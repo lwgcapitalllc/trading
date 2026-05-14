@@ -96,8 +96,8 @@ def get_all_tasks() -> list[dict]:
         if not market_label:
             continue
 
-        status = parts[2].strip().upper()
-        running = "RUNNING" in status or "Ready" in parts[2]
+        status = parts[2].strip()
+        running = status == "Running"
 
         # Parse name into components: FX_XAUUSD_Bot1 → FX, XAUUSD, Bot1
         name_parts = name.split("_", 2)
@@ -228,7 +228,6 @@ def print_header(tasks: list[dict]):
         for t in tasks:
             status_icon = green("●") if t["running"] else red("○")
             status_text = green("RUNNING") if t["running"] else red("STOPPED")
-            label       = f"{t['market']}/{t['pair']}/{t['role']}"
 
             if t["running"] and t["name"] in LOG_MAP:
                 uptime = get_uptime(t["name"])
