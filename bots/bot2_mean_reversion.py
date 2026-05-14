@@ -566,9 +566,7 @@ def run():
                         close_position(t["ticket"], t["dir"])
                     if t in open_trades:
                         open_trades.remove(t)
-                log.info("All positions closed for market close.")
-                time.sleep(60)
-                continue
+                log.info("Positions closed. Bot stays running — no new entries during close window.")
             if date != last_date:
                 acct         = mt5.account_info()
                 daily_start  = acct.balance

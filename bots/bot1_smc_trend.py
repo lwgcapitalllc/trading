@@ -573,9 +573,7 @@ def run():
                         close_position(t["ticket"], t["dir"], reason)
                     if t in open_trades:
                         open_trades.remove(t)
-                log.info("All positions closed for market close.")
-                time.sleep(60)
-                continue
+                log.info("Positions closed. Bot stays running — no new entries during close window.")
 
             # ── Daily reset ───────────────────────────────────────────────
             if date != last_date:
