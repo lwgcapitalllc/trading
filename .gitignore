@@ -1,0 +1,22 @@
+# Sensitive files — never commit
+credentials.json
+.claude/
+*.key
+*.pem
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Logs and runtime output
+*.log
+logs/
+
+# Leftover mount directory from cloud IDE
+mnt/
