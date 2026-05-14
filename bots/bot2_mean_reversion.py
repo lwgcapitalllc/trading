@@ -123,12 +123,12 @@ def now_utc():
 def is_market_close() -> bool:
     """Returns True at 21:45 UTC — 15 min before gold market closes at 22:00 UTC."""
     t = now_utc()
-    return t.hour == 21 and t.minute >= 45
+    return (t.hour == 19 and t.minute >= 45) or t.hour == 20
 
 def should_close_for_weekend() -> bool:
     """Friday 21:45 UTC — no reopening until Sunday 22:00 UTC."""
     t = now_utc()
-    return t.weekday() == 4 and t.hour == 21 and t.minute >= 45
+    return t.weekday() == 4 and ((t.hour == 19 and t.minute >= 45) or t.hour == 20)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

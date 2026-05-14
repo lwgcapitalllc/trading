@@ -138,12 +138,12 @@ def is_market_close() -> bool:
     This covers both the daily rollover and the weekend close (Friday 21:45 UTC).
     """
     t = now_utc()
-    return t.hour == 21 and t.minute >= 45
+    return (t.hour == 19 and t.minute >= 45) or t.hour == 20
 
 def should_close_for_weekend() -> bool:
     """Friday 21:45 UTC — market won't reopen until Sunday 22:00 UTC."""
     t = now_utc()
-    return t.weekday() == 4 and t.hour == 21 and t.minute >= 45
+    return t.weekday() == 4 and ((t.hour == 19 and t.minute >= 45) or t.hour == 20)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
