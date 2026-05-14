@@ -1,7 +1,30 @@
-**/credentials.json
-**/*.log
+# Credentials — never commit
+credentials.json
+.claude/
+*.key
+*.pem
+
+# Runtime files — stay on VPS only, never commit
 **/*_trades.json
 **/*_equity.json
 **/*.pkl
 **/regime_state_*.json
 **/*_stdout.log
+**/bot_pids.json
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Leftover mount directory from cloud IDE
+mnt/
