@@ -120,6 +120,16 @@ def get_tick():
 def now_utc():
     return datetime.now(pytz.utc)
 
+def is_market_close() -> bool:
+    """Returns True at 21:45 UTC — 15 min before gold market closes at 22:00 UTC."""
+    t = now_utc()
+    return t.hour == 21 and t.minute >= 45
+
+def should_close_for_weekend() -> bool:
+    """Friday 21:45 UTC — no reopening until Sunday 22:00 UTC."""
+    t = now_utc()
+    return t.weekday() == 4 and t.hour == 21 and t.minute >= 45
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PROTECTION HELPERS
@@ -389,12 +399,23 @@ def partial_close(ticket, close_lots, direction):
 
 def manage_positions(open_trades):
     """
-    Aggressive mean reversion profit protection:
-      1. Breakeven at 0.3R — lock it in fast
-      2. Partial close 50% at 1R — bank half immediately
-      3. Tight trail after partial (0.3x ATR)
-      4. Early close if RSI returns to neutral (mean reached)
+    0.01-lot-safe mean reversion management:
+      1. Breakeven at 0.3R (fast)
+      2. Full close at 1R — bank the entire trade (works at minimum lot size)
+      3. Early close when RSI returns to neutral
+      4. Force close everything at 21:45 UTC (15 min before market close)
     """
+    # Force close everything before market close
+    if is_market_close() and open_trades:
+        reason = "WEEKEND-CLOSE" if should_close_for_weekend() else "DAILY-CLOSE"
+        log.info(f"Market closing in 15 min — closing all {len(open_trades)} position(s). [{reason}]")
+        for t in open_trades[:]:
+            pos = mt5.positions_get(ticket=t["ticket"])
+            if pos:
+                close_position(t["ticket"], t["dir"])
+            open_trades.remove(t)
+        return
+
     df_m15 = get_candles(mt5.TIMEFRAME_M15, 30)
     if df_m15.empty: return
     rsi_now = calc_rsi(df_m15)
@@ -429,36 +450,31 @@ def manage_positions(open_trades):
                 t["be_done"] = True
                 log.info(f"T{t['ticket']} → BREAKEVEN @ {be:.2f} ({profit_r:.2f}R)")
 
-        # Stage 2 — Partial close 50% at 1R — bank it
-        if profit_r >= PARTIAL_CLOSE_R and not t.get("partial_done"):
-            close_lots = round(p.volume * PARTIAL_CLOSE_PCT, 2)
-            if partial_close(t["ticket"], close_lots, direction):
-                t["partial_done"] = True
-                t["peak"]         = price
-                move_sl(t["ticket"], t["entry"])
-                log.info(f"T{t['ticket']} PARTIAL CLOSE 50% @ {profit_r:.1f}R | "
-                         f"Profit banked. Runner active.")
+        # Stage 2 — Full close at 1R — bank entire trade
+        if profit_r >= PARTIAL_CLOSE_R and not t.get("closed"):
+            log.info(f"T{t['ticket']} FULL CLOSE @ {profit_r:.1f}R — banking profit.")
+            if close_position(t["ticket"], direction):
+                t["closed"] = True
+                open_trades.remove(t)
+            continue
 
-        # Stage 3 — Tight trail after partial close
-        if t.get("partial_done"):
+        # Stage 3 — Tight trail after breakeven
+        if t.get("be_done") and not t.get("closed"):
             trail = atr * TRAIL_ATR_MULT
             if direction == "bullish":
                 t["peak"] = max(t.get("peak", price), price)
                 new_sl    = t["peak"] - trail
                 if new_sl > p.sl + 0.05:
                     move_sl(t["ticket"], new_sl)
-                    log.info(f"T{t['ticket']} TRAIL SL={new_sl:.2f} "
-                             f"(peak={t['peak']:.2f})")
             else:
                 t["peak"] = min(t.get("peak", price), price)
                 new_sl    = t["peak"] + trail
                 if new_sl < p.sl - 0.05:
                     move_sl(t["ticket"], new_sl)
-                    log.info(f"T{t['ticket']} TRAIL SL={new_sl:.2f}")
 
-        # Stage 4 — Early close if RSI returns to neutral (mean reached)
+        # Stage 4 — Early RSI close (mean reached)
         rsi_neutral = RSI_NEUTRAL_LO <= rsi_now <= RSI_NEUTRAL_HI
-        if rsi_neutral and profit_r > 0.3:
+        if rsi_neutral and profit_r > 0.3 and not t.get("closed"):
             log.info(f"T{t['ticket']} EARLY CLOSE — RSI neutral ({rsi_now:.1f}) | "
                      f"profit={profit_r:.1f}R. Mean reached.")
             if close_position(t["ticket"], direction):

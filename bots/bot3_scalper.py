@@ -25,7 +25,7 @@
 ║    $7,000 → $10,000 : 3.5% risk                                            ║
 ║    $10,000+         : 2.0% risk (reset after goal, keep compounding)       ║
 ║                                                                              ║
-║  Config    : C:\algos\xauusd\config.json (bot3_scalper section)            ║
+║  Config    : C:/algos/markets/fx/instances/xauusd_scalper/config.json      ║
 ║  Install   : pip install MetaTrader5 pandas numpy pytz scikit-learn joblib ║
 ║  Run       : python bot3_scalper.py                                        ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -170,6 +170,16 @@ def now_utc():
 
 def is_dead_zone():
     return DEAD_ZONE_START <= now_utc().hour < DEAD_ZONE_END
+
+def is_market_close() -> bool:
+    """Returns True at 21:45 UTC — 15 min before gold market closes at 22:00 UTC."""
+    t = now_utc()
+    return t.hour == 21 and t.minute >= 45
+
+def should_close_for_weekend() -> bool:
+    """Friday 21:45 UTC — no reopening until Sunday 22:00 UTC."""
+    t = now_utc()
+    return t.weekday() == 4 and t.hour == 21 and t.minute >= 45
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -510,8 +520,20 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame):
     1. Breakeven at BE_ACTIVATION_R
     2. Trailing stop after breakeven
     3. Max hold time force close
-    4. MOMENTUM REVERSAL — close immediately if M5 bias flips against position
+    4. MOMENTUM REVERSAL — close if M5 bias flips against position while in profit
+    5. Force close everything at 21:45 UTC (15 min before market close)
     """
+    # Force close before market close
+    if is_market_close() and open_trades:
+        reason = "WEEKEND-CLOSE" if should_close_for_weekend() else "DAILY-CLOSE"
+        log.info(f"Market closing in 15 min — closing all {len(open_trades)} scalp(s). [{reason}]")
+        for t in open_trades[:]:
+            pos = mt5.positions_get(ticket=t["ticket"])
+            if pos:
+                close_position(t["ticket"], t["dir"], reason)
+            open_trades.remove(t)
+        return
+
     current_bias, _ = get_m5_bias(df_m5)
 
     for t in open_trades[:]:

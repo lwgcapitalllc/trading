@@ -131,6 +131,20 @@ def in_kill_zone():
 def is_ny_session_close():
     return now_utc().hour >= 15
 
+def is_market_close() -> bool:
+    """
+    Returns True 15 minutes before market closes.
+    Gold market closes 22:00 UTC daily — we close at 21:45 UTC.
+    This covers both the daily rollover and the weekend close (Friday 21:45 UTC).
+    """
+    t = now_utc()
+    return t.hour == 21 and t.minute >= 45
+
+def should_close_for_weekend() -> bool:
+    """Friday 21:45 UTC — market won't reopen until Sunday 22:00 UTC."""
+    t = now_utc()
+    return t.weekday() == 4 and t.hour == 21 and t.minute >= 45
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PROTECTION HELPERS
@@ -274,6 +288,34 @@ def move_sl(ticket, new_sl):
            "position":ticket, "sl":round(new_sl, 2), "tp":pos[0].tp}
     mt5.order_send(req)
 
+def close_position(ticket: int, direction: str, reason: str = "") -> bool:
+    """Close an entire position."""
+    pos = mt5.positions_get(ticket=ticket)
+    if not pos: return False
+    p          = pos[0]
+    bid, ask   = get_tick()
+    price      = bid if direction == "bullish" else ask
+    close_type = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
+    req = {
+        "action":       mt5.TRADE_ACTION_DEAL,
+        "symbol":       SYMBOL,
+        "volume":       p.volume,
+        "type":         close_type,
+        "position":     ticket,
+        "price":        price,
+        "deviation":    20,
+        "magic":        MAGIC,
+        "comment":      f"BOT1-CLOSE-{reason}",
+        "type_time":    mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_IOC,
+    }
+    res = mt5.order_send(req)
+    if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+        log.info(f"CLOSED ticket={ticket} reason={reason} @ {price:.2f}")
+        return True
+    log.error(f"Close failed ticket={ticket}: {mt5.last_error()}")
+    return False
+
 def partial_close(ticket, close_lots, direction):
     """Close a portion of an open position."""
     pos = mt5.positions_get(ticket=ticket)
@@ -321,15 +363,43 @@ def get_key_levels(df_h4):
 
 def manage_positions(open_trades, atr, df_h4=None):
     """
-    Full 5-stage position management:
+    0.01-lot-safe profit management:
       1. Breakeven at 1R
-      2. Partial close 50% at 3R — bank guaranteed profit
-      3. Runner: dynamic ATR trail (wide at low R, tight at high R)
-      4. Runner exits at weekly key levels
-      5. Runner exits at NY session close
+      2. Full close at 2R — bank the entire trade (works at minimum lot size)
+      3. Keep only the single best trade as a runner with dynamic trail
+      4. Force close everything at 21:45 UTC (15 min before market close)
+      5. Runner exits at weekly key levels
     """
-    key_levels = get_key_levels(df_h4)
-    ny_close   = is_ny_session_close()
+    key_levels  = get_key_levels(df_h4)
+    mkt_close   = is_market_close()
+
+    # Force close everything 15 min before market close
+    if mkt_close and open_trades:
+        reason = "WEEKEND-CLOSE" if should_close_for_weekend() else "DAILY-CLOSE"
+        log.info(f"Market closing in 15 min — closing all {len(open_trades)} position(s). [{reason}]")
+        for t in open_trades[:]:
+            pos = mt5.positions_get(ticket=t["ticket"])
+            if pos:
+                close_position(t["ticket"], t["dir"])
+            open_trades.remove(t)
+        return
+
+    # Find the best performing open trade to keep as runner
+    best_ticket = None
+    best_r      = -999
+    for t in open_trades:
+        pos = mt5.positions_get(ticket=t["ticket"])
+        if not pos: continue
+        sl_dist = abs(t["entry"] - t["sl"])
+        if sl_dist == 0: continue
+        p = pos[0]
+        profit_r = (
+            (p.price_current - t["entry"]) / sl_dist if t["dir"] == "bullish"
+            else (t["entry"] - p.price_current) / sl_dist
+        )
+        if profit_r > best_r:
+            best_r      = profit_r
+            best_ticket = t["ticket"]
 
     for t in open_trades[:]:
         pos = mt5.positions_get(ticket=t["ticket"])
@@ -357,19 +427,23 @@ def manage_positions(open_trades, atr, df_h4=None):
                 move_sl(t["ticket"], t["entry"])
                 log.info(f"T{t['ticket']} → BREAKEVEN @ {t['entry']:.2f}")
 
-        # Stage 2 — Partial close at 3R
-        if profit_r >= PARTIAL_CLOSE_R and not t.get("partial_done"):
-            close_lots = round(p.volume * PARTIAL_CLOSE_PCT, 2)
-            if partial_close(t["ticket"], close_lots, direction):
-                t["partial_done"]  = True
-                t["runner_start"]  = price
-                t["peak"]          = price
-                move_sl(t["ticket"], t["entry"])
-                log.info(f"T{t['ticket']} PARTIAL CLOSE {PARTIAL_CLOSE_PCT:.0%} @ {profit_r:.1f}R | "
-                         f"Banked. Runner active from {price:.2f}")
+        # Stage 2 — Full close at 2R for non-runner trades
+        # Keep the best performing trade as the runner
+        if profit_r >= 2.0 and t["ticket"] != best_ticket:
+            log.info(f"T{t['ticket']} FULL CLOSE @ {profit_r:.1f}R — banking profit. "
+                     f"(runner kept: T{best_ticket})")
+            if close_position(t["ticket"], direction):
+                open_trades.remove(t)
+            continue
 
-        # Stage 3/4/5 — Runner management
-        if t.get("partial_done"):
+        # Stage 3 — Runner management (best trade only)
+        if t["ticket"] == best_ticket and profit_r >= 2.0:
+            if not t.get("runner_active"):
+                t["runner_active"] = True
+                t["peak"]          = price
+                log.info(f"T{t['ticket']} RUNNER active @ {profit_r:.1f}R")
+
+        if t.get("runner_active"):
             trail_mult = get_dynamic_trail_mult(profit_r)
             trail_dist = atr * trail_mult
 
@@ -379,7 +453,7 @@ def manage_positions(open_trades, atr, df_h4=None):
                 if runner_sl > p.sl + 0.05:
                     move_sl(t["ticket"], runner_sl)
                     log.info(f"T{t['ticket']} RUNNER trail SL={runner_sl:.2f} "
-                             f"(peak={t['peak']:.2f} trail={trail_dist:.1f}pts {trail_mult}×ATR)")
+                             f"(peak={t['peak']:.2f} {trail_mult}×ATR)")
             else:
                 t["peak"] = min(t.get("peak", price), price)
                 runner_sl = t["peak"] + trail_dist
@@ -387,25 +461,19 @@ def manage_positions(open_trades, atr, df_h4=None):
                     move_sl(t["ticket"], runner_sl)
                     log.info(f"T{t['ticket']} RUNNER trail SL={runner_sl:.2f}")
 
-            # Stage 4 — Key level exit
+            # Key level exit
             if RUNNER_KEY_LEVEL_EXIT:
                 for level in key_levels:
                     if direction == "bullish" and price >= level - 0.5:
-                        log.info(f"T{t['ticket']} RUNNER → weekly high {level:.2f} hit. Closing.")
-                        partial_close(t["ticket"], p.volume, direction)
+                        log.info(f"T{t['ticket']} RUNNER → weekly high {level:.2f}. Closing.")
+                        close_position(t["ticket"], direction)
                         if t in open_trades: open_trades.remove(t)
                         break
                     elif direction == "bearish" and price <= level + 0.5:
-                        log.info(f"T{t['ticket']} RUNNER → weekly low {level:.2f} hit. Closing.")
-                        partial_close(t["ticket"], p.volume, direction)
+                        log.info(f"T{t['ticket']} RUNNER → weekly low {level:.2f}. Closing.")
+                        close_position(t["ticket"], direction)
                         if t in open_trades: open_trades.remove(t)
                         break
-
-            # Stage 5 — NY session close exit
-            if RUNNER_SESSION_EXIT and ny_close and profit_r > 0 and t in open_trades:
-                log.info(f"T{t['ticket']} RUNNER → NY close. Exiting at {profit_r:.1f}R.")
-                partial_close(t["ticket"], p.volume, direction)
-                if t in open_trades: open_trades.remove(t)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
