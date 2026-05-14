@@ -27,6 +27,9 @@ _inject_shared_path()
 def load_config() -> dict:
     """
     Load config from --config path argument.
+    Credentials are loaded separately from credentials.json in the same
+    instance directory and merged in. credentials.json is never committed
+    to GitHub.
 
     Run a bot like:
         python bots\bot1_smc_trend.py --config instances\xauusd_main\config.json
@@ -51,6 +54,26 @@ def load_config() -> dict:
 
     with open(cfg_path, encoding="utf-8") as f:
         cfg = json.load(f)
+
+    # Load credentials.json from same instance directory
+    creds_path = cfg_path.parent / "credentials.json"
+    if not creds_path.exists():
+        raise FileNotFoundError(
+            f"\n\n  credentials.json not found at: {creds_path}\n"
+            f"  Create it in the same folder as config.json with:\n"
+            f"  {{\n"
+            f"      \"login\":    YOUR_ACCOUNT_NUMBER,\n"
+            f"      \"password\": \"YOUR_PASSWORD\",\n"
+            f"      \"server\":   \"YOUR_BROKER_SERVER\"\n"
+            f"  }}\n"
+            f"  This file is never committed to GitHub.\n"
+        )
+
+    with open(creds_path, encoding="utf-8") as f:
+        creds = json.load(f)
+
+    # Merge credentials into config under "account" key
+    cfg["account"] = creds
 
     cfg["_instance_dir"]  = str(cfg_path.parent.resolve())
     cfg["_config_path"]   = str(cfg_path.resolve())

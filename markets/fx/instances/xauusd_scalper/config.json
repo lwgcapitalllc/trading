@@ -1,9 +1,4 @@
 {
-  "account": {
-    "login": 700107520,
-    "password": "ItIsPossible1#",
-    "server": "PUPrime-Demo"
-  },
   "symbol": "XAUUSD.s",
   "risk": {
     "risk_pct_bot1": 2.0,
