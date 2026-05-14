@@ -1,17 +1,18 @@
+# BOT1_SMC_TREND_GUIDE.md
 # Bot 1 — SMC Trend Following
 
 **File:** `bots/bot1_smc_trend.py`
-**Style:** Trend following — rides institutional order flow
-**Capital allocation:** 60–80% of account
-**Trades per day:** 0–2 (quality over quantity)
+**Style:** Trend following — rides institutional order flow with the H4 trend
+**Capital allocation:** 60–80% of account (runs alongside Bot 2)
+**Trades per day:** 0–3 (quality over quantity — most days 0–1)
 
 ---
 
 ## What It Does
 
-Waits for institutions to fake a directional move to trigger retail stop-losses, then trades the reversal. This pattern — called a Judas Swing in Smart Money Concepts — repeats reliably at the London and NY session opens when institutional volume floods in.
+Waits for institutions to fake a directional move to trigger retail stop-losses, then trades the reversal — but **only in the direction of the H4 trend**. This pattern (Judas Swing) repeats at London and NY session opens when institutional volume floods in.
 
-The bot does nothing for most of the day. It marks the Asian session range, waits for London or NY to open, and looks for one specific thing: price sweeping through the Asian high or low and closing back inside. When that happens with enough confluence, it enters.
+The bot marks the Asian session range, waits for London or NY, and requires: price sweeping the Asian high/low, reversing, AND that reversal aligning with the H4 EMA 200 trend. Counter-trend setups are blocked entirely regardless of score.
 
 ---
 
@@ -22,85 +23,86 @@ The bot does nothing for most of the day. It marks the Asian session range, wait
 | London kill zone | 07:00–10:00 | 2:00–5:00am |
 | NY kill zone | 12:00–15:00 | 7:00–10:00am |
 | Asian session | 20:00–00:00 | Range building only — no entries |
-| All other hours | — | Silent |
+| All other hours | — | Manages open positions only |
 
 ---
 
 ## How It Finds a Trade
 
-1. Marks the Asian session high and low (the range)
-2. Detects a "Judas Swing" — price breaks the Asian low/high with a wick, then closes back inside
-3. Confirms a Fair Value Gap (FVG) on M5 — a price imbalance candle left by the displacement
-4. Scores the setup 0–8 using confluence signals (sweep, FVG alignment, H4 trend, session, FVG midpoint)
-5. Minimum score of 4 required to proceed
-6. AI model votes approve or block based on 15 historical features
-7. If approved — calculates position size for exactly the configured risk % and places the order with a broker-side stop loss
+1. Marks Asian session high and low
+2. Detects Judas Swing — sweep of Asian range with reversal close
+3. **Hard H4 filter** — sweep direction must match H4 EMA 200 trend or trade is blocked
+4. Confirms Fair Value Gap (FVG) on M5
+5. Scores setup 0–8 — minimum **5** required
+6. AI model approves or blocks
+7. Places order with broker-side stop loss
+
+**Why the H4 filter:** Without it the bot was taking counter-trend trades every 5 minutes (46 trades in one session). H4 filter reduces this to 0–3 genuine with-trend setups per session.
 
 ---
 
-## How It Manages Trades
+## How It Manages Trades — 0.01 Lot Safe
 
-| Milestone | Action |
-|---|---|
-| +1R profit | Stop loss moves to breakeven — trade is now free |
-| +3R profit | 50% of position closes — profit banked |
-| Runner (50%) | Dynamic ATR trailing stop activates |
-| 0–5R on runner | Trail = 2× ATR (wide — survives pullbacks) |
-| 5–8R on runner | Trail = 1.5× ATR |
-| 8R+ on runner | Trail = 1× ATR (tight — protect gains) |
-| Weekly key level hit | Runner closes immediately |
-| NY session close (15:00 UTC) | Runner closes — no overnight exposure |
+Partial close (splitting a position) doesn't work at 0.01 lots minimum. Instead:
+
+| Stage | Trigger | Action |
+|---|---|---|
+| 1 | +1R profit | Stop to breakeven — trade is free |
+| 2 | +2R profit (non-runner) | Full close — profit banked |
+| 3 | Best trade at +2R | Becomes the runner — trail activates |
+| Runner | After 2R | Dynamic ATR trail (2× → 1.5× → 1× as profit grows) |
+| Force close | 21:45 UTC daily | All positions closed before market close |
+| Force close | Friday 21:45 UTC | Weekend protection |
+
+**Runner logic:** When multiple trades reach 2R, the single best performing trade stays open as the runner with a trailing stop. All others close and bank profit. Guarantees money is secured while the strongest trade runs further.
 
 ---
 
 ## Risk Controls
 
-All configured in `config.json` → `bot1_trend` section.
-
-| Control | Default | Notes |
+| Parameter | Default | Description |
 |---|---|---|
-| Risk per trade | 2% | Of current account balance |
-| Daily loss cap | 10% | No new entries rest of day |
-| Weekly loss cap | 20% | 6hr cooldown then regime check |
-| Consecutive losses | 3 | 30min → 1hr → 3hr cooldown |
-| News blackout | 30 min | Around configured events |
+| `min_confluence_score` | **5** | Minimum to take a trade (raised from 4) |
+| `atr_sl_multiplier` | 1.5 | SL = 1.5 × ATR beyond sweep wick |
+| `risk_pct_bot1` | 2.0% | Per trade risk |
+| `max_daily_loss_pct_bot1` | 10% | Daily loss cap |
+| `max_weekly_loss_pct_bot1` | 20% | Weekly loss cap |
 
 ---
 
 ## Regime Behaviour
 
-The bot reads the shared regime classifier every hour. ADX, ATR ratio, and RSI range determine whether the market is trending or ranging.
-
 | Regime | Bot 1 behaviour |
 |---|---|
-| TRENDING | Full size — ideal conditions |
+| TRENDING | Full size — ideal |
 | TRANSITIONING | 50% size |
-| RANGING | No entries — market not suitable for trend following |
+| RANGING | No entries |
 
 ---
 
-## AI Learning
+## Tuning Guide
 
-After 30 closed trades the Random Forest model trains on these features: confluence score, ATR, sweep wick size, session, H4 alignment, FVG presence, spread, day/hour, rolling win rate, and price position in daily range. Walk-forward validated — never trained on future data. Retrains every 10 new trades. If AUC falls below 0.52 (no better than random) the model is discarded and the bot runs rules-only.
+| Problem | Parameter | Change |
+|---|---|---|
+| Still too many trades | `min_confluence_score` | Raise to 6 |
+| No trades firing | `min_confluence_score` | Lower to 4 |
+| Stops hit before move | `atr_sl_multiplier` | Raise 1.5 → 1.8 |
+| Profits banking too slow | `partial_close_r` (bot1_trend) | Lower 2.0 → 1.5 |
 
 ---
 
 ## Log Messages to Watch
 
 ```
-In NY kill zone — scanning for setup...        ← active, looking
-No Judas Swing detected                         ← no setup this minute, normal
-Asian range: H=2400.50 L=2385.20               ← range identified
-Confluence score 7/8                            ← strong setup
-AI approved 68%                                 ← AI gate passed
-ORDER FILLED | bullish 0.02L @ 2387.50         ← trade placed
-T12345678 → breakeven @ 2387.50                ← stop moved to BE
-T12345678 PARTIAL CLOSE 50% @ 3.0R             ← profit banked
-T12345678 RUNNER trail SL=2389.00              ← runner active
+H4 FILTER: sweep=bearish but H4=bullish. Counter-trend blocked.     ← working correctly
+In LONDON kill zone — scanning for setup...                          ← active
+Score 3 < 5. Skip.                                                   ← quality filter working
+Confluence score 6/8 | sweep(+2) | FVG-aligned(+2) | london(+1)... ← strong setup
+AI approved 68%                                                      ← AI gate passed
+ORDER FILLED | ticket=... | bullish 0.01L @ 4688.63                 ← trade placed
+T12345678 → BREAKEVEN @ 4688.63                                     ← free trade
+T12345678 FULL CLOSE @ 2.1R — banking profit.                       ← secured
+T12345678 RUNNER active @ 2.0R                                      ← best trade running
+Market closing in 15 min — closing all 3 position(s). [DAILY-CLOSE] ← eod cleanup
+Market closing in 15 min — closing all 2 position(s). [WEEKEND-CLOSE] ← friday cleanup
 ```
-
----
-
-## Works On
-
-Any liquid instrument with clear session structure and institutional participation. Gold (XAUUSD), major FX pairs (GBPJPY, GBPUSD, EURUSD), indices (US30, NAS100). Adjust `asian_session_start_utc` in config for non-gold pairs — for GBPJPY use 0–4 UTC (Tokyo open builds the range).

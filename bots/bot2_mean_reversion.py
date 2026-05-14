@@ -555,7 +555,20 @@ def run():
             now  = now_utc()
             date = now.date()
 
-            # ── Daily reset ───────────────────────────────────────────────
+            # ── Market close — highest priority check ─────────────────────
+            if is_market_close() and open_trades:
+                reason = "WEEKEND-CLOSE" if should_close_for_weekend() else "DAILY-CLOSE"
+                log.warning(f"MARKET CLOSE in 15 min [{reason}] — "
+                            f"closing all {len(open_trades)} position(s) now.")
+                for t in open_trades[:]:
+                    pos = mt5.positions_get(ticket=t["ticket"])
+                    if pos:
+                        close_position(t["ticket"], t["dir"])
+                    if t in open_trades:
+                        open_trades.remove(t)
+                log.info("All positions closed for market close.")
+                time.sleep(60)
+                continue
             if date != last_date:
                 acct         = mt5.account_info()
                 daily_start  = acct.balance
