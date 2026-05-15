@@ -477,16 +477,16 @@ async def run():
              f"(${DAILY_GOAL_FLOOR}-${DAILY_GOAL_CEIL})")
     log.info("=" * 65)
 
-    # Load credentials
-    creds_path = _INST / "credentials.json"
-    if not creds_path.exists():
-        log.error(f"credentials.json not found at {creds_path}")
-        log.error("Copy credentials.template.json -> credentials.json "
-                  "and fill in your Tradovate details.")
+    # Load credentials from merged config (bot_utils merges credentials.json → cfg["account"])
+    creds = _CFG.get("account")
+    if not creds:
+        log.error("No credentials found. Check credentials.json exists in instance dir.")
         return
 
-    with open(creds_path) as f:
-        creds = json.load(f)
+    if not creds.get("username") or not creds.get("password"):
+        log.error("credentials.json must contain 'username', 'password', "
+                  "'account_id', and 'environment'.")
+        return
 
     # Initialise components
     executor    = TradovateExecutor(creds, environment=creds.get("environment","demo"))
