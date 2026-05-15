@@ -1,26 +1,25 @@
 """
-shared_ai_brain.py — AI Brain + Trade Logger
-Used by both bots. Each bot has its own model file and trade history.
+shared_ai_brain.py — AI Brain + Trade Logger + Daily Performance Logger
 
-What this does:
-  - Logs every trade with 13–15 market features at entry
-  - After 30 closed trades, trains a Random Forest classifier
-  - Walk-forward validates (TimeSeriesSplit) — no lookahead bias
-  - Refuses to deploy if AUC ≤ 0.52 (no better than chance)
-  - Each bot has its own model: bot1_model.pkl / bot2_model.pkl
-  - Retrains automatically every 10 new closed trades
+Improvements over v1:
+  - Training threshold lowered to 15 trades (was 30)
+  - AUC gate raised to 0.55 (stricter — faster training needs stricter quality gate)
+  - Daily performance logger — records drawdown, trade count, simultaneous positions
+  - Drawdown awareness feature — AI learns which day patterns lead to losses
+  - Re-entry tracking — logs whether a trade was a re-entry and its outcome
+  - Retrains every 5 new closed trades (was 10)
 
 Install: pip install scikit-learn joblib
 """
 
-import json, logging, numpy as np, pandas as pd
-from datetime import datetime
+import json, logging, numpy as np
+from datetime import datetime, date
 from pathlib import Path
 
 log = logging.getLogger("AI-BRAIN")
 
 try:
-    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
     from sklearn.preprocessing import StandardScaler
     from sklearn.model_selection import TimeSeriesSplit
     from sklearn.metrics import roc_auc_score
@@ -30,48 +29,164 @@ except ImportError:
     ML_OK = False
     log.warning("scikit-learn not found. pip install scikit-learn joblib")
 
-MIN_TRADES_TRAIN = 30
-RETRAIN_EVERY    = 10
+MIN_TRADES_TRAIN = 15   # lowered from 30
+MIN_AUC_GATE     = 0.55 # raised from 0.52 — stricter since less data
+RETRAIN_EVERY    = 5    # lowered from 10 — faster adaptation
 
 # ── Feature sets ──────────────────────────────────────────────────────────────
 TREND_FEATURES = [
-    "confluence_score",     # 0–8: how many signals aligned
-    "atr_normalized",       # ATR as % of price
-    "sweep_wick_size",      # Judas Swing wick size in points
-    "session_london",       # 1 if London kill zone
-    "session_ny",           # 1 if NY kill zone
-    "h4_trend_aligned",     # 1 if H4 EMA200 aligns with trade
-    "fvg_present",          # 1 if Fair Value Gap detected
-    "day_of_week",          # 0=Mon … 4=Fri
-    "hour_of_day",          # UTC hour at entry
-    "spread_at_entry",      # broker spread in points
-    "prev_trade_won",       # 1 if last closed trade won
-    "rolling_wr_5",         # win rate last 5 trades
-    "rolling_wr_10",        # win rate last 10 trades
-    "price_vs_daily_range", # 0=at low, 1=at high of day
-    "rr_ratio",             # actual R:R ratio of setup
+    "confluence_score",
+    "atr_normalized",
+    "sweep_wick_size",
+    "session_london",
+    "session_ny",
+    "h4_trend_aligned",
+    "fvg_present",
+    "day_of_week",
+    "hour_of_day",
+    "spread_at_entry",
+    "prev_trade_won",
+    "rolling_wr_5",
+    "rolling_wr_10",
+    "price_vs_daily_range",
+    "rr_ratio",
+    # New drawdown-aware features
+    "daily_trades_so_far",      # how many trades already today
+    "daily_pnl_pct",            # current day P&L % at time of entry
+    "simultaneous_open",        # how many positions open at entry
+    "is_reentry",               # 1 if this is a re-entry after BE stop
 ]
 
 REVERSION_FEATURES = [
     "confluence_score",
     "atr_normalized",
-    "rsi_value",            # RSI at entry
-    "stoch_rsi",            # Stochastic RSI
-    "bb_pct_b",             # Bollinger Band %B (0=lower, 1=upper)
-    "price_vs_vwap",        # deviation from VWAP in std units
+    "rsi_value",
+    "stoch_rsi",
+    "bb_pct_b",
+    "price_vs_vwap",
     "spread_at_entry",
     "day_of_week",
     "hour_of_day",
     "prev_trade_won",
     "rolling_wr_5",
     "rolling_wr_10",
-    "regime_score",         # 1=trending, 2=transitioning, 3=ranging
+    "regime_score",
+    # New drawdown-aware features
+    "daily_trades_so_far",
+    "daily_pnl_pct",
+    "simultaneous_open",
+    "is_reentry",
+]
+
+SCALPER_FEATURES = [
+    "ema_stack_strength",
+    "pullback_depth_r",
+    "momentum_body_r",
+    "rsi_at_entry",
+    "atr_normalized",
+    "hour_of_day",
+    "day_of_week",
+    "prev_trade_won",
+    "rolling_wr_5",
+    "rolling_wr_10",
+    "daily_pnl_pct",
+    "spread_at_entry",
+    "bias_direction",
+    "daily_trades_so_far",
+    "simultaneous_open",
+    "is_reentry",
 ]
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+# DAILY PERFORMANCE LOGGER
+# =============================================================================
+
+class DailyLogger:
+    """
+    Records end-of-day performance metrics for AI training.
+    The AI learns which day CONDITIONS produce drawdowns vs profits.
+    """
+
+    def __init__(self, filepath="daily_performance.json"):
+        self.filepath = filepath
+        self.records  = self._load()
+
+    def _load(self):
+        if Path(self.filepath).exists():
+            with open(self.filepath) as f:
+                return json.load(f)
+        return []
+
+    def _save(self):
+        with open(self.filepath, "w") as f:
+            json.dump(self.records, f, indent=2, default=str)
+
+    def record_day(self, date_str: str, metrics: dict):
+        """
+        Call at end of each trading day with:
+        metrics = {
+            "total_trades": int,
+            "wins": int,
+            "losses": int,
+            "breakevens": int,
+            "max_simultaneous_open": int,
+            "max_drawdown_pct": float,
+            "final_pnl_pct": float,
+            "regime": str,
+            "day_of_week": int,
+        }
+        """
+        record = {"date": date_str, **metrics}
+        # Update existing record for today if already exists
+        for i, r in enumerate(self.records):
+            if r["date"] == date_str:
+                self.records[i] = record
+                self._save()
+                log.info(f"Daily log updated | {date_str} | "
+                         f"trades={metrics.get('total_trades')} | "
+                         f"pnl={metrics.get('final_pnl_pct', 0):+.1f}% | "
+                         f"max_dd={metrics.get('max_drawdown_pct', 0):.1f}% | "
+                         f"max_open={metrics.get('max_simultaneous_open', 0)}")
+                return
+        self.records.append(record)
+        self._save()
+        log.info(f"Daily log saved | {date_str} | "
+                 f"trades={metrics.get('total_trades')} | "
+                 f"pnl={metrics.get('final_pnl_pct', 0):+.1f}%")
+
+    def get_recent(self, n=30) -> list:
+        return self.records[-n:]
+
+    def get_avg_drawdown(self, n=10) -> float:
+        recent = self.get_recent(n)
+        if not recent: return 0.0
+        return sum(r.get("max_drawdown_pct", 0) for r in recent) / len(recent)
+
+    def get_bad_day_patterns(self) -> dict:
+        """Return conditions that correlate with bad days."""
+        if len(self.records) < 5:
+            return {}
+        bad  = [r for r in self.records if r.get("final_pnl_pct", 0) < -2]
+        good = [r for r in self.records if r.get("final_pnl_pct", 0) > 1]
+        if not bad or not good:
+            return {}
+        patterns = {
+            "bad_days_avg_trades":      sum(r.get("total_trades", 0) for r in bad) / len(bad),
+            "good_days_avg_trades":     sum(r.get("total_trades", 0) for r in good) / len(good),
+            "bad_days_avg_max_open":    sum(r.get("max_simultaneous_open", 0) for r in bad) / len(bad),
+            "good_days_avg_max_open":   sum(r.get("max_simultaneous_open", 0) for r in good) / len(good),
+        }
+        log.info(f"Bad day pattern: avg {patterns['bad_days_avg_trades']:.1f} trades, "
+                 f"{patterns['bad_days_avg_max_open']:.1f} max open")
+        log.info(f"Good day pattern: avg {patterns['good_days_avg_trades']:.1f} trades, "
+                 f"{patterns['good_days_avg_max_open']:.1f} max open")
+        return patterns
+
+
+# =============================================================================
 # TRADE LOGGER
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 
 class TradeLogger:
     """Persistent JSON store for every trade with features and outcomes."""
@@ -92,21 +207,23 @@ class TradeLogger:
         with open(self.filepath, "w") as f:
             json.dump(self.trades, f, indent=2, default=str)
 
-    def log_entry(self, ticket, features, direction, entry, sl, tp1, tp2):
+    def log_entry(self, ticket, features, direction, entry, sl, tp1, tp2,
+                  is_reentry=False):
         self.trades.append({
-            "ticket":     ticket,
-            "direction":  direction,
-            "entry":      entry,
-            "sl":         sl,
-            "tp1":        tp1,
-            "tp2":        tp2,
-            "sl_dist":    abs(entry - sl),
-            "features":   features,
-            "opened_at":  datetime.utcnow().isoformat(),
-            "closed_at":  None,
-            "outcome":    None,
-            "r_multiple": None,
-            "close_price":None,
+            "ticket":      ticket,
+            "direction":   direction,
+            "entry":       entry,
+            "sl":          sl,
+            "tp1":         tp1,
+            "tp2":         tp2,
+            "sl_dist":     abs(entry - sl),
+            "features":    features,
+            "opened_at":   datetime.utcnow().isoformat(),
+            "closed_at":   None,
+            "outcome":     None,
+            "r_multiple":  None,
+            "close_price": None,
+            "is_reentry":  is_reentry,
         })
         self._save()
 
@@ -129,12 +246,27 @@ class TradeLogger:
                 )
                 self._save()
                 log.info(f"Trade closed | ticket={ticket} | "
-                         f"outcome={t['outcome']} | R={t['r_multiple']:.2f}")
+                         f"outcome={t['outcome']} | R={t['r_multiple']:.2f}"
+                         + (" [re-entry]" if t.get("is_reentry") else ""))
                 return
         log.warning(f"Could not find open trade for ticket {ticket}")
 
     def get_closed(self):
         return [t for t in self.trades if t["outcome"] is not None]
+
+    def get_reentry_stats(self) -> dict:
+        """Compare win rate of re-entries vs original entries."""
+        closed = self.get_closed()
+        reentries = [t for t in closed if t.get("is_reentry")]
+        originals = [t for t in closed if not t.get("is_reentry")]
+        def wr(trades):
+            if not trades: return 0.0
+            return sum(1 for t in trades if t["outcome"] == "win") / len(trades)
+        return {
+            "reentry_wr":  round(wr(reentries), 3),
+            "original_wr": round(wr(originals), 3),
+            "reentry_count": len(reentries),
+        }
 
     def get_rolling_wr(self, n=10) -> float:
         closed = self.get_closed()
@@ -146,14 +278,21 @@ class TradeLogger:
         closed = self.get_closed()
         return 1.0 if closed and closed[-1]["outcome"] == "win" else 0.0
 
+    def was_last_trade_breakeven(self) -> bool:
+        """Used to detect re-entry opportunity."""
+        closed = self.get_closed()
+        return bool(closed and closed[-1]["outcome"] == "breakeven")
 
-# ═════════════════════════════════════════════════════════════════════════════
+
+# =============================================================================
 # FEATURE BUILDERS
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 
 def build_features_trend(score, atr, price, sweep_wick, session,
                           h4_aligned, fvg_present, spread,
-                          d_high, d_low, logger) -> dict:
+                          d_high, d_low, logger,
+                          daily_trades=0, daily_pnl_pct=0.0,
+                          simultaneous_open=0, is_reentry=False) -> dict:
     now   = datetime.utcnow()
     d_rng = d_high - d_low
     p_pct = (price - d_low) / d_rng if d_rng > 0 else 0.5
@@ -173,42 +312,53 @@ def build_features_trend(score, atr, price, sweep_wick, session,
         "rolling_wr_10":        round(logger.get_rolling_wr(10), 3),
         "price_vs_daily_range": round(p_pct, 3),
         "rr_ratio":             3.0,
+        "daily_trades_so_far":  daily_trades,
+        "daily_pnl_pct":        round(daily_pnl_pct, 3),
+        "simultaneous_open":    simultaneous_open,
+        "is_reentry":           1 if is_reentry else 0,
     }
+
 
 def build_features_reversion(score, atr, price, rsi, stoch_rsi,
                                bb_mid, bb_upper, bb_lower,
-                               vwap, spread, logger, regime) -> dict:
-    now    = datetime.utcnow()
-    bb_rng = bb_upper - bb_lower
-    bb_pct = (price - bb_lower) / bb_rng if bb_rng > 0 else 0.5
-    v_dev  = (price - vwap) / max(abs(price - bb_mid), 1.0) if vwap else 0.0
-    reg_map = {"TRENDING": 1, "TRANSITIONING": 2, "RANGING": 3}
+                               vwap, spread, logger, regime,
+                               daily_trades=0, daily_pnl_pct=0.0,
+                               simultaneous_open=0, is_reentry=False) -> dict:
+    now       = datetime.utcnow()
+    bb_range  = bb_upper - bb_lower
+    bb_pct_b  = (price - bb_lower) / bb_range if bb_range > 0 else 0.5
+    vwap_std  = (price - vwap) / (bb_range / 4) if bb_range > 0 else 0
+    regime_map = {"RANGING": 3, "TRANSITIONING": 2, "TRENDING": 1}
     return {
-        "confluence_score": score,
-        "atr_normalized":   round((atr / price) * 100, 4),
-        "rsi_value":        round(rsi, 2),
-        "stoch_rsi":        round(stoch_rsi, 3),
-        "bb_pct_b":         round(bb_pct, 3),
-        "price_vs_vwap":    round(v_dev, 3),
-        "spread_at_entry":  round(spread, 2),
-        "day_of_week":      now.weekday(),
-        "hour_of_day":      now.hour,
-        "prev_trade_won":   logger.get_last_outcome(),
-        "rolling_wr_5":     round(logger.get_rolling_wr(5), 3),
-        "rolling_wr_10":    round(logger.get_rolling_wr(10), 3),
-        "regime_score":     reg_map.get(regime, 2),
+        "confluence_score":  score,
+        "atr_normalized":    round((atr / price) * 100, 4),
+        "rsi_value":         round(rsi, 2),
+        "stoch_rsi":         round(stoch_rsi, 3),
+        "bb_pct_b":          round(bb_pct_b, 3),
+        "price_vs_vwap":     round(vwap_std, 3),
+        "spread_at_entry":   round(spread, 2),
+        "day_of_week":       now.weekday(),
+        "hour_of_day":       now.hour,
+        "prev_trade_won":    logger.get_last_outcome(),
+        "rolling_wr_5":      round(logger.get_rolling_wr(5), 3),
+        "rolling_wr_10":     round(logger.get_rolling_wr(10), 3),
+        "regime_score":      regime_map.get(regime, 2),
+        "daily_trades_so_far": daily_trades,
+        "daily_pnl_pct":     round(daily_pnl_pct, 3),
+        "simultaneous_open": simultaneous_open,
+        "is_reentry":        1 if is_reentry else 0,
     }
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 # AI BRAIN
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 
 class AIBrain:
     """
     Random Forest classifier that learns from closed trades.
-    Predicts win probability for new setups.
-    Retrains automatically every 10 closed trades.
+    v2: Trains at 15 trades, retrains every 5, AUC gate 0.55.
+    Includes drawdown awareness and re-entry tracking.
     """
 
     def __init__(self, logger: TradeLogger, model_file="model.pkl",
@@ -228,25 +378,30 @@ class AIBrain:
         if not ML_OK: return
         if Path(self.model_file).exists() and Path(self.scaler_file).exists():
             try:
-                self.model   = joblib.load(self.model_file)
-                self.scaler  = joblib.load(self.scaler_file)
+                self.model      = joblib.load(self.model_file)
+                self.scaler     = joblib.load(self.scaler_file)
                 self.is_trained = True
-                log.info(f"Loaded model from {self.model_file}")
+                log.info(f"AI model loaded | {self.model_file} | "
+                         f"last AUC={self.last_auc:.3f}")
             except Exception as e:
                 log.warning(f"Could not load model: {e}")
 
     def _detect_features(self, features: dict) -> list:
-        """Auto-detect which feature set to use based on keys present."""
-        return TREND_FEATURES if "sweep_wick_size" in features else REVERSION_FEATURES
+        if "sweep_wick_size" in features:   return TREND_FEATURES
+        if "ema_stack_strength" in features: return SCALPER_FEATURES
+        return REVERSION_FEATURES
 
     def train(self, force=False) -> bool:
         if not ML_OK: return False
         closed = self.logger.get_closed()
-        if len(closed) < MIN_TRADES_TRAIN and not force:
-            log.info(f"Need {MIN_TRADES_TRAIN} trades to train ({len(closed)} so far)")
+        n = len(closed)
+
+        if n < MIN_TRADES_TRAIN and not force:
+            remaining = MIN_TRADES_TRAIN - n
+            log.info(f"AI: {n} closed trades. Need {remaining} more to train. "
+                     f"Running rules-based logic.")
             return False
 
-        # Determine feature set from first trade
         sample_feats = next(
             (t["features"] for t in closed if t["features"]), {}
         )
@@ -258,21 +413,27 @@ class AIBrain:
                 rows.append([t["features"].get(k, 0) for k in feature_names])
                 labels.append(1 if t["outcome"] == "win" else 0)
 
-        if len(rows) < 20:
-            log.warning(f"Only {len(rows)} valid labeled trades. Need 20+.")
+        if len(rows) < MIN_TRADES_TRAIN:
+            log.warning(f"Only {len(rows)} win/loss trades (excluding breakevens). "
+                        f"Need {MIN_TRADES_TRAIN}.")
             return False
 
         X, y = np.array(rows), np.array(labels)
-        self.scaler  = StandardScaler()
+        self.scaler = StandardScaler()
         Xs = self.scaler.fit_transform(X)
 
-        # Walk-forward cross-validation — no lookahead bias
-        tscv = TimeSeriesSplit(n_splits=min(5, len(X) // 10))
+        # Walk-forward cross-validation
+        n_splits = min(3, len(X) // 5)
+        if n_splits < 2:
+            log.warning("Not enough trades for walk-forward validation yet.")
+            n_splits = 2
+
+        tscv = TimeSeriesSplit(n_splits=n_splits)
         aucs = []
         for tr, te in tscv.split(Xs):
-            if len(te) < 3: continue
+            if len(te) < 2: continue
             m = RandomForestClassifier(
-                n_estimators=200, max_depth=6, min_samples_leaf=5,
+                n_estimators=100, max_depth=4, min_samples_leaf=3,
                 class_weight="balanced", random_state=42
             )
             m.fit(Xs[tr], y[tr])
@@ -280,19 +441,19 @@ class AIBrain:
                 aucs.append(roc_auc_score(y[te], m.predict_proba(Xs[te])[:, 1]))
 
         mean_auc = np.mean(aucs) if aucs else 0.5
-        if mean_auc < 0.52:
-            log.warning(f"Walk-forward AUC={mean_auc:.3f} — not better than chance. "
-                        f"Model not deployed. Keep collecting data.")
+        if mean_auc < MIN_AUC_GATE:
+            log.warning(f"AI: AUC={mean_auc:.3f} below gate {MIN_AUC_GATE}. "
+                        f"Model not deployed. Need more quality data.")
             return False
 
-        # Train final model on all data
+        # Train final model
         self.model = RandomForestClassifier(
-            n_estimators=300, max_depth=6, min_samples_leaf=5,
+            n_estimators=200, max_depth=5, min_samples_leaf=3,
             class_weight="balanced", random_state=42
         )
         self.model.fit(Xs, y)
-        self.is_trained = True
-        self.last_auc   = mean_auc
+        self.is_trained  = True
+        self.last_auc    = mean_auc
         self.trades_since_retrain = 0
 
         self.feature_importance = dict(zip(
@@ -302,10 +463,16 @@ class AIBrain:
         joblib.dump(self.model,  self.model_file)
         joblib.dump(self.scaler, self.scaler_file)
 
-        log.info(f"Model trained | AUC={mean_auc:.3f} | {len(rows)} trades")
+        log.info(f"AI trained | AUC={mean_auc:.3f} | {len(rows)} trades | "
+                 f"threshold={MIN_AUC_GATE}")
         top = sorted(self.feature_importance.items(), key=lambda x: -x[1])[:5]
-        for f, v in top:
-            log.info(f"  {f}: {v:.4f}")
+        log.info("Top features: " + " | ".join(f"{f}={v:.3f}" for f, v in top))
+
+        # Log re-entry stats
+        stats = self.logger.get_reentry_stats()
+        if stats["reentry_count"] > 0:
+            log.info(f"Re-entry stats: {stats['reentry_count']} re-entries | "
+                     f"WR={stats['reentry_wr']:.1%} vs original WR={stats['original_wr']:.1%}")
         return True
 
     def predict_win_prob(self, features: dict) -> float:
@@ -316,24 +483,41 @@ class AIBrain:
             Xs = self.scaler.transform(X)
             return round(float(self.model.predict_proba(Xs)[0][1]), 4)
         except Exception as e:
-            log.warning(f"Prediction failed: {e}")
+            log.warning(f"AI prediction failed: {e}")
             return 0.5
 
     def should_take_trade(self, features: dict, threshold=0.55) -> tuple:
         """Returns (take_trade, win_probability, reason)."""
         prob = self.predict_win_prob(features)
+        closed = self.logger.get_closed()
+        n = len(closed)
+
         if not self.is_trained:
-            return True, prob, "AI not yet trained — rules-based logic only"
+            remaining = max(0, MIN_TRADES_TRAIN - n)
+            reason = (f"AI not yet trained ({n}/{MIN_TRADES_TRAIN} trades). "
+                      f"Rules-based. {remaining} more needed.")
+            return True, prob, reason
+
         if prob >= threshold:
-            return True, prob, f"AI approved {prob:.1%} ≥ {threshold:.1%}"
+            return True, prob, f"AI approved {prob:.1%} >= {threshold:.1%}"
         return False, prob, f"AI blocked {prob:.1%} < {threshold:.1%}"
 
     def on_trade_closed(self, ticket, close_price, pnl=0):
-        """Call from main bot whenever a trade closes."""
+        """Call whenever a trade closes — logs outcome and triggers retrain."""
         self.logger.log_close(ticket, close_price, pnl)
         self.trades_since_retrain += 1
         closed = self.logger.get_closed()
         if (len(closed) >= MIN_TRADES_TRAIN and
                 self.trades_since_retrain >= RETRAIN_EVERY):
-            log.info(f"Retrain trigger: {self.trades_since_retrain} new trades since last train.")
+            log.info(f"AI retrain: {self.trades_since_retrain} new trades since last train.")
             self.train()
+
+    def status_report(self) -> str:
+        closed = self.logger.get_closed()
+        n = len(closed)
+        if not self.is_trained:
+            return (f"AI: Not trained | {n}/{MIN_TRADES_TRAIN} trades | "
+                    f"{max(0, MIN_TRADES_TRAIN - n)} more needed")
+        wr = self.logger.get_rolling_wr(10)
+        return (f"AI: Trained | AUC={self.last_auc:.3f} | "
+                f"WR(10)={wr:.1%} | {n} total trades")

@@ -29,7 +29,7 @@ import pytz
 
 from bot_utils import load_config, setup_logging, get_instance_dir
 from shared_regime   import RegimeClassifier
-from shared_ai_brain import AIBrain, TradeLogger, build_features_trend
+from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
 
 # ── Load config + logging (instance-aware) ────────────────────────────────────
@@ -404,6 +404,16 @@ def manage_positions(open_trades, atr, df_h4=None):
     for t in open_trades[:]:
         pos = mt5.positions_get(ticket=t["ticket"])
         if not pos:
+            # Trade was closed by broker (stop loss hit)
+            # Check if it was at breakeven — if so, flag for re-entry
+            if t.get("be_done"):
+                log.info(f"T{t['ticket']} stopped at BREAKEVEN. "
+                         f"Re-entry available if bias unchanged.")
+                # Store setup details globally for re-entry check
+                manage_positions._last_be_setup = {
+                    "direction": t["dir"],
+                    "entry":     t["entry"],
+                }
             open_trades.remove(t)
             continue
 
@@ -532,6 +542,9 @@ def recover_open_positions() -> list:
 # MAIN LOOP
 # ═════════════════════════════════════════════════════════════════════════════
 
+manage_positions._last_be_setup = None
+
+
 def run():
     log.info("=" * 65)
     log.info("  BOT 1 — SMC TREND FOLLOWING — STARTING")
@@ -543,15 +556,19 @@ def run():
     logger       = TradeLogger(str(_INST / "bot1_trades.json"))
     ai           = AIBrain(logger, model_file=str(_INST / "bot1_model.pkl"))
     calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "bot1_equity.json"))
+    daily_log    = DailyLogger(str(_INST / "bot1_daily.json"))
 
     daily_start  = acct.balance
     weekly_start = acct.balance
     trades_today = 0
-    open_trades  = recover_open_positions()   # ← resume any trades from before restart
+    max_open_today    = 0
+    min_balance_today = acct.balance
+    open_trades  = recover_open_positions()
     last_date    = now_utc().date()
     last_week    = now_utc().isocalendar()[1]
     consec_losses= 0
     trading_halted = False
+    last_be_setup    = None   # tracks setup details after a breakeven stop
 
     log.info(f"Balance ${acct.balance:,.2f} | Risk {RISK_PCT}% | "
              f"Daily cap {MAX_DAILY_LOSS}% | Weekly cap {MAX_WEEKLY_LOSS}%")
@@ -577,13 +594,34 @@ def run():
 
             # ── Daily reset ───────────────────────────────────────────────
             if date != last_date:
-                acct         = mt5.account_info()
-                daily_start  = acct.balance
-                trades_today = 0
-                last_date    = date
+                # Save yesterday's performance before resetting
+                closed_today = [t for t in logger.get_closed()
+                                if t.get("closed_at", "")[:10] == str(last_date)]
+                wins  = sum(1 for t in closed_today if t["outcome"] == "win")
+                losses= sum(1 for t in closed_today if t["outcome"] == "loss")
+                dd    = (daily_start - min_balance_today) / daily_start * 100
+                pnl   = (acct.balance - daily_start) / daily_start * 100
+                daily_log.record_day(str(last_date), {
+                    "total_trades":          trades_today,
+                    "wins":                  wins,
+                    "losses":                losses,
+                    "breakevens":            trades_today - wins - losses,
+                    "max_simultaneous_open": max_open_today,
+                    "max_drawdown_pct":      round(dd, 2),
+                    "final_pnl_pct":         round(pnl, 2),
+                    "day_of_week":           last_date.weekday(),
+                })
+                acct              = mt5.account_info()
+                daily_start       = acct.balance
+                min_balance_today = acct.balance
+                max_open_today    = 0
+                trades_today      = 0
+                last_be_setup     = None
+                last_date         = date
                 calmar.record(acct.balance)
                 calmar.log_report()
-                log.info(f"New day {date} | ${acct.balance:,.2f}")
+                log.info(f"New day {date} | ${acct.balance:,.2f} | "
+                         f"{ai.status_report()}")
 
             # ── Weekly reset ──────────────────────────────────────────────
             week = now.isocalendar()[1]
@@ -681,6 +719,11 @@ def run():
                 log.info(f"Regime block: {reason}")
                 time.sleep(60); continue
 
+            # ── Track max simultaneous open and min balance ───────────────
+            max_open_today    = max(max_open_today, len(open_trades))
+            min_balance_today = min(min_balance_today, acct.balance)
+            daily_pnl_pct     = (acct.balance - daily_start) / daily_start * 100
+
             # ── Market data ───────────────────────────────────────────────
             df_m15 = get_candles(mt5.TIMEFRAME_M15, 100)
             df_h4  = get_candles(mt5.TIMEFRAME_H4,   50)
@@ -728,6 +771,19 @@ def run():
                 log.info(f"Score {score} < {MIN_SCORE}. Skip.")
                 time.sleep(60); continue
 
+            # ── Re-entry check ────────────────────────────────────────────
+            # If last trade was a breakeven stop-out and bias still valid,
+            # allow one re-entry with same setup direction
+            is_reentry = False
+            be_setup = manage_positions._last_be_setup
+            if (be_setup is not None and
+                    be_setup["direction"] == sweep["direction"] and
+                    h4_trend == sweep["direction"]):
+                is_reentry = True
+                log.info(f"RE-ENTRY: bias unchanged after BE stop. "
+                         f"Same direction {sweep['direction'].upper()}. Allowing re-entry.")
+                manage_positions._last_be_setup = None  # one re-entry per setup
+
             # ── AI gate ───────────────────────────────────────────────────
             feats = build_features_trend(
                 score, atr, price,
@@ -736,7 +792,11 @@ def run():
                 fvg is not None, ask - bid,
                 float(df_h4["high"].iloc[-1]),
                 float(df_h4["low"].iloc[-1]),
-                logger
+                logger,
+                daily_trades=trades_today,
+                daily_pnl_pct=daily_pnl_pct,
+                simultaneous_open=len(open_trades),
+                is_reentry=is_reentry,
             )
             take, ai_prob, ai_reason = ai.should_take_trade(feats, MIN_AI_PROB)
             log.info(f"AI: {ai_reason}")
@@ -766,7 +826,8 @@ def run():
 
             log.info(f"SIGNAL | {direction.upper()} | score={score} | "
                      f"AI={ai_prob:.0%} | R:R={abs(tp-entry)/sl_d:.1f} | "
-                     f"entry={entry:.2f} SL={sl:.2f} TP={tp:.2f}")
+                     f"entry={entry:.2f} SL={sl:.2f} TP={tp:.2f}"
+                     + (" [RE-ENTRY]" if is_reentry else ""))
 
             # ── Place order ───────────────────────────────────────────────
             ticket, filled = place_order(direction, lots, sl, tp)
@@ -780,7 +841,8 @@ def run():
                     "peak":         filled,
                     "partial_done": False,
                 })
-                logger.log_entry(ticket, feats, direction, filled, sl, tp, tp)
+                logger.log_entry(ticket, feats, direction, filled, sl, tp, tp,
+                                 is_reentry=is_reentry)
                 trades_today  += 1
                 consec_losses  = 0
                 log.info(f"Trade #{trades_today} today. Runner system armed.")

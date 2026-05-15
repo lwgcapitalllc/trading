@@ -1,6 +1,6 @@
-# Algo Suite — Master README
+# Algo Suite — LWG Capital LLC
 
-A multi-bot, multi-market algorithmic trading system built on MetaTrader 5.
+Multi-bot algorithmic trading system built on MetaTrader 5.
 Designed to scale across any instrument by separating shared code from per-instance configuration.
 
 ---
@@ -9,157 +9,146 @@ Designed to scale across any instrument by separating shared code from per-insta
 
 ```
 algos/
+├── algo.py                          <- Mac control panel (run with: algo)
+├── ALGO_CONTROL_PANEL_GUIDE.md
+├── README.md
+├── SETUP.md
+├── stress_test_suite.py             <- run locally for Monte Carlo analysis
 │
-├── shared/                          # Shared libraries — imported by all bots
-│   ├── shared_ai_brain.py           # AI learning engine + trade logger
-│   ├── shared_calmar.py             # Calmar ratio tracker
-│   └── shared_regime.py            # Market regime classifier
+├── shared/                          <- one copy, used by all bots
+│   ├── shared_ai_brain.py           <- AI engine + trade logger + daily logger
+│   ├── shared_calmar.py             <- Calmar ratio tracker
+│   └── shared_regime.py             <- market regime classifier
 │
-├── bots/                            # Bot scripts — one copy, used by all instances
-│   ├── bot_utils.py                 # Config loader + path resolver
-│   ├── launcher.py                  # Universal Task Scheduler launcher
-│   ├── bot1_smc_trend.py            # Bot 1: SMC trend following
-│   ├── bot2_mean_reversion.py       # Bot 2: Mean reversion
-│   ├── bot3_scalper.py              # Bot 3: EMA momentum scalper
-│   ├── README_BOT1.md
-│   ├── README_BOT2.md
-│   └── README_BOT3.md
+├── bots/                            <- one copy of each bot, used by all instruments
+│   ├── bot_utils.py                 <- config loader + path resolver
+│   ├── launcher.py                  <- universal Task Scheduler launcher
+│   ├── bot1_smc_trend.py            <- Bot 1: SMC trend following
+│   ├── bot2_mean_reversion.py       <- Bot 2: mean reversion
+│   ├── bot3_scalper.py              <- Bot 3: EMA momentum scalper
+│   ├── BOT1_SMC_TREND_GUIDE.md
+│   ├── BOT2_MEAN_REVERSION_GUIDE.md
+│   └── BOT3_SCALPER_GUIDE.md
 │
-└── markets/                         # Instance configs — one folder per deployment
-    ├── fx/
-    │   └── instances/
-    │       ├── xauusd_main/         # Bot1 + Bot2 on XAUUSD
-    │       │   └── config.json
-    │       ├── xauusd_scalper/      # Bot3 on XAUUSD (separate account)
-    │       │   └── config.json
-    │       └── gbpjpy_main/         # Bot1 + Bot2 
-    ├── crypto/
-    │   └── instances/               # Future: BTCUSD etc
-    └── futures/
-        └── instances/               # Future: US30, NAS100 etc
+└── markets/
+    └── fx/
+        └── instances/
+            ├── xauusd_main/         <- Bot 1 + Bot 2 on XAUUSD
+            │   ├── config.json
+            │   └── credentials.json <- NOT in GitHub, manual VPS only
+            └── xauusd_scalper/      <- Bot 3 on XAUUSD (separate account)
+                ├── config.json
+                └── credentials.json <- NOT in GitHub, manual VPS only
 ```
 
 ---
 
 ## The Three Bots
 
-| Bot | Strategy | When it trades | Per-trade risk | Purpose |
+| Bot | Strategy | Sessions | Risk | Account |
 |---|---|---|---|---|
-| Bot 1 | SMC Trend Following | London + NY kill zones only | 2% | Capital growth on big moves |
-| Bot 2 | Mean Reversion | 24 hours | 2% | Cash flow during ranging markets |
-| Bot 3 | EMA Scalper | All sessions except dead zone | 2–3.5% (auto-scaling) | Aggressive small account growth |
+| Bot 1 | SMC Trend — Judas Swing + H4 filter | London + NY kill zones | 2% per trade | Main |
+| Bot 2 | Mean Reversion — BB + RSI + VWAP | 24 hours | 2% per trade | Main |
+| Bot 3 | EMA Momentum Scalper | All except dead zone | 2–3.5% auto-scaling | Separate |
 
-Bot 1 and Bot 2 run together on the same account — they are designed to be uncorrelated. Bot 3 runs on its own dedicated account due to its aggressive risk profile.
+Bot 1 and Bot 2 share an account — designed to be uncorrelated. Bot 3 must run on its own account due to its aggressive daily profit engine.
 
 ---
 
-## How to Add a New Instrument or Market
+## AI Brain (v2) — All Bots
 
-1. Create a new folder under the appropriate market: `markets/fx/instances/eurusd_main/`
-2. Copy any existing `config.json` into it
-3. Edit the config: change `symbol`, adjust ATR parameters and risk levels for the new instrument
-4. Add a new Task Scheduler task on the VPS pointing to `launcher.py` with the new `--config` path
-5. Add Mac terminal aliases for the new instance
+| Feature | Value |
+|---|---|
+| Minimum trades to train | 15 (was 30) |
+| AUC quality gate | 0.55 (was 0.52) |
+| Retrains every | 5 new closed trades (was 10) |
+| Daily performance logger | Records drawdown, trade count, simultaneous positions |
+| Re-entry tracking | Logs whether a trade was a re-entry and outcome |
+| Drawdown features | daily_trades_so_far, daily_pnl_pct, simultaneous_open |
 
-Zero code changes required. The bots read everything from config.
+The AI learns two things over time:
+1. Which entry conditions produce winning trades
+2. Which day patterns produce drawdowns
+
+After 7+ days of data it can start flagging bad day patterns — e.g. taking trade #6 when already down 4% with 3 positions open has historically led to further losses.
+
+---
+
+## Re-Entry Logic — Bot 1 and Bot 2
+
+If a trade stops at breakeven and the market bias is unchanged, both bots will re-enter once:
+
+- **Bot 1:** Re-enters if H4 trend and sweep direction still match
+- **Bot 2:** Re-enters if price is still outside the Bollinger Band
+
+Re-entries are tagged `[RE-ENTRY]` in the log and tracked separately in the AI model. Over time the AI learns whether re-entries outperform original entries.
+
+---
+
+## Market Close Protection — All Bots
+
+All three bots force-close every open position at **19:45 UTC daily** — 15 minutes before the gold market closes at 20:00 UTC (3pm CT Fort Worth).
+
+This triggers:
+- On restart if the VPS rebooted during the close window (19:45–21:00 UTC)
+- On the normal daily close
+- On Fridays (weekend protection — market doesn't reopen until Sunday 22:00 UTC)
+
+**You will never hold overnight or over weekends.**
 
 ---
 
 ## Shared Components
 
 ### shared_ai_brain.py
-Self-improving Random Forest classifier. Logs every trade with 13–15 features at entry. After 30 closed trades, trains a model using walk-forward validation (TimeSeriesSplit). Refuses to deploy if AUC ≤ 0.52. Retrains every 10 new trades. Each instance has its own model file stored in the instance directory.
+- `TradeLogger` — logs every trade with 18 features at entry and outcome at close
+- `DailyLogger` — records end-of-day metrics (new in v2)
+- `AIBrain` — Random Forest classifier, trains at 15 trades, retrains every 5
+- `build_features_trend` — feature builder for Bot 1
+- `build_features_reversion` — feature builder for Bot 2
 
 ### shared_calmar.py
-Tracks daily equity and calculates Calmar ratio (annualised return / max drawdown). Jason Byers' #1 metric. Prints a morning report daily. Benchmarks: 2.0 = okay, 3.0 = decent, 5.0+ = generational edge.
+Calmar ratio = annualised return / max drawdown. Prints morning report daily.
+- 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ### shared_regime.py
-Classifies market conditions hourly using ADX(14), ATR ratio, and RSI range. Returns TRENDING / TRANSITIONING / RANGING. Bot 1 and Bot 2 read the same classifier but react opposite ways — Bot 1 is active in trends, Bot 2 is active in ranges.
+Classifies market every hour: TRENDING / TRANSITIONING / RANGING.
+Bot 1 and Bot 2 react opposite ways to the same regime.
 
 ---
 
-## Running a Bot
-
-On the VPS, each bot is launched via Task Scheduler using `launcher.py`:
-
-```
-python bots\launcher.py --bot bot1 --config markets\fx\instances\xauusd_main\config.json
-python bots\launcher.py --bot bot2 --config markets\fx\instances\xauusd_main\config.json
-python bots\launcher.py --bot bot3 --config markets\fx\instances\xauusd_scalper\config.json
-```
-
-From your Mac terminal (after SSH key setup):
+## Deploy Workflow
 
 ```bash
-xau-start      # start Bot 1 + Bot 2 (XAUUSD)
-xau-stop       # stop Bot 1 + Bot 2
-xau-status     # check running status
-xau-log1       # view Bot 1 activity log
-xau-log2       # view Bot 2 activity log
-xau-start3     # start Bot 3 (XAUUSD scalper)
-xau-stop3      # stop Bot 3
-xau-log3       # view Bot 3 activity log
+# Make changes on Mac, push to GitHub
+git add . && git commit -m "description" && git push
+
+# Deploy to VPS
+ssh forexvps "cd C:\algos && git pull origin main"
+
+# Restart bots
+algo -> Stop all -> Start all
 ```
 
 ---
 
-## Files Generated at Runtime (per instance)
+## Adding a New Instrument
 
-All written to the instance directory (e.g. `markets/fx/instances/xauusd_main/`):
-
-| File | Contents |
-|---|---|
-| `bot1.log` | Full Bot 1 activity log |
-| `bot2.log` | Full Bot 2 activity log |
-| `bot1_trades.json` | Every Bot 1 trade with features and outcomes |
-| `bot2_trades.json` | Every Bot 2 trade with features and outcomes |
-| `bot1_model.pkl` | Bot 1 trained AI classifier |
-| `bot2_model.pkl` | Bot 2 trained AI classifier |
-| `bot1_equity.json` | Bot 1 daily equity and Calmar |
-| `bot2_equity.json` | Bot 2 daily equity and Calmar |
-| `regime_state_BOT1.json` | Last regime reading |
-| `regime_state_BOT2.json` | Last regime reading |
-
----
-
-## Key Configuration Parameters
-
-All parameters live in the instance `config.json`. Nothing is hardcoded in the bot scripts.
-
-| Section | Key parameters |
-|---|---|
-| `account` | MT5 login, password, server |
-| `symbol` | Instrument name exactly as shown in MT5 market watch |
-| `risk` | Risk % per trade, min/max lot size |
-| `protection` | Daily/weekly loss caps, cooldown times, news events |
-| `bot1_trend` | Kill zone hours, confluence threshold, runner trail multipliers |
-| `bot2_reversion` | BB period/std, RSI thresholds, VWAP multiplier |
-| `bot3_scalper` | EMA periods, daily target, compounding tiers, dead zone hours |
-| `regime` | ADX/ATR/RSI thresholds for regime classification |
-
----
-
-## Jason Byers' Framework — What We Implemented
-
-| Principle | Implementation |
-|---|---|
-| Two-bot portfolio: trend + reversion | Bot 1 + Bot 2 |
-| Regime classifier prevents blowouts | shared_regime.py — governs both bots |
-| HMM Monte Carlo stress testing | stress_test_suite.py (run locally) |
-| Never trust backtested data | Walk-forward validation only in AI brain |
-| Calmar ratio is the only metric | shared_calmar.py — daily tracking |
-| Fast trailing stop improves Calmar | Bot 1: breakeven at 1R, dynamic runner trail |
-| High Calmar = safe to leverage | Phase 4 of game plan after verified 3.0+ on live |
+1. Create `markets/fx/instances/NEW_PAIR_main/config.json`
+2. Add `credentials.json` manually on VPS only
+3. Add Task Scheduler task: `FX_NEWPAIR_Bot1` pointing to `launcher.py --bot bot1 --config ...`
+4. Add entry to `LOG_MAP` and `TASK_BOT_MAP` in `algo.py`
+5. The bot appears in `algo` control panel automatically
 
 ---
 
 ## Game Plan
 
-| Phase | When | Condition to advance |
+| Phase | Timing | Condition to advance |
 |---|---|---|
-| Demo trading | Now → Day 60–90 | 50+ trades, Calmar ≥ 2.0 |
-| Evaluation | Day 60–90 | Bot1 Calmar ≥ 2.5, Bot2 Calmar ≥ 2.0 |
-| Small live account (50% risk) | Day 90–150 | Calmar holds on live data |
-| Full risk | Day 150+ | Live Calmar ≥ 3.0 for 60+ days |
+| Demo trading | Now -> Day 60 | 15+ closed trades, Calmar >= 2.0 |
+| Evaluation | Day 60–90 | Bot1 Calmar >= 2.5, Bot2 Calmar >= 2.0 |
+| Small live (50% risk) | Day 90–150 | Calmar holds on live data |
+| Full risk | Day 150+ | Live Calmar >= 3.0 for 60+ days |
 
-*Always run on DEMO first. Jason lost $300k skipping this step.*
+*Always run on DEMO first. Jason Byers lost $300k skipping this step.*
