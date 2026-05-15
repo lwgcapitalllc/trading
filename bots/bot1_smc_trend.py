@@ -559,7 +559,26 @@ def run():
     daily_log    = DailyLogger(str(_INST / "bot1_daily.json"))
 
     daily_start  = acct.balance
-    weekly_start = acct.balance
+    # Load weekly_start from equity file so restarts don't reset it
+    # Only reset weekly_start if it's a new week
+    _eq_file = _INST / "bot1_equity.json"
+    _week_file = _INST / "bot1_weekly.json"
+    current_week = now_utc().isocalendar()[1]
+    if _week_file.exists():
+        import json as _json
+        _wdata = _json.loads(_week_file.read_text())
+        if _wdata.get("week") == current_week:
+            weekly_start = _wdata.get("weekly_start", acct.balance)
+            log.info(f"Weekly start restored: ${weekly_start:,.2f} (week {current_week})")
+        else:
+            weekly_start = acct.balance
+            _week_file.write_text(_json.dumps({"week": current_week, "weekly_start": weekly_start}))
+            log.info(f"New week {current_week} — weekly start: ${weekly_start:,.2f}")
+    else:
+        weekly_start = acct.balance
+        import json as _json
+        _week_file.write_text(_json.dumps({"week": current_week, "weekly_start": weekly_start}))
+        log.info(f"Week file created — weekly start: ${weekly_start:,.2f}")
     trades_today = 0
     max_open_today    = 0
     min_balance_today = acct.balance
@@ -630,7 +649,9 @@ def run():
                 last_week      = week
                 trading_halted = False
                 consec_losses  = 0
-                log.info(f"New week | Weekly balance reset ${weekly_start:,.2f}")
+                import json as _json
+                _week_file.write_text(_json.dumps({"week": week, "weekly_start": weekly_start}))
+                log.info(f"New week {week} | Weekly balance reset ${weekly_start:,.2f}")
 
             acct = mt5.account_info()
 
