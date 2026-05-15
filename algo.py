@@ -401,6 +401,7 @@ def main():
             print()
             input(gray("  Press Enter to continue..."))
 
+        elif choice == "3":
             confirm = input(red("  Type YES to confirm emergency stop: ")).strip()
             if confirm == "YES":
                 emergency_stop_all(tasks)
