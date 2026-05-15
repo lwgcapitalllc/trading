@@ -1,44 +1,32 @@
 # ALGO_CONTROL_PANEL_GUIDE.md
 # algo.py — Interactive Trading Bot Control Panel
 
-**File:** `algo.py` (lives in the root of your algos folder)
-**Run from:** Your Mac Terminal — works from anywhere once installed
+**File:** `algo.py` (root of your algos folder, runs on your Mac only)
 **Command:** `algo`
-
----
-
-## What It Does
-
-Single interactive menu that manages all your trading bots across all instruments and accounts. Connects to your VPS over SSH, reads Task Scheduler to discover every running bot automatically, and gives you full control without needing to remember individual commands.
-
-As you add more bots (GBPJPY, crypto, futures), they appear in the menu automatically. Zero configuration changes needed.
 
 ---
 
 ## Install Once
 
-Run these three commands in your Mac Terminal:
-
 ```bash
 chmod +x /Users/alwg/algos/algo.py
 echo 'alias algo="python3 /Users/alwg/algos/algo.py"' >> ~/.zshrc
+echo 'alias algo-emergency="ssh forexvps \"taskkill /F /IM python.exe\" && echo All bots killed"' >> ~/.zshrc
 source ~/.zshrc
 ```
-
-After that, just type `algo` from anywhere.
 
 ---
 
 ## The Menu
 
 ```
-╔══════════════════════════════════════════════════════╗
-║  ALGO CONTROL PANEL    2026-05-14 12:34 UTC          ║
-╠══════════════════════════════════════════════════════╣
-║  ● FX/XAUUSD/Bot1              RUNNING               ║
-║  ● FX/XAUUSD/Bot2              RUNNING               ║
-║  ○ FX/XAUUSD/Scalper           STOPPED               ║
-╚══════════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════════╗
+║  ALGO CONTROL PANEL  2026-05-14 21:00 UTC                ║
+╠══════════════════════════════════════════════════════════╣
+║  ● FX/XAUUSD/Bot1              RUNNING  up 2h 14m        ║
+║  ● FX/XAUUSD/Bot2              RUNNING  up 2h 14m        ║
+║  ○ FX/XAUUSD/Scalper           STOPPED                   ║
+╚══════════════════════════════════════════════════════════╝
 
   ACTIONS
   [1] Start all bots
@@ -56,50 +44,55 @@ After that, just type `algo` from anywhere.
 
 | Option | What it does |
 |---|---|
-| `1` Start all | Runs every task in Task Scheduler — all bots start |
-| `2` Stop all | Ends all bot tasks gracefully |
-| `3` Emergency stop | Kills all tasks AND kills all python.exe processes. Use when something is very wrong. Open MT5 to verify positions are handled. |
-| `4` Manage individual | Select one bot — start, stop, restart, or view its log |
-| `5` View bot log | Select a bot and see its last 40 or 100 log lines, colour coded |
-| `6` Refresh | Re-query VPS for current status |
-| `q` Quit | Exit |
+| `1` Start all | Launches every bot. Polls VPS for up to 8 seconds per bot and shows ✓ RUNNING or ✗ FAILED for each. Panel updates automatically. |
+| `2` Stop all | Kills all bots. Confirms each one stopped within 8 seconds. |
+| `3` Emergency stop | Kills all tasks AND all python.exe processes instantly. Open MT5 to verify no positions left open. |
+| `4` Manage individual | Select one bot — start, stop, restart, or view its log. Every action confirms the result before returning. |
+| `5` View log | Select a bot, see last 40 or 100 lines, colour coded. |
+| `6` Refresh | Re-query VPS for current status. |
+| `q` Quit | Exit. |
+
+---
+
+## How Status Detection Works
+
+The panel checks for actual running Python processes on the VPS using `wmic` — not Task Scheduler task state. This matters because:
+
+- Task Scheduler launches `launcher.py` which spawns the bot and exits immediately
+- Task Scheduler therefore always shows the task as stopped even when the bot is running fine
+- The panel bypasses this by checking if `bot1_smc_trend.py`, `bot2_mean_reversion.py`, or `bot3_scalper.py` appear in the VPS process list directly
+
+**Start confirmation flow:** fires the Task Scheduler task → polls process list every 1 second → up to 8 seconds → shows ✓ RUNNING or ✗ FAILED TO START.
 
 ---
 
 ## Log Colours
 
-When viewing a bot log through the panel:
-
 | Colour | Meaning |
 |---|---|
 | Green | Trade filled, signal found, order placed |
 | Red | Error or warning |
-| Yellow | Warning, daily cap hit, cooldown |
-| Cyan | Breakeven, partial close, trailing stop update |
+| Yellow | Warning, daily cap, cooldown |
+| Cyan | Breakeven, partial close, trailing stop |
 | Gray | Normal scanning activity |
 
 ---
 
 ## Adding a New Bot
 
-When you add a new instrument or bot to Task Scheduler on the VPS, the control panel discovers it automatically — **as long as the task name follows the naming convention:**
+When you add a new instrument or bot to Task Scheduler on the VPS, two steps:
 
+**1. Task name must follow the convention:**
 ```
 MARKET_PAIR_Role
-
 Examples:
   FX_XAUUSD_Bot1
-  FX_XAUUSD_Bot2
-  FX_XAUUSD_Scalper
-  FX_GBPJPY_Bot1
+  FX_GBPJPY_Bot2
   CRYPTO_BTCUSD_Scalper
-  FUTURES_US30_Bot1
 ```
-
 Prefixes recognised: `FX_`, `CRYPTO_`, `FUTURES_`
 
-**One manual step required** — add the log file path to the `LOG_MAP` dictionary at the top of `algo.py`:
-
+**2. Add to LOG_MAP in algo.py:**
 ```python
 LOG_MAP = {
     "FX_XAUUSD_Bot1":    ("fx", "xauusd_main",    "bot1.log"),
@@ -110,37 +103,32 @@ LOG_MAP = {
 }
 ```
 
----
-
-## Configuration
-
-Two settings at the top of `algo.py`:
-
+**3. Add to TASK_BOT_MAP in algo.py:**
 ```python
-VPS_HOST = "forexvps"           # Your SSH host alias from ~/.ssh/config
-LOG_BASE = "C:\\algos\\markets" # Base log path on VPS (rarely needs changing)
+TASK_BOT_MAP = {
+    "FX_XAUUSD_Bot1":    "bot1",
+    "FX_XAUUSD_Bot2":    "bot2",
+    "FX_XAUUSD_Scalper": "bot3",
+    # Add new entries here:
+    "FX_GBPJPY_Bot1":    "bot1",
+}
 ```
-
----
-
-## Requirements
-
-- SSH key set up for passwordless VPS access (already done)
-- `forexvps` host alias in `~/.ssh/config` (already configured)
-- Python 3 on your Mac (comes pre-installed on modern Macs)
 
 ---
 
 ## Troubleshooting
 
-**"SSH connection timed out"**
-VPS may be sleeping or unreachable. Check ForexVPS dashboard.
+**Bot shows ✗ FAILED TO START**
+Run directly to see the error:
+```bash
+ssh forexvps "python C:\algos\bots\bot1_smc_trend.py --config C:\algos\markets\fx\instances\xauusd_main\config.json 2>&1"
+```
 
-**"No bot tasks found on VPS"**
-Task Scheduler tasks don't match naming convention. Check task names start with `FX_`, `CRYPTO_`, or `FUTURES_`.
+**All bots show STOPPED after starting**
+Check if credentials.json exists on VPS:
+```bash
+ssh forexvps "dir C:\algos\markets\fx\instances\xauusd_main\credentials.json"
+```
 
-**Log shows empty or not found**
-Task name not in `LOG_MAP` in `algo.py`. Add it following the pattern above.
-
-**Bot shows STOPPED right after starting**
-Check the bot's stdout log on the VPS — there may be a Python error. Common causes: config.json missing credentials, MT5 not running, wrong symbol name.
+**SSH connection timed out**
+VPS may be unreachable. Check ForexVPS dashboard.

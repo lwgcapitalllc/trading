@@ -76,18 +76,33 @@ def ssh_ok(cmd: str) -> bool:
 # ── Task Discovery ────────────────────────────────────────────────────────────
 def get_all_tasks() -> list[dict]:
     """
-    Query VPS Task Scheduler for all algo bot tasks.
-    Returns list of dicts with name, market, pair, bot, status.
+    Query VPS for all algo bot tasks and their actual running state.
+    Checks if a python process is running with the bot script name,
+    since Task Scheduler tasks exit after spawning the bot process.
     """
-    raw = ssh("schtasks /query /fo CSV /nh 2>nul")
+    # Get list of running python processes and their command lines
+    running_scripts = set()
+    raw_procs = ssh('wmic process where "name=\'python.exe\'" get commandline /format:list 2>nul')
+    for line in raw_procs.splitlines():
+        if "bot1_smc_trend" in line:    running_scripts.add("bot1")
+        if "bot2_mean_reversion" in line: running_scripts.add("bot2")
+        if "bot3_scalper" in line:       running_scripts.add("bot3")
+
+    # Map task names to bot script keys
+    TASK_BOT_MAP = {
+        "FX_XAUUSD_Bot1":    "bot1",
+        "FX_XAUUSD_Bot2":    "bot2",
+        "FX_XAUUSD_Scalper": "bot3",
+    }
+
     tasks = []
+    raw = ssh("schtasks /query /fo CSV /nh 2>nul")
     for line in raw.splitlines():
         parts = line.strip().strip('"').split('","')
         if len(parts) < 3:
             continue
         name = parts[0].lstrip("\\")
 
-        # Only include tasks matching our market prefixes
         market_label = None
         for prefix, label in MARKET_PREFIXES.items():
             if name.startswith(prefix):
@@ -96,10 +111,10 @@ def get_all_tasks() -> list[dict]:
         if not market_label:
             continue
 
-        status = parts[2].strip()
-        running = status == "Running"
+        # Check actual process running state
+        bot_key = TASK_BOT_MAP.get(name)
+        running = bot_key in running_scripts if bot_key else False
 
-        # Parse name into components: FX_XAUUSD_Bot1 → FX, XAUUSD, Bot1
         name_parts = name.split("_", 2)
         pair = name_parts[1] if len(name_parts) > 1 else "?"
         role = name_parts[2] if len(name_parts) > 2 else "?"
@@ -110,7 +125,7 @@ def get_all_tasks() -> list[dict]:
             "pair":    pair,
             "role":    role,
             "running": running,
-            "status":  parts[2].strip(),
+            "status":  "Running" if running else "Stopped",
         })
 
     return sorted(tasks, key=lambda x: (x["market"], x["pair"], x["role"]))
@@ -295,29 +310,59 @@ def main():
         choice = input("  Choice: ").strip().lower()
 
         if choice == "1":
-            print(gray("\n  Starting all bots..."))
+            clear()
+            print(bold("\n  Starting all bots...\n"))
             for t in tasks:
-                result = start_task(t["name"])
-                icon   = green("✓") if result else red("✗")
-                print(f"  {icon} {t['name']}")
-            input(gray("\n  Press Enter to continue..."))
+                print(gray(f"  → Launching {t['name']}..."), end="", flush=True)
+                start_task(t["name"])
+                # Poll for up to 8 seconds to confirm process started
+                confirmed = False
+                for _ in range(8):
+                    import time; time.sleep(1)
+                    updated = get_all_tasks()
+                    match = next((x for x in updated if x["name"] == t["name"]), None)
+                    if match and match["running"]:
+                        confirmed = True
+                        break
+                if confirmed:
+                    print(f"\r  {green('✓')} {t['name']:<30} {green('RUNNING')}")
+                else:
+                    print(f"\r  {red('✗')} {t['name']:<30} {red('FAILED TO START')}")
             tasks = get_all_tasks()
+            print()
+            input(gray("  Press Enter to continue..."))
 
         elif choice == "2":
-            print(gray("\n  Stopping all bots..."))
+            clear()
+            print(bold("\n  Stopping all bots...\n"))
             for t in tasks:
-                result = stop_task(t["name"])
-                icon   = green("✓") if result else red("✗")
-                print(f"  {icon} {t['name']}")
-            input(gray("\n  Press Enter to continue..."))
+                print(gray(f"  → Stopping {t['name']}..."), end="", flush=True)
+                stop_task(t["name"])
+                # Poll for up to 8 seconds to confirm process stopped
+                confirmed = False
+                for _ in range(8):
+                    import time; time.sleep(1)
+                    updated = get_all_tasks()
+                    match = next((x for x in updated if x["name"] == t["name"]), None)
+                    if match and not match["running"]:
+                        confirmed = True
+                        break
+                if confirmed:
+                    print(f"\r  {green('✓')} {t['name']:<30} {green('STOPPED')}")
+                else:
+                    print(f"\r  {yellow('?')} {t['name']:<30} {yellow('MAY STILL BE RUNNING')}")
             tasks = get_all_tasks()
+            print()
+            input(gray("  Press Enter to continue..."))
 
         elif choice == "3":
             confirm = input(red("  Type YES to confirm emergency stop: ")).strip()
             if confirm == "YES":
                 emergency_stop_all(tasks)
-                input(gray("\n  Press Enter to continue..."))
+                import time; time.sleep(3)
                 tasks = get_all_tasks()
+                print()
+                input(gray("\n  Press Enter to continue..."))
             else:
                 print(gray("  Cancelled."))
 
@@ -342,18 +387,48 @@ def main():
                     if action == "b":
                         break
                     elif action == "1":
-                        ok = start_task(task["name"])
-                        print(green(f"  Started {task['name']}") if ok else red(f"  Failed to start {task['name']}"))
+                        print(gray(f"\n  Starting {task['name']}..."), end="", flush=True)
+                        start_task(task["name"])
+                        confirmed = False
+                        for _ in range(8):
+                            import time; time.sleep(1)
+                            updated = get_all_tasks()
+                            match = next((x for x in updated if x["name"] == task["name"]), None)
+                            if match and match["running"]:
+                                confirmed = True
+                                task = match
+                                break
+                        print(f"\r  {green('✓ RUNNING') if confirmed else red('✗ FAILED')}")
                         input(gray("  Press Enter..."))
                     elif action == "2":
-                        ok = stop_task(task["name"])
-                        print(green(f"  Stopped {task['name']}") if ok else red(f"  Failed to stop {task['name']}"))
+                        print(gray(f"\n  Stopping {task['name']}..."), end="", flush=True)
+                        stop_task(task["name"])
+                        confirmed = False
+                        for _ in range(8):
+                            import time; time.sleep(1)
+                            updated = get_all_tasks()
+                            match = next((x for x in updated if x["name"] == task["name"]), None)
+                            if match and not match["running"]:
+                                confirmed = True
+                                task = match
+                                break
+                        print(f"\r  {green('✓ STOPPED') if confirmed else yellow('? MAY STILL BE RUNNING')}")
                         input(gray("  Press Enter..."))
                     elif action == "3":
+                        print(gray(f"\n  Restarting {task['name']}..."), end="", flush=True)
                         stop_task(task["name"])
                         import time; time.sleep(3)
-                        ok = start_task(task["name"])
-                        print(green(f"  Restarted {task['name']}") if ok else red(f"  Restart failed"))
+                        start_task(task["name"])
+                        confirmed = False
+                        for _ in range(8):
+                            time.sleep(1)
+                            updated = get_all_tasks()
+                            match = next((x for x in updated if x["name"] == task["name"]), None)
+                            if match and match["running"]:
+                                confirmed = True
+                                task = match
+                                break
+                        print(f"\r  {green('✓ RESTARTED') if confirmed else red('✗ RESTART FAILED')}")
                         input(gray("  Press Enter..."))
                     elif action in ("4", "5"):
                         lines = 40 if action == "4" else 100
