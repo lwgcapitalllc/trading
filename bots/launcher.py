@@ -56,7 +56,9 @@ def main():
         proc.stdin.write(b"CONFIRM\n")
         proc.stdin.flush()
         proc.stdin.close()
-        proc.wait()
+        # Do NOT call proc.wait() — the bot runs forever
+        # Task Scheduler will track this process directly
+        print(f"{args.bot} started with PID {proc.pid}")
 
 if __name__ == "__main__":
     main()
