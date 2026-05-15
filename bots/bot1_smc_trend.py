@@ -91,7 +91,9 @@ log.info(f"Config loaded | symbol={SYMBOL} | risk={RISK_PCT}% | "
 # ═════════════════════════════════════════════════════════════════════════════
 
 def connect():
-    if not mt5.initialize():
+    mt5_path = _CFG.get("mt5_path", "")
+    init_kwargs = {"path": mt5_path} if mt5_path else {}
+    if not mt5.initialize(**init_kwargs):
         log.error(f"MT5 init failed: {mt5.last_error()}"); return False
     if not mt5.login(ACCOUNT["login"], password=ACCOUNT["password"], server=ACCOUNT["server"]):
         log.error(f"Login failed: {mt5.last_error()}"); mt5.shutdown(); return False
