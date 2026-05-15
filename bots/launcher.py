@@ -3,9 +3,9 @@ launcher.py — Universal launcher for all bots.
 Used by Windows Task Scheduler. Accepts bot name and config path.
 
 Usage:
-    python bots\launcher.py --bot bot1 --config instances\xauusd_main\config.json
-    python bots\launcher.py --bot bot2 --config instances\xauusd_main\config.json
-    python bots\launcher.py --bot bot3 --config instances\xauusd_scalper\config.json
+    python bots/launcher.py --bot bot1 --config instances/xauusd_main/config.json
+    python bots/launcher.py --bot bot2 --config instances/xauusd_main/config.json
+    python bots/launcher.py --bot bot3 --config instances/xauusd_scalper/config.json
 
 This replaces launch_bot1.py / launch_bot2.py / launch_bot3.py.
 One launcher handles all bots and all instances.
