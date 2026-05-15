@@ -261,6 +261,7 @@ def print_menu():
     print(bold("  ACTIONS"))
     print(f"  {bold('[1]')} Start all bots")
     print(f"  {bold('[2]')} Stop all bots")
+    print(f"  {bold('[r]')} Restart all bots")
     print(f"  {bold('[3]')} {red('Emergency stop everything')}")
     print(f"  {bold('[4]')} Manage individual bot")
     print(f"  {bold('[5]')} View bot log")
@@ -355,7 +356,36 @@ def main():
             print()
             input(gray("  Press Enter to continue..."))
 
-        elif choice == "3":
+        elif choice == "r":
+            clear()
+            print(bold("\n  Restarting all bots...\n"))
+            # Stop all first
+            print(gray("  Stopping..."))
+            for t in tasks:
+                stop_task(t["name"])
+            ssh("taskkill /F /IM python.exe 2>nul")
+            import time; time.sleep(4)
+            # Start all with confirmation
+            print(gray("  Starting...\n"))
+            for t in tasks:
+                print(gray(f"  -> Launching {t['name']}..."), end="", flush=True)
+                start_task(t["name"])
+                confirmed = False
+                for _ in range(10):
+                    import time; time.sleep(1)
+                    updated = get_all_tasks()
+                    match = next((x for x in updated if x["name"] == t["name"]), None)
+                    if match and match["running"]:
+                        confirmed = True
+                        break
+                if confirmed:
+                    print(f"\r  {green('✓')} {t['name']:<30} {green('RUNNING')}")
+                else:
+                    print(f"\r  {red('✗')} {t['name']:<30} {red('FAILED TO START')}")
+            tasks = get_all_tasks()
+            print()
+            input(gray("  Press Enter to continue..."))
+
             confirm = input(red("  Type YES to confirm emergency stop: ")).strip()
             if confirm == "YES":
                 emergency_stop_all(tasks)
@@ -460,6 +490,59 @@ def main():
 
 
 if __name__ == "__main__":
+    # Support direct commands: algo restart, algo start, algo stop, algo status
+    import sys
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1].lower()
+        try:
+            tasks = get_all_tasks()
+        except Exception as e:
+            print(red(f"SSH connection failed: {e}"))
+            sys.exit(1)
+
+        if cmd == "restart":
+            print(bold("Restarting all bots..."))
+            for t in tasks:
+                stop_task(t["name"])
+            ssh("taskkill /F /IM python.exe 2>nul")
+            import time; time.sleep(4)
+            for t in tasks:
+                print(gray(f"Starting {t['name']}..."), end="", flush=True)
+                start_task(t["name"])
+                confirmed = False
+                for _ in range(10):
+                    time.sleep(1)
+                    updated = get_all_tasks()
+                    match = next((x for x in updated if x["name"] == t["name"]), None)
+                    if match and match["running"]:
+                        confirmed = True
+                        break
+                print(f"\r{green('✓') if confirmed else red('✗')} {t['name']:<35} "
+                      f"{green('RUNNING') if confirmed else red('FAILED')}")
+
+        elif cmd == "start":
+            print(bold("Starting all bots..."))
+            for t in tasks:
+                start_task(t["name"])
+                print(f"  -> {t['name']}")
+
+        elif cmd == "stop":
+            print(bold("Stopping all bots..."))
+            for t in tasks:
+                stop_task(t["name"])
+            ssh("taskkill /F /IM python.exe 2>nul")
+            print(green("All bots stopped."))
+
+        elif cmd == "status":
+            for t in tasks:
+                icon = green("● RUNNING") if t["running"] else red("○ STOPPED")
+                print(f"  {icon}  {t['market']}/{t['pair']}/{t['role']}")
+
+        else:
+            print(f"Unknown command: {cmd}")
+            print("Usage: algo [restart|start|stop|status]")
+        sys.exit(0)
+
     main()
 
 
