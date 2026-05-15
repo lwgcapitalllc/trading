@@ -125,7 +125,17 @@ class TradovateExecutor:
 
     async def connect(self):
         """Open session and authenticate."""
-        self.session = aiohttp.ClientSession()
+        import ssl
+        # Demo environment uses self-signed certs — disable verification
+        # Live environment uses proper certs — verification enabled
+        if self.env == "demo":
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+        else:
+            connector = aiohttp.TCPConnector()
+        self.session = aiohttp.ClientSession(connector=connector)
         await self._auth()
         self._connected = True
         log.info("Tradovate executor connected.")
