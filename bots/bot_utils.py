@@ -3,7 +3,7 @@ bot_utils.py — Shared utility imported by every bot.
 
 Handles:
   1. --config argument so each bot loads the right instance config
-  2. sys.path injection so bots can always find shared\ modules
+  2. sys.path injection so bots can always find shared/ modules
   3. Logging setup that writes to the instance directory
 
 Usage in every bot (first two lines after docstring):
@@ -32,7 +32,7 @@ def load_config() -> dict:
     to GitHub.
 
     Run a bot like:
-        python bots\bot1_smc_trend.py --config instances\xauusd_main\config.json
+        python bots/bot1_smc_trend.py --config instances/xauusd_main/config.json
 
     Falls back to config.json next to the bot file if --config not given.
     """
@@ -48,8 +48,8 @@ def load_config() -> dict:
     if not cfg_path.exists():
         raise FileNotFoundError(
             f"\n\n  Config not found: {cfg_path}\n"
-            f"  Usage: python bots\\bot1_smc_trend.py "
-            f"--config instances\\xauusd_main\\config.json\n"
+            f"  Usage: python bots/bot1_smc_trend.py "
+            f"--config instances/xauusd_main/config.json\n"
         )
 
     with open(cfg_path, encoding="utf-8") as f:
