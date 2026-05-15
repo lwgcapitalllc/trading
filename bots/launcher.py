@@ -6,9 +6,16 @@ Usage:
     python bots/launcher.py --bot bot1 --config instances/xauusd_main/config.json
     python bots/launcher.py --bot bot2 --config instances/xauusd_main/config.json
     python bots/launcher.py --bot bot3 --config instances/xauusd_scalper/config.json
+    python bots/launcher.py --bot bot4 --config instances/lucid_account1/config.json
 
-This replaces launch_bot1.py / launch_bot2.py / launch_bot3.py.
+Bot map:
+    bot1 = bot1_smc_trend.py       (FX, MT5)
+    bot2 = bot2_mean_reversion.py  (FX, MT5)
+    bot3 = bot3_scalper.py         (FX, MT5)
+    bot4 = bot4_lucidflex.py       (Futures, Tradovate)
+
 One launcher handles all bots and all instances.
+To add a new bot: add its script name to BOT_SCRIPTS below.
 """
 
 import subprocess
@@ -20,6 +27,7 @@ BOT_SCRIPTS = {
     "bot1": "bot1_smc_trend.py",
     "bot2": "bot2_mean_reversion.py",
     "bot3": "bot3_scalper.py",
+    "bot4": "bot4_lucidflex.py",
 }
 
 def main():

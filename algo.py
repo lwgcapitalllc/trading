@@ -28,9 +28,16 @@ MARKET_PREFIXES = {
 # Map task name patterns to log file paths
 # Format: partial task name match → (market, pair, instance_folder)
 LOG_MAP = {
-    "FX_XAUUSD_Bot1":    ("fx", "xauusd_main",    "bot1.log"),
-    "FX_XAUUSD_Bot2":    ("fx", "xauusd_main",    "bot2.log"),
-    "FX_XAUUSD_Scalper": ("fx", "xauusd_scalper", "bot3.log"),
+    # FX accounts
+    "FX_XAUUSD_Bot1":              ("fx",      "xauusd_main",    "bot1.log"),
+    "FX_XAUUSD_Bot2":              ("fx",      "xauusd_main",    "bot2.log"),
+    "FX_XAUUSD_Scalper":           ("fx",      "xauusd_scalper", "bot3.log"),
+    # Futures accounts — add one entry per Lucid account
+    "FUTURES_MNQ_LucidFlex_Acct1": ("futures", "lucid_account1", "bot4.log"),
+    "FUTURES_MNQ_LucidFlex_Acct2": ("futures", "lucid_account2", "bot4.log"),
+    "FUTURES_MNQ_LucidFlex_Acct3": ("futures", "lucid_account3", "bot4.log"),
+    "FUTURES_MNQ_LucidFlex_Acct4": ("futures", "lucid_account4", "bot4.log"),
+    "FUTURES_MNQ_LucidFlex_Acct5": ("futures", "lucid_account5", "bot4.log"),
 }
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -84,15 +91,23 @@ def get_all_tasks() -> list[dict]:
     running_scripts = set()
     raw_procs = ssh('wmic process where "name=\'python.exe\'" get commandline /format:list 2>nul')
     for line in raw_procs.splitlines():
-        if "bot1_smc_trend" in line:    running_scripts.add("bot1")
-        if "bot2_mean_reversion" in line: running_scripts.add("bot2")
-        if "bot3_scalper" in line:       running_scripts.add("bot3")
+        if "bot1_smc_trend"     in line: running_scripts.add("bot1")
+        if "bot2_mean_reversion"in line: running_scripts.add("bot2")
+        if "bot3_scalper"       in line: running_scripts.add("bot3")
+        if "bot4_lucidflex"     in line: running_scripts.add("bot4")
 
     # Map task names to bot script keys
     TASK_BOT_MAP = {
-        "FX_XAUUSD_Bot1":    "bot1",
-        "FX_XAUUSD_Bot2":    "bot2",
-        "FX_XAUUSD_Scalper": "bot3",
+        # FX
+        "FX_XAUUSD_Bot1":              "bot1",
+        "FX_XAUUSD_Bot2":              "bot2",
+        "FX_XAUUSD_Scalper":           "bot3",
+        # Futures — LucidFlex accounts (add more as you open them)
+        "FUTURES_MNQ_LucidFlex_Acct1": "bot4",
+        "FUTURES_MNQ_LucidFlex_Acct2": "bot4",
+        "FUTURES_MNQ_LucidFlex_Acct3": "bot4",
+        "FUTURES_MNQ_LucidFlex_Acct4": "bot4",
+        "FUTURES_MNQ_LucidFlex_Acct5": "bot4",
     }
 
     tasks = []
