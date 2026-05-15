@@ -630,7 +630,7 @@ def log_progress(balance: float, start_balance: float):
     risk_pct    = get_risk_pct(balance)
     next_tier   = next((t["to"] for t in COMPOUND_TIERS
                         if t["from"] <= balance < t["to"]), ACCOUNT_GOAL)
-    log.info(f"PROGRESS | ${balance:,.2f} → ${ACCOUNT_GOAL:,} ({pct_to_goal:.0f}%) | "
+    log.info(f"PROGRESS | ${balance:,.2f} -> ${ACCOUNT_GOAL:,} ({pct_to_goal:.0f}%) | "
              f"total growth={growth:+.1f}% | risk={risk_pct}% | next tier ${next_tier:,}")
     if balance >= ACCOUNT_GOAL:
         log.info("GOAL REACHED! Continuing to compound at 2% risk.")
@@ -850,7 +850,7 @@ def run():
 
 if __name__ == "__main__":
     print("BOT 3 -- EMA Momentum Scalper | XAUUSD")
-    print("Dynamic compounding: $1,000 → unlimited")
+    print("Dynamic compounding: $1,000 -> unlimited")
     print("Daily engine: runs until +30% OR 10% peak drawdown OR -8% floor\n")
     if input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":
         run()

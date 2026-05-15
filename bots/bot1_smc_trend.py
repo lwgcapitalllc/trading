@@ -422,10 +422,10 @@ def manage_positions(open_trades, atr, df_h4=None):
         if profit_r >= 1.0:
             if direction == "bullish" and p.sl < t["entry"] - 0.05:
                 move_sl(t["ticket"], t["entry"])
-                log.info(f"T{t['ticket']} → BREAKEVEN @ {t['entry']:.2f}")
+                log.info(f"T{t['ticket']} -> BREAKEVEN @ {t['entry']:.2f}")
             elif direction == "bearish" and p.sl > t["entry"] + 0.05:
                 move_sl(t["ticket"], t["entry"])
-                log.info(f"T{t['ticket']} → BREAKEVEN @ {t['entry']:.2f}")
+                log.info(f"T{t['ticket']} -> BREAKEVEN @ {t['entry']:.2f}")
 
         # Stage 2 — Full close at 2R for non-runner trades
         # Keep the best performing trade as the runner
@@ -465,12 +465,12 @@ def manage_positions(open_trades, atr, df_h4=None):
             if RUNNER_KEY_LEVEL_EXIT:
                 for level in key_levels:
                     if direction == "bullish" and price >= level - 0.5:
-                        log.info(f"T{t['ticket']} RUNNER → weekly high {level:.2f}. Closing.")
+                        log.info(f"T{t['ticket']} RUNNER -> weekly high {level:.2f}. Closing.")
                         close_position(t["ticket"], direction)
                         if t in open_trades: open_trades.remove(t)
                         break
                     elif direction == "bearish" and price <= level + 0.5:
-                        log.info(f"T{t['ticket']} RUNNER → weekly low {level:.2f}. Closing.")
+                        log.info(f"T{t['ticket']} RUNNER -> weekly low {level:.2f}. Closing.")
                         close_position(t["ticket"], direction)
                         if t in open_trades: open_trades.remove(t)
                         break

@@ -444,11 +444,11 @@ def manage_positions(open_trades):
             if direction == "bullish" and p.sl < be - 0.05:
                 move_sl(t["ticket"], be)
                 t["be_done"] = True
-                log.info(f"T{t['ticket']} → BREAKEVEN @ {be:.2f} ({profit_r:.2f}R)")
+                log.info(f"T{t['ticket']} -> BREAKEVEN @ {be:.2f} ({profit_r:.2f}R)")
             elif direction == "bearish" and p.sl > be + 0.05:
                 move_sl(t["ticket"], be)
                 t["be_done"] = True
-                log.info(f"T{t['ticket']} → BREAKEVEN @ {be:.2f} ({profit_r:.2f}R)")
+                log.info(f"T{t['ticket']} -> BREAKEVEN @ {be:.2f} ({profit_r:.2f}R)")
 
         # Stage 2 — Full close at 1R — bank entire trade
         if profit_r >= PARTIAL_CLOSE_R and not t.get("closed"):
