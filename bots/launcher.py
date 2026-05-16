@@ -28,6 +28,7 @@ BOT_SCRIPTS = {
     "bot2": "bot2_mean_reversion.py",
     "bot3": "bot3_scalper.py",
     "bot4": "bot4_lucidflex.py",
+    "bot5": "bot5_fft.py",
 }
 
 def main():

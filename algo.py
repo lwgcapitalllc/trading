@@ -32,7 +32,8 @@ LOG_MAP = {
     "FX_XAUUSD_Bot1":              ("fx",      "xauusd_main",    "bot1.log"),
     "FX_XAUUSD_Bot2":              ("fx",      "xauusd_main",    "bot2.log"),
     "FX_XAUUSD_Scalper":           ("fx",      "xauusd_scalper", "bot3.log"),
-    # Futures accounts — add one entry per Lucid account
+    "FX_XAUUSD_Bot5_FFT":          ("fx",      "xauusd_fft",     "bot5.log"),
+    # Futures accounts
     "FUTURES_MNQ_LucidFlex_Acct1": ("futures", "lucid_account1", "bot4.log"),
     "FUTURES_MNQ_LucidFlex_Acct2": ("futures", "lucid_account2", "bot4.log"),
     "FUTURES_MNQ_LucidFlex_Acct3": ("futures", "lucid_account3", "bot4.log"),
@@ -95,6 +96,7 @@ def get_all_tasks() -> list[dict]:
         if "bot2_mean_reversion"in line: running_scripts.add("bot2")
         if "bot3_scalper"       in line: running_scripts.add("bot3")
         if "bot4_lucidflex"     in line: running_scripts.add("bot4")
+        if "bot5_fft"           in line: running_scripts.add("bot5")
 
     # Map task names to bot script keys
     TASK_BOT_MAP = {
@@ -102,7 +104,8 @@ def get_all_tasks() -> list[dict]:
         "FX_XAUUSD_Bot1":              "bot1",
         "FX_XAUUSD_Bot2":              "bot2",
         "FX_XAUUSD_Scalper":           "bot3",
-        # Futures — LucidFlex accounts (add more as you open them)
+        "FX_XAUUSD_Bot5_FFT":          "bot5",
+        # Futures
         "FUTURES_MNQ_LucidFlex_Acct1": "bot4",
         "FUTURES_MNQ_LucidFlex_Acct2": "bot4",
         "FUTURES_MNQ_LucidFlex_Acct3": "bot4",
