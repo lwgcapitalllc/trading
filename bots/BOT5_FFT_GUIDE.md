@@ -1,5 +1,5 @@
 # BOT5_FFT_GUIDE.md
-# Bot 5 — FFT (Fibonacci Fractal Trading) Strategy
+# Bot 5 — FFT (First Fib Touch) Strategy
 
 **File:** `bots/bot5_fft.py`
 **Strategy:** Fibonacci Fractal Trading — proprietary dual-fib confluence system
