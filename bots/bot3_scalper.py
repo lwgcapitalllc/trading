@@ -170,8 +170,137 @@ def get_tick():
 def now_utc():
     return datetime.now(pytz.utc)
 
-def is_dead_zone():
-    return DEAD_ZONE_START <= now_utc().hour < DEAD_ZONE_END
+def is_dead_zone() -> bool:
+    """
+    Returns True during 3:00pm - 7:00pm Texas time.
+    Uses America/Chicago timezone so DST is handled automatically.
+    CDT (Mar-Nov): 3-7pm CT = 20:00-00:00 UTC
+    CST (Nov-Mar): 3-7pm CT = 21:00-01:00 UTC
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        texas = ZoneInfo("America/Chicago")
+        now_tx = now_utc().astimezone(texas)
+        return 15 <= now_tx.hour < 19
+    except Exception:
+        return DEAD_ZONE_START <= now_utc().hour < DEAD_ZONE_END
+
+
+def handle_dead_zone(open_trades: list, atr: float):
+    """
+    Dead zone trade management (3:00pm - 7:00pm Texas time).
+
+    Portfolio-level logic — looks at ALL open trades together:
+
+    1. Calculate total floating P&L across all open trades (in $)
+    2. If portfolio is NET PROFITABLE → close ALL positions immediately
+       (lock in the combined profit, don't risk the dead zone)
+    3. If portfolio is NET NEGATIVE:
+       a. For any individual trade getting WORSE → close that trade immediately
+          at the best possible price (stop the bleeding)
+       b. For trades that are improving or at BE → hold and monitor
+       c. At 3:45pm TX → close ALL remaining positions regardless
+       d. If portfolio flips to net profitable at any point → close ALL immediately
+    4. Profitable trades → move to breakeven if not already done
+
+    DST handled automatically via America/Chicago timezone.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        texas   = ZoneInfo("America/Chicago")
+        now_tx  = now_utc().astimezone(texas)
+        tx_hour = now_tx.hour
+        tx_min  = now_tx.minute
+        hard_cut = tx_hour > 15 or (tx_hour == 15 and tx_min >= 45)
+    except Exception:
+        hard_cut = False
+
+    if not open_trades:
+        return
+
+    # ── Refresh all positions and calculate portfolio P&L ────────────────
+    live_trades = []
+    total_pnl   = 0.0
+
+    for t in open_trades[:]:
+        pos = mt5.positions_get(ticket=t["ticket"])
+        if not pos:
+            open_trades.remove(t)
+            continue
+        p = pos[0]
+        total_pnl += p.profit
+        live_trades.append((t, p))
+
+    if not live_trades:
+        return
+
+    # ── Portfolio is NET PROFITABLE → close everything now ────────────────
+    if total_pnl > 0:
+        log.info(f"DEAD ZONE PORTFOLIO CLOSE | Net P&L=+${total_pnl:.2f} | "
+                 f"Closing all {len(live_trades)} position(s) — locking profit.")
+        for t, p in live_trades:
+            direction = t["dir"]
+            close_position(t["ticket"], direction, "dead-zone-net-profit")
+            if t in open_trades:
+                open_trades.remove(t)
+        return
+
+    # ── Portfolio is NET NEGATIVE ─────────────────────────────────────────
+    for t, p in live_trades:
+        entry     = t["entry"]
+        sl        = t["sl"]
+        sl_dist   = abs(entry - sl)
+        direction = t["dir"]
+
+        if sl_dist == 0:
+            continue
+
+        if direction == "bullish":
+            profit_r = (p.price_current - entry) / sl_dist
+        else:
+            profit_r = (entry - p.price_current) / sl_dist
+
+        if profit_r > 0:
+            # This trade is individually profitable — move to BE
+            if not t.get("be_done"):
+                ok = modify_sl(t["ticket"], entry)
+                if ok:
+                    t["be_done"] = True
+                    t["sl"]      = entry
+                    log.info(f"DEAD ZONE BE | T{t['ticket']} "
+                             f"-> breakeven @ {entry:.2f}")
+
+        else:
+            # This trade is in loss
+            prev_r = t.get("_dz_prev_r", profit_r)
+            worsening = profit_r < prev_r  # loss is getting bigger
+            t["_dz_prev_r"] = profit_r
+
+            if hard_cut:
+                # 3:45pm hard cut — close at best available price
+                log.warning(f"DEAD ZONE 3:45 CUT | T{t['ticket']} | "
+                            f"P&L={profit_r:.2f}R | ${p.profit:.2f} | "
+                            f"closing now.")
+                close_position(t["ticket"], direction, "dead-zone-3:45-cut")
+                if t in open_trades:
+                    open_trades.remove(t)
+
+            elif worsening:
+                # Loss is getting worse — close at the lowest loss possible now
+                log.warning(f"DEAD ZONE WORSENING | T{t['ticket']} | "
+                            f"P&L={profit_r:.2f}R -> {prev_r:.2f}R "
+                            f"| ${p.profit:.2f} | closing to limit loss.")
+                close_position(t["ticket"], direction, "dead-zone-worsening")
+                if t in open_trades:
+                    open_trades.remove(t)
+
+            else:
+                # Loss improving — monitor
+                log.info(f"DEAD ZONE MONITOR | T{t['ticket']} | "
+                         f"P&L={profit_r:.2f}R improving | "
+                         f"Portfolio=${total_pnl:.2f} | "
+                         f"Holding to 3:45pm TX.")
+
 
 def is_market_close() -> bool:
     """Returns True at 21:45 UTC — 15 min before gold market closes at 22:00 UTC."""
@@ -744,15 +873,16 @@ def run():
                 consec_losses = 0
                 continue
 
-            # ── Dead zone ─────────────────────────────────────────────────
+            # ── Dead zone: 3pm-7pm Texas time ────────────────────────────
             if is_dead_zone():
                 df_m1 = get_candles(mt5.TIMEFRAME_M1, 50)
                 df_m5 = get_candles(mt5.TIMEFRAME_M5, 50)
                 if not df_m1.empty and not df_m5.empty:
-                    manage_positions(open_trades, calc_atr(df_m1), df_m5)
+                    atr_dz = calc_atr(df_m1)
+                    manage_positions(open_trades, atr_dz, df_m5)
+                    handle_dead_zone(open_trades, atr_dz)
                 if now.minute == 0:
-                    log.info(f"Dead zone UTC {now.hour:02d}:00. "
-                             f"Resumes {DEAD_ZONE_END:02d}:00. "
+                    log.info(f"Dead zone (3-7pm TX). No new entries. "
                              f"{daily_engine.status(acct.balance)}")
                 time.sleep(60)
                 continue

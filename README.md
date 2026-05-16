@@ -1,7 +1,92 @@
-# Algo Suite — LWG Capital LLC
+# LWG Capital LLC — Algo Trading Suite
 
 Multi-bot algorithmic trading system built on MetaTrader 5.
-Designed to scale across any instrument by separating shared code from per-instance configuration.
+Designed to scale across instruments and prop firm accounts.
+
+---
+
+## The Bots — At a Glance
+
+| | Bot 1 | Bot 2 | Bot 3 | Bot 5 |
+|---|---|---|---|---|
+| **Name** | SMC Trend | Mean Reversion | EMA Scalper | FFT |
+| **Strategy** | Judas Swing + FVG | BB + RSI + VWAP | EMA stack + pullback | Dual Fibonacci confluence |
+| **Direction** | With H4 trend only | Against overextension | With momentum | With H1+H4 trend |
+| **Timeframe** | M15 entry | Any (24hr) | M5 stack, M1 entry | M15 entry |
+| **Sessions** | London + NY kill zones | 24 hours | All except dead zone | Any trending session |
+| **Trades/day** | 0–3 | 0–4 | 5–20+ | 0–3 |
+| **Target R:R** | 3:1+ (runner system) | 1:1 fast | Dynamic daily engine | 2:1 to 5:1 |
+| **Risk/trade** | 2% | 2% | 2–3.5% (auto-scaling) | 1% |
+| **Daily cap** | 10% loss | 10% loss | -8% floor | 5% loss |
+| **Account** | Main (with Bot 2) | Main (with Bot 1) | Separate | Separate |
+| **MT5** | PU Prime Terminal | PU Prime Terminal | MT5_Scalper | MT5_FFT |
+
+---
+
+## How They Work Together
+
+**Bot 1 and Bot 2 are designed to be uncorrelated.** When markets are trending, Bot 1 is active and Bot 2 reduces size. When markets are ranging, Bot 2 is busy and Bot 1 sits idle. They share one account and complement each other across market conditions.
+
+**Bot 3 is completely independent.** It runs on its own account with its own aggressive compounding logic. Its daily profit engine means one great day can significantly move the account.
+
+**Bot 5 is the proprietary edge.** The FFT dual-fib strategy is the most selective — it only fires when two independent Fibonacci tools agree on the same price zone. Fewer trades, higher quality. Will be refined over time as more chart examples are provided.
+
+---
+
+## Key Differences Explained
+
+**Why does Bot 2 close at 1R when Bot 1 targets 3R?**
+Mean reversion moves are fast and often complete within minutes. Holding for 3R on a reversion trade risks giving back the move. Bot 2 banks 1R reliably, many times. Bot 1 holds for 3R because trend continuation moves can run far beyond the initial target — the runner system captures this.
+
+**Why does Bot 3 have its own account?**
+Bot 3 can make +50% in a day. It can also hit the -8% floor. This volatility would destroy the daily loss cap tracking on Bot 1 and Bot 2's shared account. Separation keeps risk clean.
+
+**Why is Bot 5 risk only 1% when others are 2%?**
+The FFT strategy is unproven in live trading — it has no trade history yet. Lower risk while the AI is learning. Once it has 30+ trades and a solid Calmar ratio, risk can be raised to 2%.
+
+**Why different AI thresholds (Bot 1/2: 55% vs Bot 3/5: 52%)?**
+Bot 1 and 2 have stricter entry rules — the AI needs more confidence to approve. Bot 3 and 5 are newer with less data — a lower threshold means the AI starts influencing decisions sooner while still learning.
+
+---
+
+## Dead Zone (All Bots)
+
+**No new entries 3:00pm–7:00pm Texas time** (CDT/CST, DST-aware automatically).
+
+During this window all bots run portfolio-level management:
+- Net profitable across all open trades → close everything, lock profit
+- Profitable individual trade, portfolio negative → move to breakeven
+- Losing trade getting worse → close immediately
+- Losing trade improving → hold until 3:45pm TX then hard close
+
+---
+
+## Infrastructure
+
+**VPS:** ForexVPS (IP: 45.82.164.112) — Windows Server, 24/7
+**Control:** `algo` command on Mac — starts, stops, restarts, shows status and uptime
+**Deploy:** `git push` on Mac → `ssh forexvps "git pull"` → `algo restart`
+**Monitoring:** `algo status` shows all bots, uptime, running state
+
+**MT5 instances:**
+| Directory | Account | Bots |
+|---|---|---|
+| `C:\Program Files\PU Prime MT5 Terminal` | Main (#700103491) | Bot 1 + Bot 2 |
+| `C:\MT5_Scalper` | Scalper (#700107520) | Bot 3 |
+| `C:\MT5_FFT` | FFT (#700107749) | Bot 5 |
+
+---
+
+## Shared Components
+
+| File | Purpose |
+|---|---|
+| `shared/shared_ai_brain.py` | AI engine, trade logger, daily performance logger |
+| `shared/shared_calmar.py` | Calmar ratio tracker (prints morning report daily) |
+| `shared/shared_regime.py` | Market regime classifier (TRENDING/TRANSITIONING/RANGING) |
+| `bots/bot_utils.py` | Config loader, logging setup, path resolver |
+| `bots/launcher.py` | Universal Task Scheduler launcher for all bots |
+| `algo.py` | Mac control panel — start/stop/status/logs |
 
 ---
 
@@ -9,136 +94,34 @@ Designed to scale across any instrument by separating shared code from per-insta
 
 ```
 algos/
-├── algo.py                          <- Mac control panel (run with: algo)
-├── ALGO_CONTROL_PANEL_GUIDE.md
+├── algo.py                           <- Mac control panel
 ├── README.md
-├── SETUP.md
-├── stress_test_suite.py             <- run locally for Monte Carlo analysis
-│
-├── shared/                          <- one copy, used by all bots
-│   ├── shared_ai_brain.py           <- AI engine + trade logger + daily logger
-│   ├── shared_calmar.py             <- Calmar ratio tracker
-│   └── shared_regime.py             <- market regime classifier
-│
-├── bots/                            <- one copy of each bot, used by all instruments
-│   ├── bot_utils.py                 <- config loader + path resolver
-│   ├── launcher.py                  <- universal Task Scheduler launcher
-│   ├── bot1_smc_trend.py            <- Bot 1: SMC trend following
-│   ├── bot2_mean_reversion.py       <- Bot 2: mean reversion
-│   ├── bot3_scalper.py              <- Bot 3: EMA momentum scalper
+├── stress_test_suite.py
+├── shared/
+│   ├── shared_ai_brain.py
+│   ├── shared_calmar.py
+│   └── shared_regime.py
+├── bots/
+│   ├── bot_utils.py
+│   ├── launcher.py
+│   ├── bot1_smc_trend.py
+│   ├── bot2_mean_reversion.py
+│   ├── bot3_scalper.py
+│   ├── bot5_fft.py
 │   ├── BOT1_SMC_TREND_GUIDE.md
 │   ├── BOT2_MEAN_REVERSION_GUIDE.md
-│   └── BOT3_SCALPER_GUIDE.md
-│
+│   ├── BOT3_SCALPER_GUIDE.md
+│   └── BOT5_FFT_GUIDE.md
+├── executors/
+│   └── tradovate.py                  <- Tradovate API (Bot 4 futures)
 └── markets/
-    └── fx/
-        └── instances/
-            ├── xauusd_main/         <- Bot 1 + Bot 2 on XAUUSD
-            │   ├── config.json
-            │   └── credentials.json <- NOT in GitHub, manual VPS only
-            └── xauusd_scalper/      <- Bot 3 on XAUUSD (separate account)
-                ├── config.json
-                └── credentials.json <- NOT in GitHub, manual VPS only
+    ├── fx/instances/
+    │   ├── xauusd_main/              <- Bot 1 + Bot 2
+    │   ├── xauusd_scalper/           <- Bot 3
+    │   └── xauusd_fft/               <- Bot 5
+    └── futures/instances/
+        └── lucid_account1/           <- Bot 4 (pending Lucid evaluation)
 ```
-
----
-
-## The Three Bots
-
-| Bot | Strategy | Sessions | Risk | Account |
-|---|---|---|---|---|
-| Bot 1 | SMC Trend — Judas Swing + H4 filter | London + NY kill zones | 2% per trade | Main |
-| Bot 2 | Mean Reversion — BB + RSI + VWAP | 24 hours | 2% per trade | Main |
-| Bot 3 | EMA Momentum Scalper | All except dead zone | 2–3.5% auto-scaling | Separate |
-
-Bot 1 and Bot 2 share an account — designed to be uncorrelated. Bot 3 must run on its own account due to its aggressive daily profit engine.
-
----
-
-## AI Brain (v2) — All Bots
-
-| Feature | Value |
-|---|---|
-| Minimum trades to train | 15 (was 30) |
-| AUC quality gate | 0.55 (was 0.52) |
-| Retrains every | 5 new closed trades (was 10) |
-| Daily performance logger | Records drawdown, trade count, simultaneous positions |
-| Re-entry tracking | Logs whether a trade was a re-entry and outcome |
-| Drawdown features | daily_trades_so_far, daily_pnl_pct, simultaneous_open |
-
-The AI learns two things over time:
-1. Which entry conditions produce winning trades
-2. Which day patterns produce drawdowns
-
-After 7+ days of data it can start flagging bad day patterns — e.g. taking trade #6 when already down 4% with 3 positions open has historically led to further losses.
-
----
-
-## Re-Entry Logic — Bot 1 and Bot 2
-
-If a trade stops at breakeven and the market bias is unchanged, both bots will re-enter once:
-
-- **Bot 1:** Re-enters if H4 trend and sweep direction still match
-- **Bot 2:** Re-enters if price is still outside the Bollinger Band
-
-Re-entries are tagged `[RE-ENTRY]` in the log and tracked separately in the AI model. Over time the AI learns whether re-entries outperform original entries.
-
----
-
-## Market Close Protection — All Bots
-
-All three bots force-close every open position at **19:45 UTC daily** — 15 minutes before the gold market closes at 20:00 UTC (3pm CT Fort Worth).
-
-This triggers:
-- On restart if the VPS rebooted during the close window (19:45–21:00 UTC)
-- On the normal daily close
-- On Fridays (weekend protection — market doesn't reopen until Sunday 22:00 UTC)
-
-**You will never hold overnight or over weekends.**
-
----
-
-## Shared Components
-
-### shared_ai_brain.py
-- `TradeLogger` — logs every trade with 18 features at entry and outcome at close
-- `DailyLogger` — records end-of-day metrics (new in v2)
-- `AIBrain` — Random Forest classifier, trains at 15 trades, retrains every 5
-- `build_features_trend` — feature builder for Bot 1
-- `build_features_reversion` — feature builder for Bot 2
-
-### shared_calmar.py
-Calmar ratio = annualised return / max drawdown. Prints morning report daily.
-- 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
-
-### shared_regime.py
-Classifies market every hour: TRENDING / TRANSITIONING / RANGING.
-Bot 1 and Bot 2 react opposite ways to the same regime.
-
----
-
-## Deploy Workflow
-
-```bash
-# Make changes on Mac, push to GitHub
-git add . && git commit -m "description" && git push
-
-# Deploy to VPS
-ssh forexvps "cd C:\algos && git pull origin main"
-
-# Restart bots
-algo -> Stop all -> Start all
-```
-
----
-
-## Adding a New Instrument
-
-1. Create `markets/fx/instances/NEW_PAIR_main/config.json`
-2. Add `credentials.json` manually on VPS only
-3. Add Task Scheduler task: `FX_NEWPAIR_Bot1` pointing to `launcher.py --bot bot1 --config ...`
-4. Add entry to `LOG_MAP` and `TASK_BOT_MAP` in `algo.py`
-5. The bot appears in `algo` control panel automatically
 
 ---
 
@@ -146,9 +129,12 @@ algo -> Stop all -> Start all
 
 | Phase | Timing | Condition to advance |
 |---|---|---|
-| Demo trading | Now -> Day 60 | 15+ closed trades, Calmar >= 2.0 |
-| Evaluation | Day 60–90 | Bot1 Calmar >= 2.5, Bot2 Calmar >= 2.0 |
+| Demo trading | Now — Day 60 | 15+ closed trades per bot, Calmar >= 2.0 |
+| Evaluation | Day 60–90 | Bot 1 Calmar >= 2.5, Bot 2 Calmar >= 2.0 |
 | Small live (50% risk) | Day 90–150 | Calmar holds on live data |
 | Full risk | Day 150+ | Live Calmar >= 3.0 for 60+ days |
+| Prop firms (Lucid) | Parallel | Buy LucidFlex $100K eval, run Bot 4 |
 
-*Always run on DEMO first. Jason Byers lost $300k skipping this step.*
+**Calmar targets:** 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
+
+*Always run on DEMO first. Never optimize to past results — that is overfitting.*

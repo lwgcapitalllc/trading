@@ -1,41 +1,62 @@
-# BOT3_SCALPER_GUIDE.md
 # Bot 3 — EMA Momentum Scalper
-
-**File:** `bots/bot3_scalper.py`
-**Strategy:** EMA stack direction + M1 pullback entry
-**Direction:** With momentum — closes immediately if momentum flips
-**Trades per day:** 5–20+ depending on session
-**Account:** Dedicated separate account — never shared with Bot 1 or Bot 2
+**File:** `bots/bot3_scalper.py` | **Account:** Dedicated scalper account | **MT5:** `C:\MT5_Scalper`
 
 ---
 
-## What It Does
+## What This Bot Is Built To Do
 
-Grows a small account aggressively through high-frequency compounding. Enters when the M5 EMA stack (9/21/50) shows clear directional bias and price pulls back to the EMA9 on M1, then fires a momentum candle. Exits fast. Scales position size automatically as account grows.
-
-Must run on its own dedicated MT5 account. Its aggressive profile would contaminate daily loss tracking for Bot 1 and Bot 2 if shared.
+Bot 3 is an aggressive account-growth engine. It trades momentum on M5 using EMA stack alignment and M1 pullback entries. It runs a dynamic daily profit engine — once it hits its daily target it keeps running with peak protection until either a 10% pullback from the day's peak or a hard ceiling. It compounds position sizes automatically as the account grows. It must run on its own separate account because its risk profile is incompatible with Bot 1 and Bot 2.
 
 ---
 
-## When It Trades
+## Strategy
 
-All sessions except the dead zone (15:00–19:00 UTC, configurable). Checks every 10 seconds. All positions force-close at 19:45 UTC daily.
+**EMA Momentum Scalping — M5 Stack + M1 Pullback Entry**
+
+1. M5 EMA stack (9/21/50) must all point in the same direction
+2. Price pulls back to the EMA9 on M1 — a genuine retracement, not drift
+3. A momentum candle fires in the trend direction (body >= 0.3x ATR)
+4. RSI must not be extreme against the trade (no buying above 75, no selling below 25)
+5. Enter immediately — scalps require fast execution
+
+**When it trades:** All sessions except 3:00–7:00pm Texas (dead zone) and the previous dead zone start 15:00–19:00 UTC as a secondary check.
+
+**Entry checklist:**
+- M5 EMA 9/21/50 all aligned in same direction
+- Price within 0.3x ATR of EMA9 on M1 (real pullback)
+- Momentum candle body >= 0.3x ATR
+- RSI not extreme against trade direction
+- AI approves >= 52%
 
 ---
 
-## Entry Logic — All Must Be True
+## Profitability Goal
 
-**Direction filter (M5):**
-- EMA 9/21/50 all aligned in same direction
-- Price above EMA50 (bullish) or below EMA50 (bearish)
-- Partial alignment (2/3) accepted at reduced confidence
+- **Daily target:** +10% of account balance
+- **Dynamic engine:** After hitting 10%, peak protection activates — bot keeps trading until a 10% pullback from the day's high-water mark
+- **Hard ceiling:** +50% in a day — bot stops and locks in gains
+- **Compounding tiers:** Risk % increases automatically as account grows
 
-**Entry trigger (M1):**
-1. Price within 0.3× ATR of EMA9 (genuine pullback)
-2. Momentum candle body ≥ 0.3× ATR in trend direction
-3. RSI not extreme against trade (not buying above 75, not selling below 25)
-4. Previous candle touched EMA9 — confirms actual pullback, not drift
-5. AI approves ≥ 52%
+| Balance | Risk per trade |
+|---|---|
+| $0–$2,000 | 2.0% |
+| $2,000–$4,000 | 2.5% |
+| $4,000–$7,000 | 3.0% |
+| $7,000–$10,000 | 3.5% |
+| $10,000+ | 2.0% (resets, compounds again) |
+
+---
+
+## Risk Goal
+
+| Control | Value |
+|---|---|
+| Daily loss floor | -8% — bot stops for the day |
+| Peak protection | 10% pullback from day's peak triggers stop |
+| Hard ceiling | +50% — locks in gains |
+| Weekly loss cap | 20% |
+| No overnight holds | Force-close 19:45 UTC |
+| Momentum reversal | Closes immediately if M5 bias flips while in profit |
 
 ---
 
@@ -43,110 +64,55 @@ All sessions except the dead zone (15:00–19:00 UTC, configurable). Checks ever
 
 | Stage | Trigger | Action |
 |---|---|---|
-| Breakeven | +0.5R profit | Stop to entry — very fast |
-| Trailing | After BE | 0.4× ATR tight trail |
-| Max hold | 20 M1 candles | Force close — scalps don't drag |
-| Momentum flip | M5 bias reverses AND in profit | Close immediately |
-| Market close | 19:45 UTC daily | All positions force-closed |
-| Weekend | Friday 19:45 UTC | All positions force-closed |
-
-**Momentum reversal detection:** If the M5 EMA stack flips against the open position while in profit, the bot exits immediately and banks the profit. This is the key difference from a basic scalper.
+| Breakeven | +0.5R | Stop to entry — fast |
+| Trail | After BE | 0.4x ATR tight trail |
+| Max hold | 20 M1 candles | Force-close — scalps don't drag |
+| Momentum flip | M5 bias reverses + in profit | Close immediately |
+| Market close | 19:45 UTC | Force-close all |
 
 ---
 
-## Dynamic Daily Profit Engine
+## Dead Zone (3:00–7:00pm Texas)
 
-| Phase | Condition | Behaviour |
-|---|---|---|
-| Free run | Until +10% daily target hit | Trades normally |
-| Peak protection | After +10% hit | Tracks peak balance, keeps trading |
-| Stop | 10% pullback from day's peak | Locks in accumulated gains |
-| Hard ceiling | +50% (5x target) | Banks everything, done for day |
-| Hard floor | -8% loss | Closes all, done for day |
-
-**Example:** Hits +10% -> keeps running -> peaks at +28% -> pulls back 10% from 28% peak -> stops at +18% locked in.
+No new entries. Portfolio-level management every minute:
+- Net profitable across all trades → close all immediately
+- Individual trade profitable, portfolio negative → move to breakeven
+- Losing trade getting worse → close immediately at best price
+- Losing trade improving → hold and monitor until 3:45pm TX
+- Any trade still open at 3:45pm TX → hard close
 
 ---
 
-## Compounding Tiers (auto-adjusts)
+## AI Brain
 
-| Balance | Risk per trade |
-|---|---|
-| $0 - $2,000 | 2.0% |
-| $2,000 - $4,000 | 2.5% |
-| $4,000 - $7,000 | 3.0% |
-| $7,000 - $10,000 | 3.5% |
-| $10,000+ | 2.0% (resets, keeps compounding) |
+Trains at 15 closed trades. Retrains every 5. AUC gate 0.55.
+Learns from: EMA stack strength, pullback depth, momentum body size, RSI at entry, daily P&L %, daily trade count.
 
 ---
 
-## News Events
+## Tuning
 
-Configured in `config.json` -> `bot3_scalper` -> `news_events`.
-Format: `[weekday, hour_utc, minute_utc, "label"]`
-
-Options:
-- `news_pause_minutes: 30` — pause 30 min around event (default)
-- `news_pause_minutes: 0` — trade through all news
-- `news_widen_sl_multiplier: 2.0` — keep trading with 2x wider stop
-
----
-
-## AI Brain (v2)
-
-| Parameter | Value |
-|---|---|
-| Min trades to train | 15 |
-| AUC gate | 0.55 |
-| Retrains every | 5 trades |
-
-**Features the AI learns from:**
-- EMA stack strength, pullback depth, momentum body size
-- RSI at entry, ATR, time of day, day of week
-- Rolling win rate, spread
-- `daily_trades_so_far`, `daily_pnl_pct`, `simultaneous_open`
-
-The `daily_pnl_pct` feature is especially important — the AI learns whether taking trades when already up 15% on the day has historically been profitable.
-
----
-
-## Risk Controls
-
-| Control | Value |
-|---|---|
-| Risk per trade | 2.0–3.5% (auto by tier) |
-| Daily target | +10% |
-| Peak protection | 10% pullback from peak |
-| Hard ceiling | +50% |
-| Daily loss floor | -8% |
-| Weekly loss cap | 20% |
-| Market close | 19:45 UTC force-close |
-
----
-
-## Tuning Guide
-
-| Problem | Parameter | Adjustment |
+| Problem | Config key | Fix |
 |---|---|---|
 | Too few signals | `pullback_tolerance` | Raise 0.3 -> 0.5 |
 | Too many bad entries | `pullback_tolerance` | Lower 0.3 -> 0.2 |
 | Stops hit on noise | `atr_sl_multiplier` | Raise 0.8 -> 1.0 |
 | BE too slow | `breakeven_at_r` | Lower 0.5 -> 0.3 |
-| Too aggressive daily | `daily_profit_target_pct` | Lower 10 -> 5 |
+| Too aggressive | `daily_profit_target_pct` | Lower 10 -> 5 |
 
 ---
 
-## Log Messages to Watch
+## Key Log Messages
 
 ```
-SCALP SIGNAL | BULLISH | price=4388.50 | RSI=52.1 | stack=3/3       ← strong setup
-AI approved 64% >= 52%                                               ← gate passed
-FILLED | ticket=... | bullish 0.02L @ 4388.65                       ← trade placed
-T12345678 BE @ 4388.65 (0.5R)                                       ← breakeven
-T12345678 MOMENTUM FLIP -- closing at 1.2R                          ← smart exit
-DAILY TARGET HIT: +10.3%. Peak protection active. Continuing.       ← phase 2
-PEAK PROTECTION: pulled back 10% from peak +22%. Locked +12%.      ← day done
-DAILY CEILING HIT: +50.1%. Banking everything.                      ← great day
-PROGRESS | $1,340 -> $10,000 (13%) | growth=+34% | risk=2%         ← daily summary
-Market closing in 15 min [DAILY-CLOSE] -- closing all 4 scalps.    ← eod cleanup
+SCALP SIGNAL | BULLISH | price=4388.50 | RSI=52.1 | stack=3/3
+AI approved 64% >= 52%
+FILLED | bullish 0.02L @ 4388.65
+T12345 BE @ 4388.65 (0.5R)
+T12345 MOMENTUM FLIP -- closing at 1.2R
+DAILY TARGET HIT: +10.3%. Peak protection active. Continuing.
+PEAK PROTECTION: pulled back 10% from peak +22%. Locked +12%.
+DAILY CEILING HIT: +50.1%. Banking everything.
+DEAD ZONE PORTFOLIO CLOSE | Net P&L=+$18.40 | Closing all 3 positions
+PROGRESS | $1,000 -> $10,000 (10%) | growth=+0.0% | risk=2.0%
 ```

@@ -164,11 +164,13 @@ def get_uptime(task_name: str) -> str:
     if not raw:
         return ""
 
-    # Find last startup line
+    # Find last startup line — matches all bot startup formats
     lines = raw.splitlines()
     start_time = None
     for line in reversed(lines):
-        if "STARTING" in line or ("Balance" in line and "Risk" in line):
+        if ("STARTING" in line or
+                ("Balance" in line and "Risk" in line) or
+                ("Balance" in line and "AI:" in line)):
             try:
                 ts_str     = line.split("|")[0].strip()[:19]
                 start_time = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")

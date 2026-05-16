@@ -1,112 +1,93 @@
-# BOT2_MEAN_REVERSION_GUIDE.md
 # Bot 2 — Mean Reversion
-
-**File:** `bots/bot2_mean_reversion.py`
-**Strategy:** Fade overextended price back to statistical average
-**Direction:** Against the overextension — confirms with RSI, BB, VWAP
-**Trades per day:** 0–4 typical
-**Account:** Main account — runs alongside Bot 1
+**File:** `bots/bot2_mean_reversion.py` | **Account:** Main (shared with Bot 1) | **MT5:** `C:\Program Files\PU Prime MT5 Terminal`
 
 ---
 
-## What It Does
+## What This Bot Is Built To Do
 
-Trades price back toward its average after it stretches too far. When an instrument is overbought or oversold relative to Bollinger Bands, RSI, and VWAP simultaneously, the snapback probability is high. This bot captures that snapback quickly and banks profit at 1R — it does not hold for extended moves.
-
-This is the cash flow layer. Bot 1 is active during kill zones only. Bot 2 runs 24 hours and generates consistent wins during ranging conditions when Bot 1 is idle. They are intentionally uncorrelated.
+Bot 2 trades price snapping back to its statistical average after extreme overextension. When gold stretches too far from its mean — confirmed by Bollinger Bands, RSI, and VWAP simultaneously — the probability of a snapback is high. This bot captures that move quickly and banks profit at 1R. It runs 24 hours and generates consistent smaller wins, complementing Bot 1 which is session-specific.
 
 ---
 
-## When It Trades
+## Strategy
 
-Active 24 hours. All positions force-close at 19:45 UTC daily (market close window).
+**Mean Reversion — Bollinger Band + RSI + VWAP Confluence**
 
----
+A signal fires when all three confirm the same overextension:
+- Price outside Bollinger Band (2+ standard deviations)
+- RSI below 28 (oversold) or above 72 (overbought)
+- Price deviated from VWAP by 1.5+ standard deviations
+- Rejection candle confirms buyers/sellers stepping in
 
-## Entry Logic — All Must Be True
+**When it trades:** 24 hours, every day. Dead zone 3–7pm Texas.
 
-**Bullish (long after oversold):**
-1. Price below lower Bollinger Band (2+ std deviations)
-2. RSI below 28
-3. Price below VWAP by 1.5+ std deviations
-4. Rejection candle confirming buyers
-
-**Bearish (short after overbought):**
-1. Price above upper Bollinger Band
-2. RSI above 72
-3. Price above VWAP by 1.5+ std deviations
-4. Rejection candle confirming sellers
-
-Minimum confluence score 4. AI must approve ≥ 55%.
+**Entry checklist — all must be true:**
+- Price outside Bollinger Band (2+ std dev)
+- RSI confirms overbought/oversold
+- VWAP deviation confirms overextension
+- Rejection candle present
+- Confluence score >= 4
+- AI approves >= 55%
 
 ---
 
-## Trade Management — 0.01 Lot Safe
+## Profitability Goal
 
-Mean reversion moves fast — bank profit immediately rather than trailing.
+- **Target per trade:** 1R (tight, fast, consistent)
+- **Philosophy:** Many small wins compound faster than few large wins at this account size
+- **Early close:** Closes if RSI returns to neutral (50 area) — mean has been reached, no reason to hold
+- **Cash flow layer:** Designed to generate consistent daily P&L while Bot 1 waits for high-quality setups
+
+---
+
+## Risk Goal
+
+| Control | Value |
+|---|---|
+| Risk per trade | 2% of balance |
+| Breakeven | +0.3R — very fast protection |
+| Full close | +1R — always banks profit |
+| Daily loss cap | 10% — no new entries |
+| Weekly loss cap | 20% — 6hr cooldown |
+| No overnight holds | Force-close 19:45 UTC |
+
+---
+
+## Trade Management
 
 | Stage | Trigger | Action |
 |---|---|---|
-| Breakeven | +0.3R profit | Stop to entry — very fast |
-| Full close | +1R profit | Entire position closes — profit banked |
-| Early close | RSI returns to 40–60 | Mean reached — close immediately |
-| Tight trail | After BE, before 1R | 0.3× ATR trail |
-| Market close | 19:45 UTC daily | All positions force-closed |
-| Weekend | Friday 19:45 UTC | All positions force-closed |
-
-**Why full close at 1R:** At 0.01 lots you cannot split a position. Full close at 1R guarantees profit on every winning trade. Mean reversion moves are typically done by 1R — price has returned to the mean.
+| Breakeven | +0.3R | Stop to entry — very fast |
+| Full close | +1R | Entire position closes |
+| Early close | RSI returns to neutral | Mean reached — exit |
+| Tight trail | After BE, before 1R | 0.3x ATR trail |
+| Market close | 19:45 UTC | Force-close all |
 
 ---
 
-## Re-Entry After Breakeven Stop
+## Dead Zone (3:00–7:00pm Texas)
 
-If a trade stops at breakeven and price is still at the extreme (still outside BB), the bot re-enters once:
-
-1. Trade stops at BE → direction stored as re-entry opportunity
-2. Next valid signal in the same direction → re-enters with `[RE-ENTRY]` tag
-3. AI learns whether re-entries outperform original entries
-4. Maximum one re-entry per original setup
-
----
-
-## AI Brain (v2)
-
-Same improvements as Bot 1:
-
-| Parameter | Value | Change |
-|---|---|---|
-| Min trades to train | 15 | Was 30 |
-| AUC gate | 0.55 | Was 0.52 |
-| Retrains every | 5 trades | Was 10 |
-
-**New features the AI learns from:**
-- `daily_trades_so_far` — trades placed so far today
-- `daily_pnl_pct` — current day P&L at entry
-- `simultaneous_open` — open positions at entry
-- `is_reentry` — whether this is a re-entry
-
-**Daily performance logger** records end-of-day metrics. The AI learns which day conditions and market regimes produce drawdowns.
+No new entries. Portfolio-level management every minute:
+- Net profitable across all trades → close all immediately
+- Individual trade profitable, portfolio negative → move to breakeven
+- Losing trade getting worse → close immediately at best price
+- Losing trade improving → hold and monitor until 3:45pm TX
+- Any trade still open at 3:45pm TX → hard close
 
 ---
 
-## Risk Controls
+## AI Brain
 
-| Control | Value | Notes |
-|---|---|---|
-| Risk per trade | 2% | Of current balance |
-| Breakeven at | 0.3R | Very fast — protects every winner |
-| Full close at | 1R | Profit always banked |
-| Daily loss cap | 10% | No new entries |
-| Weekly loss cap | 20% | 6hr cooldown |
-| Market close | 19:45 UTC | Force-closes all |
+Trains at 15 closed trades. Retrains every 5. AUC gate 0.55.
+Learns from: confluence score, RSI value, BB position, VWAP deviation, daily P&L %, simultaneous positions, regime score.
 
 ---
 
 ## Regime Behaviour
 
-Inverted logic vs Bot 1:
+Bot 2 is the INVERSE of Bot 1 — it thrives when Bot 1 struggles:
 
-| Regime | Bot 2 response |
+| Regime | Response |
 |---|---|
 | RANGING | Full size — ideal, price oscillates predictably |
 | TRANSITIONING | 75% size |
@@ -114,30 +95,26 @@ Inverted logic vs Bot 1:
 
 ---
 
-## Tuning Guide
+## Tuning
 
-| Problem | Parameter in config.json | Adjustment |
+| Problem | Config key | Fix |
 |---|---|---|
 | Giving back profits | `breakeven_at_r` | Lower to 0.2 |
 | Closing too early | `partial_close_r` | Raise to 1.5 |
-| Too few signals | `bb_std_entry` | Lower 2.0 → 1.8 |
-| Too many bad signals | `bb_std_entry` | Raise 2.0 → 2.2 |
-| RSI exit too early | `rsi_neutral_low/high` | Widen to 35/65 |
+| Too few signals | `bb_std_entry` | Lower 2.0 -> 1.8 |
+| Too many bad signals | `bb_std_entry` | Raise 2.0 -> 2.2 |
 
 ---
 
-## Log Messages to Watch
+## Key Log Messages
 
 ```
-Scanning | price=4385.20 | regime=RANGING | risk_mult=1.0            ← ideal conditions
-REVERSION SIGNAL | BULLISH | score=5 | RSI=24.3                      ← setup found
-AI approved 61% >= 55%                                                ← gate passed
-AI not yet trained (6/15 trades). Rules-based. 9 more needed.        ← learning
-ENTRY | bullish | lots=0.02 | entry=4385.20 SL=4380.00 TP=4400.00    ← trade placed
-ENTRY | bullish | ... [RE-ENTRY]                                       ← re-entry
-T12345678 -> BREAKEVEN @ 4385.20 (0.31R)                             ← free trade
-T12345678 FULL CLOSE @ 1.0R -- banking profit.                        ← secured
-T12345678 EARLY CLOSE -- RSI neutral (48.2) | profit=0.8R            ← mean reached
-Market closing in 15 min [DAILY-CLOSE] -- closing all 1 positions.   ← eod protection
-New day 2026-05-15 | $1,234.56 | AI: Trained | AUC=0.58 | WR(10)=60% ← morning report
+REVERSION SIGNAL | BULLISH | score=5 | RSI=24.3
+AI approved 61% >= 55%
+ENTRY | bullish | lots=0.02 | entry=4385.20 SL=4380.00 TP=4400.00
+T12345 -> BREAKEVEN @ 4385.20 (0.31R)
+T12345 FULL CLOSE @ 1.0R -- banking profit.
+T12345 EARLY CLOSE -- RSI neutral (48.2) | profit=0.8R
+DEAD ZONE PORTFOLIO CLOSE | Net P&L=+$22.10 | Closing all 1 position
+New day 2026-05-16 | $2,759.28 | AI: Trained | AUC=0.58 | WR(10)=60%
 ```
