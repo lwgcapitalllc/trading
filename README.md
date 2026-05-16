@@ -5,6 +5,20 @@ Designed to scale across instruments and prop firm accounts.
 
 ---
 
+## Documentation
+
+**Bot guides:**
+- [Bot 1 — SMC Trend Following](bots/BOT1_SMC_TREND_GUIDE.md)
+- [Bot 2 — Mean Reversion](bots/BOT2_MEAN_REVERSION_GUIDE.md)
+- [Bot 3 — EMA Scalper](bots/BOT3_SCALPER_GUIDE.md)
+- [Bot 5 — FFT Strategy](bots/BOT5_FFT_GUIDE.md)
+
+**System guides:**
+- [Notifications — Telegram reporter, monitor, commands](notifications/NOTIFICATIONS_GUIDE.md)
+- [Scheduler — Task Scheduler setup and management](scheduler/SCHEDULER_GUIDE.md)
+
+---
+
 ## The Bots — At a Glance
 
 | | Bot 1 | Bot 2 | Bot 3 | Bot 5 |
