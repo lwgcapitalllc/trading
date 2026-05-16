@@ -554,6 +554,9 @@ def run():
     if not connect(): return
 
     acct         = mt5.account_info()
+    if acct.balance <= 0:
+        log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. Please restore balance before running BOT1.")
+        mt5.shutdown(); return
     regime       = RegimeClassifier(bot_name="BOT1")
     logger       = TradeLogger(str(_INST / "bot1_trades.json"))
     ai           = AIBrain(logger, model_file=str(_INST / "bot1_model.pkl"))
@@ -656,6 +659,11 @@ def run():
                 log.info(f"New week {week} | Weekly balance reset ${weekly_start:,.2f}")
 
             acct = mt5.account_info()
+
+            # Sanity check — if balance is 0 MT5 returned a bad reading
+            if not acct or acct.balance <= 0:
+                log.warning("MT5 returned zero balance — skipping iteration (bad reading).")
+                time.sleep(30); continue
 
             # ── Weekly loss guard — 6hr cooldown + regime check ───────────
             weekly_dd = (weekly_start - acct.balance) / weekly_start * 100

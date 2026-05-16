@@ -652,6 +652,10 @@ def run():
     if not connect(): return
 
     acct          = mt5.account_info()
+    if acct.balance <= 0:
+        log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. "
+                  "Please restore balance before running BOT3.")
+        mt5.shutdown(); return
     calmar        = CalmarTracker(acct.balance, equity_file=str(_INST / "bot3_equity.json"))
     logger        = TradeLogger(str(_INST / "bot3_trades.json"))
     ai            = AIBrain(logger, model_file=str(_INST / "bot3_model.pkl"))
