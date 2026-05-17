@@ -1,144 +1,65 @@
-# SETUP.md — Algo Suite Deployment Guide
+# SETUP.md — LWG Capital Algo Suite
 
-## Architecture
+Complete setup guide for a fresh VPS or new developer.
+
+---
+
+## Repository Structure
 
 ```
 algos/
-├── .gitignore                       # blocks credentials + runtime files
-├── algo.py                          # Mac control panel
-├── ALGO_CONTROL_PANEL_GUIDE.md
-├── README.md
-├── stress_test_suite.py
-├── shared/                          # one copy, used by all bots
+├── algo.py                          ← Mac control panel (alias: algo)
+├── deploy.py                        ← Deployment helper script
+├── README.md                        ← Master docs + bot comparison
+├── SETUP.md                         ← This file
+├── stress_test_suite.py             ← Local HMM Monte Carlo stress tests
+│
+├── bots/                            ← All trading bot scripts + guides
+│   ├── bot_smc_trend.py
+│   ├── bot_mean_reversion.py
+│   ├── bot_scalper.py
+│   ├── bot_fft.py
+│   ├── bot_futures.py
+│   ├── bot_utils.py
+│   ├── launcher.py
+│   ├── BOT_SMC_TREND_GUIDE.md
+│   ├── BOT_MEAN_REVERSION_GUIDE.md
+│   ├── BOT_SCALPER_GUIDE.md
+│   ├── BOT_FFT_GUIDE.md
+│   └── BOT_FUTURES_GUIDE.md
+│
+├── shared/                          ← Shared components (all bots import these)
 │   ├── shared_ai_brain.py
 │   ├── shared_calmar.py
 │   └── shared_regime.py
-├── bots/                            # one copy of each bot
-│   ├── bot_utils.py
-│   ├── launcher.py
-│   ├── bot1_smc_trend.py
-│   ├── bot2_mean_reversion.py
-│   ├── bot3_scalper.py
-│   └── [GUIDE files]
-└── markets/
-    └── fx/
-        └── instances/
-            ├── xauusd_main/
-            │   ├── config.json              ← IN GitHub (no credentials)
-            │   ├── credentials.template.json ← IN GitHub (safe template)
-            │   └── credentials.json         ← NOT in GitHub (real creds, VPS only)
-            └── xauusd_scalper/
-                ├── config.json
-                ├── credentials.template.json
-                └── credentials.json         ← NOT in GitHub
-```
-
----
-
-## Credential Separation — Why and How
-
-**credentials.json is never committed to GitHub.** It contains your MT5 account number, password, and broker server. The `.gitignore` blocks it automatically.
-
-Each instance needs its own `credentials.json` created manually on the VPS:
-
-```json
-{
-    "login":    700103491,
-    "password": "YourActualPassword",
-    "server":   "PUPrime-Demo"
-}
-```
-
-The bot reads `config.json` (from GitHub) and `credentials.json` (local only) and merges them at startup. If `credentials.json` is missing the bot prints clear instructions and exits.
-
----
-
-## One-Time VPS Setup
-
-### 1. Install Python and dependencies
-```
-pip install MetaTrader5 pandas numpy pytz scikit-learn joblib
-```
-
-### 2. Install Git on VPS
-Download from https://git-scm.com/download/win and install with defaults.
-
-### 3. Clone your repo
-```
-cd C:\
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git algos
-cd C:\algos
-```
-
-### 4. Create credentials.json for each instance
-```
-notepad C:\algos\markets\fx\instances\xauusd_main\credentials.json
-```
-Fill in your real PU Prime details. Save. Repeat for `xauusd_scalper`.
-
-### 5. Configure Task Scheduler tasks
-Create three tasks (see names and arguments below). Do this once — they survive reboots.
-
-| Task Name | Arguments |
-|---|---|
-| `FX_XAUUSD_Bot1` | `C:\algos\bots\launcher.py --bot bot1 --config C:\algos\markets\fx\instances\xauusd_main\config.json` |
-| `FX_XAUUSD_Bot2` | `C:\algos\bots\launcher.py --bot bot2 --config C:\algos\markets\fx\instances\xauusd_main\config.json` |
-| `FX_XAUUSD_Scalper` | `C:\algos\bots\launcher.py --bot bot3 --config C:\algos\markets\fx\instances\xauusd_scalper\config.json` |
-
-- **Program:** `C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe`
-- **Start in:** `C:\algos\bots`
-- **Trigger:** At system startup
-- **Security:** Run whether logged on or not ✓ | Run with highest privileges ✓
-
-### 6. Start bots
-From your Mac terminal:
-```bash
-algo
-```
-
----
-
-## Daily Deploy Workflow (after initial setup)
-
-```
-1. Make changes on Mac
-2. git add . && git commit -m "your message" && git push
-
-3. Deploy to VPS:
-   ssh forexvps "cd C:\algos && git pull"
-
-4. Restart bots:
-   algo  →  Start all
-```
-
-Or as a one-liner:
-```bash
-git push && ssh forexvps "cd C:\\algos && git pull" && algo
-```
-
----
-
-## Adding a New Instrument
-
-1. Create instance folder: `markets/fx/instances/gbpjpy_main/`
-2. Copy and edit `config.json` — change `symbol` and tune parameters
-3. Copy `credentials.template.json` → rename to `credentials.template.json`
-4. Commit and push to GitHub
-5. On VPS: `git pull`, then create `credentials.json` in the new instance folder
-6. Add Task Scheduler task pointing to the new config
-7. Add entry to `LOG_MAP` in `algo.py`
-8. The bot appears in `algo` control panel automatically
-
----
-
-## Mac Setup
-
-```bash
-# Install algo control panel command
-chmod +x /Users/alwg/algos/algo.py
-echo 'alias algo="python3 /Users/alwg/algos/algo.py"' >> ~/.zshrc
-echo 'alias algo-emergency="ssh forexvps \"taskkill /F /IM python.exe\" && echo All bots killed"' >> ~/.zshrc
-source ~/.zshrc
+│
+├── executors/                       ← Broker API connectors
+│   └── tradovate.py
+│
+├── notifications/                   ← Telegram reporter, monitor, command bot
+│   ├── reporter.py
+│   ├── monitor.py
+│   ├── telegram_bot.py
+│   └── NOTIFICATIONS_GUIDE.md
+│
+├── scheduler/                       ← Task Scheduler XMLs (one per task)
+│   ├── smc_trend_task.xml
+│   ├── mean_reversion_task.xml
+│   ├── scalper_task.xml
+│   ├── fft_task.xml
+│   ├── futures_acct1_task.xml
+│   ├── telegram_task.xml
+│   ├── reporter_task.xml
+│   ├── monitor_task.xml
+│   └── SCHEDULER_GUIDE.md
+│
+└── markets/                         ← Per-instance configs (no credentials)
+    ├── fx/instances/
+    │   ├── gold_main/               ← SMC Trend + Mean Reversion
+    │   ├── gold_scalper/            ← Scalper
+    │   └── gold_fft/                ← FFT
+    └── futures/instances/
+        └── futures_account1/        ← Futures bot
 ```
 
 ---
@@ -151,9 +72,125 @@ source ~/.zshrc
 | config.json | ✓ | ✓ | ✓ |
 | credentials.json | ✗ | ✗ | ✓ only |
 | credentials.template.json | ✓ | ✓ | ✓ |
-| .gitignore | ✓ | ✓ | ✓ |
-| Trade JSON files | ✗ | ✗ | ✓ only |
-| Log files | ✗ | ✗ | ✓ only |
-| AI model .pkl files | ✗ | ✗ | ✓ only |
+| Trade JSON / log / pkl files | ✗ | ✗ | ✓ only |
 | algo.py | ✓ | ✓ | ✗ |
-| stress_test_suite.py | ✓ | ✓ | ✗ |
+| deploy.py | ✓ | ✓ | ✗ |
+
+---
+
+## Credential Separation
+
+**credentials.json is never committed to GitHub.** The `.gitignore` blocks it.
+
+Each instance needs its own `credentials.json` created manually on the VPS:
+
+```json
+{
+    "login":    700103491,
+    "password": "YourPassword",
+    "server":   "PUPrime-Demo"
+}
+```
+
+The bot merges `config.json` (from GitHub) + `credentials.json` (VPS only) at startup. If missing, it prints clear instructions and exits.
+
+---
+
+## One-Time VPS Setup
+
+**1. Install Python dependencies:**
+```
+pip install MetaTrader5 pandas numpy pytz scikit-learn joblib requests
+```
+
+**2. Clone the repo:**
+```
+cd C:\
+git clone https://github.com/lwgcapitalllc/algos.git algos
+cd C:\algos
+```
+
+**3. Create credentials.json for each instance:**
+```
+notepad C:\algos\markets\fx\instances\gold_main\credentials.json
+notepad C:\algos\markets\fx\instances\gold_scalper\credentials.json
+notepad C:\algos\markets\fx\instances\gold_fft\credentials.json
+```
+
+**4. Install Task Scheduler tasks (PowerShell on VPS):**
+
+See `scheduler/SCHEDULER_GUIDE.md` for the full install commands.
+All tasks use the `ALGO_` prefix. Install via XML files in `scheduler/`.
+
+**5. Start everything:**
+```bash
+algo restart
+```
+
+---
+
+## Mac Setup (one-time)
+
+```bash
+chmod +x /Users/alwg/algos/algo.py
+echo 'alias algo="python3 /Users/alwg/algos/algo.py"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+---
+
+## Daily Deploy Workflow
+
+```bash
+# 1. Make changes on Mac
+# 2. Commit and push
+git add . && git commit -m "your message" && git push
+
+# 3. Pull on VPS and restart
+ssh forexvps "cd C:\algos && git pull origin main"
+algo restart
+```
+
+---
+
+## Deploying New Files
+
+When downloading updated files from Claude, place them all flat into `algos/files/` then run:
+
+```bash
+cd /Users/alwg/algos
+python3 deploy.py
+```
+
+This moves every file to its correct location, removes old files, and cleans up.
+
+---
+
+## Task Scheduler Task Names
+
+All tasks use the `ALGO_` prefix for easy grouping:
+
+| Task | Purpose |
+|---|---|
+| `ALGO_SMC_TREND` | Bot SMC Trend |
+| `ALGO_MEAN_REVERSION` | Bot Mean Reversion |
+| `ALGO_SCALPER` | Bot Scalper |
+| `ALGO_FFT` | Bot FFT |
+| `ALGO_FUTURES_ACCT1` | Bot Futures Account 1 |
+| `ALGO_TELEGRAM` | Telegram command bot (24/7) |
+| `ALGO_REPORTER` | Daily summary at 4pm Texas |
+| `ALGO_MONITOR` | Health checker every 5 minutes |
+
+Find all: `schtasks /query /fo TABLE | findstr ALGO`
+
+---
+
+## Adding a New Instrument
+
+1. Create instance folder: `markets/fx/instances/gbpjpy_main/`
+2. Copy and edit `config.json` — change symbol and tune parameters
+3. Copy `credentials.template.json` into new folder
+4. Add new task XML to `scheduler/`
+5. Add entry to `LOG_MAP` and `TASK_BOT_MAP` in `algo.py`
+6. Add to `MANIFEST` in `deploy.py`
+7. Commit, push, pull on VPS, install task, start bot

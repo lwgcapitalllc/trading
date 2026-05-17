@@ -1,5 +1,5 @@
 # Bot 5 — FFT (Fibonacci Fractal Trading)
-**File:** `bots/bot5_fft.py` | **Account:** Dedicated FFT account | **MT5:** `C:\MT5_FFT`
+**File:** `bots/bot_fft.py` | **Account:** Dedicated FFT account | **MT5:** `C:\MT5_FFT`
 
 ---
 

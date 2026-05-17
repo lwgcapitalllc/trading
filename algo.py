@@ -20,26 +20,23 @@ LOG_BASE    = "C:\\algos\\markets" # Base path for log files on VPS
 
 # Task name prefix → market label
 MARKET_PREFIXES = {
-    "FX_":      "FX",
-    "CRYPTO_":  "Crypto",
-    "FUTURES_": "Futures",
-    "ALGO_":    "System",
+    "ALGO_": "ALGO",
 }
 
 # Map task name patterns to log file paths
 # Format: partial task name match → (market, pair, instance_folder)
 LOG_MAP = {
-    # FX accounts
-    "FX_XAUUSD_Bot1":              ("fx",      "xauusd_main",    "bot1.log"),
-    "FX_XAUUSD_Bot2":              ("fx",      "xauusd_main",    "bot2.log"),
-    "FX_XAUUSD_Scalper":           ("fx",      "xauusd_scalper", "bot3.log"),
-    "FX_XAUUSD_Bot5_FFT":          ("fx",      "xauusd_fft",     "bot5.log"),
+    # Gold FX strategies
+    "ALGO_SMC_TREND":       ("fx",      "gold_main",       "bot_smc_trend.log"),
+    "ALGO_MEAN_REVERSION":  ("fx",      "gold_main",       "bot_mean_reversion.log"),
+    "ALGO_SCALPER":         ("fx",      "gold_scalper",    "bot_scalper.log"),
+    "ALGO_FFT":             ("fx",      "gold_fft",        "bot_fft.log"),
     # Futures accounts
-    "FUTURES_MNQ_LucidFlex_Acct1": ("futures", "lucid_account1", "bot4.log"),
-    "FUTURES_MNQ_LucidFlex_Acct2": ("futures", "lucid_account2", "bot4.log"),
-    "FUTURES_MNQ_LucidFlex_Acct3": ("futures", "lucid_account3", "bot4.log"),
-    "FUTURES_MNQ_LucidFlex_Acct4": ("futures", "lucid_account4", "bot4.log"),
-    "FUTURES_MNQ_LucidFlex_Acct5": ("futures", "lucid_account5", "bot4.log"),
+    "ALGO_FUTURES_ACCT1":   ("futures", "futures_account1", "bot_futures.log"),
+    "ALGO_FUTURES_ACCT2":   ("futures", "futures_account2", "bot_futures.log"),
+    "ALGO_FUTURES_ACCT3":   ("futures", "futures_account3", "bot_futures.log"),
+    "ALGO_FUTURES_ACCT4":   ("futures", "futures_account4", "bot_futures.log"),
+    "ALGO_FUTURES_ACCT5":   ("futures", "futures_account5", "bot_futures.log"),
 }
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -93,28 +90,28 @@ def get_all_tasks() -> list[dict]:
     running_scripts = set()
     raw_procs = ssh('wmic process where "name=\'python.exe\'" get commandline /format:list 2>nul')
     for line in raw_procs.splitlines():
-        if "bot1_smc_trend"     in line: running_scripts.add("bot1")
-        if "bot2_mean_reversion"in line: running_scripts.add("bot2")
-        if "bot3_scalper"       in line: running_scripts.add("bot3")
-        if "bot4_lucidflex"     in line: running_scripts.add("bot4")
-        if "bot5_fft"           in line: running_scripts.add("bot5")
+        if "bot_smc_trend"     in line: running_scripts.add("bot1")
+        if "bot_mean_reversion"in line: running_scripts.add("bot2")
+        if "bot_scalper"       in line: running_scripts.add("bot3")
+        if "bot_futures"     in line: running_scripts.add("bot4")
+        if "bot_fft"           in line: running_scripts.add("bot5")
         if "telegram_bot"       in line: running_scripts.add("telegram")
 
     # Map task names to bot script keys
     TASK_BOT_MAP = {
         # FX
-        "FX_XAUUSD_Bot1":              "bot1",
-        "FX_XAUUSD_Bot2":              "bot2",
-        "FX_XAUUSD_Scalper":           "bot3",
-        "FX_XAUUSD_Bot5_FFT":          "bot5",
+        "ALGO_SMC_TREND":              "bot1",
+        "ALGO_MEAN_REVERSION":              "bot2",
+        "ALGO_SCALPER":           "bot3",
+        "ALGO_FFT":          "bot5",
         # Notifications
-        "ALGO_Telegram_Bot":           "telegram",
+        "ALGO_TELEGRAM":           "telegram",
         # Futures
-        "FUTURES_MNQ_LucidFlex_Acct1": "bot4",
-        "FUTURES_MNQ_LucidFlex_Acct2": "bot4",
-        "FUTURES_MNQ_LucidFlex_Acct3": "bot4",
-        "FUTURES_MNQ_LucidFlex_Acct4": "bot4",
-        "FUTURES_MNQ_LucidFlex_Acct5": "bot4",
+        "ALGO_FUTURES_ACCT1": "bot4",
+        "ALGO_FUTURES_ACCT2": "bot4",
+        "ALGO_FUTURES_ACCT3": "bot4",
+        "ALGO_FUTURES_ACCT4": "bot4",
+        "ALGO_FUTURES_ACCT5": "bot4",
     }
 
     tasks = []
@@ -217,7 +214,7 @@ def emergency_stop_all(tasks: list[dict]):
     print(yellow("Open MT5 to verify no positions are still open."))
     # Restart telegram bot so you can still receive alerts and commands
     import time; time.sleep(3)
-    start_task("ALGO_Telegram_Bot")
+    start_task("ALGO_TELEGRAM")
     print(green("Telegram bot restarted — you can still send commands."))
 
 
@@ -411,8 +408,8 @@ def main():
                 else:
                     print(f"\r  {red('✗')} {t['name']:<30} {red('FAILED TO START')}")
             # Always restart telegram bot after any bot restart
-            start_task("ALGO_Telegram_Bot")
-            print(f"  {green('✓')} {'ALGO_Telegram_Bot':<30} {green('RESTARTED')}")
+            start_task("ALGO_TELEGRAM")
+            print(f"  {green('✓')} {'ALGO_TELEGRAM':<30} {green('RESTARTED')}")
             tasks = get_all_tasks()
             print()
             input(gray("  Press Enter to continue..."))
@@ -552,16 +549,16 @@ if __name__ == "__main__":
                 print(f"\r{green('✓') if confirmed else red('✗')} {t['name']:<35} "
                       f"{green('RUNNING') if confirmed else red('FAILED')}")
             # Always restart telegram bot
-            start_task("ALGO_Telegram_Bot")
-            print(f"{green('✓')} {'ALGO_Telegram_Bot':<35} {green('RESTARTED')}")
+            start_task("ALGO_TELEGRAM")
+            print(f"{green('✓')} {'ALGO_TELEGRAM':<35} {green('RESTARTED')}")
 
         elif cmd == "start":
             print(bold("Starting all bots..."))
             for t in tasks:
                 start_task(t["name"])
                 print(f"  -> {t['name']}")
-            start_task("ALGO_Telegram_Bot")
-            print(f"  -> ALGO_Telegram_Bot")
+            start_task("ALGO_TELEGRAM")
+            print(f"  -> ALGO_TELEGRAM")
 
         elif cmd == "stop":
             print(bold("Stopping all bots..."))

@@ -1,5 +1,5 @@
 # Bot 2 — Mean Reversion
-**File:** `bots/bot2_mean_reversion.py` | **Account:** Main (shared with Bot 1) | **MT5:** `C:\Program Files\PU Prime MT5 Terminal`
+**File:** `bots/bot_mean_reversion.py` | **Account:** Main (shared with Bot 1) | **MT5:** `C:\Program Files\PU Prime MT5 Terminal`
 
 ---
 

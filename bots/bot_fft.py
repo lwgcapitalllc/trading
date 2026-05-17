@@ -45,8 +45,8 @@
 ║                                                                              ║
 ║  Platform: MetaTrader 5 (MT5)                                               ║
 ║  Account:  Dedicated MT5_FFT instance                                        ║
-║  Run:      python bots/bot5_fft.py --config                                 ║
-║            markets/fx/instances/xauusd_fft/config.json                      ║
+║  Run:      python bots/bot_fft.py --config                                 ║
+║            markets/fx/instances/gold_fft/config.json                      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -73,7 +73,7 @@ from shared_regime   import RegimeClassifier
 
 # ── Load config ───────────────────────────────────────────────────────────────
 _CFG  = load_config()
-log   = setup_logging("BOT5", _CFG)
+log   = setup_logging("BOT_FFT", _CFG)
 _INST = get_instance_dir(_CFG)
 
 # Symbol and account
@@ -81,7 +81,7 @@ SYMBOL   = _CFG.get("symbol", "XAUUSD.s")
 ACCOUNT  = _CFG.get("account", {})
 
 # Strategy params (all configurable via config.json)
-_S = _CFG.get("bot5_fft", {})
+_S = _CFG.get("bot_fft", {})
 
 # Structure detection
 SWING_LOOKBACK      = _S.get("swing_lookback", 3)       # candles each side to confirm swing
@@ -121,7 +121,7 @@ TF_HIGHER = mt5.TIMEFRAME_H4
 # Magic number for this bot
 MAGIC = 20240005
 
-log.info(f"BOT5 | FFT Strategy | {SYMBOL} | risk={RISK_PCT}%")
+log.info(f"BOT_FFT | FFT Strategy | {SYMBOL} | risk={RISK_PCT}%")
 
 
 # =============================================================================
@@ -968,12 +968,12 @@ def run():
         return
 
     # Shared components
-    regime      = RegimeClassifier(bot_name="BOT5")
-    logger      = TradeLogger(str(_INST / "bot5_trades.json"))
-    ai          = AIBrain(logger, model_file=str(_INST / "bot5_model.pkl"))
+    regime      = RegimeClassifier(bot_name="BOT_FFT")
+    logger      = TradeLogger(str(_INST / "fft_trades.json"))
+    ai          = AIBrain(logger, model_file=str(_INST / "fft_model.pkl"))
     calmar      = CalmarTracker(acct.balance,
-                                equity_file=str(_INST / "bot5_equity.json"))
-    daily_log   = DailyLogger(str(_INST / "bot5_daily.json"))
+                                equity_file=str(_INST / "fft_equity.json"))
+    daily_log   = DailyLogger(str(_INST / "fft_daily.json"))
 
     # State
     daily_start       = acct.balance
@@ -988,7 +988,7 @@ def run():
     consec_losses     = 0
 
     # Weekly persistence
-    _week_file = _INST / "bot5_weekly.json"
+    _week_file = _INST / "fft_weekly.json"
     _cur_week  = now_utc().isocalendar()[1]
     if _week_file.exists():
         import json as _json

@@ -30,8 +30,8 @@
 ║                                                                              ║
 ║  Platform: Tradovate (via executors/tradovate.py)                           ║
 ║  Install:  pip install aiohttp websockets pandas numpy pytz                 ║
-║  Run:      python bots/bot4_lucidflex.py --config                           ║
-║            markets/futures/instances/lucid_account1/config.json             ║
+║  Run:      python bots/bot_futures.py --config                           ║
+║            markets/futures/instances/futures_account1/config.json             ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -62,7 +62,7 @@ UTC = ZoneInfo("UTC")
 
 # ── Load config ───────────────────────────────────────────────────────────────
 _CFG  = load_config()
-log   = setup_logging("BOT4", _CFG)
+log   = setup_logging("BOT_FUTURES", _CFG)
 _INST = get_instance_dir(_CFG)
 
 # Prop firm settings
@@ -107,7 +107,7 @@ RISK_PCT         = _RSK.get("risk_pct_per_trade", 1.0)
 MAX_DAILY_LOSS   = _RSK.get("max_daily_loss_pct", 3.0)
 DRAWDOWN_BUFFER  = _RSK.get("max_drawdown_buffer", 500)
 
-log.info(f"BOT4 | {FIRM_NAME} | {SYMBOL} | mode={MODE.upper()} | "
+log.info(f"BOT_FUTURES | {FIRM_NAME} | {SYMBOL} | mode={MODE.upper()} | "
          f"account=${ACCOUNT_SIZE:,} | target=${PROFIT_TARGET:,}")
 
 
@@ -490,10 +490,10 @@ async def run():
 
     # Initialise components
     executor    = TradovateExecutor(creds, environment=creds.get("environment","demo"))
-    logger      = TradeLogger(str(_INST / "bot4_trades.json"))
-    daily_log   = DailyLogger(str(_INST / "bot4_daily.json"))
-    ai          = AIBrain(logger, model_file=str(_INST / "bot4_model.pkl"))
-    calmar      = CalmarTracker(ACCOUNT_SIZE, equity_file=str(_INST / "bot4_equity.json"))
+    logger      = TradeLogger(str(_INST / "futures_trades.json"))
+    daily_log   = DailyLogger(str(_INST / "futures_daily.json"))
+    ai          = AIBrain(logger, model_file=str(_INST / "futures_model.pkl"))
+    calmar      = CalmarTracker(ACCOUNT_SIZE, equity_file=str(_INST / "futures_equity.json"))
     compliance  = PropFirmCompliance(ACCOUNT_SIZE, MODE)
 
     await executor.connect()

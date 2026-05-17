@@ -1,5 +1,5 @@
 # Bot 3 — EMA Momentum Scalper
-**File:** `bots/bot3_scalper.py` | **Account:** Dedicated scalper account | **MT5:** `C:\MT5_Scalper`
+**File:** `bots/bot_scalper.py` | **Account:** Dedicated scalper account | **MT5:** `C:\MT5_Scalper`
 
 ---
 

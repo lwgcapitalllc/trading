@@ -1,5 +1,5 @@
 # Bot 1 — SMC Trend Following
-**File:** `bots/bot1_smc_trend.py` | **Account:** Main (shared with Bot 2) | **MT5:** `C:\Program Files\PU Prime MT5 Terminal`
+**File:** `bots/bot_smc_trend.py` | **Account:** Main (shared with Bot 2) | **MT5:** `C:\Program Files\PU Prime MT5 Terminal`
 
 ---
 

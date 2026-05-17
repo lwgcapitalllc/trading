@@ -3,16 +3,16 @@ launcher.py — Universal launcher for all bots.
 Used by Windows Task Scheduler. Accepts bot name and config path.
 
 Usage:
-    python bots/launcher.py --bot bot1 --config instances/xauusd_main/config.json
-    python bots/launcher.py --bot bot2 --config instances/xauusd_main/config.json
-    python bots/launcher.py --bot bot3 --config instances/xauusd_scalper/config.json
-    python bots/launcher.py --bot bot4 --config instances/lucid_account1/config.json
+    python bots/launcher.py --bot bot1 --config instances/gold_main/config.json
+    python bots/launcher.py --bot bot2 --config instances/gold_main/config.json
+    python bots/launcher.py --bot bot3 --config instances/gold_scalper/config.json
+    python bots/launcher.py --bot bot4 --config instances/futures_account1/config.json
 
 Bot map:
-    bot1 = bot1_smc_trend.py       (FX, MT5)
-    bot2 = bot2_mean_reversion.py  (FX, MT5)
-    bot3 = bot3_scalper.py         (FX, MT5)
-    bot4 = bot4_lucidflex.py       (Futures, Tradovate)
+    bot1 = bot_smc_trend.py       (FX, MT5)
+    bot2 = bot_mean_reversion.py  (FX, MT5)
+    bot3 = bot_scalper.py         (FX, MT5)
+    bot4 = bot_futures.py       (Futures, Tradovate)
 
 One launcher handles all bots and all instances.
 To add a new bot: add its script name to BOT_SCRIPTS below.
@@ -24,11 +24,11 @@ import argparse
 from pathlib import Path
 
 BOT_SCRIPTS = {
-    "bot1": "bot1_smc_trend.py",
-    "bot2": "bot2_mean_reversion.py",
-    "bot3": "bot3_scalper.py",
-    "bot4": "bot4_lucidflex.py",
-    "bot5": "bot5_fft.py",
+    "bot_smc_trend":      "bot_smc_trend.py",
+    "bot_mean_reversion": "bot_mean_reversion.py",
+    "bot_scalper":        "bot_scalper.py",
+    "bot_futures":        "bot_futures.py",
+    "bot_fft":            "bot_fft.py",
 }
 
 def main():
@@ -42,7 +42,7 @@ def main():
     config     = Path(args.config).resolve()
 
     # Log file sits next to the config (instance dir)
-    log_out    = config.parent / f"{args.bot}_stdout.log"
+    log_out    = config.parent / f"{args.bot.replace("bot_", "")}_stdout.log"
 
     if not script.exists():
         print(f"ERROR: Bot script not found: {script}")

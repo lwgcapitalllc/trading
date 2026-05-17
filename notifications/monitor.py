@@ -38,40 +38,40 @@ TEXAS          = ZoneInfo("America/Chicago")
 BOTS = {
     "bot1": {
         "name":        "Bot 1 — SMC Trend",
-        "script":      "bot1_smc_trend.py",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot1_equity.json",
-        "daily":       ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot1_daily.json",
-        "weekly":      ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot1_weekly.json",
+        "script":      "bot_smc_trend.py",
+        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_equity.json",
+        "daily":       ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_daily.json",
+        "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_weekly.json",
         "daily_cap":   10.0,
         "weekly_cap":  20.0,
         "daily_goal":  2.0,
     },
     "bot2": {
         "name":        "Bot 2 — Mean Reversion",
-        "script":      "bot2_mean_reversion.py",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot2_equity.json",
-        "daily":       ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot2_daily.json",
-        "weekly":      ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot2_weekly.json",
+        "script":      "bot_mean_reversion.py",
+        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_equity.json",
+        "daily":       ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_daily.json",
+        "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_weekly.json",
         "daily_cap":   10.0,
         "weekly_cap":  20.0,
         "daily_goal":  2.0,
     },
     "bot3": {
         "name":        "Bot 3 — EMA Scalper",
-        "script":      "bot3_scalper.py",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/xauusd_scalper/bot3_equity.json",
-        "daily":       ALGOS_ROOT / "markets/fx/instances/xauusd_scalper/bot3_daily.json",
-        "weekly":      ALGOS_ROOT / "markets/fx/instances/xauusd_scalper/bot3_weekly.json",
+        "script":      "bot_scalper.py",
+        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_equity.json",
+        "daily":       ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_daily.json",
+        "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_weekly.json",
         "daily_cap":   8.0,
         "weekly_cap":  20.0,
         "daily_goal":  10.0,
     },
     "bot5": {
         "name":        "Bot 5 — FFT Strategy",
-        "script":      "bot5_fft.py",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/xauusd_fft/bot5_equity.json",
-        "daily":       ALGOS_ROOT / "markets/fx/instances/xauusd_fft/bot5_daily.json",
-        "weekly":      ALGOS_ROOT / "markets/fx/instances/xauusd_fft/bot5_weekly.json",
+        "script":      "bot_fft.py",
+        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_equity.json",
+        "daily":       ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_daily.json",
+        "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_weekly.json",
         "daily_cap":   5.0,
         "weekly_cap":  15.0,
         "daily_goal":  2.0,
@@ -227,10 +227,78 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     return bot_state
 
 
+def check_telegram_bot(state: dict) -> dict:
+    """
+    Watchdog for the Telegram bot — the most critical system process.
+    If it's not running, restart it immediately and alert via Telegram
+    once it's back up. Retries up to 3 times before giving up.
+
+    This runs every 5 minutes so the bot is never down for more than 5 min.
+    """
+    tg_state  = state.get("telegram_bot", {})
+    running   = is_running("telegram_bot.py")
+    max_tries = 3
+
+    if not running:
+        tries = tg_state.get("restart_tries", 0)
+        print(f"Telegram bot is DOWN. Attempting restart ({tries+1}/{max_tries})...")
+
+        if tries < max_tries:
+            try:
+                result = subprocess.run(
+                    ["schtasks", "/run", "/tn", "ALGO_TELEGRAM"],
+                    capture_output=True, text=True, timeout=15
+                )
+                if result.returncode == 0:
+                    import time; time.sleep(5)
+                    if is_running("telegram_bot.py"):
+                        print("Telegram bot restarted successfully.")
+                        send_alert(
+                            "✅ *Telegram Bot Auto\\-Restarted*\n"
+                            f"Was offline\\. Restarted automatically at "
+                            f"{datetime.now(TEXAS).strftime('%I:%M %p CT')}\\.\n"
+                            f"Commands are available again\\."
+                        )
+                        tg_state["restart_tries"] = 0
+                        tg_state["running"]        = True
+                    else:
+                        print("Restart attempt failed — process not detected.")
+                        tg_state["restart_tries"] = tries + 1
+                        tg_state["running"]        = False
+            except Exception as e:
+                print(f"Restart error: {e}")
+                tg_state["restart_tries"] = tries + 1
+        else:
+            # Max retries reached — send alert if not already sent
+            if not tg_state.get("max_retry_alerted"):
+                send_alert(
+                    "🚨 *Telegram Bot FAILED TO RESTART*\n"
+                    f"Tried {max_tries} times\\. Manual intervention required\\.\n"
+                    f"RDP into VPS and run: `schtasks /run /tn ALGO_TELEGRAM`\n"
+                    f"Or restart via algo panel on Mac\\."
+                )
+                tg_state["max_retry_alerted"] = True
+            print(f"Max retries ({max_tries}) reached. Manual restart needed.")
+    else:
+        # Bot is running — reset counters
+        tg_state["running"]           = True
+        tg_state["restart_tries"]     = 0
+        tg_state["max_retry_alerted"] = False
+
+    return tg_state
+
+
 def main():
     state = load_state()
     today = datetime.now(TEXAS).date().isoformat()
 
+    # ── Watchdog: Telegram bot (highest priority — always check first) ─────
+    try:
+        state["telegram_bot"] = check_telegram_bot(state)
+    except Exception as e:
+        print(f"Telegram watchdog error: {e}")
+
+    # ── Check all trading bots ─────────────────────────────────────────────
     for bot_key in BOTS:
         try:
             state[bot_key] = check_bot(bot_key, state, today)

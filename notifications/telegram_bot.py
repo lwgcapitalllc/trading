@@ -1,28 +1,40 @@
 """
 telegram_bot.py — Telegram Command Handler
+Location: notifications/telegram_bot.py
 
-Lets you check your bots from anywhere via Telegram.
+Lets you monitor and control your bots from anywhere via Telegram.
 Polls for new messages every 10 seconds and responds to commands.
 
-Commands:
-  /status   — all bots running/stopped with uptime
-  /balance  — current balance on each account
-  /trades   — today's trades summary across all bots
-  /report   — trigger a full report for all bots right now
-  /help     — list commands
+READ-ONLY COMMANDS (instant response):
+  /status              — all bots running/stopped with uptime
+  /balance             — current balance on each account
+  /trades              — today's trades summary across all bots
+  /report              — trigger full daily report right now
+  /help                — list all commands
+
+CONTROL COMMANDS (require /confirm within 30 seconds):
+  /restart             — restart all bots
+  /restart bot1        — restart specific bot (bot1/bot2/bot3/bot5)
+  /stop                — stop all bots
+  /stop bot1           — stop specific bot
+  /emergency           — EMERGENCY STOP — kills everything immediately
+  /confirm             — confirms the last pending control command
+
+Safety: all control commands require explicit /confirm before executing.
+This prevents accidental restarts or stops when messaging on mobile.
 
 Run via Task Scheduler at startup (runs 24/7 polling).
 Install: pip install requests
 
 Usage:
-    python telegram_bot.py
+    python notifications/telegram_bot.py
 """
 
 import json
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -37,41 +49,57 @@ TELEGRAM_CHAT   = "429207285"
 ALGOS_ROOT      = Path("C:/algos")
 OFFSET_FILE     = ALGOS_ROOT / "telegram_offset.json"
 TEXAS           = ZoneInfo("America/Chicago")
-POLL_INTERVAL   = 10  # seconds
+POLL_INTERVAL   = 10   # seconds
+CONFIRM_TIMEOUT = 30   # seconds to confirm a control command
+
+# Task names as registered in Windows Task Scheduler
+TASK_NAMES = {
+    "bot1": "ALGO_SMC_TREND",
+    "bot2": "ALGO_MEAN_REVERSION",
+    "bot3": "ALGO_SCALPER",
+    "bot5": "ALGO_FFT",
+}
 
 BOTS = {
     "bot1": {
         "name":   "Bot 1 — SMC Trend",
         "emoji":  "📈",
-        "script": "bot1_smc_trend.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot1_equity.json",
-        "trades": ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot1_trades.json",
-        "log":    ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot1.log",
+        "script": "bot_smc_trend.py",
+        "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_equity.json",
+        "trades": ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_trades.json",
+        "log":    ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
     },
     "bot2": {
         "name":   "Bot 2 — Mean Reversion",
         "emoji":  "↩️",
-        "script": "bot2_mean_reversion.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot2_equity.json",
-        "trades": ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot2_trades.json",
-        "log":    ALGOS_ROOT / "markets/fx/instances/xauusd_main/bot2.log",
+        "script": "bot_mean_reversion.py",
+        "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_equity.json",
+        "trades": ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_trades.json",
+        "log":    ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
     },
     "bot3": {
         "name":   "Bot 3 — EMA Scalper",
         "emoji":  "⚡",
-        "script": "bot3_scalper.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/xauusd_scalper/bot3_equity.json",
-        "trades": ALGOS_ROOT / "markets/fx/instances/xauusd_scalper/bot3_trades.json",
-        "log":    ALGOS_ROOT / "markets/fx/instances/xauusd_scalper/bot3.log",
+        "script": "bot_scalper.py",
+        "equity": ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_equity.json",
+        "trades": ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_trades.json",
+        "log":    ALGOS_ROOT / "markets/fx/instances/gold_scalper/bot_scalper.log",
     },
     "bot5": {
         "name":   "Bot 5 — FFT Strategy",
         "emoji":  "🎯",
-        "script": "bot5_fft.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/xauusd_fft/bot5_equity.json",
-        "trades": ALGOS_ROOT / "markets/fx/instances/xauusd_fft/bot5_trades.json",
-        "log":    ALGOS_ROOT / "markets/fx/instances/xauusd_fft/bot5.log",
+        "script": "bot_fft.py",
+        "equity": ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_equity.json",
+        "trades": ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_trades.json",
+        "log":    ALGOS_ROOT / "markets/fx/instances/gold_fft/bot_fft.log",
     },
+}
+
+# Pending confirmation state
+pending_action = {
+    "command":   None,   # what to execute on confirm
+    "label":     None,   # human-readable description
+    "expires_at": None,  # datetime when confirm window expires
 }
 
 
@@ -176,7 +204,81 @@ def get_today_trades(trades: list) -> list:
 
 
 # =============================================================================
-# COMMAND HANDLERS
+# BOT CONTROL FUNCTIONS
+# =============================================================================
+
+def task_start(task_name: str) -> bool:
+    """Start a Task Scheduler task."""
+    try:
+        result = subprocess.run(
+            ["schtasks", "/run", "/tn", task_name],
+            capture_output=True, text=True, timeout=15
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def task_stop(task_name: str) -> bool:
+    """Stop a Task Scheduler task and kill its process."""
+    try:
+        subprocess.run(
+            ["schtasks", "/end", "/tn", task_name],
+            capture_output=True, text=True, timeout=15
+        )
+        return True
+    except Exception:
+        return False
+
+
+def do_restart(bot_keys: list) -> str:
+    """Stop then start the given bots. Returns result message."""
+    results = []
+    for key in bot_keys:
+        task = TASK_NAMES.get(key)
+        if not task:
+            continue
+        cfg  = BOTS[key]
+        task_stop(task)
+        time.sleep(3)
+        ok = task_start(task)
+        results.append(f"{'✅' if ok else '❌'} {cfg['emoji']} {cfg['name']}")
+    return "\n".join(results)
+
+
+def do_stop(bot_keys: list) -> str:
+    """Stop the given bots."""
+    results = []
+    for key in bot_keys:
+        task = TASK_NAMES.get(key)
+        if not task:
+            continue
+        cfg = BOTS[key]
+        task_stop(task)
+        results.append(f"⛔ {cfg['emoji']} {cfg['name']} stopped")
+    return "\n".join(results)
+
+
+def do_emergency_stop() -> str:
+    """Kill all bot processes immediately via taskkill."""
+    try:
+        # Kill all python processes running bot scripts
+        for key, cfg in BOTS.items():
+            task = TASK_NAMES.get(key)
+            if task:
+                task_stop(task)
+        # Force kill remaining python processes
+        subprocess.run(
+            ["taskkill", "/f", "/im", "python.exe"],
+            capture_output=True, timeout=10
+        )
+        return "🚨 EMERGENCY STOP executed\nAll bot processes terminated\\."
+    except Exception as e:
+        return f"Emergency stop error: {e}"
+
+
+# =============================================================================
+# COMMAND HANDLERS — READ ONLY
 # =============================================================================
 
 def cmd_status() -> str:
@@ -204,18 +306,18 @@ def cmd_balance() -> str:
         g_icon  = "📈" if growth > 0 else "📉" if growth < 0 else "➡️"
         lines.append(
             f"{cfg['emoji']} *{cfg['name']}*\n"
-            f"   ${balance:,.2f} {g_icon} {growth:+.1f}% all time"
+            f"   ${balance:,.2f} {g_icon} {growth:+.1f}%"
         )
     return "\n".join(lines)
 
 
 def cmd_trades() -> str:
-    now_tx = datetime.now(TEXAS)
-    lines  = [f"📊 *Today's Trades* — {now_tx.strftime('%I:%M %p CT')}", ""]
+    now_tx  = datetime.now(TEXAS)
+    lines   = [f"📊 *Today's Trades* — {now_tx.strftime('%I:%M %p CT')}", ""]
     total_w = total_l = total_be = total_t = 0
     for bot_key, cfg in BOTS.items():
-        trades  = load_json(cfg["trades"])
-        today   = get_today_trades(trades)
+        trades = load_json(cfg["trades"])
+        today  = get_today_trades(trades)
         w  = sum(1 for t in today if t["outcome"] == "win")
         l  = sum(1 for t in today if t["outcome"] == "loss")
         be = sum(1 for t in today if t["outcome"] == "breakeven")
@@ -228,49 +330,155 @@ def cmd_trades() -> str:
         total_l  += l
         total_be += be
         total_t  += len(today)
-    lines.append(f"\n*Total today: {total_t} trades | {total_w}W {total_l}L {total_be}BE*")
+    lines.append(f"\n*Total: {total_t} trades | {total_w}W {total_l}L {total_be}BE*")
     return "\n".join(lines)
+
+
+def cmd_report() -> str:
+    try:
+        subprocess.Popen(
+            ["python", str(ALGOS_ROOT / "notifications/reporter.py")],
+            cwd=str(ALGOS_ROOT)
+        )
+        return "📊 Generating reports\\. Check messages in a moment\\."
+    except Exception as e:
+        return f"Failed to run reporter: {e}"
 
 
 def cmd_help() -> str:
     return (
         "🤖 *LWG Capital Bot Commands*\n\n"
-        "/status  — all bots running/stopped with uptime\n"
-        "/balance — current balance on each account\n"
-        "/trades  — today's trades summary\n"
-        "/report  — trigger full daily report now\n"
-        "/help    — this message"
+        "*── READ ONLY ──*\n"
+        "/status   — running/stopped with uptime\n"
+        "/balance  — current balance per account\n"
+        "/trades   — today's trades summary\n"
+        "/report   — trigger full daily report now\n"
+        "/help     — this message\n\n"
+        "*── CONTROL (requires /confirm) ──*\n"
+        "/restart          — restart all bots\n"
+        "/restart bot1     — restart one bot\n"
+        "/stop             — stop all bots\n"
+        "/stop bot1        — stop one bot\n"
+        "/emergency        — EMERGENCY STOP everything\n"
+        "/confirm          — confirm pending action\n\n"
+        "_Valid bot names: bot1, bot2, bot3, bot5_"
     )
 
 
-def cmd_report() -> str:
-    """Trigger the reporter script."""
-    try:
-        subprocess.Popen(
-            ["python", str(ALGOS_ROOT / "reporter.py")],
-            cwd=str(ALGOS_ROOT)
+# =============================================================================
+# COMMAND HANDLERS — CONTROL (require confirmation)
+# =============================================================================
+
+def request_confirm(command_fn, label: str) -> str:
+    """Stage a control command and ask for confirmation."""
+    pending_action["command"]    = command_fn
+    pending_action["label"]      = label
+    pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=CONFIRM_TIMEOUT)
+    return (
+        f"⚠️ *Confirm required*\n"
+        f"Action: *{label}*\n\n"
+        f"Send /confirm within {CONFIRM_TIMEOUT} seconds to proceed\\.\n"
+        f"Send anything else to cancel\\."
+    )
+
+
+def cmd_confirm() -> str:
+    """Execute the pending confirmed command."""
+    if not pending_action["command"]:
+        return "No pending action to confirm\\."
+    if datetime.utcnow() > pending_action["expires_at"]:
+        pending_action["command"] = None
+        return "⏰ Confirmation timed out\\. Action cancelled\\."
+
+    fn    = pending_action["command"]
+    label = pending_action["label"]
+    pending_action["command"] = None
+
+    result = fn()
+    return f"✅ *{label}* executed\n\n{result}"
+
+
+def parse_bot_key(parts: list) -> str | None:
+    """Extract bot key from command parts e.g. ['/restart', 'bot1'] -> 'bot1'"""
+    if len(parts) >= 2:
+        key = parts[1].lower()
+        if key in BOTS:
+            return key
+    return None
+
+
+# =============================================================================
+# MESSAGE ROUTER
+# =============================================================================
+
+def handle_message(text: str) -> str:
+    text  = text.strip()
+    parts = text.lower().split()
+    cmd   = parts[0] if parts else ""
+
+    # Read-only commands
+    if cmd == "/status":   return cmd_status()
+    if cmd == "/balance":  return cmd_balance()
+    if cmd == "/trades":   return cmd_trades()
+    if cmd == "/report":   return cmd_report()
+    if cmd == "/help":     return cmd_help()
+
+    # Confirm pending action
+    if cmd == "/confirm":  return cmd_confirm()
+
+    # Control commands — stage for confirmation
+    if cmd == "/emergency":
+        return request_confirm(
+            do_emergency_stop,
+            "EMERGENCY STOP — kill all bots immediately"
         )
-        return "📊 Generating reports... check messages in a moment."
-    except Exception as e:
-        return f"Failed to run reporter: {e}"
+
+    if cmd == "/restart":
+        bot_key = parse_bot_key(parts)
+        if bot_key:
+            cfg = BOTS[bot_key]
+            return request_confirm(
+                lambda k=bot_key: do_restart([k]),
+                f"Restart {cfg['name']}"
+            )
+        else:
+            return request_confirm(
+                lambda: do_restart(list(BOTS.keys())),
+                "Restart ALL bots"
+            )
+
+    if cmd == "/stop":
+        bot_key = parse_bot_key(parts)
+        if bot_key:
+            cfg = BOTS[bot_key]
+            return request_confirm(
+                lambda k=bot_key: do_stop([k]),
+                f"Stop {cfg['name']}"
+            )
+        else:
+            return request_confirm(
+                lambda: do_stop(list(BOTS.keys())),
+                "Stop ALL bots"
+            )
+
+    # Cancel any pending action on unrecognised input
+    if pending_action["command"]:
+        pending_action["command"] = None
+        return f"Action cancelled\\. Unknown command: `{text}`\nSend /help for commands\\."
+
+    return f"Unknown command: `{text}`\nSend /help for commands\\."
 
 
 # =============================================================================
 # MAIN LOOP
 # =============================================================================
 
-COMMANDS = {
-    "/status":  cmd_status,
-    "/balance": cmd_balance,
-    "/trades":  cmd_trades,
-    "/help":    cmd_help,
-    "/report":  cmd_report,
-}
-
-
 def main():
     print(f"Telegram bot started — polling every {POLL_INTERVAL}s")
-    send("🤖 *LWG Capital Bot online*\nSend /help for available commands\\.")
+    send(
+        "🤖 *LWG Capital Bot online*\n"
+        "Send /help for available commands\\."
+    )
     offset = load_offset()
 
     while True:
@@ -281,24 +489,14 @@ def main():
                 save_offset(offset)
 
                 msg  = update.get("message", {})
-                text = msg.get("text", "").strip().lower()
+                text = msg.get("text", "").strip()
                 chat = str(msg.get("chat", {}).get("id", ""))
 
-                # Only respond to your own chat
-                if chat != TELEGRAM_CHAT:
+                if not text or chat != TELEGRAM_CHAT:
                     continue
 
-                # Strip bot username suffix if present
-                cmd = text.split("@")[0]
-
-                if cmd in COMMANDS:
-                    response = COMMANDS[cmd]()
-                    send(response)
-                elif text:
-                    send(
-                        f"Unknown command: `{text}`\n"
-                        f"Send /help for available commands\\."
-                    )
+                response = handle_message(text)
+                send(response)
 
         except Exception as e:
             print(f"Poll error: {e}")

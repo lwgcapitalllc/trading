@@ -8,10 +8,10 @@ Designed to scale across instruments and prop firm accounts.
 ## Documentation
 
 **Bot guides:**
-- [Bot 1 — SMC Trend Following](bots/BOT1_SMC_TREND_GUIDE.md)
-- [Bot 2 — Mean Reversion](bots/BOT2_MEAN_REVERSION_GUIDE.md)
-- [Bot 3 — EMA Scalper](bots/BOT3_SCALPER_GUIDE.md)
-- [Bot 5 — FFT Strategy](bots/BOT5_FFT_GUIDE.md)
+- [Bot SMC Trend — SMC Trend Following](bots/BOT_SMC_TREND_GUIDE.md)
+- [Bot Mean Reversion — Mean Reversion](bots/BOT_MEAN_REVERSION_GUIDE.md)
+- [Bot Scalper — EMA Scalper](bots/BOT_SCALPER_GUIDE.md)
+- [Bot FFT — FFT Strategy](bots/BOT_FFT_GUIDE.md)
 
 **System guides:**
 - [Notifications — Telegram reporter, monitor, commands](notifications/NOTIFICATIONS_GUIDE.md)
@@ -118,23 +118,23 @@ algos/
 ├── bots/
 │   ├── bot_utils.py
 │   ├── launcher.py
-│   ├── bot1_smc_trend.py
-│   ├── bot2_mean_reversion.py
-│   ├── bot3_scalper.py
-│   ├── bot5_fft.py
-│   ├── BOT1_SMC_TREND_GUIDE.md
-│   ├── BOT2_MEAN_REVERSION_GUIDE.md
-│   ├── BOT3_SCALPER_GUIDE.md
-│   └── BOT5_FFT_GUIDE.md
+│   ├── bot_smc_trend.py
+│   ├── bot_mean_reversion.py
+│   ├── bot_scalper.py
+│   ├── bot_fft.py
+│   ├── BOT_SMC_TREND_GUIDE.md
+│   ├── BOT_MEAN_REVERSION_GUIDE.md
+│   ├── BOT_SCALPER_GUIDE.md
+│   └── BOT_FFT_GUIDE.md
 ├── executors/
 │   └── tradovate.py                  <- Tradovate API (Bot 4 futures)
 └── markets/
     ├── fx/instances/
-    │   ├── xauusd_main/              <- Bot 1 + Bot 2
-    │   ├── xauusd_scalper/           <- Bot 3
-    │   └── xauusd_fft/               <- Bot 5
+    │   ├── gold_main/              <- Bot 1 + Bot 2
+    │   ├── gold_scalper/           <- Bot 3
+    │   └── gold_fft/               <- Bot 5
     └── futures/instances/
-        └── lucid_account1/           <- Bot 4 (pending Lucid evaluation)
+        └── futures_account1/           <- Bot 4 (pending Lucid evaluation)
 ```
 
 ---

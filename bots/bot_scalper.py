@@ -25,9 +25,9 @@
 ║    $7,000 → $10,000 : 3.5% risk                                            ║
 ║    $10,000+         : 2.0% risk (reset after goal, keep compounding)       ║
 ║                                                                              ║
-║  Config    : C:/algos/markets/fx/instances/xauusd_scalper/config.json      ║
+║  Config    : C:/algos/markets/fx/instances/gold_scalper/config.json      ║
 ║  Install   : pip install MetaTrader5 pandas numpy pytz scikit-learn joblib ║
-║  Run       : python bot3_scalper.py                                        ║
+║  Run       : python bot_scalper.py                                        ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -45,14 +45,14 @@ from shared_ai_brain import AIBrain, TradeLogger
 
 # ── Load config + logging (instance-aware) ────────────────────────────────────
 _CFG  = load_config()
-log   = setup_logging("BOT3", _CFG)
+log   = setup_logging("BOT_SCALPER", _CFG)
 _INST = get_instance_dir(_CFG)
 
 ACCOUNT = _CFG["account"]
 SYMBOL  = _CFG["symbol"]
 MAGIC   = 20240003
 
-_S = _CFG.get("bot3_scalper", {})
+_S = _CFG.get("bot_scalper", {})
 
 # EMA stack
 EMA_FAST  = _S.get("ema_fast",  9)
@@ -576,7 +576,7 @@ def place_order(direction: str, lots: float, sl: float, tp: float):
         "tp":           round(tp, 2),
         "deviation":    20,
         "magic":        MAGIC,
-        "comment":      "BOT3-SCALP",
+        "comment":      "BOT_SCALPER-SCALP",
         "type_time":    mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
     }
@@ -611,7 +611,7 @@ def close_position(ticket: int, direction: str, reason: str = ""):
         "price":        price,
         "deviation":    20,
         "magic":        MAGIC,
-        "comment":      f"BOT3-{reason}",
+        "comment":      f"BOT_SCALPER-{reason}",
         "type_time":    mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
     }
@@ -639,7 +639,7 @@ def close_all_positions(reason: str = "emergency"):
             "price":        price,
             "deviation":    30,
             "magic":        MAGIC,
-            "comment":      f"BOT3-{reason}",
+            "comment":      f"BOT_SCALPER-{reason}",
             "type_time":    mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
@@ -783,11 +783,11 @@ def run():
     acct          = mt5.account_info()
     if acct.balance <= 0:
         log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. "
-                  "Please restore balance before running BOT3.")
+                  "Please restore balance before running BOT_SCALPER.")
         mt5.shutdown(); return
-    calmar        = CalmarTracker(acct.balance, equity_file=str(_INST / "bot3_equity.json"))
-    logger        = TradeLogger(str(_INST / "bot3_trades.json"))
-    ai            = AIBrain(logger, model_file=str(_INST / "bot3_model.pkl"))
+    calmar        = CalmarTracker(acct.balance, equity_file=str(_INST / "scalper_equity.json"))
+    logger        = TradeLogger(str(_INST / "scalper_trades.json"))
+    ai            = AIBrain(logger, model_file=str(_INST / "scalper_model.pkl"))
 
     start_balance = acct.balance
     daily_engine  = DailyProfitEngine(acct.balance)
