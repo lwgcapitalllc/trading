@@ -244,13 +244,12 @@ def get_uptime(task_name: str) -> str:
 
     # Special case: Telegram uptime via startup timestamp file
     if LOG_MAP[task_name] is None:
-        raw = ssh("python -c \"import json,os; f=r'C:\\\\algos\\\\telegram_start.json'; d=json.load(open(f)); print(d['started'])\" 2>nul")
+        raw = ssh("type C:\\algos\\telegram_start.json 2>nul")
         try:
-            mtime = float(raw.strip())
-            if mtime == 0:
-                return ""
-            import time as _time
-            delta   = _time.time() - mtime
+            import json as _json, time as _time
+            data    = _json.loads(raw.strip())
+            started = float(data["started"])
+            delta   = _time.time() - started
             hours   = int(delta // 3600)
             minutes = int((delta % 3600) // 60)
             return f"{hours}h {minutes}m"
