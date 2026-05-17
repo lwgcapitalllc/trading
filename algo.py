@@ -380,6 +380,10 @@ def print_header(tasks: list[dict], tab: str = "all"):
         pad = max(0, W - len(strip_ansi(content)))
         return bold(cyan("║")) + content + " " * pad + bold(cyan("║"))
 
+    def col(text: str, width: int) -> str:
+        """Pad plain text to exact width. Apply color AFTER calling this."""
+        return f"{str(text):<{width}}"
+
     def bot_row(t: dict, is_sched: bool = False) -> str:
         """
         Build one data row with perfectly aligned columns.
