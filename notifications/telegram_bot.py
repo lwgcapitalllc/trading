@@ -267,7 +267,8 @@ def cmd_status() -> str:
     lines.append("")
     lines.append("*System*")
     tg_running = is_running("telegram_bot.py")
-    lines.append(f"  {'Telegram':<18} {'Running' if tg_running else "Stopped":<8}")
+    tg_status  = "Running" if tg_running else "Stopped"
+    lines.append(f"  {'Telegram':<18} {tg_status:<8}")
 
     return "\n".join(lines)
 
