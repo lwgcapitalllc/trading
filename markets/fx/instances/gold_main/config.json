@@ -122,5 +122,6 @@
     "partial_close_r": 1.0,
     "partial_close_pct": 0.5,
     "trail_atr_mult": 0.3
-  }
+  },
+  "mt5_path": "C:\\Program Files\\PU Prime MT5 Terminal\\terminal64.exe"
 }

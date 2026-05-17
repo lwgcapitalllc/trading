@@ -77,5 +77,6 @@
     "atr_ratio_compressing": 0.8,
     "rsi_range_trending": 35,
     "rsi_range_ranging": 20
-  }
+  },
+  "mt5_path": "C:\\MT5_Scalper\\terminal64.exe"
 }
