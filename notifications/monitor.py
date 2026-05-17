@@ -275,7 +275,7 @@ def check_telegram_bot(state: dict) -> dict:
         else:
             if not tg_state.get("max_retry_alerted"):
                 send_alert(
-                    f"*CRITICAL — Telegram Bot Down*\n"
+                    f"🚨 *CRITICAL — Telegram Bot Down*\n"
                     f"Failed to restart after {max_tries} attempts\\.\n"
                     f"Manual action required\\.\n"
                     f"RDP into VPS: `schtasks /run /tn SYS_TELEGRAM`\n"

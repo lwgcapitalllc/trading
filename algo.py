@@ -350,14 +350,23 @@ def print_menu():
 def print_bot_menu(tasks: list[dict]):
     print(bold("\n  SELECT BOT:\n"))
     for i, t in enumerate(tasks, 1):
-        status = green("● RUNNING") if t["running"] else red("○ STOPPED")
-        print(f"  {bold(f'[{i}]')} {t['market']}/{t['pair']}/{t['role']:<20} {status}")
+        is_sched = t["name"] in SCHEDULED_TASKS
+        if is_sched:
+            status = blue("◑ SCHEDULED")
+        else:
+            status = green("● RUNNING") if t["running"] else red("○ STOPPED ")
+        label = t["pair"]
+        print(f"  {bold(f'[{i}]')} {label:<22} {status}")
     print(f"  {bold('[b]')} Back")
     print()
 
 def bot_action_menu(task: dict) -> str:
-    status = green("RUNNING") if task["running"] else red("STOPPED")
-    print(bold(f"\n  {task['market']}/{task['pair']}/{task['role']} — {status}\n"))
+    is_sched = task["name"] in SCHEDULED_TASKS
+    if is_sched:
+        status = blue("SCHEDULED")
+    else:
+        status = green("RUNNING") if task["running"] else red("STOPPED")
+    print(bold(f"\n  {task['pair']} — {status}\n"))
     print(f"  {bold('[1]')} Start")
     print(f"  {bold('[2]')} Stop")
     print(f"  {bold('[3]')} Restart")
@@ -622,8 +631,12 @@ if __name__ == "__main__":
 
         elif cmd == "status":
             for t in tasks:
-                icon = green("● RUNNING") if t["running"] else red("○ STOPPED")
-                print(f"  {icon}  {t['market']}/{t['pair']}/{t['role']}")
+                is_sched = t["name"] in SCHEDULED_TASKS
+                if is_sched:
+                    icon = blue("◑ SCHEDULED")
+                else:
+                    icon = green("● RUNNING") if t["running"] else red("○ STOPPED")
+                print(f"  {icon}  {t['pair']}")
 
         else:
             print(f"Unknown command: {cmd}")
