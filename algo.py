@@ -249,6 +249,9 @@ def get_uptime(task_name: str) -> str:
             capture_output=True, text=True, timeout=10
         )
         raw = (result.stdout + result.stderr).strip().replace("\r", "")
+        # DEBUG — remove after confirming
+        import sys
+        print(f"\nDEBUG telegram_start raw: {repr(raw)}", file=sys.stderr)
         try:
             import json as _json, time as _time
             data    = _json.loads(raw)
@@ -257,7 +260,8 @@ def get_uptime(task_name: str) -> str:
             hours   = int(delta // 3600)
             minutes = int((delta % 3600) // 60)
             return f"{hours}h {minutes}m"
-        except Exception:
+        except Exception as e:
+            print(f"DEBUG telegram uptime error: {e}", file=sys.stderr)
             return ""
 
     market, instance, logfile = LOG_MAP[task_name]
