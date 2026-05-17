@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  BOT 1 — XAUUSD SMC TREND FOLLOWING                                        ║
+║  BOT SMC TREND — XAUUSD Gold Spot                                          ║
 ║                                                                              ║
 ║  Strategy : Asian range build → Judas Swing sweep → FVG entry              ║
 ║             London + NY kill zones only                                     ║
@@ -59,7 +59,7 @@ LOSS_COOLDOWN        = {
 }
 
 # Bot 1 strategy
-_B1             = _CFG["bot1_trend"]
+_B1             = _CFG["bot_smc_trend"]
 MIN_RR          = _B1["min_rr"]
 ATR_PERIOD      = _B1["atr_period"]
 ATR_SL_MULT     = _B1["atr_sl_multiplier"]
@@ -685,7 +685,7 @@ manage_positions._last_be_setup = None
 
 def run():
     log.info("=" * 65)
-    log.info("  BOT 1 — SMC TREND FOLLOWING — STARTING")
+    log.info("  BOT SMC TREND — STARTING")
     log.info("=" * 65)
     if not connect(): return
 
@@ -693,7 +693,7 @@ def run():
     if acct.balance <= 0:
         log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. Please restore balance before running BOT_SMC.")
         mt5.shutdown(); return
-    regime       = RegimeClassifier(bot_name="BOT_SMC")
+    regime       = RegimeClassifier(bot_name="BOT_SMC_TREND")
     logger       = TradeLogger(str(_INST / "smc_trend_trades.json"))
     ai           = AIBrain(logger, model_file=str(_INST / "smc_trend_model.pkl"))
     calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "smc_trend_equity.json"))
@@ -1038,7 +1038,7 @@ def run():
 
 
 if __name__ == "__main__":
-    print("BOT 1 -- SMC Trend Following | XAUUSD")
+    print("BOT SMC TREND | XAUUSD Gold")
     print("Always test on DEMO first. Never skip this step.")
     print("")
     if input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":

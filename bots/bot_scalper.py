@@ -985,7 +985,7 @@ def run():
 
 
 if __name__ == "__main__":
-    print("BOT 3 -- EMA Momentum Scalper | XAUUSD")
+    print("BOT SCALPER | XAUUSD Gold | XAUUSD")
     print("Dynamic compounding: $1,000 -> unlimited")
     print("Daily engine: runs until +30% OR 10% peak drawdown OR -8% floor\n")
     if input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":

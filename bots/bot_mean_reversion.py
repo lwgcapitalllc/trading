@@ -38,7 +38,7 @@ from shared_calmar   import CalmarTracker
 
 # ── Load config + logging (instance-aware) ────────────────────────────────────
 _CFG     = load_config()
-log      = setup_logging("BOT_REVERSION", _CFG)
+log      = setup_logging("BOT_MEAN_REVERSION", _CFG)
 _INST    = get_instance_dir(_CFG)
 
 ACCOUNT         = _CFG["account"]
@@ -63,7 +63,7 @@ LOSS_COOLDOWN        = {
 }
 
 # Bot 2 strategy
-_B2             = _CFG["bot2_reversion"]
+_B2             = _CFG["bot_mean_reversion"]
 MIN_RR          = _B2["min_rr"]
 ATR_PERIOD      = _B2["atr_period"]
 ATR_SL_MULT     = _B2["atr_sl_multiplier"]
@@ -283,7 +283,7 @@ def close_all_positions(reason="emergency"):
         close_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
         req = {"action":mt5.TRADE_ACTION_DEAL,"symbol":SYMBOL,"volume":pos.volume,
                "type":close_type,"position":pos.ticket,"price":price,
-               "deviation":30,"magic":MAGIC,"comment":f"BOT_REVERSION-{reason}",
+               "deviation":30,"magic":MAGIC,"comment":f"BOT_MEAN_REVERSION-{reason}",
                "type_time":mt5.ORDER_TIME_GTC,"type_filling":mt5.ORDER_FILLING_IOC}
         res = mt5.order_send(req)
         if res and res.retcode == mt5.TRADE_RETCODE_DONE:
@@ -470,7 +470,7 @@ def place_order(direction, lots, sl, tp):
         "tp":           round(tp, 2),
         "deviation":    20,
         "magic":        MAGIC,
-        "comment":      "BOT_REVERSION-REVERT",
+        "comment":      "BOT_MEAN_REVERSION-REVERT",
         "type_time":    mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
     }
@@ -499,7 +499,7 @@ def close_position(ticket, direction, volume=None):
     close_type = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
     req = {"action":mt5.TRADE_ACTION_DEAL,"symbol":SYMBOL,"volume":vol,
            "type":close_type,"position":ticket,"price":price,
-           "deviation":20,"magic":MAGIC,"comment":"BOT_REVERSION-CLOSE",
+           "deviation":20,"magic":MAGIC,"comment":"BOT_MEAN_REVERSION-CLOSE",
            "type_time":mt5.ORDER_TIME_GTC,"type_filling":mt5.ORDER_FILLING_IOC}
     res = mt5.order_send(req)
     return res and res.retcode == mt5.TRADE_RETCODE_DONE
@@ -524,7 +524,7 @@ def partial_close(ticket, close_lots, direction):
         "price":        price,
         "deviation":    20,
         "magic":        MAGIC,
-        "comment":      "BOT_REVERSION-PARTIAL",
+        "comment":      "BOT_MEAN_REVERSION-PARTIAL",
         "type_time":    mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
     }
@@ -680,9 +680,9 @@ def run():
 
     acct         = mt5.account_info()
     if acct.balance <= 0:
-        log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. Please restore balance before running BOT_REVERSION.")
+        log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. Please restore balance before running BOT_MEAN_REVERSION.")
         mt5.shutdown(); return
-    regime       = RegimeClassifier(bot_name="BOT_REVERSION")
+    regime       = RegimeClassifier(bot_name="BOT_MEAN_REVERSION")
     logger       = TradeLogger(str(_INST / "mean_reversion_trades.json"))
     ai           = AIBrain(logger, model_file=str(_INST / "mean_reversion_model.pkl"))
     calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "mean_reversion_equity.json"))
@@ -983,7 +983,7 @@ def run():
 
 
 if __name__ == "__main__":
-    print("BOT 2 -- Mean Reversion | XAUUSD")
+    print("BOT MEAN REVERSION | XAUUSD Gold | XAUUSD")
     print("Always test on DEMO first. Never skip this step.")
     print("")
     if input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":

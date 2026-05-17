@@ -1350,7 +1350,7 @@ def run():
 
 
 if __name__ == "__main__":
-    print("BOT 5 -- FFT (Fibonacci Fractal Trading) | XAUUSD")
+    print("BOT FFT | XAUUSD Gold (Fibonacci Fractal Trading) | XAUUSD")
     print("Timeframe: M15 | Trend filter: H1 + H4")
     print("Entry: Sniper green zone overlap with FFT 61.8-88.6%\n")
     if input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":
