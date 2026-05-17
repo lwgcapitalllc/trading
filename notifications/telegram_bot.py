@@ -276,9 +276,20 @@ def do_restart(bot_keys: list) -> str:
         if not task:
             continue
         task_stop(task)
-        time.sleep(3)
+        time.sleep(2)
         ok = task_start(task)
-        lines.append(f"{'✓' if ok else '✗'}  {BOTS[key]['name']}")
+        status = "✓" if ok else "✗"
+        lines.append(f"{status}  {BOTS[key]['name']}")
+
+    # Always restart Telegram last so it can send this response first
+    if set(bot_keys) == set(BOTS.keys()):
+        lines.append("")
+        lines.append("_Restarting Telegram bot..._")
+        time.sleep(2)
+        task_stop("SYS_TELEGRAM")
+        time.sleep(2)
+        task_start("SYS_TELEGRAM")
+
     return "\n".join(lines)
 
 
