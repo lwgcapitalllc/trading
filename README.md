@@ -21,9 +21,8 @@ Designed to scale across instruments and prop firm accounts.
 
 ## The Bots — At a Glance
 
-| | Bot 1 | Bot 2 | Bot 3 | Bot 5 |
+| | SMC Trend | Mean Reversion | Scalper | FFT |
 |---|---|---|---|---|
-| **Name** | SMC Trend | Mean Reversion | EMA Scalper | FFT |
 | **Strategy** | Judas Swing + FVG | BB + RSI + VWAP | EMA stack + pullback | Dual Fibonacci confluence |
 | **Direction** | With H4 trend only | Against overextension | With momentum | With H1+H4 trend |
 | **Timeframe** | M15 entry | Any (24hr) | M5 stack, M1 entry | M15 entry |
@@ -32,34 +31,36 @@ Designed to scale across instruments and prop firm accounts.
 | **Target R:R** | 3:1+ (runner system) | 1:1 fast | Dynamic daily engine | 2:1 to 5:1 |
 | **Risk/trade** | 2% | 2% | 2–3.5% (auto-scaling) | 1% |
 | **Daily cap** | 10% loss | 10% loss | -8% floor | 5% loss |
-| **Account** | Main (with Bot 2) | Main (with Bot 1) | Separate | Separate |
-| **MT5** | PU Prime Terminal | PU Prime Terminal | MT5_Scalper | MT5_FFT |
+| **Account** | gold_main (shared) | gold_main (shared) | gold_scalper | gold_fft |
+| **MT5** | #700103491 | #700103491 | #700107520 | #700107749 |
 
 ---
 
 ## How They Work Together
 
-**Bot 1 and Bot 2 are designed to be uncorrelated.** When markets are trending, Bot 1 is active and Bot 2 reduces size. When markets are ranging, Bot 2 is busy and Bot 1 sits idle. They share one account and complement each other across market conditions.
+**Bot SMC Trend and Bot Mean Reversion are designed to be uncorrelated.**
 
-**Bot 3 is completely independent.** It runs on its own account with its own aggressive compounding logic. Its daily profit engine means one great day can significantly move the account.
+They share one MT5 account (#700103491) and one equity file (`gold_main_equity.json`). Their balance and account growth are always identical. Individual trade performance (win rate, profit factor, Calmar) is tracked separately per bot. When markets are trending, Bot SMC Trend is active and Bot Mean Reversion reduces size. When markets are ranging, Bot Mean Reversion is busy and Bot SMC Trend sits idle. They share one account and complement each other across market conditions.
 
-**Bot 5 is the proprietary edge.** The FFT dual-fib strategy is the most selective — it only fires when two independent Fibonacci tools agree on the same price zone. Fewer trades, higher quality. Will be refined over time as more chart examples are provided.
+**Bot Scalper is completely independent.** It runs on its own account with its own aggressive compounding logic. Its daily profit engine means one great day can significantly move the account.
+
+**Bot FFT is the proprietary edge.** The FFT dual-fib strategy is the most selective — it only fires when two independent Fibonacci tools agree on the same price zone. Fewer trades, higher quality. Will be refined over time as more chart examples are provided.
 
 ---
 
 ## Key Differences Explained
 
-**Why does Bot 2 close at 1R when Bot 1 targets 3R?**
-Mean reversion moves are fast and often complete within minutes. Holding for 3R on a reversion trade risks giving back the move. Bot 2 banks 1R reliably, many times. Bot 1 holds for 3R because trend continuation moves can run far beyond the initial target — the runner system captures this.
+**Why does Mean Reversion close at 1R when SMC Trend targets 3R?**
+Mean reversion moves are fast and often complete within minutes. Holding for 3R on a reversion trade risks giving back the move. Mean Reversion banks 1R reliably, many times. SMC Trend holds for 3R because trend continuation moves can run far beyond the initial target — the runner system captures this.
 
-**Why does Bot 3 have its own account?**
-Bot 3 can make +50% in a day. It can also hit the -8% floor. This volatility would destroy the daily loss cap tracking on Bot 1 and Bot 2's shared account. Separation keeps risk clean.
+**Why does Scalper have its own account?**
+Scalper can make +50% in a day. It can also hit the -8% floor. This volatility would destroy the daily loss cap tracking on the shared gold_main account. Separation keeps risk clean.
 
-**Why is Bot 5 risk only 1% when others are 2%?**
+**Why is FFT risk only 1% when others are 2%?**
 The FFT strategy is unproven in live trading — it has no trade history yet. Lower risk while the AI is learning. Once it has 30+ trades and a solid Calmar ratio, risk can be raised to 2%.
 
-**Why different AI thresholds (Bot 1/2: 55% vs Bot 3/5: 52%)?**
-Bot 1 and 2 have stricter entry rules — the AI needs more confidence to approve. Bot 3 and 5 are newer with less data — a lower threshold means the AI starts influencing decisions sooner while still learning.
+**Why different AI thresholds (SMC/Reversion: 55% vs Scalper/FFT: 52%)?**
+Bot 1 and 2 have stricter entry rules — the AI needs more confidence to approve. Scalper and FFT are newer with less data — a lower threshold means the AI starts influencing decisions sooner while still learning.
 
 ---
 
@@ -79,15 +80,15 @@ During this window all bots run portfolio-level management:
 
 **VPS:** ForexVPS (IP: 45.82.164.112) — Windows Server, 24/7
 **Control:** `algo` command on Mac — starts, stops, restarts, shows status and uptime
-**Deploy:** `git push` on Mac → `ssh forexvps "git pull"` → `algo restart`
+**Deploy:** Edit on Mac → `python3 deploy.py` → `git push` → `ssh forexvps "cd C:\algos && git pull"` → `algo restart`
 **Monitoring:** `algo status` shows all bots, uptime, running state
 
 **MT5 instances:**
 | Directory | Account | Bots |
 |---|---|---|
-| `C:\Program Files\PU Prime MT5 Terminal` | Main (#700103491) | Bot 1 + Bot 2 |
-| `C:\MT5_Scalper` | Scalper (#700107520) | Bot 3 |
-| `C:\MT5_FFT` | FFT (#700107749) | Bot 5 |
+| `C:\Program Files\PU Prime MT5 Terminal` | #700103491 | Bot SMC Trend + Bot Mean Reversion |
+| `C:\MT5_Scalper` | #700107520 | Bot Scalper |
+| `C:\MT5_FFT` | #700107749 | Bot FFT |
 
 ---
 
@@ -127,7 +128,7 @@ algos/
 │   ├── BOT_SCALPER_GUIDE.md
 │   └── BOT_FFT_GUIDE.md
 ├── executors/
-│   └── tradovate.py                  <- Tradovate API (Bot 4 futures)
+│   └── tradovate.py                  <- Tradovate API (Bot Futures)
 └── markets/
     ├── fx/instances/
     │   ├── gold_main/              <- Bot 1 + Bot 2
@@ -144,7 +145,7 @@ algos/
 | Phase | Timing | Condition to advance |
 |---|---|---|
 | Demo trading | Now — Day 60 | 15+ closed trades per bot, Calmar >= 2.0 |
-| Evaluation | Day 60–90 | Bot 1 Calmar >= 2.5, Bot 2 Calmar >= 2.0 |
+| Evaluation | Day 60–90 | SMC Trend Calmar >= 2.5, Mean Reversion Calmar >= 2.0 |
 | Small live (50% risk) | Day 90–150 | Calmar holds on live data |
 | Full risk | Day 150+ | Live Calmar >= 3.0 for 60+ days |
 | Prop firms (Lucid) | Parallel | Buy LucidFlex $100K eval, run Bot 4 |

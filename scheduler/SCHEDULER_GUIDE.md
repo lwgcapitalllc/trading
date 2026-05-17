@@ -1,68 +1,57 @@
 # Scheduler Guide
 **Folder:** `scheduler/`
 
-All Windows Task Scheduler XML files live here.
-One XML per task — bots, reporter, monitor, and telegram bot.
+All Windows Task Scheduler XML files. One XML per task.
 
 ---
 
 ## Files
 
-| File | Task Name | Trigger | What It Runs |
-|---|---|---|---|
-| `bot1_task.xml` | `FX_XAUUSD_Bot1` | At startup | Bot 1 SMC Trend |
-| `bot2_task.xml` | `FX_XAUUSD_Bot2` | At startup | Bot 2 Mean Reversion |
-| `bot3_task.xml` | `FX_XAUUSD_Scalper` | At startup | Bot 3 EMA Scalper |
-| `bot5_task.xml` | `FX_XAUUSD_Bot5_FFT` | At startup | Bot 5 FFT Strategy |
-| `reporter_task.xml` | `ALGO_Daily_Reporter` | Daily 21:00 UTC (4pm CDT) | reporter.py |
-| `monitor_task.xml` | `ALGO_Monitor` | Every 5 minutes | monitor.py |
-| `telegram_bot_task.xml` | `ALGO_Telegram_Bot` | At startup | telegram_bot.py |
+| XML File | Task Name | Prefix | Trigger | What It Runs |
+|---|---|---|---|---|
+| `smc_trend_task.xml` | `BOT_SMC_TREND` | BOT_ | At startup | bot_smc_trend.py |
+| `mean_reversion_task.xml` | `BOT_MEAN_REVERSION` | BOT_ | At startup | bot_mean_reversion.py |
+| `scalper_task.xml` | `BOT_SCALPER` | BOT_ | At startup | bot_scalper.py |
+| `fft_task.xml` | `BOT_FFT` | BOT_ | At startup | bot_fft.py |
+| `futures_acct1_task.xml` | `BOT_FUTURES_ACCT1` | BOT_ | At startup | bot_futures.py |
+| `telegram_task.xml` | `SYS_TELEGRAM` | SYS_ | At startup | start_telegram.py |
+| `reporter_task.xml` | `SYS_REPORTER` | SYS_ | Daily 21:00 UTC (4pm CDT) | reporter.py |
+| `monitor_task.xml` | `SYS_MONITOR` | SYS_ | Every 1 minute | monitor.py |
+
+**Prefix convention:**
+- `BOT_` — trading bots (persistent, run 24/7)
+- `SYS_` — system jobs (telegram is persistent, reporter/monitor are scheduled)
 
 ---
 
 ## Key Settings (all tasks)
 
 All tasks are configured consistently:
-- `DisallowStartIfOnBatteries: false` — runs on VPS (no physical battery)
-- `StopIfGoingOnBatteries: false` — never stops due to power
+- `DisallowStartIfOnBatteries: false` — VPS has no battery
+- `StopIfGoingOnBatteries: false` — never stops
 - `ExecutionTimeLimit: PT0S` — no time limit (bots run indefinitely)
 - `RunLevel: HighestAvailable` — elevated privileges
-- `MultipleInstancesPolicy: IgnoreNew` — won't start a second copy if already running
-- `WorkingDirectory: C:\algos\bots` — correct working dir for imports
+- `MultipleInstancesPolicy: IgnoreNew` — no duplicate instances
+- `WorkingDirectory: C:\algos\bots` — correct for imports
+
+**SYS_TELEGRAM** uses `start_telegram.py` as the launcher — this kills any
+existing telegram_bot.py process first to prevent duplicate instances.
 
 ---
 
-## Installing a Task
+## Installing All Tasks (fresh setup)
 
-```powershell
-# 1. Copy XML to temp (required encoding step)
-Copy-Item C:\algos\scheduler\bot1_task.xml C:\temp\bot1_task.xml
+Run in PowerShell on VPS as Administrator:
 
-# 2. Install
-schtasks /create /tn "FX_XAUUSD_Bot1" /xml "C:\temp\bot1_task.xml" /ru trader /rp "312MXFjt7Q8Zoec"
-```
-
-**Install all bot tasks at once:**
 ```powershell
 $tasks = @(
-    @{file="bot1_task.xml"; name="FX_XAUUSD_Bot1"},
-    @{file="bot2_task.xml"; name="FX_XAUUSD_Bot2"},
-    @{file="bot3_task.xml"; name="FX_XAUUSD_Scalper"},
-    @{file="bot5_task.xml"; name="FX_XAUUSD_Bot5_FFT"}
-)
-foreach ($t in $tasks) {
-    Copy-Item "C:\algos\scheduler\$($t.file)" "C:\temp\$($t.file)"
-    schtasks /create /tn $t.name /xml "C:\temp\$($t.file)" /ru trader /rp "312MXFjt7Q8Zoec"
-    Write-Host "Installed: $($t.name)"
-}
-```
-
-**Install all notification tasks:**
-```powershell
-$tasks = @(
-    @{file="reporter_task.xml";     name="ALGO_Daily_Reporter"},
-    @{file="monitor_task.xml";      name="ALGO_Monitor"},
-    @{file="telegram_bot_task.xml"; name="ALGO_Telegram_Bot"}
+    @{file="smc_trend_task.xml";      name="BOT_SMC_TREND"},
+    @{file="mean_reversion_task.xml"; name="BOT_MEAN_REVERSION"},
+    @{file="scalper_task.xml";        name="BOT_SCALPER"},
+    @{file="fft_task.xml";            name="BOT_FFT"},
+    @{file="telegram_task.xml";       name="SYS_TELEGRAM"},
+    @{file="reporter_task.xml";       name="SYS_REPORTER"},
+    @{file="monitor_task.xml";        name="SYS_MONITOR"}
 )
 foreach ($t in $tasks) {
     Copy-Item "C:\algos\scheduler\$($t.file)" "C:\temp\$($t.file)"
@@ -75,23 +64,13 @@ foreach ($t in $tasks) {
 
 ## Verifying Tasks
 
-**List all installed algo tasks:**
 ```bash
-ssh forexvps "schtasks /query /fo TABLE | findstr -i algo"
-ssh forexvps "schtasks /query /fo TABLE | findstr -i fx_xauusd"
-```
+# List all algo tasks
+ssh forexvps "schtasks /query /fo TABLE | findstr BOT_"
+ssh forexvps "schtasks /query /fo TABLE | findstr SYS_"
 
-**Check a specific task:**
-```bash
-ssh forexvps "schtasks /query /fo LIST /tn FX_XAUUSD_Bot1 /v" | grep -E "Status|Power|Start In|Task To Run"
-```
-
-Expected output for a healthy task:
-```
-Task To Run:   C:\...\python.exe C:\algos\bots\launcher.py --bot bot1 ...
-Start In:      C:\algos\bots
-Power Management: (blank — battery restrictions off)
-Status:        Running
+# Check a specific task
+ssh forexvps "schtasks /query /fo LIST /tn BOT_SMC_TREND /v"
 ```
 
 ---
@@ -99,28 +78,19 @@ Status:        Running
 ## Manual Task Control
 
 ```bash
-# Start a task manually
-ssh forexvps "schtasks /run /tn FX_XAUUSD_Bot1"
-
-# Stop a task
-ssh forexvps "schtasks /end /tn FX_XAUUSD_Bot1"
-
-# Delete a task (to reinstall)
-ssh forexvps "schtasks /delete /tn FX_XAUUSD_Bot1 /f"
+ssh forexvps "schtasks /run /tn BOT_SMC_TREND"
+ssh forexvps "schtasks /end /tn BOT_SMC_TREND"
+ssh forexvps "schtasks /delete /tn BOT_SMC_TREND /f"
 ```
 
 ---
 
 ## Recreating a Task From Scratch
 
-If a task gets corrupted or needs to be rebuilt, use the XML from this
-folder. The XML contains all settings including the correct user SID,
-working directory, and power management flags.
-
 ```powershell
-schtasks /delete /tn "FX_XAUUSD_Bot1" /f
-Copy-Item C:\algos\scheduler\bot1_task.xml C:\temp\bot1_task.xml
-schtasks /create /tn "FX_XAUUSD_Bot1" /xml "C:\temp\bot1_task.xml" /ru trader /rp "312MXFjt7Q8Zoec"
+schtasks /delete /tn "BOT_SMC_TREND" /f
+Copy-Item C:\algos\scheduler\smc_trend_task.xml C:\temp\smc_trend_task.xml
+schtasks /create /tn "BOT_SMC_TREND" /xml "C:\temp\smc_trend_task.xml" /ru trader /rp "312MXFjt7Q8Zoec"
 ```
 
 ---
@@ -129,14 +99,9 @@ schtasks /create /tn "FX_XAUUSD_Bot1" /xml "C:\temp\bot1_task.xml" /ru trader /r
 
 When clocks fall back in November, update `reporter_task.xml`:
 
-Change:
-```xml
-<StartBoundary>2026-01-01T21:00:00</StartBoundary>
+Change `21:00:00` → `22:00:00` in `<StartBoundary>`, then reinstall:
+```powershell
+schtasks /delete /tn "SYS_REPORTER" /f
+Copy-Item C:\algos\scheduler\reporter_task.xml C:\temp\reporter_task.xml
+schtasks /create /tn "SYS_REPORTER" /xml "C:\temp\reporter_task.xml" /ru trader /rp "312MXFjt7Q8Zoec"
 ```
-To:
-```xml
-<StartBoundary>2026-01-01T22:00:00</StartBoundary>
-```
-
-Then reinstall the task. This keeps the 4pm Texas delivery time accurate
-through daylight saving transitions.

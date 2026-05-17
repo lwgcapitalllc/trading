@@ -34,7 +34,7 @@ from shared_calmar   import CalmarTracker
 
 # ── Load config + logging (instance-aware) ────────────────────────────────────
 _CFG     = load_config()
-log      = setup_logging("BOT_SMC", _CFG)
+log      = setup_logging("BOT_SMC_TREND", _CFG)
 _INST    = get_instance_dir(_CFG)
 
 ACCOUNT         = _CFG["account"]

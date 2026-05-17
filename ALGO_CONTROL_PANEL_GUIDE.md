@@ -45,10 +45,10 @@ source ~/.zshrc
 
 | Option | What it does |
 |---|---|
-| `1` Start all | Launches every bot via Task Scheduler. Polls VPS for up to 10s per bot and shows ✓ RUNNING or ✗ FAILED. Also starts ALGO_TELEGRAM. |
+| `1` Start all | Launches every bot via Task Scheduler. Polls VPS for up to 10s per bot and shows ✓ RUNNING or ✗ FAILED. Also starts SYS_TELEGRAM. |
 | `2` Stop all | Stops all bots. |
-| `r` Restart all | Stops all, kills python.exe, waits 4s, starts all. ALGO_TELEGRAM always restarted too. |
-| `3` Emergency stop | Kills all tasks AND all python.exe instantly. ALGO_TELEGRAM restarts automatically after 3s so you can still receive alerts. |
+| `r` Restart all | Stops all, kills python.exe, waits 4s, starts all. SYS_TELEGRAM always restarted too. |
+| `3` Emergency stop | Kills all tasks AND all python.exe instantly. SYS_TELEGRAM restarts automatically after 3s so you can still receive alerts. |
 | `4` Manage individual | Select one bot — start, stop, restart, or view log. |
 | `5` View log | Select a bot, see last 40 or 100 lines, colour coded. |
 | `6` Refresh | Re-query VPS for current status. |
@@ -72,18 +72,18 @@ algo status       # print status and exit
 
 The panel checks actual running Python processes via `wmic` — not Task Scheduler state. Task Scheduler launches `launcher.py` which spawns the bot and exits, so the task always shows as stopped even when the bot is running.
 
-The panel bypasses this by checking if `bot_smc_trend.py`, `bot_mean_reversion.py`, `bot_scalper.py`, `bot_fft.py`, `bot_futures.py`, or `telegram_bot.py` appear in the VPS process list.
+The panel bypasses this by checking if `bot_smc_trend.py`, `bot_mean_reversion.py`, `bot_scalper.py`, `bot_fft.py`, `bot_futures.py`, or `start_telegram.py → telegram_bot.py` appear in the VPS process list.
 
 ---
 
-## ALGO_TELEGRAM — Special Handling
+## SYS_TELEGRAM — Special Handling
 
 The Telegram bot is always managed alongside the trading bots:
 - `algo restart` → restarts trading bots + telegram bot
 - `algo start` → starts trading bots + telegram bot
 - Emergency stop → kills trading bots, then restarts telegram bot after 3s
 
-The `ALGO_MONITOR` task (every 5 min) also watches the telegram bot and auto-restarts it if it goes down. Up to 3 auto-restart attempts before sending a critical alert.
+The `SYS_MONITOR` task (every 5 min) also watches the telegram bot and auto-restarts it if it goes down. Up to 3 auto-restart attempts before sending a critical alert.
 
 ---
 
@@ -110,8 +110,8 @@ bot_my_new_strategy.py
 
 **2. Task name must start with `ALGO_`:**
 ```
-ALGO_SMC_TREND
-ALGO_SCALPER
+BOT_SMC_TREND
+BOT_SCALPER
 ALGO_MY_NEW_STRATEGY
 ```
 
@@ -152,7 +152,7 @@ ssh forexvps "dir C:\algos\markets\fx\instances\gold_main\credentials.json"
 **Telegram bot not responding**
 ```bash
 ssh forexvps "wmic process where \"name='python.exe'\" get commandline 2>nul" | grep telegram
-ssh forexvps "schtasks /run /tn ALGO_TELEGRAM"
+ssh forexvps "schtasks /run /tn SYS_TELEGRAM"
 ```
 
 **SSH connection timed out**

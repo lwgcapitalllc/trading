@@ -39,7 +39,7 @@ algos/
 ├── notifications/                   ← Telegram reporter, monitor, command bot
 │   ├── reporter.py
 │   ├── monitor.py
-│   ├── telegram_bot.py
+│   ├── start_telegram.py → telegram_bot.py
 │   └── NOTIFICATIONS_GUIDE.md
 │
 ├── scheduler/                       ← Task Scheduler XMLs (one per task)
@@ -172,14 +172,14 @@ All tasks use the `ALGO_` prefix for easy grouping:
 
 | Task | Purpose |
 |---|---|
-| `ALGO_SMC_TREND` | Bot SMC Trend |
-| `ALGO_MEAN_REVERSION` | Bot Mean Reversion |
-| `ALGO_SCALPER` | Bot Scalper |
-| `ALGO_FFT` | Bot FFT |
-| `ALGO_FUTURES_ACCT1` | Bot Futures Account 1 |
-| `ALGO_TELEGRAM` | Telegram command bot (24/7) |
-| `ALGO_REPORTER` | Daily summary at 4pm Texas |
-| `ALGO_MONITOR` | Health checker every 5 minutes |
+| `BOT_SMC_TREND` | Bot SMC Trend |
+| `BOT_MEAN_REVERSION` | Bot Mean Reversion |
+| `BOT_SCALPER` | Bot Scalper |
+| `BOT_FFT` | Bot FFT |
+| `BOT_FUTURES_ACCT1` | Bot Futures Account 1 |
+| `SYS_TELEGRAM` | Telegram command bot (24/7) |
+| `SYS_REPORTER` | Daily summary at 4pm Texas |
+| `SYS_MONITOR` | Health checker every 1 minute |
 
 Find all: `schtasks /query /fo TABLE | findstr ALGO`
 
