@@ -23,6 +23,7 @@ MARKET_PREFIXES = {
     "FX_":      "FX",
     "CRYPTO_":  "Crypto",
     "FUTURES_": "Futures",
+    "ALGO_":    "System",
 }
 
 # Map task name patterns to log file paths
@@ -97,6 +98,7 @@ def get_all_tasks() -> list[dict]:
         if "bot3_scalper"       in line: running_scripts.add("bot3")
         if "bot4_lucidflex"     in line: running_scripts.add("bot4")
         if "bot5_fft"           in line: running_scripts.add("bot5")
+        if "telegram_bot"       in line: running_scripts.add("telegram")
 
     # Map task names to bot script keys
     TASK_BOT_MAP = {
@@ -105,6 +107,8 @@ def get_all_tasks() -> list[dict]:
         "FX_XAUUSD_Bot2":              "bot2",
         "FX_XAUUSD_Scalper":           "bot3",
         "FX_XAUUSD_Bot5_FFT":          "bot5",
+        # Notifications
+        "ALGO_Telegram_Bot":           "telegram",
         # Futures
         "FUTURES_MNQ_LucidFlex_Acct1": "bot4",
         "FUTURES_MNQ_LucidFlex_Acct2": "bot4",
