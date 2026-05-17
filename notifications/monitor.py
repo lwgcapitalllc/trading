@@ -260,7 +260,7 @@ def check_telegram_bot(state: dict) -> dict:
                     if is_running("telegram_bot.py"):
                         print("Telegram bot restarted successfully.")
                         send_alert(
-                            f"*ALERT — Telegram Bot Restarted*\n"
+                            f"🟢 *ALERT — Telegram Bot Restarted*\n"
                             f"Was offline\\. Auto-restarted at {now_str}\\.\n"
                             f"Commands are available again\\."
                         )
