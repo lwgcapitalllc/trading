@@ -359,31 +359,45 @@ def clear():
 
 def print_header(tasks: list[dict], tab: str = "all"):
     """
-    Print the algo control panel with tabs (All/Demo/Live).
-    Columns for bots: Name | Account | Type | Instrument | Status | Uptime
-    Border alignment is guaranteed by stripping ANSI codes before padding.
-    Tab state is passed in — default is "all".
+    Render the control panel with guaranteed border alignment.
+    Key rule: pad plain text to column width FIRST, then apply ANSI color.
+    Never apply color before padding — f-string padding counts ANSI bytes
+    as visible characters and throws off the right border.
+
+    Layout: W=82 inner content, W+2=84 total with both ║ borders.
+    3 sections (All tab): Trading Bots | Telegram | Scheduled Jobs
+    Each section uses identical columns: Name | Account | Type | Inst | Status | Uptime/Schedule
     """
     import re
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    W   = 84  # visible panel width including both ║ border chars
+    W   = 82  # inner content width; total panel width = W+2
 
-    def strip(s: str) -> str:
+    def strip_ansi(s: str) -> str:
         return re.sub(r'\033\[[0-9;]*m', '', s)
 
     def row(content: str) -> str:
-        pad = max(0, W - 2 - len(strip(content)))
+        """Pad content so right border lands exactly at W+2."""
+        pad = max(0, W - len(strip_ansi(content)))
         return bold(cyan("║")) + content + " " * pad + bold(cyan("║"))
 
-    # Tab bar
-    tab_str = "  ".join(
+    def col(text: str, width: int, color_fn=None) -> str:
+        """Pad text to width, then optionally colorize. Never color before padding."""
+        padded = f"{str(text):<{width}}"
+        return color_fn(padded) if color_fn else padded
+
+    # Tab bar — bold active tab
+    tab_bar = "  ".join(
         bold(f"[{lbl}]") if key == tab else gray(f"[{lbl}]")
         for key, lbl in [("all","All"),("demo","Demo"),("live","Live")]
     )
 
-    print(bold(cyan("╔" + "═" * (W - 2) + "╗")))
-    print(row(f"  {bold('ALGO CONTROL PANEL')}  {gray(now)}    {tab_str}"))
-    print(bold(cyan("╠" + "═" * (W - 2) + "╣")))
+    # Column header string (no color — just spacing reference)
+    COL_HDR = f"  {'Name':<16}  {'Account':<12}  {'Type':<5}  {'Inst':<7}  {'Status':<9}  Uptime"
+    SCH_HDR = f"  {'Name':<16}  {'Account':<12}  {'Type':<5}  {'Inst':<7}  {'Status':<9}  Schedule"
+
+    print(bold(cyan("╔" + "═" * W + "╗")))
+    print(row(f"  {bold('ALGO CONTROL PANEL')}  {gray(now)}    {tab_bar}"))
+    print(bold(cyan("╠" + "═" * W + "╣")))
 
     if not tasks:
         print(row(yellow("  No tasks found on VPS")))
@@ -392,62 +406,80 @@ def print_header(tasks: list[dict], tab: str = "all"):
         sys_t = [t for t in tasks if t["name"] == "SYS_TELEGRAM"]
         sched = [t for t in tasks if t["name"] in SCHEDULED_TASKS]
 
-        # Filter by tab
+        # Filter bots by tab
         if tab == "demo":
             bots    = [t for t in bots if t.get("acct_type","").upper() in ("DEMO","")]
-            section = "Demo Accounts"
+            section = "Trading Bots — Demo"
         elif tab == "live":
             bots    = [t for t in bots if t.get("acct_type","").upper() == "LIVE"]
-            section = "Live Accounts"
+            section = "Trading Bots — Live"
         else:
             section = "Trading Bots"
 
+        # ── Section: Trading Bots ─────────────────────────────────────────
         print(row(f"  {gray(section)}"))
-
         if bots:
-            hdr = f"    {'Name':<16}  {'Account':<12}  {'Type':<5}  {'Inst':<7}  {'Status':<9}  Uptime"
-            print(row(gray(hdr)))
+            print(row(gray(COL_HDR)))
             for t in bots:
                 icon  = green("●") if t["running"] else red("○")
-                stat  = green("RUNNING  ") if t["running"] else red("STOPPED  ")
-                name  = t["pair"][:16]
-                acct  = str(t.get("account",    "—"))[:12]
-                atype = str(t.get("acct_type",  "—")).upper()[:5]
-                instr = str(t.get("instrument", "—"))[:7]
                 up    = ""
-                if t["running"] and t["name"] in LOG_MAP:
+                if t["running"] and t["name"] in LOG_MAP and LOG_MAP[t["name"]]:
                     u = get_uptime(t["name"])
                     if u:
-                        up = gray(f"up {u}")
+                        up = gray(u)
                 print(row(
-                    f"  {icon}  {name:<16}  {gray(acct):<12}  "
-                    f"{gray(atype):<5}  {gray(instr):<7}  {stat}  {up}"
+                    f"  {icon} "
+                    f"{col(t['pair'][:16], 16)}  "
+                    f"{col(t.get('account','—')[:12], 12, gray)}  "
+                    f"{col(t.get('acct_type','—').upper()[:5], 5, gray)}  "
+                    f"{col(t.get('instrument','—')[:7], 7, gray)}  "
+                    f"{col('RUNNING' if t['running'] else 'STOPPED', 9, green if t['running'] else red)}  "
+                    f"{up}"
                 ))
         else:
             print(row(f"  {gray('No bots for this account type.')}"))
             if tab == "live":
                 print(row(f"  {gray('Set account_type: live in a config.json')}"))
 
-        # System section — only on All tab
-        if tab == "all" and (sys_t or sched):
-            print(row(""))
-            print(row(f"  {gray('System')}"))
-            for t in sys_t + sched:
-                is_sched = t["name"] in SCHEDULED_TASKS
-                icon     = green("●") if t["running"] else (blue("◑") if is_sched else red("○"))
-                stat     = cyan("SCHEDULED") if is_sched else (
-                           green("RUNNING  ") if t["running"] else red("STOPPED  "))
-                name     = t["pair"][:22]
-                info     = ""
-                if is_sched:
-                    info = gray(SCHEDULED_INFO.get(t["name"], ""))
-                elif t["running"] and t["name"] in LOG_MAP:
-                    u = get_uptime(t["name"])
-                    if u:
-                        info = gray(f"up {u}")
-                print(row(f"  {icon}  {name:<22}  {stat}  {info}"))
+        # ── Sections: Telegram + Scheduled Jobs (All tab only) ────────────
+        if tab == "all":
+            if sys_t:
+                print(row(""))
+                print(row(f"  {gray('Telegram')}"))
+                print(row(gray(COL_HDR)))
+                for t in sys_t:
+                    up = ""
+                    if t["running"] and t["name"] in LOG_MAP:
+                        u = get_uptime(t["name"])
+                        if u:
+                            up = gray(u)
+                    print(row(
+                        f"  {green('●') if t['running'] else red('○')} "
+                        f"{col(t['pair'][:16], 16)}  "
+                        f"{col('—', 12, gray)}  "
+                        f"{col('—', 5, gray)}  "
+                        f"{col('—', 7, gray)}  "
+                        f"{col('RUNNING' if t['running'] else 'STOPPED', 9, green if t['running'] else red)}  "
+                        f"{up}"
+                    ))
 
-    print(bold(cyan("╚" + "═" * (W - 2) + "╝")))
+            if sched:
+                print(row(""))
+                print(row(f"  {gray('Scheduled Jobs')}"))
+                print(row(gray(SCH_HDR)))
+                for t in sched:
+                    schedule = gray(SCHEDULED_INFO.get(t["name"], ""))
+                    print(row(
+                        f"  {blue('◑')} "
+                        f"{col(t['pair'][:16], 16)}  "
+                        f"{col('—', 12, gray)}  "
+                        f"{col('—', 5, gray)}  "
+                        f"{col('—', 7, gray)}  "
+                        f"{col('SCHEDULED', 9, cyan)}  "
+                        f"{schedule}"
+                    ))
+
+    print(bold(cyan("╚" + "═" * W + "╝")))
 
 def print_menu():
     print()
@@ -488,12 +520,175 @@ def bot_action_menu(task: dict) -> str:
     print(f"  {bold('[3]')} Restart")
     print(f"  {bold('[4]')} View log (last 40 lines)")
     print(f"  {bold('[5]')} View log (last 100 lines)")
+    if task["name"] == "SYS_TELEGRAM":
+        print(f"  {bold('[u]')} Manage users")
     print(f"  {bold('[b]')} Back")
     print()
     return input("  Choice: ").strip().lower()
 
 
-# ── Main Loop ─────────────────────────────────────────────────────────────────
+# ── User Management ───────────────────────────────────────────────────────────
+
+USERS_FILE_VPS = r"C:\algos\users.json"
+
+
+def read_users() -> dict:
+    """Read users.json from VPS. Returns empty dict if missing."""
+    raw = ssh(f"type {USERS_FILE_VPS} 2>nul")
+    if not raw:
+        return {}
+    import json as _j
+    try:
+        return _j.loads(raw).get("users", {})
+    except Exception:
+        return {}
+
+
+def write_users(users: dict):
+    """Write users dict back to users.json on VPS."""
+    import json as _j, tempfile, os
+    data    = {"users": users}
+    content = _j.dumps(data, indent=2)
+    # Write via echo through SSH — escape for Windows cmd
+    escaped = content.replace('"', '\\"').replace('\n', ' ')
+    # Use Python on VPS to write the file (avoids shell escaping issues)
+    py_cmd  = (
+        f"python -c \""
+        f"import json; "
+        f"f=open(r'{USERS_FILE_VPS}','w'); "
+        f"json.dump({_j.dumps(data)}, f, indent=2); "
+        f"f.close(); "
+        f"print('saved')\""
+    )
+    result = ssh(py_cmd)
+    return "saved" in result
+
+
+def manage_users_menu():
+    """Full user management submenu — accessed from Telegram bot option."""
+    while True:
+        clear()
+        users = read_users()
+
+        print(bold("\n  USER MANAGEMENT\n"))
+
+        if users:
+            print(gray("  Current users:\n"))
+            for uid, info in users.items():
+                name  = info.get("name", "?")
+                role  = info.get("role", "?").upper()
+                added = info.get("added", "")
+                date  = f"  {gray('added ' + added)}" if added else ""
+                print(f"  {green('●') if role == 'ADMIN' else cyan('●')}  "
+                      f"{name:<16}  {gray(uid):<14}  {bold(role)}{date}")
+        else:
+            print(gray("  No users configured yet.\n"))
+
+        print()
+        print(f"  {bold('[1]')} List users")
+        print(f"  {bold('[2]')} Add user")
+        print(f"  {bold('[3]')} Remove user")
+        print(f"  {bold('[4]')} Change role")
+        print(f"  {bold('[b]')} Back")
+        print()
+
+        choice = input("  Choice: ").strip().lower()
+
+        if choice == "b":
+            break
+
+        elif choice == "1":
+            # Already shown above — just pause
+            print()
+            input(gray("  Press Enter to continue..."))
+
+        elif choice == "2":
+            print(bold("\n  Add User\n"))
+            print(gray("  Tip: ask them to message @userinfobot on Telegram to get their chat ID\n"))
+            uid  = input("  Chat ID: ").strip()
+            if not uid.isdigit():
+                print(red("  Invalid chat ID — must be numbers only."))
+                input(gray("  Press Enter...")); continue
+            if uid in users:
+                print(yellow(f"  User {uid} already exists. Use [4] to change their role."))
+                input(gray("  Press Enter...")); continue
+            name = input("  Name: ").strip()
+            if not name:
+                print(red("  Name cannot be empty.")); input(gray("  Press Enter...")); continue
+            print(f"\n  Role: {bold('[1]')} admin   {bold('[2]')} readonly")
+            r = input("  Role: ").strip()
+            role = "admin" if r == "1" else "readonly"
+            from datetime import datetime as _dt
+            users[uid] = {
+                "name":  name,
+                "role":  role,
+                "added": _dt.now().strftime("%Y-%m-%d"),
+            }
+            if write_users(users):
+                print(green(f"\n  ✓ {name} added as {role.upper()}."))
+            else:
+                print(red("\n  Failed to save users.json on VPS."))
+            input(gray("  Press Enter..."))
+
+        elif choice == "3":
+            if not users:
+                print(yellow("  No users to remove.")); input(gray("  Press Enter...")); continue
+            print(bold("\n  Remove User\n"))
+            user_list = list(users.items())
+            for i, (uid, info) in enumerate(user_list, 1):
+                print(f"  {bold(f'[{i}]')} {info.get('name','?'):<16}  {gray(uid)}")
+            print(f"  {bold('[b]')} Cancel")
+            print()
+            sel = input("  Select: ").strip().lower()
+            if sel == "b":
+                continue
+            if sel.isdigit() and 1 <= int(sel) <= len(user_list):
+                uid, info = user_list[int(sel) - 1]
+                name = info.get("name", "?")
+                confirm = input(f"  Remove {name}? (y/n): ").strip().lower()
+                if confirm == "y":
+                    del users[uid]
+                    if write_users(users):
+                        print(green(f"\n  ✓ {name} removed."))
+                    else:
+                        print(red("\n  Failed to save."))
+                else:
+                    print(gray("  Cancelled."))
+            else:
+                print(red("  Invalid selection."))
+            input(gray("  Press Enter..."))
+
+        elif choice == "4":
+            if not users:
+                print(yellow("  No users to update.")); input(gray("  Press Enter...")); continue
+            print(bold("\n  Change Role\n"))
+            user_list = list(users.items())
+            for i, (uid, info) in enumerate(user_list, 1):
+                role = info.get("role","?").upper()
+                print(f"  {bold(f'[{i}]')} {info.get('name','?'):<16}  {gray(uid)}  {role}")
+            print(f"  {bold('[b]')} Cancel")
+            print()
+            sel = input("  Select: ").strip().lower()
+            if sel == "b":
+                continue
+            if sel.isdigit() and 1 <= int(sel) <= len(user_list):
+                uid, info = user_list[int(sel) - 1]
+                name = info.get("name", "?")
+                current = info.get("role", "?").upper()
+                print(f"\n  {name} — current role: {bold(current)}")
+                print(f"  New role: {bold('[1]')} admin   {bold('[2]')} readonly")
+                r = input("  Role: ").strip()
+                if r not in ("1", "2"):
+                    print(red("  Invalid.")); input(gray("  Press Enter...")); continue
+                new_role = "admin" if r == "1" else "readonly"
+                users[uid]["role"] = new_role
+                if write_users(users):
+                    print(green(f"\n  ✓ {name} updated to {new_role.upper()}."))
+                else:
+                    print(red("\n  Failed to save."))
+            else:
+                print(red("  Invalid selection."))
+            input(gray("  Press Enter..."))
 def main():
     print(gray("Connecting to VPS..."))
 
@@ -682,6 +877,8 @@ def main():
                         clear()
                         view_log(task["name"], lines)
                         input(gray("\n  Press Enter to continue..."))
+                    elif action == "u" and task["name"] == "SYS_TELEGRAM":
+                        manage_users_menu()
 
                 tasks = get_all_tasks()
 

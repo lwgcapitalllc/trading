@@ -1,0 +1,14 @@
+{
+  "_note": "Copy this file to users.json and fill in real chat IDs. Never commit users.json to git.",
+  "users": {
+    "429207285": {
+      "name": "Jason",
+      "role": "admin",
+      "added": "2026-05-17"
+    }
+  },
+  "_roles": {
+    "admin":    "Full access — status, balance, trades, report, restart, stop, emergency",
+    "readonly": "Read only — status, balance, trades, report. No control commands."
+  }
+}

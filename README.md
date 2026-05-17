@@ -148,7 +148,7 @@ algos/
 | Evaluation | Day 60–90 | SMC Trend Calmar >= 2.5, Mean Reversion Calmar >= 2.0 |
 | Small live (50% risk) | Day 90–150 | Calmar holds on live data |
 | Full risk | Day 150+ | Live Calmar >= 3.0 for 60+ days |
-| Prop firms (Lucid) | Parallel | Buy LucidFlex $100K eval, run Bot 4 |
+| Prop firms (Lucid) | Parallel | Buy LucidFlex $100K eval, run Bot Futures |
 
 **Calmar targets:** 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 

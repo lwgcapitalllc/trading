@@ -158,3 +158,65 @@ foreach ($t in $tasks) {
 `reporter_task.xml` trigger time:
 - CDT (Mar–Nov): 4pm CT = 21:00 UTC — current setting
 - CST (Nov–Mar): 4pm CT = 22:00 UTC — update in November
+
+---
+
+## User Access Control
+
+Access is controlled via `C:\algos\users.json` on the VPS.
+This file is **never committed to git** — it lives on the VPS only.
+
+### Roles
+
+| Role | Can do |
+|---|---|
+| `admin` | Everything — status, balance, trades, report, restart, stop, emergency, /users |
+| `readonly` | Read only — status, balance, trades, report. No control commands. |
+
+### users.json format
+
+```json
+{
+  "users": {
+    "429207285": {
+      "name": "Jason",
+      "role": "admin",
+      "added": "2026-05-17"
+    },
+    "123456789": {
+      "name": "Partner",
+      "role": "readonly",
+      "added": "2026-05-18"
+    }
+  }
+}
+```
+
+A `users.template.json` in the `notifications/` folder shows the format.
+
+### Adding / removing / changing roles
+
+Manage users directly from your Mac via the algo panel — no VPS login needed:
+
+```
+algo → [4] Manage individual bot → select Telegram → [u] Manage users
+```
+
+From there you can list, add, remove, and change roles interactively.
+
+To find someone's chat ID: ask them to message @userinfobot on Telegram.
+Unauthorized access attempts are also logged to the VPS console:
+`UNAUTHORIZED: chat=123456789 user=@theirhandle (Their Name)`
+
+### Viewing current users
+
+Via algo panel: `algo` → `[4]` → `Telegram` → `[u]` → `[1] List users`
+Via Telegram: send `/users` (admin only — read-only view)
+
+### Security layers
+
+1. **Chat ID whitelist** — anyone not in `users.json` gets rejected silently (one message telling them it's private)
+2. **Role enforcement** — readonly users can't use control commands even if they try
+3. **Unauthorized logging** — all rejected attempts logged to VPS console with username and message
+4. **Token privacy** — bot token is in the Python file; keep your repo private or move to env var
+
