@@ -6,7 +6,7 @@ READ-ONLY COMMANDS:
   /status          — all bots running/stopped with uptime
   /balance         — current balance per account
   /trades          — today's trade summary
-  /report          — trigger daily report (skips on weekends)
+  /report          — trigger daily report (weekdays only)
   /report-force    — trigger report even on weekends
   /help            — command list
 
@@ -178,6 +178,14 @@ def get_balance(equity) -> float:
     return float(records[-1].get("balance", records[-1].get("equity", 0)))
 
 
+def get_start_balance(equity) -> float:
+    """First equity record — the account starting balance."""
+    records = equity if isinstance(equity, list) else []
+    if not records:
+        return 0.0
+    return float(records[0].get("balance", records[0].get("equity", 0)))
+
+
 def get_today_trades(trades: list) -> list:
     today = datetime.now(TEXAS).date().isoformat()
     return [t for t in trades
@@ -220,8 +228,7 @@ def do_restart(bot_keys: list) -> str:
         task_stop(task)
         time.sleep(3)
         ok = task_start(task)
-        name = BOTS[key]["name"]
-        lines.append(f"{'OK' if ok else 'FAILED'}  {name}")
+        lines.append(f"{'✓' if ok else '✗'}  {BOTS[key]['name']}")
     return "\n".join(lines)
 
 
@@ -232,7 +239,7 @@ def do_stop(bot_keys: list) -> str:
         if not task:
             continue
         task_stop(task)
-        lines.append(f"Stopped  {BOTS[key]['name']}")
+        lines.append(f"✓  {BOTS[key]['name']} stopped")
     return "\n".join(lines)
 
 
@@ -254,44 +261,45 @@ def do_emergency_stop() -> str:
 # =============================================================================
 
 def cmd_status() -> str:
-    now_tx = datetime.now(TEXAS).strftime("%Y-%m-%d %H:%M CT")
-    lines  = [f"*Status Report*  {now_tx}", ""]
+    now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
+    lines  = [f"📊 *Bot Status*  _{now_tx}_", ""]
 
     lines.append("*Trading Bots*")
     for key, cfg in BOTS.items():
         running = is_running(cfg["script"])
         uptime  = get_uptime(cfg["log"]) if running else "—"
-        status  = "Running" if running else "Stopped"
-        lines.append(f"  {cfg['name']:<18} {status:<8} {uptime}")
+        dot     = "🟢" if running else "🔴"
+        lines.append(f"{dot} `{cfg['name']:<16}` {uptime}")
 
     lines.append("")
     lines.append("*System*")
     tg_running = is_running("telegram_bot.py")
     tg_status  = "Running" if tg_running else "Stopped"
-    lines.append(f"  {'Telegram':<18} {tg_status:<8}")
+    dot = "🟢" if tg_running else "🔴"
+    lines.append(f"{dot} `{'Telegram':<16}` {tg_status}")
 
     return "\n".join(lines)
 
 
 def cmd_balance() -> str:
-    now_tx = datetime.now(TEXAS).strftime("%Y-%m-%d %H:%M CT")
-    lines  = [f"*Account Balances*  {now_tx}", ""]
+    now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
+    lines  = [f"💰 *Account Balances*  _{now_tx}_", ""]
 
     for key, cfg in BOTS.items():
         equity  = load_json(cfg["equity"])
         balance = get_balance(equity)
-        records = equity if isinstance(equity, list) else []
-        start   = float(records[0].get("balance", records[0].get("equity", 0))) if records else 0
+        start   = get_start_balance(equity)
         growth  = ((balance - start) / start * 100) if start > 0 else 0
+        arrow   = "↑" if growth > 0 else "↓" if growth < 0 else "—"
         sign    = "+" if growth >= 0 else ""
-        lines.append(f"  {cfg['name']:<18} ${balance:>9,.2f}  ({sign}{growth:.1f}%)")
+        lines.append(f"`{cfg['name']:<16}` *${balance:,.2f}*  {arrow} {sign}{growth:.1f}%")
 
     return "\n".join(lines)
 
 
 def cmd_trades() -> str:
-    now_tx  = datetime.now(TEXAS).strftime("%Y-%m-%d %H:%M CT")
-    lines   = [f"*Today's Trades*  {now_tx}", ""]
+    now_tx  = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
+    lines   = [f"📋 *Today's Trades*  _{now_tx}_", ""]
     total_w = total_l = total_be = total_t = 0
 
     for key, cfg in BOTS.items():
@@ -301,43 +309,64 @@ def cmd_trades() -> str:
         l  = sum(1 for t in today if t["outcome"] == "loss")
         be = sum(1 for t in today if t["outcome"] == "breakeven")
         wr = f"{w/len(today)*100:.0f}%" if today else "—"
-        lines.append(f"  {cfg['name']:<18} {len(today):>2} trades  {w}W {l}L {be}BE  WR {wr}")
+        lines.append(f"`{cfg['name']:<16}` {len(today)} trades  {w}W {l}L {be}BE  WR {wr}")
         total_w += w; total_l += l; total_be += be; total_t += len(today)
 
     lines.append("")
-    lines.append(f"  Total  {total_t} trades  {total_w}W {total_l}L {total_be}BE")
+    lines.append(f"`{'Total':<16}` {total_t} trades  {total_w}W {total_l}L {total_be}BE")
     return "\n".join(lines)
 
 
 def cmd_report(force: bool = False) -> str:
-    flag = "--force" if force else ""
+    """
+    Trigger the daily report.
+    On weekends: prompt user to send /force to override.
+    If force=True: run immediately regardless of day.
+    """
+    now_tx     = datetime.now(TEXAS)
+    is_weekend = now_tx.weekday() >= 5
+
+    if is_weekend and not force:
+        # Set pending action so /force triggers the report
+        pending_action["command"]    = lambda: _run_reporter(force=True)
+        pending_action["label"]      = "Weekend Report"
+        pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=120)
+        day = now_tx.strftime("%A")
+        return (
+            f"📅 It's {day} — gold markets are closed\\.\n\n"
+            f"Send /force within 2 minutes to generate the report anyway\\."
+        )
+
+    return _run_reporter(force=force)
+
+
+def _run_reporter(force: bool = False) -> str:
     try:
-        args = ["python",
-                str(ALGOS_ROOT / "notifications/reporter.py")]
-        if flag:
-            args.append(flag)
+        args = ["python", str(ALGOS_ROOT / "notifications/reporter.py")]
+        if force:
+            args.append("--force")
         subprocess.Popen(args, cwd=str(ALGOS_ROOT))
-        return "Report generating. Check messages shortly."
+        return "📊 Generating report. Check messages shortly."
     except Exception as e:
         return f"Failed to run reporter: {e}"
 
 
 def cmd_help() -> str:
     return (
-        "*LWG Capital — Available Commands*\n\n"
+        "📖 *LWG Capital — Commands*\n\n"
         "*Read Only*\n"
-        "  /status         Running status and uptime\n"
-        "  /balance        Account balances\n"
-        "  /trades         Today's trade summary\n"
-        "  /report         Daily report (weekdays only)\n"
-        "  /report\\-force  Report even on weekends\n"
-        "  /help           This message\n\n"
-        "*Control  (type /confirm within 30s)*\n"
-        "  /restart        Restart all bots\n"
-        "  /restart smc    Restart one bot\n"
-        "  /stop           Stop all bots\n"
-        "  /stop scalper   Stop one bot\n"
-        "  /emergency      Kill everything immediately\n\n"
+        "`/status`         Running status and uptime\n"
+        "`/balance`        Account balances\n"
+        "`/trades`         Today's trade summary\n"
+        "`/report`         Daily report \\(weekdays only\\)\n"
+        "`/force`          Confirm weekend report when prompted\n"
+        "`/help`           This message\n\n"
+        "*Control*  _type /confirm within 30s_\n"
+        "`/restart`        Restart all bots\n"
+        "`/restart smc`    Restart one bot\n"
+        "`/stop`           Stop all bots\n"
+        "`/stop scalper`   Stop one bot\n"
+        "`/emergency`      Kill everything immediately\n\n"
         "_Bot keys: smc  reversion  scalper  fft_"
     )
 
@@ -347,13 +376,13 @@ def cmd_help() -> str:
 # =============================================================================
 
 def request_confirm(command_fn, label: str) -> str:
-    pending_action["command"]     = command_fn
-    pending_action["label"]       = label
-    pending_action["expires_at"]  = datetime.utcnow() + timedelta(seconds=CONFIRM_TIMEOUT)
+    pending_action["command"]    = command_fn
+    pending_action["label"]      = label
+    pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=CONFIRM_TIMEOUT)
     return (
-        f"*Confirmation Required*\n\n"
-        f"Action: {label}\n\n"
-        f"Send /confirm within {CONFIRM_TIMEOUT} seconds to proceed\\.\n"
+        f"⚠️ *Confirm Required*\n\n"
+        f"Action: _{label}_\n\n"
+        f"Send /confirm within {CONFIRM_TIMEOUT}s to proceed\\.\n"
         f"Any other message cancels\\."
     )
 
@@ -363,12 +392,12 @@ def cmd_confirm() -> str:
         return "No pending action."
     if datetime.utcnow() > pending_action["expires_at"]:
         pending_action["command"] = None
-        return "Confirmation timed out. Action cancelled."
+        return "⏰ Confirmation timed out. Action cancelled."
     fn    = pending_action["command"]
     label = pending_action["label"]
     pending_action["command"] = None
     result = fn()
-    return f"*{label}*\n\n{result}"
+    return f"✅ *{label}*\n\n{result}"
 
 
 def parse_bot_key(parts: list) -> str | None:
@@ -387,36 +416,42 @@ def handle_message(text: str) -> str:
     parts = text.strip().split()
     cmd   = parts[0].lower() if parts else ""
 
-    if cmd == "/status":          return cmd_status()
-    if cmd == "/balance":         return cmd_balance()
-    if cmd == "/trades":          return cmd_trades()
-    if cmd == "/report":          return cmd_report(force=False)
-    if cmd == "/report-force":    return cmd_report(force=True)
-    if cmd == "/help":            return cmd_help()
-    if cmd == "/confirm":         return cmd_confirm()
+    if cmd == "/status":        return cmd_status()
+    if cmd == "/balance":       return cmd_balance()
+    if cmd == "/trades":        return cmd_trades()
+    if cmd == "/report":        return cmd_report(force=False)
+    if cmd == "/report-force":  return cmd_report(force=True)
+    if cmd == "/force":         return cmd_confirm()  # /force confirms weekend report
+    if cmd == "/help":          return cmd_help()
+    if cmd == "/confirm":       return cmd_confirm()
 
     if cmd == "/emergency":
-        return request_confirm(do_emergency_stop, "Emergency Stop — kill all bots")
+        return request_confirm(do_emergency_stop,
+                               "Emergency Stop — kill all bots")
 
     if cmd == "/restart":
         bot_key = parse_bot_key(parts)
         if bot_key:
             name = BOTS[bot_key]["name"]
-            return request_confirm(lambda k=bot_key: do_restart([k]), f"Restart {name}")
-        return request_confirm(lambda: do_restart(list(BOTS.keys())), "Restart All Bots")
+            return request_confirm(lambda k=bot_key: do_restart([k]),
+                                   f"Restart {name}")
+        return request_confirm(lambda: do_restart(list(BOTS.keys())),
+                               "Restart All Bots")
 
     if cmd == "/stop":
         bot_key = parse_bot_key(parts)
         if bot_key:
             name = BOTS[bot_key]["name"]
-            return request_confirm(lambda k=bot_key: do_stop([k]), f"Stop {name}")
-        return request_confirm(lambda: do_stop(list(BOTS.keys())), "Stop All Bots")
+            return request_confirm(lambda k=bot_key: do_stop([k]),
+                                   f"Stop {name}")
+        return request_confirm(lambda: do_stop(list(BOTS.keys())),
+                               "Stop All Bots")
 
     if pending_action["command"]:
         pending_action["command"] = None
-        return f"Action cancelled. Unknown command: {cmd}\nSend /help for commands."
+        return f"Action cancelled.\nUnknown command: `{cmd}`\nSend /help for commands."
 
-    return f"Unknown command: {cmd}\nSend /help for commands."
+    return f"Unknown command: `{cmd}`\nSend /help for commands."
 
 
 # =============================================================================
@@ -425,7 +460,7 @@ def handle_message(text: str) -> str:
 
 def main():
     print(f"Telegram bot started — polling every {POLL_INTERVAL}s")
-    send("*LWG Capital online*\nSend /help for available commands\\.")
+    send("🟢 *LWG Capital online*\nSend /help for available commands\\.")
     offset = load_offset()
 
     while True:
