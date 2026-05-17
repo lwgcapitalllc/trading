@@ -54,10 +54,10 @@ CONFIRM_TIMEOUT = 30   # seconds to confirm a control command
 
 # Task names as registered in Windows Task Scheduler
 TASK_NAMES = {
-    "bot1": "ALGO_SMC_TREND",
-    "bot2": "ALGO_MEAN_REVERSION",
-    "bot3": "ALGO_SCALPER",
-    "bot5": "ALGO_FFT",
+    "bot1": "BOT_SMC_TREND",
+    "bot2": "BOT_MEAN_REVERSION",
+    "bot3": "BOT_SCALPER",
+    "bot5": "BOT_FFT",
 }
 
 BOTS = {

@@ -20,23 +20,39 @@ LOG_BASE    = "C:\\algos\\markets" # Base path for log files on VPS
 
 # Task name prefix → market label
 MARKET_PREFIXES = {
-    "ALGO_": "ALGO",
+    "BOT_": "Bot",
+    "SYS_": "System",
 }
 
 # Map task name patterns to log file paths
 # Format: partial task name match → (market, pair, instance_folder)
 LOG_MAP = {
-    # Gold FX strategies
-    "ALGO_SMC_TREND":       ("fx",      "gold_main",       "bot_smc_trend.log"),
-    "ALGO_MEAN_REVERSION":  ("fx",      "gold_main",       "bot_mean_reversion.log"),
-    "ALGO_SCALPER":         ("fx",      "gold_scalper",    "bot_scalper.log"),
-    "ALGO_FFT":             ("fx",      "gold_fft",        "bot_fft.log"),
-    # Futures accounts
-    "ALGO_FUTURES_ACCT1":   ("futures", "futures_account1", "bot_futures.log"),
-    "ALGO_FUTURES_ACCT2":   ("futures", "futures_account2", "bot_futures.log"),
-    "ALGO_FUTURES_ACCT3":   ("futures", "futures_account3", "bot_futures.log"),
-    "ALGO_FUTURES_ACCT4":   ("futures", "futures_account4", "bot_futures.log"),
-    "ALGO_FUTURES_ACCT5":   ("futures", "futures_account5", "bot_futures.log"),
+    # Trading bots
+    "BOT_SMC_TREND":       ("fx",      "gold_main",        "bot_smc_trend.log"),
+    "BOT_MEAN_REVERSION":  ("fx",      "gold_main",        "bot_mean_reversion.log"),
+    "BOT_SCALPER":         ("fx",      "gold_scalper",     "bot_scalper.log"),
+    "BOT_FFT":             ("fx",      "gold_fft",         "bot_fft.log"),
+    "BOT_FUTURES_ACCT1":   ("futures", "futures_account1", "bot_futures.log"),
+    "BOT_FUTURES_ACCT2":   ("futures", "futures_account2", "bot_futures.log"),
+    "BOT_FUTURES_ACCT3":   ("futures", "futures_account3", "bot_futures.log"),
+    "BOT_FUTURES_ACCT4":   ("futures", "futures_account4", "bot_futures.log"),
+    "BOT_FUTURES_ACCT5":   ("futures", "futures_account5", "bot_futures.log"),
+}
+
+# Display names for panel — clean readable labels
+DISPLAY_NAMES = {
+    "BOT_SMC_TREND":       "SMC Trend",
+    "BOT_MEAN_REVERSION":  "Mean Reversion",
+    "BOT_SCALPER":         "Scalper",
+    "BOT_FFT":             "FFT",
+    "BOT_FUTURES_ACCT1":   "Futures Acct 1",
+    "BOT_FUTURES_ACCT2":   "Futures Acct 2",
+    "BOT_FUTURES_ACCT3":   "Futures Acct 3",
+    "BOT_FUTURES_ACCT4":   "Futures Acct 4",
+    "BOT_FUTURES_ACCT5":   "Futures Acct 5",
+    "SYS_TELEGRAM":        "Telegram",
+    "SYS_REPORTER":        "Reporter",
+    "SYS_MONITOR":         "Monitor",
 }
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -96,18 +112,20 @@ def get_all_tasks() -> list[dict]:
         if "bot_futures"     in line: running_scripts.add("bot4")
         if "bot_fft"           in line: running_scripts.add("bot5")
         if "telegram_bot"       in line: running_scripts.add("telegram")
+        if "reporter"           in line: running_scripts.add("reporter")
+        if "monitor"            in line: running_scripts.add("monitor")
 
     # Map task names to bot script keys
     TASK_BOT_MAP = {
         # FX
-        "ALGO_SMC_TREND":              "bot1",
-        "ALGO_MEAN_REVERSION":              "bot2",
-        "ALGO_SCALPER":           "bot3",
-        "ALGO_FFT":          "bot5",
+        "BOT_SMC_TREND":              "bot1",
+        "BOT_MEAN_REVERSION":              "bot2",
+        "BOT_SCALPER":           "bot3",
+        "BOT_FFT":          "bot5",
         # Notifications
-        "ALGO_TELEGRAM":           "telegram",
+        "SYS_TELEGRAM":           "telegram",
         # Futures
-        "ALGO_FUTURES_ACCT1": "bot4",
+        "BOT_FUTURES_ACCT1": "bot4",
         "ALGO_FUTURES_ACCT2": "bot4",
         "ALGO_FUTURES_ACCT3": "bot4",
         "ALGO_FUTURES_ACCT4": "bot4",
@@ -134,15 +152,13 @@ def get_all_tasks() -> list[dict]:
         bot_key = TASK_BOT_MAP.get(name)
         running = bot_key in running_scripts if bot_key else False
 
-        name_parts = name.split("_", 2)
-        pair = name_parts[1] if len(name_parts) > 1 else "?"
-        role = name_parts[2] if len(name_parts) > 2 else "?"
+        display = DISPLAY_NAMES.get(name, name)
 
         tasks.append({
             "name":    name,
             "market":  market_label,
-            "pair":    pair,
-            "role":    role,
+            "pair":    display,
+            "role":    "",
             "running": running,
             "status":  "Running" if running else "Stopped",
         })
@@ -214,7 +230,7 @@ def emergency_stop_all(tasks: list[dict]):
     print(yellow("Open MT5 to verify no positions are still open."))
     # Restart telegram bot so you can still receive alerts and commands
     import time; time.sleep(3)
-    start_task("ALGO_TELEGRAM")
+    start_task("SYS_TELEGRAM")
     print(green("Telegram bot restarted — you can still send commands."))
 
 
@@ -408,8 +424,8 @@ def main():
                 else:
                     print(f"\r  {red('✗')} {t['name']:<30} {red('FAILED TO START')}")
             # Always restart telegram bot after any bot restart
-            start_task("ALGO_TELEGRAM")
-            print(f"  {green('✓')} {'ALGO_TELEGRAM':<30} {green('RESTARTED')}")
+            start_task("SYS_TELEGRAM")
+            print(f"  {green('✓')} {'SYS_TELEGRAM':<30} {green('RESTARTED')}")
             tasks = get_all_tasks()
             print()
             input(gray("  Press Enter to continue..."))
@@ -549,15 +565,15 @@ if __name__ == "__main__":
                 print(f"\r{green('✓') if confirmed else red('✗')} {t['name']:<35} "
                       f"{green('RUNNING') if confirmed else red('FAILED')}")
             # Always restart telegram bot
-            start_task("ALGO_TELEGRAM")
-            print(f"{green('✓')} {'ALGO_TELEGRAM':<35} {green('RESTARTED')}")
+            start_task("SYS_TELEGRAM")
+            print(f"{green('✓')} {'SYS_TELEGRAM':<35} {green('RESTARTED')}")
 
         elif cmd == "start":
             print(bold("Starting all bots..."))
             for t in tasks:
                 start_task(t["name"])
                 print(f"  -> {t['name']}")
-            start_task("ALGO_TELEGRAM")
+            start_task("SYS_TELEGRAM")
             print(f"  -> ALGO_TELEGRAM")
 
         elif cmd == "stop":

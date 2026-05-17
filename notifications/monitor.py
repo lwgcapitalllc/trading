@@ -246,7 +246,7 @@ def check_telegram_bot(state: dict) -> dict:
         if tries < max_tries:
             try:
                 result = subprocess.run(
-                    ["schtasks", "/run", "/tn", "ALGO_TELEGRAM"],
+                    ["schtasks", "/run", "/tn", "SYS_TELEGRAM"],
                     capture_output=True, text=True, timeout=15
                 )
                 if result.returncode == 0:
@@ -274,7 +274,7 @@ def check_telegram_bot(state: dict) -> dict:
                 send_alert(
                     "🚨 *Telegram Bot FAILED TO RESTART*\n"
                     f"Tried {max_tries} times\\. Manual intervention required\\.\n"
-                    f"RDP into VPS and run: `schtasks /run /tn ALGO_TELEGRAM`\n"
+                    f"RDP into VPS and run: `schtasks /run /tn SYS_TELEGRAM`\n"
                     f"Or restart via algo panel on Mac\\."
                 )
                 tg_state["max_retry_alerted"] = True
