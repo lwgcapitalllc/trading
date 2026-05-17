@@ -244,10 +244,14 @@ def get_uptime(task_name: str) -> str:
 
     # Special case: Telegram uptime via startup timestamp file
     if LOG_MAP[task_name] is None:
-        raw = ssh("type C:\\algos\\telegram_start.json 2>nul")
+        result = subprocess.run(
+            ["ssh", VPS_HOST, "type C:\\algos\\telegram_start.json"],
+            capture_output=True, text=True, timeout=10
+        )
+        raw = (result.stdout + result.stderr).strip().replace("\r", "")
         try:
             import json as _json, time as _time
-            data    = _json.loads(raw.strip())
+            data    = _json.loads(raw)
             started = float(data["started"])
             delta   = _time.time() - started
             hours   = int(delta // 3600)
