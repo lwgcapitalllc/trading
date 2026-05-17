@@ -148,44 +148,42 @@ def connect():
     """
     Connect to the correct MT5 terminal instance.
 
-    Uses a lock file to prevent multiple bots from calling mt5.initialize()
-    simultaneously. This is the only reliable way to prevent account mixing
-    when all bots restart at the same time.
+    CRITICAL: Never falls back to no-path initialize when a mt5_path is configured.
+    Falling back to no-path allows Python to connect to ANY terminal, which causes
+    it to log accounts into the wrong terminal — MT5 remembers all logins.
 
-    Lock file: C:/algos/mt5_connect.lock
-    Each bot acquires the lock, connects, verifies account, then releases.
-    Next bot waits up to 60s for the lock to clear before proceeding.
+    Strategy:
+    1. Acquire connection lock (prevents race conditions between bots)
+    2. Try mt5.initialize(path=...) — retries up to 5 times with delay
+    3. If IPC timeout: terminal is already running — retry, don't fallback
+    4. Verify account matches expected ID before proceeding
     """
     import time as _time
 
     LOCK_FILE    = Path(r"C:\algos\mt5_connect.lock")
-    LOCK_TIMEOUT = 60   # max seconds to wait for lock
-    LOCK_TTL     = 30   # max seconds a lock is considered valid (stale lock protection)
+    LOCK_TIMEOUT = 90
+    LOCK_TTL     = 45
 
     def acquire_lock(bot_id: str) -> bool:
-        """Try to acquire the connection lock. Return True if acquired."""
         waited = 0
         while waited < LOCK_TIMEOUT:
             if LOCK_FILE.exists():
-                # Check if lock is stale
                 try:
-                    age = _time.time() - LOCK_FILE.stat().st_mtime
+                    age    = _time.time() - LOCK_FILE.stat().st_mtime
+                    holder = LOCK_FILE.read_text().strip()
                     if age > LOCK_TTL:
-                        log.warning(f"Stale lock detected ({age:.0f}s old) — removing")
+                        log.warning(f"Stale lock ({age:.0f}s old, held by {holder}) — removing")
                         LOCK_FILE.unlink(missing_ok=True)
                     else:
-                        holder = LOCK_FILE.read_text().strip()
                         log.info(f"Waiting for MT5 lock (held by {holder}, {age:.0f}s)...")
-                        _time.sleep(2)
-                        waited += 2
+                        _time.sleep(3)
+                        waited += 3
                         continue
                 except Exception:
                     pass
-            # Lock is free — acquire it
             try:
                 LOCK_FILE.write_text(bot_id)
-                _time.sleep(0.5)  # small delay to catch near-simultaneous writes
-                # Verify we actually got it (not overwritten immediately)
+                _time.sleep(0.5)
                 if LOCK_FILE.exists() and LOCK_FILE.read_text().strip() == bot_id:
                     return True
             except Exception as e:
@@ -201,7 +199,6 @@ def connect():
         except Exception:
             pass
 
-    # Startup delay from config — extra stagger on top of lock
     startup_delay = _CFG.get("startup_delay", 0)
     if startup_delay > 0:
         log.info(f"Startup delay {startup_delay}s")
@@ -211,48 +208,46 @@ def connect():
     expected_id = ACCOUNT.get("login")
     bot_id      = f"BOT_SCALPER_{expected_id}"
 
-    # Acquire lock before any MT5 operation
     if not acquire_lock(bot_id):
         return False
 
     try:
-        for attempt in range(1, 4):
+        MAX_ATTEMPTS = 5
+        for attempt in range(1, MAX_ATTEMPTS + 1):
             if attempt > 1:
-                log.info(f"Connect attempt {attempt}/3 — waiting 5s...")
-                _time.sleep(5)
-                mt5.shutdown()
+                log.info(f"Connect attempt {attempt}/{MAX_ATTEMPTS} — waiting 8s...")
+                _time.sleep(8)
+                try:
+                    mt5.shutdown()
+                except Exception:
+                    pass
 
-            # Initialize with path
-            connected = False
+            # Initialize
             if mt5_path:
-                if mt5.initialize(path=mt5_path):
-                    connected = True
-                else:
+                # Always use explicit path — NEVER fall back to no-path
+                # IPC timeout means terminal is already running — just retry
+                init_ok = mt5.initialize(path=mt5_path)
+                if not init_ok:
                     err = mt5.last_error()
-                    if err[0] == -10005:  # IPC timeout — terminal already running
-                        log.info("IPC timeout — terminal running, trying without path")
-                        if mt5.initialize():
-                            connected = True
-                    if not connected:
-                        log.error(f"MT5 init failed: {mt5.last_error()}")
-                        continue
+                    if err[0] == -10005:
+                        log.info(f"IPC timeout (attempt {attempt}) — terminal running, will retry with path")
+                    else:
+                        log.warning(f"MT5 init failed (attempt {attempt}): {err}")
+                    continue
             else:
                 if not mt5.initialize():
-                    log.error(f"MT5 init failed: {mt5.last_error()}")
+                    log.warning(f"MT5 init failed (attempt {attempt}): {mt5.last_error()}")
                     continue
-                connected = True
 
-            if not connected:
-                continue
-
-            # Login
+            # Login with explicit credentials
             if not mt5.login(ACCOUNT["login"], password=ACCOUNT["password"],
                              server=ACCOUNT["server"]):
                 log.warning(f"Login failed (attempt {attempt}): {mt5.last_error()}")
                 mt5.shutdown()
                 continue
 
-            # Verify correct account
+            # Verify correct account — if wrong, shut down immediately
+            # Do NOT retry login on same terminal — shut down and try again
             info = mt5.account_info()
             if not info:
                 log.warning(f"No account info (attempt {attempt})")
@@ -260,22 +255,24 @@ def connect():
                 continue
 
             if info.login != expected_id:
-                log.warning(
+                log.error(
                     f"ACCOUNT MISMATCH (attempt {attempt}): "
-                    f"got #{info.login} expected #{expected_id} — retrying"
+                    f"got #{info.login} expected #{expected_id} — "
+                    f"shutting down and retrying"
                 )
                 mt5.shutdown()
                 continue
 
-            # Connected and verified
             log.info(f"Connected | #{info.login} | ${info.balance:,.2f} | {info.server}")
             return True
 
-        log.error(f"Failed to connect to #{expected_id} after 3 attempts.")
+        log.error(
+            f"Failed to connect to #{expected_id} after {MAX_ATTEMPTS} attempts. "
+            f"Ensure the correct MT5 terminal is open at: {mt5_path}"
+        )
         return False
 
     finally:
-        # Always release lock whether we succeeded or failed
         release_lock()
         log.info("MT5 connection lock released")
 
