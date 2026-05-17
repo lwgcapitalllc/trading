@@ -114,7 +114,7 @@ def get_updates(offset: int = 0) -> list:
 
 def send(text: str):
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT, "text": text, "parse_mode": "Markdown"}
+    data = {"chat_id": ADMIN_CHAT, "text": text, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=data, timeout=10)
     except Exception as e:
