@@ -39,8 +39,8 @@ ALGOS_ROOT     = Path("C:/algos")
 TEXAS          = ZoneInfo("America/Chicago")
 
 BOTS = {
-    "bot1": {
-        "name":      "Bot 1 — SMC Trend",
+    "smc_trend": {
+        "name":      "Bot SMC Trend",
         "emoji":     "📈",
         "script":    "bot_smc_trend.py",
         "trades":    ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_trades.json",
@@ -49,8 +49,8 @@ BOTS = {
         "log":       ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
         "daily_cap": 10.0,
     },
-    "bot2": {
-        "name":      "Bot 2 — Mean Reversion",
+    "mean_reversion": {
+        "name":      "Bot Mean Reversion",
         "emoji":     "↩️",
         "script":    "bot_mean_reversion.py",
         "trades":    ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_trades.json",
@@ -59,8 +59,8 @@ BOTS = {
         "log":       ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
         "daily_cap": 10.0,
     },
-    "bot3": {
-        "name":      "Bot 3 — EMA Scalper",
+    "scalper": {
+        "name":      "Bot Scalper",
         "emoji":     "⚡",
         "script":    "bot_scalper.py",
         "trades":    ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_trades.json",
@@ -69,8 +69,8 @@ BOTS = {
         "log":       ALGOS_ROOT / "markets/fx/instances/gold_scalper/bot_scalper.log",
         "daily_cap": 8.0,
     },
-    "bot5": {
-        "name":      "Bot 5 — FFT Strategy",
+    "fft": {
+        "name":      "Bot FFT",
         "emoji":     "🎯",
         "script":    "bot_fft.py",
         "trades":    ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_trades.json",
@@ -305,9 +305,23 @@ def format_report(bot_key: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bot",  help="bot1/bot2/bot3/bot5")
-    parser.add_argument("--test", action="store_true")
+    parser.add_argument("--bot",   help="smc_trend/mean_reversion/scalper/fft")
+    parser.add_argument("--test",  action="store_true")
+    parser.add_argument("--force", action="store_true",
+                        help="Send report even on weekends")
     args = parser.parse_args()
+
+    # Skip reports on weekends — gold markets are closed
+    # Use --force to override (e.g. from /report telegram command)
+    now_tx     = datetime.now(TEXAS)
+    is_weekend = now_tx.weekday() >= 5  # 5=Saturday, 6=Sunday
+    if is_weekend and not args.test and not args.force:
+        print(f"Weekend — markets closed. No report sent ({now_tx.strftime('%A')})")
+        send_telegram(
+            f"📊 Weekend report skipped — gold markets are closed\\.\n"
+            f"Send /report to request one anyway\\."
+        )
+        return
 
     if args.test:
         ok = send_telegram(
@@ -317,7 +331,7 @@ def main():
         print("Test OK" if ok else "Test FAILED")
         return
 
-    targets = [args.bot] if args.bot else list(BOTS.keys())
+    targets = [args.bot] if args.bot and args.bot in BOTS else list(BOTS.keys())
 
     now_tx = datetime.now(TEXAS)
     send_telegram(

@@ -287,13 +287,14 @@ def print_header(tasks: list[dict]):
 
             if t["running"] and t["name"] in LOG_MAP:
                 uptime = get_uptime(t["name"])
-                uptime_str = gray(f"  up {uptime}") if uptime else ""
+                uptime_str = gray(f"up {uptime}") if uptime else ""
             else:
                 uptime_str = ""
 
-            print(bold(cyan("║")) + f"  {status_icon} " +
-                  bold(f"{t['market']}/") + cyan(f"{t['pair']}/") +
-                  f"{t['role']:<18} {status_text}{uptime_str}")
+            # Fixed width label — pad based on visible chars not ANSI codes
+            label     = f"{t['market']}/{t['pair']}"
+            pad       = max(0, 26 - len(label))
+            print(bold(cyan("║")) + f"  {status_icon} {label}{' ' * pad} {status_text}  {uptime_str}")
 
     print(bold(cyan("╚══════════════════════════════════════════════════════════╝")))
 

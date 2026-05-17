@@ -14,7 +14,7 @@
   <Settings>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <ExecutionTimeLimit>PT2M</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT1M</ExecutionTimeLimit>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
   </Settings>
@@ -22,7 +22,7 @@
     <TimeTrigger>
       <StartBoundary>2026-01-01T00:00:00</StartBoundary>
       <Repetition>
-        <Interval>PT5M</Interval>
+        <Interval>PT1M</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
     </TimeTrigger>

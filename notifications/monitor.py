@@ -36,8 +36,8 @@ STATE_FILE     = ALGOS_ROOT / "monitor_state.json"
 TEXAS          = ZoneInfo("America/Chicago")
 
 BOTS = {
-    "bot1": {
-        "name":        "Bot 1 — SMC Trend",
+    "smc_trend": {
+        "name":        "Bot SMC Trend",
         "script":      "bot_smc_trend.py",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_equity.json",
         "daily":       ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_daily.json",
@@ -46,8 +46,8 @@ BOTS = {
         "weekly_cap":  20.0,
         "daily_goal":  2.0,
     },
-    "bot2": {
-        "name":        "Bot 2 — Mean Reversion",
+    "mean_reversion": {
+        "name":        "Bot Mean Reversion",
         "script":      "bot_mean_reversion.py",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_equity.json",
         "daily":       ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_daily.json",
@@ -56,8 +56,8 @@ BOTS = {
         "weekly_cap":  20.0,
         "daily_goal":  2.0,
     },
-    "bot3": {
-        "name":        "Bot 3 — EMA Scalper",
+    "scalper": {
+        "name":        "Bot Scalper",
         "script":      "bot_scalper.py",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_equity.json",
         "daily":       ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_daily.json",
@@ -66,8 +66,8 @@ BOTS = {
         "weekly_cap":  20.0,
         "daily_goal":  10.0,
     },
-    "bot5": {
-        "name":        "Bot 5 — FFT Strategy",
+    "fft": {
+        "name":        "Bot FFT",
         "script":      "bot_fft.py",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_equity.json",
         "daily":       ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_daily.json",
