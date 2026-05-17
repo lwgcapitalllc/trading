@@ -211,6 +211,10 @@ def emergency_stop_all(tasks: list[dict]):
     ssh("taskkill /F /IM python.exe 2>nul")
     print(red("All bots killed."))
     print(yellow("Open MT5 to verify no positions are still open."))
+    # Restart telegram bot so you can still receive alerts and commands
+    import time; time.sleep(3)
+    start_task("ALGO_Telegram_Bot")
+    print(green("Telegram bot restarted — you can still send commands."))
 
 
 # ── Log Viewer ────────────────────────────────────────────────────────────────
@@ -402,6 +406,9 @@ def main():
                     print(f"\r  {green('✓')} {t['name']:<30} {green('RUNNING')}")
                 else:
                     print(f"\r  {red('✗')} {t['name']:<30} {red('FAILED TO START')}")
+            # Always restart telegram bot after any bot restart
+            start_task("ALGO_Telegram_Bot")
+            print(f"  {green('✓')} {'ALGO_Telegram_Bot':<30} {green('RESTARTED')}")
             tasks = get_all_tasks()
             print()
             input(gray("  Press Enter to continue..."))
@@ -540,12 +547,17 @@ if __name__ == "__main__":
                         break
                 print(f"\r{green('✓') if confirmed else red('✗')} {t['name']:<35} "
                       f"{green('RUNNING') if confirmed else red('FAILED')}")
+            # Always restart telegram bot
+            start_task("ALGO_Telegram_Bot")
+            print(f"{green('✓')} {'ALGO_Telegram_Bot':<35} {green('RESTARTED')}")
 
         elif cmd == "start":
             print(bold("Starting all bots..."))
             for t in tasks:
                 start_task(t["name"])
                 print(f"  -> {t['name']}")
+            start_task("ALGO_Telegram_Bot")
+            print(f"  -> ALGO_Telegram_Bot")
 
         elif cmd == "stop":
             print(bold("Stopping all bots..."))
