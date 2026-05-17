@@ -42,7 +42,8 @@ def main():
     config     = Path(args.config).resolve()
 
     # Log file sits next to the config (instance dir)
-    log_out    = config.parent / f"{args.bot.replace("bot_", "")}_stdout.log"
+    bot_name = args.bot.replace("bot_", "")
+    log_out  = config.parent / f"{bot_name}_stdout.log"
 
     if not script.exists():
         print(f"ERROR: Bot script not found: {script}")
