@@ -123,5 +123,6 @@
     "partial_close_r": 1.0,
     "partial_close_pct": 0.5,
     "trail_atr_mult": 0.3
-  }
+  },
+  "startup_delay": 0
 }

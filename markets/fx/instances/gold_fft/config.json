@@ -38,5 +38,6 @@
     "atr_ratio_compressing": 0.8,
     "rsi_range_trending": 35,
     "rsi_range_ranging": 20
-  }
+  },
+  "startup_delay": 15
 }

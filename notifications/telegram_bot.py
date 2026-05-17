@@ -271,15 +271,23 @@ def task_stop(task_name: str) -> bool:
 
 def do_restart(bot_keys: list) -> str:
     lines = []
+
+    # Stop all bots first, then stagger starts
+    # Prevents all bots racing to grab the same MT5 terminal simultaneously
     for key in bot_keys:
+        task = TASK_NAMES.get(key)
+        if task:
+            task_stop(task)
+    time.sleep(3)
+
+    for i, key in enumerate(bot_keys):
         task = TASK_NAMES.get(key)
         if not task:
             continue
-        task_stop(task)
-        time.sleep(2)
+        if i > 0:
+            time.sleep(5)  # 5s between each start — matches startup_delay in configs
         ok = task_start(task)
-        status = "✓" if ok else "✗"
-        lines.append(f"{status}  {BOTS[key]['name']}")
+        lines.append(f"{'✓' if ok else '✗'}  {BOTS[key]['name']}")
 
     # Always restart Telegram last so it can send this response first
     if set(bot_keys) == set(BOTS.keys()):
