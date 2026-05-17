@@ -242,9 +242,9 @@ def get_uptime(task_name: str) -> str:
     if task_name not in LOG_MAP:
         return ""
 
-    # Special case: Telegram uptime via offset file mtime
+    # Special case: Telegram uptime via startup timestamp file
     if LOG_MAP[task_name] is None:
-        raw = ssh("python -c \"import os,json; f='C:\\\\algos\\\\telegram_offset.json'; print(os.path.getmtime(f)) if os.path.exists(f) else print(0)\" 2>nul")
+        raw = ssh("python -c \"import json,os; f=r'C:\\\\algos\\\\telegram_start.json'; d=json.load(open(f)); print(d['started'])\" 2>nul")
         try:
             mtime = float(raw.strip())
             if mtime == 0:

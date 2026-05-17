@@ -41,6 +41,7 @@ ADMIN_CHAT      = "429207285"   # Primary admin — always has access even if us
 ALGOS_ROOT      = Path("C:/algos")
 USERS_FILE      = ALGOS_ROOT / "users.json"
 OFFSET_FILE     = ALGOS_ROOT / "telegram_offset.json"
+TELEGRAM_START  = ALGOS_ROOT / "telegram_start.json"
 TEXAS           = ZoneInfo("America/Chicago")
 POLL_INTERVAL   = 10
 CONFIRM_TIMEOUT = 30
