@@ -37,6 +37,8 @@ LOG_MAP = {
     "BOT_FUTURES_ACCT3":   ("futures", "futures_account3", "bot_futures.log"),
     "BOT_FUTURES_ACCT4":   ("futures", "futures_account4", "bot_futures.log"),
     "BOT_FUTURES_ACCT5":   ("futures", "futures_account5", "bot_futures.log"),
+    # System — telegram uptime via offset file, not log
+    "SYS_TELEGRAM":        None,
 }
 
 # Display names for panel — clean readable labels
@@ -170,10 +172,26 @@ def get_all_tasks() -> list[dict]:
 def get_uptime(task_name: str) -> str:
     """
     Calculate how long a bot has been running by reading its log file.
-    Finds the most recent startup line and calculates elapsed time.
+    For SYS_TELEGRAM, uses the offset file modification time instead.
+    Scans log in reverse to find the most recent startup line.
     """
     if task_name not in LOG_MAP:
         return ""
+
+    # Special case: Telegram uptime via offset file mtime
+    if LOG_MAP[task_name] is None:
+        raw = ssh("python -c \"import os,json; f='C:\\\\algos\\\\telegram_offset.json'; print(os.path.getmtime(f)) if os.path.exists(f) else print(0)\" 2>nul")
+        try:
+            mtime = float(raw.strip())
+            if mtime == 0:
+                return ""
+            import time as _time
+            delta   = _time.time() - mtime
+            hours   = int(delta // 3600)
+            minutes = int((delta % 3600) // 60)
+            return f"{hours}h {minutes}m"
+        except Exception:
+            return ""
 
     market, instance, logfile = LOG_MAP[task_name]
     path = f"C:\\algos\\markets\\{market}\\instances\\{instance}\\{logfile}"
@@ -182,7 +200,7 @@ def get_uptime(task_name: str) -> str:
     if not raw:
         return ""
 
-    # Find last startup line — matches all bot startup formats
+    # Scan reversed — most recent startup line
     lines = raw.splitlines()
     start_time = None
     for line in reversed(lines):
@@ -203,27 +221,6 @@ def get_uptime(task_name: str) -> str:
     hours   = int(delta.total_seconds() // 3600)
     minutes = int((delta.total_seconds() % 3600) // 60)
 
-    if hours >= 24:
-        days  = hours // 24
-        hours = hours % 24
-        return f"{days}d {hours}h {minutes}m"
-    elif hours > 0:
-        return f"{hours}h {minutes}m"
-    else:
-        return f"{minutes}m"
-
-
-def get_telegram_uptime() -> str:
-    raw = ssh("type C:\\algos\\telegram_start.txt 2>nul")
-    if not raw:
-        return ""
-    try:
-        start_time = datetime.strptime(raw.strip()[:19], "%Y-%m-%d %H:%M:%S")
-    except Exception:
-        return ""
-    delta   = datetime.utcnow() - start_time
-    hours   = int(delta.total_seconds() // 3600)
-    minutes = int((delta.total_seconds() % 3600) // 60)
     if hours >= 24:
         days  = hours // 24
         hours = hours % 24
@@ -298,67 +295,55 @@ def clear():
 
 def print_header(tasks: list[dict]):
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    W   = 60  # total panel width including borders
 
-    W = 60  # panel width
-    divider = bold(cyan("╠" + "═" * (W-2) + "╣"))
-    top     = bold(cyan("╔" + "═" * (W-2) + "╗"))
-    bottom  = bold(cyan("╚" + "═" * (W-2) + "╝"))
-    side    = bold(cyan("║"))
-
-    def row(text=""):
-        # Strip ANSI for length calculation
+    def strip_ansi(s: str) -> str:
         import re
-        visible = re.sub(r'\033\[[0-9;]*m', '', text)
-        pad = max(0, W - 2 - len(visible))
-        return side + " " + text + " " * pad + side
+        return re.sub(r'\033\[[0-9;]*m', '', s)
 
-    print(top)
-    title = bold("ALGO CONTROL PANEL") + gray(f"  {now}")
-    print(row("  " + title))
-    print(divider)
+    def pad_row(content: str) -> str:
+        """Pad content to fill panel width with right border."""
+        visible_len = len(strip_ansi(content))
+        pad = max(0, W - 2 - visible_len)
+        return bold(cyan("║")) + content + " " * pad + bold(cyan("║"))
+
+    print(bold(cyan("╔" + "═" * (W-2) + "╗")))
+    title = f"  {bold('ALGO CONTROL PANEL')}  {gray(now)}"
+    print(pad_row(title))
+    print(bold(cyan("╠" + "═" * (W-2) + "╣")))
 
     if not tasks:
-        print(row(yellow("  No tasks found on VPS")))
+        print(pad_row(yellow("  No tasks found on VPS")))
     else:
-        # Split into 3 groups
-        trading  = [t for t in tasks if t["name"].startswith("BOT_")]
-        system   = [t for t in tasks if t["name"] == "SYS_TELEGRAM"]
-        sched    = [t for t in tasks if t["name"] in SCHEDULED_TASKS]
+        trading = [t for t in tasks if t["name"].startswith("BOT_")]
+        system  = [t for t in tasks if t["name"] == "SYS_TELEGRAM"]
+        sched   = [t for t in tasks if t["name"] in SCHEDULED_TASKS]
 
         def print_section(label, items):
-            print(row(f"  {gray(label)}"))
+            print(pad_row(f"  {gray(label)}"))
             for t in items:
                 is_sched   = t["name"] in SCHEDULED_TASKS
                 icon       = green("●") if t["running"] else (blue("◑") if is_sched else red("○"))
-                if is_sched:
-                    status = cyan("SCHEDULED")
-                else:
-                    status = green("RUNNING") if t["running"] else red("STOPPED ")
-
+                status     = cyan("SCHEDULED") if is_sched else (green("RUNNING") if t["running"] else red("STOPPED"))
                 uptime_str = ""
-                if t["running"]:
-                    if t["name"] in LOG_MAP:
-                        uptime = get_uptime(t["name"])
-                    elif t["name"] == "SYS_TELEGRAM":
-                        uptime = get_telegram_uptime()
-                    else:
-                        uptime = ""
+                if t["running"] and t["name"] in LOG_MAP:
+                    uptime = get_uptime(t["name"])
                     if uptime:
-                        uptime_str = gray(f"up {uptime}")
-
+                        uptime_str = gray(f"  up {uptime}")
                 label_str = t["pair"]
-                pad       = max(0, 22 - len(label_str))
-                print(row(f"  {icon} {label_str}{' ' * pad} {status}  {uptime_str}"))
+                # Build visible content then pad
+                row = f"  {icon} {label_str:<22} {status}{uptime_str}"
+                print(pad_row(row))
 
         print_section("Trading Bots", trading)
         if system:
-            print(row(""))
+            print(pad_row(""))
             print_section("Telegram", system)
         if sched:
-            print(row(""))
+            print(pad_row(""))
             print_section("Scheduled Jobs", sched)
 
-    print(bottom)
+    print(bold(cyan("╚" + "═" * (W-2) + "╝")))
 
 def print_menu():
     print()

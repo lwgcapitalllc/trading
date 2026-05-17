@@ -44,6 +44,7 @@ TEXAS           = ZoneInfo("America/Chicago")
 POLL_INTERVAL   = 10
 CONFIRM_TIMEOUT = 30
 
+
 TASK_NAMES = {
     "smc":       "BOT_SMC_TREND",
     "reversion": "BOT_MEAN_REVERSION",
@@ -145,33 +146,30 @@ def is_running(script: str) -> bool:
 
 def get_uptime(log_path: Path) -> str:
     """
-    Find the FIRST startup line today to calculate uptime.
-    Stops at first match — do not continue scanning or uptime
-    will reflect a later reconnect, not the actual startup time.
+    Calculate uptime by finding the MOST RECENT startup line in the log.
+    Uses reversed scan to match algo.py panel behavior so uptimes are consistent.
     """
     if not log_path.exists():
         return "unknown"
-    today = datetime.now(TEXAS).date().isoformat()
     try:
         with open(log_path, errors="replace") as f:
-            for line in f:
-                if today[:10] not in line:
+            lines = f.readlines()
+        for line in reversed(lines):
+            if ("STARTING" in line or
+                    ("Balance" in line and "Risk" in line) or
+                    ("Balance" in line and "AI:" in line)):
+                try:
+                    ts    = line.split("|")[0].strip()[:19]
+                    start = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                    delta = datetime.utcnow() - start
+                    h = int(delta.total_seconds() // 3600)
+                    m = int((delta.total_seconds() % 3600) // 60)
+                    return f"{h}h {m}m"
+                except Exception:
                     continue
-                if ("STARTING" in line or
-                        ("Balance" in line and "Risk" in line) or
-                        ("Balance" in line and "AI:" in line)):
-                    try:
-                        ts    = line.split("|")[0].strip()[:19]
-                        start = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-                        delta = datetime.utcnow() - start
-                        h = int(delta.total_seconds() // 3600)
-                        m = int((delta.total_seconds() % 3600) // 60)
-                        return f"{h}h {m}m"
-                    except Exception:
-                        continue
     except Exception:
         return "unknown"
-    return "not started today"
+    return "unknown"
 
 
 def get_balance(equity) -> float:
@@ -277,9 +275,20 @@ def cmd_status() -> str:
     lines.append("")
     lines.append("*System*")
     tg_running = is_running("telegram_bot.py")
-    tg_status  = "Running" if tg_running else "Stopped"
-    dot = "🟢" if tg_running else "🔴"
-    lines.append(f"{dot} `{'Telegram':<16}` {tg_status}")
+    dot        = "🟢" if tg_running else "🔴"
+    # Get telegram uptime from offset file modification time
+    tg_uptime  = ""
+    if tg_running and OFFSET_FILE.exists():
+        import os
+        try:
+            mtime = os.path.getmtime(str(OFFSET_FILE))
+            delta = datetime.utcnow().timestamp() - mtime
+            h = int(delta // 3600)
+            m = int((delta % 3600) // 60)
+            tg_uptime = f"{h}h {m}m"
+        except Exception:
+            tg_uptime = "running"
+    lines.append(f"{dot} `{'Telegram':<16}` {tg_uptime if tg_running else 'Stopped'}")
 
     return "\n".join(lines)
 
