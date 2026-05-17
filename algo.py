@@ -380,10 +380,48 @@ def print_header(tasks: list[dict], tab: str = "all"):
         pad = max(0, W - len(strip_ansi(content)))
         return bold(cyan("║")) + content + " " * pad + bold(cyan("║"))
 
-    def col(text: str, width: int, color_fn=None) -> str:
-        """Pad text to width, then optionally colorize. Never color before padding."""
-        padded = f"{str(text):<{width}}"
-        return color_fn(padded) if color_fn else padded
+    def bot_row(t: dict, is_sched: bool = False) -> str:
+        """
+        Build one data row with perfectly aligned columns.
+        Icon is 1 visible char. All columns are padded BEFORE colorizing.
+        Fixed layout: 2sp + icon(1) + 1sp + name(16) + 2sp + acct(12) +
+                      2sp + type(5) + 2sp + inst(7) + 2sp + status(9) + 2sp + info
+        Total fixed visible chars before info: 2+1+1+16+2+12+2+5+2+7+2+9+2 = 63
+        """
+        if is_sched:
+            icon_char   = "◑"
+            icon_color  = blue
+            status_text = "SCHEDULED"
+            status_color= cyan
+            info        = gray(SCHEDULED_INFO.get(t["name"], ""))
+        else:
+            running      = t["running"]
+            icon_char    = "●" if running else "○"
+            icon_color   = green if running else red
+            status_text  = "RUNNING" if running else "STOPPED"
+            status_color = green if running else red
+            info         = ""
+            if running and t["name"] in LOG_MAP and LOG_MAP[t["name"]]:
+                u = get_uptime(t["name"])
+                if u:
+                    info = gray(u)
+
+        name   = col(t["pair"][:16],                          16)
+        acct   = col(t.get("account",    "—")[:12],           12)
+        atype  = col(t.get("acct_type",  "—").upper()[:5],     5)
+        instr  = col(t.get("instrument", "—")[:7],             7)
+        status = col(status_text,                              9)
+
+        # Apply colors AFTER padding
+        return (
+            f"  {icon_color(icon_char)} "
+            f"{name} "
+            f"{gray(acct)} "
+            f"{gray(atype)} "
+            f"{gray(instr)} "
+            f"{status_color(status)} "
+            f"{info}"
+        )
 
     # Tab bar — bold active tab
     tab_bar = "  ".join(
@@ -392,8 +430,8 @@ def print_header(tasks: list[dict], tab: str = "all"):
     )
 
     # Column header string (no color — just spacing reference)
-    COL_HDR = f"  {'Name':<16}  {'Account':<12}  {'Type':<5}  {'Inst':<7}  {'Status':<9}  Uptime"
-    SCH_HDR = f"  {'Name':<16}  {'Account':<12}  {'Type':<5}  {'Inst':<7}  {'Status':<9}  Schedule"
+    COL_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Inst':<7} {'Status':<9} Uptime"
+    SCH_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Inst':<7} {'Status':<9} Schedule"
 
     print(bold(cyan("╔" + "═" * W + "╗")))
     print(row(f"  {bold('ALGO CONTROL PANEL')}  {gray(now)}    {tab_bar}"))
@@ -421,21 +459,7 @@ def print_header(tasks: list[dict], tab: str = "all"):
         if bots:
             print(row(gray(COL_HDR)))
             for t in bots:
-                icon  = green("●") if t["running"] else red("○")
-                up    = ""
-                if t["running"] and t["name"] in LOG_MAP and LOG_MAP[t["name"]]:
-                    u = get_uptime(t["name"])
-                    if u:
-                        up = gray(u)
-                print(row(
-                    f"  {icon} "
-                    f"{col(t['pair'][:16], 16)}  "
-                    f"{col(t.get('account','—')[:12], 12, gray)}  "
-                    f"{col(t.get('acct_type','—').upper()[:5], 5, gray)}  "
-                    f"{col(t.get('instrument','—')[:7], 7, gray)}  "
-                    f"{col('RUNNING' if t['running'] else 'STOPPED', 9, green if t['running'] else red)}  "
-                    f"{up}"
-                ))
+                print(row(bot_row(t)))
         else:
             print(row(f"  {gray('No bots for this account type.')}"))
             if tab == "live":
@@ -448,36 +472,14 @@ def print_header(tasks: list[dict], tab: str = "all"):
                 print(row(f"  {gray('Telegram')}"))
                 print(row(gray(COL_HDR)))
                 for t in sys_t:
-                    up = ""
-                    if t["running"] and t["name"] in LOG_MAP:
-                        u = get_uptime(t["name"])
-                        if u:
-                            up = gray(u)
-                    print(row(
-                        f"  {green('●') if t['running'] else red('○')} "
-                        f"{col(t['pair'][:16], 16)}  "
-                        f"{col('—', 12, gray)}  "
-                        f"{col('—', 5, gray)}  "
-                        f"{col('—', 7, gray)}  "
-                        f"{col('RUNNING' if t['running'] else 'STOPPED', 9, green if t['running'] else red)}  "
-                        f"{up}"
-                    ))
+                    print(row(bot_row(t)))
 
             if sched:
                 print(row(""))
                 print(row(f"  {gray('Scheduled Jobs')}"))
                 print(row(gray(SCH_HDR)))
                 for t in sched:
-                    schedule = gray(SCHEDULED_INFO.get(t["name"], ""))
-                    print(row(
-                        f"  {blue('◑')} "
-                        f"{col(t['pair'][:16], 16)}  "
-                        f"{col('—', 12, gray)}  "
-                        f"{col('—', 5, gray)}  "
-                        f"{col('—', 7, gray)}  "
-                        f"{col('SCHEDULED', 9, cyan)}  "
-                        f"{schedule}"
-                    ))
+                    print(row(bot_row(t, is_sched=True)))
 
     print(bold(cyan("╚" + "═" * W + "╝")))
 

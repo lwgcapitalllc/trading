@@ -150,14 +150,14 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
         now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
         if not running:
             send_alert(
-                f"*ALERT — Bot Offline*\n"
+                f"🚨 *ALERT — Bot Offline*\n"
                 f"{cfg['name']} stopped unexpectedly\n"
                 f"Time: {now_str}\n"
                 f"Action: run `algo restart` or use /restart"
             )
         else:
             send_alert(
-                f"*ALERT — Bot Online*\n"
+                f"🟢 *ALERT — Bot Online*\n"
                 f"{cfg['name']} is running again\n"
                 f"Time: {now_str}"
             )
@@ -198,7 +198,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     # ── Daily goal hit ─────────────────────────────────────────────────────
     if daily_gain >= cfg["daily_goal"] and not bot_state.get("goal_alerted"):
         send_alert(
-            f"*ALERT — Daily Goal Hit*\n"
+            f"🎯 *ALERT — Daily Goal Hit*\n"
             f"{cfg['name']}\n"
             f"Today: +{daily_gain:.1f}% (+${balance - day_start:.2f})\n"
             f"Balance: ${balance:,.2f}\n"
@@ -209,7 +209,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     # ── Daily loss cap hit ─────────────────────────────────────────────────
     if daily_gain <= -cfg["daily_cap"] and not bot_state.get("daily_cap_alerted"):
         send_alert(
-            f"*ALERT — Daily Loss Cap Hit*\n"
+            f"🛑 *ALERT — Daily Loss Cap Hit*\n"
             f"{cfg['name']}\n"
             f"Today: {daily_gain:.1f}% (-${day_start - balance:.2f})\n"
             f"Balance: ${balance:,.2f}\n"
@@ -221,7 +221,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     # ── Weekly loss cap hit ────────────────────────────────────────────────
     if weekly_dd >= cfg["weekly_cap"] and not bot_state.get("weekly_cap_alerted"):
         send_alert(
-            f"*ALERT — Weekly Loss Cap Hit*\n"
+            f"🚫 *ALERT — Weekly Loss Cap Hit*\n"
             f"{cfg['name']}\n"
             f"Weekly drawdown: -{weekly_dd:.1f}%\n"
             f"Balance: ${balance:,.2f} (week start: ${weekly_start:,.2f})\n"
