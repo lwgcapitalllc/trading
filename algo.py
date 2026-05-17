@@ -73,6 +73,7 @@ def yellow(s): return f"{C.YELLOW}{s}{C.RESET}"
 def cyan(s):   return f"{C.CYAN}{s}{C.RESET}"
 def bold(s):   return f"{C.BOLD}{s}{C.RESET}"
 def gray(s):   return f"{C.GRAY}{s}{C.RESET}"
+def blue(s):   return f"\033[94m{s}{C.RESET}"
 
 
 # ── SSH Helpers ───────────────────────────────────────────────────────────────
@@ -267,6 +268,9 @@ def view_log(task_name: str, lines: int = 40):
             print(gray(line))
 
 
+# Scheduled jobs — these run on a timer, not persistently
+SCHEDULED_TASKS = {"SYS_REPORTER", "SYS_MONITOR"}
+
 # ── Display ───────────────────────────────────────────────────────────────────
 def clear():
     os.system("clear")
@@ -274,29 +278,61 @@ def clear():
 def print_header(tasks: list[dict]):
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-    print(bold(cyan("╔══════════════════════════════════════════════════════════╗")))
-    print(bold(cyan("║")) + bold(f"  ALGO CONTROL PANEL") + gray(f"  {now}") + bold(cyan("                ║")))
-    print(bold(cyan("╠══════════════════════════════════════════════════════════╣")))
+    W = 60  # panel width
+    divider = bold(cyan("╠" + "═" * (W-2) + "╣"))
+    top     = bold(cyan("╔" + "═" * (W-2) + "╗"))
+    bottom  = bold(cyan("╚" + "═" * (W-2) + "╝"))
+    side    = bold(cyan("║"))
+
+    def row(text=""):
+        # Strip ANSI for length calculation
+        import re
+        visible = re.sub(r'\033\[[0-9;]*m', '', text)
+        pad = max(0, W - 2 - len(visible))
+        return side + " " + text + " " * pad + side
+
+    print(top)
+    title = bold("ALGO CONTROL PANEL") + gray(f"  {now}")
+    print(row("  " + title))
+    print(divider)
 
     if not tasks:
-        print(bold(cyan("║")) + yellow("  No bot tasks found on VPS") + bold(cyan("                           ║")))
+        print(row(yellow("  No tasks found on VPS")))
     else:
-        for t in tasks:
-            status_icon = green("●") if t["running"] else red("○")
-            status_text = green("RUNNING") if t["running"] else red("STOPPED")
+        # Split into 3 groups
+        trading  = [t for t in tasks if t["name"].startswith("BOT_")]
+        system   = [t for t in tasks if t["name"] == "SYS_TELEGRAM"]
+        sched    = [t for t in tasks if t["name"] in SCHEDULED_TASKS]
 
-            if t["running"] and t["name"] in LOG_MAP:
-                uptime = get_uptime(t["name"])
-                uptime_str = gray(f"up {uptime}") if uptime else ""
-            else:
+        def print_section(label, items):
+            print(row(f"  {gray(label)}"))
+            for t in items:
+                is_sched   = t["name"] in SCHEDULED_TASKS
+                icon       = green("●") if t["running"] else (blue("◑") if is_sched else red("○"))
+                if is_sched:
+                    status = cyan("SCHEDULED")
+                else:
+                    status = green("RUNNING") if t["running"] else red("STOPPED ")
+
                 uptime_str = ""
+                if t["running"] and t["name"] in LOG_MAP:
+                    uptime = get_uptime(t["name"])
+                    if uptime:
+                        uptime_str = gray(f"up {uptime}")
 
-            # Fixed width label — pad based on visible chars not ANSI codes
-            label     = f"{t['market']}/{t['pair']}"
-            pad       = max(0, 26 - len(label))
-            print(bold(cyan("║")) + f"  {status_icon} {label}{' ' * pad} {status_text}  {uptime_str}")
+                label_str = t["pair"]
+                pad       = max(0, 22 - len(label_str))
+                print(row(f"  {icon} {label_str}{' ' * pad} {status}  {uptime_str}"))
 
-    print(bold(cyan("╚══════════════════════════════════════════════════════════╝")))
+        print_section("Trading Bots", trading)
+        if system:
+            print(row(""))
+            print_section("Telegram", system)
+        if sched:
+            print(row(""))
+            print_section("Scheduled Jobs", sched)
+
+    print(bottom)
 
 def print_menu():
     print()

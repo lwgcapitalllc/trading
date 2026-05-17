@@ -1,19 +1,20 @@
 """
 monitor.py — Real-Time Bot Health Monitor + Alert System
 
-Runs every 5 minutes via Task Scheduler.
+Runs every 1 minute via Task Scheduler.
 Sends Telegram alerts immediately when:
   - A bot goes offline unexpectedly
   - A bot comes back online
   - Daily profit goal is hit
   - Daily loss cap is hit
   - Weekly loss cap is hit
-  - Account balance drops significantly
 
 State is tracked in monitor_state.json so it knows what changed.
+The Telegram bot (SYS_TELEGRAM) is watched as a priority watchdog —
+auto-restarted up to 3 times before sending a critical alert.
 
 Install: pip install requests
-Run:     python monitor.py
+Run:     python notifications/monitor.py
 """
 
 import json
@@ -40,7 +41,6 @@ BOTS = {
         "name":        "Bot SMC Trend",
         "script":      "bot_smc_trend.py",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_equity.json",
-        "daily":       ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_daily.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_weekly.json",
         "daily_cap":   10.0,
         "weekly_cap":  20.0,
@@ -50,7 +50,6 @@ BOTS = {
         "name":        "Bot Mean Reversion",
         "script":      "bot_mean_reversion.py",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_equity.json",
-        "daily":       ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_daily.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_weekly.json",
         "daily_cap":   10.0,
         "weekly_cap":  20.0,
@@ -60,7 +59,6 @@ BOTS = {
         "name":        "Bot Scalper",
         "script":      "bot_scalper.py",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_equity.json",
-        "daily":       ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_daily.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_weekly.json",
         "daily_cap":   8.0,
         "weekly_cap":  20.0,
@@ -70,7 +68,6 @@ BOTS = {
         "name":        "Bot FFT",
         "script":      "bot_fft.py",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_equity.json",
-        "daily":       ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_daily.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_weekly.json",
         "daily_cap":   5.0,
         "weekly_cap":  15.0,
@@ -135,113 +132,122 @@ def get_weekly_start(weekly_path: Path) -> float:
 
 
 def check_bot(bot_key: str, state: dict, today: str) -> dict:
-    """Check one bot and send alerts if anything changed. Returns updated state."""
+    """
+    Check one bot's health and send alerts if anything changed.
+
+    Daily cap/goal calculations use day_start_balance which is set at
+    midnight each day. On first run, day_start_balance is set to current
+    balance to avoid false positives from stale equity data.
+    """
     cfg       = BOTS[bot_key]
     bot_state = state.get(bot_key, {})
 
-    running   = is_running(cfg["script"])
+    running     = is_running(cfg["script"])
     was_running = bot_state.get("running", None)
 
-    # ── Running state change ──────────────────────────────────────────────
+    # ── Running state change alerts ───────────────────────────────────────
     if was_running is not None and running != was_running:
+        now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
         if not running:
             send_alert(
-                f"🚨 *BOT OFFLINE*\n"
-                f"{cfg['name']} has stopped unexpectedly\\.\n"
-                f"⏰ {datetime.now(TEXAS).strftime('%I:%M %p CT')}\n"
-                f"Action: Run `algo restart` to bring it back up\\."
+                f"*ALERT — Bot Offline*\n"
+                f"{cfg['name']} stopped unexpectedly\n"
+                f"Time: {now_str}\n"
+                f"Action: run `algo restart` or use /restart"
             )
         else:
             send_alert(
-                f"✅ *BOT ONLINE*\n"
-                f"{cfg['name']} is running again\\.\n"
-                f"⏰ {datetime.now(TEXAS).strftime('%I:%M %p CT')}"
+                f"*ALERT — Bot Online*\n"
+                f"{cfg['name']} is running again\n"
+                f"Time: {now_str}"
             )
 
     bot_state["running"] = running
-
     if not running:
         return bot_state
 
-    # ── Balance checks ────────────────────────────────────────────────────
-    equity  = load_json(cfg["equity"])
-    balance = get_balance(equity)
+    # ── Balance and P&L checks ────────────────────────────────────────────
+    equity       = load_json(cfg["equity"])
+    balance      = get_balance(equity)
     weekly_start = get_weekly_start(cfg["weekly"])
 
-    if balance > 0 and weekly_start > 0:
-        daily_pnl_pct  = bot_state.get("last_balance", balance)
-        daily_dd       = (daily_pnl_pct - balance) / daily_pnl_pct * 100 if daily_pnl_pct > 0 else 0
-        weekly_dd      = (weekly_start - balance) / weekly_start * 100 if weekly_start > 0 else 0
-        daily_gain     = (balance - bot_state.get("day_start_balance", balance)) / bot_state.get("day_start_balance", balance) * 100 if bot_state.get("day_start_balance", 0) > 0 else 0
+    if balance <= 0:
+        return bot_state
 
-        # Reset day start balance at midnight
-        if bot_state.get("last_date") != today:
-            bot_state["day_start_balance"] = balance
-            bot_state["last_date"]         = today
-            bot_state["goal_alerted"]      = False
-            bot_state["daily_cap_alerted"] = False
-            bot_state["weekly_cap_alerted"]= False
+    # Reset day tracking at midnight or on first run
+    if bot_state.get("last_date") != today:
+        bot_state["day_start_balance"] = balance
+        bot_state["last_date"]         = today
+        bot_state["goal_alerted"]      = False
+        bot_state["daily_cap_alerted"] = False
+        bot_state["weekly_cap_alerted"]= False
+        print(f"{bot_key}: New day — day start balance set to ${balance:,.2f}")
 
-        # ── Daily goal hit ────────────────────────────────────────────────
-        if (daily_gain >= cfg["daily_goal"] and
-                not bot_state.get("goal_alerted") and
-                bot_state.get("day_start_balance", 0) > 0):
-            send_alert(
-                f"🎯 *DAILY GOAL HIT*\n"
-                f"{cfg['name']}\n"
-                f"Today: +{daily_gain:.1f}% (\\+${balance - bot_state['day_start_balance']:.2f})\n"
-                f"Balance: ${balance:,.2f}\n"
-                f"⏰ {datetime.now(TEXAS).strftime('%I:%M %p CT')}"
-            )
-            bot_state["goal_alerted"] = True
+    day_start = bot_state.get("day_start_balance", balance)
 
-        # ── Daily loss cap ────────────────────────────────────────────────
-        if (daily_gain <= -cfg["daily_cap"] and
-                not bot_state.get("daily_cap_alerted") and
-                bot_state.get("day_start_balance", 0) > 0):
-            send_alert(
-                f"🛑 *DAILY LOSS CAP HIT*\n"
-                f"{cfg['name']}\n"
-                f"Today: {daily_gain:.1f}% (${balance - bot_state['day_start_balance']:.2f})\n"
-                f"Balance: ${balance:,.2f}\n"
-                f"Bot is now managing open trades only\\. No new entries until tomorrow\\.\n"
-                f"⏰ {datetime.now(TEXAS).strftime('%I:%M %p CT')}"
-            )
-            bot_state["daily_cap_alerted"] = True
+    # Guard: if day_start is 0 or not set, set it now and skip this check
+    if not day_start or day_start <= 0:
+        bot_state["day_start_balance"] = balance
+        return bot_state
 
-        # ── Weekly loss cap ───────────────────────────────────────────────
-        if (weekly_dd >= cfg["weekly_cap"] and
-                not bot_state.get("weekly_cap_alerted")):
-            send_alert(
-                f"🚫 *WEEKLY LOSS CAP HIT*\n"
-                f"{cfg['name']}\n"
-                f"Weekly drawdown: \\-{weekly_dd:.1f}%\n"
-                f"Balance: ${balance:,.2f} (started week at ${weekly_start:,.2f})\n"
-                f"Bot entering 6hr cooldown\\.\n"
-                f"⏰ {datetime.now(TEXAS).strftime('%I:%M %p CT')}"
-            )
-            bot_state["weekly_cap_alerted"] = True
+    daily_gain = (balance - day_start) / day_start * 100
+    weekly_dd  = (weekly_start - balance) / weekly_start * 100 if weekly_start > 0 else 0
 
-        bot_state["last_balance"] = balance
+    now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
 
+    # ── Daily goal hit ─────────────────────────────────────────────────────
+    if daily_gain >= cfg["daily_goal"] and not bot_state.get("goal_alerted"):
+        send_alert(
+            f"*ALERT — Daily Goal Hit*\n"
+            f"{cfg['name']}\n"
+            f"Today: +{daily_gain:.1f}% (+${balance - day_start:.2f})\n"
+            f"Balance: ${balance:,.2f}\n"
+            f"Time: {now_str}"
+        )
+        bot_state["goal_alerted"] = True
+
+    # ── Daily loss cap hit ─────────────────────────────────────────────────
+    if daily_gain <= -cfg["daily_cap"] and not bot_state.get("daily_cap_alerted"):
+        send_alert(
+            f"*ALERT — Daily Loss Cap Hit*\n"
+            f"{cfg['name']}\n"
+            f"Today: {daily_gain:.1f}% (-${day_start - balance:.2f})\n"
+            f"Balance: ${balance:,.2f}\n"
+            f"No new entries until tomorrow\n"
+            f"Time: {now_str}"
+        )
+        bot_state["daily_cap_alerted"] = True
+
+    # ── Weekly loss cap hit ────────────────────────────────────────────────
+    if weekly_dd >= cfg["weekly_cap"] and not bot_state.get("weekly_cap_alerted"):
+        send_alert(
+            f"*ALERT — Weekly Loss Cap Hit*\n"
+            f"{cfg['name']}\n"
+            f"Weekly drawdown: -{weekly_dd:.1f}%\n"
+            f"Balance: ${balance:,.2f} (week start: ${weekly_start:,.2f})\n"
+            f"6-hour cooldown activated\n"
+            f"Time: {now_str}"
+        )
+        bot_state["weekly_cap_alerted"] = True
+
+    bot_state["last_balance"] = balance
     return bot_state
 
 
 def check_telegram_bot(state: dict) -> dict:
     """
-    Watchdog for the Telegram bot — the most critical system process.
-    If it's not running, restart it immediately and alert via Telegram
-    once it's back up. Retries up to 3 times before giving up.
-
-    This runs every 5 minutes so the bot is never down for more than 5 min.
+    Watchdog for SYS_TELEGRAM — most critical system process.
+    Auto-restarts up to 3 times. Sends alert when back online.
+    After 3 failures sends a critical alert requiring manual intervention.
     """
     tg_state  = state.get("telegram_bot", {})
     running   = is_running("telegram_bot.py")
     max_tries = 3
+    now_str   = datetime.now(TEXAS).strftime("%I:%M %p CT")
 
     if not running:
         tries = tg_state.get("restart_tries", 0)
-        print(f"Telegram bot is DOWN. Attempting restart ({tries+1}/{max_tries})...")
+        print(f"Telegram bot is DOWN. Restart attempt {tries+1}/{max_tries}...")
 
         if tries < max_tries:
             try:
@@ -254,33 +260,29 @@ def check_telegram_bot(state: dict) -> dict:
                     if is_running("telegram_bot.py"):
                         print("Telegram bot restarted successfully.")
                         send_alert(
-                            "✅ *Telegram Bot Auto\\-Restarted*\n"
-                            f"Was offline\\. Restarted automatically at "
-                            f"{datetime.now(TEXAS).strftime('%I:%M %p CT')}\\.\n"
+                            f"*ALERT — Telegram Bot Restarted*\n"
+                            f"Was offline\\. Auto-restarted at {now_str}\\.\n"
                             f"Commands are available again\\."
                         )
                         tg_state["restart_tries"] = 0
                         tg_state["running"]        = True
                     else:
-                        print("Restart attempt failed — process not detected.")
                         tg_state["restart_tries"] = tries + 1
                         tg_state["running"]        = False
             except Exception as e:
                 print(f"Restart error: {e}")
                 tg_state["restart_tries"] = tries + 1
         else:
-            # Max retries reached — send alert if not already sent
             if not tg_state.get("max_retry_alerted"):
                 send_alert(
-                    "🚨 *Telegram Bot FAILED TO RESTART*\n"
-                    f"Tried {max_tries} times\\. Manual intervention required\\.\n"
-                    f"RDP into VPS and run: `schtasks /run /tn SYS_TELEGRAM`\n"
-                    f"Or restart via algo panel on Mac\\."
+                    f"*CRITICAL — Telegram Bot Down*\n"
+                    f"Failed to restart after {max_tries} attempts\\.\n"
+                    f"Manual action required\\.\n"
+                    f"RDP into VPS: `schtasks /run /tn SYS_TELEGRAM`\n"
+                    f"Time: {now_str}"
                 )
                 tg_state["max_retry_alerted"] = True
-            print(f"Max retries ({max_tries}) reached. Manual restart needed.")
     else:
-        # Bot is running — reset counters
         tg_state["running"]           = True
         tg_state["restart_tries"]     = 0
         tg_state["max_retry_alerted"] = False
@@ -292,13 +294,13 @@ def main():
     state = load_state()
     today = datetime.now(TEXAS).date().isoformat()
 
-    # ── Watchdog: Telegram bot (highest priority — always check first) ─────
+    # Telegram bot watchdog — always check first
     try:
         state["telegram_bot"] = check_telegram_bot(state)
     except Exception as e:
         print(f"Telegram watchdog error: {e}")
 
-    # ── Check all trading bots ─────────────────────────────────────────────
+    # Trading bot checks
     for bot_key in BOTS:
         try:
             state[bot_key] = check_bot(bot_key, state, today)
