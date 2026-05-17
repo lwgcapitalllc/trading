@@ -45,7 +45,7 @@ BOTS = {
         "script":    "bot_smc_trend.py",
         "trades":    ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_trades.json",
         "daily":     ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_daily.json",
-        "equity":    ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_equity.json",
+        "equity":    ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "log":       ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
         "daily_cap": 10.0,
     },
@@ -55,7 +55,7 @@ BOTS = {
         "script":    "bot_mean_reversion.py",
         "trades":    ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_trades.json",
         "daily":     ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_daily.json",
-        "equity":    ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_equity.json",
+        "equity":    ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "log":       ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
         "daily_cap": 10.0,
     },
@@ -125,14 +125,15 @@ def get_bot_uptime(log_path: Path) -> str:
     try:
         with open(log_path, errors="replace") as f:
             for line in f:
-                if today[:10] in line and (
-                    "STARTING" in line or
-                    ("Balance" in line and "Risk" in line) or
-                    ("Balance" in line and "AI:" in line)
-                ):
+                if today[:10] not in line:
+                    continue
+                if ("STARTING" in line or
+                        ("Balance" in line and "Risk" in line) or
+                        ("Balance" in line and "AI:" in line)):
                     try:
                         ts = line.split("|")[0].strip()[:19]
                         start_time = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                        break  # First match only
                     except Exception:
                         continue
     except Exception:

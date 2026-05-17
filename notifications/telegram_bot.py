@@ -55,14 +55,14 @@ BOTS = {
     "smc": {
         "name":   "SMC Trend",
         "script": "bot_smc_trend.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_equity.json",
+        "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "trades": ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_trades.json",
         "log":    ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
     },
     "reversion": {
         "name":   "Mean Reversion",
         "script": "bot_mean_reversion.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_equity.json",
+        "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "trades": ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_trades.json",
         "log":    ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
     },
@@ -144,31 +144,34 @@ def is_running(script: str) -> bool:
 
 
 def get_uptime(log_path: Path) -> str:
+    """
+    Find the FIRST startup line today to calculate uptime.
+    Stops at first match — do not continue scanning or uptime
+    will reflect a later reconnect, not the actual startup time.
+    """
     if not log_path.exists():
         return "unknown"
     today = datetime.now(TEXAS).date().isoformat()
-    start = None
     try:
         with open(log_path, errors="replace") as f:
             for line in f:
-                if today[:10] in line and (
-                    "STARTING" in line or
-                    ("Balance" in line and "Risk" in line) or
-                    ("Balance" in line and "AI:" in line)
-                ):
+                if today[:10] not in line:
+                    continue
+                if ("STARTING" in line or
+                        ("Balance" in line and "Risk" in line) or
+                        ("Balance" in line and "AI:" in line)):
                     try:
                         ts    = line.split("|")[0].strip()[:19]
                         start = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                        delta = datetime.utcnow() - start
+                        h = int(delta.total_seconds() // 3600)
+                        m = int((delta.total_seconds() % 3600) // 60)
+                        return f"{h}h {m}m"
                     except Exception:
                         continue
     except Exception:
         return "unknown"
-    if not start:
-        return "not started today"
-    delta = datetime.utcnow() - start
-    h = int(delta.total_seconds() // 3600)
-    m = int((delta.total_seconds() % 3600) // 60)
-    return f"{h}h {m}m"
+    return "not started today"
 
 
 def get_balance(equity) -> float:

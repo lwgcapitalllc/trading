@@ -40,7 +40,7 @@ BOTS = {
     "smc_trend": {
         "name":        "Bot SMC Trend",
         "script":      "bot_smc_trend.py",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_equity.json",
+        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_weekly.json",
         "daily_cap":   10.0,
         "weekly_cap":  20.0,
@@ -49,7 +49,7 @@ BOTS = {
     "mean_reversion": {
         "name":        "Bot Mean Reversion",
         "script":      "bot_mean_reversion.py",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_equity.json",
+        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_weekly.json",
         "daily_cap":   10.0,
         "weekly_cap":  20.0,

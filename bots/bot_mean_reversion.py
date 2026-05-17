@@ -739,7 +739,7 @@ def run():
     regime       = RegimeClassifier(bot_name="BOT_MEAN_REVERSION")
     logger       = TradeLogger(str(_INST / "mean_reversion_trades.json"))
     ai           = AIBrain(logger, model_file=str(_INST / "mean_reversion_model.pkl"))
-    calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "mean_reversion_equity.json"))
+    calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "gold_main_equity.json"))
     daily_log    = DailyLogger(str(_INST / "mean_reversion_daily.json"))
 
     daily_start       = acct.balance

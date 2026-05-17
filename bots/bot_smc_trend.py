@@ -750,13 +750,13 @@ def run():
     regime       = RegimeClassifier(bot_name="BOT_SMC_TREND")
     logger       = TradeLogger(str(_INST / "smc_trend_trades.json"))
     ai           = AIBrain(logger, model_file=str(_INST / "smc_trend_model.pkl"))
-    calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "smc_trend_equity.json"))
+    calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "gold_main_equity.json"))
     daily_log    = DailyLogger(str(_INST / "smc_trend_daily.json"))
 
     daily_start  = acct.balance
     # Load weekly_start from equity file so restarts don't reset it
     # Only reset weekly_start if it's a new week
-    _eq_file = _INST / "smc_trend_equity.json"
+    _eq_file = _INST / "gold_main_equity.json"
     _week_file = _INST / "smc_trend_weekly.json"
     current_week = now_utc().isocalendar()[1]
     if _week_file.exists():
