@@ -131,76 +131,112 @@ log.info(f"BOT_FFT | FFT Strategy | {SYMBOL} | risk={RISK_PCT}%")
 def connect() -> bool:
     """
     Connect to the correct MT5 terminal instance.
-    Includes startup delay staggering and retry logic to prevent
-    account mixing when all bots restart simultaneously.
+    Uses a lock file to prevent simultaneous connections causing account mixing.
     """
     import time as _time
 
+    LOCK_FILE    = Path(r"C:\algos\mt5_connect.lock")
+    LOCK_TIMEOUT = 60
+    LOCK_TTL     = 30
+
+    def acquire_lock(bot_id: str) -> bool:
+        waited = 0
+        while waited < LOCK_TIMEOUT:
+            if LOCK_FILE.exists():
+                try:
+                    age = _time.time() - LOCK_FILE.stat().st_mtime
+                    if age > LOCK_TTL:
+                        log.warning(f"Stale lock ({age:.0f}s) — removing")
+                        LOCK_FILE.unlink(missing_ok=True)
+                    else:
+                        holder = LOCK_FILE.read_text().strip()
+                        log.info(f"Waiting for MT5 lock (held by {holder})...")
+                        _time.sleep(2)
+                        waited += 2
+                        continue
+                except Exception:
+                    pass
+            try:
+                LOCK_FILE.write_text(bot_id)
+                _time.sleep(0.5)
+                if LOCK_FILE.exists() and LOCK_FILE.read_text().strip() == bot_id:
+                    return True
+            except Exception as e:
+                log.warning(f"Lock write error: {e}")
+            _time.sleep(1)
+            waited += 1
+        log.error(f"Could not acquire MT5 lock after {LOCK_TIMEOUT}s")
+        return False
+
+    def release_lock():
+        try:
+            LOCK_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+
     startup_delay = _CFG.get("startup_delay", 0)
     if startup_delay > 0:
-        log.info(f"Startup delay {startup_delay}s — staggering to avoid terminal race")
+        log.info(f"Startup delay {startup_delay}s")
         _time.sleep(startup_delay)
 
     mt5_path    = _CFG.get("mt5_path", "")
     expected_id = ACCOUNT.get("login")
+    bot_id      = f"BOT_FFT_{expected_id}"
 
-    for attempt in range(1, 4):
-        if attempt > 1:
-            log.info(f"Connect attempt {attempt}/3 — waiting 5s...")
-            _time.sleep(5)
-            mt5.shutdown()
+    if not acquire_lock(bot_id):
+        return False
 
-        connected = False
-        if mt5_path:
-            if mt5.initialize(path=mt5_path):
-                connected = True
-            else:
-                err = mt5.last_error()
-                if err[0] == -10005:
-                    log.info("IPC timeout — terminal already running, trying without path")
-                    if mt5.initialize():
-                        connected = True
-                    else:
-                        log.error(f"MT5 init failed (no path): {mt5.last_error()}")
-                        continue
+    try:
+        for attempt in range(1, 4):
+            if attempt > 1:
+                log.info(f"Connect attempt {attempt}/3 — waiting 5s...")
+                _time.sleep(5)
+                mt5.shutdown()
+
+            connected = False
+            if mt5_path:
+                if mt5.initialize(path=mt5_path):
+                    connected = True
                 else:
-                    log.error(f"MT5 init failed: {err}")
+                    err = mt5.last_error()
+                    if err[0] == -10005:
+                        if mt5.initialize():
+                            connected = True
+                if not connected:
+                    log.error(f"MT5 init failed: {mt5.last_error()}")
                     continue
-        else:
-            if mt5.initialize():
-                connected = True
             else:
-                log.error(f"MT5 init failed: {mt5.last_error()}")
+                if not mt5.initialize():
+                    log.error(f"MT5 init failed: {mt5.last_error()}")
+                    continue
+                connected = True
+
+            if not mt5.login(ACCOUNT["login"], password=ACCOUNT["password"],
+                             server=ACCOUNT["server"]):
+                log.warning(f"Login failed (attempt {attempt}): {mt5.last_error()}")
+                mt5.shutdown()
                 continue
 
-        if not connected:
-            continue
+            info = mt5.account_info()
+            if not info:
+                log.warning(f"No account info (attempt {attempt})")
+                mt5.shutdown()
+                continue
 
-        if not mt5.login(ACCOUNT["login"], password=ACCOUNT["password"],
-                         server=ACCOUNT["server"]):
-            log.warning(f"Login failed (attempt {attempt}): {mt5.last_error()}")
-            mt5.shutdown()
-            continue
+            if info.login != expected_id:
+                log.warning(f"ACCOUNT MISMATCH (attempt {attempt}): got #{info.login} expected #{expected_id}")
+                mt5.shutdown()
+                continue
 
-        info = mt5.account_info()
-        if not info:
-            log.warning(f"No account info (attempt {attempt})")
-            mt5.shutdown()
-            continue
+            log.info(f"Connected | #{info.login} | ${info.balance:,.2f} | {info.server}")
+            return True
 
-        if info.login != expected_id:
-            log.warning(
-                f"ACCOUNT MISMATCH (attempt {attempt}): "
-                f"got #{info.login} expected #{expected_id} — retrying"
-            )
-            mt5.shutdown()
-            continue
+        log.error(f"Failed to connect to #{expected_id} after 3 attempts.")
+        return False
 
-        log.info(f"Connected | #{info.login} | ${info.balance:,.2f} | {info.server}")
-        return True
-
-    log.error(f"Failed to connect to #{expected_id} after 3 attempts.")
-    return False
+    finally:
+        release_lock()
+        log.info("MT5 connection lock released")
 
 
 def now_utc() -> datetime:
