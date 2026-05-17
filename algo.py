@@ -57,6 +57,21 @@ DISPLAY_NAMES = {
     "SYS_MONITOR":         "Monitor",
 }
 
+# Instance config paths for reading account_type and instrument
+INSTANCE_CONFIGS = {
+    "BOT_SMC_TREND":       r"C:\algos\markets\fx\instances\gold_main\config.json",
+    "BOT_MEAN_REVERSION":  r"C:\algos\markets\fx\instances\gold_main\config.json",
+    "BOT_SCALPER":         r"C:\algos\markets\fx\instances\gold_scalper\config.json",
+    "BOT_FFT":             r"C:\algos\markets\fx\instances\gold_fft\config.json",
+    "BOT_FUTURES_ACCT1":   r"C:\algos\markets\futures\instances\futures_account1\config.json",
+}
+
+# Scheduled job schedule descriptions
+SCHEDULED_INFO = {
+    "SYS_REPORTER": "daily 4pm CT",
+    "SYS_MONITOR":  "every 1 min",
+}
+
 # ── Colors ────────────────────────────────────────────────────────────────────
 class C:
     RED    = "\033[91m"
@@ -157,16 +172,65 @@ def get_all_tasks() -> list[dict]:
 
         display = DISPLAY_NAMES.get(name, name)
 
+        # Read account info from instance config (cached in task dict)
+        acct_type  = "—"
+        instrument = "—"
+        account    = "—"
+        if name in INSTANCE_CONFIGS:
+            cfg_path = INSTANCE_CONFIGS[name]
+            cfg_raw  = ssh(f"type {cfg_path} 2>nul")
+            if cfg_raw:
+                import json as _json
+                try:
+                    cfg        = _json.loads(cfg_raw)
+                    acct_type  = cfg.get("account_type", "—").upper()
+                    instrument = cfg.get("instrument",   "—")
+                except Exception:
+                    pass
+            # Read account number from credentials.json
+            cred_path = cfg_path.replace("config.json", "credentials.json")
+            cred_raw  = ssh(f"type {cred_path} 2>nul")
+            if cred_raw:
+                try:
+                    cred    = _json.loads(cred_raw)
+                    account = str(cred.get("login", "—"))
+                except Exception:
+                    pass
+
         tasks.append({
-            "name":    name,
-            "market":  market_label,
-            "pair":    display,
-            "role":    "",
-            "running": running,
-            "status":  "Running" if running else "Stopped",
+            "name":       name,
+            "market":     market_label,
+            "pair":       display,
+            "role":       "",
+            "running":    running,
+            "status":     "Running" if running else "Stopped",
+            "acct_type":  acct_type,
+            "instrument": instrument,
+            "account":    account,
         })
 
     return sorted(tasks, key=lambda x: (x["market"], x["pair"], x["role"]))
+
+
+def get_task_account_info(task_name: str) -> tuple:
+    """
+    Read account number, account_type, and instrument from the
+    instance config.json on VPS. Returns (account, type, instrument).
+    """
+    if task_name not in INSTANCE_CONFIGS:
+        return ("—", "—", "—")
+    cfg_path = INSTANCE_CONFIGS[task_name]
+    raw = ssh(f"type {cfg_path} 2>nul")
+    if not raw:
+        return ("—", "—", "—")
+    import json as _json
+    try:
+        cfg = _json.loads(raw)
+        acct_type  = cfg.get("account_type", "—").upper()
+        instrument = cfg.get("instrument",   "—")
+        return (acct_type, instrument)
+    except Exception:
+        return ("—", "—")
 
 
 def get_uptime(task_name: str) -> str:
@@ -293,57 +357,97 @@ SCHEDULED_TASKS = {"SYS_REPORTER", "SYS_MONITOR"}
 def clear():
     os.system("clear")
 
-def print_header(tasks: list[dict]):
+def print_header(tasks: list[dict], tab: str = "all"):
+    """
+    Print the algo control panel with tabs (All/Demo/Live).
+    Columns for bots: Name | Account | Type | Instrument | Status | Uptime
+    Border alignment is guaranteed by stripping ANSI codes before padding.
+    Tab state is passed in — default is "all".
+    """
+    import re
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    W   = 60  # total panel width including borders
+    W   = 84  # visible panel width including both ║ border chars
 
-    def strip_ansi(s: str) -> str:
-        import re
+    def strip(s: str) -> str:
         return re.sub(r'\033\[[0-9;]*m', '', s)
 
-    def pad_row(content: str) -> str:
-        """Pad content to fill panel width with right border."""
-        visible_len = len(strip_ansi(content))
-        pad = max(0, W - 2 - visible_len)
+    def row(content: str) -> str:
+        pad = max(0, W - 2 - len(strip(content)))
         return bold(cyan("║")) + content + " " * pad + bold(cyan("║"))
 
-    print(bold(cyan("╔" + "═" * (W-2) + "╗")))
-    title = f"  {bold('ALGO CONTROL PANEL')}  {gray(now)}"
-    print(pad_row(title))
-    print(bold(cyan("╠" + "═" * (W-2) + "╣")))
+    # Tab bar
+    tab_str = "  ".join(
+        bold(f"[{lbl}]") if key == tab else gray(f"[{lbl}]")
+        for key, lbl in [("all","All"),("demo","Demo"),("live","Live")]
+    )
+
+    print(bold(cyan("╔" + "═" * (W - 2) + "╗")))
+    print(row(f"  {bold('ALGO CONTROL PANEL')}  {gray(now)}    {tab_str}"))
+    print(bold(cyan("╠" + "═" * (W - 2) + "╣")))
 
     if not tasks:
-        print(pad_row(yellow("  No tasks found on VPS")))
+        print(row(yellow("  No tasks found on VPS")))
     else:
-        trading = [t for t in tasks if t["name"].startswith("BOT_")]
-        system  = [t for t in tasks if t["name"] == "SYS_TELEGRAM"]
-        sched   = [t for t in tasks if t["name"] in SCHEDULED_TASKS]
+        bots  = [t for t in tasks if t["name"].startswith("BOT_")]
+        sys_t = [t for t in tasks if t["name"] == "SYS_TELEGRAM"]
+        sched = [t for t in tasks if t["name"] in SCHEDULED_TASKS]
 
-        def print_section(label, items):
-            print(pad_row(f"  {gray(label)}"))
-            for t in items:
-                is_sched   = t["name"] in SCHEDULED_TASKS
-                icon       = green("●") if t["running"] else (blue("◑") if is_sched else red("○"))
-                status     = cyan("SCHEDULED") if is_sched else (green("RUNNING") if t["running"] else red("STOPPED"))
-                uptime_str = ""
+        # Filter by tab
+        if tab == "demo":
+            bots    = [t for t in bots if t.get("acct_type","").upper() in ("DEMO","")]
+            section = "Demo Accounts"
+        elif tab == "live":
+            bots    = [t for t in bots if t.get("acct_type","").upper() == "LIVE"]
+            section = "Live Accounts"
+        else:
+            section = "Trading Bots"
+
+        print(row(f"  {gray(section)}"))
+
+        if bots:
+            hdr = f"    {'Name':<16}  {'Account':<12}  {'Type':<5}  {'Inst':<7}  {'Status':<9}  Uptime"
+            print(row(gray(hdr)))
+            for t in bots:
+                icon  = green("●") if t["running"] else red("○")
+                stat  = green("RUNNING  ") if t["running"] else red("STOPPED  ")
+                name  = t["pair"][:16]
+                acct  = str(t.get("account",    "—"))[:12]
+                atype = str(t.get("acct_type",  "—")).upper()[:5]
+                instr = str(t.get("instrument", "—"))[:7]
+                up    = ""
                 if t["running"] and t["name"] in LOG_MAP:
-                    uptime = get_uptime(t["name"])
-                    if uptime:
-                        uptime_str = gray(f"  up {uptime}")
-                label_str = t["pair"]
-                # Build visible content then pad
-                row = f"  {icon} {label_str:<22} {status}{uptime_str}"
-                print(pad_row(row))
+                    u = get_uptime(t["name"])
+                    if u:
+                        up = gray(f"up {u}")
+                print(row(
+                    f"  {icon}  {name:<16}  {gray(acct):<12}  "
+                    f"{gray(atype):<5}  {gray(instr):<7}  {stat}  {up}"
+                ))
+        else:
+            print(row(f"  {gray('No bots for this account type.')}"))
+            if tab == "live":
+                print(row(f"  {gray('Set account_type: live in a config.json')}"))
 
-        print_section("Trading Bots", trading)
-        if system:
-            print(pad_row(""))
-            print_section("Telegram", system)
-        if sched:
-            print(pad_row(""))
-            print_section("Scheduled Jobs", sched)
+        # System section — only on All tab
+        if tab == "all" and (sys_t or sched):
+            print(row(""))
+            print(row(f"  {gray('System')}"))
+            for t in sys_t + sched:
+                is_sched = t["name"] in SCHEDULED_TASKS
+                icon     = green("●") if t["running"] else (blue("◑") if is_sched else red("○"))
+                stat     = cyan("SCHEDULED") if is_sched else (
+                           green("RUNNING  ") if t["running"] else red("STOPPED  "))
+                name     = t["pair"][:22]
+                info     = ""
+                if is_sched:
+                    info = gray(SCHEDULED_INFO.get(t["name"], ""))
+                elif t["running"] and t["name"] in LOG_MAP:
+                    u = get_uptime(t["name"])
+                    if u:
+                        info = gray(f"up {u}")
+                print(row(f"  {icon}  {name:<22}  {stat}  {info}"))
 
-    print(bold(cyan("╚" + "═" * (W-2) + "╝")))
+    print(bold(cyan("╚" + "═" * (W - 2) + "╝")))
 
 def print_menu():
     print()
@@ -355,6 +459,7 @@ def print_menu():
     print(f"  {bold('[4]')} Manage individual bot")
     print(f"  {bold('[5]')} View bot log")
     print(f"  {bold('[6]')} Refresh status")
+    print(f"  {gray('[t1/t2/t3]')} {gray('Switch tab (All / Demo / Live)')}")
     print(f"  {bold('[q]')} Quit")
     print()
 
@@ -401,12 +506,22 @@ def main():
         print(red("SSH not found. Make sure OpenSSH is installed."))
         sys.exit(1)
 
+    active_tab = "all"
+
     while True:
         clear()
-        print_header(tasks)
+        print_header(tasks, active_tab)
         print_menu()
 
         choice = input("  Choice: ").strip().lower()
+
+        # Tab switching
+        if choice == "t1" or choice == "tab1":
+            active_tab = "all"; continue
+        if choice == "t2" or choice == "tab2":
+            active_tab = "demo"; continue
+        if choice == "t3" or choice == "tab3":
+            active_tab = "live"; continue
 
         if choice == "1":
             clear()

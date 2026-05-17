@@ -1,5 +1,7 @@
 {
   "_instance": "gold_main \u2014 SMC Trend + Mean Reversion (XAUUSD)",
+  "account_type": "demo",
+  "instrument": "XAUUSD",
   "symbol": "XAUUSD.s",
   "risk": {
     "risk_pct_bot1": 2.0,
@@ -78,7 +80,6 @@
       }
     ]
   },
-  "mt5_path": "C:\\Program Files\\PU Prime MT5 Terminal\\terminal64.exe",
   "bot_smc_trend": {
     "min_rr": 3.0,
     "atr_period": 14,
@@ -122,6 +123,5 @@
     "partial_close_r": 1.0,
     "partial_close_pct": 0.5,
     "trail_atr_mult": 0.3
-  },
-  "mt5_path": "C:\\Program Files\\PU Prime MT5 Terminal\\terminal64.exe"
+  }
 }

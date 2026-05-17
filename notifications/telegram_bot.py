@@ -329,36 +329,64 @@ def cmd_trades() -> str:
     return "\n".join(lines)
 
 
-def cmd_report(force: bool = False) -> str:
+def cmd_report(force: bool = False, group: str | None = None) -> str:
     """
     Trigger the daily report.
-    On weekends: prompt user to send /force to override.
-    If force=True: run immediately regardless of day.
+    - On weekdays: runs immediately for the requested group
+    - On weekends: prompts /force first, then asks for group
+    - group: None = ask user, "demo"/"live"/"all" = run directly
     """
     now_tx     = datetime.now(TEXAS)
     is_weekend = now_tx.weekday() >= 5
 
+    # If no group specified, ask first
+    if group is None:
+        if is_weekend:
+            # Stage a weekend+group prompt
+            pending_action["command"]    = lambda: _ask_report_group(force=True)
+            pending_action["label"]      = "Weekend Report Group"
+            pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=120)
+            day = now_tx.strftime("%A")
+            return (
+                f"📅 It's {day} — gold markets are closed\\.\n\n"
+                f"Reply /demo, /live, or /all to send a report anyway\\."
+            )
+        else:
+            # Stage a group prompt
+            pending_action["command"]    = lambda: _ask_report_group(force=False)
+            pending_action["label"]      = "Report Group"
+            pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=120)
+            return (
+                f"📊 Which accounts?\n\n"
+                f"Reply /demo, /live, or /all"
+            )
+
+    # Group specified — run the report
     if is_weekend and not force:
-        # Set pending action so /force triggers the report
-        pending_action["command"]    = lambda: _run_reporter(force=True)
-        pending_action["label"]      = "Weekend Report"
-        pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=120)
-        day = now_tx.strftime("%A")
         return (
-            f"📅 It's {day} — gold markets are closed\\.\n\n"
-            f"Send /force within 2 minutes to generate the report anyway\\."
+            f"📅 Weekend — markets closed\\.\n"
+            f"Send /report then /demo, /live or /all to force\\."
         )
+    return _run_reporter(group=group, force=force)
 
-    return _run_reporter(force=force)
+
+def _ask_report_group(force: bool = False) -> str:
+    """Called when user confirms a pending report — now ask for group."""
+    pending_action["command"]    = lambda: _run_reporter(group="all", force=force)
+    pending_action["label"]      = "Report (All)"
+    pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=120)
+    return "Reply /demo, /live, or /all"
 
 
-def _run_reporter(force: bool = False) -> str:
+def _run_reporter(group: str = "all", force: bool = False) -> str:
     try:
-        args = ["python", str(ALGOS_ROOT / "notifications/reporter.py")]
+        args = ["python", str(ALGOS_ROOT / "notifications/reporter.py"),
+                "--group", group]
         if force:
             args.append("--force")
         subprocess.Popen(args, cwd=str(ALGOS_ROOT))
-        return "📊 Generating report. Check messages shortly."
+        label = group.upper() if group != "all" else "All accounts"
+        return f"📊 Generating {label} report\\. Check messages shortly\\."
     except Exception as e:
         return f"Failed to run reporter: {e}"
 
@@ -370,8 +398,10 @@ def cmd_help() -> str:
         "`/status`         Running status and uptime\n"
         "`/balance`        Account balances\n"
         "`/trades`         Today's trade summary\n"
-        "`/report`         Daily report \\(weekdays only\\)\n"
-        "`/force`          Confirm weekend report when prompted\n"
+        "`/report`         Daily report — prompts for account group\n"
+        "`/demo`           Report for demo accounts only\n"
+        "`/live`           Report for live accounts only\n"
+        "`/all`            Report for all accounts\n"
         "`/help`           This message\n\n"
         "*Control*  _type /confirm within 30s_\n"
         "`/restart`        Restart all bots\n"
@@ -431,11 +461,25 @@ def handle_message(text: str) -> str:
     if cmd == "/status":        return cmd_status()
     if cmd == "/balance":       return cmd_balance()
     if cmd == "/trades":        return cmd_trades()
-    if cmd == "/report":        return cmd_report(force=False)
-    if cmd == "/report-force":  return cmd_report(force=True)
-    if cmd == "/force":         return cmd_confirm()  # /force confirms weekend report
+    if cmd == "/report":        return cmd_report(force=False, group=None)
     if cmd == "/help":          return cmd_help()
     if cmd == "/confirm":       return cmd_confirm()
+
+    # Report group shortcuts — work as direct commands and as replies to /report prompt
+    if cmd in ("/demo", "/live", "/all"):
+        group = cmd.lstrip("/")
+        if pending_action["command"] and datetime.utcnow() <= pending_action["expires_at"]:
+            pending_action["command"] = None
+            return _run_reporter(group=group, force=True)
+        return cmd_report(force=False, group=group)
+
+    # /force — confirm weekend report
+    if cmd == "/force":
+        if pending_action["command"] and datetime.utcnow() <= pending_action["expires_at"]:
+            fn = pending_action["command"]
+            pending_action["command"] = None
+            return fn()
+        return "No pending action."
 
     if cmd == "/emergency":
         return request_confirm(do_emergency_stop,

@@ -48,6 +48,7 @@ BOTS = {
         "equity":    ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "log":       ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
         "daily_cap": 10.0,
+        "acct_type":  "demo",
     },
     "mean_reversion": {
         "name":      "Bot Mean Reversion",
@@ -308,8 +309,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bot",   help="smc_trend/mean_reversion/scalper/fft")
     parser.add_argument("--test",  action="store_true")
-    parser.add_argument("--force", action="store_true",
-                        help="Send report even on weekends")
+    parser.add_argument("--force", action="store_true", help="Send even on weekends")
+    parser.add_argument("--group", choices=["demo","live","all"], default="all",
+                        help="Filter by account type")
     args = parser.parse_args()
 
     # Skip reports on weekends — gold markets are closed
@@ -333,6 +335,13 @@ def main():
         return
 
     targets = [args.bot] if args.bot and args.bot in BOTS else list(BOTS.keys())
+
+    # Filter by account group
+    if args.group != "all":
+        targets = [k for k in targets if BOTS[k].get("acct_type","demo") == args.group]
+        if not targets:
+            send_telegram(f"No {args.group.upper()} accounts configured.")
+            return
 
     now_tx = datetime.now(TEXAS)
     send_telegram(

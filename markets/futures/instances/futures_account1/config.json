@@ -1,5 +1,7 @@
 {
   "_instance": "futures_account1 \u2014 Futures Bot (MNQ)",
+  "account_type": "demo",
+  "instrument": "MNQ",
   "platform": "tradovate",
   "prop_firm": {
     "name": "LucidFlex",
@@ -14,15 +16,6 @@
     "daily_profit_goal_ceil": 600,
     "max_contracts": 4,
     "drawdown_type": "EOD"
-  },
-  "instrument": {
-    "symbol": "MNQ",
-    "tick_size": 0.25,
-    "tick_value": 0.5,
-    "point_value": 2.0,
-    "currency": "USD",
-    "session_open_et": "09:30",
-    "session_close_et": "16:00"
   },
   "strategy": {
     "name": "SMC_TREND",

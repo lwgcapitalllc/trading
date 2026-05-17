@@ -1,5 +1,7 @@
 {
   "_instance": "gold_scalper \u2014 EMA Scalper (XAUUSD)",
+  "account_type": "demo",
+  "instrument": "XAUUSD",
   "symbol": "XAUUSD.s",
   "risk": {
     "risk_pct_bot1": 2.0,
@@ -77,6 +79,5 @@
     "atr_ratio_compressing": 0.8,
     "rsi_range_trending": 35,
     "rsi_range_ranging": 20
-  },
-  "mt5_path": "C:\\MT5_Scalper\\terminal64.exe"
+  }
 }
