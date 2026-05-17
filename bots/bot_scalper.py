@@ -145,16 +145,69 @@ def build_scalp_features(signal, daily_pnl_pct, logger):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def connect():
-    mt5_path = _CFG.get("mt5_path", "")
-    init_kwargs = {"path": mt5_path} if mt5_path else {}
-    if not mt5.initialize(**init_kwargs):
-        log.error(f"MT5 init failed: {mt5.last_error()}"); return False
+    """
+    Connect to the correct MT5 terminal instance.
+
+    Strategy:
+    1. Try mt5.initialize() with explicit path — connects to that specific terminal
+    2. If IPC timeout (terminal already running), try without path
+       then immediately login with explicit credentials to bind to correct account
+    3. Verify the connected account matches expected login number
+
+    This ensures each bot connects to its own MT5 instance and never
+    accidentally trades on the wrong account.
+    """
+    mt5_path    = _CFG.get("mt5_path", "")
+    expected_id = ACCOUNT.get("login")
+
+    # Attempt 1: explicit path (works when terminal just started)
+    if mt5_path:
+        if mt5.initialize(path=mt5_path):
+            if mt5.login(ACCOUNT["login"], password=ACCOUNT["password"],
+                         server=ACCOUNT["server"]):
+                info = mt5.account_info()
+                if info and info.login == expected_id:
+                    log.info(f"Connected | #{info.login} | ${info.balance:,.2f} | {info.server}")
+                    return True
+                log.error(f"Wrong account: got #{info.login if info else '?'} expected #{expected_id}")
+                mt5.shutdown()
+            else:
+                log.warning(f"Login failed with path: {mt5.last_error()}")
+                mt5.shutdown()
+        else:
+            err = mt5.last_error()
+            if err[0] != -10005:  # not IPC timeout
+                log.error(f"MT5 init failed: {err}")
+                return False
+            log.info("IPC timeout with path (terminal already running) — trying without path")
+
+    # Attempt 2: no path (terminal already running)
+    if not mt5.initialize():
+        log.error(f"MT5 init failed: {mt5.last_error()}")
+        return False
+
     if not mt5.login(ACCOUNT["login"], password=ACCOUNT["password"],
                      server=ACCOUNT["server"]):
-        log.error(f"Login failed: {mt5.last_error()}"); mt5.shutdown(); return False
+        log.error(f"Login failed: {mt5.last_error()}")
+        mt5.shutdown()
+        return False
+
+    # Verify we are on the right account
     info = mt5.account_info()
+    if not info:
+        log.error("Could not get account info after login")
+        mt5.shutdown()
+        return False
+
+    if info.login != expected_id:
+        log.error(f"ACCOUNT MISMATCH: connected to #{info.login} but expected #{expected_id}. "
+                  f"Ensure the correct MT5 terminal is open for this bot.")
+        mt5.shutdown()
+        return False
+
     log.info(f"Connected | #{info.login} | ${info.balance:,.2f} | {info.server}")
     return True
+
 
 def get_candles(tf, count):
     r = mt5.copy_rates_from_pos(SYMBOL, tf, 0, count)

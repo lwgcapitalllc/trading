@@ -130,19 +130,56 @@ log.info(f"BOT_FFT | FFT Strategy | {SYMBOL} | risk={RISK_PCT}%")
 
 def connect() -> bool:
     """
-    Connect to MT5 terminal.
-    Uses mt5_path from config if specified (for dedicated FFT terminal).
-    Falls back to default MT5 if no path configured.
+    Connect to the correct MT5 terminal instance.
+
+    Strategy:
+    1. Try with explicit path first (works when terminal just started)
+    2. On IPC timeout (terminal already running), try without path
+    3. Always verify connected account matches expected login number
+
+    This prevents account mixing when multiple bot instances are running.
     """
+    mt5_path    = _CFG.get("mt5_path", "")
+    expected_id = ACCOUNT.get("login")
+
+    # Attempt 1: explicit path
+    if mt5_path:
+        if mt5.initialize(path=mt5_path):
+            if mt5.login(ACCOUNT["login"], password=ACCOUNT["password"],
+                         server=ACCOUNT["server"]):
+                info = mt5.account_info()
+                if info and info.login == expected_id:
+                    log.info(f"Connected | #{info.login} | ${info.balance:,.2f} | {info.server}")
+                    return True
+                log.error(f"Wrong account: got #{info.login if info else '?'} expected #{expected_id}")
+                mt5.shutdown()
+            else:
+                log.warning(f"Login failed with path: {mt5.last_error()}")
+                mt5.shutdown()
+        else:
+            err = mt5.last_error()
+            if err[0] != -10005:
+                log.error(f"MT5 init failed: {err}")
+                return False
+            log.info("IPC timeout — terminal already running, trying without path")
+
+    # Attempt 2: no path
     if not mt5.initialize():
         log.error(f"MT5 init failed: {mt5.last_error()}")
         return False
+
     if not mt5.login(ACCOUNT["login"], password=ACCOUNT["password"],
                      server=ACCOUNT["server"]):
         log.error(f"Login failed: {mt5.last_error()}")
         mt5.shutdown()
         return False
+
     info = mt5.account_info()
+    if not info or info.login != expected_id:
+        log.error(f"ACCOUNT MISMATCH: got #{info.login if info else '?'} expected #{expected_id}")
+        mt5.shutdown()
+        return False
+
     log.info(f"Connected | #{info.login} | ${info.balance:,.2f} | {info.server}")
     return True
 
