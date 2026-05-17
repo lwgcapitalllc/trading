@@ -249,9 +249,6 @@ def get_uptime(task_name: str) -> str:
             capture_output=True, text=True, timeout=10
         )
         raw = (result.stdout + result.stderr).strip().replace("\r", "")
-        # DEBUG — remove after confirming
-        import sys
-        print(f"\nDEBUG telegram_start raw: {repr(raw)}", file=sys.stderr)
         try:
             import json as _json, time as _time
             data    = _json.loads(raw)
@@ -260,8 +257,7 @@ def get_uptime(task_name: str) -> str:
             hours   = int(delta // 3600)
             minutes = int((delta % 3600) // 60)
             return f"{hours}h {minutes}m"
-        except Exception as e:
-            print(f"DEBUG telegram uptime error: {e}", file=sys.stderr)
+        except Exception:
             return ""
 
     market, instance, logfile = LOG_MAP[task_name]
@@ -412,7 +408,7 @@ def print_header(tasks: list[dict], tab: str = "all"):
             status_text  = "RUNNING" if running else "STOPPED"
             status_color = green if running else red
             info         = ""
-            if running and t["name"] in LOG_MAP and LOG_MAP[t["name"]]:
+            if running and t["name"] in LOG_MAP:
                 u = get_uptime(t["name"])
                 if u:
                     info = gray(u)
