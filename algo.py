@@ -213,6 +213,27 @@ def get_uptime(task_name: str) -> str:
         return f"{minutes}m"
 
 
+def get_telegram_uptime() -> str:
+    raw = ssh("type C:\\algos\\telegram_start.txt 2>nul")
+    if not raw:
+        return ""
+    try:
+        start_time = datetime.strptime(raw.strip()[:19], "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return ""
+    delta   = datetime.utcnow() - start_time
+    hours   = int(delta.total_seconds() // 3600)
+    minutes = int((delta.total_seconds() % 3600) // 60)
+    if hours >= 24:
+        days  = hours // 24
+        hours = hours % 24
+        return f"{days}d {hours}h {minutes}m"
+    elif hours > 0:
+        return f"{hours}h {minutes}m"
+    else:
+        return f"{minutes}m"
+
+
 # ── Actions ───────────────────────────────────────────────────────────────────
 def start_task(name: str) -> bool:
     ok = ssh_ok(f'schtasks /run /tn "{name}"')
@@ -315,8 +336,13 @@ def print_header(tasks: list[dict]):
                     status = green("RUNNING") if t["running"] else red("STOPPED ")
 
                 uptime_str = ""
-                if t["running"] and t["name"] in LOG_MAP:
-                    uptime = get_uptime(t["name"])
+                if t["running"]:
+                    if t["name"] in LOG_MAP:
+                        uptime = get_uptime(t["name"])
+                    elif t["name"] == "SYS_TELEGRAM":
+                        uptime = get_telegram_uptime()
+                    else:
+                        uptime = ""
                     if uptime:
                         uptime_str = gray(f"up {uptime}")
 

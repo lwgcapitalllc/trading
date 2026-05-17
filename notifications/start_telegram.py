@@ -8,6 +8,7 @@ Called by SYS_TELEGRAM Task Scheduler task instead of telegram_bot.py directly.
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 ALGOS = Path("C:/algos")
@@ -34,6 +35,9 @@ def kill_existing():
 
 def main():
     kill_existing()
+    (ALGOS / "telegram_start.txt").write_text(
+        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    )
     print("Starting telegram_bot.py...")
     script = ALGOS / "notifications" / "telegram_bot.py"
     python = sys.executable
