@@ -29,7 +29,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe</Command>
-      <Arguments>C:\algos\reporter.py</Arguments>
+      <Arguments>C:\algos\notifications\reporter.py</Arguments>
       <WorkingDirectory>C:\algos</WorkingDirectory>
     </Exec>
   </Actions>

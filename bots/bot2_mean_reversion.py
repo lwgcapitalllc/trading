@@ -740,7 +740,7 @@ def run():
             if is_dead_zone():
                 df_tmp = get_candles(mt5.TIMEFRAME_M15, 20)
                 handle_dead_zone(open_trades,
-                                 get_atr(df_tmp) if not df_tmp.empty else 10.0)
+                                 calc_atr(df_tmp) if not df_tmp.empty else 10.0)
                 if now.minute == 0:
                     log.info("Dead zone (3-7pm TX) — no new entries. Managing open positions.")
                 time.sleep(60)
