@@ -111,6 +111,12 @@ def main():
         print(f"Starting {name}...")
         size_before = get_log_size(log_path)
 
+        # Write startup timestamp BEFORE waiting — so uptime is accurate
+        # even if connection check times out
+        import json as _json, time as _time
+        ts_file = Path(log_path).parent / "startup_time.json"
+        ts_file.write_text(_json.dumps({"started": _time.time()}))
+
         subprocess.Popen(
             [PYTHON, script, "--config", config],
             cwd=str(BOTS),
@@ -118,12 +124,7 @@ def main():
         )
 
         connected = wait_for_connection(log_path, ready_str, size_before, timeout, name)
-        if connected:
-            # Write startup timestamp for uptime tracking in algo panel
-            import json as _json, time as _time
-            ts_file = Path(log_path).parent / "startup_time.json"
-            ts_file.write_text(_json.dumps({"started": _time.time()}))
-        else:
+        if not connected:
             all_ok = False
 
         time.sleep(1)
