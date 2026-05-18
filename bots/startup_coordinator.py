@@ -31,7 +31,7 @@ STARTUP_SEQUENCE = [
         r"C:\algos\markets\fx\instances\gold_main\config.json",
         r"C:\algos\markets\fx\instances\gold_main\smc_trend_stdout.log",
         "Connected | #700103491",
-        90,
+        30,
     ),
     (
         "Mean Reversion",
@@ -39,7 +39,7 @@ STARTUP_SEQUENCE = [
         r"C:\algos\markets\fx\instances\gold_main\config.json",
         r"C:\algos\markets\fx\instances\gold_main\mean_reversion_stdout.log",
         "Connected | #700103491",
-        90,
+        30,
     ),
     (
         "Scalper",
@@ -47,7 +47,7 @@ STARTUP_SEQUENCE = [
         r"C:\algos\markets\fx\instances\gold_scalper\config.json",
         r"C:\algos\markets\fx\instances\gold_scalper\scalper_stdout.log",
         "Connected | #700107520",
-        90,
+        30,
     ),
     (
         "FFT",
@@ -55,7 +55,7 @@ STARTUP_SEQUENCE = [
         r"C:\algos\markets\fx\instances\gold_fft\config.json",
         r"C:\algos\markets\fx\instances\gold_fft\fft_stdout.log",
         "Connected | #700107749",
-        90,
+        30,
     ),
 ]
 
@@ -121,7 +121,7 @@ def main():
         if not connected:
             all_ok = False
 
-        time.sleep(3)
+        time.sleep(1)
 
     print()
     print("=" * 60)
