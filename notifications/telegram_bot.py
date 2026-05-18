@@ -341,18 +341,25 @@ def do_emergency_stop() -> str:
 def cmd_status() -> str:
     import time as _time
     sys.path.insert(0, str(ALGOS_ROOT / "shared"))
-    from bot_state import read_all, BOT_NAMES, get_uptime_str
+    from bot_state import BOT_NAMES, get_uptime_str
     now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
     lines  = [f"📊 *Bot Status*  _{now_tx}_", ""]
+
+    BOT_SCRIPTS = {
+        "smc_trend":      "bot_smc_trend.py",
+        "mean_reversion": "bot_mean_reversion.py",
+        "scalper":        "bot_scalper.py",
+        "fft":            "bot_fft.py",
+    }
+
     lines.append("*Trading Bots*")
-    all_states = read_all()
-    for key, state in all_states.items():
-        status = state.get("status", "stopped")
-        running = status == "running"
+    for key, script in BOT_SCRIPTS.items():
+        running = is_running(script)
         uptime  = get_uptime_str(key) if running else "—"
         dot     = "🟢" if running else "🔴"
         name    = BOT_NAMES.get(key, key)
         lines.append(f"{dot} `{name:<16}` {uptime}")
+
     lines.append("")
     lines.append("*System*")
     tg_running = is_running("telegram_bot.py")
