@@ -124,13 +124,23 @@ notepad C:\algos\markets\fx\instances\gold_fft\credentials.json
 
 **4. Create users.json (Telegram access control):**
 ```
-echo {"users":{"429207205":{"name":"Jason","role":"admin","added":"2026-05-17"}}} > C:\algos\users.json
+echo {"users":{"429207205":{"name":"Aaron","role":"admin","added":"2026-05-17"}}} > C:\algos\users.json
 ```
 Manage users at any time via: `algo` → `[4] Manage individual bot` → `Telegram` → `[u] Manage users`
 
 **5. Install Task Scheduler tasks (PowerShell on VPS):**
 
 See `scheduler/SCHEDULER_GUIDE.md` for full install commands.
+
+The most important task is `SYS_STARTUP` — it starts all bots sequentially
+to prevent MT5 account mixing. Always use this instead of starting individual
+BOT_ tasks directly.
+
+```powershell
+# Install the startup coordinator first
+Copy-Item "C:\algos\scheduler\startup_coordinator_task.xml" "C:\temp\startup_coordinator_task.xml"
+schtasks /create /tn "SYS_STARTUP" /xml "C:\temp\startup_coordinator_task.xml" /ru trader /rp "312MXFjt7Q8Zoec"
+```
 
 **6. Start everything:**
 ```bash
@@ -159,7 +169,8 @@ git add . && git commit -m "your message" && git push
 # 3. Pull on VPS and restart
 ssh forexvps "cd C:\algos && git pull origin main"
 ssh forexvps "taskkill /f /im python.exe"
-ssh forexvps "schtasks /run /tn BOT_SMC_TREND && schtasks /run /tn BOT_MEAN_REVERSION && schtasks /run /tn BOT_SCALPER && schtasks /run /tn BOT_FFT && schtasks /run /tn SYS_TELEGRAM"
+ssh forexvps "del C:\algos\mt5_connect.lock 2>nul"
+ssh forexvps "schtasks /run /tn SYS_STARTUP"
 ```
 
 ---
@@ -189,14 +200,15 @@ Alternatively, drop files flat into `algos/files/` and run `python3 deploy.py` t
 | `BOT_SCALPER` | BOT_ | Bot Scalper |
 | `BOT_FFT` | BOT_ | Bot FFT |
 | `BOT_FUTURES_ACCT1` | BOT_ | Bot Futures Account 1 |
+| `SYS_STARTUP` | SYS_ | Sequential bot startup coordinator |
 | `SYS_TELEGRAM` | SYS_ | Telegram command bot (24/7) |
 | `SYS_REPORTER` | SYS_ | Daily summary at 4pm Texas |
 | `SYS_MONITOR` | SYS_ | Health checker every 1 minute |
 
 ```bash
 # List all tasks
-ssh forexvps "schtasks /query /fo TABLE | findstr BOT_"
-ssh forexvps "schtasks /query /fo TABLE | findstr SYS_"
+ssh forexvps "schtasks /query /fo TABLE | grep BOT_"
+ssh forexvps "schtasks /query /fo TABLE | grep SYS_"
 ```
 
 ---

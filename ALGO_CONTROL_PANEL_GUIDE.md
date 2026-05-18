@@ -71,7 +71,7 @@ and that bot automatically appears on the Live tab.
 |---|---|
 | `1` | Start all bots + SYS_TELEGRAM |
 | `2` | Stop all bots |
-| `r` | Kill all python.exe, restart all bots + SYS_TELEGRAM |
+| `r` | Stop all bots, run SYS_STARTUP coordinator (sequential startup) |
 | `3` | Emergency stop — kills everything, restarts SYS_TELEGRAM after |
 | `4` | Manage individual bot (start/stop/restart/log) |
 | `5` | View bot log (last 40 or 100 lines) |

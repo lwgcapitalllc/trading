@@ -777,34 +777,20 @@ def main():
             clear()
             print(bold("\n  Restarting all bots...\n"))
             # Stop all first
-            print(gray("  Stopping..."))
+            print(gray("  Stopping all bots..."))
             for t in tasks:
                 stop_task(t["name"])
             ssh("taskkill /F /IM python.exe 2>nul")
             import time; time.sleep(4)
-            # Start all with confirmation
-            print(gray("  Starting...\n"))
-            for t in tasks:
-                print(gray(f"  -> Launching {t['name']}..."), end="", flush=True)
-                start_task(t["name"])
-                confirmed = False
-                for _ in range(10):
-                    import time; time.sleep(1)
-                    updated = get_all_tasks()
-                    match = next((x for x in updated if x["name"] == t["name"]), None)
-                    if match and match["running"]:
-                        confirmed = True
-                        break
-                if confirmed:
-                    print(f"\r  {green('✓')} {t['name']:<30} {green('RUNNING')}")
-                else:
-                    print(f"\r  {red('✗')} {t['name']:<30} {red('FAILED TO START')}")
-            # Always restart telegram bot after any bot restart
-            start_task("SYS_TELEGRAM")
-            print(f"  {green('✓')} {'SYS_TELEGRAM':<30} {green('RESTARTED')}")
-            tasks = get_all_tasks()
+            # Use startup coordinator — starts bots sequentially to prevent
+            # MT5 account mixing from simultaneous connections
+            print(gray("  Launching startup coordinator (sequential startup)...\n"))
+            start_task("SYS_STARTUP")
+            print(gray("  Bots are starting sequentially. Each waits for MT5"))
+            print(gray("  connection before the next starts (~2 min total).\n"))
+            print(gray("  SYS_TELEGRAM will start automatically at the end."))
             print()
-            input(gray("  Press Enter to continue..."))
+            input(gray("  Press Enter — then refresh in 2 minutes to confirm all running..."))
 
         elif choice == "3":
             confirm = input(red("  Type YES to confirm emergency stop: ")).strip()

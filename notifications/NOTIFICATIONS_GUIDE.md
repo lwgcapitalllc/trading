@@ -9,6 +9,7 @@ Four scripts handle all Telegram communication.
 
 | File | Purpose | Runs |
 |---|---|---|
+| `startup_coordinator.py` | Sequential bot startup | At boot via SYS_STARTUP task |
 | `reporter.py` | Daily summary per bot | 4pm Texas daily (SYS_REPORTER task) |
 | `monitor.py` | Health checks + real-time alerts | Every 1 minute (SYS_MONITOR task) |
 | `telegram_bot.py` | Command handler | 24/7 at startup (SYS_TELEGRAM task) |
@@ -179,7 +180,7 @@ This file is **never committed to git** — it lives on the VPS only.
 {
   "users": {
     "429207285": {
-      "name": "Jason",
+      "name": "Aaron",
       "role": "admin",
       "added": "2026-05-17"
     },

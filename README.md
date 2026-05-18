@@ -80,7 +80,7 @@ During this window all bots run portfolio-level management:
 
 **VPS:** ForexVPS (IP: 45.82.164.112) — Windows Server, 24/7
 **Control:** `algo` command on Mac — starts, stops, restarts, shows status and uptime
-**Deploy:** Edit on Mac → `python3 deploy.py` → `git push` → `ssh forexvps "cd C:\algos && git pull"` → `algo restart`
+**Deploy:** Edit on Mac → `git push` → `ssh forexvps "cd C:\algos && git pull"` → `algo restart` (uses SYS_STARTUP coordinator)
 **Monitoring:** `algo status` shows all bots, uptime, running state
 
 **MT5 instances:**
@@ -119,6 +119,7 @@ algos/
 ├── bots/
 │   ├── bot_utils.py
 │   ├── launcher.py
+│   ├── startup_coordinator.py
 │   ├── bot_smc_trend.py
 │   ├── bot_mean_reversion.py
 │   ├── bot_scalper.py

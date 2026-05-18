@@ -270,35 +270,44 @@ def task_stop(task_name: str) -> bool:
 
 
 def do_restart(bot_keys: list) -> str:
-    lines = []
+    """
+    Restart bots using the startup coordinator for sequential startup.
+    This prevents MT5 account mixing by ensuring only one bot connects at a time.
 
-    # Stop all bots first, then stagger starts
-    # Prevents all bots racing to grab the same MT5 terminal simultaneously
-    for key in bot_keys:
+    For individual bot restart: uses direct task start (no coordinator needed).
+    For all bots: uses SYS_STARTUP coordinator which starts bots one by one
+    and waits for each to confirm connection before starting the next.
+    """
+    # Individual bot restart — direct task start is fine
+    if set(bot_keys) != set(BOTS.keys()):
+        lines = []
+        for key in bot_keys:
+            task = TASK_NAMES.get(key)
+            if not task:
+                continue
+            task_stop(task)
+            time.sleep(3)
+            ok = task_start(task)
+            lines.append(f"{'✓' if ok else '✗'}  {BOTS[key]['name']}")
+        return "\n".join(lines)
+
+    # Full restart — stop everything then use coordinator
+    for key in BOTS.keys():
         task = TASK_NAMES.get(key)
         if task:
             task_stop(task)
     time.sleep(3)
 
-    for i, key in enumerate(bot_keys):
-        task = TASK_NAMES.get(key)
-        if not task:
-            continue
-        if i > 0:
-            time.sleep(5)  # 5s between each start — matches startup_delay in configs
-        ok = task_start(task)
-        lines.append(f"{'✓' if ok else '✗'}  {BOTS[key]['name']}")
-
-    # Always restart Telegram last so it can send this response first
-    if set(bot_keys) == set(BOTS.keys()):
-        lines.append("")
-        lines.append("_Restarting Telegram bot..._")
-        time.sleep(2)
-        task_stop("SYS_TELEGRAM")
-        time.sleep(2)
-        task_start("SYS_TELEGRAM")
-
-    return "\n".join(lines)
+    # Run startup coordinator — starts bots sequentially, waits for each connection
+    ok = task_start("SYS_STARTUP")
+    if ok:
+        return (
+            "Restarting all bots sequentially via startup coordinator.\n"
+            "Each bot waits for MT5 connection before the next starts.\n"
+            "_Check /status in ~2 minutes to confirm all running._"
+        )
+    else:
+        return "Failed to start SYS_STARTUP coordinator. Try restarting manually."
 
 
 def do_stop(bot_keys: list) -> str:

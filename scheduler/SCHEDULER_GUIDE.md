@@ -14,6 +14,7 @@ All Windows Task Scheduler XML files. One XML per task.
 | `scalper_task.xml` | `BOT_SCALPER` | BOT_ | At startup | bot_scalper.py |
 | `fft_task.xml` | `BOT_FFT` | BOT_ | At startup | bot_fft.py |
 | `futures_acct1_task.xml` | `BOT_FUTURES_ACCT1` | BOT_ | At startup | bot_futures.py |
+| `startup_coordinator_task.xml` | `SYS_STARTUP` | SYS_ | At boot (+10s delay) | startup_coordinator.py |
 | `telegram_task.xml` | `SYS_TELEGRAM` | SYS_ | At startup | start_telegram.py |
 | `reporter_task.xml` | `SYS_REPORTER` | SYS_ | Daily 21:00 UTC (4pm CDT) | reporter.py |
 | `monitor_task.xml` | `SYS_MONITOR` | SYS_ | Every 1 minute | monitor.py |
@@ -37,6 +38,12 @@ All tasks are configured consistently:
 **SYS_TELEGRAM** uses `start_telegram.py` as the launcher — this kills any
 existing telegram_bot.py process first to prevent duplicate instances.
 
+**SYS_STARTUP** is the sequential bot startup coordinator. It starts bots
+one at a time, waiting for each to confirm MT5 connection before starting
+the next. This is the only reliable way to prevent account mixing when
+multiple MT5 terminals are running simultaneously. Always use SYS_STARTUP
+instead of starting individual BOT_ tasks directly.
+
 ---
 
 ## Installing All Tasks (fresh setup)
@@ -49,6 +56,7 @@ $tasks = @(
     @{file="mean_reversion_task.xml"; name="BOT_MEAN_REVERSION"},
     @{file="scalper_task.xml";        name="BOT_SCALPER"},
     @{file="fft_task.xml";            name="BOT_FFT"},
+    @{file="startup_coordinator_task.xml"; name="SYS_STARTUP"},
     @{file="telegram_task.xml";       name="SYS_TELEGRAM"},
     @{file="reporter_task.xml";       name="SYS_REPORTER"},
     @{file="monitor_task.xml";        name="SYS_MONITOR"}
