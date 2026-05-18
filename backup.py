@@ -58,9 +58,9 @@ def backup():
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
             copied.append(rel_path)
-            print(f"  ✓ {rel_path}")
+            print(f"  OK {rel_path}")
         else:
-            print(f"  — {rel_path} (not found, skipping)")
+            print(f"  -- {rel_path} (not found, skipping)")
 
     if not copied:
         print("Nothing to back up.")
@@ -90,7 +90,7 @@ def backup():
                 ["git", "push", "origin", "main"],
                 cwd=ALGOS_ROOT, check=True
             )
-            print(f"✓ Pushed {len(copied)} files to GitHub")
+            print(f"OK Pushed {len(copied)} files to GitHub")
         else:
             print("No changes since last backup.")
     except subprocess.CalledProcessError as e:
