@@ -1247,7 +1247,13 @@ def run():
             atr      = get_atr(df_m15)
 
             # ── Manage open positions ─────────────────────────────────────
+            trades_before = len(open_trades)
             manage_positions(open_trades, atr)
+            # Record equity immediately after any trade closes
+            if len(open_trades) < trades_before:
+                acct = mt5.account_info()
+                if acct:
+                    calmar.record(acct.balance)
 
             # ── Trend filters (H1 and H4) ─────────────────────────────────
             h1_trend = get_trend(df_h1, 200)

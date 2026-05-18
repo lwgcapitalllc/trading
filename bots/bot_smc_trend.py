@@ -1037,7 +1037,11 @@ def run():
             log.info(f"Scanning | price={price:.2f} | H4={h4_trend} | ATR={atr:.2f}")
 
             # ── Manage open positions every loop ──────────────────────────
+            trades_before = len(open_trades)
             manage_positions(open_trades, atr, df_h4)
+            if len(open_trades) < trades_before:
+                _acct = mt5.account_info()
+                if _acct: calmar.record(_acct.balance)
 
             # ── Asian range ───────────────────────────────────────────────
             ar = get_asian_range(df_m15)

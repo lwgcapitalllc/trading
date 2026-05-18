@@ -1030,7 +1030,11 @@ def run():
             atr      = calc_atr(df_m1)
 
             # ── Manage existing positions ─────────────────────────────────
+            trades_before = len(open_trades)
             manage_positions(open_trades, atr, df_m5)
+            if len(open_trades) < trades_before:
+                _acct = mt5.account_info()
+                if _acct: calmar.record(_acct.balance)
 
             # ── Log status every hour ─────────────────────────────────────
             if now.minute == 0:

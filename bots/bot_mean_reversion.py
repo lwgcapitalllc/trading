@@ -996,7 +996,11 @@ def run():
             log.info(f"Scanning | price={price:.2f} | regime={reg_state} | risk_mult={risk_mult}")
 
             # ── Manage open positions ─────────────────────────────────────
+            trades_before = len(open_trades)
             manage_positions(open_trades)
+            if len(open_trades) < trades_before:
+                _acct = mt5.account_info()
+                if _acct: calmar.record(_acct.balance)
 
             # ── Signal detection ──────────────────────────────────────────
             signal = detect_reversion_signal(df_m15, df_m5)
