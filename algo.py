@@ -56,7 +56,6 @@ DISPLAY_NAMES = {
     "SYS_REPORTER":        "Reporter",
     "SYS_MONITOR":         "Monitor",
     "SYS_PNLTRACKER":      "P&L Tracker",
-    "SYS_BACKUP":          "Backup",
 }
 
 # Instance config paths for reading account_type and instrument
@@ -73,7 +72,6 @@ SCHEDULED_INFO = {
     "SYS_REPORTER": "daily 4pm CT",
     "SYS_MONITOR":  "every 1 min",
     "SYS_PNLTRACKER": "every 1 min",
-    "SYS_BACKUP":     "twice daily",
 }
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -240,57 +238,44 @@ def get_task_account_info(task_name: str) -> tuple:
 
 def get_uptime(task_name: str) -> str:
     """
-    Get bot uptime from bot_state.json — single source of truth.
-    For Telegram, reads telegram_start.json.
+    Calculate how long a bot has been running by reading its log file.
+    For SYS_TELEGRAM, uses the offset file modification time instead.
+    Scans log in reverse to find the most recent startup line.
     """
-    import time as _time
+    if task_name not in LOG_MAP:
+        return ""
 
-    # Telegram special case
-    if LOG_MAP.get(task_name) is None:
+    # Special case: Telegram uptime via startup timestamp file
+    if LOG_MAP[task_name] is None:
         result = subprocess.run(
             ["ssh", VPS_HOST, "type C:\\algos\\telegram_start.json"],
             capture_output=True, text=True, timeout=10
         )
         raw = (result.stdout + result.stderr).strip().replace("\r", "")
         try:
-            import json as _json
+            import json as _json, time as _time
             data    = _json.loads(raw)
             started = float(data["started"])
             delta   = _time.time() - started
-            h = int(delta // 3600)
-            m = int((delta % 3600) // 60)
-            return f"{h}h {m}m" if h > 0 else f"{m}m"
+            hours   = int(delta // 3600)
+            minutes = int((delta % 3600) // 60)
+            return f"{hours}h {minutes}m"
         except Exception:
             return ""
 
-    if task_name not in LOG_MAP:
-        return ""
+    market, instance, logfile = LOG_MAP[task_name]
+    instance_path = f"C:\\algos\\markets\\{market}\\instances\\{instance}"
 
-    # Map task name to bot_key
-    TASK_TO_BOT = {
-        "BOT_SMC_TREND":      "smc_trend",
-        "BOT_MEAN_REVERSION": "mean_reversion",
-        "BOT_SCALPER":        "scalper",
-        "BOT_FFT":            "fft",
-    }
-    bot_key = TASK_TO_BOT.get(task_name)
-    if not bot_key:
-        return ""
-
-    # Read started from bot_state.json
-    market, instance, _ = LOG_MAP[task_name]
-    state_path = f"C:\\algos\\markets\\{market}\\instances\\{instance}\\bot_state.json"
+    # Read startup timestamp file written by coordinator on each restart
     result = subprocess.run(
-        ["ssh", VPS_HOST, f"type {state_path} 2>nul"],
+        ["ssh", VPS_HOST, f"type {instance_path}\\startup_time.json 2>nul"],
         capture_output=True, text=True, timeout=10
     )
-    raw = (result.stdout + result.stderr).strip().replace("\r", "")
+    raw_ts = (result.stdout + result.stderr).strip().replace("\r", "")
     try:
-        import json as _json
-        state   = _json.loads(raw)
-        started = float(state.get(bot_key, {}).get("started", 0))
-        if not started:
-            return ""
+        import json as _json, time as _time
+        data    = _json.loads(raw_ts)
+        started = float(data["started"])
         delta   = _time.time() - started
         hours   = int(delta // 3600)
         minutes = int((delta % 3600) // 60)
@@ -303,7 +288,43 @@ def get_uptime(task_name: str) -> str:
         else:
             return f"{minutes}m"
     except Exception:
+        pass
+
+    # Fallback: scan log file for most recent startup line
+    path = f"{instance_path}\\{logfile}"
+    raw = ssh(f"type {path} 2>nul")
+    if not raw:
         return ""
+
+    # Scan reversed — most recent startup line
+    lines = raw.splitlines()
+    start_time = None
+    for line in reversed(lines):
+        if ("STARTING" in line or
+                ("Balance" in line and "Risk" in line) or
+                ("Balance" in line and "AI:" in line)):
+            try:
+                ts_str     = line.split("|")[0].strip()[:19]
+                start_time = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                break
+            except Exception:
+                continue
+
+    if not start_time:
+        return ""
+
+    delta   = datetime.utcnow() - start_time
+    hours   = int(delta.total_seconds() // 3600)
+    minutes = int((delta.total_seconds() % 3600) // 60)
+
+    if hours >= 24:
+        days  = hours // 24
+        hours = hours % 24
+        return f"{days}d {hours}h {minutes}m"
+    elif hours > 0:
+        return f"{hours}h {minutes}m"
+    else:
+        return f"{minutes}m"
 
 
 # ── Actions ───────────────────────────────────────────────────────────────────
@@ -362,7 +383,7 @@ def view_log(task_name: str, lines: int = 40):
 
 
 # Scheduled jobs — these run on a timer, not persistently
-SCHEDULED_TASKS = {"SYS_REPORTER", "SYS_MONITOR", "SYS_PNLTRACKER", "SYS_BACKUP"}
+SCHEDULED_TASKS = {"SYS_REPORTER", "SYS_MONITOR", "SYS_PNLTRACKER"}
 
 # ── Display ───────────────────────────────────────────────────────────────────
 def clear():
@@ -562,20 +583,28 @@ def read_users() -> dict:
 
 
 def write_users(users: dict):
-    """Write users dict back to users.json on VPS."""
-    import json as _j, tempfile, os
+    """Write users dict back to users.json on VPS.
+
+    Uses base64 to pass the JSON payload through SSH and Windows cmd
+    without any quote-escaping issues. The previous inline-JSON approach
+    broke whenever the payload contained the double-quotes that JSON
+    requires (i.e. always), causing every save to fail silently.
+    """
+    import json as _j
+    import base64
+
     data    = {"users": users}
     content = _j.dumps(data, indent=2)
-    # Write via echo through SSH — escape for Windows cmd
-    escaped = content.replace('"', '\\"').replace('\n', ' ')
-    # Use Python on VPS to write the file (avoids shell escaping issues)
-    py_cmd  = (
-        f"python -c \""
-        f"import json; "
-        f"f=open(r'{USERS_FILE_VPS}','w'); "
-        f"json.dump({_j.dumps(data)}, f, indent=2); "
-        f"f.close(); "
-        f"print('saved')\""
+    b64     = base64.b64encode(content.encode("utf-8")).decode("ascii")
+
+    # Python on the VPS decodes the base64 blob and writes the file.
+    # Base64 contains only [A-Za-z0-9+/=], so no shell escaping is needed.
+    py_cmd = (
+        f'python -c "'
+        f"import base64; "
+        f"open(r'{USERS_FILE_VPS}','wb').write(base64.b64decode('{b64}')); "
+        f"print('saved')"
+        f'"'
     )
     result = ssh(py_cmd)
     return "saved" in result
