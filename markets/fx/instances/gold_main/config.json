@@ -124,5 +124,6 @@
     "partial_close_pct": 0.5,
     "trail_atr_mult": 0.3
   },
-  "startup_delay": 0
+  "startup_delay": 0,
+  "mt5_path": "C:\\Program Files\\PU Prime MT5 Terminal\\terminal64.exe"
 }

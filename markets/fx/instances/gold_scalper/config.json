@@ -80,5 +80,6 @@
     "rsi_range_trending": 35,
     "rsi_range_ranging": 20
   },
-  "startup_delay": 10
+  "startup_delay": 10,
+  "mt5_path": "C:\\MT5_Scalper\\terminal64.exe"
 }

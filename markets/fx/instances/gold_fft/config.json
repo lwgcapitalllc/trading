@@ -39,5 +39,6 @@
     "rsi_range_trending": 35,
     "rsi_range_ranging": 20
   },
-  "startup_delay": 15
+  "startup_delay": 15,
+  "mt5_path": "C:\\MT5_FFT\\terminal64.exe"
 }
