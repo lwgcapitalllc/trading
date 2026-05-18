@@ -103,11 +103,14 @@ def main():
         print(f"Starting {name}...")
         size_before = get_log_size(log_path)
 
-        # Launch bot directly — not via Task Scheduler
+        # Launch bot as fully independent process
+        # CREATE_NEW_PROCESS_GROUP (0x00000200) + DETACHED_PROCESS (0x00000008)
+        # ensures the bot survives after the coordinator exits
         proc = subprocess.Popen(
             [PYTHON, script, "--config", config],
             cwd=str(BOTS),
-            creationflags=0x00000008,  # DETACHED_PROCESS on Windows
+            creationflags=0x00000200 | 0x00000008,
+            close_fds=True,
         )
         processes.append(proc)
 
@@ -126,13 +129,17 @@ def main():
         print("  Some bots had issues — check logs.")
     print("=" * 60)
 
-    # Start Telegram
+    # Start Telegram as independent process
     print("\nStarting Telegram bot...")
     subprocess.Popen(
         [PYTHON, str(ALGOS / "notifications/start_telegram.py")],
-        cwd=str(ALGOS)
+        cwd=str(ALGOS),
+        creationflags=0x00000200 | 0x00000008,
+        close_fds=True,
     )
     print("  ✓ Telegram started")
+    print()
+    print("Coordinator complete — all processes running independently.")
 
 
 if __name__ == "__main__":

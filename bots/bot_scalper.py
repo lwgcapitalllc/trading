@@ -1109,7 +1109,10 @@ if __name__ == "__main__":
     print("BOT SCALPER | XAUUSD Gold | XAUUSD")
     print("Dynamic compounding: $1,000 -> unlimited")
     print("Daily engine: runs until +30% OR 10% peak drawdown OR -8% floor\n")
-    if input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":
+    # Auto-confirm when running non-interactively (coordinator/Task Scheduler)
+    # Prompt only when launched directly in a terminal
+    import sys as _sys
+    if not _sys.stdin.isatty() or input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":
         run()
     else:
         print("Aborted.")

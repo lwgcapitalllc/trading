@@ -1108,7 +1108,10 @@ if __name__ == "__main__":
     print("BOT MEAN REVERSION | XAUUSD Gold | XAUUSD")
     print("Always test on DEMO first. Never skip this step.")
     print("")
-    if input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":
+    # Auto-confirm when running non-interactively (coordinator/Task Scheduler)
+    # Prompt only when launched directly in a terminal
+    import sys as _sys
+    if not _sys.stdin.isatty() or input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":
         run()
     else:
         print("Aborted.")
