@@ -1,0 +1,12 @@
+{
+  "backed_up_at": "2026-05-18 05:21 UTC",
+  "files": [
+    "markets/fx/instances/gold_main/bot_state.json",
+    "markets/fx/instances/gold_scalper/bot_state.json",
+    "markets/fx/instances/gold_fft/bot_state.json",
+    "markets/fx/instances/gold_main/smc_trend_trades.json",
+    "markets/fx/instances/gold_main/mean_reversion_trades.json",
+    "markets/fx/instances/gold_scalper/scalper_trades.json",
+    "users.json"
+  ]
+}
