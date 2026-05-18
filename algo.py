@@ -56,6 +56,7 @@ DISPLAY_NAMES = {
     "SYS_REPORTER":        "Reporter",
     "SYS_MONITOR":         "Monitor",
     "SYS_PNLTRACKER":      "P&L Tracker",
+    "SYS_BACKUP":          "Backup",
 }
 
 # Instance config paths for reading account_type and instrument
@@ -72,6 +73,7 @@ SCHEDULED_INFO = {
     "SYS_REPORTER": "daily 4pm CT",
     "SYS_MONITOR":  "every 1 min",
     "SYS_PNLTRACKER": "every 1 min",
+    "SYS_BACKUP":     "twice daily",
 }
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -360,7 +362,7 @@ def view_log(task_name: str, lines: int = 40):
 
 
 # Scheduled jobs — these run on a timer, not persistently
-SCHEDULED_TASKS = {"SYS_REPORTER", "SYS_MONITOR", "SYS_PNLTRACKER"}
+SCHEDULED_TASKS = {"SYS_REPORTER", "SYS_MONITOR", "SYS_PNLTRACKER", "SYS_BACKUP"}
 
 # ── Display ───────────────────────────────────────────────────────────────────
 def clear():
