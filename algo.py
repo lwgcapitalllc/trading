@@ -238,44 +238,57 @@ def get_task_account_info(task_name: str) -> tuple:
 
 def get_uptime(task_name: str) -> str:
     """
-    Calculate how long a bot has been running by reading its log file.
-    For SYS_TELEGRAM, uses the offset file modification time instead.
-    Scans log in reverse to find the most recent startup line.
+    Get bot uptime from bot_state.json — single source of truth.
+    For Telegram, reads telegram_start.json.
     """
-    if task_name not in LOG_MAP:
-        return ""
+    import time as _time
 
-    # Special case: Telegram uptime via startup timestamp file
-    if LOG_MAP[task_name] is None:
+    # Telegram special case
+    if LOG_MAP.get(task_name) is None:
         result = subprocess.run(
             ["ssh", VPS_HOST, "type C:\\algos\\telegram_start.json"],
             capture_output=True, text=True, timeout=10
         )
         raw = (result.stdout + result.stderr).strip().replace("\r", "")
         try:
-            import json as _json, time as _time
+            import json as _json
             data    = _json.loads(raw)
             started = float(data["started"])
             delta   = _time.time() - started
-            hours   = int(delta // 3600)
-            minutes = int((delta % 3600) // 60)
-            return f"{hours}h {minutes}m"
+            h = int(delta // 3600)
+            m = int((delta % 3600) // 60)
+            return f"{h}h {m}m" if h > 0 else f"{m}m"
         except Exception:
             return ""
 
-    market, instance, logfile = LOG_MAP[task_name]
-    instance_path = f"C:\\algos\\markets\\{market}\\instances\\{instance}"
+    if task_name not in LOG_MAP:
+        return ""
 
-    # Read startup timestamp file written by coordinator on each restart
+    # Map task name to bot_key
+    TASK_TO_BOT = {
+        "BOT_SMC_TREND":      "smc_trend",
+        "BOT_MEAN_REVERSION": "mean_reversion",
+        "BOT_SCALPER":        "scalper",
+        "BOT_FFT":            "fft",
+    }
+    bot_key = TASK_TO_BOT.get(task_name)
+    if not bot_key:
+        return ""
+
+    # Read started from bot_state.json
+    market, instance, _ = LOG_MAP[task_name]
+    state_path = f"C:\\algos\\markets\\{market}\\instances\\{instance}\\bot_state.json"
     result = subprocess.run(
-        ["ssh", VPS_HOST, f"type {instance_path}\\startup_time.json 2>nul"],
+        ["ssh", VPS_HOST, f"type {state_path} 2>nul"],
         capture_output=True, text=True, timeout=10
     )
-    raw_ts = (result.stdout + result.stderr).strip().replace("\r", "")
+    raw = (result.stdout + result.stderr).strip().replace("\r", "")
     try:
-        import json as _json, time as _time
-        data    = _json.loads(raw_ts)
-        started = float(data["started"])
+        import json as _json
+        state   = _json.loads(raw)
+        started = float(state.get(bot_key, {}).get("started", 0))
+        if not started:
+            return ""
         delta   = _time.time() - started
         hours   = int(delta // 3600)
         minutes = int((delta % 3600) // 60)
@@ -288,43 +301,7 @@ def get_uptime(task_name: str) -> str:
         else:
             return f"{minutes}m"
     except Exception:
-        pass
-
-    # Fallback: scan log file for most recent startup line
-    path = f"{instance_path}\\{logfile}"
-    raw = ssh(f"type {path} 2>nul")
-    if not raw:
         return ""
-
-    # Scan reversed — most recent startup line
-    lines = raw.splitlines()
-    start_time = None
-    for line in reversed(lines):
-        if ("STARTING" in line or
-                ("Balance" in line and "Risk" in line) or
-                ("Balance" in line and "AI:" in line)):
-            try:
-                ts_str     = line.split("|")[0].strip()[:19]
-                start_time = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
-                break
-            except Exception:
-                continue
-
-    if not start_time:
-        return ""
-
-    delta   = datetime.utcnow() - start_time
-    hours   = int(delta.total_seconds() // 3600)
-    minutes = int((delta.total_seconds() % 3600) // 60)
-
-    if hours >= 24:
-        days  = hours // 24
-        hours = hours % 24
-        return f"{days}d {hours}h {minutes}m"
-    elif hours > 0:
-        return f"{hours}h {minutes}m"
-    else:
-        return f"{minutes}m"
 
 
 # ── Actions ───────────────────────────────────────────────────────────────────

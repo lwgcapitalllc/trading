@@ -339,50 +339,53 @@ def do_emergency_stop() -> str:
 # =============================================================================
 
 def cmd_status() -> str:
+    import time as _time
+    sys.path.insert(0, str(ALGOS_ROOT / "shared"))
+    from bot_state import read_all, BOT_NAMES, get_uptime_str
     now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
     lines  = [f"📊 *Bot Status*  _{now_tx}_", ""]
-
     lines.append("*Trading Bots*")
-    for key, cfg in BOTS.items():
-        running = is_running(cfg["script"])
-        uptime  = get_uptime(cfg["log"]) if running else "—"
+    all_states = read_all()
+    for key, state in all_states.items():
+        status = state.get("status", "stopped")
+        running = status == "running"
+        uptime  = get_uptime_str(key) if running else "—"
         dot     = "🟢" if running else "🔴"
-        lines.append(f"{dot} `{cfg['name']:<16}` {uptime}")
-
+        name    = BOT_NAMES.get(key, key)
+        lines.append(f"{dot} `{name:<16}` {uptime}")
     lines.append("")
     lines.append("*System*")
     tg_running = is_running("telegram_bot.py")
     dot        = "🟢" if tg_running else "🔴"
-    # Get telegram uptime from offset file modification time
     tg_uptime  = ""
-    if tg_running and OFFSET_FILE.exists():
-        import os
+    if tg_running and TELEGRAM_START.exists():
         try:
-            mtime = os.path.getmtime(str(OFFSET_FILE))
-            delta = datetime.utcnow().timestamp() - mtime
+            import json as _json
+            data      = _json.loads(TELEGRAM_START.read_text())
+            started   = float(data["started"])
+            delta     = _time.time() - started
             h = int(delta // 3600)
             m = int((delta % 3600) // 60)
             tg_uptime = f"{h}h {m}m"
         except Exception:
             tg_uptime = "running"
     lines.append(f"{dot} `{'Telegram':<16}` {tg_uptime if tg_running else 'Stopped'}")
-
     return "\n".join(lines)
 
 
 def cmd_balance() -> str:
+    sys.path.insert(0, str(ALGOS_ROOT / "shared"))
+    from bot_state import read_all, BOT_STARTING_BALANCES, BOT_NAMES
     now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
     lines  = [f"💰 *Account Balances*  _{now_tx}_", ""]
-
-    for key, cfg in BOTS.items():
-        equity  = load_json(cfg["equity"])
-        balance = get_balance(equity)
-        start   = get_start_balance(equity)
-        growth  = ((balance - start) / start * 100) if start > 0 else 0
-        arrow   = "↑" if growth > 0 else "↓" if growth < 0 else "—"
-        sign    = "+" if growth >= 0 else ""
-        lines.append(f"`{cfg['name']:<16}` *${balance:,.2f}*  {arrow} {sign}{growth:.1f}%")
-
+    all_states = read_all()
+    for key, state in all_states.items():
+        balance = state.get("balance", BOT_STARTING_BALANCES.get(key, 1000.0))
+        pct     = state.get("total_pnl_pct", 0.0)
+        name    = BOT_NAMES.get(key, key)
+        arrow   = "↑" if pct > 0 else "↓" if pct < 0 else "—"
+        sign    = "+" if pct >= 0 else ""
+        lines.append(f"`{name:<16}` *${balance:,.2f}*  {arrow} {sign}{pct:.1f}%")
     return "\n".join(lines)
 
 
