@@ -264,8 +264,34 @@ def get_uptime(task_name: str) -> str:
             return ""
 
     market, instance, logfile = LOG_MAP[task_name]
-    path = f"C:\\algos\\markets\\{market}\\instances\\{instance}\\{logfile}"
+    instance_path = f"C:\\algos\\markets\\{market}\\instances\\{instance}"
 
+    # Read startup timestamp file written by coordinator on each restart
+    result = subprocess.run(
+        ["ssh", VPS_HOST, f"type {instance_path}\\startup_time.json 2>nul"],
+        capture_output=True, text=True, timeout=10
+    )
+    raw_ts = (result.stdout + result.stderr).strip().replace("\r", "")
+    try:
+        import json as _json, time as _time
+        data    = _json.loads(raw_ts)
+        started = float(data["started"])
+        delta   = _time.time() - started
+        hours   = int(delta // 3600)
+        minutes = int((delta % 3600) // 60)
+        if hours >= 24:
+            days  = hours // 24
+            hours = hours % 24
+            return f"{days}d {hours}h {minutes}m"
+        elif hours > 0:
+            return f"{hours}h {minutes}m"
+        else:
+            return f"{minutes}m"
+    except Exception:
+        pass
+
+    # Fallback: scan log file for most recent startup line
+    path = f"{instance_path}\\{logfile}"
     raw = ssh(f"type {path} 2>nul")
     if not raw:
         return ""
