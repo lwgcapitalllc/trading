@@ -1,107 +1,19 @@
-# LWG Capital LLC — Algo Trading Suite
+# LWG Capital — Algo Trading Suite
 
-Multi-bot algorithmic trading system built on MetaTrader 5.
-Designed to scale across instruments and prop firm accounts.
-
----
-
-## Documentation
-
-**Bot guides:**
-- [Bot SMC Trend — SMC Trend Following](bots/BOT_SMC_TREND_GUIDE.md)
-- [Bot Mean Reversion — Mean Reversion](bots/BOT_MEAN_REVERSION_GUIDE.md)
-- [Bot Scalper — EMA Scalper](bots/BOT_SCALPER_GUIDE.md)
-- [Bot FFT — FFT Strategy](bots/BOT_FFT_GUIDE.md)
-
-**System guides:**
-- [Notifications — Telegram reporter, monitor, commands](notifications/NOTIFICATIONS_GUIDE.md)
-- [Scheduler — Task Scheduler setup and management](scheduler/SCHEDULER_GUIDE.md)
+Automated trading system for XAUUSD (Gold) on PU Prime demo accounts.
+Runs on a Windows VPS (ForexVPS). Managed from Mac via SSH alias `forexvps`.
 
 ---
 
-## The Bots — At a Glance
+## Accounts
 
-| | SMC Trend | Mean Reversion | Scalper | FFT |
-|---|---|---|---|---|
-| **Strategy** | Judas Swing + FVG | BB + RSI + VWAP | EMA stack + pullback | Dual Fibonacci confluence |
-| **Direction** | With H4 trend only | Against overextension | With momentum | With H1+H4 trend |
-| **Timeframe** | M15 entry | Any (24hr) | M5 stack, M1 entry | M15 entry |
-| **Sessions** | London + NY kill zones | 24 hours | All except dead zone | Any trending session |
-| **Trades/day** | 0–3 | 0–4 | 5–20+ | 0–3 |
-| **Target R:R** | 3:1+ (runner system) | 1:1 fast | Dynamic daily engine | 2:1 to 5:1 |
-| **Risk/trade** | 2% | 2% | 2–3.5% (auto-scaling) | 1% |
-| **Daily cap** | 10% loss | 10% loss | -8% floor | 5% loss |
-| **Account** | gold_main (shared) | gold_main (shared) | gold_scalper | gold_fft |
-| **MT5** | #700103491 | #700103491 | #700107520 | #700107749 |
+| Instance | Account | Bot(s) | Balance |
+|---|---|---|---|
+| gold_main | #700103491 | SMC Trend + Mean Reversion | $2,759.28 |
+| gold_scalper | #700107520 | Scalper | $981.41 |
+| gold_fft | #700107749 | FFT | $1,070.50 |
 
----
-
-## How They Work Together
-
-**Bot SMC Trend and Bot Mean Reversion are designed to be uncorrelated.**
-
-They share one MT5 account (#700103491) and one equity file (`gold_main_equity.json`). Their balance and account growth are always identical. Individual trade performance (win rate, profit factor, Calmar) is tracked separately per bot. When markets are trending, Bot SMC Trend is active and Bot Mean Reversion reduces size. When markets are ranging, Bot Mean Reversion is busy and Bot SMC Trend sits idle. They share one account and complement each other across market conditions.
-
-**Bot Scalper is completely independent.** It runs on its own account with its own aggressive compounding logic. Its daily profit engine means one great day can significantly move the account.
-
-**Bot FFT is the proprietary edge.** The FFT dual-fib strategy is the most selective — it only fires when two independent Fibonacci tools agree on the same price zone. Fewer trades, higher quality. Will be refined over time as more chart examples are provided.
-
----
-
-## Key Differences Explained
-
-**Why does Mean Reversion close at 1R when SMC Trend targets 3R?**
-Mean reversion moves are fast and often complete within minutes. Holding for 3R on a reversion trade risks giving back the move. Mean Reversion banks 1R reliably, many times. SMC Trend holds for 3R because trend continuation moves can run far beyond the initial target — the runner system captures this.
-
-**Why does Scalper have its own account?**
-Scalper can make +50% in a day. It can also hit the -8% floor. This volatility would destroy the daily loss cap tracking on the shared gold_main account. Separation keeps risk clean.
-
-**Why is FFT risk only 1% when others are 2%?**
-The FFT strategy is unproven in live trading — it has no trade history yet. Lower risk while the AI is learning. Once it has 30+ trades and a solid Calmar ratio, risk can be raised to 2%.
-
-**Why different AI thresholds (SMC/Reversion: 55% vs Scalper/FFT: 52%)?**
-Bot 1 and 2 have stricter entry rules — the AI needs more confidence to approve. Scalper and FFT are newer with less data — a lower threshold means the AI starts influencing decisions sooner while still learning.
-
----
-
-## Dead Zone (All Bots)
-
-**No new entries 3:00pm–7:00pm Texas time** (CDT/CST, DST-aware automatically).
-
-During this window all bots run portfolio-level management:
-- Net profitable across all open trades → close everything, lock profit
-- Profitable individual trade, portfolio negative → move to breakeven
-- Losing trade getting worse → close immediately
-- Losing trade improving → hold until 3:45pm TX then hard close
-
----
-
-## Infrastructure
-
-**VPS:** ForexVPS (IP: 45.82.164.112) — Windows Server, 24/7
-**Control:** `algo` command on Mac — starts, stops, restarts, shows status and uptime
-**Deploy:** Edit on Mac → `git push` → `ssh forexvps "cd C:\algos && git pull"` → `algo restart` (uses SYS_STARTUP coordinator)
-**Monitoring:** `algo status` shows all bots, uptime, running state
-
-**MT5 instances:**
-| Directory | Account | Bots |
-|---|---|---|
-| `C:\Program Files\PU Prime MT5 Terminal` | #700103491 | Bot SMC Trend + Bot Mean Reversion |
-| `C:\MT5_Scalper` | #700107520 | Bot Scalper |
-| `C:\MT5_FFT` | #700107749 | Bot FFT |
-
----
-
-## Shared Components
-
-| File | Purpose |
-|---|---|
-| `shared/shared_ai_brain.py` | AI engine, trade logger, daily performance logger |
-| `shared/shared_calmar.py` | Calmar ratio tracker (prints morning report daily) |
-| `shared/shared_regime.py` | Market regime classifier (TRENDING/TRANSITIONING/RANGING) |
-| `bots/bot_utils.py` | Config loader, logging setup, path resolver |
-| `bots/launcher.py` | Universal Task Scheduler launcher for all bots |
-| `algo.py` | Mac control panel — start/stop/status/logs |
+Starting balance for all accounts: **$1,000**
 
 ---
 
@@ -109,48 +21,111 @@ During this window all bots run portfolio-level management:
 
 ```
 algos/
-├── algo.py                           <- Mac control panel
+├── algo.py                          ← Mac control panel (run: algo)
+├── backup.py                        ← Daily backup to GitHub
+├── cleanup_vps.bat                  ← One-time cleanup script
 ├── README.md
-├── stress_test_suite.py
-├── shared/
-│   ├── shared_ai_brain.py
-│   ├── shared_calmar.py
-│   └── shared_regime.py
+├── SETUP.md
 ├── bots/
-│   ├── bot_utils.py
-│   ├── launcher.py
-│   ├── startup_coordinator.py
 │   ├── bot_smc_trend.py
 │   ├── bot_mean_reversion.py
 │   ├── bot_scalper.py
 │   ├── bot_fft.py
-│   ├── BOT_SMC_TREND_GUIDE.md
-│   ├── BOT_MEAN_REVERSION_GUIDE.md
-│   ├── BOT_SCALPER_GUIDE.md
-│   └── BOT_FFT_GUIDE.md
-├── executors/
-│   └── tradovate.py                  <- Tradovate API (Bot Futures)
+│   ├── bot_utils.py
+│   ├── startup_coordinator.py       ← Sequential startup (single entry point)
+│   └── BOT_*_GUIDE.md
+├── shared/
+│   ├── bot_state.py                 ← Single source of truth (read/write)
+│   ├── shared_ai_brain.py           ← Trade logging + AI brain
+│   ├── shared_calmar.py             ← Calmar ratio tracker
+│   └── shared_regime.py             ← Market regime detection
+├── notifications/
+│   ├── monitor.py                   ← Process watchdog (every 1 min)
+│   ├── pnl_tracker.py               ← P&L engine (every 1 min)
+│   ├── reporter.py                  ← Daily 4pm CT report
+│   ├── telegram_bot.py              ← Telegram command bot
+│   ├── start_telegram.py            ← Telegram launcher
+│   └── NOTIFICATIONS_GUIDE.md
+├── scheduler/
+│   ├── *_task.xml                   ← Task Scheduler definitions
+│   └── SCHEDULER_GUIDE.md
 └── markets/
-    ├── fx/instances/
-    │   ├── gold_main/              <- Bot 1 + Bot 2
-    │   ├── gold_scalper/           <- Bot 3
-    │   └── gold_fft/               <- Bot 5
-    └── futures/instances/
-        └── futures_account1/           <- Bot 4 (pending Lucid evaluation)
+    └── fx/instances/
+        ├── gold_main/
+        │   ├── config.json
+        │   ├── bot_state.json       ← Live state (balance, P&L, status)
+        │   ├── smc_trend_trades.json
+        │   └── mean_reversion_trades.json
+        ├── gold_scalper/
+        │   ├── config.json
+        │   ├── bot_state.json
+        │   └── scalper_trades.json
+        └── gold_fft/
+            ├── config.json
+            ├── bot_state.json
+            └── fft_trades.json
 ```
 
 ---
 
-## Game Plan
+## Single Source of Truth
 
-| Phase | Timing | Condition to advance |
+`bot_state.json` in each instance directory is the **only** file every
+component reads from. Nothing else is authoritative.
+
+| Field | Set by | Read by |
 |---|---|---|
-| Demo trading | Now — Day 60 | 15+ closed trades per bot, Calmar >= 2.0 |
-| Evaluation | Day 60–90 | SMC Trend Calmar >= 2.5, Mean Reversion Calmar >= 2.0 |
-| Small live (50% risk) | Day 90–150 | Calmar holds on live data |
-| Full risk | Day 150+ | Live Calmar >= 3.0 for 60+ days |
-| Prop firms (Lucid) | Parallel | Buy LucidFlex $100K eval, run Bot Futures |
+| `started` | startup_coordinator | algo.py, telegram /status |
+| `status` | monitor.py | telegram /status |
+| `balance`, P&L fields | pnl_tracker.py | telegram /balance, reporter |
+| `day_locked` | pnl_tracker.py | monitor alerts |
 
-**Calmar targets:** 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
+---
 
-*Always run on DEMO first. Never optimize to past results — that is overfitting.*
+## Deploy Workflow
+
+```bash
+# Edit on Mac
+git add . && git commit -m "..." && git push
+ssh forexvps "cd C:\algos && git pull origin main"
+
+# Restart bots (coordinator starts them sequentially)
+ssh forexvps "del C:\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
+sleep 3
+ssh forexvps "schtasks /run /tn SYS_STARTUP"
+sleep 60
+ssh forexvps "wmic process where \"name='python.exe'\" get commandline 2>nul"
+```
+
+---
+
+## VPS Data Backup
+
+Critical VPS-only files are backed up to GitHub daily at midnight via `SYS_BACKUP`:
+- `bot_state.json` (all instances) — balances, P&L
+- `*_trades.json` (all instances) — full trade history
+- `users.json` — Telegram user list
+
+Backups stored in `backup/` directory in this repo.
+To restore after VPS rebuild: copy files from `backup/` to their original paths.
+
+---
+
+## MT5 Instances (VPS)
+
+| Terminal | Path | Account |
+|---|---|---|
+| MT5 Main | `C:\Program Files\PU Prime MT5 Terminal\terminal64.exe` | #700103491 |
+| MT5 Scalper | `C:\MT5_Scalper\terminal64.exe` | #700107520 |
+| MT5 FFT | `C:\MT5_FFT\terminal64.exe` | #700107749 |
+
+**Critical**: Each terminal must have ONLY its own account logged in.
+If extra accounts appear in Navigator → Accounts → right-click → Remove.
+
+---
+
+## Telegram Bot
+
+- Token: `8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8`
+- Admin: Aaron (@cryptobetta, chat ID: `429207285`)
+- Commands: `/status`, `/balance`, `/restart`, `/stop`, `/emergency`, `/help`

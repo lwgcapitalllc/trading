@@ -1,132 +1,79 @@
-# Scheduler Guide
-**Folder:** `scheduler/`
+# Task Scheduler Guide
 
-All Windows Task Scheduler XML files. One XML per task.
-
----
-
-## Files
-
-| XML File | Task Name | Prefix | Trigger | What It Runs |
-|---|---|---|---|---|
-| `smc_trend_task.xml` | `BOT_SMC_TREND` | BOT_ | At startup | bot_smc_trend.py |
-| `mean_reversion_task.xml` | `BOT_MEAN_REVERSION` | BOT_ | At startup | bot_mean_reversion.py |
-| `scalper_task.xml` | `BOT_SCALPER` | BOT_ | At startup | bot_scalper.py |
-| `fft_task.xml` | `BOT_FFT` | BOT_ | At startup | bot_fft.py |
-| `futures_acct1_task.xml` | `BOT_FUTURES_ACCT1` | BOT_ | At startup | bot_futures.py |
-| `startup_coordinator_task.xml` | `SYS_STARTUP` | SYS_ | At boot (+10s delay) | startup_coordinator.py |
-| `telegram_task.xml` | `SYS_TELEGRAM` | SYS_ | At startup | start_telegram.py |
-| `reporter_task.xml` | `SYS_REPORTER` | SYS_ | Daily 21:00 UTC (4pm CDT) | reporter.py |
-| `monitor_task.xml` | `SYS_MONITOR` | SYS_ | Every 1 minute | monitor.py |
-| `pnl_tracker_task.xml` | `SYS_PNLTRACKER` | SYS_ | Every 1 minute | pnl_tracker.py |
-
-**Prefix convention:**
-- `BOT_` — trading bots (persistent, run 24/7)
-- `SYS_` — system jobs (telegram is persistent, reporter/monitor are scheduled)
+All tasks run as `trader` user on the VPS.
 
 ---
 
-## Key Settings (all tasks)
+## Task List
 
-All tasks are configured consistently:
-- `DisallowStartIfOnBatteries: false` — VPS has no battery
-- `StopIfGoingOnBatteries: false` — never stops
-- `ExecutionTimeLimit: PT0S` — no time limit (bots run indefinitely)
-- `RunLevel: HighestAvailable` — elevated privileges
-- `MultipleInstancesPolicy: IgnoreNew` — no duplicate instances
-- `WorkingDirectory: C:\algos\bots` — correct for imports
+| Task | Type | Trigger | Script |
+|---|---|---|---|
+| SYS_STARTUP | Boot | At startup | `bots/startup_coordinator.py` |
+| SYS_TELEGRAM | Boot | At startup | `notifications/start_telegram.py` |
+| SYS_MONITOR | Scheduled | Every 1 min | `notifications/monitor.py` |
+| SYS_PNLTRACKER | Scheduled | Every 1 min | `notifications/pnl_tracker.py` |
+| SYS_REPORTER | Scheduled | Daily 4pm CT | `notifications/reporter.py` |
+| SYS_BACKUP | Scheduled | Daily midnight | `backup.py` |
+| BOT_SMC_TREND | **Disabled** | (manual only) | `bots/bot_smc_trend.py` |
+| BOT_MEAN_REVERSION | **Disabled** | (manual only) | `bots/bot_mean_reversion.py` |
+| BOT_SCALPER | **Disabled** | (manual only) | `bots/bot_scalper.py` |
+| BOT_FFT | **Disabled** | (manual only) | `bots/bot_fft.py` |
 
-**SYS_TELEGRAM** uses `start_telegram.py` as the launcher — this kills any
-existing telegram_bot.py process first to prevent duplicate instances.
-
-**SYS_STARTUP** is the sequential bot startup coordinator. It starts bots
-one at a time, waiting for each to confirm MT5 connection before starting
-the next. This is the only reliable way to prevent account mixing when
-multiple MT5 terminals are running simultaneously. Always use SYS_STARTUP
-instead of starting individual BOT_ tasks directly.
+**Important**: BOT_ tasks are disabled. Only `SYS_STARTUP` fires bots.
+`SYS_STARTUP` uses `schtasks /run` to start each BOT_ task sequentially.
 
 ---
 
-## Installing All Tasks (fresh setup)
+## Why BOT_ Tasks Are Disabled
 
-Run in PowerShell on VPS as Administrator:
+MT5's Python API cannot reliably select between running terminals via path.
+Sequential startup via `SYS_STARTUP` prevents account mixing by starting
+one bot at a time and waiting for connection confirmation before the next.
+
+---
+
+## Install All Tasks (PowerShell)
 
 ```powershell
+$pass = "312MXFjt7Q8Zoec"
 $tasks = @(
-    @{file="smc_trend_task.xml";      name="BOT_SMC_TREND"},
-    @{file="mean_reversion_task.xml"; name="BOT_MEAN_REVERSION"},
-    @{file="scalper_task.xml";        name="BOT_SCALPER"},
-    @{file="fft_task.xml";            name="BOT_FFT"},
-    @{file="startup_coordinator_task.xml"; name="SYS_STARTUP"},
-    @{file="telegram_task.xml";       name="SYS_TELEGRAM"},
-    @{file="reporter_task.xml";       name="SYS_REPORTER"},
-    @{file="monitor_task.xml";        name="SYS_MONITOR"}
+    "startup_coordinator_task.xml:SYS_STARTUP",
+    "telegram_task.xml:SYS_TELEGRAM",
+    "monitor_task.xml:SYS_MONITOR",
+    "pnl_tracker_task.xml:SYS_PNLTRACKER",
+    "reporter_task.xml:SYS_REPORTER",
+    "backup_task.xml:SYS_BACKUP",
+    "smc_trend_task.xml:BOT_SMC_TREND",
+    "mean_reversion_task.xml:BOT_MEAN_REVERSION",
+    "scalper_task.xml:BOT_SCALPER",
+    "fft_task.xml:BOT_FFT"
 )
 foreach ($t in $tasks) {
-    Copy-Item "C:\algos\scheduler\$($t.file)" "C:\temp\$($t.file)"
-    schtasks /create /tn $t.name /xml "C:\temp\$($t.file)" /ru trader /rp "312MXFjt7Q8Zoec"
-    Write-Host "Installed: $($t.name)"
+    $parts = $t.Split(":")
+    Copy-Item "C:\algos\scheduler\$($parts[0])" "C:\temp\$($parts[0])"
+    schtasks /create /tn $parts[1] /xml "C:\temp\$($parts[0])" /ru trader /rp $pass
 }
+schtasks /change /tn BOT_SMC_TREND /disable
+schtasks /change /tn BOT_MEAN_REVERSION /disable
+schtasks /change /tn BOT_SCALPER /disable
+schtasks /change /tn BOT_FFT /disable
 ```
 
 ---
 
-## Verifying Tasks
+## Common Commands
 
 ```bash
-# List all algo tasks
-ssh forexvps "schtasks /query /fo TABLE | findstr BOT_"
+# Check all tasks
 ssh forexvps "schtasks /query /fo TABLE | findstr SYS_"
+ssh forexvps "schtasks /query /fo TABLE | findstr BOT_"
 
-# Check a specific task
-ssh forexvps "schtasks /query /fo LIST /tn BOT_SMC_TREND /v"
+# Run manually
+ssh forexvps "schtasks /run /tn SYS_STARTUP"
+ssh forexvps "schtasks /run /tn SYS_BACKUP"
+
+# Restart everything
+ssh forexvps "del C:\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
+sleep 3
+ssh forexvps "schtasks /run /tn SYS_STARTUP"
 ```
-
----
-
-## Manual Task Control
-
-```bash
-ssh forexvps "schtasks /run /tn BOT_SMC_TREND"
-ssh forexvps "schtasks /end /tn BOT_SMC_TREND"
-ssh forexvps "schtasks /delete /tn BOT_SMC_TREND /f"
-```
-
----
-
-## Recreating a Task From Scratch
-
-```powershell
-schtasks /delete /tn "BOT_SMC_TREND" /f
-Copy-Item C:\algos\scheduler\smc_trend_task.xml C:\temp\smc_trend_task.xml
-schtasks /create /tn "BOT_SMC_TREND" /xml "C:\temp\smc_trend_task.xml" /ru trader /rp "312MXFjt7Q8Zoec"
-```
-
----
-
-## Reporter DST Update (November)
-
-When clocks fall back in November, update `reporter_task.xml`:
-
-Change `21:00:00` → `22:00:00` in `<StartBoundary>`, then reinstall:
-```powershell
-schtasks /delete /tn "SYS_REPORTER" /f
-Copy-Item C:\algos\scheduler\reporter_task.xml C:\temp\reporter_task.xml
-schtasks /create /tn "SYS_REPORTER" /xml "C:\temp\reporter_task.xml" /ru trader /rp "312MXFjt7Q8Zoec"
-```
-
----
-
-## SYS_PNLTRACKER — Real-Time P&L Engine
-
-Runs every 1 minute. Reads ONLY from trades JSON files — pure math,
-no MT5 connections, no dependency on stale equity files.
-
-For each bot calculates from scratch:
-- Current balance = starting_balance + sum of all closed trade P&L
-- Daily P&L, weekly P&L, total P&L ($ and %)
-- Peak balance and drawdown from peak
-- Sends alerts when daily/weekly caps or goals are hit
-
-This is the single source of truth for all P&L data.
-Replaces ad-hoc calmar.record() calls in individual bots.
