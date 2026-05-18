@@ -1,18 +1,20 @@
 """
-startup_coordinator.py — Sequential Bot Startup with Terminal Reset
+startup_coordinator.py — Sequential Bot Startup
 
-The ONLY reliable way to prevent MT5 account mixing when multiple
-terminals are running:
+Strategy:
+1. Kill all MT5 terminals (terminal64.exe)
+2. For each terminal group:
+   a. Launch the MT5 terminal executable directly
+   b. Wait for it to be ready (15s)
+   c. Start the bot(s) for that terminal
+   d. Wait for bot to confirm connection before moving to next group
 
-1. Kill ALL terminal64.exe processes first
-2. Start each bot one at a time — bot launches its own terminal via mt5_path
-3. Wait for connection confirmed before starting the next bot
+This is the ONLY reliable approach:
+- Coordinator (not the bot) launches the terminal
+- Terminal is already running when bot calls mt5.initialize(path=...)
+- No IPC race — each terminal is ready before its bot starts
 
-When a terminal is NOT running, mt5.initialize(path=...) launches it
-fresh and is 100% reliable. The IPC race only happens when terminals
-are already running simultaneously.
-
-Run via SYS_STARTUP task at boot, or manually:
+Run via SYS_STARTUP task at boot:
     python C:/algos/bots/startup_coordinator.py
 """
 
@@ -25,60 +27,72 @@ PYTHON = sys.executable
 ALGOS  = Path("C:/algos")
 BOTS   = Path("C:/algos/bots")
 
-# Sequential startup order
-# (display_name, script, config, stdout_log, ready_string, timeout_s)
-STARTUP_SEQUENCE = [
+# Terminal paths
+MT5_MAIN    = r"C:\Program Files\PU Prime MT5 Terminal\terminal64.exe"
+MT5_SCALPER = r"C:\MT5_Scalper\terminal64.exe"
+MT5_FFT     = r"C:\MT5_FFT\terminal64.exe"
+
+# Startup groups — each group shares a terminal
+# (terminal_exe, terminal_ready_wait, [(name, script, config, log, ready_str, timeout)])
+STARTUP_GROUPS = [
     (
-        "SMC Trend",
-        r"C:\algos\bots\bot_smc_trend.py",
-        r"C:\algos\markets\fx\instances\gold_main\config.json",
-        r"C:\algos\markets\fx\instances\gold_main\smc_trend_stdout.log",
-        "Connected | #700103491",
-        90,
+        MT5_MAIN, 20,
+        [
+            (
+                "SMC Trend",
+                r"C:\algos\bots\bot_smc_trend.py",
+                r"C:\algos\markets\fx\instances\gold_main\config.json",
+                r"C:\algos\markets\fx\instances\gold_main\smc_trend_stdout.log",
+                "Connected | #700103491",
+                90,
+            ),
+            (
+                "Mean Reversion",
+                r"C:\algos\bots\bot_mean_reversion.py",
+                r"C:\algos\markets\fx\instances\gold_main\config.json",
+                r"C:\algos\markets\fx\instances\gold_main\mean_reversion_stdout.log",
+                "Connected | #700103491",
+                90,
+            ),
+        ]
     ),
     (
-        "Mean Reversion",
-        r"C:\algos\bots\bot_mean_reversion.py",
-        r"C:\algos\markets\fx\instances\gold_main\config.json",
-        r"C:\algos\markets\fx\instances\gold_main\mean_reversion_stdout.log",
-        "Connected | #700103491",
-        90,
+        MT5_SCALPER, 20,
+        [
+            (
+                "Scalper",
+                r"C:\algos\bots\bot_scalper.py",
+                r"C:\algos\markets\fx\instances\gold_scalper\config.json",
+                r"C:\algos\markets\fx\instances\gold_scalper\scalper_stdout.log",
+                "Connected | #700107520",
+                90,
+            ),
+        ]
     ),
     (
-        "Scalper",
-        r"C:\algos\bots\bot_scalper.py",
-        r"C:\algos\markets\fx\instances\gold_scalper\config.json",
-        r"C:\algos\markets\fx\instances\gold_scalper\scalper_stdout.log",
-        "Connected | #700107520",
-        90,
-    ),
-    (
-        "FFT",
-        r"C:\algos\bots\bot_fft.py",
-        r"C:\algos\markets\fx\instances\gold_fft\config.json",
-        r"C:\algos\markets\fx\instances\gold_fft\fft_stdout.log",
-        "Connected | #700107749",
-        90,
+        MT5_FFT, 20,
+        [
+            (
+                "FFT",
+                r"C:\algos\bots\bot_fft.py",
+                r"C:\algos\markets\fx\instances\gold_fft\config.json",
+                r"C:\algos\markets\fx\instances\gold_fft\fft_stdout.log",
+                "Connected | #700107749",
+                90,
+            ),
+        ]
     ),
 ]
 
 
 def kill_all_terminals():
-    """
-    Kill ALL MT5 terminal64.exe processes.
-    This is essential — when terminals are not running, mt5.initialize(path=...)
-    launches the correct one fresh, making account assignment 100% reliable.
-    """
     print("Killing all MT5 terminals...")
-    result = subprocess.run(
+    subprocess.run(
         ["taskkill", "/f", "/im", "terminal64.exe"],
         capture_output=True, text=True
     )
-    if "SUCCESS" in result.stdout or "not found" in result.stderr.lower():
-        print("  ✓ MT5 terminals cleared")
-    else:
-        print(f"  (No terminals were running)")
-    time.sleep(3)  # Give Windows time to fully release IPC handles
+    time.sleep(3)
+    print("  ✓ Terminals cleared")
 
 
 def clear_lock():
@@ -88,6 +102,18 @@ def clear_lock():
         print("  ✓ Cleared stale MT5 lock")
 
 
+def launch_terminal(exe_path: str, wait_seconds: int):
+    """Launch MT5 terminal and wait for it to be ready."""
+    print(f"  Launching {Path(exe_path).parent.name}...")
+    subprocess.Popen(
+        [exe_path],
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+    )
+    print(f"  Waiting {wait_seconds}s for terminal to be ready...")
+    time.sleep(wait_seconds)
+    print(f"  ✓ Terminal ready")
+
+
 def get_log_size(log_path: str) -> int:
     p = Path(log_path)
     return p.stat().st_size if p.exists() else 0
@@ -95,10 +121,6 @@ def get_log_size(log_path: str) -> int:
 
 def wait_for_connection(log_path: str, ready_string: str,
                         size_before: int, timeout: int, name: str) -> bool:
-    """
-    Poll the stdout log for the ready string in content written after bot started.
-    Returns True if connected, False if timeout or error.
-    """
     start = time.time()
     while time.time() - start < timeout:
         p = Path(log_path)
@@ -111,7 +133,7 @@ def wait_for_connection(log_path: str, ready_string: str,
                     print(f"  ✓ {name} connected in {elapsed:.0f}s")
                     return True
                 if "ACCOUNT MISMATCH" in new_content:
-                    print(f"  ✗ {name} account mismatch — retrying")
+                    print(f"  ✗ {name} account mismatch")
                     return False
                 if "Failed to connect" in new_content:
                     print(f"  ✗ {name} failed to connect")
@@ -119,9 +141,16 @@ def wait_for_connection(log_path: str, ready_string: str,
             except Exception:
                 pass
         time.sleep(2)
-
     print(f"  ✗ {name} timed out after {timeout}s")
     return False
+
+
+def start_bot(script: str, config: str) -> subprocess.Popen:
+    return subprocess.Popen(
+        [PYTHON, script, "--config", config],
+        cwd=str(BOTS),
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+    )
 
 
 def main():
@@ -130,36 +159,29 @@ def main():
     print("=" * 60)
     print()
 
-    # Step 1: Kill all terminals so each bot gets a fresh launch
     kill_all_terminals()
     clear_lock()
     print()
 
     all_ok = True
 
-    for name, script, config, log_path, ready_str, timeout in STARTUP_SEQUENCE:
-        print(f"Starting {name}...")
+    for terminal_exe, ready_wait, bots in STARTUP_GROUPS:
+        print(f"--- {Path(terminal_exe).parent.name} ---")
 
-        # Record log size before starting
-        size_before = get_log_size(log_path)
+        # Step 1: Launch terminal
+        launch_terminal(terminal_exe, ready_wait)
 
-        # Launch bot — it will call mt5.initialize(path=...) which launches
-        # its specific terminal fresh since all terminals are now closed
-        proc = subprocess.Popen(
-            [PYTHON, script, "--config", config],
-            cwd=str(BOTS),
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-        )
+        # Step 2: Start each bot for this terminal
+        for name, script, config, log_path, ready_str, timeout in bots:
+            print(f"Starting {name}...")
+            size_before = get_log_size(log_path)
+            start_bot(script, config)
+            connected = wait_for_connection(log_path, ready_str, size_before, timeout, name)
+            if not connected:
+                all_ok = False
+            time.sleep(3)
 
-        # Wait for connection confirmed before starting next bot
-        connected = wait_for_connection(log_path, ready_str, size_before, timeout, name)
-        if not connected:
-            all_ok = False
-            print(f"  Warning: {name} did not confirm connection. Proceeding anyway.")
-
-        # Short pause between bots — gives MT5 terminal time to fully register
         print()
-        time.sleep(5)
 
     print("=" * 60)
     if all_ok:
