@@ -10,6 +10,7 @@ Four scripts handle all Telegram communication.
 | File | Purpose | Runs |
 |---|---|---|
 | `startup_coordinator.py` | Sequential bot startup | At boot via SYS_STARTUP task |
+| `pnl_tracker.py` | Real-time P&L engine | Every 1 minute via SYS_PNLTRACKER task |
 | `reporter.py` | Daily summary per bot | 4pm Texas daily (SYS_REPORTER task) |
 | `monitor.py` | Health checks + real-time alerts | Every 1 minute (SYS_MONITOR task) |
 | `telegram_bot.py` | Command handler | 24/7 at startup (SYS_TELEGRAM task) |
@@ -221,3 +222,33 @@ Via Telegram: send `/users` (admin only — read-only view)
 3. **Unauthorized logging** — all rejected attempts logged to VPS console with username and message
 4. **Token privacy** — bot token is in the Python file; keep your repo private or move to env var
 
+
+---
+
+## pnl_tracker.py — Real-Time P&L Engine
+
+Runs every minute. Pure math from trades JSON files only.
+
+**What it calculates:**
+- Current balance = starting_balance + sum of all closed trade P&L (uses `pnl_usd` field)
+- Daily P&L, weekly P&L, total growth since inception
+- Peak balance and drawdown from peak
+
+**What it updates:**
+- Equity files (appends new record when balance changes)
+- Weekly files (always current)
+- `pnl_state.json` — alert state (prevents duplicate alerts)
+
+**Alerts sent:**
+- 🎯 Daily goal hit
+- 🛑 Daily loss cap hit
+- 🚫 Weekly loss cap hit
+
+**Install:**
+```powershell
+Copy-Item "C:\algos\scheduler\pnl_tracker_task.xml" "C:\temp\pnl_tracker_task.xml"
+schtasks /create /tn "SYS_PNLTRACKER" /xml "C:\temp\pnl_tracker_task.xml" /ru trader /rp "312MXFjt7Q8Zoec"
+```
+
+**Note:** Trades must have `pnl_usd` field populated by `log_close()` in `shared_ai_brain.py`.
+Old trades without `pnl_usd` fall back to `r_multiple × risk_usd` estimation.

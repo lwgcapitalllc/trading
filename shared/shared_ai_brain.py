@@ -208,7 +208,7 @@ class TradeLogger:
             json.dump(self.trades, f, indent=2, default=str)
 
     def log_entry(self, ticket, features, direction, entry, sl, tp1, tp2,
-                  is_reentry=False):
+                  is_reentry=False, risk_usd=0.0):
         self.trades.append({
             "ticket":      ticket,
             "direction":   direction,
@@ -217,11 +217,13 @@ class TradeLogger:
             "tp1":         tp1,
             "tp2":         tp2,
             "sl_dist":     abs(entry - sl),
+            "risk_usd":    round(float(risk_usd), 2),
             "features":    features,
             "opened_at":   datetime.utcnow().isoformat(),
             "closed_at":   None,
             "outcome":     None,
             "r_multiple":  None,
+            "pnl_usd":     None,
             "close_price": None,
             "is_reentry":  is_reentry,
         })
@@ -232,6 +234,7 @@ class TradeLogger:
             if t["ticket"] == ticket and t["outcome"] is None:
                 t["closed_at"]   = datetime.utcnow().isoformat()
                 t["close_price"] = close_price
+                t["pnl_usd"]     = round(float(pnl_usd), 2)
                 sl_d = t["sl_dist"]
                 if sl_d > 0:
                     r = (close_price - t["entry"]) / sl_d
@@ -246,7 +249,8 @@ class TradeLogger:
                 )
                 self._save()
                 log.info(f"Trade closed | ticket={ticket} | "
-                         f"outcome={t['outcome']} | R={t['r_multiple']:.2f}"
+                         f"outcome={t['outcome']} | R={t['r_multiple']:.2f} | "
+                         f"P&L=${pnl_usd:+.2f}"
                          + (" [re-entry]" if t.get("is_reentry") else ""))
                 return
         log.warning(f"Could not find open trade for ticket {ticket}")

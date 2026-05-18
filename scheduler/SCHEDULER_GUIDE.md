@@ -18,6 +18,7 @@ All Windows Task Scheduler XML files. One XML per task.
 | `telegram_task.xml` | `SYS_TELEGRAM` | SYS_ | At startup | start_telegram.py |
 | `reporter_task.xml` | `SYS_REPORTER` | SYS_ | Daily 21:00 UTC (4pm CDT) | reporter.py |
 | `monitor_task.xml` | `SYS_MONITOR` | SYS_ | Every 1 minute | monitor.py |
+| `pnl_tracker_task.xml` | `SYS_PNLTRACKER` | SYS_ | Every 1 minute | pnl_tracker.py |
 
 **Prefix convention:**
 - `BOT_` — trading bots (persistent, run 24/7)
@@ -113,3 +114,19 @@ schtasks /delete /tn "SYS_REPORTER" /f
 Copy-Item C:\algos\scheduler\reporter_task.xml C:\temp\reporter_task.xml
 schtasks /create /tn "SYS_REPORTER" /xml "C:\temp\reporter_task.xml" /ru trader /rp "312MXFjt7Q8Zoec"
 ```
+
+---
+
+## SYS_PNLTRACKER — Real-Time P&L Engine
+
+Runs every 1 minute. Reads ONLY from trades JSON files — pure math,
+no MT5 connections, no dependency on stale equity files.
+
+For each bot calculates from scratch:
+- Current balance = starting_balance + sum of all closed trade P&L
+- Daily P&L, weekly P&L, total P&L ($ and %)
+- Peak balance and drawdown from peak
+- Sends alerts when daily/weekly caps or goals are hit
+
+This is the single source of truth for all P&L data.
+Replaces ad-hoc calmar.record() calls in individual bots.
