@@ -70,9 +70,13 @@ Create `C:\algos\users.json`:
 
 ---
 
-## 5. Restore Bot State from Backup
+## 5. Restore Data from Backup (New VPS Only)
 
-After a fresh clone, restore VPS-only data from backup:
+After a fresh clone, restore VPS-only data from GitHub backup.
+
+**IMPORTANT**: This is only for new VPS setup or disaster recovery.
+On a running VPS, never copy from backup/ — it will overwrite live data.
+The .gitignore prevents git pull from touching these files automatically.
 
 ```powershell
 # Copy bot state (balances, P&L)
