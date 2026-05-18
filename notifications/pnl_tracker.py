@@ -179,7 +179,22 @@ def calculate_pnl(bot_key: str) -> dict:
         risk = float(t.get("risk_usd") or (start * 0.02))
         return round(r * risk, 2)
 
-    total_profit = sum(trade_pnl(t) for t in closed)
+    # Check if we have any real pnl_usd data at all
+    has_pnl_data = any(t.get("pnl_usd") is not None for t in closed)
+
+    # If no pnl_usd data exists yet (old trades only), fall back to equity file
+    # to get the actual current balance rather than calculating from R multiples
+    # which may be inaccurate for dollar amounts
+    if not has_pnl_data and closed:
+        equity_records = load_json(cfg["equity"])
+        if equity_records:
+            actual_balance = float(equity_records[-1]["balance"])
+            # Use equity file for balance but still calculate daily/weekly from trades
+            total_profit = actual_balance - start
+        else:
+            total_profit = sum(trade_pnl(t) for t in closed)
+    else:
+        total_profit = sum(trade_pnl(t) for t in closed)
     current_balance = round(start + total_profit, 2)
 
     # Today's trades
