@@ -55,6 +55,7 @@ DISPLAY_NAMES = {
     "SYS_TELEGRAM":        "Telegram",
     "SYS_REPORTER":        "Reporter",
     "SYS_MONITOR":         "Monitor",
+    "SYS_PNLTRACKER":      "P&L Tracker",
 }
 
 # Instance config paths for reading account_type and instrument
@@ -70,6 +71,7 @@ INSTANCE_CONFIGS = {
 SCHEDULED_INFO = {
     "SYS_REPORTER": "daily 4pm CT",
     "SYS_MONITOR":  "every 1 min",
+    "SYS_PNLTRACKER": "every 1 min",
 }
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -142,6 +144,7 @@ def get_all_tasks() -> list[dict]:
         "BOT_FFT":          "bot5",
         # Notifications
         "SYS_TELEGRAM":           "telegram",
+        "SYS_PNLTRACKER":          "pnltracker",
         # Futures
         "BOT_FUTURES_ACCT1": "bot4",
         "ALGO_FUTURES_ACCT2": "bot4",
@@ -354,7 +357,7 @@ def view_log(task_name: str, lines: int = 40):
 
 
 # Scheduled jobs — these run on a timer, not persistently
-SCHEDULED_TASKS = {"SYS_REPORTER", "SYS_MONITOR"}
+SCHEDULED_TASKS = {"SYS_REPORTER", "SYS_MONITOR", "SYS_PNLTRACKER"}
 
 # ── Display ───────────────────────────────────────────────────────────────────
 def clear():
