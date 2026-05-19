@@ -140,16 +140,58 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ---
 
+## What Was Done This Session (2026-05-19)
+
+### Bug 1 — Silent bot hangs (FIXED)
+All 4 bots had `input("Type CONFIRM to start:")` behind a `sys.stdin.isatty()` check.
+Windows Task Scheduler allocates a real console, so `isatty()` returned `True` and the bots
+blocked forever waiting for keyboard input — appearing alive in the process list but never trading.
+Fix: removed the prompt entirely. Entry point is now just `run()`.
+
+### Bug 2 — Log close never called (FIXED — most critical)
+All 4 bots called `log_entry()` on trade open but **never called `log_close()`** on close.
+Result: every trade in `*_trades.json` had `outcome: null`, `pnl_usd: null`, `close_price: null`.
+AI brain had zero training data. Telegram `/balance` always showed starting balance.
+
+Fix applied to all 4 bots:
+- Added `get_deal_result(ticket)` helper — queries `mt5.history_deals_get()` to get close price
+  and P&L for positions closed externally by the broker (SL/TP hit)
+- `close_position()` now returns `(success, close_price, pnl_usd)` instead of a plain bool
+- `manage_positions()` and `handle_dead_zone()` now accept `logger` and `ai` as parameters
+- Every trade removal — SL/TP hit, momentum flip, max hold, dead zone, market close — calls
+  `logger.log_close(ticket, cp, pnl)` and `ai.on_trade_closed(ticket, cp, pnl)`
+- Fixed `risk_usd=0.0` in all `log_entry()` calls — now passes actual dollar risk amount
+
+### Bug 3 — Log staleness alert added to monitor.py
+Monitor now detects "alive but blocked" bots: if process is running but log file hasn't been
+written in 90 minutes, sends Telegram alert with last log line. Controlled by `LOG_STALE_MINUTES = 90`.
+
+### Full account reset
+- All 4 MT5 accounts reset to $1,000 via broker backoffice (old equity was from a buggy period)
+- All VPS tracking files reset: `*_trades.json → []`, `*_equity.json → [{balance:1000}]`,
+  `*_weekly.json → {weekly_start:1000}`, `bot_state.json` balances zeroed
+- Backup branch cleared of stale pre-reset data; fresh backup committed at 2026-05-19 05:13 UTC
+- All 4 bots restarted cleanly. Scalper killed → file wiped → restarted (in that order) to ensure
+  it loaded the empty file rather than writing its stale in-memory state back to disk.
+
+### Current VPS state (as of end of session)
+- All 4 bots running: `BOT_SMC_TREND`, `BOT_MEAN_REVERSION`, `BOT_SCALPER`, `BOT_FFT`
+- Telegram bot running: `SYS_TELEGRAM`
+- All `*_trades.json`: 0 entries (clean slate)
+- No `.pkl` model files exist (AI never trained — log_close was broken)
+- Next closed trade on any bot = first real data point with outcome populated
+
+---
+
 ## What I Am Working On (Update This Section Each Session)
 
 _Fill this in at the start of each Claude Code or chat session:_
 
-- Last completed: Fixed systemic bug — all 4 bots were logging entries but never calling `log_close`.
-  Trades JSON always showed `outcome: null`, AI brain had no training data, `/balance` always showed
-  starting balance regardless of actual P&L. Now every exit path (SL/TP hit via `get_deal_result`,
-  explicit close via modified `close_position` returning `(success, price, pnl_usd)`) calls
-  `logger.log_close()` + `ai.on_trade_closed()`. Also fixed `risk_usd=0.0` in all `log_entry` calls.
-- Currently working on: Live validation — confirm next closed trade appears in trades.json with
-  `outcome`, `pnl_usd`, `close_price` populated.
-- Next up: Monitor AI training — once 15 closed trades accumulate, verify first model trains.
-- Open questions / decisions pending: Futures bot (`bot_futures.py`) — not yet audited for same bug.
+- Last completed: Full fix + reset described above. All systems clean as of 2026-05-19.
+- Currently working on: Live validation — confirm next closed trade appears with `outcome`,
+  `pnl_usd`, `close_price` populated in `*_trades.json`.
+- Next up: Monitor AI training — once 15 closed trades accumulate per bot, verify first model
+  trains and AUC gate passes. Then check Calmar tracking is updating correctly.
+- Open questions / decisions pending:
+  - `bot_futures.py` — NOT yet audited for the same missing `log_close` bug
+  - Consider whether `pnl_tracker.py` needs updating now that trades will have real `pnl_usd` values
