@@ -2,7 +2,7 @@
   "fft": {
     "name": "FFT",
     "status": "offline",
-    "started": 1779080295.0159755,
+    "started": 1779156373.4253726,
     "account": "700107749",
     "balance": 1070.5,
     "daily_pnl": 0.0,
@@ -15,5 +15,5 @@
     "day_locked": false,
     "last_updated": "2026-05-18T04:36:23.971728"
   },
-  "last_updated": "2026-05-18T04:58:45.048783"
+  "last_updated": "2026-05-19T02:06:43.451135"
 }

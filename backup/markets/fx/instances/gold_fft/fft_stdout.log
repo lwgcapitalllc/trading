@@ -1,1 +1,130 @@
  
+2026-05-19 00:07:40,650 | BOT_FFT | INFO     | Config: C:\algos\markets\fx\instances\gold_fft\config.json
+2026-05-19 00:07:40,650 | BOT_FFT | INFO     | Logs  : C:\algos\markets\fx\instances\gold_fft\bot_fft.log
+2026-05-19 00:07:40,650 | BOT_FFT | INFO     | BOT_FFT | FFT Strategy | XAUUSD.s | risk=1.0%
+2026-05-19 00:07:40,650 | BOT_FFT | INFO     | =================================================================
+2026-05-19 00:07:40,650 | BOT_FFT | INFO     |   BOT 5 — FFT (Fibonacci Fractal Trading) STRATEGY
+2026-05-19 00:07:40,650 | BOT_FFT | INFO     |   Symbol: XAUUSD.s | Risk: 1.0%
+2026-05-19 00:07:40,650 | BOT_FFT | INFO     |   BOS lookback: 3 candles | Entry zone: 61.8–88.6%
+2026-05-19 00:07:40,650 | BOT_FFT | INFO     | =================================================================
+2026-05-19 00:07:40,650 | BOT_FFT | INFO     | Startup delay 15s
+2026-05-19 00:07:56,167 | BOT_FFT | INFO     | Connected | #700107749 | $1,070.50 | PUPrime-Demo
+2026-05-19 00:07:56,167 | BOT_FFT | INFO     | MT5 connection lock released
+2026-05-19 00:07:56,167 | BOT_FFT | INFO     | Balance $1,070.50 | AI: Not trained | 0/15 trades | 15 more needed
+2026-05-19 00:07:56,417 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:08:56,435 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:09:56,436 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:10:56,453 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:11:56,455 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:12:56,464 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:13:56,480 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:14:56,482 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:15:56,498 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:16:56,498 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:17:56,510 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:18:56,514 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:19:56,533 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:20:56,535 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:21:56,550 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:22:56,582 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:23:56,601 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:24:56,606 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:25:56,620 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:26:56,620 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:27:56,638 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:28:56,656 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:29:56,660 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:30:56,668 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:31:56,683 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:32:56,688 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:33:56,700 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:34:56,716 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:35:56,724 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:36:56,742 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:37:56,747 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:38:56,760 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:39:56,779 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:40:56,779 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:41:56,795 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:42:56,799 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:43:56,812 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:44:56,815 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:45:56,830 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:46:56,846 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:47:56,850 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:48:56,864 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:49:56,881 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:50:56,882 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:51:56,888 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:52:56,901 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:53:56,917 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:54:56,922 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:55:56,935 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:56:56,939 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:57:56,946 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:58:56,959 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 00:59:56,962 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:00:56,975 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:01:56,993 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:02:57,014 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:03:57,018 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:04:57,027 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:05:57,035 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:06:57,078 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:07:57,088 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:08:57,100 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:09:57,508 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:10:57,540 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:11:57,556 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:12:57,568 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:13:57,574 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:14:57,588 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:15:57,605 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:16:57,609 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:17:57,625 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:18:57,641 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:19:57,646 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:20:57,651 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:21:57,664 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:22:57,682 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:23:57,687 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:24:57,704 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:25:57,720 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:26:57,737 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:27:57,753 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:28:57,773 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:29:57,776 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:30:57,784 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:31:57,803 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:32:57,813 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:33:57,835 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:34:57,851 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:35:57,869 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:36:57,872 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:37:57,888 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:38:57,889 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:39:57,910 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:40:57,925 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:41:57,927 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:42:57,944 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:43:57,947 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:44:57,961 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:45:57,965 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:46:57,979 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:47:58,011 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:48:58,018 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:49:58,027 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:50:58,044 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:51:58,061 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:52:58,070 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:53:58,087 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:54:58,104 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:55:58,107 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:56:58,123 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:57:58,140 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:58:58,144 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 01:59:58,177 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 02:00:58,178 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 02:01:58,199 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 02:02:58,215 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
+2026-05-19 02:03:58,224 | BOT_FFT | INFO     | Trend neutral — H1=neutral H4=neutral. Waiting.
