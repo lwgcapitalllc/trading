@@ -1,3 +1,6 @@
+# Backup data lives on the `backups` branch, not main
+backup/
+
 # ============================================================
 # VPS-ONLY DATA FILES
 # These files exist only on the VPS and must NEVER be
@@ -13,10 +16,27 @@ markets/fx/instances/*/smc_trend_trades.json
 markets/fx/instances/*/mean_reversion_trades.json
 markets/fx/instances/*/scalper_trades.json
 markets/fx/instances/*/fft_trades.json
+
+# Trained AI models and scalers
 markets/fx/instances/*/fft_model.pkl
+markets/fx/instances/*/fft_model_scaler.pkl
 markets/fx/instances/*/smc_trend_model.pkl
+markets/fx/instances/*/smc_trend_model_scaler.pkl
 markets/fx/instances/*/mean_reversion_model.pkl
+markets/fx/instances/*/mean_reversion_model_scaler.pkl
 markets/fx/instances/*/scalper_model.pkl
+markets/fx/instances/*/scalper_model_scaler.pkl
+
+# Equity curves, daily/weekly performance tracking
+markets/fx/instances/*/gold_main_equity.json
+markets/fx/instances/*/scalper_equity.json
+markets/fx/instances/*/fft_equity.json
+markets/fx/instances/*/smc_trend_daily.json
+markets/fx/instances/*/mean_reversion_daily.json
+markets/fx/instances/*/fft_daily.json
+markets/fx/instances/*/smc_trend_weekly.json
+markets/fx/instances/*/mean_reversion_weekly.json
+markets/fx/instances/*/fft_weekly.json
 
 # Bot activity logs
 markets/fx/instances/*/smc_trend_stdout.log
