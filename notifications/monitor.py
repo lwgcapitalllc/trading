@@ -20,6 +20,7 @@ Run:     python notifications/monitor.py
 import json
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -36,10 +37,13 @@ ALGOS_ROOT     = Path("C:/algos")
 STATE_FILE     = ALGOS_ROOT / "monitor_state.json"
 TEXAS          = ZoneInfo("America/Chicago")
 
+LOG_STALE_MINUTES = 90  # alert if process alive but log silent this long
+
 BOTS = {
     "smc_trend": {
         "name":        "Bot SMC Trend",
         "script":      "bot_smc_trend.py",
+        "log":         ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_weekly.json",
         "daily_cap":   10.0,
@@ -49,6 +53,7 @@ BOTS = {
     "mean_reversion": {
         "name":        "Bot Mean Reversion",
         "script":      "bot_mean_reversion.py",
+        "log":         ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_weekly.json",
         "daily_cap":   10.0,
@@ -58,6 +63,7 @@ BOTS = {
     "scalper": {
         "name":        "Bot Scalper",
         "script":      "bot_scalper.py",
+        "log":         ALGOS_ROOT / "markets/fx/instances/gold_scalper/bot_scalper.log",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_equity.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_weekly.json",
         "daily_cap":   8.0,
@@ -67,6 +73,7 @@ BOTS = {
     "fft": {
         "name":        "Bot FFT",
         "script":      "bot_fft.py",
+        "log":         ALGOS_ROOT / "markets/fx/instances/gold_fft/bot_fft.log",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_equity.json",
         "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_weekly.json",
         "daily_cap":   5.0,
@@ -164,7 +171,36 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
 
     bot_state["running"] = running
     if not running:
+        bot_state["stale_alerted"] = False
         return bot_state
+
+    # ── Log staleness check — catches alive-but-blocked bots ──────────────
+    log_path = cfg.get("log")
+    if log_path and log_path.exists():
+        stale_min = (time.time() - log_path.stat().st_mtime) / 60
+        if stale_min > LOG_STALE_MINUTES:
+            if not bot_state.get("stale_alerted"):
+                last_line = ""
+                try:
+                    with open(log_path, "rb") as _f:
+                        _f.seek(max(0, log_path.stat().st_size - 500))
+                        chunk = _f.read().decode("utf-8", errors="replace").strip()
+                        last_line = chunk.split("\n")[-1]
+                        if " | " in last_line:
+                            last_line = last_line.split(" | ", 3)[-1]
+                except Exception:
+                    pass
+                now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
+                send_alert(
+                    f"⚠️ *{cfg['name']} — Loop Stalled*\n"
+                    f"Process alive but log silent {stale_min:.0f} min\n"
+                    f"Last: `{last_line[:120]}`\n"
+                    f"Time: {now_str}\n"
+                    f"Action: /restart or check `algo logs`"
+                )
+                bot_state["stale_alerted"] = True
+        else:
+            bot_state["stale_alerted"] = False
 
     # ── Balance and P&L checks ────────────────────────────────────────────
     equity       = load_json(cfg["equity"])
