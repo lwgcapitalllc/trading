@@ -24,21 +24,29 @@ MARKET_PREFIXES = {
     "SYS_": "System",
 }
 
-# Map task name patterns to log file paths
-# Format: partial task name match → (market, pair, instance_folder)
+# Map task name → (market, instance, log) for log-scan fallback only
+# Primary uptime source is bot_state.json; log scan is last resort.
 LOG_MAP = {
-    # Trading bots
-    "BOT_SMC_TREND":       ("fx",      "gold_main",        "bot_smc_trend.log"),
-    "BOT_MEAN_REVERSION":  ("fx",      "gold_main",        "bot_mean_reversion.log"),
-    "BOT_SCALPER":         ("fx",      "gold_scalper",     "bot_scalper.log"),
-    "BOT_FFT":             ("fx",      "gold_fft",         "bot_fft.log"),
+    # Trading bots — use *_stdout.log (fresh on each restart, unlike bot_*.log)
+    "BOT_SMC_TREND":       ("fx",      "gold_main",        "smc_trend_stdout.log"),
+    "BOT_MEAN_REVERSION":  ("fx",      "gold_main",        "mean_reversion_stdout.log"),
+    "BOT_SCALPER":         ("fx",      "gold_scalper",     "scalper_stdout.log"),
+    "BOT_FFT":             ("fx",      "gold_fft",         "fft_stdout.log"),
     "BOT_FUTURES_ACCT1":   ("futures", "futures_account1", "bot_futures.log"),
     "BOT_FUTURES_ACCT2":   ("futures", "futures_account2", "bot_futures.log"),
     "BOT_FUTURES_ACCT3":   ("futures", "futures_account3", "bot_futures.log"),
     "BOT_FUTURES_ACCT4":   ("futures", "futures_account4", "bot_futures.log"),
     "BOT_FUTURES_ACCT5":   ("futures", "futures_account5", "bot_futures.log"),
-    # System — telegram uptime via offset file, not log
+    # System — telegram uptime via telegram_start.json written by start_telegram.py
     "SYS_TELEGRAM":        None,
+}
+
+# Map task name → (bot_key, instance_path) for reading started from bot_state.json
+BOT_UPTIME_MAP = {
+    "BOT_SMC_TREND":      ("smc_trend",      r"C:\algos\markets\fx\instances\gold_main"),
+    "BOT_MEAN_REVERSION": ("mean_reversion",  r"C:\algos\markets\fx\instances\gold_main"),
+    "BOT_SCALPER":        ("scalper",          r"C:\algos\markets\fx\instances\gold_scalper"),
+    "BOT_FFT":            ("fft",              r"C:\algos\markets\fx\instances\gold_fft"),
 }
 
 # Display names for panel — clean readable labels
@@ -236,87 +244,9 @@ def get_task_account_info(task_name: str) -> tuple:
         return ("—", "—")
 
 
-def get_uptime(task_name: str) -> str:
-    """
-    Calculate how long a bot has been running by reading its log file.
-    For SYS_TELEGRAM, uses the offset file modification time instead.
-    Scans log in reverse to find the most recent startup line.
-    """
-    if task_name not in LOG_MAP:
-        return ""
-
-    # Special case: Telegram uptime via startup timestamp file
-    if LOG_MAP[task_name] is None:
-        result = subprocess.run(
-            ["ssh", VPS_HOST, "type C:\\algos\\telegram_start.json"],
-            capture_output=True, text=True, timeout=10
-        )
-        raw = (result.stdout + result.stderr).strip().replace("\r", "")
-        try:
-            import json as _json, time as _time
-            data    = _json.loads(raw)
-            started = float(data["started"])
-            delta   = _time.time() - started
-            hours   = int(delta // 3600)
-            minutes = int((delta % 3600) // 60)
-            return f"{hours}h {minutes}m"
-        except Exception:
-            return ""
-
-    market, instance, logfile = LOG_MAP[task_name]
-    instance_path = f"C:\\algos\\markets\\{market}\\instances\\{instance}"
-
-    # Read startup timestamp file written by coordinator on each restart
-    result = subprocess.run(
-        ["ssh", VPS_HOST, f"type {instance_path}\\startup_time.json 2>nul"],
-        capture_output=True, text=True, timeout=10
-    )
-    raw_ts = (result.stdout + result.stderr).strip().replace("\r", "")
-    try:
-        import json as _json, time as _time
-        data    = _json.loads(raw_ts)
-        started = float(data["started"])
-        delta   = _time.time() - started
-        hours   = int(delta // 3600)
-        minutes = int((delta % 3600) // 60)
-        if hours >= 24:
-            days  = hours // 24
-            hours = hours % 24
-            return f"{days}d {hours}h {minutes}m"
-        elif hours > 0:
-            return f"{hours}h {minutes}m"
-        else:
-            return f"{minutes}m"
-    except Exception:
-        pass
-
-    # Fallback: scan log file for most recent startup line
-    path = f"{instance_path}\\{logfile}"
-    raw = ssh(f"type {path} 2>nul")
-    if not raw:
-        return ""
-
-    # Scan reversed — most recent startup line
-    lines = raw.splitlines()
-    start_time = None
-    for line in reversed(lines):
-        if ("STARTING" in line or
-                ("Balance" in line and "Risk" in line) or
-                ("Balance" in line and "AI:" in line)):
-            try:
-                ts_str     = line.split("|")[0].strip()[:19]
-                start_time = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
-                break
-            except Exception:
-                continue
-
-    if not start_time:
-        return ""
-
-    delta   = datetime.utcnow() - start_time
-    hours   = int(delta.total_seconds() // 3600)
-    minutes = int((delta.total_seconds() % 3600) // 60)
-
+def _fmt_uptime(delta_seconds: float) -> str:
+    hours   = int(delta_seconds // 3600)
+    minutes = int((delta_seconds % 3600) // 60)
     if hours >= 24:
         days  = hours // 24
         hours = hours % 24
@@ -325,6 +255,60 @@ def get_uptime(task_name: str) -> str:
         return f"{hours}h {minutes}m"
     else:
         return f"{minutes}m"
+
+
+def get_uptime(task_name: str) -> str:
+    """
+    Return human-readable uptime for a task.
+
+    Primary source: bot_state.json `started` Unix timestamp (written by
+    startup_coordinator on each restart).
+    Fallback: scan *_stdout.log for the most recent startup line.
+    Telegram: reads telegram_start.json written by start_telegram.py.
+    """
+    if task_name not in LOG_MAP:
+        return ""
+
+    import json as _json, time as _time
+
+    # ── Telegram ──────────────────────────────────────────────────────────────
+    if LOG_MAP[task_name] is None:
+        raw = ssh("type C:\\algos\\telegram_start.json 2>nul")
+        try:
+            started = float(_json.loads(raw)["started"])
+            return _fmt_uptime(_time.time() - started)
+        except Exception:
+            return ""
+
+    # ── Trading bots — read started from bot_state.json ───────────────────────
+    if task_name in BOT_UPTIME_MAP:
+        bot_key, instance_path = BOT_UPTIME_MAP[task_name]
+        raw = ssh(f"type {instance_path}\\bot_state.json 2>nul")
+        try:
+            started = float(_json.loads(raw).get(bot_key, {}).get("started", 0))
+            if started:
+                return _fmt_uptime(_time.time() - started)
+        except Exception:
+            pass
+
+    # ── Fallback: scan *_stdout.log for most recent startup line ──────────────
+    market, instance, logfile = LOG_MAP[task_name]
+    path = f"C:\\algos\\markets\\{market}\\instances\\{instance}\\{logfile}"
+    raw  = ssh(f"type {path} 2>nul")
+    if not raw:
+        return ""
+
+    for line in reversed(raw.splitlines()):
+        if ("STARTING" in line or
+                ("Balance" in line and "Risk" in line) or
+                ("Balance" in line and "AI:" in line)):
+            try:
+                ts_str     = line.split("|")[0].strip()[:19]
+                start_time = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                return _fmt_uptime((datetime.utcnow() - start_time).total_seconds())
+            except Exception:
+                continue
+    return ""
 
 
 # ── Actions ───────────────────────────────────────────────────────────────────

@@ -35,8 +35,9 @@ def kill_existing():
 
 def main():
     kill_existing()
-    (ALGOS / "telegram_start.txt").write_text(
-        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    import json as _json
+    (ALGOS / "telegram_start.json").write_text(
+        _json.dumps({"started": datetime.now(timezone.utc).timestamp()})
     )
     print("Starting telegram_bot.py...")
     script = ALGOS / "notifications" / "telegram_bot.py"
