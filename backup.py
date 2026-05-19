@@ -11,6 +11,11 @@ To restore (e.g. new VPS), manually copy from backup/ to their paths.
 Files backed up:
   bot_state.json        — balances, P&L, status (single source of truth)
   *_trades.json         — full trade history (AI training data)
+  *_model.pkl           — trained AI model (Random Forest classifier)
+  *_model_scaler.pkl    — feature scaler paired with each model
+  *_equity.json         — equity curve history (Calmar ratio source data)
+  *_daily.json          — daily P&L log (AI drawdown-awareness training)
+  *_weekly.json         — weekly loss cap state
   *_stdout.log          — bot activity logs
   users.json            — Telegram user list
 
@@ -36,6 +41,27 @@ BACKUP_FILES = [
     "markets/fx/instances/gold_main/mean_reversion_trades.json",
     "markets/fx/instances/gold_scalper/scalper_trades.json",
     "markets/fx/instances/gold_fft/fft_trades.json",
+    # Trained AI models — if lost, bots run unfiltered until 15+ trades re-accumulate
+    "markets/fx/instances/gold_main/smc_trend_model.pkl",
+    "markets/fx/instances/gold_main/smc_trend_model_scaler.pkl",
+    "markets/fx/instances/gold_main/mean_reversion_model.pkl",
+    "markets/fx/instances/gold_main/mean_reversion_model_scaler.pkl",
+    "markets/fx/instances/gold_scalper/scalper_model.pkl",
+    "markets/fx/instances/gold_scalper/scalper_model_scaler.pkl",
+    "markets/fx/instances/gold_fft/fft_model.pkl",
+    "markets/fx/instances/gold_fft/fft_model_scaler.pkl",
+    # Equity curves (Calmar ratio source data)
+    "markets/fx/instances/gold_main/gold_main_equity.json",
+    "markets/fx/instances/gold_scalper/scalper_equity.json",
+    "markets/fx/instances/gold_fft/fft_equity.json",
+    # Daily P&L logs (AI drawdown-awareness training data)
+    "markets/fx/instances/gold_main/smc_trend_daily.json",
+    "markets/fx/instances/gold_main/mean_reversion_daily.json",
+    "markets/fx/instances/gold_fft/fft_daily.json",
+    # Weekly loss cap state
+    "markets/fx/instances/gold_main/smc_trend_weekly.json",
+    "markets/fx/instances/gold_main/mean_reversion_weekly.json",
+    "markets/fx/instances/gold_fft/fft_weekly.json",
     # Bot activity logs
     "markets/fx/instances/gold_main/smc_trend_stdout.log",
     "markets/fx/instances/gold_main/mean_reversion_stdout.log",
