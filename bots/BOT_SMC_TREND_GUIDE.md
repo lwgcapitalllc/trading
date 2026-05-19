@@ -102,6 +102,10 @@ No new entries. Portfolio-level management every minute:
 Trains at 15 closed trades. Retrains every 5. AUC gate 0.55.
 Learns from: confluence score, ATR, session, FVG, daily P&L %, simultaneous positions, re-entry flag.
 
+Trade close logging is fully implemented — every exit (SL/TP hit, 2R bank, runner key-level exit, dead zone,
+market close) calls `log_close(ticket, close_price, pnl_usd)` which writes `outcome`, `pnl_usd`, and
+`close_price` to `smc_trend_trades.json` and triggers AI retraining. `risk_usd` is correctly recorded at entry.
+
 ---
 
 ## Regime Behaviour

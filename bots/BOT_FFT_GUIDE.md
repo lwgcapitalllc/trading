@@ -96,6 +96,11 @@ No new entries. Portfolio-level management every minute:
 Trains at 15 closed trades. Retrains every 5. AUC gate 0.55.
 Learns from: confluence score, ATR, session, H4 alignment, FVG, overlap tightness, daily P&L %.
 
+Trade close logging is fully implemented — every exit (SL/TP hit, dead zone, market close) calls
+`log_close(ticket, close_price, pnl_usd)` which writes `outcome`, `pnl_usd`, and `close_price` to
+`fft_trades.json` and triggers AI retraining. `risk_usd` is correctly recorded at entry (accounts for
+the `risk_mult` regime multiplier).
+
 **Refinement over time:** As more chart examples are provided, the BOS detection sensitivity, swing lookback, and confluence scoring weights will be tuned. Version history tracked in config comments.
 
 ---

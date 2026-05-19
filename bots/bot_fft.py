@@ -350,13 +350,28 @@ def place_order(direction: str, lots: float, sl: float,
     return None, None
 
 
-def close_position(ticket: int, direction: str, reason: str = "") -> bool:
-    """Close an open position at market."""
+def get_deal_result(ticket: int):
+    """Return (close_price, pnl_usd) for a closed position from MT5 deal history."""
+    from datetime import datetime as _dt, timedelta as _td
+    to    = _dt.utcnow()
+    from_ = to - _td(days=1)
+    deals = mt5.history_deals_get(from_, to, position=ticket)
+    if deals:
+        closing = [d for d in deals if d.entry == 1]  # DEAL_ENTRY_OUT
+        if closing:
+            d = closing[-1]
+            return float(d.price), float(d.profit)
+    return 0.0, 0.0
+
+
+def close_position(ticket: int, direction: str, reason: str = "") -> tuple:
+    """Close an open position at market. Returns (success, close_price, pnl_usd)."""
     pos = mt5.positions_get(ticket=ticket)
     if not pos:
-        return True
+        return True, 0.0, 0.0
     p = pos[0]
-    bid, ask = get_tick()
+    pnl_usd     = p.profit
+    bid, ask    = get_tick()
     close_type  = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
     close_price = bid if direction == "bullish" else ask
     request = {
@@ -376,7 +391,8 @@ def close_position(ticket: int, direction: str, reason: str = "") -> bool:
     ok = result.retcode == mt5.TRADE_RETCODE_DONE
     if ok:
         log.info(f"CLOSED T{ticket} | reason={reason}")
-    return ok
+        return True, close_price, pnl_usd
+    return False, 0.0, 0.0
 
 
 def modify_sl(ticket: int, new_sl: float) -> bool:
@@ -422,7 +438,7 @@ def is_dead_zone() -> bool:
         return 20 <= t.hour < 24 or t.hour == 0
 
 
-def handle_dead_zone(open_trades: list, atr: float):
+def handle_dead_zone(open_trades: list, atr: float, logger, ai):
     """
     Dead zone trade management (3:00pm - 7:00pm Texas time).
 
@@ -461,6 +477,10 @@ def handle_dead_zone(open_trades: list, atr: float):
     for t in open_trades[:]:
         pos = mt5.positions_get(ticket=t["ticket"])
         if not pos:
+            cp, pnl = get_deal_result(t["ticket"])
+            if cp:
+                logger.log_close(t["ticket"], cp, pnl)
+                ai.on_trade_closed(t["ticket"], cp, pnl)
             open_trades.remove(t)
             continue
         p = pos[0]
@@ -476,7 +496,10 @@ def handle_dead_zone(open_trades: list, atr: float):
                  f"Closing all {len(live_trades)} position(s) — locking profit.")
         for t, p in live_trades:
             direction = t["dir"]
-            close_position(t["ticket"], direction, "dead-zone-net-profit")
+            ok, cp, pnl = close_position(t["ticket"], direction, "dead-zone-net-profit")
+            if ok:
+                logger.log_close(t["ticket"], cp, pnl)
+                ai.on_trade_closed(t["ticket"], cp, pnl)
             if t in open_trades:
                 open_trades.remove(t)
         return
@@ -517,7 +540,10 @@ def handle_dead_zone(open_trades: list, atr: float):
                 log.warning(f"DEAD ZONE 3:45 CUT | T{t['ticket']} | "
                             f"P&L={profit_r:.2f}R | ${p.profit:.2f} | "
                             f"closing now.")
-                close_position(t["ticket"], direction, "dead-zone-3:45-cut")
+                ok, cp, pnl = close_position(t["ticket"], direction, "dead-zone-3:45-cut")
+                if ok:
+                    logger.log_close(t["ticket"], cp, pnl)
+                    ai.on_trade_closed(t["ticket"], cp, pnl)
                 if t in open_trades:
                     open_trades.remove(t)
 
@@ -526,7 +552,10 @@ def handle_dead_zone(open_trades: list, atr: float):
                 log.warning(f"DEAD ZONE WORSENING | T{t['ticket']} | "
                             f"P&L={profit_r:.2f}R -> {prev_r:.2f}R "
                             f"| ${p.profit:.2f} | closing to limit loss.")
-                close_position(t["ticket"], direction, "dead-zone-worsening")
+                ok, cp, pnl = close_position(t["ticket"], direction, "dead-zone-worsening")
+                if ok:
+                    logger.log_close(t["ticket"], cp, pnl)
+                    ai.on_trade_closed(t["ticket"], cp, pnl)
                 if t in open_trades:
                     open_trades.remove(t)
 
@@ -921,7 +950,7 @@ def calc_take_profits(fft: dict, overlap: dict) -> tuple:
 # POSITION MANAGEMENT
 # =============================================================================
 
-def manage_positions(open_trades: list, atr: float):
+def manage_positions(open_trades: list, atr: float, logger, ai):
     """
     Manage all open FFT positions:
     - Move to breakeven at 0.5R
@@ -936,6 +965,10 @@ def manage_positions(open_trades: list, atr: float):
     for t in open_trades[:]:
         pos = mt5.positions_get(ticket=t["ticket"])
         if not pos:
+            cp, pnl = get_deal_result(t["ticket"])
+            if cp:
+                logger.log_close(t["ticket"], cp, pnl)
+                ai.on_trade_closed(t["ticket"], cp, pnl)
             open_trades.remove(t)
             continue
 
@@ -1135,12 +1168,18 @@ def run():
             if is_market_close() and open_trades:
                 reason = "WEEKEND-CLOSE" if now.weekday() >= 4 else "DAILY-CLOSE"
                 log.warning(f"MARKET CLOSE [{reason}] — closing {len(open_trades)} position(s)")
-                close_all_positions(reason)
+                for t in open_trades[:]:
+                    pos = mt5.positions_get(ticket=t["ticket"])
+                    if pos:
+                        ok, cp, pnl = close_position(t["ticket"], t["dir"], reason)
+                        if ok:
+                            logger.log_close(t["ticket"], cp, pnl)
+                            ai.on_trade_closed(t["ticket"], cp, pnl)
                 open_trades.clear()
 
             # ── Dead zone: 3pm-7pm Texas time — no new entries ────────────
             if is_dead_zone():
-                handle_dead_zone(open_trades, get_atr(get_candles(TF_ENTRY, 20)))
+                handle_dead_zone(open_trades, get_atr(get_candles(TF_ENTRY, 20)), logger, ai)
                 if now.minute == 0:
                     log.info("Dead zone (3-7pm TX) — no new FFT entries. Managing open positions.")
                 time.sleep(60)
@@ -1206,7 +1245,7 @@ def run():
                     log.warning(f"DAILY CAP: -{daily_dd:.1f}%. "
                                 "Managing open trades only.")
                     trading_halted = True
-                manage_positions(open_trades, 10)
+                manage_positions(open_trades, 10, logger, ai)
                 time.sleep(60)
                 continue
 
@@ -1248,7 +1287,7 @@ def run():
 
             # ── Manage open positions ─────────────────────────────────────
             trades_before = len(open_trades)
-            manage_positions(open_trades, atr)
+            manage_positions(open_trades, atr, logger, ai)
             # Record equity immediately after any trade closes
             if len(open_trades) < trades_before:
                 acct = mt5.account_info()
@@ -1290,7 +1329,7 @@ def run():
             # ── Generate setup ID to avoid re-entering same zone ──────────
             setup_id = f"{bos['direction']}_{bos['bos_price']:.1f}"
             if setup_id == last_setup_id:
-                manage_positions(open_trades, atr)
+                manage_positions(open_trades, atr, logger, ai)
                 time.sleep(60)
                 continue
 
@@ -1417,8 +1456,10 @@ def run():
                     "fft_levels": fft,
                     "sniper":     sniper,
                 })
+                risk_usd = acct.balance * (RISK_PCT / 100) * risk_mult
                 logger.log_entry(ticket, feats, bos["direction"],
-                                 filled, sl_price, tp1_price, tp2_price)
+                                 filled, sl_price, tp1_price, tp2_price,
+                                 risk_usd=risk_usd)
                 trades_today  += 1
                 consec_losses  = 0
                 last_setup_id  = setup_id
@@ -1449,8 +1490,10 @@ def run():
                             "fft_levels": fft,
                             "sniper":     sniper,
                         })
+                        risk_usd2 = acct.balance * (RISK_PCT / 100) * risk_mult * 0.5
                         logger.log_entry(ticket2, feats, bos["direction"],
-                                         filled2, sl_price, tp2_price, tp2_price)
+                                         filled2, sl_price, tp2_price, tp2_price,
+                                         risk_usd=risk_usd2)
                         log.info(f"Entry 2 placed @ {filled2:.2f} | "
                                  f"TP={tp2_price:.2f} | lots={lots2}")
 

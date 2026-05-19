@@ -307,7 +307,7 @@ def is_dead_zone() -> bool:
         return DEAD_ZONE_START <= now_utc().hour < DEAD_ZONE_END
 
 
-def handle_dead_zone(open_trades: list, atr: float):
+def handle_dead_zone(open_trades: list, atr: float, logger, ai):
     """
     Dead zone trade management (3:00pm - 7:00pm Texas time).
 
@@ -346,6 +346,10 @@ def handle_dead_zone(open_trades: list, atr: float):
     for t in open_trades[:]:
         pos = mt5.positions_get(ticket=t["ticket"])
         if not pos:
+            cp, pnl = get_deal_result(t["ticket"])
+            if cp:
+                logger.log_close(t["ticket"], cp, pnl)
+                ai.on_trade_closed(t["ticket"], cp, pnl)
             open_trades.remove(t)
             continue
         p = pos[0]
@@ -361,7 +365,10 @@ def handle_dead_zone(open_trades: list, atr: float):
                  f"Closing all {len(live_trades)} position(s) — locking profit.")
         for t, p in live_trades:
             direction = t["dir"]
-            close_position(t["ticket"], direction, "dead-zone-net-profit")
+            ok, cp, pnl = close_position(t["ticket"], direction, "dead-zone-net-profit")
+            if ok:
+                logger.log_close(t["ticket"], cp, pnl)
+                ai.on_trade_closed(t["ticket"], cp, pnl)
             if t in open_trades:
                 open_trades.remove(t)
         return
@@ -402,7 +409,10 @@ def handle_dead_zone(open_trades: list, atr: float):
                 log.warning(f"DEAD ZONE 3:45 CUT | T{t['ticket']} | "
                             f"P&L={profit_r:.2f}R | ${p.profit:.2f} | "
                             f"closing now.")
-                close_position(t["ticket"], direction, "dead-zone-3:45-cut")
+                ok, cp, pnl = close_position(t["ticket"], direction, "dead-zone-3:45-cut")
+                if ok:
+                    logger.log_close(t["ticket"], cp, pnl)
+                    ai.on_trade_closed(t["ticket"], cp, pnl)
                 if t in open_trades:
                     open_trades.remove(t)
 
@@ -411,7 +421,10 @@ def handle_dead_zone(open_trades: list, atr: float):
                 log.warning(f"DEAD ZONE WORSENING | T{t['ticket']} | "
                             f"P&L={profit_r:.2f}R -> {prev_r:.2f}R "
                             f"| ${p.profit:.2f} | closing to limit loss.")
-                close_position(t["ticket"], direction, "dead-zone-worsening")
+                ok, cp, pnl = close_position(t["ticket"], direction, "dead-zone-worsening")
+                if ok:
+                    logger.log_close(t["ticket"], cp, pnl)
+                    ai.on_trade_closed(t["ticket"], cp, pnl)
                 if t in open_trades:
                     open_trades.remove(t)
 
@@ -716,10 +729,26 @@ def move_sl(ticket: int, new_sl: float):
            "position":ticket, "sl":round(new_sl, 2), "tp":pos[0].tp}
     mt5.order_send(req)
 
-def close_position(ticket: int, direction: str, reason: str = ""):
+def get_deal_result(ticket: int):
+    """Return (close_price, pnl_usd) for a closed position from MT5 deal history."""
+    from datetime import datetime as _dt, timedelta as _td
+    to    = _dt.utcnow()
+    from_ = to - _td(days=1)
+    deals = mt5.history_deals_get(from_, to, position=ticket)
+    if deals:
+        closing = [d for d in deals if d.entry == 1]  # DEAL_ENTRY_OUT
+        if closing:
+            d = closing[-1]
+            return float(d.price), float(d.profit)
+    return 0.0, 0.0
+
+
+def close_position(ticket: int, direction: str, reason: str = "") -> tuple:
+    """Returns (success, close_price, pnl_usd). pnl_usd is position profit at close."""
     pos = mt5.positions_get(ticket=ticket)
-    if not pos: return False
+    if not pos: return False, 0.0, 0.0
     p          = pos[0]
+    pnl_usd    = p.profit
     bid, ask   = get_tick()
     price      = bid if direction == "bullish" else ask
     close_type = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
@@ -739,8 +768,8 @@ def close_position(ticket: int, direction: str, reason: str = ""):
     res = mt5.order_send(req)
     if res and res.retcode == mt5.TRADE_RETCODE_DONE:
         log.info(f"CLOSED ticket={ticket} | reason={reason} @ {price:.2f}")
-        return True
-    return False
+        return True, price, pnl_usd
+    return False, 0.0, 0.0
 
 def close_all_positions(reason: str = "emergency"):
     positions = mt5.positions_get(symbol=SYMBOL)
@@ -766,7 +795,7 @@ def close_all_positions(reason: str = "emergency"):
         }
         mt5.order_send(req)
 
-def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame):
+def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame, logger, ai):
     """
     Full position management:
     1. Breakeven at BE_ACTIVATION_R
@@ -782,7 +811,10 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame):
         for t in open_trades[:]:
             pos = mt5.positions_get(ticket=t["ticket"])
             if pos:
-                close_position(t["ticket"], t["dir"], reason)
+                ok, cp, pnl = close_position(t["ticket"], t["dir"], reason)
+                if ok:
+                    logger.log_close(t["ticket"], cp, pnl)
+                    ai.on_trade_closed(t["ticket"], cp, pnl)
             open_trades.remove(t)
         return
 
@@ -791,6 +823,10 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame):
     for t in open_trades[:]:
         pos = mt5.positions_get(ticket=t["ticket"])
         if not pos:
+            cp, pnl = get_deal_result(t["ticket"])
+            if cp:
+                logger.log_close(t["ticket"], cp, pnl)
+                ai.on_trade_closed(t["ticket"], cp, pnl)
             open_trades.remove(t)
             continue
 
@@ -811,7 +847,10 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame):
             if profit_r > 0:  # only close early if we're in profit
                 log.info(f"T{t['ticket']} MOMENTUM FLIP — M5 bias now {current_bias}, "
                          f"we are {direction}. Closing at {profit_r:.1f}R.")
-                if close_position(t["ticket"], direction, "MOMENTUM-FLIP"):
+                ok, cp, pnl = close_position(t["ticket"], direction, "MOMENTUM-FLIP")
+                if ok:
+                    logger.log_close(t["ticket"], cp, pnl)
+                    ai.on_trade_closed(t["ticket"], cp, pnl)
                     open_trades.remove(t)
                     continue
 
@@ -847,7 +886,10 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame):
         t["candles_held"] = t.get("candles_held", 0) + 1
         if t["candles_held"] >= MAX_HOLD_CANDLES:
             log.info(f"T{t['ticket']} MAX HOLD ({MAX_HOLD_CANDLES} candles). Closing.")
-            if close_position(t["ticket"], direction, "MAX-HOLD"):
+            ok, cp, pnl = close_position(t["ticket"], direction, "MAX-HOLD")
+            if ok:
+                logger.log_close(t["ticket"], cp, pnl)
+                ai.on_trade_closed(t["ticket"], cp, pnl)
                 open_trades.remove(t)
 
 def recover_open_positions() -> list:
@@ -933,7 +975,10 @@ def run():
                 for t in open_trades[:]:
                     pos = mt5.positions_get(ticket=t["ticket"])
                     if pos:
-                        close_position(t["ticket"], t["dir"], reason)
+                        ok, cp, pnl = close_position(t["ticket"], t["dir"], reason)
+                        if ok:
+                            logger.log_close(t["ticket"], cp, pnl)
+                            ai.on_trade_closed(t["ticket"], cp, pnl)
                     if t in open_trades:
                         open_trades.remove(t)
                 log.info("Positions closed. Bot stays running — no new entries during close window.")
@@ -975,7 +1020,7 @@ def run():
                     df_m5 = get_candles(mt5.TIMEFRAME_M5, 50)
                     if not df_m1.empty and not df_m5.empty:
                         manage_positions(open_trades,
-                                         calc_atr(df_m1), df_m5)
+                                         calc_atr(df_m1), df_m5, logger, ai)
                     time.sleep(60)
                 continue
 
@@ -1000,8 +1045,8 @@ def run():
                 df_m5 = get_candles(mt5.TIMEFRAME_M5, 50)
                 if not df_m1.empty and not df_m5.empty:
                     atr_dz = calc_atr(df_m1)
-                    manage_positions(open_trades, atr_dz, df_m5)
-                    handle_dead_zone(open_trades, atr_dz)
+                    manage_positions(open_trades, atr_dz, df_m5, logger, ai)
+                    handle_dead_zone(open_trades, atr_dz, logger, ai)
                 if now.minute == 0:
                     log.info(f"Dead zone (3-7pm TX). No new entries. "
                              f"{daily_engine.status(acct.balance)}")
@@ -1031,7 +1076,7 @@ def run():
 
             # ── Manage existing positions ─────────────────────────────────
             trades_before = len(open_trades)
-            manage_positions(open_trades, atr, df_m5)
+            manage_positions(open_trades, atr, df_m5, logger, ai)
             if len(open_trades) < trades_before:
                 _acct = mt5.account_info()
                 if _acct: calmar.record(_acct.balance)
@@ -1093,7 +1138,9 @@ def run():
                     "be_done":      False,
                     "candles_held": 0,
                 })
-                logger.log_entry(ticket, feats, direction, filled, sl, tp, tp)
+                risk_usd = acct.balance * (get_risk_pct(acct.balance) / 100)
+                logger.log_entry(ticket, feats, direction, filled, sl, tp, tp,
+                                 risk_usd=risk_usd)
                 consec_losses = 0
                 time.sleep(10)
             else:

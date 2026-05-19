@@ -144,7 +144,12 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 _Fill this in at the start of each Claude Code or chat session:_
 
-- Last completed: 
-- Currently working on: 
-- Next up: 
-- Open questions / decisions pending: 
+- Last completed: Fixed systemic bug — all 4 bots were logging entries but never calling `log_close`.
+  Trades JSON always showed `outcome: null`, AI brain had no training data, `/balance` always showed
+  starting balance regardless of actual P&L. Now every exit path (SL/TP hit via `get_deal_result`,
+  explicit close via modified `close_position` returning `(success, price, pnl_usd)`) calls
+  `logger.log_close()` + `ai.on_trade_closed()`. Also fixed `risk_usd=0.0` in all `log_entry` calls.
+- Currently working on: Live validation — confirm next closed trade appears in trades.json with
+  `outcome`, `pnl_usd`, `close_price` populated.
+- Next up: Monitor AI training — once 15 closed trades accumulate, verify first model trains.
+- Open questions / decisions pending: Futures bot (`bot_futures.py`) — not yet audited for same bug.
