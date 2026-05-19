@@ -1470,17 +1470,4 @@ def run():
 
 
 if __name__ == "__main__":
-    print("BOT FFT | XAUUSD Gold (Fibonacci Fractal Trading) | XAUUSD")
-    print("Timeframe: M15 | Trend filter: H1 + H4")
-    print("Entry: Sniper green zone overlap with FFT 61.8-88.6%\n")
-    # Auto-confirm when running non-interactively (coordinator/Task Scheduler)
-    # Prompt only when launched directly in a terminal
-    import sys as _sys
-    try:
-        _interactive = _sys.stdin is not None and _sys.stdin.isatty()
-    except Exception:
-        _interactive = False
-    if not _interactive or input("Type CONFIRM to start: ").strip().upper() == "CONFIRM":
-        run()
-    else:
-        print("Aborted.")
+    run()
