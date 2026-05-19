@@ -1,3 +1,6 @@
+# Backup data lives on the `backups` branch, not main
+backup/
+
 # ============================================================
 # VPS-ONLY DATA FILES
 # These files exist only on the VPS and must NEVER be

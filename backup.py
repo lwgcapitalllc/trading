@@ -1,12 +1,17 @@
 """
-backup.py — VPS Data Backup to GitHub
+backup.py — VPS Data Backup to GitHub (backups branch)
 
 Runs twice daily (midnight + noon CT) via SYS_BACKUP task.
-Pushes VPS-only data to GitHub under backup/ directory.
+Pushes VPS-only data to the `backups` orphan branch on GitHub.
 
-IMPORTANT: This is ONE-WAY — VPS to GitHub only.
-GitHub data NEVER overwrites VPS data automatically.
-To restore (e.g. new VPS), manually copy from backup/ to their paths.
+The `backups` branch is SEPARATE from `main` — backup commits never
+land on main, so local Mac development never conflicts with VPS backups.
+
+Restore (new VPS): git clone -b backups <repo> C:\algos-backup
+then manually copy files to their C:\algos paths.
+
+ONE-TIME VPS SETUP (run once after first deploy):
+  python C:/algos/backup.py --setup
 
 Files backed up:
   bot_state.json        — balances, P&L, status (single source of truth)
@@ -25,11 +30,13 @@ Run: python C:/algos/backup.py
 import json
 import subprocess
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 
-ALGOS_ROOT  = Path("C:/algos")
-BACKUP_DIR  = ALGOS_ROOT / "backup"
+ALGOS_ROOT     = Path("C:/algos")
+BACKUP_WORKTREE = Path("C:/algos-backup")   # git worktree for backups branch
+BACKUP_BRANCH  = "backups"
 
 BACKUP_FILES = [
     # Single source of truth
@@ -72,17 +79,62 @@ BACKUP_FILES = [
 ]
 
 
+def run(cmd, cwd=None, check=True):
+    return subprocess.run(cmd, cwd=cwd, check=check, capture_output=True, text=True)
+
+
+def setup():
+    """
+    One-time setup: create the backups orphan branch on GitHub and a local
+    git worktree pointing to it at C:\\algos-backup.
+
+    Run: python C:/algos/backup.py --setup
+    """
+    print("Setting up backups branch and worktree...")
+
+    # Check if backups branch already exists on remote
+    result = run(["git", "ls-remote", "--heads", "origin", BACKUP_BRANCH],
+                 cwd=ALGOS_ROOT, check=False)
+    branch_exists = BACKUP_BRANCH in result.stdout
+
+    if not branch_exists:
+        print("  Creating orphan backups branch on GitHub...")
+        # Create orphan branch, empty commit, push, return to main
+        run(["git", "checkout", "--orphan", BACKUP_BRANCH], cwd=ALGOS_ROOT)
+        run(["git", "reset", "--hard"], cwd=ALGOS_ROOT)
+        run(["git", "commit", "--allow-empty", "-m", "init: backups branch"],
+            cwd=ALGOS_ROOT)
+        run(["git", "push", "origin", BACKUP_BRANCH], cwd=ALGOS_ROOT)
+        run(["git", "checkout", "main"], cwd=ALGOS_ROOT)
+        print("  backups branch created and pushed.")
+    else:
+        print("  backups branch already exists on remote.")
+
+    # Create worktree
+    if BACKUP_WORKTREE.exists():
+        print(f"  Worktree already exists at {BACKUP_WORKTREE}.")
+    else:
+        run(["git", "worktree", "add", str(BACKUP_WORKTREE), BACKUP_BRANCH],
+            cwd=ALGOS_ROOT)
+        print(f"  Worktree created at {BACKUP_WORKTREE}.")
+
+    print("Setup complete. Run 'python C:/algos/backup.py' to take the first backup.")
+
+
 def backup():
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     print(f"Starting backup -- {now}")
 
-    BACKUP_DIR.mkdir(exist_ok=True)
+    if not BACKUP_WORKTREE.exists():
+        print("ERROR: Backup worktree not set up.")
+        print("Run: python C:/algos/backup.py --setup")
+        return
 
     copied = []
     skipped = []
     for rel_path in BACKUP_FILES:
         src  = ALGOS_ROOT / rel_path
-        dest = BACKUP_DIR / rel_path
+        dest = BACKUP_WORKTREE / rel_path
         if src.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
@@ -99,36 +151,30 @@ def backup():
         return
 
     # Write manifest
-    with open(BACKUP_DIR / "manifest.json", "w") as f:
+    with open(BACKUP_WORKTREE / "manifest.json", "w") as f:
         json.dump({
             "backed_up_at": now,
             "files_backed_up": len(copied),
             "files": copied,
         }, f, indent=2)
 
-    # Commit and push to GitHub
+    # Commit and push to backups branch
     try:
-        subprocess.run(["git", "add", "backup/"], cwd=ALGOS_ROOT, check=True,
-                       capture_output=True)
-        result = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"],
-            cwd=ALGOS_ROOT, capture_output=True
-        )
+        run(["git", "add", "."], cwd=BACKUP_WORKTREE)
+        result = run(["git", "diff", "--cached", "--quiet"],
+                     cwd=BACKUP_WORKTREE, check=False)
         if result.returncode != 0:
-            subprocess.run(
-                ["git", "commit", "-m", f"backup: {now}"],
-                cwd=ALGOS_ROOT, check=True, capture_output=True
-            )
-            subprocess.run(
-                ["git", "push", "origin", "main"],
-                cwd=ALGOS_ROOT, check=True, capture_output=True
-            )
-            print(f"OK Pushed {len(copied)} files to GitHub -- {now}")
+            run(["git", "commit", "-m", f"backup: {now}"], cwd=BACKUP_WORKTREE)
+            run(["git", "push", "origin", BACKUP_BRANCH], cwd=BACKUP_WORKTREE)
+            print(f"OK Pushed {len(copied)} files to GitHub ({BACKUP_BRANCH}) -- {now}")
         else:
             print("No changes since last backup.")
     except subprocess.CalledProcessError as e:
-        print(f"Git error: {e}")
+        print(f"Git error: {e.stderr.strip()}")
 
 
 if __name__ == "__main__":
-    backup()
+    if "--setup" in sys.argv:
+        setup()
+    else:
+        backup()
