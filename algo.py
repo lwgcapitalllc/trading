@@ -357,6 +357,11 @@ def view_log(task_name: str, lines: int = 40):
         print(gray("Add it to LOG_MAP in algo.py"))
         return
 
+    if LOG_MAP[task_name] is None:
+        print(yellow(f"{task_name} has no log file."))
+        print(gray("Uptime is tracked via offset file, not a log."))
+        return
+
     market, instance, logfile = LOG_MAP[task_name]
     path = f"C:\\algos\\markets\\{market}\\instances\\{instance}\\{logfile}"
     print(gray(f"\nLog: {path}\n"))
