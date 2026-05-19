@@ -50,7 +50,7 @@ CONFIRM_TIMEOUT = 30
 ROLE_COMMANDS = {
     "admin":    {"/status","/balance","/trades","/report","/demo","/live","/all",
                  "/force","/help","/restart","/stop","/emergency","/confirm",
-                 "/users"},
+                 "/users","/resume"},
     "readonly": {"/status","/balance","/trades","/report","/demo","/live","/all",
                  "/force","/help"},
 }
@@ -517,6 +517,8 @@ def cmd_help() -> str:
         "`/stop`           Stop all bots\n"
         "`/stop scalper`   Stop one bot\n"
         "`/emergency`      Kill everything immediately\n\n"
+        "*Override*  _no confirm needed_\n"
+        "`/resume scalper` Resume a locked bot (overrides peak protection)\n\n"
         "_Bot keys: smc  reversion  scalper  fft_"
     )
 
@@ -634,6 +636,24 @@ def handle_message(text: str, chat_id: str) -> str:
                                    f"Stop {name}")
         return request_confirm(lambda: do_stop(list(BOTS.keys())),
                                "Stop All Bots")
+
+    if cmd == "/resume":
+        if not can(chat_id, cmd):
+            return denied()
+        bot_key = parse_bot_key(parts)
+        if not bot_key:
+            return "Usage: `/resume <bot>`\nBot keys: smc  reversion  scalper  fft"
+        from bot_state import read_bot, write_bot
+        state = read_bot(bot_key)
+        name  = BOTS[bot_key]["name"]
+        if not state.get("day_locked"):
+            return f"{name} is not locked — no override needed."
+        write_bot(bot_key, {"resume_trading": True})
+        return (
+            f"▶️ *Resume signal sent to {name}*\n"
+            f"Bot will unlock within 60s and resume trading.\n"
+            f"Peak protection is now OFF for the rest of today — trade carefully."
+        )
 
     if pending_action["command"]:
         pending_action["command"] = None

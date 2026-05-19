@@ -158,6 +158,9 @@ def check_alerts(bot_key: str, pnl: dict):
             "alert_date":        today,
             "goal_alerted":      False,
             "daily_cap_alerted": False,
+            "day_locked":        False,
+            "lock_alerted":      False,
+            "lock_reason":       "",
         })
         state = read_bot(bot_key)
 
@@ -166,6 +169,19 @@ def check_alerts(bot_key: str, pnl: dict):
 
     if not pnl["has_pnl_data"]:
         return  # Don't send alerts if data isn't reliable yet
+
+    # Day locked (peak protection or ceiling hit) — only scalper has this
+    if state.get("day_locked") and not state.get("lock_alerted"):
+        reason = state.get("lock_reason", "Daily engine triggered")
+        send_alert(
+            f"🔒 *Bot {name} — Day Locked*\n"
+            f"{reason}\n"
+            f"Balance: ${bal:,.2f}\n"
+            f"No new trades until midnight UTC\n"
+            f"Override: `/resume {bot_key}`\n"
+            f"Time: {now_str}"
+        )
+        write_bot(bot_key, {"lock_alerted": True})
 
     # Daily goal
     if daily_pct >= thresh["daily_goal"] and not state.get("goal_alerted"):

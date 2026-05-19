@@ -23,6 +23,8 @@ Writes balance, daily/weekly P&L to `bot_state.json`.
 - 🎯 Daily Goal Hit
 - 🛑 Daily Loss Cap Hit
 - 🚫 Weekly Loss Cap Hit
+- 🔒 Day Locked — fires when a bot sets `day_locked=True` in bot_state (currently: Scalper
+  peak protection and daily ceiling). Includes the exact stop reason and `/resume` hint.
 
 ### reporter.py (SYS_REPORTER — daily 4pm CT)
 Sends daily performance summary to all Telegram users.
@@ -39,8 +41,11 @@ Telegram command interface. Reads from `bot_state.json` for all data.
 | `/status` | Live bot status (checks process directly) |
 | `/balance` | Current balances and total P&L % |
 | `/restart` | Restart all bots (requires /confirm) |
+| `/restart scalper` | Restart one bot (requires /confirm) |
 | `/stop` | Stop all bots (requires /confirm) |
+| `/stop scalper` | Stop one bot (requires /confirm) |
 | `/emergency` | Emergency stop — immediate, no confirm |
+| `/resume scalper` | Resume a peak-protection-locked bot — no confirm. Clears lock within 60s. Peak protection stays OFF for rest of day. Admin only. |
 | `/report` | Request performance report |
 | `/help` | Command list |
 | `/users` | Manage users (admin only) |
@@ -64,3 +69,14 @@ All components read from `bot_state.json` — single source of truth.
 `pnl_tracker.py` is the only writer for balance/P&L fields.
 `monitor.py` is the only writer for status field.
 `startup_coordinator.py` is the only writer for started field.
+`bot_scalper.py` writes `day_locked`, `lock_reason`, `lock_alerted`, `resume_trading`.
+`telegram_bot.py` writes `resume_trading` (via `/resume` command).
+
+### bot_state.json lock fields (Scalper only)
+
+| Field | Written by | Purpose |
+|---|---|---|
+| `day_locked` | bot_scalper.py | True when peak protection or ceiling lock fires |
+| `lock_reason` | bot_scalper.py | Human-readable stop reason for the alert |
+| `lock_alerted` | pnl_tracker.py | Dedup flag — alert sent once per lock |
+| `resume_trading` | telegram_bot.py | Flag read by bot_scalper wait loop to break lock |

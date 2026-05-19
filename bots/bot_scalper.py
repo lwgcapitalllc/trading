@@ -42,6 +42,7 @@ import pytz
 from bot_utils import load_config, setup_logging, get_instance_dir
 from shared_calmar   import CalmarTracker
 from shared_ai_brain import AIBrain, TradeLogger
+from bot_state       import write_bot, read_bot
 
 # ── Load config + logging (instance-aware) ────────────────────────────────────
 _CFG  = load_config()
@@ -1014,13 +1015,29 @@ def run():
                 log.info(f"Day locked | {daily_engine.status(acct.balance)}")
                 calmar.record(acct.balance)
                 log_progress(acct.balance, start_balance)
-                # Wait until midnight UTC for daily reset
+                # Publish lock to bot_state so monitor can alert and /resume can override
+                write_bot("scalper", {
+                    "day_locked":     True,
+                    "lock_reason":    stop_reason,
+                    "lock_alerted":   False,
+                    "resume_trading": False,
+                })
+                # Wait until midnight UTC (or until /resume override)
                 while now_utc().date() == date:
                     df_m1 = get_candles(mt5.TIMEFRAME_M1, 50)
                     df_m5 = get_candles(mt5.TIMEFRAME_M5, 50)
                     if not df_m1.empty and not df_m5.empty:
                         manage_positions(open_trades,
                                          calc_atr(df_m1), df_m5, logger, ai)
+                    # Check for /resume override from Telegram
+                    if read_bot("scalper").get("resume_trading"):
+                        write_bot("scalper", {
+                            "day_locked":     False,
+                            "resume_trading": False,
+                        })
+                        log.warning("RESUME OVERRIDE: resuming trading by user request")
+                        daily_engine.stopped = False
+                        break
                     time.sleep(60)
                 continue
 

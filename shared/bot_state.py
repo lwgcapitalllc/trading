@@ -185,5 +185,8 @@ def _default_state(bot_key: str) -> dict:
         "peak_balance":   BOT_STARTING_BALANCES.get(bot_key, 1000.0),
         "trades_today":   0,
         "day_locked":     False,
+        "lock_reason":    "",
+        "lock_alerted":   False,
+        "resume_trading": False,
         "last_updated":   "",
     }

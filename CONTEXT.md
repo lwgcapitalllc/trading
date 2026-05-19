@@ -85,9 +85,13 @@ During dead zone: net profit → close all. Individual profit + portfolio negati
 algos/
 ├── algo.py                    ← Mac control panel
 ├── backup.py                  ← Twice-daily backup to backups branch
+├── CLAUDE.md                  ← Auto-loaded Claude Code instructions (quant rules + doc rules)
 ├── CONTEXT.md                 ← This file
 ├── stress_test_suite.py
-├── instructions/              ← Standing instructions for Claude Code sessions
+├── instructions/              ← Detailed standing instructions (referenced by CLAUDE.md)
+├── .claude/
+│   ├── settings.local.json
+│   └── commands/              ← Custom slash commands: /session-start /update-context /quant-review
 ├── shared/
 │   ├── shared_ai_brain.py
 │   ├── shared_calmar.py
@@ -183,15 +187,78 @@ written in 90 minutes, sends Telegram alert with last log line. Controlled by `L
 
 ---
 
+---
+
+## What Was Done This Session (2026-05-19 — Session 2)
+
+### Feature — Peak protection lock alert + `/resume` override
+
+**Problem:** When `bot_scalper.py`'s `DailyProfitEngine` triggered peak protection (daily P&L
+pulled back 10 percentage points from peak after hitting the +10% daily goal), the bot locked
+silently. No Telegram alert was sent. The only signal was the 90-minute stall alert — a blunt
+proxy. User had no way to override the lock without a full restart.
+
+**Changes:**
+
+`shared/bot_state.py`
+- Added `lock_reason: ""`, `lock_alerted: False`, `resume_trading: False` to `_default_state`
+
+`bots/bot_scalper.py`
+- Imported `write_bot`, `read_bot` from `bot_state`
+- On `should_stop`: writes `day_locked=True`, `lock_reason=<stop_reason>`, `lock_alerted=False`
+  to `bot_state.json` immediately after `close_all_positions`
+- Wait loop now checks `read_bot("scalper").get("resume_trading")` each 60s cycle.
+  If True: clears the flags, resets `daily_engine.stopped = False`, and breaks out — resuming
+  trading without a restart. Peak protection is then OFF for the rest of the day.
+
+`notifications/pnl_tracker.py`
+- `check_alerts()` now detects `day_locked=True` + not `lock_alerted` and fires:
+  `🔒 Bot Scalper — Day Locked` with the exact reason, balance, and `/resume` hint
+- Daily reset block now also resets `day_locked`, `lock_alerted`, `lock_reason`
+
+`notifications/telegram_bot.py`
+- Added `/resume <bot>` command: sets `resume_trading=True` in bot_state. No confirm required.
+  Responds with a warning that peak protection is now OFF for the rest of the day.
+- Added `/resume` to admin `ROLE_COMMANDS`
+- Updated `/help` text with Override section
+
+**Only the scalper has peak profit protection** — SMC Trend, Mean Reversion, and FFT only have
+daily loss caps, no peak drawdown engine. The `day_locked` field in bot_state.py is generic and
+can be extended to other bots in future.
+
+### Infrastructure — CLAUDE.md + .claude/commands/
+
+Added `CLAUDE.md` at repo root (auto-loaded by Claude Code every session). Contains:
+- Quant developer mindset rules
+- Non-negotiable documentation update rules
+- Coding conventions
+
+Added `.claude/commands/` with custom slash commands:
+- `/session-start` — oriented session startup checklist
+- `/update-context` — prompt to update CONTEXT.md after a session
+- `/quant-review` — pre-commit risk and doc coverage review
+
+Renamed and removed: `instructions/keep_docs_updated.md` content is now folded into `CLAUDE.md`.
+The `instructions/` folder is kept for future detailed instruction files.
+
+### Scalper overnight incident (2026-05-18→19)
+
+Scalper hit +10% daily goal at 12:46 AM CT ($1,082.21, +$120 from ~$962 day-start).
+Peak protection activated. Bot kept trading, peaked at approximately +22.5% (~$1,179),
+then P&L pulled back 10pp to +12.5% → peak protection triggered lock at ~2 AM CT.
+`close_all_positions` ran; bot entered midnight-wait loop. Log went silent.
+Stall alert fired at 3:33 AM CT. Actual locked balance: $1,082.85.
+`/balance` showed $1,088.13 (pnl_tracker reading from trades.json — stale vs MT5 actual).
+
+---
+
 ## What I Am Working On (Update This Section Each Session)
 
-_Fill this in at the start of each Claude Code or chat session:_
-
-- Last completed: Full fix + reset described above. All systems clean as of 2026-05-19.
-- Currently working on: Live validation — confirm next closed trade appears with `outcome`,
-  `pnl_usd`, `close_price` populated in `*_trades.json`.
+- Last completed: Peak protection alert + `/resume` override. CLAUDE.md + slash commands setup.
+- Currently working on: Deploying changes to VPS. Validating Scalper resumes correctly.
 - Next up: Monitor AI training — once 15 closed trades accumulate per bot, verify first model
   trains and AUC gate passes. Then check Calmar tracking is updating correctly.
 - Open questions / decisions pending:
   - `bot_futures.py` — NOT yet audited for the same missing `log_close` bug
-  - Consider whether `pnl_tracker.py` needs updating now that trades will have real `pnl_usd` values
+  - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10% to give more
+    room before locking (current value means a 10pp P&L swing locks the day)
