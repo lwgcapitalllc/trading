@@ -72,26 +72,52 @@ Create `C:\algos\users.json`:
 
 ## 5. Restore Data from Backup (New VPS Only)
 
-After a fresh clone, restore VPS-only data from GitHub backup.
+Backups live on the `backups` branch of this repo (separate from `main`).
+Clone it into a staging directory, copy files to their live paths, then delete
+the staging directory.
 
-**IMPORTANT**: This is only for new VPS setup or disaster recovery.
-On a running VPS, never copy from backup/ — it will overwrite live data.
-The .gitignore prevents git pull from touching these files automatically.
+**IMPORTANT**: Only do this on a fresh VPS or after disaster recovery.
+On a running VPS, never overwrite live bot data from backup.
 
 ```powershell
-# Copy bot state (balances, P&L)
-copy "C:\algos\backup\markets\fx\instances\gold_main\bot_state.json" "C:\algos\markets\fx\instances\gold_main\bot_state.json"
-copy "C:\algos\backup\markets\fx\instances\gold_scalper\bot_state.json" "C:\algos\markets\fx\instances\gold_scalper\bot_state.json"
-copy "C:\algos\backup\markets\fx\instances\gold_fft\bot_state.json" "C:\algos\markets\fx\instances\gold_fft\bot_state.json"
+# Clone backups branch into a staging directory
+git clone --branch backups --single-branch https://github.com/lwgcapitalllc/algos.git C:\algos-restore
 
-# Copy trade histories
-copy "C:\algos\backup\markets\fx\instances\gold_main\smc_trend_trades.json" "C:\algos\markets\fx\instances\gold_main\"
-copy "C:\algos\backup\markets\fx\instances\gold_main\mean_reversion_trades.json" "C:\algos\markets\fx\instances\gold_main\"
-copy "C:\algos\backup\markets\fx\instances\gold_scalper\scalper_trades.json" "C:\algos\markets\fx\instances\gold_scalper\"
-copy "C:\algos\backup\markets\fx\instances\gold_fft\fft_trades.json" "C:\algos\markets\fx\instances\gold_fft\"
+# Copy bot state (balances, P&L)
+copy "C:\algos-restore\markets\fx\instances\gold_main\bot_state.json"    "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_scalper\bot_state.json" "C:\algos\markets\fx\instances\gold_scalper\"
+copy "C:\algos-restore\markets\fx\instances\gold_fft\bot_state.json"     "C:\algos\markets\fx\instances\gold_fft\"
+
+# Copy trade histories (AI training data)
+copy "C:\algos-restore\markets\fx\instances\gold_main\smc_trend_trades.json"     "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_main\mean_reversion_trades.json" "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_scalper\scalper_trades.json"    "C:\algos\markets\fx\instances\gold_scalper\"
+copy "C:\algos-restore\markets\fx\instances\gold_fft\fft_trades.json"            "C:\algos\markets\fx\instances\gold_fft\"
+
+# Copy trained AI models
+copy "C:\algos-restore\markets\fx\instances\gold_main\smc_trend_model.pkl"            "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_main\smc_trend_model_scaler.pkl"     "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_main\mean_reversion_model.pkl"       "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_main\mean_reversion_model_scaler.pkl" "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_scalper\scalper_model.pkl"           "C:\algos\markets\fx\instances\gold_scalper\"
+copy "C:\algos-restore\markets\fx\instances\gold_scalper\scalper_model_scaler.pkl"    "C:\algos\markets\fx\instances\gold_scalper\"
+
+# Copy equity curves and daily/weekly performance logs
+copy "C:\algos-restore\markets\fx\instances\gold_main\gold_main_equity.json"      "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_main\smc_trend_daily.json"       "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_main\mean_reversion_daily.json"  "C:\algos\markets\fx\instances\gold_main\"
+copy "C:\algos-restore\markets\fx\instances\gold_scalper\scalper_equity.json"     "C:\algos\markets\fx\instances\gold_scalper\"
+copy "C:\algos-restore\markets\fx\instances\gold_fft\fft_equity.json"             "C:\algos\markets\fx\instances\gold_fft\"
+copy "C:\algos-restore\markets\fx\instances\gold_fft\fft_daily.json"              "C:\algos\markets\fx\instances\gold_fft\"
 
 # Copy Telegram users
-copy "C:\algos\backup\users.json" "C:\algos\users.json"
+copy "C:\algos-restore\users.json" "C:\algos\users.json"
+
+# Clean up staging directory
+rmdir /S /Q C:\algos-restore
+
+# Re-create the backup worktree for future backups
+python C:\algos\backup.py --setup
 ```
 
 ---

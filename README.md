@@ -22,10 +22,12 @@ Starting balance for all accounts: **$1,000**
 ```
 algos/
 ├── algo.py                          ← Mac control panel (run: algo)
-├── backup.py                        ← Daily backup to GitHub
+├── backup.py                        ← Twice-daily backup to GitHub (backups branch)
 ├── cleanup_vps.bat                  ← One-time cleanup script
 ├── README.md
 ├── SETUP.md
+├── instructions/                    ← Standing instructions for Claude Code sessions
+│   └── keep_docs_updated.md
 ├── bots/
 │   ├── bot_smc_trend.py
 │   ├── bot_mean_reversion.py
@@ -101,13 +103,20 @@ ssh forexvps "wmic process where \"name='python.exe'\" get commandline 2>nul"
 
 ## VPS Data Backup
 
-Critical VPS-only files are backed up to GitHub daily at midnight via `SYS_BACKUP`:
-- `bot_state.json` (all instances) — balances, P&L
-- `*_trades.json` (all instances) — full trade history
-- `users.json` — Telegram user list
+Critical VPS-only files are backed up to GitHub twice daily (midnight + noon CT) via `SYS_BACKUP`.
 
-Backups stored in `backup/` directory in this repo.
-To restore after VPS rebuild: copy files from `backup/` to their original paths.
+**What is backed up:** `bot_state.json`, `*_trades.json` (AI training data),
+`*_model.pkl` + `*_model_scaler.pkl` (trained AI models), `*_equity.json`,
+`*_daily.json`, `*_weekly.json`, `*_stdout.log`, `users.json`
+
+**Where:** The `backups` orphan branch of this repo (separate from `main`).
+Backup commits never land on `main`, so Mac development and VPS backups never conflict.
+
+**On VPS:** `backup.py` uses a git worktree at `C:\algos-backup` pointing to the
+`backups` branch. The `main` branch working tree at `C:\algos` is never touched
+by backup operations.
+
+To restore after VPS rebuild — see SETUP.md § Restore Data from Backup.
 
 ---
 

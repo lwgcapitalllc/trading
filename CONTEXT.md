@@ -73,6 +73,9 @@ During dead zone: net profit → close all. Individual profit + portfolio negati
 - **Deploy:** `git push` on Mac → `ssh forexvps "cd C:\algos && git pull"` → `algo restart`
 - **Monitoring:** Telegram bot for alerts, reporter.py for daily summaries, monitor.py for health checks
 - **Scheduling:** Windows Task Scheduler via XML task files
+- **Backup:** `backup.py` runs twice daily (midnight + noon CT) via SYS_BACKUP. Commits VPS runtime
+  data to the `backups` orphan branch via a git worktree at `C:\algos-backup`. Never touches `main`,
+  so Mac deploys and VPS backups never conflict. See README § VPS Data Backup for full file list.
 
 ---
 
@@ -81,9 +84,10 @@ During dead zone: net profit → close all. Individual profit + portfolio negati
 ```
 algos/
 ├── algo.py                    ← Mac control panel
+├── backup.py                  ← Twice-daily backup to backups branch
 ├── CONTEXT.md                 ← This file
-├── config.json                ← Active instance config (futures_account1)
 ├── stress_test_suite.py
+├── instructions/              ← Standing instructions for Claude Code sessions
 ├── shared/
 │   ├── shared_ai_brain.py
 │   ├── shared_calmar.py
@@ -107,6 +111,9 @@ algos/
     └── futures/instances/
         └── futures_account1/
 ```
+
+Note: VPS runtime data (`*_trades.json`, `bot_state.json`, `*.pkl`, etc.) is gitignored
+on `main` and backed up to the separate `backups` branch by `backup.py`.
 
 ---
 
