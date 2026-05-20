@@ -358,14 +358,15 @@ def kill_bot_process(task_name: str):
     schtasks /end stops the task entry but does not reliably terminate the running
     Python process. If the process is still alive when schtasks /run is called,
     Windows Task Scheduler refuses to start a new instance (default policy).
-    Uses wmic directly — more reliable over SSH than the PowerShell WMI path.
+    %% is the cmd.exe escape for a literal % — without it, cmd.exe strips %script%
+    to an empty string over SSH and the wmic LIKE query matches nothing.
     """
     script = TASK_SCRIPT_MAP.get(task_name, "")
     if not script:
         return
     ssh(
         f"wmic process where "
-        f"\"name='python.exe' and commandline like '%{script}%'\" "
+        f"\"name='python.exe' and commandline like '%%{script}%%'\" "
         f"call terminate 2>nul"
     )
 
