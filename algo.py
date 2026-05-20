@@ -531,7 +531,7 @@ def bot_action_menu(task: dict) -> str:
 
 
 # ── Non-blocking Input with Auto-Refresh ─────────────────────────────────────
-def input_or_timeout(prompt: str, timeout: int) -> str | None:
+def input_or_timeout(prompt: str, timeout: int):
     """
     Show prompt and wait for input. Returns None if timeout elapses
     (triggers auto-refresh). Works on macOS/Linux via select.select.
