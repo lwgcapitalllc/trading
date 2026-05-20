@@ -164,18 +164,22 @@ def fetch_vps_snapshot() -> dict:
     sections = _parse_sections(ssh(cmd1), "procs")
 
     # Call 2: bot state files.
-    # NOTE: Do NOT use `2>nul` with `type` in a `&` chain — Windows cmd.exe
-    # quirk causes `2>nul` to suppress stdout too. Use `if exist` instead.
+    # Notes:
+    #   - No `2>nul` with `type` in a `&` chain: Windows cmd.exe quirk causes
+    #     `2>nul` to suppress stdout too. Use `if exist` to skip missing files.
+    #   - `echo.` before each marker: `type` does not append a trailing newline,
+    #     so the last `}` of a JSON file and the next marker land on the same
+    #     line (e.g. `}===STATE_SCALPER===`), breaking the section parser.
     cmd2 = (
         "if exist C:\\algos\\markets\\fx\\instances\\gold_main\\bot_state.json"
         " (type C:\\algos\\markets\\fx\\instances\\gold_main\\bot_state.json)"
-        " & echo ===STATE_SCALPER==="
+        " & echo. & echo ===STATE_SCALPER==="
         " & if exist C:\\algos\\markets\\fx\\instances\\gold_scalper\\bot_state.json"
         " (type C:\\algos\\markets\\fx\\instances\\gold_scalper\\bot_state.json)"
-        " & echo ===STATE_FFT==="
+        " & echo. & echo ===STATE_FFT==="
         " & if exist C:\\algos\\markets\\fx\\instances\\gold_fft\\bot_state.json"
         " (type C:\\algos\\markets\\fx\\instances\\gold_fft\\bot_state.json)"
-        " & echo ===TELEGRAM_START==="
+        " & echo. & echo ===TELEGRAM_START==="
         " & if exist C:\\algos\\telegram_start.json"
         " (type C:\\algos\\telegram_start.json)"
     )
