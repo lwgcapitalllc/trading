@@ -117,7 +117,7 @@ copy "C:\algos-restore\users.json" "C:\algos\users.json"
 rmdir /S /Q C:\algos-restore
 
 # Re-create the backup worktree for future backups
-python C:\algos\backup.py --setup
+python C:\algos\scripts\backup.py --setup
 ```
 
 ---

@@ -31,8 +31,8 @@ Not as a follow-up. Right now, before moving on.
 
 | Doc | Update when |
 |-----|-------------|
-| `CONTEXT.md` | Any architectural change, new feature, new bot behavior, infrastructure change, or fix that changes how the system works |
-| `SETUP.md` | New files added, new dependencies, new VPS steps, backup strategy changes |
+| `docs/CONTEXT.md` | Any architectural change, new feature, new bot behavior, infrastructure change, or fix that changes how the system works |
+| `docs/SETUP.md` | New files added, new dependencies, new VPS steps, backup strategy changes |
 | `README.md` | Repo structure changes, new top-level files/dirs, workflow changes |
 | `bots/BOT_*_GUIDE.md` | Any change to that bot's behavior, config, or risk rules |
 | `notifications/NOTIFICATIONS_GUIDE.md` | Any change to alerts, Telegram commands, monitor behavior |
@@ -42,20 +42,20 @@ Not as a follow-up. Right now, before moving on.
 
 1. If a doc describes behavior that no longer exists — correct or delete it. Stale docs are
    worse than no docs.
-2. Keep the repo structure tree in `CONTEXT.md` and `README.md` in sync with actual layout.
-3. `SETUP.md` restore steps must always produce a working VPS from scratch — verify mentally
+2. Keep the repo structure tree in `docs/CONTEXT.md` and `README.md` in sync with actual layout.
+3. `docs/SETUP.md` restore steps must always produce a working VPS from scratch — verify mentally
    after any change that affects deploy or VPS setup.
-4. `CONTEXT.md § What Was Done` — always append a new entry at the bottom for the current
+4. `docs/CONTEXT.md § What Was Done` — always append a new entry at the bottom for the current
    session. Never overwrite previous sessions. Include: what changed, why, and current VPS state.
 
 ---
 
 ## Project Reference
 
-Full context: `CONTEXT.md`
+Full context: `docs/CONTEXT.md`
+Setup guide: `docs/SETUP.md`
 Notification system: `notifications/NOTIFICATIONS_GUIDE.md`
 Bot guides: `bots/BOT_*_GUIDE.md`
-Standing instructions detail: `instructions/`
 
 ---
 

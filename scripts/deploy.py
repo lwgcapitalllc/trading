@@ -46,7 +46,7 @@ USAGE:
 import shutil
 from pathlib import Path
 
-ROOT  = Path(__file__).parent
+ROOT  = Path(__file__).parent.parent
 FILES = ROOT / "files"
 
 GREEN  = "\033[92m"
@@ -123,12 +123,16 @@ MANIFEST = {
                                      "markets/futures/instances/futures_account1/credentials.template.json",
 
     # ── Root files ────────────────────────────────────────────────────────────
-    "algo.py":                       "algo.py",
-    "README.md":                     "README.md",
-    "SETUP.md":                      "SETUP.md",
-    "ALGO_CONTROL_PANEL_GUIDE.md":   "ALGO_CONTROL_PANEL_GUIDE.md",
-    "stress_test_suite.py":          "stress_test_suite.py",
-    "deploy.py":                     "deploy.py",
+    "algo.py":                                   "algo.py",
+    "README.md":                                 "README.md",
+
+    # ── Docs ─────────────────────────────────────────────────────────────────
+    "docs/SETUP.md":                             "docs/SETUP.md",
+    "docs/ALGO_CONTROL_PANEL_GUIDE.md":          "docs/ALGO_CONTROL_PANEL_GUIDE.md",
+
+    # ── Scripts ───────────────────────────────────────────────────────────────
+    "scripts/stress_test_suite.py":              "scripts/stress_test_suite.py",
+    "scripts/deploy.py":                         "scripts/deploy.py",
 }
 
 

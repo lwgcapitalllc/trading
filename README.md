@@ -22,12 +22,17 @@ Starting balance for all accounts: **$1,000**
 ```
 algos/
 ├── algo.py                          ← Mac control panel (run: algo)
-├── backup.py                        ← Twice-daily backup to GitHub (backups branch)
-├── cleanup_vps.bat                  ← One-time cleanup script
 ├── README.md
-├── SETUP.md
-├── instructions/                    ← Standing instructions for Claude Code sessions
-│   └── keep_docs_updated.md
+├── docs/
+│   ├── CONTEXT.md                   ← Full project context
+│   ├── SETUP.md                     ← VPS setup and restore guide
+│   ├── ALGO_CONTROL_PANEL_GUIDE.md
+│   └── CLAUDE_CODE_SETUP.md
+├── scripts/
+│   ├── backup.py                    ← Twice-daily backup to GitHub (backups branch)
+│   ├── deploy.py                    ← File staging tool
+│   ├── stress_test_suite.py         ← Monte Carlo stress tests (run locally)
+│   └── cleanup_vps.bat
 ├── bots/
 │   ├── bot_smc_trend.py
 │   ├── bot_mean_reversion.py
@@ -112,11 +117,11 @@ Critical VPS-only files are backed up to GitHub twice daily (midnight + noon CT)
 **Where:** The `backups` orphan branch of this repo (separate from `main`).
 Backup commits never land on `main`, so Mac development and VPS backups never conflict.
 
-**On VPS:** `backup.py` uses a git worktree at `C:\algos-backup` pointing to the
+**On VPS:** `scripts/backup.py` uses a git worktree at `C:\algos-backup` pointing to the
 `backups` branch. The `main` branch working tree at `C:\algos` is never touched
 by backup operations.
 
-To restore after VPS rebuild — see SETUP.md § Restore Data from Backup.
+To restore after VPS rebuild — see `docs/SETUP.md` § Restore Data from Backup.
 
 ---
 

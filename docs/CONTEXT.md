@@ -73,7 +73,7 @@ During dead zone: net profit → close all. Individual profit + portfolio negati
 - **Deploy:** `git push` on Mac → `ssh forexvps "cd C:\algos && git pull"` → `algo restart`
 - **Monitoring:** Telegram bot for alerts, reporter.py for daily summaries, monitor.py for health checks
 - **Scheduling:** Windows Task Scheduler via XML task files
-- **Backup:** `backup.py` runs twice daily (midnight + noon CT) via SYS_BACKUP. Commits VPS runtime
+- **Backup:** `scripts/backup.py` runs twice daily (midnight + noon CT) via SYS_BACKUP. Commits VPS runtime
   data to the `backups` orphan branch via a git worktree at `C:\algos-backup`. Never touches `main`,
   so Mac deploys and VPS backups never conflict. See README § VPS Data Backup for full file list.
 
@@ -84,11 +84,18 @@ During dead zone: net profit → close all. Individual profit + portfolio negati
 ```
 algos/
 ├── algo.py                    ← Mac control panel
-├── backup.py                  ← Twice-daily backup to backups branch
 ├── CLAUDE.md                  ← Auto-loaded Claude Code instructions (quant rules + doc rules)
-├── CONTEXT.md                 ← This file
-├── stress_test_suite.py
-├── instructions/              ← Detailed standing instructions (referenced by CLAUDE.md)
+├── README.md
+├── docs/
+│   ├── CONTEXT.md             ← This file
+│   ├── SETUP.md               ← VPS setup and restore guide
+│   ├── ALGO_CONTROL_PANEL_GUIDE.md
+│   └── CLAUDE_CODE_SETUP.md
+├── scripts/
+│   ├── backup.py              ← Twice-daily backup to backups branch
+│   ├── deploy.py              ← File staging tool
+│   ├── stress_test_suite.py   ← Monte Carlo stress tests (run locally)
+│   └── cleanup_vps.bat
 ├── .claude/
 │   ├── settings.local.json
 │   └── commands/              ← Custom slash commands: /session-start /update-context /quant-review
