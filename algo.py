@@ -297,6 +297,7 @@ def get_all_tasks(snap: dict) -> list[dict]:
 
         balance     = state.get("balance", 0.0) if state else 0.0
         daily_pct   = state.get("daily_pnl_pct", 0.0) if state else 0.0
+        total_pct   = state.get("total_pnl_pct", 0.0) if state else 0.0
         account     = state.get("account", "—") if state else "—"
         if not account:
             account = "—"
@@ -319,6 +320,7 @@ def get_all_tasks(snap: dict) -> list[dict]:
             "account":    account,
             "balance":    balance,
             "daily_pct":  daily_pct,
+            "total_pct":  total_pct,
             "uptime":     uptime,
         })
 
@@ -392,14 +394,14 @@ def print_header(tasks: list[dict], tab: str = "all"):
     Render the control panel with guaranteed border alignment.
     Pad plain text to column width FIRST, then apply ANSI color.
 
-    Layout: W=82 inner content, W+2=84 total with both ║ borders.
-    Columns: icon(1) + Name(16) + Account(12) + Balance(10) + Status(9) + Info
-    Fixed visible chars before info: 2+1+1+16+1+12+1+10+1+9+1 = 55
-    Info space: 82-55 = 27 chars (uptime + daily P&L)
+    Layout: W=90 inner content, W+2=92 total with both ║ borders.
+    Columns: icon(2) + Name(16) + Account(12) + Type(5) + Balance(10) + Total(8) + Status(9) + Info
+    Fixed visible chars before info: 4+16+1+12+1+5+1+10+1+8+1+9+1 = 70
+    Info space: 90-70 = 20 chars (uptime + daily P&L)
     """
     import re
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    W   = 82
+    W   = 90
 
     def strip_ansi(s: str) -> str:
         return re.sub(r'\033\[[0-9;]*m', '', s)
@@ -424,6 +426,7 @@ def print_header(tasks: list[dict], tab: str = "all"):
             status_color = cyan
             info         = gray(SCHEDULED_INFO.get(t["name"], ""))
             balance_str  = col("—", 10)
+            total_str    = col("—", 8)
         else:
             running       = t["running"]
             icon_char     = "●" if running else "○"
@@ -432,11 +435,19 @@ def print_header(tasks: list[dict], tab: str = "all"):
             status_color  = green if running else red
             balance_str   = fmt_balance(t.get("balance", 0.0))
 
+            tpct = t.get("total_pct", 0.0)
+            if tpct == 0.0:
+                total_str = col("—", 8)
+            else:
+                sign      = "+" if tpct >= 0 else ""
+                tpct_txt  = f"{sign}{tpct:.1f}%"
+                tpct_clr  = green if tpct > 0 else red
+                total_str = tpct_clr(col(tpct_txt, 8))
+
             info = ""
             uptime = t.get("uptime", "")
             dpct   = t.get("daily_pct", 0.0)
             if uptime:
-                info = uptime
                 if dpct != 0.0:
                     sign = "+" if dpct >= 0 else ""
                     pct_str = f"  d:{sign}{dpct:.1f}%"
@@ -456,6 +467,7 @@ def print_header(tasks: list[dict], tab: str = "all"):
             f"{gray(acct)} "
             f"{gray(acct_type)} "
             f"{gray(balance_str)} "
+            f"{total_str} "
             f"{status_color(status)} "
             f"{info}"
         )
@@ -465,8 +477,8 @@ def print_header(tasks: list[dict], tab: str = "all"):
         for key, lbl in [("all", "All"), ("demo", "Demo"), ("live", "Live")]
     )
 
-    COL_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Balance':<10} {'Status':<9} Info"
-    SCH_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Balance':<10} {'Status':<9} Schedule"
+    COL_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Balance':<10} {'Total':<8} {'Status':<9} Info"
+    SCH_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Balance':<10} {'Total':<8} {'Status':<9} Schedule"
 
     print(bold(cyan("╔" + "═" * W + "╗")))
     print(row(f"  {bold('ALGO CONTROL PANEL')}  {gray(now)}    {tab_bar}"))
