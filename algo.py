@@ -363,6 +363,13 @@ def start_task(name: str) -> bool:
 def stop_task(name: str) -> bool:
     return ssh_ok(f'schtasks /end /tn "{name}"')
 
+def stop_bot(name: str) -> bool:
+    """Stop the scheduler task, force-kill the Python process, and wait until dead.
+    Returns True if the process is confirmed gone. Use this everywhere — stop and restart."""
+    stop_task(name)
+    kill_bot_process(name)
+    return wait_for_process_death(name, timeout=10)
+
 def suppress_stop_alert(task_name: str):
     """Write bot key to VPS stop_suppress.json so the crash monitor skips alerting."""
     key = TASK_SUPPRESS_KEY_MAP.get(task_name)
@@ -407,6 +414,18 @@ def wait_for_process_death(task_name: str, timeout: int = 10) -> bool:
         if script not in out:
             return True
     return False
+
+def wait_for_state(task_name: str, want_running: bool, timeout: int = 8):
+    """Poll VPS snapshot until task matches desired running state or timeout expires.
+    Returns (confirmed: bool, updated_task: dict | None)."""
+    for _ in range(timeout):
+        _time.sleep(1)
+        snap  = fetch_vps_snapshot()
+        tasks = get_all_tasks(snap)
+        match = next((t for t in tasks if t["name"] == task_name), None)
+        if match and match["running"] == want_running:
+            return True, match
+    return False, None
 
 def notify_telegram(text: str):
     import urllib.request, urllib.parse
@@ -881,15 +900,7 @@ def main():
             for t in tasks:
                 print(gray(f"  → Launching {t['name']}..."), end="", flush=True)
                 start_task(t["name"])
-                confirmed = False
-                for _ in range(8):
-                    import time; time.sleep(1)
-                    snap2 = fetch_vps_snapshot()
-                    upd   = get_all_tasks(snap2)
-                    match = next((x for x in upd if x["name"] == t["name"]), None)
-                    if match and match["running"]:
-                        confirmed = True
-                        break
+                confirmed, _ = wait_for_state(t["name"], want_running=True)
                 print(f"\r  {green('✓') if confirmed else red('✗')} {t['name']:<30} "
                       f"{green('RUNNING') if confirmed else red('FAILED TO START')}")
             snap  = fetch_vps_snapshot()
@@ -903,16 +914,8 @@ def main():
             for t in tasks:
                 print(gray(f"  → Stopping {t['name']}..."), end="", flush=True)
                 suppress_stop_alert(t["name"])
-                stop_task(t["name"])
-                confirmed = False
-                for _ in range(8):
-                    import time; time.sleep(1)
-                    snap2 = fetch_vps_snapshot()
-                    upd   = get_all_tasks(snap2)
-                    match = next((x for x in upd if x["name"] == t["name"]), None)
-                    if match and not match["running"]:
-                        confirmed = True
-                        break
+                stop_bot(t["name"])
+                confirmed, _ = wait_for_state(t["name"], want_running=False)
                 print(f"\r  {green('✓') if confirmed else yellow('?')} {t['name']:<30} "
                       f"{green('STOPPED') if confirmed else yellow('MAY STILL BE RUNNING')}")
             snap  = fetch_vps_snapshot()
@@ -973,71 +976,44 @@ def main():
                     elif action == "b":
                         break
                     elif action == "1":
-                        import time
                         notify_telegram(f"▶️ *{task['pair']}* starting \\[control panel\\]")
                         print(gray(f"\n  Starting {task['name']}..."))
                         ok = start_task(task["name"])
                         print(gray(f"  Launched:  {green('✓') if ok else red('✗')}"))
-                        confirmed = False
-                        for _ in range(8):
-                            time.sleep(1)
-                            snap2 = fetch_vps_snapshot()
-                            upd   = get_all_tasks(snap2)
-                            match = next((x for x in upd if x["name"] == task["name"]), None)
-                            if match and match["running"]:
-                                confirmed = True; task = match; break
+                        confirmed, updated = wait_for_state(task["name"], want_running=True)
+                        if updated: task = updated
                         print(f"  {green('✓ RUNNING') if confirmed else red('✗ FAILED')}")
                         if not confirmed:
                             notify_telegram(f"✗ *{task['pair']}* failed to start \\[control panel\\]")
                         input(gray("  Press Enter..."))
                     elif action == "2":
-                        import time
                         print(gray(f"\n  Stopping {task['name']}..."))
                         suppress_stop_alert(task["name"])
-                        stop_task(task["name"])
-                        kill_bot_process(task["name"])
-                        dead = wait_for_process_death(task["name"], timeout=10)
+                        dead = stop_bot(task["name"])
                         print(gray(f"  Killed:    {green('✓') if dead else red('✗ (may still be running)')}"))
-                        confirmed = False
-                        for _ in range(8):
-                            time.sleep(1)
-                            snap2 = fetch_vps_snapshot()
-                            upd   = get_all_tasks(snap2)
-                            match = next((x for x in upd if x["name"] == task["name"]), None)
-                            if match and not match["running"]:
-                                confirmed = True; task = match; break
+                        confirmed, updated = wait_for_state(task["name"], want_running=False)
+                        if updated: task = updated
                         print(f"  {green('✓ STOPPED') if confirmed else yellow('? MAY STILL BE RUNNING')}")
                         notify_telegram(f"{'⏹' if confirmed else '?'} *{task['pair']}* {'stopped' if confirmed else 'stop unconfirmed'} \\[control panel\\]")
                         input(gray("  Press Enter..."))
                     elif action == "3":
-                        import time
                         notify_telegram(f"🔄 *{task['pair']}* restarting \\[control panel\\]")
                         print(gray(f"\n  Stopping {task['name']}..."))
-                        stop_task(task["name"])
-                        kill_bot_process(task["name"])
-                        dead = wait_for_process_death(task["name"], timeout=10)
+                        dead = stop_bot(task["name"])
                         print(gray(f"  Killed:    {green('✓') if dead else red('✗ (may still be running)')}"))
                         print(gray(f"  Starting {task['name']}..."))
                         ok = start_task(task["name"])
                         print(gray(f"  Launched:  {green('✓') if ok else red('✗')}"))
-                        confirmed = False
-                        for _ in range(8):
-                            time.sleep(1)
-                            snap2 = fetch_vps_snapshot()
-                            upd   = get_all_tasks(snap2)
-                            match = next((x for x in upd if x["name"] == task["name"]), None)
-                            if match and match["running"]:
-                                confirmed = True; task = match; break
+                        confirmed, updated = wait_for_state(task["name"], want_running=True)
+                        if updated: task = updated
                         print(f"  {green('✓ RESTARTED') if confirmed else red('✗ RESTART FAILED')}")
                         if not confirmed:
                             notify_telegram(f"✗ *{task['pair']}* restart failed \\[control panel\\]")
                         input(gray("  Press Enter..."))
                     elif action == "r":
                         snap2 = fetch_vps_snapshot()
-                        upd   = get_all_tasks(snap2)
-                        match = next((x for x in upd if x["name"] == task["name"]), None)
-                        if match:
-                            task = match
+                        match = next((t for t in get_all_tasks(snap2) if t["name"] == task["name"]), None)
+                        if match: task = match
                     elif action in ("4", "5"):
                         lines = 40 if action == "4" else 100
                         clear()

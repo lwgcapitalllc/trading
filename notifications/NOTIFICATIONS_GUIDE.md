@@ -27,17 +27,35 @@ Bot status notifications are event-driven, not polling-based:
 | Bot starts (any cause) | Bot calls `notify.send_telegram` at top of `run()` | Immediate |
 | Start/stop/restart from control panel | `algo.py notify_telegram` after confirmation | Immediate |
 | Stop/restart from Telegram command | Result message returned to user via `/confirm` flow | Immediate |
-| Bot crashes unexpectedly | `telegram_bot.py` crash detector (every 6 polls ≈ 60s) | ≤ 60s |
+| Bot crashes unexpectedly | `monitor.py` crash detector (every 1 min) | ≤ 1 min |
+| Bot comes back online after crash | `monitor.py` (same cycle as crash detection) | ≤ 1 min |
 | Telegram bot goes down | `monitor.py` watchdog (every 1 min) | ≤ 1 min |
 
 `shared/notify.py` is the single helper used by all VPS-side components.
 `algo.py` (runs on Mac) has an inline `notify_telegram()` using stdlib `urllib`.
 
 ### monitor.py (SYS_MONITOR — every 1 min)
-**Telegram bot watchdog only.** Bot health monitoring has moved to event-driven sources above.
-Auto-restarts Telegram bot up to 3 times if it goes down.
+Full bot health monitor. Tracks running state, log staleness, P&L caps, and Telegram bot watchdog.
+Persists state in `monitor_state.json` across runs.
+
+**Crash alerting with intentional-stop suppression:**
+When a bot goes offline, monitor.py checks `C:/algos/stop_suppress.json` before alerting.
+If the bot's suppress key is in the file, the stop was intentional — no alert is sent and no
+"Bot Online" alert fires when it restarts. The key is consumed on first read (one-shot).
+
+Suppress keys: `fft`, `scalper`, `smc`, `reversion`.
+
+The suppress file is written by:
+- `algo.py` — via SSH before stopping from the control panel (`suppress_stop_alert()`)
+- `telegram_bot.py` — locally before executing `/stop`, `/restart`, `/emergency` commands
 
 **Alerts sent:**
+- 🚨 Bot Offline — unexpected stop (suppressed for intentional stops)
+- 🟢 Bot Online — bot came back after a crash (suppressed if stop was intentional)
+- ⚠️ Loop Stalled — process alive but log silent > 90 min
+- 🎯 Daily Goal Hit
+- 🛑 Daily Loss Cap Hit
+- 🚫 Weekly Loss Cap Hit
 - 🟢 Telegram Bot Restarted — auto-restart succeeded
 - 🚨 Critical — Telegram Bot Down — 3 restarts failed
 

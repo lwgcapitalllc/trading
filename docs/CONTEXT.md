@@ -68,7 +68,7 @@ During dead zone: net profit → close all. Individual profit + portfolio negati
 - **VPS:** ForexVPS Windows Server, 24/7
 - **Mac control:** `python algo.py start|stop|restart|status`
 - **Deploy:** `git push` on Mac → `ssh forexvps "cd C:\algos && git pull"` → `algo restart`
-- **Notifications:** Event-driven — bots self-report startup, algo.py fires on control panel actions, telegram_bot.py crash detector fires within ~60s on unexpected stop. monitor.py is Telegram bot watchdog only. reporter.py handles daily summaries.
+- **Notifications:** Event-driven — bots self-report startup, algo.py fires on control panel actions, monitor.py detects crashes and fires Bot Offline/Online alerts (≤1 min). Intentional stops suppressed via `stop_suppress.json`. reporter.py handles daily summaries.
 - **Scheduling:** Windows Task Scheduler via XML task files
 - **Backup:** `scripts/backup.py` runs twice daily (midnight + noon CT) via SYS_BACKUP. Commits VPS runtime
   data to the `backups` orphan branch via a git worktree at `C:\algos-backup`. Never touches `main`,
@@ -150,12 +150,12 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ## What I Am Working On
 
-- Last completed: Fixed individual bot restart in `algo.py` and `telegram_bot.py`.
-  `schtasks /end` stops the task entry but does not kill the Python process. If the
-  process is still alive when `schtasks /run` is called, Task Scheduler refuses to
-  start a new instance. Fix: `algo.py` now calls `kill_bot_process()` (PowerShell
-  WMI process kill by script name) and `telegram_bot.py` uses `wmic` subprocess
-  between stop and start. Sleep extended from 3s to 5s for clean exit.
+- Last completed: Refactored bot control in `algo.py`. `stop_bot()` encapsulates
+  `schtasks /end` + `wmic terminate` + `wait_for_process_death` — used by both stop
+  and restart, no duplication. `wait_for_state()` replaces five copies of the
+  VPS-snapshot polling loop. Crash alerting moved to `monitor.py` with intentional-stop
+  suppression via `stop_suppress.json`; duplicate crash detector removed from
+  `telegram_bot.py`.
 - Open questions / decisions pending:
   - `bot_futures.py` — NOT yet audited for reconciliation/P&L bugs or DRY refactor.
   - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.
