@@ -45,6 +45,7 @@ USERS_FILE      = ALGOS_ROOT / "users.json"
 OFFSET_FILE     = ALGOS_ROOT / "telegram_offset.json"
 TELEGRAM_START  = ALGOS_ROOT / "telegram_start.json"
 PID_FILE        = ALGOS_ROOT / "telegram_bot.pid"
+SUPPRESS_FILE   = ALGOS_ROOT / "stop_suppress.json"
 TEXAS           = ZoneInfo("America/Chicago")
 POLL_INTERVAL   = 10
 CONFIRM_TIMEOUT = 30
@@ -104,6 +105,32 @@ pending_actions: dict = {}
 # Populated on first check; alerts fire when a bot flips running → not-running.
 _bot_last_running: dict[str, bool] = {}
 _CRASH_CHECK_INTERVAL = 6   # check every N poll cycles (~60s at POLL_INTERVAL=10)
+
+
+def _suppress_stop_alert(keys: list) -> None:
+    """Mark bot keys as intentionally stopped so the crash monitor skips alerting."""
+    try:
+        existing = json.loads(SUPPRESS_FILE.read_text()) if SUPPRESS_FILE.exists() else []
+        for k in keys:
+            if k not in existing:
+                existing.append(k)
+        SUPPRESS_FILE.write_text(json.dumps(existing))
+    except Exception:
+        pass
+
+
+def _is_stop_suppressed(key: str) -> bool:
+    """Consume and return True if this bot's offline alert should be suppressed."""
+    try:
+        if SUPPRESS_FILE.exists():
+            keys = json.loads(SUPPRESS_FILE.read_text())
+            if key in keys:
+                keys.remove(key)
+                SUPPRESS_FILE.write_text(json.dumps(keys))
+                return True
+    except Exception:
+        pass
+    return False
 
 
 # =============================================================================
@@ -266,13 +293,15 @@ def check_crashes():
             _bot_last_running[key] = running
             continue
         if prev and not running:
-            # Was running, now gone — crash or unexpected stop
-            send_to(GROUP_CHAT,
-                f"🚨 *ALERT — Bot Offline*\n"
-                f"{cfg['name']} stopped unexpectedly\n"
-                f"Time: {now_str}\n"
-                f"Action: /restart {key}"
-            )
+            if _is_stop_suppressed(key):
+                pass  # intentional stop — no alert
+            else:
+                send_to(GROUP_CHAT,
+                    f"🚨 *ALERT — Bot Offline*\n"
+                    f"{cfg['name']} stopped unexpectedly\n"
+                    f"Time: {now_str}\n"
+                    f"Action: /restart {key}"
+                )
         _bot_last_running[key] = running
 
 
@@ -363,6 +392,7 @@ def do_restart(bot_keys: list) -> str:
     """
     # Individual bot restart — direct task start is fine
     if set(bot_keys) != set(BOTS.keys()):
+        _suppress_stop_alert(bot_keys)
         lines = []
         for key in bot_keys:
             task = TASK_NAMES.get(key)
@@ -420,6 +450,7 @@ def do_restart(bot_keys: list) -> str:
 
 
 def do_stop(bot_keys: list) -> str:
+    _suppress_stop_alert(bot_keys)
     lines = []
     for key in bot_keys:
         task = TASK_NAMES.get(key)
@@ -432,6 +463,7 @@ def do_stop(bot_keys: list) -> str:
 
 
 def do_emergency_stop() -> str:
+    _suppress_stop_alert(list(BOTS.keys()))
     for key in BOTS:
         task = TASK_NAMES.get(key)
         if task:

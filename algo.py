@@ -94,6 +94,14 @@ TASK_SCRIPT_MAP = {
     "SYS_TELEGRAM":       "telegram_bot",
 }
 
+# Maps task scheduler name → telegram_bot.py BOTS key (for crash-alert suppression)
+TASK_SUPPRESS_KEY_MAP = {
+    "BOT_SMC_TREND":      "smc",
+    "BOT_MEAN_REVERSION": "reversion",
+    "BOT_SCALPER":        "scalper",
+    "BOT_FFT":            "fft",
+}
+
 SCHEDULED_INFO = {
     "SYS_REPORTER":   "daily 4pm CT",
     "SYS_MONITOR":    "every 1 min",
@@ -354,6 +362,20 @@ def start_task(name: str) -> bool:
 
 def stop_task(name: str) -> bool:
     return ssh_ok(f'schtasks /end /tn "{name}"')
+
+def suppress_stop_alert(task_name: str):
+    """Write bot key to VPS stop_suppress.json so the crash monitor skips alerting."""
+    key = TASK_SUPPRESS_KEY_MAP.get(task_name)
+    if not key:
+        return
+    ssh(
+        f'python -c "'
+        f'import json,pathlib;'
+        f'p=pathlib.Path(r\'C:/algos/stop_suppress.json\');'
+        f'k=json.loads(p.read_text()) if p.exists() else [];'
+        f'k.append(\'{key}\') if \'{key}\' not in k else None;'
+        f'p.write_text(json.dumps(k))"'
+    )
 
 def kill_bot_process(task_name: str):
     """Force-kill the specific bot's Python process after schtasks /end.
@@ -880,6 +902,7 @@ def main():
             print(bold("\n  Stopping all bots...\n"))
             for t in tasks:
                 print(gray(f"  → Stopping {t['name']}..."), end="", flush=True)
+                suppress_stop_alert(t["name"])
                 stop_task(t["name"])
                 confirmed = False
                 for _ in range(8):
@@ -970,7 +993,11 @@ def main():
                     elif action == "2":
                         import time
                         print(gray(f"\n  Stopping {task['name']}..."))
+                        suppress_stop_alert(task["name"])
                         stop_task(task["name"])
+                        kill_bot_process(task["name"])
+                        dead = wait_for_process_death(task["name"], timeout=10)
+                        print(gray(f"  Killed:    {green('✓') if dead else red('✗ (may still be running)')}"))
                         confirmed = False
                         for _ in range(8):
                             time.sleep(1)
