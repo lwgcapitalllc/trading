@@ -35,7 +35,7 @@ Bot status notifications are event-driven, not polling-based:
 `algo.py` (runs on Mac) has an inline `notify_telegram()` using stdlib `urllib`.
 
 ### monitor.py (SYS_MONITOR — every 1 min)
-Full bot health monitor. Tracks running state, log staleness, P&L caps, and Telegram bot watchdog.
+Full bot health monitor. Tracks running state, heartbeat freshness, P&L caps, and Telegram bot watchdog.
 Persists state in `monitor_state.json` across runs.
 
 **Crash alerting with intentional-stop suppression:**
@@ -52,8 +52,8 @@ The suppress file is written by:
 **Alerts sent:**
 - 🚨 Bot Offline — unexpected stop (suppressed for intentional stops)
 - 🟢 Bot Online — bot came back after a crash (suppressed if stop was intentional)
-- ⚠️ Loop Stalled — process alive but log silent > 5 min. Writes `status = "stalled"` to bot_state.json.
-- 🟢 Loop Recovered — log activity resumed after a stall. Writes `status = "running"` to bot_state.json.
+- ⚠️ Loop Stalled — process alive but heartbeat missing > 5 min. Writes `status = "stalled"` to bot_state.json.
+- 🟢 Loop Recovered — heartbeat resumed after a stall. Writes `status = "running"` to bot_state.json.
 - 🎯 Daily Goal Hit
 - 🛑 Daily Loss Cap Hit
 - 🚫 Weekly Loss Cap Hit
@@ -127,6 +127,7 @@ All components read from `bot_state.json` — single source of truth.
 | `daily_start` | bots (every loop) | Balance at start of current UTC day |
 | `weekly_start` | bots (every loop) | Balance at start of current ISO week |
 | `last_write` | bots (every loop) | UTC ISO timestamp — pnl_tracker uses to detect live mode |
+| `heartbeat` | bots (every loop iteration, including during long sleeps) | Unix timestamp — monitor.py checks this to detect a frozen loop; if missing > 5 min, stall alert fires |
 | `status` | bots at startup; monitor.py on transitions | "running" / "stalled" / "offline" — monitor.py writes stalled/offline/running-recovery; bots write running at startup |
 | `started` | each bot at `run()` start; also startup_coordinator.py | Timestamp bot process launched |
 | `day_locked` | all bots | True when weekly cap / peak protection / daily ceiling fires |
