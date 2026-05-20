@@ -21,7 +21,6 @@ from datetime import datetime
 VPS_HOST = "forexvps"
 LOG_BASE = "C:\\algos\\markets"
 
-# ── Telegram ──────────────────────────────────────────────────────────────────
 TG_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
 TG_CHAT  = "-1003977707258"
 
@@ -390,7 +389,7 @@ def wait_for_process_death(task_name: str, timeout: int = 10) -> bool:
 def notify_telegram(text: str):
     import urllib.request, urllib.parse
     url  = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    data = urllib.parse.urlencode({"chat_id": TG_CHAT, "text": text}).encode()
+    data = urllib.parse.urlencode({"chat_id": TG_CHAT, "text": text, "parse_mode": "Markdown"}).encode()
     try:
         urllib.request.urlopen(url, data=data, timeout=5)
     except Exception:
@@ -963,9 +962,8 @@ def main():
                             match = next((x for x in upd if x["name"] == task["name"]), None)
                             if match and match["running"]:
                                 confirmed = True; task = match; break
-                        result = "RUNNING" if confirmed else "FAILED TO START"
                         print(f"  {green('✓ RUNNING') if confirmed else red('✗ FAILED')}")
-                        notify_telegram(f"{'✓' if confirmed else '✗'} {task['pair']} {result.lower()} [control panel]")
+                        notify_telegram(f"{'✓' if confirmed else '✗'} *{task['pair']}* {'started' if confirmed else 'failed to start'} \\[control panel\\]")
                         input(gray("  Press Enter..."))
                     elif action == "2":
                         import time
@@ -980,7 +978,7 @@ def main():
                             if match and not match["running"]:
                                 confirmed = True; task = match; break
                         print(f"  {green('✓ STOPPED') if confirmed else yellow('? MAY STILL BE RUNNING')}")
-                        notify_telegram(f"{'✓' if confirmed else '?'} {task['pair']} {'stopped' if confirmed else 'stop uncertain'} [control panel]")
+                        notify_telegram(f"{'✓' if confirmed else '?'} *{task['pair']}* {'stopped' if confirmed else 'stop unconfirmed'} \\[control panel\\]")
                         input(gray("  Press Enter..."))
                     elif action == "3":
                         import time
@@ -1001,7 +999,7 @@ def main():
                             if match and match["running"]:
                                 confirmed = True; task = match; break
                         print(f"  {green('✓ RESTARTED') if confirmed else red('✗ RESTART FAILED')}")
-                        notify_telegram(f"{'✓' if confirmed else '✗'} {task['pair']} {'restarted' if confirmed else 'restart failed'} [control panel]")
+                        notify_telegram(f"{'✓' if confirmed else '✗'} *{task['pair']}* {'restarted' if confirmed else 'restart failed'} \\[control panel\\]")
                         input(gray("  Press Enter..."))
                     elif action == "r":
                         snap2 = fetch_vps_snapshot()

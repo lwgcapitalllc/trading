@@ -42,6 +42,7 @@ from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_calmar   import CalmarTracker
 from shared_ai_brain import AIBrain, TradeLogger
 from bot_state       import write_bot, read_bot, set_started
+from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
                               should_close_for_weekend, is_dead_zone, get_atr)
 
@@ -556,6 +557,7 @@ def run():
              f"Trail: -{PEAK_DRAWDOWN_PCT}% from peak | Loss floor: -{DAILY_LOSS_CAP_PCT}%")
     log.info("=" * 65)
     set_started("scalper")
+    send_telegram("🟢 *Scalper online*")
 
     if not connect(): return
 

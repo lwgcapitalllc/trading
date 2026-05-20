@@ -31,6 +31,7 @@ from shared_regime   import RegimeClassifier
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
 from bot_state       import write_bot, read_bot, set_started
+from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
                               should_close_for_weekend, is_dead_zone, get_atr, get_ema)
 
@@ -425,6 +426,7 @@ def run():
     log.info("  BOT SMC TREND — STARTING")
     log.info("=" * 65)
     set_started("smc_trend")
+    send_telegram("🟢 *SMC Trend online*")
     if not connect(): return
 
     acct         = mt5.account_info()

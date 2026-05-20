@@ -100,6 +100,11 @@ BOTS = {
 # Per-user pending actions — keyed by user_id so two users can't overwrite each other's confirm state
 pending_actions: dict = {}
 
+# Crash detector — tracks last-known running state for each bot script.
+# Populated on first check; alerts fire when a bot flips running → not-running.
+_bot_last_running: dict[str, bool] = {}
+_CRASH_CHECK_INTERVAL = 6   # check every N poll cycles (~60s at POLL_INTERVAL=10)
+
 
 # =============================================================================
 # TELEGRAM API
@@ -233,6 +238,42 @@ def is_running(script: str) -> bool:
         return script in r.stdout
     except Exception:
         return False
+
+
+def check_crashes():
+    """
+    Called every _CRASH_CHECK_INTERVAL poll cycles.
+    Compares current running state against last-known state.
+    Fires an immediate alert if any bot flipped running → not-running.
+    First call seeds the baseline without alerting.
+    """
+    now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
+    try:
+        r = subprocess.run(
+            ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
+            capture_output=True, text=True, timeout=10
+        )
+        procs = r.stdout
+    except Exception:
+        return
+
+    for key, cfg in BOTS.items():
+        script  = cfg["script"]
+        running = script in procs
+        prev    = _bot_last_running.get(key)
+        if prev is None:
+            # First run — seed baseline, no alert
+            _bot_last_running[key] = running
+            continue
+        if prev and not running:
+            # Was running, now gone — crash or unexpected stop
+            send_to(GROUP_CHAT,
+                f"🚨 *ALERT — Bot Offline*\n"
+                f"{cfg['name']} stopped unexpectedly\n"
+                f"Time: {now_str}\n"
+                f"Action: /restart {key}"
+            )
+        _bot_last_running[key] = running
 
 
 def get_uptime(log_path: Path) -> str:
@@ -742,7 +783,8 @@ def main():
     print(f"Telegram bot started — polling every {POLL_INTERVAL}s")
     try:
         send("🟢 *LWG Capital online*\nSend /help for available commands\\.")
-        offset = load_offset()
+        offset     = load_offset()
+        poll_count = 0
 
         while True:
             try:
@@ -768,6 +810,11 @@ def main():
                         continue
                     response = handle_message(text, chat_id, user_id)
                     send_to(chat_id, response)
+
+                poll_count += 1
+                if poll_count % _CRASH_CHECK_INTERVAL == 0:
+                    check_crashes()
+
             except Exception as e:
                 print(f"Poll error: {e}")
             time.sleep(POLL_INTERVAL)

@@ -34,6 +34,7 @@ from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_regime   import RegimeClassifier
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_reversion
 from bot_state       import write_bot, read_bot, set_started
+from notify          import send_telegram
 from shared_calmar   import CalmarTracker
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
                               should_close_for_weekend, is_dead_zone, get_atr)
@@ -433,6 +434,7 @@ def run():
     log.info("  BOT 2 — MEAN REVERSION — STARTING")
     log.info("=" * 65)
     set_started("mean_reversion")
+    send_telegram("🟢 *Mean Reversion online*")
     if not connect(): return
 
     acct         = mt5.account_info()
