@@ -908,11 +908,14 @@ def main():
                         input(gray("  Press Enter..."))
                     elif action == "3":
                         import time
-                        print(gray(f"\n  Restarting {task['name']}..."), end="", flush=True)
+                        print(gray(f"\n  Stopping {task['name']}..."))
                         stop_task(task["name"])
                         kill_bot_process(task["name"])
-                        wait_for_process_death(task["name"], timeout=10)
-                        start_task(task["name"])
+                        dead = wait_for_process_death(task["name"], timeout=10)
+                        print(gray(f"  Process dead: {dead}"))
+                        print(gray(f"  Starting {task['name']}..."))
+                        started_ok = start_task(task["name"])
+                        print(gray(f"  schtasks /run returned: {started_ok}"))
                         confirmed = False
                         for _ in range(8):
                             time.sleep(1)
@@ -921,7 +924,7 @@ def main():
                             match = next((x for x in upd if x["name"] == task["name"]), None)
                             if match and match["running"]:
                                 confirmed = True; task = match; break
-                        print(f"\r  {green('✓ RESTARTED') if confirmed else red('✗ RESTART FAILED')}")
+                        print(f"  {green('✓ RESTARTED') if confirmed else red('✗ RESTART FAILED')}")
                         input(gray("  Press Enter..."))
                     elif action in ("4", "5"):
                         lines = 40 if action == "4" else 100
