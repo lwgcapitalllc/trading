@@ -81,6 +81,15 @@ TASK_ACCT_TYPE = {
     "BOT_FUTURES_ACCT1":  "DEMO",
 }
 
+# Script keyword used to identify the bot's Python process in the process list.
+# Used to force-kill the process before restart (schtasks /end alone is not reliable).
+TASK_SCRIPT_MAP = {
+    "BOT_SMC_TREND":      "bot_smc_trend",
+    "BOT_MEAN_REVERSION": "bot_mean_reversion",
+    "BOT_SCALPER":        "bot_scalper",
+    "BOT_FFT":            "bot_fft",
+}
+
 SCHEDULED_INFO = {
     "SYS_REPORTER":   "daily 4pm CT",
     "SYS_MONITOR":    "every 1 min",
@@ -341,6 +350,24 @@ def start_task(name: str) -> bool:
 
 def stop_task(name: str) -> bool:
     return ssh_ok(f'schtasks /end /tn "{name}"')
+
+def kill_bot_process(task_name: str):
+    """Force-kill the specific bot's Python process after schtasks /end.
+
+    schtasks /end stops the task entry but does not reliably terminate the running
+    Python process. If the process is still alive when schtasks /run is called,
+    Windows Task Scheduler refuses to start a new instance (default policy).
+    PowerShell avoids the cmd.exe % variable-expansion issue that affects wmic LIKE queries.
+    """
+    script = TASK_SCRIPT_MAP.get(task_name, "")
+    if not script:
+        return
+    ssh(
+        f"powershell -NoProfile -Command "
+        f"\"Get-WmiObject Win32_Process | "
+        f"Where-Object {{$_.CommandLine -like '*{script}*'}} | "
+        f"ForEach-Object {{$_.Terminate()}}\" 2>nul"
+    )
 
 def emergency_stop_all(tasks: list[dict]):
     print(red("\n⚠  EMERGENCY STOP — killing all bots and python processes"))
@@ -878,7 +905,8 @@ def main():
                     elif action == "3":
                         print(gray(f"\n  Restarting {task['name']}..."), end="", flush=True)
                         stop_task(task["name"])
-                        import time; time.sleep(3)
+                        kill_bot_process(task["name"])
+                        import time; time.sleep(5)
                         start_task(task["name"])
                         confirmed = False
                         for _ in range(8):

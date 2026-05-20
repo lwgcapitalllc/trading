@@ -298,7 +298,19 @@ def do_restart(bot_keys: list) -> str:
             if not task:
                 continue
             task_stop(task)
-            time.sleep(3)
+            # schtasks /end stops the task entry but does not reliably kill the
+            # Python process. If the process is still alive when schtasks /run is
+            # called, Task Scheduler refuses to start a new instance. Kill it
+            # directly by matching the script name in the command line.
+            script_name = BOTS[key].get("script", "")
+            if script_name:
+                subprocess.run(
+                    ["wmic", "process", "where",
+                     f"name='python.exe' and commandline like '%{script_name}%'",
+                     "call", "terminate"],
+                    capture_output=True, timeout=10
+                )
+            time.sleep(5)
             ok = task_start(task)
             lines.append(f"{'✓' if ok else '✗'}  {BOTS[key]['name']}")
         return "\n".join(lines)

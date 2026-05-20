@@ -150,10 +150,12 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ## What I Am Working On
 
-- Last completed: Repo reorganisation (docs/ + scripts/) and algo.py panel overhaul —
-  batched SSH, Balance column, auto-refresh, seamless redraw, order matches Telegram.
-- Next up: Deploy to VPS, restart all bots, verify pnl_tracker shows `[live]` mode,
-  confirm `/balance` matches MT5 actual balance within $1.
+- Last completed: Fixed individual bot restart in `algo.py` and `telegram_bot.py`.
+  `schtasks /end` stops the task entry but does not kill the Python process. If the
+  process is still alive when `schtasks /run` is called, Task Scheduler refuses to
+  start a new instance. Fix: `algo.py` now calls `kill_bot_process()` (PowerShell
+  WMI process kill by script name) and `telegram_bot.py` uses `wmic` subprocess
+  between stop and start. Sleep extended from 3s to 5s for clean exit.
 - Open questions / decisions pending:
   - `bot_futures.py` — NOT yet audited for reconciliation/P&L bugs or DRY refactor.
   - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.
