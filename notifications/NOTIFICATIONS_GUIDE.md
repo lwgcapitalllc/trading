@@ -18,14 +18,26 @@ who is not in `users.json` gets "not authorized".
 
 ## Components
 
+### Notification Architecture — Event-Driven
+
+Bot status notifications are event-driven, not polling-based:
+
+| Event | Source | Latency |
+|---|---|---|
+| Bot starts (any cause) | Bot calls `notify.send_telegram` at top of `run()` | Immediate |
+| Start/stop/restart from control panel | `algo.py notify_telegram` after confirmation | Immediate |
+| Stop/restart from Telegram command | Result message returned to user via `/confirm` flow | Immediate |
+| Bot crashes unexpectedly | `telegram_bot.py` crash detector (every 6 polls ≈ 60s) | ≤ 60s |
+| Telegram bot goes down | `monitor.py` watchdog (every 1 min) | ≤ 1 min |
+
+`shared/notify.py` is the single helper used by all VPS-side components.
+`algo.py` (runs on Mac) has an inline `notify_telegram()` using stdlib `urllib`.
+
 ### monitor.py (SYS_MONITOR — every 1 min)
-Watchdog for bot processes. Checks if Python processes are running.
-Updates `status` field in `bot_state.json`.
+**Telegram bot watchdog only.** Bot health monitoring has moved to event-driven sources above.
 Auto-restarts Telegram bot up to 3 times if it goes down.
 
 **Alerts sent:**
-- 🚨 Bot Offline — bot process stopped unexpectedly
-- 🟢 Bot Online — bot process came back up
 - 🟢 Telegram Bot Restarted — auto-restart succeeded
 - 🚨 Critical — Telegram Bot Down — 3 restarts failed
 
@@ -96,8 +108,8 @@ All components read from `bot_state.json` — single source of truth.
 | `daily_start` | bots (every loop) | Balance at start of current UTC day |
 | `weekly_start` | bots (every loop) | Balance at start of current ISO week |
 | `last_write` | bots (every loop) | UTC ISO timestamp — pnl_tracker uses to detect live mode |
-| `status` | monitor.py | "running" / "stopped" / "error" |
-| `started` | startup_coordinator.py | Timestamp bot process launched |
+| `status` | telegram_bot.py crash detector | "running" / "offline" |
+| `started` | each bot at `run()` start; also startup_coordinator.py | Timestamp bot process launched |
 | `day_locked` | all bots | True when weekly cap / peak protection / daily ceiling fires |
 | `lock_reason` | all bots | Human-readable stop reason for the lock alert |
 | `lock_alerted` | pnl_tracker.py | Dedup flag — alert sent once per lock |
