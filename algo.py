@@ -372,12 +372,11 @@ def kill_bot_process(task_name: str):
 
 def wait_for_process_death(task_name: str, timeout: int = 10) -> bool:
     """Poll until the bot's Python process is gone or timeout expires. Returns True if dead."""
-    import time
     script = TASK_SCRIPT_MAP.get(task_name, "")
     if not script:
         return True
     for _ in range(timeout):
-        time.sleep(1)
+        _time.sleep(1)
         out = ssh(f"wmic process where \"name='python.exe'\" get commandline 2>nul")
         if script not in out:
             return True
@@ -907,6 +906,7 @@ def main():
                         print(f"\r  {green('✓ STOPPED') if confirmed else yellow('? MAY STILL BE RUNNING')}")
                         input(gray("  Press Enter..."))
                     elif action == "3":
+                        import time
                         print(gray(f"\n  Restarting {task['name']}..."), end="", flush=True)
                         stop_task(task["name"])
                         kill_bot_process(task["name"])
