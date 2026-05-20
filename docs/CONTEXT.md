@@ -1,9 +1,6 @@
 # LWG Capital LLC — Algo Trading Suite
 ## Claude Context File
 
-> Drop this at the start of any Claude chat or Claude Code session.
-> Keep it updated as the project evolves.
-
 ---
 
 ## What This Project Is
