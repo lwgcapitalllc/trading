@@ -445,14 +445,16 @@ def print_header(tasks: list[dict], tab: str = "all"):
                 else:
                     info = gray(uptime)
 
-        name   = col(t["pair"][:16], 16)
-        acct   = col(t.get("account", "—")[:12], 12)
-        status = col(status_text, 9)
+        name      = col(t["pair"][:16], 16)
+        acct      = col(t.get("account", "—")[:12], 12)
+        acct_type = col(t.get("acct_type", "—")[:5], 5)
+        status    = col(status_text, 9)
 
         return (
             f"  {icon_color(icon_char)} "
             f"{name} "
             f"{gray(acct)} "
+            f"{gray(acct_type)} "
             f"{gray(balance_str)} "
             f"{status_color(status)} "
             f"{info}"
@@ -463,8 +465,8 @@ def print_header(tasks: list[dict], tab: str = "all"):
         for key, lbl in [("all", "All"), ("demo", "Demo"), ("live", "Live")]
     )
 
-    COL_HDR = f"    {'Name':<16} {'Account':<12} {'Balance':<10} {'Status':<9} Info"
-    SCH_HDR = f"    {'Name':<16} {'Account':<12} {'Balance':<10} {'Status':<9} Schedule"
+    COL_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Balance':<10} {'Status':<9} Info"
+    SCH_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Balance':<10} {'Status':<9} Schedule"
 
     print(bold(cyan("╔" + "═" * W + "╗")))
     print(row(f"  {bold('ALGO CONTROL PANEL')}  {gray(now)}    {tab_bar}"))
