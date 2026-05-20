@@ -23,6 +23,7 @@ Install: pip install requests
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -43,6 +44,7 @@ ALGOS_ROOT      = Path("C:/algos")
 USERS_FILE      = ALGOS_ROOT / "users.json"
 OFFSET_FILE     = ALGOS_ROOT / "telegram_offset.json"
 TELEGRAM_START  = ALGOS_ROOT / "telegram_start.json"
+PID_FILE        = ALGOS_ROOT / "telegram_bot.pid"
 TEXAS           = ZoneInfo("America/Chicago")
 POLL_INTERVAL   = 10
 CONFIRM_TIMEOUT = 30
@@ -194,6 +196,34 @@ def load_json(path: Path):
         return json.load(f)
 
 
+def acquire_singleton():
+    """Exit immediately if another telegram_bot instance is already running.
+
+    Checks the PID file and verifies the stored PID still belongs to a
+    telegram_bot process.  Stale PID files (from a hard kill) are ignored.
+    """
+    if PID_FILE.exists():
+        try:
+            old_pid = int(PID_FILE.read_text().strip())
+            r = subprocess.run(
+                ["wmic", "process", "where", f"processid={old_pid}", "get", "commandline"],
+                capture_output=True, text=True, timeout=5
+            )
+            if "telegram_bot" in r.stdout:
+                print(f"Another telegram_bot is already running (PID {old_pid}). Exiting.")
+                sys.exit(0)
+        except Exception:
+            pass
+    PID_FILE.write_text(str(os.getpid()))
+
+
+def release_singleton():
+    try:
+        PID_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def is_running(script: str) -> bool:
     try:
         r = subprocess.run(
@@ -310,7 +340,15 @@ def do_restart(bot_keys: list) -> str:
                      "call", "terminate"],
                     capture_output=True, timeout=10
                 )
-            time.sleep(5)
+                # Poll until process is gone (max 10s) before re-launching.
+                for _ in range(10):
+                    time.sleep(1)
+                    r = subprocess.run(
+                        ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if script_name not in r.stdout:
+                        break
             ok = task_start(task)
             lines.append(f"{'✓' if ok else '✗'}  {BOTS[key]['name']}")
         return "\n".join(lines)
@@ -693,37 +731,41 @@ def handle_message(text: str, chat_id: str, user_id: str) -> str:
 # =============================================================================
 
 def main():
+    acquire_singleton()
     print(f"Telegram bot started — polling every {POLL_INTERVAL}s")
-    send("🟢 *LWG Capital online*\nSend /help for available commands\\.")
-    offset = load_offset()
+    try:
+        send("🟢 *LWG Capital online*\nSend /help for available commands\\.")
+        offset = load_offset()
 
-    while True:
-        try:
-            updates = get_updates(offset)
-            for update in updates:
-                offset = update["update_id"] + 1
-                save_offset(offset)
-                msg     = update.get("message", {})
-                text    = msg.get("text", "").strip()
-                chat_id = str(msg.get("chat", {}).get("id", ""))   # where to reply
-                user_id = str(msg.get("from", {}).get("id", ""))   # who sent it
-                if not text:
-                    continue
+        while True:
+            try:
+                updates = get_updates(offset)
+                for update in updates:
+                    offset = update["update_id"] + 1
+                    save_offset(offset)
+                    msg     = update.get("message", {})
+                    text    = msg.get("text", "").strip()
+                    chat_id = str(msg.get("chat", {}).get("id", ""))   # where to reply
+                    user_id = str(msg.get("from", {}).get("id", ""))   # who sent it
+                    if not text:
+                        continue
 
-                # Authorize by sender's user id, not the chat/group id
-                role = get_role(user_id)
-                if not role:
-                    from_user = msg.get("from", {})
-                    username  = from_user.get("username", "unknown")
-                    name      = from_user.get("first_name", "")
-                    print(f"UNAUTHORIZED: chat={chat_id} user={user_id} (@{username}) ({name}) text={text[:50]}")
-                    send_to(chat_id, "This bot is private. You are not authorized.")
-                    continue
-                response = handle_message(text, chat_id, user_id)
-                send_to(chat_id, response)
-        except Exception as e:
-            print(f"Poll error: {e}")
-        time.sleep(POLL_INTERVAL)
+                    # Authorize by sender's user id, not the chat/group id
+                    role = get_role(user_id)
+                    if not role:
+                        from_user = msg.get("from", {})
+                        username  = from_user.get("username", "unknown")
+                        name      = from_user.get("first_name", "")
+                        print(f"UNAUTHORIZED: chat={chat_id} user={user_id} (@{username}) ({name}) text={text[:50]}")
+                        send_to(chat_id, "This bot is private. You are not authorized.")
+                        continue
+                    response = handle_message(text, chat_id, user_id)
+                    send_to(chat_id, response)
+            except Exception as e:
+                print(f"Poll error: {e}")
+            time.sleep(POLL_INTERVAL)
+    finally:
+        release_singleton()
 
 
 if __name__ == "__main__":

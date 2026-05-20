@@ -358,17 +358,30 @@ def kill_bot_process(task_name: str):
     schtasks /end stops the task entry but does not reliably terminate the running
     Python process. If the process is still alive when schtasks /run is called,
     Windows Task Scheduler refuses to start a new instance (default policy).
-    PowerShell avoids the cmd.exe % variable-expansion issue that affects wmic LIKE queries.
+    Uses wmic directly — more reliable over SSH than the PowerShell WMI path.
     """
     script = TASK_SCRIPT_MAP.get(task_name, "")
     if not script:
         return
     ssh(
-        f"powershell -NoProfile -Command "
-        f"\"Get-WmiObject Win32_Process | "
-        f"Where-Object {{$_.CommandLine -like '*{script}*'}} | "
-        f"ForEach-Object {{$_.Terminate()}}\" 2>nul"
+        f"wmic process where "
+        f"\"name='python.exe' and commandline like '%{script}%'\" "
+        f"call terminate 2>nul"
     )
+
+
+def wait_for_process_death(task_name: str, timeout: int = 10) -> bool:
+    """Poll until the bot's Python process is gone or timeout expires. Returns True if dead."""
+    import time
+    script = TASK_SCRIPT_MAP.get(task_name, "")
+    if not script:
+        return True
+    for _ in range(timeout):
+        time.sleep(1)
+        out = ssh(f"wmic process where \"name='python.exe'\" get commandline 2>nul")
+        if script not in out:
+            return True
+    return False
 
 def emergency_stop_all(tasks: list[dict]):
     print(red("\n⚠  EMERGENCY STOP — killing all bots and python processes"))
@@ -897,7 +910,7 @@ def main():
                         print(gray(f"\n  Restarting {task['name']}..."), end="", flush=True)
                         stop_task(task["name"])
                         kill_bot_process(task["name"])
-                        import time; time.sleep(5)
+                        wait_for_process_death(task["name"], timeout=10)
                         start_task(task["name"])
                         confirmed = False
                         for _ in range(8):
