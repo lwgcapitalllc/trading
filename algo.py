@@ -88,6 +88,7 @@ TASK_SCRIPT_MAP = {
     "BOT_MEAN_REVERSION": "bot_mean_reversion",
     "BOT_SCALPER":        "bot_scalper",
     "BOT_FFT":            "bot_fft",
+    "SYS_TELEGRAM":       "telegram_bot",
 }
 
 SCHEDULED_INFO = {
@@ -471,17 +472,7 @@ def print_header(tasks: list[dict], tab: str = "all"):
                 tpct_clr  = green if tpct > 0 else red
                 total_str = tpct_clr(col(tpct_txt, 8))
 
-            info = ""
-            uptime = t.get("uptime", "")
-            dpct   = t.get("daily_pct", 0.0)
-            if uptime:
-                if dpct != 0.0:
-                    sign = "+" if dpct >= 0 else ""
-                    pct_str = f"  d:{sign}{dpct:.1f}%"
-                    info_color = green if dpct > 0 else red if dpct < 0 else gray
-                    info = gray(uptime) + info_color(pct_str)
-                else:
-                    info = gray(uptime)
+            info   = gray(t.get("uptime", ""))
 
         name      = col(t["pair"][:16], 16)
         acct      = col(t.get("account", "—")[:12], 12)
