@@ -67,6 +67,59 @@ Standing instructions detail: `instructions/`
 - Never duplicate logic between bots — if two bots need it, it goes in `shared/`.
 - Never optimize to past data. Overfitting is the primary enemy.
 - MT5 operations: always check return values. Log failures. Don't silently swallow errors.
+- No unused imports. Every imported symbol must appear in the file body.
+
+---
+
+## Shared MT5 Architecture — Non-Negotiable
+
+All MT5 operations live in `shared/mt5_ops.py`. Bots never implement MT5 logic directly.
+
+### BotMT5 class (`shared/mt5_ops.py`)
+
+Encapsulates all MT5 operations for a single bot instance. Instantiate once at module level:
+
+```python
+_mt5 = BotMT5(SYMBOL, MAGIC, "BOT_NAME", _CFG, ACCOUNT, log)
+```
+
+Methods: `connect`, `get_candles`, `get_tick`, `place_order`, `move_sl`, `partial_close`,
+`get_deal_result`, `close_position`, `close_all_positions`, `lot_size`,
+`recover_open_positions`, `reconcile_on_startup`, `handle_dead_zone`.
+
+Free functions (import directly): `now_utc`, `is_market_close`, `should_close_for_weekend`,
+`is_dead_zone`, `get_atr`, `get_ema`.
+
+### Thin delegate pattern
+
+Each bot exposes module-level functions that forward to `_mt5`. Call sites stay unchanged:
+
+```python
+def connect():              return _mt5.connect()
+def get_candles(tf, n):     return _mt5.get_candles(tf, n)
+def get_tick():             return _mt5.get_tick()
+def get_deal_result(t):     return _mt5.get_deal_result(t)
+def close_position(t, d, r=""): return _mt5.close_position(t, d, r)
+def close_all_positions(r="emergency"): return _mt5.close_all_positions(r)
+def move_sl(t, sl, tp=None): return _mt5.move_sl(t, sl, tp)
+def handle_dead_zone(ot, atr, logger, ai): return _mt5.handle_dead_zone(ot, atr, logger, ai)
+def reconcile_on_startup(ot, logger, ai): return _mt5.reconcile_on_startup(ot, logger, ai)
+```
+
+### What stays bot-specific
+
+- `lot_size` — wraps `_mt5.lot_size(balance, sl_dist, RISK_PCT, mult)` with bot's own RISK_PCT
+- `place_order` — wraps `_mt5.place_order(...)` with bot-specific comment string
+- `partial_close` — wraps `_mt5.partial_close(...)` (1-liner delegate)
+- `recover_open_positions` — bot-specific if it needs extra trade dict fields (e.g., FFT's `fft_levels`)
+- Strategy signals, regime logic, indicator calculations — never shared
+- Bot-specific session/kill-zone helpers (e.g., `in_kill_zone`, `is_ny_session_close`)
+
+### When to update `shared/mt5_ops.py`
+
+Any time you add or fix behaviour that applies to ALL bots. Do not add it to one bot and
+leave the others with stale code. Fix the shared implementation, update the thin delegates
+in every bot that uses it.
 
 ---
 

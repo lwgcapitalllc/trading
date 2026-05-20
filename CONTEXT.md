@@ -403,13 +403,71 @@ needed, since going-forward records will be clean.
 
 ---
 
+## What Was Done This Session (2026-05-19 — Session 5: DRY Refactor)
+
+### Refactor — Shared MT5 architecture (`shared/mt5_ops.py`)
+
+Extracted all duplicated MT5 code from all 4 bots into a single shared module following
+SOLID principles:
+
+**`BotMT5` class** (`shared/mt5_ops.py`) — centralises:
+- MT5 connection (with lock, retry, account verification)
+- `connect`, `get_candles`, `get_tick`, `place_order`, `move_sl`, `partial_close`
+- `get_deal_result`, `close_position`, `close_all_positions`
+- `lot_size` (base implementation, bots wrap with their own RISK_PCT)
+- `recover_open_positions`, `reconcile_on_startup`, `handle_dead_zone`
+
+**Free functions** (imported directly): `now_utc`, `is_market_close`,
+`should_close_for_weekend`, `is_dead_zone`, `get_atr`, `get_ema`.
+
+**Thin delegate pattern** in every bot — module-level 1-liner functions forward to `_mt5`:
+```python
+_mt5 = BotMT5(SYMBOL, MAGIC, "BOT_NAME", _CFG, ACCOUNT, log)
+def connect():              return _mt5.connect()
+def get_candles(tf, n):     return _mt5.get_candles(tf, n)
+# ... etc.
+```
+All existing call sites in each bot unchanged — no cascading edits required.
+
+**Removed per-bot implementations of:**
+- `connect()` (~120 lines each × 4 bots = ~480 lines removed)
+- `handle_dead_zone()` (~130 lines each × 4 bots = ~520 lines removed)
+- `reconcile_on_startup()` (~45 lines each × 4 bots = ~180 lines removed)
+- `get_candles`, `get_tick`, `get_atr`, `get_ema`, `get_deal_result`,
+  `close_position`, `close_all_positions`, `partial_close`, `move_sl/modify_sl`,
+  `now_utc`, `is_market_close`, `should_close_for_weekend`, `is_dead_zone` (~1,200 lines total)
+
+**Kept bot-specific:**
+- `lot_size` — wraps `_mt5.lot_size` with bot's RISK_PCT
+- `place_order` — wraps `_mt5.place_order` with bot-specific comment string
+- `recover_open_positions` — FFT has extra fields (`tp`, `tp1_done`, `fft_levels`)
+- Strategy signals, indicators, regime logic — never shared
+- Kill-zone/session helpers in smc_trend (`in_kill_zone`, `is_ny_session_close`)
+
+**Cleanup:**
+- Removed `import pytz` from bot_mean_reversion and bot_smc_trend (now use `now_utc` from mt5_ops)
+- Removed `import argparse`, `import logging` from bot_fft (unused)
+- Renamed `modify_sl` → `move_sl` in bot_fft for consistency across all bots
+
+### Architecture rules added to `CLAUDE.md`
+
+New "Shared MT5 Architecture" section documenting the `BotMT5` class, thin delegate
+pattern, what stays bot-specific, and when to update `shared/mt5_ops.py`.
+
+### VPS state after this session
+
+All 4 bot files + `shared/mt5_ops.py` + `CLAUDE.md` updated locally. Not yet deployed.
+Previous session's accounting/reconciliation changes also awaiting deploy.
+
+---
+
 ## What I Am Working On (Update This Section Each Session)
 
-- Last completed: Full accounting reconciliation overhaul across all 4 bots + pnl_tracker.
-- Next up: Deploy to VPS (rsync or git push), restart all bots, verify live output shows
-  `[live]` mode in pnl_tracker and that `/balance` matches MT5 actual balance within $1.
+- Last completed: DRY refactor — all MT5 shared code extracted to `shared/mt5_ops.py`.
+- Next up: Deploy to VPS (scp), restart all bots, verify pnl_tracker shows `[live]` mode,
+  confirm `/balance` matches MT5 actual balance within $1.
 - Open questions / decisions pending:
   - Existing trades.json on VPS has corrupted pnl_usd. Consider resetting to `[]` per bot
     on first deploy, letting reconcile_on_startup re-log any currently-open positions.
-  - `bot_futures.py` — NOT yet audited for the same reconciliation/P&L bugs.
+  - `bot_futures.py` — NOT yet audited for the same reconciliation/P&L bugs or DRY refactor.
   - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.

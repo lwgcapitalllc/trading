@@ -50,9 +50,6 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
-import argparse
-import json
-import logging
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -71,6 +68,8 @@ from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_tr
 from shared_calmar   import CalmarTracker
 from shared_regime   import RegimeClassifier
 from bot_state       import write_bot, read_bot
+from mt5_ops         import (BotMT5, now_utc, is_market_close,
+                              should_close_for_weekend, is_dead_zone, get_atr, get_ema)
 
 # ── Load config ───────────────────────────────────────────────────────────────
 _CFG  = load_config()
@@ -124,462 +123,31 @@ MAGIC = 20240005
 
 log.info(f"BOT_FFT | FFT Strategy | {SYMBOL} | risk={RISK_PCT}%")
 
+_mt5 = BotMT5(SYMBOL, MAGIC, "BOT_FFT", _CFG, ACCOUNT, log)
+
 
 # =============================================================================
-# MT5 CONNECTION
+# MT5 HELPERS — delegates to shared BotMT5 instance
 # =============================================================================
 
-def connect() -> bool:
-    """
-    Connect to the correct MT5 terminal instance.
+def connect() -> bool:              return _mt5.connect()
+def get_candles(tf, n):             return _mt5.get_candles(tf, n)
+def get_tick() -> tuple:            return _mt5.get_tick()
+def get_deal_result(t):             return _mt5.get_deal_result(t)
+def close_position(t, d, r=""):     return _mt5.close_position(t, d, r)
+def close_all_positions(r=""):      return _mt5.close_all_positions(r)
+def move_sl(t, sl, tp=None):        return _mt5.move_sl(t, sl, tp)
+def handle_dead_zone(ot, atr, logger, ai): return _mt5.handle_dead_zone(ot, atr, logger, ai)
+def reconcile_on_startup(ot, logger, ai):  return _mt5.reconcile_on_startup(ot, logger, ai)
 
-    CRITICAL: Never falls back to no-path initialize when a mt5_path is configured.
-    Falling back to no-path allows Python to connect to ANY terminal, which causes
-    it to log accounts into the wrong terminal — MT5 remembers all logins.
-
-    Strategy:
-    1. Acquire connection lock (prevents race conditions between bots)
-    2. Try mt5.initialize(path=...) — retries up to 5 times with delay
-    3. If IPC timeout: terminal is already running — retry, don't fallback
-    4. Verify account matches expected ID before proceeding
-    """
-    import time as _time
-
-    LOCK_FILE    = Path(r"C:\algos\mt5_connect.lock")
-    LOCK_TIMEOUT = 90
-    LOCK_TTL     = 45
-
-    def acquire_lock(bot_id: str) -> bool:
-        waited = 0
-        while waited < LOCK_TIMEOUT:
-            if LOCK_FILE.exists():
-                try:
-                    age    = _time.time() - LOCK_FILE.stat().st_mtime
-                    holder = LOCK_FILE.read_text().strip()
-                    if age > LOCK_TTL:
-                        log.warning(f"Stale lock ({age:.0f}s old, held by {holder}) — removing")
-                        LOCK_FILE.unlink(missing_ok=True)
-                    else:
-                        log.info(f"Waiting for MT5 lock (held by {holder}, {age:.0f}s)...")
-                        _time.sleep(3)
-                        waited += 3
-                        continue
-                except Exception:
-                    pass
-            try:
-                LOCK_FILE.write_text(bot_id)
-                _time.sleep(0.5)
-                if LOCK_FILE.exists() and LOCK_FILE.read_text().strip() == bot_id:
-                    return True
-            except Exception as e:
-                log.warning(f"Lock write error: {e}")
-            _time.sleep(1)
-            waited += 1
-        log.error(f"Could not acquire MT5 lock after {LOCK_TIMEOUT}s")
-        return False
-
-    def release_lock():
-        try:
-            LOCK_FILE.unlink(missing_ok=True)
-        except Exception:
-            pass
-
-    startup_delay = _CFG.get("startup_delay", 0)
-    if startup_delay > 0:
-        log.info(f"Startup delay {startup_delay}s")
-        _time.sleep(startup_delay)
-
-    mt5_path    = _CFG.get("mt5_path", "")
-    expected_id = ACCOUNT.get("login")
-    bot_id      = f"BOT_FFT_{expected_id}"
-
-    if not acquire_lock(bot_id):
-        return False
-
-    try:
-        MAX_ATTEMPTS = 5
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            if attempt > 1:
-                log.info(f"Connect attempt {attempt}/{MAX_ATTEMPTS} — waiting 8s...")
-                _time.sleep(8)
-                try:
-                    mt5.shutdown()
-                except Exception:
-                    pass
-
-            # Initialize
-            if mt5_path:
-                # Always use explicit path — NEVER fall back to no-path
-                # IPC timeout means terminal is already running — just retry
-                init_ok = mt5.initialize(path=mt5_path)
-                if not init_ok:
-                    err = mt5.last_error()
-                    if err[0] == -10005:
-                        log.info(f"IPC timeout (attempt {attempt}) — terminal running, will retry with path")
-                    else:
-                        log.warning(f"MT5 init failed (attempt {attempt}): {err}")
-                    continue
-            else:
-                if not mt5.initialize():
-                    log.warning(f"MT5 init failed (attempt {attempt}): {mt5.last_error()}")
-                    continue
-
-            # Login with explicit credentials
-            if not mt5.login(ACCOUNT["login"], password=ACCOUNT["password"],
-                             server=ACCOUNT["server"]):
-                log.warning(f"Login failed (attempt {attempt}): {mt5.last_error()}")
-                mt5.shutdown()
-                continue
-
-            # Verify correct account — if wrong, shut down immediately
-            # Do NOT retry login on same terminal — shut down and try again
-            info = mt5.account_info()
-            if not info:
-                log.warning(f"No account info (attempt {attempt})")
-                mt5.shutdown()
-                continue
-
-            if info.login != expected_id:
-                log.error(
-                    f"ACCOUNT MISMATCH (attempt {attempt}): "
-                    f"got #{info.login} expected #{expected_id} — "
-                    f"shutting down and retrying"
-                )
-                mt5.shutdown()
-                continue
-
-            log.info(f"Connected | #{info.login} | ${info.balance:,.2f} | {info.server}")
-            return True
-
-        log.error(
-            f"Failed to connect to #{expected_id} after {MAX_ATTEMPTS} attempts. "
-            f"Ensure the correct MT5 terminal is open at: {mt5_path}"
-        )
-        return False
-
-    finally:
-        release_lock()
-        log.info("MT5 connection lock released")
-
-
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def get_candles(timeframe: int, count: int) -> pd.DataFrame:
-    """Fetch OHLCV candles from MT5."""
-    rates = mt5.copy_rates_from_pos(SYMBOL, timeframe, 0, count)
-    if rates is None or len(rates) == 0:
-        return pd.DataFrame()
-    df = pd.DataFrame(rates)
-    df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
-    return df
-
-
-def get_tick() -> tuple:
-    """Return (bid, ask) for the symbol."""
-    tick = mt5.symbol_info_tick(SYMBOL)
-    if not tick:
-        return 0.0, 0.0
-    return tick.bid, tick.ask
-
-
-def get_atr(df: pd.DataFrame, period: int = 14) -> float:
-    """Average True Range over the given period."""
-    h, l, c = df["high"], df["low"], df["close"].shift(1)
-    tr = pd.concat([h - l, (h - c).abs(), (l - c).abs()], axis=1).max(axis=1)
-    return float(tr.rolling(period).mean().iloc[-1])
-
-
-def get_ema(df: pd.DataFrame, period: int) -> float:
-    """Exponential moving average of close."""
-    return float(df["close"].ewm(span=period, adjust=False).mean().iloc[-1])
-
-
-def lot_size(balance: float, sl_distance: float,
-             risk_mult: float = 1.0) -> float:
-    """
-    Calculate lot size based on account balance and stop loss distance.
-
-    sl_distance: distance in price points (e.g. 5.00 for gold)
-    Returns lot size rounded to nearest 0.01, minimum 0.01.
-    """
-    tick_value = mt5.symbol_info(SYMBOL).trade_tick_value
-    tick_size  = mt5.symbol_info(SYMBOL).trade_tick_size
-    if tick_size == 0 or sl_distance == 0:
-        return 0.01
-    risk_amount = balance * (RISK_PCT / 100) * risk_mult
-    sl_ticks    = sl_distance / tick_size
-    sl_value    = sl_ticks * tick_value
-    lots = risk_amount / sl_value if sl_value > 0 else 0.01
-    lots = max(0.01, round(lots / 0.01) * 0.01)
-    return lots
-
+def lot_size(balance: float, sl_distance: float, risk_mult: float = 1.0) -> float:
+    """Position size using fixed RISK_PCT with optional risk multiplier."""
+    return _mt5.lot_size(balance, sl_distance, RISK_PCT, risk_mult)
 
 def place_order(direction: str, lots: float, sl: float,
                 tp: float, comment: str = "FFT") -> tuple:
-    """
-    Place a market order.
-
-    direction: 'bullish' or 'bearish'
-    Returns (ticket, filled_price) or (None, None) on failure.
-    """
-    bid, ask = get_tick()
-    order_type = mt5.ORDER_TYPE_BUY if direction == "bullish" else mt5.ORDER_TYPE_SELL
-    price      = ask if direction == "bullish" else bid
-
-    request = {
-        "action":    mt5.TRADE_ACTION_DEAL,
-        "symbol":    SYMBOL,
-        "volume":    lots,
-        "type":      order_type,
-        "price":     price,
-        "sl":        sl,
-        "tp":        tp,
-        "deviation": 20,
-        "magic":     MAGIC,
-        "comment":   comment,
-        "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
-    }
-    result = mt5.order_send(request)
-    if result.retcode == mt5.TRADE_RETCODE_DONE:
-        log.info(f"ORDER FILLED | ticket={result.order} | "
-                 f"{direction} {lots}L @ {result.price:.2f}")
-        return result.order, result.price
-    log.error(f"Order failed: {result.retcode} '{result.comment}'")
-    return None, None
-
-
-def get_deal_result(ticket: int):
-    """Return (close_price, pnl_usd) for a closed position from MT5 deal history."""
-    to    = datetime.utcnow()
-    from_ = to - timedelta(days=7)
-    deals = mt5.history_deals_get(from_, to, position=ticket)
-    if deals:
-        closing = [d for d in deals if d.entry == 1]  # DEAL_ENTRY_OUT
-        if closing:
-            d = closing[-1]
-            return float(d.price), float(d.profit)
-    return 0.0, 0.0
-
-
-def close_position(ticket: int, direction: str, reason: str = "") -> tuple:
-    """Close an open position at market. Returns (success, close_price, pnl_usd)."""
-    pos = mt5.positions_get(ticket=ticket)
-    if not pos:
-        return False, 0.0, 0.0
-    p = pos[0]
-    bid, ask    = get_tick()
-    close_type  = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
-    close_price = bid if direction == "bullish" else ask
-    request = {
-        "action":    mt5.TRADE_ACTION_DEAL,
-        "symbol":    SYMBOL,
-        "volume":    p.volume,
-        "type":      close_type,
-        "position":  ticket,
-        "price":     close_price,
-        "deviation": 20,
-        "magic":     MAGIC,
-        "comment":   f"FFT-CLOSE-{reason}",
-        "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
-    }
-    result = mt5.order_send(request)
-    ok = result.retcode == mt5.TRADE_RETCODE_DONE
-    if ok:
-        log.info(f"CLOSED T{ticket} | reason={reason}")
-        time.sleep(0.3)
-        cp, pnl = get_deal_result(ticket)
-        if cp == 0.0:
-            cp, pnl = close_price, p.profit
-        return True, cp, pnl
-    return False, 0.0, 0.0
-
-
-def modify_sl(ticket: int, new_sl: float) -> bool:
-    """Modify stop loss on an open position."""
-    pos = mt5.positions_get(ticket=ticket)
-    if not pos:
-        return False
-    p = pos[0]
-    request = {
-        "action":   mt5.TRADE_ACTION_SLTP,
-        "symbol":   SYMBOL,
-        "position": ticket,
-        "sl":       new_sl,
-        "tp":       p.tp,
-    }
-    result = mt5.order_send(request)
-    return result.retcode == mt5.TRADE_RETCODE_DONE
-
-
-def is_market_close() -> bool:
-    """True when it's the daily market close window (19:45–21:00 UTC)."""
-    now = now_utc()
-    return (now.hour == 19 and now.minute >= 45) or now.hour == 20
-
-
-
-def is_dead_zone() -> bool:
-    """
-    Returns True during the no-new-entries window: 3:00pm - 7:00pm Texas time.
-    Uses America/Chicago timezone so daylight saving is handled automatically.
-    CDT (Mar-Nov): 3pm-7pm CT = 20:00-00:00 UTC
-    CST (Nov-Mar): 3pm-7pm CT = 21:00-01:00 UTC
-    """
-    try:
-        from zoneinfo import ZoneInfo
-        texas = ZoneInfo("America/Chicago")
-        now_tx = now_utc().astimezone(texas)
-        h = now_tx.hour
-        return 15 <= h < 19
-    except Exception:
-        # Fallback: use UTC offset estimate (CDT = UTC-5)
-        t = now_utc()
-        return 20 <= t.hour < 24 or t.hour == 0
-
-
-def handle_dead_zone(open_trades: list, atr: float, logger, ai):
-    """
-    Dead zone trade management (3:00pm - 7:00pm Texas time).
-
-    Portfolio-level logic — looks at ALL open trades together:
-
-    1. Calculate total floating P&L across all open trades (in $)
-    2. If portfolio is NET PROFITABLE → close ALL positions immediately
-       (lock in the combined profit, don't risk the dead zone)
-    3. If portfolio is NET NEGATIVE:
-       a. For any individual trade getting WORSE → close that trade immediately
-          at the best possible price (stop the bleeding)
-       b. For trades that are improving or at BE → hold and monitor
-       c. At 3:45pm TX → close ALL remaining positions regardless
-       d. If portfolio flips to net profitable at any point → close ALL immediately
-    4. Profitable trades → move to breakeven if not already done
-
-    DST handled automatically via America/Chicago timezone.
-    """
-    try:
-        from zoneinfo import ZoneInfo
-        texas   = ZoneInfo("America/Chicago")
-        now_tx  = now_utc().astimezone(texas)
-        tx_hour = now_tx.hour
-        tx_min  = now_tx.minute
-        hard_cut = tx_hour > 15 or (tx_hour == 15 and tx_min >= 45)
-    except Exception:
-        hard_cut = False
-
-    if not open_trades:
-        return
-
-    # ── Refresh all positions and calculate portfolio P&L ────────────────
-    live_trades = []
-    total_pnl   = 0.0
-
-    for t in open_trades[:]:
-        pos = mt5.positions_get(ticket=t["ticket"])
-        if not pos:
-            cp, pnl = get_deal_result(t["ticket"])
-            if cp:
-                logger.log_close(t["ticket"], cp, pnl)
-                ai.on_trade_closed(t["ticket"], cp, pnl)
-            open_trades.remove(t)
-            continue
-        p = pos[0]
-        total_pnl += p.profit
-        live_trades.append((t, p))
-
-    if not live_trades:
-        return
-
-    # ── Portfolio is NET PROFITABLE → close everything now ────────────────
-    if total_pnl > 0:
-        log.info(f"DEAD ZONE PORTFOLIO CLOSE | Net P&L=+${total_pnl:.2f} | "
-                 f"Closing all {len(live_trades)} position(s) — locking profit.")
-        for t, p in live_trades:
-            direction = t["dir"]
-            ok, cp, pnl = close_position(t["ticket"], direction, "dead-zone-net-profit")
-            if ok:
-                logger.log_close(t["ticket"], cp, pnl)
-                ai.on_trade_closed(t["ticket"], cp, pnl)
-            if t in open_trades:
-                open_trades.remove(t)
-        return
-
-    # ── Portfolio is NET NEGATIVE ─────────────────────────────────────────
-    for t, p in live_trades:
-        entry     = t["entry"]
-        sl        = t["sl"]
-        sl_dist   = abs(entry - sl)
-        direction = t["dir"]
-
-        if sl_dist == 0:
-            continue
-
-        if direction == "bullish":
-            profit_r = (p.price_current - entry) / sl_dist
-        else:
-            profit_r = (entry - p.price_current) / sl_dist
-
-        if profit_r > 0:
-            # This trade is individually profitable — move to BE
-            if not t.get("be_done"):
-                ok = modify_sl(t["ticket"], entry)
-                if ok:
-                    t["be_done"] = True
-                    t["sl"]      = entry
-                    log.info(f"DEAD ZONE BE | T{t['ticket']} "
-                             f"-> breakeven @ {entry:.2f}")
-
-        else:
-            # This trade is in loss
-            prev_r = t.get("_dz_prev_r", profit_r)
-            worsening = profit_r < prev_r  # loss is getting bigger
-            t["_dz_prev_r"] = profit_r
-
-            if hard_cut:
-                # 3:45pm hard cut — close at best available price
-                log.warning(f"DEAD ZONE 3:45 CUT | T{t['ticket']} | "
-                            f"P&L={profit_r:.2f}R | ${p.profit:.2f} | "
-                            f"closing now.")
-                ok, cp, pnl = close_position(t["ticket"], direction, "dead-zone-3:45-cut")
-                if ok:
-                    logger.log_close(t["ticket"], cp, pnl)
-                    ai.on_trade_closed(t["ticket"], cp, pnl)
-                if t in open_trades:
-                    open_trades.remove(t)
-
-            elif worsening:
-                # Loss is getting worse — close at the lowest loss possible now
-                log.warning(f"DEAD ZONE WORSENING | T{t['ticket']} | "
-                            f"P&L={profit_r:.2f}R -> {prev_r:.2f}R "
-                            f"| ${p.profit:.2f} | closing to limit loss.")
-                ok, cp, pnl = close_position(t["ticket"], direction, "dead-zone-worsening")
-                if ok:
-                    logger.log_close(t["ticket"], cp, pnl)
-                    ai.on_trade_closed(t["ticket"], cp, pnl)
-                if t in open_trades:
-                    open_trades.remove(t)
-
-            else:
-                # Loss improving — monitor
-                log.info(f"DEAD ZONE MONITOR | T{t['ticket']} | "
-                         f"P&L={profit_r:.2f}R improving | "
-                         f"Portfolio=${total_pnl:.2f} | "
-                         f"Holding to 3:45pm TX.")
-
-
-def close_all_positions(reason: str = ""):
-    """Force-close all open FFT positions."""
-    positions = mt5.positions_get(symbol=SYMBOL)
-    if not positions:
-        return
-    for p in positions:
-        if p.magic != MAGIC:
-            continue
-        direction = "bullish" if p.type == mt5.ORDER_TYPE_BUY else "bearish"
-        close_position(p.ticket, direction, reason)
+    """Place a market order; returns (ticket, fill_price) or (None, None)."""
+    return _mt5.place_order(direction, lots, sl, tp, comment=comment)
 
 
 def recover_open_positions() -> list:
@@ -609,54 +177,6 @@ def recover_open_positions() -> list:
     if recovered:
         log.info(f"Recovered {len(recovered)} open FFT position(s).")
     return recovered
-
-
-def reconcile_on_startup(open_trades: list, logger, ai) -> None:
-    """
-    Ground-truth reconciliation after any restart or VPS reboot.
-
-    Case 1 — Positions closed while bot was down (SL/TP hit by broker):
-      trades.json has outcome=None but position is gone from MT5.
-      → Retrieve actual P&L from deal history and log the close.
-
-    Case 2 — Positions open in MT5 with no trades.json entry:
-      trades.json was wiped during a crash and the position re-appeared on recovery.
-      → Create a synthetic entry record so log_close() can find it later.
-    """
-    pending = {t["ticket"] for t in logger.trades if t.get("outcome") is None}
-    live    = {t["ticket"] for t in open_trades}
-
-    missed = pending - live
-    if missed:
-        log.info(f"RECONCILE: {len(missed)} position(s) closed while bot was down — logging now.")
-    for ticket in missed:
-        cp, pnl = get_deal_result(ticket)
-        if cp:
-            logger.log_close(ticket, cp, pnl)
-            ai.on_trade_closed(ticket, cp, pnl)
-            log.info(f"RECONCILE: Logged missed close | ticket={ticket} | pnl=${pnl:+.2f}")
-        else:
-            logger.mark_orphaned(ticket)
-            log.warning(f"RECONCILE: No deal history for ticket={ticket} — marked orphaned")
-
-    phantom = live - pending
-    if phantom:
-        log.info(f"RECONCILE: {len(phantom)} recovered position(s) have no trades.json entry — creating.")
-    for t in open_trades:
-        if t["ticket"] in phantom:
-            logger.log_entry(
-                ticket    = t["ticket"],
-                features  = {},
-                direction = t["dir"],
-                entry     = t["entry"],
-                sl        = t["sl"],
-                tp1       = t.get("tp", 0.0),
-                tp2       = 0.0,
-                is_reentry= True,
-                risk_usd  = 0.0,
-            )
-            log.info(f"RECONCILE: Synthetic entry created | ticket={t['ticket']} | "
-                     f"{t['dir']} @ {t['entry']:.2f}")
 
 
 # =============================================================================
@@ -1041,7 +561,7 @@ def manage_positions(open_trades: list, atr: float, logger, ai):
 
         # Move to breakeven at 0.5R
         if profit_r >= BE_R and not t.get("be_done"):
-            ok = modify_sl(t["ticket"], entry)
+            ok = move_sl(t["ticket"], entry)
             if ok:
                 t["be_done"] = True
                 t["sl"]      = entry
