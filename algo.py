@@ -323,6 +323,8 @@ def get_all_tasks(snap: dict) -> list[dict]:
         if not account:
             account = "—"
 
+        stalled = running and bool(bot_key) and state.get("status") == "stalled"
+
         uptime = ""
         if name == "SYS_TELEGRAM":
             uptime = telegram_uptime
@@ -336,7 +338,8 @@ def get_all_tasks(snap: dict) -> list[dict]:
             "market":     market_label,
             "pair":       display,
             "running":    running,
-            "status":     "Running" if running else "Stopped",
+            "stalled":    stalled,
+            "status":     "Stalled" if stalled else ("Running" if running else "Stopped"),
             "acct_type":  TASK_ACCT_TYPE.get(name, "—"),
             "account":    account,
             "balance":    balance,
@@ -523,11 +526,23 @@ def print_header(tasks: list[dict], tab: str = "all"):
             balance_str  = col("—", 10)
             total_str    = col("—", 8)
         else:
-            running       = t["running"]
-            icon_char     = "●" if running else "○"
-            icon_color    = green if running else red
-            status_text   = "RUNNING" if running else "STOPPED"
-            status_color  = green if running else red
+            running  = t["running"]
+            stalled  = t.get("stalled", False)
+            if stalled:
+                icon_char    = "◐"
+                icon_color   = yellow
+                status_text  = "STALLED"
+                status_color = yellow
+            elif running:
+                icon_char    = "●"
+                icon_color   = green
+                status_text  = "RUNNING"
+                status_color = green
+            else:
+                icon_char    = "○"
+                icon_color   = red
+                status_text  = "STOPPED"
+                status_color = red
             balance_str   = fmt_balance(t.get("balance", 0.0))
 
             tpct = t.get("total_pct", 0.0)
@@ -632,8 +647,12 @@ def print_bot_menu(tasks: list[dict]):
         is_sched = t["name"] in SCHEDULED_TASKS
         if is_sched:
             status = blue("◑ SCHEDULED")
+        elif t.get("stalled"):
+            status = yellow("◐ STALLED  ")
+        elif t["running"]:
+            status = green("● RUNNING  ")
         else:
-            status = green("● RUNNING") if t["running"] else red("○ STOPPED ")
+            status = red("○ STOPPED  ")
         print(f"  {bold(f'[{i}]')} {t['pair']:<22} {status}")
     print(f"  {bold('[b]')} Back")
     print()
@@ -651,12 +670,19 @@ def print_bot_detail(task: dict):
 
     is_sched  = task["name"] in SCHEDULED_TASKS
     running   = task.get("running", False)
+    stalled   = task.get("stalled", False)
     if is_sched:
         icon_str   = blue("◑")
         status_str = blue("SCHEDULED")
+    elif stalled:
+        icon_str   = yellow("◐")
+        status_str = yellow("STALLED")
+    elif running:
+        icon_str   = green("●")
+        status_str = green("RUNNING")
     else:
-        icon_str   = green("●") if running else red("○")
-        status_str = green("RUNNING") if running else red("STOPPED")
+        icon_str   = red("○")
+        status_str = red("STOPPED")
 
     acct_type = task.get("acct_type", "—")
     account   = task.get("account", "—")
@@ -1100,8 +1126,12 @@ if __name__ == "__main__":
                 is_sched = t["name"] in SCHEDULED_TASKS
                 if is_sched:
                     icon = blue("◑ SCHEDULED")
+                elif t.get("stalled"):
+                    icon = yellow("◐ STALLED")
+                elif t["running"]:
+                    icon = green("● RUNNING")
                 else:
-                    icon = green("● RUNNING") if t["running"] else red("○ STOPPED")
+                    icon = red("○ STOPPED")
                 print(f"  {icon}  {t['pair']}")
 
         else:

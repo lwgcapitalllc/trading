@@ -39,7 +39,12 @@ STATE_FILE     = ALGOS_ROOT / "monitor_state.json"
 SUPPRESS_FILE  = ALGOS_ROOT / "stop_suppress.json"
 TEXAS          = ZoneInfo("America/Chicago")
 
-LOG_STALE_MINUTES = 90  # alert if process alive but log silent this long
+sys.path.insert(0, str(ALGOS_ROOT / "shared"))
+import bot_state as _bot_state
+
+# Bots emit a log line roughly every ~60s. Some branches (SMC outside kill zone,
+# "manage trades only") can sleep up to ~2-3 min. 5 min is a safe floor.
+LOG_STALE_SECS = 5 * 60
 
 BOTS = {
     "smc_trend": {
@@ -186,6 +191,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     f"Time: {now_str}\n"
                     f"Action: run `algo restart` or use /restart"
                 )
+            _bot_state.set_status(bot_key, "offline")
         else:
             if not bot_state.get("stop_suppressed"):
                 send_alert(
@@ -194,17 +200,18 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     f"Time: {now_str}"
                 )
             bot_state["stop_suppressed"] = False
+            _bot_state.set_status(bot_key, "running")
 
     bot_state["running"] = running
     if not running:
         bot_state["stale_alerted"] = False
         return bot_state
 
-    # ── Log staleness check — catches alive-but-blocked bots ──────────────
+    # ── Log staleness check — catches alive-but-frozen bots ───────────────
     log_path = cfg.get("log")
     if log_path and log_path.exists():
-        stale_min = (time.time() - log_path.stat().st_mtime) / 60
-        if stale_min > LOG_STALE_MINUTES:
+        stale_secs = time.time() - log_path.stat().st_mtime
+        if stale_secs > LOG_STALE_SECS:
             if not bot_state.get("stale_alerted"):
                 last_line = ""
                 try:
@@ -219,13 +226,22 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
                 send_alert(
                     f"⚠️ *{cfg['name']} — Loop Stalled*\n"
-                    f"Process alive but log silent {stale_min:.0f} min\n"
+                    f"Process alive but log silent {stale_secs / 60:.0f} min\n"
                     f"Last: `{last_line[:120]}`\n"
                     f"Time: {now_str}\n"
                     f"Action: /restart or check `algo logs`"
                 )
                 bot_state["stale_alerted"] = True
+                _bot_state.set_status(bot_key, "stalled")
         else:
+            if bot_state.get("stale_alerted"):
+                now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
+                send_alert(
+                    f"🟢 *{cfg['name']} — Loop Recovered*\n"
+                    f"Log activity resumed. Bot is scanning again.\n"
+                    f"Time: {now_str}"
+                )
+                _bot_state.set_status(bot_key, "running")
             bot_state["stale_alerted"] = False
 
     # ── Balance and P&L checks ────────────────────────────────────────────

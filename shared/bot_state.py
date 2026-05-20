@@ -7,7 +7,7 @@ One bot_state.json file per instance directory.
 Schema per bot entry:
 {
   "name":           "SMC Trend",
-  "status":         "running" | "stopped" | "offline",
+  "status":         "running" | "stalled" | "stopped" | "offline",
   "started":        1779077863.18,      # Unix timestamp of last start
   "account":        "700103491",
   "balance":        2759.28,            # current balance (from pnl_tracker)

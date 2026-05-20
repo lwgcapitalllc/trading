@@ -52,7 +52,8 @@ The suppress file is written by:
 **Alerts sent:**
 - 🚨 Bot Offline — unexpected stop (suppressed for intentional stops)
 - 🟢 Bot Online — bot came back after a crash (suppressed if stop was intentional)
-- ⚠️ Loop Stalled — process alive but log silent > 90 min
+- ⚠️ Loop Stalled — process alive but log silent > 5 min. Writes `status = "stalled"` to bot_state.json.
+- 🟢 Loop Recovered — log activity resumed after a stall. Writes `status = "running"` to bot_state.json.
 - 🎯 Daily Goal Hit
 - 🛑 Daily Loss Cap Hit
 - 🚫 Weekly Loss Cap Hit
@@ -126,7 +127,7 @@ All components read from `bot_state.json` — single source of truth.
 | `daily_start` | bots (every loop) | Balance at start of current UTC day |
 | `weekly_start` | bots (every loop) | Balance at start of current ISO week |
 | `last_write` | bots (every loop) | UTC ISO timestamp — pnl_tracker uses to detect live mode |
-| `status` | telegram_bot.py crash detector | "running" / "offline" |
+| `status` | bots at startup; monitor.py on transitions | "running" / "stalled" / "offline" — monitor.py writes stalled/offline/running-recovery; bots write running at startup |
 | `started` | each bot at `run()` start; also startup_coordinator.py | Timestamp bot process launched |
 | `day_locked` | all bots | True when weekly cap / peak protection / daily ceiling fires |
 | `lock_reason` | all bots | Human-readable stop reason for the lock alert |

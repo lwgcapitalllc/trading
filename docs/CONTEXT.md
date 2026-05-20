@@ -68,7 +68,7 @@ During dead zone: net profit → close all. Individual profit + portfolio negati
 - **VPS:** ForexVPS Windows Server, 24/7
 - **Mac control:** `python algo.py start|stop|restart|status`
 - **Deploy:** `git push` on Mac → `ssh forexvps "cd C:\algos && git pull"` → `algo restart`
-- **Notifications:** Event-driven — bots self-report startup, algo.py fires on control panel actions, monitor.py detects crashes and fires Bot Offline/Online alerts (≤1 min). Intentional stops suppressed via `stop_suppress.json`. reporter.py handles daily summaries.
+- **Notifications:** Event-driven — bots self-report startup, algo.py fires on control panel actions, monitor.py detects crashes (Bot Offline/Online ≤1 min) and loop stalls (process up but log stale >5 min → STALLED status). Intentional stops suppressed via `stop_suppress.json`. reporter.py handles daily summaries.
 - **Scheduling:** Windows Task Scheduler via XML task files
 - **Backup:** `scripts/backup.py` runs twice daily (midnight + noon CT) via SYS_BACKUP. Commits VPS runtime
   data to the `backups` orphan branch via a git worktree at `C:\algos-backup`. Never touches `main`,
