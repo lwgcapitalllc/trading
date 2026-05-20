@@ -584,10 +584,60 @@ def print_bot_menu(tasks: list[dict]):
     print(f"  {bold('[b]')} Back")
     print()
 
+def print_bot_detail(task: dict):
+    import re
+    W = 90
+
+    def strip_ansi(s: str) -> str:
+        return re.sub(r'\033\[[0-9;]*m', '', s)
+
+    def row(content: str) -> str:
+        pad = max(0, W - len(strip_ansi(content)))
+        return bold(cyan("║")) + content + " " * pad + bold(cyan("║"))
+
+    is_sched  = task["name"] in SCHEDULED_TASKS
+    running   = task.get("running", False)
+    if is_sched:
+        icon_str   = blue("◑")
+        status_str = blue("SCHEDULED")
+    else:
+        icon_str   = green("●") if running else red("○")
+        status_str = green("RUNNING") if running else red("STOPPED")
+
+    acct_type = task.get("acct_type", "—")
+    account   = task.get("account", "—")
+    acct_disp = gray(f"{acct_type}  #{account}") if account != "—" else gray(acct_type)
+
+    header = f"  {icon_str} {bold(task['pair'])} — {status_str}    {acct_disp}"
+
+    balance = task.get("balance", 0.0)
+    daily   = task.get("daily_pct", 0.0)
+    total   = task.get("total_pct", 0.0)
+    uptime  = task.get("uptime", "") or "—"
+
+    bal_str    = f"${balance:,.2f}" if balance > 0 else "—"
+    d_sign     = "+" if daily >= 0 else ""
+    d_clr      = green if daily > 0 else (red if daily < 0 else gray)
+    t_sign     = "+" if total >= 0 else ""
+    t_clr      = green if total > 0 else (red if total < 0 else gray)
+
+    data = (
+        f"  Balance {gray(bal_str)}"
+        f"    Daily {d_clr(f'{d_sign}{daily:.1f}%')}"
+        f"    Total {t_clr(f'{t_sign}{total:.1f}%')}"
+        f"    Uptime {gray(uptime)}"
+    )
+
+    print(bold(cyan("╔" + "═" * W + "╗")))
+    print(row(header))
+    print(bold(cyan("╠" + "═" * W + "╣")))
+    print(row(data))
+    print(bold(cyan("╚" + "═" * W + "╝")))
+
+
 def bot_action_menu(task: dict) -> str:
-    is_sched = task["name"] in SCHEDULED_TASKS
-    status = blue("SCHEDULED") if is_sched else (green("RUNNING") if task["running"] else red("STOPPED"))
-    print(bold(f"\n  {task['pair']} — {status}\n"))
+    print_bot_detail(task)
+    print()
     print(f"  {bold('[1]')} Start")
     print(f"  {bold('[2]')} Stop")
     print(f"  {bold('[3]')} Restart")
@@ -595,6 +645,7 @@ def bot_action_menu(task: dict) -> str:
     print(f"  {bold('[5]')} View log (last 100 lines)")
     if task["name"] == "SYS_TELEGRAM":
         print(f"  {bold('[u]')} Manage users")
+    print(f"  {bold('[r]')} Refresh")
     print(f"  {bold('[b]')} Back")
     print()
     return input("  Choice: ").strip().lower()
@@ -929,6 +980,12 @@ def main():
                                 confirmed = True; task = match; break
                         print(f"  {green('✓ RESTARTED') if confirmed else red('✗ RESTART FAILED')}")
                         input(gray("  Press Enter..."))
+                    elif action == "r":
+                        snap2 = fetch_vps_snapshot()
+                        upd   = get_all_tasks(snap2)
+                        match = next((x for x in upd if x["name"] == task["name"]), None)
+                        if match:
+                            task = match
                     elif action in ("4", "5"):
                         lines = 40 if action == "4" else 100
                         clear()
