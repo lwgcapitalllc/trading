@@ -951,6 +951,7 @@ def main():
                         break
                     elif action == "1":
                         import time
+                        notify_telegram(f"▶️ *{task['pair']}* starting \\[control panel\\]")
                         print(gray(f"\n  Starting {task['name']}..."))
                         ok = start_task(task["name"])
                         print(gray(f"  Launched:  {green('✓') if ok else red('✗')}"))
@@ -963,7 +964,8 @@ def main():
                             if match and match["running"]:
                                 confirmed = True; task = match; break
                         print(f"  {green('✓ RUNNING') if confirmed else red('✗ FAILED')}")
-                        notify_telegram(f"{'✓' if confirmed else '✗'} *{task['pair']}* {'started' if confirmed else 'failed to start'} \\[control panel\\]")
+                        if not confirmed:
+                            notify_telegram(f"✗ *{task['pair']}* failed to start \\[control panel\\]")
                         input(gray("  Press Enter..."))
                     elif action == "2":
                         import time
@@ -978,10 +980,11 @@ def main():
                             if match and not match["running"]:
                                 confirmed = True; task = match; break
                         print(f"  {green('✓ STOPPED') if confirmed else yellow('? MAY STILL BE RUNNING')}")
-                        notify_telegram(f"{'✓' if confirmed else '?'} *{task['pair']}* {'stopped' if confirmed else 'stop unconfirmed'} \\[control panel\\]")
+                        notify_telegram(f"{'⏹' if confirmed else '?'} *{task['pair']}* {'stopped' if confirmed else 'stop unconfirmed'} \\[control panel\\]")
                         input(gray("  Press Enter..."))
                     elif action == "3":
                         import time
+                        notify_telegram(f"🔄 *{task['pair']}* restarting \\[control panel\\]")
                         print(gray(f"\n  Stopping {task['name']}..."))
                         stop_task(task["name"])
                         kill_bot_process(task["name"])
@@ -999,7 +1002,8 @@ def main():
                             if match and match["running"]:
                                 confirmed = True; task = match; break
                         print(f"  {green('✓ RESTARTED') if confirmed else red('✗ RESTART FAILED')}")
-                        notify_telegram(f"{'✓' if confirmed else '✗'} *{task['pair']}* {'restarted' if confirmed else 'restart failed'} \\[control panel\\]")
+                        if not confirmed:
+                            notify_telegram(f"✗ *{task['pair']}* restart failed \\[control panel\\]")
                         input(gray("  Press Enter..."))
                     elif action == "r":
                         snap2 = fetch_vps_snapshot()
