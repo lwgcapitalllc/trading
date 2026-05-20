@@ -21,6 +21,10 @@ from datetime import datetime
 VPS_HOST = "forexvps"
 LOG_BASE = "C:\\algos\\markets"
 
+# ── Telegram ──────────────────────────────────────────────────────────────────
+TG_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
+TG_CHAT  = "-1003977707258"
+
 MARKET_PREFIXES = {
     "BOT_": "Bot",
     "SYS_": "System",
@@ -383,6 +387,16 @@ def wait_for_process_death(task_name: str, timeout: int = 10) -> bool:
             return True
     return False
 
+def notify_telegram(text: str):
+    import urllib.request, urllib.parse
+    url  = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    data = urllib.parse.urlencode({"chat_id": TG_CHAT, "text": text}).encode()
+    try:
+        urllib.request.urlopen(url, data=data, timeout=5)
+    except Exception:
+        pass
+
+
 def emergency_stop_all(tasks: list[dict]):
     print(red("\n⚠  EMERGENCY STOP — killing all bots and python processes"))
     for t in tasks:
@@ -647,6 +661,7 @@ def bot_action_menu(task: dict) -> str:
         print(f"  {bold('[u]')} Manage users")
     print(f"  {bold('[r]')} Refresh")
     print(f"  {bold('[b]')} Back")
+    print(f"  {bold('[q]')} Quit")
     print()
     return input("  Choice: ").strip().lower()
 
@@ -917,6 +932,8 @@ def main():
                 print_header(tasks, active_tab)
                 print_bot_menu(tasks)
                 bot_choice = input("  Select bot: ").strip().lower()
+                if bot_choice in ("q", "quit", "exit"):
+                    sys.exit(0)
                 if bot_choice == "b":
                     break
                 if not bot_choice.isdigit():
@@ -929,7 +946,9 @@ def main():
                 while True:
                     clear()
                     action = bot_action_menu(task)
-                    if action == "b":
+                    if action in ("q", "quit", "exit"):
+                        sys.exit(0)
+                    elif action == "b":
                         break
                     elif action == "1":
                         import time
@@ -944,7 +963,9 @@ def main():
                             match = next((x for x in upd if x["name"] == task["name"]), None)
                             if match and match["running"]:
                                 confirmed = True; task = match; break
+                        result = "RUNNING" if confirmed else "FAILED TO START"
                         print(f"  {green('✓ RUNNING') if confirmed else red('✗ FAILED')}")
+                        notify_telegram(f"{'✓' if confirmed else '✗'} {task['pair']} {result.lower()} [control panel]")
                         input(gray("  Press Enter..."))
                     elif action == "2":
                         import time
@@ -959,6 +980,7 @@ def main():
                             if match and not match["running"]:
                                 confirmed = True; task = match; break
                         print(f"  {green('✓ STOPPED') if confirmed else yellow('? MAY STILL BE RUNNING')}")
+                        notify_telegram(f"{'✓' if confirmed else '?'} {task['pair']} {'stopped' if confirmed else 'stop uncertain'} [control panel]")
                         input(gray("  Press Enter..."))
                     elif action == "3":
                         import time
@@ -979,6 +1001,7 @@ def main():
                             if match and match["running"]:
                                 confirmed = True; task = match; break
                         print(f"  {green('✓ RESTARTED') if confirmed else red('✗ RESTART FAILED')}")
+                        notify_telegram(f"{'✓' if confirmed else '✗'} {task['pair']} {'restarted' if confirmed else 'restart failed'} [control panel]")
                         input(gray("  Press Enter..."))
                     elif action == "r":
                         snap2 = fetch_vps_snapshot()
@@ -1001,7 +1024,9 @@ def main():
             clear()
             print_header(tasks, active_tab)
             print_bot_menu(tasks)
-            bot_choice = input("  Select bot to view log: ").strip()
+            bot_choice = input("  Select bot to view log: ").strip().lower()
+            if bot_choice in ("q", "quit", "exit"):
+                sys.exit(0)
             if bot_choice.isdigit():
                 idx = int(bot_choice) - 1
                 if 0 <= idx < len(tasks):
