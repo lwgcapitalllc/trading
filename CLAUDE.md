@@ -45,8 +45,8 @@ Not as a follow-up. Right now, before moving on.
 2. Keep the repo structure tree in `docs/CONTEXT.md` and `README.md` in sync with actual layout.
 3. `docs/SETUP.md` restore steps must always produce a working VPS from scratch — verify mentally
    after any change that affects deploy or VPS setup.
-4. `docs/CONTEXT.md § What Was Done` — always append a new entry at the bottom for the current
-   session. Never overwrite previous sessions. Include: what changed, why, and current VPS state.
+4. `docs/CONTEXT.md § What I Am Working On` — update this section to reflect current state.
+   Never log session history here. Git commits are the changelog.
 
 ---
 
