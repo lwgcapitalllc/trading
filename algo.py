@@ -881,30 +881,33 @@ def main():
                     if action == "b":
                         break
                     elif action == "1":
-                        print(gray(f"\n  Starting {task['name']}..."), end="", flush=True)
-                        start_task(task["name"])
+                        import time
+                        print(gray(f"\n  Starting {task['name']}..."))
+                        ok = start_task(task["name"])
+                        print(gray(f"  Launched:  {green('✓') if ok else red('✗')}"))
                         confirmed = False
                         for _ in range(8):
-                            import time; time.sleep(1)
+                            time.sleep(1)
                             snap2 = fetch_vps_snapshot()
                             upd   = get_all_tasks(snap2)
                             match = next((x for x in upd if x["name"] == task["name"]), None)
                             if match and match["running"]:
                                 confirmed = True; task = match; break
-                        print(f"\r  {green('✓ RUNNING') if confirmed else red('✗ FAILED')}")
+                        print(f"  {green('✓ RUNNING') if confirmed else red('✗ FAILED')}")
                         input(gray("  Press Enter..."))
                     elif action == "2":
-                        print(gray(f"\n  Stopping {task['name']}..."), end="", flush=True)
+                        import time
+                        print(gray(f"\n  Stopping {task['name']}..."))
                         stop_task(task["name"])
                         confirmed = False
                         for _ in range(8):
-                            import time; time.sleep(1)
+                            time.sleep(1)
                             snap2 = fetch_vps_snapshot()
                             upd   = get_all_tasks(snap2)
                             match = next((x for x in upd if x["name"] == task["name"]), None)
                             if match and not match["running"]:
                                 confirmed = True; task = match; break
-                        print(f"\r  {green('✓ STOPPED') if confirmed else yellow('? MAY STILL BE RUNNING')}")
+                        print(f"  {green('✓ STOPPED') if confirmed else yellow('? MAY STILL BE RUNNING')}")
                         input(gray("  Press Enter..."))
                     elif action == "3":
                         import time
@@ -912,10 +915,10 @@ def main():
                         stop_task(task["name"])
                         kill_bot_process(task["name"])
                         dead = wait_for_process_death(task["name"], timeout=10)
-                        print(gray(f"  Process dead: {dead}"))
+                        print(gray(f"  Killed:    {green('✓') if dead else red('✗ (may still be running)')}"))
                         print(gray(f"  Starting {task['name']}..."))
-                        started_ok = start_task(task["name"])
-                        print(gray(f"  schtasks /run returned: {started_ok}"))
+                        ok = start_task(task["name"])
+                        print(gray(f"  Launched:  {green('✓') if ok else red('✗')}"))
                         confirmed = False
                         for _ in range(8):
                             time.sleep(1)

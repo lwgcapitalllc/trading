@@ -333,6 +333,7 @@ def do_restart(bot_keys: list) -> str:
             # called, Task Scheduler refuses to start a new instance. Kill it
             # directly by matching the script name in the command line.
             script_name = BOTS[key].get("script", "")
+            killed = False
             if script_name:
                 subprocess.run(
                     ["wmic", "process", "where",
@@ -348,10 +349,15 @@ def do_restart(bot_keys: list) -> str:
                         capture_output=True, text=True, timeout=5
                     )
                     if script_name not in r.stdout:
+                        killed = True
                         break
-            ok = task_start(task)
-            lines.append(f"{'✓' if ok else '✗'}  {BOTS[key]['name']}")
-        return "\n".join(lines)
+            else:
+                killed = True
+            started = task_start(task)
+            kill_icon  = "✓" if killed  else "✗"
+            start_icon = "✓" if started else "✗"
+            lines.append(f"*{BOTS[key]['name']}*\n  Killed: {kill_icon}  Started: {start_icon}")
+        return "\n\n".join(lines)
 
     # Full restart — stop everything then use coordinator
     for key in BOTS.keys():
@@ -378,8 +384,9 @@ def do_stop(bot_keys: list) -> str:
         task = TASK_NAMES.get(key)
         if not task:
             continue
-        task_stop(task)
-        lines.append(f"✓  {BOTS[key]['name']} stopped")
+        ok = task_stop(task)
+        icon = "✓" if ok else "✗"
+        lines.append(f"{icon}  {BOTS[key]['name']}")
     return "\n".join(lines)
 
 
@@ -463,7 +470,7 @@ def cmd_trades() -> str:
     lines   = [f"📋 *Today's Trades*  _{now_tx}_", ""]
     total_w = total_l = total_be = total_t = 0
 
-    for key, cfg in BOTS.items():
+    for _, cfg in BOTS.items():
         trades = load_json(cfg["trades"])
         today  = get_today_trades(trades)
         w  = sum(1 for t in today if t["outcome"] == "win")
