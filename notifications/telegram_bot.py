@@ -101,17 +101,11 @@ BOTS = {
 # Per-user pending actions — keyed by user_id so two users can't overwrite each other's confirm state
 pending_actions: dict = {}
 
-# Crash detector — tracks last-known running state for each bot script.
-# Populated on first check; alerts fire after bot has been offline for one full cycle.
-# One-cycle delay prevents false alarms from intentional stops (suppression file may
-# arrive up to a few seconds after the stop — the 60s window is more than enough).
-_bot_last_running: dict[str, bool] = {}
-_bot_went_offline: dict[str, float] = {}   # key → epoch when first seen offline
-_CRASH_CHECK_INTERVAL = 6   # check every N poll cycles (~60s at POLL_INTERVAL=10)
+_CRASH_CHECK_INTERVAL = 6   # kept for poll_count modulo — crash alerting is in monitor.py
 
 
 def _suppress_stop_alert(keys: list) -> None:
-    """Mark bot keys as intentionally stopped so the crash monitor skips alerting."""
+    """Mark bot keys as intentionally stopped so monitor.py skips the offline alert."""
     try:
         existing = json.loads(SUPPRESS_FILE.read_text()) if SUPPRESS_FILE.exists() else []
         for k in keys:
@@ -120,20 +114,6 @@ def _suppress_stop_alert(keys: list) -> None:
         SUPPRESS_FILE.write_text(json.dumps(existing))
     except Exception:
         pass
-
-
-def _is_stop_suppressed(key: str) -> bool:
-    """Consume and return True if this bot's offline alert should be suppressed."""
-    try:
-        if SUPPRESS_FILE.exists():
-            keys = json.loads(SUPPRESS_FILE.read_text())
-            if key in keys:
-                keys.remove(key)
-                SUPPRESS_FILE.write_text(json.dumps(keys))
-                return True
-    except Exception:
-        pass
-    return False
 
 
 # =============================================================================
@@ -270,55 +250,6 @@ def is_running(script: str) -> bool:
         return False
 
 
-def check_crashes():
-    """
-    Called every _CRASH_CHECK_INTERVAL poll cycles (~60s).
-    Two-phase alert: when a bot goes offline, record the time but don't alert yet.
-    On the next cycle, if still offline and not suppressed, fire the alert.
-    The one-cycle delay (60s) gives suppression writes plenty of time to land before
-    the alert fires, eliminating the race between algo.py writing the file and this check.
-    """
-    now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
-    try:
-        r = subprocess.run(
-            ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
-            capture_output=True, text=True, timeout=10
-        )
-        procs = r.stdout
-    except Exception:
-        return
-
-    for key, cfg in BOTS.items():
-        script  = cfg["script"]
-        running = script in procs
-        prev    = _bot_last_running.get(key)
-        if prev is None:
-            # First run — seed baseline, clear any stale offline record
-            _bot_last_running[key] = running
-            _bot_went_offline.pop(key, None)
-            continue
-        if prev and not running:
-            # First cycle offline — record timestamp, don't alert yet
-            _bot_went_offline.setdefault(key, time.time())
-        elif running:
-            # Back online — clear offline record
-            _bot_went_offline.pop(key, None)
-        _bot_last_running[key] = running
-
-    # Second pass: fire alerts for bots offline for more than one full cycle
-    for key in list(_bot_went_offline):
-        if time.time() - _bot_went_offline[key] > 70:
-            if _is_stop_suppressed(key):
-                pass  # intentional stop
-            else:
-                cfg = BOTS[key]
-                send_to(GROUP_CHAT,
-                    f"🚨 *ALERT — Bot Offline*\n"
-                    f"{cfg['name']} stopped unexpectedly\n"
-                    f"Time: {now_str}\n"
-                    f"Action: /restart {key}"
-                )
-            del _bot_went_offline[key]
 
 
 def get_uptime(log_path: Path) -> str:
@@ -860,8 +791,6 @@ def main():
                     send_to(chat_id, response)
 
                 poll_count += 1
-                if poll_count % _CRASH_CHECK_INTERVAL == 0:
-                    check_crashes()
 
             except Exception as e:
                 print(f"Poll error: {e}")

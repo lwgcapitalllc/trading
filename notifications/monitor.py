@@ -36,6 +36,7 @@ ADMIN_CHAT     = "429207285"
 GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadcast destination
 ALGOS_ROOT     = Path("C:/algos")
 STATE_FILE     = ALGOS_ROOT / "monitor_state.json"
+SUPPRESS_FILE  = ALGOS_ROOT / "stop_suppress.json"
 TEXAS          = ZoneInfo("America/Chicago")
 
 LOG_STALE_MINUTES = 90  # alert if process alive but log silent this long
@@ -43,6 +44,7 @@ LOG_STALE_MINUTES = 90  # alert if process alive but log silent this long
 BOTS = {
     "smc_trend": {
         "name":        "Bot SMC Trend",
+        "suppress_key": "smc",
         "script":      "bot_smc_trend.py",
         "log":         ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
@@ -53,6 +55,7 @@ BOTS = {
     },
     "mean_reversion": {
         "name":        "Bot Mean Reversion",
+        "suppress_key": "reversion",
         "script":      "bot_mean_reversion.py",
         "log":         ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
@@ -63,6 +66,7 @@ BOTS = {
     },
     "scalper": {
         "name":        "Bot Scalper",
+        "suppress_key": "scalper",
         "script":      "bot_scalper.py",
         "log":         ALGOS_ROOT / "markets/fx/instances/gold_scalper/bot_scalper.log",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_equity.json",
@@ -73,6 +77,7 @@ BOTS = {
     },
     "fft": {
         "name":        "Bot FFT",
+        "suppress_key": "fft",
         "script":      "bot_fft.py",
         "log":         ALGOS_ROOT / "markets/fx/instances/gold_fft/bot_fft.log",
         "equity":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_equity.json",
@@ -124,6 +129,20 @@ def load_json(path: Path):
         return json.load(f)
 
 
+def _is_stop_suppressed(suppress_key: str) -> bool:
+    """Consume and return True if this bot's offline alert should be suppressed."""
+    try:
+        if SUPPRESS_FILE.exists():
+            keys = json.loads(SUPPRESS_FILE.read_text())
+            if suppress_key in keys:
+                keys.remove(suppress_key)
+                SUPPRESS_FILE.write_text(json.dumps(keys))
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def get_balance(equity) -> float:
     records = equity if isinstance(equity, list) else []
     if not records:
@@ -157,18 +176,24 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     if was_running is not None and running != was_running:
         now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
         if not running:
-            send_alert(
-                f"🚨 *ALERT — Bot Offline*\n"
-                f"{cfg['name']} stopped unexpectedly\n"
-                f"Time: {now_str}\n"
-                f"Action: run `algo restart` or use /restart"
-            )
+            suppress_key = cfg.get("suppress_key", "")
+            suppressed   = _is_stop_suppressed(suppress_key) if suppress_key else False
+            bot_state["stop_suppressed"] = suppressed
+            if not suppressed:
+                send_alert(
+                    f"🚨 *ALERT — Bot Offline*\n"
+                    f"{cfg['name']} stopped unexpectedly\n"
+                    f"Time: {now_str}\n"
+                    f"Action: run `algo restart` or use /restart"
+                )
         else:
-            send_alert(
-                f"🟢 *ALERT — Bot Online*\n"
-                f"{cfg['name']} is running again\n"
-                f"Time: {now_str}"
-            )
+            if not bot_state.get("stop_suppressed"):
+                send_alert(
+                    f"🟢 *ALERT — Bot Online*\n"
+                    f"{cfg['name']} is running again\n"
+                    f"Time: {now_str}"
+                )
+            bot_state["stop_suppressed"] = False
 
     bot_state["running"] = running
     if not running:
