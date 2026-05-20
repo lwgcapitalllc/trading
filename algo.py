@@ -127,29 +127,10 @@ def ssh_ok(cmd: str) -> bool:
 
 
 # ── Batched VPS Snapshot ──────────────────────────────────────────────────────
-def fetch_vps_snapshot() -> dict:
-    """
-    Single SSH call that fetches ALL status data needed for the panel.
-    Returns a dict of section_name → raw_string.
-
-    Sections: procs, tasks, state_main, state_scalper, state_fft, telegram_start
-    """
-    cmd = (
-        "wmic process where \"name='python.exe'\" get commandline /format:list 2>nul"
-        " & echo ===TASKS==="
-        " & schtasks /query /fo CSV /nh 2>nul"
-        " & echo ===STATE_MAIN==="
-        " & type C:\\algos\\markets\\fx\\instances\\gold_main\\bot_state.json 2>nul"
-        " & echo ===STATE_SCALPER==="
-        " & type C:\\algos\\markets\\fx\\instances\\gold_scalper\\bot_state.json 2>nul"
-        " & echo ===STATE_FFT==="
-        " & type C:\\algos\\markets\\fx\\instances\\gold_fft\\bot_state.json 2>nul"
-        " & echo ===TELEGRAM_START==="
-        " & type C:\\algos\\telegram_start.json 2>nul"
-    )
-    raw = ssh(cmd)
+def _parse_sections(raw: str, initial_section: str) -> dict:
+    """Split raw SSH output into named sections using ===NAME=== delimiters."""
     sections: dict[str, str] = {}
-    current = "procs"
+    current = initial_section
     buf: list[str] = []
     for line in raw.splitlines():
         stripped = line.strip()
@@ -160,6 +141,40 @@ def fetch_vps_snapshot() -> dict:
         else:
             buf.append(line)
     sections[current] = "\n".join(buf).strip()
+    return sections
+
+
+def fetch_vps_snapshot() -> dict:
+    """
+    Two SSH calls that fetch all status data needed for the panel.
+
+    Call 1 (procs+tasks): wmic process list + schtasks CSV.
+    Call 2 (state files): bot_state.json reads isolated — avoids Windows
+    stdout-buffering issue where `type` output leaks into wrong sections
+    when chained with `&` alongside other commands.
+
+    Returns a merged dict of section_name → raw_string.
+    """
+    # Call 1: process list + task scheduler
+    cmd1 = (
+        "wmic process where \"name='python.exe'\" get commandline /format:list 2>nul"
+        " & echo ===TASKS==="
+        " & schtasks /query /fo CSV /nh 2>nul"
+    )
+    sections = _parse_sections(ssh(cmd1), "procs")
+
+    # Call 2: bot state files (isolated — `type` output stays in order)
+    cmd2 = (
+        "type C:\\algos\\markets\\fx\\instances\\gold_main\\bot_state.json 2>nul"
+        " & echo ===STATE_SCALPER==="
+        " & type C:\\algos\\markets\\fx\\instances\\gold_scalper\\bot_state.json 2>nul"
+        " & echo ===STATE_FFT==="
+        " & type C:\\algos\\markets\\fx\\instances\\gold_fft\\bot_state.json 2>nul"
+        " & echo ===TELEGRAM_START==="
+        " & type C:\\algos\\telegram_start.json 2>nul"
+    )
+    sections.update(_parse_sections(ssh(cmd2), "state_main"))
+
     return sections
 
 
