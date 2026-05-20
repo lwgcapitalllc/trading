@@ -30,15 +30,24 @@ Auto-restarts Telegram bot up to 3 times if it goes down.
 - 🚨 Critical — Telegram Bot Down — 3 restarts failed
 
 ### pnl_tracker.py (SYS_PNLTRACKER — every 1 min)
-Pure math P&L engine. Reads trades JSON files only — no MT5 connections.
-Writes balance, daily/weekly P&L to `bot_state.json`.
+Dual-mode P&L engine. Writes balance, daily/weekly P&L to `bot_state.json`.
+
+**LIVE mode** (bot `last_write` in bot_state is within 5 minutes):
+- Reads `balance`, `daily_start`, `weekly_start` directly from bot_state — these are MT5
+  ground-truth values the bot writes every loop iteration.
+- No trades.json math. No hardcoded starting balance.
+
+**OFFLINE mode** (bot stopped or last_write stale):
+- Falls back to trades.json closed-trade math.
+- Uses bot_state `balance` as last-known value when trades.json has no pnl_usd data.
 
 **Alerts sent:**
 - 🎯 Daily Goal Hit
 - 🛑 Daily Loss Cap Hit
 - 🚫 Weekly Loss Cap Hit
-- 🔒 Day Locked — fires when a bot sets `day_locked=True` in bot_state (currently: Scalper
-  peak protection and daily ceiling). Includes the exact stop reason and `/resume` hint.
+- 🔒 Day Locked — fires when a bot sets `day_locked=True` in bot_state (all 4 bots set
+  this on weekly cap; Scalper also sets it on peak protection and daily ceiling).
+  Includes the exact stop reason and `/resume` hint.
 
 ### reporter.py (SYS_REPORTER — daily 4pm CT)
 Sends daily performance summary to all Telegram users.
@@ -80,17 +89,20 @@ Telegram command interface. Reads from `bot_state.json` for all data.
 ## Data Source
 
 All components read from `bot_state.json` — single source of truth.
-`pnl_tracker.py` is the only writer for balance/P&L fields.
-`monitor.py` is the only writer for status field.
-`startup_coordinator.py` is the only writer for started field.
-`bot_scalper.py` writes `day_locked`, `lock_reason`, `lock_alerted`, `resume_trading`.
-`telegram_bot.py` writes `resume_trading` (via `/resume` command).
-
-### bot_state.json lock fields (Scalper only)
 
 | Field | Written by | Purpose |
 |---|---|---|
-| `day_locked` | bot_scalper.py | True when peak protection or ceiling lock fires |
-| `lock_reason` | bot_scalper.py | Human-readable stop reason for the alert |
+| `balance` | bots (every loop) | MT5 account balance — authoritative when bot is live |
+| `daily_start` | bots (every loop) | Balance at start of current UTC day |
+| `weekly_start` | bots (every loop) | Balance at start of current ISO week |
+| `last_write` | bots (every loop) | UTC ISO timestamp — pnl_tracker uses to detect live mode |
+| `status` | monitor.py | "running" / "stopped" / "error" |
+| `started` | startup_coordinator.py | Timestamp bot process launched |
+| `day_locked` | all bots | True when weekly cap / peak protection / daily ceiling fires |
+| `lock_reason` | all bots | Human-readable stop reason for the lock alert |
 | `lock_alerted` | pnl_tracker.py | Dedup flag — alert sent once per lock |
-| `resume_trading` | telegram_bot.py | Flag read by bot_scalper wait loop to break lock |
+| `resume_trading` | telegram_bot.py | Flag read by bot wait loop to break weekly-cap lock early |
+
+Note: `pnl_tracker.py` calls `set_pnl()` which writes display-only balance/P&L fields back
+to bot_state for Telegram `/balance` to read. When the bot is in LIVE mode, this echoes
+what the bot already wrote. When OFFLINE, it writes the trades.json-computed estimate.

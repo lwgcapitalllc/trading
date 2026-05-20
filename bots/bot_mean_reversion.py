@@ -27,13 +27,14 @@ import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
 import time, json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import pytz
 
 from bot_utils import load_config, setup_logging, get_instance_dir
 from shared_regime   import RegimeClassifier
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_reversion
+from bot_state       import write_bot, read_bot
 from shared_calmar   import CalmarTracker
 
 # ── Load config + logging (instance-aware) ────────────────────────────────────
@@ -626,9 +627,8 @@ def move_sl(ticket, new_sl, tp=None):
 
 def get_deal_result(ticket: int):
     """Return (close_price, pnl_usd) for a closed position from MT5 deal history."""
-    from datetime import datetime as _dt, timedelta as _td
-    to    = _dt.utcnow()
-    from_ = to - _td(days=1)
+    to    = datetime.utcnow()
+    from_ = to - timedelta(days=7)
     deals = mt5.history_deals_get(from_, to, position=ticket)
     if deals:
         closing = [d for d in deals if d.entry == 1]  # DEAL_ENTRY_OUT
@@ -639,11 +639,10 @@ def get_deal_result(ticket: int):
 
 
 def close_position(ticket, direction, volume=None) -> tuple:
-    """Returns (success, close_price, pnl_usd)."""
+    """Returns (success, close_price, pnl_usd). pnl_usd is actual executed P&L."""
     pos = mt5.positions_get(ticket=ticket)
     if not pos: return False, 0.0, 0.0
     p          = pos[0]
-    pnl_usd    = p.profit
     vol        = volume if volume else p.volume
     bid, ask   = get_tick()
     price      = bid if direction == "bullish" else ask
@@ -654,7 +653,11 @@ def close_position(ticket, direction, volume=None) -> tuple:
            "type_time":mt5.ORDER_TIME_GTC,"type_filling":mt5.ORDER_FILLING_IOC}
     res = mt5.order_send(req)
     if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-        return True, price, pnl_usd
+        time.sleep(0.3)
+        cp, pnl = get_deal_result(ticket)
+        if cp == 0.0:
+            cp, pnl = price, p.profit
+        return True, cp, pnl
     return False, 0.0, 0.0
 
 def partial_close(ticket, close_lots, direction):
@@ -831,6 +834,54 @@ def recover_open_positions() -> list:
     return recovered
 
 
+def reconcile_on_startup(open_trades: list, logger, ai) -> None:
+    """
+    Ground-truth reconciliation after any restart or VPS reboot.
+
+    Case 1 — Positions closed while bot was down (SL/TP hit by broker):
+      trades.json has outcome=None but position is gone from MT5.
+      → Retrieve actual P&L from deal history and log the close.
+
+    Case 2 — Positions open in MT5 with no trades.json entry:
+      trades.json was wiped during a crash and the position re-appeared on recovery.
+      → Create a synthetic entry record so log_close() can find it later.
+    """
+    pending = {t["ticket"] for t in logger.trades if t.get("outcome") is None}
+    live    = {t["ticket"] for t in open_trades}
+
+    missed = pending - live
+    if missed:
+        log.info(f"RECONCILE: {len(missed)} position(s) closed while bot was down — logging now.")
+    for ticket in missed:
+        cp, pnl = get_deal_result(ticket)
+        if cp:
+            logger.log_close(ticket, cp, pnl)
+            ai.on_trade_closed(ticket, cp, pnl)
+            log.info(f"RECONCILE: Logged missed close | ticket={ticket} | pnl=${pnl:+.2f}")
+        else:
+            logger.mark_orphaned(ticket)
+            log.warning(f"RECONCILE: No deal history for ticket={ticket} — marked orphaned")
+
+    phantom = live - pending
+    if phantom:
+        log.info(f"RECONCILE: {len(phantom)} recovered position(s) have no trades.json entry — creating.")
+    for t in open_trades:
+        if t["ticket"] in phantom:
+            logger.log_entry(
+                ticket    = t["ticket"],
+                features  = {},
+                direction = t["dir"],
+                entry     = t["entry"],
+                sl        = t["sl"],
+                tp1       = 0.0,
+                tp2       = 0.0,
+                is_reentry= True,
+                risk_usd  = 0.0,
+            )
+            log.info(f"RECONCILE: Synthetic entry created | ticket={t['ticket']} | "
+                     f"{t['dir']} @ {t['entry']:.2f}")
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # MAIN LOOP
 # ═════════════════════════════════════════════════════════════════════════════
@@ -875,6 +926,7 @@ def run():
     max_open_today    = 0
     min_balance_today = acct.balance
     open_trades       = recover_open_positions()
+    reconcile_on_startup(open_trades, logger, ai)
     last_date         = now_utc().date()
     last_week         = now_utc().isocalendar()[1]
     consec_losses     = 0
@@ -962,6 +1014,15 @@ def run():
                 log.warning("MT5 returned zero balance — skipping iteration (bad reading).")
                 time.sleep(30); continue
 
+            # Publish ground-truth balance so pnl_tracker and /balance stay accurate
+            write_bot("mean_reversion", {
+                "balance":      acct.balance,
+                "status":       "running",
+                "weekly_start": weekly_start,
+                "daily_start":  daily_start,
+                "last_write":   datetime.utcnow().isoformat(),
+            })
+
             # ── Weekly loss guard — 6hr cooldown then regime check ────────
             weekly_dd = (weekly_start - acct.balance) / weekly_start * 100
             if weekly_dd >= MAX_WEEKLY_LOSS:
@@ -969,7 +1030,22 @@ def run():
                     log.warning(f"WEEKLY CAP: -{weekly_dd:.1f}%. Closing all. 6hr cooldown.")
                     close_all_positions("weekly-cap")
                     trading_halted = True
-                    time.sleep(21600)
+                    write_bot("mean_reversion", {
+                        "day_locked":     True,
+                        "lock_reason":    f"WEEKLY CAP: -{weekly_dd:.1f}% weekly loss",
+                        "lock_alerted":   False,
+                        "resume_trading": False,
+                    })
+                    cooldown_end = datetime.utcnow() + timedelta(hours=6)
+                    while datetime.utcnow() < cooldown_end:
+                        if read_bot("mean_reversion").get("resume_trading"):
+                            write_bot("mean_reversion", {"day_locked": False, "resume_trading": False})
+                            log.warning("WEEKLY CAP RESUME: user override — resuming early.")
+                            trading_halted = False
+                            break
+                        time.sleep(60)
+                    else:
+                        write_bot("mean_reversion", {"day_locked": False})
                     df_h1 = get_candles(mt5.TIMEFRAME_H1, 60)
                     df_h4 = get_candles(mt5.TIMEFRAME_H4, 50)
                     if not df_h1.empty and not df_h4.empty:

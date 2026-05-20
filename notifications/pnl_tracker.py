@@ -2,14 +2,19 @@
 pnl_tracker.py — Real-Time P&L Engine
 
 Runs every minute via SYS_PNLTRACKER task.
-Pure math from trades JSON only — no MT5 connections.
 Writes results to bot_state.json (single source of truth).
 Sends Telegram alerts when thresholds are crossed.
+
+Two operating modes per bot:
+  LIVE   — bot is running and writing MT5-authoritative data to bot_state
+           (last_write within 5 min). Uses bot_state balance/daily_start/weekly_start
+           directly; no trades.json math.
+  OFFLINE — bot is stopped or stale. Falls back to trades.json math.
 """
 
 import json
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -26,11 +31,12 @@ from bot_state import (
     read_bot, set_pnl, write_bot
 )
 
-TELEGRAM_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
-ADMIN_CHAT     = "429207285"
-GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadcast destination
-ALGOS_ROOT     = Path("C:/algos")
-TEXAS          = ZoneInfo("America/Chicago")
+TELEGRAM_TOKEN  = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
+ADMIN_CHAT      = "429207285"
+GROUP_CHAT      = "-1003977707258"
+ALGOS_ROOT      = Path("C:/algos")
+TEXAS           = ZoneInfo("America/Chicago")
+BOT_LIVE_WINDOW = 300  # seconds — treat bot as live if last_write is within this
 
 # Trades files per bot
 BOT_TRADES = {
@@ -66,23 +72,92 @@ def parse_dt(dt_str: str) -> datetime:
     try:
         return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
     except Exception:
-        return datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
+        return datetime.now(timezone.utc)
 
 
 def trade_pnl(t: dict, starting_balance: float) -> float:
-    """Get dollar P&L for a trade."""
     if t.get("pnl_usd") is not None:
         return float(t["pnl_usd"])
-    # Fallback: r_multiple × risk_usd
     r    = float(t.get("r_multiple") or 0)
     risk = float(t.get("risk_usd") or (starting_balance * 0.02))
     return round(r * risk, 2)
 
 
-def calculate_pnl(bot_key: str) -> dict:
-    """Pure math P&L from trades JSON."""
-    trades  = load_trades(BOT_TRADES[bot_key])
-    start   = BOT_STARTING_BALANCES[bot_key]
+def _bot_is_live(state: dict) -> bool:
+    """True if the bot wrote to bot_state within BOT_LIVE_WINDOW seconds."""
+    last_write = state.get("last_write")
+    if not last_write:
+        return False
+    try:
+        lw = datetime.fromisoformat(last_write)
+        if lw.tzinfo is None:
+            lw = lw.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - lw).total_seconds()
+        return age < BOT_LIVE_WINDOW
+    except Exception:
+        return False
+
+
+def _peak_from_trades(bot_key: str, closed: list) -> float:
+    """Walk closed trade history to find the peak running balance."""
+    start = BOT_STARTING_BALANCES[bot_key]
+    peak = running = start
+    for t in sorted(closed, key=lambda x: x.get("closed_at", "")):
+        running += trade_pnl(t, start)
+        peak = max(peak, running)
+    return peak
+
+
+def _calculate_pnl_live(bot_key: str, state: dict) -> dict:
+    """
+    Bot is running — use MT5-authoritative values from bot_state.
+    Computes daily/weekly P&L from bot-written daily_start/weekly_start.
+    """
+    balance      = float(state["balance"])
+    daily_start  = float(state["daily_start"])
+    weekly_start = float(state["weekly_start"])
+
+    daily_pnl    = balance - daily_start
+    weekly_pnl   = balance - weekly_start
+
+    daily_pnl_pct  = daily_pnl / daily_start * 100 if daily_start else 0.0
+    weekly_pnl_pct = weekly_pnl / weekly_start * 100 if weekly_start else 0.0
+
+    start          = BOT_STARTING_BALANCES[bot_key]
+    total_pnl_pct  = (balance - start) / start * 100 if start else 0.0
+
+    # Trade count from file (doesn't affect P&L math, just informational)
+    trades       = load_trades(BOT_TRADES[bot_key])
+    today_tx     = datetime.now(TEXAS).date()
+    closed       = [t for t in trades
+                    if t.get("outcome") in ("win", "loss", "breakeven")
+                    and t.get("closed_at")]
+    today_trades = [t for t in closed
+                    if parse_dt(t["closed_at"]).astimezone(TEXAS).date() == today_tx]
+
+    peak = max(_peak_from_trades(bot_key, closed), balance)
+
+    return {
+        "balance":        round(balance, 2),
+        "daily_pnl":      round(daily_pnl, 2),
+        "daily_pnl_pct":  round(daily_pnl_pct, 2),
+        "weekly_pnl":     round(weekly_pnl, 2),
+        "weekly_pnl_pct": round(weekly_pnl_pct, 2),
+        "total_pnl_pct":  round(total_pnl_pct, 2),
+        "peak_balance":   round(peak, 2),
+        "trades_today":   len(today_trades),
+        "has_pnl_data":   True,
+        "source":         "live",
+    }
+
+
+def _calculate_pnl_offline(bot_key: str, state: dict) -> dict:
+    """
+    Bot is offline — fall back to trades.json math.
+    Uses last-known balance from bot_state when trades.json has no pnl_usd data.
+    """
+    trades = load_trades(BOT_TRADES[bot_key])
+    start  = BOT_STARTING_BALANCES[bot_key]
 
     now_tx     = datetime.now(TEXAS)
     today      = now_tx.date()
@@ -92,43 +167,33 @@ def calculate_pnl(bot_key: str) -> dict:
               if t.get("outcome") in ("win", "loss", "breakeven")
               and t.get("closed_at")]
 
-    # Check if any real pnl_usd data exists
     has_pnl_data = any(t.get("pnl_usd") is not None for t in closed)
 
     if not has_pnl_data and closed:
-        # No pnl_usd yet — read balance from existing bot_state
-        # Don't overwrite with bad calculation
-        existing = read_bot(bot_key)
-        balance  = existing.get("balance", start)
-        total_profit = balance - start
+        # No pnl_usd yet — use last-known balance from bot_state rather than
+        # silently computing a wrong number from r_multiple estimates.
+        existing      = state
+        balance       = existing.get("balance", start)
+        total_profit  = balance - start
     else:
         total_profit = sum(trade_pnl(t, start) for t in closed)
 
     current_balance = round(start + total_profit, 2)
 
-    # Daily trades
     today_trades  = [t for t in closed
                      if parse_dt(t["closed_at"]).astimezone(TEXAS).date() == today]
     daily_profit  = sum(trade_pnl(t, start) for t in today_trades) if has_pnl_data else 0.0
 
-    # Weekly trades
     week_trades   = [t for t in closed
                      if parse_dt(t["closed_at"]).astimezone(TEXAS).date() >= week_start]
     weekly_profit = sum(trade_pnl(t, start) for t in week_trades) if has_pnl_data else 0.0
 
-    # Starting balances for % calc
-    pre_today_profit  = (total_profit - daily_profit) if has_pnl_data else total_profit
-    pre_week_profit   = (total_profit - weekly_profit) if has_pnl_data else total_profit
-    daily_start       = round(start + pre_today_profit, 2)
-    week_start_bal    = round(start + pre_week_profit, 2)
+    pre_today_profit = (total_profit - daily_profit) if has_pnl_data else total_profit
+    pre_week_profit  = (total_profit - weekly_profit) if has_pnl_data else total_profit
+    daily_start      = round(start + pre_today_profit, 2)
+    week_start_bal   = round(start + pre_week_profit, 2)
 
-    # Peak balance
-    peak    = start
-    running = start
-    for t in sorted(closed, key=lambda x: x.get("closed_at", "")):
-        running += trade_pnl(t, start)
-        peak     = max(peak, running)
-    peak = max(peak, current_balance)
+    peak = max(_peak_from_trades(bot_key, closed), current_balance)
 
     return {
         "balance":        current_balance,
@@ -140,7 +205,15 @@ def calculate_pnl(bot_key: str) -> dict:
         "peak_balance":   round(peak, 2),
         "trades_today":   len(today_trades),
         "has_pnl_data":   has_pnl_data,
+        "source":         "offline",
     }
+
+
+def calculate_pnl(bot_key: str) -> dict:
+    state = read_bot(bot_key)
+    if _bot_is_live(state):
+        return _calculate_pnl_live(bot_key, state)
+    return _calculate_pnl_offline(bot_key, state)
 
 
 def check_alerts(bot_key: str, pnl: dict):
@@ -171,7 +244,7 @@ def check_alerts(bot_key: str, pnl: dict):
     if not pnl["has_pnl_data"]:
         return  # Don't send alerts if data isn't reliable yet
 
-    # Day locked (peak protection or ceiling hit) — only scalper has this
+    # Day locked (peak protection or ceiling hit)
     if state.get("day_locked") and not state.get("lock_alerted"):
         reason = state.get("lock_reason", "Daily engine triggered")
         send_alert(
@@ -244,7 +317,8 @@ def main():
                 f"day={pnl['daily_pnl_pct']:+.1f}% | "
                 f"week={pnl['weekly_pnl_pct']:+.1f}% | "
                 f"trades={pnl['trades_today']}"
-                + (" [estimated]" if not pnl["has_pnl_data"] else "")
+                f" [{pnl['source']}]"
+                + ("" if pnl["has_pnl_data"] else " [estimated]")
             )
 
         except Exception as e:

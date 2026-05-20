@@ -294,13 +294,122 @@ chat ("LWG Capital Algos Notifications", id `-1003977707258`) instead of admin D
 
 ---
 
+---
+
+## What Was Done This Session (2026-05-19 — Session 4)
+
+### Root-cause investigation — balance discrepancy and false alerts
+
+Diagnosed three compounding bugs that caused scalper `/balance` to show $785.67 vs MT5 actual
+$910.62, a false weekly cap alert, and a "/resume not locked" confusion:
+
+1. **Hardcoded starting balance** — `pnl_tracker.py` used `BOT_STARTING_BALANCES = {"scalper": 1000.0}`
+   rather than reading the actual session-start balance. Any restart with a different balance
+   immediately breaks all P&L math.
+2. **Unlogged trade closes** — when the bot restarts with an empty `open_trades` list but
+   old MT5 positions still open, subsequent closes are not matched to trades.json records
+   ("Could not find open trade"). Those trades show `outcome=None` forever, corrupting cumulative P&L.
+3. **Floating P&L captured before close** — `close_position()` saved `p.profit` (the unrealised
+   float P&L BEFORE the order executes) instead of the actual fill P&L from deal history.
+   This produced wrong positive pnl_usd on losing trades.
+
+### Feature — Startup reconciliation (all 4 bots)
+
+Added `reconcile_on_startup(open_trades, logger, ai)` function to all 4 bots
+(`bot_scalper.py`, `bot_smc_trend.py`, `bot_mean_reversion.py`, `bot_fft.py`).
+
+Logic runs once at startup, after `recover_open_positions()`:
+- **Missed close** (in trades.json as open, NOT in MT5): bot was down when trade closed.
+  Calls `get_deal_result(ticket)` to fetch actual close price + P&L from MT5 deal history.
+  Logs the close via `logger.log_close()`. If deal history is unavailable, marks
+  trade as `outcome="unknown"` via `logger.mark_orphaned()` (excluded from P&L math).
+- **Phantom position** (in MT5, NOT in trades.json): trades.json was wiped or trade entered
+  before logger was initialised. Adds a stub entry via `logger.log_entry(..., is_reentry=True)`
+  so the position is tracked going forward.
+
+### Fix — Actual close P&L (all 4 bots)
+
+`close_position()` in all 4 bots now:
+1. Executes the close order.
+2. Sleeps 0.3s for MT5 to record the deal.
+3. Calls `get_deal_result(ticket)` to fetch the actual fill price and realised P&L.
+4. Falls back to `p.profit` (pre-close float) only if deal history is unavailable.
+
+`get_deal_result()` lookback extended from 1 day to 7 days in all bots.
+
+### Fix — mark_orphaned() in shared_ai_brain.py
+
+Added `TradeLogger.mark_orphaned(ticket)` method. Sets `outcome="unknown"`, `pnl_usd=None`,
+`r_multiple=None` on a pending trade with no recoverable deal history. The "unknown" outcome
+is excluded from `pnl_tracker.py`'s `outcome in ('win','loss','breakeven')` filter, so it
+cannot corrupt P&L calculations.
+
+### Feature — Bot publishes MT5 ground truth to bot_state (all 4 bots)
+
+Every main-loop iteration each bot now writes to `bot_state.json`:
+
+```json
+{
+  "balance":      <MT5 acct.balance>,
+  "daily_start":  <session daily_start>,
+  "weekly_start": <weekly_start>,
+  "last_write":   "<UTC ISO timestamp>",
+  "status":       "running"
+}
+```
+
+`last_write` is a heartbeat timestamp used by `pnl_tracker.py` to determine whether
+the bot is actively running.
+
+### Feature — pnl_tracker.py dual-mode P&L calculation
+
+`pnl_tracker.py` now operates in two modes per bot:
+
+**LIVE mode** (bot `last_write` within 300 seconds):
+- Uses `balance`, `daily_start`, `weekly_start` from `bot_state.json` directly.
+- `daily_pnl = balance − daily_start`, `weekly_pnl = balance − weekly_start`.
+- No trades.json math, no hardcoded starting balance — values are MT5-authoritative.
+
+**OFFLINE mode** (bot stopped or last_write stale > 5 min):
+- Falls back to trades.json math (existing behaviour).
+- Uses `bot_state["balance"]` as the last-known balance when trades.json has no `pnl_usd`
+  data, rather than the hardcoded $1,000 starting balance.
+
+Printed output now includes `[live]` or `[offline]` tag per bot each run.
+
+### Fix — Weekly cap: interruptible cooldown (all 4 bots)
+
+Replaced `time.sleep(21600)` weekly cap with a 60-second poll loop that:
+- Sets `bot_state: day_locked=True, lock_reason="WEEKLY CAP: …"` so `pnl_tracker.py`
+  fires the existing lock alert and Telegram reports it correctly.
+- Exits early if `read_bot(key).get("resume_trading")` is set (via `/resume` command).
+- On early exit or expiry, sets `day_locked=False`.
+
+Previously the bot was unreachable for 6 hours — no monitoring, no override, no alerts.
+
+### Fix — Weekly start persistence (scalper)
+
+Scalper was not persisting `weekly_start` across restarts. Pattern now matches the other
+bots: reads/writes `scalper_weekly.json` on startup and on weekly reset.
+
+### VPS state after this session
+
+All 4 bot files updated. Not yet deployed — deploy required via git push or rsync to VPS.
+Existing trades.json files on VPS have some corrupted `pnl_usd` values (from old pre-close
+floating P&L bug). Once bots are restarted after deploy, `reconcile_on_startup` will
+correctly tag any pending-but-closed trades. Historical pnl_usd corruption for already-closed
+trades will not be fixed automatically — a one-time trades.json reset is acceptable if
+needed, since going-forward records will be clean.
+
+---
+
 ## What I Am Working On (Update This Section Each Session)
 
-- Last completed: Telegram group chat migration.
-- Currently working on: Deploy to VPS and verify.
-- Next up: Monitor AI training — once 15 closed trades accumulate per bot, verify first model
-  trains and AUC gate passes. Then check Calmar tracking is updating correctly.
+- Last completed: Full accounting reconciliation overhaul across all 4 bots + pnl_tracker.
+- Next up: Deploy to VPS (rsync or git push), restart all bots, verify live output shows
+  `[live]` mode in pnl_tracker and that `/balance` matches MT5 actual balance within $1.
 - Open questions / decisions pending:
-  - `bot_futures.py` — NOT yet audited for the same missing `log_close` bug
-  - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10% to give more
-    room before locking (current value means a 10pp P&L swing locks the day)
+  - Existing trades.json on VPS has corrupted pnl_usd. Consider resetting to `[]` per bot
+    on first deploy, letting reconcile_on_startup re-log any currently-open positions.
+  - `bot_futures.py` — NOT yet audited for the same reconciliation/P&L bugs.
+  - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.

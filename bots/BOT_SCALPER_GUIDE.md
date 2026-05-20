@@ -120,3 +120,39 @@ DAILY CEILING HIT: +50.1%. Banking everything.
 DEAD ZONE PORTFOLIO CLOSE | Net P&L=+$18.40 | Closing all 3 positions
 PROGRESS | $1,000 -> $10,000 (10%) | growth=+0.0% | risk=2.0%
 ```
+
+---
+
+## Startup Reconciliation
+
+On every restart, `reconcile_on_startup()` runs before entering the main loop:
+
+**Missed closes** (trade in `scalper_trades.json` as open, but position not in MT5):
+- Bot was down when the trade closed. Fetches actual close price + realised P&L from MT5
+  deal history (7-day lookback window).
+- If found: logs the close via `TradeLogger.log_close()`.
+- If not found (deal expired from history): marks the trade `outcome="unknown"` via
+  `TradeLogger.mark_orphaned()`. Orphaned trades are excluded from all P&L calculations.
+
+**Phantom positions** (position in MT5, no record in `scalper_trades.json`):
+- trades.json was wiped or trade entered before logger initialised.
+- Adds a stub `log_entry(..., is_reentry=True)` so the position is tracked going forward.
+
+## Balance and State Persistence
+
+Every main-loop iteration writes to `bot_state.json`:
+- `balance` — actual `mt5.account_info().balance`
+- `daily_start` — balance at start of current UTC day (from `daily_engine.start`)
+- `weekly_start` — balance at start of current ISO week (persisted in `scalper_weekly.json`)
+- `last_write` — UTC timestamp used by `pnl_tracker.py` to detect live mode
+
+`weekly_start` survives restarts via `scalper_weekly.json` in the instance folder.
+
+## Weekly Cap Behaviour
+
+When the weekly drawdown exceeds `WEEKLY_LOSS_CAP_PCT`:
+1. All open positions are closed.
+2. `bot_state: day_locked=True, lock_reason="WEEKLY CAP: …"` is set — `pnl_tracker.py`
+   sends the lock alert within 1 minute.
+3. Bot enters a 6-hour interruptible cooldown (60-second poll loop, not `time.sleep(21600)`).
+4. `/resume scalper` breaks the cooldown early by setting `resume_trading=True` in bot_state.

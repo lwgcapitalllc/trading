@@ -142,3 +142,33 @@ T12345 RUNNER active @ 2.0R
 DEAD ZONE PORTFOLIO CLOSE | Net P&L=+$45.20 | Closing all 2 positions
 New day 2026-05-16 | $2,759.28 | AI: Trained | AUC=0.61 | WR(10)=67%
 ```
+
+
+---
+
+## Startup Reconciliation
+
+On every restart, `reconcile_on_startup()` runs before the main loop:
+
+**Missed closes** (trade open in trades.json, position gone from MT5):
+- Bot was down when the trade closed. Fetches actual close price + P&L from MT5 deal history
+  (7-day lookback). Logs via `TradeLogger.log_close()` or marks `outcome="unknown"` via
+  `TradeLogger.mark_orphaned()` if history is unavailable.
+
+**Phantom positions** (position in MT5, no record in trades.json):
+- Adds a stub `log_entry(..., is_reentry=True)` so the position is tracked going forward.
+
+## Balance and State Persistence
+
+Every main-loop iteration writes to `bot_state.json`:
+- `balance` — actual `mt5.account_info().balance`
+- `daily_start` — balance at start of current UTC day
+- `weekly_start` — balance at start of current ISO week (persisted in weekly JSON file)
+- `last_write` — UTC timestamp used by `pnl_tracker.py` to detect live mode
+
+## Weekly Cap Behaviour
+
+When weekly drawdown exceeds the cap:
+1. All open positions are closed.
+2. `bot_state: day_locked=True, lock_reason="WEEKLY CAP: …"` — triggers lock alert.
+3. Interruptible 6-hour cooldown (60-second poll). `/resume <bot>` breaks it early.

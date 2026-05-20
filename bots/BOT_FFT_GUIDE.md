@@ -155,3 +155,33 @@ No BOS detected. Waiting 60s.
 No green zone overlap with FFT entry zone. Skip.
 DEAD ZONE PORTFOLIO CLOSE | Net P&L=+$31.50 | Closing all 1 position
 ```
+
+
+---
+
+## Startup Reconciliation
+
+On every restart, `reconcile_on_startup()` runs before the main loop:
+
+**Missed closes** (trade open in trades.json, position gone from MT5):
+- Bot was down when the trade closed. Fetches actual close price + P&L from MT5 deal history
+  (7-day lookback). Logs via `TradeLogger.log_close()` or marks `outcome="unknown"` via
+  `TradeLogger.mark_orphaned()` if history is unavailable.
+
+**Phantom positions** (position in MT5, no record in trades.json):
+- Adds a stub `log_entry(..., is_reentry=True)` so the position is tracked going forward.
+
+## Balance and State Persistence
+
+Every main-loop iteration writes to `bot_state.json`:
+- `balance` — actual `mt5.account_info().balance`
+- `daily_start` — balance at start of current UTC day
+- `weekly_start` — balance at start of current ISO week (persisted in weekly JSON file)
+- `last_write` — UTC timestamp used by `pnl_tracker.py` to detect live mode
+
+## Weekly Cap Behaviour
+
+When weekly drawdown exceeds the cap:
+1. All open positions are closed.
+2. `bot_state: day_locked=True, lock_reason="WEEKLY CAP: …"` — triggers lock alert.
+3. Interruptible 6-hour cooldown (60-second poll). `/resume <bot>` breaks it early.

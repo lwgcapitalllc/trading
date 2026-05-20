@@ -2,12 +2,12 @@
 shared_ai_brain.py — AI Brain + Trade Logger + Daily Performance Logger
 
 Improvements over v1:
-  - Training threshold lowered to 15 trades (was 30)
+  - Training threshold lowered to 15 trades
   - AUC gate raised to 0.55 (stricter — faster training needs stricter quality gate)
   - Daily performance logger — records drawdown, trade count, simultaneous positions
   - Drawdown awareness feature — AI learns which day patterns lead to losses
   - Re-entry tracking — logs whether a trade was a re-entry and its outcome
-  - Retrains every 5 new closed trades (was 10)
+  - Retrains every 5 new closed trades
 
 Install: pip install scikit-learn joblib
 """
@@ -254,6 +254,23 @@ class TradeLogger:
                          + (" [re-entry]" if t.get("is_reentry") else ""))
                 return
         log.warning(f"Could not find open trade for ticket {ticket}")
+
+    def mark_orphaned(self, ticket: int) -> None:
+        """
+        Mark a pending trade as closed-unknown when deal history cannot be retrieved.
+        Outcome 'unknown' is excluded from all P&L and win-rate calculations so it
+        doesn't corrupt stats, but the record is preserved for audit purposes.
+        """
+        for t in self.trades:
+            if t["ticket"] == ticket and t["outcome"] is None:
+                t["closed_at"]   = datetime.utcnow().isoformat()
+                t["outcome"]     = "unknown"
+                t["pnl_usd"]     = None
+                t["r_multiple"]  = None
+                t["close_price"] = None
+                self._save()
+                log.warning(f"ticket={ticket} marked orphaned — deal history unavailable")
+                return
 
     def get_closed(self):
         return [t for t in self.trades if t["outcome"] is not None]

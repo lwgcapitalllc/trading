@@ -55,7 +55,7 @@ import json
 import logging
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import MetaTrader5 as mt5
@@ -66,10 +66,11 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
 
-from bot_utils      import load_config, setup_logging, get_instance_dir
+from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
 from shared_regime   import RegimeClassifier
+from bot_state       import write_bot, read_bot
 
 # ── Load config ───────────────────────────────────────────────────────────────
 _CFG  = load_config()
@@ -352,9 +353,8 @@ def place_order(direction: str, lots: float, sl: float,
 
 def get_deal_result(ticket: int):
     """Return (close_price, pnl_usd) for a closed position from MT5 deal history."""
-    from datetime import datetime as _dt, timedelta as _td
-    to    = _dt.utcnow()
-    from_ = to - _td(days=1)
+    to    = datetime.utcnow()
+    from_ = to - timedelta(days=7)
     deals = mt5.history_deals_get(from_, to, position=ticket)
     if deals:
         closing = [d for d in deals if d.entry == 1]  # DEAL_ENTRY_OUT
@@ -368,9 +368,8 @@ def close_position(ticket: int, direction: str, reason: str = "") -> tuple:
     """Close an open position at market. Returns (success, close_price, pnl_usd)."""
     pos = mt5.positions_get(ticket=ticket)
     if not pos:
-        return True, 0.0, 0.0
+        return False, 0.0, 0.0
     p = pos[0]
-    pnl_usd     = p.profit
     bid, ask    = get_tick()
     close_type  = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
     close_price = bid if direction == "bullish" else ask
@@ -391,7 +390,11 @@ def close_position(ticket: int, direction: str, reason: str = "") -> tuple:
     ok = result.retcode == mt5.TRADE_RETCODE_DONE
     if ok:
         log.info(f"CLOSED T{ticket} | reason={reason}")
-        return True, close_price, pnl_usd
+        time.sleep(0.3)
+        cp, pnl = get_deal_result(ticket)
+        if cp == 0.0:
+            cp, pnl = close_price, p.profit
+        return True, cp, pnl
     return False, 0.0, 0.0
 
 
@@ -606,6 +609,54 @@ def recover_open_positions() -> list:
     if recovered:
         log.info(f"Recovered {len(recovered)} open FFT position(s).")
     return recovered
+
+
+def reconcile_on_startup(open_trades: list, logger, ai) -> None:
+    """
+    Ground-truth reconciliation after any restart or VPS reboot.
+
+    Case 1 — Positions closed while bot was down (SL/TP hit by broker):
+      trades.json has outcome=None but position is gone from MT5.
+      → Retrieve actual P&L from deal history and log the close.
+
+    Case 2 — Positions open in MT5 with no trades.json entry:
+      trades.json was wiped during a crash and the position re-appeared on recovery.
+      → Create a synthetic entry record so log_close() can find it later.
+    """
+    pending = {t["ticket"] for t in logger.trades if t.get("outcome") is None}
+    live    = {t["ticket"] for t in open_trades}
+
+    missed = pending - live
+    if missed:
+        log.info(f"RECONCILE: {len(missed)} position(s) closed while bot was down — logging now.")
+    for ticket in missed:
+        cp, pnl = get_deal_result(ticket)
+        if cp:
+            logger.log_close(ticket, cp, pnl)
+            ai.on_trade_closed(ticket, cp, pnl)
+            log.info(f"RECONCILE: Logged missed close | ticket={ticket} | pnl=${pnl:+.2f}")
+        else:
+            logger.mark_orphaned(ticket)
+            log.warning(f"RECONCILE: No deal history for ticket={ticket} — marked orphaned")
+
+    phantom = live - pending
+    if phantom:
+        log.info(f"RECONCILE: {len(phantom)} recovered position(s) have no trades.json entry — creating.")
+    for t in open_trades:
+        if t["ticket"] in phantom:
+            logger.log_entry(
+                ticket    = t["ticket"],
+                features  = {},
+                direction = t["dir"],
+                entry     = t["entry"],
+                sl        = t["sl"],
+                tp1       = t.get("tp", 0.0),
+                tp2       = 0.0,
+                is_reentry= True,
+                risk_usd  = 0.0,
+            )
+            log.info(f"RECONCILE: Synthetic entry created | ticket={t['ticket']} | "
+                     f"{t['dir']} @ {t['entry']:.2f}")
 
 
 # =============================================================================
@@ -1129,6 +1180,7 @@ def run():
     max_open_today    = 0
     min_balance_today = acct.balance
     open_trades       = recover_open_positions()
+    reconcile_on_startup(open_trades, logger, ai)
     last_date         = now_utc().date()
     last_week         = now_utc().isocalendar()[1]
     trading_halted    = False
@@ -1234,6 +1286,14 @@ def run():
                 time.sleep(30)
                 continue
 
+            write_bot("fft", {
+                "balance":      acct.balance,
+                "status":       "running",
+                "weekly_start": weekly_start,
+                "daily_start":  daily_start,
+                "last_write":   datetime.now(timezone.utc).isoformat(),
+            })
+
             max_open_today    = max(max_open_today, len(open_trades))
             min_balance_today = min(min_balance_today, acct.balance)
             daily_pnl_pct     = (acct.balance - daily_start) / daily_start * 100
@@ -1255,8 +1315,23 @@ def run():
                 if not trading_halted:
                     log.warning(f"WEEKLY CAP: -{weekly_dd:.1f}%. 6hr cooldown.")
                     close_all_positions("weekly-cap")
-                    trading_halted = True
-                    time.sleep(21600)
+                    calmar.record(acct.balance)
+                    write_bot("fft", {
+                        "day_locked":     True,
+                        "lock_reason":    f"WEEKLY CAP: -{weekly_dd:.1f}% weekly loss",
+                        "lock_alerted":   False,
+                        "resume_trading": False,
+                    })
+                    trading_halted  = True
+                    cooldown_end = datetime.now(timezone.utc) + timedelta(hours=6)
+                    while datetime.now(timezone.utc) < cooldown_end:
+                        if read_bot("fft").get("resume_trading"):
+                            write_bot("fft", {"day_locked": False, "resume_trading": False})
+                            log.warning("WEEKLY CAP RESUME: user override — resuming early.")
+                            break
+                        time.sleep(60)
+                    else:
+                        write_bot("fft", {"day_locked": False})
                     trading_halted = False
                 continue
 
