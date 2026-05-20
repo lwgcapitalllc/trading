@@ -207,42 +207,30 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
         bot_state["stale_alerted"] = False
         return bot_state
 
-    # ── Log staleness check — catches alive-but-frozen bots ───────────────
-    log_path = cfg.get("log")
-    if log_path and log_path.exists():
-        stale_secs = time.time() - log_path.stat().st_mtime
-        if stale_secs > LOG_STALE_SECS:
-            if not bot_state.get("stale_alerted"):
-                last_line = ""
-                try:
-                    with open(log_path, "rb") as _f:
-                        _f.seek(max(0, log_path.stat().st_size - 500))
-                        chunk = _f.read().decode("utf-8", errors="replace").strip()
-                        last_line = chunk.split("\n")[-1]
-                        if " | " in last_line:
-                            last_line = last_line.split(" | ", 3)[-1]
-                except Exception:
-                    pass
-                now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
-                send_alert(
-                    f"⚠️ *{cfg['name']} — Loop Stalled*\n"
-                    f"Process alive but log silent {stale_secs / 60:.0f} min\n"
-                    f"Last: `{last_line[:120]}`\n"
-                    f"Time: {now_str}\n"
-                    f"Action: /restart or check `algo logs`"
-                )
-                bot_state["stale_alerted"] = True
-                _bot_state.set_status(bot_key, "stalled")
-        else:
-            if bot_state.get("stale_alerted"):
-                now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
-                send_alert(
-                    f"🟢 *{cfg['name']} — Loop Recovered*\n"
-                    f"Log activity resumed. Bot is scanning again.\n"
-                    f"Time: {now_str}"
-                )
-                _bot_state.set_status(bot_key, "running")
-            bot_state["stale_alerted"] = False
+    # ── Heartbeat check — catches alive-but-frozen loops ─────────────────
+    heartbeat  = _bot_state.read_bot(bot_key).get("heartbeat", 0)
+    stale_secs = (time.time() - heartbeat) if heartbeat else 0
+    if stale_secs > LOG_STALE_SECS:
+        if not bot_state.get("stale_alerted"):
+            now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
+            send_alert(
+                f"⚠️ *{cfg['name']} — Loop Stalled*\n"
+                f"Process alive but heartbeat missing {stale_secs / 60:.0f} min\n"
+                f"Time: {now_str}\n"
+                f"Action: /restart or check `algo logs`"
+            )
+            bot_state["stale_alerted"] = True
+            _bot_state.set_status(bot_key, "stalled")
+    else:
+        if bot_state.get("stale_alerted"):
+            now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
+            send_alert(
+                f"🟢 *{cfg['name']} — Loop Recovered*\n"
+                f"Heartbeat resumed. Bot is scanning again.\n"
+                f"Time: {now_str}"
+            )
+            _bot_state.set_status(bot_key, "running")
+        bot_state["stale_alerted"] = False
 
     # ── Balance and P&L checks ────────────────────────────────────────────
     equity       = load_json(cfg["equity"])

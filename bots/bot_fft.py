@@ -738,6 +738,7 @@ def run():
             now  = now_utc()
             date = now.date()
             week = now.isocalendar()[1]
+            write_bot("fft", {"heartbeat": time.time()})
 
             # ── Market close force-close ──────────────────────────────────
             if is_market_close() and open_trades:
@@ -1095,7 +1096,9 @@ def run():
                         log.info(f"Entry 2 placed @ {filled2:.2f} | "
                                  f"TP={tp2_price:.2f} | lots={lots2}")
 
-                time.sleep(300)  # 5 min cooldown after entry
+                for _ in range(5):
+                    time.sleep(60)
+                    write_bot("fft", {"heartbeat": time.time()})
             else:
                 consec_losses += 1
                 log.warning(f"Order failed. Consecutive: {consec_losses}")

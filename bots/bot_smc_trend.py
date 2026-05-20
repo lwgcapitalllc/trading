@@ -478,6 +478,7 @@ def run():
         while True:
             now  = now_utc()
             date = now.date()
+            write_bot("smc_trend", {"heartbeat": time.time()})
 
             # ── Market close — highest priority check ─────────────────────
             # Runs every loop iteration so it can never be missed
@@ -597,7 +598,9 @@ def run():
                         log.info(f"Regime OK ({reason}). Resuming.")
                     else:
                         log.warning(f"Regime still bad ({reason}). Waiting 1hr.")
-                        time.sleep(3600)
+                        for _ in range(60):
+                            time.sleep(60)
+                            write_bot("smc_trend", {"heartbeat": time.time()})
                     continue
                 else:
                     trading_halted = False
@@ -631,7 +634,10 @@ def run():
                 if not df_m15.empty:
                     manage_positions(open_trades, get_atr(df_m15),
                                      logger, ai, df_h4 if not df_h4.empty else None)
-                time.sleep(3600); continue
+                for _ in range(60):
+                    time.sleep(60)
+                    write_bot("smc_trend", {"heartbeat": time.time()})
+                continue
 
             # ── Kill zone gate ────────────────────────────────────────────
             kz = in_kill_zone()
@@ -795,7 +801,9 @@ def run():
                 trades_today  += 1
                 consec_losses  = 0
                 log.info(f"Trade #{trades_today} today. Runner system armed.")
-                time.sleep(300)
+                for _ in range(5):
+                    time.sleep(60)
+                    write_bot("smc_trend", {"heartbeat": time.time()})
             else:
                 consec_losses += 1
                 log.warning(f"Order failed. Consecutive issues: {consec_losses}")

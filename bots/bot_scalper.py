@@ -602,6 +602,7 @@ def run():
     try:
         while True:
             now  = now_utc()
+            write_bot("scalper", {"heartbeat": time.time()})
 
             # ── Market close — highest priority check ─────────────────────
             if is_market_close() and open_trades:
@@ -716,7 +717,9 @@ def run():
             # ── Consecutive loss cooldown ─────────────────────────────────
             if consec_losses >= 3:
                 log.warning(f"{consec_losses} consecutive losses. 1hr cooldown.")
-                time.sleep(3600)
+                for _ in range(60):
+                    time.sleep(60)
+                    write_bot("scalper", {"heartbeat": time.time()})
                 consec_losses = 0
                 continue
 

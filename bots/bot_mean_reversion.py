@@ -482,6 +482,7 @@ def run():
         while True:
             now  = now_utc()
             date = now.date()
+            write_bot("mean_reversion", {"heartbeat": time.time()})
 
             # ── Market close — highest priority check ─────────────────────
             if is_market_close() and open_trades:
@@ -599,7 +600,9 @@ def run():
                         log.info(f"Regime={regime.current_regime}. Bot 2 resuming.")
                     else:
                         log.warning("Regime TRENDING. Waiting 1 more hour.")
-                        time.sleep(3600)
+                        for _ in range(60):
+                            time.sleep(60)
+                            write_bot("mean_reversion", {"heartbeat": time.time()})
                     continue
                 else:
                     trading_halted = False
@@ -629,7 +632,10 @@ def run():
             if dd >= MAX_DAILY_LOSS:
                 log.warning(f"Daily cap hit ({dd:.1f}%). Managing open trades only.")
                 manage_positions(open_trades, logger, ai)
-                time.sleep(3600); continue
+                for _ in range(60):
+                    time.sleep(60)
+                    write_bot("mean_reversion", {"heartbeat": time.time()})
+                continue
 
             # ── Regime check — INVERTED logic for mean reversion ──────────
             if regime.needs_update():
