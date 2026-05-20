@@ -67,7 +67,7 @@ from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
 from shared_regime   import RegimeClassifier
-from bot_state       import write_bot, read_bot
+from bot_state       import write_bot, read_bot, set_started
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
                               should_close_for_weekend, is_dead_zone, get_atr, get_ema)
 
@@ -674,6 +674,7 @@ def run():
     log.info(f"  BOS lookback: {SWING_LOOKBACK} candles | "
              f"Entry zone: {FFT_ENTRY_MIN*100:.1f}–{FFT_ENTRY_MAX*100:.1f}%")
     log.info("=" * 65)
+    set_started("fft")
 
     if not connect():
         return
