@@ -28,6 +28,7 @@ from bot_state import (
 
 TELEGRAM_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
 ADMIN_CHAT     = "429207285"
+GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadcast destination
 ALGOS_ROOT     = Path("C:/algos")
 TEXAS          = ZoneInfo("America/Chicago")
 
@@ -44,7 +45,7 @@ def send_alert(message: str):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": ADMIN_CHAT, "text": message, "parse_mode": "Markdown"},
+            json={"chat_id": GROUP_CHAT, "text": message, "parse_mode": "Markdown"},
             timeout=10
         )
     except Exception as e:

@@ -252,10 +252,52 @@ Stall alert fired at 3:33 AM CT. Actual locked balance: $1,082.85.
 
 ---
 
+## What Was Done This Session (2026-05-19 — Session 3)
+
+### Feature — Migrate Telegram bot to shared group chat
+
+All Telegram interactions (commands, replies, and scheduled alerts) now go to a shared group
+chat ("LWG Capital Algos Notifications", id `-1003977707258`) instead of admin DM.
+
+**Changes across 4 files:**
+
+`notifications/telegram_bot.py`
+- Added `GROUP_CHAT = "-1003977707258"` constant alongside `ADMIN_CHAT` (kept)
+- `send()` broadcasts to `GROUP_CHAT` (startup ping, unsolicited alerts)
+- Main polling loop now splits `chat_id` (where to reply) and `user_id` (who sent it).
+  `chat_id = msg.chat.id`, `user_id = msg.from.id`. All `get_role()` / `can()` calls
+  use `user_id`; all `send_to()` calls use `chat_id`. This is correct for groups: every
+  member shares one `chat.id` but each has a unique `from.id`.
+- `UNAUTHORIZED` log line now shows both: `chat={chat_id} user={user_id} (@username)`
+- `cmd_users()` "← you" marker uses `user_id` not `chat_id`
+- `pending_action` (module-level dict) replaced with `pending_actions: dict` keyed by
+  `user_id`. Two users can now `/restart` simultaneously without overwriting each other's
+  confirm state. `request_confirm()` and `cmd_confirm()` take `user_id` param.
+- `cmd_report()` and `_ask_report_group()` take `user_id` param to set per-user
+  pending action for the report group selection flow.
+- `handle_message()` signature updated to `(text, chat_id, user_id)`
+
+`notifications/monitor.py`
+- Added `GROUP_CHAT` constant; renamed `TELEGRAM_CHAT` → `ADMIN_CHAT` for consistency
+- `send_alert()` now sends to `GROUP_CHAT`
+
+`notifications/pnl_tracker.py`
+- Added `GROUP_CHAT` constant (kept `ADMIN_CHAT`)
+- `send_alert()` now sends to `GROUP_CHAT`
+
+`notifications/reporter.py`
+- Added `GROUP_CHAT` constant; renamed `TELEGRAM_CHAT` → `ADMIN_CHAT` for consistency
+- `send_telegram()` now sends to `GROUP_CHAT`
+
+**Authorization model unchanged:** `users.json` still stores personal Telegram user IDs
+(from `@userinfobot`). The group chat ID is only used as a send destination — never for auth.
+
+---
+
 ## What I Am Working On (Update This Section Each Session)
 
-- Last completed: Peak protection alert + `/resume` override. CLAUDE.md + slash commands setup.
-- Currently working on: Deploying changes to VPS. Validating Scalper resumes correctly.
+- Last completed: Telegram group chat migration.
+- Currently working on: Deploy to VPS and verify.
 - Next up: Monitor AI training — once 15 closed trades accumulate per bot, verify first model
   trains and AUC gate passes. Then check Calmar tracking is updating correctly.
 - Open questions / decisions pending:

@@ -32,7 +32,8 @@ except ImportError:
     sys.exit(1)
 
 TELEGRAM_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
-TELEGRAM_CHAT  = "429207285"
+ADMIN_CHAT     = "429207285"
+GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadcast destination
 ALGOS_ROOT     = Path("C:/algos")
 STATE_FILE     = ALGOS_ROOT / "monitor_state.json"
 TEXAS          = ZoneInfo("America/Chicago")
@@ -85,7 +86,7 @@ BOTS = {
 
 def send_alert(message: str):
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT, "text": message, "parse_mode": "Markdown"}
+    data = {"chat_id": GROUP_CHAT, "text": message, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=data, timeout=10)
     except Exception as e:

@@ -37,7 +37,8 @@ except ImportError:
     sys.exit(1)
 
 TELEGRAM_TOKEN  = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
-ADMIN_CHAT      = "429207285"   # Primary admin — always has access even if users.json missing
+ADMIN_CHAT      = "429207285"           # Primary admin — always has access even if users.json missing
+GROUP_CHAT      = "-1003977707258"      # LWG Capital Algos Notifications — broadcast destination
 ALGOS_ROOT      = Path("C:/algos")
 USERS_FILE      = ALGOS_ROOT / "users.json"
 OFFSET_FILE     = ALGOS_ROOT / "telegram_offset.json"
@@ -94,8 +95,8 @@ BOTS = {
     },
 }
 
-pending_action = {"command": None, "label": None, "expires_at": None}
-
+# Per-user pending actions — keyed by user_id so two users can't overwrite each other's confirm state
+pending_actions: dict = {}
 
 
 # =============================================================================
@@ -114,8 +115,19 @@ def get_updates(offset: int = 0) -> list:
 
 
 def send(text: str):
+    """Broadcast to the group (startup ping, unsolicited alerts)."""
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": ADMIN_CHAT, "text": text, "parse_mode": "Markdown"}
+    data = {"chat_id": GROUP_CHAT, "text": text, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=data, timeout=10)
+    except Exception as e:
+        print(f"Send error: {e}")
+
+
+def send_to(chat_id: str, text: str):
+    """Send a message to a specific chat ID."""
+    url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=data, timeout=10)
     except Exception as e:
@@ -126,7 +138,7 @@ def load_users() -> dict:
     """
     Load users from users.json on VPS.
     Falls back to admin-only if file missing.
-    Format: {"users": {"CHAT_ID": {"name": "...", "role": "admin|readonly"}}}
+    Format: {"users": {"USER_ID": {"name": "...", "role": "admin|readonly"}}}
     """
     if USERS_FILE.exists():
         try:
@@ -144,16 +156,16 @@ def save_users(users: dict):
         json.dump(data, f, indent=2)
 
 
-def get_role(chat_id: str) -> str | None:
-    """Return role for chat_id or None if not authorized."""
+def get_role(user_id: str) -> str | None:
+    """Return role for user_id or None if not authorized."""
     users = load_users()
-    user  = users.get(chat_id)
+    user  = users.get(user_id)
     return user["role"] if user else None
 
 
-def can(chat_id: str, command: str) -> bool:
+def can(user_id: str, command: str) -> bool:
     """True if the user's role allows this command."""
-    role = get_role(chat_id)
+    role = get_role(user_id)
     if not role:
         return False
     return command in ROLE_COMMANDS.get(role, set())
@@ -416,7 +428,7 @@ def cmd_trades() -> str:
     return "\n".join(lines)
 
 
-def cmd_report(force: bool = False, group: str | None = None) -> str:
+def cmd_report(user_id: str, force: bool = False, group: str | None = None) -> str:
     """
     Trigger the daily report.
     - On weekdays: runs immediately for the requested group
@@ -429,20 +441,22 @@ def cmd_report(force: bool = False, group: str | None = None) -> str:
     # If no group specified, ask first
     if group is None:
         if is_weekend:
-            # Stage a weekend+group prompt
-            pending_action["command"]    = lambda: _ask_report_group(force=True)
-            pending_action["label"]      = "Weekend Report Group"
-            pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=120)
+            pending_actions[user_id] = {
+                "command":    lambda uid=user_id: _ask_report_group(uid, force=True),
+                "label":      "Weekend Report Group",
+                "expires_at": datetime.utcnow() + timedelta(seconds=120),
+            }
             day = now_tx.strftime("%A")
             return (
                 f"📅 It's {day} — gold markets are closed\\.\n\n"
                 f"Reply /demo, /live, or /all to send a report anyway\\."
             )
         else:
-            # Stage a group prompt
-            pending_action["command"]    = lambda: _ask_report_group(force=False)
-            pending_action["label"]      = "Report Group"
-            pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=120)
+            pending_actions[user_id] = {
+                "command":    lambda uid=user_id: _ask_report_group(uid, force=False),
+                "label":      "Report Group",
+                "expires_at": datetime.utcnow() + timedelta(seconds=120),
+            }
             return (
                 f"📊 Which accounts?\n\n"
                 f"Reply /demo, /live, or /all"
@@ -457,11 +471,13 @@ def cmd_report(force: bool = False, group: str | None = None) -> str:
     return _run_reporter(group=group, force=force)
 
 
-def _ask_report_group(force: bool = False) -> str:
+def _ask_report_group(user_id: str, force: bool = False) -> str:
     """Called when user confirms a pending report — now ask for group."""
-    pending_action["command"]    = lambda: _run_reporter(group="all", force=force)
-    pending_action["label"]      = "Report (All)"
-    pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=120)
+    pending_actions[user_id] = {
+        "command":    lambda: _run_reporter(group="all", force=force),
+        "label":      "Report (All)",
+        "expires_at": datetime.utcnow() + timedelta(seconds=120),
+    }
     return "Reply /demo, /live, or /all"
 
 
@@ -478,7 +494,7 @@ def _run_reporter(group: str = "all", force: bool = False) -> str:
         return f"Failed to run reporter: {e}"
 
 
-def cmd_users(chat_id: str) -> str:
+def cmd_users(user_id: str) -> str:
     """Admin only — list all authorized users."""
     users  = load_users()
     now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
@@ -487,14 +503,13 @@ def cmd_users(chat_id: str) -> str:
         name  = info.get("name", "Unknown")
         role  = info.get("role", "readonly").upper()
         added = info.get("added", "")
-        you   = " \u2190 you" if uid == chat_id else ""
+        you   = " ← you" if uid == user_id else ""
         lines.append(f"`{uid}`  {name}  {role}{you}")
         if added:
             lines.append(f"  _Added {added}_")
     lines.append("")
     lines.append("_Manage users via the algo panel on your Mac_")
     return "\n".join(lines)
-
 
 
 def cmd_help() -> str:
@@ -527,10 +542,12 @@ def cmd_help() -> str:
 # CONTROL COMMANDS
 # =============================================================================
 
-def request_confirm(command_fn, label: str) -> str:
-    pending_action["command"]    = command_fn
-    pending_action["label"]      = label
-    pending_action["expires_at"] = datetime.utcnow() + timedelta(seconds=CONFIRM_TIMEOUT)
+def request_confirm(user_id: str, command_fn, label: str) -> str:
+    pending_actions[user_id] = {
+        "command":    command_fn,
+        "label":      label,
+        "expires_at": datetime.utcnow() + timedelta(seconds=CONFIRM_TIMEOUT),
+    }
     return (
         f"⚠️ *Confirm Required*\n\n"
         f"Action: _{label}_\n\n"
@@ -539,15 +556,16 @@ def request_confirm(command_fn, label: str) -> str:
     )
 
 
-def cmd_confirm() -> str:
-    if not pending_action["command"]:
+def cmd_confirm(user_id: str) -> str:
+    action = pending_actions.get(user_id, {})
+    if not action.get("command"):
         return "No pending action."
-    if datetime.utcnow() > pending_action["expires_at"]:
-        pending_action["command"] = None
+    if datetime.utcnow() > action["expires_at"]:
+        pending_actions.pop(user_id, None)
         return "⏰ Confirmation timed out. Action cancelled."
-    fn    = pending_action["command"]
-    label = pending_action["label"]
-    pending_action["command"] = None
+    fn    = action["command"]
+    label = action["label"]
+    pending_actions.pop(user_id, None)
     result = fn()
     return f"✅ *{label}*\n\n{result}"
 
@@ -564,81 +582,76 @@ def parse_bot_key(parts: list) -> str | None:
 # MESSAGE ROUTER
 # =============================================================================
 
-def send_to(chat_id: str, text: str):
-    """Send a message to a specific chat ID."""
-    url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=data, timeout=10)
-    except Exception as e:
-        print(f"Send error: {e}")
-
-
-def handle_message(text: str, chat_id: str) -> str:
+def handle_message(text: str, chat_id: str, user_id: str) -> str:
+    """
+    chat_id — where to reply (group id or DM id)
+    user_id — who sent it (their personal Telegram user id, used for auth)
+    """
     parts = text.strip().split()
     cmd   = parts[0].lower() if parts else ""
-    role  = get_role(chat_id)
 
     def denied() -> str:
         return "You do not have permission to use that command."
 
-    if cmd == "/status":        return cmd_status() if can(chat_id, cmd) else denied()
-    if cmd == "/balance":       return cmd_balance() if can(chat_id, cmd) else denied()
-    if cmd == "/trades":        return cmd_trades() if can(chat_id, cmd) else denied()
-    if cmd == "/report":        return cmd_report(force=False, group=None) if can(chat_id, cmd) else denied()
+    if cmd == "/status":        return cmd_status() if can(user_id, cmd) else denied()
+    if cmd == "/balance":       return cmd_balance() if can(user_id, cmd) else denied()
+    if cmd == "/trades":        return cmd_trades() if can(user_id, cmd) else denied()
+    if cmd == "/report":        return cmd_report(user_id, force=False, group=None) if can(user_id, cmd) else denied()
     if cmd == "/help":          return cmd_help()
-    if cmd == "/users":         return cmd_users(chat_id) if can(chat_id, cmd) else denied()
-    if cmd == "/confirm":       return cmd_confirm() if can(chat_id, cmd) else denied()
+    if cmd == "/users":         return cmd_users(user_id) if can(user_id, cmd) else denied()
+    if cmd == "/confirm":       return cmd_confirm(user_id) if can(user_id, cmd) else denied()
 
     # Report group shortcuts
     if cmd in ("/demo", "/live", "/all"):
-        if not can(chat_id, cmd):
+        if not can(user_id, cmd):
             return denied()
-        group = cmd.lstrip("/")
-        if pending_action["command"] and datetime.utcnow() <= pending_action["expires_at"]:
-            pending_action["command"] = None
+        group  = cmd.lstrip("/")
+        action = pending_actions.get(user_id, {})
+        if action.get("command") and datetime.utcnow() <= action["expires_at"]:
+            pending_actions.pop(user_id, None)
             return _run_reporter(group=group, force=True)
-        return cmd_report(force=False, group=group)
+        return cmd_report(user_id, force=False, group=group)
 
     if cmd == "/force":
-        if not can(chat_id, cmd):
+        if not can(user_id, cmd):
             return denied()
-        if pending_action["command"] and datetime.utcnow() <= pending_action["expires_at"]:
-            fn = pending_action["command"]
-            pending_action["command"] = None
+        action = pending_actions.get(user_id, {})
+        if action.get("command") and datetime.utcnow() <= action["expires_at"]:
+            fn = action["command"]
+            pending_actions.pop(user_id, None)
             return fn()
         return "No pending action."
 
     if cmd == "/emergency":
-        if not can(chat_id, cmd):
+        if not can(user_id, cmd):
             return denied()
-        return request_confirm(do_emergency_stop,
+        return request_confirm(user_id, do_emergency_stop,
                                "Emergency Stop — kill all bots")
 
     if cmd == "/restart":
-        if not can(chat_id, cmd):
+        if not can(user_id, cmd):
             return denied()
         bot_key = parse_bot_key(parts)
         if bot_key:
             name = BOTS[bot_key]["name"]
-            return request_confirm(lambda k=bot_key: do_restart([k]),
+            return request_confirm(user_id, lambda k=bot_key: do_restart([k]),
                                    f"Restart {name}")
-        return request_confirm(lambda: do_restart(list(BOTS.keys())),
+        return request_confirm(user_id, lambda: do_restart(list(BOTS.keys())),
                                "Restart All Bots")
 
     if cmd == "/stop":
-        if not can(chat_id, cmd):
+        if not can(user_id, cmd):
             return denied()
         bot_key = parse_bot_key(parts)
         if bot_key:
             name = BOTS[bot_key]["name"]
-            return request_confirm(lambda k=bot_key: do_stop([k]),
+            return request_confirm(user_id, lambda k=bot_key: do_stop([k]),
                                    f"Stop {name}")
-        return request_confirm(lambda: do_stop(list(BOTS.keys())),
+        return request_confirm(user_id, lambda: do_stop(list(BOTS.keys())),
                                "Stop All Bots")
 
     if cmd == "/resume":
-        if not can(chat_id, cmd):
+        if not can(user_id, cmd):
             return denied()
         bot_key = parse_bot_key(parts)
         if not bot_key:
@@ -655,8 +668,9 @@ def handle_message(text: str, chat_id: str) -> str:
             f"Peak protection is now OFF for the rest of today — trade carefully."
         )
 
-    if pending_action["command"]:
-        pending_action["command"] = None
+    # Unknown command cancels this user's pending action
+    if pending_actions.get(user_id, {}).get("command"):
+        pending_actions.pop(user_id, None)
         return f"Action cancelled.\nUnknown command: `{cmd}`\nSend /help for commands."
 
     return f"Unknown command: `{cmd}`\nSend /help for commands."
@@ -677,24 +691,24 @@ def main():
             for update in updates:
                 offset = update["update_id"] + 1
                 save_offset(offset)
-                msg  = update.get("message", {})
-                text = msg.get("text", "").strip()
-                chat = str(msg.get("chat", {}).get("id", ""))
+                msg     = update.get("message", {})
+                text    = msg.get("text", "").strip()
+                chat_id = str(msg.get("chat", {}).get("id", ""))   # where to reply
+                user_id = str(msg.get("from", {}).get("id", ""))   # who sent it
                 if not text:
                     continue
 
-                # Check authorization
-                role = get_role(chat)
+                # Authorize by sender's user id, not the chat/group id
+                role = get_role(user_id)
                 if not role:
                     from_user = msg.get("from", {})
                     username  = from_user.get("username", "unknown")
                     name      = from_user.get("first_name", "")
-                    print(f"UNAUTHORIZED: chat={chat} user=@{username} ({name}) text={text[:50]}")
-                    # Send one-time rejection so they know it's locked
-                    send_to(chat, "This bot is private. You are not authorized.")
+                    print(f"UNAUTHORIZED: chat={chat_id} user={user_id} (@{username}) ({name}) text={text[:50]}")
+                    send_to(chat_id, "This bot is private. You are not authorized.")
                     continue
-                response = handle_message(text, chat)
-                send(response)
+                response = handle_message(text, chat_id, user_id)
+                send_to(chat_id, response)
         except Exception as e:
             print(f"Poll error: {e}")
         time.sleep(POLL_INTERVAL)

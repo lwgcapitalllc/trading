@@ -2,6 +2,20 @@
 
 ---
 
+## Telegram Delivery Model
+
+All notifications — scheduled alerts, command replies, and the startup ping — go to the
+**LWG Capital Algos Notifications** group chat (`GROUP_CHAT = "-1003977707258"`).
+
+`ADMIN_CHAT = "429207285"` is kept in all files as a fallback definition but is no longer
+the send destination for any message.
+
+**Authorization** uses each sender's personal Telegram **user ID** (`message.from.id`), not
+the group chat ID. `users.json` lists users by their personal user ID. Anyone in the group
+who is not in `users.json` gets "not authorized".
+
+---
+
 ## Components
 
 ### monitor.py (SYS_MONITOR — every 1 min)

@@ -34,7 +34,8 @@ except ImportError:
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
-TELEGRAM_CHAT  = "429207285"
+ADMIN_CHAT     = "429207285"
+GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadcast destination
 ALGOS_ROOT     = Path("C:/algos")
 TEXAS          = ZoneInfo("America/Chicago")
 
@@ -96,7 +97,7 @@ def load_json(path: Path):
 
 def send_telegram(message: str) -> bool:
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT, "text": message, "parse_mode": "Markdown"}
+    data = {"chat_id": GROUP_CHAT, "text": message, "parse_mode": "Markdown"}
     try:
         r = requests.post(url, json=data, timeout=10)
         return r.status_code == 200
