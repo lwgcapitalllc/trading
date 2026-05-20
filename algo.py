@@ -163,15 +163,21 @@ def fetch_vps_snapshot() -> dict:
     )
     sections = _parse_sections(ssh(cmd1), "procs")
 
-    # Call 2: bot state files (isolated — `type` output stays in order)
+    # Call 2: bot state files.
+    # NOTE: Do NOT use `2>nul` with `type` in a `&` chain — Windows cmd.exe
+    # quirk causes `2>nul` to suppress stdout too. Use `if exist` instead.
     cmd2 = (
-        "type C:\\algos\\markets\\fx\\instances\\gold_main\\bot_state.json 2>nul"
+        "if exist C:\\algos\\markets\\fx\\instances\\gold_main\\bot_state.json"
+        " (type C:\\algos\\markets\\fx\\instances\\gold_main\\bot_state.json)"
         " & echo ===STATE_SCALPER==="
-        " & type C:\\algos\\markets\\fx\\instances\\gold_scalper\\bot_state.json 2>nul"
+        " & if exist C:\\algos\\markets\\fx\\instances\\gold_scalper\\bot_state.json"
+        " (type C:\\algos\\markets\\fx\\instances\\gold_scalper\\bot_state.json)"
         " & echo ===STATE_FFT==="
-        " & type C:\\algos\\markets\\fx\\instances\\gold_fft\\bot_state.json 2>nul"
+        " & if exist C:\\algos\\markets\\fx\\instances\\gold_fft\\bot_state.json"
+        " (type C:\\algos\\markets\\fx\\instances\\gold_fft\\bot_state.json)"
         " & echo ===TELEGRAM_START==="
-        " & type C:\\algos\\telegram_start.json 2>nul"
+        " & if exist C:\\algos\\telegram_start.json"
+        " (type C:\\algos\\telegram_start.json)"
     )
     sections.update(_parse_sections(ssh(cmd2), "state_main"))
 
