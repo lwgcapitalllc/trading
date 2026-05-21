@@ -109,7 +109,7 @@ SCHEDULED_INFO = {
     "SYS_PNLTRACKER": "every 1 min",
 }
 
-AUTO_REFRESH_SECS = 30
+AUTO_REFRESH_SECS = 60
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 class C:
@@ -504,8 +504,7 @@ SCHEDULED_TASKS = {"SYS_REPORTER", "SYS_MONITOR", "SYS_PNLTRACKER"}
 
 # ── Display ───────────────────────────────────────────────────────────────────
 def clear():
-    sys.stdout.write("\033[H\033[2J")
-    sys.stdout.flush()
+    os.system("clear")
 
 def print_header(tasks: list[dict], tab: str = "all", show_menu: bool = True):
     import re
