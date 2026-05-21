@@ -60,7 +60,6 @@ _B2      = _CFG["bot_mean_reversion"]
 WATCHLIST        = _B2.get("watchlist", [SYMBOL])
 MIN_ATR_RATIO    = _B2.get("min_atr_ratio", 0.8)
 FORCE_TRADE      = _B2.get("force_trade", False)
-DAILY_BUDGET_PCT = _B2.get("daily_budget_pct", MAX_DAILY_LOSS)
 
 # Risk
 RISK_PCT        = _CFG["risk"]["risk_pct_bot2"]
@@ -69,6 +68,7 @@ MAX_LOT         = _CFG["risk"]["max_lot_size"]
 
 # Protection
 MAX_DAILY_LOSS       = _CFG["protection"]["max_daily_loss_pct_bot2"]
+DAILY_BUDGET_PCT     = _B2.get("daily_budget_pct", MAX_DAILY_LOSS)
 MAX_WEEKLY_LOSS      = _CFG["protection"]["max_weekly_loss_pct_bot2"]
 MAX_CONSEC_LOSSES    = _CFG["protection"]["max_consec_losses"]
 NEWS_BLACKOUT_MINS   = _CFG["protection"]["news_blackout_minutes"]
