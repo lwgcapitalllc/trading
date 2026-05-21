@@ -962,7 +962,9 @@ def run():
             if df_h1_primary.empty or df_h4_primary.empty:
                 time.sleep(30)
                 continue
-            reg_state, risk_mult = regime.classify(df_h1_primary, df_h4_primary)
+            reg_result = regime.classify(df_h1_primary, df_h4_primary)
+            reg_state  = reg_result["regime"]
+            risk_mult  = reg_result["risk_multiplier"]
             if reg_state == "RANGING":
                 log.info("Regime RANGING — FFT strategy needs trending. Waiting.")
                 time.sleep(60)
