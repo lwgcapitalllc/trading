@@ -861,7 +861,12 @@ def run():
             if weekly_dd >= MAX_WEEKLY_LOSS:
                 if not trading_halted:
                     log.warning(f"WEEKLY CAP: -{weekly_dd:.1f}%. 6hr cooldown.")
-                    close_all_positions("weekly-cap")
+                    for _t, _cp, _pnl in close_all_positions("weekly-cap"):
+                        _m = next((x for x in open_trades if x["ticket"] == _t), None)
+                        if _m:
+                            logger.log_close(_t, _cp, _pnl)
+                            ai.on_trade_closed(_t, _cp, _pnl)
+                            open_trades.remove(_m)
                     calmar.record(acct.balance)
                     write_bot("fft", {
                         "day_locked":     True,

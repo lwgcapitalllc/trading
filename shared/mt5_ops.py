@@ -446,14 +446,16 @@ class BotMT5:
         return False, 0.0, 0.0
 
     def close_all_positions(self, reason: str = "",
-                            symbols: list = None) -> None:
+                            symbols: list = None) -> list:
         """
         Force-close all open positions belonging to this bot (filtered by magic number).
 
+        Returns list of (ticket, close_price, pnl_usd) for each successfully closed position
+        so callers can log trade outcomes immediately — avoids stale deal-history cross-
+        contamination that occurs when get_deal_result is called later for batch closes.
+
         symbols: list of symbol strings to scan. Defaults to [self.symbol].
                  Pass the full watchlist to close across all instruments.
-        Uses raw MT5 order_send (not close_position) for speed — this is called
-        during emergency stops and weekly caps where latency matters.
         """
         syms = symbols if symbols else [self.symbol]
         all_own = []
@@ -462,8 +464,9 @@ class BotMT5:
             if positions:
                 all_own.extend([p for p in positions if p.magic == self.magic])
         if not all_own:
-            return
+            return []
         self.log.warning(f"CLOSE ALL — {reason} | {len(all_own)} position(s)")
+        results = []
         for p in all_own:
             bid, ask   = self.get_tick(p.symbol)
             price      = bid if p.type == mt5.ORDER_TYPE_BUY else ask
@@ -483,8 +486,14 @@ class BotMT5:
             })
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
                 self.log.warning(f"  Closed T{p.ticket} {p.symbol} @ {price:.2f}")
+                time.sleep(0.3)
+                cp, pnl = self.get_deal_result(p.ticket)
+                if cp == 0.0:
+                    cp, pnl = price, p.profit  # fallback: pre-close floating value
+                results.append((p.ticket, cp, pnl))
             else:
                 self.log.error(f"  Failed T{p.ticket}: {mt5.last_error()}")
+        return results
 
     def lot_size(self, balance: float, sl_dist: float, risk_pct: float,
                  risk_mult: float = 1.0, symbol: str = None) -> float:

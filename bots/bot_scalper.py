@@ -711,7 +711,12 @@ def run():
             should_stop, stop_reason = daily_engine.update(acct.balance)
             if should_stop:
                 log.warning(f"DAILY ENGINE: {stop_reason}")
-                close_all_positions("daily-engine")
+                for _t, _cp, _pnl in close_all_positions("daily-engine"):
+                    _m = next((x for x in open_trades if x["ticket"] == _t), None)
+                    if _m:
+                        logger.log_close(_t, _cp, _pnl)
+                        ai.on_trade_closed(_t, _cp, _pnl)
+                        open_trades.remove(_m)
                 log.info(f"Day locked | {daily_engine.status(acct.balance)}")
                 calmar.record(acct.balance)
                 log_progress(acct.balance, start_balance)
@@ -742,7 +747,12 @@ def run():
             weekly_dd = ((weekly_start - acct.balance) / weekly_start) * 100
             if weekly_dd >= WEEKLY_LOSS_CAP_PCT:
                 log.warning(f"WEEKLY CAP: -{weekly_dd:.1f}%. 6hr cooldown.")
-                close_all_positions("weekly-cap")
+                for _t, _cp, _pnl in close_all_positions("weekly-cap"):
+                    _m = next((x for x in open_trades if x["ticket"] == _t), None)
+                    if _m:
+                        logger.log_close(_t, _cp, _pnl)
+                        ai.on_trade_closed(_t, _cp, _pnl)
+                        open_trades.remove(_m)
                 calmar.record(acct.balance)
                 write_bot("scalper", {
                     "day_locked":     True,
