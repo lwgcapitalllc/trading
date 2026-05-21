@@ -37,6 +37,40 @@ from datetime import datetime, timezone
 import MetaTrader5 as mt5
 
 
+# ── Shared MT5 risk helper ────────────────────────────────────────────────────
+
+def _calc_trade_live_risk_pct(trade: dict, balance: float) -> float:
+    """
+    Dollar risk if the current MT5 SL is hit, as % of balance.
+    Returns negative when SL is in profit territory (locked-in gain).
+    Returns 0.0 on any MT5 data error or missing trade fields.
+    """
+    ticket    = trade.get("ticket")
+    symbol    = trade.get("symbol")
+    direction = trade.get("dir")
+    if not all([ticket, symbol, direction]) or balance <= 0:
+        return 0.0
+
+    positions = mt5.positions_get(ticket=int(ticket))
+    if not positions:
+        return 0.0
+    pos = positions[0]
+
+    si = mt5.symbol_info(symbol)
+    if si is None or si.trade_tick_size <= 0:
+        return 0.0
+
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        return 0.0
+
+    current_price = tick.bid if direction == "bullish" else tick.ask
+    sl_dist  = (current_price - pos.sl) if direction == "bullish" else (pos.sl - current_price)
+    ticks    = sl_dist / si.trade_tick_size
+    risk_usd = ticks * si.trade_tick_value * pos.volume
+    return (risk_usd / balance) * 100
+
+
 class RiskEngine:
     """
     One instance per bot. open_trades is a list[dict] where each dict has
@@ -62,41 +96,7 @@ class RiskEngine:
     # ── Per-trade live risk ───────────────────────────────────────────────────
 
     def _trade_live_risk_pct(self, trade: dict, balance: float) -> float:
-        """
-        Dollar risk if the current MT5 SL is hit, as % of balance.
-        Returns negative when SL is in profit territory (locked-in gain).
-        Returns 0.0 on any MT5 data error.
-
-        Fetches SL and volume from MT5 so the result is always current,
-        even if the bot's trade dict has a stale 'sl' after a SL move.
-        """
-        ticket    = trade.get("ticket")
-        symbol    = trade.get("symbol")
-        direction = trade.get("dir")
-        if not all([ticket, symbol, direction]) or balance <= 0:
-            return 0.0
-
-        positions = mt5.positions_get(ticket=int(ticket))
-        if not positions:
-            return 0.0
-        pos = positions[0]
-
-        si = mt5.symbol_info(symbol)
-        if si is None or si.trade_tick_size <= 0:
-            return 0.0
-
-        tick = mt5.symbol_info_tick(symbol)
-        if tick is None:
-            return 0.0
-
-        current_price = tick.bid if direction == "bullish" else tick.ask
-
-        # Signed SL distance: positive = at risk, negative = locked profit
-        sl_dist = (current_price - pos.sl) if direction == "bullish" else (pos.sl - current_price)
-
-        ticks    = sl_dist / si.trade_tick_size
-        risk_usd = ticks * si.trade_tick_value * pos.volume
-        return (risk_usd / balance) * 100
+        return _calc_trade_live_risk_pct(trade, balance)
 
     # ── Portfolio aggregates ──────────────────────────────────────────────────
 
@@ -166,3 +166,86 @@ class RiskEngine:
     def daily_cap_hit(self, balance: float) -> bool:
         """True when realized losses alone exhaust the daily budget."""
         return self._realized_daily_loss_pct(balance) >= self.daily_budget_pct
+
+
+# ── Correlation guard (Phase 4) ───────────────────────────────────────────────
+
+class CorrelationGuard:
+    """
+    Pre-entry correlation filter. Prevents the scanner from opening multiple
+    highly-correlated instruments simultaneously (which multiplies real exposure).
+
+    correlation_map: list of {"symbols": [...], "tier": "high"|"medium"|"low"}
+      All pairs within a group share the same tier.
+
+    action: "block" or "shared_budget"
+      "block"        — deny entry if any open position is high-correlation.
+      "shared_budget" — allow entry but cap proposed_risk to the live risk of
+                        the most-constraining correlated open trade. A trade at
+                        breakeven contributes ~0, so the new entry is sized to
+                        near-zero — the same net effect as a block, without a
+                        hard rule.
+
+    Only "high"-tier pairs trigger action. "medium" and "low" are informational.
+    """
+
+    def __init__(self, correlation_map: list, log):
+        self._pairs: dict[frozenset, str] = {}
+        self.log = log
+        for entry in correlation_map:
+            syms = entry.get("symbols", [])
+            tier = entry.get("tier", "low")
+            for i, s1 in enumerate(syms):
+                for s2 in syms[i + 1:]:
+                    self._pairs[frozenset({s1, s2})] = tier
+
+    def tier(self, s1: str, s2: str) -> str:
+        """Correlation tier between two symbols. 'low' if not in map."""
+        return self._pairs.get(frozenset({s1, s2}), "low")
+
+    def check(
+        self,
+        candidate_symbol: str,
+        open_trades: list,
+        proposed_risk_pct: float,
+        action: str,
+        balance: float,
+    ) -> tuple[bool, float]:
+        """
+        Returns (allowed, effective_risk_pct).
+
+        Iterates open trades; acts only on "high"-tier pairs.
+        For "shared_budget", the cap is the minimum live risk across all
+        high-correlated open trades — the most conservative bound.
+        """
+        min_live_risk: float | None = None
+
+        for trade in open_trades:
+            open_sym = trade.get("symbol", "")
+            if not open_sym or open_sym == candidate_symbol:
+                continue
+            if self.tier(candidate_symbol, open_sym) != "high":
+                continue
+
+            if action == "block":
+                self.log.warning(
+                    f"CorrelationGuard: {candidate_symbol} BLOCKED — "
+                    f"high correlation with open {open_sym}"
+                )
+                return False, 0.0
+
+            # shared_budget: collect the most constraining live risk
+            live = _calc_trade_live_risk_pct(trade, balance)
+            if min_live_risk is None or live < min_live_risk:
+                min_live_risk = live
+
+        if min_live_risk is not None:
+            capped = max(0.0, min(proposed_risk_pct, min_live_risk))
+            self.log.info(
+                f"CorrelationGuard: {candidate_symbol} — shared_budget: "
+                f"proposed {proposed_risk_pct:.2f}% → capped {capped:.2f}% "
+                f"(min correlated live_risk={min_live_risk:.2f}%)"
+            )
+            return True, capped
+
+        return True, proposed_risk_pct

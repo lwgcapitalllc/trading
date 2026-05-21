@@ -24,6 +24,7 @@
     "watchlist": ["XAUUSD.s", "GBPJPY.s", "NAS100.s", "EURUSD.s", "USDJPY.s"],
     "min_atr_ratio": 0.8,
     "force_trade": false,
+    "correlation_action": "block",
     "daily_budget_pct": 8.0,
     "ema_fast": 9,
     "ema_mid": 21,
@@ -83,6 +84,13 @@
     "rsi_range_trending": 35,
     "rsi_range_ranging": 20
   },
+  "correlation_map": [
+    {"symbols": ["XAUUSD.s", "XAGUSD.s"],          "tier": "high"},
+    {"symbols": ["EURUSD.s", "GBPUSD.s"],           "tier": "high"},
+    {"symbols": ["GBPUSD.s", "GBPJPY.s"],           "tier": "high"},
+    {"symbols": ["USDJPY.s", "GBPJPY.s"],           "tier": "medium"},
+    {"symbols": ["US30.s",   "NAS100.s"],           "tier": "high"}
+  ],
   "startup_delay": 10,
   "mt5_path": "C:\\MT5_Scalper\\terminal64.exe"
 }

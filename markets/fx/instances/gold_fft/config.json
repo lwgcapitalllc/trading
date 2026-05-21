@@ -32,8 +32,12 @@
     "daily_budget_pct": 5.0,
     "max_weekly_loss_pct": 15.0,
     "max_trades_per_day": 3,
-    "min_ai_probability": 0.52
+    "min_ai_probability": 0.52,
+    "correlation_action": "block"
   },
+  "correlation_map": [
+    {"symbols": ["XAUUSD.s", "XAGUSD.s"], "tier": "high"}
+  ],
   "regime": {
     "update_interval_minutes": 60,
     "adx_trending_threshold": 25,

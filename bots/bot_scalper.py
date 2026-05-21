@@ -43,7 +43,7 @@ from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_calmar   import CalmarTracker
 from shared_ai_brain import AIBrain, TradeLogger
 from shared_scanner  import InstrumentScanner
-from shared_risk     import RiskEngine
+from shared_risk     import RiskEngine, CorrelationGuard
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
@@ -63,6 +63,7 @@ _S = _CFG.get("bot_scalper", {})
 WATCHLIST     = _S.get("watchlist", [SYMBOL])
 MIN_ATR_RATIO = _S.get("min_atr_ratio", 0.8)
 FORCE_TRADE   = _S.get("force_trade", False)
+CORR_ACTION   = _S.get("correlation_action", "block")
 
 # EMA stack
 EMA_FAST  = _S.get("ema_fast",  9)
@@ -615,6 +616,7 @@ def run():
     scanner       = InstrumentScanner(WATCHLIST, "BOT_SCALPER", "scalper", _INST, log,
                                       min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
     risk_engine   = RiskEngine("BOT_SCALPER", DAILY_BUDGET_PCT, log)
+    corr_guard    = CorrelationGuard(_CFG.get("correlation_map", []), log)
 
     start_balance = acct.balance
     daily_engine  = DailyProfitEngine(acct.balance)
@@ -815,7 +817,20 @@ def run():
                 time.sleep(10)
                 continue
 
-            best   = candidates[0]
+            # ── Correlation filter (Phase 4) ──────────────────────────────
+            _budget_risk = effective_risk
+            best = None
+            for _cand in candidates:
+                _ok, effective_risk = corr_guard.check(
+                    _cand.symbol, open_trades, _budget_risk, CORR_ACTION, acct.balance
+                )
+                if _ok:
+                    best = _cand
+                    break
+            if best is None:
+                log.info("CorrelationGuard: all candidates blocked — waiting 10s.")
+                time.sleep(10); continue
+
             symbol = best.symbol
             signal = best.setup
 

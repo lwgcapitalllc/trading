@@ -36,7 +36,7 @@ from shared_regime   import RegimeClassifier
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
 from shared_scanner  import InstrumentScanner
-from shared_risk     import RiskEngine
+from shared_risk     import RiskEngine, CorrelationGuard
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
@@ -56,6 +56,7 @@ _B1      = _CFG["bot_smc_trend"]
 WATCHLIST        = _B1.get("watchlist", [SYMBOL])
 MIN_ATR_RATIO    = _B1.get("min_atr_ratio", 0.8)
 FORCE_TRADE      = _B1.get("force_trade", False)
+CORR_ACTION      = _B1.get("correlation_action", "block")
 
 # Risk
 RISK_PCT        = _CFG["risk"]["risk_pct_bot1"]
@@ -511,6 +512,7 @@ def run():
     scanner      = InstrumentScanner(WATCHLIST, "BOT_SMC_TREND", "smc_trend", _INST, log,
                                      min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
     risk_engine  = RiskEngine("BOT_SMC_TREND", DAILY_BUDGET_PCT, log)
+    corr_guard   = CorrelationGuard(_CFG.get("correlation_map", []), log)
 
     daily_start  = acct.balance
     _eq_file     = _INST / "gold_main_equity.json"
@@ -756,7 +758,20 @@ def run():
             if not candidates:
                 time.sleep(60); continue
 
-            best   = candidates[0]
+            # ── Correlation filter (Phase 4) ──────────────────────────────
+            _budget_risk = effective_risk
+            best = None
+            for _cand in candidates:
+                _ok, effective_risk = corr_guard.check(
+                    _cand.symbol, open_trades, _budget_risk, CORR_ACTION, acct.balance
+                )
+                if _ok:
+                    best = _cand
+                    break
+            if best is None:
+                log.info("CorrelationGuard: all candidates blocked — waiting 60s.")
+                time.sleep(60); continue
+
             symbol = best.symbol
             setup  = best.setup
 

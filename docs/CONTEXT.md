@@ -47,11 +47,12 @@ FFT is the lowest risk (1%) — gold-only until 30+ closed trades with solid Cal
 | `tradovate.py` | Tradovate API executor for Bot Futures |
 | `algo.py` | Mac control panel — start/stop/status/logs/restart |
 
-**Multi-instrument architecture (Phases 1–3):**
+**Multi-instrument architecture (Phases 1–4):**
 - `InstrumentScanner.scan(detect_fn)` iterates the watchlist, calls `detect_fn(symbol) → dict|None` per symbol, ranks by confluence score, returns sorted candidates
 - **Phase 2 volatility filter:** before calling detect_fn, the scanner computes `atr_ratio = ATR(5) / ATR(20)` on H1 candles per symbol; symbols below `min_atr_ratio` (default 0.8) are skipped; if the entire watchlist is below the floor and `force_trade=false`, the bot sits out the cycle — configured per bot in config.json
-- **Phase 3 dynamic risk engine:** `RiskEngine` tracks `available_risk = daily_budget − used_risk − realized_daily_loss`. `used_risk` is computed from live MT5 SL positions each cycle — trades at breakeven contribute ~0, trades with SL trailing in profit contribute negative (locked gain). Before any new entry, each bot calls `risk_engine.can_enter(open_trades, balance, proposed_risk_pct)` and sizes with `risk_engine.sized_risk_pct()` to cap allocation. Default `daily_budget_pct` equals each bot's existing daily loss cap so day-one behaviour is identical. Phase 4 correlation control and Phase 5 AI gate cap to follow.
-- Each bot picks `candidates[0]` (best setup) and enters
+- **Phase 3 dynamic risk engine:** `RiskEngine` tracks `available_risk = daily_budget − used_risk − realized_daily_loss`. `used_risk` is computed from live MT5 SL positions each cycle — trades at breakeven contribute ~0, trades with SL trailing in profit contribute negative (locked gain). Before any new entry, each bot calls `risk_engine.evaluate(open_trades, balance, proposed_risk_pct)` which returns `(allowed, effective_risk_pct)`. Default `daily_budget_pct` equals each bot's existing daily loss cap so day-one behaviour is identical.
+- **Phase 4 correlation control:** after scanning, each bot iterates candidates in rank order and calls `corr_guard.check(symbol, open_trades, risk, action, balance)` before entering. `CorrelationGuard` holds a static map of `{frozenset({sym1, sym2}): tier}` built from `correlation_map` in config.json. Only `"high"` tier triggers action. `correlation_action = "block"` denies the candidate; `"shared_budget"` allows it but caps proposed risk to the minimum live SL risk of any high-correlated open trade. Bots loop to the next-ranked candidate before sitting out — a non-correlated setup on a different instrument is still taken.
+- Each bot iterates candidates until one passes both the risk engine and correlation guard, then enters
 - All MT5 methods accept `symbol=None` (defaults to bot's primary symbol)
 - `move_sl`, `close_position`, `partial_close` read `pos[0].symbol` from the live MT5 position — instrument-agnostic
 - `close_all_positions(symbols=WATCHLIST)` covers all instruments in emergency closes
@@ -118,7 +119,7 @@ algos/
 │   ├── shared_calmar.py
 │   ├── shared_regime.py
 │   ├── shared_scanner.py       ← Multi-instrument scanner (InstrumentScanner)
-│   ├── shared_risk.py          ← Dynamic risk engine (RiskEngine) — Phase 3
+│   ├── shared_risk.py          ← Dynamic risk engine (RiskEngine) + correlation guard (CorrelationGuard) — Phases 3–4
 │   └── mt5_ops.py             ← All MT5 operations, symbol-parameterized
 ├── bots/
 │   ├── bot_utils.py
@@ -170,13 +171,14 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ## What I Am Working On
 
-- Last completed: **Phase 3 Dynamic Risk / Capacity Engine**
-  - New `shared/shared_risk.py` — `RiskEngine` class.
-  - `available_risk = daily_budget − used_risk − realized_daily_loss`. `used_risk` computed from live MT5 SL distance each cycle; trades at BE contribute ~0, trades trailing in profit contribute negative (open capacity).
-  - All four FX bots now call `risk_engine.can_enter()` before new entries and `risk_engine.sized_risk_pct()` to cap allocation. `lots` added to all trade dicts so the engine can compute per-trade risk without extra MT5 calls.
-  - `daily_budget_pct` added to all config sections (defaults to each bot's existing daily loss cap — day-one behavior identical).
-  - Phase 4 (correlation control) and Phase 5 (AI gate cap) are the next phases per MULTI_INSTRUMENT_UPGRADE.md.
-- Previously: **Phase 2 Volatility Filter** and **Phase 1 Multi-Instrument Scanner**.
+- Last completed: **Phase 4 Correlation & Exposure Control**
+  - `CorrelationGuard` class added to `shared/shared_risk.py` alongside `RiskEngine`.
+  - Static correlation map in each `config.json` (`correlation_map` at top level): list of `{"symbols": [...], "tier": "high"|"medium"|"low"}`. All pairs within a group share the tier.
+  - All four FX bots iterate scanner candidates in rank order; each candidate passes through `corr_guard.check()` before entry. If the best candidate is blocked by correlation, the next-ranked candidate is tried — non-correlated setups on other instruments are still taken.
+  - `correlation_action: "block"` (default) denies entry when any open position is high-correlated. `"shared_budget"` allows entry but caps risk to the live SL risk of the most constraining correlated open trade.
+  - `correlation_map` and `correlation_action` configurable per bot in config.json.
+- Previously: **Phase 3 Dynamic Risk / Capacity Engine**, **Phase 2 Volatility Filter**, **Phase 1 Multi-Instrument Scanner**.
+- Phase 5 (AI gate cap) is next per MULTI_INSTRUMENT_UPGRADE.md.
 - Open questions / decisions pending:
   - `bot_futures.py` — NOT yet audited for reconciliation/P&L bugs or DRY refactor.
   - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.

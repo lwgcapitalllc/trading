@@ -42,7 +42,7 @@ from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from shared_calmar   import CalmarTracker
 from shared_scanner  import InstrumentScanner
-from shared_risk     import RiskEngine
+from shared_risk     import RiskEngine, CorrelationGuard
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
                               should_close_for_weekend, is_dead_zone, get_atr)
 
@@ -60,6 +60,7 @@ _B2      = _CFG["bot_mean_reversion"]
 WATCHLIST        = _B2.get("watchlist", [SYMBOL])
 MIN_ATR_RATIO    = _B2.get("min_atr_ratio", 0.8)
 FORCE_TRADE      = _B2.get("force_trade", False)
+CORR_ACTION      = _B2.get("correlation_action", "block")
 
 # Risk
 RISK_PCT        = _CFG["risk"]["risk_pct_bot2"]
@@ -484,6 +485,7 @@ def run():
                                      _INST, log,
                                      min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
     risk_engine  = RiskEngine("BOT_MEAN_REVERSION", DAILY_BUDGET_PCT, log)
+    corr_guard   = CorrelationGuard(_CFG.get("correlation_map", []), log)
 
     daily_start       = acct.balance
     _week_file2       = _INST / "mean_reversion_weekly.json"
@@ -721,7 +723,20 @@ def run():
                 log.info("No reversion signal on any watchlist instrument. Waiting 60s.")
                 time.sleep(60); continue
 
-            best   = candidates[0]
+            # ── Correlation filter (Phase 4) ──────────────────────────────
+            _budget_risk = effective_risk
+            best = None
+            for _cand in candidates:
+                _ok, effective_risk = corr_guard.check(
+                    _cand.symbol, open_trades, _budget_risk, CORR_ACTION, acct.balance
+                )
+                if _ok:
+                    best = _cand
+                    break
+            if best is None:
+                log.info("CorrelationGuard: all candidates blocked — waiting 60s.")
+                time.sleep(60); continue
+
             symbol = best.symbol
             signal = best.setup
 

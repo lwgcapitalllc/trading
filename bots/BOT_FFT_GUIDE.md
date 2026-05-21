@@ -142,6 +142,8 @@ Expansion gate: 30+ closed trades with solid Calmar ratio (tracked in `fft_equit
 
 **Dynamic risk engine (Phase 3):** Before scanning, the bot checks `available_risk = daily_budget − used_risk − realized_daily_loss`. `used_risk` is computed from live MT5 SL distances each cycle. Trades at breakeven contribute ~0; trailing winners with SL in profit free up extra capacity. If `available_risk < proposed_risk_pct`, the scan is skipped. The daily hard cap still enforces the ceiling.
 
+**Correlation control (Phase 4):** FFT is gold-only, so the correlation guard will only fire if the watchlist is ever expanded. The `correlation_map` (`{"symbols": ["XAUUSD.s", "XAGUSD.s"], "tier": "high"}`) is in place for when that happens. `correlation_action = "block"` is set in the bot_fft config section.
+
 Config keys (in `bot_fft` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`

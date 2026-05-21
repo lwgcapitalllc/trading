@@ -112,6 +112,8 @@ The symbol with the highest confluence score wins and gets the trade entry.
 
 **Dynamic risk engine (Phase 3):** Before scanning, the bot checks `available_risk = daily_budget − used_risk − realized_daily_loss`. `used_risk` is computed from live MT5 SL distances each cycle. Trades at breakeven contribute ~0; trailing winners with SL in profit free up extra capacity. If `available_risk < proposed_risk_pct`, the scan is skipped. The daily hard cap still enforces the ceiling.
 
+**Correlation control (Phase 4):** After scanning, the bot iterates candidates in rank order and runs each through `CorrelationGuard` before entering. Only `"high"`-tier pairs from `correlation_map` (config top level) trigger action. `correlation_action = "block"` (default) skips a candidate if any open position is high-correlated. The bot tries the next-ranked candidate before sitting out.
+
 Config keys (in `bot_mean_reversion` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`

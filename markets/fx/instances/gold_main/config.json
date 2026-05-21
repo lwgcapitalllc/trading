@@ -85,6 +85,7 @@
     "watchlist": ["XAUUSD.s", "GBPJPY.s", "EURUSD.s", "XAGUSD.s", "USDJPY.s"],
     "min_atr_ratio": 0.8,
     "force_trade": false,
+    "correlation_action": "block",
     "daily_budget_pct": 10.0,
     "min_rr": 3.0,
     "atr_period": 14,
@@ -111,6 +112,7 @@
     "watchlist": ["XAUUSD.s", "EURUSD.s", "AUDUSD.s", "USDCAD.s", "EURGBP.s"],
     "min_atr_ratio": 0.8,
     "force_trade": false,
+    "correlation_action": "block",
     "daily_budget_pct": 10.0,
     "min_rr": 1.5,
     "atr_period": 14,
@@ -133,6 +135,15 @@
     "partial_close_pct": 0.5,
     "trail_atr_mult": 0.3
   },
+  "correlation_map": [
+    {"symbols": ["XAUUSD.s", "XAGUSD.s"],          "tier": "high"},
+    {"symbols": ["EURUSD.s", "GBPUSD.s"],           "tier": "high"},
+    {"symbols": ["EURUSD.s", "EURGBP.s"],           "tier": "high"},
+    {"symbols": ["GBPUSD.s", "GBPJPY.s"],           "tier": "high"},
+    {"symbols": ["USDJPY.s", "GBPJPY.s"],           "tier": "medium"},
+    {"symbols": ["EURUSD.s", "AUDUSD.s"],           "tier": "medium"},
+    {"symbols": ["USDCAD.s", "AUDUSD.s"],           "tier": "medium"}
+  ],
   "startup_delay": 0,
   "mt5_path": "C:\\Program Files\\PU Prime MT5 Terminal\\terminal64.exe"
 }

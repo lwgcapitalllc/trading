@@ -68,7 +68,7 @@ from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_tr
 from shared_calmar   import CalmarTracker
 from shared_regime   import RegimeClassifier
 from shared_scanner  import InstrumentScanner
-from shared_risk     import RiskEngine
+from shared_risk     import RiskEngine, CorrelationGuard
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
@@ -89,6 +89,7 @@ _S = _CFG.get("bot_fft", {})
 WATCHLIST     = _S.get("watchlist", [SYMBOL])
 MIN_ATR_RATIO = _S.get("min_atr_ratio", 0.8)
 FORCE_TRADE   = _S.get("force_trade", False)
+CORR_ACTION   = _S.get("correlation_action", "block")
 
 # Structure detection
 SWING_LOOKBACK      = _S.get("swing_lookback", 3)       # candles each side to confirm swing
@@ -779,6 +780,7 @@ def run():
     scanner     = InstrumentScanner(WATCHLIST, "BOT_FFT", "fft", _INST, log,
                                     min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
     risk_engine = RiskEngine("BOT_FFT", DAILY_BUDGET_PCT, log)
+    corr_guard  = CorrelationGuard(_CFG.get("correlation_map", []), log)
 
     # State
     daily_start       = acct.balance
@@ -992,7 +994,20 @@ def run():
                 time.sleep(60)
                 continue
 
-            best   = candidates[0]
+            # ── Correlation filter (Phase 4) ──────────────────────────────
+            _budget_risk = effective_risk
+            best = None
+            for _cand in candidates:
+                _ok, effective_risk = corr_guard.check(
+                    _cand.symbol, open_trades, _budget_risk, CORR_ACTION, acct.balance
+                )
+                if _ok:
+                    best = _cand
+                    break
+            if best is None:
+                log.info("CorrelationGuard: all candidates blocked — waiting 60s.")
+                time.sleep(60); continue
+
             symbol = best.symbol
             setup  = best.setup
 
