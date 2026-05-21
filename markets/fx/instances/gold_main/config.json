@@ -1,7 +1,6 @@
 {
   "_instance": "gold_main \u2014 SMC Trend + Mean Reversion (XAUUSD)",
   "account_type": "demo",
-  "instrument": "XAUUSD",
   "symbol": "XAUUSD.s",
   "risk": {
     "risk_pct_bot1": 2.0,
@@ -81,6 +80,7 @@
     ]
   },
   "bot_smc_trend": {
+    "watchlist": ["XAUUSD.s", "GBPJPY.s", "EURUSD.s", "XAGUSD.s", "USDJPY.s"],
     "min_rr": 3.0,
     "atr_period": 14,
     "atr_sl_multiplier": 1.5,
@@ -103,6 +103,7 @@
     "breakeven_at_r": 1.0
   },
   "bot_mean_reversion": {
+    "watchlist": ["XAUUSD.s", "EURUSD.s", "AUDUSD.s", "USDCAD.s", "EURGBP.s"],
     "min_rr": 1.5,
     "atr_period": 14,
     "atr_sl_multiplier": 1.0,

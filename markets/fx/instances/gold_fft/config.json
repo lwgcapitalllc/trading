@@ -1,12 +1,13 @@
 {
   "_instance": "gold_fft \u2014 FFT Strategy (XAUUSD)",
   "account_type": "demo",
-  "instrument": "XAUUSD",
   "symbol": "XAUUSD.s",
   "platform": "mt5",
   "account": {},
   "bot_fft": {
     "_comment": "FFT Strategy \u2014 Fibonacci Fractal Trading",
+    "_watchlist_note": "Gold-only until 30+ closed trades with solid Calmar (Phase 5 gate). Do not expand.",
+    "watchlist": ["XAUUSD.s"],
     "swing_lookback": 3,
     "bos_min_body_mult": 1.5,
     "fft_entry_min": 0.618,

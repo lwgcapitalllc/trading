@@ -1,11 +1,12 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  BOT 3 — XAUUSD EMA MOMENTUM SCALPER (FULL BUILD)                          ║
+║  BOT 3 — EMA MOMENTUM SCALPER (MULTI-INSTRUMENT)                           ║
 ║                                                                              ║
 ║  Goal      : Grow account indefinitely through aggressive compounding       ║
 ║  Strategy  : 3-EMA stack direction (M5) + M1 pullback entry                ║
 ║  Timeframe : M5 direction bias · M1 entry timing                           ║
 ║  Sessions  : All sessions except dead zone (configurable)                  ║
+║  Watchlist : Configured per instance in config.json bot_scalper.watchlist  ║
 ║                                                                              ║
 ║  5 CORE FEATURES:                                                           ║
 ║  1. AI self-improvement — learns from every closed trade                   ║
@@ -41,6 +42,7 @@ from pathlib import Path
 from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_calmar   import CalmarTracker
 from shared_ai_brain import AIBrain, TradeLogger
+from shared_scanner  import InstrumentScanner
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
@@ -56,6 +58,8 @@ SYMBOL  = _CFG["symbol"]
 MAGIC   = 20240003
 
 _S = _CFG.get("bot_scalper", {})
+
+WATCHLIST = _S.get("watchlist", [SYMBOL])
 
 # EMA stack
 EMA_FAST  = _S.get("ema_fast",  9)
@@ -101,7 +105,7 @@ ACCOUNT_GOAL = _S.get("account_goal", 10000)
 MIN_LOT = _CFG["risk"]["min_lot_size"]
 MAX_LOT = _CFG["risk"]["max_lot_size"]
 
-log.info(f"Config loaded | {SYMBOL} | target=+{DAILY_TARGET_PCT}% | "
+log.info(f"Config loaded | watchlist={WATCHLIST} | target=+{DAILY_TARGET_PCT}% | "
          f"ceil=+{DAILY_TARGET_PCT*DAILY_CEIL_MULT:.0f}% | loss=-{DAILY_LOSS_CAP_PCT}%")
 
 _mt5 = BotMT5(SYMBOL, MAGIC, "BOT_SCALPER", _CFG, ACCOUNT, log)
@@ -149,15 +153,20 @@ def build_scalp_features(signal, daily_pnl_pct, logger):
 # MT5 HELPERS — delegates to shared BotMT5 instance
 # ═════════════════════════════════════════════════════════════════════════════
 
-def connect():              return _mt5.connect()
-def get_candles(tf, n):     return _mt5.get_candles(tf, n)
-def get_tick():             return _mt5.get_tick()
-def get_deal_result(t):     return _mt5.get_deal_result(t)
-def close_position(t, d, r=""): return _mt5.close_position(t, d, r)
-def close_all_positions(r="emergency"): return _mt5.close_all_positions(r)
-def move_sl(t, sl, tp=None): return _mt5.move_sl(t, sl, tp)
+def connect():                      return _mt5.connect()
+def get_candles(tf, n, symbol=None): return _mt5.get_candles(tf, n, symbol)
+def get_tick(symbol=None):           return _mt5.get_tick(symbol)
+def get_deal_result(t):              return _mt5.get_deal_result(t)
+def close_position(t, d, r=""):      return _mt5.close_position(t, d, r)
+def close_all_positions(r="emergency"):
+    return _mt5.close_all_positions(r, WATCHLIST)
+def move_sl(t, sl, tp=None):        return _mt5.move_sl(t, sl, tp)
 def handle_dead_zone(ot, atr, logger, ai): return _mt5.handle_dead_zone(ot, atr, logger, ai)
-def reconcile_on_startup(ot, logger, ai): return _mt5.reconcile_on_startup(ot, logger, ai)
+def reconcile_on_startup(ot, logger, ai):  return _mt5.reconcile_on_startup(ot, logger, ai)
+
+def place_order(direction: str, lots: float, sl: float, tp: float, symbol: str = None):
+    return _mt5.place_order(direction, lots, sl, tp,
+                            comment="BOT_SCALPER-SCALP", symbol=symbol)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -197,10 +206,12 @@ def get_risk_pct(balance: float) -> float:
             return tier["risk_pct"]
     return 2.0
 
-def lot_size(balance: float, sl_dist: float, sl_multiplier: float = 1.0) -> float:
-    """Calculate position size. sl_multiplier widens stop during news."""
+def lot_size(balance: float, sl_dist: float,
+             sl_multiplier: float = 1.0, symbol: str = None) -> float:
+    """Calculate position size for the given symbol."""
+    sym      = symbol or SYMBOL
     risk_pct = get_risk_pct(balance)
-    si = mt5.symbol_info(SYMBOL)
+    si       = mt5.symbol_info(sym)
     if not si or si.trade_tick_size == 0 or sl_dist == 0: return MIN_LOT
     actual_sl = sl_dist * sl_multiplier
     risk  = balance * (risk_pct / 100)
@@ -209,8 +220,8 @@ def lot_size(balance: float, sl_dist: float, sl_multiplier: float = 1.0) -> floa
     lots  = max(MIN_LOT, round(int(lots * 100) / 100, 2))
     lots  = max(si.volume_min, min(si.volume_max, lots))
     lots  = round(round(lots / si.volume_step) * si.volume_step, 2)
-    log.info(f"Lot size: {lots}L | risk={risk_pct}% (${risk:.2f}) | "
-             f"balance=${balance:,.0f} | sl={actual_sl:.2f}pts")
+    log.info(f"Lot size: {lots}L | {sym} | risk={risk_pct}% (${risk:.2f}) | "
+             f"balance=${balance:,.0f} | sl={actual_sl:.5f}pts")
     return lots
 
 
@@ -236,9 +247,7 @@ class DailyProfitEngine:
         self.stop_reason    = ""
 
     def update(self, current_balance: float) -> tuple[bool, str]:
-        """
-        Call every loop. Returns (should_stop, reason).
-        """
+        """Call every loop. Returns (should_stop, reason)."""
         if self.stopped:
             return True, self.stop_reason
 
@@ -246,26 +255,22 @@ class DailyProfitEngine:
         self.peak_balance = max(self.peak_balance, current_balance)
         peak_pnl = ((self.peak_balance - self.start) / self.start) * 100
 
-        # Hard floor — always active
         if pnl_pct <= -DAILY_LOSS_CAP_PCT:
             self.stopped     = True
             self.stop_reason = f"DAILY LOSS FLOOR: {pnl_pct:.1f}%"
             return True, self.stop_reason
 
-        # Hard ceiling — 3x target
         ceil_pct = DAILY_TARGET_PCT * DAILY_CEIL_MULT
         if pnl_pct >= ceil_pct:
             self.stopped     = True
             self.stop_reason = f"DAILY CEILING HIT: +{pnl_pct:.1f}% (3x target). Banking it."
             return True, self.stop_reason
 
-        # Activate peak protection once initial target is hit
         if pnl_pct >= DAILY_TARGET_PCT and not self.target_hit:
             self.target_hit = True
             log.info(f"DAILY TARGET HIT: +{pnl_pct:.1f}%. "
                      f"Peak protection active. Continuing to trade.")
 
-        # Peak drawdown protection — only after target hit
         if self.target_hit and peak_pnl > DAILY_TARGET_PCT:
             pullback = peak_pnl - pnl_pct
             if pullback >= PEAK_DRAWDOWN_PCT:
@@ -306,10 +311,7 @@ def calc_rsi(df: pd.DataFrame, period: int = 14) -> float:
     return float((100 - (100 / (1 + gain/(loss+1e-9)))).iloc[-1])
 
 def get_m5_bias(df_m5: pd.DataFrame) -> tuple[str | None, int]:
-    """
-    Returns (bias, stack_strength).
-    stack_strength 0-3: how many EMA conditions are met.
-    """
+    """Returns (bias, stack_strength). stack_strength 0-3: EMA alignment count."""
     if len(df_m5) < EMA_SLOW + 5:
         return None, 0
 
@@ -334,7 +336,7 @@ def get_m5_bias(df_m5: pd.DataFrame) -> tuple[str | None, int]:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def detect_scalp_signal(df_m1: pd.DataFrame, df_m5: pd.DataFrame,
-                         spread: float) -> dict | None:
+                         spread: float, symbol: str) -> dict | None:
     """
     M5 EMA stack bias + M1 pullback to EMA9 + momentum candle.
     """
@@ -345,7 +347,7 @@ def detect_scalp_signal(df_m1: pd.DataFrame, df_m5: pd.DataFrame,
     if not bias:
         return None
 
-    bid, ask = get_tick()
+    bid, ask = get_tick(symbol)
     price    = (bid + ask) / 2
     if price == 0: return None
 
@@ -369,15 +371,16 @@ def detect_scalp_signal(df_m1: pd.DataFrame, df_m5: pd.DataFrame,
         if prev["low"] > ema9_m1 + atr * 0.5: return None
 
         return {
-            "direction":     "bullish",
-            "price":         price,
-            "atr":           atr,
-            "ema9":          ema9_m1,
-            "rsi":           rsi,
+            "direction":      "bullish",
+            "price":          price,
+            "atr":            atr,
+            "ema9":           ema9_m1,
+            "rsi":            rsi,
             "stack_strength": stack_strength,
             "pullback_depth": abs(pullback),
             "body_atr_ratio": body_ratio,
             "spread":         spread,
+            "score":          float(stack_strength),
         }
 
     else:  # bearish
@@ -391,36 +394,54 @@ def detect_scalp_signal(df_m1: pd.DataFrame, df_m5: pd.DataFrame,
         if prev["high"] < ema9_m1 - atr * 0.5: return None
 
         return {
-            "direction":     "bearish",
-            "price":         price,
-            "atr":           atr,
-            "ema9":          ema9_m1,
-            "rsi":           rsi,
+            "direction":      "bearish",
+            "price":          price,
+            "atr":            atr,
+            "ema9":           ema9_m1,
+            "rsi":            rsi,
             "stack_strength": stack_strength,
             "pullback_depth": abs(pullback),
             "body_atr_ratio": body_ratio,
             "spread":         spread,
+            "score":          float(stack_strength),
         }
+
+
+def detect_setup(symbol: str) -> dict | None:
+    """
+    Scanner callback: fetch data for `symbol` and return a setup dict or None.
+    The `score` key is used by InstrumentScanner to rank candidates.
+    """
+    df_m1 = get_candles(mt5.TIMEFRAME_M1, 120, symbol)
+    df_m5 = get_candles(mt5.TIMEFRAME_M5, 120, symbol)
+    if df_m1.empty or df_m5.empty:
+        return None
+
+    bid, ask = get_tick(symbol)
+    spread   = ask - bid
+
+    return detect_scalp_signal(df_m1, df_m5, spread, symbol)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 # ORDER MANAGEMENT — delegates to shared BotMT5
 # ═════════════════════════════════════════════════════════════════════════════
 
-def place_order(direction: str, lots: float, sl: float, tp: float):
-    """Send a market order. Returns (ticket, filled_price) or (None, None)."""
-    return _mt5.place_order(direction, lots, sl, tp, comment="BOT_SCALPER-SCALP")
-
-def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame, logger, ai):
+def manage_positions(open_trades: list, m5_cache: dict, logger, ai):
     """
-    Full position management:
+    Full position management across all open trades (any symbol).
+
+    m5_cache: {symbol: df_m5} for momentum flip detection.
+
+    Per-trade atr is read from t["atr"] (stored at entry time) so trailing
+    stop distances are correct for each instrument's volatility.
+
     1. Breakeven at BE_ACTIVATION_R
     2. Trailing stop after breakeven
     3. Max hold time force close
     4. MOMENTUM REVERSAL — close if M5 bias flips against position while in profit
     5. Force close everything at 21:45 UTC (15 min before market close)
     """
-    # Force close before market close
     if is_market_close() and open_trades:
         reason = "WEEKEND-CLOSE" if should_close_for_weekend() else "DAILY-CLOSE"
         log.info(f"Market closing in 15 min — closing all {len(open_trades)} scalp(s). [{reason}]")
@@ -434,8 +455,6 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame, logger,
             open_trades.remove(t)
         return
 
-    current_bias, _ = get_m5_bias(df_m5)
-
     for t in open_trades[:]:
         pos = mt5.positions_get(ticket=t["ticket"])
         if not pos:
@@ -447,6 +466,7 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame, logger,
             continue
 
         p         = pos[0]
+        sym       = t.get("symbol", SYMBOL)
         price     = p.price_current
         direction = t["dir"]
         sl_dist   = abs(t["entry"] - t["sl"])
@@ -457,18 +477,24 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame, logger,
             else (t["entry"] - price) / sl_dist
         )
 
-        # FEATURE 5 — Momentum reversal detection
-        # Close immediately if M5 bias fully flips against our position
-        if current_bias is not None and current_bias != direction:
-            if profit_r > 0:  # only close early if we're in profit
-                log.info(f"T{t['ticket']} MOMENTUM FLIP — M5 bias now {current_bias}, "
-                         f"we are {direction}. Closing at {profit_r:.1f}R.")
-                ok, cp, pnl = close_position(t["ticket"], direction, "MOMENTUM-FLIP")
-                if ok:
-                    logger.log_close(t["ticket"], cp, pnl)
-                    ai.on_trade_closed(t["ticket"], cp, pnl)
-                    open_trades.remove(t)
-                    continue
+        # FEATURE 5 — Momentum reversal detection per trade's symbol
+        df_m5 = m5_cache.get(sym, pd.DataFrame())
+        if not df_m5.empty:
+            current_bias, _ = get_m5_bias(df_m5)
+            if current_bias is not None and current_bias != direction:
+                if profit_r > 0:  # only close early if we're in profit
+                    log.info(f"T{t['ticket']} MOMENTUM FLIP [{sym}] — "
+                             f"M5 bias now {current_bias}, we are {direction}. "
+                             f"Closing at {profit_r:.1f}R.")
+                    ok, cp, pnl = close_position(t["ticket"], direction, "MOMENTUM-FLIP")
+                    if ok:
+                        logger.log_close(t["ticket"], cp, pnl)
+                        ai.on_trade_closed(t["ticket"], cp, pnl)
+                        open_trades.remove(t)
+                        continue
+
+        # Per-trade ATR for trailing stop (each instrument has its own volatility)
+        atr = t.get("atr") or 1.0
 
         # Breakeven at BE_ACTIVATION_R
         if profit_r >= BE_ACTIVATION_R and not t.get("be_done"):
@@ -477,12 +503,12 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame, logger,
                 move_sl(t["ticket"], be)
                 t["be_done"] = True
                 t["peak"]    = price
-                log.info(f"T{t['ticket']} BE @ {be:.2f} ({profit_r:.1f}R)")
+                log.info(f"T{t['ticket']} BE [{sym}] @ {be:.5f} ({profit_r:.1f}R)")
             elif direction == "bearish" and p.sl > be + 0.05:
                 move_sl(t["ticket"], be)
                 t["be_done"] = True
                 t["peak"]    = price
-                log.info(f"T{t['ticket']} BE @ {be:.2f} ({profit_r:.1f}R)")
+                log.info(f"T{t['ticket']} BE [{sym}] @ {be:.5f} ({profit_r:.1f}R)")
 
         # Trail after breakeven
         if t.get("be_done"):
@@ -501,32 +527,42 @@ def manage_positions(open_trades: list, atr: float, df_m5: pd.DataFrame, logger,
         # Max hold time
         t["candles_held"] = t.get("candles_held", 0) + 1
         if t["candles_held"] >= MAX_HOLD_CANDLES:
-            log.info(f"T{t['ticket']} MAX HOLD ({MAX_HOLD_CANDLES} candles). Closing.")
+            log.info(f"T{t['ticket']} MAX HOLD [{sym}] ({MAX_HOLD_CANDLES} candles). Closing.")
             ok, cp, pnl = close_position(t["ticket"], direction, "MAX-HOLD")
             if ok:
                 logger.log_close(t["ticket"], cp, pnl)
                 ai.on_trade_closed(t["ticket"], cp, pnl)
                 open_trades.remove(t)
 
+
 def recover_open_positions() -> list:
-    positions = mt5.positions_get(symbol=SYMBOL)
-    if not positions: return []
     recovered = []
-    for pos in positions:
-        if pos.magic != MAGIC: continue
-        direction = "bullish" if pos.type == mt5.ORDER_TYPE_BUY else "bearish"
-        recovered.append({
-            "ticket":       pos.ticket,
-            "entry":        pos.price_open,
-            "sl":           pos.sl,
-            "dir":          direction,
-            "peak":         pos.price_current,
-            "be_done":      False,
-            "candles_held": 0,
-        })
-        log.info(f"RECOVERED | ticket={pos.ticket} | {direction} @ {pos.price_open:.2f}")
+    for symbol in WATCHLIST:
+        positions = mt5.positions_get(symbol=symbol)
+        if not positions:
+            continue
+        for pos in positions:
+            if pos.magic != MAGIC:
+                continue
+            direction = "bullish" if pos.type == mt5.ORDER_TYPE_BUY else "bearish"
+            # Fetch ATR at recover time for accurate trailing stop distances
+            df_m1 = get_candles(mt5.TIMEFRAME_M1, 50, symbol)
+            atr   = calc_atr(df_m1) if not df_m1.empty else None
+            recovered.append({
+                "ticket":       pos.ticket,
+                "entry":        pos.price_open,
+                "sl":           pos.sl,
+                "dir":          direction,
+                "peak":         pos.price_current,
+                "be_done":      False,
+                "candles_held": 0,
+                "symbol":       symbol,
+                "atr":          atr,
+            })
+            log.info(f"RECOVERED | {symbol} | ticket={pos.ticket} | "
+                     f"{direction} @ {pos.price_open:.5f}")
     if recovered:
-        log.info(f"Recovered {len(recovered)} position(s)")
+        log.info(f"Recovered {len(recovered)} position(s) across watchlist")
     return recovered
 
 
@@ -552,7 +588,8 @@ def log_progress(balance: float, start_balance: float):
 
 def run():
     log.info("=" * 65)
-    log.info("  BOT 3 — EMA MOMENTUM SCALPER")
+    log.info("  BOT 3 — EMA MOMENTUM SCALPER (MULTI-INSTRUMENT)")
+    log.info(f"  Watchlist: {WATCHLIST}")
     log.info(f"  Target: +{DAILY_TARGET_PCT}% daily | Ceil: +{DAILY_TARGET_PCT*DAILY_CEIL_MULT:.0f}% | "
              f"Trail: -{PEAK_DRAWDOWN_PCT}% from peak | Loss floor: -{DAILY_LOSS_CAP_PCT}%")
     log.info("=" * 65)
@@ -561,19 +598,20 @@ def run():
 
     if not connect(): return
 
-    acct          = mt5.account_info()
+    acct = mt5.account_info()
     if acct.balance <= 0:
         log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. "
                   "Please restore balance before running BOT_SCALPER.")
         mt5.shutdown(); return
+
     calmar        = CalmarTracker(acct.balance, equity_file=str(_INST / "scalper_equity.json"))
     logger        = TradeLogger(str(_INST / "scalper_trades.json"))
     ai            = AIBrain(logger, model_file=str(_INST / "scalper_model.pkl"))
+    scanner       = InstrumentScanner(WATCHLIST, "BOT_SCALPER", "scalper", _INST, log)
 
     start_balance = acct.balance
     daily_engine  = DailyProfitEngine(acct.balance)
 
-    # Restore weekly_start from file so restarts mid-week don't reset it
     _week_file   = _INST / "scalper_weekly.json"
     current_week = now_utc().isocalendar()[1]
     if _week_file.exists():
@@ -630,6 +668,7 @@ def run():
                 calmar.record(acct.balance)
                 calmar.log_report()
                 log_progress(acct.balance, start_balance)
+                write_bot("scalper", {"unresolved_symbols_alerted": {}})
                 log.info(f"New day | ${acct.balance:,.2f} | "
                          f"risk={get_risk_pct(acct.balance)}%")
 
@@ -646,8 +685,6 @@ def run():
                 log.warning("MT5 returned no account info — retrying.")
                 time.sleep(30); continue
 
-            # Publish ground-truth balance to bot_state so pnl_tracker and
-            # Telegram /balance always reflect actual MT5 values.
             write_bot("scalper", {
                 "balance":      acct.balance,
                 "status":       "running",
@@ -661,25 +698,21 @@ def run():
             if should_stop:
                 log.warning(f"DAILY ENGINE: {stop_reason}")
                 close_all_positions("daily-engine")
-                # Log final day status
                 log.info(f"Day locked | {daily_engine.status(acct.balance)}")
                 calmar.record(acct.balance)
                 log_progress(acct.balance, start_balance)
-                # Publish lock to bot_state so monitor can alert and /resume can override
                 write_bot("scalper", {
                     "day_locked":     True,
                     "lock_reason":    stop_reason,
                     "lock_alerted":   False,
                     "resume_trading": False,
                 })
-                # Wait until midnight UTC (or until /resume override)
                 while now_utc().date() == date:
-                    df_m1 = get_candles(mt5.TIMEFRAME_M1, 50)
-                    df_m5 = get_candles(mt5.TIMEFRAME_M5, 50)
-                    if not df_m1.empty and not df_m5.empty:
-                        manage_positions(open_trades,
-                                         calc_atr(df_m1), df_m5, logger, ai)
-                    # Check for /resume override from Telegram
+                    active_syms = {t.get("symbol", SYMBOL) for t in open_trades}
+                    m5_cache    = {sym: get_candles(mt5.TIMEFRAME_M5, 50, sym)
+                                   for sym in active_syms}
+                    if m5_cache:
+                        manage_positions(open_trades, m5_cache, logger, ai)
                     if read_bot("scalper").get("resume_trading"):
                         write_bot("scalper", {
                             "day_locked":     False,
@@ -723,16 +756,17 @@ def run():
                 consec_losses = 0
                 continue
 
-            # ── Dead zone: 3pm-7pm Texas time ────────────────────────────
+            # ── Dead zone: 3pm–7pm UTC ────────────────────────────────────
             if is_dead_zone():
-                df_m1 = get_candles(mt5.TIMEFRAME_M1, 50)
-                df_m5 = get_candles(mt5.TIMEFRAME_M5, 50)
-                if not df_m1.empty and not df_m5.empty:
-                    atr_dz = calc_atr(df_m1)
-                    manage_positions(open_trades, atr_dz, df_m5, logger, ai)
-                    handle_dead_zone(open_trades, atr_dz, logger, ai)
+                active_syms = {t.get("symbol", SYMBOL) for t in open_trades}
+                m5_cache    = {sym: get_candles(mt5.TIMEFRAME_M5, 50, sym)
+                               for sym in active_syms}
+                if m5_cache:
+                    manage_positions(open_trades, m5_cache, logger, ai)
+                    # handle_dead_zone operates on ticket-level, atr is vestigial
+                    handle_dead_zone(open_trades, 0.0, logger, ai)
                 if now.minute == 0:
-                    log.info(f"Dead zone (3-7pm TX). No new entries. "
+                    log.info(f"Dead zone. No new entries. "
                              f"{daily_engine.status(acct.balance)}")
                 time.sleep(60)
                 continue
@@ -740,27 +774,16 @@ def run():
             # ── News event check ──────────────────────────────────────────
             news_status, sl_mult = get_news_status()
             if news_status == "active" and NEWS_PAUSE_MINS > 0 and NEWS_WIDEN_SL == 1.0:
-                # Only pause if news_widen_sl is 1.0 (user chose not to widen)
-                # If they set a widen mult, keep trading with wider SL
                 log.warning("News blackout active. Pausing entries.")
                 time.sleep(60)
                 continue
 
-            # ── Market data ───────────────────────────────────────────────
-            df_m1 = get_candles(mt5.TIMEFRAME_M1, 120)
-            df_m5 = get_candles(mt5.TIMEFRAME_M5, 120)
-            if df_m1.empty or df_m5.empty:
-                log.warning("No data from MT5. Retrying...")
-                time.sleep(30)
-                continue
-
-            bid, ask = get_tick()
-            spread   = ask - bid
-            atr      = calc_atr(df_m1)
-
             # ── Manage existing positions ─────────────────────────────────
+            active_syms = {t.get("symbol", SYMBOL) for t in open_trades}
+            m5_cache    = {sym: get_candles(mt5.TIMEFRAME_M5, 120, sym)
+                           for sym in active_syms}
             trades_before = len(open_trades)
-            manage_positions(open_trades, atr, df_m5, logger, ai)
+            manage_positions(open_trades, m5_cache, logger, ai)
             if len(open_trades) < trades_before:
                 _acct = mt5.account_info()
                 if _acct: calmar.record(_acct.balance)
@@ -769,25 +792,31 @@ def run():
             if now.minute == 0:
                 log.info(daily_engine.status(acct.balance))
 
-            # ── Signal detection ──────────────────────────────────────────
-            signal = detect_scalp_signal(df_m1, df_m5, spread)
-            if not signal:
+            # ── Scanner: find best setup across watchlist ─────────────────
+            candidates = scanner.scan(detect_setup)
+            if not candidates:
                 time.sleep(10)
                 continue
+
+            best   = candidates[0]
+            symbol = best.symbol
+            signal = best.setup
 
             # ── AI gate ───────────────────────────────────────────────────
             daily_pnl = daily_engine.get_daily_pnl_pct(acct.balance)
             feats     = build_scalp_features(signal, daily_pnl, logger)
             take, ai_prob, ai_reason = ai.should_take_trade(feats, threshold=0.52)
-            log.info(f"AI: {ai_reason}")
+            log.info(f"AI [{symbol}]: {ai_reason}")
             if not take:
                 time.sleep(10)
                 continue
 
-            # ── Entry, SL, TP (SL widens during news if configured) ───────
+            # ── Entry, SL, TP ─────────────────────────────────────────────
             direction = signal["direction"]
-            sl_dist   = atr * ATR_SL_MULT * sl_mult  # sl_mult=1.0 normally, >1 during news
+            atr       = signal["atr"]
+            sl_dist   = atr * ATR_SL_MULT * sl_mult  # sl_mult > 1 during news
 
+            bid, ask = get_tick(symbol)
             if direction == "bullish":
                 entry = ask
                 sl    = entry - sl_dist
@@ -802,15 +831,15 @@ def run():
                 continue
 
             # ── Position sizing ───────────────────────────────────────────
-            lots = lot_size(acct.balance, sl_dist)
+            lots = lot_size(acct.balance, sl_dist, sl_mult, symbol)
 
-            log.info(f"SCALP SIGNAL | {direction.upper()} | "
-                     f"price={signal['price']:.2f} | RSI={signal['rsi']:.1f} | "
+            log.info(f"SCALP SIGNAL | {symbol} | {direction.upper()} | "
+                     f"price={signal['price']:.5f} | RSI={signal['rsi']:.1f} | "
                      f"stack={signal['stack_strength']}/3 | AI={ai_prob:.0%} | "
-                     f"entry={entry:.2f} SL={sl:.2f} TP={tp:.2f} | "
+                     f"entry={entry:.5f} SL={sl:.5f} TP={tp:.5f} | "
                      f"{daily_engine.status(acct.balance)}")
 
-            ticket, filled = place_order(direction, lots, sl, tp)
+            ticket, filled = place_order(direction, lots, sl, tp, symbol)
 
             if ticket:
                 open_trades.append({
@@ -821,6 +850,8 @@ def run():
                     "peak":         filled,
                     "be_done":      False,
                     "candles_held": 0,
+                    "symbol":       symbol,
+                    "atr":          atr,
                 })
                 risk_usd = acct.balance * (get_risk_pct(acct.balance) / 100)
                 logger.log_entry(ticket, feats, direction, filled, sl, tp, tp,

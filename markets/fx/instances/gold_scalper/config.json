@@ -1,7 +1,6 @@
 {
   "_instance": "gold_scalper \u2014 EMA Scalper (XAUUSD)",
   "account_type": "demo",
-  "instrument": "XAUUSD",
   "symbol": "XAUUSD.s",
   "risk": {
     "risk_pct_bot1": 2.0,
@@ -22,6 +21,7 @@
     "news_events": []
   },
   "bot_scalper": {
+    "watchlist": ["XAUUSD.s", "GBPJPY.s", "NAS100.s", "EURUSD.s", "USDJPY.s"],
     "ema_fast": 9,
     "ema_mid": 21,
     "ema_slow": 50,

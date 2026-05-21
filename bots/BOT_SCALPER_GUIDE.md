@@ -1,4 +1,4 @@
-# Bot 3 — EMA Momentum Scalper
+# Bot 3 — EMA Momentum Scalper (Multi-Instrument)
 **File:** `bots/bot_scalper.py` | **Account:** Dedicated scalper account | **MT5:** `C:\MT5_Scalper`
 
 ---
@@ -91,6 +91,24 @@ Learns from: EMA stack strength, pullback depth, momentum body size, RSI at entr
 Trade close logging is fully implemented — every exit (SL/TP hit, momentum flip, max hold, dead zone, market close)
 calls `log_close(ticket, close_price, pnl_usd)` which writes `outcome`, `pnl_usd`, and `close_price` to
 `scalper_trades.json` and triggers AI retraining. `risk_usd` is correctly recorded at entry.
+
+---
+
+## Multi-Instrument Scanner
+
+Every cycle the bot scans all symbols in `bot_scalper.watchlist` (config.json).
+The symbol with the highest EMA stack strength wins the entry.
+
+**Watchlist (Phase 1 defaults):** `["XAUUSD", "US30", "NAS100", "EURUSD", "GBPUSD"]`
+*(verify exact broker symbol strings on VPS before going live)*
+
+**Unresolved symbol handling:**
+- Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
+- bot_state flag is set → monitor.py sends one Telegram alert per bad symbol per day
+
+**Per-trade ATR:** Each trade stores its ATR at entry. The momentum-flip detection and trailing stop use the stored ATR, ensuring correct stop distances for each instrument.
+
+**Position sizing:** Compounding tiers apply per trade using the candidate symbol's instrument info, not the default XAUUSD tick values.
 
 ---
 

@@ -1,4 +1,4 @@
-# Bot 1 — SMC Trend Following
+# Bot 1 — SMC Trend Following (Multi-Instrument)
 **File:** `bots/bot_smc_trend.py` | **Account:** Main (shared with Bot 2) | **MT5:** `C:\Program Files\PU Prime MT5 Terminal`
 
 ---
@@ -115,6 +115,23 @@ market close) calls `log_close(ticket, close_price, pnl_usd)` which writes `outc
 | TRENDING | Full size |
 | TRANSITIONING | 50% size |
 | RANGING | No new entries |
+
+---
+
+## Multi-Instrument Scanner
+
+Every cycle the bot scans all symbols in `bot_smc_trend.watchlist` (config.json).
+The symbol with the highest confluence score wins and gets the trade entry.
+
+**Watchlist (Phase 1 defaults):** `["XAUUSD", "EURUSD", "GBPUSD", "XAGUSD", "US30"]`
+*(verify exact broker symbol strings on VPS before going live — brokers add suffixes like `.s`)*
+
+**Unresolved symbol handling:**
+- Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
+- bot_state flag is set → monitor.py sends one Telegram alert per bad symbol per day
+- Alert: `⚠️ Bot SMC Trend: Symbol 'XYZ' not found on broker — skipped. Fix config.json.`
+
+**Per-trade ATR:** Each trade stores its ATR at entry time. Trailing stops use the stored ATR so position management is correct even when the runner is on a different instrument than the current scan.
 
 ---
 

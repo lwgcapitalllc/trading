@@ -1,4 +1,4 @@
-# Bot 5 — FFT (Fibonacci Fractal Trading)
+# Bot 5 — FFT (Fibonacci Fractal Trading) — Scanner-Ready
 **File:** `bots/bot_fft.py` | **Account:** Dedicated FFT account | **MT5:** `C:\MT5_FFT`
 
 ---
@@ -126,6 +126,21 @@ the `risk_mult` regime multiplier).
 | TRENDING | Full size — required |
 | TRANSITIONING | Reduced entries |
 | RANGING | No new entries — strategy requires trend |
+
+---
+
+## Watchlist and Scanner
+
+The FFT bot uses `InstrumentScanner` for all symbol evaluation — the architecture supports multiple instruments.
+
+**Phase 1 watchlist:** `["XAUUSD"]` — gold only.
+Expansion gate: 30+ closed trades with solid Calmar ratio (tracked in `fft_equity.json`). Do not expand early.
+
+**config.json note:** `_watchlist_note` field documents the gate. Do not remove it — it's a reminder to future maintainers.
+
+**Unresolved symbol handling:**
+- Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
+- bot_state flag is set → monitor.py sends one Telegram alert per bad symbol per day
 
 ---
 

@@ -1,4 +1,4 @@
-# Bot 2 — Mean Reversion
+# Bot 2 — Mean Reversion (Multi-Instrument)
 **File:** `bots/bot_mean_reversion.py` | **Account:** Main (shared with Bot 1) | **MT5:** `C:\Program Files\PU Prime MT5 Terminal`
 
 ---
@@ -97,6 +97,22 @@ Bot 2 is the INVERSE of Bot 1 — it thrives when Bot 1 struggles:
 | RANGING | Full size — ideal, price oscillates predictably |
 | TRANSITIONING | 75% size |
 | TRENDING | 40% size — trends fight reversion |
+
+---
+
+## Multi-Instrument Scanner
+
+Every cycle the bot scans all symbols in `bot_mean_reversion.watchlist` (config.json).
+The symbol with the highest confluence score wins and gets the trade entry.
+
+**Watchlist (Phase 1 defaults):** `["XAUUSD", "EURUSD", "AUDUSD", "USDCAD", "EURGBP"]`
+*(verify exact broker symbol strings on VPS before going live)*
+
+**Unresolved symbol handling:**
+- Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
+- bot_state flag is set → monitor.py sends one Telegram alert per bad symbol per day
+
+**Per-trade ATR:** Each trade stores its ATR at entry. RSI early-exit and trailing stop use the stored ATR, keeping position management correct per instrument.
 
 ---
 

@@ -5,26 +5,29 @@
 
 ## What This Project Is
 
-Multi-bot algorithmic trading system for gold (XAUUSD) and futures (MNQ).
+Multi-bot, multi-instrument algorithmic trading system for FX/metals/indices and futures (MNQ).
 Built in Python, runs 24/7 on a Windows VPS (ForexVPS, IP: 45.82.164.112).
 Controlled from Mac via `algo.py` command-line panel.
 Code lives on GitHub. Deploy flow: edit on Mac → git push → ssh pull on VPS → algo restart.
+
+Each bot scans a configurable watchlist every cycle and trades the highest-scoring setup.
+Watchlists live inside each bot's config section (`bot_smc_trend.watchlist`, etc.).
 
 ---
 
 ## The Bots
 
-| Bot | File | Strategy | Account | MT5 Instance |
-|-----|------|----------|---------|--------------|
-| SMC Trend | `bot_smc_trend.py` | Judas Swing + FVG, H4 trend filter, M15 entry | gold_main #700103491 | PU Prime Terminal |
-| Mean Reversion | `bot_mean_reversion.py` | BB + RSI + VWAP, 1R target, fast close | gold_main #700103491 | PU Prime Terminal |
-| Scalper | `bot_scalper.py` | EMA stack + pullback, M5/M1, 5–20 trades/day | gold_scalper #700107520 | MT5_Scalper |
-| FFT | `bot_fft.py` | Dual Fibonacci confluence, H1+H4 trend | gold_fft #700107749 | MT5_FFT |
-| Futures | `bot_futures.py` | SMC_TREND on MNQ via Tradovate API | futures_account1 | N/A (Tradovate) |
+| Bot | File | Strategy | Watchlist | Account | MT5 Instance |
+|-----|------|----------|-----------|---------|--------------|
+| SMC Trend | `bot_smc_trend.py` | Judas Swing + FVG, H4 trend filter, M15 | XAUUSD, EURUSD, GBPUSD, XAGUSD, US30 | gold_main #700103491 | PU Prime Terminal |
+| Mean Reversion | `bot_mean_reversion.py` | BB + RSI + VWAP, 1R target, fast close | XAUUSD, EURUSD, AUDUSD, USDCAD, EURGBP | gold_main #700103491 | PU Prime Terminal |
+| Scalper | `bot_scalper.py` | EMA stack + pullback, M5/M1, 5–20 trades/day | XAUUSD, US30, NAS100, EURUSD, GBPUSD | gold_scalper #700107520 | MT5_Scalper |
+| FFT | `bot_fft.py` | Dual Fibonacci confluence, H1+H4 trend | XAUUSD only (Phase 5 gate) | gold_fft #700107749 | MT5_FFT |
+| Futures | `bot_futures.py` | SMC_TREND on MNQ via Tradovate API | MNQ only | futures_account1 | N/A (Tradovate) |
 
 SMC Trend and Mean Reversion share one MT5 account and are designed to be uncorrelated — one works trending markets, the other ranging markets.
 Scalper is isolated on its own account due to high volatility (+50% / -8% swings possible).
-FFT is the lowest risk (1%) — unproven in live trading, still learning.
+FFT is the lowest risk (1%) — gold-only until 30+ closed trades with solid Calmar (Phase 5 gate).
 
 ---
 
@@ -35,11 +38,22 @@ FFT is the lowest risk (1%) — unproven in live trading, still learning.
 | `shared_ai_brain.py` | AI engine (Claude API), trade logger, daily performance logger |
 | `shared_calmar.py` | Calmar ratio tracker, morning report |
 | `shared_regime.py` | Market regime classifier: TRENDING / TRANSITIONING / RANGING |
+| `shared_scanner.py` | Multi-instrument watchlist scanner — `InstrumentScanner` + `SetupCandidate` |
+| `mt5_ops.py` | All MT5 operations — symbol-parameterized, single shared instance per bot |
 | `bot_utils.py` | Config loader, logging, path resolver |
 | `launcher.py` | Universal Task Scheduler launcher |
 | `startup_coordinator.py` | Orchestrates bot startup sequence |
 | `tradovate.py` | Tradovate API executor for Bot Futures |
 | `algo.py` | Mac control panel — start/stop/status/logs/restart |
+
+**Multi-instrument architecture (Phase 1):**
+- `InstrumentScanner.scan(detect_fn)` iterates the watchlist, calls `detect_fn(symbol) → dict|None` per symbol, ranks by confluence score, returns sorted candidates
+- Each bot picks `candidates[0]` (best setup) and enters
+- All MT5 methods accept `symbol=None` (defaults to bot's primary symbol)
+- `move_sl`, `close_position`, `partial_close` read `pos[0].symbol` from the live MT5 position — instrument-agnostic
+- `close_all_positions(symbols=WATCHLIST)` covers all instruments in emergency closes
+- Per-trade `symbol` and `atr` stored in trade dict at entry; position management uses them for correct trailing stop distances
+- Unresolved watchlist symbols: WARNING log + `symbol_errors.log` + bot_state flag → monitor.py alert (once/day/symbol)
 
 ---
 
@@ -99,7 +113,9 @@ algos/
 ├── shared/
 │   ├── shared_ai_brain.py
 │   ├── shared_calmar.py
-│   └── shared_regime.py
+│   ├── shared_regime.py
+│   ├── shared_scanner.py       ← Multi-instrument scanner (InstrumentScanner)
+│   └── mt5_ops.py             ← All MT5 operations, symbol-parameterized
 ├── bots/
 │   ├── bot_utils.py
 │   ├── launcher.py
@@ -150,12 +166,16 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ## What I Am Working On
 
-- Last completed: Refactored bot control in `algo.py`. `stop_bot()` encapsulates
-  `schtasks /end` + `wmic terminate` + `wait_for_process_death` — used by both stop
-  and restart, no duplication. `wait_for_state()` replaces five copies of the
-  VPS-snapshot polling loop. Crash alerting moved to `monitor.py` with intentional-stop
-  suppression via `stop_suppress.json`; duplicate crash detector removed from
-  `telegram_bot.py`.
+- Last completed: **Phase 1 Multi-Instrument Scanner** — all four FX bots converted from
+  single-symbol to watchlist scanners. Each bot now evaluates its full watchlist each cycle
+  and trades the best-ranked setup. Changes: `shared/mt5_ops.py` (symbol-parameterized),
+  `shared/shared_scanner.py` (new), all 4 `config.json` files (watchlists added), all 4 bot
+  files refactored with `detect_setup(symbol)` + `InstrumentScanner`, `monitor.py` updated
+  with unresolved-symbol alert handling.
+- Phase 2 (per-symbol volatility filter) and Phase 3 (multi-position management) not started.
+  Do Phase 1 demo verification before beginning either.
 - Open questions / decisions pending:
   - `bot_futures.py` — NOT yet audited for reconciliation/P&L bugs or DRY refactor.
+  - Broker symbol string verification: all watchlists use generic names (XAUUSD, EURUSD, etc.)
+    and must be verified against actual PU Prime symbol strings on VPS before going live.
   - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.

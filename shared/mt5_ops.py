@@ -249,37 +249,42 @@ class BotMT5:
 
     # ── Market data ───────────────────────────────────────────────────────────
 
-    def get_candles(self, tf: int, count: int) -> pd.DataFrame:
+    def get_candles(self, tf: int, count: int,
+                    symbol: str = None) -> pd.DataFrame:
         """Fetch OHLCV bars from MT5. Returns empty DataFrame on failure."""
-        rates = mt5.copy_rates_from_pos(self.symbol, tf, 0, count)
+        sym   = symbol or self.symbol
+        rates = mt5.copy_rates_from_pos(sym, tf, 0, count)
         if rates is None or len(rates) == 0:
             return pd.DataFrame()
         df = pd.DataFrame(rates)
         df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
         return df
 
-    def get_tick(self) -> tuple[float, float]:
+    def get_tick(self, symbol: str = None) -> tuple[float, float]:
         """Return (bid, ask) for the symbol. Returns (0.0, 0.0) on failure."""
-        tick = mt5.symbol_info_tick(self.symbol)
+        sym  = symbol or self.symbol
+        tick = mt5.symbol_info_tick(sym)
         return (tick.bid, tick.ask) if tick else (0.0, 0.0)
 
     # ── Order execution ───────────────────────────────────────────────────────
 
     def place_order(self, direction: str, lots: float, sl: float, tp: float,
-                    comment: str = "") -> tuple:
+                    comment: str = "", symbol: str = None) -> tuple:
         """
         Send a market order.
 
         direction: 'bullish' or 'bearish'
+        symbol:  override the instance symbol (for multi-instrument scanning)
         comment: optional override for the MT5 order comment field
         Returns (ticket, filled_price) or (None, None) on failure.
         """
-        bid, ask   = self.get_tick()
+        sym        = symbol or self.symbol
+        bid, ask   = self.get_tick(sym)
         order_type = mt5.ORDER_TYPE_BUY if direction == "bullish" else mt5.ORDER_TYPE_SELL
         price      = ask if direction == "bullish" else bid
         result = mt5.order_send({
             "action":       mt5.TRADE_ACTION_DEAL,
-            "symbol":       self.symbol,
+            "symbol":       sym,
             "volume":       lots,
             "type":         order_type,
             "price":        price,
@@ -304,15 +309,18 @@ class BotMT5:
         """
         Modify the stop loss on an open position.
 
+        Reads the position's own symbol from MT5 — works correctly for any
+        instrument, not just the bot's default symbol.
         Preserves the existing TP unless tp is explicitly provided.
         Returns True if MT5 accepted the modification.
         """
         pos = mt5.positions_get(ticket=ticket)
         if not pos:
             return False
+        sym = pos[0].symbol
         result = mt5.order_send({
             "action":   mt5.TRADE_ACTION_SLTP,
-            "symbol":   self.symbol,
+            "symbol":   sym,
             "position": ticket,
             "sl":       round(new_sl, 2),
             "tp":       tp if tp is not None else pos[0].tp,
@@ -323,24 +331,26 @@ class BotMT5:
         """
         Close a portion of an open position to bank partial profit.
 
-        close_lots is rounded to the symbol's volume step and clamped to the
-        position's current volume.
+        Reads the position's own symbol from MT5 — works correctly for any
+        instrument. close_lots is rounded to the symbol's volume step and
+        clamped to the position's current volume.
         Returns True if MT5 accepted the order.
         """
         pos = mt5.positions_get(ticket=ticket)
         if not pos:
             return False
-        si = mt5.symbol_info(self.symbol)
+        sym = pos[0].symbol
+        si  = mt5.symbol_info(sym)
         if not si:
             return False
-        bid, ask   = self.get_tick()
+        bid, ask   = self.get_tick(sym)
         price      = bid if direction == "bullish" else ask
         close_type = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
         close_lots = round(round(close_lots / si.volume_step) * si.volume_step, 2)
         close_lots = max(si.volume_min, min(close_lots, pos[0].volume))
         result = mt5.order_send({
             "action":       mt5.TRADE_ACTION_DEAL,
-            "symbol":       self.symbol,
+            "symbol":       sym,
             "volume":       close_lots,
             "type":         close_type,
             "position":     ticket,
@@ -381,9 +391,10 @@ class BotMT5:
         """
         Close an open position at market price.
 
-        Waits 0.3s after the order executes then fetches the actual realised P&L
-        from MT5 deal history. Falls back to the pre-close floating P&L only if
-        deal history is not yet available.
+        Reads the position's own symbol from MT5 — works correctly for any
+        instrument. Waits 0.3s after the order executes then fetches the actual
+        realised P&L from MT5 deal history. Falls back to the pre-close
+        floating P&L only if deal history is not yet available.
 
         Returns (success, close_price, pnl_usd).
         """
@@ -391,12 +402,13 @@ class BotMT5:
         if not pos:
             return False, 0.0, 0.0
         p          = pos[0]
-        bid, ask   = self.get_tick()
+        sym        = p.symbol
+        bid, ask   = self.get_tick(sym)
         close_type = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
         price      = bid if direction == "bullish" else ask
         result = mt5.order_send({
             "action":       mt5.TRADE_ACTION_DEAL,
-            "symbol":       self.symbol,
+            "symbol":       sym,
             "volume":       p.volume,
             "type":         close_type,
             "position":     ticket,
@@ -416,27 +428,32 @@ class BotMT5:
             return True, cp, pnl
         return False, 0.0, 0.0
 
-    def close_all_positions(self, reason: str = "") -> None:
+    def close_all_positions(self, reason: str = "",
+                            symbols: list = None) -> None:
         """
         Force-close all open positions belonging to this bot (filtered by magic number).
 
+        symbols: list of symbol strings to scan. Defaults to [self.symbol].
+                 Pass the full watchlist to close across all instruments.
         Uses raw MT5 order_send (not close_position) for speed — this is called
         during emergency stops and weekly caps where latency matters.
         """
-        positions = mt5.positions_get(symbol=self.symbol)
-        if not positions:
+        syms = symbols if symbols else [self.symbol]
+        all_own = []
+        for sym in syms:
+            positions = mt5.positions_get(symbol=sym)
+            if positions:
+                all_own.extend([p for p in positions if p.magic == self.magic])
+        if not all_own:
             return
-        own = [p for p in positions if p.magic == self.magic]
-        if not own:
-            return
-        self.log.warning(f"CLOSE ALL — {reason} | {len(own)} position(s)")
-        for p in own:
-            bid, ask   = self.get_tick()
+        self.log.warning(f"CLOSE ALL — {reason} | {len(all_own)} position(s)")
+        for p in all_own:
+            bid, ask   = self.get_tick(p.symbol)
             price      = bid if p.type == mt5.ORDER_TYPE_BUY else ask
             close_type = mt5.ORDER_TYPE_SELL if p.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
             result = mt5.order_send({
                 "action":       mt5.TRADE_ACTION_DEAL,
-                "symbol":       self.symbol,
+                "symbol":       p.symbol,
                 "volume":       p.volume,
                 "type":         close_type,
                 "position":     p.ticket,
@@ -448,20 +465,22 @@ class BotMT5:
                 "type_filling": mt5.ORDER_FILLING_IOC,
             })
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-                self.log.warning(f"  Closed T{p.ticket} @ {price:.2f}")
+                self.log.warning(f"  Closed T{p.ticket} {p.symbol} @ {price:.2f}")
             else:
                 self.log.error(f"  Failed T{p.ticket}: {mt5.last_error()}")
 
     def lot_size(self, balance: float, sl_dist: float, risk_pct: float,
-                 risk_mult: float = 1.0) -> float:
+                 risk_mult: float = 1.0, symbol: str = None) -> float:
         """
         Calculate MT5 lot size for the given risk parameters.
 
         risk_pct: percentage of balance to risk (e.g. 1.0 for 1%)
         risk_mult: multiplier applied to sl_dist (e.g. for news stop widening)
+        symbol:   override instance symbol (for multi-instrument scanning)
         Rounds to the symbol's volume step and clamps to min/max lot.
         """
-        si = mt5.symbol_info(self.symbol)
+        sym = symbol or self.symbol
+        si  = mt5.symbol_info(sym)
         if not si or si.trade_tick_size == 0 or sl_dist == 0:
             return si.volume_min if si else 0.01
         actual_sl = sl_dist * risk_mult
@@ -476,33 +495,38 @@ class BotMT5:
         )
         return lots
 
-    def recover_open_positions(self) -> list:
+    def recover_open_positions(self, symbols: list = None) -> list:
         """
         On bot restart, scan MT5 for positions opened by this bot (by magic number)
         and rebuild a minimal open_trades list so position management resumes.
 
-        Returns list of dicts with keys: ticket, entry, sl, dir, lots.
+        symbols: list of symbol strings to scan. Defaults to [self.symbol].
+                 Pass the full watchlist to recover positions across all instruments.
+        Returns list of dicts with keys: ticket, entry, sl, dir, lots, symbol.
         Bot-specific fields (tp, be_done, etc.) should be set by the caller.
         """
-        positions = mt5.positions_get(symbol=self.symbol)
-        if not positions:
-            return []
+        syms      = symbols if symbols else [self.symbol]
         recovered = []
-        for p in positions:
-            if p.magic != self.magic:
+        for sym in syms:
+            positions = mt5.positions_get(symbol=sym)
+            if not positions:
                 continue
-            direction = "bullish" if p.type == mt5.ORDER_TYPE_BUY else "bearish"
-            recovered.append({
-                "ticket": p.ticket,
-                "entry":  p.price_open,
-                "sl":     p.sl,
-                "dir":    direction,
-                "lots":   p.volume,
-            })
-            self.log.info(
-                f"RECOVERED T{p.ticket} | {direction} {p.volume}L @ {p.price_open:.2f} "
-                f"| P&L=${p.profit:.2f} | SL={p.sl:.2f}"
-            )
+            for p in positions:
+                if p.magic != self.magic:
+                    continue
+                direction = "bullish" if p.type == mt5.ORDER_TYPE_BUY else "bearish"
+                recovered.append({
+                    "ticket": p.ticket,
+                    "entry":  p.price_open,
+                    "sl":     p.sl,
+                    "dir":    direction,
+                    "lots":   p.volume,
+                    "symbol": sym,
+                })
+                self.log.info(
+                    f"RECOVERED T{p.ticket} {sym} | {direction} {p.volume}L "
+                    f"@ {p.price_open:.2f} | P&L=${p.profit:.2f} | SL={p.sl:.2f}"
+                )
         if recovered:
             self.log.info(f"Position recovery complete — {len(recovered)} trade(s).")
         else:

@@ -208,8 +208,9 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
         return bot_state
 
     # ── Heartbeat check — catches alive-but-frozen loops ─────────────────
-    heartbeat  = _bot_state.read_bot(bot_key).get("heartbeat", 0)
-    stale_secs = (time.time() - heartbeat) if heartbeat else 0
+    bot_live    = _bot_state.read_bot(bot_key)
+    heartbeat   = bot_live.get("heartbeat", 0)
+    stale_secs  = (time.time() - heartbeat) if heartbeat else 0
     if stale_secs > LOG_STALE_SECS:
         if not bot_state.get("stale_alerted"):
             now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
@@ -232,6 +233,24 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             _bot_state.set_status(bot_key, "running")
         bot_state["stale_alerted"] = False
 
+    # ── Unresolved symbol alerts (once per symbol per day) ───────────────
+    unresolved    = bot_live.get("unresolved_symbols", [])
+    alerted_today = bot_state.get("unresolved_symbols_alerted", {})
+    if unresolved:
+        now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
+        for entry in unresolved:
+            sym = entry.get("symbol", "")
+            if not sym or alerted_today.get(sym) == today:
+                continue
+            send_alert(
+                f"⚠️ *{cfg['name']}: Watchlist Symbol Not Found*\n"
+                f"Symbol `{sym}` not found on broker — skipped this cycle\\.\n"
+                f"Fix `watchlist` in config\\.json\\.\n"
+                f"Time: {now_str}"
+            )
+            alerted_today[sym] = today
+    bot_state["unresolved_symbols_alerted"] = alerted_today
+
     # ── Balance and P&L checks ────────────────────────────────────────────
     equity       = load_json(cfg["equity"])
     balance      = get_balance(equity)
@@ -242,11 +261,12 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
 
     # Reset day tracking at midnight or on first run
     if bot_state.get("last_date") != today:
-        bot_state["day_start_balance"] = balance
-        bot_state["last_date"]         = today
-        bot_state["goal_alerted"]      = False
-        bot_state["daily_cap_alerted"] = False
-        bot_state["weekly_cap_alerted"]= False
+        bot_state["day_start_balance"]          = balance
+        bot_state["last_date"]                  = today
+        bot_state["goal_alerted"]               = False
+        bot_state["daily_cap_alerted"]          = False
+        bot_state["weekly_cap_alerted"]         = False
+        bot_state["unresolved_symbols_alerted"] = {}
         print(f"{bot_key}: New day — day start balance set to ${balance:,.2f}")
 
     day_start = bot_state.get("day_start_balance", balance)

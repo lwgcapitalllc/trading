@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  BOT 2 — XAUUSD MEAN REVERSION (CASH FLOW LAYER)                           ║
+║  BOT 2 — MEAN REVERSION — Multi-Instrument Scanner                          ║
 ║                                                                              ║
 ║  Strategy : Bollinger Band extremes + RSI + VWAP deviation + rejection     ║
 ║             candle → fade the extreme, target BB midline                   ║
@@ -13,10 +13,15 @@
 ║    Ranging market  = Bot 2 FULL SIZE (ideal conditions)                    ║
 ║    Trending market = Bot 2 REDUCED SIZE (trend fights reversion)            ║
 ║                                                                              ║
+║  Watchlist (verify exact broker symbol strings on VPS before live):         ║
+║    bot_mean_reversion.watchlist in config.json                              ║
+║    Default: XAUUSD, EURUSD, AUDUSD, USDCAD, EURGBP                        ║
+║                                                                              ║
 ║  Shared files required (same folder):                                       ║
 ║    shared_regime.py   — regime classifier                                   ║
 ║    shared_ai_brain.py — AI win-probability gate + trade logger              ║
 ║    shared_calmar.py   — live Calmar ratio tracker                           ║
+║    shared_scanner.py  — multi-instrument watchlist scanner                  ║
 ║                                                                              ║
 ║  Install : pip install MetaTrader5 pandas numpy pytz scikit-learn joblib    ║
 ║  Run     : python bot_mean_reversion.py                                    ║
@@ -36,6 +41,7 @@ from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_re
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from shared_calmar   import CalmarTracker
+from shared_scanner  import InstrumentScanner
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
                               should_close_for_weekend, is_dead_zone, get_atr)
 
@@ -45,8 +51,12 @@ log      = setup_logging("BOT_MEAN_REVERSION", _CFG)
 _INST    = get_instance_dir(_CFG)
 
 ACCOUNT         = _CFG["account"]
-SYMBOL          = _CFG["symbol"]
+SYMBOL          = _CFG["symbol"]   # kept as fallback default
 MAGIC           = 20240002
+
+# Watchlist — falls back to single symbol if not configured
+_B2      = _CFG["bot_mean_reversion"]
+WATCHLIST = _B2.get("watchlist", [SYMBOL])
 
 # Risk
 RISK_PCT        = _CFG["risk"]["risk_pct_bot2"]
@@ -66,7 +76,6 @@ LOSS_COOLDOWN        = {
 }
 
 # Bot 2 strategy
-_B2             = _CFG["bot_mean_reversion"]
 MIN_RR          = _B2["min_rr"]
 ATR_PERIOD      = _B2["atr_period"]
 ATR_SL_MULT     = _B2["atr_sl_multiplier"]
@@ -84,15 +93,13 @@ VWAP_STD_MULT   = _B2["vwap_std_multiplier"]
 MIN_SCORE       = _B2["min_confluence_score"]
 MIN_AI_PROB     = _B2["min_ai_probability"]
 
-# Exit management — aggressive profit protection for mean reversion
-BE_ACTIVATION_R     = _B2.get("breakeven_at_r",       0.3)   # fast BE
-PARTIAL_CLOSE_R     = _B2.get("partial_close_r",       1.0)   # bank 50% at 1R
-PARTIAL_CLOSE_PCT   = _B2.get("partial_close_pct",     0.50)
-TRAIL_ATR_MULT      = _B2.get("trail_atr_mult",        0.3)   # tight trail after partial
+# Exit management
+BE_ACTIVATION_R   = _B2.get("breakeven_at_r",     0.3)
+PARTIAL_CLOSE_R   = _B2.get("partial_close_r",     1.0)
+PARTIAL_CLOSE_PCT = _B2.get("partial_close_pct",   0.50)
+TRAIL_ATR_MULT    = _B2.get("trail_atr_mult",       0.3)
 
-MAX_TRADES_DAY  = 999   # unlimited — daily loss cap governs
-
-log.info(f"Config loaded | symbol={SYMBOL} | risk={RISK_PCT}% | "
+log.info(f"Config loaded | watchlist={WATCHLIST} | risk={RISK_PCT}% | "
          f"daily_cap={MAX_DAILY_LOSS}% | weekly_cap={MAX_WEEKLY_LOSS}%")
 
 _mt5 = BotMT5(SYMBOL, MAGIC, "BOT_MEAN_REVERSION", _CFG, ACCOUNT, log)
@@ -102,13 +109,14 @@ _mt5 = BotMT5(SYMBOL, MAGIC, "BOT_MEAN_REVERSION", _CFG, ACCOUNT, log)
 # MT5 HELPERS — delegates to shared BotMT5 instance
 # ═════════════════════════════════════════════════════════════════════════════
 
-def connect():              return _mt5.connect()
-def get_candles(tf, n):     return _mt5.get_candles(tf, n)
-def get_tick():             return _mt5.get_tick()
-def get_deal_result(t):     return _mt5.get_deal_result(t)
-def close_position(t, d, r=""): return _mt5.close_position(t, d, r)
-def close_all_positions(r="emergency"): return _mt5.close_all_positions(r)
-def move_sl(t, sl, tp=None): return _mt5.move_sl(t, sl, tp)
+def connect():                         return _mt5.connect()
+def get_candles(tf, n, symbol=None):   return _mt5.get_candles(tf, n, symbol)
+def get_tick(symbol=None):             return _mt5.get_tick(symbol)
+def get_deal_result(t):                return _mt5.get_deal_result(t)
+def close_position(t, d, r=""):        return _mt5.close_position(t, d, r)
+def close_all_positions(r="emergency", symbols=None):
+    return _mt5.close_all_positions(r, symbols or WATCHLIST)
+def move_sl(t, sl, tp=None):           return _mt5.move_sl(t, sl, tp)
 def handle_dead_zone(ot, atr, logger, ai): return _mt5.handle_dead_zone(ot, atr, logger, ai)
 def reconcile_on_startup(ot, logger, ai): return _mt5.reconcile_on_startup(ot, logger, ai)
 
@@ -178,21 +186,19 @@ def in_active_session():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# SIGNAL DETECTION
+# SIGNAL DETECTION (per-symbol)
 # ═════════════════════════════════════════════════════════════════════════════
 
-def detect_reversion_signal(df_m15, df_m5):
+def detect_reversion_signal(df_m15, df_m5, symbol: str) -> dict | None:
     """
-    Detect mean reversion setup on M15.
-    Bullish (go long after oversold extreme):
-      Price below lower BB + RSI oversold + VWAP deviation + rejection candle
-    Bearish (go short after overbought extreme):
-      Price above upper BB + RSI overbought + VWAP deviation + rejection candle
+    Detect mean reversion setup on M15 for the given symbol.
+    Bullish: price below lower BB + RSI oversold + VWAP deviation + rejection candle
+    Bearish: price above upper BB + RSI overbought + VWAP deviation + rejection candle
     Returns signal dict or None.
     """
     if df_m15.empty or len(df_m15) < 30: return None
 
-    bid, ask = get_tick()
+    bid, ask = get_tick(symbol)
     price    = (bid + ask) / 2
     if price == 0: return None
 
@@ -230,7 +236,7 @@ def detect_reversion_signal(df_m15, df_m5):
         return {"direction":"bullish","score":score,"price":price,"atr":atr,
                 "bb_upper":upper,"bb_mid":mid,"bb_lower":lower,"bb_std":bb_std,
                 "rsi":rsi,"vwap":vwap,"vstd":vstd,"stoch_rsi":srsi,
-                "signals":signals,"tp_target":mid}
+                "signals":signals,"tp_target":mid,"bid":bid,"ask":ask}
 
     # ── Bearish reversion ─────────────────────────────────────────────────
     score, signals = 0, {}
@@ -258,22 +264,40 @@ def detect_reversion_signal(df_m15, df_m5):
         return {"direction":"bearish","score":score,"price":price,"atr":atr,
                 "bb_upper":upper,"bb_mid":mid,"bb_lower":lower,"bb_std":bb_std,
                 "rsi":rsi,"vwap":vwap,"vstd":vstd,"stoch_rsi":srsi,
-                "signals":signals,"tp_target":mid}
+                "signals":signals,"tp_target":mid,"bid":bid,"ask":ask}
 
     return None
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SETUP DETECTION — called by InstrumentScanner per symbol
+# ═════════════════════════════════════════════════════════════════════════════
+
+def detect_setup(symbol: str) -> dict | None:
+    """
+    Evaluate a single symbol for a mean reversion setup.
+    Called by InstrumentScanner.scan() for each watchlist symbol.
+    Returns a setup dict (with "score" key) or None.
+    """
+    df_m15 = get_candles(mt5.TIMEFRAME_M15, 100, symbol)
+    df_m5  = get_candles(mt5.TIMEFRAME_M5,   50, symbol)
+    if df_m15.empty:
+        return None
+    return detect_reversion_signal(df_m15, df_m5, symbol)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 # ORDER MANAGEMENT — delegates to shared BotMT5 instance
 # ═════════════════════════════════════════════════════════════════════════════
 
-def lot_size(balance, sl_dist, regime_mult=1.0):
+def lot_size(balance, sl_dist, regime_mult=1.0, symbol=None):
     """Position size using fixed RISK_PCT with optional regime multiplier."""
-    return _mt5.lot_size(balance, sl_dist, RISK_PCT, regime_mult)
+    return _mt5.lot_size(balance, sl_dist, RISK_PCT, regime_mult, symbol)
 
-def place_order(direction, lots, sl, tp):
+def place_order(direction, lots, sl, tp, symbol=None):
     """Place a market order; returns (ticket, fill_price) or (None, None)."""
-    return _mt5.place_order(direction, lots, sl, tp, comment="BOT_MEAN_REVERSION-REVERT")
+    return _mt5.place_order(direction, lots, sl, tp,
+                            comment="BOT_MEAN_REVERSION-REVERT", symbol=symbol)
 
 def partial_close(ticket, close_lots, direction):
     """Close a portion of an open position to bank profit; returns True on success."""
@@ -281,13 +305,14 @@ def partial_close(ticket, close_lots, direction):
 
 def manage_positions(open_trades, logger, ai):
     """
-    0.01-lot-safe mean reversion management:
+    0.01-lot-safe mean reversion management across all open trades (any symbol):
       1. Breakeven at 0.3R (fast)
-      2. Full close at 1R — bank the entire trade (works at minimum lot size)
-      3. Early close when RSI returns to neutral
+      2. Full close at 1R — bank the entire trade
+      3. Early close when RSI returns to neutral (checked per trade's symbol)
       4. Force close everything at 21:45 UTC (15 min before market close)
+
+    ATR for trailing uses t["atr"] stored at entry, or falls back to live fetch.
     """
-    # Force close everything before market close
     if is_market_close() and open_trades:
         reason = "WEEKEND-CLOSE" if should_close_for_weekend() else "DAILY-CLOSE"
         log.info(f"Market closing in 15 min — closing all {len(open_trades)} position(s). [{reason}]")
@@ -301,15 +326,11 @@ def manage_positions(open_trades, logger, ai):
             open_trades.remove(t)
         return
 
-    df_m15 = get_candles(mt5.TIMEFRAME_M15, 30)
-    if df_m15.empty: return
-    rsi_now = calc_rsi(df_m15)
-    atr     = calc_atr(df_m15)
-
     for t in open_trades[:]:
+        sym = t.get("symbol", SYMBOL)
+
         pos = mt5.positions_get(ticket=t["ticket"])
         if not pos:
-            # Trade closed by broker (SL/TP hit)
             cp, pnl = get_deal_result(t["ticket"])
             if cp:
                 logger.log_close(t["ticket"], cp, pnl)
@@ -331,6 +352,12 @@ def manage_positions(open_trades, logger, ai):
             (price - t["entry"]) / sl_dist if direction == "bullish"
             else (t["entry"] - price) / sl_dist
         )
+
+        # ATR: stored at entry, or fetch fresh if missing
+        atr = t.get("atr")
+        if not atr:
+            df_tmp = get_candles(mt5.TIMEFRAME_M15, 30, sym)
+            atr    = calc_atr(df_tmp) if not df_tmp.empty else 10.0
 
         # Stage 1 — Breakeven at 0.3R (fast)
         if profit_r >= BE_ACTIVATION_R and not t.get("be_done"):
@@ -369,7 +396,9 @@ def manage_positions(open_trades, logger, ai):
                 if new_sl < p.sl - 0.05:
                     move_sl(t["ticket"], new_sl)
 
-        # Stage 4 — Early RSI close (mean reached)
+        # Stage 4 — Early RSI close (per trade's symbol)
+        df_tmp     = get_candles(mt5.TIMEFRAME_M15, 30, sym)
+        rsi_now    = calc_rsi(df_tmp) if not df_tmp.empty else 50.0
         rsi_neutral = RSI_NEUTRAL_LO <= rsi_now <= RSI_NEUTRAL_HI
         if rsi_neutral and profit_r > 0.3 and not t.get("closed"):
             log.info(f"T{t['ticket']} EARLY CLOSE — RSI neutral ({rsi_now:.1f}) | "
@@ -389,36 +418,33 @@ def manage_positions(open_trades, logger, ai):
 def recover_open_positions() -> list:
     """
     On startup, scan MT5 for any positions this bot opened previously
-    (identified by MAGIC number). Rebuilds the open_trades list so
-    position management (breakeven, early RSI close) resumes immediately.
+    across all watchlist symbols (identified by MAGIC number).
     """
-    positions = mt5.positions_get(symbol=SYMBOL)
-    if not positions:
-        return []
-
     recovered = []
-    for pos in positions:
-        if pos.magic != MAGIC:
-            continue  # belongs to a different bot or manual trade
-
-        direction = "bullish" if pos.type == mt5.ORDER_TYPE_BUY else "bearish"
-
-        trade = {
-            "ticket": pos.ticket,
-            "entry":  pos.price_open,
-            "sl":     pos.sl,
-            "dir":    direction,
-        }
-        recovered.append(trade)
-        log.info(f"RECOVERED position | ticket={pos.ticket} | "
-                 f"{direction} {pos.volume}L @ {pos.price_open:.2f} | "
-                 f"current P&L=${pos.profit:.2f} | SL={pos.sl:.2f}")
+    for symbol in WATCHLIST:
+        positions = mt5.positions_get(symbol=symbol)
+        if not positions:
+            continue
+        for pos in positions:
+            if pos.magic != MAGIC:
+                continue
+            direction = "bullish" if pos.type == mt5.ORDER_TYPE_BUY else "bearish"
+            trade = {
+                "ticket": pos.ticket,
+                "entry":  pos.price_open,
+                "sl":     pos.sl,
+                "dir":    direction,
+                "symbol": symbol,
+            }
+            recovered.append(trade)
+            log.info(f"RECOVERED position | ticket={pos.ticket} | symbol={symbol} | "
+                     f"{direction} {pos.volume}L @ {pos.price_open:.2f} | "
+                     f"current P&L=${pos.profit:.2f} | SL={pos.sl:.2f}")
 
     if recovered:
         log.info(f"Position recovery complete — {len(recovered)} trade(s) resumed.")
     else:
         log.info("Position recovery — no open positions found from previous session.")
-
     return recovered
 
 
@@ -426,31 +452,35 @@ def recover_open_positions() -> list:
 # MAIN LOOP
 # ═════════════════════════════════════════════════════════════════════════════
 
-_last_be_direction = [None]  # mutable container for BE direction tracking
+_last_be_direction = [None]
 
 
 def run():
     log.info("=" * 65)
     log.info("  BOT 2 — MEAN REVERSION — STARTING")
+    log.info(f"  Watchlist: {WATCHLIST}")
     log.info("=" * 65)
     set_started("mean_reversion")
     send_telegram("🟢 *Mean Reversion online*")
     if not connect(): return
 
-    acct         = mt5.account_info()
+    acct = mt5.account_info()
     if acct.balance <= 0:
-        log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. Please restore balance before running BOT_MEAN_REVERSION.")
+        log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been "
+                  "reset. Please restore balance before running BOT_MEAN_REVERSION.")
         mt5.shutdown(); return
+
     regime       = RegimeClassifier(bot_name="BOT_MEAN_REVERSION")
     logger       = TradeLogger(str(_INST / "mean_reversion_trades.json"))
     ai           = AIBrain(logger, model_file=str(_INST / "mean_reversion_model.pkl"))
     calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "gold_main_equity.json"))
     daily_log    = DailyLogger(str(_INST / "mean_reversion_daily.json"))
+    scanner      = InstrumentScanner(WATCHLIST, "BOT_MEAN_REVERSION", "mean_reversion",
+                                     _INST, log)
 
     daily_start       = acct.balance
-    # Load weekly_start from file so restarts don't reset it
-    _week_file2 = _INST / "mean_reversion_weekly.json"
-    current_week2 = now_utc().isocalendar()[1]
+    _week_file2       = _INST / "mean_reversion_weekly.json"
+    current_week2     = now_utc().isocalendar()[1]
     if _week_file2.exists():
         import json as _json2
         _wdata2 = _json2.loads(_week_file2.read_text())
@@ -464,6 +494,7 @@ def run():
         weekly_start = acct.balance
         import json as _json2
         _week_file2.write_text(_json2.dumps({"week": current_week2, "weekly_start": weekly_start}))
+
     trades_today      = 0
     max_open_today    = 0
     min_balance_today = acct.balance
@@ -473,7 +504,6 @@ def run():
     last_week         = now_utc().isocalendar()[1]
     consec_losses     = 0
     trading_halted    = False
-    # re-entry handled via _last_be_direction module variable
 
     log.info(f"Balance ${acct.balance:,.2f} | Risk {RISK_PCT}% | "
              f"Daily cap {MAX_DAILY_LOSS}% | Weekly cap {MAX_WEEKLY_LOSS}%")
@@ -509,8 +539,8 @@ def run():
                     log.info("Dead zone (3-7pm TX) — no new entries. Managing open positions.")
                 time.sleep(60)
                 continue
+
             if date != last_date:
-                # Save yesterday's performance
                 closed_today = [t for t in logger.get_closed()
                                 if t.get("closed_at", "")[:10] == str(last_date)]
                 wins   = sum(1 for t in closed_today if t["outcome"] == "win")
@@ -535,7 +565,10 @@ def run():
                 _last_be_direction[0] = None
                 calmar.record(acct.balance)
                 calmar.log_report()
+                # Reset unresolved symbol alerts for new day
+                write_bot("mean_reversion", {"unresolved_symbols_alerted": {}})
                 log.info(f"New day {date} | ${acct.balance:,.2f} | {ai.status_report()}")
+                last_date = date
 
             # ── Weekly reset ──────────────────────────────────────────────
             week = now.isocalendar()[1]
@@ -546,18 +579,14 @@ def run():
                 import json as _json2
                 _week_file2.write_text(_json2.dumps({"week": week, "weekly_start": weekly_start}))
                 log.info(f"New week {week} | Weekly balance reset ${weekly_start:,.2f}")
-                consec_losses  = 0
-                log.info(f"New week | Weekly balance reset ${weekly_start:,.2f}")
+                consec_losses = 0
 
             acct = mt5.account_info()
 
-            # Sanity check — if balance is 0 MT5 returned a bad reading
-            # (can happen if wrong terminal responds). Skip this iteration.
             if not acct or acct.balance <= 0:
                 log.warning("MT5 returned zero balance — skipping iteration (bad reading).")
                 time.sleep(30); continue
 
-            # Publish ground-truth balance so pnl_tracker and /balance stay accurate
             write_bot("mean_reversion", {
                 "balance":      acct.balance,
                 "status":       "running",
@@ -566,7 +595,7 @@ def run():
                 "last_write":   datetime.utcnow().isoformat(),
             })
 
-            # ── Weekly loss guard — 6hr cooldown then regime check ────────
+            # ── Weekly loss guard ─────────────────────────────────────────
             weekly_dd = (weekly_start - acct.balance) / weekly_start * 100
             if weekly_dd >= MAX_WEEKLY_LOSS:
                 if not trading_halted:
@@ -593,7 +622,6 @@ def run():
                     df_h4 = get_candles(mt5.TIMEFRAME_H4, 50)
                     if not df_h1.empty and not df_h4.empty:
                         regime.classify(df_h1, df_h4)
-                    # Bot 2 resumes when regime is ranging or transitioning
                     if regime.current_regime in ("RANGING", "TRANSITIONING"):
                         trading_halted = False
                         consec_losses  = 0
@@ -645,8 +673,6 @@ def run():
                     regime.classify(df_h1, df_h4)
 
             reg_state = regime.current_regime
-            # Bot 2 is OPPOSITE to Bot 1:
-            # Ranging = ideal (full size), Trending = caution (reduced size)
             if reg_state == "RANGING":
                 risk_mult = 1.0
             elif reg_state == "TRANSITIONING":
@@ -655,16 +681,15 @@ def run():
                 risk_mult = 0.4
                 log.info(f"Regime TRENDING — Bot 2 using 40% size")
 
-            # ── Market data ───────────────────────────────────────────────
-            df_m15 = get_candles(mt5.TIMEFRAME_M15, 100)
-            df_m5  = get_candles(mt5.TIMEFRAME_M5,   50)
-            if df_m15.empty:
-                log.warning("No M15 data returned from MT5. Retrying...")
-                time.sleep(30); continue
+            # ── Track metrics ─────────────────────────────────────────────
+            max_open_today    = max(max_open_today, len(open_trades))
+            min_balance_today = min(min_balance_today, acct.balance)
+            daily_pnl_pct     = (acct.balance - daily_start) / daily_start * 100
 
-            bid, ask = get_tick()
-            price    = (bid + ask) / 2
-            log.info(f"Scanning | price={price:.2f} | regime={reg_state} | risk_mult={risk_mult}")
+            bid_primary, ask_primary = get_tick()
+            price_primary = (bid_primary + ask_primary) / 2
+            log.info(f"Scanning watchlist {WATCHLIST} | regime={reg_state} | "
+                     f"risk_mult={risk_mult}")
 
             # ── Manage open positions ─────────────────────────────────────
             trades_before = len(open_trades)
@@ -673,21 +698,20 @@ def run():
                 _acct = mt5.account_info()
                 if _acct: calmar.record(_acct.balance)
 
-            # ── Signal detection ──────────────────────────────────────────
-            signal = detect_reversion_signal(df_m15, df_m5)
-            if not signal:
-                log.info("No reversion signal — conditions not met. Waiting 60s.")
+            # ── Multi-instrument scan ─────────────────────────────────────
+            candidates = scanner.scan(detect_setup)
+            if not candidates:
+                log.info("No reversion signal on any watchlist instrument. Waiting 60s.")
                 time.sleep(60); continue
 
-            log.info(f"REVERSION SIGNAL | {signal['direction'].upper()} | "
+            best   = candidates[0]
+            symbol = best.symbol
+            signal = best.setup
+
+            log.info(f"Best reversion: {symbol} | {signal['direction'].upper()} | "
                      f"score={signal['score']} | RSI={signal['rsi']:.1f}")
             for k, v in signal["signals"].items():
                 log.info(f"  [{k}] {v}")
-
-            # ── Track drawdown metrics ────────────────────────────────────
-            max_open_today    = max(max_open_today, len(open_trades))
-            min_balance_today = min(min_balance_today, acct.balance)
-            daily_pnl_pct     = (acct.balance - daily_start) / daily_start * 100
 
             # ── Re-entry check ────────────────────────────────────────────
             is_reentry = False
@@ -695,11 +719,11 @@ def run():
                     _last_be_direction[0] == signal["direction"]):
                 is_reentry = True
                 log.info(f"RE-ENTRY: price still at extreme after BE stop. "
-                         f"Re-entering {signal['direction'].upper()}.")
+                         f"Re-entering {signal['direction'].upper()} on {symbol}.")
                 _last_be_direction[0] = None
 
             # ── AI gate ───────────────────────────────────────────────────
-            bid, ask = get_tick()
+            bid, ask = signal["bid"], signal["ask"]
             spread   = ask - bid
             feats    = build_features_reversion(
                 signal["score"], signal["atr"], signal["price"],
@@ -720,7 +744,6 @@ def run():
             direction = signal["direction"]
             atr       = signal["atr"]
             sl_buf    = atr * ATR_SL_MULT
-            bid, ask  = get_tick()
 
             if direction == "bullish":
                 entry = ask
@@ -741,22 +764,24 @@ def run():
                 time.sleep(60); continue
 
             # ── Position sizing ───────────────────────────────────────────
-            lots = lot_size(acct.balance, sl_d, risk_mult)
+            lots = lot_size(acct.balance, sl_d, risk_mult, symbol)
             if lots <= 0: time.sleep(60); continue
 
-            log.info(f"ENTRY | {direction} | lots={lots} | "
+            log.info(f"ENTRY | {symbol} | {direction} | lots={lots} | "
                      f"entry={entry:.2f} SL={sl:.2f} TP={tp:.2f} R:R={rr:.2f}"
                      + (" [RE-ENTRY]" if is_reentry else ""))
 
             # ── Place order ───────────────────────────────────────────────
-            ticket, filled = place_order(direction, lots, sl, tp)
+            ticket, filled = place_order(direction, lots, sl, tp, symbol)
 
             if ticket:
                 open_trades.append({
-                    "ticket": ticket,
-                    "entry":  filled,
-                    "sl":     sl,
-                    "dir":    direction,
+                    "ticket":  ticket,
+                    "entry":   filled,
+                    "sl":      sl,
+                    "dir":     direction,
+                    "symbol":  symbol,
+                    "atr":     atr,
                     "be_done": False,
                 })
                 risk_usd = acct.balance * (RISK_PCT / 100)
@@ -764,7 +789,7 @@ def run():
                                  is_reentry=is_reentry, risk_usd=risk_usd)
                 trades_today  += 1
                 consec_losses  = 0
-                log.info(f"Trade #{trades_today} today.")
+                log.info(f"Trade #{trades_today} today on {symbol}.")
                 time.sleep(180)
             else:
                 consec_losses += 1

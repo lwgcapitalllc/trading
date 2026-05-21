@@ -1,7 +1,7 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  BOT 5 — FFT (Fibonacci Fractal Trading) STRATEGY                          ║
-║  Instrument: XAUUSD (Gold Spot) | Primary Timeframe: M15                   ║
+║  BOT 5 — FFT (Fibonacci Fractal Trading) STRATEGY (MULTI-INSTRUMENT)       ║
+║  Watchlist: configured per instance — gold-only until Phase 5 gate.        ║
 ║                                                                              ║
 ║  STRATEGY OVERVIEW                                                           ║
 ║  ─────────────────                                                           ║
@@ -67,6 +67,7 @@ from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
 from shared_regime   import RegimeClassifier
+from shared_scanner  import InstrumentScanner
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
@@ -83,6 +84,8 @@ ACCOUNT  = _CFG.get("account", {})
 
 # Strategy params (all configurable via config.json)
 _S = _CFG.get("bot_fft", {})
+
+WATCHLIST = _S.get("watchlist", [SYMBOL])
 
 # Structure detection
 SWING_LOOKBACK      = _S.get("swing_lookback", 3)       # candles each side to confirm swing
@@ -122,7 +125,7 @@ TF_HIGHER = mt5.TIMEFRAME_H4
 # Magic number for this bot
 MAGIC = 20240005
 
-log.info(f"BOT_FFT | FFT Strategy | {SYMBOL} | risk={RISK_PCT}%")
+log.info(f"BOT_FFT | FFT Strategy | watchlist={WATCHLIST} | risk={RISK_PCT}%")
 
 _mt5 = BotMT5(SYMBOL, MAGIC, "BOT_FFT", _CFG, ACCOUNT, log)
 
@@ -131,50 +134,57 @@ _mt5 = BotMT5(SYMBOL, MAGIC, "BOT_FFT", _CFG, ACCOUNT, log)
 # MT5 HELPERS — delegates to shared BotMT5 instance
 # =============================================================================
 
-def connect() -> bool:              return _mt5.connect()
-def get_candles(tf, n):             return _mt5.get_candles(tf, n)
-def get_tick() -> tuple:            return _mt5.get_tick()
-def get_deal_result(t):             return _mt5.get_deal_result(t)
-def close_position(t, d, r=""):     return _mt5.close_position(t, d, r)
-def close_all_positions(r=""):      return _mt5.close_all_positions(r)
-def move_sl(t, sl, tp=None):        return _mt5.move_sl(t, sl, tp)
+def connect() -> bool:                   return _mt5.connect()
+def get_candles(tf, n, symbol=None):     return _mt5.get_candles(tf, n, symbol)
+def get_tick(symbol=None) -> tuple:      return _mt5.get_tick(symbol)
+def get_deal_result(t):                  return _mt5.get_deal_result(t)
+def close_position(t, d, r=""):          return _mt5.close_position(t, d, r)
+def close_all_positions(r=""):           return _mt5.close_all_positions(r, WATCHLIST)
+def move_sl(t, sl, tp=None):             return _mt5.move_sl(t, sl, tp)
 def handle_dead_zone(ot, atr, logger, ai): return _mt5.handle_dead_zone(ot, atr, logger, ai)
 def reconcile_on_startup(ot, logger, ai):  return _mt5.reconcile_on_startup(ot, logger, ai)
 
-def lot_size(balance: float, sl_distance: float, risk_mult: float = 1.0) -> float:
+def lot_size(balance: float, sl_distance: float,
+             risk_mult: float = 1.0, symbol: str = None) -> float:
     """Position size using fixed RISK_PCT with optional risk multiplier."""
-    return _mt5.lot_size(balance, sl_distance, RISK_PCT, risk_mult)
+    return _mt5.lot_size(balance, sl_distance, RISK_PCT, risk_mult, symbol)
 
 def place_order(direction: str, lots: float, sl: float,
-                tp: float, comment: str = "FFT") -> tuple:
+                tp: float, comment: str = "FFT", symbol: str = None) -> tuple:
     """Place a market order; returns (ticket, fill_price) or (None, None)."""
-    return _mt5.place_order(direction, lots, sl, tp, comment=comment)
+    return _mt5.place_order(direction, lots, sl, tp, comment=comment, symbol=symbol)
 
 
 def recover_open_positions() -> list:
     """
     On bot restart, recover any open positions placed by this bot
-    so we can continue managing them (breakeven, trailing, TP2).
+    so we can continue managing them (breakeven, TP2).
     """
-    positions = mt5.positions_get(symbol=SYMBOL)
-    if not positions:
-        return []
     recovered = []
-    for p in positions:
-        if p.magic != MAGIC:
+    for symbol in WATCHLIST:
+        positions = mt5.positions_get(symbol=symbol)
+        if not positions:
             continue
-        direction = "bullish" if p.type == mt5.ORDER_TYPE_BUY else "bearish"
-        recovered.append({
-            "ticket":       p.ticket,
-            "entry":        p.price_open,
-            "sl":           p.sl,
-            "tp":           p.tp,
-            "dir":          direction,
-            "lots":         p.volume,
-            "be_done":      False,
-            "tp1_done":     False,
-            "fft_levels":   None,  # will be recalculated on next signal
-        })
+        for p in positions:
+            if p.magic != MAGIC:
+                continue
+            direction = "bullish" if p.type == mt5.ORDER_TYPE_BUY else "bearish"
+            df_m15 = get_candles(TF_ENTRY, 50, symbol)
+            atr    = get_atr(df_m15) if not df_m15.empty else None
+            recovered.append({
+                "ticket":     p.ticket,
+                "entry":      p.price_open,
+                "sl":         p.sl,
+                "tp":         p.tp,
+                "dir":        direction,
+                "lots":       p.volume,
+                "be_done":    False,
+                "tp1_done":   False,
+                "fft_levels": None,  # recalculated on next signal
+                "symbol":     symbol,
+                "atr":        atr,
+            })
+            log.info(f"RECOVERED | {symbol} | ticket={p.ticket} | {direction} @ {p.price_open:.5f}")
     if recovered:
         log.info(f"Recovered {len(recovered)} open FFT position(s).")
     return recovered
@@ -522,7 +532,7 @@ def calc_take_profits(fft: dict, overlap: dict) -> tuple:
 # POSITION MANAGEMENT
 # =============================================================================
 
-def manage_positions(open_trades: list, atr: float, logger, ai):
+def manage_positions(open_trades: list, logger, ai):
     """
     Manage all open FFT positions:
     - Move to breakeven at 0.5R
@@ -532,8 +542,6 @@ def manage_positions(open_trades: list, atr: float, logger, ai):
     Note: TP2 is placed as a hard TP on the order. TP1 requires partial close
     which at 0.01 lots means full close. The bot handles this via order monitoring.
     """
-    bid, ask = get_tick()
-
     for t in open_trades[:]:
         pos = mt5.positions_get(ticket=t["ticket"])
         if not pos:
@@ -554,7 +562,6 @@ def manage_positions(open_trades: list, atr: float, logger, ai):
         if sl_dist == 0:
             continue
 
-        # Calculate current profit in R
         if direction == "bullish":
             profit_r = (price - entry) / sl_dist
         else:
@@ -566,7 +573,8 @@ def manage_positions(open_trades: list, atr: float, logger, ai):
             if ok:
                 t["be_done"] = True
                 t["sl"]      = entry
-                log.info(f"T{t['ticket']} -> BREAKEVEN @ {entry:.2f} ({profit_r:.2f}R)")
+                sym = t.get("symbol", SYMBOL)
+                log.info(f"T{t['ticket']} [{sym}] -> BREAKEVEN @ {entry:.5f} ({profit_r:.2f}R)")
 
 
 # =============================================================================
@@ -665,6 +673,73 @@ def get_session(hour_utc: int) -> str:
 
 
 # =============================================================================
+# SCANNER CALLBACK
+# =============================================================================
+
+def detect_setup(symbol: str) -> dict | None:
+    """
+    InstrumentScanner callback: evaluate `symbol` for an FFT entry setup.
+    Returns a dict (with 'score' key) if valid, None otherwise.
+    All heavy strategy logic lives here so run() stays clean.
+    """
+    df_m15 = get_candles(TF_ENTRY,  150, symbol)
+    df_h1  = get_candles(TF_TREND,   50, symbol)
+    df_h4  = get_candles(TF_HIGHER,  50, symbol)
+    if df_m15.empty or df_h1.empty or df_h4.empty:
+        return None
+
+    bid, ask = get_tick(symbol)
+    price    = (bid + ask) / 2
+    if price == 0:
+        return None
+
+    atr = get_atr(df_m15)
+
+    h1_trend = get_trend(df_h1, 200)
+    h4_trend = get_trend(df_h4, 200)
+    if h1_trend == "neutral" or h4_trend == "neutral":
+        return None
+
+    bos = detect_bos(df_m15, atr)
+    if not bos or bos["direction"] != h1_trend:
+        return None
+
+    fft     = calc_fft_levels(bos)
+    sniper  = calc_sniper_levels(bos)
+    overlap = check_green_zone_overlap(fft, sniper)
+    if not overlap:
+        return None
+
+    if not price_in_entry_zone(price, fft, sniper):
+        return None
+
+    session = get_session(now_utc().hour)
+    fvg     = detect_fvg(df_m15, bos["direction"])
+    score   = score_setup(bos, fft, sniper, overlap, h1_trend, h4_trend, fvg, session)
+
+    if score < 4:
+        return None
+
+    return {
+        "score":    score,
+        "bos":      bos,
+        "fft":      fft,
+        "sniper":   sniper,
+        "overlap":  overlap,
+        "h1_trend": h1_trend,
+        "h4_trend": h4_trend,
+        "fvg":      fvg,
+        "session":  session,
+        "price":    price,
+        "atr":      atr,
+        "bid":      bid,
+        "ask":      ask,
+        "df_h4":    df_h4,
+        "df_m15":   df_m15,
+    }
+
+
+# =============================================================================
 # MAIN BOT LOOP
 # =============================================================================
 
@@ -695,6 +770,7 @@ def run():
     calmar      = CalmarTracker(acct.balance,
                                 equity_file=str(_INST / "fft_equity.json"))
     daily_log   = DailyLogger(str(_INST / "fft_daily.json"))
+    scanner     = InstrumentScanner(WATCHLIST, "BOT_FFT", "fft", _INST, log)
 
     # State
     daily_start       = acct.balance
@@ -755,7 +831,7 @@ def run():
 
             # ── Dead zone: 3pm-7pm Texas time — no new entries ────────────
             if is_dead_zone():
-                handle_dead_zone(open_trades, get_atr(get_candles(TF_ENTRY, 20)), logger, ai)
+                handle_dead_zone(open_trades, 0.0, logger, ai)
                 if now.minute == 0:
                     log.info("Dead zone (3-7pm TX) — no new FFT entries. Managing open positions.")
                 time.sleep(60)
@@ -789,6 +865,7 @@ def run():
                 trading_halted    = False
                 calmar.record(acct.balance)
                 calmar.log_report()
+                write_bot("fft", {"unresolved_symbols_alerted": {}})
                 log.info(f"New day {date} | ${acct.balance:,.2f} | {ai.status_report()}")
 
             # ── Weekly reset ──────────────────────────────────────────────
@@ -829,7 +906,7 @@ def run():
                     log.warning(f"DAILY CAP: -{daily_dd:.1f}%. "
                                 "Managing open trades only.")
                     trading_halted = True
-                manage_positions(open_trades, 10, logger, ai)
+                manage_positions(open_trades, logger, ai)
                 time.sleep(60)
                 continue
 
@@ -864,117 +941,69 @@ def run():
 
             # ── Daily trade limit ─────────────────────────────────────────
             if trades_today >= MAX_TRADES_DAY:
-                manage_positions(open_trades, 10)
+                manage_positions(open_trades, logger, ai)
                 if now.minute == 0:
                     log.info(f"Daily trade limit {MAX_TRADES_DAY} reached. "
                              "Managing open positions only.")
                 time.sleep(60)
                 continue
 
-            # ── Get market data ───────────────────────────────────────────
-            df_m15 = get_candles(TF_ENTRY,  150)
-            df_h1  = get_candles(TF_TREND,   50)
-            df_h4  = get_candles(TF_HIGHER,  50)
-
-            if df_m15.empty or df_h1.empty or df_h4.empty:
-                time.sleep(30)
-                continue
-
-            bid, ask = get_tick()
-            price    = (bid + ask) / 2
-            atr      = get_atr(df_m15)
-
             # ── Manage open positions ─────────────────────────────────────
             trades_before = len(open_trades)
-            manage_positions(open_trades, atr, logger, ai)
-            # Record equity immediately after any trade closes
+            manage_positions(open_trades, logger, ai)
             if len(open_trades) < trades_before:
                 acct = mt5.account_info()
                 if acct:
                     calmar.record(acct.balance)
 
-            # ── Trend filters (H1 and H4) ─────────────────────────────────
-            h1_trend = get_trend(df_h1, 200)
-            h4_trend = get_trend(df_h4, 200)
-
-            if h1_trend == "neutral" or h4_trend == "neutral":
-                log.info(f"Trend neutral — H1={h1_trend} H4={h4_trend}. Waiting.")
-                time.sleep(60)
+            # ── Regime check (primary symbol H1/H4 for Phase 1) ───────────
+            df_h1_primary = get_candles(TF_TREND,  50)
+            df_h4_primary = get_candles(TF_HIGHER, 50)
+            if df_h1_primary.empty or df_h4_primary.empty:
+                time.sleep(30)
                 continue
-
-            log.info(f"Scanning | price={price:.2f} | H1={h1_trend} | "
-                     f"H4={h4_trend} | ATR={atr:.2f}")
-
-            # ── Regime check ──────────────────────────────────────────────
-            reg_state, risk_mult = regime.classify(df_h1, df_h4)
+            reg_state, risk_mult = regime.classify(df_h1_primary, df_h4_primary)
             if reg_state == "RANGING":
                 log.info("Regime RANGING — FFT strategy needs trending. Waiting.")
                 time.sleep(60)
                 continue
 
-            # ── BOS detection on M15 ──────────────────────────────────────
-            bos = detect_bos(df_m15, atr)
-            if not bos:
-                log.info("No BOS detected. Waiting 60s.")
+            # ── Scanner: find best setup across watchlist ─────────────────
+            candidates = scanner.scan(detect_setup)
+            if not candidates:
                 time.sleep(60)
                 continue
 
-            # ── Trend alignment check ─────────────────────────────────────
-            if bos["direction"] != h1_trend:
-                log.info(f"BOS {bos['direction']} conflicts with H1 {h1_trend}. Skip.")
-                time.sleep(60)
-                continue
+            best   = candidates[0]
+            symbol = best.symbol
+            setup  = best.setup
 
-            # ── Generate setup ID to avoid re-entering same zone ──────────
-            setup_id = f"{bos['direction']}_{bos['bos_price']:.1f}"
+            bos     = setup["bos"]
+            fft     = setup["fft"]
+            sniper  = setup["sniper"]
+            overlap = setup["overlap"]
+            score   = setup["score"]
+            atr     = setup["atr"]
+            price   = setup["price"]
+            bid     = setup["bid"]
+            ask     = setup["ask"]
+            df_h4   = setup["df_h4"]
+            h4_trend = setup["h4_trend"]
+            fvg      = setup["fvg"]
+            session  = setup["session"]
+
+            # ── Avoid re-entering same zone ───────────────────────────────
+            setup_id = f"{symbol}_{bos['direction']}_{bos['bos_price']:.1f}"
             if setup_id == last_setup_id:
-                manage_positions(open_trades, atr, logger, ai)
                 time.sleep(60)
                 continue
 
-            # ── Calculate FFT and Sniper levels ───────────────────────────
-            fft    = calc_fft_levels(bos)
-            sniper = calc_sniper_levels(bos)
-
-            log.info(f"BOS {bos['direction'].upper()} @ {bos['bos_price']:.2f} | "
-                     f"FFT zone: {fft['61.8']:.2f}–{fft['88.6']:.2f} | "
-                     f"Green zone: {sniper['zone_bottom']:.2f}–{sniper['zone_top']:.2f}")
-
-            # ── Check green zone overlap (CRITICAL) ───────────────────────
-            overlap = check_green_zone_overlap(fft, sniper)
-            if not overlap:
-                log.info("No green zone overlap with FFT entry zone. Skip.")
-                time.sleep(60)
-                continue
-
-            # ── Check if price has retraced INTO the entry zone ───────────
-            if not price_in_entry_zone(price, fft, sniper):
-                log.info(f"Price {price:.2f} not yet in entry zone "
-                         f"({overlap['overlap_bottom']:.2f}–{overlap['overlap_top']:.2f}). "
-                         "Waiting for retracement.")
-                time.sleep(60)
-                continue
-
-            # ── Additional confluence ─────────────────────────────────────
-            session   = get_session(now.hour)
-            fvg       = detect_fvg(df_m15, bos["direction"])
-            score     = score_setup(bos, fft, sniper, overlap,
-                                    h1_trend, h4_trend, fvg, session)
-
-            log.info(f"SETUP | {bos['direction'].upper()} | score={score}/10 | "
-                     f"session={session} | FVG={fvg} | "
-                     f"deep={overlap['is_deep']}")
-
-            # Minimum score: 4 (BOS + overlap + at least H1 alignment)
-            if score < 4:
-                log.info(f"Score {score} < 4. Insufficient confluence. Skip.")
-                time.sleep(60)
-                continue
+            log.info(f"SETUP | {symbol} | {bos['direction'].upper()} | score={score}/10 | "
+                     f"session={session} | FVG={fvg} | deep={overlap['is_deep']}")
 
             # ── Calculate TPs ─────────────────────────────────────────────
             tp1_price, tp2_price = calc_take_profits(fft, overlap)
 
-            # Validate TP direction makes sense
             if bos["direction"] == "bullish":
                 if tp1_price <= price or tp2_price <= price:
                     log.info("TP levels below entry for bullish trade. Skip.")
@@ -1003,7 +1032,7 @@ def run():
                 is_reentry=False,
             )
             take, ai_prob, ai_reason = ai.should_take_trade(feats, MIN_AI_PROB)
-            log.info(f"AI: {ai_reason}")
+            log.info(f"AI [{symbol}]: {ai_reason}")
             if not take:
                 time.sleep(60)
                 continue
@@ -1024,21 +1053,21 @@ def run():
                 time.sleep(60)
                 continue
 
-            lots = lot_size(acct.balance, sl_dist, risk_mult)
+            lots = lot_size(acct.balance, sl_dist, risk_mult, symbol)
             if lots <= 0:
                 time.sleep(60)
                 continue
 
-            log.info(f"SIGNAL | {bos['direction'].upper()} | "
+            log.info(f"SIGNAL | {symbol} | {bos['direction'].upper()} | "
                      f"score={score} | AI={ai_prob:.0%} | "
-                     f"entry={entry_price:.2f} SL={sl_price:.2f} | "
-                     f"TP1={tp1_price:.2f} TP2={tp2_price:.2f} | "
+                     f"entry={entry_price:.5f} SL={sl_price:.5f} | "
+                     f"TP1={tp1_price:.5f} TP2={tp2_price:.5f} | "
                      f"R:R={rr:.2f} | lots={lots}")
 
             # ── Place order ───────────────────────────────────────────────
             ticket, filled = place_order(
                 bos["direction"], lots, sl_price, tp1_price,
-                comment=f"FFT-E1-s{score}"
+                comment=f"FFT-E1-s{score}", symbol=symbol
             )
 
             if ticket:
@@ -1054,6 +1083,8 @@ def run():
                     "tp1_done":   False,
                     "fft_levels": fft,
                     "sniper":     sniper,
+                    "symbol":     symbol,
+                    "atr":        atr,
                 })
                 risk_usd = acct.balance * (RISK_PCT / 100) * risk_mult
                 logger.log_entry(ticket, feats, bos["direction"],
@@ -1066,14 +1097,13 @@ def run():
                 log.info(f"Trade #{trades_today} today | FFT setup confirmed.")
 
                 # ── Entry 2: sniper 38.2% if lots allow ───────────────────
-                # Only if we can trade 0.02+ lots (otherwise single entry)
                 if lots >= 0.02:
                     entry2_price = sniper["sniper_38_2"]
                     lots2        = round(lots * 0.5 / 0.01) * 0.01
                     lots2        = max(0.01, lots2)
                     ticket2, filled2 = place_order(
                         bos["direction"], lots2, sl_price, tp2_price,
-                        comment=f"FFT-E2-s{score}"
+                        comment=f"FFT-E2-s{score}", symbol=symbol
                     )
                     if ticket2:
                         open_trades.append({
@@ -1088,13 +1118,15 @@ def run():
                             "tp1_done":   False,
                             "fft_levels": fft,
                             "sniper":     sniper,
+                            "symbol":     symbol,
+                            "atr":        atr,
                         })
                         risk_usd2 = acct.balance * (RISK_PCT / 100) * risk_mult * 0.5
                         logger.log_entry(ticket2, feats, bos["direction"],
                                          filled2, sl_price, tp2_price, tp2_price,
                                          risk_usd=risk_usd2)
-                        log.info(f"Entry 2 placed @ {filled2:.2f} | "
-                                 f"TP={tp2_price:.2f} | lots={lots2}")
+                        log.info(f"Entry 2 placed @ {filled2:.5f} | "
+                                 f"TP={tp2_price:.5f} | lots={lots2}")
 
                 for _ in range(5):
                     time.sleep(60)
