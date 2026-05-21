@@ -166,16 +166,19 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ## What I Am Working On
 
-- Last completed: **Phase 1 Multi-Instrument Scanner** — all four FX bots converted from
-  single-symbol to watchlist scanners. Each bot now evaluates its full watchlist each cycle
-  and trades the best-ranked setup. Changes: `shared/mt5_ops.py` (symbol-parameterized),
-  `shared/shared_scanner.py` (new), all 4 `config.json` files (watchlists added), all 4 bot
-  files refactored with `detect_setup(symbol)` + `InstrumentScanner`, `monitor.py` updated
-  with unresolved-symbol alert handling.
+- Last completed: **Phase 1 Multi-Instrument Scanner + post-deploy bug fixes**
+  - All four FX bots converted from single-symbol to watchlist scanners.
+  - 3 bugs found and fixed during VPS verification:
+    1. `regime.classify()` returns a dict — FFT bot was unpacking it as a 2-tuple (crash).
+    2. `risk_mult < 1` in `BotMT5.lot_size` multiplied sl_dist, narrowing the virtual SL and
+       INCREASING lot size/dollar risk (e.g. 0.4x regime → 2.5× risk). Fixed by scaling
+       `risk_pct * regime_mult` instead in bot_smc_trend, bot_mean_reversion, bot_fft.
+    3. `round(sl, 2)` in `place_order` collapsed FX SL levels to 2dp (SL == entry for
+       AUDUSD.s). Fixed to use `si.digits`. Broker min-stops-level guard also added.
+  - All symbols use `.s` suffix (PU Prime). Watchlists verified on VPS — all symbols found
+    except US30 (not on broker, replaced with GBPJPY.s + USDJPY.s).
 - Phase 2 (per-symbol volatility filter) and Phase 3 (multi-position management) not started.
-  Do Phase 1 demo verification before beginning either.
+  Continue Phase 1 demo accumulation (target 15+ trades per bot) before either.
 - Open questions / decisions pending:
   - `bot_futures.py` — NOT yet audited for reconciliation/P&L bugs or DRY refactor.
-  - Broker symbol string verification: all watchlists use generic names (XAUUSD, EURUSD, etc.)
-    and must be verified against actual PU Prime symbol strings on VPS before going live.
   - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.
