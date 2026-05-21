@@ -69,14 +69,16 @@ TASK_NAMES = {
 
 BOTS = {
     "smc": {
-        "name":   "SMC Trend",
+        "name":      "SMC Trend",
+        "state_key": "smc_trend",
         "script": "bot_smc_trend.py",
         "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "trades": ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_trades.json",
         "log":    ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
     },
     "reversion": {
-        "name":   "Mean Reversion",
+        "name":      "Mean Reversion",
+        "state_key": "mean_reversion",
         "script": "bot_mean_reversion.py",
         "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "trades": ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_trades.json",
@@ -734,11 +736,12 @@ def handle_message(text: str, chat_id: str, user_id: str) -> str:
         if not bot_key:
             return "Usage: `/resume <bot>`\nBot keys: smc  reversion  scalper  fft"
         from bot_state import read_bot, write_bot
-        state = read_bot(bot_key)
+        state_key = BOTS[bot_key].get("state_key", bot_key)
+        state = read_bot(state_key)
         name  = BOTS[bot_key]["name"]
         if not state.get("day_locked"):
             return f"{name} is not locked — no override needed."
-        write_bot(bot_key, {"resume_trading": True})
+        write_bot(state_key, {"resume_trading": True})
         return (
             f"▶️ *Resume signal sent to {name}*\n"
             f"Bot will unlock within 60s and resume trading.\n"
