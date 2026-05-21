@@ -632,7 +632,9 @@ def print_header(tasks: list[dict], tab: str = "all", show_menu: bool = True):
     print(bold(royal("╔" + "═" * W + "╗")))
     print(row(""))
     for line in BANNER:
-        print(row(bold(line)))
+        stripped = line.strip()
+        left = max(0, (W - len(stripped)) // 2)
+        print(row(" " * left + bold(stripped)))
     print(row(""))
 
     # ── Info bar: time left, tab switcher ─────────────────────────────────────
