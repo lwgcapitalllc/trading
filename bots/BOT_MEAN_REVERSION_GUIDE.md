@@ -209,3 +209,4 @@ When weekly drawdown exceeds the cap:
 1. All open positions are closed.
 2. `bot_state: day_locked=True, lock_reason="WEEKLY CAP: …"` — triggers lock alert.
 3. Interruptible 6-hour cooldown (60-second poll). `/resume <bot>` breaks it early.
+4. Heartbeat is written every 60s during the cooldown — monitor.py will not fire a "Loop Stalled" alert while the bot is in this state.

@@ -49,6 +49,15 @@ The suppress file is written by:
 - `algo.py` — via SSH before stopping from the control panel (`suppress_stop_alert()`)
 - `telegram_bot.py` — locally before executing `/stop`, `/restart`, `/emergency` commands
 
+**`/restart` full-restart sequence (all bots):**
+1. Suppress offline alerts for all bots (`stop_suppress.json`) so the planned stop doesn't trigger false crash alerts.
+2. Stop all Task Scheduler task entries (`schtasks /end`) for each bot.
+3. Force-kill all bot Python processes by script name via `wmic … call terminate` — `schtasks /end` stops the task entry but does not kill the running process.
+4. Poll (max 15s) until all bot processes are confirmed gone.
+5. Start the `SYS_STARTUP` coordinator, which starts bots sequentially.
+
+Individual `/restart <bot>` follows the same terminate-then-start pattern for the single bot.
+
 **Alerts sent:**
 - 🚨 Bot Offline — unexpected stop (suppressed for intentional stops)
 - 🟢 Bot Online — bot came back after a crash (suppressed if stop was intentional)
