@@ -42,7 +42,7 @@ from pathlib import Path
 from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_calmar   import CalmarTracker
 from shared_ai_brain import AIBrain, TradeLogger
-from shared_scanner  import InstrumentScanner
+from shared_scanner  import InstrumentScanner, LearningPhaseGate
 from shared_risk     import RiskEngine, CorrelationGuard
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
@@ -60,10 +60,12 @@ MAGIC   = 20240003
 
 _S = _CFG.get("bot_scalper", {})
 
-WATCHLIST     = _S.get("watchlist", [SYMBOL])
-MIN_ATR_RATIO = _S.get("min_atr_ratio", 0.8)
-FORCE_TRADE   = _S.get("force_trade", False)
-CORR_ACTION   = _S.get("correlation_action", "block")
+WATCHLIST          = _S.get("watchlist", [SYMBOL])
+LEARNING_WATCHLIST = _S.get("learning_watchlist", WATCHLIST[:2])
+LEARNING_MAX_OPEN  = _S.get("learning_max_open", 1)
+MIN_ATR_RATIO      = _S.get("min_atr_ratio", 0.8)
+FORCE_TRADE        = _S.get("force_trade", False)
+CORR_ACTION        = _S.get("correlation_action", "block")
 
 # EMA stack
 EMA_FAST  = _S.get("ema_fast",  9)
@@ -617,6 +619,7 @@ def run():
                                       min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
     risk_engine   = RiskEngine("BOT_SCALPER", DAILY_BUDGET_PCT, log)
     corr_guard    = CorrelationGuard(_CFG.get("correlation_map", []), log)
+    learning_gate = LearningPhaseGate(LEARNING_WATCHLIST, LEARNING_MAX_OPEN, log)
 
     start_balance = acct.balance
     daily_engine  = DailyProfitEngine(acct.balance)
@@ -811,8 +814,13 @@ def run():
             if not _allowed:
                 time.sleep(10); continue
 
+            # ── Phase 5: learning-phase gate ──────────────────────────────
+            if not learning_gate.check_max_open(open_trades, ai):
+                time.sleep(10); continue
+            _active_watchlist = learning_gate.active_watchlist(WATCHLIST, ai)
+
             # ── Scanner: find best setup across watchlist ─────────────────
-            candidates = scanner.scan(detect_setup)
+            candidates = scanner.scan(detect_setup, watchlist=_active_watchlist)
             if not candidates:
                 time.sleep(10)
                 continue

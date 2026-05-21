@@ -35,6 +35,7 @@ import pandas as pd
 
 from bot_state import read_bot, write_bot
 from mt5_ops import get_atr
+from shared_ai_brain import MIN_TRADES_TRAIN
 
 
 @dataclass
@@ -44,6 +45,74 @@ class SetupCandidate:
     setup:            dict
     confluence_score: float
     ai_probability:   float = 0.0
+
+
+class LearningPhaseGate:
+    """
+    During the AI learning phase (model not yet deployed), restricts the scanner to a
+    reduced watchlist and enforces a maximum simultaneous open-trade count.
+
+    Caps lift automatically once ai.is_trained becomes True.
+    No model code — reads only ai.is_trained and ai.logger.get_closed().
+
+    Usage:
+        gate = LearningPhaseGate(["XAUUSD.s", "EURUSD.s"], max_open=1, log=log)
+        if not gate.check_max_open(open_trades, ai):
+            continue
+        watchlist = gate.active_watchlist(WATCHLIST, ai)
+        candidates = scanner.scan(detect_fn, watchlist=watchlist)
+    """
+
+    def __init__(self, learning_watchlist: list[str],
+                 learning_max_open: int = 1, log=None):
+        self.learning_watchlist = learning_watchlist
+        self.learning_max_open  = learning_max_open
+        self.log                = log
+        self._prev_phase: bool | None = None  # tracks transitions for log-once behaviour
+
+    def is_learning_phase(self, ai) -> bool:
+        return not ai.is_trained
+
+    def active_watchlist(self, full_watchlist: list[str], ai) -> list[str]:
+        """
+        Returns the learning watchlist while the AI is untrained; the full watchlist
+        once the model is deployed. Logs only on phase transitions.
+        """
+        in_learning = self.is_learning_phase(ai)
+        if self._prev_phase != in_learning:
+            n = len(ai.logger.get_closed())
+            if in_learning:
+                self.log.info(
+                    f"LearningPhaseGate: learning phase active "
+                    f"({n}/{MIN_TRADES_TRAIN} closed trades). "
+                    f"Watchlist restricted to {self.learning_watchlist} | "
+                    f"max open: {self.learning_max_open}"
+                )
+            else:
+                self.log.info(
+                    "LearningPhaseGate: AI model deployed — "
+                    "full watchlist and multi-position cap lifted."
+                )
+            self._prev_phase = in_learning
+        return self.learning_watchlist if in_learning else full_watchlist
+
+    def check_max_open(self, open_trades: list, ai) -> bool:
+        """
+        Returns True if a new position may be opened.
+        During learning phase, blocks when len(open_trades) >= learning_max_open.
+        After training, always returns True (capacity owned by RiskEngine).
+        """
+        if not self.is_learning_phase(ai):
+            return True
+        if len(open_trades) >= self.learning_max_open:
+            n = len(ai.logger.get_closed())
+            self.log.info(
+                f"LearningPhaseGate: position cap ({self.learning_max_open}) reached "
+                f"during learning phase ({n}/{MIN_TRADES_TRAIN} trades) — "
+                "waiting for open position to close."
+            )
+            return False
+        return True
 
 
 class InstrumentScanner:
@@ -154,19 +223,23 @@ class InstrumentScanner:
 
     # ── Main scan ─────────────────────────────────────────────────────────────
 
-    def scan(self, detect_fn: Callable[[str], Optional[dict]]) -> list[SetupCandidate]:
+    def scan(self, detect_fn: Callable[[str], Optional[dict]],
+             watchlist: list[str] | None = None) -> list[SetupCandidate]:
         """
         Iterate the watchlist, call detect_fn(symbol) for each valid symbol,
         collect non-None results, and return them sorted best-first.
 
         detect_fn must return a dict with at minimum a "score" key, or None.
+        watchlist overrides self.watchlist when provided (used by LearningPhaseGate).
         """
+        active_watchlist = watchlist if watchlist is not None else self.watchlist
+
         candidates:    list[SetupCandidate] = []
         unresolved_now: set[str]            = set()
         passed_atr:    list[str]            = []
         failed_atr:    list[str]            = []
 
-        for symbol in self.watchlist:
+        for symbol in active_watchlist:
             if not self._is_valid_symbol(symbol):
                 self._report_unresolved(symbol)
                 unresolved_now.add(symbol)
@@ -218,7 +291,7 @@ class InstrumentScanner:
         else:
             self.log.info(
                 f"Scanner: no setups on watchlist "
-                f"{self.watchlist} this cycle."
+                f"{active_watchlist} this cycle."
             )
 
         return candidates

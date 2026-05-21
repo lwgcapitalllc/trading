@@ -136,10 +136,17 @@ The symbol with the highest confluence score wins and gets the trade entry.
 
 The bot tries the next-ranked candidate before sitting out — a valid non-correlated setup on another instrument is still taken. All candidates exhausted → waits 60s.
 
+**Learning-phase gate (Phase 5):** Until the AI model is deployed (< 15 closed win/loss trades, AUC < 0.55), the bot operates under tighter constraints to avoid multi-instrument variance without an edge:
+- Scanner is restricted to `learning_watchlist` (default: first 2 items of the full watchlist, i.e. `["XAUUSD.s", "EURUSD.s"]`).
+- Maximum 1 open trade at a time. If a trade is already open, the scan is skipped until it closes.
+- Both caps lift automatically the moment `ai.is_trained` becomes True (model deployed). No manual action required.
+
 Config keys (in `bot_smc_trend` section):
 - `"min_atr_ratio": 0.8` — lower = more permissive, higher = stricter
 - `"force_trade": false` — set to `true` to bypass the volatility filter entirely
 - `"daily_budget_pct": 10.0` — total risk budget per day; defaults to the existing daily loss cap
+- `"learning_watchlist": ["XAUUSD.s", "EURUSD.s"]` — reduced watchlist during AI learning phase
+- `"learning_max_open": 1` — max simultaneous positions during learning phase
 
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
