@@ -6,7 +6,7 @@ Or install as a command: see INSTALL section at bottom of this file.
 
 Connects to your VPS over SSH and manages all trading bots.
 All status data is fetched in ONE batched SSH call per refresh.
-Auto-refreshes every 60 seconds. Redraws in-place (no screen flash).
+Auto-refreshes every 30 seconds. Redraws in-place (no screen flash).
 """
 
 import subprocess
@@ -15,6 +15,7 @@ import os
 import select
 import json as _json
 import time as _time
+import shutil
 from datetime import datetime
 
 # ── VPS Config ────────────────────────────────────────────────────────────────
@@ -108,7 +109,7 @@ SCHEDULED_INFO = {
     "SYS_PNLTRACKER": "every 1 min",
 }
 
-AUTO_REFRESH_SECS = 60
+AUTO_REFRESH_SECS = 30
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 class C:
@@ -120,7 +121,9 @@ class C:
     WHITE  = "\033[97m"
     GRAY   = "\033[90m"
     BOLD   = "\033[1m"
+    DIM    = "\033[2m"
     RESET  = "\033[0m"
+    ROYAL  = "\033[38;5;27m"
 
 def green(s):  return f"{C.GREEN}{s}{C.RESET}"
 def red(s):    return f"{C.RED}{s}{C.RESET}"
@@ -129,6 +132,23 @@ def cyan(s):   return f"{C.CYAN}{s}{C.RESET}"
 def bold(s):   return f"{C.BOLD}{s}{C.RESET}"
 def gray(s):   return f"{C.GRAY}{s}{C.RESET}"
 def blue(s):   return f"\033[94m{s}{C.RESET}"
+def royal(s):  return f"{C.ROYAL}{s}{C.RESET}"
+def dim(s):    return f"{C.DIM}{s}{C.RESET}"
+
+
+# ── LWG CAPITAL Banner ────────────────────────────────────────────────────────
+BANNER = [
+    "  ██╗     ██╗    ██╗ ██████╗      ██████╗ █████╗ ██████╗ ██╗████████╗ █████╗ ██╗   ",
+    "  ██║     ██║    ██║██╔════╝     ██╔════╝██╔══██╗██╔══██╗██║╚══██╔══╝██╔══██╗██║   ",
+    "  ██║     ██║ █╗ ██║██║  ███╗    ██║     ███████║██████╔╝██║   ██║   ███████║██║   ",
+    "  ██║     ██║███╗██║██║   ██║    ██║     ██╔══██║██╔═══╝ ██║   ██║   ██╔══██║██║   ",
+    "  ███████╗╚███╔███╔╝╚██████╔╝    ╚██████╗██║  ██║██║     ██║   ██║   ██║  ██║███████╗",
+    "  ╚══════╝ ╚══╝╚══╝  ╚═════╝      ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝",
+]
+
+def _get_term_width() -> int:
+    cols = shutil.get_terminal_size(fallback=(100, 40)).columns
+    return max(96, min(cols - 2, 140))
 
 
 # ── SSH Helpers ───────────────────────────────────────────────────────────────
@@ -487,102 +507,145 @@ def clear():
     sys.stdout.write("\033[H\033[2J")
     sys.stdout.flush()
 
-def print_header(tasks: list[dict], tab: str = "all"):
-    """
-    Render the control panel with guaranteed border alignment.
-    Pad plain text to column width FIRST, then apply ANSI color.
-
-    Layout: W=90 inner content, W+2=92 total with both ║ borders.
-    Columns: icon(2) + Name(16) + Account(12) + Type(5) + Balance(10) + Total(8) + Status(9) + Info
-    Fixed visible chars before info: 4+16+1+12+1+5+1+10+1+8+1+9+1 = 70
-    Info space: 90-70 = 20 chars (uptime + daily P&L)
-    """
+def print_header(tasks: list[dict], tab: str = "all", show_menu: bool = True):
     import re
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    W   = 90
+    now = datetime.utcnow().strftime("%Y-%m-%d  %H:%M UTC")
+    W   = _get_term_width()
 
     def strip_ansi(s: str) -> str:
         return re.sub(r'\033\[[0-9;]*m', '', s)
 
     def row(content: str) -> str:
         pad = max(0, W - len(strip_ansi(content)))
-        return bold(cyan("║")) + content + " " * pad + bold(cyan("║"))
+        return bold(royal("║")) + content + " " * pad + bold(royal("║"))
 
     def col(text: str, width: int) -> str:
         return f"{str(text):<{width}}"
 
+    def div() -> str:
+        return row("  " + gray("─" * (W - 4)))
+
+    def section(label: str) -> str:
+        return row(f"  {royal('▸')} {bold(label)}")
+
     def fmt_balance(balance: float) -> str:
         if balance <= 0:
-            return col("—", 10)
-        return col(f"${balance:,.2f}", 10)
+            return col("—", W_BAL)
+        return col(f"${balance:,.2f}", W_BAL)
+
+    W_NAME   = 20
+    W_ACCT   = 12
+    W_TYPE   = 5
+    W_BAL    = 12
+    W_PNL    = 8
+    W_STATUS = 10
+
+    def col_hdr(is_sched: bool = False) -> str:
+        info_lbl = "Schedule" if is_sched else "Uptime"
+        return (
+            f"    {col('Name', W_NAME)} "
+            f"{col('Account', W_ACCT)} "
+            f"{col('Type', W_TYPE)} "
+            f"{col('Balance', W_BAL)} "
+            f"{col('P&L%', W_PNL)} "
+            f"{col('Status', W_STATUS)} "
+            f"{info_lbl}"
+        )
 
     def bot_row(t: dict, is_sched: bool = False) -> str:
         if is_sched:
-            icon_char    = "◑"
-            icon_color   = blue
-            status_text  = "SCHEDULED"
-            status_color = cyan
-            info         = gray(SCHEDULED_INFO.get(t["name"], ""))
-            balance_str  = col("—", 10)
-            total_str    = col("—", 8)
+            icon_char   = "◑"
+            icon_fn     = royal
+            status_text = "SCHEDULED"
+            status_fn   = royal
+            info        = gray(SCHEDULED_INFO.get(t["name"], ""))
+            balance_str = col("—", W_BAL)
+            pnl_str     = col("—", W_PNL)
         else:
-            running  = t["running"]
-            stalled  = t.get("stalled", False)
+            running = t["running"]
+            stalled = t.get("stalled", False)
             if stalled:
-                icon_char    = "◐"
-                icon_color   = yellow
-                status_text  = "STALLED"
-                status_color = yellow
+                icon_char   = "◐"
+                icon_fn     = yellow
+                status_text = "STALLED"
+                status_fn   = yellow
             elif running:
-                icon_char    = "●"
-                icon_color   = green
-                status_text  = "RUNNING"
-                status_color = green
+                icon_char   = "●"
+                icon_fn     = green
+                status_text = "RUNNING"
+                status_fn   = green
             else:
-                icon_char    = "○"
-                icon_color   = red
-                status_text  = "STOPPED"
-                status_color = red
-            balance_str   = fmt_balance(t.get("balance", 0.0))
+                icon_char   = "○"
+                icon_fn     = red
+                status_text = "STOPPED"
+                status_fn   = red
+            balance_str = fmt_balance(t.get("balance", 0.0))
 
             tpct = t.get("total_pct", 0.0)
             if tpct == 0.0:
-                total_str = col("—", 8)
+                pnl_str = col("—", W_PNL)
             else:
-                sign      = "+" if tpct >= 0 else ""
-                tpct_txt  = f"{sign}{tpct:.1f}%"
-                tpct_clr  = green if tpct > 0 else red
-                total_str = tpct_clr(col(tpct_txt, 8))
+                sign    = "+" if tpct >= 0 else ""
+                txt     = f"{sign}{tpct:.1f}%"
+                pnl_fn  = green if tpct > 0 else red
+                pnl_str = pnl_fn(col(txt, W_PNL))
 
-            info   = gray(t.get("uptime", ""))
+            info = gray(t.get("uptime", ""))
 
-        name      = col(t["pair"][:16], 16)
-        acct      = col(t.get("account", "—")[:12], 12)
-        acct_type = col(t.get("acct_type", "—")[:5], 5)
-        status    = col(status_text, 9)
+        name_str   = col(t["pair"][:W_NAME], W_NAME)
+        acct_str   = col(t.get("account", "—")[:W_ACCT], W_ACCT)
+        type_str   = col(t.get("acct_type", "—")[:W_TYPE], W_TYPE)
+        status_str = col(status_text, W_STATUS)
 
         return (
-            f"  {icon_color(icon_char)} "
-            f"{name} "
-            f"{gray(acct)} "
-            f"{gray(acct_type)} "
+            f"  {icon_fn(icon_char)} "
+            f"{name_str} "
+            f"{gray(acct_str)} "
+            f"{gray(type_str)} "
             f"{gray(balance_str)} "
-            f"{total_str} "
-            f"{status_color(status)} "
+            f"{pnl_str} "
+            f"{status_fn(status_str)} "
             f"{info}"
         )
 
-    tab_bar = "  ".join(
-        bold(f"[{lbl}]") if key == tab else gray(f"[{lbl}]")
-        for key, lbl in [("all", "All"), ("demo", "Demo"), ("live", "Live")]
+    # Tab bar
+    tab_parts = []
+    for key, lbl in [("all", "All"), ("demo", "Demo"), ("live", "Live")]:
+        if key == tab:
+            tab_parts.append(bold(f"▌{lbl}▐"))
+        else:
+            tab_parts.append(gray(f" {lbl} "))
+    tab_bar = "  ".join(tab_parts)
+
+    # Footer menu line
+    menu_line = (
+        f"  {bold(royal('[1]'))} Start All  "
+        f"{bold(royal('[2]'))} Stop All  "
+        f"{bold(royal('[r]'))} Restart  "
+        f"{bold(royal('[3]'))} {red('Emergency')}  "
+        f"{bold(royal('[4]'))} Manage  "
+        f"{bold(royal('[5]'))} Log  "
+        f"{bold(royal('[6]'))} Refresh  "
+        f"{bold(royal('[q]'))} Quit"
     )
 
-    COL_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Balance':<10} {'Total':<8} {'Status':<9} Info"
-    SCH_HDR = f"    {'Name':<16} {'Account':<12} {'Type':<5} {'Balance':<10} {'Total':<8} {'Status':<9} Schedule"
+    # ── Top border + LWG CAPITAL banner ──────────────────────────────────────
+    print(bold(royal("╔" + "═" * W + "╗")))
+    print(row(""))
+    for line in BANNER:
+        print(row(bold(line)))
+    print(row(""))
 
-    print(bold(cyan("╔" + "═" * W + "╗")))
-    print(row(f"  {bold('ALGO CONTROL PANEL')}  {gray(now)}    {tab_bar}"))
-    print(bold(cyan("╠" + "═" * W + "╣")))
+    # ── Info bar: time left, tab switcher ─────────────────────────────────────
+    print(bold(royal("╠" + "═" * W + "╣")))
+    time_str = gray(now)
+    tab_vis  = len(strip_ansi(tab_bar))
+    time_vis = 2 + len(strip_ansi(time_str))
+    gap = max(1, W - time_vis - tab_vis - 2)
+    print(row(f"  {time_str}" + " " * gap + tab_bar + " "))
+
+    # ── Body ──────────────────────────────────────────────────────────────────
+    print(bold(royal("╠" + "═" * W + "╣")))
 
     if not tasks:
         print(row(yellow("  No tasks found on VPS")))
@@ -592,88 +655,89 @@ def print_header(tasks: list[dict], tab: str = "all"):
         sched = [t for t in tasks if t["name"] in SCHEDULED_TASKS]
 
         if tab == "demo":
-            bots    = [t for t in bots if t.get("acct_type", "").upper() in ("DEMO", "")]
-            section = "Trading Bots — Demo"
+            bots        = [t for t in bots if t.get("acct_type", "").upper() in ("DEMO", "")]
+            bot_section = "Trading Bots — Demo"
         elif tab == "live":
-            bots    = [t for t in bots if t.get("acct_type", "").upper() == "LIVE"]
-            section = "Trading Bots — Live"
+            bots        = [t for t in bots if t.get("acct_type", "").upper() == "LIVE"]
+            bot_section = "Trading Bots — Live"
         else:
-            section = "Trading Bots"
+            bot_section = "Trading Bots"
 
-        print(row(f"  {gray(section)}"))
+        print(section(bot_section))
+        print(div())
         if bots:
-            print(row(gray(COL_HDR)))
+            print(row(gray(col_hdr())))
+            print(div())
             for t in bots:
                 print(row(bot_row(t)))
         else:
             print(row(f"  {gray('No bots for this account type.')}"))
             if tab == "live":
-                print(row(f"  {gray('Set account_type: live in config.json')}"))
+                print(row(f"  {gray('Set acct_type: live in config.json')}"))
 
         if tab == "all":
             if sys_t:
                 print(row(""))
-                print(row(f"  {gray('Telegram')}"))
-                print(row(gray(COL_HDR)))
+                print(section("Telegram"))
+                print(div())
+                print(row(gray(col_hdr())))
+                print(div())
                 for t in sys_t:
                     print(row(bot_row(t)))
 
             if sched:
                 print(row(""))
-                print(row(f"  {gray('Scheduled Jobs')}"))
-                print(row(gray(SCH_HDR)))
+                print(section("Scheduled Jobs"))
+                print(div())
+                print(row(gray(col_hdr(is_sched=True))))
+                print(div())
                 for t in sched:
                     print(row(bot_row(t, is_sched=True)))
 
-    print(bold(cyan("╚" + "═" * W + "╝")))
+    # ── Footer menu ───────────────────────────────────────────────────────────
+    if show_menu:
+        print(bold(royal("╠" + "═" * W + "╣")))
+        print(row(menu_line))
+    print(bold(royal("╚" + "═" * W + "╝")))
+
 
 def print_menu():
-    print()
-    print(bold("  ACTIONS"))
-    print(f"  {bold('[1]')} Start all bots")
-    print(f"  {bold('[2]')} Stop all bots")
-    print(f"  {bold('[r]')} Restart all bots")
-    print(f"  {bold('[3]')} {red('Emergency stop everything')}")
-    print(f"  {bold('[4]')} Manage individual bot")
-    print(f"  {bold('[5]')} View bot log")
-    print(f"  {bold('[6]')} Refresh now")
-    print(f"  {gray('[t1/t2/t3]')} {gray('Switch tab (All / Demo / Live)')}")
-    print(f"  {bold('[q]')} Quit")
-    print()
+    pass  # menu is now embedded in the print_header footer
+
 
 def print_bot_menu(tasks: list[dict]):
     print(bold("\n  SELECT BOT:\n"))
     for i, t in enumerate(tasks, 1):
         is_sched = t["name"] in SCHEDULED_TASKS
         if is_sched:
-            status = blue("◑ SCHEDULED")
+            status = royal("◑") + gray(" SCHEDULED")
         elif t.get("stalled"):
             status = yellow("◐ STALLED  ")
         elif t["running"]:
             status = green("● RUNNING  ")
         else:
             status = red("○ STOPPED  ")
-        print(f"  {bold(f'[{i}]')} {t['pair']:<22} {status}")
-    print(f"  {bold('[b]')} Back")
+        print(f"  {bold(royal(f'[{i}]'))} {t['pair']:<22} {status}")
+    print(f"  {bold(royal('[b]'))} Back")
     print()
 
 def print_bot_detail(task: dict):
     import re
-    W = 90
+    W = _get_term_width()
 
     def strip_ansi(s: str) -> str:
         return re.sub(r'\033\[[0-9;]*m', '', s)
 
     def row(content: str) -> str:
         pad = max(0, W - len(strip_ansi(content)))
-        return bold(cyan("║")) + content + " " * pad + bold(cyan("║"))
+        return bold(royal("║")) + content + " " * pad + bold(royal("║"))
 
     is_sched  = task["name"] in SCHEDULED_TASKS
     running   = task.get("running", False)
     stalled   = task.get("stalled", False)
     if is_sched:
-        icon_str   = blue("◑")
-        status_str = blue("SCHEDULED")
+        icon_str   = royal("◑")
+        status_str = royal("SCHEDULED")
     elif stalled:
         icon_str   = yellow("◐")
         status_str = yellow("STALLED")
@@ -703,47 +767,56 @@ def print_bot_detail(task: dict):
 
     data = (
         f"  Balance {gray(bal_str)}"
-        f"    Daily {d_clr(f'{d_sign}{daily:.1f}%')}"
-        f"    Total {t_clr(f'{t_sign}{total:.1f}%')}"
+        f"    Daily P&L {d_clr(f'{d_sign}{daily:.1f}%')}"
+        f"    Total P&L {t_clr(f'{t_sign}{total:.1f}%')}"
         f"    Uptime {gray(uptime)}"
     )
 
-    print(bold(cyan("╔" + "═" * W + "╗")))
+    print(bold(royal("╔" + "═" * W + "╗")))
     print(row(header))
-    print(bold(cyan("╠" + "═" * W + "╣")))
+    print(bold(royal("╠" + "═" * W + "╣")))
     print(row(data))
-    print(bold(cyan("╚" + "═" * W + "╝")))
+    print(bold(royal("╚" + "═" * W + "╝")))
 
 
 def bot_action_menu(task: dict) -> str:
     print_bot_detail(task)
     print()
-    print(f"  {bold('[1]')} Start")
-    print(f"  {bold('[2]')} Stop")
-    print(f"  {bold('[3]')} Restart")
-    print(f"  {bold('[4]')} View log (last 40 lines)")
-    print(f"  {bold('[5]')} View log (last 100 lines)")
+    print(f"  {bold(royal('[1]'))} Start")
+    print(f"  {bold(royal('[2]'))} Stop")
+    print(f"  {bold(royal('[3]'))} Restart")
+    print(f"  {bold(royal('[4]'))} View log (last 40 lines)")
+    print(f"  {bold(royal('[5]'))} View log (last 100 lines)")
     if task["name"] == "SYS_TELEGRAM":
-        print(f"  {bold('[u]')} Manage users")
-    print(f"  {bold('[r]')} Refresh")
-    print(f"  {bold('[b]')} Back")
-    print(f"  {bold('[q]')} Quit")
+        print(f"  {bold(royal('[u]'))} Manage users")
+    print(f"  {bold(royal('[r]'))} Refresh")
+    print(f"  {bold(royal('[b]'))} Back")
+    print(f"  {bold(royal('[q]'))} Quit")
     print()
     return input("  Choice: ").strip().lower()
 
 
-# ── Non-blocking Input with Auto-Refresh ─────────────────────────────────────
+# ── Non-blocking Input with Live Countdown ────────────────────────────────────
 def input_or_timeout(prompt: str, timeout: int):
     """
-    Show prompt and wait for input. Returns None if timeout elapses
-    (triggers auto-refresh). Works on macOS/Linux via select.select.
+    Show a live countdown and wait for input.
+    Returns None on timeout (triggers auto-refresh).
+    Works on macOS/Linux via select.select.
     """
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
-    ready, _, _ = select.select([sys.stdin], [], [], timeout)
-    if ready:
-        return sys.stdin.readline().strip().lower()
-    return None  # timed out — trigger refresh
+    end_time = _time.monotonic() + timeout
+    while True:
+        remaining = int(end_time - _time.monotonic())
+        if remaining <= 0:
+            print()
+            return None
+        sys.stdout.write(
+            f"\r  {C.BOLD}Choice{C.RESET} "
+            f"[{C.ROYAL}{remaining}{C.RESET}s]: "
+        )
+        sys.stdout.flush()
+        ready, _, _ = select.select([sys.stdin], [], [], 1.0)
+        if ready:
+            return sys.stdin.readline().strip().lower()
 
 
 # ── User Management ───────────────────────────────────────────────────────────
@@ -790,11 +863,11 @@ def manage_users_menu():
         else:
             print(gray("  No users configured yet.\n"))
         print()
-        print(f"  {bold('[1]')} List users")
-        print(f"  {bold('[2]')} Add user")
-        print(f"  {bold('[3]')} Remove user")
-        print(f"  {bold('[4]')} Change role")
-        print(f"  {bold('[b]')} Back")
+        print(f"  {bold(royal('[1]'))} List users")
+        print(f"  {bold(royal('[2]'))} Add user")
+        print(f"  {bold(royal('[3]'))} Remove user")
+        print(f"  {bold(royal('[4]'))} Change role")
+        print(f"  {bold(royal('[b]'))} Back")
         print()
         choice = input("  Choice: ").strip().lower()
         if choice == "b":
@@ -815,7 +888,7 @@ def manage_users_menu():
             name = input("  Name: ").strip()
             if not name:
                 print(red("  Name cannot be empty.")); input(gray("  Press Enter...")); continue
-            print(f"\n  Role: {bold('[1]')} admin   {bold('[2]')} readonly")
+            print(f"\n  Role: {bold(royal('[1]'))} admin   {bold(royal('[2]'))} readonly")
             r = input("  Role: ").strip()
             role = "admin" if r == "1" else "readonly"
             from datetime import datetime as _dt
@@ -831,8 +904,8 @@ def manage_users_menu():
             print(bold("\n  Remove User\n"))
             user_list = list(users.items())
             for i, (uid, info) in enumerate(user_list, 1):
-                print(f"  {bold(f'[{i}]')} {info.get('name','?'):<16}  {gray(uid)}")
-            print(f"  {bold('[b]')} Cancel")
+                print(f"  {bold(royal(f'[{i}]'))} {info.get('name','?'):<16}  {gray(uid)}")
+            print(f"  {bold(royal('[b]'))} Cancel")
             print()
             sel = input("  Select: ").strip().lower()
             if sel == "b":
@@ -859,8 +932,8 @@ def manage_users_menu():
             user_list = list(users.items())
             for i, (uid, info) in enumerate(user_list, 1):
                 role = info.get("role","?").upper()
-                print(f"  {bold(f'[{i}]')} {info.get('name','?'):<16}  {gray(uid)}  {role}")
-            print(f"  {bold('[b]')} Cancel")
+                print(f"  {bold(royal(f'[{i}]'))} {info.get('name','?'):<16}  {gray(uid)}  {role}")
+            print(f"  {bold(royal('[b]'))} Cancel")
             print()
             sel = input("  Select: ").strip().lower()
             if sel == "b":
@@ -870,7 +943,7 @@ def manage_users_menu():
                 name = info.get("name", "?")
                 current = info.get("role", "?").upper()
                 print(f"\n  {name} — current role: {bold(current)}")
-                print(f"  New role: {bold('[1]')} admin   {bold('[2]')} readonly")
+                print(f"  New role: {bold(royal('[1]'))} admin   {bold(royal('[2]'))} readonly")
                 r = input("  Role: ").strip()
                 if r not in ("1", "2"):
                     print(red("  Invalid.")); input(gray("  Press Enter...")); continue
@@ -902,12 +975,8 @@ def main():
     while True:
         clear()
         print_header(tasks, active_tab)
-        print_menu()
 
-        choice = input_or_timeout(
-            f"  Choice [{AUTO_REFRESH_SECS}s auto-refresh]: ",
-            AUTO_REFRESH_SECS,
-        )
+        choice = input_or_timeout("", AUTO_REFRESH_SECS)
 
         # Auto-refresh on timeout
         if choice is None:
@@ -980,7 +1049,7 @@ def main():
         elif choice == "4":
             while True:
                 clear()
-                print_header(tasks, active_tab)
+                print_header(tasks, active_tab, show_menu=False)
                 print_bot_menu(tasks)
                 bot_choice = input("  Select bot: ").strip().lower()
                 if bot_choice in ("q", "quit", "exit"):
@@ -1053,7 +1122,7 @@ def main():
 
         elif choice == "5":
             clear()
-            print_header(tasks, active_tab)
+            print_header(tasks, active_tab, show_menu=False)
             print_bot_menu(tasks)
             bot_choice = input("  Select bot to view log: ").strip().lower()
             if bot_choice in ("q", "quit", "exit"):
@@ -1125,7 +1194,7 @@ if __name__ == "__main__":
             for t in tasks:
                 is_sched = t["name"] in SCHEDULED_TASKS
                 if is_sched:
-                    icon = blue("◑ SCHEDULED")
+                    icon = royal("◑") + gray(" SCHEDULED")
                 elif t.get("stalled"):
                     icon = yellow("◐ STALLED")
                 elif t["running"]:
