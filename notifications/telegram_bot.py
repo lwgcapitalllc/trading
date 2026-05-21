@@ -380,11 +380,33 @@ def do_restart(bot_keys: list) -> str:
         return "\n\n".join(lines)
 
     # Full restart — stop everything then use coordinator
+    _suppress_stop_alert(list(BOTS.keys()))
     for key in BOTS.keys():
         task = TASK_NAMES.get(key)
         if task:
             task_stop(task)
-    time.sleep(3)
+
+    # Force-kill any lingering bot Python processes (task_stop does not kill the process)
+    for key in BOTS.keys():
+        script_name = BOTS[key].get("script", "")
+        if script_name:
+            subprocess.run(
+                ["wmic", "process", "where",
+                 f"name='python.exe' and commandline like '%{script_name}%'",
+                 "call", "terminate"],
+                capture_output=True, timeout=10
+            )
+
+    # Wait until all bot processes are gone (max 15s) before starting coordinator
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        r = subprocess.run(
+            ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
+            capture_output=True, text=True, timeout=5
+        )
+        if not any(BOTS[k].get("script", "") in r.stdout for k in BOTS):
+            break
+        time.sleep(1)
 
     # Run startup coordinator — starts bots sequentially, waits for each connection
     ok = task_start("SYS_STARTUP")

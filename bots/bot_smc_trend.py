@@ -661,6 +661,7 @@ def run():
                             log.warning("WEEKLY CAP RESUME: user override — resuming early.")
                             trading_halted = False
                             break
+                        write_bot("smc_trend", {"heartbeat": time.time()})
                         time.sleep(60)
                     else:
                         write_bot("smc_trend", {"day_locked": False})
