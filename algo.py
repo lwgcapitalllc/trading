@@ -631,10 +631,9 @@ def print_header(tasks: list[dict], tab: str = "all", show_menu: bool = True):
     # ── Top border + LWG CAPITAL banner ──────────────────────────────────────
     print(bold(royal("╔" + "═" * W + "╗")))
     print(row(""))
+    banner_left = max(0, (W - max(len(l.strip()) for l in BANNER)) // 2)
     for line in BANNER:
-        stripped = line.strip()
-        left = max(0, (W - len(stripped)) // 2)
-        print(row(" " * left + bold(stripped)))
+        print(row(" " * banner_left + bold(line.strip())))
     print(row(""))
 
     # ── Info bar: time left, tab switcher ─────────────────────────────────────
