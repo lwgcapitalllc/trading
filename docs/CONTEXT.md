@@ -46,8 +46,9 @@ FFT is the lowest risk (1%) — gold-only until 30+ closed trades with solid Cal
 | `tradovate.py` | Tradovate API executor for Bot Futures |
 | `algo.py` | Mac control panel — start/stop/status/logs/restart |
 
-**Multi-instrument architecture (Phase 1):**
+**Multi-instrument architecture (Phase 1 + 2):**
 - `InstrumentScanner.scan(detect_fn)` iterates the watchlist, calls `detect_fn(symbol) → dict|None` per symbol, ranks by confluence score, returns sorted candidates
+- **Phase 2 volatility filter:** before calling detect_fn, the scanner computes `atr_ratio = ATR(5) / ATR(20)` on H1 candles per symbol; symbols below `min_atr_ratio` (default 0.8) are skipped; if the entire watchlist is below the floor and `force_trade=false`, the bot sits out the cycle — configured per bot in config.json
 - Each bot picks `candidates[0]` (best setup) and enters
 - All MT5 methods accept `symbol=None` (defaults to bot's primary symbol)
 - `move_sl`, `close_position`, `partial_close` read `pos[0].symbol` from the live MT5 position — instrument-agnostic
@@ -166,19 +167,13 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ## What I Am Working On
 
-- Last completed: **Phase 1 Multi-Instrument Scanner + post-deploy bug fixes**
-  - All four FX bots converted from single-symbol to watchlist scanners.
-  - 3 bugs found and fixed during VPS verification:
-    1. `regime.classify()` returns a dict — FFT bot was unpacking it as a 2-tuple (crash).
-    2. `risk_mult < 1` in `BotMT5.lot_size` multiplied sl_dist, narrowing the virtual SL and
-       INCREASING lot size/dollar risk (e.g. 0.4x regime → 2.5× risk). Fixed by scaling
-       `risk_pct * regime_mult` instead in bot_smc_trend, bot_mean_reversion, bot_fft.
-    3. `round(sl, 2)` in `place_order` collapsed FX SL levels to 2dp (SL == entry for
-       AUDUSD.s). Fixed to use `si.digits`. Broker min-stops-level guard also added.
-  - All symbols use `.s` suffix (PU Prime). Watchlists verified on VPS — all symbols found
-    except US30 (not on broker, replaced with GBPJPY.s + USDJPY.s).
-- Phase 2 (per-symbol volatility filter) and Phase 3 (multi-position management) not started.
-  Continue Phase 1 demo accumulation (target 15+ trades per bot) before either.
+- Last completed: **Phase 2 Volatility / Opportunity Filter**
+  - Per-symbol ATR ratio filter added to `InstrumentScanner` (H1 ATR(5)/ATR(20)).
+  - Symbols below `min_atr_ratio` (default 0.8) are skipped each cycle with a log line.
+  - If the entire watchlist is below the floor and `force_trade=false`, bot sits out.
+  - `min_atr_ratio` and `force_trade` added to all four bot config sections; defaults keep day-one behavior unchanged.
+- Previously: **Phase 1 Multi-Instrument Scanner** — all four FX bots on watchlist scanners; 3 post-deploy bugs fixed.
+- Phase 3 (dynamic risk engine) pending demo accumulation (target 15+ trades per bot per instrument).
 - Open questions / decisions pending:
   - `bot_futures.py` — NOT yet audited for reconciliation/P&L bugs or DRY refactor.
   - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.

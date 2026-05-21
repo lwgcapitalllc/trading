@@ -85,7 +85,9 @@ ACCOUNT  = _CFG.get("account", {})
 # Strategy params (all configurable via config.json)
 _S = _CFG.get("bot_fft", {})
 
-WATCHLIST = _S.get("watchlist", [SYMBOL])
+WATCHLIST     = _S.get("watchlist", [SYMBOL])
+MIN_ATR_RATIO = _S.get("min_atr_ratio", 0.8)
+FORCE_TRADE   = _S.get("force_trade", False)
 
 # Structure detection
 SWING_LOOKBACK      = _S.get("swing_lookback", 3)       # candles each side to confirm swing
@@ -770,7 +772,8 @@ def run():
     calmar      = CalmarTracker(acct.balance,
                                 equity_file=str(_INST / "fft_equity.json"))
     daily_log   = DailyLogger(str(_INST / "fft_daily.json"))
-    scanner     = InstrumentScanner(WATCHLIST, "BOT_FFT", "fft", _INST, log)
+    scanner     = InstrumentScanner(WATCHLIST, "BOT_FFT", "fft", _INST, log,
+                                    min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
 
     # State
     daily_start       = acct.balance

@@ -59,7 +59,9 @@ MAGIC   = 20240003
 
 _S = _CFG.get("bot_scalper", {})
 
-WATCHLIST = _S.get("watchlist", [SYMBOL])
+WATCHLIST     = _S.get("watchlist", [SYMBOL])
+MIN_ATR_RATIO = _S.get("min_atr_ratio", 0.8)
+FORCE_TRADE   = _S.get("force_trade", False)
 
 # EMA stack
 EMA_FAST  = _S.get("ema_fast",  9)
@@ -607,7 +609,8 @@ def run():
     calmar        = CalmarTracker(acct.balance, equity_file=str(_INST / "scalper_equity.json"))
     logger        = TradeLogger(str(_INST / "scalper_trades.json"))
     ai            = AIBrain(logger, model_file=str(_INST / "scalper_model.pkl"))
-    scanner       = InstrumentScanner(WATCHLIST, "BOT_SCALPER", "scalper", _INST, log)
+    scanner       = InstrumentScanner(WATCHLIST, "BOT_SCALPER", "scalper", _INST, log,
+                                      min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
 
     start_balance = acct.balance
     daily_engine  = DailyProfitEngine(acct.balance)

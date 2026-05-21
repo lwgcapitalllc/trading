@@ -126,6 +126,12 @@ The symbol with the highest confluence score wins and gets the trade entry.
 **Watchlist (Phase 1 defaults):** `["XAUUSD", "EURUSD", "GBPUSD", "XAGUSD", "US30"]`
 *(verify exact broker symbol strings on VPS before going live — brokers add suffixes like `.s`)*
 
+**Volatility filter (Phase 2):** Before evaluating a setup, the scanner checks whether the instrument is actually moving. It computes `atr_ratio = ATR(5) / ATR(20)` on H1 candles. If the ratio is below `min_atr_ratio` (default 0.8 — current volatility less than 80% of recent baseline), that symbol is skipped for the cycle. If the entire watchlist is below the floor, the bot sits out rather than forcing a trade in dead conditions.
+
+Config keys (in `bot_smc_trend` section):
+- `"min_atr_ratio": 0.8` — lower = more permissive, higher = stricter
+- `"force_trade": false` — set to `true` to bypass the filter entirely
+
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
 - bot_state flag is set → monitor.py sends one Telegram alert per bad symbol per day

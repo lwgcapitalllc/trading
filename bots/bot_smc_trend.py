@@ -52,7 +52,9 @@ MAGIC           = 20240001
 
 # Watchlist — falls back to single symbol if not configured
 _B1      = _CFG["bot_smc_trend"]
-WATCHLIST = _B1.get("watchlist", [SYMBOL])
+WATCHLIST     = _B1.get("watchlist", [SYMBOL])
+MIN_ATR_RATIO = _B1.get("min_atr_ratio", 0.8)
+FORCE_TRADE   = _B1.get("force_trade", False)
 
 # Risk
 RISK_PCT        = _CFG["risk"]["risk_pct_bot1"]
@@ -503,7 +505,8 @@ def run():
     ai           = AIBrain(logger, model_file=str(_INST / "smc_trend_model.pkl"))
     calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "gold_main_equity.json"))
     daily_log    = DailyLogger(str(_INST / "smc_trend_daily.json"))
-    scanner      = InstrumentScanner(WATCHLIST, "BOT_SMC_TREND", "smc_trend", _INST, log)
+    scanner      = InstrumentScanner(WATCHLIST, "BOT_SMC_TREND", "smc_trend", _INST, log,
+                                     min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
 
     daily_start  = acct.balance
     _eq_file     = _INST / "gold_main_equity.json"

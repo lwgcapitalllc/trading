@@ -30,6 +30,8 @@
     "rsi_range_ranging": 20
   },
   "bot_scalper": {
+    "min_atr_ratio": 0.8,
+    "force_trade": false,
     "ema_fast": 9,
     "ema_mid": 21,
     "ema_slow": 50,
@@ -81,6 +83,8 @@
   },
   "bot_smc_trend": {
     "watchlist": ["XAUUSD.s", "GBPJPY.s", "EURUSD.s", "XAGUSD.s", "USDJPY.s"],
+    "min_atr_ratio": 0.8,
+    "force_trade": false,
     "min_rr": 3.0,
     "atr_period": 14,
     "atr_sl_multiplier": 1.5,
@@ -104,6 +108,8 @@
   },
   "bot_mean_reversion": {
     "watchlist": ["XAUUSD.s", "EURUSD.s", "AUDUSD.s", "USDCAD.s", "EURGBP.s"],
+    "min_atr_ratio": 0.8,
+    "force_trade": false,
     "min_rr": 1.5,
     "atr_period": 14,
     "atr_sl_multiplier": 1.0,

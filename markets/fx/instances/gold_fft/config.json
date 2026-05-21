@@ -8,6 +8,8 @@
     "_comment": "FFT Strategy \u2014 Fibonacci Fractal Trading",
     "_watchlist_note": "Gold-only until 30+ closed trades with solid Calmar (Phase 5 gate). Do not expand.",
     "watchlist": ["XAUUSD.s"],
+    "min_atr_ratio": 0.8,
+    "force_trade": false,
     "swing_lookback": 3,
     "bos_min_body_mult": 1.5,
     "fft_entry_min": 0.618,

@@ -56,7 +56,9 @@ MAGIC           = 20240002
 
 # Watchlist — falls back to single symbol if not configured
 _B2      = _CFG["bot_mean_reversion"]
-WATCHLIST = _B2.get("watchlist", [SYMBOL])
+WATCHLIST     = _B2.get("watchlist", [SYMBOL])
+MIN_ATR_RATIO = _B2.get("min_atr_ratio", 0.8)
+FORCE_TRADE   = _B2.get("force_trade", False)
 
 # Risk
 RISK_PCT        = _CFG["risk"]["risk_pct_bot2"]
@@ -476,7 +478,8 @@ def run():
     calmar       = CalmarTracker(acct.balance, equity_file=str(_INST / "gold_main_equity.json"))
     daily_log    = DailyLogger(str(_INST / "mean_reversion_daily.json"))
     scanner      = InstrumentScanner(WATCHLIST, "BOT_MEAN_REVERSION", "mean_reversion",
-                                     _INST, log)
+                                     _INST, log,
+                                     min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
 
     daily_start       = acct.balance
     _week_file2       = _INST / "mean_reversion_weekly.json"

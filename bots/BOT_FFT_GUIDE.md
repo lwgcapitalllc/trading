@@ -138,6 +138,12 @@ Expansion gate: 30+ closed trades with solid Calmar ratio (tracked in `fft_equit
 
 **config.json note:** `_watchlist_note` field documents the gate. Do not remove it — it's a reminder to future maintainers.
 
+**Volatility filter (Phase 2):** Before evaluating a setup, the scanner checks `atr_ratio = ATR(5) / ATR(20)` on H1 candles. Symbols below `min_atr_ratio` (default 0.8) are skipped. Since FFT is gold-only, if XAUUSD is compressed the bot simply sits out the cycle.
+
+Config keys (in `bot_fft` section):
+- `"min_atr_ratio": 0.8`
+- `"force_trade": false`
+
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
 - bot_state flag is set → monitor.py sends one Telegram alert per bad symbol per day

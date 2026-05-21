@@ -102,6 +102,12 @@ The symbol with the highest EMA stack strength wins the entry.
 **Watchlist (Phase 1 defaults):** `["XAUUSD", "US30", "NAS100", "EURUSD", "GBPUSD"]`
 *(verify exact broker symbol strings on VPS before going live)*
 
+**Volatility filter (Phase 2):** Before evaluating a setup, the scanner checks `atr_ratio = ATR(5) / ATR(20)` on H1 candles. Symbols below `min_atr_ratio` (default 0.8) are skipped. If the entire watchlist is compressed, the bot sits out the cycle.
+
+Config keys (in `bot_scalper` section):
+- `"min_atr_ratio": 0.8`
+- `"force_trade": false`
+
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
 - bot_state flag is set → monitor.py sends one Telegram alert per bad symbol per day
