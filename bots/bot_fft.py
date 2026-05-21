@@ -146,8 +146,8 @@ def reconcile_on_startup(ot, logger, ai):  return _mt5.reconcile_on_startup(ot, 
 
 def lot_size(balance: float, sl_distance: float,
              risk_mult: float = 1.0, symbol: str = None) -> float:
-    """Position size using fixed RISK_PCT with optional risk multiplier."""
-    return _mt5.lot_size(balance, sl_distance, RISK_PCT, risk_mult, symbol)
+    """Position size using fixed RISK_PCT scaled by risk_mult."""
+    return _mt5.lot_size(balance, sl_distance, RISK_PCT * risk_mult, 1.0, symbol)
 
 def place_order(direction: str, lots: float, sl: float,
                 tp: float, comment: str = "FFT", symbol: str = None) -> tuple:

@@ -279,17 +279,30 @@ class BotMT5:
         Returns (ticket, filled_price) or (None, None) on failure.
         """
         sym        = symbol or self.symbol
+        si         = mt5.symbol_info(sym)
+        digits     = si.digits if si else 2
         bid, ask   = self.get_tick(sym)
         order_type = mt5.ORDER_TYPE_BUY if direction == "bullish" else mt5.ORDER_TYPE_SELL
         price      = ask if direction == "bullish" else bid
+
+        # Broker minimum stop-distance guard
+        if si and si.trade_stops_level > 0:
+            min_dist = si.trade_stops_level * si.point
+            if abs(price - sl) < min_dist:
+                self.log.warning(
+                    f"SL too close: |{price:.{digits}f} - {sl:.{digits}f}| = "
+                    f"{abs(price-sl):.{digits}f} < stops_level {min_dist:.{digits}f} ({sym}). Skip."
+                )
+                return None, None
+
         result = mt5.order_send({
             "action":       mt5.TRADE_ACTION_DEAL,
             "symbol":       sym,
             "volume":       lots,
             "type":         order_type,
             "price":        price,
-            "sl":           round(sl, 2),
-            "tp":           round(tp, 2),
+            "sl":           round(sl, digits),
+            "tp":           round(tp, digits),
             "deviation":    20,
             "magic":        self.magic,
             "comment":      comment or f"{self.bot_label}-ENTRY",
@@ -299,7 +312,8 @@ class BotMT5:
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log.info(
                 f"ORDER FILLED | ticket={result.order} | "
-                f"{direction} {lots}L @ {result.price:.2f} | SL={sl:.2f} TP={tp:.2f}"
+                f"{direction} {lots}L @ {result.price:.{digits}f} | "
+                f"SL={sl:.{digits}f} TP={tp:.{digits}f}"
             )
             return result.order, result.price
         self.log.error(f"Order failed: {mt5.last_error()}")
@@ -489,9 +503,10 @@ class BotMT5:
         lots      = risk / (ticks * si.trade_tick_value)
         lots      = max(si.volume_min, min(si.volume_max, lots))
         lots      = round(round(lots / si.volume_step) * si.volume_step, 2)
+        digits = si.digits if si else 5
         self.log.info(
-            f"Lot size: {lots}L | risk={risk_pct}% (${risk:.2f}) | "
-            f"balance=${balance:,.0f} | sl={actual_sl:.2f}pts"
+            f"Lot size: {lots}L | risk={risk_pct:.2f}% (${risk:.2f}) | "
+            f"balance=${balance:,.0f} | sl={actual_sl:.{digits}f}pts"
         )
         return lots
 

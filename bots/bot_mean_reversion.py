@@ -291,8 +291,8 @@ def detect_setup(symbol: str) -> dict | None:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def lot_size(balance, sl_dist, regime_mult=1.0, symbol=None):
-    """Position size using fixed RISK_PCT with optional regime multiplier."""
-    return _mt5.lot_size(balance, sl_dist, RISK_PCT, regime_mult, symbol)
+    """Position size using fixed RISK_PCT scaled by regime_mult."""
+    return _mt5.lot_size(balance, sl_dist, RISK_PCT * regime_mult, 1.0, symbol)
 
 def place_order(direction, lots, sl, tp, symbol=None):
     """Place a market order; returns (ticket, fill_price) or (None, None)."""
