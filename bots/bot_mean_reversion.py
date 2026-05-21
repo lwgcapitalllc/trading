@@ -64,6 +64,11 @@ MIN_ATR_RATIO      = _B2.get("min_atr_ratio", 0.8)
 FORCE_TRADE        = _B2.get("force_trade", False)
 CORR_ACTION        = _B2.get("correlation_action", "block")
 
+# Dead zone (gold market close window — CT local hours, DST-aware)
+_DZ             = _CFG.get("dead_zone", {})
+DEAD_ZONE_START = _DZ.get("start_ct", 16)
+DEAD_ZONE_END   = _DZ.get("end_ct",   17)
+
 # Risk
 RISK_PCT        = _CFG["risk"]["risk_pct_bot2"]
 MIN_LOT         = _CFG["risk"]["min_lot_size"]
@@ -565,13 +570,13 @@ def run():
             if acct is None:
                 time.sleep(30); continue
 
-            # ── Dead zone: 3pm-7pm Texas time — no new entries ────────────
-            if is_dead_zone():
+            # ── Dead zone: gold market close — no new entries ─────────────
+            if is_dead_zone(DEAD_ZONE_START, DEAD_ZONE_END):
                 df_tmp = get_candles(mt5.TIMEFRAME_M15, 20)
                 handle_dead_zone(open_trades,
                                  calc_atr(df_tmp) if not df_tmp.empty else 10.0, logger, ai)
                 if now.minute == 0:
-                    log.info("Dead zone (3-7pm TX) — no new entries. Managing open positions.")
+                    log.info(f"Dead zone ({DEAD_ZONE_START}:00–{DEAD_ZONE_END}:00 CT) — no new entries.")
                 time.sleep(60)
                 continue
 

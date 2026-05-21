@@ -26,7 +26,7 @@ Watchlists live inside each bot's config section (`bot_smc_trend.watchlist`, etc
 | Futures | `bot_futures.py` | SMC_TREND on MNQ via Tradovate API | MNQ only | futures_account1 | N/A (Tradovate) |
 
 SMC Trend and Mean Reversion share one MT5 account and are designed to be uncorrelated — one works trending markets, the other ranging markets.
-Scalper is isolated on its own account due to high volatility (+50% / -8% swings possible).
+Scalper is isolated on its own account due to higher volatility (+15% ceiling / -5% daily floor).
 FFT is the lowest risk (1%) — gold-only until 30+ closed trades with solid Calmar (Phase 5 gate).
 
 ---
@@ -64,11 +64,11 @@ FFT is the lowest risk (1%) — gold-only until 30+ closed trades with solid Cal
 
 ## Risk Rules (All Bots)
 
-- SMC Trend: 2% risk, 3:1 target, 10% daily loss cap
-- Mean Reversion: 2% risk, 1:1 target, 10% daily loss cap
-- Scalper: 2–3.5% risk (auto-scaling), -8% floor
-- FFT: 1% risk, 2:1–5:1 target, 5% daily loss cap
-- Futures (MNQ): 1% risk, max 4 contracts, 3% daily loss cap
+- SMC Trend: 1% risk, 3:1 target, 5% daily loss cap, 10% weekly cap
+- Mean Reversion: 1% risk, 1:1 target, 5% daily loss cap, 10% weekly cap
+- Scalper: 1–2% risk (auto-scaling, $2k+ threshold), -5% daily floor, 10% weekly cap, +5% daily target, +15% hard ceiling, 8% peak drawdown trigger
+- FFT: 1% risk, 2:1–5:1 target, 5% daily loss cap, 10% weekly cap
+- Futures (MNQ): 1% risk, max 4 contracts, 5% daily loss cap, 10% weekly cap
 
 **Dead Zone (all bots): No new entries 3:00pm–7:00pm Texas time.**
 During dead zone: net profit → close all. Individual profit + portfolio negative → breakeven. Losing worsening → close immediately.

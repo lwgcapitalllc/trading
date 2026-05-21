@@ -1,5 +1,5 @@
 {
-  "_instance": "futures_account1 \u2014 Futures Bot (MNQ)",
+  "_instance": "futures_account1 — Futures Bot (MNQ)",
   "account_type": "demo",
   "instrument": "MNQ",
   "platform": "tradovate",
@@ -11,7 +11,7 @@
     "consistency_rule_pct": 50,
     "close_time_et": "16:30",
     "mode": "evaluation",
-    "daily_profit_goal_pct": 2.0,
+    "daily_profit_goal_pct": 2,
     "daily_profit_goal_floor": 200,
     "daily_profit_goal_ceil": 600,
     "max_contracts": 4,
@@ -32,8 +32,9 @@
     "kill_zone_end_et": "11:00"
   },
   "risk": {
-    "risk_pct_per_trade": 1.0,
-    "max_daily_loss_pct": 3.0,
+    "risk_pct_per_trade": 1,
+    "max_daily_loss_pct": 5,
+    "max_weekly_loss_pct": 10,
     "max_drawdown_buffer": 500,
     "max_contracts": 4,
     "min_contracts": 1

@@ -95,9 +95,9 @@ NEWS_EVENTS         = _S.get("news_events", [])
 NEWS_PAUSE_MINS     = _S.get("news_pause_minutes", 30)
 NEWS_WIDEN_SL       = _S.get("news_widen_sl_multiplier", 1.0)  # 1.0 = no change
 
-# Dead zone
-DEAD_ZONE_START     = _S.get("dead_zone_start_utc", 15)
-DEAD_ZONE_END       = _S.get("dead_zone_end_utc",   19)
+# Dead zone (CT local hours, DST-aware)
+DEAD_ZONE_START     = _S.get("dead_zone_start_ct", 15)
+DEAD_ZONE_END       = _S.get("dead_zone_end_ct",   19)
 
 # Compounding
 COMPOUND_TIERS      = _S.get("compound_tiers", [
@@ -780,8 +780,8 @@ def run():
                 consec_losses = 0
                 continue
 
-            # ── Dead zone: 3pm–7pm UTC ────────────────────────────────────
-            if is_dead_zone():
+            # ── Dead zone: gold market close ──────────────────────────────
+            if is_dead_zone(DEAD_ZONE_START, DEAD_ZONE_END):
                 active_syms = {t.get("symbol", SYMBOL) for t in open_trades}
                 m5_cache    = {sym: get_candles(mt5.TIMEFRAME_M5, 50, sym)
                                for sym in active_syms}

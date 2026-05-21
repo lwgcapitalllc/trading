@@ -32,18 +32,16 @@ Bot 3 is an aggressive account-growth engine. It trades momentum on M5 using EMA
 
 ## Profitability Goal
 
-- **Daily target:** +10% of account balance
-- **Dynamic engine:** After hitting 10%, peak protection activates — bot keeps trading until a 10% pullback from the day's high-water mark
-- **Hard ceiling:** +50% in a day — bot stops and locks in gains
+- **Daily target:** +5% of account balance
+- **Dynamic engine:** After hitting 5%, peak protection activates — bot keeps trading until an 8% pullback from the day's high-water mark
+- **Hard ceiling:** +15% in a day — bot stops and locks in gains
 - **Compounding tiers:** Risk % increases automatically as account grows
 
 | Balance | Risk per trade |
 |---|---|
-| $0–$2,000 | 2.0% |
-| $2,000–$4,000 | 2.5% |
-| $4,000–$7,000 | 3.0% |
-| $7,000–$10,000 | 3.5% |
-| $10,000+ | 2.0% (resets, compounds again) |
+| $0–$2,000 | 1% |
+| $2,000–$10,000 | 2% |
+| $10,000+ | 1% (resets, compounds again) |
 
 ---
 
@@ -51,10 +49,10 @@ Bot 3 is an aggressive account-growth engine. It trades momentum on M5 using EMA
 
 | Control | Value |
 |---|---|
-| Daily loss floor | -8% — bot stops for the day |
-| Peak protection | 10% pullback from day's peak triggers stop |
-| Hard ceiling | +50% — locks in gains |
-| Weekly loss cap | 20% |
+| Daily loss floor | -5% — bot stops for the day |
+| Peak protection | 8% pullback from day's peak triggers stop |
+| Hard ceiling | +15% — locks in gains |
+| Weekly loss cap | 10% |
 | No overnight holds | Force-close 19:45 UTC |
 | Momentum reversal | Closes immediately if M5 bias flips while in profit |
 
@@ -116,7 +114,7 @@ The symbol with the highest EMA stack strength wins the entry.
 Config keys (in `bot_scalper` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`
-- `"daily_budget_pct": 8.0` — total risk budget per day; defaults to `daily_loss_cap_pct`
+- `"daily_budget_pct": 5` — total risk budget per day; defaults to `daily_loss_cap_pct`
 - `"learning_watchlist": ["XAUUSD.s", "GBPJPY.s"]` — reduced watchlist during AI learning phase
 - `"learning_max_open": 1` — max simultaneous positions during learning phase
 
@@ -138,7 +136,7 @@ Config keys (in `bot_scalper` section):
 | Too many bad entries | `pullback_tolerance` | Lower 0.3 -> 0.2 |
 | Stops hit on noise | `atr_sl_multiplier` | Raise 0.8 -> 1.0 |
 | BE too slow | `breakeven_at_r` | Lower 0.5 -> 0.3 |
-| Too aggressive | `daily_profit_target_pct` | Lower 10 -> 5 |
+| Too aggressive | `daily_profit_target_pct` | Lower 5 -> 3 |
 
 ---
 

@@ -7,7 +7,7 @@ FREE FUNCTIONS (stateless, no symbol/magic context):
     now_utc()                  — timezone-aware UTC datetime
     is_market_close()          — True during the 19:45-21:00 UTC close window
     should_close_for_weekend() — True on Friday in the market close window
-    is_dead_zone()             — True during 3-7 PM Texas time
+    is_dead_zone(start_hour, end_hour) — True during configured CT window (default 16–17)
     get_atr(df, period)        — Average True Range calculation
     get_ema(df, period)        — Exponential moving average of close
 
@@ -93,16 +93,22 @@ def should_close_for_weekend() -> bool:
     return now_utc().weekday() == 4 and is_market_close()
 
 
-def is_dead_zone() -> bool:
+def is_dead_zone(start_hour: int = 16, end_hour: int = 17) -> bool:
     """
-    True during 3:00 PM–7:00 PM Texas time — no new entries allowed.
-    Uses America/Chicago so DST is handled automatically.
+    True during the configured dead zone window (Texas/CT local time).
+
+    start_hour / end_hour are CT local hours (0–23). America/Chicago is used
+    so DST transitions (CST↔CDT) are handled automatically — callers just
+    supply the local clock hours they see in Texas with no UTC math needed.
+
+    Gold market daily close is 16:00–17:00 CT (4–5 PM).
+    Configure via config.json: dead_zone.start_ct / dead_zone.end_ct.
     """
     try:
-        return 15 <= now_utc().astimezone(_TEXAS).hour < 19
+        return start_hour <= now_utc().astimezone(_TEXAS).hour < end_hour
     except Exception:
         t = now_utc()
-        return 20 <= t.hour < 24 or t.hour == 0
+        return 21 <= t.hour < 22
 
 
 def get_atr(df: pd.DataFrame, period: int = 14) -> float:

@@ -44,11 +44,11 @@ A signal fires when all three confirm the same overextension:
 
 | Control | Value |
 |---|---|
-| Risk per trade | 2% of balance |
+| Risk per trade | 1% of balance |
 | Breakeven | +0.3R — very fast protection |
 | Full close | +1R — always banks profit |
-| Daily loss cap | 10% — no new entries |
-| Weekly loss cap | 20% — 6hr cooldown |
+| Daily loss cap | 5% — no new entries |
+| Weekly loss cap | 10% — 6hr cooldown |
 | No overnight holds | Force-close 19:45 UTC |
 
 ---
@@ -122,7 +122,7 @@ The symbol with the highest confluence score wins and gets the trade entry.
 Config keys (in `bot_mean_reversion` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`
-- `"daily_budget_pct": 10.0` — total risk budget per day; defaults to the existing daily loss cap
+- `"daily_budget_pct": 5` — total risk budget per day; defaults to the existing daily loss cap
 - `"learning_watchlist": ["XAUUSD.s", "EURUSD.s"]` — reduced watchlist during AI learning phase
 - `"learning_max_open": 1` — max simultaneous positions during learning phase
 

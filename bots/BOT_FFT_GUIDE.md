@@ -62,7 +62,7 @@ Two fibs are drawn on every qualifying setup:
 | Stop loss | 1% behind bottom of green zone |
 | Breakeven | +0.5R — move to entry |
 | Daily loss cap | 5% — no new entries |
-| Weekly loss cap | 15% — cooldown |
+| Weekly loss cap | 10% — cooldown |
 | Max trades per day | 3 |
 | No overnight holds | Force-close 19:45 UTC |
 
@@ -149,7 +149,7 @@ Expansion gate: 30+ closed trades with solid Calmar ratio (tracked in `fft_equit
 Config keys (in `bot_fft` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`
-- `"daily_budget_pct": 5.0` — total risk budget per day; defaults to `max_daily_loss_pct`
+- `"daily_budget_pct": 5` — total risk budget per day; defaults to `max_daily_loss_pct`
 - `"learning_watchlist": ["XAUUSD.s"]` — gold-only during learning phase (same as full watchlist)
 - `"learning_max_open": 1` — max simultaneous positions during learning phase
 

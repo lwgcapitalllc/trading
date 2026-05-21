@@ -1,11 +1,16 @@
 {
-  "_instance": "gold_fft \u2014 FFT Strategy (XAUUSD)",
+  "_instance": "gold_fft — FFT Strategy (XAUUSD)",
   "account_type": "demo",
   "symbol": "XAUUSD.s",
   "platform": "mt5",
+  "dead_zone": {
+    "_comment": "Gold market daily close window. Hours are CT local (DST-aware). 16=4PM, 17=5PM CT.",
+    "start_ct": 16,
+    "end_ct": 17
+  },
   "account": {},
   "bot_fft": {
-    "_comment": "FFT Strategy \u2014 Fibonacci Fractal Trading",
+    "_comment": "FFT Strategy — Fibonacci Fractal Trading",
     "_watchlist_note": "Gold-only until 30+ closed trades with solid Calmar (Phase 5 gate). Do not expand.",
     "watchlist": ["XAUUSD.s"],
     "learning_watchlist": ["XAUUSD.s"],
@@ -27,10 +32,10 @@
     "breakeven_at_r": 0.5,
     "tp1_size_pct": 0.8,
     "tp2_size_pct": 0.2,
-    "risk_pct": 1.0,
-    "max_daily_loss_pct": 5.0,
-    "daily_budget_pct": 5.0,
-    "max_weekly_loss_pct": 15.0,
+    "risk_pct": 1,
+    "max_daily_loss_pct": 5,
+    "daily_budget_pct": 5,
+    "max_weekly_loss_pct": 10,
     "max_trades_per_day": 3,
     "min_ai_probability": 0.52,
     "correlation_action": "block"

@@ -121,6 +121,11 @@ MAX_WEEKLY_LOSS     = _S.get("max_weekly_loss_pct", 15.0)
 MAX_TRADES_DAY      = _S.get("max_trades_per_day", 3)
 MIN_AI_PROB         = _S.get("min_ai_probability", 0.52)
 
+# Dead zone (gold market close window — CT local hours, DST-aware)
+_DZ             = _CFG.get("dead_zone", {})
+DEAD_ZONE_START = _DZ.get("start_ct", 16)
+DEAD_ZONE_END   = _DZ.get("end_ct",   17)
+
 # Timeframes
 TF_ENTRY  = mt5.TIMEFRAME_M15
 TF_TREND  = mt5.TIMEFRAME_H1
@@ -780,11 +785,11 @@ def run():
             if acct is None:
                 time.sleep(30); continue
 
-            # ── Dead zone: 3pm-7pm Texas time — no new entries ────────────
-            if is_dead_zone():
+            # ── Dead zone: gold market close — no new entries ─────────────
+            if is_dead_zone(DEAD_ZONE_START, DEAD_ZONE_END):
                 handle_dead_zone(open_trades, 0.0, logger, ai)
                 if now.minute == 0:
-                    log.info("Dead zone (3-7pm TX) — no new FFT entries. Managing open positions.")
+                    log.info(f"Dead zone ({DEAD_ZONE_START}:00–{DEAD_ZONE_END}:00 CT) — no new FFT entries.")
                 time.sleep(60)
                 continue
 

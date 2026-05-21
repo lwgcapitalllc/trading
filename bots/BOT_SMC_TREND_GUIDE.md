@@ -61,10 +61,10 @@ Bot 1 identifies institutional manipulation — moments when large players fake 
 
 | Control | Value |
 |---|---|
-| Risk per trade | 2% of balance |
+| Risk per trade | 1% of balance |
 | Breakeven | +1R — trade becomes free |
-| Daily loss cap | 10% — no new entries |
-| Weekly loss cap | 20% — 6hr cooldown |
+| Daily loss cap | 5% — no new entries |
+| Weekly loss cap | 10% — 6hr cooldown |
 | Consecutive losses | 3 max — then cooldown |
 | No overnight holds | Force-close 19:45 UTC |
 | No counter-trend | H4 filter is a hard block |
@@ -144,7 +144,7 @@ The bot tries the next-ranked candidate before sitting out — a valid non-corre
 Config keys (in `bot_smc_trend` section):
 - `"min_atr_ratio": 0.8` — lower = more permissive, higher = stricter
 - `"force_trade": false` — set to `true` to bypass the volatility filter entirely
-- `"daily_budget_pct": 10.0` — total risk budget per day; defaults to the existing daily loss cap
+- `"daily_budget_pct": 5` — total risk budget per day; defaults to the existing daily loss cap
 - `"learning_watchlist": ["XAUUSD.s", "EURUSD.s"]` — reduced watchlist during AI learning phase
 - `"learning_max_open": 1` — max simultaneous positions during learning phase
 
