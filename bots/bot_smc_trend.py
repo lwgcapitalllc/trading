@@ -707,9 +707,21 @@ def run():
             if dd >= MAX_DAILY_LOSS:
                 log.warning(f"Daily cap hit ({dd:.1f}%). Managing open trades only.")
                 manage_positions(open_trades, logger, ai)
+                write_bot("smc_trend", {
+                    "day_locked":     True,
+                    "lock_reason":    f"DAILY CAP: -{dd:.1f}% daily loss",
+                    "lock_alerted":   False,
+                    "resume_trading": False,
+                })
                 for _ in range(60):
                     time.sleep(60)
                     write_bot("smc_trend", {"heartbeat": time.time()})
+                    if read_bot("smc_trend").get("resume_trading"):
+                        write_bot("smc_trend", {"day_locked": False, "resume_trading": False})
+                        log.warning("DAILY CAP RESUME: user override — resuming early.")
+                        break
+                else:
+                    write_bot("smc_trend", {"day_locked": False})
                 continue
 
             # ── Kill zone gate ────────────────────────────────────────────
