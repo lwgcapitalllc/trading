@@ -343,13 +343,29 @@ def manage_positions(open_trades, logger, ai):
             if cp:
                 logger.log_close(t["ticket"], cp, pnl)
                 ai.on_trade_closed(t["ticket"], cp, pnl)
-            if t.get("be_done"):
-                log.info(f"T{t['ticket']} stopped at BREAKEVEN. "
-                         f"Re-entry available if conditions still met.")
-                _last_be_direction[0] = t["dir"]
-            open_trades.remove(t)
+                if t.get("be_done"):
+                    log.info(f"T{t['ticket']} stopped at BREAKEVEN. "
+                             f"Re-entry available if conditions still met.")
+                    _last_be_direction[0] = t["dir"]
+                open_trades.remove(t)
+            else:
+                t["_missing_count"] = t.get("_missing_count", 0) + 1
+                if t["_missing_count"] >= 3:
+                    log.warning(
+                        f"T{t['ticket']} missing from MT5 for 3 consecutive checks "
+                        "with no deal history — marking orphaned."
+                    )
+                    logger.mark_orphaned(t["ticket"])
+                    open_trades.remove(t)
+                else:
+                    log.warning(
+                        f"T{t['ticket']} not found in MT5 "
+                        f"({t['_missing_count']}/3 checks) — "
+                        "possible connection glitch, retaining."
+                    )
             continue
 
+        t["_missing_count"] = 0
         p         = pos[0]
         price     = p.price_current
         direction = t["dir"]
@@ -809,6 +825,13 @@ def run():
                 tp    = signal["tp_target"]
 
             if sl_d <= 0: time.sleep(60); continue
+
+            # Ensure SL distance is at least 1× ATR. When price barely crosses
+            # the BB the raw sl_d can be near-zero, producing an enormous lot count.
+            min_sl_d = atr * ATR_SL_MULT
+            if sl_d < min_sl_d:
+                sl_d = min_sl_d
+                sl   = entry - sl_d if direction == "bullish" else entry + sl_d
 
             rr = abs(tp - entry) / sl_d
             if rr < MIN_RR:

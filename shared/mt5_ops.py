@@ -389,12 +389,15 @@ class BotMT5:
 
         Uses a 7-day lookback window so deals from over the weekend are found.
         Returns (0.0, 0.0) if no closing deal is found.
+
+        Explicitly re-filters by position_id == ticket to guard against MT5
+        returning deals from a different position during connection instability.
         """
         to    = datetime.utcnow()
         from_ = to - timedelta(days=7)
         deals = mt5.history_deals_get(from_, to, position=ticket)
         if deals:
-            closing = [d for d in deals if d.entry == 1]  # DEAL_ENTRY_OUT
+            closing = [d for d in deals if d.entry == 1 and d.position_id == ticket]
             if closing:
                 d = closing[-1]
                 return float(d.price), float(d.profit)
@@ -627,8 +630,24 @@ class BotMT5:
                 if cp:
                     logger.log_close(t["ticket"], cp, pnl)
                     ai.on_trade_closed(t["ticket"], cp, pnl)
-                open_trades.remove(t)
+                    open_trades.remove(t)
+                else:
+                    t["_missing_count"] = t.get("_missing_count", 0) + 1
+                    if t["_missing_count"] >= 3:
+                        self.log.warning(
+                            f"T{t['ticket']} missing from MT5 for 3 dead-zone checks "
+                            "with no deal history — marking orphaned."
+                        )
+                        logger.mark_orphaned(t["ticket"])
+                        open_trades.remove(t)
+                    else:
+                        self.log.warning(
+                            f"T{t['ticket']} not found in MT5 "
+                            f"({t['_missing_count']}/3 dead-zone checks) — "
+                            "possible connection glitch, retaining."
+                        )
                 continue
+            t["_missing_count"] = 0
             p = pos[0]
             total_pnl += p.profit
             live_trades.append((t, p))

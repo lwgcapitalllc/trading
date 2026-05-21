@@ -174,7 +174,8 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ## What I Am Working On
 
-- Last completed: **FFT Structure Engine** — `shared/structure_engine.py` built and test-validated. Replaces `find_swing_highs` / `find_swing_lows` / `detect_bos` in `bot_fft.py` once owner review passes.
+- Last completed: **Mean Reversion connection resilience hardening** — `manage_positions()` and `handle_dead_zone()` now require deal-history confirmation before removing a trade from `open_trades`; a `_missing_count` retry counter orphans after 3 consecutive misses. `get_deal_result()` now validates `d.position_id == ticket`. Minimum SL distance enforced at `atr * atr_sl_multiplier` to prevent near-zero `sl_d` producing oversized lots. `DailyLogger`/`TradeLogger` load validates JSON is a list before using it. Files: `bots/bot_mean_reversion.py`, `shared/mt5_ops.py`, `shared/shared_ai_brain.py`.
+- Previously: **FFT Structure Engine** — `shared/structure_engine.py` built and test-validated. Replaces `find_swing_highs` / `find_swing_lows` / `detect_bos` in `bot_fft.py` once owner review passes.
   - `StructureEngine` class: event-driven, candle-by-candle. No fixed lookback — breaks confirmed by body closes only. Wicks only anchor fib points.
   - Detects: BOS (body-close beyond swing extreme), SOS (body-close beyond opposing structural point, checked before retracement to take priority), RETRACEMENT_BEGAN (first bearish/bullish body-close back under the new HH/LL close).
   - Bootstrap seeds initial HH/HL from the first 20 candles — heuristic, `leg_established = False` until first confirmed BOS.

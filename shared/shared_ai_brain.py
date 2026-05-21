@@ -114,8 +114,14 @@ class DailyLogger:
 
     def _load(self):
         if Path(self.filepath).exists():
-            with open(self.filepath) as f:
-                return json.load(f)
+            try:
+                with open(self.filepath) as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    return data
+                log.warning(f"DailyLogger: {self.filepath} contains non-list data — resetting.")
+            except Exception as e:
+                log.warning(f"DailyLogger: failed to load {self.filepath}: {e} — starting fresh.")
         return []
 
     def _save(self):
@@ -197,10 +203,15 @@ class TradeLogger:
 
     def _load(self):
         if Path(self.filepath).exists():
-            with open(self.filepath) as f:
-                data = json.load(f)
-            log.info(f"Loaded {len(data)} trades from {self.filepath}")
-            return data
+            try:
+                with open(self.filepath) as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    log.info(f"Loaded {len(data)} trades from {self.filepath}")
+                    return data
+                log.warning(f"TradeLogger: {self.filepath} contains non-list data — resetting.")
+            except Exception as e:
+                log.warning(f"TradeLogger: failed to load {self.filepath}: {e} — starting fresh.")
         return []
 
     def _save(self):

@@ -161,6 +161,28 @@ New day 2026-05-16 | $2,759.28 | AI: Trained | AUC=0.58 | WR(10)=60%
 
 ---
 
+## Connection Resilience
+
+The bot is designed to survive MT5 connection drops without corrupting its trade state.
+
+**Position not found in MT5:**
+When `positions_get(ticket)` returns empty, the bot does not immediately remove the trade from memory. It first calls `get_deal_result(ticket)` to look for a closing deal in MT5 history:
+- Deal found → log close, remove trade normally.
+- No deal found → trade is retained. A `_missing_count` counter increments each cycle. After 3 consecutive misses the trade is orphaned (`outcome="unknown"`) and removed. This tolerates brief connection glitches without clearing the open trade count.
+
+The same logic applies inside dead-zone portfolio management.
+
+**Minimum SL distance:**
+After computing `sl_d` from the Bollinger Band, the bot enforces `sl_d >= atr * atr_sl_multiplier`. When price barely crosses the BB the raw gap can be near-zero, which would produce an oversized lot count. The minimum ensures position sizing stays within expected risk regardless of how close entry is to the band.
+
+**Deal history validation:**
+`get_deal_result()` in `shared/mt5_ops.py` confirms `d.position_id == ticket` on every returned deal. This prevents a deal from a different position being recorded against the wrong ticket during MT5 instability.
+
+**JSON file resilience:**
+`DailyLogger` and `TradeLogger` validate that their JSON files contain a list on load. A corrupt or empty file (`{}` or non-list) silently resets to `[]` with a warning log rather than crashing.
+
+---
+
 ## Startup Reconciliation
 
 On every restart, `reconcile_on_startup()` runs before the main loop:
