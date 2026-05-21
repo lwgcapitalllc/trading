@@ -101,7 +101,7 @@ Trade close logging is fully implemented — every exit (SL/TP hit, dead zone, m
 `fft_trades.json` and triggers AI retraining. `risk_usd` is correctly recorded at entry (accounts for
 the `risk_mult` regime multiplier).
 
-**Refinement over time:** As more chart examples are provided, the BOS detection sensitivity, swing lookback, and confluence scoring weights will be tuned. Version history tracked in config comments.
+**Structure engine:** BOS/SOS/RETRACEMENT events are detected by `shared/structure_engine.py` — event-driven, no fixed candle lookback. Body closes confirm all breaks; wicks anchor fib levels only. Integration into `bot_fft.py` pending owner sign-off on `shared/test_structure_engine.py`.
 
 ---
 
@@ -159,12 +159,26 @@ Config keys (in `bot_fft` section):
 
 ---
 
+## Structure Engine
+
+`shared/structure_engine.py` tracks BOS/SOS/RETRACEMENT events candle-by-candle.
+
+**Key rules:**
+- Body close above current HH → **BOS** (bullish). New HH = that close. Old HH becomes new HL.
+- Body close below current HL → **SOS** (bullish structure broken). Bias flips to bearish.
+- First bearish body-close back under the new HH close → **RETRACEMENT_BEGAN**. Fires once per leg.
+- Wick-only breaks never register.
+- SOS is tested only after `leg_established = True` (first confirmed BOS). Bootstrap phase never triggers SOS.
+- SOS takes priority over RETRACEMENT on the same candle.
+
+**Bootstrap:** seeds HH/HL from first 20 candles. Treat pre-first-BOS signals with lower confidence.
+
+**Outputs per candle:** `bias`, `swing_high`, `swing_low`, `fib_anchor_high/low`, `bos`, `sos`, `retracement_began`, `leg_established`.
+
 ## Tuning
 
 | Problem | Config key | Fix |
 |---|---|---|
-| Missing obvious BOS | `swing_lookback` | Lower 3 -> 2 |
-| Too many weak BOS | `bos_min_body_mult` | Raise 1.5 -> 2.0 |
 | Entry zone too tight | `fft_entry_min` | Lower 0.618 -> 0.50 |
 | Entry zone too wide | `fft_entry_max` | Lower 0.886 -> 0.786 |
 | SL too tight | `sl_pct_behind_zone` | Raise 0.01 -> 0.015 |

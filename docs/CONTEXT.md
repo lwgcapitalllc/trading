@@ -121,6 +121,8 @@ algos/
 │   ├── shared_regime.py
 │   ├── shared_scanner.py       ← Multi-instrument scanner (InstrumentScanner)
 │   ├── shared_risk.py          ← Dynamic risk engine (RiskEngine) + correlation guard (CorrelationGuard) — Phases 3–4
+│   ├── structure_engine.py     ← FFT structure engine: event-driven BOS/SOS/RETRACEMENT detection
+│   ├── test_structure_engine.py ← Owner-validation test harness (3 scenarios, 29 checks)
 │   └── mt5_ops.py             ← All MT5 operations, symbol-parameterized
 ├── bots/
 │   ├── bot_utils.py
@@ -172,7 +174,13 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ## What I Am Working On
 
-- Last completed: **Phase 5 AI Gate / Learning-Phase Cap** — all Phases 1–5 of MULTI_INSTRUMENT_UPGRADE.md are now complete.
+- Last completed: **FFT Structure Engine** — `shared/structure_engine.py` built and test-validated. Replaces `find_swing_highs` / `find_swing_lows` / `detect_bos` in `bot_fft.py` once owner review passes.
+  - `StructureEngine` class: event-driven, candle-by-candle. No fixed lookback — breaks confirmed by body closes only. Wicks only anchor fib points.
+  - Detects: BOS (body-close beyond swing extreme), SOS (body-close beyond opposing structural point, checked before retracement to take priority), RETRACEMENT_BEGAN (first bearish/bullish body-close back under the new HH/LL close).
+  - Bootstrap seeds initial HH/HL from the first 20 candles — heuristic, `leg_established = False` until first confirmed BOS.
+  - `shared/test_structure_engine.py`: 29 checks across 3 owner scenarios (walkthrough, wick fakeout, SOS flip) — all pass.
+  - **Integration into `bot_fft.py` is the next step** — pending owner sign-off on the test run.
+- Previously: **Phase 5 AI Gate / Learning-Phase Cap** — all Phases 1–5 of MULTI_INSTRUMENT_UPGRADE.md are now complete.
   - `LearningPhaseGate` class added to `shared/shared_scanner.py`. Reads `ai.is_trained` and `ai.logger.get_closed()`. No new model code.
   - While untrained: restricts each bot's scan to `learning_watchlist` (2 instruments for SMC/MR/Scalper, gold-only for FFT) and caps open positions at `learning_max_open` (default 1).
   - Both caps lift automatically once the AI model deploys (`ai.is_trained = True`). Logs only on phase transitions.

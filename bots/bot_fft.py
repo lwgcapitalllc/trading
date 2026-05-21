@@ -73,6 +73,7 @@ from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
                               should_close_for_weekend, is_dead_zone, get_atr, get_ema)
+from structure_engine import StructureEngine
 
 # ── Load config ───────────────────────────────────────────────────────────────
 _CFG  = load_config()
@@ -92,10 +93,6 @@ LEARNING_MAX_OPEN  = _S.get("learning_max_open", 1)
 MIN_ATR_RATIO      = _S.get("min_atr_ratio", 0.8)
 FORCE_TRADE        = _S.get("force_trade", False)
 CORR_ACTION        = _S.get("correlation_action", "block")
-
-# Structure detection
-SWING_LOOKBACK      = _S.get("swing_lookback", 3)       # candles each side to confirm swing
-BOS_MIN_BODY_MULT   = _S.get("bos_min_body_mult", 1.5)  # BOS candle body >= 1.5x ATR
 
 # Fibonacci levels
 FFT_ENTRY_MIN       = _S.get("fft_entry_min", 0.618)    # entry zone bottom (61.8%)
@@ -200,138 +197,61 @@ def recover_open_positions() -> list:
 
 
 # =============================================================================
-# STRUCTURE DETECTION
+# STRUCTURE DETECTION — StructureEngine wrapper
 # =============================================================================
 
-def find_swing_highs(df: pd.DataFrame, lookback: int = 3) -> list:
+def _run_structure_engine(df: pd.DataFrame):
     """
-    Find swing highs: candles where 'high' is greater than 'lookback'
-    candles on both sides.
-
-    Returns list of (index, price) tuples, most recent last.
+    Replay df through StructureEngine and return (engine, result).
+    Returns (None, None) if the engine hasn't bootstrapped or the leg isn't
+    established with a retracement underway.
     """
-    highs = []
-    for i in range(lookback, len(df) - lookback):
-        hi = df["high"].iloc[i]
-        left  = all(df["high"].iloc[i - j] < hi for j in range(1, lookback + 1))
-        right = all(df["high"].iloc[i + j] < hi for j in range(1, lookback + 1))
-        if left and right:
-            highs.append((i, float(hi)))
-    return highs
+    eng = StructureEngine()
+    result = eng.replay(df)
+    return eng, result
 
 
-def find_swing_lows(df: pd.DataFrame, lookback: int = 3) -> list:
+def _build_bos_dict(result, eng) -> dict | None:
     """
-    Find swing lows: candles where 'low' is less than 'lookback'
-    candles on both sides.
+    Map a StructureResult to the bos-dict format expected by calc_fft_levels /
+    calc_sniper_levels.  Returns None if required anchors are missing.
 
-    Returns list of (index, price) tuples, most recent last.
+    Bullish fib anchors:
+      fft_low      = prev_swing_low.body  (HL at leg start — body close)
+      fft_high     = swing_high.wick      (top wick of new HH)
+      counter_high = swing_low.body       (old HH promoted to new HL — sniper top)
+      counter_low  = prev_swing_low.body  (same as fft_low — sniper bottom)
+
+    Bearish mirrors the above.
     """
-    lows = []
-    for i in range(lookback, len(df) - lookback):
-        lo = df["low"].iloc[i]
-        left  = all(df["low"].iloc[i - j] > lo for j in range(1, lookback + 1))
-        right = all(df["low"].iloc[i + j] > lo for j in range(1, lookback + 1))
-        if left and right:
-            lows.append((i, float(lo)))
-    return lows
-
-
-def detect_bos(df: pd.DataFrame, atr: float) -> dict | None:
-    """
-    Detect a Break of Structure on the given dataframe.
-
-    A bullish BOS occurs when:
-    - There are at least 2 swing lows (higher lows in an uptrend) and
-    - The last impulsive candle closes above the most recent swing high
-    - The BOS candle body is significant (>= BOS_MIN_BODY_MULT * ATR)
-
-    A bearish BOS occurs when:
-    - There are at least 2 swing highs (lower highs in a downtrend) and
-    - The last impulsive candle closes below the most recent swing low
-    - The BOS candle body is significant
-
-    Returns dict with:
-        direction:     'bullish' or 'bearish'
-        bos_price:     price level that was broken
-        bos_candle_idx: index of the BOS candle
-        swing_high:    price of the relevant swing high (for FFT draw)
-        swing_low:     price of the relevant swing low (for FFT draw)
-        counter_high:  price of counter move high (for sniper draw)
-        counter_low:   price of counter move low (for sniper draw)
-    Or None if no BOS detected.
-    """
-    if len(df) < 20:
+    if not result.leg_established or result.bias == "undecided":
         return None
 
-    swing_highs = find_swing_highs(df, SWING_LOOKBACK)
-    swing_lows  = find_swing_lows(df, SWING_LOOKBACK)
-
-    if len(swing_highs) < 2 or len(swing_lows) < 2:
+    if result.swing_high is None or result.swing_low is None:
         return None
 
-    last_candle = df.iloc[-1]
-    prev_candle = df.iloc[-2]
-    body_size   = abs(last_candle["close"] - last_candle["open"])
-
-    # ── BULLISH BOS ────────────────────────────────────────────────────────
-    # Structure: lower low → higher low → impulsive push breaks above swing high
-    # FFT draw:  from the higher low UP to the new higher high
-    # Sniper:    from the lower high DOWN to the higher low (counter move before BOS)
-
-    # Get the two most recent swing lows
-    sl1_idx, sl1_price = swing_lows[-2]  # older swing low (lower low)
-    sl2_idx, sl2_price = swing_lows[-1]  # recent swing low (higher low = FFT start)
-
-    # Get the most recent swing high between the two lows (= BOS level)
-    sh_between = [sh for sh in swing_highs if sl1_idx < sh[0] < sl2_idx]
-    if not sh_between:
-        sh_between = [sh for sh in swing_highs if sh[0] > sl1_idx]
-
-    if sh_between and sl2_price > sl1_price:  # higher low confirms uptrend attempt
-        sh_idx, sh_price = sh_between[-1]
-        # Check if last candle closes above the swing high (BOS)
-        if (last_candle["close"] > sh_price and
-                body_size >= BOS_MIN_BODY_MULT * atr):
-            # Counter move: from the swing high (sh_price) down to the higher low (sl2)
-            # This is the sniper fib draw range
-            return {
-                "direction":     "bullish",
-                "bos_price":     sh_price,
-                "bos_candle_idx": len(df) - 1,
-                "fft_low":       sl2_price,   # FFT fib start (higher low)
-                "fft_high":      last_candle["high"],  # FFT fib end (new high being formed)
-                "counter_high":  sh_price,    # sniper fib top (lower high before BOS)
-                "counter_low":   sl2_price,   # sniper fib bottom (higher low)
-            }
-
-    # ── BEARISH BOS ────────────────────────────────────────────────────────
-    # Structure: higher high → lower high → impulsive push breaks below swing low
-    # FFT draw:  from the lower high DOWN to the new lower low
-    # Sniper:    from the higher low UP to the lower high (counter move before BOS)
-
-    sh1_idx, sh1_price = swing_highs[-2]  # older swing high (higher high)
-    sh2_idx, sh2_price = swing_highs[-1]  # recent swing high (lower high = FFT start)
-
-    sl_between = [sl for sl in swing_lows if sh1_idx < sl[0] < sh2_idx]
-    if not sl_between:
-        sl_between = [sl for sl in swing_lows if sl[0] > sh1_idx]
-
-    if sl_between and sh2_price < sh1_price:  # lower high confirms downtrend attempt
-        sl_idx, sl_price = sl_between[-1]
-        if (last_candle["close"] < sl_price and
-                body_size >= BOS_MIN_BODY_MULT * atr):
-            return {
-                "direction":     "bearish",
-                "bos_price":     sl_price,
-                "bos_candle_idx": len(df) - 1,
-                "fft_high":      sh2_price,   # FFT fib start (lower high)
-                "fft_low":       last_candle["low"],  # FFT fib end (new low being formed)
-                "counter_high":  sh2_price,   # sniper fib top (lower high)
-                "counter_low":   sl_price,    # sniper fib bottom (higher low before BOS)
-            }
-
-    return None
+    if result.bias == "bullish":
+        psl = result.prev_swing_low
+        fft_low = psl.body if psl is not None else result.swing_low.body
+        return {
+            "direction":    "bullish",
+            "bos_price":    result.swing_high.body,
+            "fft_low":      fft_low,
+            "fft_high":     result.swing_high.wick,
+            "counter_high": result.swing_low.body,
+            "counter_low":  fft_low,
+        }
+    else:  # bearish
+        psh = result.prev_swing_high
+        fft_high = psh.body if psh is not None else result.swing_high.body
+        return {
+            "direction":    "bearish",
+            "bos_price":    result.swing_low.body,
+            "fft_high":     fft_high,
+            "fft_low":      result.swing_low.wick,
+            "counter_high": fft_high,
+            "counter_low":  result.swing_high.body,
+        }
 
 
 # =============================================================================
@@ -709,8 +629,19 @@ def detect_setup(symbol: str) -> dict | None:
     if h1_trend == "neutral" or h4_trend == "neutral":
         return None
 
-    bos = detect_bos(df_m15, atr)
-    if not bos or bos["direction"] != h1_trend:
+    eng, result = _run_structure_engine(df_m15)
+
+    if not result.leg_established or result.bias == "undecided":
+        return None
+
+    if result.bias != h1_trend:
+        return None
+
+    if not eng._retracement_fired:
+        return None
+
+    bos = _build_bos_dict(result, eng)
+    if not bos:
         return None
 
     fft     = calc_fft_levels(bos)
@@ -756,8 +687,8 @@ def run():
     log.info("=" * 65)
     log.info("  BOT 5 — FFT (Fibonacci Fractal Trading) STRATEGY")
     log.info(f"  Symbol: {SYMBOL} | Risk: {RISK_PCT}%")
-    log.info(f"  BOS lookback: {SWING_LOOKBACK} candles | "
-             f"Entry zone: {FFT_ENTRY_MIN*100:.1f}–{FFT_ENTRY_MAX*100:.1f}%")
+    log.info(f"  Entry zone: {FFT_ENTRY_MIN*100:.1f}–{FFT_ENTRY_MAX*100:.1f}% | "
+             f"Structure engine: event-driven BOS/SOS/RETRACEMENT")
     log.info("=" * 65)
     set_started("fft")
     send_telegram("🟢 *FFT online*")

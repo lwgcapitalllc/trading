@@ -12,8 +12,6 @@
     "learning_max_open": 1,
     "min_atr_ratio": 0.8,
     "force_trade": false,
-    "swing_lookback": 3,
-    "bos_min_body_mult": 1.5,
     "fft_entry_min": 0.618,
     "fft_entry_max": 0.886,
     "fft_deep_threshold": 0.786,
