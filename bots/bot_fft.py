@@ -147,6 +147,8 @@ def close_all_positions(r=""):           return _mt5.close_all_positions(r, WATC
 def move_sl(t, sl, tp=None):             return _mt5.move_sl(t, sl, tp)
 def handle_dead_zone(ot, atr, logger, ai): return _mt5.handle_dead_zone(ot, atr, logger, ai)
 def reconcile_on_startup(ot, logger, ai):  return _mt5.reconcile_on_startup(ot, logger, ai)
+def write_live_state(weekly_start, daily_start):
+    return _mt5.write_live_state("fft", weekly_start, daily_start)
 
 def lot_size(balance: float, sl_distance: float,
              risk_mult: float = 1.0, symbol: str = None,
@@ -774,6 +776,10 @@ def run():
                             ai.on_trade_closed(t["ticket"], cp, pnl)
                 open_trades.clear()
 
+            acct = write_live_state(weekly_start, daily_start)
+            if acct is None:
+                time.sleep(30); continue
+
             # ── Dead zone: 3pm-7pm Texas time — no new entries ────────────
             if is_dead_zone():
                 handle_dead_zone(open_trades, 0.0, logger, ai)
@@ -825,21 +831,6 @@ def run():
                     _json.dumps({"week": week, "weekly_start": weekly_start})
                 )
                 log.info(f"New week {week} | Weekly start: ${weekly_start:,.2f}")
-
-            # ── Account refresh with sanity check ─────────────────────────
-            acct = mt5.account_info()
-            if not acct or acct.balance <= 0:
-                log.warning("MT5 returned zero balance — skipping (bad reading).")
-                time.sleep(30)
-                continue
-
-            write_bot("fft", {
-                "balance":      acct.balance,
-                "status":       "running",
-                "weekly_start": weekly_start,
-                "daily_start":  daily_start,
-                "last_write":   datetime.now(timezone.utc).isoformat(),
-            })
 
             max_open_today    = max(max_open_today, len(open_trades))
             min_balance_today = min(min_balance_today, acct.balance)

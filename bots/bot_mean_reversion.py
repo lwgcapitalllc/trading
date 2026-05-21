@@ -126,6 +126,8 @@ def close_all_positions(r="emergency", symbols=None):
 def move_sl(t, sl, tp=None):           return _mt5.move_sl(t, sl, tp)
 def handle_dead_zone(ot, atr, logger, ai): return _mt5.handle_dead_zone(ot, atr, logger, ai)
 def reconcile_on_startup(ot, logger, ai): return _mt5.reconcile_on_startup(ot, logger, ai)
+def write_live_state(weekly_start, daily_start):
+    return _mt5.write_live_state("mean_reversion", weekly_start, daily_start)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -559,6 +561,10 @@ def run():
                         open_trades.remove(t)
                 log.info("Positions closed. Bot stays running — no new entries during close window.")
 
+            acct = write_live_state(weekly_start, daily_start)
+            if acct is None:
+                time.sleep(30); continue
+
             # ── Dead zone: 3pm-7pm Texas time — no new entries ────────────
             if is_dead_zone():
                 df_tmp = get_candles(mt5.TIMEFRAME_M15, 20)
@@ -610,20 +616,6 @@ def run():
                 _week_file2.write_text(_json2.dumps({"week": week, "weekly_start": weekly_start}))
                 log.info(f"New week {week} | Weekly balance reset ${weekly_start:,.2f}")
                 consec_losses = 0
-
-            acct = mt5.account_info()
-
-            if not acct or acct.balance <= 0:
-                log.warning("MT5 returned zero balance — skipping iteration (bad reading).")
-                time.sleep(30); continue
-
-            write_bot("mean_reversion", {
-                "balance":      acct.balance,
-                "status":       "running",
-                "weekly_start": weekly_start,
-                "daily_start":  daily_start,
-                "last_write":   datetime.utcnow().isoformat(),
-            })
 
             # ── Weekly loss guard ─────────────────────────────────────────
             weekly_dd = (weekly_start - acct.balance) / weekly_start * 100

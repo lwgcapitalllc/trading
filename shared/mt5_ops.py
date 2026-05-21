@@ -40,6 +40,11 @@ CLASS BotMT5:
     Sizing:
         lot_size(balance, sl_dist, risk_pct, risk_mult)
 
+    State:
+        write_live_state(state_key, weekly_start, daily_start)
+            — Fetch acct.balance, guard zero, write balance+last_write to bot_state.
+              Call before any early-continue so P&L tracker stays in LIVE mode.
+
 Usage in a bot:
     from mt5_ops import BotMT5, now_utc, is_market_close, should_close_for_weekend
     from mt5_ops import is_dead_zone, get_atr, get_ema
@@ -59,6 +64,8 @@ from zoneinfo import ZoneInfo
 
 import MetaTrader5 as mt5
 import pandas as pd
+
+from bot_state import write_bot
 
 _LOCK_FILE    = Path(r"C:\algos\mt5_connect.lock")
 _LOCK_TIMEOUT = 90   # seconds to wait for the file lock
@@ -521,6 +528,32 @@ class BotMT5:
             f"balance=${balance:,.0f} | sl={actual_sl:.{digits}f}pts"
         )
         return lots
+
+    def write_live_state(self, state_key: str, weekly_start: float,
+                         daily_start: float):
+        """
+        Fetch account balance from MT5, guard against bad readings, and write
+        the live state fields (balance, last_write, weekly_start, daily_start)
+        to bot_state.json.
+
+        Returns the AccountInfo object on success, or None if MT5 returned a
+        zero/missing balance (callers should sleep + continue the loop).
+
+        Call this BEFORE any early-continue paths (dead zone, market close) so
+        the P&L tracker always sees a fresh last_write and stays in LIVE mode.
+        """
+        acct = mt5.account_info()
+        if not acct or acct.balance <= 0:
+            self.log.warning("MT5 returned zero balance — skipping iteration (bad reading).")
+            return None
+        write_bot(state_key, {
+            "balance":      acct.balance,
+            "status":       "running",
+            "weekly_start": weekly_start,
+            "daily_start":  daily_start,
+            "last_write":   datetime.now(timezone.utc).isoformat(),
+        })
+        return acct
 
     def recover_open_positions(self, symbols: list = None) -> list:
         """
