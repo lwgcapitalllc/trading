@@ -68,6 +68,7 @@ from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_tr
 from shared_calmar   import CalmarTracker
 from shared_regime   import RegimeClassifier
 from shared_scanner  import InstrumentScanner
+from shared_risk     import RiskEngine
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
@@ -115,6 +116,7 @@ TP2_SIZE_PCT        = _S.get("tp2_size_pct", 0.20)        # 20% at TP2
 # Risk
 RISK_PCT            = _S.get("risk_pct", 1.0)
 MAX_DAILY_LOSS      = _S.get("max_daily_loss_pct", 5.0)
+DAILY_BUDGET_PCT    = _S.get("daily_budget_pct", MAX_DAILY_LOSS)
 MAX_WEEKLY_LOSS     = _S.get("max_weekly_loss_pct", 15.0)
 MAX_TRADES_DAY      = _S.get("max_trades_per_day", 3)
 MIN_AI_PROB         = _S.get("min_ai_probability", 0.52)
@@ -147,9 +149,11 @@ def handle_dead_zone(ot, atr, logger, ai): return _mt5.handle_dead_zone(ot, atr,
 def reconcile_on_startup(ot, logger, ai):  return _mt5.reconcile_on_startup(ot, logger, ai)
 
 def lot_size(balance: float, sl_distance: float,
-             risk_mult: float = 1.0, symbol: str = None) -> float:
-    """Position size using fixed RISK_PCT scaled by risk_mult."""
-    return _mt5.lot_size(balance, sl_distance, RISK_PCT * risk_mult, 1.0, symbol)
+             risk_mult: float = 1.0, symbol: str = None,
+             risk_pct: float = None) -> float:
+    """Position size. risk_pct overrides RISK_PCT * risk_mult when provided."""
+    rp = risk_pct if risk_pct is not None else RISK_PCT * risk_mult
+    return _mt5.lot_size(balance, sl_distance, rp, 1.0, symbol)
 
 def place_order(direction: str, lots: float, sl: float,
                 tp: float, comment: str = "FFT", symbol: str = None) -> tuple:
@@ -774,6 +778,7 @@ def run():
     daily_log   = DailyLogger(str(_INST / "fft_daily.json"))
     scanner     = InstrumentScanner(WATCHLIST, "BOT_FFT", "fft", _INST, log,
                                     min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
+    risk_engine = RiskEngine("BOT_FFT", DAILY_BUDGET_PCT, log)
 
     # State
     daily_start       = acct.balance
@@ -783,6 +788,7 @@ def run():
     min_balance_today = acct.balance
     open_trades       = recover_open_positions()
     reconcile_on_startup(open_trades, logger, ai)
+    risk_engine.reset_day(acct.balance)
     last_date         = now_utc().date()
     last_week         = now_utc().isocalendar()[1]
     trading_halted    = False
@@ -866,6 +872,7 @@ def run():
                 last_date         = date
                 last_setup_id     = None
                 trading_halted    = False
+                risk_engine.reset_day(acct.balance)
                 calmar.record(acct.balance)
                 calmar.log_report()
                 write_bot("fft", {"unresolved_symbols_alerted": {}})
@@ -973,6 +980,12 @@ def run():
                 time.sleep(60)
                 continue
 
+            # ── Risk capacity gate (Phase 3) ───────────────────────────────
+            proposed_risk = RISK_PCT * risk_mult
+            _allowed, effective_risk = risk_engine.evaluate(open_trades, acct.balance, proposed_risk)
+            if not _allowed:
+                time.sleep(60); continue
+
             # ── Scanner: find best setup across watchlist ─────────────────
             candidates = scanner.scan(detect_setup)
             if not candidates:
@@ -1058,7 +1071,7 @@ def run():
                 time.sleep(60)
                 continue
 
-            lots = lot_size(acct.balance, sl_dist, risk_mult, symbol)
+            lots = lot_size(acct.balance, sl_dist, risk_mult, symbol, risk_pct=effective_risk)
             if lots <= 0:
                 time.sleep(60)
                 continue

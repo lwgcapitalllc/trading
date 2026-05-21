@@ -104,9 +104,12 @@ The symbol with the highest EMA stack strength wins the entry.
 
 **Volatility filter (Phase 2):** Before evaluating a setup, the scanner checks `atr_ratio = ATR(5) / ATR(20)` on H1 candles. Symbols below `min_atr_ratio` (default 0.8) are skipped. If the entire watchlist is compressed, the bot sits out the cycle.
 
+**Dynamic risk engine (Phase 3):** Before scanning, the bot checks `available_risk = daily_budget − used_risk − realized_daily_loss`. `used_risk` is computed from live MT5 SL distances each cycle. Trades at breakeven contribute ~0; trailing winners with SL in profit free up extra capacity. If `available_risk < proposed_risk_pct` (the current compounding tier rate), the scan is skipped. This operates beneath the existing `DailyProfitEngine` which still controls the ceiling, peak protection, and hard loss floor.
+
 Config keys (in `bot_scalper` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`
+- `"daily_budget_pct": 8.0` — total risk budget per day; defaults to `daily_loss_cap_pct`
 
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir

@@ -36,6 +36,7 @@ from shared_regime   import RegimeClassifier
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
 from shared_scanner  import InstrumentScanner
+from shared_risk     import RiskEngine
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
@@ -52,9 +53,10 @@ MAGIC           = 20240001
 
 # Watchlist — falls back to single symbol if not configured
 _B1      = _CFG["bot_smc_trend"]
-WATCHLIST     = _B1.get("watchlist", [SYMBOL])
-MIN_ATR_RATIO = _B1.get("min_atr_ratio", 0.8)
-FORCE_TRADE   = _B1.get("force_trade", False)
+WATCHLIST        = _B1.get("watchlist", [SYMBOL])
+MIN_ATR_RATIO    = _B1.get("min_atr_ratio", 0.8)
+FORCE_TRADE      = _B1.get("force_trade", False)
+DAILY_BUDGET_PCT = _B1.get("daily_budget_pct", MAX_DAILY_LOSS)
 
 # Risk
 RISK_PCT        = _CFG["risk"]["risk_pct_bot1"]
@@ -263,9 +265,10 @@ def detect_setup(symbol: str) -> dict | None:
 # ORDER MANAGEMENT — delegates to shared BotMT5 instance
 # ═════════════════════════════════════════════════════════════════════════════
 
-def lot_size(balance, sl_dist, regime_mult=1.0, symbol=None):
-    """Position size using fixed RISK_PCT scaled by regime_mult."""
-    return _mt5.lot_size(balance, sl_dist, RISK_PCT * regime_mult, 1.0, symbol)
+def lot_size(balance, sl_dist, regime_mult=1.0, symbol=None, risk_pct=None):
+    """Position size. risk_pct overrides RISK_PCT * regime_mult when provided."""
+    rp = risk_pct if risk_pct is not None else RISK_PCT * regime_mult
+    return _mt5.lot_size(balance, sl_dist, rp, 1.0, symbol)
 
 def place_order(direction, lots, sl, tp, symbol=None):
     """Place a market order; returns (ticket, fill_price) or (None, None)."""
@@ -507,6 +510,7 @@ def run():
     daily_log    = DailyLogger(str(_INST / "smc_trend_daily.json"))
     scanner      = InstrumentScanner(WATCHLIST, "BOT_SMC_TREND", "smc_trend", _INST, log,
                                      min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
+    risk_engine  = RiskEngine("BOT_SMC_TREND", DAILY_BUDGET_PCT, log)
 
     daily_start  = acct.balance
     _eq_file     = _INST / "gold_main_equity.json"
@@ -533,6 +537,7 @@ def run():
     min_balance_today = acct.balance
     open_trades       = recover_open_positions()
     reconcile_on_startup(open_trades, logger, ai)
+    risk_engine.reset_day(acct.balance)
     last_date         = now_utc().date()
     last_week         = now_utc().isocalendar()[1]
     consec_losses     = 0
@@ -597,6 +602,7 @@ def run():
                 max_open_today    = 0
                 trades_today      = 0
                 manage_positions._last_be_setup = None
+                risk_engine.reset_day(acct.balance)
                 last_date         = date
                 calmar.record(acct.balance)
                 calmar.log_report()
@@ -735,7 +741,15 @@ def run():
             manage_positions(open_trades, logger, ai)
             if len(open_trades) < trades_before:
                 _acct = mt5.account_info()
-                if _acct: calmar.record(_acct.balance)
+                if _acct:
+                    acct = _acct
+                    calmar.record(acct.balance)
+
+            # ── Risk capacity gate (Phase 3) ───────────────────────────────
+            proposed_risk = RISK_PCT * risk_mult
+            _allowed, effective_risk = risk_engine.evaluate(open_trades, acct.balance, proposed_risk)
+            if not _allowed:
+                time.sleep(60); continue
 
             # ── Multi-instrument scan ─────────────────────────────────────
             candidates = scanner.scan(detect_setup)
@@ -806,7 +820,7 @@ def run():
                 log.info("R:R check failed. Skip."); time.sleep(60); continue
 
             # ── Position sizing ───────────────────────────────────────────
-            lots = lot_size(acct.balance, sl_d, risk_mult, symbol)
+            lots = lot_size(acct.balance, sl_d, risk_mult, symbol, risk_pct=effective_risk)
             if lots <= 0: time.sleep(60); continue
 
             log.info(f"SIGNAL | {symbol} | {direction.upper()} | score={score} | "
@@ -827,6 +841,7 @@ def run():
                     "atr":          atr,
                     "peak":         filled,
                     "partial_done": False,
+                    "lots":         lots,
                 })
                 risk_usd = acct.balance * (RISK_PCT / 100)
                 logger.log_entry(ticket, feats, direction, filled, sl, tp, tp,

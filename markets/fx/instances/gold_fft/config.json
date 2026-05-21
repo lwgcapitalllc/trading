@@ -29,6 +29,7 @@
     "tp2_size_pct": 0.2,
     "risk_pct": 1.0,
     "max_daily_loss_pct": 5.0,
+    "daily_budget_pct": 5.0,
     "max_weekly_loss_pct": 15.0,
     "max_trades_per_day": 3,
     "min_ai_probability": 0.52

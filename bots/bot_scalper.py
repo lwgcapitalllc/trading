@@ -43,6 +43,7 @@ from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_calmar   import CalmarTracker
 from shared_ai_brain import AIBrain, TradeLogger
 from shared_scanner  import InstrumentScanner
+from shared_risk     import RiskEngine
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
@@ -83,6 +84,7 @@ DAILY_CEIL_MULT     = _S.get("daily_ceiling_multiplier",    3.0)  # 3× target =
 PEAK_DRAWDOWN_PCT   = _S.get("peak_drawdown_trigger_pct",  10.0)  # 10% pullback from peak
 DAILY_LOSS_CAP_PCT  = _S.get("daily_loss_cap_pct",          8.0)
 WEEKLY_LOSS_CAP_PCT = _S.get("weekly_loss_cap_pct",         20.0)
+DAILY_BUDGET_PCT    = _S.get("daily_budget_pct", DAILY_LOSS_CAP_PCT)
 
 # News events — list of [weekday, hour_utc, minute_utc, label]
 # weekday: 0=Mon 1=Tue 2=Wed 3=Thu 4=Fri
@@ -209,20 +211,21 @@ def get_risk_pct(balance: float) -> float:
     return 2.0
 
 def lot_size(balance: float, sl_dist: float,
-             sl_multiplier: float = 1.0, symbol: str = None) -> float:
-    """Calculate position size for the given symbol."""
-    sym      = symbol or SYMBOL
-    risk_pct = get_risk_pct(balance)
-    si       = mt5.symbol_info(sym)
+             sl_multiplier: float = 1.0, symbol: str = None,
+             risk_pct: float = None) -> float:
+    """Calculate position size. risk_pct overrides the tier-based rate when provided."""
+    sym = symbol or SYMBOL
+    rp  = risk_pct if risk_pct is not None else get_risk_pct(balance)
+    si  = mt5.symbol_info(sym)
     if not si or si.trade_tick_size == 0 or sl_dist == 0: return MIN_LOT
     actual_sl = sl_dist * sl_multiplier
-    risk  = balance * (risk_pct / 100)
+    risk  = balance * (rp / 100)
     ticks = actual_sl / si.trade_tick_size
     lots  = risk / (ticks * si.trade_tick_value)
     lots  = max(MIN_LOT, round(int(lots * 100) / 100, 2))
     lots  = max(si.volume_min, min(si.volume_max, lots))
     lots  = round(round(lots / si.volume_step) * si.volume_step, 2)
-    log.info(f"Lot size: {lots}L | {sym} | risk={risk_pct}% (${risk:.2f}) | "
+    log.info(f"Lot size: {lots}L | {sym} | risk={rp}% (${risk:.2f}) | "
              f"balance=${balance:,.0f} | sl={actual_sl:.5f}pts")
     return lots
 
@@ -611,6 +614,7 @@ def run():
     ai            = AIBrain(logger, model_file=str(_INST / "scalper_model.pkl"))
     scanner       = InstrumentScanner(WATCHLIST, "BOT_SCALPER", "scalper", _INST, log,
                                       min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
+    risk_engine   = RiskEngine("BOT_SCALPER", DAILY_BUDGET_PCT, log)
 
     start_balance = acct.balance
     daily_engine  = DailyProfitEngine(acct.balance)
@@ -633,6 +637,7 @@ def run():
 
     open_trades   = recover_open_positions()
     reconcile_on_startup(open_trades, logger, ai)
+    risk_engine.reset_day(acct.balance)
     last_date     = now_utc().date()
     last_week     = current_week
     consec_losses = 0
@@ -666,6 +671,7 @@ def run():
             if date != last_date:
                 acct          = mt5.account_info()
                 daily_engine  = DailyProfitEngine(acct.balance)
+                risk_engine.reset_day(acct.balance)
                 last_date     = date
                 consec_losses = 0
                 calmar.record(acct.balance)
@@ -789,11 +795,19 @@ def run():
             manage_positions(open_trades, m5_cache, logger, ai)
             if len(open_trades) < trades_before:
                 _acct = mt5.account_info()
-                if _acct: calmar.record(_acct.balance)
+                if _acct:
+                    acct = _acct
+                    calmar.record(acct.balance)
 
             # ── Log status every hour ─────────────────────────────────────
             if now.minute == 0:
                 log.info(daily_engine.status(acct.balance))
+
+            # ── Risk capacity gate (Phase 3) ───────────────────────────────
+            proposed_risk = get_risk_pct(acct.balance)
+            _allowed, effective_risk = risk_engine.evaluate(open_trades, acct.balance, proposed_risk)
+            if not _allowed:
+                time.sleep(10); continue
 
             # ── Scanner: find best setup across watchlist ─────────────────
             candidates = scanner.scan(detect_setup)
@@ -834,7 +848,7 @@ def run():
                 continue
 
             # ── Position sizing ───────────────────────────────────────────
-            lots = lot_size(acct.balance, sl_dist, sl_mult, symbol)
+            lots = lot_size(acct.balance, sl_dist, sl_mult, symbol, risk_pct=effective_risk)
 
             log.info(f"SCALP SIGNAL | {symbol} | {direction.upper()} | "
                      f"price={signal['price']:.5f} | RSI={signal['rsi']:.1f} | "
@@ -855,6 +869,7 @@ def run():
                     "candles_held": 0,
                     "symbol":       symbol,
                     "atr":          atr,
+                    "lots":         lots,
                 })
                 risk_usd = acct.balance * (get_risk_pct(acct.balance) / 100)
                 logger.log_entry(ticket, feats, direction, filled, sl, tp, tp,

@@ -24,6 +24,7 @@
     "watchlist": ["XAUUSD.s", "GBPJPY.s", "NAS100.s", "EURUSD.s", "USDJPY.s"],
     "min_atr_ratio": 0.8,
     "force_trade": false,
+    "daily_budget_pct": 8.0,
     "ema_fast": 9,
     "ema_mid": 21,
     "ema_slow": 50,

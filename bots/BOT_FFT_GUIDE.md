@@ -140,9 +140,12 @@ Expansion gate: 30+ closed trades with solid Calmar ratio (tracked in `fft_equit
 
 **Volatility filter (Phase 2):** Before evaluating a setup, the scanner checks `atr_ratio = ATR(5) / ATR(20)` on H1 candles. Symbols below `min_atr_ratio` (default 0.8) are skipped. Since FFT is gold-only, if XAUUSD is compressed the bot simply sits out the cycle.
 
+**Dynamic risk engine (Phase 3):** Before scanning, the bot checks `available_risk = daily_budget − used_risk − realized_daily_loss`. `used_risk` is computed from live MT5 SL distances each cycle. Trades at breakeven contribute ~0; trailing winners with SL in profit free up extra capacity. If `available_risk < proposed_risk_pct`, the scan is skipped. The daily hard cap still enforces the ceiling.
+
 Config keys (in `bot_fft` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`
+- `"daily_budget_pct": 5.0` — total risk budget per day; defaults to `max_daily_loss_pct`
 
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir

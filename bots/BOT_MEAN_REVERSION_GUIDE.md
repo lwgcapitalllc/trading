@@ -110,9 +110,12 @@ The symbol with the highest confluence score wins and gets the trade entry.
 
 **Volatility filter (Phase 2):** Before evaluating a setup, the scanner checks `atr_ratio = ATR(5) / ATR(20)` on H1 candles. Symbols below `min_atr_ratio` (default 0.8) are skipped. If the entire watchlist is compressed, the bot sits out the cycle.
 
+**Dynamic risk engine (Phase 3):** Before scanning, the bot checks `available_risk = daily_budget − used_risk − realized_daily_loss`. `used_risk` is computed from live MT5 SL distances each cycle. Trades at breakeven contribute ~0; trailing winners with SL in profit free up extra capacity. If `available_risk < proposed_risk_pct`, the scan is skipped. The daily hard cap still enforces the ceiling.
+
 Config keys (in `bot_mean_reversion` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`
+- `"daily_budget_pct": 10.0` — total risk budget per day; defaults to the existing daily loss cap
 
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
