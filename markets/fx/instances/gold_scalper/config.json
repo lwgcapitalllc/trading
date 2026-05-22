@@ -22,8 +22,6 @@
   },
   "bot_scalper": {
     "watchlist": ["XAUUSD.s", "GBPJPY.s", "NAS100.s", "EURUSD.s", "USDJPY.s"],
-    "learning_watchlist": ["XAUUSD.s", "GBPJPY.s"],
-    "learning_max_open": 1,
     "min_atr_ratio": 0.8,
     "force_trade": false,
     "correlation_action": "block",

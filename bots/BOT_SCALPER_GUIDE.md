@@ -105,17 +105,12 @@ The symbol with the highest EMA stack strength wins the entry.
 
 **Correlation control (Phase 4):** After scanning, the bot iterates candidates in rank order and runs each through `CorrelationGuard` before entering. Only `"high"`-tier pairs from `correlation_map` (config top level) trigger action. `correlation_action = "block"` (default) skips a candidate if any open position is high-correlated. The bot tries the next-ranked candidate before sitting out.
 
-**Learning-phase gate (Phase 5):** Until the AI model is deployed (< 15 closed win/loss trades, AUC < 0.55), the bot operates under tighter constraints:
-- Scanner is restricted to `learning_watchlist` (default: `["XAUUSD.s", "GBPJPY.s"]`).
-- Maximum 1 open trade at a time. If a trade is already open, the scan is skipped until it closes.
-- Both caps lift automatically the moment `ai.is_trained` becomes True. No manual action required.
+**Breakeven gate (Phase 5):** Before scanning for a new entry, the bot checks all open trades. If any open trade has not yet reached breakeven (risk > 0), the scan is skipped. Once all open trades are at breakeven or better, the bot scans the full watchlist and enters the highest-scoring setup.
 
 Config keys (in `bot_scalper` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`
 - `"daily_budget_pct": 5` — total risk budget per day; defaults to `daily_loss_cap_pct`
-- `"learning_watchlist": ["XAUUSD.s", "GBPJPY.s"]` — reduced watchlist during AI learning phase
-- `"learning_max_open": 1` — max simultaneous positions during learning phase
 
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir

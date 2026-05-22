@@ -144,14 +144,12 @@ Expansion gate: 30+ closed trades with solid Calmar ratio (tracked in `fft_equit
 
 **Correlation control (Phase 4):** FFT is gold-only, so the correlation guard will only fire if the watchlist is ever expanded. The `correlation_map` (`{"symbols": ["XAUUSD.s", "XAGUSD.s"], "tier": "high"}`) is in place for when that happens. `correlation_action = "block"` is set in the bot_fft config section.
 
-**Learning-phase gate (Phase 5):** Until the AI model is deployed (< 15 closed win/loss trades, AUC < 0.55), the bot holds to 1 open trade at a time. FFT is already gold-only, so `learning_watchlist` defaults to `["XAUUSD.s"]` — identical to the full watchlist. The position cap still applies and lifts automatically once `ai.is_trained` is True.
+**Breakeven gate (Phase 5):** Before scanning for a new entry, the bot checks all open trades. If any open trade has not yet reached breakeven (risk > 0), the scan is skipped. Once all open trades are at breakeven or better, the bot scans the full watchlist and enters the highest-scoring setup.
 
 Config keys (in `bot_fft` section):
 - `"min_atr_ratio": 0.8`
 - `"force_trade": false`
 - `"daily_budget_pct": 5` — total risk budget per day; defaults to `max_daily_loss_pct`
-- `"learning_watchlist": ["XAUUSD.s"]` — gold-only during learning phase (same as full watchlist)
-- `"learning_max_open": 1` — max simultaneous positions during learning phase
 
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir

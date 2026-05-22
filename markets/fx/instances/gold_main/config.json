@@ -88,8 +88,6 @@
   },
   "bot_smc_trend": {
     "watchlist": ["XAUUSD.s", "GBPJPY.s", "EURUSD.s", "XAGUSD.s", "USDJPY.s"],
-    "learning_watchlist": ["XAUUSD.s", "EURUSD.s"],
-    "learning_max_open": 1,
     "min_atr_ratio": 0.8,
     "force_trade": false,
     "correlation_action": "block",
@@ -117,8 +115,6 @@
   },
   "bot_mean_reversion": {
     "watchlist": ["XAUUSD.s", "EURUSD.s", "AUDUSD.s", "USDCAD.s", "EURGBP.s"],
-    "learning_watchlist": ["XAUUSD.s", "EURUSD.s"],
-    "learning_max_open": 1,
     "min_atr_ratio": 0.8,
     "force_trade": false,
     "correlation_action": "block",

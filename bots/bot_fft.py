@@ -67,7 +67,7 @@ from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
 from shared_regime   import RegimeClassifier
-from shared_scanner  import InstrumentScanner, LearningPhaseGate
+from shared_scanner  import InstrumentScanner
 from shared_risk     import RiskEngine, CorrelationGuard
 from bot_state       import write_bot, read_bot, set_started
 from notify          import send_telegram
@@ -88,8 +88,6 @@ ACCOUNT  = _CFG.get("account", {})
 _S = _CFG.get("bot_fft", {})
 
 WATCHLIST          = _S.get("watchlist", [SYMBOL])
-LEARNING_WATCHLIST = _S.get("learning_watchlist", WATCHLIST)   # FFT: gold-only even after training until 30+ trades
-LEARNING_MAX_OPEN  = _S.get("learning_max_open", 1)
 MIN_ATR_RATIO      = _S.get("min_atr_ratio", 0.8)
 FORCE_TRADE        = _S.get("force_trade", False)
 CORR_ACTION        = _S.get("correlation_action", "block")
@@ -721,7 +719,6 @@ def run():
                                       min_atr_ratio=MIN_ATR_RATIO, force_trade=FORCE_TRADE)
     risk_engine   = RiskEngine("BOT_FFT", DAILY_BUDGET_PCT, log)
     corr_guard    = CorrelationGuard(_CFG.get("correlation_map", []), log)
-    learning_gate = LearningPhaseGate(LEARNING_WATCHLIST, LEARNING_MAX_OPEN, log)
 
     # State
     daily_start       = acct.balance
@@ -923,13 +920,12 @@ def run():
             if not _allowed:
                 time.sleep(60); continue
 
-            # ── Phase 5: learning-phase gate ──────────────────────────────
-            if not learning_gate.check_max_open(open_trades, ai):
+            # ── Wait for breakeven before opening another position ────────
+            if open_trades and not all(t.get("be_done", False) for t in open_trades):
                 time.sleep(60); continue
-            _active_watchlist = learning_gate.active_watchlist(WATCHLIST, ai)
 
             # ── Scanner: find best setup across watchlist ─────────────────
-            candidates = scanner.scan(detect_setup, watchlist=_active_watchlist)
+            candidates = scanner.scan(detect_setup, watchlist=WATCHLIST)
             if not candidates:
                 time.sleep(60)
                 continue
