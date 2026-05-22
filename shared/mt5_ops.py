@@ -10,6 +10,7 @@ FREE FUNCTIONS (stateless, no symbol/magic context):
     is_dead_zone(start_hour, end_hour) — True during configured CT window (default 16–17)
     get_atr(df, period)        — Average True Range calculation
     get_ema(df, period)        — Exponential moving average of close
+    get_rsi(df, period)        — Wilder RSI, last value
 
 CLASS BotMT5:
     Wraps symbol, magic, credentials, and logger into a single context object.
@@ -33,6 +34,7 @@ CLASS BotMT5:
         close_all_positions(reason)
         recover_open_positions()
         reconcile_on_startup(open_trades, logger, ai)
+        disconnect()            — mt5.shutdown() + log
 
     Dead zone:
         handle_dead_zone(open_trades, atr, logger, ai)
@@ -121,6 +123,14 @@ def get_atr(df: pd.DataFrame, period: int = 14) -> float:
 def get_ema(df: pd.DataFrame, period: int) -> float:
     """Exponential moving average of close, last value only."""
     return float(df["close"].ewm(span=period, adjust=False).mean().iloc[-1])
+
+
+def get_rsi(df: pd.DataFrame, period: int = 14) -> float:
+    """Wilder RSI, last value only."""
+    delta = df["close"].diff()
+    gain  = delta.clip(lower=0).rolling(period).mean()
+    loss  = (-delta.clip(upper=0)).rolling(period).mean()
+    return float((100 - (100 / (1 + gain / (loss + 1e-9)))).iloc[-1])
 
 
 # =============================================================================
@@ -647,6 +657,11 @@ class BotMT5:
                     f"RECONCILE: Stub entry created | T{t['ticket']} | "
                     f"{t['dir']} @ {t['entry']:.2f}"
                 )
+
+    def disconnect(self) -> None:
+        """Shut down MT5 and log."""
+        mt5.shutdown()
+        self.log.info("MT5 disconnected.")
 
     # ── Dead zone management ──────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@ Handles:
   3. Logging setup that writes to the instance directory
 
 Usage in every bot (first two lines after docstring):
-    from bot_utils import load_config, setup_logging, get_instance_dir
+    from bot_utils import load_config, setup_logging, get_instance_dir, load_weekly_start
     CFG = load_config()
 """
 
@@ -97,6 +97,25 @@ def load_config() -> dict:
 def get_instance_dir(cfg: dict) -> Path:
     """Where logs, trade files, and model files are written for this instance."""
     return Path(cfg["_instance_dir"])
+
+
+def load_weekly_start(week_file: "Path", current_week: int, balance: float) -> float:
+    """
+    Load or initialise the weekly starting balance from a JSON persistence file.
+
+    If the file exists and the stored week matches current_week, returns the
+    stored weekly_start.  Otherwise writes a new file with the current balance
+    and returns that balance.  Callers are responsible for logging the result.
+    """
+    if week_file.exists():
+        try:
+            data = json.loads(week_file.read_text())
+            if data.get("week") == current_week:
+                return float(data.get("weekly_start", balance))
+        except Exception:
+            pass
+    week_file.write_text(json.dumps({"week": current_week, "weekly_start": balance}))
+    return balance
 
 
 def setup_logging(bot_name: str, cfg: dict) -> logging.Logger:

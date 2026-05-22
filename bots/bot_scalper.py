@@ -41,7 +41,7 @@ import time, json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from bot_utils       import load_config, setup_logging, get_instance_dir
+from bot_utils       import load_config, setup_logging, get_instance_dir, load_weekly_start
 from shared_calmar   import CalmarTracker
 from shared_ai_brain import AIBrain, TradeLogger
 from shared_scanner  import InstrumentScanner
@@ -49,7 +49,7 @@ from shared_risk     import RiskEngine, CorrelationGuard
 from bot_state       import write_bot, read_bot, set_started, ensure_starting_balance
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
-                              should_close_for_weekend, is_dead_zone, get_atr)
+                              should_close_for_weekend, is_dead_zone, get_atr, get_rsi)
 
 # ── Load config + logging (instance-aware) ────────────────────────────────────
 _CFG  = load_config()
@@ -313,10 +313,7 @@ def calc_atr(df: pd.DataFrame, period: int = ATR_PERIOD) -> float:
     return get_atr(df, period)
 
 def calc_rsi(df: pd.DataFrame, period: int = 14) -> float:
-    delta = df["close"].diff()
-    gain  = delta.clip(lower=0).rolling(period).mean()
-    loss  = (-delta.clip(upper=0)).rolling(period).mean()
-    return float((100 - (100 / (1 + gain/(loss+1e-9)))).iloc[-1])
+    return get_rsi(df, period)
 
 def get_m5_bias(df_m5: pd.DataFrame) -> tuple[str | None, int]:
     """Returns (bias, stack_strength). stack_strength 0-3: EMA alignment count."""
@@ -610,7 +607,7 @@ def run():
     if acct.balance <= 0:
         log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. "
                   "Please restore balance before running BOT_SCALPER.")
-        mt5.shutdown(); return
+        _mt5.disconnect(); return
     ensure_starting_balance("scalper", acct.balance)
 
     calmar        = CalmarTracker(acct.balance, equity_file=str(_INST / "scalper_equity.json"))
@@ -626,19 +623,8 @@ def run():
 
     _week_file   = _INST / "scalper_weekly.json"
     current_week = now_utc().isocalendar()[1]
-    if _week_file.exists():
-        _wdata = json.loads(_week_file.read_text())
-        if _wdata.get("week") == current_week:
-            weekly_start = _wdata.get("weekly_start", acct.balance)
-            log.info(f"Weekly start restored: ${weekly_start:,.2f} (week {current_week})")
-        else:
-            weekly_start = acct.balance
-            _week_file.write_text(json.dumps({"week": current_week, "weekly_start": weekly_start}))
-            log.info(f"New week {current_week} — weekly start: ${weekly_start:,.2f}")
-    else:
-        weekly_start = acct.balance
-        _week_file.write_text(json.dumps({"week": current_week, "weekly_start": weekly_start}))
-        log.info(f"Week file created — weekly start: ${weekly_start:,.2f}")
+    weekly_start = load_weekly_start(_week_file, current_week, acct.balance)
+    log.info(f"Weekly start: ${weekly_start:,.2f} (week {current_week})")
 
     open_trades   = recover_open_positions()
     reconcile_on_startup(open_trades, logger, ai)
@@ -918,8 +904,7 @@ def run():
         log.exception(f"Unexpected error: {e}")
         send_telegram(f"🔴 *Scalper crashed*: `{e}`")
     finally:
-        mt5.shutdown()
-        log.info("MT5 disconnected.")
+        _mt5.disconnect()
 
 
 if __name__ == "__main__":

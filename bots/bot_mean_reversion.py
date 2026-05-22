@@ -35,7 +35,7 @@ import time, json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from bot_utils       import load_config, setup_logging, get_instance_dir
+from bot_utils       import load_config, setup_logging, get_instance_dir, load_weekly_start
 from shared_regime   import RegimeClassifier
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_reversion
 from bot_state       import write_bot, read_bot, set_started, ensure_starting_balance
@@ -44,7 +44,7 @@ from shared_calmar   import CalmarTracker
 from shared_scanner  import InstrumentScanner
 from shared_risk     import RiskEngine, CorrelationGuard
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
-                              should_close_for_weekend, is_dead_zone, get_atr)
+                              should_close_for_weekend, is_dead_zone, get_atr, get_rsi)
 
 # ── Load config + logging (instance-aware) ────────────────────────────────────
 _CFG     = load_config()
@@ -162,15 +162,10 @@ def calc_bollinger(df, period=BB_PERIOD, std_dev=BB_STD):
             float(std.iloc[-1]))
 
 def calc_rsi(df, period=RSI_PERIOD):
-    delta = df["close"].diff()
-    gain  = delta.clip(lower=0).rolling(period).mean()
-    loss  = (-delta.clip(upper=0)).rolling(period).mean()
-    return float((100 - (100 / (1 + gain/(loss+1e-9)))).iloc[-1])
+    return get_rsi(df, period)
 
 def calc_atr(df, period=ATR_PERIOD):
-    h, l, c = df["high"], df["low"], df["close"].shift(1)
-    tr = pd.concat([h-l, (h-c).abs(), (l-c).abs()], axis=1).max(axis=1)
-    return float(tr.rolling(period).mean().iloc[-1])
+    return get_atr(df, period)
 
 def calc_vwap(df):
     """Intraday VWAP — uses today's candles only."""
@@ -497,7 +492,7 @@ def run():
     if acct.balance <= 0:
         log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been "
                   "reset. Please restore balance before running BOT_MEAN_REVERSION.")
-        mt5.shutdown(); return
+        _mt5.disconnect(); return
     ensure_starting_balance("mean_reversion", acct.balance)
 
     regime       = RegimeClassifier(bot_name="BOT_MEAN_REVERSION")
@@ -511,22 +506,11 @@ def run():
     risk_engine   = RiskEngine("BOT_MEAN_REVERSION", DAILY_BUDGET_PCT, log)
     corr_guard    = CorrelationGuard(_CFG.get("correlation_map", []), log)
 
-    daily_start       = acct.balance
-    _week_file2       = _INST / "mean_reversion_weekly.json"
-    current_week2     = now_utc().isocalendar()[1]
-    if _week_file2.exists():
-        import json as _json2
-        _wdata2 = _json2.loads(_week_file2.read_text())
-        if _wdata2.get("week") == current_week2:
-            weekly_start = _wdata2.get("weekly_start", acct.balance)
-            log.info(f"Weekly start restored: ${weekly_start:,.2f} (week {current_week2})")
-        else:
-            weekly_start = acct.balance
-            _week_file2.write_text(_json2.dumps({"week": current_week2, "weekly_start": weekly_start}))
-    else:
-        weekly_start = acct.balance
-        import json as _json2
-        _week_file2.write_text(_json2.dumps({"week": current_week2, "weekly_start": weekly_start}))
+    daily_start  = acct.balance
+    _week_file2  = _INST / "mean_reversion_weekly.json"
+    current_week2 = now_utc().isocalendar()[1]
+    weekly_start  = load_weekly_start(_week_file2, current_week2, acct.balance)
+    log.info(f"Weekly start: ${weekly_start:,.2f} (week {current_week2})")
 
     trades_today      = 0
     max_open_today    = 0
@@ -600,7 +584,7 @@ def run():
                 min_balance_today = acct.balance
                 max_open_today    = 0
                 trades_today      = 0
-                _last_be_direction[0] = None
+                _last_be_direction[0]  = None
                 risk_engine.reset_day(acct.balance)
                 calmar.record(acct.balance)
                 calmar.log_report()
@@ -615,10 +599,9 @@ def run():
                 weekly_start   = acct.balance
                 last_week      = week
                 trading_halted = False
-                import json as _json2
-                _week_file2.write_text(_json2.dumps({"week": week, "weekly_start": weekly_start}))
+                consec_losses  = 0
+                _week_file2.write_text(json.dumps({"week": week, "weekly_start": weekly_start}))
                 log.info(f"New week {week} | Weekly balance reset ${weekly_start:,.2f}")
-                consec_losses = 0
 
             # ── Weekly loss guard ─────────────────────────────────────────
             weekly_dd = (weekly_start - acct.balance) / weekly_start * 100
@@ -880,8 +863,7 @@ def run():
         log.exception(f"Unexpected error: {e}")
         send_telegram(f"🔴 *Mean Reversion crashed*: `{e}`")
     finally:
-        mt5.shutdown()
-        log.info("MT5 disconnected.")
+        _mt5.disconnect()
 
 
 if __name__ == "__main__":

@@ -174,7 +174,16 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ## What I Am Working On
 
-- Last completed: **Mean Reversion connection resilience hardening** — `manage_positions()` and `handle_dead_zone()` now require deal-history confirmation before removing a trade from `open_trades`; a `_missing_count` retry counter orphans after 3 consecutive misses. `get_deal_result()` now validates `d.position_id == ticket`. Minimum SL distance enforced at `atr * atr_sl_multiplier` to prevent near-zero `sl_d` producing oversized lots. `DailyLogger`/`TradeLogger` load validates JSON is a list before using it. Files: `bots/bot_mean_reversion.py`, `shared/mt5_ops.py`, `shared/shared_ai_brain.py`.
+- Last completed: **Code quality / deduplication pass** — all dead and duplicate code removed across shared and bot files.
+  - `shared/bot_state.py`: removed unused `Optional` import.
+  - `shared/mt5_ops.py`: added `get_rsi(df, period)` free function (shared RSI implementation); added `BotMT5.disconnect()` (wraps `mt5.shutdown()` + logs).
+  - `bots/bot_utils.py`: added `load_weekly_start(week_file, week, balance)` helper — single implementation of the weekly-persistence init pattern.
+  - `bots/bot_mean_reversion.py`: `calc_atr` and `calc_rsi` now delegate to shared `get_atr` / `get_rsi` instead of reimplementing; redundant local `import json as _json2` blocks removed; weekly init replaced with `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
+  - `bots/bot_scalper.py`: `calc_rsi` delegates to shared `get_rsi`; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
+  - `bots/bot_fft.py`: added top-level `import json`; redundant local `import json as _json` blocks removed; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
+  - `bots/bot_smc_trend.py`: redundant local `import json as _json` blocks removed; unused `_eq_file` variable removed; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
+
+- Previously: **Mean Reversion connection resilience hardening** — `manage_positions()` and `handle_dead_zone()` now require deal-history confirmation before removing a trade from `open_trades`; a `_missing_count` retry counter orphans after 3 consecutive misses. `get_deal_result()` now validates `d.position_id == ticket`. Minimum SL distance enforced at `atr * atr_sl_multiplier` to prevent near-zero `sl_d` producing oversized lots. `DailyLogger`/`TradeLogger` load validates JSON is a list before using it. Files: `bots/bot_mean_reversion.py`, `shared/mt5_ops.py`, `shared/shared_ai_brain.py`.
 - Previously: **FFT Structure Engine** — `shared/structure_engine.py` built and test-validated. Replaces `find_swing_highs` / `find_swing_lows` / `detect_bos` in `bot_fft.py` once owner review passes.
   - `StructureEngine` class: event-driven, candle-by-candle. No fixed lookback — breaks confirmed by body closes only. Wicks only anchor fib points.
   - Detects: BOS (body-close beyond swing extreme), SOS (body-close beyond opposing structural point, checked before retracement to take priority), RETRACEMENT_BEGAN (first bearish/bullish body-close back under the new HH/LL close).

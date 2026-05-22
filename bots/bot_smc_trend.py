@@ -31,7 +31,7 @@ import time, json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from bot_utils       import load_config, setup_logging, get_instance_dir
+from bot_utils       import load_config, setup_logging, get_instance_dir, load_weekly_start
 from shared_regime   import RegimeClassifier
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
@@ -509,7 +509,7 @@ def run():
     if acct.balance <= 0:
         log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been "
                   "reset. Please restore balance before running BOT_SMC.")
-        mt5.shutdown(); return
+        _mt5.disconnect(); return
     ensure_starting_balance("smc_trend", acct.balance)
 
     regime       = RegimeClassifier(bot_name="BOT_SMC_TREND")
@@ -523,24 +523,10 @@ def run():
     corr_guard    = CorrelationGuard(_CFG.get("correlation_map", []), log)
 
     daily_start  = acct.balance
-    _eq_file     = _INST / "gold_main_equity.json"
     _week_file   = _INST / "smc_trend_weekly.json"
     current_week = now_utc().isocalendar()[1]
-    if _week_file.exists():
-        import json as _json
-        _wdata = _json.loads(_week_file.read_text())
-        if _wdata.get("week") == current_week:
-            weekly_start = _wdata.get("weekly_start", acct.balance)
-            log.info(f"Weekly start restored: ${weekly_start:,.2f} (week {current_week})")
-        else:
-            weekly_start = acct.balance
-            _week_file.write_text(_json.dumps({"week": current_week, "weekly_start": weekly_start}))
-            log.info(f"New week {current_week} — weekly start: ${weekly_start:,.2f}")
-    else:
-        weekly_start = acct.balance
-        import json as _json
-        _week_file.write_text(_json.dumps({"week": current_week, "weekly_start": weekly_start}))
-        log.info(f"Week file created — weekly start: ${weekly_start:,.2f}")
+    weekly_start = load_weekly_start(_week_file, current_week, acct.balance)
+    log.info(f"Weekly start: ${weekly_start:,.2f} (week {current_week})")
 
     trades_today      = 0
     max_open_today    = 0
@@ -632,8 +618,7 @@ def run():
                 last_week      = week
                 trading_halted = False
                 consec_losses  = 0
-                import json as _json
-                _week_file.write_text(_json.dumps({"week": week, "weekly_start": weekly_start}))
+                _week_file.write_text(json.dumps({"week": week, "weekly_start": weekly_start}))
                 log.info(f"New week {week} | Weekly balance reset ${weekly_start:,.2f}")
 
             # ── Weekly loss guard ─────────────────────────────────────────
@@ -900,8 +885,7 @@ def run():
         log.exception(f"Unexpected error: {e}")
         send_telegram(f"🔴 *SMC Trend crashed*: `{e}`")
     finally:
-        mt5.shutdown()
-        log.info("MT5 disconnected.")
+        _mt5.disconnect()
 
 
 if __name__ == "__main__":

@@ -28,7 +28,6 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 ALGOS_ROOT = Path("C:/algos")
 

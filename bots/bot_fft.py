@@ -50,6 +50,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import json
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -63,7 +64,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
 
-from bot_utils       import load_config, setup_logging, get_instance_dir
+from bot_utils       import load_config, setup_logging, get_instance_dir, load_weekly_start
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_trend
 from shared_calmar   import CalmarTracker
 from shared_regime   import RegimeClassifier
@@ -705,7 +706,7 @@ def run():
     if not acct or acct.balance <= 0:
         log.error(f"Account balance is ${acct.balance if acct else 0:.2f}. "
                   "Cannot start. Check credentials and MT5_FFT terminal.")
-        mt5.shutdown()
+        _mt5.disconnect()
         return
     ensure_starting_balance("fft", acct.balance)
 
@@ -736,23 +737,10 @@ def run():
     consec_losses     = 0
 
     # Weekly persistence
-    _week_file = _INST / "fft_weekly.json"
-    _cur_week  = now_utc().isocalendar()[1]
-    if _week_file.exists():
-        import json as _json
-        _wd = _json.loads(_week_file.read_text())
-        if _wd.get("week") == _cur_week:
-            weekly_start = _wd.get("weekly_start", acct.balance)
-            log.info(f"Weekly start restored: ${weekly_start:,.2f}")
-        else:
-            _week_file.write_text(
-                _json.dumps({"week": _cur_week, "weekly_start": weekly_start})
-            )
-    else:
-        import json as _json
-        _week_file.write_text(
-            _json.dumps({"week": _cur_week, "weekly_start": weekly_start})
-        )
+    _week_file   = _INST / "fft_weekly.json"
+    _cur_week    = now_utc().isocalendar()[1]
+    weekly_start = load_weekly_start(_week_file, _cur_week, acct.balance)
+    log.info(f"Weekly start: ${weekly_start:,.2f} (week {_cur_week})")
 
     log.info(f"Balance ${acct.balance:,.2f} | {ai.status_report()}")
 
@@ -825,14 +813,11 @@ def run():
 
             # ── Weekly reset ──────────────────────────────────────────────
             if week != last_week:
-                import json as _json
                 weekly_start   = acct.balance
                 last_week      = week
                 trading_halted = False
                 consec_losses  = 0
-                _week_file.write_text(
-                    _json.dumps({"week": week, "weekly_start": weekly_start})
-                )
+                _week_file.write_text(json.dumps({"week": week, "weekly_start": weekly_start}))
                 log.info(f"New week {week} | Weekly start: ${weekly_start:,.2f}")
 
             max_open_today    = max(max_open_today, len(open_trades))
@@ -1112,8 +1097,7 @@ def run():
         log.exception(f"Unexpected error: {e}")
         send_telegram(f"🔴 *FFT crashed*: `{e}`")
     finally:
-        mt5.shutdown()
-        log.info("Bot 5 shut down.")
+        _mt5.disconnect()
 
 
 if __name__ == "__main__":
