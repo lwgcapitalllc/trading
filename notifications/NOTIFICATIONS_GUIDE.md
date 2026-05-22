@@ -70,16 +70,14 @@ Individual `/restart <bot>` follows the same terminate-then-start pattern for th
 - 🚨 Critical — Telegram Bot Down — 3 restarts failed
 
 ### pnl_tracker.py (SYS_PNLTRACKER — every 1 min)
-Dual-mode P&L engine. Writes balance, daily/weekly P&L to `bot_state.json`.
+P&L engine. Writes balance, daily/weekly P&L to `bot_state.json`. MT5 is the only source of truth.
 
-**LIVE mode** (bot `last_write` in bot_state is within 5 minutes):
-- Reads `balance`, `daily_start`, `weekly_start` directly from bot_state — these are MT5
-  ground-truth values the bot writes every loop iteration.
-- No trades.json math. No hardcoded starting balance.
+**LIVE** (bot `last_write` within 5 minutes):
+- Reads `balance`, `daily_start`, `weekly_start` directly from bot_state — MT5-authoritative
+  values the bot writes every loop iteration. No trades.json math.
 
-**OFFLINE mode** (bot stopped or last_write stale):
-- Falls back to trades.json closed-trade math.
-- Uses bot_state `balance` as last-known value when trades.json has no pnl_usd data.
+**OFFLINE** (bot stopped or last_write stale):
+- Does nothing. Last-known state is preserved as-is. No alerts fired. No values overwritten.
 
 **Alerts sent:**
 - 🎯 Daily Goal Hit
@@ -145,5 +143,5 @@ All components read from `bot_state.json` — single source of truth.
 | `resume_trading` | telegram_bot.py | Flag read by bot wait loop to break weekly-cap lock early |
 
 Note: `pnl_tracker.py` calls `set_pnl()` which writes display-only balance/P&L fields back
-to bot_state for Telegram `/balance` to read. When the bot is in LIVE mode, this echoes
-what the bot already wrote. When OFFLINE, it writes the trades.json-computed estimate.
+to bot_state for Telegram `/balance` to read. Only runs when the bot is LIVE — it echoes
+what the bot already wrote. When offline, bot_state is not touched.
