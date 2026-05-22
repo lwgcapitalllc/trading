@@ -324,7 +324,7 @@ def manage_positions(open_trades, logger, ai):
       1. Breakeven at 0.3R (fast)
       2. Full close at 1R — bank the entire trade
       3. Early close when RSI returns to neutral (checked per trade's symbol)
-      4. Force close everything at 21:45 UTC (15 min before market close)
+      4. Force close everything at 19:45 UTC (gold daily close window)
 
     ATR for trailing uses t["atr"] stored at entry, or falls back to live fetch.
     """

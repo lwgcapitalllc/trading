@@ -19,7 +19,7 @@ A signal fires when all three confirm the same overextension:
 - Price deviated from VWAP by 1.5+ standard deviations
 - Rejection candle confirms buyers/sellers stepping in
 
-**When it trades:** 24 hours, every day. Dead zone 3–7pm Texas.
+**When it trades:** 24 hours, every day. Dead zone 4–5 PM CT.
 
 **Entry checklist — all must be true:**
 - Price outside Bollinger Band (2+ std dev)
@@ -27,7 +27,7 @@ A signal fires when all three confirm the same overextension:
 - VWAP deviation confirms overextension
 - Rejection candle present
 - Confluence score >= 4
-- AI approves >= 55%
+- AI approves >= 52%
 
 ---
 
@@ -65,7 +65,7 @@ A signal fires when all three confirm the same overextension:
 
 ---
 
-## Dead Zone (3:00–7:00pm Texas)
+## Dead Zone (4:00–5:00 PM CT)
 
 No new entries. Portfolio-level management every minute:
 - Net profitable across all trades → close all immediately
