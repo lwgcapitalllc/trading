@@ -2,12 +2,12 @@
 shared_ai_brain.py — AI Brain + Trade Logger + Daily Performance Logger
 
 Improvements over v1:
-  - Training threshold lowered to 15 trades
-  - AUC gate raised to 0.55 (stricter — faster training needs stricter quality gate)
+  - Training threshold 100 trades (needs clean post-bugfix sample before activating)
+  - AUC gate 0.55
   - Daily performance logger — records drawdown, trade count, simultaneous positions
   - Drawdown awareness feature — AI learns which day patterns lead to losses
   - Re-entry tracking — logs whether a trade was a re-entry and its outcome
-  - Retrains every 5 new closed trades
+  - Retrains every 20 new closed trades
 
 Install: pip install scikit-learn joblib
 """
@@ -29,9 +29,9 @@ except ImportError:
     ML_OK = False
     log.warning("scikit-learn not found. pip install scikit-learn joblib")
 
-MIN_TRADES_TRAIN = 15   # lowered from 30
-MIN_AUC_GATE     = 0.55 # raised from 0.52 — stricter since less data
-RETRAIN_EVERY    = 5    # lowered from 10 — faster adaptation
+MIN_TRADES_TRAIN = 100  # raised — need clean post-bugfix sample before model activates
+MIN_AUC_GATE     = 0.55
+RETRAIN_EVERY    = 20   # retrain in meaningful increments, not on noise
 
 # ── Feature sets ──────────────────────────────────────────────────────────────
 TREND_FEATURES = [
@@ -389,7 +389,7 @@ def build_features_reversion(score, atr, price, rsi, stoch_rsi,
 class AIBrain:
     """
     Random Forest classifier that learns from closed trades.
-    v2: Trains at 15 trades, retrains every 5, AUC gate 0.55.
+    Trains at 100 trades, retrains every 20, AUC gate 0.55.
     Includes drawdown awareness and re-entry tracking.
     """
 
