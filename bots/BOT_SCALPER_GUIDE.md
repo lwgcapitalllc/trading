@@ -19,7 +19,7 @@ Bot 3 is an aggressive account-growth engine. It trades momentum on M5 using EMA
 4. RSI must not be extreme against the trade (no buying above 75, no selling below 25)
 5. Enter immediately — scalps require fast execution
 
-**When it trades:** All sessions except 3:00–7:00pm Texas (dead zone) and the previous dead zone start 15:00–19:00 UTC as a secondary check.
+**When it trades:** All sessions except 3:00–7:00pm Central Time (dead zone, DST-aware).
 
 **Entry checklist:**
 - M5 EMA 9/21/50 all aligned in same direction
@@ -97,8 +97,7 @@ calls `log_close(ticket, close_price, pnl_usd)` which writes `outcome`, `pnl_usd
 Every cycle the bot scans all symbols in `bot_scalper.watchlist` (config.json).
 The symbol with the highest EMA stack strength wins the entry.
 
-**Watchlist (Phase 1 defaults):** `["XAUUSD", "US30", "NAS100", "EURUSD", "GBPUSD"]`
-*(verify exact broker symbol strings on VPS before going live)*
+**Watchlist (gold_scalper instance):** `["XAUUSD.s", "GBPJPY.s", "NAS100.s", "EURUSD.s", "USDJPY.s"]`
 
 **Volatility filter (Phase 2):** Before evaluating a setup, the scanner checks `atr_ratio = ATR(5) / ATR(20)` on H1 candles. Symbols below `min_atr_ratio` (default 0.8) are skipped. If the entire watchlist is compressed, the bot sits out the cycle.
 

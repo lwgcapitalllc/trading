@@ -8,23 +8,25 @@
 ║  Sessions  : All sessions except dead zone (configurable)                  ║
 ║  Watchlist : Configured per instance in config.json bot_scalper.watchlist  ║
 ║                                                                              ║
+║  All values below reflect config.json — config is always authoritative.    ║
+║                                                                              ║
 ║  5 CORE FEATURES:                                                           ║
 ║  1. AI self-improvement — learns from every closed trade                   ║
-║  2. Hard loss limits — daily -8% floor, weekly -20% cap                   ║
+║  2. Hard loss limits — daily -5% floor, weekly -10% cap                   ║
 ║  3. Dynamic daily profit engine:                                            ║
-║       • Runs freely until +10% daily target hit                            ║
-║       • After 10% hit: tracks peak profit, keeps trading                   ║
-║       • Stops if profit pulls back 10% from day peak                       ║
-║       • Hard ceiling at +30% (3x target) — bank it                        ║
+║       • Runs freely until +5% daily target hit                             ║
+║       • After 5% hit: tracks peak profit, keeps trading                    ║
+║       • Stops if profit pulls back 8% from day peak                        ║
+║       • Hard ceiling at +15% (3x target) — bank it                        ║
 ║  4. News event control — fully configurable via config.json                ║
 ║  5. Dynamic momentum reaction — closes trade if M5 bias flips             ║
 ║                                                                              ║
 ║  Compounding tiers (auto-scales as balance grows):                         ║
-║    $0     → $2,000  : 2.0% risk                                            ║
-║    $2,000 → $4,000  : 2.5% risk                                            ║
-║    $4,000 → $7,000  : 3.0% risk                                            ║
-║    $7,000 → $10,000 : 3.5% risk                                            ║
-║    $10,000+         : 2.0% risk (reset after goal, keep compounding)       ║
+║    $0     → $2,000  : 1.0% risk                                            ║
+║    $2,000 → $4,000  : 2.0% risk                                            ║
+║    $4,000 → $7,000  : 2.0% risk                                            ║
+║    $7,000 → $10,000 : 2.0% risk                                            ║
+║    $10,000+         : 1.0% risk (reset after goal, keep compounding)       ║
 ║                                                                              ║
 ║  Config    : C:/algos/markets/fx/instances/gold_scalper/config.json      ║
 ║  Install   : pip install MetaTrader5 pandas numpy pytz scikit-learn joblib ║
