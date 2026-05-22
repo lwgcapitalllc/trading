@@ -38,7 +38,7 @@ from pathlib import Path
 from bot_utils       import load_config, setup_logging, get_instance_dir
 from shared_regime   import RegimeClassifier
 from shared_ai_brain import AIBrain, TradeLogger, DailyLogger, build_features_reversion
-from bot_state       import write_bot, read_bot, set_started
+from bot_state       import write_bot, read_bot, set_started, ensure_starting_balance
 from notify          import send_telegram
 from shared_calmar   import CalmarTracker
 from shared_scanner  import InstrumentScanner
@@ -498,6 +498,7 @@ def run():
         log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been "
                   "reset. Please restore balance before running BOT_MEAN_REVERSION.")
         mt5.shutdown(); return
+    ensure_starting_balance("mean_reversion", acct.balance)
 
     regime       = RegimeClassifier(bot_name="BOT_MEAN_REVERSION")
     logger       = TradeLogger(str(_INST / "mean_reversion_trades.json"))

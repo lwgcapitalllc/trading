@@ -495,12 +495,12 @@ def cmd_status() -> str:
 
 def cmd_balance() -> str:
     sys.path.insert(0, str(ALGOS_ROOT / "shared"))
-    from bot_state import read_all, BOT_STARTING_BALANCES, BOT_NAMES
+    from bot_state import read_all, BOT_NAMES
     now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
     lines  = [f"💰 *Account Balances*  _{now_tx}_", ""]
     all_states = read_all()
     for key, state in all_states.items():
-        balance = state.get("balance", BOT_STARTING_BALANCES.get(key, 1000.0))
+        balance = state.get("balance", state.get("starting_balance", 0.0))
         pct     = state.get("total_pnl_pct", 0.0)
         name    = BOT_NAMES.get(key, key)
         arrow   = "↑" if pct > 0 else "↓" if pct < 0 else "—"

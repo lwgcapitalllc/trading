@@ -69,7 +69,7 @@ from shared_calmar   import CalmarTracker
 from shared_regime   import RegimeClassifier
 from shared_scanner  import InstrumentScanner
 from shared_risk     import RiskEngine, CorrelationGuard
-from bot_state       import write_bot, read_bot, set_started
+from bot_state       import write_bot, read_bot, set_started, ensure_starting_balance
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
                               should_close_for_weekend, is_dead_zone, get_atr, get_ema)
@@ -707,6 +707,7 @@ def run():
                   "Cannot start. Check credentials and MT5_FFT terminal.")
         mt5.shutdown()
         return
+    ensure_starting_balance("fft", acct.balance)
 
     # Shared components
     regime      = RegimeClassifier(bot_name="BOT_FFT")

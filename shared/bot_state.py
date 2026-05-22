@@ -56,13 +56,6 @@ BOT_NAMES = {
     "fft":            "FFT",
 }
 
-# Starting balances (original deposits)
-BOT_STARTING_BALANCES = {
-    "smc_trend":      1000.0,
-    "mean_reversion": 1000.0,
-    "scalper":        1000.0,
-    "fft":            1000.0,
-}
 
 # Thresholds
 BOT_THRESHOLDS = {
@@ -170,6 +163,13 @@ def get_uptime_str(bot_key: str) -> str:
         return f"{minutes}m"
 
 
+def ensure_starting_balance(bot_key: str, balance: float) -> None:
+    """Write starting_balance once on first run — never overwritten after that.
+    Call this at bot startup after MT5 connects and balance is confirmed."""
+    if not read_bot(bot_key).get("starting_balance"):
+        write_bot(bot_key, {"starting_balance": round(balance, 2)})
+
+
 def _default_state(bot_key: str) -> dict:
     """Default state for a bot with no existing data."""
     return {
@@ -177,13 +177,13 @@ def _default_state(bot_key: str) -> dict:
         "status":         "stopped",
         "started":        0,
         "account":        BOT_ACCOUNTS.get(bot_key, ""),
-        "balance":        BOT_STARTING_BALANCES.get(bot_key, 1000.0),
+        "balance":        0.0,
         "daily_pnl":      0.0,
         "daily_pnl_pct":  0.0,
         "weekly_pnl":     0.0,
         "weekly_pnl_pct": 0.0,
         "total_pnl_pct":  0.0,
-        "peak_balance":   BOT_STARTING_BALANCES.get(bot_key, 1000.0),
+        "peak_balance":   0.0,
         "trades_today":   0,
         "day_locked":     False,
         "lock_reason":    "",

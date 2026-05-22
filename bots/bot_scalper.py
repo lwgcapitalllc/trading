@@ -46,7 +46,7 @@ from shared_calmar   import CalmarTracker
 from shared_ai_brain import AIBrain, TradeLogger
 from shared_scanner  import InstrumentScanner
 from shared_risk     import RiskEngine, CorrelationGuard
-from bot_state       import write_bot, read_bot, set_started
+from bot_state       import write_bot, read_bot, set_started, ensure_starting_balance
 from notify          import send_telegram
 from mt5_ops         import (BotMT5, now_utc, is_market_close,
                               should_close_for_weekend, is_dead_zone, get_atr)
@@ -611,6 +611,7 @@ def run():
         log.error(f"Account balance is ${acct.balance:.2f} — demo account may have been reset. "
                   "Please restore balance before running BOT_SCALPER.")
         mt5.shutdown(); return
+    ensure_starting_balance("scalper", acct.balance)
 
     calmar        = CalmarTracker(acct.balance, equity_file=str(_INST / "scalper_equity.json"))
     logger        = TradeLogger(str(_INST / "scalper_trades.json"))

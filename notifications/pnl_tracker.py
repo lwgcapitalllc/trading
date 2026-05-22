@@ -24,7 +24,7 @@ except ImportError:
 # Add shared dir to path
 sys.path.insert(0, str(Path("C:/algos/shared")))
 from bot_state import (
-    BOT_STARTING_BALANCES, BOT_THRESHOLDS, BOT_NAMES,
+    BOT_THRESHOLDS, BOT_NAMES,
     read_bot, set_pnl, write_bot
 )
 
@@ -95,12 +95,11 @@ def _bot_is_live(state: dict) -> bool:
         return False
 
 
-def _peak_from_trades(bot_key: str, closed: list) -> float:
+def _peak_from_trades(starting_balance: float, closed: list) -> float:
     """Walk closed trade history to find the peak running balance."""
-    start = BOT_STARTING_BALANCES[bot_key]
-    peak = running = start
+    peak = running = starting_balance
     for t in sorted(closed, key=lambda x: x.get("closed_at", "")):
-        running += trade_pnl(t, start)
+        running += trade_pnl(t, starting_balance)
         peak = max(peak, running)
     return peak
 
@@ -120,7 +119,7 @@ def _calculate_pnl_live(bot_key: str, state: dict) -> dict:
     daily_pnl_pct  = daily_pnl / daily_start * 100 if daily_start else 0.0
     weekly_pnl_pct = weekly_pnl / weekly_start * 100 if weekly_start else 0.0
 
-    start          = BOT_STARTING_BALANCES[bot_key]
+    start          = float(state.get("starting_balance") or balance)
     total_pnl_pct  = (balance - start) / start * 100 if start else 0.0
 
     # Trade count from file (doesn't affect P&L math, just informational)
@@ -132,7 +131,7 @@ def _calculate_pnl_live(bot_key: str, state: dict) -> dict:
     today_trades = [t for t in closed
                     if parse_dt(t["closed_at"]).astimezone(TEXAS).date() == today_tx]
 
-    peak = max(_peak_from_trades(bot_key, closed), balance)
+    peak = max(_peak_from_trades(start, closed), balance)
 
     return {
         "balance":        round(balance, 2),
