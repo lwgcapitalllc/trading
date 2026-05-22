@@ -203,7 +203,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             int    qty    = CalcContracts(risk);
                             if (qty >= 1)
                             {
-                                SetStopLoss("MOM_Long",    CalculationMode.Price, stop);
+                                SetStopLoss("MOM_Long",    CalculationMode.Price, stop,   false);
                                 SetProfitTarget("MOM_Long", CalculationMode.Price, target);
                                 EnterLong(0, qty, "MOM_Long");
                                 pendingDir = 1;
@@ -245,7 +245,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             int    qty    = CalcContracts(risk);
                             if (qty >= 1)
                             {
-                                SetStopLoss("MOM_Short",    CalculationMode.Price, stop);
+                                SetStopLoss("MOM_Short",    CalculationMode.Price, stop,   false);
                                 SetProfitTarget("MOM_Short", CalculationMode.Price, target);
                                 EnterShort(0, qty, "MOM_Short");
                                 pendingDir = -1;

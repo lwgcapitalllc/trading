@@ -210,7 +210,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     int qty = CalcContracts(dist);
                     if (qty >= 1)
                     {
-                        SetStopLoss("VWAP_Long",    CalculationMode.Price, stop);
+                        SetStopLoss("VWAP_Long",    CalculationMode.Price, stop,   false);
                         SetProfitTarget("VWAP_Long", CalculationMode.Price, target);
                         EnterLong(0, qty, "VWAP_Long");
                         pendingDir = 1;
@@ -232,7 +232,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     int qty = CalcContracts(dist);
                     if (qty >= 1)
                     {
-                        SetStopLoss("VWAP_Short",    CalculationMode.Price, stop);
+                        SetStopLoss("VWAP_Short",    CalculationMode.Price, stop,   false);
                         SetProfitTarget("VWAP_Short", CalculationMode.Price, target);
                         EnterShort(0, qty, "VWAP_Short");
                         pendingDir = -1;

@@ -198,7 +198,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         double stop   = orLow;
                         double target = orHigh + TpMultiple * orWidth;
-                        SetStopLoss("ORB_Long",    CalculationMode.Price, stop);
+                        SetStopLoss("ORB_Long",    CalculationMode.Price, stop,   false);
                         SetProfitTarget("ORB_Long", CalculationMode.Price, target);
                         EnterLong(0, qty, "ORB_Long");
                         pendingDir = 1;
@@ -218,7 +218,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         double stop   = orHigh;
                         double target = orLow - TpMultiple * orWidth;
-                        SetStopLoss("ORB_Short",    CalculationMode.Price, stop);
+                        SetStopLoss("ORB_Short",    CalculationMode.Price, stop,   false);
                         SetProfitTarget("ORB_Short", CalculationMode.Price, target);
                         EnterShort(0, qty, "ORB_Short");
                         pendingDir = -1;
