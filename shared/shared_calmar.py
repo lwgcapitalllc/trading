@@ -34,7 +34,8 @@ class CalmarTracker:
                 self.equity_log = json.load(f)
             if self.equity_log:
                 self.peak       = max(e["balance"] for e in self.equity_log)
-                self.start_date = datetime.fromisoformat(self.equity_log[0]["date"])
+                dt = datetime.fromisoformat(self.equity_log[0]["date"])
+                self.start_date = dt.replace(tzinfo=None)  # normalize: equity log may have mixed tz-aware/naive entries
                 log.info(f"Loaded {len(self.equity_log)} equity records from {self.equity_file}")
 
     def _save(self):
@@ -54,7 +55,8 @@ class CalmarTracker:
     def get_metrics(self) -> dict:
         if not self.equity_log: return {}
         bal   = self.equity_log[-1]["balance"]
-        days  = max(1, (datetime.utcnow() - self.start_date).days)
+        sd    = self.start_date.replace(tzinfo=None) if self.start_date.tzinfo else self.start_date
+        days  = max(1, (datetime.utcnow() - sd).days)
         years = days / 365.0
         tot_r = (bal / self.start_balance) - 1
         ann_r = (1 + tot_r) ** (1 / max(years, 0.1)) - 1

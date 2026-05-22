@@ -879,6 +879,7 @@ def run():
         log.info("Stopped by user.")
     except Exception as e:
         log.exception(f"Unexpected error: {e}")
+        send_telegram(f"🔴 *Mean Reversion crashed*: `{e}`")
     finally:
         mt5.shutdown()
         log.info("MT5 disconnected.")
