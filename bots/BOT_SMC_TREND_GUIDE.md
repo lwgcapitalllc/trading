@@ -75,12 +75,15 @@ Bot 1 identifies institutional manipulation — moments when large players fake 
 
 | Stage | Trigger | Action |
 |---|---|---|
-| Breakeven | +1R | Stop to entry |
+| Trail starts | Entry | SL ratchets up with peak, clamped to original SL floor |
+| Velocity tighten | Fast favourable move | Trail distance shrinks (min 0.6× base) |
+| Velocity loosen | Slow / adverse move | Trail distance widens (max 1.4× base) |
+| Breakeven | Trail crosses entry | be_done set — enables new entries (no hard snap) |
+| Trail wide | 0–5R | 2× ATR from peak (before velocity adj) |
+| Trail mid | 5–8R | 1.5× ATR from peak |
+| Trail tight | 8R+ | 1× ATR from peak |
 | Bank profit | +2R (non-runner) | Full close |
-| Runner armed | Best trade at +2R | Trail activates |
-| Trail wide | 0–5R | 2x ATR |
-| Trail mid | 5–8R | 1.5x ATR |
-| Trail tight | 8R+ | 1x ATR |
+| Runner armed | Best trade at +2R | Runner active — trail already running |
 | Key level hit | Weekly H/L | Runner closes |
 | Market close | 19:45 UTC | Force-close all |
 
@@ -101,6 +104,10 @@ No new entries. Portfolio-level management every minute:
 
 Trains at 15 closed trades. Retrains every 5. AUC gate 0.55.
 Learns from: confluence score, ATR, session, FVG, daily P&L %, simultaneous positions, re-entry flag.
+
+**Pass-through when untrained:** The AI always allows trades (rules-based pass-through) when either no
+model has been trained yet OR the current trades file has fewer than 15 closed trades. This prevents a stale
+`.pkl` from a previous run blocking new entries on a fresh instance with no data.
 
 Trade close logging is fully implemented — every exit (SL/TP hit, 2R bank, runner key-level exit, dead zone,
 market close) calls `log_close(ticket, close_price, pnl_usd)` which writes `outcome`, `pnl_usd`, and
@@ -142,6 +149,8 @@ Config keys (in `bot_smc_trend` section):
 - `"min_atr_ratio": 0.8` — lower = more permissive, higher = stricter
 - `"force_trade": false` — set to `true` to bypass the volatility filter entirely
 - `"daily_budget_pct": 5` — total risk budget per day; defaults to the existing daily loss cap
+- `"min_sweep_atr_factor": 0.15` — Judas Swing minimum distance as a fraction of M15 ATR. Normalises across instruments. Raise to 0.20–0.25 for stricter sweeps; lower to 0.10 if setups are being missed.
+- `"velocity_trail_sensitivity": 1.5` — how much momentum tightens/widens the trail. At 1.5, gaining 0.2R/cycle tightens trail by 30%; losing 0.2R/cycle widens it by 30%. Range 0.6–1.4× base.
 
 **Unresolved symbol handling:**
 - Any symbol not found on the broker is logged to `symbol_errors.log` in the instance dir
@@ -160,6 +169,8 @@ Config keys (in `bot_smc_trend` section):
 | Missing setups | `min_confluence_score` | Lower to 4 |
 | Stops hit early | `atr_sl_multiplier` | Raise 1.5 -> 1.8 |
 | Profit not banking | `partial_close_r` | Lower 2.0 -> 1.5 |
+| No sweeps detected | `min_sweep_atr_factor` | Lower to 0.10 |
+| Too many false sweeps | `min_sweep_atr_factor` | Raise to 0.20–0.25 |
 
 ---
 

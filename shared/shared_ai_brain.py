@@ -524,7 +524,7 @@ class AIBrain:
         closed = self.logger.get_closed()
         n = len(closed)
 
-        if not self.is_trained:
+        if not self.is_trained or n < MIN_TRADES_TRAIN:
             remaining = max(0, MIN_TRADES_TRAIN - n)
             reason = (f"AI not yet trained ({n}/{MIN_TRADES_TRAIN} trades). "
                       f"Rules-based. {remaining} more needed.")

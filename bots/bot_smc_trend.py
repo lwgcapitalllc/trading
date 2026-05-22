@@ -57,6 +57,10 @@ WATCHLIST          = _B1.get("watchlist", [SYMBOL])
 MIN_ATR_RATIO      = _B1.get("min_atr_ratio", 0.8)
 FORCE_TRADE        = _B1.get("force_trade", False)
 CORR_ACTION        = _B1.get("correlation_action", "block")
+MIN_SWEEP_ATR_FACTOR   = _B1.get("min_sweep_atr_factor", 0.15)
+ASIAN_SESSION_START    = _B1.get("asian_session_start_utc", 20)
+ASIAN_SESSION_END      = _B1.get("asian_session_end_utc", 24)
+VELOCITY_TRAIL_SENS    = _B1.get("velocity_trail_sensitivity", 1.5)
 
 # Dead zone (gold market close window — CT local hours, DST-aware)
 _DZ             = _CFG.get("dead_zone", {})
@@ -158,20 +162,37 @@ def is_news_blackout():
 # ═════════════════════════════════════════════════════════════════════════════
 
 def get_asian_range(df_m15):
-    now   = now_utc()
-    end   = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    start = end - timedelta(hours=4)
-    mask  = (df_m15["time"] >= start) & (df_m15["time"] < end)
-    s     = df_m15[mask]
+    now  = now_utc()
+    # Build today's Asian session window using config hours (e.g. 20:00–00:00 UTC).
+    # If end hour is 24 (midnight), clamp to start of today.
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if ASIAN_SESSION_END == 24:
+        end   = day_start
+        start = day_start - timedelta(hours=(24 - ASIAN_SESSION_START))
+    else:
+        end   = day_start.replace(hour=ASIAN_SESSION_END)
+        start = day_start.replace(hour=ASIAN_SESSION_START)
+        if start > now:   # window hasn't opened yet today — use yesterday's
+            start -= timedelta(days=1)
+            end   -= timedelta(days=1)
+    mask = (df_m15["time"] >= start) & (df_m15["time"] < end)
+    s    = df_m15[mask]
     if len(s) < 4: return None
     return float(s["high"].max()), float(s["low"].min())
 
-def detect_sweep(df_m15, asian_high, asian_low):
-    """Detect Judas Swing — wick through Asian range that closes back inside."""
-    for c in df_m15.tail(8).iloc[::-1].itertuples():
-        if c.low < asian_low and c.close > asian_low and (asian_low - c.low) > 0.3:
+def detect_sweep(df_m15, asian_high, asian_low, atr):
+    """Detect Judas Swing — wick through Asian range that closes back inside.
+
+    Minimum sweep distance is ATR-relative so the threshold is consistent
+    across instruments (EURUSD pips vs XAUUSD dollars vs GBPJPY yen).
+    Looks back 16 M15 candles (4 hours) so sweeps at London open are still
+    detected mid-session.
+    """
+    min_sweep = atr * MIN_SWEEP_ATR_FACTOR
+    for c in df_m15.tail(16).iloc[::-1].itertuples():
+        if c.low < asian_low and c.close > asian_low and (asian_low - c.low) >= min_sweep:
             return {"direction":"bullish","swept":asian_low,"extreme":c.low,"time":c.time}
-        if c.high > asian_high and c.close < asian_high and (c.high - asian_high) > 0.3:
+        if c.high > asian_high and c.close < asian_high and (c.high - asian_high) >= min_sweep:
             return {"direction":"bearish","swept":asian_high,"extreme":c.high,"time":c.time}
     return None
 
@@ -243,7 +264,7 @@ def detect_setup(symbol: str) -> dict | None:
         return None
     asian_high, asian_low = ar
 
-    sweep = detect_sweep(df_m15, asian_high, asian_low)
+    sweep = detect_sweep(df_m15, asian_high, asian_low, atr)
     if not sweep:
         return None
 
@@ -304,11 +325,13 @@ def get_key_levels(df_h4):
 def manage_positions(open_trades, logger, ai, df_h4_primary=None):
     """
     0.01-lot-safe profit management across all open trades (any symbol):
-      1. Breakeven at 1R
-      2. Full close at 2R — bank the entire trade (works at minimum lot size)
-      3. Keep only the single best trade as a runner with dynamic trail
-      4. Force close everything at 21:45 UTC (15 min before market close)
-      5. Runner exits at weekly key levels
+      1. ATR trail from entry — ratchets up as price moves, gives room to breathe.
+         Clamped to never go below the original SL. be_done is set naturally when
+         the trail crosses entry (no hard snap).
+      2. Full close at 2R — bank the entire non-runner trade.
+      3. Keep only the single best trade as a runner; trail tightens dynamically.
+      4. Force close everything at 21:45 UTC (15 min before market close).
+      5. Runner exits at weekly key levels.
 
     ATR for trailing is stored per-trade at entry time (t["atr"]).
     Falls back to fetching from the trade's symbol if not stored.
@@ -376,20 +399,46 @@ def manage_positions(open_trades, logger, ai, df_h4_primary=None):
         # ATR for trailing: use stored value from entry, fetch fresh if missing
         atr = t.get("atr")
         if not atr:
-            sym     = t.get("symbol", SYMBOL)
-            df_tmp  = get_candles(mt5.TIMEFRAME_M15, 50, sym)
-            atr     = get_atr(df_tmp) if not df_tmp.empty else 10.0
+            sym    = t.get("symbol", SYMBOL)
+            df_tmp = get_candles(mt5.TIMEFRAME_M15, 50, sym)
+            atr    = get_atr(df_tmp) if not df_tmp.empty else 10.0
 
-        # Stage 1 — Breakeven at 1R
-        if profit_r >= 1.0:
-            if direction == "bullish" and p.sl < t["entry"] - 0.05:
-                move_sl(t["ticket"], t["entry"])
+        # Momentum: EMA of profit_r change per 60s cycle (instrument-neutral, no API call).
+        # Positive = price moving in our favour. Negative = moving against us.
+        prev_r   = t.get("prev_profit_r", profit_r)
+        delta_r  = profit_r - prev_r
+        momentum = t.get("momentum_ema", 0.0) * 0.7 + delta_r * 0.3
+        t["prev_profit_r"] = profit_r
+        t["momentum_ema"]  = momentum
+
+        # Stage 1 — ATR trail from entry, velocity-adjusted
+        # Fast favourable move → tighter trail (lock in profits sooner).
+        # Slow or adverse move → wider trail (give the trade room to breathe).
+        # Clamped to never go below the original SL.
+        trail_mult = get_dynamic_trail_mult(profit_r)
+        vel_factor = max(0.6, min(1.4, 1.0 - momentum * VELOCITY_TRAIL_SENS))
+        trail_dist = atr * trail_mult * vel_factor
+
+        if direction == "bullish":
+            t["peak"]  = max(t.get("peak", price), price)
+            trail_sl   = max(t["sl"], t["peak"] - trail_dist)
+            if trail_sl > p.sl + 0.05:
+                move_sl(t["ticket"], trail_sl)
+                log.info(f"T{t['ticket']} trail SL={trail_sl:.5f} "
+                         f"({profit_r:.1f}R, {trail_mult}×ATR, peak={t['peak']:.5f})")
+            if not t.get("be_done") and trail_sl >= t["entry"]:
                 t["be_done"] = True
-                log.info(f"T{t['ticket']} -> BREAKEVEN @ {t['entry']:.2f}")
-            elif direction == "bearish" and p.sl > t["entry"] + 0.05:
-                move_sl(t["ticket"], t["entry"])
+                log.info(f"T{t['ticket']} -> BREAKEVEN via trail @ {trail_sl:.5f}")
+        else:
+            t["peak"]  = min(t.get("peak", price), price)
+            trail_sl   = min(t["sl"], t["peak"] + trail_dist)
+            if trail_sl < p.sl - 0.05:
+                move_sl(t["ticket"], trail_sl)
+                log.info(f"T{t['ticket']} trail SL={trail_sl:.5f} "
+                         f"({profit_r:.1f}R, {trail_mult}×ATR, peak={t['peak']:.5f})")
+            if not t.get("be_done") and trail_sl <= t["entry"]:
                 t["be_done"] = True
-                log.info(f"T{t['ticket']} -> BREAKEVEN @ {t['entry']:.2f}")
+                log.info(f"T{t['ticket']} -> BREAKEVEN via trail @ {trail_sl:.5f}")
 
         # Stage 2 — Full close at 2R for non-runner trades
         if profit_r >= 2.0 and t["ticket"] != best_ticket:
@@ -402,32 +451,12 @@ def manage_positions(open_trades, logger, ai, df_h4_primary=None):
                 open_trades.remove(t)
             continue
 
-        # Stage 3 — Runner management (best trade only)
+        # Stage 3 — Runner activation + key level exits (trail handled above)
         if t["ticket"] == best_ticket and profit_r >= 2.0:
             if not t.get("runner_active"):
                 t["runner_active"] = True
-                t["peak"]          = price
                 log.info(f"T{t['ticket']} RUNNER active @ {profit_r:.1f}R")
 
-        if t.get("runner_active"):
-            trail_mult = get_dynamic_trail_mult(profit_r)
-            trail_dist = atr * trail_mult
-
-            if direction == "bullish":
-                t["peak"] = max(t.get("peak", price), price)
-                runner_sl = t["peak"] - trail_dist
-                if runner_sl > p.sl + 0.05:
-                    move_sl(t["ticket"], runner_sl)
-                    log.info(f"T{t['ticket']} RUNNER trail SL={runner_sl:.2f} "
-                             f"(peak={t['peak']:.2f} {trail_mult}×ATR)")
-            else:
-                t["peak"] = min(t.get("peak", price), price)
-                runner_sl = t["peak"] + trail_dist
-                if runner_sl < p.sl - 0.05:
-                    move_sl(t["ticket"], runner_sl)
-                    log.info(f"T{t['ticket']} RUNNER trail SL={runner_sl:.2f}")
-
-            # Key level exit
             if RUNNER_KEY_LEVEL_EXIT:
                 for level in key_levels:
                     if direction == "bullish" and price >= level - 0.5:

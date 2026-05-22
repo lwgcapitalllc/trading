@@ -111,6 +111,8 @@
     "ny_kz_end_utc": 15,
     "asian_session_start_utc": 20,
     "asian_session_end_utc": 24,
+    "min_sweep_atr_factor": 0.15,
+    "velocity_trail_sensitivity": 1.5,
     "breakeven_at_r": 1.0
   },
   "bot_mean_reversion": {
