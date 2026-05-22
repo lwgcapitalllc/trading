@@ -16,6 +16,7 @@
 
 #region Using declarations
 using System;
+using System.IO;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using NinjaTrader.Cbi;
@@ -84,6 +85,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int    pendingQty;
         private int    pendingDir;
 
+        // ── Backtest performance accumulators (exported to CSV on Terminated) ─
+
+        private double peakEquity;
+        private double maxDrawdown;
+        private double grossWins;
+        private double grossLosses;
+        private int    winCount;
+        private int    tradeCount;
+
         // ── Cached boundary ────────────────────────────────────────────────────
 
         private TimeSpan tForceFlat;
@@ -113,6 +123,31 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.Configure)
             {
                 tForceFlat = new TimeSpan(15, 30, 0);
+                peakEquity = AccountSize;
+            }
+            else if (State == State.Terminated)
+            {
+                try
+                {
+                    double net    = grossWins + grossLosses;
+                    double pf     = (grossLosses != 0) ? grossWins / Math.Abs(grossLosses) : 0;
+                    double winPct = (tradeCount > 0) ? (double)winCount / tradeCount * 100.0 : 0;
+
+                    string dir  = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                        "NinjaTrader 8");
+                    string path = Path.Combine(dir, "lucid_flex_results.csv");
+
+                    if (!File.Exists(path))
+                        File.WriteAllText(path,
+                            "Strategy,Instrument,NetPnL,MaxDD,ProfitFactor,WinPct,Trades\r\n");
+
+                    File.AppendAllText(path, string.Format(
+                        "{0},{1},{2:F2},{3:F2},{4:F4},{5:F1},{6}\r\n",
+                        Name, Instrument.MasterInstrument.Name,
+                        net, maxDrawdown, pf, winPct, tradeCount));
+                }
+                catch { }
             }
         }
 
@@ -280,10 +315,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                         int    dir   = (execution.Order.OrderAction == OrderAction.Sell) ? 1 : -1;
                         double gross = (price - pendingEntryPrice) * dir * quantity * pv;
                         double costs = CommissionPerSide * 2 * quantity;
-                        cumulativePnl    += gross - costs;
+                        double tradePnl   = gross - costs;
+                        cumulativePnl    += tradePnl;
                         pendingEntryPrice = 0;
                         pendingQty        = 0;
                         pendingDir        = 0;
+
+                        tradeCount++;
+                        if (tradePnl > 0) { grossWins += tradePnl; winCount++; }
+                        else                grossLosses += tradePnl;
+
+                        double equity = AccountSize + cumulativePnl;
+                        if (equity > peakEquity) peakEquity = equity;
+                        double dd = peakEquity - equity;
+                        if (dd > maxDrawdown) maxDrawdown = dd;
                     }
                     break;
             }

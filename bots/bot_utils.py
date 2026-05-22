@@ -58,24 +58,13 @@ def load_config() -> dict:
     # Load credentials.json from same instance directory
     creds_path = cfg_path.parent / "credentials.json"
     if not creds_path.exists():
-        platform = cfg.get("platform", "mt5")
-        if platform == "tradovate":
-            example = (
-                f"  {{\n"
-                f"      \"username\":    \"your_tradovate_username\",\n"
-                f"      \"password\":    \"your_tradovate_password\",\n"
-                f"      \"account_id\":  12345678,\n"
-                f"      \"environment\": \"demo\"\n"
-                f"  }}\n"
-            )
-        else:
-            example = (
-                f"  {{\n"
-                f"      \"login\":    YOUR_ACCOUNT_NUMBER,\n"
-                f"      \"password\": \"YOUR_PASSWORD\",\n"
-                f"      \"server\":   \"YOUR_BROKER_SERVER\"\n"
-                f"  }}\n"
-            )
+        example = (
+            f"  {{\n"
+            f"      \"login\":    YOUR_ACCOUNT_NUMBER,\n"
+            f"      \"password\": \"YOUR_PASSWORD\",\n"
+            f"      \"server\":   \"YOUR_BROKER_SERVER\"\n"
+            f"  }}\n"
+        )
         raise FileNotFoundError(
             f"\n\n  credentials.json not found at: {creds_path}\n"
             f"  Create it in the same folder as config.json with:\n"

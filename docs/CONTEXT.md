@@ -5,8 +5,9 @@
 
 ## What This Project Is
 
-Multi-bot, multi-instrument algorithmic trading system for FX/metals/indices and futures (MNQ).
+Multi-bot, multi-instrument algorithmic trading system for FX/metals/indices.
 Built in Python, runs 24/7 on a Windows VPS (ForexVPS, IP: 45.82.164.112).
+NinjaTrader 8 strategies for futures (LucidFlex prop firm) live in `markets/futures/lucid_flex/`.
 Controlled from Mac via `algo.py` command-line panel.
 Code lives on GitHub. Deploy flow: edit on Mac → git push → ssh pull on VPS → algo restart.
 
@@ -23,8 +24,6 @@ Watchlists live inside each bot's config section (`bot_smc_trend.watchlist`, etc
 | Mean Reversion | `bot_mean_reversion.py` | BB + RSI + VWAP, 1R target, fast close | XAUUSD, EURUSD, AUDUSD, USDCAD, EURGBP | gold_main #700103491 | PU Prime Terminal |
 | Scalper | `bot_scalper.py` | EMA stack + pullback, M5/M1, 5–20 trades/day | XAUUSD, US30, NAS100, EURUSD, GBPUSD | gold_scalper #700107520 | MT5_Scalper |
 | FFT | `bot_fft.py` | Dual Fibonacci confluence, H1+H4 trend | XAUUSD only (Phase 5 gate) | gold_fft #700107749 | MT5_FFT |
-| Futures | `bot_futures.py` | SMC_TREND on MNQ via Tradovate API | MNQ only | futures_account1 | N/A (Tradovate) |
-
 SMC Trend and Mean Reversion share one MT5 account and are designed to be uncorrelated — one works trending markets, the other ranging markets.
 Scalper is isolated on its own account due to higher volatility (+15% ceiling / -5% daily floor).
 FFT is the lowest risk (1%) — gold-only until 30+ closed trades with solid Calmar (Phase 5 gate).
@@ -44,7 +43,6 @@ FFT is the lowest risk (1%) — gold-only until 30+ closed trades with solid Cal
 | `bot_utils.py` | Config loader, logging, path resolver |
 | `launcher.py` | Universal Task Scheduler launcher |
 | `startup_coordinator.py` | Orchestrates bot startup sequence |
-| `tradovate.py` | Tradovate API executor for Bot Futures |
 | `algo.py` | Mac control panel — start/stop/status/logs/restart |
 
 **Multi-instrument architecture (Phases 1–5):**
@@ -68,8 +66,6 @@ FFT is the lowest risk (1%) — gold-only until 30+ closed trades with solid Cal
 - Mean Reversion: 1% risk, 1:1 target, 5% daily loss cap, 10% weekly cap
 - Scalper: 1–2% risk (auto-scaling, $2k+ threshold), -5% daily floor, 10% weekly cap, +5% daily target, +15% hard ceiling, 8% peak drawdown trigger
 - FFT: 1% risk, 2:1–5:1 target, 5% daily loss cap, 10% weekly cap
-- Futures (MNQ): 1% risk, max 4 contracts, 5% daily loss cap, 10% weekly cap
-
 **Dead Zone (all bots): No new entries 3:00pm–7:00pm Texas time.**
 During dead zone: net profit → close all. Individual profit + portfolio negative → breakeven. Losing worsening → close immediately.
 
@@ -131,17 +127,14 @@ algos/
 │   ├── bot_smc_trend.py
 │   ├── bot_mean_reversion.py
 │   ├── bot_scalper.py
-│   ├── bot_fft.py
-│   └── bot_futures.py
-├── executors/
-│   └── tradovate.py
+│   └── bot_fft.py
 └── markets/
     ├── fx/instances/
     │   ├── gold_main/
     │   ├── gold_scalper/
     │   └── gold_fft/
-    └── futures/instances/
-        └── futures_account1/
+    └── futures/
+        └── lucid_flex/          ← NinjaScript strategies + backtest tools
 ```
 
 Note: VPS runtime data (`*_trades.json`, `bot_state.json`, `*.pkl`, etc.) is gitignored
@@ -199,5 +192,4 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
   - Config: `"learning_watchlist"` and `"learning_max_open"` added to `bot_smc_trend`, `bot_mean_reversion`, `bot_scalper`, `bot_fft` sections in all instance config.json files.
 - Previously: **Phase 4 Correlation & Exposure Control**, **Phase 3 Dynamic Risk / Capacity Engine**, **Phase 2 Volatility Filter**, **Phase 1 Multi-Instrument Scanner**.
 - Open questions / decisions pending:
-  - `bot_futures.py` — NOT yet audited for reconciliation/P&L bugs or DRY refactor.
   - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.

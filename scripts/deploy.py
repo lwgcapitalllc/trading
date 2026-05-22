@@ -13,8 +13,6 @@ Files with the same name in different folders get a prefix:
   config.json from gold_main/    → name it: gold_main_config.json
   config.json from gold_scalper/ → name it: gold_scalper_config.json
   config.json from gold_fft/     → name it: gold_fft_config.json
-  config.json from futures_account1/ → name it: futures_acct1_config.json
-
 Everything else (bots, guides, xmls) has a unique name already.
 
 ────────────────────────────────────────────────────────────
@@ -72,7 +70,6 @@ MANIFEST = {
     "bot_mean_reversion.py":         "bots/bot_mean_reversion.py",
     "bot_scalper.py":                "bots/bot_scalper.py",
     "bot_fft.py":                    "bots/bot_fft.py",
-    "bot_futures.py":                "bots/bot_futures.py",
     "bot_utils.py":                  "bots/bot_utils.py",
     "launcher.py":                   "bots/launcher.py",
 
@@ -81,15 +78,11 @@ MANIFEST = {
     "BOT_MEAN_REVERSION_GUIDE.md":   "bots/BOT_MEAN_REVERSION_GUIDE.md",
     "BOT_SCALPER_GUIDE.md":          "bots/BOT_SCALPER_GUIDE.md",
     "BOT_FFT_GUIDE.md":              "bots/BOT_FFT_GUIDE.md",
-    "BOT_FUTURES_GUIDE.md":          "bots/BOT_FUTURES_GUIDE.md",
 
     # ── Shared ────────────────────────────────────────────────────────────────
     "shared_ai_brain.py":            "shared/shared_ai_brain.py",
     "shared_calmar.py":              "shared/shared_calmar.py",
     "shared_regime.py":              "shared/shared_regime.py",
-
-    # ── Executors ─────────────────────────────────────────────────────────────
-    "tradovate.py":                  "executors/tradovate.py",
 
     # ── Notifications ─────────────────────────────────────────────────────────
     "reporter.py":                   "notifications/reporter.py",
@@ -102,7 +95,6 @@ MANIFEST = {
     "mean_reversion_task.xml":       "scheduler/mean_reversion_task.xml",
     "scalper_task.xml":              "scheduler/scalper_task.xml",
     "fft_task.xml":                  "scheduler/fft_task.xml",
-    "futures_acct1_task.xml":        "scheduler/futures_acct1_task.xml",
     "telegram_task.xml":             "scheduler/telegram_task.xml",
     "reporter_task.xml":             "scheduler/reporter_task.xml",
     "monitor_task.xml":              "scheduler/monitor_task.xml",
@@ -118,10 +110,6 @@ MANIFEST = {
     "gold_fft_config.json":          "markets/fx/instances/gold_fft/config.json",
     "gold_fft_credentials.template.json":
                                      "markets/fx/instances/gold_fft/credentials.template.json",
-    "futures_acct1_config.json":     "markets/futures/instances/futures_account1/config.json",
-    "futures_acct1_credentials.template.json":
-                                     "markets/futures/instances/futures_account1/credentials.template.json",
-
     # ── Root files ────────────────────────────────────────────────────────────
     "algo.py":                                   "algo.py",
     "README.md":                                 "README.md",
@@ -165,6 +153,12 @@ OLD_FILES = [
     "telegram_bot_task.xml",
     "SSH_SETUP_AND_COMMANDS.txt",
     "test_tradovate_auth.py",
+    "executors/tradovate.py",
+    "bots/bot_futures.py",
+    "bots/BOT_FUTURES_GUIDE.md",
+    "scheduler/futures_acct1_task.xml",
+    "markets/futures/instances/futures_account1/config.json",
+    "markets/futures/instances/futures_account1/credentials.template.json",
 ]
 
 OLD_DIRS = [
