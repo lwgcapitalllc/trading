@@ -552,9 +552,8 @@ def run():
     corr_guard    = CorrelationGuard(_CFG.get("correlation_map", []), log)
 
     daily_start  = acct.balance
-    _week_file   = _INST / "smc_trend_weekly.json"
     current_week = now_utc().isocalendar()[1]
-    weekly_start = load_weekly_start(_week_file, current_week, acct.balance)
+    weekly_start = load_weekly_start("smc_trend", current_week, acct.balance)
     log.info(f"Weekly start: ${weekly_start:,.2f} (week {current_week})")
 
     trades_today      = 0
@@ -596,6 +595,19 @@ def run():
             acct = write_live_state(weekly_start, daily_start)
             if acct is None:
                 time.sleep(30); continue
+
+            if read_bot("smc_trend").get("reset_requested"):
+                weekly_start = daily_start = acct.balance
+                write_bot("smc_trend", {
+                    "reset_requested":    False,
+                    "weekly_start":       weekly_start,
+                    "daily_start":        daily_start,
+                    "last_week":          now_utc().isocalendar()[1],
+                    "weekly_cap_alerted": False,
+                    "goal_alerted":       False,
+                    "daily_cap_alerted":  False,
+                })
+                log.info(f"Balance references reset to ${weekly_start:,.2f} (user request)")
 
             # ── Dead zone: gold market close — no new entries ─────────────
             if is_dead_zone(DEAD_ZONE_START, DEAD_ZONE_END):
@@ -647,7 +659,7 @@ def run():
                 last_week      = week
                 trading_halted = False
                 consec_losses  = 0
-                _week_file.write_text(json.dumps({"week": week, "weekly_start": weekly_start}))
+                write_bot("smc_trend", {"last_week": week, "weekly_start": weekly_start})
                 log.info(f"New week {week} | Weekly balance reset ${weekly_start:,.2f}")
 
             # ── Weekly loss guard ─────────────────────────────────────────

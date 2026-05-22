@@ -506,10 +506,9 @@ def run():
     risk_engine   = RiskEngine("BOT_MEAN_REVERSION", DAILY_BUDGET_PCT, log)
     corr_guard    = CorrelationGuard(_CFG.get("correlation_map", []), log)
 
-    daily_start  = acct.balance
-    _week_file2  = _INST / "mean_reversion_weekly.json"
+    daily_start   = acct.balance
     current_week2 = now_utc().isocalendar()[1]
-    weekly_start  = load_weekly_start(_week_file2, current_week2, acct.balance)
+    weekly_start  = load_weekly_start("mean_reversion", current_week2, acct.balance)
     log.info(f"Weekly start: ${weekly_start:,.2f} (week {current_week2})")
 
     trades_today      = 0
@@ -551,6 +550,19 @@ def run():
             acct = write_live_state(weekly_start, daily_start)
             if acct is None:
                 time.sleep(30); continue
+
+            if read_bot("mean_reversion").get("reset_requested"):
+                weekly_start = daily_start = acct.balance
+                write_bot("mean_reversion", {
+                    "reset_requested":    False,
+                    "weekly_start":       weekly_start,
+                    "daily_start":        daily_start,
+                    "last_week":          now_utc().isocalendar()[1],
+                    "weekly_cap_alerted": False,
+                    "goal_alerted":       False,
+                    "daily_cap_alerted":  False,
+                })
+                log.info(f"Balance references reset to ${weekly_start:,.2f} (user request)")
 
             # ── Dead zone: gold market close — no new entries ─────────────
             if is_dead_zone(DEAD_ZONE_START, DEAD_ZONE_END):
@@ -600,7 +612,7 @@ def run():
                 last_week      = week
                 trading_halted = False
                 consec_losses  = 0
-                _week_file2.write_text(json.dumps({"week": week, "weekly_start": weekly_start}))
+                write_bot("mean_reversion", {"last_week": week, "weekly_start": weekly_start})
                 log.info(f"New week {week} | Weekly balance reset ${weekly_start:,.2f}")
 
             # ── Weekly loss guard ─────────────────────────────────────────

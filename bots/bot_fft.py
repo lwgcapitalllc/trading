@@ -736,10 +736,8 @@ def run():
     trading_halted    = False
     consec_losses     = 0
 
-    # Weekly persistence
-    _week_file   = _INST / "fft_weekly.json"
     _cur_week    = now_utc().isocalendar()[1]
-    weekly_start = load_weekly_start(_week_file, _cur_week, acct.balance)
+    weekly_start = load_weekly_start("fft", _cur_week, acct.balance)
     log.info(f"Weekly start: ${weekly_start:,.2f} (week {_cur_week})")
 
     log.info(f"Balance ${acct.balance:,.2f} | {ai.status_report()}")
@@ -770,6 +768,19 @@ def run():
             acct = write_live_state(weekly_start, daily_start)
             if acct is None:
                 time.sleep(30); continue
+
+            if read_bot("fft").get("reset_requested"):
+                weekly_start = daily_start = acct.balance
+                write_bot("fft", {
+                    "reset_requested":    False,
+                    "weekly_start":       weekly_start,
+                    "daily_start":        daily_start,
+                    "last_week":          now_utc().isocalendar()[1],
+                    "weekly_cap_alerted": False,
+                    "goal_alerted":       False,
+                    "daily_cap_alerted":  False,
+                })
+                log.info(f"Balance references reset to ${weekly_start:,.2f} (user request)")
 
             # ── Dead zone: gold market close — no new entries ─────────────
             if is_dead_zone(DEAD_ZONE_START, DEAD_ZONE_END):
@@ -817,7 +828,7 @@ def run():
                 last_week      = week
                 trading_halted = False
                 consec_losses  = 0
-                _week_file.write_text(json.dumps({"week": week, "weekly_start": weekly_start}))
+                write_bot("fft", {"last_week": week, "weekly_start": weekly_start})
                 log.info(f"New week {week} | Weekly start: ${weekly_start:,.2f}")
 
             max_open_today    = max(max_open_today, len(open_trades))

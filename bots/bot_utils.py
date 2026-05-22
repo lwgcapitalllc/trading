@@ -99,22 +99,19 @@ def get_instance_dir(cfg: dict) -> Path:
     return Path(cfg["_instance_dir"])
 
 
-def load_weekly_start(week_file: "Path", current_week: int, balance: float) -> float:
+def load_weekly_start(bot_key: str, current_week: int, balance: float) -> float:
     """
-    Load or initialise the weekly starting balance from a JSON persistence file.
+    Load or initialise the weekly starting balance from bot_state.json.
 
-    If the file exists and the stored week matches current_week, returns the
-    stored weekly_start.  Otherwise writes a new file with the current balance
-    and returns that balance.  Callers are responsible for logging the result.
+    If bot_state has a weekly_start for the current ISO week, returns it.
+    Otherwise writes the current balance as the new weekly_start and returns it.
+    bot_state.json is the single source of truth — no separate *_weekly.json files needed.
     """
-    if week_file.exists():
-        try:
-            data = json.loads(week_file.read_text())
-            if data.get("week") == current_week:
-                return float(data.get("weekly_start", balance))
-        except Exception:
-            pass
-    week_file.write_text(json.dumps({"week": current_week, "weekly_start": balance}))
+    from bot_state import read_bot, write_bot
+    state = read_bot(bot_key)
+    if state.get("last_week") == current_week and state.get("weekly_start"):
+        return float(state["weekly_start"])
+    write_bot(bot_key, {"last_week": current_week, "weekly_start": balance})
     return balance
 
 

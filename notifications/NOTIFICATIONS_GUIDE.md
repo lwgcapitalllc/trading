@@ -35,7 +35,8 @@ Bot status notifications are event-driven, not polling-based:
 `algo.py` (runs on Mac) has an inline `notify_telegram()` using stdlib `urllib`.
 
 ### monitor.py (SYS_MONITOR — every 1 min)
-Full bot health monitor. Tracks running state, heartbeat freshness, P&L caps, and Telegram bot watchdog.
+Bot availability and heartbeat monitor. Handles availability alerting and Telegram bot watchdog only.
+P&L threshold alerts are exclusively handled by `pnl_tracker.py`.
 Persists state in `monitor_state.json` across runs.
 
 **Crash alerting with intentional-stop suppression:**
@@ -63,14 +64,12 @@ Individual `/restart <bot>` follows the same terminate-then-start pattern for th
 - 🟢 Bot Online — bot came back after a crash (suppressed if stop was intentional)
 - ⚠️ Loop Stalled — process alive but heartbeat missing > 5 min. Writes `status = "stalled"` to bot_state.json.
 - 🟢 Loop Recovered — heartbeat resumed after a stall. Writes `status = "running"` to bot_state.json.
-- 🎯 Daily Goal Hit
-- 🛑 Daily Loss Cap Hit
-- 🚫 Weekly Loss Cap Hit
 - 🟢 Telegram Bot Restarted — auto-restart succeeded
 - 🚨 Critical — Telegram Bot Down — 3 restarts failed
 
 ### pnl_tracker.py (SYS_PNLTRACKER — every 1 min)
 P&L engine. Writes balance, daily/weekly P&L to `bot_state.json`. MT5 is the only source of truth.
+This is the sole source of P&L threshold alerts — monitor.py does not duplicate these.
 
 **LIVE** (bot `last_write` within 5 minutes):
 - Reads `balance`, `daily_start`, `weekly_start` directly from bot_state — MT5-authoritative
@@ -78,6 +77,9 @@ P&L engine. Writes balance, daily/weekly P&L to `bot_state.json`. MT5 is the onl
 
 **OFFLINE** (bot stopped or last_write stale):
 - Does nothing. Last-known state is preserved as-is. No alerts fired. No values overwritten.
+
+**RESET PENDING** (`reset_requested` flag is True in bot_state):
+- Skips alert evaluation for that bot until the bot processes the reset (within 60s).
 
 **Alerts sent:**
 - 🎯 Daily Goal Hit
@@ -107,6 +109,8 @@ Telegram command interface. Reads from `bot_state.json` for all data.
 | `/stop scalper` | Stop one bot (requires /confirm) |
 | `/emergency` | Emergency stop — immediate, no confirm |
 | `/resume scalper` | Resume a peak-protection-locked bot — no confirm. Clears lock within 60s. Peak protection stays OFF for rest of day. Admin only. |
+| `/resetweek` | Reset weekly and daily P&L references to current MT5 balance for all bots. Use after depositing funds. Bots apply within 60s and clear all alert flags. Admin only. |
+| `/resetweek smc` | Reset one bot only. |
 | `/report` | Request performance report |
 | `/help` | Command list |
 | `/users` | Manage users (admin only) |
@@ -133,6 +137,7 @@ All components read from `bot_state.json` — single source of truth.
 | `balance` | bots (every loop) | MT5 account balance — authoritative when bot is live |
 | `daily_start` | bots (every loop) | Balance at start of current UTC day |
 | `weekly_start` | bots (every loop) | Balance at start of current ISO week |
+| `last_week` | bots (startup + week rollover) | ISO week number — used by `load_weekly_start` to detect week boundaries across restarts. Replaces per-bot `*_weekly.json` files. |
 | `last_write` | bots (every loop) | UTC ISO timestamp — pnl_tracker uses to detect live mode |
 | `heartbeat` | bots (every loop iteration, including during long sleeps) | Unix timestamp — monitor.py checks this to detect a frozen loop; if missing > 5 min, stall alert fires |
 | `status` | bots at startup; monitor.py on transitions | "running" / "stalled" / "offline" — monitor.py writes stalled/offline/running-recovery; bots write running at startup |
@@ -141,7 +146,19 @@ All components read from `bot_state.json` — single source of truth.
 | `lock_reason` | all bots | Human-readable stop reason for the lock alert |
 | `lock_alerted` | pnl_tracker.py | Dedup flag — alert sent once per lock |
 | `resume_trading` | telegram_bot.py | Flag read by bot wait loop to break weekly-cap lock early |
+| `reset_requested` | telegram_bot.py `/resetweek` | When True, bot resets weekly_start and daily_start to current MT5 balance on its next loop iteration, then clears the flag. pnl_tracker.py skips alert evaluation while pending. |
 
 Note: `pnl_tracker.py` calls `set_pnl()` which writes display-only balance/P&L fields back
 to bot_state for Telegram `/balance` to read. Only runs when the bot is LIVE — it echoes
 what the bot already wrote. When offline, bot_state is not touched.
+
+### Weekly start persistence
+
+`weekly_start` is stored exclusively in `bot_state.json`. There are no separate
+`*_weekly.json` files. On startup, `load_weekly_start(bot_key, week, balance)` reads
+`last_week` from bot_state: if it matches the current ISO week the stored `weekly_start`
+is returned; otherwise the current balance is written as the new weekly_start.
+
+**After depositing funds:** send `/resetweek` via Telegram. All running bots pick up the
+flag within 60s, reset their in-memory references, and clear all P&L alert flags. No manual
+file editing required.

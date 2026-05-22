@@ -1,15 +1,17 @@
 """
-monitor.py — Real-Time Bot Health Monitor + Alert System
+monitor.py — Bot Availability + Heartbeat Monitor
 
 Runs every 1 minute via Task Scheduler.
-Sends Telegram alerts immediately when:
-  - A bot goes offline unexpectedly
-  - A bot comes back online
-  - Daily profit goal is hit
-  - Daily loss cap is hit
-  - Weekly loss cap is hit
+Sends Telegram alerts for:
+  - Bot offline / back online
+  - Bot loop stalled (alive but no heartbeat for 5+ min)
+  - Watchlist symbol not found on broker
 
-State is tracked in monitor_state.json so it knows what changed.
+P&L threshold alerts (daily goal, daily cap, weekly cap) are handled
+exclusively by pnl_tracker.py (SYS_PNLTRACKER task) which reads
+authoritative daily_start/weekly_start from bot_state.json.
+
+State is tracked in monitor_state.json.
 The Telegram bot (SYS_TELEGRAM) is watched as a priority watchdog —
 auto-restarted up to 3 times before sending a critical alert.
 
@@ -48,48 +50,28 @@ LOG_STALE_SECS = 5 * 60
 
 BOTS = {
     "smc_trend": {
-        "name":        "Bot SMC Trend",
+        "name":         "Bot SMC Trend",
         "suppress_key": "smc",
-        "script":      "bot_smc_trend.py",
-        "log":         ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
-        "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_weekly.json",
-        "daily_cap":   10.0,
-        "weekly_cap":  20.0,
-        "daily_goal":  2.0,
+        "script":       "bot_smc_trend.py",
+        "log":          ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
     },
     "mean_reversion": {
-        "name":        "Bot Mean Reversion",
+        "name":         "Bot Mean Reversion",
         "suppress_key": "reversion",
-        "script":      "bot_mean_reversion.py",
-        "log":         ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
-        "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_weekly.json",
-        "daily_cap":   10.0,
-        "weekly_cap":  20.0,
-        "daily_goal":  2.0,
+        "script":       "bot_mean_reversion.py",
+        "log":          ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
     },
     "scalper": {
-        "name":        "Bot Scalper",
+        "name":         "Bot Scalper",
         "suppress_key": "scalper",
-        "script":      "bot_scalper.py",
-        "log":         ALGOS_ROOT / "markets/fx/instances/gold_scalper/bot_scalper.log",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_equity.json",
-        "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_weekly.json",
-        "daily_cap":   8.0,
-        "weekly_cap":  20.0,
-        "daily_goal":  10.0,
+        "script":       "bot_scalper.py",
+        "log":          ALGOS_ROOT / "markets/fx/instances/gold_scalper/bot_scalper.log",
     },
     "fft": {
-        "name":        "Bot FFT",
+        "name":         "Bot FFT",
         "suppress_key": "fft",
-        "script":      "bot_fft.py",
-        "log":         ALGOS_ROOT / "markets/fx/instances/gold_fft/bot_fft.log",
-        "equity":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_equity.json",
-        "weekly":      ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_weekly.json",
-        "daily_cap":   5.0,
-        "weekly_cap":  15.0,
-        "daily_goal":  2.0,
+        "script":       "bot_fft.py",
+        "log":          ALGOS_ROOT / "markets/fx/instances/gold_fft/bot_fft.log",
     },
 }
 
@@ -127,13 +109,6 @@ def is_running(script: str) -> bool:
         return False
 
 
-def load_json(path: Path):
-    if not path.exists():
-        return []
-    with open(path) as f:
-        return json.load(f)
-
-
 def _is_stop_suppressed(suppress_key: str) -> bool:
     """Consume and return True if this bot's offline alert should be suppressed."""
     try:
@@ -148,29 +123,8 @@ def _is_stop_suppressed(suppress_key: str) -> bool:
     return False
 
 
-def get_balance(equity) -> float:
-    records = equity if isinstance(equity, list) else []
-    if not records:
-        return 0.0
-    return float(records[-1].get("balance", records[-1].get("equity", 0)))
-
-
-def get_weekly_start(weekly_path: Path) -> float:
-    if not weekly_path.exists():
-        return 0.0
-    with open(weekly_path) as f:
-        data = json.load(f)
-    return float(data.get("weekly_start", 0))
-
-
 def check_bot(bot_key: str, state: dict, today: str) -> dict:
-    """
-    Check one bot's health and send alerts if anything changed.
-
-    Daily cap/goal calculations use day_start_balance which is set at
-    midnight each day. On first run, day_start_balance is set to current
-    balance to avoid false positives from stale equity data.
-    """
+    """Check bot availability and heartbeat. P&L alerts are handled by pnl_tracker.py."""
     cfg       = BOTS[bot_key]
     bot_state = state.get(bot_key, {})
 
@@ -251,72 +205,6 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             alerted_today[sym] = today
     bot_state["unresolved_symbols_alerted"] = alerted_today
 
-    # ── Balance and P&L checks ────────────────────────────────────────────
-    equity       = load_json(cfg["equity"])
-    balance      = get_balance(equity)
-    weekly_start = get_weekly_start(cfg["weekly"])
-
-    if balance <= 0:
-        return bot_state
-
-    # Reset day tracking at midnight or on first run
-    if bot_state.get("last_date") != today:
-        bot_state["day_start_balance"]          = balance
-        bot_state["last_date"]                  = today
-        bot_state["goal_alerted"]               = False
-        bot_state["daily_cap_alerted"]          = False
-        bot_state["weekly_cap_alerted"]         = False
-        bot_state["unresolved_symbols_alerted"] = {}
-        print(f"{bot_key}: New day — day start balance set to ${balance:,.2f}")
-
-    day_start = bot_state.get("day_start_balance", balance)
-
-    # Guard: if day_start is 0 or not set, set it now and skip this check
-    if not day_start or day_start <= 0:
-        bot_state["day_start_balance"] = balance
-        return bot_state
-
-    daily_gain = (balance - day_start) / day_start * 100
-    weekly_dd  = (weekly_start - balance) / weekly_start * 100 if weekly_start > 0 else 0
-
-    now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
-
-    # ── Daily goal hit ─────────────────────────────────────────────────────
-    if daily_gain >= cfg["daily_goal"] and not bot_state.get("goal_alerted"):
-        send_alert(
-            f"🎯 *ALERT — Daily Goal Hit*\n"
-            f"{cfg['name']}\n"
-            f"Today: +{daily_gain:.1f}% (+${balance - day_start:.2f})\n"
-            f"Balance: ${balance:,.2f}\n"
-            f"Time: {now_str}"
-        )
-        bot_state["goal_alerted"] = True
-
-    # ── Daily loss cap hit ─────────────────────────────────────────────────
-    if daily_gain <= -cfg["daily_cap"] and not bot_state.get("daily_cap_alerted"):
-        send_alert(
-            f"🛑 *ALERT — Daily Loss Cap Hit*\n"
-            f"{cfg['name']}\n"
-            f"Today: {daily_gain:.1f}% (-${day_start - balance:.2f})\n"
-            f"Balance: ${balance:,.2f}\n"
-            f"No new entries until tomorrow\n"
-            f"Time: {now_str}"
-        )
-        bot_state["daily_cap_alerted"] = True
-
-    # ── Weekly loss cap hit ────────────────────────────────────────────────
-    if weekly_dd >= cfg["weekly_cap"] and not bot_state.get("weekly_cap_alerted"):
-        send_alert(
-            f"🚫 *ALERT — Weekly Loss Cap Hit*\n"
-            f"{cfg['name']}\n"
-            f"Weekly drawdown: -{weekly_dd:.1f}%\n"
-            f"Balance: ${balance:,.2f} (week start: ${weekly_start:,.2f})\n"
-            f"6-hour cooldown activated\n"
-            f"Time: {now_str}"
-        )
-        bot_state["weekly_cap_alerted"] = True
-
-    bot_state["last_balance"] = balance
     return bot_state
 
 

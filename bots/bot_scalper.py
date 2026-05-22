@@ -621,9 +621,8 @@ def run():
     start_balance = acct.balance
     daily_engine  = DailyProfitEngine(acct.balance)
 
-    _week_file   = _INST / "scalper_weekly.json"
     current_week = now_utc().isocalendar()[1]
-    weekly_start = load_weekly_start(_week_file, current_week, acct.balance)
+    weekly_start = load_weekly_start("scalper", current_week, acct.balance)
     log.info(f"Weekly start: ${weekly_start:,.2f} (week {current_week})")
 
     open_trades   = recover_open_positions()
@@ -677,7 +676,7 @@ def run():
             if week != last_week:
                 weekly_start = acct.balance
                 last_week    = week
-                _week_file.write_text(json.dumps({"week": week, "weekly_start": weekly_start}))
+                write_bot("scalper", {"last_week": week, "weekly_start": weekly_start})
                 log.info(f"New week | Reset ${weekly_start:,.2f}")
 
             acct = mt5.account_info()
@@ -692,6 +691,20 @@ def run():
                 "daily_start":  daily_engine.start,
                 "last_write":   datetime.utcnow().isoformat(),
             })
+
+            if read_bot("scalper").get("reset_requested"):
+                weekly_start  = acct.balance
+                daily_engine  = DailyProfitEngine(acct.balance)
+                write_bot("scalper", {
+                    "reset_requested":    False,
+                    "weekly_start":       weekly_start,
+                    "daily_start":        acct.balance,
+                    "last_week":          now_utc().isocalendar()[1],
+                    "weekly_cap_alerted": False,
+                    "goal_alerted":       False,
+                    "daily_cap_alerted":  False,
+                })
+                log.info(f"Balance references reset to ${weekly_start:,.2f} (user request)")
 
             # ── Daily P&L engine check ────────────────────────────────────
             should_stop, stop_reason = daily_engine.update(acct.balance)

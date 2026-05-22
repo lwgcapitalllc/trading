@@ -146,8 +146,10 @@ def _calculate_pnl_live(bot_key: str, state: dict) -> dict:
 
 
 def calculate_pnl(bot_key: str) -> dict | None:
-    """Returns live P&L dict, or None if the bot is offline. Never infers from trades.json."""
+    """Returns live P&L dict, or None if the bot is offline or a reset is pending."""
     state = read_bot(bot_key)
+    if state.get("reset_requested"):
+        return None  # bot hasn't picked up the reset yet — don't alert on stale references
     if _bot_is_live(state):
         return _calculate_pnl_live(bot_key, state)
     return None

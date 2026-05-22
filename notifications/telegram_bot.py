@@ -54,7 +54,7 @@ CONFIRM_TIMEOUT = 30
 ROLE_COMMANDS = {
     "admin":    {"/status","/balance","/trades","/report","/demo","/live","/all",
                  "/force","/help","/restart","/stop","/emergency","/confirm",
-                 "/users","/resume"},
+                 "/users","/resume","/resetweek"},
     "readonly": {"/status","/balance","/trades","/report","/demo","/live","/all",
                  "/force","/help"},
 }
@@ -634,7 +634,9 @@ def cmd_help() -> str:
         "`/stop scalper`   Stop one bot\n"
         "`/emergency`      Kill everything immediately\n\n"
         "*Override*  _no confirm needed_\n"
-        "`/resume scalper` Resume a locked bot (overrides peak protection)\n\n"
+        "`/resume scalper` Resume a locked bot (overrides peak protection)\n"
+        "`/resetweek`      Reset weekly/daily P&L references to current balance\n"
+        "`/resetweek smc`  Reset one bot only\n\n"
         "_Bot keys: smc  reversion  scalper  fft_"
     )
 
@@ -768,6 +770,28 @@ def handle_message(text: str, chat_id: str, user_id: str) -> str:
             f"▶️ *Resume signal sent to {name}*\n"
             f"Bot will unlock within 60s and resume trading.\n"
             f"Peak protection is now OFF for the rest of today — trade carefully."
+        )
+
+    if cmd == "/resetweek":
+        if not can(user_id, cmd):
+            return denied()
+        from bot_state import read_bot, write_bot, BOT_NAMES
+        alias = parse_bot_key(parts)
+        if alias:
+            state_keys = [BOTS[alias].get("state_key", alias)]
+        else:
+            state_keys = [BOTS[k].get("state_key", k) for k in BOTS]
+        lines = []
+        for key in state_keys:
+            bal = read_bot(key).get("balance", 0)
+            write_bot(key, {"reset_requested": True})
+            name = BOT_NAMES.get(key, key)
+            lines.append(f"• {name}: reset signal sent (current balance ${bal:,.2f})")
+        return (
+            f"🔄 *Weekly/Daily Reset Requested*\n"
+            + "\n".join(lines) + "\n"
+            f"Bots will update references within 60s.\n"
+            f"Run after depositing funds to clear P&L counters."
         )
 
     # Unknown command cancels this user's pending action
