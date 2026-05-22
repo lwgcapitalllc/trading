@@ -648,6 +648,7 @@ def run():
                             trading_halted = False
                             break
                         write_bot("mean_reversion", {"heartbeat": time.time()})
+                        write_live_state(weekly_start, daily_start)
                         time.sleep(60)
                     else:
                         write_bot("mean_reversion", {"day_locked": False})
@@ -664,6 +665,7 @@ def run():
                         for _ in range(60):
                             time.sleep(60)
                             write_bot("mean_reversion", {"heartbeat": time.time()})
+                            write_live_state(weekly_start, daily_start)
                     continue
                 else:
                     trading_halted = False
