@@ -159,6 +159,16 @@ def set_combo(sa, auto_id, value):
         time.sleep(0.2)
         ctrl.child_window(title=str(value)).click_input()
         return True
+    except Exception:
+        pass
+    try:
+        # NT8 WPF ComboBoxes: click to open, find ListItem in the whole tree
+        ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
+        ctrl.click_input()
+        time.sleep(0.3)
+        item = sa.child_window(title=str(value), control_type="ListItem")
+        item.click_input()
+        return True
     except Exception as e:
         print(f"  WARNING: set_combo '{auto_id}' failed: {e}")
         return False
