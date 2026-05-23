@@ -107,7 +107,7 @@ def _run_bg():
     _log_append("Starting backtest runner...")
     try:
         proc = subprocess.Popen(
-            [sys.executable, runner, "--config", cfg],
+            [sys.executable, "-u", runner, "--config", cfg],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1,
         )
