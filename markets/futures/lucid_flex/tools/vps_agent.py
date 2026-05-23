@@ -152,30 +152,18 @@ def diagnose():
 
 @app.route("/dump-sa")
 def dump_sa():
-    """Dump the control tree of the Strategy Analyzer window (2 levels deep)."""
+    """Dump all descendants of the Strategy Analyzer with non-empty title or auto_id."""
     try:
         from pywinauto import Desktop
         sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
         controls = []
-        for child in sa.children():
-            entry = {
-                "title": child.window_text(),
-                "control_type": child.element_info.control_type,
-                "auto_id": child.element_info.automation_id,
-            }
-            grandchildren = []
-            try:
-                for gc in child.children():
-                    grandchildren.append({
-                        "title": gc.window_text(),
-                        "control_type": gc.element_info.control_type,
-                        "auto_id": gc.element_info.automation_id,
-                    })
-            except Exception:
-                pass
-            entry["children"] = grandchildren
-            controls.append(entry)
+        for el in sa.descendants():
+            title  = el.window_text()
+            aid    = el.element_info.automation_id
+            ctype  = el.element_info.control_type
+            if title or aid:
+                controls.append({"title": title, "control_type": ctype, "auto_id": aid})
         return jsonify({"controls": controls})
     except Exception as e:
         return jsonify({"error": str(e)})
