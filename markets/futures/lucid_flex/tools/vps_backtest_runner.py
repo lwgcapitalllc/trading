@@ -49,35 +49,42 @@ def load_config(path):
 def connect_nt8():
     """Connect to the running NT8 process."""
     print("Connecting to NinjaTrader 8...")
-    try:
-        app = Application(backend="uia").connect(
-            title_re=".*NinjaTrader.*", timeout=30
-        )
-        print("  Connected.")
-        return app
-    except Exception as e:
-        print(f"  ERROR: Could not connect to NT8: {e}")
-        print("  Make sure NinjaTrader 8 is running and Strategy Analyzer is open.")
-        sys.exit(1)
+    # NT8 window titles vary — try process name first, then title patterns
+    attempts = [
+        ("process name",  {"path": "NinjaTrader.exe"}),
+        ("title NT8",     {"title_re": ".*NinjaTrader.*"}),
+        ("title SA",      {"title_re": ".*Strategy Analyzer.*"}),
+    ]
+    for label, kwargs in attempts:
+        try:
+            app = Application(backend="uia").connect(timeout=20, **kwargs)
+            print(f"  Connected (via {label}).")
+            return app
+        except Exception:
+            continue
+    print("  ERROR: Could not connect to NT8.")
+    print("  Make sure NinjaTrader 8 is running and Strategy Analyzer is open.")
+    sys.exit(1)
 
 
 def find_strategy_analyzer(app):
     """Locate the Strategy Analyzer window / panel."""
+    from pywinauto import Desktop
+
+    # Desktop enumeration is the most reliable — works regardless of how SA is docked
     try:
-        # Try floating window first
-        sa = app.window(title_re=".*Strategy Analyzer.*")
+        sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
-        print("  Strategy Analyzer window found.")
+        print("  Strategy Analyzer found.")
         return sa
     except Exception:
         pass
 
-    # Fall back: find it as a child of the main NT8 window
+    # Fallback: search within the connected app
     try:
-        main = app.window(title_re="NinjaTrader 8")
-        sa = main.child_window(title_re=".*Strategy Analyzer.*")
-        sa.wait("visible", timeout=5)
-        print("  Strategy Analyzer panel found (docked).")
+        sa = app.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        print("  Strategy Analyzer found (via app).")
         return sa
     except Exception as e:
         print(f"  ERROR: Strategy Analyzer not found: {e}")
