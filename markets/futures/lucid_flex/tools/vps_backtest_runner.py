@@ -249,8 +249,7 @@ def configure_combo(sa, combo, global_params):
     # Instrument
     set_instrument(sa, combo["instrument"])
 
-    # Bar series
-    set_combo(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_MarketDataType", gp["bar_type"])
+    # Bar value — bar_type (Minute) is retained by NT8 between runs, no need to set it
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", gp["bar_value"])
 
     # Date range
