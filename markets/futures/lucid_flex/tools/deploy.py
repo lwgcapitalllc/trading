@@ -37,19 +37,14 @@ def ssh(cfg, remote_cmd, check=True):
     return result.stdout.strip()
 
 
-def scp_to_vps(cfg, local_path, remote_dir):
-    # OpenSSH on Windows accepts forward-slash paths prefixed with /c/ or C:/
-    cmd = f'scp "{local_path}" {cfg["vps_host"]}:"{remote_dir}/"'
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"  SCP ERROR: {result.stderr.strip()}")
-        sys.exit(1)
-
-
 def copy_strategies(cfg):
-    src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    user     = cfg["vps_user"]
-    dst_dir  = f"/c/Users/{user}/{cfg['strategies_dst_dir']}"
+    """
+    SCP each .cs file to the VPS home dir (no spaces), then SSH-move to the
+    NinjaTrader 8 strategies folder (which has a space in the path).
+    """
+    src_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    host     = cfg["vps_host"]
+    dst_win  = cfg["strategies_dst_dir"].replace("/", "\\")
 
     print("Copying strategy files to VPS...")
     for fname in STRATEGY_FILES:
@@ -57,8 +52,27 @@ def copy_strategies(cfg):
         if not os.path.exists(src):
             print(f"  WARNING: {fname} not found at {src}, skipping")
             continue
+
+        # Step 1 — SCP to home dir (no spaces, always works)
+        result = subprocess.run(
+            ["scp", src, f"{host}:{fname}"],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"  SCP ERROR: {result.stderr.strip()}")
+            sys.exit(1)
+
+        # Step 2 — move from home dir to strategies folder
+        move_cmd = f'move /Y "{fname}" "{dst_win}\\"'
+        result = subprocess.run(
+            ["ssh", host, move_cmd],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"  MOVE ERROR ({fname}): {result.stderr.strip() or result.stdout.strip()}")
+            sys.exit(1)
+
         print(f"  {fname}")
-        scp_to_vps(cfg, src, dst_dir)
     print("  Done.")
 
 

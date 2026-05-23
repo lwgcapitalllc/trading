@@ -46,21 +46,21 @@ def sh(cmd, check=True, echo=True):
 
 
 def scp_from_vps(cfg):
-    user     = cfg["vps_user"]
-    host     = cfg["vps_host"]
-    remote   = cfg["results_remote_path"]
-    local    = os.path.join(SCRIPT_DIR, cfg["results_local_path"])
-
-    # Convert Windows path to scp-compatible path
-    # e.g. Documents/NinjaTrader 8/... → /c/Users/Administrator/Documents/NinjaTrader 8/...
-    remote_full = f'/c/Users/{user}/{remote}'
+    host   = cfg["vps_host"]
+    remote = cfg["results_remote_path"].replace("/", "\\")
+    local  = os.path.join(SCRIPT_DIR, cfg["results_local_path"])
 
     print(f"\nFetching results from VPS...")
-    rc = sh(f'scp "{host}:{remote_full}" "{local}"', check=False)
-    if rc != 0:
-        print(f"  Could not fetch {remote_full}")
+    result = subprocess.run(
+        f'ssh {host} "type \\"{remote}\\""',
+        shell=True, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"  Could not fetch {remote}")
         print(f"  Check that at least one backtest has been run and results file exists.")
         return False
+    with open(local, "w", encoding="utf-8") as f:
+        f.write(result.stdout)
     print(f"  Saved to {local}")
     return True
 
@@ -70,30 +70,84 @@ def run_deploy():
     print("STEP 1: Deploy + compile strategies on VPS")
     print("=" * 60)
     deploy_script = os.path.join(SCRIPT_DIR, "deploy.py")
-    sh(f'python "{deploy_script}"')
+    sh(f'"{sys.executable}" "{deploy_script}"')
 
 
 def run_auto_backtest(cfg):
+    """
+    Upload backtest runner to VPS, then launch it in the Administrator's
+    interactive RDP session via Task Scheduler (/it flag).
+    SSH sessions are isolated from the RDP session, so direct SSH → pywinauto
+    doesn't work — Task Scheduler bridges the gap.
+    """
     print("=" * 60)
     print("STEP 2: Running backtests via pywinauto (VPS)")
     print("=" * 60)
-    host   = cfg["vps_host"]
-    user   = cfg["vps_user"]
-    runner = f"C:/Users/{user}/Documents/NinjaTrader 8/tools/vps_backtest_runner.py"
-    cfg_r  = f"C:/Users/{user}/Documents/NinjaTrader 8/tools/backtest_config.json"
+    host      = cfg["vps_host"]
+    # Use C:\algos path — no spaces, already exists on VPS from git pull
+    tools_win = r"C:\algos\markets\futures\lucid_flex\tools"
+    runner_win = rf"{tools_win}\vps_backtest_runner.py"
+    cfg_win    = rf"{tools_win}\backtest_config.json"
+    log_win    = rf"{tools_win}\backtest_runner.log"
+    task_name  = "NT8BacktestRunner"
 
-    # Upload the runner and config to VPS
     local_runner = os.path.join(SCRIPT_DIR, "vps_backtest_runner.py")
     local_cfg    = CFG_PATH
-    dst          = f"/c/Users/{user}/Documents/NinjaTrader 8/tools"
 
-    sh(f'ssh {host} "mkdir -p \'{dst}\'"')
-    sh(f'scp "{local_runner}" "{host}:{dst}/"')
-    sh(f'scp "{local_cfg}"    "{host}:{dst}/"')
+    # Upload runner + config (SCP to home → move to tools dir)
+    for local, fname in [(local_runner, "vps_backtest_runner.py"),
+                         (local_cfg,    "backtest_config.json")]:
+        r = subprocess.run(["scp", local, f"{host}:{fname}"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"  SCP ERROR: {r.stderr.strip()}")
+            sys.exit(1)
+        sh(f'ssh {host} "move /Y {fname} {tools_win}\\"')
 
-    print("\nLaunching vps_backtest_runner.py on VPS...")
-    print("  (NT8 must be running with Strategy Analyzer open)")
-    sh(f'ssh -t {host} "python \\"{runner}\\" --config \\"{cfg_r}\\""')
+    # Build task command — no spaces in any path now
+    task_cmd = (
+        f"cmd /c python {runner_win} "
+        f"--config {cfg_win} "
+        f"> {log_win} 2>&1"
+    )
+
+    # Create + immediately run the scheduled task in the interactive session (/it)
+    print("\nScheduling backtest runner in interactive RDP session...")
+    sh(f'ssh {host} "schtasks /create /F /tn {task_name} '
+       f'/tr \\"{task_cmd}\\" /sc ONCE /st 00:00 '
+       f'/ru ADMINISTRATOR /it /rl HIGHEST"')
+    sh(f'ssh {host} "schtasks /run /tn {task_name}"')
+
+    # Poll until the log file appears and runner exits (up to 90 minutes)
+    print("  Waiting for backtests to complete (up to 90 min)...")
+    deadline = time.time() + 90 * 60
+    done = False
+    while time.time() < deadline:
+        time.sleep(30)
+        # Task is done when schtasks status is no longer "Running"
+        status_out = subprocess.run(
+            f'ssh {host} "schtasks /query /tn {task_name} /fo LIST"',
+            shell=True, capture_output=True, text=True
+        ).stdout
+        if "Running" not in status_out:
+            done = True
+            break
+        elapsed = int(time.time() - (deadline - 90 * 60))
+        print(f"  Still running... ({elapsed // 60}m {elapsed % 60}s elapsed)")
+
+    # Pull and print the log
+    log_result = subprocess.run(
+        f'ssh {host} "type \\"{log_win}\\""',
+        shell=True, capture_output=True, text=True
+    )
+    if log_result.stdout.strip():
+        print("\n--- VPS backtest runner output ---")
+        print(log_result.stdout)
+        print("--- end ---\n")
+
+    if not done:
+        print("  WARNING: timed out waiting for backtest runner. Check VPS.")
+        sys.exit(1)
 
 
 def wait_for_manual_run():
@@ -137,7 +191,7 @@ def run_analyze(local_only=False):
         return
 
     analyze_script = os.path.join(SCRIPT_DIR, "analyze.py")
-    sh(f'python "{analyze_script}" --results "{local_results}"', echo=False)
+    sh(f'"{sys.executable}" "{analyze_script}" --results "{local_results}"', echo=False)
 
 
 def main():
