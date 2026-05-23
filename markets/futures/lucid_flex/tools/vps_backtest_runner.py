@@ -12,7 +12,8 @@ Usage:
 The script:
   1. Connects to the running NT8 instance
   2. For each combo in config: sets all fields, clicks Run, waits for completion
-  3. Results are written to lucid_flex_results.csv by the strategy's Terminated handler
+  3. Reads results from NT8's strategy analyzer XML logs (written automatically)
+  4. Writes lucid_flex_results.csv to the NT8 Documents folder
 
 NOTE: NT8 must already be open with the Strategy Analyzer visible.
       Open it via: New -> Strategy Analyzer in NT8 Control Center.
@@ -20,9 +21,14 @@ NOTE: NT8 must already be open with the Strategy Analyzer visible.
 
 import sys
 import os
+import csv
+import glob
 import json
 import time
 import argparse
+import xml.etree.ElementTree as ET
+from datetime import datetime
+from pathlib import Path
 
 try:
     from pywinauto import Application, Desktop
@@ -33,9 +39,16 @@ except ImportError:
     sys.exit(1)
 
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CFG = os.path.join(SCRIPT_DIR, "backtest_config.json")
 RUN_TIMEOUT = 600
+
+NT8_DOCS    = Path.home() / "Documents" / "NinjaTrader 8"
+SA_LOG_DIR  = NT8_DOCS / "strategyanalyzerlogs"
+RESULTS_CSV = NT8_DOCS / "lucid_flex_results.csv"
+
+CSV_FIELDS  = ["id", "strategy", "instrument",
+               "net_pnl", "max_drawdown", "profit_factor", "win_pct", "trades"]
 
 
 def load_config(path):
@@ -160,6 +173,50 @@ def wait_for_run_complete(sa, timeout=RUN_TIMEOUT):
     return False
 
 
+def read_result_from_xml(combo_id, strategy, instrument):
+    """
+    Find the most recently written SA XML log for this strategy and extract
+    performance metrics from the Currency/UsDollar SummaryPerformancesSerialize.
+    Returns a result dict or None on failure.
+    """
+    today   = datetime.now().strftime("%Y_%m_%d")
+    pattern = str(SA_LOG_DIR / f"@@@{strategy}_{today}_*.xml")
+    files   = sorted(glob.glob(pattern))
+    if not files:
+        print(f"  WARNING: No XML log found matching {pattern}")
+        return None
+
+    xml_path = files[-1]
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        perf_nodes = root.findall(".//SummaryPerformancesSerialize")
+        if not perf_nodes:
+            print(f"  WARNING: No SummaryPerformancesSerialize in {xml_path}")
+            return None
+        # First node is Currency/UsDollar — the dollar P&L values we want
+        raw     = perf_nodes[0].text or ""
+        metrics = {}
+        for part in raw.split("|"):
+            bits = part.split(";")
+            if len(bits) >= 2:
+                metrics[bits[0]] = bits[1]  # "All" column (index 1)
+
+        return {
+            "id":            combo_id,
+            "strategy":      strategy,
+            "instrument":    instrument,
+            "net_pnl":       float(metrics.get("TotalNetProfit",   0)),
+            "max_drawdown":  float(metrics.get("MaxDrawdown",       0)),
+            "profit_factor": float(metrics.get("ProfitFactor",      0)),
+            "win_pct":       round(float(metrics.get("PercentProfitable", 0)) * 100, 2),
+            "trades":        int(float(metrics.get("TotalNumTrades", 0))),
+        }
+    except Exception as e:
+        print(f"  WARNING: Could not parse XML {xml_path}: {e}")
+        return None
+
+
 def configure_combo(sa, combo, global_params):
     """Push all settings for one combo into the Strategy Analyzer panel."""
     gp       = global_params
@@ -208,18 +265,25 @@ def run_combo(sa, combo, global_params, idx, total):
         print("  Run clicked. Waiting for completion...")
     except Exception as e:
         print(f"  ERROR clicking Run: {e}")
-        return False
+        return None
 
     # SA takes a moment to disable the Run button after click
     time.sleep(2)
     finished = wait_for_run_complete(sa, RUN_TIMEOUT)
-    if finished:
-        print("  Backtest complete.")
-    else:
+    if not finished:
         print(f"  WARNING: Timed out after {RUN_TIMEOUT}s.")
+        return None
 
+    # Give NT8 a moment to finish writing the XML log
     time.sleep(2)
-    return finished
+    print("  Backtest complete. Reading results from XML log...")
+    result = read_result_from_xml(combo["id"], combo["strategy"], combo["instrument"])
+    if result:
+        print(f"  Trades={result['trades']}  NetPnL={result['net_pnl']:.2f}"
+              f"  PF={result['profit_factor']:.4f}  MaxDD={result['max_drawdown']:.2f}")
+    else:
+        print("  WARNING: Could not read result from XML.")
+    return result
 
 
 def main():
@@ -234,15 +298,24 @@ def main():
     app = connect_nt8()
     sa  = find_strategy_analyzer(app)
 
-    total  = len(combos)
-    passed = 0
+    total   = len(combos)
+    results = []
     for i, combo in enumerate(combos, 1):
-        ok = run_combo(sa, combo, gp, i, total)
-        if ok:
-            passed += 1
+        result = run_combo(sa, combo, gp, i, total)
+        if result:
+            results.append(result)
 
-    print(f"\nFinished: {passed}/{total} combos ran successfully.")
-    print("Results written to lucid_flex_results.csv in NT8 Documents folder.")
+    # Write CSV — Python-side, bypassing the C# Terminated handler
+    try:
+        with open(RESULTS_CSV, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+            writer.writeheader()
+            writer.writerows(results)
+        print(f"\nResults written to {RESULTS_CSV}  ({len(results)}/{total} combos)")
+    except Exception as e:
+        print(f"\nERROR writing CSV: {e}")
+
+    print(f"Finished: {len(results)}/{total} combos produced results.")
 
 
 if __name__ == "__main__":

@@ -21,7 +21,6 @@ Access from Mac via SSH tunnel:
 
 import sys
 import os
-import json
 import csv
 import time
 import threading
@@ -53,11 +52,6 @@ def _log_append(msg: str):
         if len(_log) > 500:
             _log.pop(0)
     print(entry, flush=True)
-
-
-def _load_config():
-    with open(CFG_PATH) as f:
-        return json.load(f)
 
 
 # ── CORS (React app on localhost:5173 → agent on localhost:8765) ──────────
@@ -127,12 +121,9 @@ def _run_bg():
 
 @app.route("/results")
 def get_results():
-    cfg  = _load_config()
-    user = cfg["vps_user"]
-    path = Path(rf"C:\Users\{user}") / cfg["results_remote_path"].replace("/", "\\")
+    path = Path.home() / "Documents" / "NinjaTrader 8" / "lucid_flex_results.csv"
     if not path.exists():
         return jsonify({"error": "No results file yet", "rows": []}), 404
-    rows = []
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
     return jsonify({"rows": rows})
@@ -171,9 +162,7 @@ def dump_sa():
 
 @app.route("/clear-results", methods=["POST"])
 def clear_results():
-    cfg  = _load_config()
-    user = cfg["vps_user"]
-    path = Path(rf"C:\Users\{user}") / cfg["results_remote_path"].replace("/", "\\")
+    path = Path.home() / "Documents" / "NinjaTrader 8" / "lucid_flex_results.csv"
     try:
         path.unlink(missing_ok=True)
         _log_append("Results cleared.")
