@@ -1,6 +1,6 @@
 {
   "vps_host": "forexvps",
-  "vps_user": "Administrator",
+  "vps_user": "trader",
   "nt8_exe": "C:\\Program Files\\NinjaTrader 8\\bin\\NinjaTrader.exe",
   "strategies_src_dir": "../",
   "strategies_dst_dir": "Documents/NinjaTrader 8/bin/Custom/Strategies",
