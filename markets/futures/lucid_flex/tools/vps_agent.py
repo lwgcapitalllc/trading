@@ -138,6 +138,18 @@ def get_results():
     return jsonify({"rows": rows})
 
 
+@app.route("/diagnose")
+def diagnose():
+    """List all top-level window titles pywinauto can see in this session."""
+    try:
+        from pywinauto import Desktop
+        windows = Desktop(backend="uia").windows()
+        titles = [w.window_text() for w in windows]
+        return jsonify({"windows": titles})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/clear-results", methods=["POST"])
 def clear_results():
     cfg  = _load_config()
