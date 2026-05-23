@@ -150,6 +150,37 @@ def diagnose():
         return jsonify({"error": str(e)})
 
 
+@app.route("/dump-sa")
+def dump_sa():
+    """Dump the control tree of the Strategy Analyzer window (2 levels deep)."""
+    try:
+        from pywinauto import Desktop
+        sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        controls = []
+        for child in sa.children():
+            entry = {
+                "title": child.window_text(),
+                "control_type": child.element_info.control_type,
+                "auto_id": child.element_info.automation_id,
+            }
+            grandchildren = []
+            try:
+                for gc in child.children():
+                    grandchildren.append({
+                        "title": gc.window_text(),
+                        "control_type": gc.element_info.control_type,
+                        "auto_id": gc.element_info.automation_id,
+                    })
+            except Exception:
+                pass
+            entry["children"] = grandchildren
+            controls.append(entry)
+        return jsonify({"controls": controls})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/clear-results", methods=["POST"])
 def clear_results():
     cfg  = _load_config()
