@@ -257,9 +257,11 @@ def configure_combo(sa, combo, global_params):
     set_edit(sa, f"{pfx}_DailyHaltFraction", gp["daily_halt_fraction"])
     set_edit(sa, f"{pfx}_CommissionPerSide", gp["commission_per_side"])
 
-    # Strategy-specific params
+    # Strategy-specific params — try Edit first, fall back to ComboBox (e.g. bool fields)
     for key, value in combo.get("params", {}).items():
-        set_edit(sa, f"{pfx}_{key}", value)
+        aid = f"{pfx}_{key}"
+        if not set_edit(sa, aid, value):
+            set_combo(sa, aid, value)
 
 
 def run_combo(sa, combo, global_params, idx, total):
