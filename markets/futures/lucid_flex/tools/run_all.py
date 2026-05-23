@@ -45,24 +45,68 @@ def sh(cmd, check=True, echo=True):
     return result.returncode
 
 
-def scp_from_vps(cfg):
-    host   = cfg["vps_host"]
-    remote = cfg["results_remote_path"].replace("/", "\\")
-    local  = os.path.join(SCRIPT_DIR, cfg["results_local_path"])
-
-    print(f"\nFetching results from VPS...")
-    result = subprocess.run(
-        f'ssh {host} "type \\"{remote}\\""',
-        shell=True, capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        print(f"  Could not fetch {remote}")
-        print(f"  Check that at least one backtest has been run and results file exists.")
+def fetch_results_via_agent(local_path, agent_url="http://localhost:8765"):
+    """Fetch results from vps_agent /results endpoint and write CSV locally."""
+    import csv as csv_mod
+    import urllib.request, urllib.error
+    print(f"\nFetching results from agent ({agent_url}/results)...")
+    try:
+        with urllib.request.urlopen(f"{agent_url}/results", timeout=10) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"  Agent returned {e.code}: {body}")
         return False
-    with open(local, "w", encoding="utf-8") as f:
-        f.write(result.stdout)
-    print(f"  Saved to {local}")
+    except Exception as e:
+        print(f"  Could not reach agent: {e}")
+        print("  Ensure SSH tunnel is up: ssh -N -f -L 8765:127.0.0.1:8765 forexvps")
+        return False
+    rows = data.get("rows", [])
+    if not rows:
+        print("  No results rows yet. Run backtests first.")
+        return False
+    fieldnames = list(rows[0].keys())
+    with open(local_path, "w", newline="") as f:
+        writer = csv_mod.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"  {len(rows)} row(s) saved to {local_path}")
     return True
+
+
+def trigger_and_wait(agent_url="http://localhost:8765"):
+    """Trigger /run-backtests and poll /status until done."""
+    import urllib.request, urllib.error
+    print("\nTriggering backtests via agent...")
+    try:
+        req = urllib.request.Request(f"{agent_url}/run-backtests",
+                                     data=b"", method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"  {json.loads(resp.read())}")
+    except urllib.error.HTTPError as e:
+        print(f"  {e.code}: {e.read().decode()}")
+        return False
+    except Exception as e:
+        print(f"  Could not reach agent: {e}")
+        return False
+
+    print("  Waiting for completion (polling every 15s)...")
+    deadline = time.time() + 90 * 60
+    while time.time() < deadline:
+        time.sleep(15)
+        try:
+            with urllib.request.urlopen(f"{agent_url}/status", timeout=10) as resp:
+                st = json.loads(resp.read())
+            logs = st.get("log", [])
+            if logs:
+                print(f"  {logs[-1]}")
+            if not st.get("running"):
+                print("  Run complete.")
+                return True
+        except Exception:
+            pass
+    print("  WARNING: timed out waiting for agent.")
+    return False
 
 
 def run_deploy():
@@ -171,18 +215,20 @@ def wait_for_manual_run():
     input("  Press ENTER when all 6 runs are complete...")
 
 
-def run_analyze(local_only=False):
+def run_analyze(local_only=False, use_http=False):
     print("=" * 60)
     print("STEP 3: Fetch + analyze results")
     print("=" * 60)
     cfg = load_config()
-
     local_results = os.path.join(SCRIPT_DIR, cfg["results_local_path"])
 
     if not local_only:
-        ok = scp_from_vps(cfg)
-        if not ok:
+        ok = fetch_results_via_agent(local_results) if use_http else False
+        if not ok and not use_http:
             print("\nSkipping analysis — no results file.")
+            return
+        if not ok:
+            print("\nSkipping analysis — could not fetch results.")
             return
 
     if not os.path.exists(local_results):
@@ -197,6 +243,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--deploy-only",   action="store_true")
     parser.add_argument("--analyze-only",  action="store_true")
+    parser.add_argument("--http",          action="store_true",
+                        help="Use vps_agent HTTP API (requires SSH tunnel on port 8765)")
     parser.add_argument("--auto-run",      action="store_true",
                         help="Automate Strategy Analyzer via pywinauto (requires NT8 open on VPS)")
     parser.add_argument("--local-results", action="store_true",
@@ -210,10 +258,17 @@ def main():
         return
 
     if args.analyze_only:
-        run_analyze(local_only=args.local_results)
+        run_analyze(local_only=args.local_results, use_http=args.http)
         return
 
-    # Full pipeline
+    # Full HTTP pipeline: trigger run, wait, fetch, analyze
+    if args.http:
+        trigger_and_wait()
+        time.sleep(3)
+        run_analyze(use_http=True)
+        return
+
+    # Full pipeline (legacy)
     run_deploy()
 
     if args.auto_run:

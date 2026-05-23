@@ -38,10 +38,10 @@ def verdict(row, thresh):
     Returns (label, colour) based on thresholds.
     KEEP / WARN / DISCARD
     """
-    net    = float(row["NetPnL"])
-    dd     = float(row["MaxDD"])
-    pf     = float(row["ProfitFactor"])
-    trades = int(row["Trades"])
+    net    = float(row["net_pnl"])
+    dd     = float(row["max_drawdown"])
+    pf     = float(row["profit_factor"])
+    trades = int(row["trades"])
 
     min_pf    = thresh.get("min_profit_factor", 1.5)
     min_tr    = thresh.get("min_trades", 150)
@@ -93,13 +93,13 @@ def print_table(rows, thresh):
     for row in rows:
         vstr, colour = verdict(row, thresh)
         cells = [
-            row.get("Strategy", ""),
-            row.get("Instrument", ""),
-            fmt(row.get("NetPnL", 0), ".0f", "$"),
-            fmt(row.get("MaxDD", 0),  ".0f", "$"),
-            fmt(row.get("ProfitFactor", 0), ".3f"),
-            fmt(row.get("WinPct", 0), ".1f") + "%",
-            row.get("Trades", "0"),
+            row.get("strategy", ""),
+            row.get("instrument", ""),
+            fmt(row.get("net_pnl", 0), ".0f", "$"),
+            fmt(row.get("max_drawdown", 0), ".0f", "$"),
+            fmt(row.get("profit_factor", 0), ".3f"),
+            fmt(row.get("win_pct", 0), ".1f") + "%",
+            row.get("trades", "0"),
             vstr,
         ]
         line = "|" + "|".join(
@@ -117,8 +117,8 @@ def print_table(rows, thresh):
 
 def consistency_check(rows):
     """Rough consistency check: flag if any single combo dominates profit."""
-    nets = [(r.get("Strategy","") + " " + r.get("Instrument",""), float(r.get("NetPnL",0)))
-            for r in rows if float(r.get("NetPnL",0)) > 0]
+    nets = [(r.get("strategy","") + " " + r.get("instrument",""), float(r.get("net_pnl",0)))
+            for r in rows if float(r.get("net_pnl",0)) > 0]
     if not nets:
         return
     total = sum(n for _, n in nets)

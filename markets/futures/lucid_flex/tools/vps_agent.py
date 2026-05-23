@@ -28,7 +28,7 @@ import subprocess
 from pathlib import Path
 
 try:
-    from flask import Flask, jsonify
+    from flask import Flask, jsonify, request
 except ImportError:
     print("ERROR: flask not installed. Run: pip install flask")
     sys.exit(1)
@@ -127,6 +127,35 @@ def get_results():
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
     return jsonify({"rows": rows})
+
+
+@app.route("/select-and-dump")
+def select_and_dump():
+    """Select a strategy in SA then dump all its controls — use ?strategy=ORB_LucidFlex."""
+    strategy = request.args.get("strategy", "")
+    if not strategy:
+        return jsonify({"error": "Pass ?strategy=StrategyName"}), 400
+    try:
+        from pywinauto import Desktop
+        from pywinauto.keyboard import send_keys
+        sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        selector = sa.child_window(auto_id="NinjaScriptSelector")
+        selector.click_input()
+        time.sleep(1.5)
+        item = sa.child_window(title=strategy, control_type="MenuItem", found_index=0)
+        item.click_input()
+        time.sleep(2.0)
+        controls = []
+        for el in sa.descendants():
+            title = el.window_text()
+            aid   = el.element_info.automation_id
+            ctype = el.element_info.control_type
+            if title or aid:
+                controls.append({"title": title, "control_type": ctype, "auto_id": aid})
+        return jsonify({"strategy": strategy, "controls": controls})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 
 @app.route("/diagnose")
