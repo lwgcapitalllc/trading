@@ -88,16 +88,9 @@ def select_strategy(sa, strategy_name):
         selector = sa.child_window(auto_id="NinjaScriptSelector")
         selector.click_input()
         time.sleep(0.8)
-        # Menu may appear as a popup window — try Desktop first
-        try:
-            item = Desktop(backend="uia").window(title=strategy_name, control_type="MenuItem")
-            item.click_input()
-            time.sleep(1.0)
-            return True
-        except Exception:
-            pass
-        # Fallback: MenuItem is a direct child of sa
-        item = sa.child_window(title=strategy_name, control_type="MenuItem")
+        # found_index=0 picks the first match when the dropdown has multiple elements
+        # sharing the same title (e.g., MenuItem + its Text child both show strategy name)
+        item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
         item.click_input()
         time.sleep(1.0)
         return True
