@@ -97,19 +97,24 @@ def find_strategy_analyzer(app):
 
 def select_strategy(sa, strategy_name):
     """Select strategy from the NinjaScriptSelector dropdown."""
-    try:
-        selector = sa.child_window(auto_id="NinjaScriptSelector")
-        selector.click_input()
-        time.sleep(0.8)
-        # found_index=0 picks the first match when the dropdown has multiple elements
-        # sharing the same title (e.g., MenuItem + its Text child both show strategy name)
-        item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
-        item.click_input()
-        time.sleep(1.0)
-        return True
-    except Exception as e:
-        print(f"  WARNING: could not select strategy '{strategy_name}': {e}")
-        return False
+    selector = sa.child_window(auto_id="NinjaScriptSelector")
+    for attempt in range(3):
+        try:
+            selector.click_input()
+            time.sleep(1.5)  # dropdown needs time to populate on first open
+            # found_index=0 picks first match — the MenuItem and its Text child
+            # both share the same title, so pywinauto finds 2; we want index 0.
+            item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
+            item.click_input()
+            time.sleep(1.0)
+            return True
+        except Exception as e:
+            if attempt < 2:
+                send_keys("{ESCAPE}")
+                time.sleep(1.0)
+            else:
+                print(f"  WARNING: could not select strategy '{strategy_name}': {e}")
+    return False
 
 
 def set_instrument(sa, instrument):
@@ -190,6 +195,10 @@ def read_result_from_xml(combo_id, strategy, instrument):
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
+        # Sanity-check that the XML matches the expected instrument
+        xml_instrument = root.findtext(".//Instrument") or ""
+        if instrument.split()[0].upper() not in xml_instrument.upper():
+            print(f"  WARNING: XML instrument '{xml_instrument}' doesn't match expected '{instrument}'")
         perf_nodes = root.findall(".//SummaryPerformancesSerialize")
         if not perf_nodes:
             print(f"  WARNING: No SummaryPerformancesSerialize in {xml_path}")
