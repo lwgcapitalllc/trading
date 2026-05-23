@@ -27,7 +27,6 @@ import argparse
 try:
     from pywinauto import Application, Desktop
     from pywinauto.keyboard import send_keys
-    from pywinauto.timings import wait_until_passes
 except ImportError:
     print("ERROR: pywinauto not installed.")
     print("  Run: pip install pywinauto comtypes")
@@ -36,8 +35,6 @@ except ImportError:
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CFG = os.path.join(SCRIPT_DIR, "backtest_config.json")
-
-# How long (seconds) to wait for a backtest run to finish before timing out
 RUN_TIMEOUT = 600
 
 
@@ -49,11 +46,10 @@ def load_config(path):
 def connect_nt8():
     """Connect to the running NT8 process."""
     print("Connecting to NinjaTrader 8...")
-    # NT8 window titles vary — try process name first, then title patterns
     attempts = [
-        ("process name",  {"path": "NinjaTrader.exe"}),
-        ("title NT8",     {"title_re": ".*NinjaTrader.*"}),
-        ("title SA",      {"title_re": ".*Strategy Analyzer.*"}),
+        ("process name", {"path": "NinjaTrader.exe"}),
+        ("title NT8",    {"title_re": ".*NinjaTrader.*"}),
+        ("title SA",     {"title_re": ".*Strategy Analyzer.*"}),
     ]
     for label, kwargs in attempts:
         try:
@@ -69,9 +65,6 @@ def connect_nt8():
 
 def find_strategy_analyzer(app):
     """Locate the Strategy Analyzer window / panel."""
-    from pywinauto import Desktop
-
-    # Desktop enumeration is the most reliable — works regardless of how SA is docked
     try:
         sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
@@ -79,8 +72,6 @@ def find_strategy_analyzer(app):
         return sa
     except Exception:
         pass
-
-    # Fallback: search within the connected app
     try:
         sa = app.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
@@ -88,38 +79,77 @@ def find_strategy_analyzer(app):
         return sa
     except Exception as e:
         print(f"  ERROR: Strategy Analyzer not found: {e}")
-        print("  Open it via New -> Strategy Analyzer in NT8 Control Center.")
         sys.exit(1)
 
 
-def set_field(sa, label_text, value):
-    """
-    Set a field in the Settings panel by its label.
-    NT8 uses WPF so we find the element by AutomationId or Name.
-    """
+def select_strategy(sa, strategy_name):
+    """Select strategy from the NinjaScriptSelector dropdown."""
     try:
-        ctrl = sa.child_window(title=label_text, control_type="Edit")
-        ctrl.set_edit_text(str(value))
+        selector = sa.child_window(auto_id="NinjaScriptSelector")
+        selector.click_input()
+        time.sleep(0.8)
+        # Menu may appear as a popup window — try Desktop first
+        try:
+            item = Desktop(backend="uia").window(title=strategy_name, control_type="MenuItem")
+            item.click_input()
+            time.sleep(1.0)
+            return True
+        except Exception:
+            pass
+        # Fallback: MenuItem is a direct child of sa
+        item = sa.child_window(title=strategy_name, control_type="MenuItem")
+        item.click_input()
+        time.sleep(1.0)
         return True
-    except Exception:
-        pass
-
-    # Fallback: try finding by partial title
-    try:
-        ctrl = sa.child_window(title_re=f".*{label_text}.*", control_type="Edit")
-        ctrl.set_edit_text(str(value))
-        return True
-    except Exception:
+    except Exception as e:
+        print(f"  WARNING: could not select strategy '{strategy_name}': {e}")
         return False
 
 
-def set_combo(sa, label_text, value):
-    """Set a combo-box / dropdown field."""
+def set_instrument(sa, instrument):
+    """Set instrument in the InstrumentSelector control."""
     try:
-        ctrl = sa.child_window(title=label_text, control_type="ComboBox")
+        selector = sa.child_window(auto_id="InstrumentSelector")
+        selector.click_input()
+        time.sleep(0.3)
+        send_keys("^a")
+        send_keys(instrument, with_spaces=True)
+        time.sleep(0.3)
+        send_keys("{ENTER}")
+        time.sleep(0.5)
+        return True
+    except Exception as e:
+        print(f"  WARNING: could not set instrument '{instrument}': {e}")
+        return False
+
+
+def set_edit(sa, auto_id, value):
+    """Set an Edit field by AutomationId."""
+    try:
+        ctrl = sa.child_window(auto_id=auto_id, control_type="Edit")
+        ctrl.set_edit_text(str(value))
+        return True
+    except Exception as e:
+        print(f"  WARNING: set_edit '{auto_id}' failed: {e}")
+        return False
+
+
+def set_combo(sa, auto_id, value):
+    """Set a ComboBox field by AutomationId."""
+    try:
+        ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
         ctrl.select(str(value))
         return True
     except Exception:
+        pass
+    try:
+        ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
+        ctrl.expand()
+        time.sleep(0.2)
+        ctrl.child_window(title=str(value)).click_input()
+        return True
+    except Exception as e:
+        print(f"  WARNING: set_combo '{auto_id}' failed: {e}")
         return False
 
 
@@ -128,7 +158,7 @@ def wait_for_run_complete(sa, timeout=RUN_TIMEOUT):
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            run_btn = sa.child_window(title="Run", control_type="Button")
+            run_btn = sa.child_window(auto_id="Run", control_type="Button")
             if run_btn.is_enabled():
                 return True
         except Exception:
@@ -139,40 +169,38 @@ def wait_for_run_complete(sa, timeout=RUN_TIMEOUT):
 
 def configure_combo(sa, combo, global_params):
     """Push all settings for one combo into the Strategy Analyzer panel."""
-    gp = global_params
+    gp       = global_params
+    strategy = combo["strategy"]
+    pfx      = f"{strategy}PropertyGridEditorPDEX"
 
-    fields = {
-        # Data Series
-        "Instrument":       combo["instrument"],
-        "Type":             gp["bar_type"],
-        "Value":            gp["bar_value"],
-        # Time Frame
-        "Start date":       gp["start_date"],
-        "End date":         gp["end_date"],
-        # Historical fill processing
-        "Slippage":         gp["slippage"],
-        # Prop firm params
-        "Account Size ($)": gp["account_size"],
-        "Risk % per Trade": gp["risk_pct"],
-        "Max Daily Loss ($)": gp["max_daily_loss"],
-        "Daily Halt Fraction": gp["daily_halt_fraction"],
-        "Commission/Side ($)": gp["commission_per_side"],
-    }
+    # Select strategy first — this refreshes the strategy-specific params section
+    select_strategy(sa, strategy)
+    time.sleep(1.5)
 
-    # Merge strategy-specific params
-    fields.update(combo["params"])
+    # Instrument
+    set_instrument(sa, combo["instrument"])
 
-    for label, value in fields.items():
-        ok = set_field(sa, label, value) or set_combo(sa, label, value)
-        if not ok:
-            print(f"    WARNING: could not set field '{label}' — may need manual tuning")
+    # Bar series
+    set_combo(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_MarketDataType", gp["bar_type"])
+    set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", gp["bar_value"])
 
-    # Set strategy dropdown
-    set_combo(sa, "Strategy", combo["strategy"])
+    # Date range
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From", gp["start_date"])
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To", gp["end_date"])
 
-    # Trading hours — set to RTH template if available
-    # NT8 uses "Trading hours" dropdown; RTH template name varies by instrument
-    # Leave as "Use instrument settings" unless a specific override is needed
+    # Slippage
+    set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", gp["slippage"])
+
+    # Prop firm params — AutomationId prefix matches the strategy class name
+    set_edit(sa, f"{pfx}_AccountSize",       gp["account_size"])
+    set_edit(sa, f"{pfx}_RiskPct",           gp["risk_pct"])
+    set_edit(sa, f"{pfx}_MaxDailyLoss",      gp["max_daily_loss"])
+    set_edit(sa, f"{pfx}_DailyHaltFraction", gp["daily_halt_fraction"])
+    set_edit(sa, f"{pfx}_CommissionPerSide", gp["commission_per_side"])
+
+    # Strategy-specific params
+    for key, value in combo.get("params", {}).items():
+        set_edit(sa, f"{pfx}_{key}", value)
 
 
 def run_combo(sa, combo, global_params, idx, total):
@@ -182,20 +210,21 @@ def run_combo(sa, combo, global_params, idx, total):
     time.sleep(1)
 
     try:
-        run_btn = sa.child_window(title="Run", control_type="Button")
-        run_btn.click()
+        run_btn = sa.child_window(auto_id="Run", control_type="Button")
+        run_btn.click_input()
         print("  Run clicked. Waiting for completion...")
     except Exception as e:
         print(f"  ERROR clicking Run: {e}")
         return False
 
+    # SA takes a moment to disable the Run button after click
+    time.sleep(2)
     finished = wait_for_run_complete(sa, RUN_TIMEOUT)
     if finished:
         print("  Backtest complete.")
     else:
-        print(f"  WARNING: Timed out after {RUN_TIMEOUT}s — backtest may still be running.")
+        print(f"  WARNING: Timed out after {RUN_TIMEOUT}s.")
 
-    # Small pause between runs
     time.sleep(2)
     return finished
 
@@ -205,14 +234,14 @@ def main():
     parser.add_argument("--config", default=DEFAULT_CFG)
     args = parser.parse_args()
 
-    cfg     = load_config(args.config)
-    combos  = cfg["combos"]
-    gp      = cfg["global_params"]
+    cfg    = load_config(args.config)
+    combos = cfg["combos"]
+    gp     = cfg["global_params"]
 
     app = connect_nt8()
     sa  = find_strategy_analyzer(app)
 
-    total = len(combos)
+    total  = len(combos)
     passed = 0
     for i, combo in enumerate(combos, 1):
         ok = run_combo(sa, combo, gp, i, total)
@@ -221,7 +250,6 @@ def main():
 
     print(f"\nFinished: {passed}/{total} combos ran successfully.")
     print("Results written to lucid_flex_results.csv in NT8 Documents folder.")
-    print("Next: scp the results file to your Mac and run analyze.py")
 
 
 if __name__ == "__main__":
