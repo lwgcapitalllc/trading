@@ -89,7 +89,6 @@ def run_auto_backtest(cfg):
     runner_win = rf"{tools_win}\vps_backtest_runner.py"
     cfg_win    = rf"{tools_win}\backtest_config.json"
     log_win    = rf"{tools_win}\backtest_runner.log"
-    task_name  = "NT8BacktestRunner"
 
     local_runner = os.path.join(SCRIPT_DIR, "vps_backtest_runner.py")
     local_cfg    = CFG_PATH
@@ -102,34 +101,34 @@ def run_auto_backtest(cfg):
         if r.returncode != 0:
             print(f"  SCP ERROR: {r.stderr.strip()}")
             sys.exit(1)
-        sh(f'ssh {host} "move /Y {fname} {tools_win}\\"')
+        sh(f'ssh {host} "move /Y {fname} {tools_win}"')
 
-    # Build task command — no spaces in any path now
-    task_cmd = (
-        f"cmd /c python {runner_win} "
-        f"--config {cfg_win} "
-        f"> {log_win} 2>&1"
-    )
+    # Launch via wmic in session 0 — pywinauto UIA backend can reach NT8 cross-session as admin
+    wmic_cmd = f"python {runner_win} --config {cfg_win}"
+    print("\nLaunching backtest runner on VPS (wmic)...")
+    print("  NT8 must be running with Strategy Analyzer open.")
+    sh(f'ssh {host} "wmic process call create \\"{wmic_cmd}\\" "', check=False)
+    time.sleep(5)
 
-    # Create + immediately run the scheduled task in the interactive session (/it)
-    print("\nScheduling backtest runner in interactive RDP session...")
-    sh(f'ssh {host} "schtasks /create /F /tn {task_name} '
-       f'/tr \\"{task_cmd}\\" /sc ONCE /st 00:00 '
-       f'/ru ADMINISTRATOR /it /rl HIGHEST"')
-    sh(f'ssh {host} "schtasks /run /tn {task_name}"')
-
-    # Poll until the log file appears and runner exits (up to 90 minutes)
+    # Poll the log file until runner exits (up to 90 minutes)
     print("  Waiting for backtests to complete (up to 90 min)...")
     deadline = time.time() + 90 * 60
+    last_size = -1
     done = False
     while time.time() < deadline:
         time.sleep(30)
-        # Task is done when schtasks status is no longer "Running"
-        status_out = subprocess.run(
-            f'ssh {host} "schtasks /query /tn {task_name} /fo LIST"',
+        log_out = subprocess.run(
+            f'ssh {host} "type {log_win}"',
             shell=True, capture_output=True, text=True
-        ).stdout
-        if "Running" not in status_out:
+        )
+        size = len(log_out.stdout)
+        if size != last_size:
+            last_size = size
+            if log_out.stdout.strip():
+                last_line = log_out.stdout.strip().splitlines()[-1]
+                print(f"  [{last_line}]")
+        # Done when log contains a final status line
+        if "Complete" in log_out.stdout or "ERROR" in log_out.stdout:
             done = True
             break
         elapsed = int(time.time() - (deadline - 90 * 60))
