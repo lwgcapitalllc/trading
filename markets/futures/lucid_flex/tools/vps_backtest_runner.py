@@ -145,6 +145,19 @@ def set_edit(sa, auto_id, value):
         return False
 
 
+def set_checkbox(sa, auto_id, value):
+    """Set a CheckBox field by AutomationId. value should be 'True' or 'False'."""
+    try:
+        ctrl   = sa.child_window(auto_id=auto_id, control_type="CheckBox")
+        target = 1 if str(value).lower() == "true" else 0
+        if ctrl.get_toggle_state() != target:
+            ctrl.click_input()
+        return True
+    except Exception as e:
+        print(f"  WARNING: set_checkbox '{auto_id}' failed: {e}")
+        return False
+
+
 def set_combo(sa, auto_id, value):
     """Set a ComboBox field by AutomationId."""
     try:
@@ -266,11 +279,12 @@ def configure_combo(sa, combo, global_params):
     set_edit(sa, f"{pfx}_DailyHaltFraction", gp["daily_halt_fraction"])
     set_edit(sa, f"{pfx}_CommissionPerSide", gp["commission_per_side"])
 
-    # Strategy-specific params — try Edit first, fall back to ComboBox (e.g. bool fields)
+    # Strategy-specific params — Edit for numerics, CheckBox for bools, ComboBox for enums
     for key, value in combo.get("params", {}).items():
         aid = f"{pfx}_{key}"
         if not set_edit(sa, aid, value):
-            set_combo(sa, aid, value)
+            if not set_checkbox(sa, aid, value):
+                set_combo(sa, aid, value)
 
 
 def run_combo(sa, combo, global_params, idx, total):

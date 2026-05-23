@@ -28,7 +28,8 @@
       "instrument": "MNQ 06-26",
       "params": {
         "ORMinutes": "15",
-        "TpMultiple": "1.5"
+        "TpMultiple": "1.5",
+        "OneTradePer": "False"
       }
     },
     {
@@ -37,7 +38,8 @@
       "instrument": "MES 06-26",
       "params": {
         "ORMinutes": "15",
-        "TpMultiple": "1.5"
+        "TpMultiple": "1.5",
+        "OneTradePer": "False"
       }
     },
     {
