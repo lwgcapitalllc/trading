@@ -1,6 +1,6 @@
 {
   "vps_host": "forexvps",
-  "vps_user": "trader",
+  "vps_user": "Administrator",
   "nt8_exe": "C:\\Program Files\\NinjaTrader 8\\bin\\NinjaTrader.exe",
   "strategies_src_dir": "../",
   "strategies_dst_dir": "Documents/NinjaTrader 8/bin/Custom/Strategies",
@@ -15,7 +15,7 @@
     "commission_per_side": "2.25",
     "bar_type": "Minute",
     "bar_value": "5",
-    "start_date": "01/01/2021",
+    "start_date": "03/15/2026",
     "end_date": "05/22/2026",
     "slippage": "1",
     "trading_hours": "RTH"
