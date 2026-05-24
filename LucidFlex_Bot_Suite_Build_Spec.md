@@ -8,7 +8,7 @@ to be backtested in parallel, then (winners only) built as live bots.
 
 ---
 
-## CURRENT STATE — 2026-05-22 (read this first, then the spec)
+## CURRENT STATE — 2026-05-24 (read this first, then the spec)
 
 ### Key decision made: NT8 Strategy Analyzer as the backtest engine
 
@@ -28,34 +28,64 @@ The analyze.py script handles verdict logic (KEEP/WARN/DISCARD).
 | Momentum_LucidFlex.cs | `markets/futures/lucid_flex/` | ✓ Done — deployed, compiled on VPS |
 | deploy.py | `tools/` | ✓ Done — SCP + NT8 compile, fully working |
 | backtest_config.json | `tools/` | ✓ Done — 6 combos configured |
-| run_all.py | `tools/` | ✓ Done — orchestrator (deploy / auto-run / analyze) |
+| run_all.py | `tools/` | ✓ Done — orchestrator; `--http` flag runs full pipeline via agent |
 | vps_backtest_runner.py | `tools/` | ✓ Done — pywinauto NT8 automation |
 | analyze.py | `tools/` | ✓ Done — parses CSV, prints KEEP/WARN/DISCARD table |
+| vps_agent.py | `tools/` | ✓ Done — Flask HTTP bridge (runs in RDP session on VPS) |
 
-### What is blocked
+### Session isolation: SOLVED
 
-**Running backtests from Mac is blocked by Windows session isolation.**
-NT8 runs in the Administrator RDP session (session 3). SSH creates a new isolated
-session. pywinauto UIA backend cannot enumerate windows across sessions — it simply
-cannot see NT8 from SSH. All workarounds tried (wmic, schtasks /it) failed.
+The session isolation problem is resolved. `vps_agent.py` is a Flask HTTP server
+that runs persistently inside the RDP session on the VPS. It bridges the gap:
+Mac → SSH tunnel → vps_agent.py → vps_backtest_runner.py → NT8 (all same session).
 
-### Immediate next step to unblock
+**To start a run from Mac:**
+```
+ssh -N -f -L 8765:127.0.0.1:8765 forexvps   # open tunnel (127.0.0.1, not localhost)
+curl -X POST http://localhost:8765/run-backtests
+curl http://localhost:8765/status             # watch log
+python run_all.py --analyze-only --http       # fetch + analyze when done
+```
 
-Build `vps_agent.py` — a minimal Flask HTTP server (~60 lines) that runs persistently
-on the VPS **inside the RDP session**. It exposes two endpoints:
-- `POST /run-backtests` — spawns vps_backtest_runner.py as a subprocess (same session → pywinauto works)
-- `GET /status` — returns log tail + running flag
+**On VPS (RDP terminal):** `python C:\algos\markets\futures\lucid_flex\tools\vps_agent.py`
+Must be started manually in the RDP session each time.
 
-Update `run_all.py --auto-run` to call the agent via SSH tunnel instead of
-direct pywinauto-over-SSH.
+### Current blocker: pywinauto automation reliability
 
-SSH tunnel from Mac: `ssh -N -L 8765:localhost:8765 forexvps &`
-Agent auto-starts on RDP login via Task Scheduler logon trigger.
+The agent pipeline works end-to-end. The remaining issue is pywinauto reliably
+automating all 6 combos through NT8's Strategy Analyzer. Several bugs have been
+found and fixed; the latest fix was deployed 2026-05-24 and has not yet been
+validated with a clean 6-combo run.
+
+**Bugs fixed so far (all in vps_backtest_runner.py, all deployed):**
+- `bar_type` ComboBox removed — NT8 retains the Minute setting between runs
+- `OneTradePer` is a CheckBox, not Edit or ComboBox — `set_checkbox()` added;
+  fallback chain is now: Edit → CheckBox → ComboBox
+- set_edit warning suppressed in fallback chain (was noise, not a real error)
+- Strategy class switch crash — stale UIA handle after switching ORB→VWAP caused
+  KeyboardInterrupt. Fix: re-acquire SA handle per combo, BaseException catch in
+  main loop, 3s sleep after strategy select
+- XML read timing — NT8 writes XML async after re-enabling Run button; fixed 2s
+  sleep was not enough. Now polls up to 60s for the XML file to appear
+- `{ESCAPE}` → `{ESC}` — wrong pywinauto key code caused ValueError on every
+  strategy-selection retry, crashing the entire combo (skipping it)
+
+**What a clean run looks like (single ORB_MNQ, confirmed working previously):**
+```
+[1/1] ORB_MNQ  (ORB_LucidFlex on MNQ 06-26)
+  Strategy Analyzer found.
+  Run clicked. Waiting for completion...
+  Backtest complete. Reading results from XML log...
+  Trades=91  NetPnL=-3433.00  PF=0.7227  MaxDD=-4200.50
+```
+
+**MES/MGC/MCL instruments:** May need historical data downloaded manually via
+NT8 Data Manager (Tools → Historical Data) if those instruments return 0 trades.
 
 ### Long-term UI vision
 
 React app (local on Mac) → SSH tunnel → vps_agent.py on VPS.
-Builds on top of the same HTTP API once the agent is working.
+Builds on top of the same HTTP API once the agent is tested end-to-end.
 Do NOT build the React app before the agent is tested end-to-end.
 
 ### Build order progress (Part 8)
@@ -65,11 +95,10 @@ Do NOT build the React app before the agent is tested end-to-end.
 | 1. Build backtest engine | ✓ Done (via NT8 Strategy Analyzer, not Python) |
 | 2. Implement 3 strategies | ✓ Done (NinjaScript C#) |
 | 3. Deploy + compile on VPS | ✓ Done |
-| **4. Run all 6 combos, report results** | **BLOCKED — session isolation. Fix: vps_agent.py** |
+| **4. Run all 6 combos, report results** | **IN PROGRESS — fixes deployed 2026-05-24, clean 6-combo run not yet confirmed** |
 | 5. Monte Carlo stress test on survivors | Pending backtest results |
 | 6. Stop and report stress test results | Pending |
 | 7. Live NinjaScript bot (winning strategy only) | Pending |
-
 ---
 
 ## PART 0 — GROUND RULES (read first)
