@@ -134,14 +134,15 @@ def set_instrument(sa, instrument):
         return False
 
 
-def set_edit(sa, auto_id, value):
+def set_edit(sa, auto_id, value, warn=True):
     """Set an Edit field by AutomationId."""
     try:
         ctrl = sa.child_window(auto_id=auto_id, control_type="Edit")
         ctrl.set_edit_text(str(value))
         return True
     except Exception as e:
-        print(f"  WARNING: set_edit '{auto_id}' failed: {e}")
+        if warn:
+            print(f"  WARNING: set_edit '{auto_id}' failed: {e}")
         return False
 
 
@@ -284,7 +285,7 @@ def configure_combo(sa, combo, global_params):
     # Strategy-specific params — Edit for numerics, CheckBox for bools, ComboBox for enums
     for key, value in combo.get("params", {}).items():
         aid = f"{pfx}_{key}"
-        if not set_edit(sa, aid, value):
+        if not set_edit(sa, aid, value, warn=False):
             if not set_checkbox(sa, aid, value):
                 set_combo(sa, aid, value)
 
@@ -312,8 +313,14 @@ def run_combo(app, combo, global_params, idx, total):
         print(f"  WARNING: Timed out after {RUN_TIMEOUT}s.")
         return None
 
-    # Give NT8 a moment to finish writing the XML log
-    time.sleep(2)
+    # Poll for the XML log to appear (NT8 writes it async after re-enabling Run)
+    today   = datetime.now().strftime("%Y_%m_%d")
+    pattern = str(SA_LOG_DIR / f"@@@{combo['strategy']}_{today}_*.xml")
+    xml_deadline = time.time() + 60
+    while time.time() < xml_deadline:
+        if glob.glob(pattern):
+            break
+        time.sleep(3)
     print("  Backtest complete. Reading results from XML log...")
     result = read_result_from_xml(combo["id"], combo["strategy"], combo["instrument"])
     if result:
