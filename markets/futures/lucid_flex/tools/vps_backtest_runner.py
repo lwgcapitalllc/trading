@@ -255,9 +255,11 @@ def configure_combo(sa, combo, global_params):
     strategy = combo["strategy"]
     pfx      = f"{strategy}PropertyGridEditorPDEX"
 
-    # Select strategy first — this refreshes the strategy-specific params section
+    # Select strategy first — this refreshes the strategy-specific params section.
+    # Sleep 3s: switching strategy class causes NT8 to fully rebuild the property grid,
+    # temporarily invalidating the UIA tree. 3s is enough for it to settle.
     select_strategy(sa, strategy)
-    time.sleep(1.5)
+    time.sleep(3.0)
 
     # Instrument
     set_instrument(sa, combo["instrument"])
@@ -287,9 +289,11 @@ def configure_combo(sa, combo, global_params):
                 set_combo(sa, aid, value)
 
 
-def run_combo(sa, combo, global_params, idx, total):
+def run_combo(app, combo, global_params, idx, total):
     print(f"\n[{idx}/{total}] {combo['id']}  ({combo['strategy']} on {combo['instrument']})")
 
+    # Re-acquire SA handle each combo — stale handles crash after a strategy-class switch
+    sa = find_strategy_analyzer(app)
     configure_combo(sa, combo, global_params)
     time.sleep(1)
 
@@ -330,12 +334,15 @@ def main():
     gp     = cfg["global_params"]
 
     app = connect_nt8()
-    sa  = find_strategy_analyzer(app)
 
     total   = len(combos)
     results = []
     for i, combo in enumerate(combos, 1):
-        result = run_combo(sa, combo, gp, i, total)
+        try:
+            result = run_combo(app, combo, gp, i, total)
+        except BaseException as e:
+            print(f"  ERROR on combo {combo['id']}: {e} — skipping")
+            result = None
         if result:
             results.append(result)
 
