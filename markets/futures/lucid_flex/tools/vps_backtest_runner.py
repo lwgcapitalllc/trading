@@ -101,7 +101,7 @@ def select_strategy(sa, strategy_name):
     for attempt in range(3):
         try:
             selector.click_input()
-            time.sleep(1.5)  # dropdown needs time to populate on first open
+            time.sleep(2.5)  # dropdown needs time to populate
             # found_index=0 picks first match — the MenuItem and its Text child
             # both share the same title, so pywinauto finds 2; we want index 0.
             item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
@@ -110,7 +110,7 @@ def select_strategy(sa, strategy_name):
             return True
         except Exception as e:
             if attempt < 2:
-                send_keys("{ESCAPE}")
+                send_keys("{ESC}")
                 time.sleep(1.0)
             else:
                 print(f"  WARNING: could not select strategy '{strategy_name}': {e}")
