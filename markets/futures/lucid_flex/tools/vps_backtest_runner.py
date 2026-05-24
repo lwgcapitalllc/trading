@@ -334,11 +334,21 @@ def run_combo(app, combo, global_params, idx, total):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default=DEFAULT_CFG)
+    parser.add_argument("--combo",  default=None,
+                        help="Run only this combo ID (e.g. ORB_MNQ). Omit to run all.")
     args = parser.parse_args()
 
     cfg    = load_config(args.config)
     combos = cfg["combos"]
     gp     = cfg["global_params"]
+
+    if args.combo:
+        combos = [c for c in combos if c["id"] == args.combo]
+        if not combos:
+            valid = ", ".join(c["id"] for c in cfg["combos"])
+            print(f"ERROR: combo '{args.combo}' not found. Valid IDs: {valid}")
+            sys.exit(1)
+        print(f"Running single combo: {args.combo}")
 
     app = connect_nt8()
 

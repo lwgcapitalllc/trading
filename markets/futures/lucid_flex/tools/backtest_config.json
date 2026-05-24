@@ -15,8 +15,8 @@
     "commission_per_side": "2.25",
     "bar_type": "Minute",
     "bar_value": "5",
-    "start_date": "03/15/2026",
-    "end_date": "05/22/2026",
+    "start_date": "01/01/2021",
+    "end_date": "05/23/2026",
     "slippage": "1",
     "trading_hours": "RTH"
   },

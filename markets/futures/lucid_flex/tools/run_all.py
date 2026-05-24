@@ -74,13 +74,18 @@ def fetch_results_via_agent(local_path, agent_url="http://localhost:8765"):
     return True
 
 
-def trigger_and_wait(agent_url="http://localhost:8765"):
+def trigger_and_wait(agent_url="http://localhost:8765", combo=None):
     """Trigger /run-backtests and poll /status until done."""
     import urllib.request, urllib.error
-    print("\nTriggering backtests via agent...")
+    label = combo if combo else "all combos"
+    print(f"\nTriggering backtests via agent ({label})...")
     try:
-        req = urllib.request.Request(f"{agent_url}/run-backtests",
-                                     data=b"", method="POST")
+        body = json.dumps({"combo": combo}).encode() if combo else b""
+        req = urllib.request.Request(
+            f"{agent_url}/run-backtests",
+            data=body, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
         with urllib.request.urlopen(req, timeout=10) as resp:
             print(f"  {json.loads(resp.read())}")
     except urllib.error.HTTPError as e:
@@ -249,6 +254,8 @@ def main():
                         help="Automate Strategy Analyzer via pywinauto (requires NT8 open on VPS)")
     parser.add_argument("--local-results", action="store_true",
                         help="Use already-downloaded results file; skip VPS fetch")
+    parser.add_argument("--combo", default=None,
+                        help="Run only one combo by ID, e.g. --combo ORB_MNQ")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -263,7 +270,7 @@ def main():
 
     # Full HTTP pipeline: trigger run, wait, fetch, analyze
     if args.http:
-        trigger_and_wait()
+        trigger_and_wait(combo=args.combo)
         time.sleep(3)
         run_analyze(use_http=True)
         return

@@ -85,23 +85,30 @@ def status():
 @app.route("/run-backtests", methods=["POST"])
 def run_backtests():
     global _running
+    body  = request.get_json(silent=True) or {}
+    combo = body.get("combo")  # optional — omit to run all
     with _lock:
         if _running:
             return jsonify({"error": "Already running"}), 409
         _running = True
 
-    threading.Thread(target=_run_bg, daemon=True).start()
-    return jsonify({"status": "started"})
+    threading.Thread(target=_run_bg, args=(combo,), daemon=True).start()
+    msg = f"started (combo={combo})" if combo else "started (all combos)"
+    return jsonify({"status": msg})
 
 
-def _run_bg():
+def _run_bg(combo=None):
     global _running
     runner = str(SCRIPT_DIR / "vps_backtest_runner.py")
     cfg    = str(CFG_PATH)
-    _log_append("Starting backtest runner...")
+    label  = combo if combo else "all combos"
+    _log_append(f"Starting backtest runner ({label})...")
+    cmd = [sys.executable, "-u", runner, "--config", cfg]
+    if combo:
+        cmd += ["--combo", combo]
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-u", runner, "--config", cfg],
+            cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1,
         )
