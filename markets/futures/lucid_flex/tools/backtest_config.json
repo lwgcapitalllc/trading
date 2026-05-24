@@ -25,7 +25,7 @@
     {
       "id": "ORB_MNQ",
       "strategy": "ORB_LucidFlex",
-      "instrument": "MNQ 06-26",
+      "instrument": "@MNQ",
       "params": {
         "ORMinutes": "15",
         "TpMultiple": "1.5",
@@ -35,7 +35,7 @@
     {
       "id": "ORB_MES",
       "strategy": "ORB_LucidFlex",
-      "instrument": "MES 06-26",
+      "instrument": "@MES",
       "params": {
         "ORMinutes": "15",
         "TpMultiple": "1.5",
@@ -45,7 +45,7 @@
     {
       "id": "VWAP_MES",
       "strategy": "VWAP_MR_LucidFlex",
-      "instrument": "MES 06-26",
+      "instrument": "@MES",
       "params": {
         "EntryStd": "2.0",
         "StopExtension": "1.0",
@@ -56,7 +56,7 @@
     {
       "id": "VWAP_MGC",
       "strategy": "VWAP_MR_LucidFlex",
-      "instrument": "MGC 06-26",
+      "instrument": "@MGC",
       "params": {
         "EntryStd": "2.0",
         "StopExtension": "1.0",
@@ -67,7 +67,7 @@
     {
       "id": "MOM_MGC",
       "strategy": "Momentum_LucidFlex",
-      "instrument": "MGC 06-26",
+      "instrument": "@MGC",
       "params": {
         "MaPeriod": "20",
         "RrRatio": "2.0"
@@ -76,7 +76,7 @@
     {
       "id": "MOM_MCL",
       "strategy": "Momentum_LucidFlex",
-      "instrument": "MCL 06-26",
+      "instrument": "@MCL",
       "params": {
         "MaPeriod": "20",
         "RrRatio": "2.0"
