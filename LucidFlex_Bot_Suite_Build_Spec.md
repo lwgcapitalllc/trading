@@ -8,7 +8,7 @@ to be backtested in parallel, then (winners only) built as live bots.
 
 ---
 
-## CURRENT STATE — 2026-05-24 (read this first, then the spec)
+## CURRENT STATE — 2026-05-25 (read this first, then the spec)
 
 ### Key decision made: NT8 Strategy Analyzer as the backtest engine
 
@@ -27,7 +27,7 @@ The analyze.py script handles verdict logic (KEEP/WARN/DISCARD).
 | VWAP_MR_LucidFlex.cs | `markets/futures/lucid_flex/` | ✓ Done — deployed, compiled on VPS |
 | Momentum_LucidFlex.cs | `markets/futures/lucid_flex/` | ✓ Done — deployed, compiled on VPS |
 | deploy.py | `tools/` | ✓ Done — SCP + NT8 compile, fully working |
-| backtest_config.json | `tools/` | ✓ Done — 6 combos configured |
+| backtest_config.json | `tools/` | ✓ Done — 6 combos, front-month contracts, 2021–2026 |
 | run_all.py | `tools/` | ✓ Done — orchestrator; `--http` flag runs full pipeline via agent |
 | vps_backtest_runner.py | `tools/` | ✓ Done — pywinauto NT8 automation |
 | analyze.py | `tools/` | ✓ Done — parses CSV, prints KEEP/WARN/DISCARD table |
@@ -42,7 +42,7 @@ Mac → SSH tunnel → vps_agent.py → vps_backtest_runner.py → NT8 (all same
 **To start a run from Mac:**
 ```
 ssh -N -f -L 8765:127.0.0.1:8765 forexvps   # open tunnel (127.0.0.1, not localhost)
-curl -X POST http://localhost:8765/run-backtests
+curl -X POST http://localhost:8765/run-backtests -H "Content-Type: application/json" -d '{"combo": "ORB_MNQ"}'
 curl http://localhost:8765/status             # watch log
 python run_all.py --analyze-only --http       # fetch + analyze when done
 ```
@@ -50,12 +50,40 @@ python run_all.py --analyze-only --http       # fetch + analyze when done
 **On VPS (RDP terminal):** `python C:\algos\markets\futures\lucid_flex\tools\vps_agent.py`
 Must be started manually in the RDP session each time.
 
-### Current blocker: pywinauto automation reliability
+### Historical data: SOLVED — front-month contract notation required
 
-The agent pipeline works end-to-end. The remaining issue is pywinauto reliably
-automating all 6 combos through NT8's Strategy Analyzer. Several bugs have been
-found and fixed; the latest fix was deployed 2026-05-24 and has not yet been
-validated with a clean 6-combo run.
+**Root cause found 2026-05-25:** NT8's Strategy Analyzer with a bare master
+instrument name (e.g. `MNQ`) looks in `db/minute/MNQ/` — which is empty. The
+actual per-quarter data lives in `db/minute/MNQ 03-21/`, `db/minute/MNQ 06-21/`
+etc. SA does NOT automatically stitch from those folders when given just `MNQ`.
+
+**Fix:** Use the current front-month contract notation in SA (e.g. `MNQ 06-26`).
+With NT8 Global Merge Policy set to **Merge back adjusted**, SA chains backwards
+through the rollover dates, loading each quarterly folder in sequence. This
+produces a continuous 5-year series from locally downloaded data.
+
+**Required NT8 settings on VPS (one-time, already configured):**
+- Tools → Options → Market Data → Global merge policy: **Merge back adjusted**
+- Tools → Options → Market Data → Preferred connections – historical → Future: **NinjaTrader**
+
+**Historical data downloaded on VPS (all in `Documents/NinjaTrader 8/db/minute/`):**
+- MNQ: 03-20 through 06-26 (quarterly, back to Mar 2020) ✓
+- MES: 03-20 through 06-26 (quarterly, back to Mar 2020) ✓
+- MGC: 02-20 through 06-26 (bi-monthly, back to Feb 2020) ✓
+- MCL: 08-21 through 06-26 (monthly, back to Aug 2021) ✓
+
+**backtest_config.json instruments** (update to next front month after Jun 2026 rolls):
+- `MNQ 06-26`, `MES 06-26`, `MGC 06-26`, `MCL 06-26`
+
+**Manual verification (2026-05-25):** Momentum_LucidFlex on MNQ JUN26 ran from
+01/04/2021 through 05/24/2026 with hundreds of daily rows — confirms data
+stitching works end-to-end before automation is triggered.
+
+### Automation: ready to run combos one at a time
+
+Run combos individually via `--combo` flag (added to full stack: run_all.py →
+vps_agent.py → vps_backtest_runner.py). Review each result before triggering the
+next. Do NOT batch all 6 until single-combo runs are confirmed stable.
 
 **Bugs fixed so far (all in vps_backtest_runner.py, all deployed):**
 - `bar_type` ComboBox removed — NT8 retains the Minute setting between runs
@@ -69,18 +97,8 @@ validated with a clean 6-combo run.
   sleep was not enough. Now polls up to 60s for the XML file to appear
 - `{ESCAPE}` → `{ESC}` — wrong pywinauto key code caused ValueError on every
   strategy-selection retry, crashing the entire combo (skipping it)
-
-**What a clean run looks like (single ORB_MNQ, confirmed working previously):**
-```
-[1/1] ORB_MNQ  (ORB_LucidFlex on MNQ 06-26)
-  Strategy Analyzer found.
-  Run clicked. Waiting for completion...
-  Backtest complete. Reading results from XML log...
-  Trades=91  NetPnL=-3433.00  PF=0.7227  MaxDD=-4200.50
-```
-
-**MES/MGC/MCL instruments:** May need historical data downloaded manually via
-NT8 Data Manager (Tools → Historical Data) if those instruments return 0 trades.
+- Instrument notation — bare `MNQ` returns no data; must use `MNQ 06-26`
+  (front-month contract) so SA merge policy stitches quarterly history
 
 ### Long-term UI vision
 
@@ -95,7 +113,7 @@ Do NOT build the React app before the agent is tested end-to-end.
 | 1. Build backtest engine | ✓ Done (via NT8 Strategy Analyzer, not Python) |
 | 2. Implement 3 strategies | ✓ Done (NinjaScript C#) |
 | 3. Deploy + compile on VPS | ✓ Done |
-| **4. Run all 6 combos, report results** | **IN PROGRESS — fixes deployed 2026-05-24, clean 6-combo run not yet confirmed** |
+| **4. Run all 6 combos, report results** | **IN PROGRESS — data working (2026-05-25), triggering combos one at a time** |
 | 5. Monte Carlo stress test on survivors | Pending backtest results |
 | 6. Stop and report stress test results | Pending |
 | 7. Live NinjaScript bot (winning strategy only) | Pending |
