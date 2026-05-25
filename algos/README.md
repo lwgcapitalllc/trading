@@ -94,7 +94,7 @@ component reads from. Nothing else is authoritative.
 ```bash
 # Edit on Mac
 git add . && git commit -m "..." && git push
-ssh forexvps "cd C:\lwg-capital\algos && git pull origin main"
+ssh forexvps "cd C:\lwg-capital && git pull origin main"
 
 # Restart bots (coordinator starts them sequentially)
 ssh forexvps "del C:\lwg-capital\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
