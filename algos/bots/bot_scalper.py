@@ -28,7 +28,7 @@
 ║    $7,000 → $10,000 : 2.0% risk                                            ║
 ║    $10,000+         : 1.0% risk (reset after goal, keep compounding)       ║
 ║                                                                              ║
-║  Config    : C:/algos/markets/fx/instances/gold_scalper/config.json      ║
+║  Config    : C:/lwg-capital/algos/markets/fx/instances/gold_scalper/config.json      ║
 ║  Install   : pip install MetaTrader5 pandas numpy pytz scikit-learn joblib ║
 ║  Run       : python bot_scalper.py                                        ║
 ╚══════════════════════════════════════════════════════════════════════════════╝

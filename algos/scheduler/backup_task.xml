@@ -35,8 +35,8 @@
   <Actions Context="Author">
     <Exec>
       <Command>C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe</Command>
-      <Arguments>C:\algos\scripts\backup.py</Arguments>
-      <WorkingDirectory>C:\algos</WorkingDirectory>
+      <Arguments>C:\lwg-capital\algos\scripts\backup.py</Arguments>
+      <WorkingDirectory>C:\lwg-capital\algos</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>

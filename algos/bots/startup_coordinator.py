@@ -6,7 +6,7 @@ Writes bot_state.json with started timestamp — single source of truth
 for uptime tracking across algo panel and Telegram.
 
 Run via SYS_STARTUP task at boot, or manually:
-    python C:/algos/bots/startup_coordinator.py
+    python C:/lwg-capital/algos/bots/startup_coordinator.py
 """
 
 import subprocess
@@ -15,8 +15,8 @@ import time
 from pathlib import Path
 
 PYTHON = sys.executable
-ALGOS  = Path("C:/algos")
-BOTS   = Path("C:/algos/bots")
+ALGOS  = Path("C:/lwg-capital/algos")
+BOTS   = Path("C:/lwg-capital/algos/bots")
 
 sys.path.insert(0, str(ALGOS / "shared"))
 from bot_state import set_started, set_status
@@ -25,36 +25,36 @@ STARTUP_SEQUENCE = [
     (
         "smc_trend",
         "SMC Trend",
-        r"C:\algos\bots\bot_smc_trend.py",
-        r"C:\algos\markets\fx\instances\gold_main\config.json",
-        r"C:\algos\markets\fx\instances\gold_main\smc_trend_stdout.log",
+        r"C:\lwg-capital\algos\bots\bot_smc_trend.py",
+        r"C:\lwg-capital\algos\markets\fx\instances\gold_main\config.json",
+        r"C:\lwg-capital\algos\markets\fx\instances\gold_main\smc_trend_stdout.log",
         "Connected | #700103491",
         30,
     ),
     (
         "mean_reversion",
         "Mean Reversion",
-        r"C:\algos\bots\bot_mean_reversion.py",
-        r"C:\algos\markets\fx\instances\gold_main\config.json",
-        r"C:\algos\markets\fx\instances\gold_main\mean_reversion_stdout.log",
+        r"C:\lwg-capital\algos\bots\bot_mean_reversion.py",
+        r"C:\lwg-capital\algos\markets\fx\instances\gold_main\config.json",
+        r"C:\lwg-capital\algos\markets\fx\instances\gold_main\mean_reversion_stdout.log",
         "Connected | #700103491",
         30,
     ),
     (
         "scalper",
         "Scalper",
-        r"C:\algos\bots\bot_scalper.py",
-        r"C:\algos\markets\fx\instances\gold_scalper\config.json",
-        r"C:\algos\markets\fx\instances\gold_scalper\scalper_stdout.log",
+        r"C:\lwg-capital\algos\bots\bot_scalper.py",
+        r"C:\lwg-capital\algos\markets\fx\instances\gold_scalper\config.json",
+        r"C:\lwg-capital\algos\markets\fx\instances\gold_scalper\scalper_stdout.log",
         "Connected | #700107520",
         30,
     ),
     (
         "fft",
         "FFT",
-        r"C:\algos\bots\bot_fft.py",
-        r"C:\algos\markets\fx\instances\gold_fft\config.json",
-        r"C:\algos\markets\fx\instances\gold_fft\fft_stdout.log",
+        r"C:\lwg-capital\algos\bots\bot_fft.py",
+        r"C:\lwg-capital\algos\markets\fx\instances\gold_fft\config.json",
+        r"C:\lwg-capital\algos\markets\fx\instances\gold_fft\fft_stdout.log",
         "Connected | #700107749",
         30,
     ),
@@ -62,7 +62,7 @@ STARTUP_SEQUENCE = [
 
 
 def clear_lock():
-    lock = Path(r"C:\algos\mt5_connect.lock")
+    lock = Path(r"C:\lwg-capital\algos\mt5_connect.lock")
     if lock.exists():
         lock.unlink()
         print("Cleared stale MT5 lock")

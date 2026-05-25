@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-ALGOS = Path("C:/algos")
+ALGOS = Path("C:/lwg-capital/algos")
 
 def kill_existing():
     """Kill any running telegram_bot.py process."""

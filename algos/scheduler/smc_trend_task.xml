@@ -30,8 +30,8 @@
   <Actions Context="Author">
     <Exec>
       <Command>C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe</Command>
-      <Arguments>C:\algos\bots\launcher.py --bot bot_smc_trend --config C:\algos\markets\fx\instances\gold_main\config.json</Arguments>
-      <WorkingDirectory>C:\algos\bots</WorkingDirectory>
+      <Arguments>C:\lwg-capital\algos\bots\launcher.py --bot bot_smc_trend --config C:\lwg-capital\algos\markets\fx\instances\gold_main\config.json</Arguments>
+      <WorkingDirectory>C:\lwg-capital\algos\bots</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>

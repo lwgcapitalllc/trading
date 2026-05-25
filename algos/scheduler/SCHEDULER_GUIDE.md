@@ -50,7 +50,7 @@ $tasks = @(
 )
 foreach ($t in $tasks) {
     $parts = $t.Split(":")
-    Copy-Item "C:\algos\scheduler\$($parts[0])" "C:\temp\$($parts[0])"
+    Copy-Item "C:\lwg-capital\algos\scheduler\$($parts[0])" "C:\temp\$($parts[0])"
     schtasks /create /tn $parts[1] /xml "C:\temp\$($parts[0])" /ru trader /rp $pass
 }
 schtasks /change /tn BOT_SMC_TREND /disable
@@ -73,7 +73,7 @@ ssh forexvps "schtasks /run /tn SYS_STARTUP"
 ssh forexvps "schtasks /run /tn SYS_BACKUP"
 
 # Restart everything
-ssh forexvps "del C:\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
+ssh forexvps "del C:\lwg-capital\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
 sleep 3
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
 ```

@@ -29,7 +29,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-ALGOS_ROOT = Path("C:/algos")
+ALGOS_ROOT = Path("C:/lwg-capital/algos")
 
 # Instance directory for each bot key
 BOT_INSTANCES = {

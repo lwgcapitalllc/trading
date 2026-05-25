@@ -401,7 +401,7 @@ def suppress_stop_alert(task_name: str):
     ssh(
         f'python -c "'
         f'import json,pathlib;'
-        f'p=pathlib.Path(r\'C:/algos/stop_suppress.json\');'
+        f'p=pathlib.Path(r\'C:/lwg-capital/algos/stop_suppress.json\');'
         f'k=json.loads(p.read_text()) if p.exists() else [];'
         f'k.append(\'{key}\') if \'{key}\' not in k else None;'
         f'p.write_text(json.dumps(k))"'
@@ -820,7 +820,7 @@ def input_or_timeout(prompt: str, timeout: int):
 
 
 # ── User Management ───────────────────────────────────────────────────────────
-USERS_FILE_VPS = r"C:\algos\users.json"
+USERS_FILE_VPS = r"C:\lwg-capital\algos\users.json"
 
 def read_users() -> dict:
     raw = ssh(f"type {USERS_FILE_VPS} 2>nul")

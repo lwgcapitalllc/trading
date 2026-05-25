@@ -69,7 +69,7 @@ import pandas as pd
 
 from bot_state import write_bot
 
-_LOCK_FILE    = Path(r"C:\algos\mt5_connect.lock")
+_LOCK_FILE    = Path(r"C:\lwg-capital\algos\mt5_connect.lock")
 _LOCK_TIMEOUT = 90   # seconds to wait for the file lock
 _LOCK_TTL     = 45   # seconds after which a stale lock is removed
 _TEXAS        = ZoneInfo("America/Chicago")

@@ -22,7 +22,7 @@ except ImportError:
     sys.exit(1)
 
 # Add shared dir to path
-sys.path.insert(0, str(Path("C:/algos/shared")))
+sys.path.insert(0, str(Path("C:/lwg-capital/algos/shared")))
 from bot_state import (
     BOT_THRESHOLDS, BOT_NAMES,
     read_bot, set_pnl, write_bot
@@ -31,7 +31,7 @@ from bot_state import (
 TELEGRAM_TOKEN  = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
 ADMIN_CHAT      = "429207285"
 GROUP_CHAT      = "-1003977707258"
-ALGOS_ROOT      = Path("C:/algos")
+ALGOS_ROOT      = Path("C:/lwg-capital/algos")
 TEXAS           = ZoneInfo("America/Chicago")
 BOT_LIVE_WINDOW = 300  # seconds — treat bot as live if last_write is within this
 

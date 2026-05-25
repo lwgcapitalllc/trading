@@ -94,10 +94,10 @@ component reads from. Nothing else is authoritative.
 ```bash
 # Edit on Mac
 git add . && git commit -m "..." && git push
-ssh forexvps "cd C:\algos && git pull origin main"
+ssh forexvps "cd C:\lwg-capital\algos && git pull origin main"
 
 # Restart bots (coordinator starts them sequentially)
-ssh forexvps "del C:\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
+ssh forexvps "del C:\lwg-capital\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
 sleep 3
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
 sleep 60
@@ -117,8 +117,8 @@ Critical VPS-only files are backed up to GitHub twice daily (midnight + noon CT)
 **Where:** The `backups` orphan branch of this repo (separate from `main`).
 Backup commits never land on `main`, so Mac development and VPS backups never conflict.
 
-**On VPS:** `scripts/backup.py` uses a git worktree at `C:\algos-backup` pointing to the
-`backups` branch. The `main` branch working tree at `C:\algos` is never touched
+**On VPS:** `scripts/backup.py` uses a git worktree at `C:\lwg-capital-backup` pointing to the
+`backups` branch. The `main` branch working tree at `C:\lwg-capital\algos` is never touched
 by backup operations.
 
 To restore after VPS rebuild — see `docs/SETUP.md` § Restore Data from Backup.

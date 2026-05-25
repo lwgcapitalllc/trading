@@ -7,11 +7,11 @@ Pushes VPS-only data to the `backups` orphan branch on GitHub.
 The `backups` branch is SEPARATE from `main` — backup commits never
 land on main, so local Mac development never conflicts with VPS backups.
 
-Restore (new VPS): git clone -b backups <repo> C:\algos-backup
-then manually copy files to their C:\algos paths.
+Restore (new VPS): git clone -b backups <repo> C:\lwg-capital-backup
+then manually copy files to their C:\lwg-capital\algos paths.
 
 ONE-TIME VPS SETUP (run once after first deploy):
-  python C:/algos/backup.py --setup
+  python C:/lwg-capital/algos/scripts/backup.py --setup
 
 Files backed up:
   bot_state.json        — balances, P&L, status (single source of truth)
@@ -24,7 +24,7 @@ Files backed up:
   *_stdout.log          — bot activity logs
   users.json            — Telegram user list
 
-Run: python C:/algos/backup.py
+Run: python C:/lwg-capital/algos/scripts/backup.py
 """
 
 import json
@@ -34,8 +34,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-ALGOS_ROOT     = Path("C:/algos")
-BACKUP_WORKTREE = Path("C:/algos-backup")   # git worktree for backups branch
+ALGOS_ROOT     = Path("C:/lwg-capital/algos")
+BACKUP_WORKTREE = Path("C:/lwg-capital-backup")   # git worktree for backups branch
 BACKUP_BRANCH  = "backups"
 
 BACKUP_FILES = [
@@ -86,9 +86,9 @@ def run(cmd, cwd=None, check=True):
 def setup():
     """
     One-time setup: create the backups orphan branch on GitHub and a local
-    git worktree pointing to it at C:\\algos-backup.
+    git worktree pointing to it at C:\\lwg-capital-backup.
 
-    Run: python C:/algos/backup.py --setup
+    Run: python C:/lwg-capital/algos/scripts/backup.py --setup
     """
     print("Setting up backups branch and worktree...")
 
@@ -118,7 +118,7 @@ def setup():
             cwd=ALGOS_ROOT)
         print(f"  Worktree created at {BACKUP_WORKTREE}.")
 
-    print("Setup complete. Run 'python C:/algos/backup.py' to take the first backup.")
+    print("Setup complete. Run 'python C:/lwg-capital/algos/scripts/backup.py' to take the first backup.")
 
 
 def backup():
@@ -127,7 +127,7 @@ def backup():
 
     if not BACKUP_WORKTREE.exists():
         print("ERROR: Backup worktree not set up.")
-        print("Run: python C:/algos/backup.py --setup")
+        print("Run: python C:/lwg-capital/algos/scripts/backup.py --setup")
         return
 
     copied = []

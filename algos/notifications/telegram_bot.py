@@ -40,7 +40,7 @@ except ImportError:
 TELEGRAM_TOKEN  = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
 ADMIN_CHAT      = "429207285"           # Primary admin — always has access even if users.json missing
 GROUP_CHAT      = "-1003977707258"      # LWG Capital Algos Notifications — broadcast destination
-ALGOS_ROOT      = Path("C:/algos")
+ALGOS_ROOT      = Path("C:/lwg-capital/algos")
 USERS_FILE      = ALGOS_ROOT / "users.json"
 OFFSET_FILE     = ALGOS_ROOT / "telegram_offset.json"
 TELEGRAM_START  = ALGOS_ROOT / "telegram_start.json"

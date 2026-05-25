@@ -47,7 +47,7 @@ curl http://localhost:8765/status             # watch log
 python run_all.py --analyze-only --http       # fetch + analyze when done
 ```
 
-**On VPS (RDP terminal):** `python C:\algos\markets\futures\lucid_flex\tools\vps_agent.py`
+**On VPS (RDP terminal):** `python C:\lwg-capital\algos\markets\futures\lucid_flex\tools\vps_agent.py`
 Must be started manually in the RDP session each time.
 
 ### Historical data: SOLVED — front-month contract notation required

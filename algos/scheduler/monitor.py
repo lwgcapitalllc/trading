@@ -19,10 +19,10 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-sys.path.insert(0, str(Path("C:/algos/shared")))
+sys.path.insert(0, str(Path("C:/lwg-capital/algos/shared")))
 from notify import send_telegram
 
-ALGOS_ROOT = Path("C:/algos")
+ALGOS_ROOT = Path("C:/lwg-capital/algos")
 TEXAS      = ZoneInfo("America/Chicago")
 
 
