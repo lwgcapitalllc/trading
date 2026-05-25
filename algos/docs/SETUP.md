@@ -10,7 +10,7 @@ Fresh VPS setup or rebuild from scratch.
 - Python 3.11 installed at `C:\Users\Administrator\AppData\Local\Programs\Python\Python311\`
 - Git installed
 - MT5 terminals installed (see MT5 section)
-- GitHub repo: https://github.com/lwgcapitalllc/lwg-capital
+- GitHub repo: https://github.com/lwgcapitalllc/trading
 
 ---
 
@@ -18,8 +18,8 @@ Fresh VPS setup or rebuild from scratch.
 
 ```powershell
 cd C:\
-git clone https://github.com/lwgcapitalllc/lwg-capital.git
-cd C:\lwg-capital\algos
+git clone https://github.com/lwgcapitalllc/trading.git
+cd C:\trading\algos
 pip install requests zoneinfo pandas numpy MetaTrader5 --break-system-packages
 ```
 
@@ -44,7 +44,7 @@ Each terminal must:
 
 ## 3. Credentials File
 
-Create `C:\lwg-capital\algos\credentials.json` (never commit this file):
+Create `C:\trading\algos\credentials.json` (never commit this file):
 
 ```json
 {
@@ -60,7 +60,7 @@ Create `C:\lwg-capital\algos\credentials.json` (never commit this file):
 
 ## 4. Telegram Users File
 
-Create `C:\lwg-capital\algos\users.json`:
+Create `C:\trading\algos\users.json`:
 
 ```json
 {
@@ -81,43 +81,43 @@ On a running VPS, never overwrite live bot data from backup.
 
 ```powershell
 # Clone backups branch into a staging directory
-git clone --branch backups --single-branch https://github.com/lwgcapitalllc/lwg-capital.git C:\lwg-capital-restore
+git clone --branch backups --single-branch https://github.com/lwgcapitalllc/trading.git C:\trading-restore
 
 # Copy bot state (balances, P&L)
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\bot_state.json"    "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_scalper\bot_state.json" "C:\lwg-capital\algos\markets\fx\instances\gold_scalper\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_fft\bot_state.json"     "C:\lwg-capital\algos\markets\fx\instances\gold_fft\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\bot_state.json"    "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_scalper\bot_state.json" "C:\trading\algos\markets\fx\instances\gold_scalper\"
+copy "C:\trading-restore\markets\fx\instances\gold_fft\bot_state.json"     "C:\trading\algos\markets\fx\instances\gold_fft\"
 
 # Copy trade histories (AI training data)
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\smc_trend_trades.json"     "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\mean_reversion_trades.json" "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_scalper\scalper_trades.json"    "C:\lwg-capital\algos\markets\fx\instances\gold_scalper\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_fft\fft_trades.json"            "C:\lwg-capital\algos\markets\fx\instances\gold_fft\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\smc_trend_trades.json"     "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\mean_reversion_trades.json" "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_scalper\scalper_trades.json"    "C:\trading\algos\markets\fx\instances\gold_scalper\"
+copy "C:\trading-restore\markets\fx\instances\gold_fft\fft_trades.json"            "C:\trading\algos\markets\fx\instances\gold_fft\"
 
 # Copy trained AI models
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\smc_trend_model.pkl"            "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\smc_trend_model_scaler.pkl"     "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\mean_reversion_model.pkl"       "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\mean_reversion_model_scaler.pkl" "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_scalper\scalper_model.pkl"           "C:\lwg-capital\algos\markets\fx\instances\gold_scalper\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_scalper\scalper_model_scaler.pkl"    "C:\lwg-capital\algos\markets\fx\instances\gold_scalper\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\smc_trend_model.pkl"            "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\smc_trend_model_scaler.pkl"     "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\mean_reversion_model.pkl"       "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\mean_reversion_model_scaler.pkl" "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_scalper\scalper_model.pkl"           "C:\trading\algos\markets\fx\instances\gold_scalper\"
+copy "C:\trading-restore\markets\fx\instances\gold_scalper\scalper_model_scaler.pkl"    "C:\trading\algos\markets\fx\instances\gold_scalper\"
 
 # Copy equity curves and daily/weekly performance logs
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\gold_main_equity.json"      "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\smc_trend_daily.json"       "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_main\mean_reversion_daily.json"  "C:\lwg-capital\algos\markets\fx\instances\gold_main\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_scalper\scalper_equity.json"     "C:\lwg-capital\algos\markets\fx\instances\gold_scalper\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_fft\fft_equity.json"             "C:\lwg-capital\algos\markets\fx\instances\gold_fft\"
-copy "C:\lwg-capital-restore\markets\fx\instances\gold_fft\fft_daily.json"              "C:\lwg-capital\algos\markets\fx\instances\gold_fft\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\gold_main_equity.json"      "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\smc_trend_daily.json"       "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_main\mean_reversion_daily.json"  "C:\trading\algos\markets\fx\instances\gold_main\"
+copy "C:\trading-restore\markets\fx\instances\gold_scalper\scalper_equity.json"     "C:\trading\algos\markets\fx\instances\gold_scalper\"
+copy "C:\trading-restore\markets\fx\instances\gold_fft\fft_equity.json"             "C:\trading\algos\markets\fx\instances\gold_fft\"
+copy "C:\trading-restore\markets\fx\instances\gold_fft\fft_daily.json"              "C:\trading\algos\markets\fx\instances\gold_fft\"
 
 # Copy Telegram users
-copy "C:\lwg-capital-restore\users.json" "C:\lwg-capital\algos\users.json"
+copy "C:\trading-restore\users.json" "C:\trading\algos\users.json"
 
 # Clean up staging directory
-rmdir /S /Q C:\lwg-capital-restore
+rmdir /S /Q C:\trading-restore
 
 # Re-create the backup worktree for future backups
-python C:\lwg-capital\algos\scripts\backup.py --setup
+python C:\trading\algos\scripts\backup.py --setup
 ```
 
 ---
@@ -141,7 +141,7 @@ $tasks = @(
 )
 
 foreach ($t in $tasks) {
-    $xml = "C:\lwg-capital\algos\scheduler\$($t.file)"
+    $xml = "C:\trading\algos\scheduler\$($t.file)"
     Copy-Item $xml "C:\temp\$($t.file)"
     schtasks /create /tn $t.name /xml "C:\temp\$($t.file)" /ru trader /rp "312MXFjt7Q8Zoec"
 }

@@ -36,7 +36,7 @@ except ImportError:
 TELEGRAM_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
 ADMIN_CHAT     = "429207285"
 GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadcast destination
-ALGOS_ROOT     = Path("C:/lwg-capital/algos")
+ALGOS_ROOT     = Path("C:/trading/algos")
 STATE_FILE     = ALGOS_ROOT / "monitor_state.json"
 SUPPRESS_FILE  = ALGOS_ROOT / "stop_suppress.json"
 TEXAS          = ZoneInfo("America/Chicago")

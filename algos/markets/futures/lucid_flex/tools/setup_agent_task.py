@@ -24,7 +24,7 @@ import json
 import os
 
 CFG_PATH = os.path.join(os.path.dirname(__file__), "backtest_config.json")
-AGENT_WIN = r"C:\lwg-capital\algos\markets\futures\lucid_flex\tools\vps_agent.py"
+AGENT_WIN = r"C:\trading\algos\markets\futures\lucid_flex\tools\vps_agent.py"
 TASK_NAME = "LucidFlexAgent"
 
 

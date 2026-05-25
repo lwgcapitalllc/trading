@@ -40,7 +40,7 @@ P&L threshold alerts are exclusively handled by `pnl_tracker.py`.
 Persists state in `monitor_state.json` across runs.
 
 **Crash alerting with intentional-stop suppression:**
-When a bot goes offline, monitor.py checks `C:/lwg-capital/algos/stop_suppress.json` before alerting.
+When a bot goes offline, monitor.py checks `C:/trading/algos/stop_suppress.json` before alerting.
 If the bot's suppress key is in the file, the stop was intentional — no alert is sent and no
 "Bot Online" alert fires when it restarts. The key is consumed on first read (one-shot).
 

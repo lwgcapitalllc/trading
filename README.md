@@ -16,7 +16,7 @@ See smart-money/README.md for full documentation.
 - Provider: ForexVPS
 - OS: Windows
 - SSH alias: forexvps
-- Deploy path: C:\lwg-capital\algos
+- Deploy path: C:\trading\algos
 
 ## Repository
 - Main branch: active development

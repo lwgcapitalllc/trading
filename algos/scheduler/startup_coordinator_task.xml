@@ -26,8 +26,8 @@
   <Actions Context="Author">
     <Exec>
       <Command>C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe</Command>
-      <Arguments>C:\lwg-capital\algos\bots\startup_coordinator.py</Arguments>
-      <WorkingDirectory>C:\lwg-capital\algos\bots</WorkingDirectory>
+      <Arguments>C:\trading\algos\bots\startup_coordinator.py</Arguments>
+      <WorkingDirectory>C:\trading\algos\bots</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>

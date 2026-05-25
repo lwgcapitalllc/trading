@@ -133,8 +133,8 @@ def run_auto_backtest(cfg):
     print("STEP 2: Running backtests via pywinauto (VPS)")
     print("=" * 60)
     host      = cfg["vps_host"]
-    # Use C:\lwg-capital\algos path — no spaces, already exists on VPS from git pull
-    tools_win = r"C:\lwg-capital\algos\markets\futures\lucid_flex\tools"
+    # Use C:\trading\algos path — no spaces, already exists on VPS from git pull
+    tools_win = r"C:\trading\algos\markets\futures\lucid_flex\tools"
     runner_win = rf"{tools_win}\vps_backtest_runner.py"
     cfg_win    = rf"{tools_win}\backtest_config.json"
     log_win    = rf"{tools_win}\backtest_runner.log"

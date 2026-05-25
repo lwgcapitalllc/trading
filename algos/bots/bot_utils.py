@@ -16,8 +16,8 @@ from pathlib import Path
 
 
 def _inject_shared_path():
-    bots_dir   = Path(__file__).parent        # C:\lwg-capital\algos\bots\
-    shared_dir = bots_dir.parent / "shared"   # C:\lwg-capital\algos\shared\
+    bots_dir   = Path(__file__).parent        # C:\trading\algos\bots\
+    shared_dir = bots_dir.parent / "shared"   # C:\trading\algos\shared\
     if str(shared_dir) not in sys.path:
         sys.path.insert(0, str(shared_dir))
 

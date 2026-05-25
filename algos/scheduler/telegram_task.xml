@@ -24,8 +24,8 @@
   <Actions Context="Author">
     <Exec>
       <Command>C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe</Command>
-      <Arguments>C:\lwg-capital\algos\notifications\start_telegram.py</Arguments>
-      <WorkingDirectory>C:\lwg-capital\algos</WorkingDirectory>
+      <Arguments>C:\trading\algos\notifications\start_telegram.py</Arguments>
+      <WorkingDirectory>C:\trading\algos</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
