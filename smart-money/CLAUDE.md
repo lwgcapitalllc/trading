@@ -42,7 +42,7 @@ python run_stage2.py --address 0xYOUR_WALLET_ADDRESS
 
 ## Where We Left Off
 
-**Last action:** Stage 1 has been run once. Pool was too thin (1 qualified wallet). Config has been updated and bugs fixed. Ready to rerun Stage 1.
+**Last action:** Second Stage 1 run completed. Pool still 1 wallet. Bugs fixed, config updated, all test data cleared. Ready to rerun.
 
 **Next step:** `python3 run_stage1.py` — expect ~17 min runtime.
 
@@ -50,17 +50,16 @@ python run_stage2.py --address 0xYOUR_WALLET_ADDRESS
 | Setting | Original | Current | Reason |
 |---|---|---|---|
 | `min_win_rate` | 80% | 75% | Pool too thin at 80% — top PnL earners are high-leverage, not consistent win-rate traders |
-| `min_wallet_age_days` | 90 | 120 | Require 4 months of history |
-| `lookback.minimum_days` | 90 | 120 | Require 4 months of active trading span (separate from wallet age) |
+| `min_active_weeks_per_month` | 3 | 2 | Too restrictive — top leaderboard traders trade in bursts, not 3 weeks every month. Was killing 69 wallets. |
 
 ### Bugs found and fixed in Stage 1
 1. **Leaderboard endpoint changed** — Hyperliquid deprecated `POST /info` with `type:leaderboard`. Now uses `GET https://stats-data.hyperliquid.xyz/Mainnet/leaderboard` with different response schema. Fixed in `scanner/hyperliquid.py`.
 2. **HTTP error retry loop** — `if e.response` evaluates False for 4xx responses, so all HTTP errors retried 3x instead of failing fast. Fixed: `if e.response is not None`.
 3. **Pre-filtering** — Original code made 37k fills API calls (one per leaderboard entry). Fixed by pre-filtering leaderboard by allTime PnL ≥ $10k and account value ≥ $1k, then capping to top 500. Runtime: ~17 min.
-4. **Span gate missing** — Age check (`min_wallet_age_days`) measured wallet creation date, not trading history length. A wallet 4 months old but trading for only 22 days passed. Fixed: added `lookback.minimum_days` span gate in `profiler/filters.py:QualificationGate.evaluate`.
+4. **Span gate used window boundaries, not actual trade span** — Gate measured `windows[-1]["window_end"] - windows[0]["window_start"]` (always a multiple of 30 days). A wallet with 1 window always got span = 30 days and passed any threshold ≤ 30. Fixed: now uses `max(close_ts) - min(close_ts)` across actual trades. Fixed in `profiler/filters.py:QualificationGate.evaluate`.
 
 ### Watchlist feature
-Wallets that fail only the span gate (short trading history but strong performance) are preserved in `reports/stage1_watchlist_*.json` instead of silently dropped. Sorted by total PnL descending. First run had 1 watchlist candidate: `0x2d23b731...` — 2612% growth, 72.5% WR, 22-day span.
+Wallets that fail only the span gate (short trading history but strong performance) are preserved in `reports/stage1_watchlist_*.json` instead of silently dropped. Sorted by total PnL descending.
 
 ## Thresholds
 
@@ -68,13 +67,14 @@ All in `config/config.json`. Edit there — never in code.
 
 | Threshold | Default |
 |---|---|
-| Min win rate | 80% (per 30-day window) |
+| Min win rate | 75% (per 30-day window) |
 | Max drawdown | 20% |
 | Min trades | 100 |
 | Min wallet age | 90 days |
+| Min trading span | 90 days |
 | Max hold time | 72 hours |
 | Max single trade PnL share | 40% |
-| Min active weeks per month | 3 |
+| Min active weeks per month | 2 |
 
 ## Output Location
 

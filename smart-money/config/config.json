@@ -4,10 +4,10 @@
   "qualification": {
     "min_trades": 100,
     "min_win_rate": 0.75,
-    "min_wallet_age_days": 120,
+    "min_wallet_age_days": 90,
     "max_drawdown": 0.20,
     "max_single_trade_pnl_share": 0.40,
-    "min_active_weeks_per_month": 3,
+    "min_active_weeks_per_month": 2,
     "max_avg_hold_hours": 72,
     "min_instruments": 2
   },
@@ -19,7 +19,7 @@
   },
 
   "lookback": {
-    "minimum_days": 120,
+    "minimum_days": 90,
     "preferred_days": 180,
     "elite_days": 365,
     "window_days": 30

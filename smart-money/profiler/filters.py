@@ -318,10 +318,12 @@ class QualificationGate:
             trades, self._config["lookback"]["window_days"]
         )
 
-        # Require minimum trading span — wallet age alone is not enough
-        if windows:
-            span_ms = windows[-1]["window_end"] - windows[0]["window_start"]
-            span_days = int(span_ms / (86_400 * 1_000))
+        # Require minimum trading span — wallet age alone is not enough.
+        # Measured from oldest to newest close_ts across actual trades, not window boundaries.
+        if trades:
+            oldest_close = min(t["close_ts"] for t in trades)
+            newest_close = max(t["close_ts"] for t in trades)
+            span_days = int((newest_close - oldest_close) / (86_400 * 1_000))
             min_span = self._config["lookback"]["minimum_days"]
             if span_days < min_span:
                 reason = f"Trading span {span_days} days < {min_span} day minimum"
