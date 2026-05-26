@@ -228,9 +228,10 @@ def build_wallet_profile(
 # ---------------------------------------------------------------------------
 
 class StageReporter:
-    def __init__(self, config: dict, logger: StageLogger):
+    def __init__(self, config: dict, logger: StageLogger, run_id: str = ""):
         self._cfg = config
         self._log = logger
+        self._run_id = run_id
         self._reports_dir = Path(__file__).parent.parent / config["output"]["reports_dir"]
         self._reports_dir.mkdir(parents=True, exist_ok=True)
         self._top_n: int = config["output"]["top_n_profiles"]
@@ -238,6 +239,125 @@ class StageReporter:
 
     def _timestamp_str(self) -> str:
         return datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    # ── Structured run dir (command-center readable) ──────────────────────────
+
+    def export_run_dir(
+        self,
+        profiles: list[dict],
+        disqualified: list[dict],
+        run_counts: dict,
+    ):
+        """Write reports/{run_id}/ with candidates.json, disqualified.json, meta.json."""
+        if not self._run_id:
+            return
+
+        run_dir = self._reports_dir / self._run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        candidates = [self._profile_to_candidate(p) for p in profiles]
+        with open(run_dir / "candidates.json", "w", encoding="utf-8") as f:
+            json.dump(candidates, f, indent=2, default=str)
+
+        disq_mapped = []
+        for d in disqualified:
+            source = d.get("source", "hyperliquid")
+            market = "forex" if source in ("myfxbook", "fx_blue") else "crypto"
+            disq_mapped.append({
+                "id": d.get("address", d.get("id", "")),
+                "market": market,
+                "source": source,
+                "reason": d.get("reason", ""),
+                "stage": "stage1",
+            })
+        with open(run_dir / "disqualified.json", "w", encoding="utf-8") as f:
+            json.dump(disq_mapped, f, indent=2, default=str)
+
+        by_market: dict = {}
+        by_source: dict = {}
+        for c in candidates:
+            by_market[c["market"]] = by_market.get(c["market"], 0) + 1
+            by_source[c["source"]] = by_source.get(c["source"], 0) + 1
+
+        total_scanned = run_counts.get("total_scanned") or 0
+        passed_initial = run_counts.get("passed_initial_filter") or 0
+        total_qualified = run_counts.get("total_qualified") or 0
+
+        meta = {
+            "run_id": self._run_id,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "total_scanned": total_scanned,
+            "total_qualified": total_qualified,
+            "by_market": by_market,
+            "by_source": by_source,
+            "funnel": [
+                {"label": "Leaderboard scan", "count_in": total_scanned, "count_out": passed_initial},
+                {"label": "Qualification filters", "count_in": passed_initial, "count_out": total_qualified},
+            ],
+        }
+        with open(run_dir / "meta.json", "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, default=str)
+
+        self._log.info(f"Run dir → {run_dir}/")
+
+    def _profile_to_candidate(self, p: dict) -> dict:
+        """Translate pipeline wallet profile to the API Candidate shape."""
+        bm = p.get("balance_metrics") or {}
+        pm = p.get("performance_metrics") or {}
+        sb = p.get("score_breakdown") or {}
+        bp = p.get("behavioral_patterns") or {}
+        flags = p.get("flags") or {}
+        windows = p.get("monthly_windows") or []
+
+        source = p.get("source", "hyperliquid")
+        market = "forex" if source in ("myfxbook", "fx_blue") else "crypto"
+
+        return {
+            "rank": p.get("rank") or 0,
+            "id": p.get("address", ""),
+            "market": market,
+            "source": source,
+            "composite_score": p.get("composite_score") or 0.0,
+            "lookback_tier": p.get("lookback_tier"),
+            "lookback_span_days": p.get("lookback_span_days"),
+            "score_breakdown": sb,
+            "starting_balance": bm.get("starting_balance") or 0.0,
+            "ending_balance": bm.get("ending_balance") or 0.0,
+            "net_growth_pct": bm.get("net_growth_pct") or 0.0,
+            "peak_balance": bm.get("peak_balance") or 0.0,
+            "lowest_balance": bm.get("lowest_balance") or 0.0,
+            "monthly_balance": [
+                {"month": m.get("month_label", ""), "value": m.get("ending_balance", 0.0)}
+                for m in bm.get("month_over_month_progression") or []
+            ],
+            "overall_win_rate": pm.get("overall_win_rate") or 0.0,
+            "monthly_win_rate": [
+                {"month": w.get("month", ""), "value": w.get("win_rate", 0.0)}
+                for w in windows
+            ],
+            "win_rate_trend": pm.get("win_rate_trend") or "stable",
+            "avg_win": pm.get("average_win_usd") or 0.0,
+            "avg_loss": pm.get("average_loss_usd") or 0.0,
+            "avg_rr": pm.get("average_rr_ratio"),
+            "peak_drawdown": pm.get("peak_drawdown_pct") or 0.0,
+            "trade_count": pm.get("total_trades") or 0,
+            "preferred_days": [
+                {"label": d.get("day", ""), "count": d.get("trade_count", 0)}
+                for d in bp.get("preferred_days") or []
+            ],
+            "preferred_instruments": [
+                {"label": i.get("instrument", ""), "count": i.get("trade_count", 0),
+                 "win_rate": i.get("win_rate")}
+                for i in bp.get("preferred_instruments") or []
+            ],
+            "typical_entry_hour_utc": bp.get("typical_entry_hour_utc"),
+            "avg_hold_time_hours": bp.get("average_hold_hours"),
+            "exit_efficiency": bp.get("exit_efficiency_score"),
+            "yellow_flag_count": flags.get("yellow_flags") or 0,
+            "window_count": flags.get("window_count") or 0,
+            "windows_below_threshold": flags.get("windows_below_threshold") or 0,
+            "is_shortlist": (p.get("rank") or 999) <= self._shortlist_n,
+        }
 
     def export_json(self, profiles: list[dict], stage: str):
         ts = self._timestamp_str()

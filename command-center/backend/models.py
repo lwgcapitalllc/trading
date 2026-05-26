@@ -121,34 +121,57 @@ class ConfigGitStatus(BaseModel):
 
 class Candidate(BaseModel):
     rank: int
-    id: str
-    market: str
-    source: str
+    id: str                                 # wallet address
+    market: str                             # "crypto" | "forex"
+    source: str                             # "hyperliquid" | "myfxbook" | ...
     composite_score: float
+    lookback_tier: Optional[str] = None
+    lookback_span_days: Optional[int] = None
     score_breakdown: dict[str, float]
+    # balance
     starting_balance: float
     ending_balance: float
     net_growth_pct: float
     peak_balance: float
     lowest_balance: float
     monthly_balance: list[MonthlyPoint]
+    # performance
     overall_win_rate: float
     monthly_win_rate: list[MonthlyPoint]
+    win_rate_trend: str                     # "improving" | "stable" | "declining"
     avg_win: float
     avg_loss: float
-    avg_rr: float
+    avg_rr: Optional[float] = None
     peak_drawdown: float
     trade_count: int
+    # behavioral
     preferred_days: list[RankedItem]
     preferred_instruments: list[RankedItem]
-    typical_entry_time: str
-    avg_hold_time_hours: float
-    exit_efficiency: float
-    preferred_session: Optional[str] = None
-    consistency_rating: str             # "improving" | "stable" | "declining"
-    yellow_flags: list[str]
-    strikes: list[str]
-    is_shortlist: bool
+    typical_entry_hour_utc: Optional[int] = None
+    avg_hold_time_hours: Optional[float] = None
+    exit_efficiency: Optional[float] = None
+    # flags
+    yellow_flag_count: int = 0
+    window_count: int = 0
+    windows_below_threshold: int = 0
+    is_shortlist: bool = False
+
+
+class RunProgress(BaseModel):
+    run_id: str
+    status: str                             # "idle" | "running" | "complete" | "error"
+    stage: int
+    stage_name: str
+    phase: str
+    pct: int
+    wallets_scanned: int
+    wallets_total: int
+    qualified_so_far: int
+    disqualified_so_far: int
+    message: str
+    started_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    elapsed_seconds: float = 0.0
 
 
 class DisqualifiedCandidate(BaseModel):

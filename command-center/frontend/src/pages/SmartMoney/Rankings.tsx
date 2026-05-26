@@ -115,7 +115,7 @@ export function Rankings({ candidates, onSelect }: RankingsProps) {
                 </td>
                 <td className="px-[14px] py-[11px]">
                   <span className="font-mono text-[11px]">{c.id.length > 16 ? `${c.id.slice(0, 8)}…${c.id.slice(-4)}` : c.id}</span>
-                  {c.yellow_flags.length > 0 && (
+                  {c.yellow_flag_count > 0 && (
                     <span className="ml-[6px] text-[9px] font-semibold px-[5px] py-[1px] rounded-[3px] bg-warn-muted text-warn-text">YF</span>
                   )}
                 </td>
@@ -143,8 +143,8 @@ export function Rankings({ candidates, onSelect }: RankingsProps) {
                   {(c.overall_win_rate * 100).toFixed(0)}%
                 </td>
                 <td className="px-[14px] py-[11px]">
-                  <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${CONSISTENCY_PILL[c.consistency_rating] ?? CONSISTENCY_PILL.stable}`}>
-                    {c.consistency_rating}
+                  <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${CONSISTENCY_PILL[c.win_rate_trend] ?? CONSISTENCY_PILL.stable}`}>
+                    {c.win_rate_trend}
                   </span>
                 </td>
               </tr>

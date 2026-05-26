@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import database as db
 from run_logger import StageLogger
+from run_progress import ProgressWriter
 from scanner.hyperliquid import HyperliquidClient, HyperliquidScanner
 from profiler.hyperliquid_profiler import HyperliquidProfiler
 from profiler.filters import QualificationGate
@@ -80,8 +81,11 @@ def _build_watchlist_entry(
 
 
 def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
+    progress = ProgressWriter()
+    run_id = progress.start(stage=1, stage_name="Hyperliquid scan")
+
     logger = StageLogger("1-hyperliquid")
-    run_id = db.start_run("stage1")
+    db_run_id = db.start_run("stage1")
     logger.info("=" * 60)
     logger.info("Stage 1 — Hyperliquid Scanner & Profiler starting")
     logger.info(f"Config: min_trades={config['qualification']['min_trades']}, "
@@ -126,6 +130,14 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 
     logger.info(f"Step 1.2 complete — {len(passed_initial)} wallets pass initial filters")
 
+    total_wallets = len(passed_initial)
+    progress.update(
+        pct=10,
+        phase="profiling wallets",
+        message=f"Fetched {total_wallets} wallets from leaderboard",
+        wallets_total=total_wallets,
+    )
+
     # ------------------------------------------------------------------
     # Steps 1.3–1.5: Profile + filter each wallet
     # ------------------------------------------------------------------
@@ -134,7 +146,16 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
     qualifying: list[dict] = []
     watchlist: list[dict] = []
 
-    for wallet in passed_initial:
+    for i, wallet in enumerate(passed_initial):
+        progress.update(
+            pct=10 + int(i / max(total_wallets, 1) * 70),
+            phase="profiling wallets",
+            message=f"Profiling wallet {i + 1} / {total_wallets}",
+            wallets_scanned=i,
+            wallets_total=total_wallets,
+            qualified_so_far=len(qualifying),
+            disqualified_so_far=i - len(qualifying),
+        )
         address = wallet["address"]
 
         # Step 1.3: Parse fills into matched trades
@@ -184,6 +205,15 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 
     logger.info(f"Step 1.5 complete — {len(qualifying)} wallets pass all qualification filters")
     logger.set("passed_win_rate_filter", len(qualifying))
+    progress.update(
+        pct=80,
+        phase="scoring",
+        message=f"{len(qualifying)} wallets qualified — scoring",
+        wallets_scanned=total_wallets,
+        wallets_total=total_wallets,
+        qualified_so_far=len(qualifying),
+        disqualified_so_far=total_wallets - len(qualifying),
+    )
 
     # ------------------------------------------------------------------
     # Step 1.6: Score all qualifying wallets
@@ -230,6 +260,7 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
         })
 
     logger.info(f"Step 1.6 complete — all {len(final_scored)} wallets scored and ranked")
+    progress.update(pct=88, phase="building profiles", message=f"Building {len(final_scored)} wallet profiles")
 
     # ------------------------------------------------------------------
     # Step 1.7: Build wallet intelligence reports
@@ -258,7 +289,8 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
     # ------------------------------------------------------------------
     # Step 1.8: Export outputs
     # ------------------------------------------------------------------
-    reporter = StageReporter(config, logger)
+    progress.update(pct=95, phase="exporting", message="Writing output files")
+    reporter = StageReporter(config, logger, run_id=run_id)
     run_counts = {
         "total_scanned": logger.get("total_scanned"),
         "passed_initial_filter": len(passed_initial),
@@ -267,6 +299,7 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
         "top_profiles_built": len(profiles),
     }
 
+    reporter.export_run_dir(profiles, all_disqualified, run_counts)
     reporter.export_json(profiles, stage="stage1")
     reporter.export_csv(profiles, stage="stage1")
     reporter.export_markdown_summary(profiles, stage="stage1", run_counts=run_counts)
@@ -281,7 +314,7 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 
     # Finalise run log
     db.finish_run(
-        run_id,
+        db_run_id,
         counts={
             "total_scanned": logger.get("total_scanned"),
             "passed_initial_filter": len(passed_initial),
@@ -292,6 +325,7 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
         notes=f"Top {len(profiles)} profiles exported",
     )
 
+    progress.complete()
     logger.print_summary()
 
     # Auto-calibrate: too few → suggest threshold relaxation

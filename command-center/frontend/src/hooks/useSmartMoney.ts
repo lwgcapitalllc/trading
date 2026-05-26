@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import type {
   SmartMoneyRunSummary, SmartMoneyRun, Candidate,
-  DisqualifiedCandidate, SmartMoneyConfig, ConfigGitStatus,
+  DisqualifiedCandidate, SmartMoneyConfig, ConfigGitStatus, RunProgress,
 } from '@/types'
 
 export function useSmartMoneyRuns() {
@@ -58,6 +58,17 @@ export function useConfigGitStatus() {
     queryKey: ['smart-money', 'config', 'git-status'],
     queryFn: () => api.get<ConfigGitStatus>('/smart-money/config/git-status'),
     refetchInterval: 30_000,
+  })
+}
+
+export function useRunProgress() {
+  return useQuery({
+    queryKey: ['smart-money', 'progress'],
+    queryFn: () => api.get<RunProgress>('/smart-money/progress'),
+    refetchInterval: (query) => {
+      const status = (query.state.data as RunProgress | undefined)?.status
+      return status === 'running' ? 3_000 : 30_000
+    },
   })
 }
 

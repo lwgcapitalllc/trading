@@ -1,15 +1,80 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Play, Download } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   useSmartMoneyRuns, useSmartMoneyRun, useCandidates,
   useDisqualified, useSmartMoneyConfig, useConfigGitStatus, useSaveConfig,
+  useRunProgress,
 } from '@/hooks/useSmartMoney'
 import { PoolOverview, PoolOverviewEmpty } from './PoolOverview'
 import { Rankings } from './Rankings'
 import { CandidateProfile } from './CandidateProfile'
 import { DisqualifiedLog } from './DisqualifiedLog'
 import { Config } from './Config'
-import type { Candidate } from '@/types'
+import type { Candidate, RunProgress } from '@/types'
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  const m = Math.floor(seconds / 60)
+  const s = Math.round(seconds % 60)
+  return `${m}m ${s}s`
+}
+
+function RunProgressBar({ progress }: { progress: RunProgress }) {
+  const isRunning = progress.status === 'running'
+  const isDone = progress.status === 'complete'
+  const isError = progress.status === 'error'
+
+  return (
+    <div className={`mb-[18px] rounded-lg border p-4 ${
+      isError ? 'bg-neg-muted border-neg-muted' :
+      isDone  ? 'bg-pos-muted border-pos-muted' :
+                'bg-bg-surface border-border-subtle'
+    }`}>
+      <div className="flex items-center justify-between mb-[10px]">
+        <div className="flex items-center gap-2">
+          {isRunning && <span className="w-[7px] h-[7px] rounded-full bg-accent animate-pulse flex-shrink-0" />}
+          {isDone    && <span className="w-[7px] h-[7px] rounded-full bg-pos flex-shrink-0" />}
+          {isError   && <span className="w-[7px] h-[7px] rounded-full bg-neg flex-shrink-0" />}
+          <span className="text-small font-semibold">
+            {progress.stage_name || `Stage ${progress.stage}`}
+          </span>
+          {progress.phase && progress.phase !== 'complete' && progress.phase !== 'error' && (
+            <span className="text-micro text-text-tertiary">· {progress.phase}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 text-micro text-text-tertiary">
+          {progress.wallets_total > 0 && (
+            <span className="font-mono">{progress.wallets_scanned} / {progress.wallets_total} wallets</span>
+          )}
+          <span>{formatElapsed(progress.elapsed_seconds)}</span>
+          <span className="font-mono font-medium text-text-secondary">{progress.pct}%</span>
+        </div>
+      </div>
+
+      <div className="h-[5px] bg-bg-surface-2 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-[width] duration-500 ease-out ${
+            isError ? 'bg-neg' : isDone ? 'bg-pos' : 'bg-accent'
+          }`}
+          style={{ width: `${progress.pct}%` }}
+        />
+      </div>
+
+      <div className="flex items-center gap-4 mt-2 text-micro text-text-tertiary">
+        {progress.qualified_so_far > 0 && (
+          <span className="text-pos-text font-medium">{progress.qualified_so_far} qualified</span>
+        )}
+        {progress.disqualified_so_far > 0 && (
+          <span>{progress.disqualified_so_far} disqualified</span>
+        )}
+        {progress.message && (
+          <span className="ml-auto truncate max-w-[300px]">{progress.message}</span>
+        )}
+      </div>
+    </div>
+  )
+}
 
 type Tab = 'overview' | 'rankings' | 'profile' | 'disqualified' | 'config'
 
@@ -22,9 +87,21 @@ const TABS: Array<{ id: Tab; label: string }> = [
 ]
 
 export function SmartMoney() {
+  const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>('overview')
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null)
+
+  const { data: progress } = useRunProgress()
+  const prevStatus = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && progress?.status === 'complete') {
+      qc.invalidateQueries({ queryKey: ['smart-money', 'runs'] })
+    }
+    prevStatus.current = progress?.status
+  }, [progress?.status, qc])
+
+  const showProgress = progress != null && progress.status !== 'idle'
 
   const { data: runs } = useSmartMoneyRuns()
   const activeRunId = selectedRunId ?? runs?.[0]?.run_id ?? null
@@ -76,6 +153,8 @@ export function SmartMoney() {
           </button>
         </div>
       </div>
+
+      {showProgress && <RunProgressBar progress={progress} />}
 
       {/* Tabs */}
       <div className="flex gap-[2px] mb-[18px] border-b border-border-subtle">

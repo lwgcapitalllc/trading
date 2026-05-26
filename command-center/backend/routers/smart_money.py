@@ -25,6 +25,7 @@ from models import (
     ConfigGitStatus,
     Candidate,
     DisqualifiedCandidate,
+    RunProgress,
 )
 
 router = APIRouter(prefix="/smart-money", tags=["smart-money"])
@@ -117,21 +118,20 @@ def _validate_config_logic(c: SmartMoneyConfig) -> None:
 
 
 def _list_run_dirs() -> list[Path]:
-    """Return sorted list of run output directories, newest first."""
+    """Return run directories that have a meta.json, newest first."""
     reports_dir = cfg.SMART_MONEY_REPORTS_DIR
     if not reports_dir.exists():
         return []
-    dirs = [d for d in reports_dir.iterdir() if d.is_dir()]
+    dirs = [d for d in reports_dir.iterdir() if d.is_dir() and (d / "meta.json").exists()]
     dirs.sort(key=lambda d: d.name, reverse=True)
     return dirs
 
 
-def _load_run(run_id: str) -> dict:
-    run_dir = cfg.SMART_MONEY_REPORTS_DIR / run_id
-    report_path = run_dir / "full_report.json"
-    if not report_path.exists():
+def _load_meta(run_id: str) -> dict:
+    meta_path = cfg.SMART_MONEY_REPORTS_DIR / run_id / "meta.json"
+    if not meta_path.exists():
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
-    with open(report_path) as f:
+    with open(meta_path) as f:
         return json.load(f)
 
 
@@ -139,19 +139,15 @@ def _load_run(run_id: str) -> dict:
 
 @router.get("/runs", response_model=list[SmartMoneyRunSummary])
 def list_runs():
-    dirs = _list_run_dirs()
     summaries: list[SmartMoneyRunSummary] = []
-    for d in dirs:
-        report = d / "full_report.json"
-        if not report.exists():
-            continue
+    for d in _list_run_dirs():
         try:
-            with open(report) as f:
-                data = json.load(f)
+            with open(d / "meta.json") as f:
+                meta = json.load(f)
             summaries.append(SmartMoneyRunSummary(
                 run_id=d.name,
-                generated_at=datetime.fromisoformat(data.get("generated_at", d.name)),
-                total_qualified=data.get("total_qualified", 0),
+                generated_at=meta.get("generated_at", d.name),
+                total_qualified=meta.get("total_qualified", 0),
             ))
         except Exception:
             pass
@@ -160,27 +156,34 @@ def list_runs():
 
 @router.get("/runs/{run_id}", response_model=SmartMoneyRun)
 def get_run(run_id: str):
-    data = _load_run(run_id)
+    meta = _load_meta(run_id)
     try:
-        return SmartMoneyRun(**data)
+        return SmartMoneyRun(run_id=run_id, **meta)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse run data: {e}")
 
 
 @router.get("/runs/{run_id}/candidates", response_model=list[Candidate])
 def list_candidates(run_id: str):
-    data = _load_run(run_id)
-    candidates = data.get("candidates", [])
+    cand_path = cfg.SMART_MONEY_REPORTS_DIR / run_id / "candidates.json"
+    if not cand_path.exists():
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    with open(cand_path) as f:
+        data = json.load(f)
     try:
-        return [Candidate(**c) for c in candidates]
+        return [Candidate(**c) for c in data]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse candidates: {e}")
 
 
 @router.get("/runs/{run_id}/candidates/{candidate_id}", response_model=Candidate)
 def get_candidate(run_id: str, candidate_id: str):
-    data = _load_run(run_id)
-    for c in data.get("candidates", []):
+    cand_path = cfg.SMART_MONEY_REPORTS_DIR / run_id / "candidates.json"
+    if not cand_path.exists():
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    with open(cand_path) as f:
+        data = json.load(f)
+    for c in data:
         if c.get("id") == candidate_id:
             return Candidate(**c)
     raise HTTPException(status_code=404, detail=f"Candidate '{candidate_id}' not found in run '{run_id}'")
@@ -262,6 +265,23 @@ def config_git_status():
         last_commit_message=commit_msg,
         last_commit_at=commit_at,
     )
+
+
+# ── Live run progress ─────────────────────────────────────────────────────────
+
+@router.get("/progress", response_model=RunProgress)
+def get_progress():
+    progress_path = cfg.SMART_MONEY_REPORTS_DIR / "progress.json"
+    if not progress_path.exists():
+        return RunProgress(
+            run_id="", status="idle", stage=0, stage_name="",
+            phase="", pct=0, wallets_scanned=0, wallets_total=0,
+            qualified_so_far=0, disqualified_so_far=0,
+            message="No pipeline run in progress", elapsed_seconds=0.0,
+        )
+    with open(progress_path) as f:
+        data = json.load(f)
+    return RunProgress(**data)
 
 
 # ── Pipeline trigger (stub) ───────────────────────────────────────────────────

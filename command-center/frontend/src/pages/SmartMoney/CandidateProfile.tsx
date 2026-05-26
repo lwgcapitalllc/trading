@@ -48,9 +48,9 @@ export function CandidateProfile({ candidate, onBack }: { candidate: Candidate; 
                   Top 5 shortlist
                 </span>
               )}
-              {candidate.yellow_flags.map((f, i) => (
-                <span key={i} className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill bg-warn-muted text-warn-text">⚑ {f}</span>
-              ))}
+              {candidate.yellow_flag_count > 0 && (
+                <span className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill bg-warn-muted text-warn-text">⚑ {candidate.yellow_flag_count} yellow flag{candidate.yellow_flag_count > 1 ? 's' : ''}</span>
+              )}
             </div>
           </div>
           <div className="ml-auto text-right">
@@ -141,24 +141,20 @@ export function CandidateProfile({ candidate, onBack }: { candidate: Candidate; 
                 </tr>
                 <tr>
                   <td className="text-text-secondary py-[5px]">Entry time</td>
-                  <td className="text-right py-[5px]">{candidate.typical_entry_time || '—'}</td>
+                  <td className="text-right py-[5px]">{candidate.typical_entry_hour_utc != null ? `${candidate.typical_entry_hour_utc}:00 UTC` : '—'}</td>
                 </tr>
                 <tr>
                   <td className="text-text-secondary py-[5px]">Avg hold</td>
-                  <td className="text-right py-[5px]">{candidate.avg_hold_time_hours.toFixed(1)} hours</td>
+                  <td className="text-right py-[5px]">{candidate.avg_hold_time_hours != null ? `${candidate.avg_hold_time_hours.toFixed(1)} hours` : '—'}</td>
                 </tr>
-                <tr>
-                  <td className="text-text-secondary py-[5px]">Exit efficiency</td>
-                  <td className="text-right py-[5px]">
-                    <span className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill bg-pos-muted text-pos-text">
-                      {candidate.exit_efficiency.toFixed(2)}
-                    </span>
-                  </td>
-                </tr>
-                {candidate.preferred_session && (
+                {candidate.exit_efficiency != null && (
                   <tr>
-                    <td className="text-text-secondary py-[5px]">Session</td>
-                    <td className="text-right py-[5px]">{candidate.preferred_session}</td>
+                    <td className="text-text-secondary py-[5px]">Exit efficiency</td>
+                    <td className="text-right py-[5px]">
+                      <span className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill bg-pos-muted text-pos-text">
+                        {candidate.exit_efficiency.toFixed(2)}
+                      </span>
+                    </td>
                   </tr>
                 )}
               </tbody>

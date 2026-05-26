@@ -86,6 +86,8 @@ export interface Candidate {
   market: string
   source: string
   composite_score: number
+  lookback_tier: string | null
+  lookback_span_days: number | null
   score_breakdown: Record<string, number>
   starting_balance: number
   ending_balance: number
@@ -95,21 +97,38 @@ export interface Candidate {
   monthly_balance: MonthlyPoint[]
   overall_win_rate: number
   monthly_win_rate: MonthlyPoint[]
+  win_rate_trend: 'improving' | 'stable' | 'declining'
   avg_win: number
   avg_loss: number
-  avg_rr: number
+  avg_rr: number | null
   peak_drawdown: number
   trade_count: number
   preferred_days: RankedItem[]
   preferred_instruments: RankedItem[]
-  typical_entry_time: string
-  avg_hold_time_hours: number
-  exit_efficiency: number
-  preferred_session: string | null
-  consistency_rating: 'improving' | 'stable' | 'declining'
-  yellow_flags: string[]
-  strikes: string[]
+  typical_entry_hour_utc: number | null
+  avg_hold_time_hours: number | null
+  exit_efficiency: number | null
+  yellow_flag_count: number
+  window_count: number
+  windows_below_threshold: number
   is_shortlist: boolean
+}
+
+export interface RunProgress {
+  run_id: string
+  status: 'idle' | 'running' | 'complete' | 'error'
+  stage: number
+  stage_name: string
+  phase: string
+  pct: number
+  wallets_scanned: number
+  wallets_total: number
+  qualified_so_far: number
+  disqualified_so_far: number
+  message: string
+  started_at: string | null
+  updated_at: string | null
+  elapsed_seconds: number
 }
 
 export interface DisqualifiedCandidate {
