@@ -1,0 +1,87 @@
+{
+  "_comment": "All qualification thresholds and pipeline settings. Edit here, never in code.",
+
+  "qualification": {
+    "min_trades": 100,
+    "min_win_rate": 0.75,
+    "min_wallet_age_days": 120,
+    "max_drawdown": 0.20,
+    "max_single_trade_pnl_share": 0.40,
+    "min_active_weeks_per_month": 3,
+    "max_avg_hold_hours": 72,
+    "min_instruments": 2
+  },
+
+  "strike_system": {
+    "yellow_flag_threshold": 1,
+    "disqualify_consecutive_months": 2,
+    "reinstate_consecutive_months": 2
+  },
+
+  "lookback": {
+    "minimum_days": 120,
+    "preferred_days": 180,
+    "elite_days": 365,
+    "window_days": 30
+  },
+
+  "pool_calibration": {
+    "thin_pool_threshold": 20,
+    "large_pool_threshold": 100,
+    "thin_pool_fallback_win_rate": 0.75,
+    "large_pool_tighter_drawdown": 0.15
+  },
+
+  "scoring": {
+    "weights": {
+      "win_rate_consistency": 0.25,
+      "risk_adjusted_return": 0.25,
+      "exit_efficiency": 0.20,
+      "trade_frequency": 0.15,
+      "instrument_day_consistency": 0.15
+    },
+    "target_trades_per_month": 30,
+    "elite_lookback_bonus": 0.10
+  },
+
+  "output": {
+    "top_n_profiles": 20,
+    "top_n_shortlist": 5,
+    "reports_dir": "reports",
+    "raw_data_dir": "data/raw",
+    "processed_data_dir": "data/processed"
+  },
+
+  "hyperliquid": {
+    "base_url": "https://api.hyperliquid.xyz",
+    "rate_limit_delay_seconds": 2.0,
+    "max_retries": 3,
+    "retry_backoff_factor": 2.0,
+    "leaderboard_window": "allTime",
+    "timeout_seconds": 30,
+    "max_leaderboard_candidates": 500,
+    "min_alltime_pnl": 10000,
+    "min_account_value": 1000
+  },
+
+  "forex": {
+    "crypto_transparency_weight": 1.0,
+    "forex_transparency_weight": 0.85,
+    "dual_platform_bias_removal": true,
+    "single_platform_yellow_flag": true,
+    "disqualify_created_within_best_window_months": 6
+  },
+
+  "stage3": {
+    "dune_api_key_env": "DUNE_API_KEY",
+    "flipside_api_key_env": "FLIPSIDE_API_KEY",
+    "birdeye_api_key_env": "BIRDEYE_API_KEY",
+    "debank_api_key_env": "DEBANK_API_KEY"
+  },
+
+  "stage4": {
+    "myfxbook_email_env": "MYFXBOOK_EMAIL",
+    "myfxbook_password_env": "MYFXBOOK_PASSWORD",
+    "fx_blue_session_env": "FX_BLUE_SESSION"
+  }
+}
