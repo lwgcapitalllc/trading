@@ -1,4 +1,6 @@
+# =============================================================
 # Python
+# =============================================================
 __pycache__/
 *.py[cod]
 *.pyo
@@ -8,27 +10,88 @@ __pycache__/
 dist/
 build/
 .eggs/
+
+# =============================================================
+# Models and large binaries
+# =============================================================
 *.pkl
 *.pickle
 
-# Data files (backed up separately to backups branch)
-smart-money/data/raw/
-smart-money/data/processed/
-*.json.bak
-
-# Environment
-.env
-.venv
+# =============================================================
+# Virtual environments / Node
+# =============================================================
+.venv/
 venv/
 env/
+node_modules/
 
-# OS
+# =============================================================
+# Secrets — never commit
+# =============================================================
+.env
+credentials.json
+
+# =============================================================
+# OS / IDE
+# =============================================================
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
-
-# IDE
 .vscode/
 .idea/
+
+# =============================================================
+# Logs
+# =============================================================
+*.log
+
+# =============================================================
+# Misc artefacts
+# =============================================================
+*.json.bak
+
+# =============================================================
+# Smart Money — pipeline data and generated output
+# =============================================================
+smart-money/data/raw/
+smart-money/data/processed/
+smart-money/data/smart_money.db
+smart-money/reports/*
+!smart-money/reports/.gitkeep
+
+# =============================================================
+# Algos — VPS-only runtime files
+# These live only on the VPS and are backed up to the
+# `backups` branch via backup.py. Never overwrite via git pull.
+# =============================================================
+
+# Algo backup snapshots (backups branch only)
+algos/backup/
+
+# Live bot state
+algos/markets/fx/instances/*/bot_state.json
+
+# Trade histories
+algos/markets/fx/instances/*/smc_trend_trades.json
+algos/markets/fx/instances/*/mean_reversion_trades.json
+algos/markets/fx/instances/*/scalper_trades.json
+algos/markets/fx/instances/*/fft_trades.json
+
+# Equity curves and daily/weekly performance
+algos/markets/fx/instances/*/gold_main_equity.json
+algos/markets/fx/instances/*/scalper_equity.json
+algos/markets/fx/instances/*/fft_equity.json
+algos/markets/fx/instances/*/smc_trend_daily.json
+algos/markets/fx/instances/*/mean_reversion_daily.json
+algos/markets/fx/instances/*/fft_daily.json
+algos/markets/fx/instances/*/smc_trend_weekly.json
+algos/markets/fx/instances/*/mean_reversion_weekly.json
+algos/markets/fx/instances/*/fft_weekly.json
+
+# Telegram runtime
+algos/users.json
+algos/telegram_offset.json
+algos/telegram_start.json
+algos/telegram_monitor_state.json
+
+# MT5 lock
+algos/mt5_connect.lock

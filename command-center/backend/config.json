@@ -1,0 +1,9 @@
+{
+  "monorepo_root": "/Users/alwg/trading",
+  "smart_money_root": "/Users/alwg/trading/smart-money",
+  "smart_money_config_path": "/Users/alwg/trading/smart-money/config/config.json",
+  "smart_money_reports_dir": "/Users/alwg/trading/smart-money/reports",
+  "instances_dir": "/Users/alwg/trading/algos/markets/fx/instances",
+  "ssh_alias": "forexvps",
+  "vps_agent_tunnel": "http://localhost:8765"
+}
