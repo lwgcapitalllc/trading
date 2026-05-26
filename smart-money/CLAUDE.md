@@ -40,6 +40,28 @@ python run_stage2.py --address 0xYOUR_WALLET_ADDRESS
 | Stage 4 | Scaffold only | Needs MYFXBOOK_EMAIL, MYFXBOOK_PASSWORD, FX_BLUE_SESSION |
 | Stage 5 | Fully implemented | Reads from DB — requires Stages 1+ to have run |
 
+## Where We Left Off
+
+**Last action:** Stage 1 has been run once. Pool was too thin (1 qualified wallet). Config has been updated and bugs fixed. Ready to rerun Stage 1.
+
+**Next step:** `python3 run_stage1.py` — expect ~17 min runtime.
+
+### Config changes made (from original spec)
+| Setting | Original | Current | Reason |
+|---|---|---|---|
+| `min_win_rate` | 80% | 75% | Pool too thin at 80% — top PnL earners are high-leverage, not consistent win-rate traders |
+| `min_wallet_age_days` | 90 | 120 | Require 4 months of history |
+| `lookback.minimum_days` | 90 | 120 | Require 4 months of active trading span (separate from wallet age) |
+
+### Bugs found and fixed in Stage 1
+1. **Leaderboard endpoint changed** — Hyperliquid deprecated `POST /info` with `type:leaderboard`. Now uses `GET https://stats-data.hyperliquid.xyz/Mainnet/leaderboard` with different response schema. Fixed in `scanner/hyperliquid.py`.
+2. **HTTP error retry loop** — `if e.response` evaluates False for 4xx responses, so all HTTP errors retried 3x instead of failing fast. Fixed: `if e.response is not None`.
+3. **Pre-filtering** — Original code made 37k fills API calls (one per leaderboard entry). Fixed by pre-filtering leaderboard by allTime PnL ≥ $10k and account value ≥ $1k, then capping to top 500. Runtime: ~17 min.
+4. **Span gate missing** — Age check (`min_wallet_age_days`) measured wallet creation date, not trading history length. A wallet 4 months old but trading for only 22 days passed. Fixed: added `lookback.minimum_days` span gate in `profiler/filters.py:QualificationGate.evaluate`.
+
+### Watchlist feature
+Wallets that fail only the span gate (short trading history but strong performance) are preserved in `reports/stage1_watchlist_*.json` instead of silently dropped. Sorted by total PnL descending. First run had 1 watchlist candidate: `0x2d23b731...` — 2612% growth, 72.5% WR, 22-day span.
+
 ## Thresholds
 
 All in `config/config.json`. Edit there — never in code.
