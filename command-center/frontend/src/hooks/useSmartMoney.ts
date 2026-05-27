@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 import type {
   SmartMoneyRunSummary, SmartMoneyRun, Candidate,
   DisqualifiedCandidate, SmartMoneyConfig, ConfigGitStatus, RunProgress,
+  CacheStats, CacheClearResult,
 } from '@/types'
 
 // Module-level timestamp — shared between useRunProgress and useRunPipeline so
@@ -119,6 +120,29 @@ export function useSaveConfig() {
       api.put<SmartMoneyConfig>('/smart-money/config', cfg),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['smart-money', 'config'] })
+    },
+  })
+}
+
+export function useCacheStats() {
+  return useQuery({
+    queryKey: ['smart-money', 'cache', 'stats'],
+    queryFn: () => api.get<CacheStats>('/smart-money/cache/stats'),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useClearCache() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.delete<CacheClearResult>('/smart-money/cache'),
+    onSuccess: (data) => {
+      const n = data.cleared
+      toast.success(`Cache cleared — ${n} wallet${n !== 1 ? 's' : ''} removed`)
+      qc.invalidateQueries({ queryKey: ['smart-money', 'cache'] })
+    },
+    onError: () => {
+      toast.error('Failed to clear cache')
     },
   })
 }

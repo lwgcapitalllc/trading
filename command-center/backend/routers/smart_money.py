@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import sqlite3 as _sqlite3
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,8 @@ from models import (
 )
 
 router = APIRouter(prefix="/smart-money", tags=["smart-money"])
+
+_SM_DB_PATH = cfg.SMART_MONEY_ROOT / "data" / "smart_money.db"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -372,3 +375,48 @@ def stop_pipeline():
     os.replace(str(tmp), str(progress_path))
 
     return {"status": "stopped", "killed": killed}
+
+
+# ── Fills cache ───────────────────────────────────────────────────────────────
+
+class _CacheStats(BaseModel):
+    wallets_cached: int
+    oldest_fetched_at: Optional[int] = None
+    newest_fetched_at: Optional[int] = None
+
+
+class _CacheClearResult(BaseModel):
+    cleared: int
+
+
+@router.get("/cache/stats", response_model=_CacheStats)
+def cache_stats():
+    """Return fills cache row count and age info."""
+    if not _SM_DB_PATH.exists():
+        return _CacheStats(wallets_cached=0)
+    try:
+        with _sqlite3.connect(str(_SM_DB_PATH)) as conn:
+            conn.row_factory = _sqlite3.Row
+            row = conn.execute(
+                "SELECT COUNT(*) as n, MIN(fetched_at) as oldest, MAX(fetched_at) as newest "
+                "FROM fills_cache"
+            ).fetchone()
+        if not row:
+            return _CacheStats(wallets_cached=0)
+        return _CacheStats(
+            wallets_cached=row["n"],
+            oldest_fetched_at=row["oldest"],
+            newest_fetched_at=row["newest"],
+        )
+    except Exception:
+        return _CacheStats(wallets_cached=0)
+
+
+@router.delete("/cache", response_model=_CacheClearResult)
+def clear_cache():
+    """Delete all fills cache entries so the next scan fetches fresh data."""
+    if not _SM_DB_PATH.exists():
+        return _CacheClearResult(cleared=0)
+    with _sqlite3.connect(str(_SM_DB_PATH)) as conn:
+        n = conn.execute("DELETE FROM fills_cache").rowcount
+    return _CacheClearResult(cleared=n)

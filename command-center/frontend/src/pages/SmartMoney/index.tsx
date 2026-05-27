@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Play, Download } from 'lucide-react'
+import { Play, Download, Trash2 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useSmartMoneyRuns, useSmartMoneyRun, useCandidates,
   useDisqualified, useSmartMoneyConfig, useConfigGitStatus, useSaveConfig,
   useRunProgress, useRunPipeline, useStopPipeline,
+  useCacheStats, useClearCache,
 } from '@/hooks/useSmartMoney'
 import { PoolOverview, PoolOverviewEmpty } from './PoolOverview'
 import { Rankings } from './Rankings'
@@ -378,6 +379,8 @@ export function SmartMoney() {
   const [isStarting, setIsStarting] = useState(false)
   // profile: which config template to use when triggering a run
   const [profile, setProfile] = useState<'bot' | 'human'>('bot')
+  // confirmClear: two-step guard before deleting the fills cache
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const { data: progress } = useRunProgress()
   const prevStatus = useRef<string | undefined>(undefined)
@@ -403,10 +406,19 @@ export function SmartMoney() {
     : progress
 
   const isLive = isStarting || progress?.status === 'running'
-  const showProgress = effectiveProgress != null
 
   const { data: runs } = useSmartMoneyRuns()
   const activeRunId = selectedRunId ?? runs?.[0]?.run_id ?? null
+
+  // Terminal is tied to progress.json (always the latest run). Hide it when
+  // the user has explicitly selected a historical run — showing the latest
+  // run's terminal while browsing older data is confusing.
+  const isViewingHistoricalRun =
+    selectedRunId !== null &&
+    runs != null &&
+    runs.length > 0 &&
+    selectedRunId !== runs[0].run_id
+  const showProgress = effectiveProgress != null && !isViewingHistoricalRun
 
   const { data: run, isLoading: runLoading } = useSmartMoneyRun(activeRunId)
   const { data: candidates, isLoading: candLoading } = useCandidates(activeRunId)
@@ -416,6 +428,8 @@ export function SmartMoney() {
   const { mutate: saveConfig, isPending: saving, error: saveErr } = useSaveConfig()
   const { mutate: runPipeline, isPending: launching } = useRunPipeline()
   const { mutate: stopPipeline, isPending: stopping } = useStopPipeline()
+  const { data: cacheStats } = useCacheStats()
+  const { mutate: clearCache, isPending: clearing } = useClearCache()
 
   const handleRunPipeline = () => {
     setIsStarting(true)
@@ -483,6 +497,47 @@ export function SmartMoney() {
                 <Download size={14} />
                 Export
               </button>
+
+              {/* ── Clear cache — two-step confirmation ── */}
+              {!confirmClear ? (
+                <button
+                  onClick={() => setConfirmClear(true)}
+                  disabled={!cacheStats || cacheStats.wallets_cached === 0}
+                  title={
+                    !cacheStats || cacheStats.wallets_cached === 0
+                      ? 'Cache is empty'
+                      : `${cacheStats.wallets_cached} wallets cached — click to clear before next scan`
+                  }
+                  className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-secondary hover:text-warn hover:border-warn/40 transition-colors duration-[120ms] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-secondary disabled:hover:border-border-default"
+                >
+                  <Trash2 size={13} />
+                  {cacheStats && cacheStats.wallets_cached > 0
+                    ? `Clear cache (${cacheStats.wallets_cached})`
+                    : 'Clear cache'}
+                </button>
+              ) : (
+                <div className="flex items-center gap-[8px] px-3 py-[5px] rounded-md border border-warn/40 bg-warn/5 text-[11px] font-mono whitespace-nowrap">
+                  <span className="text-warn">⚠</span>
+                  <span className="text-text-secondary">
+                    Clear {cacheStats?.wallets_cached} cached wallets?
+                  </span>
+                  <button
+                    onClick={() => setConfirmClear(false)}
+                    className="text-text-tertiary hover:text-text-primary transition-colors duration-[120ms] ml-1"
+                  >
+                    Cancel
+                  </button>
+                  <span className="text-border-subtle">·</span>
+                  <button
+                    onClick={() => { clearCache(); setConfirmClear(false) }}
+                    disabled={clearing}
+                    className="text-warn font-semibold hover:text-warn/80 transition-colors duration-[120ms] disabled:opacity-50"
+                  >
+                    {clearing ? 'Clearing…' : 'Yes, clear'}
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-center gap-[6px]">
                 {/* Profile toggle: BOT / HUMAN */}
                 <div className="flex rounded-md overflow-hidden border border-border-default text-[11px] font-mono">

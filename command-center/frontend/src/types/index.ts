@@ -148,6 +148,16 @@ export interface DisqualifiedCandidate {
   stage: string
 }
 
+export interface CacheStats {
+  wallets_cached: number
+  oldest_fetched_at: number | null
+  newest_fetched_at: number | null
+}
+
+export interface CacheClearResult {
+  cleared: number
+}
+
 // ── Bots ────────────────────────────────────────────────────────────────────
 
 export interface BotStatus {

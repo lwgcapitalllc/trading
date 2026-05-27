@@ -55,6 +55,8 @@ Thumbs.db
 smart-money/data/raw/
 smart-money/data/processed/
 smart-money/data/smart_money.db
+smart-money/data/smart_money.db-shm
+smart-money/data/smart_money.db-wal
 smart-money/reports/*
 !smart-money/reports/.gitkeep
 

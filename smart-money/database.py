@@ -372,3 +372,10 @@ def fills_cache_stats() -> dict:
             FROM fills_cache
         """).fetchone()
     return dict(row) if row else {"n": 0, "oldest": None, "newest": None}
+
+
+def clear_fills_cache() -> int:
+    """Delete all entries from the fills cache. Returns number of rows deleted."""
+    with get_conn() as conn:
+        n = conn.execute("DELETE FROM fills_cache").rowcount
+    return n

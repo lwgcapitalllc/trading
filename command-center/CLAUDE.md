@@ -73,7 +73,8 @@ cd command-center
 | Smart Money — Candidate Profile | ✅ Live (UI) | Needs qualifying candidates |
 | Smart Money — Disqualified Log | ✅ Live | Category badges, readable reason formatting, filter tabs with counts, wallet hyperlinks |
 | Smart Money — Run pipeline button | ✅ Live | `POST /smart-money/run` spawns `run_stage1.py`; 409 if already running; optimistic instant terminal |
-| Smart Money — Scanner Terminal | ✅ Live | Replaces old progress bar; matrix-style live address feed; 1s poll while running, 1.5s for 60s after trigger, 30s idle |
+| Smart Money — Scanner Terminal | ✅ Live | Matrix-style live address feed; hidden when viewing a historical run |
+| Smart Money — Clear Cache button | ✅ Live | Two-step inline confirmation; shows live cached count; `DELETE /smart-money/cache` |
 | Bots — monitoring table | ✅ Live (UI) | Needs VPS SSH verification |
 | Bots — scheduled jobs | ✅ Live (UI) | Needs VPS SSH verification |
 | Bots — log viewer | ✅ Live (UI) | Needs VPS SSH verification |
@@ -204,6 +205,50 @@ Three independent places each rendered "Run complete" after a run:
 
 ### `SmartMoney/index.tsx` — Export button
 - Was a live-looking button with no `onClick`. Now `disabled` + `opacity-40` + tooltip `"Export coming soon"`.
+
+---
+
+## Session — cache management + terminal fix (2026-05-27)
+
+### Clear Cache feature (on-demand fills cache wipe)
+
+**Why:** The fills cache stores raw trade history per wallet for 24h to avoid re-fetching on same-day reruns. Users need a way to force a fresh fetch (e.g. to ensure data is current before a retest).
+
+**`smart-money/database.py`**
+- Added `clear_fills_cache() -> int` — `DELETE FROM fills_cache`, returns row count.
+
+**`backend/routers/smart_money.py`**
+- Added `_SM_DB_PATH = cfg.SMART_MONEY_ROOT / "data" / "smart_money.db"` module constant.
+- Added `GET /smart-money/cache/stats` → `{ wallets_cached, oldest_fetched_at, newest_fetched_at }`. Uses `sqlite3` directly (no smart-money venv dependency). Polled every 60s by the UI.
+- Added `DELETE /smart-money/cache` → `{ cleared: int }`. Wipes fills_cache table.
+
+**`frontend/src/api/client.ts`**
+- Added `delete: <T>(path) => request<T>(path, { method: 'DELETE' })` to the `api` object.
+
+**`frontend/src/types/index.ts`**
+- Added `CacheStats { wallets_cached, oldest_fetched_at, newest_fetched_at }`.
+- Added `CacheClearResult { cleared }`.
+
+**`frontend/src/hooks/useSmartMoney.ts`**
+- Added `useCacheStats()` — polls `/smart-money/cache/stats` every 60s.
+- Added `useClearCache()` — mutation for `DELETE /smart-money/cache`; success toast shows exact count removed.
+
+**`frontend/src/pages/SmartMoney/index.tsx`**
+- Added `confirmClear` state (boolean) for two-step confirmation guard.
+- **Idle state only** (hidden during live runs): `Clear cache (N)` button shows live cached count.
+  - Disabled + greyed out when cache is empty.
+  - First click → swaps to inline confirmation bar: `⚠ Clear N cached wallets?  Cancel · Yes, clear`
+  - Cancel → reverts to normal button.
+  - "Yes, clear" → fires mutation, dismisses confirmation, shows toast.
+
+### Scanner Terminal — hide on historical run
+
+**Problem:** The terminal is driven by `progress.json` (always the latest run). When the user selects an older run from the dropdown, the terminal still displayed the latest run's "complete" state — confusing while browsing unrelated data.
+
+**Fix (`SmartMoney/index.tsx`):**
+- Added `isViewingHistoricalRun`: true when `selectedRunId` is explicitly set AND differs from `runs[0].run_id`.
+- `showProgress` is now `effectiveProgress != null && !isViewingHistoricalRun`.
+- Terminal hides entirely when browsing any run that is not the most recent one. Live runs always show the terminal regardless.
 
 ---
 
