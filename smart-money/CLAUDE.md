@@ -26,6 +26,9 @@ python run_stage5.py              # Unified final report
 # Stage 1 with relaxed win rate (if pool is too small)
 python run_stage1.py --win-rate 0.75
 
+# Stage 1 dry run — skip API calls entirely, re-profile wallets already in DB
+python run_stage1.py --dry-run
+
 # Validate a specific wallet address
 python run_stage2.py --address 0xYOUR_WALLET_ADDRESS
 ```
@@ -104,6 +107,7 @@ smart-money/
 ├── config/config.json          ← All thresholds
 ├── database.py                 ← SQLite layer (shared by all stages)
 ├── run_logger.py               ← Pipeline logging utility
+├── run_progress.py             ← Atomic progress.json writer (polled by command-center)
 ├── main.py                     ← Full pipeline orchestrator
 ├── run_stage1.py               ← Stage 1 entrypoint
 ├── run_stage2.py               ← Stage 2 validation helper

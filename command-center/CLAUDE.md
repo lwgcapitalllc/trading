@@ -73,7 +73,7 @@ cd command-center
 | Smart Money — Candidate Profile | ✅ Live (UI) | Needs qualifying candidates |
 | Smart Money — Disqualified Log | ✅ Live | Category badges, readable reason formatting, filter tabs with counts, wallet hyperlinks |
 | Smart Money — Run pipeline button | ✅ Live | `POST /smart-money/run` spawns `run_stage1.py`; 409 if already running; optimistic instant terminal |
-| Smart Money — Scanner Terminal | ✅ Live | Replaces old progress bar; matrix-style live address feed; 1s poll while running, 30s idle |
+| Smart Money — Scanner Terminal | ✅ Live | Replaces old progress bar; matrix-style live address feed; 1s poll while running, 1.5s for 60s after trigger, 30s idle |
 | Bots — monitoring table | ✅ Live (UI) | Needs VPS SSH verification |
 | Bots — scheduled jobs | ✅ Live (UI) | Needs VPS SSH verification |
 | Bots — log viewer | ✅ Live (UI) | Needs VPS SSH verification |
@@ -96,7 +96,7 @@ cd command-center
   - Stats bar: wallets/sec, scanned count, qualified count
   - Thin 3 px accent progress bar at bottom
   - Phase-sensitive: shows matrix feed during scan phase; status text + cursor blink otherwise
-- **Instant terminal on "Run pipeline" click** — `useRunPipeline` sets optimistic `setQueryData` immediately in the `onSuccess` callback so the terminal appears in < 200 ms (before Python even writes `progress.json`)
+- **Instant terminal on "Run pipeline" click** — `handleRunPipeline` calls `setIsStarting(true)` synchronously before the mutation fires. The component immediately shows `STARTING_PROGRESS` (a constant `status: 'running'` placeholder). Once the backend confirms the run is live (`progress.status === 'running'`), `isStarting` is cleared and the real progress feed takes over. A module-level `_lastTriggerMs` timestamp keeps polling at 1.5 s for 60 s after the trigger (bridges the 10–15 s Python startup window where `progress.json` still shows the old completed state).
 - **`recent_addresses` in progress feed** — `RunProgress` model (`models.py` / `types/index.ts`) gained `recent_addresses: list[dict]`; `run_stage1.py` maintains a rolling list of up to 25 entries (short keys `{a, s}`) and passes them on every `progress.update()` call; the scanner callback signature in `hyperliquid.py` was updated to emit `(address, result_type)`
 - **Disqualified Log full rewrite** — category badges (Win Rate = red, Activity = teal, Drawdown = red, Concentration = gold, API errors = orange), readable reason formatting (Unix timestamps in window messages → human dates), filter tabs with live counts, wallet address hyperlinks to Hyperliquid explorer
 - **Electric Cyan theme** — `tailwind.config.js` updated: `accent #00e5ff`, `pos #00ff7f`, `neg #ff3b5c`, `warn #ffb300`; cooler blue-black surface tones; `dropShadow` glow extensions (`glow-accent`, `glow-pos`, `glow-neg`, `glow-gold`) and `boxShadow` glow variants added globally

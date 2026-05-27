@@ -1,9 +1,12 @@
 """
 Smart Money router — /smart-money/*
 
-GET endpoints read real pipeline output files (implemented in build step 4).
-Config endpoints (read/validate-write/git-status) are also fully implemented.
-POST /run is a 501 stub — backend implementation deferred.
+All endpoints are fully implemented:
+- GET /runs, /runs/{id}, /runs/{id}/candidates, /runs/{id}/disqualified — read pipeline output files
+- GET /config, PUT /config, GET /config/git-status — config read/write with bidirectional conversion
+- GET /progress — polls reports/progress.json written by the pipeline
+- POST /run — spawns run_stage1.py as a subprocess (--profile bot|human); 409 guard if already running
+- POST /stop — SIGTERMs the pipeline process and resets progress.json to idle
 """
 
 from __future__ import annotations
