@@ -33,6 +33,7 @@ from profiler.reporter import build_wallet_profile, StageReporter
 CONFIG_PATH     = Path(__file__).parent / "config" / "config.json"
 TEMPLATES_DIR   = Path(__file__).parent / "config" / "templates"
 VALID_PROFILES  = ["bot", "human"]
+ALL_PROFILES    = [None, "bot"]   # default + bot — used by --all-profiles
 
 
 def load_config(profile: str = None, win_rate_override: float = None) -> dict:
@@ -443,14 +444,26 @@ def main():
         help="Config profile to use: 'bot' (rapid growth, algo) or 'human' (conservative). "
              "Omit to use config/config.json.",
     )
+    parser.add_argument(
+        "--all-profiles", action="store_true",
+        help="Run Stage 1 twice: once with config/config.json (default), once with the bot "
+             "profile. Both write to the same DB. Catches both consistent long-term traders "
+             "AND short-burst high-ROI bots in a single command.",
+    )
     parser.add_argument("--win-rate", type=float, default=None,
                         help="Override min_win_rate threshold (e.g. 0.75)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Skip API calls and use wallets already in the database")
     args = parser.parse_args()
 
-    config = load_config(profile=args.profile, win_rate_override=args.win_rate)
-    run_stage1(config, dry_run=args.dry_run)
+    if args.all_profiles:
+        print("\n=== Stage 1 — Pass 1/2: Default profile (consistent traders) ===")
+        run_stage1(load_config(profile=None, win_rate_override=args.win_rate), dry_run=args.dry_run)
+        print("\n=== Stage 1 — Pass 2/2: Bot profile (short-burst high-ROI bots) ===")
+        run_stage1(load_config(profile="bot", win_rate_override=args.win_rate), dry_run=args.dry_run)
+    else:
+        config = load_config(profile=args.profile, win_rate_override=args.win_rate)
+        run_stage1(config, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

@@ -67,6 +67,7 @@ cd command-center
 | Module | Status | Notes |
 |---|---|---|
 | App shell (sidebar, topbar, routing) | ✅ Live | All 6 routes |
+| Overview dashboard | ✅ Live | Stat row + Bots card + Smart Money card; navigates to sub-pages |
 | Smart Money — Config | ✅ Live | Reads/writes `smart-money/config/config.json` |
 | Smart Money — Pool Overview | ✅ Live (UI) | Needs qualifying candidates to show real data |
 | Smart Money — Rankings | ✅ Live (UI) | Needs qualifying candidates |
@@ -252,6 +253,23 @@ Three independent places each rendered "Run complete" after a run:
 
 ---
 
+## Session — UI branding + Overview dashboard (2026-05-27)
+
+### Branding overhaul
+- **Indigo-black theme** — surface colors shifted to purple-tinted dark (`bg-base #080810`, `bg-sunken #0d0d1a`) so the electric cyan accent pops via complementary contrast. Glow shadow intensities bumped.
+- **TopBar** simplified to brand wordmark only (`LWG` gradient cyan→gold + `Capital` white) + refresh button. No page name, no timestamp.
+- **Sidebar** — logo image (`/logo.png`) in a centred zone at the top. "WORKSPACE" section label removed. Settings moved to footer after VPS/API status dots. `Radar` icon for Smart Money.
+- **`/public/logo.png`** — processed from `IMG_1045.JPG`: flood-fill background removal from all 4 corners (removes white + circuit board pattern), navy letters → `#e9eaf0`, teal accents → `#00e5ff`. Full mark including "CAPITAL" text (533×466 px transparent PNG).
+
+### Overview page — fully implemented
+Replaces the scaffold with a real dashboard:
+- **Stat row (4 cards, all clickable):** Bots Running (`X / 4`), Balance (exact `$7,432.50`), Last Scan (relative time), Candidates (count from latest run).
+- **Bots card:** animated skeleton while VPS SSH loads; bot rows with status dot + name + daily PnL % + status badge; "locked" pill when `day_locked`; scheduled jobs + Telegram status footer.
+- **Smart Money card:** pulsing cyan banner if pipeline is running (live % + stage name); last run stats (time, candidate count, run ID); historical run count footer.
+- **Navigation:** every stat card and section card header navigates to the corresponding module page on click.
+
+---
+
 ## What still needs to be done
 
 ### Step 4 — End-to-end test of Smart Money pipeline + dashboard ← **NEXT**
@@ -278,16 +296,13 @@ smart-money/reports/
 - `bot_state.json` exists at `C:\trading\algos\markets\fx\instances\{bot_name}\bot_state.json`
 - The `BotSnapshot` response populates correctly in the UI
 
-### Step 6 — Overview page
-Currently a scaffold. Should show a combined summary: bots running, SM pool size, recent pipeline run, last backtest. Pulls from existing endpoints — no new backend work needed.
-
-### Step 7 — Enable bot control actions
+### Step 6 — Enable bot control actions
 Only after Step 5 is verified. Implement `POST /bots/start|stop|restart` in `routers/bots.py` using SSH calls mirroring CLAUDE.md's VPS deploy workflow. Keep Emergency Stop as last to implement. Remove `ScaffoldBanner` from Bots page and enable the control buttons when controls are live.
 
-### Step 8 — Backtests module
+### Step 7 — Backtests module
 Backend: `GET /backtests/runs` reads from `algos/` backtest output directory (TBD). Frontend `src/pages/Backtests.tsx` is scaffolded. See `design/LWG_Capital_Command_Center_Build_Spec.md` section 7 for the full spec.
 
-### Step 9 — Stress Tests module
+### Step 8 — Stress Tests module
 Backend: `GET /stress-tests/results` reads stress test output (TBD). Frontend `src/pages/StressTests.tsx` is scaffolded.
 
 ---
@@ -297,4 +312,4 @@ Backend: `GET /stress-tests/results` reads stress test output (TBD). Frontend `s
 - Touch `algos/` or `smart-money/` source code from within this subsystem — read their output files only
 - Implement bot control actions before monitoring is verified (Steps 4–5 first)
 - Commit secrets: `config.json` contains local paths only (no credentials), but `.env` or any credential files must never be committed
-- Add frontend routes without adding the corresponding `ROUTE_LABELS` entry in `TopBar.tsx`
+- Add frontend routes without adding a corresponding `NavItem` entry in `Sidebar.tsx`

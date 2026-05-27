@@ -59,17 +59,31 @@ def _banner(stage_name: str):
     _log.info("=" * 70)
 
 
-def run_full_pipeline(config: dict, stages: list[int], skip_stage2: bool = False):
+def run_full_pipeline(
+    config: dict,
+    stages: list[int],
+    skip_stage2: bool = False,
+    all_profiles: bool = False,
+):
     db.init_db()
 
     results: dict[int, object] = {}
 
     # ── Stage 1: Hyperliquid ─────────────────────────────────────────────────
     if 1 in stages:
-        _banner("Stage 1 — Hyperliquid Scanner & Profiler")
-        from run_stage1 import run_stage1
-        results[1] = run_stage1(config)
-        _log.info(f"Stage 1 complete — {len(results[1])} profiles built")
+        from run_stage1 import run_stage1, load_config as load_stage1_config
+        if all_profiles:
+            _banner("Stage 1 — Pass 1/2: Default profile (consistent traders)")
+            results[1] = run_stage1(config)
+            _banner("Stage 1 — Pass 2/2: Bot profile (short-burst high-ROI bots)")
+            bot_config = load_stage1_config(profile="bot")
+            results["1_bot"] = run_stage1(bot_config)
+            total = len(results[1]) + len(results["1_bot"])
+            _log.info(f"Stage 1 complete — {total} profiles built across both profiles")
+        else:
+            _banner("Stage 1 — Hyperliquid Scanner & Profiler")
+            results[1] = run_stage1(config)
+            _log.info(f"Stage 1 complete — {len(results[1])} profiles built")
 
     # ── Stage 2: Validate & Calibrate ───────────────────────────────────────
     if 2 in stages:
@@ -143,13 +157,23 @@ def main():
         help="Skip manual validation pause after Stage 2"
     )
     parser.add_argument(
+        "--all-profiles", action="store_true",
+        help="Run Stage 1 twice: default config + bot profile. Catches both consistent "
+             "long-term traders AND short-burst high-ROI bots. Both write to the same DB.",
+    )
+    parser.add_argument(
         "--win-rate", type=float, default=None,
         help="Override min_win_rate in config (e.g. 0.75)"
     )
     args = parser.parse_args()
 
     config = load_config(profile=args.profile, win_rate_override=args.win_rate)
-    run_full_pipeline(config, stages=args.stages, skip_stage2=args.skip_stage2)
+    run_full_pipeline(
+        config,
+        stages=args.stages,
+        skip_stage2=args.skip_stage2,
+        all_profiles=args.all_profiles,
+    )
 
 
 if __name__ == "__main__":

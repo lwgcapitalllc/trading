@@ -6,17 +6,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Surfaces — cooler blue-black tones
-        'bg-base':      '#09090f',
-        'bg-sunken':    '#0f1018',
-        'bg-surface':   '#13141c',
-        'bg-surface-2': '#1a1c26',
-        'bg-hover':     '#21243080',
-        'bg-active':    '#282c3a',
-        // Borders — slightly more visible
-        'border-subtle':  '#1e2130',
-        'border-default': '#262b3a',
-        'border-strong':  '#323748',
+        // Surfaces — deep indigo-black (cyan/green glows pop against purple-dark)
+        'bg-base':      '#080810',
+        'bg-sunken':    '#0d0d1a',
+        'bg-surface':   '#111120',
+        'bg-surface-2': '#181828',
+        'bg-hover':     '#1e1e3480',
+        'bg-active':    '#222240',
+        // Borders — indigo-tinted, slightly more visible
+        'border-subtle':  '#1a1a2e',
+        'border-default': '#222238',
+        'border-strong':  '#2c2c48',
         // Text — unchanged; good contrast
         'text-primary':   '#e9eaf0',
         'text-secondary': '#9a9eb0',
@@ -84,17 +84,18 @@ export default {
         8: '32px',
       },
       boxShadow: {
-        pop:           '0 8px 24px rgba(0, 0, 0, 0.55)',
-        'glow-accent': '0 0 16px rgba(0, 229, 255, 0.25), 0 0 40px rgba(0, 229, 255, 0.10)',
-        'glow-pos':    '0 0 16px rgba(0, 255, 127, 0.20), 0 0 40px rgba(0, 255, 127, 0.08)',
-        'glow-neg':    '0 0 16px rgba(255, 59, 92,  0.25)',
+        pop:           '0 8px 28px rgba(0, 0, 0, 0.65)',
+        'glow-accent': '0 0 12px rgba(0, 229, 255, 0.35), 0 0 40px rgba(0, 229, 255, 0.14)',
+        'glow-pos':    '0 0 12px rgba(0, 255, 127, 0.28), 0 0 40px rgba(0, 255, 127, 0.11)',
+        'glow-neg':    '0 0 12px rgba(255, 59, 92,  0.35), 0 0 28px rgba(255, 59, 92, 0.12)',
+        'glow-gold':   '0 0 12px rgba(217, 164, 65, 0.35), 0 0 28px rgba(217, 164, 65, 0.12)',
       },
       dropShadow: {
         // Apply with drop-shadow-glow-* — works on text, SVG, icons
-        'glow-accent': ['0 0 6px rgba(0,229,255,0.9)',  '0 0 14px rgba(0,229,255,0.5)'],
-        'glow-pos':    ['0 0 6px rgba(0,255,127,0.9)',  '0 0 14px rgba(0,255,127,0.5)'],
-        'glow-neg':    ['0 0 6px rgba(255,59,92,0.9)',  '0 0 14px rgba(255,59,92,0.5)'],
-        'glow-gold':   ['0 0 6px rgba(255,179,0,0.9)',  '0 0 14px rgba(255,179,0,0.5)'],
+        'glow-accent': ['0 0 5px rgba(0,229,255,1.0)',   '0 0 16px rgba(0,229,255,0.65)'],
+        'glow-pos':    ['0 0 5px rgba(0,255,127,1.0)',   '0 0 16px rgba(0,255,127,0.65)'],
+        'glow-neg':    ['0 0 5px rgba(255,59,92,1.0)',   '0 0 16px rgba(255,59,92,0.65)'],
+        'glow-gold':   ['0 0 5px rgba(255,179,0,1.0)',   '0 0 16px rgba(255,179,0,0.65)'],
       },
       transitionTimingFunction: {
         ease: 'cubic-bezier(0.4, 0, 0.2, 1)',

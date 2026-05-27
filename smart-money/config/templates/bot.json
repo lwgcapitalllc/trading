@@ -1,13 +1,13 @@
 {
-  "_comment": "Bot / algo trader profile — aggressive. Optimized for 500–2000%+ annual ROI. Expects algorithmic accounts: high trade frequency, short holds, specialist instruments, recently deployed. The 90-day history requirement is dropped to 30 days — a bot running 45 days at 500% ROI is exactly what we want. Instrument concentration is disabled — bots specialize.",
+  "_comment": "Bot / algo trader profile — short-burst high-ROI. Targets algorithmic accounts: high frequency, short holds, often only active 30–60 days before funds are moved. Span gate dropped to 30 days — a bot running 45 days at 1000% ROI is exactly what we want. Drawdown gate kept at 30% — the only hard safety guard. Win rate floor lowered to 55% to include trend-following bots (high R:R, lower win %). Instrument concentration disabled — bots specialize.",
   "_profile": "bot",
 
   "qualification": {
     "min_trades": 100,
-    "min_win_rate": 0.7,
-    "min_overall_win_rate": 0.50,
+    "min_win_rate": 0.55,
+    "min_overall_win_rate": 0.45,
     "min_wallet_age_days": 30,
-    "max_inactive_days": 45,
+    "max_inactive_days": 30,
     "max_drawdown": 0.3,
     "max_single_trade_pnl_share": 1.0,
     "min_active_weeks_per_month": 1,
@@ -64,7 +64,7 @@
     "retry_backoff_factor": 2.0,
     "leaderboard_window": "allTime",
     "timeout_seconds": 30,
-    "max_leaderboard_candidates": 500,
+    "max_leaderboard_candidates": 3000,
     "fills_cache_hours": 24,
     "min_alltime_pnl": 10000,
     "min_alltime_roi": 1.0,

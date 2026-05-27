@@ -10,14 +10,22 @@ Output is a ranked candidate pool report. No trading, no execution — research 
 ```bash
 cd smart-money
 
-# Full pipeline (pauses at Stage 2 for manual review)
-python main.py
+# Full pipeline — both default + bot profiles (RECOMMENDED — catches all trader types)
+python main.py --all-profiles --skip-stage2
 
-# Full pipeline automated (no pause)
+# Full pipeline — default profile only (consistent long-term traders)
 python main.py --skip-stage2
 
+# Stage 1 only — both profiles (catches consistent traders + short-burst high-ROI bots)
+python run_stage1.py --all-profiles
+
+# Stage 1 only — bot profile (30-60 day wallets, 1000%+ ROI, active bots)
+python run_stage1.py --profile bot
+
+# Stage 1 only — default profile (consistent human-scale traders)
+python run_stage1.py
+
 # Individual stages (all independently rerunnable)
-python run_stage1.py              # Hyperliquid — main data source
 python run_stage2.py              # Manual validation helper (read-only)
 python run_stage3.py              # Solana + Ethereum (needs API keys)
 python run_stage4.py              # Forex (needs API keys)
@@ -100,15 +108,18 @@ Full automation plan is documented in `COPY_TRADING_ROADMAP.md`. Summary:
 
 ## Where We Left Off
 
-**Last action (2026-05-27, session 3):** Built `simulate_configs.py`, ran 3,780-combination
-grid search, identified the correct threshold relaxations to surface qualified traders,
-wrote `COPY_TRADING_ROADMAP.md` with the full automation path.
+**Last action (2026-05-27, session 4):** Added `--all-profiles` flag to run both default
+and bot profiles in one command. Updated bot profile: span gate 30d, wallet age 30d,
+win rate floor 55%, max_inactive_days 30, leaderboard depth 3000. Clarified that short-burst
+high-ROI bots (30–60 day active wallets) are wanted and supported — they must just not blow
+their accounts (drawdown guard stays at 30%).
 
 **Immediate next step:**
-1. Update `config/config.json` with the recommended settings above
-2. Clear fills cache (dashboard button or `python -c "import database; database.clear_fills_cache()"`)
-3. Run: `python run_stage1.py` — first run ~13–15 min, subsequent reruns ~30s
-4. Review qualified wallets in dashboard; compare window patterns before copy-listing
+1. Clear fills cache: `python -c "import database; database.clear_fills_cache()"`
+2. Run both profiles: `python run_stage1.py --all-profiles`
+   - Pass 1 (default): consistent long-term traders (~13–15 min)
+   - Pass 2 (bot): short-burst high-ROI bots (~13–15 min, shares leaderboard fetch)
+3. Review all qualified wallets in dashboard (both profiles write to same DB)
 
 ### Quality fixes added (2026-05-27, session 2)
 
@@ -164,17 +175,20 @@ All in `config/config.json` (default) or `config/templates/bot.json` / `config/t
 
 | Threshold | Default | Bot | Human |
 |---|---|---|---|
-| Min win rate (per 30-day window) | **55%** | 50% | 60% |
-| Min overall win rate (all trades) | **50%** | 45% | 55% |
-| Max inactive days | **30** | 20 | 30 |
-| Max drawdown | **30%** | 40% | 25% |
+| Min win rate (per 30-day window) | **55%** | **55%** | 60% |
+| Min overall win rate (all trades) | **50%** | **45%** | 55% |
+| Max inactive days | **30** | **30** | 30 |
+| Max drawdown | **30%** | 30% | 25% |
 | Min trades | 100 | 100 | 100 |
-| Min wallet age | 90 days | 30 days | 90 days |
-| Min trading span | 90 days | 30 days | 90 days |
-| Max hold time | 72 hours | 24 hours | 72 hours |
-| Max single trade PnL share | 40% | 100% (disabled) | 40% |
-| Min active weeks per month | 2 | 1 | 2 |
+| Min wallet age | 90 days | **30 days** | 90 days |
+| Min trading span | 90 days | **30 days** | 90 days |
+| Max hold time | 72 hours | **24 hours** | 72 hours |
+| Max single trade PnL share | 40% | **disabled** | 40% |
+| Min active weeks per month | 2 | **1** | 2 |
 | Data coverage flag threshold | 10% | 10% | 10% |
+| Leaderboard candidates scanned | 3000 | **3000** | 3000 |
+
+**Bot profile key differences:** wallet age + span gate dropped to 30 days (catches 30–60 day sprint bots); hold time 24h max (scalpers/algos); win rate lowered to 55% (trend-following bots have high R:R not high win %); drawdown stays at 30% (the only hard safety guard); leaderboard depth widened to 3000 (high-ROI bots can be mid-tier in dollar PnL).
 
 ## Output Location
 
