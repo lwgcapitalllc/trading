@@ -45,19 +45,47 @@ python run_stage2.py --address 0xYOUR_WALLET_ADDRESS
 
 ## Where We Left Off
 
-**Last action (2026-05-27):** Full session of bug fixes and pipeline improvements. Ready for a clean run.
+**Last action (2026-05-27):** Reviewed first real scanner results, identified 3 structural problems, implemented fixes. Ready to retest with a fresh full run.
 
-**Next step:** Run pipeline from the UI (BOT profile) — first run will fetch from API (~13-15 min); every re-run same day will be ~30s from cache.
+**Next step:** Delete the fills cache (`data/smart_money.db` fills_cache table or just run a full non-dry-run) and run the pipeline — fresh API fetch required since the new recency filter will reject all previously cached wallets. First run ~13-15 min; same-day reruns ~30s.
+
+### Quality fixes added (2026-05-27, session 2)
+
+After reviewing the first run results (7 qualified wallets, all now failing the new filters), three structural problems were found and fixed:
+
+**1. Recency filter** (`qualification.max_inactive_days`)
+- Wallets must have a trade within the last N days or they are disqualified.
+- Solves: one-time-wonder accounts (made all their money in one month in 2024, dormant since) were ranking at the top because their single-month metrics looked perfect.
+- Bot: 45d | Human: 60d | Default: 60d
+
+**2. Overall win rate floor** (`qualification.min_overall_win_rate`)
+- Aggregate win rate across all matched trades must meet a hard minimum.
+- Solves: high R/R "sniper" strategies (6.9% and 19.2% win rates) were passing qualification because the per-window strike system only disqualifies on *consecutive* bad months — their bad months were always separated by one recovery month.
+- Bot: 50% | Human: 60% | Default: 55%
+
+**3. Data coverage flag** (`hyperliquid.min_data_coverage_pct`)
+- Computes `captured_pnl / leaderboard_all_time_pnl` for each wallet. If below threshold, adds a yellow flag and logs a warning with the dollar gap.
+- Solves: the Hyperliquid fills API only returns a recent slice of history for most wallets (e.g. wallet with $1.65M all-time PnL had only $12.7k captured = 0.8% coverage). All metrics for that wallet are based on unrepresentative data.
+- Does NOT disqualify — just flags. The recency filter handles the main consequence.
+- Threshold: 10% (all profiles)
+- Surfaced in `flags.data_coverage_pct` in JSON, CSV, and `candidates.json`.
+
+**Validation:** All 7 wallets from the 2026-05-27 run now correctly fail:
+- Ranks 1–5: inactive 85–330 days (recency filter)
+- Ranks 6–7: 6.9% and 19.2% overall win rate (win rate floor)
 
 ### Config changes made (from original spec)
 | Setting | Original | Current | Reason |
 |---|---|---|---|
 | `min_win_rate` | 80% | 75% (human), 70% (bot) | Pool too thin at 80% |
+| `min_overall_win_rate` | — | 55% (default), 50% (bot), 60% (human) | New — blocks low-win-rate sniper strategies |
+| `max_inactive_days` | — | 60d (default/human), 45d (bot) | New — blocks dormant accounts |
+| `min_data_coverage_pct` | — | 10% (all) | New — yellow flag when fills API coverage is thin |
 | `min_active_weeks_per_month` | 3 | 2 | Too restrictive — top traders burst, not steady |
 | `requests_per_second` | (via delay) | 2 (human), 3 (bot) | Replaced `rate_limit_delay_seconds` with shared token bucket |
 | `fills_cache_hours` | — | 24 | New — skip re-fetching wallets scanned within 24h |
 
-### All bugs found and fixed
+### All bugs found and fixed (session 1)
 1. **Leaderboard endpoint changed** — Hyperliquid deprecated `POST /info` with `type:leaderboard`. Fixed in `scanner/hyperliquid.py`.
 2. **HTTP error retry loop** — `if e.response` evaluates False for 4xx. Fixed: `if e.response is not None`.
 3. **Pre-filtering** — Was making 37k API calls. Fixed by pre-filtering leaderboard and capping to top 500.
@@ -71,18 +99,21 @@ Wallets that fail only the span gate (short trading history but strong performan
 
 ## Thresholds
 
-All in `config/config.json`. Edit there — never in code.
+All in `config/config.json` (default) or `config/templates/bot.json` / `config/templates/human.json`. Edit there — never in code.
 
-| Threshold | Default |
-|---|---|
-| Min win rate | 75% (per 30-day window) |
-| Max drawdown | 20% |
-| Min trades | 100 |
-| Min wallet age | 90 days |
-| Min trading span | 90 days |
-| Max hold time | 72 hours |
-| Max single trade PnL share | 40% |
-| Min active weeks per month | 2 |
+| Threshold | Default | Bot | Human |
+|---|---|---|---|
+| Min win rate (per 30-day window) | 75% | 70% | 75% |
+| Min overall win rate (all trades) | 55% | 50% | 60% |
+| Max inactive days | 60 | 45 | 60 |
+| Max drawdown | 20% | 30% | 20% |
+| Min trades | 100 | 100 | 100 |
+| Min wallet age | 90 days | 30 days | 90 days |
+| Min trading span | 90 days | 30 days | 90 days |
+| Max hold time | 72 hours | 24 hours | 72 hours |
+| Max single trade PnL share | 40% | 100% (disabled) | 40% |
+| Min active weeks per month | 2 | 1 | 2 |
+| Data coverage flag threshold | 10% | 10% | 10% |
 
 ## Output Location
 
