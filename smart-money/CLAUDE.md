@@ -43,11 +43,72 @@ python run_stage2.py --address 0xYOUR_WALLET_ADDRESS
 | Stage 4 | Scaffold only | Needs MYFXBOOK_EMAIL, MYFXBOOK_PASSWORD, FX_BLUE_SESSION |
 | Stage 5 | Fully implemented | Reads from DB — requires Stages 1+ to have run |
 
+## Simulation Tool
+
+`simulate_configs.py` re-runs qualification logic across 3,780 config combinations against
+all trades already in the DB. No API calls. Completes in ~5 seconds.
+
+```bash
+python simulate_configs.py                 # top 40 configs by qualifier count
+python simulate_configs.py --min-qualify 5 # only show configs with ≥5 qualifiers
+python simulate_configs.py --detail        # list individual wallets for the best config
+python simulate_configs.py --export        # write reports/sim_results.{json,csv}
+python simulate_configs.py --apply-best    # patch config.json with the best config found
+```
+
+### What the simulation revealed (2026-05-27 run, 814 wallets)
+
+| Finding | Detail |
+|---|---|
+| Max possible qualified traders (any config) | **23** |
+| Current config → qualifiers | **1** (too restrictive) |
+| Biggest single filter killing candidates | `max_drawdown=20%` removes 53% of remaining wallets |
+| Second biggest | `strike_sys` (per-window win rate) removes 25% |
+| Net losers on Hyperliquid | 51% of active wallets — net negative PnL |
+| Wallets active within 30 days with 100+ trades | ~330 |
+
+### Recommended config update
+
+These settings yield ~15–20 qualified traders while still filtering noise:
+
+| Setting | Current | → Use | Reason |
+|---|---|---|---|
+| `min_win_rate` (per window) | 75% | **55%** | 75% → 5 wallets; 55% → 18–22 |
+| `min_overall_win_rate` | 55% | **50%** | Still meaningful; 55% is too high for this leaderboard |
+| `max_inactive_days` | 60 | **30** | Copy trading needs active traders, not last-year stars |
+| `max_drawdown` | 20% | **30%** | 20% cuts 53% of otherwise-good wallets; crypto is volatile |
+| `min_trades` | 100 | 100 | Keep |
+| `min_span_days` | 90 | 90 | Keep |
+
+After changing config.json, clear the cache and re-scan:
+```bash
+# Via dashboard: Smart Money → Clear cache button
+# Then: run pipeline (human profile)
+```
+
+## Copy Trading Roadmap
+
+Full automation plan is documented in `COPY_TRADING_ROADMAP.md`. Summary:
+
+| Phase | What | Status |
+|---|---|---|
+| 1 | Config tuning + fresh scan | **Ready now** |
+| 2 | Daily automated scan + Telegram alerts on status change | Not started |
+| 3 | Live WebSocket mirroring — copy trades in real time | Not started |
+| 4 | Vault copy integration (deposit into trader's Hyperliquid vault) | Not started |
+| 5 | Risk framework (per-trader allocation, daily loss limits) | Designed, not built |
+
 ## Where We Left Off
 
-**Last action (2026-05-27):** Reviewed first real scanner results, identified 3 structural problems, implemented fixes. Ready to retest with a fresh full run.
+**Last action (2026-05-27, session 3):** Built `simulate_configs.py`, ran 3,780-combination
+grid search, identified the correct threshold relaxations to surface qualified traders,
+wrote `COPY_TRADING_ROADMAP.md` with the full automation path.
 
-**Next step:** Delete the fills cache (`data/smart_money.db` fills_cache table or just run a full non-dry-run) and run the pipeline — fresh API fetch required since the new recency filter will reject all previously cached wallets. First run ~13-15 min; same-day reruns ~30s.
+**Immediate next step:**
+1. Update `config/config.json` with the recommended settings above
+2. Clear fills cache (dashboard button or `python -c "import database; database.clear_fills_cache()"`)
+3. Run: `python run_stage1.py` — first run ~13–15 min, subsequent reruns ~30s
+4. Review qualified wallets in dashboard; compare window patterns before copy-listing
 
 ### Quality fixes added (2026-05-27, session 2)
 
@@ -103,10 +164,10 @@ All in `config/config.json` (default) or `config/templates/bot.json` / `config/t
 
 | Threshold | Default | Bot | Human |
 |---|---|---|---|
-| Min win rate (per 30-day window) | 75% | 70% | 75% |
-| Min overall win rate (all trades) | 55% | 50% | 60% |
-| Max inactive days | 60 | 45 | 60 |
-| Max drawdown | 20% | 30% | 20% |
+| Min win rate (per 30-day window) | **55%** | 50% | 60% |
+| Min overall win rate (all trades) | **50%** | 45% | 55% |
+| Max inactive days | **30** | 20 | 30 |
+| Max drawdown | **30%** | 40% | 25% |
 | Min trades | 100 | 100 | 100 |
 | Min wallet age | 90 days | 30 days | 90 days |
 | Min trading span | 90 days | 30 days | 90 days |
