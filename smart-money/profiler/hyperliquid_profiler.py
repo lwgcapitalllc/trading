@@ -224,6 +224,7 @@ class HyperliquidProfiler:
             "starting_balance": round(start_bal, 2),
             "ending_balance": round(end_bal, 2),
             "net_growth_pct": round(net_growth * 100, 2),
+            "cum_pnl_usd": round(balance_series[-1]["cum_pnl"], 2),
             "peak_balance": round(max(balances), 2),
             "lowest_balance": round(min(balances), 2),
             "peak_drawdown_pct": round(max_drawdown * 100, 2),

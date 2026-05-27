@@ -6,6 +6,34 @@ import {
 import type { Candidate } from '@/types'
 import { StatCard } from '@/components/StatCard'
 
+// ── Money formatters ──────────────────────────────────────────────────────────
+
+// Desktop: show raw number (with commas) below 8 raw digits (< $10 M),
+// then abbreviate to m / b above that.
+function fmtMoneyDesktop(abs: number): string {
+  if (abs >= 1_000_000_000) return `$${(abs / 1_000_000_000).toFixed(1)}b`
+  if (abs >= 10_000_000)    return `$${(abs / 1_000_000).toFixed(1)}m`
+  return `$${abs.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+}
+
+// Mobile: always abbreviated — k / m / b.
+function fmtMoneyMobile(abs: number): string {
+  if (abs >= 1_000_000_000) return `$${(abs / 1_000_000_000).toFixed(1)}b`
+  if (abs >= 1_000_000)     return `$${(abs / 1_000_000).toFixed(1)}m`
+  return `$${(abs / 1_000).toFixed(1)}k`
+}
+
+// Returns a JSX node: full value on sm+ screens, abbreviated on mobile.
+function fmtMoney(value: number, sign = '') {
+  const abs = Math.abs(value)
+  return (
+    <>
+      <span className="hidden sm:inline">{sign}{fmtMoneyDesktop(abs)}</span>
+      <span className="sm:hidden">{sign}{fmtMoneyMobile(abs)}</span>
+    </>
+  )
+}
+
 const SCORE_LABELS: Record<string, string> = {
   win_rate_consistency:    'Win-rate consistency',
   risk_adjusted_return:    'Risk-adjusted return',
@@ -59,12 +87,33 @@ export function CandidateProfile({ candidate, onBack }: { candidate: Candidate; 
           </div>
         </div>
 
-        {/* Balance stats */}
+        {/* Account stats */}
         <div className="grid grid-cols-5 gap-[10px] mb-[18px]">
-          <StatCard label="Start" value={`$${(candidate.starting_balance / 1000).toFixed(1)}k`} />
-          <StatCard label="End" value={`$${(candidate.ending_balance / 1000).toFixed(1)}k`} />
-          <StatCard label="Net growth" value={`+${candidate.net_growth_pct.toFixed(0)}%`} subVariant="pos" />
-          <StatCard label="Peak DD" value={`${candidate.peak_drawdown.toFixed(1)}%`} />
+          <StatCard
+            label="Acct value"
+            value={candidate.account_value != null
+              ? fmtMoney(candidate.account_value)
+              : '—'}
+          />
+          <StatCard
+            label="All-time PnL"
+            value={candidate.all_time_pnl != null
+              ? fmtMoney(candidate.all_time_pnl, candidate.all_time_pnl >= 0 ? '+' : '-')
+              : '—'}
+            subVariant={candidate.all_time_pnl != null
+              ? (candidate.all_time_pnl >= 0 ? 'pos' : 'neg')
+              : 'neutral'}
+          />
+          <StatCard
+            label="All-time ROI"
+            value={candidate.all_time_roi != null
+              ? `${candidate.all_time_roi >= 0 ? '+' : ''}${(candidate.all_time_roi * 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}%`
+              : '—'}
+            subVariant={candidate.all_time_roi != null
+              ? (candidate.all_time_roi >= 0 ? 'pos' : 'neg')
+              : 'neutral'}
+          />
+          <StatCard label="Peak DD" value={`${candidate.peak_drawdown.toFixed(1)}%`} subVariant="neg" />
           <StatCard label="Trades" value={candidate.trade_count.toLocaleString()} />
         </div>
 

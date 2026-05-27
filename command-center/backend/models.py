@@ -128,12 +128,14 @@ class Candidate(BaseModel):
     lookback_tier: Optional[str] = None
     lookback_span_days: Optional[int] = None
     score_breakdown: dict[str, float]
-    # balance
-    starting_balance: float
-    ending_balance: float
-    net_growth_pct: float
-    peak_balance: float
-    lowest_balance: float
+    # leaderboard stats (real values from exchange, not synthetic)
+    account_value: Optional[float] = None     # current USD account value
+    all_time_pnl: Optional[float] = None      # total USD profit all time
+    all_time_roi: Optional[float] = None      # fractional ROI, e.g. 3.9 = 390%
+    month_roi: Optional[float] = None
+    week_roi: Optional[float] = None
+    # pnl from our fill analysis window
+    cum_pnl_usd: float = 0.0
     monthly_balance: list[MonthlyPoint]
     # performance
     overall_win_rate: float

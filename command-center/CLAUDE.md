@@ -128,6 +128,52 @@ cd command-center
 
 ---
 
+## Session — pipeline data integrity + UI overhaul (2026-05-27)
+
+### Pipeline fixes (`smart-money/`)
+
+**`filters.py` — net-negative wallets bypassing drawdown check**
+`check_drawdown` only fires when `peak_cum > 0`, so always-losing wallets pass it silently. Fixed by adding `check_overall_profitability` as the first check in `DisqualificationFilter.apply_all()` — disqualifies any wallet where `sum(pnl) <= 0`. Reason emitted: `"Net unprofitable: total PnL $-X"`.
+
+**`run_stage1.py` — `min_trades` was enforced on raw fills, not matched trades**
+Pre-filter counted closing fills before FIFO matching. Old accounts can have 100+ closing fills but collapse to a handful of matched pairs once opens predate the fetch window. Added an explicit check on `len(trades)` (matched count) immediately after `profiler.profile_wallet()`. Reason: `"Matched trades 7 < 100 (fill history likely truncated — X closing fills fetched)"`.
+
+**`hyperliquid_profiler.py`** — `compute_balance_stats` now returns `cum_pnl_usd`.
+
+**`reporter.py` — leaderboard fields silently dropped**
+`build_wallet_profile` now captures a `leaderboard` block from the wallet dict: `account_value`, `all_time_pnl`, `all_time_roi` (fractional, e.g. 3.9 = 390%), `month_roi`, `week_roi`. `_profile_to_candidate` removes all synthetic $10k balance fields (`starting_balance`, `ending_balance`, `net_growth_pct`, `peak_balance`, `lowest_balance`) and emits real leaderboard fields + `cum_pnl_usd`.
+
+### Data model (`models.py` + `types/index.ts`)
+- **Removed:** `starting_balance`, `ending_balance`, `net_growth_pct`, `peak_balance`, `lowest_balance`
+- **Added:** `account_value`, `all_time_pnl`, `all_time_roi`, `month_roi`, `week_roi` (all `Optional[float]`), `cum_pnl_usd: float = 0.0`
+
+### UI (`frontend/`)
+
+**`StatCard.tsx`** — added `onClick?: () => void` (renders as `<button>` with hover) and `disabled?: boolean` (35% opacity, `cursor-not-allowed`, no hover).
+
+**`PoolOverview.tsx`** — accepts `onNavigate?: (tab: string, market?: string) => void`. Cards now navigate:
+- API Scanned → `disqualified` tab
+- Qualified → `rankings`; disabled when `total_qualified === 0`
+- Crypto → `rankings` with `market='crypto'`; disabled when count = 0
+- Forex → `rankings` with `market='forex'`; disabled when count = 0
+
+**`Rankings.tsx`** — accepts `initialMarket?: 'all' | 'crypto' | 'forex'` so the market filter tab is pre-selected when navigating from Overview. "Net growth %" column replaced with **Cum. PnL** (`cum_pnl_usd`), sign-colored.
+
+**`CandidateProfile.tsx`** — stat card row replaced with real leaderboard data (Acct value, All-time PnL, All-time ROI, Peak DD, Trades). Responsive money formatting:
+- Desktop (`sm+`): raw number with commas below 8 raw digits (< $10 M), then `m`/`b`
+- Mobile: always abbreviated — `k` / `m` / `b`
+- ROI uses `toLocaleString` for thousands separator, e.g. `+5,769%`
+
+**`SmartMoney/index.tsx`** — `rankingsMarket` state wired through `onNavigate` → `Rankings.initialMarket` so market pre-selection works on tab switch.
+
+### Pending verification
+All pipeline fixes require a fresh run. Expected outcomes:
+- Accounts with truncated fill history → disqualified (matched trades < min_trades)
+- Net-negative wallets → disqualified (profitability check)
+- `account_value`, `all_time_pnl`, `all_time_roi` populate in CandidateProfile from real leaderboard data
+
+---
+
 ## What still needs to be done
 
 ### Step 4 — End-to-end test of Smart Money pipeline + dashboard ← **NEXT**

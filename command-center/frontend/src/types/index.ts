@@ -89,11 +89,14 @@ export interface Candidate {
   lookback_tier: string | null
   lookback_span_days: number | null
   score_breakdown: Record<string, number>
-  starting_balance: number
-  ending_balance: number
-  net_growth_pct: number
-  peak_balance: number
-  lowest_balance: number
+  // leaderboard stats (real values from exchange)
+  account_value: number | null
+  all_time_pnl: number | null
+  all_time_roi: number | null     // fractional, e.g. 3.9 = 390%
+  month_roi: number | null
+  week_roi: number | null
+  // pnl from our fill analysis window
+  cum_pnl_usd: number
   monthly_balance: MonthlyPoint[]
   overall_win_rate: number
   monthly_win_rate: MonthlyPoint[]

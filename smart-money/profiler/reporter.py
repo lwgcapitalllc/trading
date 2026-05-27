@@ -161,6 +161,15 @@ def build_wallet_profile(
         "rank": score.get("rank"),
         "composite_score": score.get("composite_score"),
         "lookback_tier": score.get("lookback_tier"),
+
+        # Leaderboard stats (real, from Hyperliquid — not synthetic)
+        "leaderboard": {
+            "account_value": wallet.get("account_value"),      # current USD account value
+            "all_time_pnl": wallet.get("all_time_pnl"),        # total USD profit all time
+            "all_time_roi": wallet.get("all_time_roi"),        # fractional, e.g. 3.9 = 390%
+            "month_roi": wallet.get("month_roi"),
+            "week_roi": wallet.get("week_roi"),
+        },
         "lookback_span_days": score.get("lookback_span_days"),
 
         # Balance & Growth
@@ -308,6 +317,7 @@ class StageReporter:
         bp = p.get("behavioral_patterns") or {}
         flags = p.get("flags") or {}
         windows = p.get("monthly_windows") or []
+        lb = p.get("leaderboard") or {}
 
         source = p.get("source", "hyperliquid")
         market = "forex" if source in ("myfxbook", "fx_blue") else "crypto"
@@ -321,11 +331,14 @@ class StageReporter:
             "lookback_tier": p.get("lookback_tier"),
             "lookback_span_days": p.get("lookback_span_days"),
             "score_breakdown": sb,
-            "starting_balance": bm.get("starting_balance") or 0.0,
-            "ending_balance": bm.get("ending_balance") or 0.0,
-            "net_growth_pct": bm.get("net_growth_pct") or 0.0,
-            "peak_balance": bm.get("peak_balance") or 0.0,
-            "lowest_balance": bm.get("lowest_balance") or 0.0,
+            # Leaderboard (real values from Hyperliquid, not synthetic)
+            "account_value": lb.get("account_value"),
+            "all_time_pnl": lb.get("all_time_pnl"),
+            "all_time_roi": lb.get("all_time_roi"),
+            "month_roi": lb.get("month_roi"),
+            "week_roi": lb.get("week_roi"),
+            # Cumulative PnL from our fill analysis window (real dollars)
+            "cum_pnl_usd": bm.get("cum_pnl_usd", 0.0),
             "monthly_balance": [
                 {"month": m.get("month_label", ""), "value": m.get("ending_balance", 0.0)}
                 for m in bm.get("month_over_month_progression") or []

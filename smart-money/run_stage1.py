@@ -215,6 +215,22 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
             current_disqualified.append({"address": address, "source": "hyperliquid", "reason": reason})
             continue
 
+        # Enforce min_trades on matched trade count, not raw closing fills.
+        # The scanner pre-filter counts closing fills before FIFO matching —
+        # old accounts often have most of their opens outside the fetch window,
+        # leaving mostly orphaned closes that get dropped. A wallet that passes
+        # 100 closing-fill check but only yields 7 matched pairs has unusable data.
+        min_trades = config["qualification"]["min_trades"]
+        if len(trades) < min_trades:
+            reason = (
+                f"Matched trades {len(trades)} < {min_trades} "
+                f"(fill history likely truncated — {wallet.get('trade_count', '?')} closing fills fetched)"
+            )
+            db.log_disqualified(address, "hyperliquid", reason)
+            logger.log_disqualified(address, reason)
+            current_disqualified.append({"address": address, "source": "hyperliquid", "reason": reason})
+            continue
+
         # Persist wallet + trades
         wallet_id = db.upsert_wallet(
             address=address,

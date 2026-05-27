@@ -30,6 +30,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
   const isRunning = progress.status === 'running'
   const isDone    = progress.status === 'complete'
   const isError   = progress.status === 'error'
+  const isIdle    = progress.status === 'idle'
 
   // During the scan phase, show per-scan progress (wallets_scanned / wallets_total)
   // instead of overall pipeline %. The backend pct is designed for a multi-stage
@@ -104,6 +105,8 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
     ? 'border-neg bg-neg-muted'
     : isDone
     ? 'border-pos/40 bg-pos-muted'
+    : isIdle
+    ? 'border-border-subtle bg-bg-sunken'
     : 'border-border-default bg-bg-sunken'
 
   return (
@@ -120,8 +123,9 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
           )}
           {isDone  && <span className="w-[8px] h-[8px] rounded-full bg-pos flex-shrink-0" />}
           {isError && <span className="w-[8px] h-[8px] rounded-full bg-neg flex-shrink-0" />}
-          <span className="text-small font-semibold font-mono tracking-wide uppercase">
-            {progress.stage_name || `Stage ${progress.stage}`}
+          {isIdle  && <span className="w-[8px] h-[8px] rounded-full bg-text-tertiary/30 flex-shrink-0" />}
+          <span className={`text-small font-semibold font-mono tracking-wide uppercase ${isIdle ? 'text-text-tertiary/50' : ''}`}>
+            {isIdle ? 'Scanner' : (progress.stage_name || `Stage ${progress.stage}`)}
           </span>
           {progress.phase && !['complete', 'error', 'starting'].includes(progress.phase) && (
             <span className="text-micro text-text-tertiary font-mono">
@@ -131,25 +135,30 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
           {isDone && (
             <span className="text-micro text-pos font-mono">· run complete</span>
           )}
+          {isIdle && (
+            <span className="text-micro text-text-tertiary/40 font-mono">· idle</span>
+          )}
         </div>
-        <div className="flex items-center gap-4 font-mono text-micro">
-          <span className="text-text-tertiary tabular-nums">{formatElapsed(liveElapsed)}</span>
-          <span
-            className={`font-semibold tabular-nums ${
-              isDone
-                ? 'text-pos drop-shadow-glow-pos'
-                : isError
-                ? 'text-neg drop-shadow-glow-neg'
-                : 'text-accent drop-shadow-glow-accent'
-            }`}
-          >
-            {displayPct}%
-          </span>
-        </div>
+        {!isIdle && (
+          <div className="flex items-center gap-4 font-mono text-micro">
+            <span className="text-text-tertiary tabular-nums">{formatElapsed(liveElapsed)}</span>
+            <span
+              className={`font-semibold tabular-nums ${
+                isDone
+                  ? 'text-pos drop-shadow-glow-pos'
+                  : isError
+                  ? 'text-neg drop-shadow-glow-neg'
+                  : 'text-accent drop-shadow-glow-accent'
+              }`}
+            >
+              {displayPct}%
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── Feed body ───────────────────────────────────────────────────── */}
-      <div className="relative h-[176px] overflow-hidden px-4 py-3 font-mono">
+      <div className={`relative overflow-hidden font-mono transition-[height] duration-500 ease-in-out ${isRunning ? 'h-[176px] py-3 px-4' : isIdle ? 'h-[80px]' : 'h-[40px] py-3 px-4'}`}>
 
         {/* Scanline sweep — subtle horizontal glint during scan phase */}
         {isScan && (
@@ -202,8 +211,41 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
               )
             })}
           </div>
+        ) : isIdle ? (
+          /* ── Coma heartbeat — continuous scrolling waveform ─────────── */
+          // Soft left/right mask makes the line feel infinite in both directions
+          <div
+            className="relative w-full h-full"
+            style={{
+              maskImage: 'linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%)',
+              WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%)',
+            }}
+          >
+            {/*
+              1000px SVG = 5 × 200px identical repeats.
+              ecgScroll slides it -200px then loops — completely seamless because
+              each repeat is identical, so the snap back is invisible.
+              Peak: y=10, only 6px above y=16 baseline — subtle coma-level amplitude.
+            */}
+            <svg
+              width="2000"
+              height="32"
+              viewBox="0 0 2000 32"
+              className="absolute animate-ecg-scroll pointer-events-none"
+              style={{ top: 'calc(50% - 16px)', left: 0 }}
+            >
+              <path
+                d="M0,16 L85,16 C90,16 92,10 100,10 C108,10 110,16 115,16 L200,16 L285,16 C290,16 292,10 300,10 C308,10 310,16 315,16 L400,16 L485,16 C490,16 492,10 500,10 C508,10 510,16 515,16 L600,16 L685,16 C690,16 692,10 700,10 C708,10 710,16 715,16 L800,16 L885,16 C890,16 892,10 900,10 C908,10 910,16 915,16 L1000,16 L1085,16 C1090,16 1092,10 1100,10 C1108,10 1110,16 1115,16 L1200,16 L1285,16 C1290,16 1292,10 1300,10 C1308,10 1310,16 1315,16 L1400,16 L1485,16 C1490,16 1492,10 1500,10 C1508,10 1510,16 1515,16 L1600,16 L1685,16 C1690,16 1692,10 1700,10 C1708,10 1710,16 1715,16 L1800,16 L1885,16 C1890,16 1892,10 1900,10 C1908,10 1910,16 1915,16 L2000,16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                className="text-accent/60"
+              />
+            </svg>
+          </div>
         ) : (
-          /* ── Status view for non-scan phases ────────────────────────── */
+          /* ── Status view for active phases ─────────────────────────── */
           <div className="flex flex-col justify-center h-full gap-[8px]">
             <div className="flex items-center gap-[10px] text-[12px] font-mono">
               {isRunning && <span className="text-accent text-[10px]">▶</span>}
@@ -260,15 +302,17 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
         </div>
       )}
 
-      {/* ── Progress bar ────────────────────────────────────────────────── */}
-      <div className="h-[3px] bg-bg-surface-2">
-        <div
-          className={`h-full transition-[width] duration-700 ease-out ${
-            isError ? 'bg-neg' : isDone ? 'bg-pos' : 'bg-accent'
-          }`}
-          style={{ width: `${Math.max(displayPct, isRunning ? 1 : 0)}%` }}
-        />
-      </div>
+      {/* ── Progress bar (hidden when idle) ─────────────────────────────── */}
+      {!isIdle && (
+        <div className="h-[3px] bg-bg-surface-2">
+          <div
+            className={`h-full transition-[width] duration-700 ease-out ${
+              isError ? 'bg-neg' : isDone ? 'bg-pos' : 'bg-accent'
+            }`}
+            style={{ width: `${Math.max(displayPct, isRunning ? 1 : 0)}%` }}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -299,9 +343,9 @@ function RunPendingPlaceholder() {
 type Tab = 'overview' | 'rankings' | 'profile' | 'disqualified' | 'config'
 
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'overview',     label: 'Pool overview' },
+  { id: 'overview',     label: 'Pool Overview' },
   { id: 'rankings',     label: 'Rankings' },
-  { id: 'profile',      label: 'Candidate profile' },
+  { id: 'profile',      label: 'Candidate Profile' },
   { id: 'disqualified', label: 'Disqualified' },
   { id: 'config',       label: 'Config' },
 ]
@@ -321,6 +365,7 @@ export function SmartMoney() {
   const [tab, setTab] = useState<Tab>('overview')
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null)
+  const [rankingsMarket, setRankingsMarket] = useState<'all' | 'crypto' | 'forex'>('all')
 
   // isStarting: true from the moment "Run pipeline" is clicked until the backend
   // confirms the run is actually running. Prevents the terminal from flickering
@@ -353,7 +398,7 @@ export function SmartMoney() {
     : progress
 
   const isLive = isStarting || progress?.status === 'running'
-  const showProgress = effectiveProgress != null && effectiveProgress.status !== 'idle'
+  const showProgress = effectiveProgress != null
 
   const { data: runs } = useSmartMoneyRuns()
   const activeRunId = selectedRunId ?? runs?.[0]?.run_id ?? null
@@ -490,7 +535,10 @@ export function SmartMoney() {
             runLoading
               ? <div className="text-text-tertiary text-small py-12 text-center">Loading…</div>
               : run
-              ? <PoolOverview run={run} />
+              ? <PoolOverview run={run} onNavigate={(t, m) => {
+                  if (m) setRankingsMarket(m as 'all' | 'crypto' | 'forex')
+                  setTab(t as Tab)
+                }} />
               : <PoolOverviewEmpty />
           )}
 
@@ -498,7 +546,7 @@ export function SmartMoney() {
             candLoading
               ? <div className="text-text-tertiary text-small py-12 text-center">Loading candidates…</div>
               : candidates && candidates.length > 0
-              ? <Rankings candidates={candidates} onSelect={handleSelectCandidate} />
+              ? <Rankings candidates={candidates} onSelect={handleSelectCandidate} initialMarket={rankingsMarket} />
               : <div className="text-center py-12 text-text-tertiary text-small">
                   No candidates found in this run.
                 </div>

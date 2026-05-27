@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { Star } from 'lucide-react'
 import type { Candidate } from '@/types'
 
+type Market = 'all' | 'crypto' | 'forex'
+
 interface RankingsProps {
   candidates: Candidate[]
   onSelect: (c: Candidate) => void
+  initialMarket?: Market
 }
-
-type Market = 'all' | 'crypto' | 'forex'
 
 const CONSISTENCY_PILL: Record<string, string> = {
   improving: 'bg-pos-muted text-pos-text',
@@ -15,8 +16,8 @@ const CONSISTENCY_PILL: Record<string, string> = {
   declining: 'bg-warn-muted text-warn-text',
 }
 
-export function Rankings({ candidates, onSelect }: RankingsProps) {
-  const [market, setMarket] = useState<Market>('all')
+export function Rankings({ candidates, onSelect, initialMarket = 'all' }: RankingsProps) {
+  const [market, setMarket] = useState<Market>(initialMarket)
   const [source, setSource] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [sortCol, setSortCol] = useState<keyof Candidate>('rank')
@@ -96,7 +97,7 @@ export function Rankings({ candidates, onSelect }: RankingsProps) {
               <th className="text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-[14px] py-[10px] bg-bg-surface-2 border-b border-border-subtle">Market</th>
               <th className="text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-[14px] py-[10px] bg-bg-surface-2 border-b border-border-subtle">Source</th>
               <SortTh col="composite_score" label="Composite" />
-              <SortTh col="net_growth_pct" label="Net growth" right />
+              <SortTh col="cum_pnl_usd" label="Cum. PnL" right />
               <SortTh col="peak_drawdown" label="Max DD" right />
               <SortTh col="overall_win_rate" label="Win rate" right />
               <th className="text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-[14px] py-[10px] bg-bg-surface-2 border-b border-border-subtle">Consistency</th>
@@ -133,8 +134,8 @@ export function Rankings({ candidates, onSelect }: RankingsProps) {
                     </div>
                   </div>
                 </td>
-                <td className="px-[14px] py-[11px] text-right mono text-pos-text text-small">
-                  +{c.net_growth_pct.toFixed(0)}%
+                <td className={`px-[14px] py-[11px] text-right mono text-small ${c.cum_pnl_usd >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>
+                  {c.cum_pnl_usd >= 0 ? '+' : ''}${Math.abs(c.cum_pnl_usd).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </td>
                 <td className="px-[14px] py-[11px] text-right mono text-small">
                   {c.peak_drawdown.toFixed(1)}%

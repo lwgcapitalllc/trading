@@ -39,10 +39,16 @@ function FunnelChart({ funnel }: { funnel: SmartMoneyRun['funnel'] }) {
 
 const DONUT_COLORS = ['#2dd4bf', '#d9a441']
 
-export function PoolOverview({ run }: { run: SmartMoneyRun }) {
+export function PoolOverview({ run, onNavigate }: {
+  run: SmartMoneyRun
+  onNavigate?: (tab: string, market?: string) => void
+}) {
   const sourceData = Object.entries(run.by_source).map(([name, value]) => ({ name, value }))
   const marketData = Object.entries(run.by_market).map(([name, value]) => ({ name, value }))
   const total = Object.values(run.by_market).reduce((a, b) => a + b, 0)
+
+  const cryptoCount = run.by_market.crypto ?? 0
+  const forexCount  = run.by_market.forex  ?? 0
 
   return (
     <div className="space-y-3">
@@ -52,22 +58,29 @@ export function PoolOverview({ run }: { run: SmartMoneyRun }) {
           label="API Scanned"
           value={run.total_scanned.toLocaleString()}
           sub={`top candidates, ${Object.keys(run.by_source).length} sources`}
+          onClick={onNavigate ? () => onNavigate('disqualified') : undefined}
         />
         <StatCard
           label="Qualified"
           value={run.total_qualified.toLocaleString()}
           sub={total > 0 ? `${((run.total_qualified / run.total_scanned) * 100).toFixed(2)}% pass rate` : '—'}
           subVariant="pos"
+          disabled={run.total_qualified === 0}
+          onClick={run.total_qualified > 0 && onNavigate ? () => onNavigate('rankings') : undefined}
         />
         <StatCard
           label="Crypto"
-          value={(run.by_market.crypto ?? 0).toLocaleString()}
+          value={cryptoCount.toLocaleString()}
           sub={Object.keys(run.by_source).filter(s => !['myfxbook', 'fx_blue'].includes(s)).join(' · ')}
+          disabled={cryptoCount === 0}
+          onClick={cryptoCount > 0 && onNavigate ? () => onNavigate('rankings', 'crypto') : undefined}
         />
         <StatCard
           label="Forex"
-          value={(run.by_market.forex ?? 0).toLocaleString()}
+          value={forexCount.toLocaleString()}
           sub={Object.keys(run.by_source).filter(s => ['myfxbook', 'fx_blue'].includes(s)).join(' · ')}
+          disabled={forexCount === 0}
+          onClick={forexCount > 0 && onNavigate ? () => onNavigate('rankings', 'forex') : undefined}
         />
       </div>
 

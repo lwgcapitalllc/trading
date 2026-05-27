@@ -118,11 +118,38 @@ export default {
         ping: {
           '75%, 100%': { transform: 'scale(2)', opacity: '0' },
         },
+        // Z floats upward and fades — used for sleeping idle state
+        floatz: {
+          '0%':   { opacity: '0',   transform: 'translateY(0px)' },
+          '15%':  { opacity: '0.7'                               },
+          '80%':  { opacity: '0.5', transform: 'translateY(-14px)' },
+          '100%': { opacity: '0',   transform: 'translateY(-20px)' },
+        },
+        // Slow breathing pulse for center dot in radar standby
+        breathe: {
+          '0%, 100%': { transform: 'scale(1)',    opacity: '0.85' },
+          '50%':      { transform: 'scale(1.06)', opacity: '1'    },
+        },
+        // Radar ring — expands from center and fades (scanner standby)
+        radarRing: {
+          '0%':   { transform: 'scale(0.12)', opacity: '0.75' },
+          '70%':  { opacity: '0.18' },
+          '100%': { transform: 'scale(1)',    opacity: '0' },
+        },
+        // ECG scroll — tiles a repeating waveform, slides left at constant speed
+        ecgScroll: {
+          '0%':   { transform: 'translateX(0px)'    },
+          '100%': { transform: 'translateX(-200px)' },
+        },
       },
       animation: {
         shimmer:  'shimmer 1.6s ease-in-out infinite',
         fadein:   'fadein 0.15s ease-out forwards',
         scanline: 'scanline 3.5s linear infinite',
+        floatz:      'floatz 2.6s ease-in-out infinite',
+        breathe:     'breathe 3.5s ease-in-out infinite',
+        'radar-ring': 'radarRing 2.8s cubic-bezier(0.2, 0.5, 0.5, 1) infinite',
+        'ecg-scroll': 'ecgScroll 2s linear infinite',
       },
     },
   },

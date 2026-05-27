@@ -268,14 +268,33 @@ class DisqualificationFilter:
             )
         return True, None
 
+    def check_overall_profitability(
+        self, trades: list[dict]
+    ) -> tuple[bool, str | None]:
+        """
+        Total cumulative PnL across all trades must be positive.
+
+        This catches wallets that win frequently on small trades but lose
+        big on a few — high win rate but net negative. The drawdown check
+        alone misses these because it only activates once cumulative PnL
+        has been positive at some point.
+        """
+        total_pnl = sum(t["pnl"] for t in trades)
+        if total_pnl <= 0:
+            return False, (
+                f"Net unprofitable: total PnL ${total_pnl:,.0f}"
+            )
+        return True, None
+
     def apply_all(
         self, trades: list[dict]
     ) -> tuple[bool, str | None]:
         """
-        Runs all five checks. Returns (qualifies, first_failing_reason).
+        Runs all checks. Returns (qualifies, first_failing_reason).
         Runs all checks so the log captures all issues but returns on first failure.
         """
         checks = [
+            self.check_overall_profitability,
             self.check_trade_concentration,
             self.check_weekly_activity,
             self.check_drawdown,
