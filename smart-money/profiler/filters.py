@@ -152,6 +152,9 @@ class DisqualificationFilter:
         self._max_hold_hours: float = q["max_avg_hold_hours"]
         self._min_instruments: int = q["min_instruments"]
         self._window_days: int = config["lookback"]["window_days"]
+        # instrument_concentration_max: max fraction of profit from one instrument.
+        # Default 0.80 (human profile). Set to 1.01+ to disable (bot profile — bots specialize).
+        self._instrument_concentration_max: float = q.get("instrument_concentration_max", 0.80)
 
     def check_trade_concentration(
         self, trades: list[dict]
@@ -255,11 +258,13 @@ class DisqualificationFilter:
         top_instrument_pnl = max(pnl_by_instrument.values())
         concentration = top_instrument_pnl / total_pos_pnl if total_pos_pnl > 0 else 0.0
 
-        # Disqualify if a single instrument contributes >80% of positive PnL
-        if concentration > 0.80:
+        # instrument_concentration_max ≥ 1.0 effectively disables this check
+        # (max possible concentration is 1.0). Bot profile sets this to 1.01.
+        if concentration > self._instrument_concentration_max:
             top = max(pnl_by_instrument, key=pnl_by_instrument.get)
             return False, (
-                f"Instrument PnL concentration: {top} = {concentration:.0%} of total profit"
+                f"Instrument PnL concentration: {top} = {concentration:.0%} of total profit "
+                f"(limit {self._instrument_concentration_max:.0%})"
             )
         return True, None
 

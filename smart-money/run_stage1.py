@@ -30,11 +30,28 @@ from profiler.scorer import CompositeScorer
 from profiler.reporter import build_wallet_profile, StageReporter
 
 
-CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
+CONFIG_PATH     = Path(__file__).parent / "config" / "config.json"
+TEMPLATES_DIR   = Path(__file__).parent / "config" / "templates"
+VALID_PROFILES  = ["bot", "human"]
 
 
-def load_config(win_rate_override: float = None) -> dict:
-    with open(CONFIG_PATH, encoding="utf-8") as f:
+def load_config(profile: str = None, win_rate_override: float = None) -> dict:
+    """
+    Load pipeline config. Priority:
+      1. --profile bot|human  → loads config/templates/{profile}.json
+      2. default              → loads config/config.json
+    win_rate_override applies on top of whichever config is loaded.
+    """
+    if profile:
+        if profile not in VALID_PROFILES:
+            raise ValueError(f"Unknown profile '{profile}'. Valid: {VALID_PROFILES}")
+        config_path = TEMPLATES_DIR / f"{profile}.json"
+        if not config_path.exists():
+            raise FileNotFoundError(f"Profile template not found: {config_path}")
+    else:
+        config_path = CONFIG_PATH
+
+    with open(config_path, encoding="utf-8") as f:
         config = json.load(f)
     if win_rate_override is not None:
         config["qualification"]["min_win_rate"] = win_rate_override
@@ -148,9 +165,12 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 
     logger.set("total_scanned", logger.get("total_scanned") or len(passed_initial) + len(failed_initial))
 
-    # Persist disqualified from initial filter
+    # Persist disqualified from initial filter and collect for this run's report
+    current_disqualified: list[dict] = []
     for w in failed_initial:
-        db.log_disqualified(w["address"], "hyperliquid", w.get("reason", "initial filter"))
+        reason = w.get("reason", "initial filter")
+        db.log_disqualified(w["address"], "hyperliquid", reason)
+        current_disqualified.append({"address": w["address"], "source": "hyperliquid", "reason": reason})
 
     logger.info(f"Step 1.2 complete — {len(passed_initial)} wallets pass initial filters")
 
@@ -188,6 +208,7 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
             reason = "No matched trades after fill parsing"
             db.log_disqualified(address, "hyperliquid", reason)
             logger.log_disqualified(address, reason)
+            current_disqualified.append({"address": address, "source": "hyperliquid", "reason": reason})
             continue
 
         # Persist wallet + trades
@@ -206,6 +227,7 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 
         if not qualifies:
             db.log_disqualified(address, "hyperliquid", disq_reason)
+            current_disqualified.append({"address": address, "source": "hyperliquid", "reason": disq_reason})
             # Preserve short-history wallets with notable performance for manual review
             if disq_reason and disq_reason.startswith("Trading span"):
                 _watchlist_entry = _build_watchlist_entry(address, trades, disq_reason, profiler)
@@ -323,12 +345,14 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
         "top_profiles_built": len(profiles),
     }
 
-    all_disqualified = db.get_disqualified(source="hyperliquid")
-    reporter.export_run_dir(profiles, all_disqualified, run_counts)
+    # Use only this run's disqualified list — not the full DB history.
+    # db.get_disqualified() returns all-time records, which would inflate the
+    # UI display and mix in stale data from previous runs with different configs.
+    reporter.export_run_dir(profiles, current_disqualified, run_counts)
     reporter.export_json(profiles, stage="stage1")
     reporter.export_csv(profiles, stage="stage1")
     reporter.export_markdown_summary(profiles, stage="stage1", run_counts=run_counts)
-    reporter.export_disqualified_log(all_disqualified, stage="stage1")
+    reporter.export_disqualified_log(current_disqualified, stage="stage1")
 
     # Export watchlist — short-history wallets with notable performance
     if watchlist:
@@ -371,13 +395,18 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 
 def main():
     parser = argparse.ArgumentParser(description="Run Stage 1 — Hyperliquid scanner and profiler")
+    parser.add_argument(
+        "--profile", choices=VALID_PROFILES, default=None,
+        help="Config profile to use: 'bot' (rapid growth, algo) or 'human' (conservative). "
+             "Omit to use config/config.json.",
+    )
     parser.add_argument("--win-rate", type=float, default=None,
                         help="Override min_win_rate threshold (e.g. 0.75)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Skip API calls and use wallets already in the database")
     args = parser.parse_args()
 
-    config = load_config(win_rate_override=args.win_rate)
+    config = load_config(profile=args.profile, win_rate_override=args.win_rate)
     run_stage1(config, dry_run=args.dry_run)
 
 

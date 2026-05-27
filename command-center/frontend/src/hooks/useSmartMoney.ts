@@ -6,6 +6,11 @@ import type {
   DisqualifiedCandidate, SmartMoneyConfig, ConfigGitStatus, RunProgress,
 } from '@/types'
 
+// Module-level timestamp — shared between useRunProgress and useRunPipeline so
+// the polling interval stays fast for 60s after a trigger even if the cache
+// gets overwritten with the old completed state before Python starts writing.
+let _lastTriggerMs = 0
+
 export function useSmartMoneyRuns() {
   return useQuery({
     queryKey: ['smart-money', 'runs'],
@@ -66,9 +71,13 @@ export function useRunProgress() {
   return useQuery({
     queryKey: ['smart-money', 'progress'],
     queryFn: () => api.get<RunProgress>('/smart-money/progress'),
-    // 1s while running so the address feed feels live; 30s idle to not spam the server.
     refetchInterval: (query) => {
       const status = (query.state.data as RunProgress | undefined)?.status
+      // For 60s after a trigger, always poll at 1.5s regardless of status —
+      // this bridges the gap while Python is importing/starting (10–15s) and
+      // prevents the interval from falling back to 30s after the first poll
+      // returns the old completed state.
+      if (Date.now() - _lastTriggerMs < 60_000) return 1_500
       return status === 'running' ? 1_000 : 30_000
     },
   })
@@ -77,30 +86,16 @@ export function useRunProgress() {
 export function useRunPipeline() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => api.post<{ status: string; stage: number }>('/smart-money/run', {}),
-    onSuccess: () => {
-      toast.success('Pipeline started')
-      // Optimistic update — Python startup takes 2–3 s, so we fake a "running/starting"
-      // state immediately so the terminal appears the moment the 202 comes back.
-      qc.setQueryData(['smart-money', 'progress'], (prev: RunProgress | undefined) => ({
-        ...(prev ?? {}),
-        run_id: '',
-        status: 'running' as const,
-        stage: 1,
-        stage_name: 'Hyperliquid scan',
-        phase: 'starting',
-        pct: 0,
-        wallets_scanned: 0,
-        wallets_total: 0,
-        qualified_so_far: 0,
-        disqualified_so_far: 0,
-        message: 'Launching pipeline…',
-        started_at: new Date().toISOString(),
-        updated_at: null,
-        elapsed_seconds: 0,
-        recent_addresses: [],
-      }))
-      // Then trigger a real fetch — will replace the fake state once Python writes progress.json
+    mutationFn: (profile: 'bot' | 'human' | null) =>
+      api.post<{ status: string; stage: number; profile: string | null }>(
+        '/smart-money/run',
+        { profile },
+      ),
+    onSuccess: (_data, profile) => {
+      _lastTriggerMs = Date.now()
+      toast.success(`Pipeline started${profile ? ` (${profile} profile)` : ''}`)
+      // Kick off a poll — the component uses local isStarting state for the
+      // immediate terminal display so we don't need setQueryData here.
       qc.invalidateQueries({ queryKey: ['smart-money', 'progress'] })
     },
   })

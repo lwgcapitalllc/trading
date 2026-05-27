@@ -31,6 +31,15 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
   const isDone    = progress.status === 'complete'
   const isError   = progress.status === 'error'
 
+  // During the scan phase, show per-scan progress (wallets_scanned / wallets_total)
+  // instead of overall pipeline %. The backend pct is designed for a multi-stage
+  // pipeline (scan = first 10%), which is misleading when only Stage 1 runs.
+  const isScanPhase = isRunning && progress.wallets_total > 0
+  const displayPct = isScanPhase
+    ? Math.round(progress.wallets_scanned / progress.wallets_total * 100)
+    : isDone ? 100
+    : progress.pct
+
   // Live elapsed counter — ticks from started_at every second so it's smooth
   // even between 1s backend polls.
   const [liveElapsed, setLiveElapsed] = useState(progress.elapsed_seconds)
@@ -134,7 +143,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
                 : 'text-accent drop-shadow-glow-accent'
             }`}
           >
-            {progress.pct}%
+            {displayPct}%
           </span>
         </div>
       </div>
@@ -232,7 +241,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
           {scanRate >= 0.5 && (
             <span className="text-text-tertiary tabular-nums">
               <span className="text-text-secondary">{scanRate.toFixed(1)}</span>
-              /sec
+              {' '}wallets/sec
             </span>
           )}
           {progress.qualified_so_far > 0 && (
@@ -257,7 +266,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
           className={`h-full transition-[width] duration-700 ease-out ${
             isError ? 'bg-neg' : isDone ? 'bg-pos' : 'bg-accent'
           }`}
-          style={{ width: `${Math.max(progress.pct, isRunning ? 1 : 0)}%` }}
+          style={{ width: `${Math.max(displayPct, isRunning ? 1 : 0)}%` }}
         />
       </div>
     </div>
@@ -276,22 +285,54 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'config',       label: 'Config' },
 ]
 
+// Placeholder progress shown immediately after clicking "Run pipeline", before
+// Python has had time to start and write a real progress.json (takes 10–15s).
+const STARTING_PROGRESS: RunProgress = {
+  run_id: '', status: 'running', stage: 1, stage_name: 'Hyperliquid scan',
+  phase: 'starting', pct: 0, wallets_scanned: 0, wallets_total: 0,
+  qualified_so_far: 0, disqualified_so_far: 0,
+  message: 'Launching pipeline…', started_at: new Date().toISOString(),
+  updated_at: null, elapsed_seconds: 0, recent_addresses: [],
+}
+
 export function SmartMoney() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>('overview')
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null)
 
+  // isStarting: true from the moment "Run pipeline" is clicked until the backend
+  // confirms the run is actually running. Prevents the terminal from flickering
+  // back to "complete" while Python is starting up (10–15s).
+  const [isStarting, setIsStarting] = useState(false)
+  // profile: which config template to use when triggering a run
+  const [profile, setProfile] = useState<'bot' | 'human'>('bot')
+
   const { data: progress } = useRunProgress()
   const prevStatus = useRef<string | undefined>(undefined)
   useEffect(() => {
+    // Once the backend confirms running, the local starting placeholder is no longer needed
+    if (progress?.status === 'running') setIsStarting(false)
     if (prevStatus.current === 'running' && progress?.status === 'complete') {
       qc.invalidateQueries({ queryKey: ['smart-money', 'runs'] })
     }
     prevStatus.current = progress?.status
   }, [progress?.status, qc])
 
-  const showProgress = progress != null && progress.status !== 'idle'
+  // Safety valve: clear isStarting after 90s regardless (in case pipeline never starts)
+  useEffect(() => {
+    if (!isStarting) return
+    const t = setTimeout(() => setIsStarting(false), 90_000)
+    return () => clearTimeout(t)
+  }, [isStarting])
+
+  // What the terminal should display: local starting placeholder until real data arrives
+  const effectiveProgress = (isStarting && progress?.status !== 'running')
+    ? STARTING_PROGRESS
+    : progress
+
+  const isLive = isStarting || progress?.status === 'running'
+  const showProgress = effectiveProgress != null && effectiveProgress.status !== 'idle'
 
   const { data: runs } = useSmartMoneyRuns()
   const activeRunId = selectedRunId ?? runs?.[0]?.run_id ?? null
@@ -304,6 +345,11 @@ export function SmartMoney() {
   const { mutate: saveConfig, isPending: saving, error: saveErr } = useSaveConfig()
   const { mutate: runPipeline, isPending: launching } = useRunPipeline()
   const { mutate: stopPipeline, isPending: stopping } = useStopPipeline()
+
+  const handleRunPipeline = () => {
+    setIsStarting(true)
+    runPipeline(profile, { onError: () => setIsStarting(false) })
+  }
 
   const handleSelectCandidate = (c: Candidate) => {
     setSelectedCandidate(c)
@@ -321,47 +367,76 @@ export function SmartMoney() {
         <h1 className="text-h1 font-semibold">Smart Money</h1>
         {runDate && <span className="text-[12px] text-text-tertiary pb-[2px]">{runDate}</span>}
         <div className="ml-auto flex items-center gap-2">
-          {/* Run selector */}
-          {runs && runs.length > 0 && (
-            <select
-              value={activeRunId ?? ''}
-              onChange={e => setSelectedRunId(e.target.value)}
-              className="bg-bg-surface border border-border-default rounded-md px-3 py-[6px] text-small text-text-primary focus:outline-none focus:border-accent"
-            >
-              {runs.map(r => (
-                <option key={r.run_id} value={r.run_id}>
-                  {new Date(r.generated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {r.total_qualified} qualified
-                </option>
-              ))}
-            </select>
-          )}
+          {/* Run selector — always shows the last COMPLETED run */}
+          <div className="flex flex-col items-end gap-[3px]">
+            {isLive && (
+              <span className="flex items-center gap-[5px] text-[10px] font-mono text-accent leading-none">
+                <span className="relative flex h-[6px] w-[6px]">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
+                  <span className="relative inline-flex rounded-full h-[6px] w-[6px] bg-accent" />
+                </span>
+                new run in progress
+              </span>
+            )}
+            {runs && runs.length > 0 && (
+              <select
+                value={activeRunId ?? ''}
+                onChange={e => setSelectedRunId(e.target.value)}
+                className="bg-bg-surface border border-border-default rounded-md px-3 py-[6px] text-small text-text-primary focus:outline-none focus:border-accent"
+              >
+                {runs.map(r => (
+                  <option key={r.run_id} value={r.run_id}>
+                    {new Date(r.generated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {r.total_qualified} qualified
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
           <button className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-primary hover:bg-bg-hover transition-colors duration-[120ms]">
             <Download size={14} />
             Export
           </button>
-          {progress?.status === 'running' ? (
+          {isLive ? (
             <button
               onClick={() => stopPipeline()}
-              disabled={stopping}
+              disabled={stopping || isStarting}
               className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-neg border border-neg text-white hover:opacity-90 transition-opacity duration-[120ms] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span className="w-[8px] h-[8px] rounded-sm bg-white flex-shrink-0" />
-              {stopping ? 'Stopping…' : 'Stop pipeline'}
+              {stopping ? 'Stopping…' : isStarting ? 'Starting…' : 'Stop pipeline'}
             </button>
           ) : (
-            <button
-              onClick={() => runPipeline()}
-              disabled={launching}
-              className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-accent border border-accent text-[#06201d] hover:bg-accent-hover transition-colors duration-[120ms] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Play size={14} />
-              {launching ? 'Starting…' : 'Run pipeline'}
-            </button>
+            <div className="flex items-center gap-[6px]">
+              {/* Profile toggle: BOT / HUMAN */}
+              <div className="flex rounded-md overflow-hidden border border-border-default text-[11px] font-mono">
+                {(['bot', 'human'] as const).map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setProfile(p)}
+                    className={`px-[10px] py-[5px] uppercase tracking-wide transition-colors duration-[120ms] ${
+                      profile === p
+                        ? 'bg-accent text-[#06201d] font-semibold'
+                        : 'text-text-tertiary hover:text-text-primary bg-transparent'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={handleRunPipeline}
+                disabled={launching}
+                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-accent border border-accent text-[#06201d] hover:bg-accent-hover transition-colors duration-[120ms] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Play size={14} />
+                {launching ? 'Starting…' : 'Run pipeline'}
+              </button>
+            </div>
           )}
         </div>
       </div>
 
-      {showProgress && <ScannerTerminal progress={progress} />}
+      {showProgress && effectiveProgress && <ScannerTerminal progress={effectiveProgress} />}
 
       {/* Tabs */}
       <div className="flex gap-[2px] mb-[18px] border-b border-border-subtle">

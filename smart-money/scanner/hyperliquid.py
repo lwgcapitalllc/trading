@@ -100,8 +100,12 @@ class HyperliquidClient:
             except requests.HTTPError as e:
                 status = e.response.status_code if e.response is not None else None
                 if status == 429:
-                    _log.warning(f"Rate limited (attempt {attempt+1}). Sleeping {wait}s")
-                    time.sleep(wait)
+                    # Rate limit: use a much longer minimum wait (5s) — the
+                    # per-request delay (0.2–0.3s) is far too short to clear a
+                    # server-side rate limit bucket.
+                    rl_wait = max(wait, 5.0) * (attempt + 1)
+                    _log.warning(f"Rate limited (attempt {attempt+1}/{self._max_retries}). Sleeping {rl_wait:.1f}s")
+                    time.sleep(rl_wait)
                     wait *= self._backoff
                 elif status and 400 <= status < 500:
                     raise  # non-retryable client errors
@@ -190,10 +194,20 @@ class HyperliquidScanner:
         self._min_trades: int = config["qualification"]["min_trades"]
         self._min_age_days: int = config["qualification"]["min_wallet_age_days"]
         hl = config.get("hyperliquid", {})
-        self._max_candidates: int   = hl.get("max_leaderboard_candidates", 3000)
-        self._min_alltime_pnl: float = hl.get("min_alltime_pnl", 10_000)
-        self._min_alltime_roi: float = hl.get("min_alltime_roi", 0.5)   # 0.5 = 50%
+        self._max_candidates: int    = hl.get("max_leaderboard_candidates", 3000)
+        self._min_alltime_pnl: float  = hl.get("min_alltime_pnl", 10_000)
+        self._min_alltime_roi: float  = hl.get("min_alltime_roi", 0.5)    # 0.5 = 50%
+        self._min_month_roi: float    = hl.get("min_month_roi", 0.0)      # 0.0 = disabled
+        self._min_week_roi: float     = hl.get("min_week_roi", 0.0)       # 0.0 = disabled
         self._min_account_value: float = hl.get("min_account_value", 1_000)
+        # Prescore weights: controls which time-window ROI dominates the pre-scan ranking.
+        # Human profile: weight all-time heavily (0.50/0.30/0.20).
+        # Bot profile: weight recent heavily (0.20/0.50/0.30) — is it growing right now?
+        self._prescore_weights: dict  = hl.get("prescore_weights", {
+            "alltime_roi": 0.50,
+            "month_roi":   0.30,
+            "week_roi":    0.20,
+        })
 
     def _parse_leaderboard_entry(self, entry: dict) -> dict | None:
         """
@@ -238,28 +252,32 @@ class HyperliquidScanner:
         age_seconds = time.time() - oldest_ts_ms / 1000.0
         return max(0, int(age_seconds / 86400))
 
-    @staticmethod
-    def _prescore(p: dict) -> float:
+    def _prescore(self, p: dict) -> float:
         """
         Composite pre-sort score using leaderboard-only data (no API calls needed).
 
-        Goal: surface skill, not just scale.  A trader who turned $20k into $800k
-        (ROI 3900%) should rank above a whale who made $1M on a $10M deposit (10% ROI).
+        Weighted sum of time-window ROIs × log10(PnL scale factor).
 
-        Formula:
-          score = all_time_roi  ×  log10(max(all_time_pnl, 1))
+        - Weights come from config `hyperliquid.prescore_weights`.
+        - Human profile (default): weights all-time ROI heavily — rewards long track records.
+        - Bot profile: weights month_roi and week_roi heavily — rewards what's growing *now*.
+        - log10(pnl) keeps micro-accounts from dominating over traders managing real capital.
 
-        - all_time_roi  captures skill / return quality
-        - log10(pnl)    provides a gentle scale component so micro-accounts
-                        (e.g. $10k → $50k at 400% ROI) don't crowd out traders
-                        who've managed real capital
-        - Recent-window bonus: +10% of score if month_roi > 0 (still active/profitable)
+        Example bot formula: 0.20×alltime_roi + 0.50×month_roi + 0.30×week_roi × log10(pnl)
+        A bot with 50%/month ranks far above one that peaked 2 years ago and is flat now.
         """
         import math
-        roi = p.get("all_time_roi") or 0.0
+        w = self._prescore_weights
         pnl = p.get("all_time_pnl") or 0.0
-        score = roi * math.log10(max(pnl, 1))
-        # Bonus for recent positive month performance (not in a long slump)
+
+        weighted_roi = (
+            (p.get("all_time_roi") or 0.0) * w.get("alltime_roi", 0.50) +
+            (p.get("month_roi")    or 0.0) * w.get("month_roi",   0.30) +
+            (p.get("week_roi")     or 0.0) * w.get("week_roi",    0.20)
+        )
+
+        score = weighted_roi * math.log10(max(pnl, 1))
+        # Small bonus for recent positive month performance (not in a long slump)
         if (p.get("month_roi") or 0.0) > 0:
             score *= 1.10
         return score
@@ -274,7 +292,7 @@ class HyperliquidScanner:
         self._log.info(f"Raw leaderboard entries: {len(raw)}")
         self._log.set("leaderboard_raw", len(raw))
 
-        passed, dropped_pnl, dropped_roi, dropped_val = [], 0, 0, 0
+        passed, dropped_pnl, dropped_roi, dropped_val, dropped_month, dropped_week = [], 0, 0, 0, 0, 0
         for entry in raw:
             p = self._parse_leaderboard_entry(entry)
             if not p:
@@ -287,14 +305,35 @@ class HyperliquidScanner:
             if roi < self._min_alltime_roi:
                 dropped_roi += 1
                 continue
-            if p["account_value"] < self._min_account_value:
+            if self._min_account_value > 0 and p["account_value"] < self._min_account_value:
                 dropped_val += 1
                 continue
+            # Recent activity floors — key for finding currently active bots.
+            # min_month_roi = 0.0 disables this check (default for human profile).
+            if self._min_month_roi > 0:
+                if (p.get("month_roi") or 0.0) < self._min_month_roi:
+                    dropped_month += 1
+                    continue
+            if self._min_week_roi > 0:
+                if (p.get("week_roi") or 0.0) < self._min_week_roi:
+                    dropped_week += 1
+                    continue
             passed.append(p)
+
+        drop_parts = [
+            f"{dropped_pnl} low-PnL",
+            f"{dropped_roi} low-ROI",
+        ]
+        if self._min_account_value > 0:
+            drop_parts.append(f"{dropped_val} low-balance")
+        if self._min_month_roi > 0:
+            drop_parts.append(f"{dropped_month} low-month-ROI (<{self._min_month_roi:.0%})")
+        if self._min_week_roi > 0:
+            drop_parts.append(f"{dropped_week} low-week-ROI (<{self._min_week_roi:.0%})")
 
         self._log.info(
             f"Hard floors: {len(raw)} raw → {len(passed)} pass "
-            f"(dropped {dropped_pnl} low-PnL, {dropped_roi} low-ROI, {dropped_val} low-balance)"
+            f"(dropped {', '.join(drop_parts)})"
         )
 
         # Sort by composite skill score: ROI × log(PnL) + recency bonus

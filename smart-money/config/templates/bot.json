@@ -1,0 +1,98 @@
+{
+  "_comment": "Bot / algo trader profile — aggressive. Optimized for 500–2000%+ annual ROI. Expects algorithmic accounts: high trade frequency, short holds, specialist instruments, recently deployed. The 90-day history requirement is dropped to 30 days — a bot running 45 days at 500% ROI is exactly what we want. Instrument concentration is disabled — bots specialize.",
+  "_profile": "bot",
+
+  "qualification": {
+    "min_trades": 100,
+    "min_win_rate": 0.7,
+    "min_wallet_age_days": 30,
+    "max_drawdown": 0.3,
+    "max_single_trade_pnl_share": 1.0,
+    "min_active_weeks_per_month": 1,
+    "max_avg_hold_hours": 24,
+    "min_instruments": 1,
+    "instrument_concentration_max": 1.01
+  },
+
+  "strike_system": {
+    "yellow_flag_threshold": 1,
+    "disqualify_consecutive_months": 3,
+    "reinstate_consecutive_months": 2
+  },
+
+  "lookback": {
+    "minimum_days": 30,
+    "preferred_days": 60,
+    "elite_days": 180,
+    "window_days": 30
+  },
+
+  "pool_calibration": {
+    "thin_pool_threshold": 10,
+    "large_pool_threshold": 50,
+    "thin_pool_fallback_win_rate": 0.6,
+    "large_pool_tighter_drawdown": 0.35
+  },
+
+  "scoring": {
+    "weights": {
+      "win_rate_consistency": 0.2,
+      "risk_adjusted_return": 0.35,
+      "exit_efficiency": 0.25,
+      "trade_frequency": 0.2,
+      "instrument_day_consistency": 0.0
+    },
+    "target_trades_per_month": 200,
+    "elite_lookback_bonus": 0.0
+  },
+
+  "output": {
+    "top_n_profiles": 20,
+    "top_n_shortlist": 5,
+    "reports_dir": "reports",
+    "raw_data_dir": "data/raw",
+    "processed_data_dir": "data/processed"
+  },
+
+  "hyperliquid": {
+    "base_url": "https://api.hyperliquid.xyz",
+    "rate_limit_delay_seconds": 0.3,
+    "concurrent_workers": 5,
+    "max_retries": 5,
+    "retry_backoff_factor": 2.0,
+    "leaderboard_window": "allTime",
+    "timeout_seconds": 30,
+    "max_leaderboard_candidates": 500,
+    "min_alltime_pnl": 10000,
+    "min_alltime_roi": 1.0,
+    "min_month_roi": 0.2,
+    "min_week_roi": 0.0,
+    "min_account_value": 0,
+    "prescore_weights": {
+      "alltime_roi": 0.2,
+      "month_roi": 0.5,
+      "week_roi": 0.3
+    }
+  },
+
+  "forex": {
+    "crypto_transparency_weight": 1.0,
+    "forex_transparency_weight": 0.85,
+    "dual_platform_bias_removal": true,
+    "single_platform_yellow_flag": true,
+    "disqualify_created_within_best_window_months": 6
+  },
+
+  "stage3": {
+    "dune_api_key_env": "DUNE_API_KEY",
+    "flipside_api_key_env": "FLIPSIDE_API_KEY",
+    "birdeye_api_key_env": "BIRDEYE_API_KEY",
+    "debank_api_key_env": "DEBANK_API_KEY"
+  },
+
+  "stage4": {
+    "myfxbook_email_env": "MYFXBOOK_EMAIL",
+    "myfxbook_password_env": "MYFXBOOK_PASSWORD",
+    "fx_blue_session_env": "FX_BLUE_SESSION"
+  }
+}

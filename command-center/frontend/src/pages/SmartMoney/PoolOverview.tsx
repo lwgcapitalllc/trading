@@ -49,9 +49,9 @@ export function PoolOverview({ run }: { run: SmartMoneyRun }) {
       {/* Stat cards */}
       <div className="grid grid-cols-4 gap-[10px]">
         <StatCard
-          label="Scanned"
+          label="API Scanned"
           value={run.total_scanned.toLocaleString()}
-          sub={`across ${Object.keys(run.by_source).length} sources`}
+          sub={`top candidates, ${Object.keys(run.by_source).length} sources`}
         />
         <StatCard
           label="Qualified"

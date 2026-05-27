@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 import config as cfg
 from models import (
@@ -293,8 +293,18 @@ def get_progress():
 _PID_FILE = cfg.SMART_MONEY_REPORTS_DIR / "pipeline.pid"
 
 
+class _RunRequest(BaseModel):
+    profile: Optional[str] = None  # "bot" | "human" | None (uses config/config.json)
+
+
 @router.post("/run", status_code=202)
-def run_pipeline():
+def run_pipeline(body: _RunRequest = None):
+    if body is None:
+        body = _RunRequest()
+
+    if body.profile is not None and body.profile not in ("bot", "human"):
+        raise HTTPException(status_code=422, detail=f"Invalid profile '{body.profile}'. Use 'bot' or 'human'.")
+
     progress_path = cfg.SMART_MONEY_REPORTS_DIR / "progress.json"
     if progress_path.exists():
         with open(progress_path) as f:
@@ -311,15 +321,19 @@ def run_pipeline():
     clean_env["PATH"] = ":".join(
         p for p in clean_env.get("PATH", "").split(":") if ".venv/bin" not in p
     )
+    cmd = ["python3", str(script)]
+    if body.profile:
+        cmd += ["--profile", body.profile]
+
     proc = subprocess.Popen(
-        ["python3", str(script)],
+        cmd,
         cwd=str(cfg.SMART_MONEY_ROOT),
         stdout=log_file,
         stderr=log_file,
         env=clean_env,
     )
     _PID_FILE.write_text(str(proc.pid))
-    return {"status": "started", "stage": 1}
+    return {"status": "started", "stage": 1, "profile": body.profile}
 
 
 @router.post("/stop", status_code=200)

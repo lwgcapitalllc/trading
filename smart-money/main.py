@@ -28,13 +28,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 import database as db
 from run_logger import get_logger
 
-CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
+CONFIG_PATH    = Path(__file__).parent / "config" / "config.json"
+TEMPLATES_DIR  = Path(__file__).parent / "config" / "templates"
+VALID_PROFILES = ["bot", "human"]
 
 _log = get_logger("main")
 
 
-def load_config(win_rate_override: float = None) -> dict:
-    with open(CONFIG_PATH, encoding="utf-8") as f:
+def load_config(profile: str = None, win_rate_override: float = None) -> dict:
+    if profile:
+        if profile not in VALID_PROFILES:
+            raise ValueError(f"Unknown profile '{profile}'. Valid: {VALID_PROFILES}")
+        config_path = TEMPLATES_DIR / f"{profile}.json"
+        _log.info(f"Using profile: {profile} ({config_path.name})")
+    else:
+        config_path = CONFIG_PATH
+
+    with open(config_path, encoding="utf-8") as f:
         config = json.load(f)
     if win_rate_override is not None:
         config["qualification"]["min_win_rate"] = win_rate_override
@@ -124,6 +134,11 @@ def main():
         help="Which stages to run (e.g. --stages 1 2 3)"
     )
     parser.add_argument(
+        "--profile", choices=VALID_PROFILES, default=None,
+        help="Config profile: 'bot' (rapid growth, algo) or 'human' (conservative). "
+             "Omit to use config/config.json.",
+    )
+    parser.add_argument(
         "--skip-stage2", action="store_true",
         help="Skip manual validation pause after Stage 2"
     )
@@ -133,7 +148,7 @@ def main():
     )
     args = parser.parse_args()
 
-    config = load_config(win_rate_override=args.win_rate)
+    config = load_config(profile=args.profile, win_rate_override=args.win_rate)
     run_full_pipeline(config, stages=args.stages, skip_stage2=args.skip_stage2)
 
 

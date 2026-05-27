@@ -1,5 +1,6 @@
 {
-  "_comment": "All qualification thresholds and pipeline settings. Edit here, never in code.",
+  "_comment": "Human trader profile — conservative. Looks for disciplined, consistent human traders with long track records (90+ days). Filters for diversification, controlled drawdown, and no single-trade dominance.",
+  "_profile": "human",
 
   "qualification": {
     "min_trades": 100,
