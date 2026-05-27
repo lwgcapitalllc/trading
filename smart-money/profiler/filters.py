@@ -155,6 +155,11 @@ class DisqualificationFilter:
         # instrument_concentration_max: max fraction of profit from one instrument.
         # Default 0.80 (human profile). Set to 1.01+ to disable (bot profile — bots specialize).
         self._instrument_concentration_max: float = q.get("instrument_concentration_max", 0.80)
+        # min_overall_win_rate: hard floor on aggregate win rate across all matched trades.
+        # Guards against high-R/R "sniper" strategies that win on dollars but lose on
+        # 80–90% of individual trades — a nightmare for copy trading.
+        # Default 0.0 (disabled) so existing configs without the key are unchanged.
+        self._min_overall_win_rate: float = q.get("min_overall_win_rate", 0.0)
 
     def check_trade_concentration(
         self, trades: list[dict]
@@ -286,6 +291,29 @@ class DisqualificationFilter:
             )
         return True, None
 
+    def check_overall_win_rate(
+        self, trades: list[dict]
+    ) -> tuple[bool, str | None]:
+        """
+        Aggregate win rate across all matched trades must meet the floor.
+
+        This catches high-R/R "sniper" strategies where 80–90% of trades
+        are individual losses funded by a few large winners. The per-window
+        strike system can miss these when bad-win-rate months are separated
+        by one good month (never hitting the consecutive-months threshold).
+        Floor default is 0.0 (disabled) — set min_overall_win_rate in config.
+        """
+        if not trades or self._min_overall_win_rate <= 0.0:
+            return True, None
+        win_rate = sum(1 for t in trades if t["is_win"]) / len(trades)
+        if win_rate < self._min_overall_win_rate:
+            return False, (
+                f"Overall win rate {win_rate:.1%} < "
+                f"{self._min_overall_win_rate:.0%} floor "
+                f"({sum(1 for t in trades if t['is_win'])} wins / {len(trades)} trades)"
+            )
+        return True, None
+
     def apply_all(
         self, trades: list[dict]
     ) -> tuple[bool, str | None]:
@@ -295,6 +323,7 @@ class DisqualificationFilter:
         """
         checks = [
             self.check_overall_profitability,
+            self.check_overall_win_rate,
             self.check_trade_concentration,
             self.check_weekly_activity,
             self.check_drawdown,
@@ -353,6 +382,22 @@ class QualificationGate:
                 reason = f"Trading span {span_days} days < {min_span} day minimum"
                 self._log.log_disqualified(address, reason)
                 return False, windows, reason
+
+            # Recency check — wallet must have traded within max_inactive_days.
+            # Catches one-time-wonder accounts that traded once in 2024 and went
+            # dormant; their single-month metrics look great but they are not
+            # live copy-trade candidates.
+            max_inactive = self._config["qualification"].get("max_inactive_days", 0)
+            if max_inactive > 0:
+                now_ms = int(time.time() * 1000)
+                days_since_last = (now_ms - newest_close) / (86_400 * 1_000)
+                if days_since_last > max_inactive:
+                    reason = (
+                        f"Inactive {int(days_since_last)} days since last trade "
+                        f"(limit {max_inactive}d)"
+                    )
+                    self._log.log_disqualified(address, reason)
+                    return False, windows, reason
 
         # Step 1.4: strike system
         qualifies_wr, windows = apply_strike_system(windows, self._config)

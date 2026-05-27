@@ -5,7 +5,9 @@
   "qualification": {
     "min_trades": 100,
     "min_win_rate": 0.7,
+    "min_overall_win_rate": 0.50,
     "min_wallet_age_days": 30,
+    "max_inactive_days": 45,
     "max_drawdown": 0.3,
     "max_single_trade_pnl_share": 1.0,
     "min_active_weeks_per_month": 1,
@@ -69,6 +71,7 @@
     "min_month_roi": 0.2,
     "min_week_roi": 0.0,
     "min_account_value": 0,
+    "min_data_coverage_pct": 0.10,
     "prescore_weights": {
       "alltime_roi": 0.2,
       "month_roi": 0.5,

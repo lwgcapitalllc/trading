@@ -231,6 +231,27 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
             current_disqualified.append({"address": address, "source": "hyperliquid", "reason": reason})
             continue
 
+        # Data coverage check — compare captured PnL to leaderboard all-time PnL.
+        # A large gap means the fills API only returned a recent slice of the wallet's
+        # history, making win rate / frequency / behavioral metrics unreliable.
+        # We flag (not disqualify) so the analyst knows to weight the profile lightly.
+        _leaderboard_pnl = wallet.get("all_time_pnl") or 0.0
+        _captured_pnl = sum(t["pnl"] for t in trades)
+        _min_coverage = config["hyperliquid"].get("min_data_coverage_pct", 0.0)
+        if _leaderboard_pnl > 10_000 and _captured_pnl > 0:
+            _coverage = round(_captured_pnl / _leaderboard_pnl, 4)
+        else:
+            _coverage = 1.0  # unknown or no leaderboard baseline — treat as full coverage
+        wallet["data_coverage_pct"] = _coverage
+        wallet["data_coverage_low"] = _min_coverage > 0 and _coverage < _min_coverage
+
+        if wallet["data_coverage_low"]:
+            logger.warning(
+                f"{address[:10]}… — low data coverage: "
+                f"captured ${_captured_pnl:,.0f} / leaderboard ${_leaderboard_pnl:,.0f} "
+                f"= {_coverage:.0%} (threshold {_min_coverage:.0%})"
+            )
+
         # Persist wallet + trades
         wallet_id = db.upsert_wallet(
             address=address,
@@ -262,6 +283,8 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 
         logger.increment("passed_disqualification_filter")
         yellow_flags = sum(1 for w in windows if w["strike_level"] == 1)
+        if wallet.get("data_coverage_low"):
+            yellow_flags += 1
         qualifying.append({
             "wallet": {**wallet, "id": wallet_id, "source": "hyperliquid"},
             "trades": trades,

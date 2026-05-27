@@ -213,6 +213,8 @@ def build_wallet_profile(
             "yellow_flags": yellow_flags,
             "window_count": len(windows),
             "windows_below_threshold": sum(1 for w in windows if w["win_rate"] < 0.80 and w["trade_count"] > 0),
+            "data_coverage_pct": wallet.get("data_coverage_pct"),
+            "data_coverage_low": wallet.get("data_coverage_low", False),
         },
 
         # Raw monthly windows (for manual validation)
@@ -369,6 +371,8 @@ class StageReporter:
             "yellow_flag_count": flags.get("yellow_flags") or 0,
             "window_count": flags.get("window_count") or 0,
             "windows_below_threshold": flags.get("windows_below_threshold") or 0,
+            "data_coverage_pct": flags.get("data_coverage_pct"),
+            "data_coverage_low": flags.get("data_coverage_low", False),
             "is_shortlist": (p.get("rank") or 999) <= self._shortlist_n,
         }
 
@@ -424,6 +428,7 @@ class StageReporter:
                 "top_instrument_win_rate": top_inst.get("win_rate"),
                 "yellow_flags": flags.get("yellow_flags"),
                 "windows_below_threshold": flags.get("windows_below_threshold"),
+                "data_coverage_pct": flags.get("data_coverage_pct"),
             })
 
         with open(path, "w", newline="", encoding="utf-8") as f:
