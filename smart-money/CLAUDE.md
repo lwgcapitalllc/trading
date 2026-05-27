@@ -42,21 +42,26 @@ python run_stage2.py --address 0xYOUR_WALLET_ADDRESS
 
 ## Where We Left Off
 
-**Last action:** Second Stage 1 run completed. Pool still 1 wallet. Bugs fixed, config updated, all test data cleared. Ready to rerun.
+**Last action (2026-05-27):** Full session of bug fixes and pipeline improvements. Ready for a clean run.
 
-**Next step:** `python3 run_stage1.py` — expect ~17 min runtime.
+**Next step:** Run pipeline from the UI (BOT profile) — first run will fetch from API (~13-15 min); every re-run same day will be ~30s from cache.
 
 ### Config changes made (from original spec)
 | Setting | Original | Current | Reason |
 |---|---|---|---|
-| `min_win_rate` | 80% | 75% | Pool too thin at 80% — top PnL earners are high-leverage, not consistent win-rate traders |
-| `min_active_weeks_per_month` | 3 | 2 | Too restrictive — top leaderboard traders trade in bursts, not 3 weeks every month. Was killing 69 wallets. |
+| `min_win_rate` | 80% | 75% (human), 70% (bot) | Pool too thin at 80% |
+| `min_active_weeks_per_month` | 3 | 2 | Too restrictive — top traders burst, not steady |
+| `requests_per_second` | (via delay) | 2 (human), 3 (bot) | Replaced `rate_limit_delay_seconds` with shared token bucket |
+| `fills_cache_hours` | — | 24 | New — skip re-fetching wallets scanned within 24h |
 
-### Bugs found and fixed in Stage 1
-1. **Leaderboard endpoint changed** — Hyperliquid deprecated `POST /info` with `type:leaderboard`. Now uses `GET https://stats-data.hyperliquid.xyz/Mainnet/leaderboard` with different response schema. Fixed in `scanner/hyperliquid.py`.
-2. **HTTP error retry loop** — `if e.response` evaluates False for 4xx responses, so all HTTP errors retried 3x instead of failing fast. Fixed: `if e.response is not None`.
-3. **Pre-filtering** — Original code made 37k fills API calls (one per leaderboard entry). Fixed by pre-filtering leaderboard by allTime PnL ≥ $10k and account value ≥ $1k, then capping to top 500. Runtime: ~17 min.
-4. **Span gate used window boundaries, not actual trade span** — Gate measured `windows[-1]["window_end"] - windows[0]["window_start"]` (always a multiple of 30 days). A wallet with 1 window always got span = 30 days and passed any threshold ≤ 30. Fixed: now uses `max(close_ts) - min(close_ts)` across actual trades. Fixed in `profiler/filters.py:QualificationGate.evaluate`.
+### All bugs found and fixed
+1. **Leaderboard endpoint changed** — Hyperliquid deprecated `POST /info` with `type:leaderboard`. Fixed in `scanner/hyperliquid.py`.
+2. **HTTP error retry loop** — `if e.response` evaluates False for 4xx. Fixed: `if e.response is not None`.
+3. **Pre-filtering** — Was making 37k API calls. Fixed by pre-filtering leaderboard and capping to top 500.
+4. **Span gate used window boundaries** — Fixed: now uses `max(close_ts) - min(close_ts)` across actual trades.
+5. **Per-worker rate limiting** — N workers × rate = N× actual RPS → mass 429s. Fixed: shared `_SharedRateLimiter` token bucket across all workers. 429 backoff increased from 0.2-0.8s to 5-15s.
+6. **Disqualified list accumulated all-time DB records** — Fixed: `current_disqualified` list scoped to current run only.
+7. **`KeyError: rate_limit_delay_seconds`** — `run_stage1.py` read removed config key directly. Fixed: `.get()` with fallback.
 
 ### Watchlist feature
 Wallets that fail only the span gate (short trading history but strong performance) are preserved in `reports/stage1_watchlist_*.json` instead of silently dropped. Sorted by total PnL descending.
@@ -88,8 +93,9 @@ All reports land in `smart-money/reports/`:
 
 ## Database
 
-SQLite at `data/smart_money.db`. Schema: wallets, trades, monthly_windows, disqualified, scores, run_log.
+SQLite at `data/smart_money.db`. Schema: wallets, trades, monthly_windows, disqualified, scores, run_log, **fills_cache**.
 Reruns are idempotent — each run overwrites prior results for the same wallet.
+`fills_cache` stores raw API fills per wallet with a `fetched_at` timestamp. TTL controlled by `hyperliquid.fills_cache_hours` (default 24h). Re-runs within TTL skip all API calls.
 
 ## File Structure
 

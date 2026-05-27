@@ -55,13 +55,14 @@
 
   "hyperliquid": {
     "base_url": "https://api.hyperliquid.xyz",
-    "rate_limit_delay_seconds": 0.2,
-    "concurrent_workers": 10,
-    "max_retries": 3,
+    "requests_per_second": 2,
+    "concurrent_workers": 5,
+    "max_retries": 5,
     "retry_backoff_factor": 2.0,
     "leaderboard_window": "allTime",
     "timeout_seconds": 30,
     "max_leaderboard_candidates": 3000,
+    "fills_cache_hours": 24,
     "min_alltime_pnl": 10000,
     "min_alltime_roi": 0.5,
     "min_month_roi": 0.0,

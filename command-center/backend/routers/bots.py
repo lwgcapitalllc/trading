@@ -65,9 +65,11 @@ _SCHEDULED_JOBS = [
 def _ssh(cmd: str) -> str:
     result = subprocess.run(
         ["ssh", VPS_HOST, cmd],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, timeout=30,
     )
-    return result.stdout.strip()
+    # Windows stdout is cp1252; decode with replacement so non-UTF-8 chars
+    # (arrows, dashes, degree signs) don't raise UnicodeDecodeError → 500.
+    return result.stdout.decode("utf-8", errors="replace").strip()
 
 
 def _parse_sections(raw: str, initial_section: str) -> dict[str, str]:

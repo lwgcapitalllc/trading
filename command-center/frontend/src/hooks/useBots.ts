@@ -13,7 +13,7 @@ export function useBotSnapshot() {
 export function useBotLog(botName: string | null) {
   return useQuery({
     queryKey: ['bots', 'log', botName],
-    queryFn: () => api.get<string>(`/bots/${encodeURIComponent(botName!)}/log`),
+    queryFn: () => api.getText(`/bots/${encodeURIComponent(botName!)}/log`),
     enabled: !!botName,
     staleTime: 0,
   })

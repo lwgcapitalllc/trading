@@ -118,6 +118,16 @@ def init_db():
                 threshold_adjustments           TEXT,
                 notes                           TEXT
             );
+
+            -- Raw fills cache: skip re-fetching wallets scanned recently.
+            -- TTL controlled by hyperliquid.fills_cache_hours in config (default 24h).
+            -- Re-runs within the TTL window skip all API calls and run filter/profile
+            -- logic only — typically reduces re-run time from ~15min to ~30s.
+            CREATE TABLE IF NOT EXISTS fills_cache (
+                address     TEXT    PRIMARY KEY,
+                fills_json  TEXT    NOT NULL,
+                fetched_at  INTEGER NOT NULL
+            );
         """)
 
 
@@ -319,3 +329,46 @@ def get_run_log(stage: str = None) -> list[dict]:
                 "SELECT * FROM run_log ORDER BY started_at DESC"
             ).fetchall()
         return [dict(r) for r in rows]
+
+
+# --- Fills cache ---
+
+def get_cached_fills(address: str, max_age_seconds: int) -> list | None:
+    """
+    Return cached fills for `address` if they were fetched within `max_age_seconds`.
+    Returns None on cache miss or stale entry.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT fills_json, fetched_at FROM fills_cache WHERE address = ?",
+            (address,)
+        ).fetchone()
+    if not row:
+        return None
+    if int(time.time()) - row["fetched_at"] > max_age_seconds:
+        return None
+    return json.loads(row["fills_json"])
+
+
+def cache_fills(address: str, fills: list) -> None:
+    """Store or refresh fills for `address`.  Overwrites any existing entry."""
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO fills_cache (address, fills_json, fetched_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(address) DO UPDATE SET
+                fills_json = excluded.fills_json,
+                fetched_at = excluded.fetched_at
+        """, (address, json.dumps(fills), int(time.time())))
+
+
+def fills_cache_stats() -> dict:
+    """Return row count and oldest/newest fetch timestamps for monitoring."""
+    with get_conn() as conn:
+        row = conn.execute("""
+            SELECT COUNT(*) as n,
+                   MIN(fetched_at) as oldest,
+                   MAX(fetched_at) as newest
+            FROM fills_cache
+        """).fetchone()
+    return dict(row) if row else {"n": 0, "oldest": None, "newest": None}

@@ -76,7 +76,39 @@ export function Bots() {
       <ScaffoldBanner message="Monitoring is live and read from bot_state.json. Control actions (start / stop / restart / emergency) are disabled in this build until monitoring is proven against algo.py." />
 
       {isLoading && (
-        <div className="text-text-tertiary text-small py-12 text-center">Fetching VPS snapshot…</div>
+        <div className="animate-pulse">
+          {/* Stat card skeletons */}
+          <div className="grid grid-cols-4 gap-[10px] mb-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-bg-surface border border-border-subtle rounded-lg p-4">
+                <div className="h-[10px] w-24 bg-bg-surface-2 rounded mb-3" />
+                <div className="h-[28px] w-16 bg-bg-surface-2 rounded mb-2" />
+                <div className="h-[10px] w-20 bg-bg-surface-2 rounded" />
+              </div>
+            ))}
+          </div>
+          {/* Table skeleton */}
+          <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+            <div className="h-[38px] bg-bg-surface-2 border-b border-border-subtle" />
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-[14px] py-[12px] border-b border-border-subtle last:border-0">
+                <div className="h-[12px] w-28 bg-bg-surface-2 rounded" />
+                <div className="h-[12px] w-20 bg-bg-surface-2 rounded" />
+                <div className="ml-auto h-[12px] w-16 bg-bg-surface-2 rounded" />
+                <div className="h-[12px] w-16 bg-bg-surface-2 rounded" />
+                <div className="h-[12px] w-12 bg-bg-surface-2 rounded" />
+              </div>
+            ))}
+          </div>
+          {/* Caption */}
+          <div className="flex items-center justify-center gap-2 mt-5 text-[11px] text-text-tertiary font-mono">
+            <svg className="animate-spin h-[13px] w-[13px] text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Connecting to VPS…
+          </div>
+        </div>
       )}
       {error && (
         <div className="text-neg-text text-small py-4 bg-neg-muted border border-neg-muted rounded-md px-4 mb-4">

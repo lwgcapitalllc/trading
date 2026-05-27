@@ -7,8 +7,12 @@ API notes (public, no key required):
   {"type": "userFills",   "user":   "0x..."}
   {"type": "clearinghouseState", "user": "0x..."}
 
-Rate limiting: the public endpoint is tolerant but we enforce a configurable
-delay between requests and exponential backoff on failures.
+Rate limiting: Hyperliquid's public endpoint rate-limits by IP.  We use a
+single shared token-bucket (_SharedRateLimiter) across all concurrent
+scanner workers.  Per-worker delays don't work — N workers × 1/delay RPS
+still fires N×(1/delay) total RPS at the same IP, instantly triggering 429s.
+The shared limiter serialises token acquisition so combined throughput stays
+at or below `requests_per_second` regardless of worker count.
 """
 
 from __future__ import annotations
@@ -28,6 +32,40 @@ _log = get_logger("hyperliquid.client")
 
 INFO_URL = "https://api.hyperliquid.xyz/info"
 LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
+
+
+# ---------------------------------------------------------------------------
+# Shared rate limiter (token bucket)
+# ---------------------------------------------------------------------------
+
+class _SharedRateLimiter:
+    """
+    Thread-safe token-bucket rate limiter for use across all scanner workers.
+
+    All workers share one instance — the combined request throughput is
+    bounded to `requests_per_second` regardless of how many concurrent
+    workers are running.
+
+    Usage: call acquire() before each outbound API request.  The call blocks
+    until the inter-request interval has elapsed, then returns.  Holding the
+    lock during the sleep is intentional — threads queue up and each one is
+    released exactly `min_interval` seconds after the previous one fired.
+
+    Example: 500 wallets at 3 req/s = ~167 s (~2.8 min).
+    """
+
+    def __init__(self, requests_per_second: float):
+        self._min_interval = 1.0 / max(requests_per_second, 0.01)
+        self._last: float = 0.0
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            wait = self._min_interval - (now - self._last)
+            if wait > 0:
+                time.sleep(wait)
+            self._last = time.monotonic()
 
 
 # ---------------------------------------------------------------------------
@@ -82,11 +120,13 @@ class HyperliquidClient:
         raise RuntimeError(f"All {self._max_retries} attempts failed for GET {url}")
 
     def _post(self, payload: dict) -> Any:
+        # Per-client spacing — a safety valve for direct (non-scanner) calls.
+        # Scanner workers set _delay=0 and use _SharedRateLimiter instead.
         elapsed = time.monotonic() - self._last_call
         if elapsed < self._delay:
             time.sleep(self._delay - elapsed)
 
-        wait = self._delay
+        wait = max(self._delay, 0.2)  # minimum backoff seed
         for attempt in range(self._max_retries):
             try:
                 resp = self._session.post(
@@ -100,21 +140,24 @@ class HyperliquidClient:
             except requests.HTTPError as e:
                 status = e.response.status_code if e.response is not None else None
                 if status == 429:
-                    # Rate limit: use a much longer minimum wait (5s) — the
-                    # per-request delay (0.2–0.3s) is far too short to clear a
-                    # server-side rate limit bucket.
-                    rl_wait = max(wait, 5.0) * (attempt + 1)
-                    _log.warning(f"Rate limited (attempt {attempt+1}/{self._max_retries}). Sleeping {rl_wait:.1f}s")
+                    # 429 needs a proper cooldown — much longer than inter-request
+                    # spacing.  Use 5s × (attempt+1) so successive 429s back off
+                    # progressively (5s, 10s, 15s…).
+                    rl_wait = 5.0 * (attempt + 1)
+                    _log.warning(
+                        f"Rate limited (attempt {attempt+1}/{self._max_retries}). "
+                        f"Sleeping {rl_wait:.0f}s"
+                    )
                     time.sleep(rl_wait)
                     wait *= self._backoff
                 elif status and 400 <= status < 500:
                     raise  # non-retryable client errors
                 else:
-                    _log.warning(f"HTTP {status} on attempt {attempt+1}. Retrying in {wait}s")
+                    _log.warning(f"HTTP {status} on attempt {attempt+1}. Retrying in {wait:.1f}s")
                     time.sleep(wait)
                     wait *= self._backoff
             except requests.RequestException as e:
-                _log.warning(f"Request error on attempt {attempt+1}: {e}. Retrying in {wait}s")
+                _log.warning(f"Request error on attempt {attempt+1}: {e}. Retrying in {wait:.1f}s")
                 time.sleep(wait)
                 wait *= self._backoff
 
@@ -358,18 +401,31 @@ class HyperliquidScanner:
         self,
         wallet: dict,
         client: "HyperliquidClient",
+        rate_limiter: "_SharedRateLimiter",
+        prefetched_fills: list | None = None,
     ) -> tuple[str, dict]:
         """
         Fetch fills for a single wallet and apply initial filters.
         Returns ("passed", wallet_dict) or ("failed", wallet_with_reason).
         Designed to run inside a thread pool — client is per-worker.
+
+        prefetched_fills: pass cached fills here to skip the API call entirely.
+        rate_limiter.acquire() is also skipped — thread only runs filter logic.
+
+        rate_limiter is a shared token bucket — calling acquire() before the
+        API request ensures total throughput across all workers stays bounded.
         """
         address = wallet["address"]
-        try:
-            fills = client.get_user_fills(address)
-        except Exception as e:
-            self._log.log_api_error(f"userFills/{address[:10]}", e)
-            return "failed", {**wallet, "reason": f"API error: {e}"}
+
+        if prefetched_fills is not None:
+            fills = prefetched_fills
+        else:
+            rate_limiter.acquire()  # global rate gate — serialises across all workers
+            try:
+                fills = client.get_user_fills(address)
+            except Exception as e:
+                self._log.log_api_error(f"userFills/{address[:10]}", e)
+                return "failed", {**wallet, "reason": f"API error: {e}"}
 
         # Count only closing fills (non-zero closedPnl)
         closing_fills = [
@@ -409,8 +465,14 @@ class HyperliquidScanner:
         """
         Step 1.2b: For each candidate, fetch fills and apply trade-count + age filters.
 
-        Runs concurrently — each worker uses its own HyperliquidClient so they
-        never block on each other's rate-limit delay.
+        Cache path (default, TTL 24h via hyperliquid.fills_cache_hours):
+            Fills already in the DB are loaded upfront — those wallets skip the
+            API call entirely.  On re-runs within the TTL window all wallets are
+            served from cache and the scan completes in ~30s.
+
+        Direct path (cache miss or TTL expired):
+            Workers run concurrently but share a single _SharedRateLimiter so
+            combined throughput stays at or below `requests_per_second`.
 
         on_progress: optional callable(wallets_scanned, wallets_total, address, result)
             called (thread-safely) after each wallet completes.
@@ -420,20 +482,54 @@ class HyperliquidScanner:
         failed: list[dict] = []
         total = len(candidates)
 
-        hl_cfg = self._cfg.get("hyperliquid", {})
-        workers = hl_cfg.get("concurrent_workers", 10)
-        per_worker_delay = hl_cfg.get("rate_limit_delay_seconds", 0.2)
+        hl_cfg  = self._cfg.get("hyperliquid", {})
+        workers = hl_cfg.get("concurrent_workers", 5)
 
-        self._log.info(
-            f"Scanning {total} wallets with {workers} concurrent workers "
-            f"({per_worker_delay}s per-worker delay)…"
+        # ── Cache: load fills already fetched this session ───────────────────
+        # TTL default 24h.  Set fills_cache_hours = 0 to disable.
+        cache_hours   = hl_cfg.get("fills_cache_hours", 24)
+        cache_max_age = int(cache_hours * 3600)
+        use_cache     = cache_max_age > 0
+
+        prefetched: dict[str, list] = {}  # address → cached fills
+
+        if use_cache:
+            import database as db
+            cache_hits = 0
+            for c in candidates:
+                cached = db.get_cached_fills(c["address"], cache_max_age)
+                if cached is not None:
+                    prefetched[c["address"]] = cached
+                    cache_hits += 1
+            if cache_hits:
+                self._log.info(
+                    f"Fills cache: {cache_hits}/{len(candidates)} wallets loaded from DB "
+                    f"(TTL {cache_hours:.0f}h) — skipping their API calls"
+                )
+
+        # ── Build shared rate limiter for uncached wallets ───────────────────
+        rps = hl_cfg.get(
+            "requests_per_second",
+            1.0 / max(hl_cfg.get("rate_limit_delay_seconds", 0.3), 0.01),
         )
+        shared_limiter = _SharedRateLimiter(rps)
 
-        # Each worker gets its own client — independent rate-limiter, no contention.
+        uncached = len(candidates) - len(prefetched)
+        if uncached > 0:
+            eta_s = int(uncached / rps)
+            self._log.info(
+                f"Scanning {uncached} uncached wallets — {workers} workers, "
+                f"{rps:.1f} req/s (est. {eta_s // 60}m {eta_s % 60}s)…"
+            )
+        else:
+            self._log.info(f"All {total} wallets served from cache — no API calls needed")
+
+        # Each worker gets its own session/client for connection management.
+        # rate_limit_delay=0 because timing is handled by the shared limiter.
         def _make_client() -> HyperliquidClient:
             return HyperliquidClient(
-                rate_limit_delay=per_worker_delay,
-                max_retries=hl_cfg.get("max_retries", 3),
+                rate_limit_delay=0,
+                max_retries=hl_cfg.get("max_retries", 5),
                 backoff_factor=hl_cfg.get("retry_backoff_factor", 2.0),
                 timeout=hl_cfg.get("timeout_seconds", 30),
             )
@@ -444,7 +540,13 @@ class HyperliquidScanner:
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
             future_to_wallet = {
-                executor.submit(self._scan_one_wallet, w, _make_client()): w
+                executor.submit(
+                    self._scan_one_wallet,
+                    w,
+                    _make_client(),
+                    shared_limiter,
+                    prefetched.get(w["address"]) if prefetched else None,
+                ): w
                 for w in candidates
             }
             for future in as_completed(future_to_wallet):
@@ -461,6 +563,16 @@ class HyperliquidScanner:
                         self._log.info(f"Scanned {i}/{total} wallets ({i/total:.0%})…")
                     if on_progress:
                         on_progress(i, total, wallet.get("address", ""), result_type)
+
+                    # Store freshly fetched fills in the cache so re-runs skip the API
+                    if use_cache and wallet.get("address") not in prefetched:
+                        fills = wallet.get("fills")
+                        if fills is not None:
+                            try:
+                                import database as db
+                                db.cache_fills(wallet["address"], fills)
+                            except Exception:
+                                pass  # cache write failure is non-fatal
 
         self._log.set("total_scanned", total)
         self._log.info(

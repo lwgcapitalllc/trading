@@ -115,11 +115,15 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
     # Step 1.1–1.2: Scan leaderboard, apply initial filters
     # ------------------------------------------------------------------
     hl_cfg = config["hyperliquid"]
+    # Support both new `requests_per_second` and legacy `rate_limit_delay_seconds` keys.
+    _rps = hl_cfg.get("requests_per_second")
+    _legacy_delay = hl_cfg.get("rate_limit_delay_seconds", 0.5)
+    _leaderboard_delay = 1.0 / max(_rps, 0.01) if _rps else _legacy_delay
     client = HyperliquidClient(
-        rate_limit_delay=hl_cfg["rate_limit_delay_seconds"],
-        max_retries=hl_cfg["max_retries"],
-        backoff_factor=hl_cfg["retry_backoff_factor"],
-        timeout=hl_cfg["timeout_seconds"],
+        rate_limit_delay=_leaderboard_delay,
+        max_retries=hl_cfg.get("max_retries", 5),
+        backoff_factor=hl_cfg.get("retry_backoff_factor", 2.0),
+        timeout=hl_cfg.get("timeout_seconds", 30),
     )
     scanner = HyperliquidScanner(client, config, logger)
 

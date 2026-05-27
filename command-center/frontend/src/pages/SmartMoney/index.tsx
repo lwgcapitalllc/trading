@@ -273,6 +273,27 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
   )
 }
 
+// ── RunPendingPlaceholder ─────────────────────────────────────────────────────
+
+function RunPendingPlaceholder() {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-[10px] w-[10px]">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
+          <span className="relative inline-flex rounded-full h-[10px] w-[10px] bg-accent" />
+        </span>
+        <span className="text-accent font-mono text-[13px] font-semibold tracking-wide">
+          RUN IN PROGRESS
+        </span>
+      </div>
+      <p className="text-text-tertiary text-small max-w-xs">
+        Results will populate here when the pipeline completes.
+      </p>
+    </div>
+  )
+}
+
 // ── Main SmartMoney page ──────────────────────────────────────────────────────
 
 type Tab = 'overview' | 'rankings' | 'profile' | 'disqualified' | 'config'
@@ -365,89 +386,94 @@ export function SmartMoney() {
       {/* Page header */}
       <div className="flex items-end gap-3 mb-[18px]">
         <h1 className="text-h1 font-semibold">Smart Money</h1>
-        {runDate && <span className="text-[12px] text-text-tertiary pb-[2px]">{runDate}</span>}
+        {!isLive && runDate && (
+          <span className="text-[12px] text-text-tertiary pb-[2px]">{runDate}</span>
+        )}
         <div className="ml-auto flex items-center gap-2">
-          {/* Run selector — always shows the last COMPLETED run */}
-          <div className="flex flex-col items-end gap-[3px]">
-            {isLive && (
-              <span className="flex items-center gap-[5px] text-[10px] font-mono text-accent leading-none">
-                <span className="relative flex h-[6px] w-[6px]">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
-                  <span className="relative inline-flex rounded-full h-[6px] w-[6px] bg-accent" />
-                </span>
-                new run in progress
-              </span>
-            )}
-            {runs && runs.length > 0 && (
-              <select
-                value={activeRunId ?? ''}
-                onChange={e => setSelectedRunId(e.target.value)}
-                className="bg-bg-surface border border-border-default rounded-md px-3 py-[6px] text-small text-text-primary focus:outline-none focus:border-accent"
-              >
-                {runs.map(r => (
-                  <option key={r.run_id} value={r.run_id}>
-                    {new Date(r.generated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {r.total_qualified} qualified
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          <button className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-primary hover:bg-bg-hover transition-colors duration-[120ms]">
-            <Download size={14} />
-            Export
-          </button>
           {isLive ? (
-            <button
-              onClick={() => stopPipeline()}
-              disabled={stopping || isStarting}
-              className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-neg border border-neg text-white hover:opacity-90 transition-opacity duration-[120ms] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span className="w-[8px] h-[8px] rounded-sm bg-white flex-shrink-0" />
-              {stopping ? 'Stopping…' : isStarting ? 'Starting…' : 'Stop pipeline'}
-            </button>
-          ) : (
-            <div className="flex items-center gap-[6px]">
-              {/* Profile toggle: BOT / HUMAN */}
-              <div className="flex rounded-md overflow-hidden border border-border-default text-[11px] font-mono">
-                {(['bot', 'human'] as const).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setProfile(p)}
-                    className={`px-[10px] py-[5px] uppercase tracking-wide transition-colors duration-[120ms] ${
-                      profile === p
-                        ? 'bg-accent text-[#06201d] font-semibold'
-                        : 'text-text-tertiary hover:text-text-primary bg-transparent'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
+            /* ── Live: show status pill + stop only — no dropdown, no export ── */
+            <>
+              <span className="flex items-center gap-[7px] px-3 py-[6px] rounded-md border border-accent/30 bg-accent/5 text-accent font-mono text-[11px] font-semibold tracking-wide">
+                <span className="relative flex h-[7px] w-[7px]">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
+                  <span className="relative inline-flex rounded-full h-[7px] w-[7px] bg-accent" />
+                </span>
+                RUN IN PROGRESS
+              </span>
               <button
-                onClick={handleRunPipeline}
-                disabled={launching}
-                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-accent border border-accent text-[#06201d] hover:bg-accent-hover transition-colors duration-[120ms] disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => stopPipeline()}
+                disabled={stopping || isStarting}
+                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-neg border border-neg text-white hover:opacity-90 transition-opacity duration-[120ms] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Play size={14} />
-                {launching ? 'Starting…' : 'Run pipeline'}
+                <span className="w-[8px] h-[8px] rounded-sm bg-white flex-shrink-0" />
+                {stopping ? 'Stopping…' : isStarting ? 'Starting…' : 'Stop pipeline'}
               </button>
-            </div>
+            </>
+          ) : (
+            /* ── Idle: show run selector, export, profile toggle + run button ── */
+            <>
+              {runs && runs.length > 0 && (
+                <select
+                  value={activeRunId ?? ''}
+                  onChange={e => setSelectedRunId(e.target.value)}
+                  className="bg-bg-surface border border-border-default rounded-md px-3 py-[6px] text-small text-text-primary focus:outline-none focus:border-accent"
+                >
+                  {runs.map(r => (
+                    <option key={r.run_id} value={r.run_id}>
+                      {new Date(r.generated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {r.total_qualified} qualified
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-primary hover:bg-bg-hover transition-colors duration-[120ms]">
+                <Download size={14} />
+                Export
+              </button>
+              <div className="flex items-center gap-[6px]">
+                {/* Profile toggle: BOT / HUMAN */}
+                <div className="flex rounded-md overflow-hidden border border-border-default text-[11px] font-mono">
+                  {(['bot', 'human'] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setProfile(p)}
+                      className={`px-[10px] py-[5px] uppercase tracking-wide transition-colors duration-[120ms] ${
+                        profile === p
+                          ? 'bg-accent text-[#06201d] font-semibold'
+                          : 'text-text-tertiary hover:text-text-primary bg-transparent'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={handleRunPipeline}
+                  disabled={launching}
+                  className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-accent border border-accent text-[#06201d] hover:bg-accent-hover transition-colors duration-[120ms] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Play size={14} />
+                  {launching ? 'Starting…' : 'Run pipeline'}
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
 
       {showProgress && effectiveProgress && <ScannerTerminal progress={effectiveProgress} />}
 
-      {/* Tabs */}
-      <div className="flex gap-[2px] mb-[18px] border-b border-border-subtle">
+      {/* Tabs — entirely non-interactive while a run is live */}
+      <div className={`flex gap-[2px] mb-[18px] border-b border-border-subtle ${isLive ? 'pointer-events-none' : ''}`}>
         {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`text-small px-[13px] py-2 cursor-pointer border-b-2 -mb-px transition-colors duration-[120ms] ${
-              tab === t.id
-                ? 'text-text-primary border-accent'
-                : 'text-text-secondary border-transparent hover:text-text-primary'
+            className={`text-small px-[13px] py-2 border-b-2 -mb-px transition-colors duration-[120ms] ${
+              isLive
+                ? 'text-text-tertiary/40 border-transparent cursor-default'
+                : tab === t.id
+                ? 'text-text-primary border-accent cursor-pointer'
+                : 'text-text-secondary border-transparent hover:text-text-primary cursor-pointer'
             }`}
           >
             {t.label}
@@ -455,55 +481,61 @@ export function SmartMoney() {
         ))}
       </div>
 
-      {/* Tab content */}
-      {tab === 'overview' && (
-        runLoading
-          ? <div className="text-text-tertiary text-small py-12 text-center">Loading…</div>
-          : run
-          ? <PoolOverview run={run} />
-          : <PoolOverviewEmpty />
-      )}
+      {/* Tab content — all tabs locked while a run is live */}
+      {isLive ? (
+        <RunPendingPlaceholder />
+      ) : (
+        <>
+          {tab === 'overview' && (
+            runLoading
+              ? <div className="text-text-tertiary text-small py-12 text-center">Loading…</div>
+              : run
+              ? <PoolOverview run={run} />
+              : <PoolOverviewEmpty />
+          )}
 
-      {tab === 'rankings' && (
-        candLoading
-          ? <div className="text-text-tertiary text-small py-12 text-center">Loading candidates…</div>
-          : candidates && candidates.length > 0
-          ? <Rankings candidates={candidates} onSelect={handleSelectCandidate} />
-          : <div className="text-center py-12 text-text-tertiary text-small">
-              No candidates found in this run.
-            </div>
-      )}
+          {tab === 'rankings' && (
+            candLoading
+              ? <div className="text-text-tertiary text-small py-12 text-center">Loading candidates…</div>
+              : candidates && candidates.length > 0
+              ? <Rankings candidates={candidates} onSelect={handleSelectCandidate} />
+              : <div className="text-center py-12 text-text-tertiary text-small">
+                  No candidates found in this run.
+                </div>
+          )}
 
-      {tab === 'profile' && (
-        selectedCandidate
-          ? <CandidateProfile candidate={selectedCandidate} onBack={() => setTab('rankings')} />
-          : <div className="text-center py-12 text-text-tertiary text-small">
-              Select a candidate from the Rankings tab to view their full profile.
-            </div>
-      )}
+          {tab === 'profile' && (
+            selectedCandidate
+              ? <CandidateProfile candidate={selectedCandidate} onBack={() => setTab('rankings')} />
+              : <div className="text-center py-12 text-text-tertiary text-small">
+                  Select a candidate from the Rankings tab to view their full profile.
+                </div>
+          )}
 
-      {tab === 'disqualified' && (
-        disqualified
-          ? <DisqualifiedLog disqualified={disqualified} />
-          : <div className="text-center py-12 text-text-tertiary text-small">
-              No disqualified log available for this run.
-            </div>
-      )}
+          {tab === 'disqualified' && (
+            disqualified
+              ? <DisqualifiedLog disqualified={disqualified} />
+              : <div className="text-center py-12 text-text-tertiary text-small">
+                  No disqualified log available for this run.
+                </div>
+          )}
 
-      {tab === 'config' && (
-        cfgLoading
-          ? <div className="text-text-tertiary text-small py-12 text-center">Loading config…</div>
-          : config
-          ? <Config
-              config={config}
-              gitStatus={gitStatus}
-              onSave={saveConfig}
-              isSaving={saving}
-              saveError={saveErr ? String(saveErr) : null}
-            />
-          : <div className="text-center py-12 text-neg-text text-small">
-              Could not load pipeline config. Check that the config file path in Settings is correct.
-            </div>
+          {tab === 'config' && (
+            cfgLoading
+              ? <div className="text-text-tertiary text-small py-12 text-center">Loading config…</div>
+              : config
+              ? <Config
+                  config={config}
+                  gitStatus={gitStatus}
+                  onSave={saveConfig}
+                  isSaving={saving}
+                  saveError={saveErr ? String(saveErr) : null}
+                />
+              : <div className="text-center py-12 text-neg-text text-small">
+                  Could not load pipeline config. Check that the config file path in Settings is correct.
+                </div>
+          )}
+        </>
       )}
     </div>
   )

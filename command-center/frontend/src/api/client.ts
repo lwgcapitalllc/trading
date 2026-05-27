@@ -2,7 +2,7 @@ import { toast } from 'sonner'
 
 const BASE = '/api'
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, asText?: boolean): Promise<T> {
   let res: Response
   try {
     res = await fetch(`${BASE}${path}`, {
@@ -22,13 +22,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     toast.error(msg)
     throw new Error(msg)
   }
+  if (asText) return res.text() as Promise<T>
   return res.json() as Promise<T>
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  put: <T>(path: string, body: unknown) =>
+  get:     <T>(path: string) => request<T>(path),
+  getText: (path: string)    => request<string>(path, undefined, true),
+  put:     <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
-  post: <T>(path: string, body?: unknown) =>
+  post:    <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
 }

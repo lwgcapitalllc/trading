@@ -103,17 +103,42 @@ cd command-center
 
 ---
 
+## Session bugs fixed (2026-05-27)
+
+### Pipeline
+- **`KeyError: rate_limit_delay_seconds`** — `run_stage1.py` hardcoded `hl_cfg["rate_limit_delay_seconds"]` but configs were updated to `requests_per_second`. Fixed with `.get()` fallback in `run_stage1.py:119`.
+
+### Smart Money UI — run-in-progress lockdown
+- **Stale data while running** — tabs still showed previous run. Fixed: all tabs (`pool overview`, `rankings`, `profile`, `disqualified`, `config`) replaced with `<RunPendingPlaceholder />` when `isLive`.
+- **Tab bar clickable during run** — all tabs are now `pointer-events-none` + dimmed text when `isLive`.
+- **Header during run** — dropdown, export button, profile toggle, and run date are all hidden. Only `● RUN IN PROGRESS` pill + `Stop pipeline` button show.
+
+### Bots page
+- **Bot log 500 error** — two bugs:
+  1. `_ssh()` in `routers/bots.py` used `text=True` in `subprocess.run`, which raised `UnicodeDecodeError` on cp1252-encoded Windows log characters (arrow/dash symbols). Fixed: decode as `utf-8, errors="replace"`.
+  2. `api.get<string>()` in frontend called `res.json()` on a `text/plain` response. Added `api.getText()` method to `client.ts`; `useBotLog` now uses it.
+- **No loading state on Bots page** — replaced bare text with animated skeleton (stat card placeholders + table row stubs + spinner + "Connecting to VPS…" caption).
+
+### Smart Money pipeline — fills cache
+- Added `fills_cache` table to SQLite (`database.py`): stores raw fills JSON per wallet with `fetched_at` timestamp.
+- `get_cached_fills(address, max_age_seconds)` and `cache_fills(address, fills)` functions added.
+- `apply_initial_filters()` in `scanner/hyperliquid.py` now loads cached fills before the thread pool. Wallets with fresh cache skip the API call entirely; newly fetched fills are written to cache after the API call.
+- Config: `hyperliquid.fills_cache_hours: 24` in all three configs. Set to 0 to disable.
+- Effect: first run unchanged (~13–15 min); any re-run within 24h completes in ~30s.
+
+---
+
 ## What still needs to be done
 
 ### Step 4 — End-to-end test of Smart Money pipeline + dashboard ← **NEXT**
-The pipeline trigger, terminal, and file-reading are all implemented. Click "Run pipeline" in the UI and verify:
-- Terminal appears instantly (< 200 ms) on click
+The pipeline trigger, terminal, lock-down UI, and file-reading are all implemented. Click "Run pipeline" in the UI and verify:
+- Terminal appears instantly (< 200 ms) on click, tabs lock down
 - Addresses stream in during scan phase with `PASS ✓` glow and dim fails
-- Run completes, appears in run dropdown, Rankings and Pool Overview populate
+- Run completes → tabs unlock, new run appears in dropdown, Rankings/Pool Overview populate
 
-**If 0 qualified candidates again**: review `min_win_rate_pct` (currently 75) — may need loosening given leaderboard composition. Check `disqualified.json` for the dominant disqualification reason.
+**If 0 qualified candidates again**: check `disqualified.json` for dominant reason — bot profile at 70% win rate + 30% drawdown should be finding candidates now.
 
-Expected directory shape (already implemented in `StageReporter.export_run_dir()`):
+Expected directory shape (implemented in `StageReporter.export_run_dir()`):
 ```
 smart-money/reports/
 ├── progress.json             → RunProgress model (overwritten each run)
