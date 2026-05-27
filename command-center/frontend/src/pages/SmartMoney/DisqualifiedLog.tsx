@@ -17,8 +17,10 @@ function categorizeReason(reason: string): ReasonCategory {
   if (
     r.includes('active week') || r.includes('trading span') ||
     r.includes('window starting') || r.includes('trade count') ||
-    r.includes('instruments') || r.includes('hold hour')
+    r.includes('instruments') || r.includes('hold hour') ||
+    r.includes('matched trades') || r.includes('matched trade')
   ) return 'activity'
+  if (r.includes('net unprofitable') || r.includes('total pnl')) return 'drawdown'
   return 'other'
 }
 

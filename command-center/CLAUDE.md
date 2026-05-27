@@ -152,7 +152,7 @@ Pre-filter counted closing fills before FIFO matching. Old accounts can have 100
 **`StatCard.tsx`** — added `onClick?: () => void` (renders as `<button>` with hover) and `disabled?: boolean` (35% opacity, `cursor-not-allowed`, no hover).
 
 **`PoolOverview.tsx`** — accepts `onNavigate?: (tab: string, market?: string) => void`. Cards now navigate:
-- API Scanned → `disqualified` tab
+- Wallets Scanned → `disqualified` tab
 - Qualified → `rankings`; disabled when `total_qualified === 0`
 - Crypto → `rankings` with `market='crypto'`; disabled when count = 0
 - Forex → `rankings` with `market='forex'`; disabled when count = 0
@@ -171,6 +171,39 @@ All pipeline fixes require a fresh run. Expected outcomes:
 - Accounts with truncated fill history → disqualified (matched trades < min_trades)
 - Net-negative wallets → disqualified (profitability check)
 - `account_value`, `all_time_pnl`, `all_time_roi` populate in CandidateProfile from real leaderboard data
+
+---
+
+## Session — UI clarity audit (2026-05-27)
+
+### `smart-money/run_progress.py`
+- **`complete()` reset all counts to zero** — the final `progress.json` had `wallets_scanned: 0`, `wallets_total: 0`, etc., so the UI had no scan data on completion.
+- Fix: `ProgressWriter` now tracks peak values during `update()` calls (`_last_wallets_scanned`, `_last_wallets_total`, `_last_qualified`, `_last_disqualified`) and passes them into `complete()`. The final `progress.json` now carries the real counts.
+
+### Scanner Terminal — "Run complete" appeared 3×
+Three independent places each rendered "Run complete" after a run:
+1. **Header** `· run complete` — kept, this is the canonical status indicator.
+2. **Body text** — was `progress.message || (isDone ? 'Run complete' : ...)`. Changed to show `"X wallets processed"` when done (using the now-preserved count), or `"Completed"` as a fallback. Errors show `progress.message` as before.
+3. **Stats bar fallback** — removed `{isDone && counts===0 → "Run complete"}` entirely. Stats bar now only renders when there is real numeric content (`wallets_total > 0 || qualified > 0 || disqualified > 0 || scanRate >= 0.5`). The wallet count row is also hidden when done (body already shows it).
+
+### `PoolOverview.tsx` — "API Scanned" card
+- Label `"API Scanned"` → `"Wallets Scanned"` — unambiguous, no jargon.
+- Sub `"top candidates, 1 sources"` → source name(s) directly, e.g. `"hyperliquid"` or `"3 sources"`. Immediately tells you where the data came from; grammar correct for any count.
+
+### `StatCard.tsx` — clickable cards now signal navigation
+- Added a subtle `›` at the right end of the label row when `onClick` is present.
+- Makes it clear the card is a nav link without adding visual noise.
+
+### `Rankings.tsx` — result count
+- Added `"X of Y candidates"` at the right side of the filter bar.
+- Instantly shows whether filters are active and how many are displayed.
+
+### `DisqualifiedLog.tsx` — missing reason categories
+- `"Matched trades N < 100 …"` now maps to `activity` (was falling through to `other`).
+- `"Net unprofitable: total PnL $-X"` now maps to `drawdown`.
+
+### `SmartMoney/index.tsx` — Export button
+- Was a live-looking button with no `onClick`. Now `disabled` + `opacity-40` + tooltip `"Export coming soon"`.
 
 ---
 

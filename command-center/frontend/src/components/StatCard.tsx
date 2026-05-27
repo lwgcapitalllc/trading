@@ -34,7 +34,10 @@ export function StatCard({ label, value, sub, subVariant = 'neutral', onClick, d
         onClick={onClick}
         className={`${baseClass} w-full text-left cursor-pointer hover:bg-bg-hover hover:border-border-default transition-colors duration-[120ms]`}
       >
-        <div className="text-micro text-text-secondary uppercase tracking-[0.6px]">{label}</div>
+        <div className="flex items-center justify-between">
+          <div className="text-micro text-text-secondary uppercase tracking-[0.6px]">{label}</div>
+          <span className="text-[11px] text-text-tertiary/40 leading-none">›</span>
+        </div>
         <div className="text-[25px] font-semibold mt-[5px] tracking-[-0.5px] mono">{value}</div>
         {sub && <div className={`text-micro mt-[1px] ${subColor}`}>{sub}</div>}
       </button>

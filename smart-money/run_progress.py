@@ -21,6 +21,11 @@ class ProgressWriter:
         self._stage_name: str = ""
         self._started_at: float = 0.0
         self._started_at_iso: str = ""
+        # Preserved so complete() can include final scan counts in the payload
+        self._last_wallets_scanned: int = 0
+        self._last_wallets_total: int = 0
+        self._last_qualified: int = 0
+        self._last_disqualified: int = 0
         _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     def start(self, stage: int, stage_name: str) -> str:
@@ -29,6 +34,10 @@ class ProgressWriter:
         self._stage_name = stage_name
         self._started_at = time.monotonic()
         self._started_at_iso = datetime.now(timezone.utc).isoformat()
+        self._last_wallets_scanned = 0
+        self._last_wallets_total = 0
+        self._last_qualified = 0
+        self._last_disqualified = 0
         self._write(self._payload(0, "starting", f"Stage {stage} starting…"))
         return self.run_id
 
@@ -43,6 +52,15 @@ class ProgressWriter:
         disqualified_so_far: int = 0,
         recent_addresses: list[dict] | None = None,
     ):
+        # Track peak values so complete() can include them in the final payload
+        if wallets_scanned > self._last_wallets_scanned:
+            self._last_wallets_scanned = wallets_scanned
+        if wallets_total > self._last_wallets_total:
+            self._last_wallets_total = wallets_total
+        if qualified_so_far > self._last_qualified:
+            self._last_qualified = qualified_so_far
+        if disqualified_so_far > self._last_disqualified:
+            self._last_disqualified = disqualified_so_far
         self._write(self._payload(
             pct, phase, message,
             wallets_scanned, wallets_total,
@@ -51,7 +69,12 @@ class ProgressWriter:
         ))
 
     def complete(self):
-        data = self._payload(100, "complete", "Run complete")
+        # Preserve the peak scan counts so the UI can show a meaningful summary
+        data = self._payload(
+            100, "complete", "",
+            self._last_wallets_scanned, self._last_wallets_total,
+            self._last_qualified, self._last_disqualified,
+        )
         data["status"] = "complete"
         self._write(data)
 

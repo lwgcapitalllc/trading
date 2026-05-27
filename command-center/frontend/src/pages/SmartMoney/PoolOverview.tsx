@@ -49,15 +49,16 @@ export function PoolOverview({ run, onNavigate }: {
 
   const cryptoCount = run.by_market.crypto ?? 0
   const forexCount  = run.by_market.forex  ?? 0
+  const sourceNames = Object.keys(run.by_source)
 
   return (
     <div className="space-y-3">
       {/* Stat cards */}
       <div className="grid grid-cols-4 gap-[10px]">
         <StatCard
-          label="API Scanned"
+          label="Wallets Scanned"
           value={run.total_scanned.toLocaleString()}
-          sub={`top candidates, ${Object.keys(run.by_source).length} sources`}
+          sub={sourceNames.length === 1 ? sourceNames[0] : `${sourceNames.length} sources`}
           onClick={onNavigate ? () => onNavigate('disqualified') : undefined}
         />
         <StatCard

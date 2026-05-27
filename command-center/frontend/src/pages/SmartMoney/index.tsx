@@ -98,7 +98,8 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
   // Computed stats
   const scanRate  = liveElapsed > 1 ? progress.wallets_scanned / liveElapsed : 0
   const isScan    = isRunning && (progress.phase === 'scanning wallets' || feed.length > 0)
-  const showStats = progress.wallets_total > 0 || isDone || feed.length > 0
+  // Only show stats bar when there is actual numeric content to display
+  const showStats = progress.wallets_total > 0 || progress.qualified_so_far > 0 || progress.disqualified_so_far > 0 || (isRunning && scanRate >= 0.5)
 
   // Border / bg colour based on state
   const wrapClass = isError
@@ -252,7 +253,13 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
               {isDone    && <span className="text-pos">✓</span>}
               {isError   && <span className="text-neg">✗</span>}
               <span className={isError ? 'text-neg-text' : isDone ? 'text-pos-text' : 'text-text-secondary'}>
-                {progress.message || (isDone ? 'Run complete' : progress.phase || 'Starting…')}
+                {isError
+                  ? (progress.message || 'Error')
+                  : isDone
+                  ? (progress.wallets_scanned > 0
+                      ? `${progress.wallets_scanned.toLocaleString()} wallets processed`
+                      : 'Completed')
+                  : (progress.message || progress.phase || 'Starting…')}
               </span>
               {isRunning && (
                 <span className="text-accent animate-pulse leading-none">█</span>
@@ -271,7 +278,8 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
       {/* ── Stats bar ───────────────────────────────────────────────────── */}
       {showStats && (
         <div className="px-4 py-[7px] border-t border-border-subtle flex items-center gap-5 font-mono text-[11px] flex-wrap">
-          {progress.wallets_total > 0 && (
+          {/* Wallet count only shown while running — body text already shows it when done */}
+          {!isDone && progress.wallets_total > 0 && (
             <span className="text-text-tertiary tabular-nums">
               <span className="text-text-secondary font-medium">
                 {progress.wallets_scanned.toLocaleString()}
@@ -280,7 +288,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
               {progress.wallets_total.toLocaleString()} wallets
             </span>
           )}
-          {scanRate >= 0.5 && (
+          {isRunning && scanRate >= 0.5 && (
             <span className="text-text-tertiary tabular-nums">
               <span className="text-text-secondary">{scanRate.toFixed(1)}</span>
               {' '}wallets/sec
@@ -295,9 +303,6 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
             <span className="text-text-tertiary tabular-nums">
               {progress.disqualified_so_far.toLocaleString()} eliminated
             </span>
-          )}
-          {isDone && progress.qualified_so_far === 0 && progress.disqualified_so_far === 0 && (
-            <span className="text-pos-text text-[10px]">Run complete</span>
           )}
         </div>
       )}
@@ -470,7 +475,11 @@ export function SmartMoney() {
                   ))}
                 </select>
               )}
-              <button className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-primary hover:bg-bg-hover transition-colors duration-[120ms]">
+              <button
+                disabled
+                title="Export coming soon"
+                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-tertiary opacity-40 cursor-not-allowed"
+              >
                 <Download size={14} />
                 Export
               </button>

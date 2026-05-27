@@ -86,6 +86,11 @@ export function Rankings({ candidates, onSelect, initialMarket = 'all' }: Rankin
             <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
           </svg>
         </div>
+        <span className="ml-auto text-micro text-text-tertiary tabular-nums">
+          {filtered.length === candidates.length
+            ? `${filtered.length} candidates`
+            : `${filtered.length} of ${candidates.length}`}
+        </span>
       </div>
 
       <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
