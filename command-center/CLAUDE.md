@@ -68,26 +68,58 @@ cd command-center
 |---|---|---|
 | App shell (sidebar, topbar, routing) | ✅ Live | All 6 routes |
 | Smart Money — Config | ✅ Live | Reads/writes `smart-money/config/config.json` |
-| Smart Money — Pool Overview | ✅ Live (UI) | Needs pipeline run output to show real data |
-| Smart Money — Rankings | ✅ Live (UI) | Needs pipeline run output |
-| Smart Money — Candidate Profile | ✅ Live (UI) | Needs pipeline run output |
-| Smart Money — Disqualified Log | ✅ Live (UI) | Needs pipeline run output |
+| Smart Money — Pool Overview | ✅ Live (UI) | Needs qualifying candidates to show real data |
+| Smart Money — Rankings | ✅ Live (UI) | Needs qualifying candidates |
+| Smart Money — Candidate Profile | ✅ Live (UI) | Needs qualifying candidates |
+| Smart Money — Disqualified Log | ✅ Live | Category badges, readable reason formatting, filter tabs with counts, wallet hyperlinks |
+| Smart Money — Run pipeline button | ✅ Live | `POST /smart-money/run` spawns `run_stage1.py`; 409 if already running; optimistic instant terminal |
+| Smart Money — Scanner Terminal | ✅ Live | Replaces old progress bar; matrix-style live address feed; 1s poll while running, 30s idle |
 | Bots — monitoring table | ✅ Live (UI) | Needs VPS SSH verification |
 | Bots — scheduled jobs | ✅ Live (UI) | Needs VPS SSH verification |
 | Bots — log viewer | ✅ Live (UI) | Needs VPS SSH verification |
 
 ---
 
+## Recent session — bug fixes and enhancements (2026-05-26)
+
+### Bugs fixed
+- **`500 multiple values for 'run_id'`** — `StageReporter` writes `run_id` into `meta.json`. `get_run()` was then calling `SmartMoneyRun(run_id=run_id, **meta)` which duplicated it. Fix: `meta.pop("run_id", None)` before spreading into the constructor (`routers/smart_money.py`).
+- **Error toasts black instead of red** — Sonner requires `richColors` prop on `<Toaster>` for semantic colouring in dark mode. Added to `App.tsx`.
+- **Disqualified Log filter tabs "Drawdown" / "Win rate" showing 0** — old `matchesFilter()` looked for literal substrings. Actual reasons use phrasing like "Strike system: 2 yellow, 1 red flag" (win rate) or "Trading span 0 days < 90" (activity). Fixed with a `categorizeReason()` function mapping reason text → category via keyword checks.
+- **API error entries styled as red disqualification reasons** — "API error: All 3 attempts failed…" now categorised as `api_error`, styled orange/warn, with its own filter tab.
+
+### Features added
+- **Matrix-style Scanner Terminal** (`ScannerTerminal` component in `SmartMoney/index.tsx`) replaces the old progress bar:
+  - Wallet addresses stream in one-by-one via a client-side drain queue (90 ms stagger) bridging 1-second polls
+  - `PASS ✓` entries glow green (`drop-shadow-glow-pos`), fails are dim
+  - Scanline sweep animation, ping-ring running dot, opacity gradient on older entries
+  - Stats bar: wallets/sec, scanned count, qualified count
+  - Thin 3 px accent progress bar at bottom
+  - Phase-sensitive: shows matrix feed during scan phase; status text + cursor blink otherwise
+- **Instant terminal on "Run pipeline" click** — `useRunPipeline` sets optimistic `setQueryData` immediately in the `onSuccess` callback so the terminal appears in < 200 ms (before Python even writes `progress.json`)
+- **`recent_addresses` in progress feed** — `RunProgress` model (`models.py` / `types/index.ts`) gained `recent_addresses: list[dict]`; `run_stage1.py` maintains a rolling list of up to 25 entries (short keys `{a, s}`) and passes them on every `progress.update()` call; the scanner callback signature in `hyperliquid.py` was updated to emit `(address, result_type)`
+- **Disqualified Log full rewrite** — category badges (Win Rate = red, Activity = teal, Drawdown = red, Concentration = gold, API errors = orange), readable reason formatting (Unix timestamps in window messages → human dates), filter tabs with live counts, wallet address hyperlinks to Hyperliquid explorer
+- **Electric Cyan theme** — `tailwind.config.js` updated: `accent #00e5ff`, `pos #00ff7f`, `neg #ff3b5c`, `warn #ffb300`; cooler blue-black surface tones; `dropShadow` glow extensions (`glow-accent`, `glow-pos`, `glow-neg`, `glow-gold`) and `boxShadow` glow variants added globally
+
+---
+
 ## What still needs to be done
 
-### Step 4 — Verify Smart Money file-reading against real pipeline output
-`GET /smart-money/runs*` reads `smart-money/reports/{run_id}/full_report.json` and `disqualified.json`. The file-reading logic is written. It needs a real pipeline run to test against. Run the pipeline, then open the Rankings and Pool Overview views and confirm the data displays correctly. If the pipeline output format differs from the `SmartMoneyRun` model, update the translation layer — not the pipeline.
+### Step 4 — End-to-end test of Smart Money pipeline + dashboard ← **NEXT**
+The pipeline trigger, terminal, and file-reading are all implemented. Click "Run pipeline" in the UI and verify:
+- Terminal appears instantly (< 200 ms) on click
+- Addresses stream in during scan phase with `PASS ✓` glow and dim fails
+- Run completes, appears in run dropdown, Rankings and Pool Overview populate
 
-Expected directory shape:
+**If 0 qualified candidates again**: review `min_win_rate_pct` (currently 75) — may need loosening given leaderboard composition. Check `disqualified.json` for the dominant disqualification reason.
+
+Expected directory shape (already implemented in `StageReporter.export_run_dir()`):
 ```
 smart-money/reports/
-└── {YYYY-MM-DD_HHmmss}/
-    ├── full_report.json      → SmartMoneyRun model
+├── progress.json             → RunProgress model (overwritten each run)
+└── {YYYYMMDD_HHMMSS}/
+    ├── meta.json             → SmartMoneyRun model
+    ├── candidates.json       → list of Candidate (flat, API shape)
     └── disqualified.json     → list of DisqualifiedCandidate
 ```
 

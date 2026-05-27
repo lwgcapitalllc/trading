@@ -4,14 +4,16 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   useSmartMoneyRuns, useSmartMoneyRun, useCandidates,
   useDisqualified, useSmartMoneyConfig, useConfigGitStatus, useSaveConfig,
-  useRunProgress,
+  useRunProgress, useRunPipeline, useStopPipeline,
 } from '@/hooks/useSmartMoney'
 import { PoolOverview, PoolOverviewEmpty } from './PoolOverview'
 import { Rankings } from './Rankings'
 import { CandidateProfile } from './CandidateProfile'
 import { DisqualifiedLog } from './DisqualifiedLog'
 import { Config } from './Config'
-import type { Candidate, RunProgress } from '@/types'
+import type { Candidate, RunProgress, ScanEntry } from '@/types'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatElapsed(seconds: number): string {
   if (seconds < 60) return `${Math.round(seconds)}s`
@@ -20,61 +22,249 @@ function formatElapsed(seconds: number): string {
   return `${m}m ${s}s`
 }
 
-function RunProgressBar({ progress }: { progress: RunProgress }) {
+// ── ScannerTerminal ───────────────────────────────────────────────────────────
+
+type FeedEntry = ScanEntry & { id: number }
+
+function ScannerTerminal({ progress }: { progress: RunProgress }) {
   const isRunning = progress.status === 'running'
-  const isDone = progress.status === 'complete'
-  const isError = progress.status === 'error'
+  const isDone    = progress.status === 'complete'
+  const isError   = progress.status === 'error'
+
+  // Live elapsed counter — ticks from started_at every second so it's smooth
+  // even between 1s backend polls.
+  const [liveElapsed, setLiveElapsed] = useState(progress.elapsed_seconds)
+  useEffect(() => {
+    if (!isRunning || !progress.started_at) {
+      setLiveElapsed(progress.elapsed_seconds)
+      return
+    }
+    const startMs = new Date(progress.started_at).getTime()
+    const tick = () => setLiveElapsed((Date.now() - startMs) / 1000)
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [isRunning, progress.started_at, progress.elapsed_seconds])
+
+  // ── Address feed animation ───────────────────────────────────────────────
+  // Backend delivers recent_addresses every 1s poll.  We drain them into the
+  // visual feed one-by-one at 90ms each so the terminal feels like real-time
+  // streaming rather than a batch jump.
+  const [feed, setFeed] = useState<FeedEntry[]>([])
+  const seenRef      = useRef(new Set<string>())
+  const drainQueue   = useRef<ScanEntry[]>([])
+  const drainingRef  = useRef(false)
+  const feedIdRef    = useRef(0)
+
+  useEffect(() => {
+    const incoming = progress.recent_addresses ?? []
+    const newOnes  = incoming.filter(e => !seenRef.current.has(e.a))
+    if (!newOnes.length) return
+
+    drainQueue.current.push(...newOnes)
+    if (drainingRef.current) return       // already draining — let it continue
+
+    drainingRef.current = true
+    const step = () => {
+      const entry = drainQueue.current.shift()
+      if (!entry) { drainingRef.current = false; return }
+      seenRef.current.add(entry.a)
+      setFeed(prev => [{ ...entry, id: feedIdRef.current++ }, ...prev.slice(0, 17)])
+      setTimeout(step, 90)
+    }
+    step()
+  }, [progress.recent_addresses])
+
+  // Clear feed when a new run starts (phase resets to "starting")
+  useEffect(() => {
+    if (progress.phase === 'starting') {
+      setFeed([])
+      seenRef.current.clear()
+      drainQueue.current = []
+      drainingRef.current = false
+    }
+  }, [progress.phase])
+
+  // Computed stats
+  const scanRate  = liveElapsed > 1 ? progress.wallets_scanned / liveElapsed : 0
+  const isScan    = isRunning && (progress.phase === 'scanning wallets' || feed.length > 0)
+  const showStats = progress.wallets_total > 0 || isDone || feed.length > 0
+
+  // Border / bg colour based on state
+  const wrapClass = isError
+    ? 'border-neg bg-neg-muted'
+    : isDone
+    ? 'border-pos/40 bg-pos-muted'
+    : 'border-border-default bg-bg-sunken'
 
   return (
-    <div className={`mb-[18px] rounded-lg border p-4 ${
-      isError ? 'bg-neg-muted border-neg-muted' :
-      isDone  ? 'bg-pos-muted border-pos-muted' :
-                'bg-bg-surface border-border-subtle'
-    }`}>
-      <div className="flex items-center justify-between mb-[10px]">
-        <div className="flex items-center gap-2">
-          {isRunning && <span className="w-[7px] h-[7px] rounded-full bg-accent animate-pulse flex-shrink-0" />}
-          {isDone    && <span className="w-[7px] h-[7px] rounded-full bg-pos flex-shrink-0" />}
-          {isError   && <span className="w-[7px] h-[7px] rounded-full bg-neg flex-shrink-0" />}
-          <span className="text-small font-semibold">
+    <div className={`mb-[18px] rounded-lg border overflow-hidden ${wrapClass}`}>
+
+      {/* ── Header row ──────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-4 py-[10px] border-b border-border-subtle">
+        <div className="flex items-center gap-[10px]">
+          {isRunning && (
+            <span className="relative flex h-[8px] w-[8px]">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
+              <span className="relative inline-flex rounded-full h-[8px] w-[8px] bg-accent" />
+            </span>
+          )}
+          {isDone  && <span className="w-[8px] h-[8px] rounded-full bg-pos flex-shrink-0" />}
+          {isError && <span className="w-[8px] h-[8px] rounded-full bg-neg flex-shrink-0" />}
+          <span className="text-small font-semibold font-mono tracking-wide uppercase">
             {progress.stage_name || `Stage ${progress.stage}`}
           </span>
-          {progress.phase && progress.phase !== 'complete' && progress.phase !== 'error' && (
-            <span className="text-micro text-text-tertiary">· {progress.phase}</span>
+          {progress.phase && !['complete', 'error', 'starting'].includes(progress.phase) && (
+            <span className="text-micro text-text-tertiary font-mono">
+              · {progress.phase}
+            </span>
+          )}
+          {isDone && (
+            <span className="text-micro text-pos font-mono">· run complete</span>
           )}
         </div>
-        <div className="flex items-center gap-3 text-micro text-text-tertiary">
-          {progress.wallets_total > 0 && (
-            <span className="font-mono">{progress.wallets_scanned} / {progress.wallets_total} wallets</span>
-          )}
-          <span>{formatElapsed(progress.elapsed_seconds)}</span>
-          <span className="font-mono font-medium text-text-secondary">{progress.pct}%</span>
+        <div className="flex items-center gap-4 font-mono text-micro">
+          <span className="text-text-tertiary tabular-nums">{formatElapsed(liveElapsed)}</span>
+          <span
+            className={`font-semibold tabular-nums ${
+              isDone
+                ? 'text-pos drop-shadow-glow-pos'
+                : isError
+                ? 'text-neg drop-shadow-glow-neg'
+                : 'text-accent drop-shadow-glow-accent'
+            }`}
+          >
+            {progress.pct}%
+          </span>
         </div>
       </div>
 
-      <div className="h-[5px] bg-bg-surface-2 rounded-full overflow-hidden">
+      {/* ── Feed body ───────────────────────────────────────────────────── */}
+      <div className="relative h-[176px] overflow-hidden px-4 py-3 font-mono">
+
+        {/* Scanline sweep — subtle horizontal glint during scan phase */}
+        {isScan && (
+          <div className="absolute inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-accent/30 to-transparent animate-scanline pointer-events-none z-10" />
+        )}
+
+        {isScan ? (
+          /* ── Matrix address feed ────────────────────────────────────── */
+          <div className="flex flex-col gap-[2px]">
+            {/* Blinking cursor — "currently scanning" */}
+            {isRunning && (
+              <div className="flex items-center gap-3 text-[11px] text-text-secondary pb-[3px]">
+                <span className="text-accent text-[10px]">▶</span>
+                <span className="text-text-tertiary">scanning</span>
+                <span className="text-accent animate-pulse leading-none">█</span>
+              </div>
+            )}
+            {feed.map((entry, i) => {
+              const isPass = entry.s === 'pass'
+              // Older entries fade toward transparent
+              const opacity = Math.max(0.15, 1 - i * 0.052)
+              return (
+                <div
+                  key={entry.id}
+                  className="flex items-center gap-[10px] text-[11px] animate-fadein"
+                  style={{ opacity }}
+                >
+                  <span className="text-text-tertiary w-[18px] text-right text-[9px] tabular-nums select-none">
+                    {feed.length - i}
+                  </span>
+                  <span className="text-text-secondary tracking-wide select-all">
+                    {entry.a.slice(0, 10)}
+                    <span className="text-text-tertiary">…</span>
+                    {entry.a.slice(-6)}
+                  </span>
+                  {/* Dotted line fills the gap */}
+                  <span className="flex-1 overflow-hidden">
+                    <span className="block border-b border-dashed border-border-subtle" />
+                  </span>
+                  {isPass ? (
+                    <span className="text-pos font-semibold tracking-widest text-[10px] drop-shadow-glow-pos">
+                      PASS ✓
+                    </span>
+                  ) : (
+                    <span className="text-text-tertiary tracking-widest text-[10px]">
+                      fail
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          /* ── Status view for non-scan phases ────────────────────────── */
+          <div className="flex flex-col justify-center h-full gap-[8px]">
+            <div className="flex items-center gap-[10px] text-[12px] font-mono">
+              {isRunning && <span className="text-accent text-[10px]">▶</span>}
+              {isDone    && <span className="text-pos">✓</span>}
+              {isError   && <span className="text-neg">✗</span>}
+              <span className={isError ? 'text-neg-text' : isDone ? 'text-pos-text' : 'text-text-secondary'}>
+                {progress.message || (isDone ? 'Run complete' : progress.phase || 'Starting…')}
+              </span>
+              {isRunning && (
+                <span className="text-accent animate-pulse leading-none">█</span>
+              )}
+            </div>
+            {/* Show phase progress for profiling/scoring steps */}
+            {isRunning && progress.wallets_total > 0 && !isScan && (
+              <div className="text-[10px] text-text-tertiary font-mono tabular-nums">
+                {progress.wallets_scanned.toLocaleString()} / {progress.wallets_total.toLocaleString()} wallets processed
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Stats bar ───────────────────────────────────────────────────── */}
+      {showStats && (
+        <div className="px-4 py-[7px] border-t border-border-subtle flex items-center gap-5 font-mono text-[11px] flex-wrap">
+          {progress.wallets_total > 0 && (
+            <span className="text-text-tertiary tabular-nums">
+              <span className="text-text-secondary font-medium">
+                {progress.wallets_scanned.toLocaleString()}
+              </span>
+              {' / '}
+              {progress.wallets_total.toLocaleString()} wallets
+            </span>
+          )}
+          {scanRate >= 0.5 && (
+            <span className="text-text-tertiary tabular-nums">
+              <span className="text-text-secondary">{scanRate.toFixed(1)}</span>
+              /sec
+            </span>
+          )}
+          {progress.qualified_so_far > 0 && (
+            <span className="text-pos tabular-nums drop-shadow-glow-pos">
+              <span className="font-semibold">{progress.qualified_so_far}</span> qualified
+            </span>
+          )}
+          {progress.disqualified_so_far > 0 && (
+            <span className="text-text-tertiary tabular-nums">
+              {progress.disqualified_so_far.toLocaleString()} eliminated
+            </span>
+          )}
+          {isDone && progress.qualified_so_far === 0 && progress.disqualified_so_far === 0 && (
+            <span className="text-pos-text text-[10px]">Run complete</span>
+          )}
+        </div>
+      )}
+
+      {/* ── Progress bar ────────────────────────────────────────────────── */}
+      <div className="h-[3px] bg-bg-surface-2">
         <div
-          className={`h-full rounded-full transition-[width] duration-500 ease-out ${
+          className={`h-full transition-[width] duration-700 ease-out ${
             isError ? 'bg-neg' : isDone ? 'bg-pos' : 'bg-accent'
           }`}
-          style={{ width: `${progress.pct}%` }}
+          style={{ width: `${Math.max(progress.pct, isRunning ? 1 : 0)}%` }}
         />
-      </div>
-
-      <div className="flex items-center gap-4 mt-2 text-micro text-text-tertiary">
-        {progress.qualified_so_far > 0 && (
-          <span className="text-pos-text font-medium">{progress.qualified_so_far} qualified</span>
-        )}
-        {progress.disqualified_so_far > 0 && (
-          <span>{progress.disqualified_so_far} disqualified</span>
-        )}
-        {progress.message && (
-          <span className="ml-auto truncate max-w-[300px]">{progress.message}</span>
-        )}
       </div>
     </div>
   )
 }
+
+// ── Main SmartMoney page ──────────────────────────────────────────────────────
 
 type Tab = 'overview' | 'rankings' | 'profile' | 'disqualified' | 'config'
 
@@ -112,6 +302,8 @@ export function SmartMoney() {
   const { data: config, isLoading: cfgLoading } = useSmartMoneyConfig()
   const { data: gitStatus } = useConfigGitStatus()
   const { mutate: saveConfig, isPending: saving, error: saveErr } = useSaveConfig()
+  const { mutate: runPipeline, isPending: launching } = useRunPipeline()
+  const { mutate: stopPipeline, isPending: stopping } = useStopPipeline()
 
   const handleSelectCandidate = (c: Candidate) => {
     setSelectedCandidate(c)
@@ -128,7 +320,7 @@ export function SmartMoney() {
       <div className="flex items-end gap-3 mb-[18px]">
         <h1 className="text-h1 font-semibold">Smart Money</h1>
         {runDate && <span className="text-[12px] text-text-tertiary pb-[2px]">{runDate}</span>}
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex items-center gap-2">
           {/* Run selector */}
           {runs && runs.length > 0 && (
             <select
@@ -147,14 +339,29 @@ export function SmartMoney() {
             <Download size={14} />
             Export
           </button>
-          <button className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-accent border border-accent text-[#06201d] hover:bg-accent-hover transition-colors duration-[120ms]">
-            <Play size={14} />
-            Run pipeline
-          </button>
+          {progress?.status === 'running' ? (
+            <button
+              onClick={() => stopPipeline()}
+              disabled={stopping}
+              className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-neg border border-neg text-white hover:opacity-90 transition-opacity duration-[120ms] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="w-[8px] h-[8px] rounded-sm bg-white flex-shrink-0" />
+              {stopping ? 'Stopping…' : 'Stop pipeline'}
+            </button>
+          ) : (
+            <button
+              onClick={() => runPipeline()}
+              disabled={launching}
+              className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small font-medium bg-accent border border-accent text-[#06201d] hover:bg-accent-hover transition-colors duration-[120ms] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Play size={14} />
+              {launching ? 'Starting…' : 'Run pipeline'}
+            </button>
+          )}
         </div>
       </div>
 
-      {showProgress && <RunProgressBar progress={progress} />}
+      {showProgress && <ScannerTerminal progress={progress} />}
 
       {/* Tabs */}
       <div className="flex gap-[2px] mb-[18px] border-b border-border-subtle">

@@ -9,6 +9,8 @@ POST /run is a 501 stub — backend implementation deferred.
 from __future__ import annotations
 
 import json
+import os
+import signal
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -157,6 +159,8 @@ def list_runs():
 @router.get("/runs/{run_id}", response_model=SmartMoneyRun)
 def get_run(run_id: str):
     meta = _load_meta(run_id)
+    # Pipeline writes run_id into meta.json — pop it to avoid passing twice
+    meta.pop("run_id", None)
     try:
         return SmartMoneyRun(run_id=run_id, **meta)
     except Exception as e:
@@ -284,11 +288,70 @@ def get_progress():
     return RunProgress(**data)
 
 
-# ── Pipeline trigger (stub) ───────────────────────────────────────────────────
+# ── Pipeline trigger ─────────────────────────────────────────────────────────
 
-@router.post("/run", status_code=501)
-def run_pipeline(stage: Optional[str] = None):
-    return {
-        "status": "not_implemented",
-        "message": "Pipeline trigger not yet implemented. Use run_stage*.py scripts directly.",
+_PID_FILE = cfg.SMART_MONEY_REPORTS_DIR / "pipeline.pid"
+
+
+@router.post("/run", status_code=202)
+def run_pipeline():
+    progress_path = cfg.SMART_MONEY_REPORTS_DIR / "progress.json"
+    if progress_path.exists():
+        with open(progress_path) as f:
+            data = json.load(f)
+        if data.get("status") == "running":
+            raise HTTPException(status_code=409, detail="Pipeline is already running")
+
+    script = cfg.SMART_MONEY_ROOT / "run_stage1.py"
+    log_path = cfg.SMART_MONEY_REPORTS_DIR / "pipeline_run.log"
+    log_file = open(log_path, "w")
+    # Strip the backend venv from PATH so python3 resolves to the system
+    # interpreter that has the smart-money pipeline dependencies.
+    clean_env = os.environ.copy()
+    clean_env["PATH"] = ":".join(
+        p for p in clean_env.get("PATH", "").split(":") if ".venv/bin" not in p
+    )
+    proc = subprocess.Popen(
+        ["python3", str(script)],
+        cwd=str(cfg.SMART_MONEY_ROOT),
+        stdout=log_file,
+        stderr=log_file,
+        env=clean_env,
+    )
+    _PID_FILE.write_text(str(proc.pid))
+    return {"status": "started", "stage": 1}
+
+
+@router.post("/stop", status_code=200)
+def stop_pipeline():
+    progress_path = cfg.SMART_MONEY_REPORTS_DIR / "progress.json"
+
+    pid: int | None = None
+    if _PID_FILE.exists():
+        try:
+            pid = int(_PID_FILE.read_text().strip())
+        except ValueError:
+            pass
+
+    killed = False
+    if pid is not None:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed = True
+        except ProcessLookupError:
+            pass  # already finished
+        finally:
+            _PID_FILE.unlink(missing_ok=True)
+
+    # Reset progress to idle so the UI clears immediately
+    idle = {
+        "run_id": "", "status": "idle", "stage": 0, "stage_name": "",
+        "phase": "", "pct": 0, "wallets_scanned": 0, "wallets_total": 0,
+        "qualified_so_far": 0, "disqualified_so_far": 0, "message": "",
+        "started_at": None, "updated_at": None, "elapsed_seconds": 0.0,
     }
+    tmp = progress_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(idle))
+    os.replace(str(tmp), str(progress_path))
+
+    return {"status": "stopped", "killed": killed}

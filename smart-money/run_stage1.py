@@ -85,6 +85,7 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
     run_id = progress.start(stage=1, stage_name="Hyperliquid scan")
 
     logger = StageLogger("1-hyperliquid")
+    db.init_db()
     db_run_id = db.start_run("stage1")
     logger.info("=" * 60)
     logger.info("Stage 1 — Hyperliquid Scanner & Profiler starting")
@@ -92,8 +93,6 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
                 f"min_win_rate={config['qualification']['min_win_rate']:.0%}, "
                 f"max_drawdown={config['qualification']['max_drawdown']:.0%}")
     logger.info("=" * 60)
-
-    db.init_db()
 
     # ------------------------------------------------------------------
     # Step 1.1–1.2: Scan leaderboard, apply initial filters
@@ -120,7 +119,32 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
             })
         failed_initial = []
     else:
-        passed_initial, failed_initial = scanner.run()
+        progress.update(pct=0, phase="fetching leaderboard", message="Fetching leaderboard…")
+
+        # Rolling window of the last 25 scanned addresses — written to progress.json
+        # so the frontend can render a live matrix-style feed.
+        _recent_scan: list[dict] = []
+
+        def _scan_progress(
+            wallets_scanned: int,
+            wallets_total: int,
+            address: str = "",
+            result: str = "",
+        ) -> None:
+            if address:
+                _recent_scan.append({"a": address, "s": "pass" if result == "passed" else "fail"})
+                if len(_recent_scan) > 25:
+                    _recent_scan.pop(0)
+            progress.update(
+                pct=int(wallets_scanned / max(wallets_total, 1) * 10),
+                phase="scanning wallets",
+                message=f"Scanning wallet {wallets_scanned} / {wallets_total}",
+                wallets_scanned=wallets_scanned,
+                wallets_total=wallets_total,
+                recent_addresses=list(_recent_scan),
+            )
+
+        passed_initial, failed_initial = scanner.run(on_progress=_scan_progress)
 
     logger.set("total_scanned", logger.get("total_scanned") or len(passed_initial) + len(failed_initial))
 
@@ -299,12 +323,11 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
         "top_profiles_built": len(profiles),
     }
 
+    all_disqualified = db.get_disqualified(source="hyperliquid")
     reporter.export_run_dir(profiles, all_disqualified, run_counts)
     reporter.export_json(profiles, stage="stage1")
     reporter.export_csv(profiles, stage="stage1")
     reporter.export_markdown_summary(profiles, stage="stage1", run_counts=run_counts)
-
-    all_disqualified = db.get_disqualified(source="hyperliquid")
     reporter.export_disqualified_log(all_disqualified, stage="stage1")
 
     # Export watchlist — short-history wallets with notable performance

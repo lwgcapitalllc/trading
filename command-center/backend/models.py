@@ -172,6 +172,7 @@ class RunProgress(BaseModel):
     started_at: Optional[str] = None
     updated_at: Optional[str] = None
     elapsed_seconds: float = 0.0
+    recent_addresses: list[dict] = []      # [{a: address, s: "pass"|"fail"}, ...]
 
 
 class DisqualifiedCandidate(BaseModel):

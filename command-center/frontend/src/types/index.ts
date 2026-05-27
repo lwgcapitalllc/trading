@@ -114,6 +114,11 @@ export interface Candidate {
   is_shortlist: boolean
 }
 
+export interface ScanEntry {
+  a: string   // wallet address
+  s: string   // "pass" | "fail"
+}
+
 export interface RunProgress {
   run_id: string
   status: 'idle' | 'running' | 'complete' | 'error'
@@ -129,6 +134,7 @@ export interface RunProgress {
   started_at: string | null
   updated_at: string | null
   elapsed_seconds: number
+  recent_addresses: ScanEntry[]
 }
 
 export interface DisqualifiedCandidate {

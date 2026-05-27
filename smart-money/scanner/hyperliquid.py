@@ -16,7 +16,9 @@ from __future__ import annotations
 import time
 import json
 import logging
-from typing import Any
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Callable
 
 import requests
 
@@ -188,27 +190,44 @@ class HyperliquidScanner:
         self._min_trades: int = config["qualification"]["min_trades"]
         self._min_age_days: int = config["qualification"]["min_wallet_age_days"]
         hl = config.get("hyperliquid", {})
-        self._max_candidates: int = hl.get("max_leaderboard_candidates", 500)
-        self._min_alltime_pnl: float = hl.get("min_alltime_pnl", 10000)
-        self._min_account_value: float = hl.get("min_account_value", 1000)
+        self._max_candidates: int   = hl.get("max_leaderboard_candidates", 3000)
+        self._min_alltime_pnl: float = hl.get("min_alltime_pnl", 10_000)
+        self._min_alltime_roi: float = hl.get("min_alltime_roi", 0.5)   # 0.5 = 50%
+        self._min_account_value: float = hl.get("min_account_value", 1_000)
 
     def _parse_leaderboard_entry(self, entry: dict) -> dict | None:
-        """Normalises a raw leaderboard entry into a standard dict."""
+        """
+        Normalises a raw leaderboard entry into a standard dict.
+
+        windowPerformances is a list of [window_name, {pnl, roi, vlm}] pairs.
+        Windows seen in the wild: "allTime", "month", "week", "day".
+        We extract pnl AND roi for allTime, plus recent-window roi for recency scoring.
+        """
         address = entry.get("ethAddress") or entry.get("address") or entry.get("user")
         if not address:
             return None
 
-        # windowPerformances is a list of [window_name, {pnl, roi, vlm}] pairs
-        all_time_pnl = None
+        perf: dict[str, dict] = {}
         for item in entry.get("windowPerformances", []):
-            if isinstance(item, (list, tuple)) and len(item) == 2 and item[0] == "allTime":
-                all_time_pnl = item[1].get("pnl")
-                break
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                window_name, stats = item
+                perf[window_name] = stats
+
+        all_time = perf.get("allTime", {})
+        month    = perf.get("month", {})
+        week     = perf.get("week", {})
+
+        def _f(d: dict, key: str) -> float | None:
+            v = d.get(key)
+            return float(v) if v is not None else None
 
         return {
-            "address": address,
-            "all_time_pnl": float(all_time_pnl) if all_time_pnl is not None else None,
+            "address":       address,
             "account_value": float(entry.get("accountValue", 0) or 0),
+            "all_time_pnl":  _f(all_time, "pnl"),
+            "all_time_roi":  _f(all_time, "roi"),   # fractional, e.g. 3.9 = 390%
+            "month_roi":     _f(month,    "roi"),
+            "week_roi":      _f(week,     "roi"),
         }
 
     def _get_account_age_days(self, address: str, fills: list[dict]) -> int:
@@ -219,102 +238,206 @@ class HyperliquidScanner:
         age_seconds = time.time() - oldest_ts_ms / 1000.0
         return max(0, int(age_seconds / 86400))
 
+    @staticmethod
+    def _prescore(p: dict) -> float:
+        """
+        Composite pre-sort score using leaderboard-only data (no API calls needed).
+
+        Goal: surface skill, not just scale.  A trader who turned $20k into $800k
+        (ROI 3900%) should rank above a whale who made $1M on a $10M deposit (10% ROI).
+
+        Formula:
+          score = all_time_roi  ×  log10(max(all_time_pnl, 1))
+
+        - all_time_roi  captures skill / return quality
+        - log10(pnl)    provides a gentle scale component so micro-accounts
+                        (e.g. $10k → $50k at 400% ROI) don't crowd out traders
+                        who've managed real capital
+        - Recent-window bonus: +10% of score if month_roi > 0 (still active/profitable)
+        """
+        import math
+        roi = p.get("all_time_roi") or 0.0
+        pnl = p.get("all_time_pnl") or 0.0
+        score = roi * math.log10(max(pnl, 1))
+        # Bonus for recent positive month performance (not in a long slump)
+        if (p.get("month_roi") or 0.0) > 0:
+            score *= 1.10
+        return score
+
     def fetch_leaderboard(self) -> list[dict]:
-        """Step 1.2a: Pull raw leaderboard, pre-filter by PnL/value, cap to top N."""
+        """
+        Step 1.2a: Pull raw leaderboard, apply hard floors, rank by composite
+        skill score (ROI × log PnL), and cap to top N for API scanning.
+        """
         self._log.info("Fetching Hyperliquid leaderboard…")
         raw = self._client.get_leaderboard()
         self._log.info(f"Raw leaderboard entries: {len(raw)}")
         self._log.set("leaderboard_raw", len(raw))
 
-        parsed = []
+        passed, dropped_pnl, dropped_roi, dropped_val = [], 0, 0, 0
         for entry in raw:
             p = self._parse_leaderboard_entry(entry)
             if not p:
                 continue
-            pnl = p.get("all_time_pnl") or 0
+            pnl = p.get("all_time_pnl") or 0.0
+            roi = p.get("all_time_roi") or 0.0
             if pnl < self._min_alltime_pnl:
+                dropped_pnl += 1
+                continue
+            if roi < self._min_alltime_roi:
+                dropped_roi += 1
                 continue
             if p["account_value"] < self._min_account_value:
+                dropped_val += 1
                 continue
-            parsed.append(p)
-
-        # Sort by all-time PnL descending; take top N before making API calls
-        parsed.sort(key=lambda x: x.get("all_time_pnl") or 0, reverse=True)
-        candidates = parsed[: self._max_candidates]
+            passed.append(p)
 
         self._log.info(
-            f"Pre-filter: {len(parsed)} entries pass PnL/value thresholds → "
-            f"top {len(candidates)} selected for API scan"
+            f"Hard floors: {len(raw)} raw → {len(passed)} pass "
+            f"(dropped {dropped_pnl} low-PnL, {dropped_roi} low-ROI, {dropped_val} low-balance)"
         )
+
+        # Sort by composite skill score: ROI × log(PnL) + recency bonus
+        passed.sort(key=self._prescore, reverse=True)
+        candidates = passed[: self._max_candidates]
+
+        self._log.info(
+            f"Pre-sort (ROI × log PnL): top {len(candidates)} of {len(passed)} selected for API scan"
+        )
+        if candidates:
+            best = candidates[0]
+            worst = candidates[-1]
+            self._log.info(
+                f"Score range: best={self._prescore(best):.1f} "
+                f"(ROI={best.get('all_time_roi', 0):.1%}, PnL=${best.get('all_time_pnl', 0):,.0f}) "
+                f"| cutoff={self._prescore(worst):.1f} "
+                f"(ROI={worst.get('all_time_roi', 0):.1%}, PnL=${worst.get('all_time_pnl', 0):,.0f})"
+            )
         return candidates
 
+    def _scan_one_wallet(
+        self,
+        wallet: dict,
+        client: "HyperliquidClient",
+    ) -> tuple[str, dict]:
+        """
+        Fetch fills for a single wallet and apply initial filters.
+        Returns ("passed", wallet_dict) or ("failed", wallet_with_reason).
+        Designed to run inside a thread pool — client is per-worker.
+        """
+        address = wallet["address"]
+        try:
+            fills = client.get_user_fills(address)
+        except Exception as e:
+            self._log.log_api_error(f"userFills/{address[:10]}", e)
+            return "failed", {**wallet, "reason": f"API error: {e}"}
+
+        # Count only closing fills (non-zero closedPnl)
+        closing_fills = [
+            f for f in fills
+            if float(f.get("closedPnl", 0) or 0) != 0.0
+        ]
+        trade_count = len(closing_fills)
+        age_days = self._get_account_age_days(address, fills)
+
+        wallet = {
+            **wallet,
+            "fills": fills,
+            "trade_count": trade_count,
+            "account_age_days": age_days,
+            "first_seen_ts": (
+                min(f["time"] for f in fills if "time" in f) if fills else None
+            ),
+        }
+
+        if trade_count < self._min_trades:
+            reason = f"Trade count {trade_count} < {self._min_trades}"
+            self._log.log_disqualified(address, reason)
+            return "failed", {**wallet, "reason": reason}
+
+        if age_days < self._min_age_days:
+            reason = f"Account age {age_days} days < {self._min_age_days} days"
+            self._log.log_disqualified(address, reason)
+            return "failed", {**wallet, "reason": reason}
+
+        return "passed", wallet
+
     def apply_initial_filters(
-        self, candidates: list[dict]
+        self,
+        candidates: list[dict],
+        on_progress: Callable[[int, int, str, str], None] | None = None,
     ) -> tuple[list[dict], list[dict]]:
         """
-        Step 1.2b: For each candidate, pull fills to check trade count and age.
-        Returns (passed, disqualified_with_reasons).
+        Step 1.2b: For each candidate, fetch fills and apply trade-count + age filters.
 
-        This is the expensive step — one fills API call per candidate.
-        Candidates are disqualified immediately if they fail, so we log them.
+        Runs concurrently — each worker uses its own HyperliquidClient so they
+        never block on each other's rate-limit delay.
+
+        on_progress: optional callable(wallets_scanned, wallets_total, address, result)
+            called (thread-safely) after each wallet completes.
+            result is "passed" or "failed".
         """
         passed: list[dict] = []
         failed: list[dict] = []
-
         total = len(candidates)
-        for i, wallet in enumerate(candidates, 1):
-            address = wallet["address"]
-            if i % 10 == 0 or i == 1:
-                self._log.info(f"Scanning wallet {i}/{total} ({i/total:.0%})…")
-            try:
-                fills = self._client.get_user_fills(address)
-            except Exception as e:
-                self._log.log_api_error(f"userFills/{address[:10]}", e)
-                failed.append({**wallet, "reason": f"API error: {e}"})
-                continue
 
-            # count only closing fills (they have non-zero closedPnl)
-            closing_fills = [
-                f for f in fills
-                if float(f.get("closedPnl", 0) or 0) != 0.0
-            ]
-            trade_count = len(closing_fills)
-            age_days = self._get_account_age_days(address, fills)
+        hl_cfg = self._cfg.get("hyperliquid", {})
+        workers = hl_cfg.get("concurrent_workers", 10)
+        per_worker_delay = hl_cfg.get("rate_limit_delay_seconds", 0.2)
 
-            wallet["fills"] = fills
-            wallet["trade_count"] = trade_count
-            wallet["account_age_days"] = age_days
-            wallet["first_seen_ts"] = (
-                min(f["time"] for f in fills if "time" in f) if fills else None
+        self._log.info(
+            f"Scanning {total} wallets with {workers} concurrent workers "
+            f"({per_worker_delay}s per-worker delay)…"
+        )
+
+        # Each worker gets its own client — independent rate-limiter, no contention.
+        def _make_client() -> HyperliquidClient:
+            return HyperliquidClient(
+                rate_limit_delay=per_worker_delay,
+                max_retries=hl_cfg.get("max_retries", 3),
+                backoff_factor=hl_cfg.get("retry_backoff_factor", 2.0),
+                timeout=hl_cfg.get("timeout_seconds", 30),
             )
 
-            if trade_count < self._min_trades:
-                reason = f"Trade count {trade_count} < {self._min_trades}"
-                self._log.log_disqualified(address, reason)
-                failed.append({**wallet, "reason": reason})
-                continue
+        # Thread-safe progress counter
+        lock = threading.Lock()
+        completed = [0]
 
-            if age_days < self._min_age_days:
-                reason = f"Account age {age_days} days < {self._min_age_days} days"
-                self._log.log_disqualified(address, reason)
-                failed.append({**wallet, "reason": reason})
-                continue
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_wallet = {
+                executor.submit(self._scan_one_wallet, w, _make_client()): w
+                for w in candidates
+            }
+            for future in as_completed(future_to_wallet):
+                result_type, wallet = future.result()
+                with lock:
+                    completed[0] += 1
+                    i = completed[0]
+                    if result_type == "passed":
+                        passed.append(wallet)
+                        self._log.increment("passed_initial_filter")
+                    else:
+                        failed.append(wallet)
+                    if i % 10 == 0 or i == 1 or i == total:
+                        self._log.info(f"Scanned {i}/{total} wallets ({i/total:.0%})…")
+                    if on_progress:
+                        on_progress(i, total, wallet.get("address", ""), result_type)
 
-            passed.append(wallet)
-            self._log.increment("passed_initial_filter")
-
-        self._log.set("total_scanned", len(candidates))
+        self._log.set("total_scanned", total)
         self._log.info(
             f"Initial filter: {len(passed)} passed, {len(failed)} failed "
-            f"(from {len(candidates)} candidates)"
+            f"(from {total} candidates)"
         )
         return passed, failed
 
-    def run(self) -> tuple[list[dict], list[dict]]:
+    def run(self, on_progress: Callable[[int, int, str, str], None] | None = None) -> tuple[list[dict], list[dict]]:
         """
         Full Step 1.1–1.2 execution.
         Returns (passed_wallets, failed_wallets).
         Each passed wallet includes: address, fills, trade_count, account_age_days.
+
+        on_progress: optional callable(wallets_scanned, wallets_total, address, result)
+            forwarded to apply_initial_filters for per-wallet progress reporting.
         """
         endpoints = self._client.verify_endpoints()
         for ep, ok in endpoints.items():
@@ -324,4 +447,4 @@ class HyperliquidScanner:
             raise RuntimeError("Critical Hyperliquid endpoints unreachable. Check connectivity.")
 
         candidates = self.fetch_leaderboard()
-        return self.apply_initial_filters(candidates)
+        return self.apply_initial_filters(candidates, on_progress=on_progress)

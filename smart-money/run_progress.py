@@ -41,11 +41,13 @@ class ProgressWriter:
         wallets_total: int = 0,
         qualified_so_far: int = 0,
         disqualified_so_far: int = 0,
+        recent_addresses: list[dict] | None = None,
     ):
         self._write(self._payload(
             pct, phase, message,
             wallets_scanned, wallets_total,
             qualified_so_far, disqualified_so_far,
+            recent_addresses=recent_addresses,
         ))
 
     def complete(self):
@@ -69,8 +71,9 @@ class ProgressWriter:
         wallets_total: int = 0,
         qualified_so_far: int = 0,
         disqualified_so_far: int = 0,
+        recent_addresses: list[dict] | None = None,
     ) -> dict:
-        return {
+        data: dict = {
             "run_id": self.run_id,
             "status": "running",
             "stage": self._stage,
@@ -86,6 +89,11 @@ class ProgressWriter:
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "elapsed_seconds": round(time.monotonic() - self._started_at, 1),
         }
+        if recent_addresses is not None:
+            # Short keys keep progress.json small during high-frequency scan writes.
+            # a = address, s = "pass" | "fail"
+            data["recent_addresses"] = recent_addresses
+        return data
 
     def _write(self, data: dict):
         tmp = _PROGRESS_FILE.with_suffix(".tmp")

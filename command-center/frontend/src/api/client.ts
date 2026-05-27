@@ -1,13 +1,26 @@
+import { toast } from 'sonner'
+
 const BASE = '/api'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-    ...init,
-  })
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...init?.headers },
+      ...init,
+    })
+  } catch (err) {
+    const msg = `Cannot reach backend — is it running? (${err})`
+    toast.error(msg)
+    throw new Error(msg)
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new Error(`${res.status} ${text}`)
+    let detail = text
+    try { detail = JSON.parse(text).detail ?? text } catch { /* not json */ }
+    const msg = `${res.status} ${detail}`
+    toast.error(msg)
+    throw new Error(msg)
   }
   return res.json() as Promise<T>
 }
