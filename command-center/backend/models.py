@@ -217,6 +217,29 @@ class BotSnapshot(BaseModel):
     telegram: ProcessStatus
 
 
+class BotConfigSections(BaseModel):
+    risk: dict = {}
+    protection: dict = {}
+    strategy: dict = {}
+    regime: dict = {}
+    dead_zone: dict = {}
+
+
+class BotConfigUpdate(BaseModel):
+    risk: Optional[dict] = None
+    protection: Optional[dict] = None
+    strategy: Optional[dict] = None
+    regime: Optional[dict] = None
+    dead_zone: Optional[dict] = None
+    deploy: bool = False
+
+
+class BotCapUpdate(BaseModel):
+    daily_goal_pct: float
+    daily_cap_pct: float
+    weekly_cap_pct: float
+
+
 # ── Backtests ─────────────────────────────────────────────────────────────────
 
 class BacktestResult(BaseModel):

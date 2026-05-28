@@ -31,7 +31,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 import config as cfg
-from models import BotSnapshot, BotStatus, JobStatus, ProcessStatus
+from models import BotCapUpdate, BotConfigSections, BotConfigUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -99,6 +99,71 @@ _TG_CHAT  = "-1003977707258"
 
 # bot_key → display name for notifications
 _KEY_DISPLAY: dict[str, str] = {v: _DISPLAY_NAMES[k] for k, v in _TASK_BOT_KEYS.items()}
+
+# Config overrides — persisted in backend/config_overrides.json.
+# Takes precedence over _BOT_THRESHOLDS when present.
+_CONFIG_OVERRIDES_PATH = Path(__file__).parent.parent / "config_overrides.json"
+
+
+def _load_config_overrides() -> dict[str, dict[str, float]]:
+    if _CONFIG_OVERRIDES_PATH.exists():
+        try:
+            return json.loads(_CONFIG_OVERRIDES_PATH.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_config_overrides(overrides: dict) -> None:
+    _CONFIG_OVERRIDES_PATH.write_text(json.dumps(overrides, indent=2))
+
+
+def _get_thresholds(bot_key: str) -> dict[str, float]:
+    overrides = _load_config_overrides()
+    base = dict(_BOT_THRESHOLDS.get(bot_key, {}))
+    base.update(overrides.get(bot_key, {}))
+    return base
+
+
+# ── Per-bot config file mapping ───────────────────────────────────────────────
+# Maps bot_key → the instance config.json path and the strategy section name.
+_BOT_INSTANCE_MAP: dict[str, dict] = {
+    "smc_trend":      {"path": cfg.INSTANCES_DIR / "gold_main"    / "config.json", "section": "bot_smc_trend"},
+    "mean_reversion": {"path": cfg.INSTANCES_DIR / "gold_main"    / "config.json", "section": "bot_mean_reversion"},
+    "scalper":        {"path": cfg.INSTANCES_DIR / "gold_scalper" / "config.json", "section": "bot_scalper"},
+    "fft":            {"path": cfg.INSTANCES_DIR / "gold_fft"     / "config.json", "section": "bot_fft"},
+}
+
+
+def _read_instance_config(bot_key: str) -> dict:
+    info = _BOT_INSTANCE_MAP.get(bot_key)
+    if not info or not info["path"].exists():
+        raise HTTPException(status_code=404, detail=f"Config file not found for '{bot_key}'")
+    return json.loads(info["path"].read_text(encoding="utf-8"))
+
+
+def _write_instance_config(bot_key: str, data: dict) -> None:
+    info = _BOT_INSTANCE_MAP[bot_key]
+    info["path"].write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _git_commit_push(file_path: Path, message: str) -> str:
+    """Stage file, commit if dirty, push. Returns output summary."""
+    root = str(cfg.MONOREPO_ROOT)
+    rel  = str(file_path.relative_to(cfg.MONOREPO_ROOT))
+    subprocess.run(["git", "-C", root, "add", rel], check=True, capture_output=True, timeout=15)
+    status = subprocess.run(
+        ["git", "-C", root, "status", "--porcelain", rel],
+        capture_output=True, text=True, timeout=10,
+    )
+    if not status.stdout.strip():
+        return "nothing to commit"
+    subprocess.run(["git", "-C", root, "commit", "-m", message], check=True, capture_output=True, timeout=15)
+    out = subprocess.run(
+        ["git", "-C", root, "push", "origin", "main"],
+        capture_output=True, text=True, timeout=30,
+    )
+    return (out.stdout + out.stderr).strip()
 
 
 def _notify_telegram(text: str) -> None:
@@ -284,7 +349,7 @@ def get_snapshot():
             except Exception:
                 total_pnl = None
 
-        thresholds = _BOT_THRESHOLDS.get(bot_key, {})
+        thresholds = _get_thresholds(bot_key)
 
         bots.append(BotStatus(
             name=_DISPLAY_NAMES.get(task_name, task_name),
@@ -460,6 +525,81 @@ def _launch_bot(bot_key: str) -> str:
     return _ssh(
         f'wmic process call create "{_PYTHON_EXE} {_COORDINATOR} --bot {bot_key}" 2>nul'
     )
+
+
+@router.get("/{bot_name}/config", response_model=BotConfigSections)
+def get_bot_config(bot_name: str):
+    """Return the config sections for a bot from its instance config.json."""
+    _, bot_key = _resolve_bot(bot_name)
+    data    = _read_instance_config(bot_key)
+    section = _BOT_INSTANCE_MAP[bot_key]["section"]
+    return BotConfigSections(
+        risk       = data.get("risk", {}),
+        protection = data.get("protection", {}),
+        strategy   = data.get(section, {}),
+        regime     = data.get("regime", {}),
+        dead_zone  = data.get("dead_zone", {}),
+    )
+
+
+@router.patch("/{bot_name}/config")
+def save_bot_config(bot_name: str, update: BotConfigUpdate):
+    """Write config sections to instance config.json.
+    If deploy=True: git commit → push → VPS git pull → restart bot.
+    """
+    _, bot_key  = _resolve_bot(bot_name)
+    info        = _BOT_INSTANCE_MAP[bot_key]
+    section_key = info["section"]
+    data        = _read_instance_config(bot_key)
+
+    if update.risk       is not None: data.setdefault("risk", {}).update(update.risk)
+    if update.protection is not None: data.setdefault("protection", {}).update(update.protection)
+    if update.strategy   is not None: data.setdefault(section_key, {}).update(update.strategy)
+    if update.regime     is not None: data.setdefault("regime", {}).update(update.regime)
+    if update.dead_zone  is not None: data.setdefault("dead_zone", {}).update(update.dead_zone)
+
+    _write_instance_config(bot_key, data)
+
+    if update.deploy:
+        try:
+            _git_commit_push(
+                info["path"],
+                f"config: update {bot_name} from command center",
+            )
+        except subprocess.CalledProcessError as e:
+            raise HTTPException(status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+
+        try:
+            _ssh("cd C:\\trading && git pull origin main")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+
+        try:
+            _suppress_stop_alert(bot_key)
+            _ssh(f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul')
+            _time.sleep(3)
+            _launch_bot(bot_key)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"VPS restart failed: {e}")
+
+        display = _KEY_DISPLAY.get(bot_key, bot_key)
+        _notify_telegram(f"🔄 *{display}* config updated + restarting \\[command center\\]")
+
+    return {"status": "ok"}
+
+
+@router.patch("/{bot_name}/caps")
+def save_bot_caps(bot_name: str, caps: BotCapUpdate):
+    """Persist risk cap overrides to config_overrides.json (no git, no restart)."""
+    _, bot_key = _resolve_bot(bot_name)
+    overrides = _load_config_overrides()
+    overrides[bot_key] = {
+        "daily_goal": caps.daily_goal_pct,
+        "daily_cap":  caps.daily_cap_pct,
+        "weekly_cap": caps.weekly_cap_pct,
+    }
+    _save_config_overrides(overrides)
+    return {"status": "ok"}
 
 
 @router.post("/{bot_name}/start")

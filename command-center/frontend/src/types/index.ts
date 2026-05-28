@@ -190,6 +190,23 @@ export interface BotSnapshot {
   telegram: ProcessStatus
 }
 
+export interface BotConfigSections {
+  risk: Record<string, unknown>
+  protection: Record<string, unknown>
+  strategy: Record<string, unknown>
+  regime: Record<string, unknown>
+  dead_zone: Record<string, unknown>
+}
+
+export interface BotConfigUpdate {
+  risk?: Record<string, unknown>
+  protection?: Record<string, unknown>
+  strategy?: Record<string, unknown>
+  regime?: Record<string, unknown>
+  dead_zone?: Record<string, unknown>
+  deploy?: boolean
+}
+
 // ── Backtests ────────────────────────────────────────────────────────────────
 
 export interface BacktestResult {

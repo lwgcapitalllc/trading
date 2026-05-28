@@ -80,6 +80,7 @@ cd command-center
 | Bots — scheduled jobs | ✅ Live | Gold glow = scheduled/waiting, green = running |
 | Bots — log viewer | ✅ Live | SSH log fetch |
 | Bots — control actions | ✅ Live | Start/Stop/Restart/Emergency (global + per-bot); all destructive actions require confirm |
+| Bots — Configure tab | ✅ Live | 4-card side-by-side comparison; editable risk caps (daily goal / daily cap / weekly cap); saves to `config_overrides.json` via `PATCH /bots/{name}/caps`; full instance `config.json` editor available via `GET/PATCH /bots/{name}/config` but not surfaced in UI |
 
 ---
 
@@ -514,133 +515,40 @@ Groundwork for the Configure tab. The `patch` method was added to the `api` obje
 
 ---
 
+---
+
+## Session — Bots Configure tab: build + revert (2026-05-28)
+
+### What was built then reverted
+First implemented a full per-bot config editor: bot-selector tabs (SMC Trend / Mean Reversion / Scalper / FFT), two-column layout showing all config parameters from the instance `config.json` files, info-icon tooltips on every field, and a "Save & Deploy" path that git-commits + pushes + VPS git-pulls + restarts the bot.
+
+**Reverted** because it broke the side-by-side comparison: you could only view one bot at a time and couldn't compare risk caps across all four bots at a glance.
+
+### Current design (4-card comparison)
+`ConfigureTab.tsx` — four cards in a grid, one per bot, visible simultaneously:
+- **Header:** bot name + Running/Stopped pill
+- **Performance (read-only):** Daily P&L, Weekly P&L, Trades today, Uptime — sourced from `useBotSnapshot()` (already cached, no extra SSH)
+- **Risk Caps (editable):** Daily goal %, Daily cap %, Weekly cap % — number inputs with `%` suffix
+- **Save button:** accent-highlighted when dirty, grey+disabled when clean; per-card so each bot saves independently
+
+### Backend additions
+- `BotCapUpdate(BaseModel)` added to `models.py` — `daily_goal_pct`, `daily_cap_pct`, `weekly_cap_pct`
+- `PATCH /bots/{bot_name}/caps` — writes to `config_overrides.json` via `_save_config_overrides()`. No git, no VPS action. `_get_thresholds()` already merges overrides into the snapshot so the UI reflects the saved values on next poll.
+- The full `GET /PATCH /bots/{bot_name}/config` endpoints remain and are functional via the API — not surfaced in the UI but kept for future use or direct API calls.
+
+### Hook addition
+`useSaveBotCaps()` in `hooks/useBots.ts` — `PATCH /bots/{name}/caps`, invalidates `['bots', 'snapshot']` on success.
+
+### Limitation (documented in the UI)
+Cap overrides are local to `backend/config_overrides.json`. The running VPS bot reads its own hardcoded `BOT_THRESHOLDS` from `shared/bot_state.py`. To activate VPS-side cap changes requires a code deploy — this UI is monitoring reference only until that wiring is added.
+
+---
+
 ## What still needs to be done
 
-### Step 4 — Bots page: two-tab layout (Monitor + Configure) ← **NEXT**
+### ~~Step 4 — Bots page: two-tab layout (Monitor + Configure)~~ ✅ Done
 
-User chose this design: keep the existing Monitor tab unchanged, add a Configure tab with 4 bot cards side by side for comparing performance and editing risk caps in one view.
-
-#### What to build
-
-**Tab structure** — add `tab: 'monitor' | 'configure'` state to the `Bots` component. Tab switcher in the header (same style as the Account filter tabs already on the page). Refresh button only shown on Monitor tab.
-
-**Monitor tab** — zero changes. All existing table, stat cards, system panel, control actions stay exactly as-is.
-
-**Configure tab** — replace the table area with a 4-column grid of bot config cards:
-
-```
-┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-│ SMC Trend        │  │ Mean Reversion   │  │ Scalper          │  │ FFT              │
-│ ● Running        │  │ ● Running        │  │ ● Stopped        │  │ ● Running        │
-│──────────────────│  │──────────────────│  │──────────────────│  │──────────────────│
-│ PERFORMANCE      │  │ PERFORMANCE      │  │ PERFORMANCE      │  │ PERFORMANCE      │
-│ Daily  +$45 1.6% │  │ Daily  ...       │  │ Daily  —         │  │ Daily  ...       │
-│ Weekly +$120 4%  │  │ Weekly ...       │  │ Weekly —         │  │ Weekly ...       │
-│ Trades today  3  │  │ Trades ...       │  │ Trades —         │  │ Trades ...       │
-│ Uptime   3h 22m  │  │ Uptime ...       │  │ Uptime —         │  │ Uptime ...       │
-│──────────────────│  │──────────────────│  │──────────────────│  │──────────────────│
-│ RISK CAPS        │  │ RISK CAPS        │  │ RISK CAPS        │  │ RISK CAPS        │
-│ Daily goal  2.0% │  │ Daily goal  2.0% │  │ Daily goal 10.0% │  │ Daily goal  2.0% │
-│ Daily cap  10.0% │  │ Daily cap  10.0% │  │ Daily cap   8.0% │  │ Daily cap   5.0% │
-│ Weekly cap 20.0% │  │ Weekly cap 20.0% │  │ Weekly cap 20.0% │  │ Weekly cap 15.0% │
-│──────────────────│  │──────────────────│  │──────────────────│  │──────────────────│
-│ [Save config]    │  │ [Save config]    │  │ [Save config]    │  │ [Save config]    │
-│ [Save & Restart] │  │ [Save & Restart] │  │ [Save & Restart] │  │ [Save & Restart] │
-└──────────────────┘  └──────────────────┘  └──────────────────┘  └──────────────────┘
-```
-
-Each card sections: header (name + StatusPill), Performance (read-only — Daily P&L, Weekly P&L, Trades Today, Uptime), Risk Caps (editable number inputs with % suffix), Action buttons.
-
-#### Implementation details
-
-**Form state** in `Bots` component:
-```typescript
-type BotForm = { daily_goal: string; daily_cap: string; weekly_cap: string }
-const [configForms, setConfigForms] = useState<Record<string, BotForm>>({})
-```
-Initialize from `snapshot.bots` via `useEffect([snapshot])` — only init if `!prev[bot.name]` so user edits survive snapshot refreshes. On successful save, delete that bot's form entry so it re-initializes from the new snapshot values.
-
-**Dirty detection** — compare form string values to `(bot.daily_goal_pct ?? '').toString()` etc. "Save config" button is accent-colored + enabled when dirty, grey + disabled when clean.
-
-**New helper components** (add at top of file alongside existing helpers):
-- `ConfigRow` — `label` (left) + `<input type="number">` + `%` (right). Input: `w-[64px] bg-bg-sunken border border-border-subtle rounded px-[7px] py-[4px] text-[12px] font-mono text-right focus:border-accent/50`.
-- `PerfRow` — label (left) + `±$X.XX (±X.XX%)` (right), colored pos/neg/tertiary.
-
-**Backend — `PATCH /bots/{bot_name}/config`** (add to `routers/bots.py`):
-```python
-from pathlib import Path as _Path
-
-_CONFIG_OVERRIDES_PATH = _Path(__file__).parent.parent / "config_overrides.json"
-
-def _load_config_overrides() -> dict[str, dict[str, float]]:
-    if _CONFIG_OVERRIDES_PATH.exists():
-        try: return json.loads(_CONFIG_OVERRIDES_PATH.read_text())
-        except Exception: pass
-    return {}
-
-def _save_config_overrides(overrides: dict) -> None:
-    _CONFIG_OVERRIDES_PATH.write_text(json.dumps(overrides, indent=2))
-
-def _get_thresholds(bot_key: str) -> dict[str, float]:
-    overrides = _load_config_overrides()
-    base = dict(_BOT_THRESHOLDS.get(bot_key, {}))
-    base.update(overrides.get(bot_key, {}))
-    return base
-```
-The snapshot builder already calls `thresholds = _BOT_THRESHOLDS.get(bot_key, {})` — change to `thresholds = _get_thresholds(bot_key)`.
-
-Add `BotConfigUpdate(BaseModel)` to `models.py`:
-```python
-class BotConfigUpdate(BaseModel):
-    daily_goal_pct: float
-    daily_cap_pct: float
-    weekly_cap_pct: float
-```
-
-Add the endpoint — note it must come BEFORE the `/{bot_name}/start|stop|restart` routes since FastAPI matches literally first:
-```python
-@router.patch("/{bot_name}/config")
-def save_bot_config(bot_name: str, config: BotConfigUpdate):
-    _, bot_key = _resolve_bot(bot_name)
-    overrides = _load_config_overrides()
-    overrides[bot_key] = {
-        "daily_goal": config.daily_goal_pct,
-        "daily_cap":  config.daily_cap_pct,
-        "weekly_cap": config.weekly_cap_pct,
-    }
-    _save_config_overrides(overrides)
-    return {"status": "ok"}
-```
-
-**Frontend hook** (`hooks/useBots.ts`) — `api.patch` was already added to `client.ts`:
-```typescript
-export function useSaveBotConfig() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ botName, config }: { botName: string; config: { daily_goal_pct: number; daily_cap_pct: number; weekly_cap_pct: number } }) =>
-      api.patch<{ status: string }>(`/bots/${encodeURIComponent(botName)}/config`, config),
-    onSuccess: (_data, { botName }) => {
-      toast.success(`${botName} config saved`)
-      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
-    },
-    onError: (err, { botName }) => toast.error(`${botName} config save failed: ${err}`),
-  })
-}
-```
-
-**"Save & Restart"** — uses `mutateAsync` to await the save, then fires `restartOne.mutate(botName)`:
-```typescript
-const handleSaveAndRestart = async (botName: string, form: BotForm) => {
-  try {
-    await saveConfig.mutateAsync({ botName, config: { daily_goal_pct: +form.daily_goal, daily_cap_pct: +form.daily_cap, weekly_cap_pct: +form.weekly_cap } })
-    setConfigForms(prev => { const n = {...prev}; delete n[botName]; return n })
-    restartOne.mutate(botName)
-  } catch { /* handled in hook */ }
-}
-```
-
-#### Limitation to document in UI
-Config overrides are persisted in `backend/config_overrides.json` and reflected in the dashboard immediately. The running bot process on VPS **does not yet read this file** — the actual day-lock behaviour still uses the hardcoded `BOT_THRESHOLDS` in `shared/bot_state.py`. To activate VPS-side cap changes, `pnl_tracker.py` needs to read from a shared config source. This is a separate VPS code change, not part of this frontend task.
+See session notes above (2026-05-28) — design is implemented.
 
 ---
 

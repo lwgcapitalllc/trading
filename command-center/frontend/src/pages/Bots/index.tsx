@@ -8,8 +8,10 @@ import {
 } from '@/hooks/useBots'
 import { StatCard } from '@/components/StatCard'
 import type { BotStatus, JobStatus } from '@/types'
+import { ConfigureTab } from './ConfigureTab'
 
 type AccountFilter = 'all' | 'demo' | 'live'
+type PageTab = 'monitor' | 'configure'
 
 function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -173,6 +175,7 @@ function RowActionBtn({
 
 export function Bots() {
   const { data: snapshot, isLoading, isFetching, error, dataUpdatedAt, refetch } = useBotSnapshot()
+  const [tab, setTab]                     = useState<PageTab>('monitor')
   const [filter, setFilter]               = useState<AccountFilter>('all')
   const [expandedBot, setExpandedBot]     = useState<string | null>(null)
   const [logBot, setLogBot]               = useState<string | null>(null)
@@ -201,13 +204,10 @@ export function Bots() {
   const anyRunning   = bots.filter(b => b.status === 'RUNNING').length > 0
   const noFilteredBots = bots.length === 0
 
-  // Global actions (start/stop/restart all) disable everything while in-flight.
-  // Per-bot actions only disable that specific row (handled by the spinner swap below).
   const anyGlobalPending = startMut.isPending || stopMut.isPending || restartMut.isPending
   const anyPerBotPending = startOne.isPending || stopOne.isPending || restartOne.isPending
   const anyBusy          = anyGlobalPending || anyPerBotPending
 
-  // Which bot row is mid-flight
   const pendingBotName: string | undefined =
     startOne.isPending   ? startOne.variables :
     stopOne.isPending    ? stopOne.variables :
@@ -221,7 +221,6 @@ export function Bots() {
 
   const lastRefresh = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '—'
 
-  // Tick every second for countdown display
   const [, setTick] = useState(0)
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 1000)
@@ -236,25 +235,41 @@ export function Bots() {
       {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 mb-[18px]">
         <h1 className="text-h1 font-semibold">Bots</h1>
-        <button
-          onClick={() => refetch()}
-          disabled={isFetching}
-          title="Refresh now"
-          className="ml-auto flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} />
-          {isFetching ? (
-            <span>Refreshing…</span>
-          ) : (
-            <>
-              <span className="font-mono text-accent tabular-nums">
-                {secondsLeft !== null ? `${secondsLeft}s` : '—'}
-              </span>
-              <span className="text-text-tertiary">·</span>
-              <span className="text-text-tertiary">last {lastRefresh}</span>
-            </>
-          )}
-        </button>
+
+        {/* Tab switcher */}
+        <div className="flex bg-bg-surface border border-border-subtle rounded-md overflow-hidden">
+          {(['monitor', 'configure'] as PageTab[]).map(t => (
+            <span
+              key={t}
+              onClick={() => setTab(t)}
+              className={`text-micro px-3 py-[6px] cursor-pointer select-none capitalize transition-colors duration-[100ms] ${tab === t ? 'bg-accent-muted text-text-primary' : 'text-text-secondary hover:bg-bg-hover'}`}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+
+        {tab === 'monitor' && (
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            title="Refresh now"
+            className="ml-auto flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} />
+            {isFetching ? (
+              <span>Refreshing…</span>
+            ) : (
+              <>
+                <span className="font-mono text-accent tabular-nums">
+                  {secondsLeft !== null ? `${secondsLeft}s` : '—'}
+                </span>
+                <span className="text-text-tertiary">·</span>
+                <span className="text-text-tertiary">last {lastRefresh}</span>
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* ── Loading ───────────────────────────────────────────────────────────── */}
@@ -297,9 +312,10 @@ export function Bots() {
         </div>
       )}
 
-      {snapshot && (
+      {/* ── Monitor tab ───────────────────────────────────────────────────────── */}
+      {snapshot && tab === 'monitor' && (
         <>
-          {/* ── Stat cards ────────────────────────────────────────────────────── */}
+          {/* ── Stat cards ──────────────────────────────────────────────────── */}
           <div className="grid grid-cols-3 gap-[10px] mb-4">
             <StatCard
               label="Bots running"
@@ -319,7 +335,7 @@ export function Bots() {
             />
           </div>
 
-          {/* ── Filter ────────────────────────────────────────────────────────── */}
+          {/* ── Filter ──────────────────────────────────────────────────────── */}
           <div className="flex items-center gap-2 mb-3">
             <div className="flex bg-bg-surface border border-border-subtle rounded-md overflow-hidden">
               {(['all', 'demo', 'live'] as AccountFilter[]).map(f => (
@@ -335,7 +351,7 @@ export function Bots() {
             <span className="ml-auto text-micro text-text-tertiary">{total} trading bots · {snapshot.scheduled_jobs.length} jobs</span>
           </div>
 
-          {/* ── Bots table ────────────────────────────────────────────────────── */}
+          {/* ── Bots table ──────────────────────────────────────────────────── */}
           <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden mb-4">
             <table className="w-full border-collapse">
               <thead>
@@ -358,7 +374,7 @@ export function Bots() {
                   return (
                     <Fragment key={bot.name}>
 
-                      {/* ── Main row ──────────────────────────────── */}
+                      {/* ── Main row ────────────────────────────── */}
                       <tr className="border-b border-border-subtle hover:bg-bg-hover/40 transition-colors duration-[80ms]">
                         <td
                           className="px-6 py-[11px] font-medium align-middle cursor-pointer select-none"
@@ -454,12 +470,12 @@ export function Bots() {
                         </td>
                       </tr>
 
-                      {/* ── Expanded detail row ────────────────────── */}
+                      {/* ── Expanded detail row ──────────────────── */}
                       {isExpanded && (
                         <tr className="bg-bg-sunken border-b border-border-subtle">
                           <td colSpan={8} className="px-6 py-[14px]">
 
-                            {/* ── Primary stat tiles ─────────────────── */}
+                            {/* ── Primary stat tiles ───────────────── */}
                             <div className="flex gap-[10px] mb-[11px]">
                               <StatTile label="Daily P&L">
                                 <PnlTileContent usd={bot.daily_pnl} pct={bot.daily_pnl_pct} />
@@ -483,7 +499,7 @@ export function Bots() {
                               </StatTile>
                             </div>
 
-                            {/* ── Config strip ───────────────────────── */}
+                            {/* ── Config strip ─────────────────────── */}
                             <div className="flex items-center gap-[12px] text-[11px] text-text-tertiary flex-wrap">
                               {bot.daily_goal_pct != null && (
                                 <>
@@ -511,7 +527,7 @@ export function Bots() {
                               )}
                             </div>
 
-                            {/* ── Lock banner ─────────────────────────── */}
+                            {/* ── Lock banner ──────────────────────── */}
                             {bot.day_locked && (
                               <div className="mt-[10px] pt-[10px] border-t border-border-subtle/40 flex items-center gap-[6px]">
                                 <span className="text-[11px] text-warn-text">
@@ -538,7 +554,7 @@ export function Bots() {
             </table>
           </div>
 
-          {/* ── System + controls ────────────────────────────────────────────── */}
+          {/* ── System + controls ───────────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-3">
 
             <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
@@ -623,6 +639,9 @@ export function Bots() {
           </div>
         </>
       )}
+
+      {/* ── Configure tab ─────────────────────────────────────────────────────── */}
+      {tab === 'configure' && <ConfigureTab />}
 
       {/* ── Log modal ─────────────────────────────────────────────────────────── */}
       {logBot && <LogModal botName={logBot} onClose={() => setLogBot(null)} />}
