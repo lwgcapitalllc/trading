@@ -24,12 +24,16 @@ function fmt$(n: number): string {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function BotStatusDot({ status }: { status: string }) {
-  const cls =
-    status === 'RUNNING' ? 'bg-pos shadow-[0_0_5px_#34d399]' :
-    status === 'ERROR'   ? 'bg-neg' :
-                           'bg-neutral'
-  return <span className={`inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 ${cls}`} />
+function StatusPill({ status }: { status: string }) {
+  const isRunning = status === 'RUNNING'
+  const isError   = status === 'ERROR'
+  const cls   = isRunning ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
+  const label = isRunning ? 'Running' : isError ? 'Error' : 'Stopped'
+  return (
+    <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}>
+      {label}
+    </span>
+  )
 }
 
 function BotRow({ bot }: { bot: BotStatus }) {
@@ -45,7 +49,6 @@ function BotRow({ bot }: { bot: BotStatus }) {
 
   return (
     <div className="flex items-center gap-[10px] py-[7px] border-b border-border-subtle/40 last:border-0">
-      <BotStatusDot status={bot.status} />
       <span className="text-[13px] text-text-primary flex-1 min-w-0 truncate">{bot.name}</span>
       {pnlStr && (
         <span className={`text-[11px] font-mono tabular-nums ${pnlColor}`}>{pnlStr}</span>
@@ -55,14 +58,7 @@ function BotRow({ bot }: { bot: BotStatus }) {
           locked
         </span>
       )}
-      <span
-        className={`text-[10px] uppercase tracking-wider w-[54px] text-right font-medium
-          ${bot.status === 'RUNNING' ? 'text-pos-text' :
-            bot.status === 'ERROR'   ? 'text-neg-text' :
-                                       'text-text-tertiary'}`}
-      >
-        {bot.status}
-      </span>
+      <StatusPill status={bot.status} />
     </div>
   )
 }
@@ -135,10 +131,18 @@ export function Overview() {
           sub={
             botsLoading ? 'connecting…' :
             botsError   ? 'VPS unreachable' :
-            snapshot    ? (runningBots === totalBots ? 'all bots live' : `${totalBots - runningBots} stopped`) :
-                          'no data'
+            snapshot    ? (
+              runningBots === totalBots ? 'all bots live' :
+              runningBots === 0         ? 'all stopped' :
+                                          `${totalBots - runningBots} stopped`
+            ) : 'no data'
           }
-          subVariant={!botsLoading && !botsError && runningBots > 0 ? 'pos' : 'neutral'}
+          subVariant={
+            botsLoading || botsError || !snapshot ? 'neutral' :
+            runningBots === totalBots             ? 'pos' :
+            runningBots === 0                     ? 'neg' :
+                                                    'neutral'
+          }
           onClick={() => navigate('/bots')}
         />
 
