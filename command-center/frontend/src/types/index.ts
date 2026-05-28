@@ -167,7 +167,7 @@ export interface BotStatus {
   balance: number | null
   status: 'RUNNING' | 'STOPPED' | 'ERROR'
   uptime_seconds: number | null
-  daily_pnl_pct: number | null
+  total_pnl_pct: number | null
   day_locked: boolean
 }
 

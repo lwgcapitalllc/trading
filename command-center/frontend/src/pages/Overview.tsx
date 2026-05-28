@@ -37,7 +37,7 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function BotRow({ bot }: { bot: BotStatus }) {
-  const pnl = bot.daily_pnl_pct
+  const pnl = bot.total_pnl_pct
   const pnlStr = pnl != null
     ? (pnl >= 0 ? `+${pnl.toFixed(2)}%` : `${pnl.toFixed(2)}%`)
     : null

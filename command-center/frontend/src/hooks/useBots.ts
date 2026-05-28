@@ -22,6 +22,8 @@ export function useBotLog(botName: string | null) {
 
 type ControlResult = { status: string; output: string }
 
+// ── Global control actions ────────────────────────────────────────────────────
+
 function useControlAction(action: 'start' | 'stop' | 'restart') {
   const qc = useQueryClient()
   const labels: Record<string, string> = {

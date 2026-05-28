@@ -194,7 +194,7 @@ class BotStatus(BaseModel):
     balance: Optional[float] = None
     status: str             # "RUNNING" | "STOPPED" | "ERROR"
     uptime_seconds: Optional[int] = None
-    daily_pnl_pct: Optional[float] = None
+    total_pnl_pct: Optional[float] = None
     day_locked: bool = False
 
 

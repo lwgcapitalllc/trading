@@ -268,12 +268,12 @@ def get_snapshot():
         else:
             status = "STOPPED"
 
-        pnl = state.get("daily_pnl_pct") or state.get("daily_pnl")
-        if pnl is not None:
+        total_pnl = state.get("total_pnl_pct")
+        if total_pnl is not None:
             try:
-                pnl = float(pnl)
+                total_pnl = float(total_pnl)
             except Exception:
-                pnl = None
+                total_pnl = None
 
         bots.append(BotStatus(
             name=_DISPLAY_NAMES.get(task_name, task_name),
@@ -282,7 +282,7 @@ def get_snapshot():
             balance=state.get("balance"),
             status=status,
             uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
-            daily_pnl_pct=pnl,
+            total_pnl_pct=total_pnl,
             day_locked=bool(state.get("day_locked", False)),
         ))
 

@@ -424,6 +424,49 @@ When the hard-clear fires, `await refetch()` runs before `clearPendingFor()`. Pr
 
 ---
 
+## Session — Bots page: simplified control flow + P&L column (2026-05-28)
+
+### Bots page — control spinner simplified
+
+**Previous design:** A `PendingTransition` state machine tracked per-bot expected status changes with fast-polling (3 s interval), effects keyed on `dataUpdatedAt`, `prevStatus` comparisons, and a 90 s timeout fallback. Multiple iterations failed because of stale closures, async interval edge cases, and `dataUpdatedAt` not updating as expected in TanStack Query v5.
+
+**New design (current):** Removed entirely:
+- `PendingTransition` type
+- `pendingTransitions` state and `setPendingFor()` helper
+- Both `useEffect` hooks (clearing effect + fast-poll interval)
+- `hasPendingTransitions` derived value
+- All inline `onSuccess` callbacks on `mutate()` calls
+
+Spinner now shows only while the HTTP request is in-flight (`startOne.isPending` / `stopOne.isPending` / `restartOne.isPending`). Data update is handled by the existing `invalidateQueries(['bots', 'snapshot'])` in the mutation hook's `onSuccess` — one fresh fetch fires automatically after every action. No polling, no state tracking.
+
+### Per-bot buttons — no longer disabled by other rows' actions
+
+**Bug:** `disabled={anyBusy}` included `anyPerBotPending` — starting/stopping one bot disabled every other row's buttons.
+
+**Fix:** Per-bot row buttons use `disabled={anyGlobalPending}` only. The active row already shows a spinner instead of buttons (so its actions can't be double-fired). Other rows stay enabled. Global control buttons (start all / stop all / restart all) still use `anyBusy` — you shouldn't fire a global action while a per-bot action is in-flight.
+
+| Situation | Active row | All other rows | Global buttons |
+|---|---|---|---|
+| Per-bot action in-flight | Spinner (no buttons) | ✅ Enabled | Disabled |
+| Global action in-flight | Disabled | Disabled | Disabled |
+| Idle | Enabled | Enabled | Enabled |
+
+### P&L column — Daily → Overall
+
+**Changed:** The "Day P&L" column now shows **Overall P&L** (total growth since the $1,000 starting balance).
+
+| File | Change |
+|---|---|
+| `backend/models.py` | `BotStatus.daily_pnl_pct` → `total_pnl_pct: Optional[float]` |
+| `backend/routers/bots.py` | Reads `state.get("total_pnl_pct")` from `bot_state.json` (was `daily_pnl_pct`) |
+| `frontend/src/types/index.ts` | `BotStatus.daily_pnl_pct` → `total_pnl_pct: number \| null` |
+| `frontend/src/pages/Bots/index.tsx` | Column header `"Day P&L"` → `"Overall P&L"`, cell renders `bot.total_pnl_pct` |
+| `frontend/src/pages/Overview.tsx` | `BotRow` reads `bot.total_pnl_pct` |
+
+`bot_state.json` fields: `daily_pnl_pct` resets each day; `total_pnl_pct` is cumulative growth since the $1,000 demo start (written by `pnl_tracker` via `shared/bot_state.py`).
+
+---
+
 ## What still needs to be done
 
 ### Step 4 — End-to-end test of Smart Money pipeline + dashboard ← **NEXT**
