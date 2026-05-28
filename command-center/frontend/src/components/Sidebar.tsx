@@ -64,14 +64,21 @@ function StatusDot({ ok }: { ok: boolean | null }) {
 }
 
 export function Sidebar() {
-  const { data: health, isError } = useQuery({
+  const { data: health, isError: apiError } = useQuery({
     queryKey: ['health'],
     queryFn: () => api.get<{ status: string }>('/health'),
     refetchInterval: 30_000,
     retry: 1,
   })
+  const { data: vpsPing, isError: vpsError } = useQuery({
+    queryKey: ['vps', 'ping'],
+    queryFn: () => api.get<{ status: string }>('/bots/ping'),
+    refetchInterval: 30_000,
+    retry: 1,
+  })
 
-  const apiOk = health?.status === 'ok' ? true : isError ? false : null
+  const apiOk = health?.status === 'ok' ? true : apiError ? false : null
+  const vpsOk = vpsPing?.status === 'ok' ? true : vpsError ? false : null
 
   return (
     <aside className="w-[212px] flex-shrink-0 bg-bg-sunken border-r border-border-subtle flex flex-col">
@@ -101,8 +108,8 @@ export function Sidebar() {
       {/* ── Footer ────────────────────────────────────────────────── */}
       <div className="mt-auto pt-[10px] border-t border-border-subtle">
         <div className="flex items-center gap-2 text-micro text-text-secondary">
-          <StatusDot ok={null} />
-          <span>VPS · <span className="text-text-tertiary">forexvps</span></span>
+          <StatusDot ok={vpsOk} />
+          <span>VPS · <span className="text-text-tertiary">{vpsOk === true ? 'forexvps' : vpsOk === false ? 'unreachable' : 'checking'}</span></span>
         </div>
         <div className="flex items-center gap-2 text-micro text-text-secondary mt-[6px]">
           <StatusDot ok={apiOk} />

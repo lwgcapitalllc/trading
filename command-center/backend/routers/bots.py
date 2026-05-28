@@ -230,6 +230,15 @@ def _uptime_seconds(state: dict) -> int | None:
         return None
 
 
+@router.get("/ping")
+def vps_ping():
+    try:
+        out = _ssh("echo ok")
+        return {"status": "ok" if "ok" in out else "error"}
+    except (subprocess.TimeoutExpired, Exception):
+        return {"status": "error"}
+
+
 @router.get("/snapshot", response_model=BotSnapshot)
 def get_snapshot():
     try:

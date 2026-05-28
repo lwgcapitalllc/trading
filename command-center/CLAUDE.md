@@ -266,8 +266,8 @@ Three independent places each rendered "Run complete" after a run:
 - **All rows' action buttons disabled while any action (global or per-bot) is in-flight** (`anyBusy = anyPending`). Prevents double-firing.
 - Global "Executing…" label only shown for global control actions (start/stop/restart/emergency all), not per-bot actions.
 
-### Known limitation
-- Per-bot stop/restart triggers the bot's Telegram "unexpectedly stopped" alert because `wmic terminate` sends a kill signal that the bot's error handler catches. To suppress this would require writing a `controlled_stop` marker file on the VPS before killing — needs algo.py change, deferred.
+### Note
+- The "unexpectedly stopped" alert suppression and `[command center]` notifications were implemented in a later session — see below.
 
 ---
 
@@ -317,6 +317,91 @@ Replaces the scaffold with a real dashboard:
 
 ---
 
+## Session — Bots page: status pills, System card, control gate (2026-05-27)
+
+### Status indicators
+- **`StatusPill` component** replaces the old dot+text approach everywhere — green `bg-pos-muted text-pos-text` for RUNNING, red `bg-neg-muted text-neg-text` for STOPPED/ERROR. Used on Bots page table, Overview `BotRow`, and the Telegram service row.
+- **"Bots Running" stat card** — sub-text and `subVariant` now correctly reflect partial-stop state: `pos` when all running, `neg` when all stopped, `neutral` (not green) when some are stopped.
+
+### Telegram card removed; System card reorganised
+- The Telegram `StatCard` was removed from the 4-card stat row (grid shrunk to 3 columns) — it duplicated information already visible below.
+- "Scheduled Jobs" card renamed to **System** with two sub-sections:
+  - **Jobs** — Monitor, P&L Tracker, Reporter with gold-glow `JobDot` + schedule text (these are Task Scheduler tasks)
+  - **Services** — Telegram with `StatusPill` (long-running daemon started by `startup_coordinator.py`, not a scheduled task)
+
+### Start All gate
+- Changed from "disabled when all running" (`allRunning`) → "disabled when **any** running" (`anyRunning = filteredRunning > 0`).
+- Rationale: `SYS_STARTUP` starts everything from scratch — running it while any bot is up risks duplicate processes. Per-row ▷ handles the partial-start use case.
+- Tooltip when disabled: `"Stop all bots first — use ▷ on a row to start an individual bot"`.
+
+---
+
+## Session — Critical bug fixes: Telegram notifications + spinner (2026-05-27)
+
+### Bug 1 — Stop from command center gave wrong/no Telegram alert
+
+**Root cause:** The crash monitor on the VPS reads `stop_suppress.json` before sending "unexpectedly stopped" alerts. `algo.py`'s control panel writes a suppress key AND sends its own `[control panel]` notification. The command center only wrote the suppress key — it never sent any notification.
+
+**Fix (`routers/bots.py`):**
+- Added `_notify_telegram()` using `urllib.request` (built-in, no new deps). Uses the same token/chat as `notify.py` and `algo.py`.
+- Added `_KEY_DISPLAY` reverse map (`bot_key → display name`) for notification text.
+- All 7 action endpoints now send a notification after the SSH action completes:
+
+| Endpoint | Message |
+|---|---|
+| `POST /bots/{name}/stop` | `⏹ *SMC Trend* stopped [command center]` |
+| `POST /bots/{name}/start` | `▶️ *Scalper* starting [command center]` |
+| `POST /bots/{name}/restart` | `🔄 *FFT* restarting [command center]` |
+| `POST /bots/stop` | `⏹ All bots stopped [command center]` |
+| `POST /bots/start` | `▶️ All bots starting [command center]` |
+| `POST /bots/restart` | `🔄 All bots restarting [command center]` |
+
+### Bug 2 — Spinner ("Stopping…") never cleared after action
+
+**Root cause:** The 45 s timeout lived inside `useEffect([snapshot])`. That effect only fires when `snapshot` updates. If the snapshot refetch is slow or fails after a stop action (SSH busy/timing out after VPS kill), `snapshot` never changes, the effect never fires, and the `timedOut` condition is never evaluated — spinner runs indefinitely.
+
+**Fix (`pages/Bots/index.tsx`):**
+- Added `transitionTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})`.
+- `setPendingFor()` now also schedules a hard-clear `setTimeout` after **30 s** — fires regardless of snapshot state.
+- `clearPendingFor()` cancels the timer when the snapshot confirms the expected state first (happy path). Both paths call the same function; cleanup `useEffect` cancels all timers on unmount.
+- The `useEffect([snapshot])` snapshot-based clearing is kept as the primary/fast path; the `setTimeout` is the guaranteed fallback.
+
+### Bug 3 — Status detection reading stale `bot_state.json`
+(Fixed in the previous session, documented here for completeness.)
+All `BOT_*` Task Scheduler tasks are **Disabled** on the VPS — `schtasks` reports `"Disabled"`, not `"Ready"`. The old `elif task_status in ("Ready", "")` branch never matched, causing fallthrough to `bot_state.json` which still says `"running"` after a hard kill. Fix: simplified to process-list-only: `running_in_procs → "RUNNING"`, otherwise `"STOPPED"`.
+
+---
+
+## Session — Bots table: alignment, layout, and column overhaul (2026-05-27)
+
+### `pages/Bots/index.tsx`
+
+**Vertical alignment** — added `align-middle` to all `<th>` and `<td>` elements. Inline-flex badges (StatusPill, account type pill) were causing rows to expand and content to drift to the text baseline; `align-middle` pins everything to the row's centre.
+
+**Account type pill conditional** — the DEMO/LIVE pill next to the account number is only rendered when `filter === 'all'`. On the Demo or Live filter tab the type is already implied by the tab; showing the pill was redundant.
+
+**Logs column** — the `FileText` log button was extracted from the Actions column flex group into its own `<td>` with a dedicated `"Logs"` header. `colSpan` on the empty-state row updated 7 → 8.
+
+**Column reorder** — final order: `Bot | Status | Balance | Day P&L | Account | Uptime | Actions | Logs`. Groups the most critical operational info (Status) immediately after the identifier, keeps financial metrics together, and pushes reference info toward the middle.
+
+**Universal left-align + spacing** — all `text-right` removed from both headers and cells; padding bumped from `px-[14px]` to `px-6` (24 px) on every header and cell. `justify-end` removed from the Actions flex container and the spinning transition state. Account cell badge alignment: wrapped account number + type pill in `<div className="flex items-center gap-[6px]">` to prevent baseline drift.
+
+---
+
+## Session — Bots header countdown + VPS status dot (2026-05-27)
+
+### Bots header refresh button (`pages/Bots/index.tsx`)
+Collapsed the separate `<span>` status text and `<button>` into a single combined button: `[↺] 45s · last 8:58:10 PM`. The countdown is derived live from `dataUpdatedAt` — a 1-second `setInterval` tick forces a re-render, then `Math.max(0, interval - elapsed)` is computed inline (no drift). Countdown resets automatically when TanStack Query marks a fresh fetch. When `hasPendingTransitions` is true the interval drops to 3 (matching the fast-poll cadence). While fetching, shows `[↺ spinning] Refreshing…`. Countdown number styled `text-accent font-mono tabular-nums` to signal it's live.
+
+### VPS status dot (`components/Sidebar.tsx` + `routers/bots.py`)
+- Added `GET /bots/ping` endpoint: runs `ssh forexvps "echo ok"` via `_ssh()`, returns `{"status": "ok"}` or `{"status": "error"}` (catches `TimeoutExpired` and any other exception — never raises HTTP error, returns graceful error instead).
+- Sidebar now polls `/bots/ping` every 30s (same cadence as the API health check).
+- `vpsOk` derived the same way as `apiOk`: `true` when status is `"ok"`, `false` on error, `null` while loading.
+- `<StatusDot ok={vpsOk} />` replaces the hardcoded `ok={null}` grey dot.
+- VPS label text is now dynamic: `forexvps` (green), `checking` (grey), `unreachable` (red) — mirrors the API row's pattern exactly.
+
+---
+
 ## What still needs to be done
 
 ### Step 4 — End-to-end test of Smart Money pipeline + dashboard ← **NEXT**
@@ -354,6 +439,6 @@ Backend: `GET /stress-tests/results` reads stress test output (TBD). Frontend `s
 ## Never do
 
 - Touch `algos/` or `smart-money/` source code from within this subsystem — read their output files only
-- Implement bot control actions before monitoring is verified (Steps 4–5 first)
 - Commit secrets: `config.json` contains local paths only (no credentials), but `.env` or any credential files must never be committed
 - Add frontend routes without adding a corresponding `NavItem` entry in `Sidebar.tsx`
+- Change Telegram token/chat constants in `routers/bots.py` independently of `algos/shared/notify.py` — they must stay in sync

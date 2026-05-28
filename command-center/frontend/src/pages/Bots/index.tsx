@@ -271,14 +271,21 @@ export function Bots() {
 
   const lastRefresh = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '—'
 
+  // Tick every second so the countdown re-derives from dataUpdatedAt without drift
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const secondsLeft = dataUpdatedAt
+    ? Math.max(0, (hasPendingTransitions ? 3 : 60) - Math.floor((Date.now() - dataUpdatedAt) / 1000))
+    : null
+
   return (
     <div>
       {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 mb-[18px]">
         <h1 className="text-h1 font-semibold">Bots</h1>
-        <span className="text-[12px] text-text-tertiary">
-          {hasPendingTransitions ? 'polling 3s · ' : 'auto-refresh 60s · '}last {lastRefresh}
-        </span>
         <button
           onClick={() => refetch()}
           disabled={isFetching}
@@ -286,7 +293,17 @@ export function Bots() {
           className="ml-auto flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} />
-          {isFetching ? 'Refreshing…' : 'Refresh'}
+          {isFetching ? (
+            <span>Refreshing…</span>
+          ) : (
+            <>
+              <span className="font-mono text-accent tabular-nums">
+                {secondsLeft !== null ? `${secondsLeft}s` : '—'}
+              </span>
+              <span className="text-text-tertiary">·</span>
+              <span className="text-text-tertiary">last {lastRefresh}</span>
+            </>
+          )}
         </button>
       </div>
 
@@ -373,11 +390,10 @@ export function Bots() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  {['Bot', 'Account', 'Balance', 'Status', 'Uptime', 'Day P&L', 'Actions'].map(h => (
+                  {['Bot', 'Status', 'Balance', 'Day P&L', 'Account', 'Uptime', 'Actions', 'Logs'].map(h => (
                     <th
                       key={h}
-                      className={`text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-[14px] py-[10px] bg-bg-surface-2 border-b border-border-subtle whitespace-nowrap align-middle
-                        ${['Balance', 'Uptime', 'Day P&L', 'Actions'].includes(h) ? 'text-right' : ''}`}
+                      className="text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-6 py-[10px] bg-bg-surface-2 border-b border-border-subtle whitespace-nowrap align-middle"
                     >
                       {h}
                     </th>
@@ -397,30 +413,16 @@ export function Bots() {
                   const anyBusy = anyPending
                   return (
                     <tr key={bot.name} className="border-b border-border-subtle last:border-0">
-                      <td className="px-[14px] py-[11px] font-medium align-middle">{bot.name}</td>
-                      <td className="px-[14px] py-[11px] align-middle">
-                        <span className="font-mono text-[11px] text-text-secondary">{bot.account}</span>
-                        <span className="ml-[4px] inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary">
-                          {bot.account_type}
-                        </span>
-                        {bot.day_locked && (
-                          <span className="ml-[4px] inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase bg-warn-muted text-warn-text">
-                            locked
-                          </span>
-                        )}
+                      <td className="px-6 py-[11px] font-medium align-middle">{bot.name}</td>
+                      <td className="px-6 py-[11px] align-middle">
+                        <StatusPill status={bot.status} />
                       </td>
-                      <td className="px-[14px] py-[11px] text-right font-mono text-small align-middle">
+                      <td className="px-6 py-[11px] font-mono text-small align-middle">
                         {bot.balance != null
                           ? '$' + bot.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                           : '—'}
                       </td>
-                      <td className="px-[14px] py-[11px] align-middle">
-                        <StatusPill status={bot.status} />
-                      </td>
-                      <td className="px-[14px] py-[11px] text-right font-mono text-small text-text-secondary align-middle">
-                        {bot.uptime_seconds != null ? formatUptime(bot.uptime_seconds) : '—'}
-                      </td>
-                      <td className="px-[14px] py-[11px] text-right font-mono text-small align-middle">
+                      <td className="px-6 py-[11px] font-mono text-small align-middle">
                         {bot.daily_pnl_pct != null
                           ? <span className={bot.daily_pnl_pct >= 0 ? 'text-pos-text' : 'text-neg-text'}>
                               {bot.daily_pnl_pct >= 0 ? '+' : ''}{bot.daily_pnl_pct.toFixed(1)}%
@@ -428,11 +430,28 @@ export function Bots() {
                           : <span className="text-text-tertiary">—</span>
                         }
                       </td>
+                      <td className="px-6 py-[11px] align-middle">
+                        <div className="flex items-center gap-[6px]">
+                          <span className="font-mono text-[11px] text-text-secondary">{bot.account}</span>
+                          {filter === 'all' && (
+                            <span className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary">
+                              {bot.account_type}
+                            </span>
+                          )}
+                          {bot.day_locked && (
+                            <span className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase bg-warn-muted text-warn-text">
+                              locked
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-[11px] font-mono text-small text-text-secondary align-middle">
+                        {bot.uptime_seconds != null ? formatUptime(bot.uptime_seconds) : '—'}
+                      </td>
                       {/* Per-row actions — locked while this row OR any row is transitioning */}
-                      <td className="px-[14px] py-[11px] align-middle">
+                      <td className="px-6 py-[11px] align-middle">
                         {isThisRowBusy ? (
-                          // Show inline executing status on the active row until VPS confirms
-                          <div className="flex items-center justify-end gap-[6px] text-[11px] text-accent">
+                          <div className="flex items-center gap-[6px] text-[11px] text-accent">
                             <svg className="animate-spin h-[11px] w-[11px] flex-shrink-0" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -440,7 +459,7 @@ export function Bots() {
                             {thisRowLabel}
                           </div>
                         ) : (
-                          <div className="flex items-center justify-end gap-[4px]">
+                          <div className="flex items-center gap-[4px]">
                             <RowActionBtn
                               icon={Play}
                               title="Start bot"
@@ -467,20 +486,22 @@ export function Bots() {
                                 restartOne.mutate(bot.name, { onError: () => clearPendingFor(bot.name) })
                               }}
                             />
-                            <RowActionBtn
-                              icon={FileText}
-                              title="View log"
-                              onClick={() => setLogBot(bot.name)}
-                            />
                           </div>
                         )}
+                      </td>
+                      <td className="px-6 py-[11px] align-middle">
+                        <RowActionBtn
+                          icon={FileText}
+                          title="View log"
+                          onClick={() => setLogBot(bot.name)}
+                        />
                       </td>
                     </tr>
                   )
                 })}
                 {bots.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-text-tertiary text-small">
+                    <td colSpan={8} className="text-center py-12 text-text-tertiary text-small">
                       No bots match filter.
                     </td>
                   </tr>
