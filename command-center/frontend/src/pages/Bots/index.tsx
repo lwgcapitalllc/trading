@@ -231,9 +231,9 @@ export function Bots() {
   const total        = snapshot?.bots.length ?? 0
   const totalBalance = snapshot?.bots.reduce((s, b) => s + (b.balance ?? 0), 0) ?? 0
   const allJobsOk    = snapshot?.scheduled_jobs.every(j => j.status === 'RUNNING') ?? false
-  // allRunning / noFilteredBots use the filtered list so the control panel reflects what's visible
+  // anyRunning / noFilteredBots use the filtered list so the control panel reflects what's visible
   const filteredRunning = bots.filter(b => b.status === 'RUNNING').length
-  const allRunning   = bots.length > 0 && filteredRunning === bots.length
+  const anyRunning     = filteredRunning > 0   // Start All requires everything stopped
   const noFilteredBots = bots.length === 0
 
   const anyGlobalPending    = startMut.isPending || stopMut.isPending || restartMut.isPending
@@ -515,10 +515,10 @@ export function Bots() {
               <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={() => setConfirm('start')}
-                  disabled={anyPending || allRunning || noFilteredBots}
+                  disabled={anyPending || anyRunning || noFilteredBots}
                   title={
                     noFilteredBots ? 'No bots in this filter' :
-                    allRunning     ? 'All bots are already running' :
+                    anyRunning     ? 'Stop all bots first — use ▷ on a row to start an individual bot' :
                                      'Start all bots via SYS_STARTUP'
                   }
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-primary hover:bg-bg-hover hover:border-pos/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
