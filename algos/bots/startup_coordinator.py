@@ -121,14 +121,17 @@ def main():
             sys.exit(1)
 
         bot_key, name, script, config, *_ = entry
-        print(f"Starting {name} (single-bot mode)…")
+        print(f"Starting {name} (single-bot mode)...")
         set_started(bot_key)
         subprocess.Popen(
             [PYTHON, script, "--config", config],
             cwd=str(BOTS),
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
-        print(f"  ✓ {name} launched")
+        print(f"  OK {name} launched")
         return
 
     # ── Full startup mode ─────────────────────────────────────────────────────

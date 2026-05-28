@@ -375,17 +375,24 @@ def _resolve_bot(bot_name: str) -> tuple[str, str]:
 
 _COORDINATOR = r"C:\trading\algos\bots\startup_coordinator.py"
 
+# Use wmic process call create so startup_coordinator runs under WMI — not
+# under the SSH job object — meaning the bot it spawns survives when SSH closes.
+# Direct SSH call kills children via job-object teardown despite CREATE_NEW_PROCESS_GROUP.
+def _launch_bot(bot_key: str) -> str:
+    """Fire startup_coordinator.py --bot <key> via WMI and return wmic output."""
+    return _ssh(
+        f'wmic process call create "python {_COORDINATOR} --bot {bot_key}" 2>nul'
+    )
+
 
 @router.post("/{bot_name}/start")
 def start_bot(bot_name: str):
-    """Launch a single bot via startup_coordinator.py --bot <key>.
-    The coordinator writes the started timestamp and Popens the bot with
-    CREATE_NEW_PROCESS_GROUP so it survives the SSH session.
-    Individual BOT_* scheduled tasks are disabled — schtasks /run does nothing.
+    """Launch a single bot via startup_coordinator.py --bot <key> (via WMI).
+    Individual BOT_* scheduled tasks are Disabled — schtasks /run does nothing.
     """
     _, bot_key = _resolve_bot(bot_name)
     try:
-        out = _ssh(f'python "{_COORDINATOR}" --bot {bot_key}')
+        out = _launch_bot(bot_key)
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
@@ -417,7 +424,7 @@ def restart_bot(bot_name: str):
             f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul'
         )
         _time.sleep(3)
-        start_out = _ssh(f'python "{_COORDINATOR}" --bot {bot_key}')
+        start_out = _launch_bot(bot_key)
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
