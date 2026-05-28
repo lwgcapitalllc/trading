@@ -473,17 +473,20 @@ export function Bots() {
             </table>
           </div>
 
-          {/* ── Scheduled jobs + controls ─────────────────────────────────────── */}
+          {/* ── System + controls ────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-3">
 
-            {/* Scheduled jobs */}
+            {/* System — scheduled tasks + services */}
             <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-              <div className="text-[13px] font-semibold mb-[14px]">Scheduled Jobs</div>
-              <table className="w-full text-micro">
+              <div className="text-[13px] font-semibold mb-[14px]">System</div>
+
+              {/* Scheduled tasks */}
+              <p className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary mb-[4px]">Jobs</p>
+              <table className="w-full text-micro mb-[12px]">
                 <tbody>
                   {snapshot.scheduled_jobs.map((j: JobStatus) => (
                     <tr key={j.name}>
-                      <td className="py-[7px]">
+                      <td className="py-[6px]">
                         <div className="flex items-center gap-2">
                           <JobDot status={j.status} />
                           <span className={j.status === 'RUNNING' ? 'text-text-primary' : 'text-text-secondary'}>
@@ -491,17 +494,20 @@ export function Bots() {
                           </span>
                         </div>
                       </td>
-                      <td className="text-right text-text-tertiary py-[7px]">{j.schedule}</td>
+                      <td className="text-right text-text-tertiary py-[6px]">{j.schedule}</td>
                     </tr>
                   ))}
-                  <tr>
-                    <td className="py-[7px] text-text-secondary">Telegram</td>
-                    <td className="text-right py-[7px]">
-                      <StatusPill status={snapshot.telegram.status} />
-                    </td>
-                  </tr>
                 </tbody>
               </table>
+
+              {/* Services — long-running processes */}
+              <div className="border-t border-border-subtle/60 pt-[10px]">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary mb-[6px]">Services</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-micro text-text-secondary">Telegram</span>
+                  <StatusPill status={snapshot.telegram.status} />
+                </div>
+              </div>
             </div>
 
             {/* Global control actions */}
