@@ -169,6 +169,18 @@ export interface BotStatus {
   uptime_seconds: number | null
   total_pnl_pct: number | null
   day_locked: boolean
+  // detail fields
+  daily_pnl: number | null
+  daily_pnl_pct: number | null
+  weekly_pnl: number | null
+  weekly_pnl_pct: number | null
+  peak_balance: number | null
+  trades_today: number | null
+  lock_reason: string | null
+  last_updated: string | null
+  daily_goal_pct: number | null
+  daily_cap_pct: number | null
+  weekly_cap_pct: number | null
 }
 
 export interface BotSnapshot {

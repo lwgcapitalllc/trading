@@ -38,10 +38,10 @@ export function TopBar() {
             filter: 'drop-shadow(0 0 8px rgba(0,229,255,0.6))',
           }}
         >
-          LWG
+          TRADING
         </span>
         <span className="text-[23px] font-bold tracking-tight text-white leading-none">
-          Capital
+          Operations
         </span>
       </div>
 

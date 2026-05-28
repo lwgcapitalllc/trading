@@ -467,9 +467,184 @@ Spinner now shows only while the HTTP request is in-flight (`startOne.isPending`
 
 ---
 
+## Session — Bots page: detail panel + nav polish (2026-05-28)
+
+### Sidebar — nav icon glow replaces "Live" pills (`components/Sidebar.tsx`)
+- Removed the green `"Live"` pill from all built workspace nav items (Overview, Smart Money, Bots) — it was a static, hardcoded flag with no runtime meaning.
+- `"Soon"` pill on unbuilt items (Backtests, Stress Tests) kept — still informative.
+- Active nav item icon now gets `text-accent drop-shadow-[0_0_6px_#34d399]` with a 120 ms CSS transition. Replaces the pill as the "this is where you are" signal.
+
+### Bot row expand — detail panel (`pages/Bots/index.tsx`)
+Each bot row now has a `ChevronRight` icon in the name cell (rotates 90° when open). Clicking the name cell toggles an inline expanded `<tr>` below the row showing:
+
+**4 stat tiles (flex row):** Daily P&L, Weekly P&L, Trades Today, Peak Balance — each in its own card with a 16px colored dollar amount and smaller pct annotation.
+
+**Config strip (single compact line):** `Goal X% · Daily cap X% · Weekly cap X% · Updated Xm ago`
+
+**Lock banner (conditional):** shown if `day_locked` is true, includes `lock_reason` if set.
+
+### Backend — `BotStatus` detail fields (`models.py`, `routers/bots.py`)
+
+New fields on `BotStatus`:
+
+| Field | Source in `bot_state.json` |
+|---|---|
+| `daily_pnl` / `daily_pnl_pct` | `daily_pnl` / `daily_pnl_pct` |
+| `weekly_pnl` / `weekly_pnl_pct` | `weekly_pnl` / `weekly_pnl_pct` |
+| `peak_balance` | `peak_balance` (0 → `None`) |
+| `trades_today` | `trades_today` |
+| `lock_reason` | `lock_reason` (empty string → `None`) |
+| `last_updated` | `last_updated` (empty string → `None`) |
+| `daily_goal_pct` / `daily_cap_pct` / `weekly_cap_pct` | `_BOT_THRESHOLDS` dict in `bots.py` |
+
+`_BOT_THRESHOLDS` added to `bots.py` (mirrors `bot_state.py`'s `BOT_THRESHOLDS`):
+```python
+_BOT_THRESHOLDS = {
+    "smc_trend":      {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
+    "mean_reversion": {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
+    "scalper":        {"daily_goal": 10.0, "daily_cap": 8.0,  "weekly_cap": 20.0},
+    "fft":            {"daily_goal": 2.0,  "daily_cap": 5.0,  "weekly_cap": 15.0},
+}
+```
+
+`instrument` field was considered but removed — hardcoding `"XAUUSD"` was misleading since these accounts trade multiple pairs.
+
+### `api/client.ts` — `patch` method added
+Groundwork for the Configure tab. The `patch` method was added to the `api` object; it is not yet called by any hook or page.
+
+---
+
 ## What still needs to be done
 
-### Step 4 — End-to-end test of Smart Money pipeline + dashboard ← **NEXT**
+### Step 4 — Bots page: two-tab layout (Monitor + Configure) ← **NEXT**
+
+User chose this design: keep the existing Monitor tab unchanged, add a Configure tab with 4 bot cards side by side for comparing performance and editing risk caps in one view.
+
+#### What to build
+
+**Tab structure** — add `tab: 'monitor' | 'configure'` state to the `Bots` component. Tab switcher in the header (same style as the Account filter tabs already on the page). Refresh button only shown on Monitor tab.
+
+**Monitor tab** — zero changes. All existing table, stat cards, system panel, control actions stay exactly as-is.
+
+**Configure tab** — replace the table area with a 4-column grid of bot config cards:
+
+```
+┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│ SMC Trend        │  │ Mean Reversion   │  │ Scalper          │  │ FFT              │
+│ ● Running        │  │ ● Running        │  │ ● Stopped        │  │ ● Running        │
+│──────────────────│  │──────────────────│  │──────────────────│  │──────────────────│
+│ PERFORMANCE      │  │ PERFORMANCE      │  │ PERFORMANCE      │  │ PERFORMANCE      │
+│ Daily  +$45 1.6% │  │ Daily  ...       │  │ Daily  —         │  │ Daily  ...       │
+│ Weekly +$120 4%  │  │ Weekly ...       │  │ Weekly —         │  │ Weekly ...       │
+│ Trades today  3  │  │ Trades ...       │  │ Trades —         │  │ Trades ...       │
+│ Uptime   3h 22m  │  │ Uptime ...       │  │ Uptime —         │  │ Uptime ...       │
+│──────────────────│  │──────────────────│  │──────────────────│  │──────────────────│
+│ RISK CAPS        │  │ RISK CAPS        │  │ RISK CAPS        │  │ RISK CAPS        │
+│ Daily goal  2.0% │  │ Daily goal  2.0% │  │ Daily goal 10.0% │  │ Daily goal  2.0% │
+│ Daily cap  10.0% │  │ Daily cap  10.0% │  │ Daily cap   8.0% │  │ Daily cap   5.0% │
+│ Weekly cap 20.0% │  │ Weekly cap 20.0% │  │ Weekly cap 20.0% │  │ Weekly cap 15.0% │
+│──────────────────│  │──────────────────│  │──────────────────│  │──────────────────│
+│ [Save config]    │  │ [Save config]    │  │ [Save config]    │  │ [Save config]    │
+│ [Save & Restart] │  │ [Save & Restart] │  │ [Save & Restart] │  │ [Save & Restart] │
+└──────────────────┘  └──────────────────┘  └──────────────────┘  └──────────────────┘
+```
+
+Each card sections: header (name + StatusPill), Performance (read-only — Daily P&L, Weekly P&L, Trades Today, Uptime), Risk Caps (editable number inputs with % suffix), Action buttons.
+
+#### Implementation details
+
+**Form state** in `Bots` component:
+```typescript
+type BotForm = { daily_goal: string; daily_cap: string; weekly_cap: string }
+const [configForms, setConfigForms] = useState<Record<string, BotForm>>({})
+```
+Initialize from `snapshot.bots` via `useEffect([snapshot])` — only init if `!prev[bot.name]` so user edits survive snapshot refreshes. On successful save, delete that bot's form entry so it re-initializes from the new snapshot values.
+
+**Dirty detection** — compare form string values to `(bot.daily_goal_pct ?? '').toString()` etc. "Save config" button is accent-colored + enabled when dirty, grey + disabled when clean.
+
+**New helper components** (add at top of file alongside existing helpers):
+- `ConfigRow` — `label` (left) + `<input type="number">` + `%` (right). Input: `w-[64px] bg-bg-sunken border border-border-subtle rounded px-[7px] py-[4px] text-[12px] font-mono text-right focus:border-accent/50`.
+- `PerfRow` — label (left) + `±$X.XX (±X.XX%)` (right), colored pos/neg/tertiary.
+
+**Backend — `PATCH /bots/{bot_name}/config`** (add to `routers/bots.py`):
+```python
+from pathlib import Path as _Path
+
+_CONFIG_OVERRIDES_PATH = _Path(__file__).parent.parent / "config_overrides.json"
+
+def _load_config_overrides() -> dict[str, dict[str, float]]:
+    if _CONFIG_OVERRIDES_PATH.exists():
+        try: return json.loads(_CONFIG_OVERRIDES_PATH.read_text())
+        except Exception: pass
+    return {}
+
+def _save_config_overrides(overrides: dict) -> None:
+    _CONFIG_OVERRIDES_PATH.write_text(json.dumps(overrides, indent=2))
+
+def _get_thresholds(bot_key: str) -> dict[str, float]:
+    overrides = _load_config_overrides()
+    base = dict(_BOT_THRESHOLDS.get(bot_key, {}))
+    base.update(overrides.get(bot_key, {}))
+    return base
+```
+The snapshot builder already calls `thresholds = _BOT_THRESHOLDS.get(bot_key, {})` — change to `thresholds = _get_thresholds(bot_key)`.
+
+Add `BotConfigUpdate(BaseModel)` to `models.py`:
+```python
+class BotConfigUpdate(BaseModel):
+    daily_goal_pct: float
+    daily_cap_pct: float
+    weekly_cap_pct: float
+```
+
+Add the endpoint — note it must come BEFORE the `/{bot_name}/start|stop|restart` routes since FastAPI matches literally first:
+```python
+@router.patch("/{bot_name}/config")
+def save_bot_config(bot_name: str, config: BotConfigUpdate):
+    _, bot_key = _resolve_bot(bot_name)
+    overrides = _load_config_overrides()
+    overrides[bot_key] = {
+        "daily_goal": config.daily_goal_pct,
+        "daily_cap":  config.daily_cap_pct,
+        "weekly_cap": config.weekly_cap_pct,
+    }
+    _save_config_overrides(overrides)
+    return {"status": "ok"}
+```
+
+**Frontend hook** (`hooks/useBots.ts`) — `api.patch` was already added to `client.ts`:
+```typescript
+export function useSaveBotConfig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ botName, config }: { botName: string; config: { daily_goal_pct: number; daily_cap_pct: number; weekly_cap_pct: number } }) =>
+      api.patch<{ status: string }>(`/bots/${encodeURIComponent(botName)}/config`, config),
+    onSuccess: (_data, { botName }) => {
+      toast.success(`${botName} config saved`)
+      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+    },
+    onError: (err, { botName }) => toast.error(`${botName} config save failed: ${err}`),
+  })
+}
+```
+
+**"Save & Restart"** — uses `mutateAsync` to await the save, then fires `restartOne.mutate(botName)`:
+```typescript
+const handleSaveAndRestart = async (botName: string, form: BotForm) => {
+  try {
+    await saveConfig.mutateAsync({ botName, config: { daily_goal_pct: +form.daily_goal, daily_cap_pct: +form.daily_cap, weekly_cap_pct: +form.weekly_cap } })
+    setConfigForms(prev => { const n = {...prev}; delete n[botName]; return n })
+    restartOne.mutate(botName)
+  } catch { /* handled in hook */ }
+}
+```
+
+#### Limitation to document in UI
+Config overrides are persisted in `backend/config_overrides.json` and reflected in the dashboard immediately. The running bot process on VPS **does not yet read this file** — the actual day-lock behaviour still uses the hardcoded `BOT_THRESHOLDS` in `shared/bot_state.py`. To activate VPS-side cap changes, `pnl_tracker.py` needs to read from a shared config source. This is a separate VPS code change, not part of this frontend task.
+
+---
+
+### Step 5 — End-to-end test of Smart Money pipeline + dashboard
 The pipeline trigger, terminal, lock-down UI, and file-reading are all implemented. Click "Run pipeline" in the UI and verify:
 - Terminal appears instantly (< 200 ms) on click, tabs lock down
 - Addresses stream in during scan phase with `PASS ✓` glow and dim fails
@@ -487,16 +662,16 @@ smart-money/reports/
     └── disqualified.json     → list of DisqualifiedCandidate
 ```
 
-### Step 5 — Verify Bots monitoring against live VPS
+### Step 6 — Verify Bots monitoring against live VPS
 `GET /bots/snapshot` makes two SSH calls to `forexvps`. Verify:
 - The wmic + schtasks parsing matches what the VPS actually returns
 - `bot_state.json` exists at `C:\trading\algos\markets\fx\instances\{bot_name}\bot_state.json`
 - The `BotSnapshot` response populates correctly in the UI
 
-### Step 6 — Backtests module
+### Step 7 — Backtests module
 Backend: `GET /backtests/runs` reads from `algos/` backtest output directory (TBD). Frontend `src/pages/Backtests.tsx` is scaffolded. See `design/LWG_Capital_Command_Center_Build_Spec.md` section 7 for the full spec.
 
-### Step 7 — Stress Tests module
+### Step 8 — Stress Tests module
 Backend: `GET /stress-tests/results` reads stress test output (TBD). Frontend `src/pages/StressTests.tsx` is scaffolded.
 
 ---

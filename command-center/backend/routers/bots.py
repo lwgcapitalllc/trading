@@ -84,6 +84,15 @@ _SUPPRESS_KEYS: dict[str, str] = {
     "fft":            "fft",
 }
 
+# Risk caps per bot — mirrors bot_state.py BOT_THRESHOLDS.
+# Update here whenever thresholds change in the algo.
+_BOT_THRESHOLDS: dict[str, dict[str, float]] = {
+    "smc_trend":      {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
+    "mean_reversion": {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
+    "scalper":        {"daily_goal": 10.0, "daily_cap": 8.0,  "weekly_cap": 20.0},
+    "fft":            {"daily_goal": 2.0,  "daily_cap": 5.0,  "weekly_cap": 15.0},
+}
+
 # Telegram — same credentials as notify.py / algo.py
 _TG_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
 _TG_CHAT  = "-1003977707258"
@@ -275,6 +284,8 @@ def get_snapshot():
             except Exception:
                 total_pnl = None
 
+        thresholds = _BOT_THRESHOLDS.get(bot_key, {})
+
         bots.append(BotStatus(
             name=_DISPLAY_NAMES.get(task_name, task_name),
             account=state.get("account", ""),
@@ -284,6 +295,17 @@ def get_snapshot():
             uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
             total_pnl_pct=total_pnl,
             day_locked=bool(state.get("day_locked", False)),
+            daily_pnl=state.get("daily_pnl"),
+            daily_pnl_pct=state.get("daily_pnl_pct"),
+            weekly_pnl=state.get("weekly_pnl"),
+            weekly_pnl_pct=state.get("weekly_pnl_pct"),
+            peak_balance=state.get("peak_balance") or None,
+            trades_today=state.get("trades_today"),
+            lock_reason=state.get("lock_reason") or None,
+            last_updated=state.get("last_updated") or None,
+            daily_goal_pct=thresholds.get("daily_goal"),
+            daily_cap_pct=thresholds.get("daily_cap"),
+            weekly_cap_pct=thresholds.get("weekly_cap"),
         ))
 
     # Scheduled jobs

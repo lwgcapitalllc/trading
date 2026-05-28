@@ -196,6 +196,18 @@ class BotStatus(BaseModel):
     uptime_seconds: Optional[int] = None
     total_pnl_pct: Optional[float] = None
     day_locked: bool = False
+    # ── Detail fields (populated from bot_state.json) ─────────────────────────
+    daily_pnl: Optional[float] = None
+    daily_pnl_pct: Optional[float] = None
+    weekly_pnl: Optional[float] = None
+    weekly_pnl_pct: Optional[float] = None
+    peak_balance: Optional[float] = None
+    trades_today: Optional[int] = None
+    lock_reason: Optional[str] = None
+    last_updated: Optional[str] = None
+    daily_goal_pct: Optional[float] = None
+    daily_cap_pct: Optional[float] = None
+    weekly_cap_pct: Optional[float] = None
 
 
 class BotSnapshot(BaseModel):

@@ -37,13 +37,15 @@ function NavItem({ to, label, icon: Icon, live }: { to: string; label: string; i
           {isActive && (
             <span className="absolute left-[-12px] top-2 bottom-2 w-[3px] bg-accent rounded-r-[3px]" />
           )}
-          <Icon size={16} className="flex-shrink-0 opacity-85" />
+          <Icon
+            size={16}
+            className={`flex-shrink-0 transition-all duration-[120ms] ${
+              isActive
+                ? 'text-accent drop-shadow-[0_0_6px_#34d399]'
+                : 'opacity-85'
+            }`}
+          />
           {label}
-          {live && (
-            <span className="ml-auto text-[9px] font-semibold px-[6px] py-[1px] rounded-pill uppercase tracking-[0.4px] bg-pos-muted text-pos-text">
-              Live
-            </span>
-          )}
           {!live && (
             <span className="ml-auto text-[9px] font-semibold px-[6px] py-[1px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary">
               Soon
