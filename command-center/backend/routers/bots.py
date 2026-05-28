@@ -73,6 +73,32 @@ _SCHEDULED_JOBS = [
     JobStatus(name="Reporter",    schedule="daily 4pm CT", status="UNKNOWN"),
 ]
 
+# Crash-alert suppress keys — must match telegram_bot.py / monitor.py
+# (bot_key → the short key written to stop_suppress.json)
+_SUPPRESS_KEYS: dict[str, str] = {
+    "smc_trend":      "smc",
+    "mean_reversion": "reversion",
+    "scalper":        "scalper",
+    "fft":            "fft",
+}
+
+
+def _suppress_stop_alert(bot_key: str) -> None:
+    """Write bot key to stop_suppress.json so the crash monitor skips alerting.
+    Mirrors algo.py suppress_stop_alert(). MUST be called before killing the process.
+    """
+    suppress_key = _SUPPRESS_KEYS.get(bot_key)
+    if not suppress_key:
+        return
+    _ssh(
+        f'python -c "'
+        f'import json,pathlib;'
+        f"p=pathlib.Path(r'C:/trading/algos/stop_suppress.json');"
+        f'k=json.loads(p.read_text()) if p.exists() else [];'
+        f"k.append('{suppress_key}') if '{suppress_key}' not in k else None;"
+        f'p.write_text(json.dumps(k))"'
+    )
+
 
 def _ssh(cmd: str) -> str:
     result = subprocess.run(
@@ -200,15 +226,15 @@ def get_snapshot():
         state = bot_states.get(bot_key, {})
         task_status = task_statuses.get(task_name, "")
 
-        # Derive status from task scheduler + process list
-        script_hint = bot_key.replace("_", "")
+        # Process list is authoritative. If the process isn't in wmic output,
+        # the bot is STOPPED — regardless of task_status or bot_state.json.
+        # (bot_state.json is never updated after a hard kill, so it can show
+        #  "running" indefinitely even after the process is dead.)
         running_in_procs = _is_python_running(snap, bot_key)
         if task_status == "Running" or running_in_procs:
             status = "RUNNING"
-        elif task_status in ("Ready", ""):
-            status = "STOPPED"
         else:
-            status = state.get("status", "STOPPED").upper()
+            status = "STOPPED"
 
         pnl = state.get("daily_pnl_pct") or state.get("daily_pnl")
         if pnl is not None:
@@ -322,6 +348,8 @@ def start_bots():
 def stop_bots():
     """Delete the MT5 lock file and kill all python.exe processes on the VPS."""
     try:
+        for bot_key in _SUPPRESS_KEYS:
+            _suppress_stop_alert(bot_key)
         out = _stop_procs()
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
@@ -333,8 +361,9 @@ def stop_bots():
 @router.post("/restart")
 def restart_bots():
     """Stop all bots, wait 3 s, then run SYS_STARTUP."""
-
     try:
+        for bot_key in _SUPPRESS_KEYS:
+            _suppress_stop_alert(bot_key)
         stop_out = _stop_procs()
         _time.sleep(3)
         start_out = _start_task()
@@ -396,6 +425,7 @@ def stop_bot(bot_name: str):
     """Kill only the python.exe process whose commandline contains this bot's key."""
     _, bot_key = _resolve_bot(bot_name)
     try:
+        _suppress_stop_alert(bot_key)  # must run before kill so monitor skips crash alert
         out = _ssh(
             f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul'
         )
@@ -411,6 +441,7 @@ def restart_bot(bot_name: str):
     """Kill this bot's process, wait 3 s, then relaunch via startup_coordinator --bot."""
     _, bot_key = _resolve_bot(bot_name)
     try:
+        _suppress_stop_alert(bot_key)  # must run before kill so monitor skips crash alert
         stop_out = _ssh(
             f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul'
         )
