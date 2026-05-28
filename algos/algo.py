@@ -460,16 +460,6 @@ def notify_telegram(text: str):
         pass
 
 
-def emergency_stop_all(tasks: list[dict]):
-    print(red("\n⚠  EMERGENCY STOP — killing all bots and python processes"))
-    for t in tasks:
-        ssh(f'schtasks /end /tn "{t["name"]}" 2>nul')
-    ssh("taskkill /F /IM python.exe 2>nul")
-    print(red("All bots killed."))
-    print(yellow("Open MT5 to verify no positions are still open."))
-    import time; time.sleep(3)
-    start_task("SYS_TELEGRAM")
-    print(green("Telegram bot restarted — you can still send commands."))
 
 
 # ── Log Viewer ────────────────────────────────────────────────────────────────
@@ -621,10 +611,9 @@ def print_header(tasks: list[dict], tab: str = "all", show_menu: bool = True):
         f"  {bold(royal('[1]'))} Start All  "
         f"{bold(royal('[2]'))} Stop All  "
         f"{bold(royal('[r]'))} Restart  "
-        f"{bold(royal('[3]'))} {red('Emergency')}  "
-        f"{bold(royal('[4]'))} Manage  "
-        f"{bold(royal('[5]'))} Log  "
-        f"{bold(royal('[6]'))} Refresh  "
+        f"{bold(royal('[3]'))} Manage  "
+        f"{bold(royal('[4]'))} Log  "
+        f"{bold(royal('[5]'))} Refresh  "
         f"{bold(royal('[q]'))} Quit"
     )
 
@@ -1035,18 +1024,6 @@ def main():
             input(gray("  Press Enter — then refresh in 2 minutes to confirm all running..."))
 
         elif choice == "3":
-            confirm = input(red("  Type YES to confirm emergency stop: ")).strip()
-            if confirm == "YES":
-                emergency_stop_all(tasks)
-                import time; time.sleep(3)
-                snap  = fetch_vps_snapshot()
-                tasks = get_all_tasks(snap)
-                print()
-                input(gray("\n  Press Enter to continue..."))
-            else:
-                print(gray("  Cancelled."))
-
-        elif choice == "4":
             while True:
                 clear()
                 print_header(tasks, active_tab, show_menu=False)
@@ -1120,7 +1097,7 @@ def main():
                 snap  = fetch_vps_snapshot()
                 tasks = get_all_tasks(snap)
 
-        elif choice == "5":
+        elif choice == "4":
             clear()
             print_header(tasks, active_tab, show_menu=False)
             print_bot_menu(tasks)
@@ -1134,7 +1111,7 @@ def main():
                     view_log(tasks[idx]["name"])
                     input(gray("\n  Press Enter to continue..."))
 
-        elif choice == "6":
+        elif choice == "5":
             print(gray("  Refreshing..."))
             snap  = fetch_vps_snapshot()
             tasks = get_all_tasks(snap)

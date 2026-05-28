@@ -345,17 +345,6 @@ def restart_bots():
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}
 
 
-@router.post("/emergency")
-def emergency_stop():
-    """Immediate taskkill of all python.exe — no lock-file cleanup."""
-    try:
-        out = _ssh("taskkill /f /im python.exe 2>nul")
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    return {"status": "ok", "output": out}
-
 
 # ── Per-bot control actions ───────────────────────────────────────────────────
 #

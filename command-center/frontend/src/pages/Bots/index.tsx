@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { FileText, Play, RotateCcw, AlertOctagon, Square, RefreshCw } from 'lucide-react'
+import { FileText, Play, RotateCcw, Square, RefreshCw } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   useBotSnapshot, useBotLog,
-  useBotStart, useBotStop, useBotRestart, useBotEmergency,
+  useBotStart, useBotStop, useBotRestart,
   useBotStartOne, useBotStopOne, useBotRestartOne,
 } from '@/hooks/useBots'
 import { StatCard } from '@/components/StatCard'
@@ -110,59 +110,6 @@ function ConfirmModal({
   )
 }
 
-// Emergency stop — two-step: first confirm, then checkbox to unlock kill button
-function EmergencyModal({ onConfirm, onCancel, isPending }: {
-  onConfirm: () => void
-  onCancel: () => void
-  isPending: boolean
-}) {
-  const [checked, setChecked] = useState(false)
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6" onClick={onCancel}>
-      <div
-        className="bg-bg-surface border border-neg/40 rounded-lg w-full max-w-sm p-5"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-3">
-          <AlertOctagon size={16} className="text-neg flex-shrink-0" />
-          <p className="text-[14px] font-semibold text-neg-text">Emergency stop</p>
-        </div>
-        <p className="text-[12px] text-text-secondary mb-4">
-          This will immediately <strong className="text-text-primary">kill all python.exe processes</strong> on the VPS with no cleanup or graceful shutdown.
-        </p>
-        <div className="bg-neg-muted border border-neg/20 rounded-md px-3 py-3 mb-4">
-          <p className="text-[11px] text-neg-text font-semibold mb-1">⚠ Open positions will NOT be closed</p>
-          <p className="text-[11px] text-text-tertiary">MT5 will remain open but unmanaged. Positions stay live until you manually close them.</p>
-        </div>
-        <label className="flex items-start gap-[10px] mb-5 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={e => setChecked(e.target.checked)}
-            className="mt-[2px] accent-neg"
-          />
-          <span className="text-[12px] text-text-secondary">
-            I understand open positions will remain live and unmanaged
-          </span>
-        </label>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-4 py-[7px] text-small rounded-md border border-border-default bg-bg-surface text-text-secondary hover:bg-bg-hover transition-colors">
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={!checked || isPending}
-            className={`px-4 py-[7px] text-small rounded-md font-medium border border-neg/40 bg-neg-muted text-neg-text transition-colors
-              ${!checked || isPending ? 'opacity-40 cursor-not-allowed' : 'hover:bg-neg/10 hover:border-neg/70'}`}
-          >
-            {isPending ? 'Killing…' : 'Kill all bots'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // Compact icon button for per-row actions
 function RowActionBtn({
   icon: Icon, title, onClick, disabled = false, variant = 'default',
@@ -197,7 +144,7 @@ export function Bots() {
   const { data: snapshot, isLoading, isFetching, error, dataUpdatedAt, refetch } = useBotSnapshot()
   const [filter, setFilter]         = useState<AccountFilter>('all')
   const [logBot, setLogBot]         = useState<string | null>(null)
-  const [confirm, setConfirm]       = useState<'start' | 'stop' | 'restart' | 'emergency' | null>(null)
+  const [confirm, setConfirm]       = useState<'start' | 'stop' | 'restart' | null>(null)
   const [confirmStopBot, setConfirmStopBot] = useState<string | null>(null)
 
   // Per-bot transitions: persists after mutation resolves until snapshot confirms expected status
@@ -207,8 +154,6 @@ export function Bots() {
   const startMut     = useBotStart()
   const stopMut      = useBotStop()
   const restartMut   = useBotRestart()
-  const emergencyMut = useBotEmergency()
-
   // Per-bot control mutations
   const startOne   = useBotStartOne()
   const stopOne    = useBotStopOne()
@@ -287,7 +232,7 @@ export function Bots() {
   const allRunning   = bots.length > 0 && filteredRunning === bots.length
   const noFilteredBots = bots.length === 0
 
-  const anyGlobalPending    = startMut.isPending || stopMut.isPending || restartMut.isPending || emergencyMut.isPending
+  const anyGlobalPending    = startMut.isPending || stopMut.isPending || restartMut.isPending
   const anyPerBotPending    = startOne.isPending || stopOne.isPending || restartOne.isPending
   // anyPending includes active transitions — keeps controls locked until VPS confirms state change
   const anyPending          = anyGlobalPending || anyPerBotPending || hasPendingTransitions
@@ -608,15 +553,6 @@ export function Bots() {
                   <RotateCcw size={13} />
                   Restart all
                 </button>
-                <button
-                  onClick={() => setConfirm('emergency')}
-                  disabled={anyPending || noFilteredBots}
-                  title={noFilteredBots ? 'No bots in this filter' : 'Emergency stop — kills all python.exe immediately'}
-                  className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-neg/40 bg-neg-muted text-neg-text hover:bg-neg/10 hover:border-neg/70 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <AlertOctagon size={13} />
-                  Emergency Stop
-                </button>
               </div>
               {noFilteredBots ? (
                 <p className="text-[11px] text-warn-text mt-3">
@@ -679,13 +615,6 @@ export function Bots() {
           }}
           onCancel={() => setConfirm(null)}
           isPending={restartMut.isPending}
-        />
-      )}
-      {confirm === 'emergency' && (
-        <EmergencyModal
-          onConfirm={() => { emergencyMut.mutate(); setConfirm(null) }}
-          onCancel={() => setConfirm(null)}
-          isPending={emergencyMut.isPending}
         />
       )}
       {confirmStopBot && (

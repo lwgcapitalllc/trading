@@ -22,13 +22,12 @@ export function useBotLog(botName: string | null) {
 
 type ControlResult = { status: string; output: string }
 
-function useControlAction(action: 'start' | 'stop' | 'restart' | 'emergency') {
+function useControlAction(action: 'start' | 'stop' | 'restart') {
   const qc = useQueryClient()
   const labels: Record<string, string> = {
     start: 'Bots started',
     stop: 'Bots stopped',
     restart: 'Bots restarted',
-    emergency: 'Emergency stop sent',
   }
   return useMutation({
     mutationFn: () => api.post<ControlResult>(`/bots/${action}`),
@@ -42,10 +41,9 @@ function useControlAction(action: 'start' | 'stop' | 'restart' | 'emergency') {
   })
 }
 
-export const useBotStart     = () => useControlAction('start')
-export const useBotStop      = () => useControlAction('stop')
-export const useBotRestart   = () => useControlAction('restart')
-export const useBotEmergency = () => useControlAction('emergency')
+export const useBotStart   = () => useControlAction('start')
+export const useBotStop    = () => useControlAction('stop')
+export const useBotRestart = () => useControlAction('restart')
 
 // ── Per-bot control actions ───────────────────────────────────────────────────
 
