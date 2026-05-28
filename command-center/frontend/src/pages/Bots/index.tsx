@@ -460,32 +460,37 @@ export function Bots() {
                           </div>
                         ) : (
                           <div className="flex items-center gap-[4px]">
-                            <RowActionBtn
-                              icon={Play}
-                              title="Start bot"
-                              variant="pos"
-                              disabled={isRunning || anyBusy}
-                              onClick={() => {
-                                setPendingFor(bot.name, 'start')
-                                startOne.mutate(bot.name, { onError: () => clearPendingFor(bot.name) })
-                              }}
-                            />
-                            <RowActionBtn
-                              icon={Square}
-                              title="Stop bot"
-                              variant="neg"
-                              disabled={!isRunning || anyBusy}
-                              onClick={() => setConfirmStopBot(bot.name)}
-                            />
-                            <RowActionBtn
-                              icon={RotateCcw}
-                              title="Restart bot"
-                              disabled={anyBusy}
-                              onClick={() => {
-                                setPendingFor(bot.name, 'restart')
-                                restartOne.mutate(bot.name, { onError: () => clearPendingFor(bot.name) })
-                              }}
-                            />
+                            {isRunning ? (
+                              <>
+                                <RowActionBtn
+                                  icon={Square}
+                                  title="Stop bot"
+                                  variant="neg"
+                                  disabled={anyBusy}
+                                  onClick={() => setConfirmStopBot(bot.name)}
+                                />
+                                <RowActionBtn
+                                  icon={RotateCcw}
+                                  title="Restart bot"
+                                  disabled={anyBusy}
+                                  onClick={() => {
+                                    setPendingFor(bot.name, 'restart')
+                                    restartOne.mutate(bot.name, { onError: () => clearPendingFor(bot.name) })
+                                  }}
+                                />
+                              </>
+                            ) : (
+                              <RowActionBtn
+                                icon={Play}
+                                title="Start bot"
+                                variant="pos"
+                                disabled={anyBusy}
+                                onClick={() => {
+                                  setPendingFor(bot.name, 'start')
+                                  startOne.mutate(bot.name, { onError: () => clearPendingFor(bot.name) })
+                                }}
+                              />
+                            )}
                           </div>
                         )}
                       </td>
