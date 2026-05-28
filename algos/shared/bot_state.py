@@ -56,13 +56,30 @@ BOT_NAMES = {
 }
 
 
-# Thresholds
-BOT_THRESHOLDS = {
+# Thresholds — defaults; overridden by thresholds.json if present
+_BOT_THRESHOLDS_DEFAULT = {
     "smc_trend":      {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
     "mean_reversion": {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
     "scalper":        {"daily_goal": 10.0, "daily_cap": 8.0,  "weekly_cap": 20.0},
     "fft":            {"daily_goal": 2.0,  "daily_cap": 5.0,  "weekly_cap": 15.0},
 }
+
+_THRESHOLDS_PATH = Path(__file__).parent / "thresholds.json"
+
+
+def _load_bot_thresholds() -> dict:
+    result = {k: dict(v) for k, v in _BOT_THRESHOLDS_DEFAULT.items()}
+    if _THRESHOLDS_PATH.exists():
+        try:
+            for bot_key, caps in json.loads(_THRESHOLDS_PATH.read_text()).items():
+                if bot_key in result:
+                    result[bot_key].update(caps)
+        except Exception:
+            pass
+    return result
+
+
+BOT_THRESHOLDS = _load_bot_thresholds()
 
 
 def _state_file(bot_key: str) -> Path:

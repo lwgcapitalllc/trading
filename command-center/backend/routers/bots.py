@@ -100,29 +100,53 @@ _TG_CHAT  = "-1003977707258"
 # bot_key → display name for notifications
 _KEY_DISPLAY: dict[str, str] = {v: _DISPLAY_NAMES[k] for k, v in _TASK_BOT_KEYS.items()}
 
-# Config overrides — persisted in backend/config_overrides.json.
-# Takes precedence over _BOT_THRESHOLDS when present.
-_CONFIG_OVERRIDES_PATH = Path(__file__).parent.parent / "config_overrides.json"
+# Thresholds — git-tracked file read by both command center and pnl_tracker (via bot_state.py).
+_THRESHOLDS_JSON_PATH = cfg.MONOREPO_ROOT / "algos" / "shared" / "thresholds.json"
 
 
-def _load_config_overrides() -> dict[str, dict[str, float]]:
-    if _CONFIG_OVERRIDES_PATH.exists():
+def _load_thresholds_json() -> dict[str, dict[str, float]]:
+    if _THRESHOLDS_JSON_PATH.exists():
         try:
-            return json.loads(_CONFIG_OVERRIDES_PATH.read_text())
+            return json.loads(_THRESHOLDS_JSON_PATH.read_text())
         except Exception:
             pass
     return {}
 
 
-def _save_config_overrides(overrides: dict) -> None:
-    _CONFIG_OVERRIDES_PATH.write_text(json.dumps(overrides, indent=2))
+def _save_thresholds_json(overrides: dict) -> None:
+    _THRESHOLDS_JSON_PATH.write_text(json.dumps(overrides, indent=2))
 
 
 def _get_thresholds(bot_key: str) -> dict[str, float]:
-    overrides = _load_config_overrides()
     base = dict(_BOT_THRESHOLDS.get(bot_key, {}))
-    base.update(overrides.get(bot_key, {}))
+    base.update(_load_thresholds_json().get(bot_key, {}))
     return base
+
+
+# Maps (bot_key, cap_name) → [(section, field)] pairs to write into instance config.json.
+# These are the fields the strategy engines actually read for hard stops.
+_CAP_CONFIG_FIELDS: dict[str, dict[str, list[tuple[str, str]]]] = {
+    "smc_trend": {
+        "daily_cap":  [("protection", "max_daily_loss_pct_bot1")],
+        "weekly_cap": [("protection", "max_weekly_loss_pct_bot1")],
+        "daily_goal": [],
+    },
+    "mean_reversion": {
+        "daily_cap":  [("protection", "max_daily_loss_pct_bot2")],
+        "weekly_cap": [("protection", "max_weekly_loss_pct_bot2")],
+        "daily_goal": [],
+    },
+    "scalper": {
+        "daily_cap":  [("bot_scalper", "daily_loss_cap_pct")],
+        "weekly_cap": [("bot_scalper", "weekly_loss_cap_pct")],
+        "daily_goal": [("bot_scalper", "daily_profit_target_pct")],
+    },
+    "fft": {
+        "daily_cap":  [("bot_fft", "max_daily_loss_pct"), ("bot_fft", "daily_budget_pct")],
+        "weekly_cap": [("bot_fft", "max_weekly_loss_pct")],
+        "daily_goal": [],
+    },
+}
 
 
 # ── Per-bot config file mapping ───────────────────────────────────────────────
@@ -147,13 +171,15 @@ def _write_instance_config(bot_key: str, data: dict) -> None:
     info["path"].write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def _git_commit_push(file_path: Path, message: str) -> str:
-    """Stage file, commit if dirty, push. Returns output summary."""
+def _git_commit_push(file_paths: list[Path] | Path, message: str) -> str:
+    """Stage files, commit if dirty, push. Returns output summary."""
     root = str(cfg.MONOREPO_ROOT)
-    rel  = str(file_path.relative_to(cfg.MONOREPO_ROOT))
-    subprocess.run(["git", "-C", root, "add", rel], check=True, capture_output=True, timeout=15)
+    paths = [file_paths] if isinstance(file_paths, Path) else file_paths
+    rels  = [str(p.relative_to(cfg.MONOREPO_ROOT)) for p in paths]
+    for rel in rels:
+        subprocess.run(["git", "-C", root, "add", rel], check=True, capture_output=True, timeout=15)
     status = subprocess.run(
-        ["git", "-C", root, "status", "--porcelain", rel],
+        ["git", "-C", root, "status", "--porcelain"] + rels,
         capture_output=True, text=True, timeout=10,
     )
     if not status.stdout.strip():
@@ -590,15 +616,54 @@ def save_bot_config(bot_name: str, update: BotConfigUpdate):
 
 @router.patch("/{bot_name}/caps")
 def save_bot_caps(bot_name: str, caps: BotCapUpdate):
-    """Persist risk cap overrides to config_overrides.json (no git, no restart)."""
+    """Update risk caps: write thresholds.json + instance config.json, git push, VPS pull, restart bot."""
     _, bot_key = _resolve_bot(bot_name)
-    overrides = _load_config_overrides()
-    overrides[bot_key] = {
+
+    # 1. thresholds.json — pnl_tracker alert levels (picked up on next 1-min run, no restart needed)
+    thresholds = _load_thresholds_json()
+    thresholds[bot_key] = {
         "daily_goal": caps.daily_goal_pct,
         "daily_cap":  caps.daily_cap_pct,
         "weekly_cap": caps.weekly_cap_pct,
     }
-    _save_config_overrides(overrides)
+    _save_thresholds_json(thresholds)
+
+    # 2. instance config.json — strategy engine hard stops (take effect on restart)
+    instance_info = _BOT_INSTANCE_MAP[bot_key]
+    config_data   = _read_instance_config(bot_key)
+    field_map     = _CAP_CONFIG_FIELDS.get(bot_key, {})
+    cap_values    = {"daily_cap": caps.daily_cap_pct, "weekly_cap": caps.weekly_cap_pct, "daily_goal": caps.daily_goal_pct}
+    for cap_name, value in cap_values.items():
+        for section, field in field_map.get(cap_name, []):
+            config_data.setdefault(section, {})[field] = value
+    _write_instance_config(bot_key, config_data)
+
+    # 3. Git commit both files + push
+    try:
+        _git_commit_push(
+            [_THRESHOLDS_JSON_PATH, instance_info["path"]],
+            f"config: update {bot_name} risk caps from command center",
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+
+    # 4. VPS git pull
+    try:
+        _ssh("cd C:\\trading && git pull origin main")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+
+    # 5. Restart the bot so new config.json values take effect
+    try:
+        _suppress_stop_alert(bot_key)
+        _ssh(f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul')
+        _time.sleep(3)
+        _launch_bot(bot_key)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS restart failed: {e}")
+
+    display = _KEY_DISPLAY.get(bot_key, bot_key)
+    _notify_telegram(f"📊 *{display}* risk caps updated + restarting \\[command center\\]")
     return {"status": "ok"}
 
 

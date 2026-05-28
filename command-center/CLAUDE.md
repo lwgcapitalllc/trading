@@ -80,7 +80,7 @@ cd command-center
 | Bots — scheduled jobs | ✅ Live | Gold glow = scheduled/waiting, green = running |
 | Bots — log viewer | ✅ Live | SSH log fetch |
 | Bots — control actions | ✅ Live | Start/Stop/Restart/Emergency (global + per-bot); all destructive actions require confirm |
-| Bots — Configure tab | ✅ Live | 4-card side-by-side comparison; editable risk caps (daily goal / daily cap / weekly cap); saves to `config_overrides.json` via `PATCH /bots/{name}/caps`; full instance `config.json` editor available via `GET/PATCH /bots/{name}/config` but not surfaced in UI |
+| Bots — Configure tab | ✅ Live | 4-card side-by-side comparison; editable risk caps (daily goal / daily cap / weekly cap); save triggers full deploy: writes `algos/shared/thresholds.json` + instance `config.json` → git commit + push → SSH VPS git pull → bot restart → Telegram notification; refresh button spans Monitor + Configure tabs |
 
 ---
 
@@ -531,16 +531,48 @@ First implemented a full per-bot config editor: bot-selector tabs (SMC Trend / M
 - **Risk Caps (editable):** Daily goal %, Daily cap %, Weekly cap % — number inputs with `%` suffix
 - **Save button:** accent-highlighted when dirty, grey+disabled when clean; per-card so each bot saves independently
 
-### Backend additions
+### Backend additions (initial — later superseded by full deploy)
 - `BotCapUpdate(BaseModel)` added to `models.py` — `daily_goal_pct`, `daily_cap_pct`, `weekly_cap_pct`
-- `PATCH /bots/{bot_name}/caps` — writes to `config_overrides.json` via `_save_config_overrides()`. No git, no VPS action. `_get_thresholds()` already merges overrides into the snapshot so the UI reflects the saved values on next poll.
+- `PATCH /bots/{bot_name}/caps` initially wrote only to `config_overrides.json` (local, no VPS action) — fully replaced in the next session with the git push + restart pipeline below.
 - The full `GET /PATCH /bots/{bot_name}/config` endpoints remain and are functional via the API — not surfaced in the UI but kept for future use or direct API calls.
 
 ### Hook addition
 `useSaveBotCaps()` in `hooks/useBots.ts` — `PATCH /bots/{name}/caps`, invalidates `['bots', 'snapshot']` on success.
 
-### Limitation (documented in the UI)
-Cap overrides are local to `backend/config_overrides.json`. The running VPS bot reads its own hardcoded `BOT_THRESHOLDS` from `shared/bot_state.py`. To activate VPS-side cap changes requires a code deploy — this UI is monitoring reference only until that wiring is added.
+---
+
+---
+
+## Session — Bots Configure tab: full deploy pipeline (2026-05-28)
+
+### Refresh button on both tabs
+Removed `{tab === 'monitor' && ...}` conditional wrapper from the refresh button in `pages/Bots/index.tsx`. The button now appears on both Monitor and Configure tabs — Configure shows live performance data from the same snapshot so the refresh is equally relevant there.
+
+### Full deploy on risk cap save
+`PATCH /bots/{bot_name}/caps` now performs a complete deploy, not a local-only file write.
+
+**Two-layer write:**
+1. `algos/shared/thresholds.json` — pnl_tracker alert thresholds (daily_goal/daily_cap/weekly_cap). pnl_tracker is a 1-minute scheduled script, not a daemon, so it re-imports `BOT_THRESHOLDS` on every execution — changes take effect within 1 minute of VPS git pull without any restart.
+2. Instance `config.json` — strategy engine hard stops. Per-bot field mapping in `_CAP_CONFIG_FIELDS` (added to `bots.py`):
+   - SMC Trend/Mean Reversion share `gold_main/config.json`, use `max_daily_loss_pct_bot1|2` / `max_weekly_loss_pct_bot1|2` in the `protection` section
+   - Scalper uses `daily_loss_cap_pct` / `weekly_loss_cap_pct` / `daily_profit_target_pct` in `bot_scalper`
+   - FFT uses `max_daily_loss_pct` / `daily_budget_pct` / `max_weekly_loss_pct` in `bot_fft`
+   - `daily_goal` maps to `config.json` only for Scalper; for SMC Trend / Mean Reversion / FFT it is pnl_tracker-only
+
+**Git commit + push:**
+`_git_commit_push` updated to accept `list[Path] | Path` — commits both `thresholds.json` and the instance `config.json` in one commit.
+
+**VPS pull + restart:**
+After push: SSH `git pull origin main` → `_suppress_stop_alert(bot_key)` → `wmic process … call terminate` → 3 s sleep → `_launch_bot(bot_key)`.
+
+**Telegram:**
+`📊 *BotName* risk caps updated + restarting [command center]`
+
+### `algos/shared/bot_state.py` — thresholds.json support
+`BOT_THRESHOLDS` now loads from `algos/shared/thresholds.json` with fallback to hardcoded defaults. `_load_bot_thresholds()` merges the JSON file over the defaults so any key not in the file stays at the default. This is backward compatible with `pnl_tracker.py`'s existing `from bot_state import BOT_THRESHOLDS` import.
+
+### `algos/shared/thresholds.json` — new git-tracked file
+Initially `{}`. Populated at runtime by `PATCH /bots/{name}/caps`. Lives alongside `bot_state.py` on the VPS at `C:\trading\algos\shared\thresholds.json`.
 
 ---
 

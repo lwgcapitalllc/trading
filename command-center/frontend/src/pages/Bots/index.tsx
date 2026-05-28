@@ -249,8 +249,7 @@ export function Bots() {
           ))}
         </div>
 
-        {tab === 'monitor' && (
-          <button
+        <button
             onClick={() => refetch()}
             disabled={isFetching}
             title="Refresh now"
@@ -269,7 +268,6 @@ export function Bots() {
               </>
             )}
           </button>
-        )}
       </div>
 
       {/* ── Loading ───────────────────────────────────────────────────────────── */}
