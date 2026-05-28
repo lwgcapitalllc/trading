@@ -254,6 +254,23 @@ Three independent places each rendered "Run complete" after a run:
 
 ---
 
+## Session — Bots page: uptime fix, per-row executing state, stop safety (2026-05-27)
+
+### Uptime fix (`routers/bots.py`)
+- `_uptime_seconds` now reads `state.get("started")` first — the actual Unix timestamp float that `shared/bot_state.py` writes via `time.time()`. Previous code only tried `started_at` / `start_time` (neither of which exist in the schema). Uptime now populates correctly for running bots.
+- `import time as _time` moved to module level; inline `import time` stubs inside restart functions removed.
+
+### Per-row executing state (`pages/Bots/index.tsx`)
+- `pendingBotName` / `pendingBotAction` derived from mutation `.variables` (TanStack Query stores the last `mutate()` arg) to identify which specific bot is currently being acted on.
+- When a row's bot is being acted on: buttons replaced by an inline spinner + label ("Restarting…", "Starting…", "Stopping…") — status shown on the exact row, not the global panel.
+- **All rows' action buttons disabled while any action (global or per-bot) is in-flight** (`anyBusy = anyPending`). Prevents double-firing.
+- Global "Executing…" label only shown for global control actions (start/stop/restart/emergency all), not per-bot actions.
+
+### Known limitation
+- Per-bot stop/restart triggers the bot's Telegram "unexpectedly stopped" alert because `wmic terminate` sends a kill signal that the bot's error handler catches. To suppress this would require writing a `controlled_stop` marker file on the VPS before killing — needs algo.py change, deferred.
+
+---
+
 ## Session — Bots page: controls, per-row actions, UX polish (2026-05-27)
 
 ### Backend (`routers/bots.py`)

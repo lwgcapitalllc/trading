@@ -204,6 +204,18 @@ export function Bots() {
   const stopOne    = useBotStopOne()
   const restartOne = useBotRestartOne()
 
+  // Which bot + action is executing — used to show inline row status
+  const pendingBotName: string | undefined =
+    startOne.isPending   ? startOne.variables :
+    stopOne.isPending    ? stopOne.variables :
+    restartOne.isPending ? restartOne.variables :
+    undefined
+  const pendingBotAction: string | null =
+    startOne.isPending   ? 'Starting…'   :
+    stopOne.isPending    ? 'Stopping…'   :
+    restartOne.isPending ? 'Restarting…' :
+    null
+
   const bots = (snapshot?.bots ?? []).filter(
     b => filter === 'all' || b.account_type === filter
   )
@@ -297,7 +309,7 @@ export function Bots() {
               value={'$' + totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             />
             <StatCard
-              label="Scheduled jobs"
+              label="Scheduled Jobs"
               value={snapshot.scheduled_jobs.length.toString()}
               sub={allJobsOk ? 'all running' : 'scheduled / waiting'}
               subVariant={allJobsOk ? 'pos' : 'neutral'}
@@ -343,8 +355,10 @@ export function Bots() {
               </thead>
               <tbody>
                 {bots.map((bot: BotStatus) => {
-                  const isRunning  = bot.status === 'RUNNING'
-                  const isPending  = startOne.isPending || stopOne.isPending || restartOne.isPending
+                  const isRunning      = bot.status === 'RUNNING'
+                  const isThisRowBusy  = pendingBotName === bot.name
+                  // All rows lock while any per-bot or global action is in-flight
+                  const anyBusy        = anyPending
                   return (
                     <tr key={bot.name} className="border-b border-border-subtle last:border-0">
                       <td className="px-[14px] py-[11px] font-medium">{bot.name}</td>
@@ -383,33 +397,44 @@ export function Bots() {
                       </td>
                       {/* Per-row actions */}
                       <td className="px-[14px] py-[11px]">
-                        <div className="flex items-center justify-end gap-[4px]">
-                          <RowActionBtn
-                            icon={Play}
-                            title="Start bot"
-                            variant="pos"
-                            disabled={isRunning || isPending}
-                            onClick={() => startOne.mutate(bot.name)}
-                          />
-                          <RowActionBtn
-                            icon={Square}
-                            title="Stop bot"
-                            variant="neg"
-                            disabled={!isRunning || isPending}
-                            onClick={() => setConfirmStopBot(bot.name)}
-                          />
-                          <RowActionBtn
-                            icon={RotateCcw}
-                            title="Restart bot"
-                            disabled={isPending}
-                            onClick={() => restartOne.mutate(bot.name)}
-                          />
-                          <RowActionBtn
-                            icon={FileText}
-                            title="View log"
-                            onClick={() => setLogBot(bot.name)}
-                          />
-                        </div>
+                        {isThisRowBusy ? (
+                          // Show inline executing status on the active row
+                          <div className="flex items-center justify-end gap-[6px] text-[11px] text-accent">
+                            <svg className="animate-spin h-[11px] w-[11px] flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            {pendingBotAction}
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-[4px]">
+                            <RowActionBtn
+                              icon={Play}
+                              title="Start bot"
+                              variant="pos"
+                              disabled={isRunning || anyBusy}
+                              onClick={() => startOne.mutate(bot.name)}
+                            />
+                            <RowActionBtn
+                              icon={Square}
+                              title="Stop bot"
+                              variant="neg"
+                              disabled={!isRunning || anyBusy}
+                              onClick={() => setConfirmStopBot(bot.name)}
+                            />
+                            <RowActionBtn
+                              icon={RotateCcw}
+                              title="Restart bot"
+                              disabled={anyBusy}
+                              onClick={() => restartOne.mutate(bot.name)}
+                            />
+                            <RowActionBtn
+                              icon={FileText}
+                              title="View log"
+                              onClick={() => setLogBot(bot.name)}
+                            />
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
@@ -430,7 +455,7 @@ export function Bots() {
 
             {/* Scheduled jobs */}
             <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-              <div className="text-[13px] font-semibold mb-[14px]">Scheduled jobs</div>
+              <div className="text-[13px] font-semibold mb-[14px]">Scheduled Jobs</div>
               <table className="w-full text-micro">
                 <tbody>
                   {snapshot.scheduled_jobs.map((j: JobStatus) => (
@@ -464,8 +489,8 @@ export function Bots() {
             {/* Global control actions */}
             <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
               <div className="flex items-center mb-[14px]">
-                <span className="text-[13px] font-semibold">Control actions</span>
-                {anyPending && (
+                <span className="text-[13px] font-semibold">Control Actions</span>
+                {anyGlobalPending && (
                   <span className="ml-auto text-[11px] text-accent animate-pulse">Executing…</span>
                 )}
               </div>
@@ -508,7 +533,7 @@ export function Bots() {
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-neg/40 bg-neg-muted text-neg-text hover:bg-neg/10 hover:border-neg/70 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <AlertOctagon size={13} />
-                  Emergency stop
+                  Emergency Stop
                 </button>
               </div>
               {noFilteredBots ? (

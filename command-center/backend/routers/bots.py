@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -165,11 +166,16 @@ def _is_python_running(snap: dict[str, str], script_fragment: str) -> bool:
 
 
 def _uptime_seconds(state: dict) -> int | None:
-    started = state.get("started_at") or state.get("start_time")
-    if not started:
+    # bot_state.py writes "started" as a Unix timestamp float (time.time()).
+    # Fall back to ISO string fields used by older/alternate state writers.
+    raw = state.get("started") or state.get("started_at") or state.get("start_time")
+    if not raw:
         return None
     try:
-        start = datetime.fromisoformat(started).replace(tzinfo=timezone.utc)
+        if isinstance(raw, (int, float)) and raw > 0:
+            return int(_time.time() - raw)
+        # ISO string fallback
+        start = datetime.fromisoformat(str(raw)).replace(tzinfo=timezone.utc)
         return int((datetime.now(timezone.utc) - start).total_seconds())
     except Exception:
         return None
@@ -327,10 +333,10 @@ def stop_bots():
 @router.post("/restart")
 def restart_bots():
     """Stop all bots, wait 3 s, then run SYS_STARTUP."""
-    import time
+
     try:
         stop_out = _stop_procs()
-        time.sleep(3)
+_time.sleep(3)
         start_out = _start_task()
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
@@ -398,13 +404,13 @@ def stop_bot(bot_name: str):
 @router.post("/{bot_name}/restart")
 def restart_bot(bot_name: str):
     """Kill this bot's process, wait 3 s, then re-run its scheduled task."""
-    import time
+
     task_name, bot_key = _resolve_bot(bot_name)
     try:
         stop_out = _ssh(
             f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul'
         )
-        time.sleep(3)
+_time.sleep(3)
         start_out = _ssh(f"schtasks /run /tn {task_name}")
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
