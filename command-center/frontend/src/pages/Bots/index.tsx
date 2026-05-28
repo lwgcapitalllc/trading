@@ -317,7 +317,7 @@ export function Bots() {
       {snapshot && (
         <>
           {/* ── Stat cards ────────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-4 gap-[10px] mb-4">
+          <div className="grid grid-cols-3 gap-[10px] mb-4">
             <StatCard
               label="Bots running"
               value={`${running} / ${total}`}
@@ -333,14 +333,6 @@ export function Bots() {
               value={snapshot.scheduled_jobs.length.toString()}
               sub={allJobsOk ? 'all running' : 'scheduled / waiting'}
               subVariant={allJobsOk ? 'pos' : 'neutral'}
-            />
-            <StatCard
-              label="Telegram"
-              value={
-                <span className={snapshot.telegram.status === 'RUNNING' ? 'text-pos-text' : 'text-neg-text'}>
-                  {snapshot.telegram.status === 'RUNNING' ? 'Running' : 'Offline'}
-                </span>
-              }
             />
           </div>
 
@@ -503,15 +495,10 @@ export function Bots() {
                     </tr>
                   ))}
                   <tr>
-                    <td className="py-[7px]">
-                      <div className="flex items-center gap-2">
-                        <JobDot status={snapshot.telegram.status} />
-                        <span className={snapshot.telegram.status === 'RUNNING' ? 'text-text-primary' : 'text-text-secondary'}>
-                          Telegram
-                        </span>
-                      </div>
+                    <td className="py-[7px] text-text-secondary">Telegram</td>
+                    <td className="text-right py-[7px]">
+                      <StatusPill status={snapshot.telegram.status} />
                     </td>
-                    <td className="text-right text-text-tertiary py-[7px]">{snapshot.telegram.status}</td>
                   </tr>
                 </tbody>
               </table>
