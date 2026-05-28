@@ -123,8 +123,7 @@ Do NOT build the React app before the agent is tested end-to-end.
 
 **The platform decision is settled:** LucidFlex bots run inside **NinjaTrader**, written
 in **C# / NinjaScript**. A direct Python-to-Tradovate connection is NOT officially
-supported by LucidFlex and will not be used. The existing `bot_futures.py` (Python)
-does NOT transfer and should be treated as reference only, not a base.
+supported by LucidFlex and will not be used. A Python futures bot prototype was considered but not built — treat the FX bots (`bot_smc_trend.py` etc.) as architectural reference only, not a base.
 
 **However** — the backtest engine (Part 1) should be built in **Python**, run locally,
 NOT in NinjaTrader. Reason: Python backtesting is faster to write, faster to iterate,

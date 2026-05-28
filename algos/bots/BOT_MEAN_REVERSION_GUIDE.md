@@ -65,14 +65,13 @@ A signal fires when all three confirm the same overextension:
 
 ---
 
-## Dead Zone (4:00–5:00 PM CT)
+## Dead Zone (4:00–5:00 PM CT — gold market close window)
 
 No new entries. Portfolio-level management every minute:
 - Net profitable across all trades → close all immediately
 - Individual trade profitable, portfolio negative → move to breakeven
 - Losing trade getting worse → close immediately at best price
-- Losing trade improving → hold and monitor until 3:45pm TX
-- Any trade still open at 3:45pm TX → hard close
+- Losing trade improving → hold and monitor until the hour closes
 
 ---
 
@@ -144,7 +143,7 @@ Config keys (in `bot_mean_reversion` section):
 
 ```
 REVERSION SIGNAL | BULLISH | score=5 | RSI=24.3
-AI approved 61% >= 55%
+AI approved 61% >= 52%
 ENTRY | bullish | lots=0.02 | entry=4385.20 SL=4380.00 TP=4400.00
 T12345 -> BREAKEVEN @ 4385.20 (0.31R)
 T12345 FULL CLOSE @ 1.0R -- banking profit.

@@ -28,8 +28,8 @@ npm run dev
 
 ## Design reference
 
-`../../ui/` contains the interactive prototype (`prototype.html`) and design tokens (`tokens.css`).
-Open `prototype.html` in a browser to see the target UI for every screen.
+`design/prototype.html` is the interactive visual spec — open in any browser, no build step.
+`design/README.md` has the theme reference (electric cyan accent `#00e5ff`, gold secondary).
 
 ## Config
 

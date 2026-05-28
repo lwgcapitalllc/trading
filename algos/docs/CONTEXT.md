@@ -20,9 +20,9 @@ Watchlists live inside each bot's config section (`bot_smc_trend.watchlist`, etc
 
 | Bot | File | Strategy | Watchlist | Account | MT5 Instance |
 |-----|------|----------|-----------|---------|--------------|
-| SMC Trend | `bot_smc_trend.py` | Judas Swing + FVG, H4 trend filter, M15 | XAUUSD, EURUSD, GBPUSD, XAGUSD, US30 | gold_main #700103491 | PU Prime Terminal |
+| SMC Trend | `bot_smc_trend.py` | Judas Swing + FVG, H4 trend filter, M15 | XAUUSD, GBPJPY, EURUSD, XAGUSD, USDJPY | gold_main #700103491 | PU Prime Terminal |
 | Mean Reversion | `bot_mean_reversion.py` | BB + RSI + VWAP, 1R target, fast close | XAUUSD, EURUSD, AUDUSD, USDCAD, EURGBP | gold_main #700103491 | PU Prime Terminal |
-| Scalper | `bot_scalper.py` | EMA stack + pullback, M5/M1, 5–20 trades/day | XAUUSD, US30, NAS100, EURUSD, GBPUSD | gold_scalper #700107520 | MT5_Scalper |
+| Scalper | `bot_scalper.py` | EMA stack + pullback, M5/M1, 5–20 trades/day | XAUUSD, GBPJPY, NAS100, EURUSD, USDJPY | gold_scalper #700107520 | MT5_Scalper |
 | FFT | `bot_fft.py` | Dual Fibonacci confluence, H1+H4 trend | XAUUSD only (Phase 5 gate) | gold_fft #700107749 | MT5_FFT |
 SMC Trend and Mean Reversion share one MT5 account and are designed to be uncorrelated — one works trending markets, the other ranging markets.
 Scalper is isolated on its own account due to higher volatility (+15% ceiling / -5% daily floor).
@@ -66,15 +66,18 @@ FFT is the lowest risk (1%) — gold-only until 30+ closed trades with solid Cal
 - Mean Reversion: 1% risk, 1:1 target, 5% daily loss cap, 10% weekly cap
 - Scalper: 1–2% risk (auto-scaling, $2k+ threshold), -5% daily floor, 10% weekly cap, +5% daily target, +15% hard ceiling, 8% peak drawdown trigger
 - FFT: 1% risk, 2:1–5:1 target, 5% daily loss cap, 10% weekly cap
-**Dead Zone (all bots): No new entries 3:00pm–7:00pm Texas time.**
-During dead zone: net profit → close all. Individual profit + portfolio negative → breakeven. Losing worsening → close immediately.
+**Dead Zone — no new entries during configured window:**
+- Scalper: 3:00pm–7:00pm CT (15–19 CT in config)
+- SMC Trend, Mean Reversion, FFT: 4:00pm–5:00pm CT (gold market close window; 16–17 CT in config)
+
+During dead zone: net profit → close all. Individual profit + portfolio negative → breakeven. Losing worsening → close immediately. Hard cut at 3:45pm CT applies only within the Scalper's 3–7pm window.
 
 ---
 
 ## AI Thresholds
 
-- SMC Trend + Mean Reversion: min_ai_probability = 0.55 (stricter, more history)
-- Scalper + FFT: min_ai_probability = 0.52 (newer, learning phase)
+- SMC Trend: min_ai_probability = 0.55
+- Mean Reversion, Scalper, FFT: min_ai_probability = 0.52
 
 ---
 
@@ -106,7 +109,6 @@ algos/
 ├── scripts/
 │   ├── backup.py              ← Twice-daily backup to backups branch
 │   ├── deploy.py              ← File staging tool
-│   ├── stress_test_suite.py   ← Monte Carlo stress tests (run locally)
 │   └── cleanup_vps.bat
 ├── .claude/
 │   ├── settings.local.json
@@ -118,7 +120,6 @@ algos/
 │   ├── shared_scanner.py       ← Multi-instrument scanner (InstrumentScanner)
 │   ├── shared_risk.py          ← Dynamic risk engine (RiskEngine) + correlation guard (CorrelationGuard) — Phases 3–4
 │   ├── structure_engine.py     ← FFT structure engine: event-driven BOS/SOS/RETRACEMENT detection
-│   ├── test_structure_engine.py ← Owner-validation test harness (3 scenarios, 29 checks)
 │   └── mt5_ops.py             ← All MT5 operations, symbol-parameterized
 ├── bots/
 │   ├── bot_utils.py
@@ -177,12 +178,10 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
   - `bots/bot_smc_trend.py`: redundant local `import json as _json` blocks removed; unused `_eq_file` variable removed; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
 
 - Previously: **Mean Reversion connection resilience hardening** — `manage_positions()` and `handle_dead_zone()` now require deal-history confirmation before removing a trade from `open_trades`; a `_missing_count` retry counter orphans after 3 consecutive misses. `get_deal_result()` now validates `d.position_id == ticket`. Minimum SL distance enforced at `atr * atr_sl_multiplier` to prevent near-zero `sl_d` producing oversized lots. `DailyLogger`/`TradeLogger` load validates JSON is a list before using it. Files: `bots/bot_mean_reversion.py`, `shared/mt5_ops.py`, `shared/shared_ai_brain.py`.
-- Previously: **FFT Structure Engine** — `shared/structure_engine.py` built and test-validated. Replaces `find_swing_highs` / `find_swing_lows` / `detect_bos` in `bot_fft.py` once owner review passes.
+- Previously: **FFT Structure Engine** — `shared/structure_engine.py` built and integrated into `bot_fft.py`.
   - `StructureEngine` class: event-driven, candle-by-candle. No fixed lookback — breaks confirmed by body closes only. Wicks only anchor fib points.
   - Detects: BOS (body-close beyond swing extreme), SOS (body-close beyond opposing structural point, checked before retracement to take priority), RETRACEMENT_BEGAN (first bearish/bullish body-close back under the new HH/LL close).
   - Bootstrap seeds initial HH/HL from the first 20 candles — heuristic, `leg_established = False` until first confirmed BOS.
-  - `shared/test_structure_engine.py`: 29 checks across 3 owner scenarios (walkthrough, wick fakeout, SOS flip) — all pass.
-  - **Integration into `bot_fft.py` is the next step** — pending owner sign-off on the test run.
 - Previously: **Phase 5 AI Gate / Learning-Phase Cap** — all Phases 1–5 of MULTI_INSTRUMENT_UPGRADE.md are now complete.
   - `LearningPhaseGate` class added to `shared/shared_scanner.py`. Reads `ai.is_trained` and `ai.logger.get_closed()`. No new model code.
   - While untrained: restricts each bot's scan to `learning_watchlist` (2 instruments for SMC/MR/Scalper, gold-only for FFT) and caps open positions at `learning_max_open` (default 1).
@@ -191,5 +190,4 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
   - All four bots wired: config load → `LearningPhaseGate` instantiation in `run()` → `check_max_open()` + `active_watchlist()` before each scan.
   - Config: `"learning_watchlist"` and `"learning_max_open"` added to `bot_smc_trend`, `bot_mean_reversion`, `bot_scalper`, `bot_fft` sections in all instance config.json files.
 - Previously: **Phase 4 Correlation & Exposure Control**, **Phase 3 Dynamic Risk / Capacity Engine**, **Phase 2 Volatility Filter**, **Phase 1 Multi-Instrument Scanner**.
-- Open questions / decisions pending:
-  - Scalper: consider whether to raise `peak_drawdown_trigger_pct` above 10%.
+- Open questions / decisions pending: none at this time.

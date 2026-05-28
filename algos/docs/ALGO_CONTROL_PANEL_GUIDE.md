@@ -4,7 +4,7 @@ Mac-side terminal dashboard. Run with: `algo`
 
 Setup: add to `~/.zshrc`:
 ```bash
-alias algo="python3 /Users/alwg/algos/algo.py"
+alias algo="python3 /Users/alwg/trading/algos/algo.py"
 ```
 
 ---

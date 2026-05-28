@@ -5,7 +5,7 @@
 
 ## What This Bot Is Built To Do
 
-Bot 3 is an aggressive account-growth engine. It trades momentum on M5 using EMA stack alignment and M1 pullback entries. It runs a dynamic daily profit engine — once it hits its daily target it keeps running with peak protection until either a 10% pullback from the day's peak or a hard ceiling. It compounds position sizes automatically as the account grows. It must run on its own separate account because its risk profile is incompatible with Bot 1 and Bot 2.
+Bot 3 is an aggressive account-growth engine. It trades momentum on M5 using EMA stack alignment and M1 pullback entries. It runs a dynamic daily profit engine — once it hits its daily target it keeps running with peak protection until either an 8% pullback from the day's peak or a hard ceiling. It compounds position sizes automatically as the account grows. It must run on its own separate account because its risk profile is incompatible with Bot 1 and Bot 2.
 
 ---
 
@@ -171,10 +171,8 @@ On every restart, `reconcile_on_startup()` runs before entering the main loop:
 Every main-loop iteration writes to `bot_state.json`:
 - `balance` — actual `mt5.account_info().balance`
 - `daily_start` — balance at start of current UTC day (from `daily_engine.start`)
-- `weekly_start` — balance at start of current ISO week (persisted in `scalper_weekly.json`)
+- `weekly_start` — balance at start of current ISO week (persisted in `bot_state.json` via `load_weekly_start()`)
 - `last_write` — UTC timestamp used by `pnl_tracker.py` to detect live mode
-
-`weekly_start` survives restarts via `scalper_weekly.json` in the instance folder.
 
 ## Weekly Cap Behaviour
 

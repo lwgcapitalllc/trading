@@ -193,8 +193,8 @@ All in `config/config.json` (default) or `config/templates/bot.json` / `config/t
 ## Output Location
 
 All reports land in `smart-money/reports/`:
-- `stage1_top20_*.json` — full wallet intelligence profiles
-- `stage1_top20_*.csv` — flat CSV for spreadsheet review
+- `stage1_top{N}_*.json` — full wallet intelligence profiles (N = qualifying candidate count)
+- `stage1_top{N}_*.csv` — flat CSV for spreadsheet review
 - `stage1_summary_*.md` — human-readable summary
 - `stage1_disqualified_*.json` — full disqualification log
 - `stage5_final_report_*.json` — unified pool final report

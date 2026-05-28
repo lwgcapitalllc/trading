@@ -13,7 +13,7 @@ All tasks run as `trader` user on the VPS.
 | SYS_MONITOR | Scheduled | Every 1 min | `notifications/monitor.py` |
 | SYS_PNLTRACKER | Scheduled | Every 1 min | `notifications/pnl_tracker.py` |
 | SYS_REPORTER | Scheduled | Daily 4pm CT | `notifications/reporter.py` |
-| SYS_BACKUP | Scheduled | Daily midnight | `scripts/backup.py` |
+| SYS_BACKUP | Scheduled | Daily midnight + noon CT (twice daily) | `scripts/backup.py` |
 | BOT_SMC_TREND | **Disabled** | (manual only) | `bots/bot_smc_trend.py` |
 | BOT_MEAN_REVERSION | **Disabled** | (manual only) | `bots/bot_mean_reversion.py` |
 | BOT_SCALPER | **Disabled** | (manual only) | `bots/bot_scalper.py` |

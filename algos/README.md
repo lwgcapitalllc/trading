@@ -31,7 +31,6 @@ algos/
 ├── scripts/
 │   ├── backup.py                    ← Twice-daily backup to GitHub (backups branch)
 │   ├── deploy.py                    ← File staging tool
-│   ├── stress_test_suite.py         ← Monte Carlo stress tests (run locally)
 │   └── cleanup_vps.bat
 ├── bots/
 │   ├── bot_smc_trend.py
@@ -82,7 +81,7 @@ component reads from. Nothing else is authoritative.
 
 | Field | Set by | Read by |
 |---|---|---|
-| `started` | startup_coordinator | algo.py, telegram /status |
+| `started` | startup_coordinator + each bot at `run()` start | algo.py, telegram /status |
 | `status` | monitor.py | telegram /status |
 | `balance`, P&L fields | pnl_tracker.py | telegram /balance, reporter |
 | `day_locked` | pnl_tracker.py | monitor alerts |

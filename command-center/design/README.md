@@ -9,8 +9,6 @@ code, because the design *is* code.
 | File | What it is |
 |---|---|
 | `prototype.html` | Interactive clickable prototype. Open in any browser. |
-| `tokens.css` | Design tokens — the theme. Colors, type, spacing, radius. |
-| `*.png` | Reference screenshots. |
 | `README.md` | This file. |
 
 ## How to use it
@@ -19,54 +17,31 @@ Double-click `prototype.html`. No build step, no account, no install. Click
 through the sidebar and the Smart Money sub-tabs — it is genuinely interactive,
 including the Config form's live weight-sum validation.
 
-## Theme — "Refined", teal accent
+## Theme — "Refined", electric cyan accent
 
-Refined dark: soft 12px corners, calm charcoal surfaces, roomy spacing, crisp
-type, monospace for numbers only. Chosen for a tool kept open for hours — the
-least fatiguing of the directions reviewed.
+Indigo-black dark: purple-tinted surfaces (`bg-base #080810`, `bg-sunken #0d0d1a`),
+soft corners, roomy spacing, crisp type, monospace for numbers only. Chosen for a
+tool kept open for hours — the least fatiguing of the directions reviewed.
 
-- **Accent:** teal `#2dd4bf` — interactive elements, primary charts.
+- **Accent:** electric cyan `#00e5ff` — interactive elements, primary charts.
 - **Secondary:** gold `#d9a441` — shortlist markers, highlights, an XAUUSD nod.
-- **Semantic, reserved:** green = profit / running / pass, red = loss / error /
-  fail, amber = warning / yellow-flag. Never decorative.
+- **Semantic, reserved:** green `#00ff7f` = profit / running / pass, red `#ff3b5c` = loss / error /
+  fail, amber `#ffb300` = warning / yellow-flag. Never decorative.
 
-Everything lives in `tokens.css`. The React app's Tailwind config should be
-generated from this file so design and code never drift.
+Theme is defined in `tailwind.config.js` in the React app. The prototype uses inline styles that reflect the same palette.
 
 ## Screens
 
-Fully built and clickable:
-- **App shell** — sidebar, top bar, six routes, VPS/API status.
-- **Smart Money** — Pool overview, Rankings, Candidate profile, Disqualified,
-  Config.
-- **Bots** — live monitoring table, scheduled jobs; control actions shown
-  disabled (the deliberate v1 safety split).
+Fully built:
+- **App shell** — sidebar, top bar, six routes, VPS/API status dots, brand wordmark.
+- **Overview** — stat row + Bots card + Smart Money card; cards navigate to sub-pages.
+- **Smart Money** — Pool overview, Rankings, Candidate profile, Disqualified Log, Config,
+  Scanner Terminal, Clear Cache, run lock-down UI.
+- **Bots** — live monitoring table, scheduled jobs, control actions (global + per-bot),
+  Configure tab (4-card risk cap editor with full deploy pipeline).
 
 Scaffolded (real routes, empty states):
-- **Overview, Backtests, Stress Tests, Settings.**
-
-### Smart Money — Pool overview
-![Smart Money overview](sm.png)
-
-### Smart Money — Rankings
-![Rankings table](rankings.png)
-
-### Smart Money — Candidate profile
-![Candidate profile](profile.png)
-
-### Smart Money — Config
-Form editor for the pipeline config file. Number inputs for thresholds, sliders
-for the five scoring weights.
-![Config editor](config.png)
-
-### Smart Money — Config validation
-When the scoring weights do not sum to 100, the bar turns red and Save is
-disabled. Server-side validation enforces the same rule. Saving writes the file
-locally only — it never commits or pushes.
-![Config validation](config-validation.png)
-
-### Bots — monitoring
-![Bots monitoring](bots.png)
+- **Backtests, Stress Tests, Settings.**
 
 ## What the prototype is NOT
 
@@ -80,7 +55,7 @@ locally only — it never commits or pushes.
 ## How this feeds the build
 
 The build spec defines *what* to build — structure, data contracts, behavior.
-This folder defines *how it looks*. Claude Code uses both. Build-order step 3
-(frontend skeleton) generates the Tailwind theme directly from `tokens.css`.
+This folder defines *how it looks*. The prototype shows the target layout for
+screens not yet built (Backtests, Stress Tests, Settings).
 
 Keep this prototype updated as the vision evolves — it is the living design doc.

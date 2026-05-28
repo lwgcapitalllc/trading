@@ -27,7 +27,7 @@ Two fibs are drawn on every qualifying setup:
 
 **The critical rule:** The green zone must overlap with the FFT 61.8–88.6% zone. If they don't overlap, no trade.
 
-**When it trades:** M15 entries. H1 + H4 EMA 200 trend filter. Dead zone 3–7pm Texas.
+**When it trades:** M15 entries. H1 + H4 EMA 200 trend filter. Dead zone 4–5pm CT (gold market close window).
 
 **Entry checklist — all must be true:**
 - Break of Structure confirmed on M15
@@ -80,14 +80,13 @@ Two fibs are drawn on every qualifying setup:
 
 ---
 
-## Dead Zone (3:00–7:00pm Texas)
+## Dead Zone (4:00–5:00pm CT — gold market close window)
 
 No new entries. Portfolio-level management every minute:
 - Net profitable across all trades → close all immediately
 - Individual trade profitable, portfolio negative → move to breakeven
 - Losing trade getting worse → close immediately at best price
-- Losing trade improving → hold and monitor until 3:45pm TX
-- Any trade still open at 3:45pm TX → hard close
+- Losing trade improving → hold and monitor until the hour closes
 
 ---
 
@@ -101,7 +100,7 @@ Trade close logging is fully implemented — every exit (SL/TP hit, dead zone, m
 `fft_trades.json` and triggers AI retraining. `risk_usd` is correctly recorded at entry (accounts for
 the `risk_mult` regime multiplier).
 
-**Structure engine:** BOS/SOS/RETRACEMENT events are detected by `shared/structure_engine.py` — event-driven, no fixed candle lookback. Body closes confirm all breaks; wicks anchor fib levels only. Integration into `bot_fft.py` pending owner sign-off on `shared/test_structure_engine.py`.
+**Structure engine:** BOS/SOS/RETRACEMENT events are detected by `shared/structure_engine.py` — event-driven, no fixed candle lookback. Body closes confirm all breaks; wicks anchor fib levels only.
 
 ---
 

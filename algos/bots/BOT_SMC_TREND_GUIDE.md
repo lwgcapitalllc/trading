@@ -24,7 +24,7 @@ Bot 1 identifies institutional manipulation — moments when large players fake 
 |---|---|---|
 | London kill zone | 07:00–10:00 | 2:00–5:00am |
 | NY kill zone | 12:00–15:00 | 7:00–10:00am |
-| Dead zone | — | 3:00–7:00pm |
+| Dead zone | — | 4:00–5:00pm |
 | Market close | 19:45 UTC | 2:45pm |
 
 **Entry checklist — all must be true:**
@@ -89,14 +89,13 @@ Bot 1 identifies institutional manipulation — moments when large players fake 
 
 ---
 
-## Dead Zone (3:00–7:00pm Texas)
+## Dead Zone (4:00–5:00pm CT — gold market close window)
 
 No new entries. Portfolio-level management every minute:
 - Net profitable across all trades → close all immediately
 - Individual trade profitable, portfolio negative → move to breakeven
 - Losing trade getting worse → close immediately at best price
-- Losing trade improving → hold and monitor until 3:45pm TX
-- Any trade still open at 3:45pm TX → hard close
+- Losing trade improving → hold and monitor until the hour closes
 
 ---
 
@@ -130,7 +129,7 @@ market close) calls `log_close(ticket, close_price, pnl_usd)` which writes `outc
 Every cycle the bot scans all symbols in `bot_smc_trend.watchlist` (config.json).
 The symbol with the highest confluence score wins and gets the trade entry.
 
-**Watchlist (Phase 1 defaults):** `["XAUUSD", "EURUSD", "GBPUSD", "XAGUSD", "US30"]`
+**Watchlist (gold_main instance):** `["XAUUSD.s", "GBPJPY.s", "EURUSD.s", "XAGUSD.s", "USDJPY.s"]`
 *(verify exact broker symbol strings on VPS before going live — brokers add suffixes like `.s`)*
 
 **Volatility filter (Phase 2):** Before evaluating a setup, the scanner checks whether the instrument is actually moving. It computes `atr_ratio = ATR(5) / ATR(20)` on H1 candles. If the ratio is below `min_atr_ratio` (default 0.8 — current volatility less than 80% of recent baseline), that symbol is skipped for the cycle. If the entire watchlist is below the floor, the bot sits out rather than forcing a trade in dead conditions.

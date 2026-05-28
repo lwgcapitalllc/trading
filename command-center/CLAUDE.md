@@ -23,8 +23,8 @@ command-center/
 │       ├── components/         Sidebar, TopBar, StatCard, ScaffoldBanner, EmptyState
 │       └── pages/
 │           ├── SmartMoney/     PoolOverview, Rankings, CandidateProfile, DisqualifiedLog, Config
-│           ├── Bots/           monitoring table, scheduled jobs, log viewer
-│           ├── Overview.tsx    scaffold
+│           ├── Bots/           monitoring table, scheduled jobs, log viewer, configure tab (ConfigureTab.tsx)
+│           ├── Overview.tsx    two-card dashboard (Bots card + Smart Money card)
 │           ├── Backtests.tsx   scaffold
 │           ├── StressTests.tsx scaffold
 │           └── Settings.tsx    scaffold
@@ -55,8 +55,6 @@ cd command-center
 **Config translation layer** — the Smart Money pipeline stores fractional values (`win_rate: 0.75`) but the UI shows percentages (`75.0`). `_pipeline_cfg_to_api()` and `_api_cfg_to_pipeline()` in `routers/smart_money.py` handle bidirectional conversion. The API contract (percentages, flat keys) is the stable interface; if the pipeline changes its format, only the translation functions change.
 
 **Batched VPS snapshot** — `GET /bots/snapshot` makes two SSH calls (replicating algo.py's `fetch_vps_snapshot()` exactly) and returns a single `BotSnapshot`. The frontend polls this at 60s. Never SSH per-bot.
-
-**Bot control actions are 501 stubs** — `POST /bots/start|stop|restart|emergency` all return 501 with an explanatory message. This is deliberate: monitoring must be verified against the live VPS before controls are enabled. Do not implement these until `/bots/snapshot` has been validated in production.
 
 **No auto-commit** — `PUT /smart-money/config` writes the file only. `GET /smart-money/config/git-status` shows dirty state. The user decides when to commit.
 

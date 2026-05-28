@@ -1,6 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-// Generated from algos/command-center/../../../ui/tokens.css
-// Keep in sync with tokens.css — do not edit colors/fonts/radii here directly.
+// Theme source of truth. Edit colors/fonts/radii here; the prototype.html reflects the same palette.
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {

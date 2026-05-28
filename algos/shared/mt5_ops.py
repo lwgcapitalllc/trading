@@ -667,13 +667,17 @@ class BotMT5:
 
     def handle_dead_zone(self, open_trades: list, atr: float, logger, ai) -> None:
         """
-        Portfolio-level trade management during 3:00 PM–7:00 PM Texas time.
+        Portfolio-level trade management during the configured dead zone window.
+
+        Window is set per-bot via config.json (dead_zone.start_ct / end_ct).
+        Scalper: 3–7pm CT. SMC Trend / Mean Reversion / FFT: 4–5pm CT (gold close).
 
         1. Net profitable → close ALL positions immediately (lock in combined profit).
         2. Net negative per-trade:
            a. Trade worsening → close immediately (stop the bleeding).
            b. Trade improving or at BE → hold and monitor.
            c. 3:45 PM TX hard cut → close all remaining regardless.
+              (Only fires when dead zone starts at or before 3:45pm — i.e. Scalper only.)
         3. Individually profitable trades → move to breakeven.
         """
         try:
