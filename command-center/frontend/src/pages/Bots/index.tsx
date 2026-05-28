@@ -29,12 +29,16 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m`
 }
 
-function StatusDot({ status }: { status: string }) {
-  const cls =
-    status === 'RUNNING' ? 'bg-pos shadow-[0_0_6px_#34d399]' :
-    status === 'ERROR'   ? 'bg-neg' :
-                           'bg-neutral'
-  return <span className={`inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 ${cls}`} />
+function StatusPill({ status }: { status: string }) {
+  const isRunning = status === 'RUNNING'
+  const isError   = status === 'ERROR'
+  const cls   = isRunning ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
+  const label = isRunning ? 'Running' : isError ? 'Error' : 'Stopped'
+  return (
+    <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}>
+      {label}
+    </span>
+  )
 }
 
 // Scheduled jobs: running = green glow, waiting = gold glow, both with tooltip
@@ -317,8 +321,8 @@ export function Bots() {
             <StatCard
               label="Bots running"
               value={`${running} / ${total}`}
-              sub={`${total - running} stopped`}
-              subVariant={running > 0 ? 'pos' : 'neutral'}
+              sub={running === total ? 'all running' : running === 0 ? 'all stopped' : `${total - running} stopped`}
+              subVariant={running === total ? 'pos' : running === 0 ? 'neg' : 'neutral'}
             />
             <StatCard
               label="Total balance"
@@ -332,8 +336,11 @@ export function Bots() {
             />
             <StatCard
               label="Telegram"
-              value={snapshot.telegram.status}
-              subVariant={snapshot.telegram.status === 'RUNNING' ? 'pos' : 'neutral'}
+              value={
+                <span className={snapshot.telegram.status === 'RUNNING' ? 'text-pos-text' : 'text-neg-text'}>
+                  {snapshot.telegram.status === 'RUNNING' ? 'Running' : 'Offline'}
+                </span>
+              }
             />
           </div>
 
@@ -400,10 +407,7 @@ export function Bots() {
                           : '—'}
                       </td>
                       <td className="px-[14px] py-[11px]">
-                        <div className="flex items-center gap-2">
-                          <StatusDot status={bot.status} />
-                          <span className="text-small">{bot.status}</span>
-                        </div>
+                        <StatusPill status={bot.status} />
                       </td>
                       <td className="px-[14px] py-[11px] text-right font-mono text-small text-text-secondary">
                         {bot.uptime_seconds != null ? formatUptime(bot.uptime_seconds) : '—'}
