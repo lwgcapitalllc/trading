@@ -212,7 +212,10 @@ export function Bots() {
   const total        = snapshot?.bots.length ?? 0
   const totalBalance = snapshot?.bots.reduce((s, b) => s + (b.balance ?? 0), 0) ?? 0
   const allJobsOk    = snapshot?.scheduled_jobs.every(j => j.status === 'RUNNING') ?? false
-  const allRunning   = total > 0 && running === total
+  // allRunning / noFilteredBots use the filtered list so the control panel reflects what's visible
+  const filteredRunning = bots.filter(b => b.status === 'RUNNING').length
+  const allRunning   = bots.length > 0 && filteredRunning === bots.length
+  const noFilteredBots = bots.length === 0
 
   const anyGlobalPending = startMut.isPending || stopMut.isPending || restartMut.isPending || emergencyMut.isPending
   const anyPerBotPending = startOne.isPending || stopOne.isPending || restartOne.isPending
@@ -469,8 +472,12 @@ export function Bots() {
               <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={() => setConfirm('start')}
-                  disabled={anyPending || allRunning}
-                  title={allRunning ? 'All bots are already running' : 'Start all bots via SYS_STARTUP'}
+                  disabled={anyPending || allRunning || noFilteredBots}
+                  title={
+                    noFilteredBots ? 'No bots in this filter' :
+                    allRunning     ? 'All bots are already running' :
+                                     'Start all bots via SYS_STARTUP'
+                  }
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-primary hover:bg-bg-hover hover:border-pos/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Play size={13} className="text-pos" />
@@ -478,7 +485,8 @@ export function Bots() {
                 </button>
                 <button
                   onClick={() => setConfirm('stop')}
-                  disabled={anyPending}
+                  disabled={anyPending || noFilteredBots}
+                  title={noFilteredBots ? 'No bots in this filter' : 'Stop all bots'}
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-neg/40 bg-neg-muted text-neg-text hover:bg-neg/10 hover:border-neg/70 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Square size={13} />
@@ -486,7 +494,8 @@ export function Bots() {
                 </button>
                 <button
                   onClick={() => setConfirm('restart')}
-                  disabled={anyPending}
+                  disabled={anyPending || noFilteredBots}
+                  title={noFilteredBots ? 'No bots in this filter' : 'Restart all bots'}
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <RotateCcw size={13} />
@@ -494,16 +503,23 @@ export function Bots() {
                 </button>
                 <button
                   onClick={() => setConfirm('emergency')}
-                  disabled={anyPending}
+                  disabled={anyPending || noFilteredBots}
+                  title={noFilteredBots ? 'No bots in this filter' : 'Emergency stop — kills all python.exe immediately'}
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-neg/40 bg-neg-muted text-neg-text hover:bg-neg/10 hover:border-neg/70 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <AlertOctagon size={13} />
                   Emergency stop
                 </button>
               </div>
-              <p className="text-[11px] text-text-tertiary mt-3">
-                Start / Stop apply to all bots. Use per-row buttons above to control individual bots.
-              </p>
+              {noFilteredBots ? (
+                <p className="text-[11px] text-warn-text mt-3">
+                  No accounts in this filter — switch to All or a filter with accounts to enable controls.
+                </p>
+              ) : (
+                <p className="text-[11px] text-text-tertiary mt-3">
+                  Start / Stop apply to all bots. Use per-row buttons above to control individual bots.
+                </p>
+              )}
             </div>
           </div>
         </>
