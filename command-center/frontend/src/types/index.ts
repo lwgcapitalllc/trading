@@ -160,6 +160,19 @@ export interface CacheClearResult {
 
 // ── Bots ────────────────────────────────────────────────────────────────────
 
+export interface TelegramUser {
+  chat_id: string
+  name: string
+  role: 'admin' | 'readonly'
+  added: string
+}
+
+export interface TelegramUserCreate {
+  chat_id: string
+  name: string
+  role: string
+}
+
 export interface BotStatus {
   name: string
   account: string

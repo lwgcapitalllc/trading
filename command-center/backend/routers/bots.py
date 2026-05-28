@@ -19,19 +19,20 @@ Per-bot control actions:
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 import time as _time
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 import config as cfg
-from models import BotCapUpdate, BotConfigSections, BotConfigUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus
+from models import BotCapUpdate, BotConfigSections, BotConfigUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -337,6 +338,64 @@ def vps_ping():
         return {"status": "ok" if "ok" in out else "error"}
     except (subprocess.TimeoutExpired, Exception):
         return {"status": "error"}
+
+
+_USERS_FILE_VPS = r"C:\trading\algos\users.json"
+
+
+def _read_users_vps() -> dict:
+    raw = _ssh(f"type {_USERS_FILE_VPS} 2>nul")
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw).get("users", {})
+    except Exception:
+        return {}
+
+
+def _write_users_vps(users: dict) -> None:
+    payload = json.dumps({"users": users}, indent=2, ensure_ascii=True)
+    b64 = base64.b64encode(payload.encode("utf-8")).decode("ascii")
+    _ssh(
+        f"python -c \"import base64; open(r'C:/trading/algos/users.json', 'w', encoding='utf-8')"
+        f".write(base64.b64decode(b'{b64}').decode())\""
+    )
+
+
+@router.get("/users", response_model=list[TelegramUser])
+def list_users():
+    users = _read_users_vps()
+    return [TelegramUser(chat_id=k, **v) for k, v in users.items()]
+
+
+@router.post("/users", status_code=201)
+def add_user(body: TelegramUserCreate):
+    users = _read_users_vps()
+    if body.chat_id in users:
+        raise HTTPException(status_code=409, detail="User already exists")
+    users[body.chat_id] = {"name": body.name, "role": body.role, "added": date.today().isoformat()}
+    _write_users_vps(users)
+    return {"status": "ok"}
+
+
+@router.delete("/users/{chat_id}")
+def remove_user(chat_id: str):
+    users = _read_users_vps()
+    if chat_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    del users[chat_id]
+    _write_users_vps(users)
+    return {"status": "ok"}
+
+
+@router.patch("/users/{chat_id}")
+def update_user_role(chat_id: str, body: TelegramUserRoleUpdate):
+    users = _read_users_vps()
+    if chat_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    users[chat_id]["role"] = body.role
+    _write_users_vps(users)
+    return {"status": "ok"}
 
 
 @router.get("/snapshot", response_model=BotSnapshot)

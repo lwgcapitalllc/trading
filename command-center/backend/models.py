@@ -240,6 +240,23 @@ class BotCapUpdate(BaseModel):
     weekly_cap_pct: float
 
 
+class TelegramUser(BaseModel):
+    chat_id: str
+    name: str
+    role: str           # "admin" | "readonly"
+    added: str          # YYYY-MM-DD
+
+
+class TelegramUserCreate(BaseModel):
+    chat_id: str
+    name: str
+    role: str
+
+
+class TelegramUserRoleUpdate(BaseModel):
+    role: str
+
+
 # ── Backtests ─────────────────────────────────────────────────────────────────
 
 class BacktestResult(BaseModel):

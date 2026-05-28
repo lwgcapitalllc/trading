@@ -9,9 +9,10 @@ import {
 import { StatCard } from '@/components/StatCard'
 import type { BotStatus, JobStatus } from '@/types'
 import { ConfigureTab } from './ConfigureTab'
+import { UsersTab } from './UsersTab'
 
 type AccountFilter = 'all' | 'demo' | 'live'
-type PageTab = 'monitor' | 'configure'
+type PageTab = 'monitor' | 'configure' | 'users'
 
 function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -238,7 +239,7 @@ export function Bots() {
 
         {/* Tab switcher */}
         <div className="flex bg-bg-surface border border-border-subtle rounded-md overflow-hidden">
-          {(['monitor', 'configure'] as PageTab[]).map(t => (
+          {(['monitor', 'configure', 'users'] as PageTab[]).map(t => (
             <span
               key={t}
               onClick={() => setTab(t)}
@@ -640,6 +641,9 @@ export function Bots() {
 
       {/* ── Configure tab ─────────────────────────────────────────────────────── */}
       {tab === 'configure' && <ConfigureTab />}
+
+      {/* ── Users tab ─────────────────────────────────────────────────────────── */}
+      {tab === 'users' && <UsersTab />}
 
       {/* ── Log modal ─────────────────────────────────────────────────────────── */}
       {logBot && <LogModal botName={logBot} onClose={() => setLogBot(null)} />}

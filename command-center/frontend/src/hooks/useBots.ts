@@ -71,7 +71,7 @@ export const useBotRestartOne = () => useBotAction('restart')
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-import type { BotConfigSections, BotConfigUpdate } from '@/types'
+import type { BotConfigSections, BotConfigUpdate, TelegramUser, TelegramUserCreate } from '@/types'
 
 export function useBotConfig(botName: string | null) {
   return useQuery({
@@ -94,6 +94,53 @@ export function useSaveBotCaps() {
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
     onError: (err, { botName }) => toast.error(`${botName} caps save failed: ${err}`),
+  })
+}
+
+// ── Telegram users ────────────────────────────────────────────────────────────
+
+export function useUsers() {
+  return useQuery({
+    queryKey: ['bots', 'users'],
+    queryFn: () => api.get<TelegramUser[]>('/bots/users'),
+    staleTime: 60_000,
+  })
+}
+
+export function useAddUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: TelegramUserCreate) => api.post<{ status: string }>('/bots/users', body),
+    onSuccess: () => {
+      toast.success('User added')
+      qc.invalidateQueries({ queryKey: ['bots', 'users'] })
+    },
+    onError: (err) => toast.error(`Add user failed: ${err}`),
+  })
+}
+
+export function useRemoveUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (chatId: string) => api.delete<{ status: string }>(`/bots/users/${encodeURIComponent(chatId)}`),
+    onSuccess: () => {
+      toast.success('User removed')
+      qc.invalidateQueries({ queryKey: ['bots', 'users'] })
+    },
+    onError: (err) => toast.error(`Remove user failed: ${err}`),
+  })
+}
+
+export function useUpdateUserRole() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ chatId, role }: { chatId: string; role: string }) =>
+      api.patch<{ status: string }>(`/bots/users/${encodeURIComponent(chatId)}`, { role }),
+    onSuccess: () => {
+      toast.success('Role updated')
+      qc.invalidateQueries({ queryKey: ['bots', 'users'] })
+    },
+    onError: (err) => toast.error(`Update role failed: ${err}`),
   })
 }
 

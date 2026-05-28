@@ -23,7 +23,7 @@ command-center/
 │       ├── components/         Sidebar, TopBar, StatCard, ScaffoldBanner, EmptyState
 │       └── pages/
 │           ├── SmartMoney/     PoolOverview, Rankings, CandidateProfile, DisqualifiedLog, Config
-│           ├── Bots/           monitoring table, scheduled jobs, log viewer, configure tab (ConfigureTab.tsx)
+│           ├── Bots/           monitoring table, log viewer, configure tab (ConfigureTab.tsx), users tab (UsersTab.tsx)
 │           ├── Overview.tsx    two-card dashboard (Bots card + Smart Money card)
 │           ├── Backtests.tsx   scaffold
 │           ├── StressTests.tsx scaffold
@@ -79,6 +79,7 @@ cd command-center
 | Bots — log viewer | ✅ Live | SSH log fetch |
 | Bots — control actions | ✅ Live | Start/Stop/Restart/Emergency (global + per-bot); all destructive actions require confirm |
 | Bots — Configure tab | ✅ Live | 4-card side-by-side comparison; editable risk caps (daily goal / daily cap / weekly cap); save triggers full deploy: writes `algos/shared/thresholds.json` + instance `config.json` → git commit + push → SSH VPS git pull → bot restart → Telegram notification; refresh button spans Monitor + Configure tabs |
+| Bots — Users tab | ✅ Live | Manage Telegram bot users (add/remove/update role). Reads/writes `algos/users.json` on VPS via SSH. Roles: `admin` (full control) and `readonly` (status/balance only). Changes take effect immediately. |
 
 ---
 
