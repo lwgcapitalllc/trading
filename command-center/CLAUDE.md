@@ -76,9 +76,10 @@ cd command-center
 | Smart Money — Run pipeline button | ✅ Live | `POST /smart-money/run` spawns `run_stage1.py`; 409 if already running; optimistic instant terminal |
 | Smart Money — Scanner Terminal | ✅ Live | Matrix-style live address feed; hidden when viewing a historical run |
 | Smart Money — Clear Cache button | ✅ Live | Two-step inline confirmation; shows live cached count; `DELETE /smart-money/cache` |
-| Bots — monitoring table | ✅ Live (UI) | Needs VPS SSH verification |
-| Bots — scheduled jobs | ✅ Live (UI) | Needs VPS SSH verification |
-| Bots — log viewer | ✅ Live (UI) | Needs VPS SSH verification |
+| Bots — monitoring table | ✅ Live | VPS SSH implemented |
+| Bots — scheduled jobs | ✅ Live | Gold glow = scheduled/waiting, green = running |
+| Bots — log viewer | ✅ Live | SSH log fetch |
+| Bots — control actions | ✅ Live | Start/Stop/Restart/Emergency (global + per-bot); all destructive actions require confirm |
 
 ---
 
@@ -253,6 +254,35 @@ Three independent places each rendered "Run complete" after a run:
 
 ---
 
+## Session — Bots page: controls, per-row actions, UX polish (2026-05-27)
+
+### Backend (`routers/bots.py`)
+- Control actions fully implemented (previously 501 stubs): `POST /bots/start|stop|restart|emergency`
+- Per-bot endpoints added: `POST /bots/{bot_name}/start|stop|restart`
+  - Start: `schtasks /run /tn {task_name}`
+  - Stop: `wmic process where "commandline like '%{bot_key}%'" call terminate`
+  - Restart: per-bot stop + 3s sleep + per-bot start
+
+### Hooks (`hooks/useBots.ts`)
+- Added `useBotStart`, `useBotStop`, `useBotRestart`, `useBotEmergency` (global)
+- Added `useBotStartOne`, `useBotStopOne`, `useBotRestartOne` (per-bot, take `botName` as mutationFn arg)
+- All control mutations invalidate `['bots', 'snapshot']` after 4s to allow VPS state to settle
+
+### Bots page (`pages/Bots/index.tsx`)
+- **Per-row action buttons**: Start (▷, green, disabled when RUNNING), Stop (■, red, disabled when not RUNNING), Restart (↺), Log (📄)
+- **Stop buttons are red** (`neg` color) — both global "Stop all" and per-row Stop — and both require a confirmation modal before firing
+- **Per-row Stop confirm**: dedicated modal naming the specific bot, `bg-neg-muted` confirm button
+- **Start all disabled** when all bots are already running (`running === total`)
+- **Emergency stop double-confirm**: custom `EmergencyModal` with red border, warning block about open positions, checkbox "I understand" must be ticked to unlock the Kill button
+- **Scheduled job indicators**: `JobDot` shows gold glow (`shadow-[0_0_6px_#d9a441]`) for all non-running states (STOPPED + UNKNOWN both = "waiting for trigger"). Tooltip on hover: "Scheduled — waiting for next trigger". "Scheduled" text pill removed.
+- **Manual refresh button** in header: calls `refetch()`, spins while `isFetching`, disabled during fetch
+- `ScaffoldBanner` removed
+
+### Overview (`pages/Overview.tsx`)
+- `JobPill` updated to match: gold dot with glow for non-running, tooltip on hover
+
+---
+
 ## Session — UI branding + Overview dashboard (2026-05-27)
 
 ### Branding overhaul
@@ -296,13 +326,10 @@ smart-money/reports/
 - `bot_state.json` exists at `C:\trading\algos\markets\fx\instances\{bot_name}\bot_state.json`
 - The `BotSnapshot` response populates correctly in the UI
 
-### Step 6 — Enable bot control actions
-Only after Step 5 is verified. Implement `POST /bots/start|stop|restart` in `routers/bots.py` using SSH calls mirroring CLAUDE.md's VPS deploy workflow. Keep Emergency Stop as last to implement. Remove `ScaffoldBanner` from Bots page and enable the control buttons when controls are live.
-
-### Step 7 — Backtests module
+### Step 6 — Backtests module
 Backend: `GET /backtests/runs` reads from `algos/` backtest output directory (TBD). Frontend `src/pages/Backtests.tsx` is scaffolded. See `design/LWG_Capital_Command_Center_Build_Spec.md` section 7 for the full spec.
 
-### Step 8 — Stress Tests module
+### Step 7 — Stress Tests module
 Backend: `GET /stress-tests/results` reads stress test output (TBD). Frontend `src/pages/StressTests.tsx` is scaffolded.
 
 ---

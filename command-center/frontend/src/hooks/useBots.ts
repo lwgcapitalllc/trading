@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type { BotSnapshot } from '@/types'
 
@@ -18,3 +19,53 @@ export function useBotLog(botName: string | null) {
     staleTime: 0,
   })
 }
+
+type ControlResult = { status: string; output: string }
+
+function useControlAction(action: 'start' | 'stop' | 'restart' | 'emergency') {
+  const qc = useQueryClient()
+  const labels: Record<string, string> = {
+    start: 'Bots started',
+    stop: 'Bots stopped',
+    restart: 'Bots restarted',
+    emergency: 'Emergency stop sent',
+  }
+  return useMutation({
+    mutationFn: () => api.post<ControlResult>(`/bots/${action}`),
+    onSuccess: () => {
+      toast.success(labels[action])
+      // Refetch snapshot after a short delay to give VPS time to update state
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] }), 4_000)
+    },
+    onError: (err) => {
+      toast.error(`${labels[action]} failed: ${err}`)
+    },
+  })
+}
+
+export const useBotStart     = () => useControlAction('start')
+export const useBotStop      = () => useControlAction('stop')
+export const useBotRestart   = () => useControlAction('restart')
+export const useBotEmergency = () => useControlAction('emergency')
+
+// ── Per-bot control actions ───────────────────────────────────────────────────
+
+function useBotAction(action: 'start' | 'stop' | 'restart') {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (botName: string) =>
+      api.post<ControlResult>(`/bots/${encodeURIComponent(botName)}/${action}`),
+    onSuccess: (_data, botName) => {
+      const label = { start: 'started', stop: 'stopped', restart: 'restarted' }[action]
+      toast.success(`${botName} ${label}`)
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] }), 4_000)
+    },
+    onError: (err, botName) => {
+      toast.error(`${botName} ${action} failed: ${err}`)
+    },
+  })
+}
+
+export const useBotStartOne   = () => useBotAction('start')
+export const useBotStopOne    = () => useBotAction('stop')
+export const useBotRestartOne = () => useBotAction('restart')

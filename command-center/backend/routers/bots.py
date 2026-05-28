@@ -1,9 +1,20 @@
 """
 Bots router — /bots/*
 
-/bots/snapshot and /bots/{name}/log are fully implemented (read-only, safe).
-Control action endpoints (start/stop/restart/emergency) return HTTP 501 —
-they are deliberately disabled until monitoring is proven against algo.py.
+Read endpoints:
+  GET  /bots/snapshot                  — full VPS state via batched SSH
+  GET  /bots/{bot_name}/log            — last N lines of stdout log
+
+Global control actions (all bots):
+  POST /bots/start                     — run SYS_STARTUP task
+  POST /bots/stop                      — delete lock + taskkill python.exe
+  POST /bots/restart                   — stop + 3s + start
+  POST /bots/emergency                 — immediate taskkill, no cleanup
+
+Per-bot control actions:
+  POST /bots/{bot_name}/start          — schtasks /run /tn {task_name}
+  POST /bots/{bot_name}/stop           — wmic terminate by commandline match
+  POST /bots/{bot_name}/restart        — per-bot stop + 3s + start
 """
 
 from __future__ import annotations
@@ -263,33 +274,140 @@ def get_bot_log(bot_name: str, lines: int = 500):
     return "\n".join(log_lines[-lines:])
 
 
-# ── Control actions — 501 stubs ───────────────────────────────────────────────
+# ── Control actions ───────────────────────────────────────────────────────────
+#
+# All actions run over SSH.  Sequence mirrors the VPS deploy workflow in CLAUDE.md:
+#   stop  = delete lock file + taskkill all python.exe
+#   start = run SYS_STARTUP scheduled task
+#   restart = stop then start (with a 3-second gap)
+#   emergency = immediate taskkill, no lock delete (fastest path)
+#
+# Each endpoint returns { "status": "ok"|"error", "output": "<ssh stdout>" }.
+# A 502 is raised when the SSH call itself fails or times out.
 
-_CONTROL_DISABLED = {
-    "status": "not_implemented",
-    "message": (
-        "Bot control actions are disabled in this build. "
-        "Monitoring must be verified against algo.py before enabling. "
-        "Use algo.py directly for now."
-    ),
-}
+_LOCK_PATH  = r"C:\trading\algos\mt5_connect.lock"
+_STARTUP_TN = "SYS_STARTUP"
 
 
-@router.post("/start", status_code=501)
+def _stop_procs() -> str:
+    """Kill lock file + all python.exe processes.  Returns combined SSH output."""
+    out = _ssh(f"del {_LOCK_PATH} 2>nul & taskkill /f /im python.exe 2>nul")
+    return out
+
+
+def _start_task() -> str:
+    """Fire SYS_STARTUP scheduled task.  Returns SSH output."""
+    return _ssh(f"schtasks /run /tn {_STARTUP_TN}")
+
+
+@router.post("/start")
 def start_bots():
-    return _CONTROL_DISABLED
+    """Run the SYS_STARTUP scheduled task on the VPS."""
+    try:
+        out = _start_task()
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    return {"status": "ok", "output": out}
 
 
-@router.post("/stop", status_code=501)
+@router.post("/stop")
 def stop_bots():
-    return _CONTROL_DISABLED
+    """Delete the MT5 lock file and kill all python.exe processes on the VPS."""
+    try:
+        out = _stop_procs()
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    return {"status": "ok", "output": out}
 
 
-@router.post("/restart", status_code=501)
+@router.post("/restart")
 def restart_bots():
-    return _CONTROL_DISABLED
+    """Stop all bots, wait 3 s, then run SYS_STARTUP."""
+    import time
+    try:
+        stop_out = _stop_procs()
+        time.sleep(3)
+        start_out = _start_task()
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}
 
 
-@router.post("/emergency", status_code=501)
+@router.post("/emergency")
 def emergency_stop():
-    return _CONTROL_DISABLED
+    """Immediate taskkill of all python.exe — no lock-file cleanup."""
+    try:
+        out = _ssh("taskkill /f /im python.exe 2>nul")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    return {"status": "ok", "output": out}
+
+
+# ── Per-bot control actions ───────────────────────────────────────────────────
+#
+# Routes registered AFTER the literal /start|stop|restart|emergency paths so
+# FastAPI matches the literals first (no ambiguity).
+
+def _resolve_bot(bot_name: str) -> tuple[str, str]:
+    """Return (task_name, bot_key) for a display-name, or raise 404."""
+    task_name = next(
+        (t for t, dn in _DISPLAY_NAMES.items() if dn.lower() == bot_name.lower()),
+        None,
+    )
+    if not task_name or task_name not in _TASK_BOT_KEYS:
+        raise HTTPException(status_code=404, detail=f"Bot '{bot_name}' not found")
+    return task_name, _TASK_BOT_KEYS[task_name]
+
+
+@router.post("/{bot_name}/start")
+def start_bot(bot_name: str):
+    """Run the scheduled task for a single bot."""
+    task_name, _ = _resolve_bot(bot_name)
+    try:
+        out = _ssh(f"schtasks /run /tn {task_name}")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    return {"status": "ok", "output": out}
+
+
+@router.post("/{bot_name}/stop")
+def stop_bot(bot_name: str):
+    """Kill only the python.exe process whose commandline contains this bot's key."""
+    _, bot_key = _resolve_bot(bot_name)
+    try:
+        out = _ssh(
+            f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul'
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    return {"status": "ok", "output": out}
+
+
+@router.post("/{bot_name}/restart")
+def restart_bot(bot_name: str):
+    """Kill this bot's process, wait 3 s, then re-run its scheduled task."""
+    import time
+    task_name, bot_key = _resolve_bot(bot_name)
+    try:
+        stop_out = _ssh(
+            f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul'
+        )
+        time.sleep(3)
+        start_out = _ssh(f"schtasks /run /tn {task_name}")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}

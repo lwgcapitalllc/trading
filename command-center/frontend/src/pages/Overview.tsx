@@ -3,7 +3,7 @@ import { Bot, Radar, ChevronRight } from 'lucide-react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import { StatCard } from '@/components/StatCard'
-import type { BotStatus, JobStatus } from '@/types'
+import type { BotStatus } from '@/types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -67,11 +67,14 @@ function BotRow({ bot }: { bot: BotStatus }) {
   )
 }
 
-function JobPill({ job }: { job: JobStatus }) {
+function JobPill({ job }: { job: { name: string; status: string } }) {
   const running = job.status === 'RUNNING'
+  const dotCls  = running ? 'bg-pos shadow-[0_0_4px_#34d399]' : 'bg-gold shadow-[0_0_4px_#d9a441]'
+  const textCls = running ? 'text-pos-text' : 'text-gold-text'
+  const tip     = running ? 'Running' : 'Scheduled — waiting for next trigger'
   return (
-    <span className={`inline-flex items-center gap-[4px] mr-[10px] text-[11px] ${running ? 'text-pos-text' : 'text-text-tertiary'}`}>
-      <span className={`inline-block w-[5px] h-[5px] rounded-full flex-shrink-0 ${running ? 'bg-pos' : 'bg-neutral'}`} />
+    <span title={tip} className={`inline-flex items-center gap-[4px] mr-[10px] text-[11px] cursor-default ${textCls}`}>
+      <span className={`inline-block w-[5px] h-[5px] rounded-full flex-shrink-0 ${dotCls}`} />
       {job.name}
     </span>
   )
@@ -213,10 +216,7 @@ export function Overview() {
                   </p>
                   <div className="flex flex-wrap gap-y-[3px]">
                     {snapshot.scheduled_jobs.map(j => <JobPill key={j.name} job={j} />)}
-                    <span className={`inline-flex items-center gap-[4px] text-[11px] ${snapshot.telegram.status === 'RUNNING' ? 'text-pos-text' : 'text-text-tertiary'}`}>
-                      <span className={`inline-block w-[5px] h-[5px] rounded-full flex-shrink-0 ${snapshot.telegram.status === 'RUNNING' ? 'bg-pos' : 'bg-neutral'}`} />
-                      Telegram
-                    </span>
+                    <JobPill job={snapshot.telegram} />
                   </div>
                 </div>
               </>
