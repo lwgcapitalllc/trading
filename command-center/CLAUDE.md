@@ -402,6 +402,28 @@ Collapsed the separate `<span>` status text and `<button>` into a single combine
 
 ---
 
+## Session — Bots row buttons + spinner timing (2026-05-27)
+
+### Context-sensitive row action buttons (`pages/Bots/index.tsx`)
+**Rule:** hide when the action makes no sense; disable when it makes sense but isn't currently available.
+
+- **Stopped bot** → Start only. Restart and Stop are hidden (not disabled) — both are semantically wrong on a stopped process.
+- **Running bot** → Stop + Restart. Start is hidden — the bot is already running.
+
+Previously all three buttons were always rendered, with Start disabled when running and Stop disabled when stopped. Restart had no status guard at all, so it appeared enabled even on stopped bots.
+
+### Action-specific hard-clear timeouts
+The hard-clear `setTimeout` in `setPendingFor` is now action-aware:
+- **Start: 60 s** — scheduler task invocation + Python process boot takes time to show in `wmic` output
+- **Stop / Restart: 20 s** — process kill is near-instant
+
+Previously all actions shared a flat 30 s timeout, which was too short for start (spinner cleared before the bot appeared as RUNNING) and unnecessarily long for stop.
+
+### Refetch on hard-clear
+When the hard-clear fires, `await refetch()` runs before `clearPendingFor()`. Previously the timer fired, removed the transition, and the table showed whatever stale snapshot data was last cached — often still showing the old state (e.g. bot still STOPPED after starting). Now the spinner persists until fresh VPS data arrives, then clears with the correct state.
+
+---
+
 ## What still needs to be done
 
 ### Step 4 — End-to-end test of Smart Money pipeline + dashboard ← **NEXT**

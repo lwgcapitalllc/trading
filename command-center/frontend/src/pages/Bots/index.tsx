@@ -179,14 +179,19 @@ export function Bots() {
       stop:    { label: 'Stopping…',   expectedStatus: 'STOPPED'  as const },
       restart: { label: 'Restarting…', expectedStatus: 'RUNNING'  as const },
     }
+    // Start takes longer (scheduler task + process boot); stop/restart are fast kills
+    const hardClearMs = action === 'start' ? 60_000 : 20_000
     // Cancel any existing timer for this bot before setting a new one
     if (transitionTimers.current[botName]) clearTimeout(transitionTimers.current[botName])
     setPendingTransitions(prev => ({
       ...prev,
       [botName]: { ...map[action], since: Date.now() },
     }))
-    // Hard-clear after 30 s: fires if snapshot polling fails or is too slow
-    transitionTimers.current[botName] = setTimeout(() => clearPendingFor(botName), 30_000)
+    // Hard-clear: refetch first so the table shows fresh state when the spinner drops
+    transitionTimers.current[botName] = setTimeout(async () => {
+      await refetch()
+      clearPendingFor(botName)
+    }, hardClearMs)
   }
 
   function clearPendingFor(botName: string) {
