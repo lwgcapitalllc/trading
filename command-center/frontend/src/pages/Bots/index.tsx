@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, Play, RotateCcw, AlertOctagon, Square, RefreshCw } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -10,6 +10,13 @@ import { StatCard } from '@/components/StatCard'
 import type { BotStatus, JobStatus } from '@/types'
 
 type AccountFilter = 'all' | 'demo' | 'live'
+
+// Per-bot transition: set on action trigger, cleared when snapshot confirms expected state
+type PendingTransition = {
+  label: string
+  expectedStatus: 'RUNNING' | 'STOPPED'
+  since: number
+}
 
 function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -193,6 +200,9 @@ export function Bots() {
   const [confirm, setConfirm]       = useState<'start' | 'stop' | 'restart' | 'emergency' | null>(null)
   const [confirmStopBot, setConfirmStopBot] = useState<string | null>(null)
 
+  // Per-bot transitions: persists after mutation resolves until snapshot confirms expected status
+  const [pendingTransitions, setPendingTransitions] = useState<Record<string, PendingTransition>>({})
+
   // Global control mutations
   const startMut     = useBotStart()
   const stopMut      = useBotStop()
@@ -204,17 +214,65 @@ export function Bots() {
   const stopOne    = useBotStopOne()
   const restartOne = useBotRestartOne()
 
-  // Which bot + action is executing — used to show inline row status
-  const pendingBotName: string | undefined =
-    startOne.isPending   ? startOne.variables :
-    stopOne.isPending    ? stopOne.variables :
-    restartOne.isPending ? restartOne.variables :
-    undefined
-  const pendingBotAction: string | null =
-    startOne.isPending   ? 'Starting…'   :
-    stopOne.isPending    ? 'Stopping…'   :
-    restartOne.isPending ? 'Restarting…' :
-    null
+  // ── Transition helpers ────────────────────────────────────────────────────────
+
+  function setPendingFor(botName: string, action: 'start' | 'stop' | 'restart') {
+    const map = {
+      start:   { label: 'Starting…',   expectedStatus: 'RUNNING'  as const },
+      stop:    { label: 'Stopping…',   expectedStatus: 'STOPPED'  as const },
+      restart: { label: 'Restarting…', expectedStatus: 'RUNNING'  as const },
+    }
+    setPendingTransitions(prev => ({
+      ...prev,
+      [botName]: { ...map[action], since: Date.now() },
+    }))
+  }
+
+  function clearPendingFor(botName: string) {
+    setPendingTransitions(prev => {
+      if (!prev[botName]) return prev
+      const next = { ...prev }
+      delete next[botName]
+      return next
+    })
+  }
+
+  // ── Clear transitions when snapshot confirms expected state or 45s timeout ───
+
+  useEffect(() => {
+    if (!snapshot) return
+    const now = Date.now()
+    setPendingTransitions(prev => {
+      if (Object.keys(prev).length === 0) return prev
+      const next = { ...prev }
+      let changed = false
+      for (const [name, t] of Object.entries(next)) {
+        const bot = snapshot.bots.find(b => b.name === name)
+        const timedOut = now - t.since > 45_000
+        const met = bot && (
+          t.expectedStatus === 'RUNNING'
+            ? bot.status === 'RUNNING'
+            : bot.status !== 'RUNNING'
+        )
+        if (timedOut || met) {
+          delete next[name]
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [snapshot])
+
+  // ── Poll every 3 s while any transition is pending ───────────────────────────
+
+  const hasPendingTransitions = Object.keys(pendingTransitions).length > 0
+  useEffect(() => {
+    if (!hasPendingTransitions) return
+    const id = setInterval(() => refetch(), 3_000)
+    return () => clearInterval(id)
+  }, [hasPendingTransitions, refetch])
+
+  // ── Derived values ────────────────────────────────────────────────────────────
 
   const bots = (snapshot?.bots ?? []).filter(
     b => filter === 'all' || b.account_type === filter
@@ -229,9 +287,22 @@ export function Bots() {
   const allRunning   = bots.length > 0 && filteredRunning === bots.length
   const noFilteredBots = bots.length === 0
 
-  const anyGlobalPending = startMut.isPending || stopMut.isPending || restartMut.isPending || emergencyMut.isPending
-  const anyPerBotPending = startOne.isPending || stopOne.isPending || restartOne.isPending
-  const anyPending       = anyGlobalPending || anyPerBotPending
+  const anyGlobalPending    = startMut.isPending || stopMut.isPending || restartMut.isPending || emergencyMut.isPending
+  const anyPerBotPending    = startOne.isPending || stopOne.isPending || restartOne.isPending
+  // anyPending includes active transitions — keeps controls locked until VPS confirms state change
+  const anyPending          = anyGlobalPending || anyPerBotPending || hasPendingTransitions
+
+  // Which bot + action is mid-flight (HTTP request not yet returned)
+  const pendingBotName: string | undefined =
+    startOne.isPending   ? startOne.variables :
+    stopOne.isPending    ? stopOne.variables :
+    restartOne.isPending ? restartOne.variables :
+    undefined
+  const pendingBotActionLabel: string | null =
+    startOne.isPending   ? 'Starting…'   :
+    stopOne.isPending    ? 'Stopping…'   :
+    restartOne.isPending ? 'Restarting…' :
+    null
 
   const lastRefresh = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '—'
 
@@ -241,7 +312,7 @@ export function Bots() {
       <div className="flex items-center gap-3 mb-[18px]">
         <h1 className="text-h1 font-semibold">Bots</h1>
         <span className="text-[12px] text-text-tertiary">
-          auto-refresh 60s · last {lastRefresh}
+          {hasPendingTransitions ? 'polling 3s · ' : 'auto-refresh 60s · '}last {lastRefresh}
         </span>
         <button
           onClick={() => refetch()}
@@ -355,10 +426,15 @@ export function Bots() {
               </thead>
               <tbody>
                 {bots.map((bot: BotStatus) => {
-                  const isRunning      = bot.status === 'RUNNING'
-                  const isThisRowBusy  = pendingBotName === bot.name
-                  // All rows lock while any per-bot or global action is in-flight
-                  const anyBusy        = anyPending
+                  const isRunning = bot.status === 'RUNNING'
+                  // Row is busy while HTTP request is in-flight OR while awaiting VPS state confirmation
+                  const isThisRowBusy = (pendingBotName === bot.name) || !!pendingTransitions[bot.name]
+                  const thisRowLabel  =
+                    pendingBotName === bot.name
+                      ? pendingBotActionLabel
+                      : (pendingTransitions[bot.name]?.label ?? null)
+                  // All rows lock while any action is in-flight or transitioning
+                  const anyBusy = anyPending
                   return (
                     <tr key={bot.name} className="border-b border-border-subtle last:border-0">
                       <td className="px-[14px] py-[11px] font-medium">{bot.name}</td>
@@ -395,16 +471,16 @@ export function Bots() {
                           : <span className="text-text-tertiary">—</span>
                         }
                       </td>
-                      {/* Per-row actions */}
+                      {/* Per-row actions — locked while this row OR any row is transitioning */}
                       <td className="px-[14px] py-[11px]">
                         {isThisRowBusy ? (
-                          // Show inline executing status on the active row
+                          // Show inline executing status on the active row until VPS confirms
                           <div className="flex items-center justify-end gap-[6px] text-[11px] text-accent">
                             <svg className="animate-spin h-[11px] w-[11px] flex-shrink-0" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                             </svg>
-                            {pendingBotAction}
+                            {thisRowLabel}
                           </div>
                         ) : (
                           <div className="flex items-center justify-end gap-[4px]">
@@ -413,7 +489,10 @@ export function Bots() {
                               title="Start bot"
                               variant="pos"
                               disabled={isRunning || anyBusy}
-                              onClick={() => startOne.mutate(bot.name)}
+                              onClick={() => {
+                                setPendingFor(bot.name, 'start')
+                                startOne.mutate(bot.name, { onError: () => clearPendingFor(bot.name) })
+                              }}
                             />
                             <RowActionBtn
                               icon={Square}
@@ -426,7 +505,10 @@ export function Bots() {
                               icon={RotateCcw}
                               title="Restart bot"
                               disabled={anyBusy}
-                              onClick={() => restartOne.mutate(bot.name)}
+                              onClick={() => {
+                                setPendingFor(bot.name, 'restart')
+                                restartOne.mutate(bot.name, { onError: () => clearPendingFor(bot.name) })
+                              }}
                             />
                             <RowActionBtn
                               icon={FileText}
@@ -560,7 +642,11 @@ export function Bots() {
           description="This will run the SYS_STARTUP scheduled task on the VPS, starting all configured bot instances."
           confirmLabel="Start"
           confirmClass="bg-pos-muted text-pos-text border border-pos/40 hover:bg-pos/10"
-          onConfirm={() => { startMut.mutate(); setConfirm(null) }}
+          onConfirm={() => {
+            startMut.mutate()
+            snapshot?.bots.forEach(b => setPendingFor(b.name, 'start'))
+            setConfirm(null)
+          }}
           onCancel={() => setConfirm(null)}
           isPending={startMut.isPending}
         />
@@ -571,7 +657,11 @@ export function Bots() {
           description="This will delete the MT5 lock file and kill all python.exe processes on the VPS. Bots will not restart until SYS_STARTUP is triggered."
           confirmLabel="Stop all"
           confirmClass="bg-warn-muted text-warn-text border border-warn/40 hover:bg-warn/10"
-          onConfirm={() => { stopMut.mutate(); setConfirm(null) }}
+          onConfirm={() => {
+            stopMut.mutate()
+            snapshot?.bots.forEach(b => setPendingFor(b.name, 'stop'))
+            setConfirm(null)
+          }}
           onCancel={() => setConfirm(null)}
           isPending={stopMut.isPending}
         />
@@ -582,7 +672,11 @@ export function Bots() {
           description="This will stop all bots (kill python.exe + delete lock), wait 3 seconds, then fire SYS_STARTUP to bring them back up."
           confirmLabel="Restart"
           confirmClass="bg-accent-muted text-accent-text border border-accent/30 hover:bg-accent/10"
-          onConfirm={() => { restartMut.mutate(); setConfirm(null) }}
+          onConfirm={() => {
+            restartMut.mutate()
+            snapshot?.bots.forEach(b => setPendingFor(b.name, 'restart'))
+            setConfirm(null)
+          }}
           onCancel={() => setConfirm(null)}
           isPending={restartMut.isPending}
         />
@@ -600,7 +694,11 @@ export function Bots() {
           description={`This will terminate the ${confirmStopBot} process on the VPS. The bot will stop trading immediately. Restart it manually when ready.`}
           confirmLabel="Stop bot"
           confirmClass="bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/10"
-          onConfirm={() => { stopOne.mutate(confirmStopBot); setConfirmStopBot(null) }}
+          onConfirm={() => {
+            setPendingFor(confirmStopBot, 'stop')
+            stopOne.mutate(confirmStopBot, { onError: () => clearPendingFor(confirmStopBot) })
+            setConfirmStopBot(null)
+          }}
           onCancel={() => setConfirmStopBot(null)}
           isPending={stopOne.isPending}
         />

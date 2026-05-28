@@ -336,7 +336,7 @@ def restart_bots():
 
     try:
         stop_out = _stop_procs()
-_time.sleep(3)
+        _time.sleep(3)
         start_out = _start_task()
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
@@ -373,12 +373,19 @@ def _resolve_bot(bot_name: str) -> tuple[str, str]:
     return task_name, _TASK_BOT_KEYS[task_name]
 
 
+_COORDINATOR = r"C:\trading\algos\bots\startup_coordinator.py"
+
+
 @router.post("/{bot_name}/start")
 def start_bot(bot_name: str):
-    """Run the scheduled task for a single bot."""
-    task_name, _ = _resolve_bot(bot_name)
+    """Launch a single bot via startup_coordinator.py --bot <key>.
+    The coordinator writes the started timestamp and Popens the bot with
+    CREATE_NEW_PROCESS_GROUP so it survives the SSH session.
+    Individual BOT_* scheduled tasks are disabled — schtasks /run does nothing.
+    """
+    _, bot_key = _resolve_bot(bot_name)
     try:
-        out = _ssh(f"schtasks /run /tn {task_name}")
+        out = _ssh(f'python "{_COORDINATOR}" --bot {bot_key}')
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
@@ -403,15 +410,14 @@ def stop_bot(bot_name: str):
 
 @router.post("/{bot_name}/restart")
 def restart_bot(bot_name: str):
-    """Kill this bot's process, wait 3 s, then re-run its scheduled task."""
-
-    task_name, bot_key = _resolve_bot(bot_name)
+    """Kill this bot's process, wait 3 s, then relaunch via startup_coordinator --bot."""
+    _, bot_key = _resolve_bot(bot_name)
     try:
         stop_out = _ssh(
             f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul'
         )
-_time.sleep(3)
-        start_out = _ssh(f"schtasks /run /tn {task_name}")
+        _time.sleep(3)
+        start_out = _ssh(f'python "{_COORDINATOR}" --bot {bot_key}')
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:

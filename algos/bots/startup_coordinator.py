@@ -7,8 +7,15 @@ for uptime tracking across algo panel and Telegram.
 
 Run via SYS_STARTUP task at boot, or manually:
     python C:/trading/algos/bots/startup_coordinator.py
+
+Single-bot mode (Command Center per-bot start/restart):
+    python C:/trading/algos/bots/startup_coordinator.py --bot smc_trend
+
+In single-bot mode: skips lock clear, skips marking other bots stopped,
+launches the bot and exits immediately (bot survives via CREATE_NEW_PROCESS_GROUP).
 """
 
+import argparse
 import subprocess
 import sys
 import time
@@ -99,6 +106,32 @@ def wait_for_connection(log_path: str, ready_string: str,
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Start bots (all or single)")
+    parser.add_argument("--bot", default=None,
+                        help="Start only this bot key (e.g. smc_trend). "
+                             "Skips lock clear and connection wait — bot detaches immediately.")
+    args = parser.parse_args()
+
+    # ── Single-bot mode ───────────────────────────────────────────────────────
+    if args.bot:
+        entry = next((e for e in STARTUP_SEQUENCE if e[0] == args.bot), None)
+        if entry is None:
+            keys = [e[0] for e in STARTUP_SEQUENCE]
+            print(f"Unknown bot key '{args.bot}'. Available: {', '.join(keys)}")
+            sys.exit(1)
+
+        bot_key, name, script, config, *_ = entry
+        print(f"Starting {name} (single-bot mode)…")
+        set_started(bot_key)
+        subprocess.Popen(
+            [PYTHON, script, "--config", config],
+            cwd=str(BOTS),
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+        print(f"  ✓ {name} launched")
+        return
+
+    # ── Full startup mode ─────────────────────────────────────────────────────
     print("=" * 60)
     print("  LWG Capital — Sequential Bot Startup")
     print("=" * 60)

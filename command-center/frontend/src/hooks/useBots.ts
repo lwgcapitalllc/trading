@@ -34,8 +34,7 @@ function useControlAction(action: 'start' | 'stop' | 'restart' | 'emergency') {
     mutationFn: () => api.post<ControlResult>(`/bots/${action}`),
     onSuccess: () => {
       toast.success(labels[action])
-      // Refetch snapshot after a short delay to give VPS time to update state
-      setTimeout(() => qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] }), 4_000)
+      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
     onError: (err) => {
       toast.error(`${labels[action]} failed: ${err}`)
@@ -58,7 +57,7 @@ function useBotAction(action: 'start' | 'stop' | 'restart') {
     onSuccess: (_data, botName) => {
       const label = { start: 'started', stop: 'stopped', restart: 'restarted' }[action]
       toast.success(`${botName} ${label}`)
-      setTimeout(() => qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] }), 4_000)
+      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
     onError: (err, botName) => {
       toast.error(`${botName} ${action} failed: ${err}`)
