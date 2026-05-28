@@ -22,6 +22,8 @@ from __future__ import annotations
 import json
 import subprocess
 import time as _time
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -81,6 +83,27 @@ _SUPPRESS_KEYS: dict[str, str] = {
     "scalper":        "scalper",
     "fft":            "fft",
 }
+
+# Telegram — same credentials as notify.py / algo.py
+_TG_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
+_TG_CHAT  = "-1003977707258"
+
+# bot_key → display name for notifications
+_KEY_DISPLAY: dict[str, str] = {v: _DISPLAY_NAMES[k] for k, v in _TASK_BOT_KEYS.items()}
+
+
+def _notify_telegram(text: str) -> None:
+    """Send a Telegram notification.  Mirrors algo.py notify_telegram().  Never raises."""
+    try:
+        url  = f"https://api.telegram.org/bot{_TG_TOKEN}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id": _TG_CHAT,
+            "text":    text,
+            "parse_mode": "Markdown",
+        }).encode()
+        urllib.request.urlopen(url, data=data, timeout=5)
+    except Exception:
+        pass
 
 
 def _suppress_stop_alert(bot_key: str) -> None:
@@ -341,6 +364,7 @@ def start_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    _notify_telegram("▶️ All bots starting \\[command center\\]")
     return {"status": "ok", "output": out}
 
 
@@ -355,6 +379,7 @@ def stop_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    _notify_telegram("⏹ All bots stopped \\[command center\\]")
     return {"status": "ok", "output": out}
 
 
@@ -371,6 +396,7 @@ def restart_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    _notify_telegram("🔄 All bots restarting \\[command center\\]")
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}
 
 
@@ -417,6 +443,8 @@ def start_bot(bot_name: str):
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    display = _KEY_DISPLAY.get(bot_key, bot_key)
+    _notify_telegram(f"▶️ *{display}* starting \\[command center\\]")
     return {"status": "ok", "output": out}
 
 
@@ -433,6 +461,8 @@ def stop_bot(bot_name: str):
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    display = _KEY_DISPLAY.get(bot_key, bot_key)
+    _notify_telegram(f"⏹ *{display}* stopped \\[command center\\]")
     return {"status": "ok", "output": out}
 
 
@@ -451,4 +481,6 @@ def restart_bot(bot_name: str):
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    display = _KEY_DISPLAY.get(bot_key, bot_key)
+    _notify_telegram(f"🔄 *{display}* restarting \\[command center\\]")
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}

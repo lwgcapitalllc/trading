@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { FileText, Play, RotateCcw, Square, RefreshCw } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -154,6 +154,9 @@ export function Bots() {
   // Per-bot transitions: persists after mutation resolves until snapshot confirms expected status
   const [pendingTransitions, setPendingTransitions] = useState<Record<string, PendingTransition>>({})
 
+  // Hard-clear timers — ensure spinners always clear even when snapshot polling fails
+  const transitionTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
   // Global control mutations
   const startMut     = useBotStart()
   const stopMut      = useBotStop()
@@ -163,6 +166,11 @@ export function Bots() {
   const stopOne    = useBotStopOne()
   const restartOne = useBotRestartOne()
 
+  // Cancel all timers on unmount
+  useEffect(() => {
+    return () => { Object.values(transitionTimers.current).forEach(clearTimeout) }
+  }, [])
+
   // ── Transition helpers ────────────────────────────────────────────────────────
 
   function setPendingFor(botName: string, action: 'start' | 'stop' | 'restart') {
@@ -171,13 +179,21 @@ export function Bots() {
       stop:    { label: 'Stopping…',   expectedStatus: 'STOPPED'  as const },
       restart: { label: 'Restarting…', expectedStatus: 'RUNNING'  as const },
     }
+    // Cancel any existing timer for this bot before setting a new one
+    if (transitionTimers.current[botName]) clearTimeout(transitionTimers.current[botName])
     setPendingTransitions(prev => ({
       ...prev,
       [botName]: { ...map[action], since: Date.now() },
     }))
+    // Hard-clear after 30 s: fires if snapshot polling fails or is too slow
+    transitionTimers.current[botName] = setTimeout(() => clearPendingFor(botName), 30_000)
   }
 
   function clearPendingFor(botName: string) {
+    if (transitionTimers.current[botName]) {
+      clearTimeout(transitionTimers.current[botName])
+      delete transitionTimers.current[botName]
+    }
     setPendingTransitions(prev => {
       if (!prev[botName]) return prev
       const next = { ...prev }
@@ -360,7 +376,7 @@ export function Bots() {
                   {['Bot', 'Account', 'Balance', 'Status', 'Uptime', 'Day P&L', 'Actions'].map(h => (
                     <th
                       key={h}
-                      className={`text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-[14px] py-[10px] bg-bg-surface-2 border-b border-border-subtle whitespace-nowrap
+                      className={`text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-[14px] py-[10px] bg-bg-surface-2 border-b border-border-subtle whitespace-nowrap align-middle
                         ${['Balance', 'Uptime', 'Day P&L', 'Actions'].includes(h) ? 'text-right' : ''}`}
                     >
                       {h}
@@ -381,8 +397,8 @@ export function Bots() {
                   const anyBusy = anyPending
                   return (
                     <tr key={bot.name} className="border-b border-border-subtle last:border-0">
-                      <td className="px-[14px] py-[11px] font-medium">{bot.name}</td>
-                      <td className="px-[14px] py-[11px]">
+                      <td className="px-[14px] py-[11px] font-medium align-middle">{bot.name}</td>
+                      <td className="px-[14px] py-[11px] align-middle">
                         <span className="font-mono text-[11px] text-text-secondary">{bot.account}</span>
                         <span className="ml-[4px] inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary">
                           {bot.account_type}
@@ -393,18 +409,18 @@ export function Bots() {
                           </span>
                         )}
                       </td>
-                      <td className="px-[14px] py-[11px] text-right font-mono text-small">
+                      <td className="px-[14px] py-[11px] text-right font-mono text-small align-middle">
                         {bot.balance != null
                           ? '$' + bot.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                           : '—'}
                       </td>
-                      <td className="px-[14px] py-[11px]">
+                      <td className="px-[14px] py-[11px] align-middle">
                         <StatusPill status={bot.status} />
                       </td>
-                      <td className="px-[14px] py-[11px] text-right font-mono text-small text-text-secondary">
+                      <td className="px-[14px] py-[11px] text-right font-mono text-small text-text-secondary align-middle">
                         {bot.uptime_seconds != null ? formatUptime(bot.uptime_seconds) : '—'}
                       </td>
-                      <td className="px-[14px] py-[11px] text-right font-mono text-small">
+                      <td className="px-[14px] py-[11px] text-right font-mono text-small align-middle">
                         {bot.daily_pnl_pct != null
                           ? <span className={bot.daily_pnl_pct >= 0 ? 'text-pos-text' : 'text-neg-text'}>
                               {bot.daily_pnl_pct >= 0 ? '+' : ''}{bot.daily_pnl_pct.toFixed(1)}%
@@ -413,7 +429,7 @@ export function Bots() {
                         }
                       </td>
                       {/* Per-row actions — locked while this row OR any row is transitioning */}
-                      <td className="px-[14px] py-[11px]">
+                      <td className="px-[14px] py-[11px] align-middle">
                         {isThisRowBusy ? (
                           // Show inline executing status on the active row until VPS confirms
                           <div className="flex items-center justify-end gap-[6px] text-[11px] text-accent">
