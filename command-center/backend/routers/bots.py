@@ -374,6 +374,8 @@ def _resolve_bot(bot_name: str) -> tuple[str, str]:
 
 
 _COORDINATOR = r"C:\trading\algos\bots\startup_coordinator.py"
+# WMI does not inherit the user's PATH — must use the full Python executable path.
+_PYTHON_EXE  = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe"
 
 # Use wmic process call create so startup_coordinator runs under WMI — not
 # under the SSH job object — meaning the bot it spawns survives when SSH closes.
@@ -381,7 +383,7 @@ _COORDINATOR = r"C:\trading\algos\bots\startup_coordinator.py"
 def _launch_bot(bot_key: str) -> str:
     """Fire startup_coordinator.py --bot <key> via WMI and return wmic output."""
     return _ssh(
-        f'wmic process call create "python {_COORDINATOR} --bot {bot_key}" 2>nul'
+        f'wmic process call create "{_PYTHON_EXE} {_COORDINATOR} --bot {bot_key}" 2>nul'
     )
 
 
