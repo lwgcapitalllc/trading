@@ -110,9 +110,26 @@ def health():
     return jsonify({"status": "ok", "running_jobs": running})
 
 
+def _enum_window_titles() -> list[str]:
+    """Enumerate top-level window titles via raw ctypes — no COM, no pywinauto."""
+    import ctypes
+    titles: list[str] = []
+    buf = ctypes.create_unicode_buffer(512)
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def _cb(hwnd, _):
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)
+        if buf.value:
+            titles.append(buf.value)
+        return True
+
+    ctypes.windll.user32.EnumWindows(_cb, None)
+    return titles
+
+
 @app.route("/nt-health")
 def nt_health():
-    """Process-level check (tasklist) + SA window check (pywinauto, RDP only)."""
+    """Process-level check (tasklist) + SA window check (EnumWindows via ctypes)."""
     result = {"nt8_running": False, "sa_visible": False, "error": None}
     try:
         out = subprocess.check_output(
@@ -124,13 +141,10 @@ def nt_health():
         result["error"] = str(e)
         return jsonify(result)
     try:
-        from pywinauto import Desktop
-        # win32 backend uses EnumWindows — no COM init needed, works in Flask threads.
-        # uia backend requires CoInitialize() per thread and breaks in threaded Flask.
-        titles = [w.window_text() for w in Desktop(backend="win32").windows()]
+        titles = _enum_window_titles()
         result["sa_visible"] = any("Strategy Analyzer" in t for t in titles)
     except Exception as e:
-        result["error"] = f"pywinauto: {e}"
+        result["error"] = f"win32: {e}"
     return jsonify(result)
 
 
@@ -379,8 +393,7 @@ def legacy_results():
 @app.route("/diagnose")
 def diagnose():
     try:
-        from pywinauto import Desktop
-        titles = [w.window_text() for w in Desktop(backend="win32").windows()]
+        titles = _enum_window_titles()
         return jsonify({"windows": titles})
     except Exception as e:
         return jsonify({"error": str(e)})
