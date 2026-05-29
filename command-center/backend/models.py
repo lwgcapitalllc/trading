@@ -129,9 +129,9 @@ class Candidate(BaseModel):
     lookback_span_days: Optional[int] = None
     score_breakdown: dict[str, float]
     # leaderboard stats (real values from exchange, not synthetic)
-    account_value: Optional[float] = None     # current USD account value
-    all_time_pnl: Optional[float] = None      # total USD profit all time
-    all_time_roi: Optional[float] = None      # fractional ROI, e.g. 3.9 = 390%
+    account_value: Optional[float] = None
+    all_time_pnl: Optional[float] = None
+    all_time_roi: Optional[float] = None    # fractional, e.g. 3.9 = 390%
     month_roi: Optional[float] = None
     week_roi: Optional[float] = None
     # pnl from our fill analysis window
@@ -257,52 +257,177 @@ class TelegramUserRoleUpdate(BaseModel):
     role: str
 
 
-# ── Backtests ─────────────────────────────────────────────────────────────────
+# ── Lab — strategies ──────────────────────────────────────────────────────────
 
-class BacktestResult(BaseModel):
-    strategy: str
+class Strategy(BaseModel):
+    id: str
+    name: str
+    class_name: str
+    source_path: str
+    category: Optional[str] = None
+    default_instrument: Optional[str] = None
+    default_params: dict = {}
+    param_schema: list[dict] = []          # [{name, type, min?, max?, default, group, display_name}]
+    scanned_at: datetime
+    run_count: int = 0
+
+
+class ScanResult(BaseModel):
+    scanned: int
+    added: int
+    updated: int
+    skipped: int
+
+
+# ── Lab — firms ───────────────────────────────────────────────────────────────
+
+class Firm(BaseModel):
+    id: str
+    name: str
+    account_size: int
+    profit_target: int
+    max_loss_eod: int
+    max_loss_intraday: Optional[int] = None
+    drawdown_type: str
+    consistency_pct: Optional[float] = None
+    min_trading_days: Optional[int] = None
+    force_flat_time_et: Optional[str] = None
+    allowed_instruments: list[str] = []
+    max_contracts: dict = {}
+    platform_support: list[str] = []
+    account_tier: str = "eval"          # "eval" | "funded"
+    docs_url: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FirmCreate(BaseModel):
+    id: str
+    name: str
+    account_size: int
+    profit_target: int
+    max_loss_eod: int
+    max_loss_intraday: Optional[int] = None
+    drawdown_type: str = "eod"
+    consistency_pct: Optional[float] = None
+    min_trading_days: Optional[int] = None
+    force_flat_time_et: Optional[str] = None
+    allowed_instruments: list[str] = []
+    max_contracts: dict = {}
+    platform_support: list[str] = []
+    account_tier: str = "eval"          # "eval" | "funded"
+    docs_url: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# ── Lab — backtest runs ───────────────────────────────────────────────────────
+
+class BacktestRunRequest(BaseModel):
+    strategy_id: str
     instrument: str
-    verdict: str            # "KEEP" | "WARN" | "DISCARD"
-    max_drawdown: float
-    max_loss_limit: float
-    drawdown_pass: bool
-    eval_result: str        # "would_pass" | "would_fail"
-    eval_days: Optional[int] = None
-    daily_pnl: list[float]
-    worst_day: float
-    worst_losing_streak: int
-    win_rate: float
-    profit_factor: float
-    avg_win: float
-    avg_loss: float
-    trade_count: int
-    expectancy: float
-    total_return: float
-    cagr: float
-    sharpe: float
-    sortino: float
-    avg_trade_duration_min: float
-    equity_curve: list[EquityPoint]
+    params: dict
+    bar_type: str = "Minute"
+    bar_value: int = 5
+    start_date: str                 # 'YYYY-MM-DD'
+    end_date: str
+    commission_per_side: float = 2.25
+    slippage_ticks: int = 1
+    evaluate_firms: list[str]       # firm_ids to evaluate against
 
 
-class BacktestRun(BaseModel):
+class BacktestSummary(BaseModel):
     run_id: str
-    generated_at: datetime
-    combos: list[BacktestResult]
-
-
-# ── Stress Tests ──────────────────────────────────────────────────────────────
-
-class StressTestResult(BaseModel):
-    strategy: str
+    strategy_id: str
+    strategy_name: str
     instrument: str
-    runs: int
-    max_dd_median: float
-    max_dd_p95: float
-    max_dd_p99: float
-    prob_breach: float
-    prob_pass_eval: float
-    final_pnl_median: float
-    final_pnl_p10: float
-    final_pnl_worst: float
-    equity_paths: list[list[EquityPoint]]
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    net_pnl: Optional[float] = None
+    max_drawdown: Optional[float] = None
+    profit_factor: Optional[float] = None
+    win_rate: Optional[float] = None
+    trade_count: Optional[int] = None
+    verdicts: list[dict] = []       # [{firm_id, verdict}]
+
+
+class EvaluationDetail(BaseModel):
+    eval_id: str
+    firm_id: str
+    firm_name: str
+    verdict: str                    # 'PASS' | 'WARN' | 'DISCARD'
+    drawdown_pass: bool
+    target_pass: bool
+    consistency_pass: Optional[bool] = None
+    simulated_eval_days: Optional[int] = None
+    breach_count: int
+    largest_day_share_pct: Optional[float] = None
+    firm_max_loss_eod: int
+    firm_profit_target: int
+    firm_consistency_pct: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class BacktestDetail(BaseModel):
+    run_id: str
+    strategy_id: str
+    strategy_name: str
+    instrument: str
+    params: dict
+    bar_type: str
+    bar_value: int
+    start_date: str
+    end_date: str
+    commission_per_side: float
+    slippage_ticks: int
+    status: str
+    error_message: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    # KPIs
+    net_pnl: Optional[float] = None
+    max_drawdown: Optional[float] = None
+    profit_factor: Optional[float] = None
+    win_rate: Optional[float] = None
+    win_count: Optional[int] = None
+    trade_count: Optional[int] = None
+    sharpe: Optional[float] = None
+    sortino: Optional[float] = None
+    cagr: Optional[float] = None
+    avg_win: Optional[float] = None
+    avg_loss: Optional[float] = None
+    avg_trade_duration_min: Optional[float] = None
+    worst_day_pnl: Optional[float] = None
+    worst_losing_streak: Optional[int] = None
+    # Heavy data (loaded from JSON files on disk)
+    equity_curve: list[EquityPoint] = []
+    daily_pnl: list[dict] = []     # [{date: 'YYYY-MM-DD', pnl: float}]
+    # Per-firm verdicts
+    evaluations: list[EvaluationDetail] = []
+
+
+# ── Lab — progress + system health ───────────────────────────────────────────
+
+class LabProgress(BaseModel):
+    job_id: Optional[str] = None
+    job_type: Optional[str] = None          # 'backtest' | 'optimize' | 'stress' | 'overfit'
+    status: str = "idle"                    # 'idle' | 'running' | 'complete' | 'failed_*'
+    strategy_id: Optional[str] = None
+    instrument: Optional[str] = None
+    pct: int = 0
+    message: str = ""
+    started_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    heartbeat_age_seconds: float = 0.0
+    error_message: Optional[str] = None
+
+
+class SystemHealth(BaseModel):
+    backend: bool = True
+    ssh_tunnel: bool = False
+    vps_agent: bool = False
+    nt8_running: bool = False
+    nt8_sa_visible: bool = False
+    last_compile_ok: bool = False
+    last_compile_at: Optional[str] = None
+    last_compile_errors: list[str] = []
+    checked_at: str

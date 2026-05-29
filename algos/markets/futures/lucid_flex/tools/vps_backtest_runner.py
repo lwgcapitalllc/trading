@@ -1,22 +1,23 @@
 """
-Automates NinjaTrader 8 Strategy Analyzer to run all backtest combos.
+Automates NinjaTrader 8 Strategy Analyzer to run backtests.
 
 Run this script ON THE VPS (via SSH or RDP terminal), not on Mac.
 
 Prerequisites on VPS:
     pip install pywinauto comtypes
 
-Usage:
-    python vps_backtest_runner.py [--config path/to/backtest_config.json]
+Two modes:
 
-The script:
-  1. Connects to the running NT8 instance
-  2. For each combo in config: sets all fields, clicks Run, waits for completion
-  3. Reads results from NT8's strategy analyzer XML logs (written automatically)
-  4. Writes lucid_flex_results.csv to the NT8 Documents folder
+  Lab mode (job-keyed, called by vps_agent.py):
+    python vps_backtest_runner.py --job-id <id> --job-spec <path/to/job_spec.json>
+    Reads a single job spec, runs it, writes NT8_DOCS/lab_results/<job_id>/result.json.
+    Emits PCT:N:message lines for agent progress tracking.
+
+  Legacy mode (config-driven, all combos):
+    python vps_backtest_runner.py [--config path/to/backtest_config.json] [--combo ID]
+    Writes lucid_flex_results.csv to the NT8 Documents folder.
 
 NOTE: NT8 must already be open with the Strategy Analyzer visible.
-      Open it via: New -> Strategy Analyzer in NT8 Control Center.
 """
 
 import sys
@@ -331,13 +332,153 @@ def run_combo(app, combo, global_params, idx, total):
     return result
 
 
+def _pct(n: int, msg: str = ""):
+    """Emit a progress line the agent parses: PCT:N:message."""
+    print(f"PCT:{n}:{msg}", flush=True)
+
+
+# ── Lab mode (job-keyed) ──────────────────────────────────────────────────────
+
+def configure_from_spec(sa, spec: dict):
+    """Configure Strategy Analyzer from a lab job spec (firm-agnostic)."""
+    strategy = spec["strategy_class"]
+    pfx      = f"{strategy}PropertyGridEditorPDEX"
+
+    # Strategy switch — NT8 rebuilds the property grid; 3s lets it settle
+    select_strategy(sa, strategy)
+    time.sleep(3.0)
+
+    set_instrument(sa, spec["instrument"])
+    set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  spec["start_date"])
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    spec["end_date"])
+    set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
+
+    # Prop-firm SA params: set permissive so strategy trades freely;
+    # actual pass/fail is evaluated post-run against firm rules by the backend.
+    set_edit(sa, f"{pfx}_AccountSize",       100000,                              warn=False)
+    set_edit(sa, f"{pfx}_CommissionPerSide", spec.get("commission_per_side", 2.25), warn=False)
+    set_edit(sa, f"{pfx}_MaxDailyLoss",      99999,                               warn=False)
+    set_edit(sa, f"{pfx}_DailyHaltFraction", 1.0,                                 warn=False)
+    set_edit(sa, f"{pfx}_RiskPct",           2.0,                                 warn=False)
+
+    # Strategy-specific params
+    for key, value in spec.get("params", {}).items():
+        aid = f"{pfx}_{key}"
+        if not set_edit(sa, aid, value, warn=False):
+            if not set_checkbox(sa, aid, value):
+                set_combo(sa, aid, value)
+
+
+def write_job_result(job_id: str, spec: dict, kpis: dict):
+    out_dir = NT8_DOCS / "lab_results" / job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    result = {
+        "job_id":         job_id,
+        "strategy_class": spec["strategy_class"],
+        "instrument":     spec["instrument"],
+        "kpis": {
+            "net_pnl":                kpis.get("net_pnl"),
+            "max_drawdown":           kpis.get("max_drawdown"),
+            "profit_factor":          kpis.get("profit_factor"),
+            "win_rate":               kpis.get("win_rate"),
+            "win_count":              kpis.get("win_count"),
+            "trade_count":            kpis.get("trade_count"),
+            "sharpe":                 None,
+            "sortino":                None,
+            "cagr":                   None,
+            "avg_win":                None,
+            "avg_loss":               None,
+            "avg_trade_duration_min": None,
+            "worst_day_pnl":          None,
+            "worst_losing_streak":    None,
+        },
+        "equity_curve": [],
+        "daily_pnl":    [],
+        "completed_at": datetime.now().isoformat(),
+    }
+    (out_dir / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    print(f"  Result written to {out_dir / 'result.json'}")
+
+
+def run_job_mode(job_id: str, spec_path: str):
+    """Lab mode: run a single job spec, write result.json, exit 0 on success."""
+    with open(spec_path) as f:
+        spec = json.load(f)
+
+    strategy = spec["strategy_class"]
+    instr    = spec["instrument"]
+    print(f"JOB {job_id}: {strategy} on {instr}")
+    _pct(10, "Connecting to NT8")
+
+    app = connect_nt8()
+    sa  = find_strategy_analyzer(app)
+    _pct(20, "Configuring SA")
+
+    configure_from_spec(sa, spec)
+    time.sleep(1)
+
+    try:
+        run_btn = sa.child_window(auto_id="Run", control_type="Button")
+        run_btn.click_input()
+        print("  Run clicked.")
+    except Exception as e:
+        print(f"  ERROR clicking Run: {e}")
+        sys.exit(1)
+
+    _pct(30, "Backtest running")
+    time.sleep(2)
+    finished = wait_for_run_complete(sa, RUN_TIMEOUT)
+    if not finished:
+        print(f"  WARNING: Timed out after {RUN_TIMEOUT}s.")
+        sys.exit(1)
+
+    _pct(80, "Reading results")
+    # Poll for XML
+    today   = datetime.now().strftime("%Y_%m_%d")
+    pattern = str(SA_LOG_DIR / f"@@@{strategy}_{today}_*.xml")
+    xml_deadline = time.time() + 60
+    while time.time() < xml_deadline:
+        if glob.glob(pattern):
+            break
+        time.sleep(3)
+
+    result = read_result_from_xml(job_id, strategy, instr)
+    if result is None:
+        print("  ERROR: Could not read result from XML.")
+        sys.exit(1)
+
+    kpis = {
+        "net_pnl":       result["net_pnl"],
+        "max_drawdown":  result["max_drawdown"],
+        "profit_factor": result["profit_factor"],
+        "win_rate":      result["win_pct"] / 100.0,
+        "trade_count":   result["trades"],
+        "win_count":     round(result["win_pct"] / 100.0 * result["trades"]),
+    }
+    print(f"  Trades={kpis['trade_count']}  NetPnL={kpis['net_pnl']:.2f}"
+          f"  PF={kpis['profit_factor']:.4f}  MaxDD={kpis['max_drawdown']:.2f}")
+
+    write_job_result(job_id, spec, kpis)
+    _pct(100, "Complete")
+
+
+# ── Legacy mode ───────────────────────────────────────────────────────────────
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default=DEFAULT_CFG)
-    parser.add_argument("--combo",  default=None,
+    parser.add_argument("--config",   default=DEFAULT_CFG)
+    parser.add_argument("--combo",    default=None,
                         help="Run only this combo ID (e.g. ORB_MNQ). Omit to run all.")
+    parser.add_argument("--job-id",   default=None, help="Lab mode: job ID")
+    parser.add_argument("--job-spec", default=None, help="Lab mode: path to job_spec.json")
     args = parser.parse_args()
 
+    if args.job_id and args.job_spec:
+        run_job_mode(args.job_id, args.job_spec)
+        return
+
+    # Legacy config-driven mode
     cfg    = load_config(args.config)
     combos = cfg["combos"]
     gp     = cfg["global_params"]
@@ -363,7 +504,6 @@ def main():
         if result:
             results.append(result)
 
-    # Write CSV — Python-side, bypassing the C# Terminated handler
     try:
         with open(RESULTS_CSV, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)

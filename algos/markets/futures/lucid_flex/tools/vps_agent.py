@@ -1,18 +1,28 @@
 """
-LucidFlex VPS Agent — HTTP server that runs in the RDP session on the VPS.
+VPS Agent — job-keyed HTTP bridge for NinjaTrader 8 backtests.
 
-Because NT8 runs in the RDP session and SSH creates an isolated session,
-pywinauto cannot reach NT8 over SSH directly. This agent runs persistently
-inside the RDP session and accepts commands via HTTP, bridging the gap.
+Runs persistently in the RDP session on the VPS. NT8 + Strategy Analyzer must
+be open before any /backtest job is submitted.
 
-Endpoints:
-    GET  /health          -- ping
-    POST /run-backtests   -- run all combos via pywinauto (background)
-    GET  /status          -- log tail + running flag
-    GET  /results         -- parsed CSV as JSON
+New endpoints (job-keyed):
+    POST /backtest                  -- submit a job, returns {job_id} 202
+    GET  /jobs/<job_id>/status      -- job state dict (no log)
+    GET  /jobs/<job_id>/results     -- parsed result JSON
+    GET  /jobs/<job_id>/log         -- job log tail
+    POST /jobs/<job_id>/cancel      -- mark job cancelled
+    GET  /nt-health                 -- NT8 process + SA window check
+    GET  /nt-compile-status         -- last compile result from NT8 log
+    GET  /nt-log                    -- NT8 log tail
+    GET  /agent-log                 -- agent's own log tail
+
+Legacy endpoints (kept for backward compat):
+    GET  /health                    -- ping (now includes running_jobs count)
+    GET  /status                    -- old running flag + agent log
+    GET  /results                   -- reads lucid_flex_results.csv
+    POST /run-backtests             -- returns 410 Gone
 
 Usage on VPS (run from RDP terminal, NT8 must be open with Strategy Analyzer):
-    python C:\\algos\\markets\\futures\\lucid_flex\\tools\\vps_agent.py
+    python C:\\trading\\algos\\markets\\futures\\lucid_flex\\tools\\vps_agent.py
 
 Access from Mac via SSH tunnel:
     ssh -N -L 8765:localhost:8765 forexvps
@@ -20,8 +30,8 @@ Access from Mac via SSH tunnel:
 """
 
 import sys
-import os
 import csv
+import json
 import time
 import threading
 import subprocess
@@ -33,28 +43,50 @@ except ImportError:
     print("ERROR: flask not installed. Run: pip install flask")
     sys.exit(1)
 
-SCRIPT_DIR   = Path(__file__).parent
-CFG_PATH     = SCRIPT_DIR / "backtest_config.json"
-PORT         = 8765
+SCRIPT_DIR = Path(__file__).parent
+CFG_PATH   = SCRIPT_DIR / "backtest_config.json"
+PORT       = 8765
+NT8_DOCS   = Path.home() / "Documents" / "NinjaTrader 8"
+NT8_LOG    = NT8_DOCS / "log"
 
 app = Flask(__name__)
 
-_log: list = []
-_running   = False
-_lock      = threading.Lock()
+_agent_log: list = []
+_jobs: dict      = {}   # job_id → job dict
+_lock            = threading.Lock()
 
 
-def _log_append(msg: str):
+# ── Logging helpers ───────────────────────────────────────────────────────────
+
+def _alog(msg: str):
     ts    = time.strftime("%H:%M:%S")
     entry = f"[{ts}] {msg}"
     with _lock:
-        _log.append(entry)
-        if len(_log) > 500:
-            _log.pop(0)
+        _agent_log.append(entry)
+        if len(_agent_log) > 1000:
+            _agent_log.pop(0)
     print(entry, flush=True)
 
 
-# ── CORS (React app on localhost:5173 → agent on localhost:8765) ──────────
+def _jlog(job_id: str, msg: str):
+    ts    = time.strftime("%H:%M:%S")
+    entry = f"[{ts}] {msg}"
+    _alog(f"[{job_id[:8]}] {msg}")
+    with _lock:
+        if job_id in _jobs:
+            _jobs[job_id]["log"].append(entry)
+            if len(_jobs[job_id]["log"]) > 500:
+                _jobs[job_id]["log"].pop(0)
+
+
+def _jupdate(job_id: str, **kwargs):
+    with _lock:
+        if job_id in _jobs:
+            _jobs[job_id].update(kwargs)
+            _jobs[job_id]["updated_at"] = time.time()
+
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
 
 @app.after_request
 def _cors(response):
@@ -63,72 +95,276 @@ def _cors(response):
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
+
 @app.route("/", defaults={"path": ""}, methods=["OPTIONS"])
 @app.route("/<path:path>",             methods=["OPTIONS"])
 def _options(path):
     return "", 204
 
 
-# ── Routes ────────────────────────────────────────────────────────────────
+# ── Observability ─────────────────────────────────────────────────────────────
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "running": _running})
+    running = sum(1 for j in _jobs.values() if j["status"] == "running")
+    return jsonify({"status": "ok", "running_jobs": running})
 
 
-@app.route("/status")
-def status():
+@app.route("/nt-health")
+def nt_health():
+    """Process-level check (tasklist) + SA window check (pywinauto, RDP only)."""
+    result = {"nt8_running": False, "sa_visible": False, "error": None}
+    try:
+        out = subprocess.check_output(
+            ["tasklist", "/FI", "IMAGENAME eq NinjaTrader.exe", "/NH"],
+            text=True, timeout=10, stderr=subprocess.DEVNULL,
+        )
+        result["nt8_running"] = "NinjaTrader.exe" in out
+    except Exception as e:
+        result["error"] = str(e)
+        return jsonify(result)
+    try:
+        from pywinauto import Desktop
+        titles = [w.window_text() for w in Desktop(backend="uia").windows()]
+        result["sa_visible"] = any("Strategy Analyzer" in t for t in titles)
+    except Exception as e:
+        result["error"] = f"pywinauto: {e}"
+    return jsonify(result)
+
+
+@app.route("/nt-compile-status")
+def nt_compile_status():
+    """Best-effort parse of the most recent NT8 log for compile results."""
+    result = {"ok": None, "at": None, "errors": [], "checked_at": time.time()}
+    try:
+        logs = sorted(NT8_LOG.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not logs:
+            result["errors"] = ["No NT8 log files found"]
+            return jsonify(result)
+        lines = logs[0].read_text(encoding="utf-8", errors="replace").splitlines()[-2000:]
+        errors, last_ok = [], None
+        for line in reversed(lines):
+            ll = line.lower()
+            if "compile error" in ll or "compilation failed" in ll:
+                errors.append(line.strip())
+                if len(errors) >= 10:
+                    break
+            elif "compilation succeeded" in ll or "compile succeeded" in ll:
+                last_ok = line.strip()
+                break
+        result["ok"]     = len(errors) == 0 and last_ok is not None
+        result["errors"] = errors
+        result["at"]     = last_ok
+    except Exception as e:
+        result["errors"] = [str(e)]
+    return jsonify(result)
+
+
+@app.route("/nt-log")
+def nt_log():
+    lines = int(request.args.get("lines", 200))
+    try:
+        logs = sorted(NT8_LOG.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not logs:
+            return jsonify({"log": ""})
+        content = logs[0].read_text(encoding="utf-8", errors="replace").splitlines()
+        return jsonify({"log": "\n".join(content[-lines:])})
+    except Exception as e:
+        return jsonify({"log": f"Error reading NT8 log: {e}"})
+
+
+@app.route("/agent-log")
+def agent_log():
+    lines = int(request.args.get("lines", 200))
     with _lock:
-        return jsonify({"running": _running, "log": list(_log[-200:])})
+        tail = list(_agent_log[-lines:])
+    return jsonify({"log": "\n".join(tail)})
 
 
-@app.route("/run-backtests", methods=["POST"])
-def run_backtests():
-    global _running
-    body  = request.get_json(silent=True) or {}
-    combo = body.get("combo")  # optional — omit to run all
+# ── Job control ───────────────────────────────────────────────────────────────
+
+@app.route("/backtest", methods=["POST"])
+def start_backtest():
+    spec   = request.get_json(silent=True) or {}
+    job_id = spec.get("job_id")
+    if not job_id:
+        return jsonify({"error": "job_id required"}), 400
+    required = ["strategy_class", "instrument", "start_date", "end_date"]
+    missing  = [k for k in required if k not in spec]
+    if missing:
+        return jsonify({"error": f"Missing fields: {missing}"}), 400
     with _lock:
-        if _running:
-            return jsonify({"error": "Already running"}), 409
-        _running = True
+        if job_id in _jobs and _jobs[job_id]["status"] == "running":
+            return jsonify({"error": "Job already running"}), 409
+        _jobs[job_id] = {
+            "job_id":     job_id,
+            "status":     "running",
+            "pct":        0,
+            "message":    "Starting...",
+            "started_at": time.time(),
+            "updated_at": time.time(),
+            "log":        [],
+            "result":     None,
+            "error":      None,
+        }
+    _alog(f"Job {job_id} submitted: {spec['strategy_class']} on {spec['instrument']}")
+    threading.Thread(target=_run_job, args=(job_id, spec), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "running"}), 202
 
-    threading.Thread(target=_run_bg, args=(combo,), daemon=True).start()
-    msg = f"started (combo={combo})" if combo else "started (all combos)"
-    return jsonify({"status": msg})
+
+@app.route("/jobs/<job_id>/status")
+def job_status(job_id):
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    with _lock:
+        snap = {k: v for k, v in job.items() if k != "log"}
+    return jsonify(snap)
 
 
-def _run_bg(combo=None):
-    global _running
-    runner = str(SCRIPT_DIR / "vps_backtest_runner.py")
-    cfg    = str(CFG_PATH)
-    label  = combo if combo else "all combos"
-    _log_append(f"Starting backtest runner ({label})...")
-    cmd = [sys.executable, "-u", runner, "--config", cfg]
-    if combo:
-        cmd += ["--combo", combo]
+@app.route("/jobs/<job_id>/results")
+def job_results(job_id):
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    if job["status"] == "running":
+        return jsonify({"error": "Job still running"}), 202
+    results_path = NT8_DOCS / "lab_results" / job_id / "result.json"
+    if not results_path.exists():
+        return jsonify({"error": "No result file", "status": job["status"]}), 404
+    try:
+        return jsonify(json.loads(results_path.read_text(encoding="utf-8")))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/jobs/<job_id>/log")
+def job_log(job_id):
+    lines = int(request.args.get("lines", 200))
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    with _lock:
+        tail = list(job["log"][-lines:])
+    return jsonify({"log": "\n".join(tail)})
+
+
+@app.route("/jobs/<job_id>/cancel", methods=["POST"])
+def cancel_job(job_id):
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    if job["status"] != "running":
+        return jsonify({"error": "Job not running", "status": job["status"]}), 409
+    _jupdate(job_id, status="failed_timeout", error="Cancelled by user", message="Cancelled")
+    _alog(f"Job {job_id} cancelled by user")
+    return jsonify({"ok": True})
+
+
+# ── Background job runner ─────────────────────────────────────────────────────
+
+def _run_job(job_id: str, spec: dict):
+    runner    = str(SCRIPT_DIR / "vps_backtest_runner.py")
+    spec_dir  = NT8_DOCS / "lab_results" / job_id
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = spec_dir / "job_spec.json"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+
+    cmd = [sys.executable, "-u", runner,
+           "--job-id", job_id,
+           "--job-spec", str(spec_path)]
+    _jlog(job_id, f"CMD: {' '.join(cmd)}")
+    _jupdate(job_id, pct=5, message="Runner started")
+
+    # Heartbeat — keeps updated_at fresh so the backend can detect stalls
+    stop_hb = threading.Event()
+    def _heartbeat():
+        while not stop_hb.wait(30):
+            with _lock:
+                if _jobs.get(job_id, {}).get("status") == "running":
+                    _jobs[job_id]["updated_at"] = time.time()
+    threading.Thread(target=_heartbeat, daemon=True).start()
+
     try:
         proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1,
         )
         for line in proc.stdout:
-            _log_append(line.rstrip())
+            line = line.rstrip()
+            _jlog(job_id, line)
+            if line.startswith("PCT:"):
+                try:
+                    parts = line.split(":", 2)
+                    pct   = int(parts[1])
+                    msg   = parts[2] if len(parts) > 2 else ""
+                    _jupdate(job_id, pct=pct, message=msg)
+                except Exception:
+                    pass
         proc.wait()
-        if proc.returncode == 0:
-            _log_append("Backtests complete.")
-        else:
-            _log_append(f"Runner exited with code {proc.returncode}")
     except Exception as e:
-        _log_append(f"ERROR: {e}")
+        stop_hb.set()
+        _jupdate(job_id, status="failed_runtime", error=str(e),
+                 message=f"Runner launch failed: {e}")
+        _alog(f"Job {job_id} launch error: {e}")
+        return
     finally:
+        stop_hb.set()
+
+    # If cancel() was called mid-run, leave the status it set
+    if _jobs.get(job_id, {}).get("status") != "running":
+        return
+
+    results_path = spec_dir / "result.json"
+    if proc.returncode == 0 and results_path.exists():
+        _jupdate(job_id, status="complete", pct=100, message="Complete")
+        _alog(f"Job {job_id} complete")
+    else:
         with _lock:
-            _running = False
+            log_text = "\n".join(_jobs.get(job_id, {}).get("log", []))
+        _classify_failure(job_id, log_text, proc.returncode)
+
+
+def _classify_failure(job_id: str, log_text: str, returncode: int):
+    lt     = log_text.lower()
+    status = "failed_unknown"
+    if "compile error" in lt or "compilation failed" in lt:
+        status = "failed_compile"
+    elif "no data" in lt or "no historical data" in lt or "insufficient data" in lt:
+        status = "failed_no_data"
+    elif "strategy analyzer" not in lt and returncode != 0:
+        status = "failed_nt_crash"
+    elif "timed out" in lt or "timeout" in lt:
+        status = "failed_timeout"
+    elif returncode != 0:
+        status = "failed_runtime"
+    _jupdate(job_id, status=status,
+             message=status.replace("_", " ").title(),
+             error=f"Exit code {returncode}")
+    _alog(f"Job {job_id} classified as {status}")
+
+
+# ── Legacy endpoints ──────────────────────────────────────────────────────────
+
+@app.route("/status")
+def legacy_status():
+    running = any(j["status"] == "running" for j in _jobs.values())
+    with _lock:
+        return jsonify({"running": running, "log": list(_agent_log[-200:])})
+
+
+@app.route("/run-backtests", methods=["POST"])
+def legacy_run_backtests():
+    return jsonify({"error": "Deprecated. Use POST /backtest with job_id."}), 410
 
 
 @app.route("/results")
-def get_results():
-    path = Path.home() / "Documents" / "NinjaTrader 8" / "lucid_flex_results.csv"
+def legacy_results():
+    path = NT8_DOCS / "lucid_flex_results.csv"
     if not path.exists():
         return jsonify({"error": "No results file yet", "rows": []}), 404
     with open(path, newline="") as f:
@@ -136,9 +372,38 @@ def get_results():
     return jsonify({"rows": rows})
 
 
+# ── Diagnostic endpoints ──────────────────────────────────────────────────────
+
+@app.route("/diagnose")
+def diagnose():
+    try:
+        from pywinauto import Desktop
+        titles = [w.window_text() for w in Desktop(backend="uia").windows()]
+        return jsonify({"windows": titles})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+@app.route("/dump-sa")
+def dump_sa():
+    try:
+        from pywinauto import Desktop
+        sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        controls = []
+        for el in sa.descendants():
+            title = el.window_text()
+            aid   = el.element_info.automation_id
+            ctype = el.element_info.control_type
+            if title or aid:
+                controls.append({"title": title, "control_type": ctype, "auto_id": aid})
+        return jsonify({"controls": controls})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/select-and-dump")
 def select_and_dump():
-    """Select a strategy in SA then dump all its controls — use ?strategy=ORB_LucidFlex."""
     strategy = request.args.get("strategy", "")
     if not strategy:
         return jsonify({"error": "Pass ?strategy=StrategyName"}), 400
@@ -165,50 +430,19 @@ def select_and_dump():
         return jsonify({"error": str(e)})
 
 
-@app.route("/diagnose")
-def diagnose():
-    """List all top-level window titles pywinauto can see in this session."""
-    try:
-        from pywinauto import Desktop
-        windows = Desktop(backend="uia").windows()
-        titles = [w.window_text() for w in windows]
-        return jsonify({"windows": titles})
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
-
-@app.route("/dump-sa")
-def dump_sa():
-    """Dump all descendants of the Strategy Analyzer with non-empty title or auto_id."""
-    try:
-        from pywinauto import Desktop
-        sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
-        sa.wait("visible", timeout=10)
-        controls = []
-        for el in sa.descendants():
-            title  = el.window_text()
-            aid    = el.element_info.automation_id
-            ctype  = el.element_info.control_type
-            if title or aid:
-                controls.append({"title": title, "control_type": ctype, "auto_id": aid})
-        return jsonify({"controls": controls})
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
-
 @app.route("/clear-results", methods=["POST"])
 def clear_results():
-    path = Path.home() / "Documents" / "NinjaTrader 8" / "lucid_flex_results.csv"
+    path = NT8_DOCS / "lucid_flex_results.csv"
     try:
         path.unlink(missing_ok=True)
-        _log_append("Results cleared.")
+        _alog("Results cleared.")
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
 
 if __name__ == "__main__":
-    _log_append(f"LucidFlex Agent starting on port {PORT}...")
-    _log_append(f"Config: {CFG_PATH}")
-    _log_append("NT8 must be running with Strategy Analyzer open.")
+    _alog(f"VPS Agent starting on port {PORT}...")
+    _alog(f"Config: {CFG_PATH}")
+    _alog("NT8 must be running with Strategy Analyzer open.")
     app.run(host="127.0.0.1", port=PORT, threaded=True)

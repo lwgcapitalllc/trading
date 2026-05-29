@@ -1,29 +1,230 @@
 """
-Backtests router — /backtests/* (scaffold stubs)
+Backtests router — /backtests/*
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import time
+import uuid
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
+
+from models import (
+    BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
+)
+from services import lab_db, vps_client
+from services.backtest_runner import run_backtest_job, read_progress
+from services.evaluator import evaluate_run
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
 
 
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _load_json(path: Optional[str]) -> list:
+    if not path:
+        return []
+    try:
+        return json.loads(Path(path).read_text())
+    except Exception:
+        return []
+
+
+def _row_to_summary(row: dict) -> BacktestSummary:
+    return BacktestSummary(
+        run_id=row["run_id"],
+        strategy_id=row["strategy_id"],
+        strategy_name=row.get("strategy_name", ""),
+        instrument=row["instrument"],
+        status=row["status"],
+        created_at=row["created_at"],
+        completed_at=row.get("completed_at"),
+        net_pnl=row.get("net_pnl"),
+        max_drawdown=row.get("max_drawdown"),
+        profit_factor=row.get("profit_factor"),
+        win_rate=row.get("win_rate"),
+        trade_count=row.get("trade_count"),
+        verdicts=lab_db.get_run_verdict_summary(row["run_id"]),
+    )
+
+
+def _row_to_detail(row: dict) -> BacktestDetail:
+    evals = [
+        EvaluationDetail(
+            eval_id=e["eval_id"],
+            firm_id=e["firm_id"],
+            firm_name=e["firm_name"],
+            verdict=e["verdict"],
+            drawdown_pass=bool(e["drawdown_pass"]),
+            target_pass=bool(e["target_pass"]),
+            consistency_pass=(
+                bool(e["consistency_pass"])
+                if e.get("consistency_pass") is not None
+                else None
+            ),
+            simulated_eval_days=e.get("simulated_eval_days"),
+            breach_count=e["breach_count"],
+            largest_day_share_pct=e.get("largest_day_share_pct"),
+            firm_max_loss_eod=e["firm_max_loss_eod"],
+            firm_profit_target=e["firm_profit_target"],
+            firm_consistency_pct=e.get("firm_consistency_pct"),
+            notes=e.get("notes"),
+        )
+        for e in lab_db.get_evaluations(row["run_id"])
+    ]
+
+    return BacktestDetail(
+        run_id=row["run_id"],
+        strategy_id=row["strategy_id"],
+        strategy_name=row.get("strategy_name", ""),
+        instrument=row["instrument"],
+        params=row.get("params", {}),
+        bar_type=row["bar_type"],
+        bar_value=row["bar_value"],
+        start_date=row["start_date"],
+        end_date=row["end_date"],
+        commission_per_side=row["commission_per_side"],
+        slippage_ticks=row["slippage_ticks"],
+        status=row["status"],
+        error_message=row.get("error_message"),
+        created_at=row["created_at"],
+        completed_at=row.get("completed_at"),
+        net_pnl=row.get("net_pnl"),
+        max_drawdown=row.get("max_drawdown"),
+        profit_factor=row.get("profit_factor"),
+        win_rate=row.get("win_rate"),
+        win_count=row.get("win_count"),
+        trade_count=row.get("trade_count"),
+        sharpe=row.get("sharpe"),
+        sortino=row.get("sortino"),
+        cagr=row.get("cagr"),
+        avg_win=row.get("avg_win"),
+        avg_loss=row.get("avg_loss"),
+        avg_trade_duration_min=row.get("avg_trade_duration_min"),
+        worst_day_pnl=row.get("worst_day_pnl"),
+        worst_losing_streak=row.get("worst_losing_streak"),
+        equity_curve=_load_json(row.get("equity_curve_path")),
+        daily_pnl=_load_json(row.get("daily_pnl_path")),
+        evaluations=evals,
+    )
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
 @router.get("/runs")
-def list_backtest_runs():
-    return []
+def list_backtest_runs(
+    strategy_id: Optional[str] = None,
+    firm_id:     Optional[str] = None,
+    status:      Optional[str] = None,
+) -> list[BacktestSummary]:
+    rows = lab_db.list_runs(strategy_id=strategy_id, firm_id=firm_id, status=status)
+    return [_row_to_summary(r) for r in rows]
 
 
 @router.get("/runs/{run_id}")
-def get_backtest_run(run_id: str):
-    return {"status": "not_implemented", "message": "Backtest results viewer not yet built."}
+def get_backtest_run(run_id: str) -> BacktestDetail:
+    row = lab_db.get_run(run_id)
+    if not row:
+        raise HTTPException(404, "Run not found")
+    return _row_to_detail(row)
 
 
-@router.post("/run", status_code=501)
-def trigger_backtest(combo: Optional[str] = None):
-    return {
-        "status": "not_implemented",
-        "message": "Backtest trigger not yet implemented.",
+@router.get("/runs/{run_id}/log", response_class=PlainTextResponse)
+def get_run_log(run_id: str, lines: int = 200) -> str:
+    if not lab_db.get_run(run_id):
+        raise HTTPException(404, "Run not found")
+    return vps_client.job_log(run_id, lines=lines)
+
+
+@router.post("/run", status_code=202)
+async def trigger_backtest(req: BacktestRunRequest) -> dict:
+    strategy = lab_db.get_strategy(req.strategy_id)
+    if not strategy:
+        raise HTTPException(404, f"Strategy '{req.strategy_id}' not found")
+
+    for fid in req.evaluate_firms:
+        if not lab_db.get_firm(fid):
+            raise HTTPException(404, f"Firm '{fid}' not found")
+
+    if read_progress().get("status") == "running":
+        raise HTTPException(409, "A backtest is already running")
+
+    run_id = uuid.uuid4().hex[:12]
+    job_id = run_id
+
+    lab_db.insert_run({
+        "run_id":             run_id,
+        "strategy_id":        req.strategy_id,
+        "instrument":         req.instrument,
+        "params":             req.params,
+        "bar_type":           req.bar_type,
+        "bar_value":          req.bar_value,
+        "start_date":         req.start_date,
+        "end_date":           req.end_date,
+        "commission_per_side": req.commission_per_side,
+        "slippage_ticks":     req.slippage_ticks,
+        "status":             "running",
+        "created_at":         int(time.time()),
+    })
+
+    job_spec = {
+        "job_id":            job_id,
+        "strategy_class":    strategy["class_name"],
+        "instrument":        req.instrument,
+        "params":            req.params,
+        "bar_type":          req.bar_type,
+        "bar_value":         req.bar_value,
+        "start_date":        req.start_date,
+        "end_date":          req.end_date,
+        "commission_per_side": req.commission_per_side,
+        "slippage_ticks":    req.slippage_ticks,
     }
+
+    try:
+        await asyncio.to_thread(vps_client.start_backtest, job_spec)
+    except Exception as exc:
+        lab_db.update_run_status(run_id, "failed_unknown", str(exc))
+        raise HTTPException(502, f"VPS agent unreachable: {exc}")
+
+    asyncio.create_task(
+        run_backtest_job(run_id, job_id, req.strategy_id, req.instrument, req.evaluate_firms)
+    )
+
+    return {"run_id": run_id, "status": "started"}
+
+
+@router.delete("/runs/{run_id}", status_code=204)
+def delete_backtest_run(run_id: str) -> Response:
+    if not lab_db.delete_run(run_id):
+        raise HTTPException(404, "Run not found")
+    return Response(status_code=204)
+
+
+class _ReevalRequest(BaseModel):
+    firm_ids: list[str]
+
+
+@router.post("/runs/{run_id}/reevaluate")
+def reevaluate_run(run_id: str, req: _ReevalRequest) -> BacktestDetail:
+    row = lab_db.get_run(run_id)
+    if not row:
+        raise HTTPException(404, "Run not found")
+    if row["status"] != "complete":
+        raise HTTPException(400, f"Run status is '{row['status']}', not 'complete'")
+
+    kpis = {k: row.get(k) for k in (
+        "net_pnl", "max_drawdown", "profit_factor", "win_rate",
+        "win_count", "trade_count", "sharpe", "sortino",
+    )}
+    equity_curve = _load_json(row.get("equity_curve_path"))
+    daily_pnl    = _load_json(row.get("daily_pnl_path"))
+
+    evaluate_run(run_id, req.firm_ids, kpis, equity_curve, daily_pnl)
+
+    return _row_to_detail(lab_db.get_run(run_id))
