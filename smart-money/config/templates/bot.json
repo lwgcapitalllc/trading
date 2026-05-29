@@ -1,17 +1,17 @@
 {
-  "_comment": "Bot / algo trader profile — short-burst high-ROI. Targets algorithmic accounts: high frequency, short holds, often only active 30–60 days before funds are moved. Span gate dropped to 30 days — a bot running 45 days at 1000% ROI is exactly what we want. Drawdown gate kept at 30% — the only hard safety guard. Win rate floor lowered to 55% to include trend-following bots (high R:R, lower win %). Instrument concentration disabled — bots specialize.",
+  "_comment": "Bot / algo trader profile — short-burst high-ROI. Targets algorithmic accounts active 14–60 days. 70% per-window win rate floor (grid-searched: gives ~21 active traders from 1,778 wallet DB). Span gate at 14d catches sprint bots. Drawdown capped at 35% — safety guard for accounts-not-blown requirement. Hold time 48h — scalpers and short-term bots. Instrument concentration disabled — bots specialize.",
   "_profile": "bot",
 
   "qualification": {
     "min_trades": 100,
-    "min_win_rate": 0.55,
+    "min_win_rate": 0.70,
     "min_overall_win_rate": 0.45,
-    "min_wallet_age_days": 30,
+    "min_wallet_age_days": 14,
     "max_inactive_days": 30,
-    "max_drawdown": 0.3,
+    "max_drawdown": 0.35,
     "max_single_trade_pnl_share": 1.0,
     "min_active_weeks_per_month": 1,
-    "max_avg_hold_hours": 24,
+    "max_avg_hold_hours": 48,
     "min_instruments": 1,
     "instrument_concentration_max": 1.01
   },
@@ -23,7 +23,7 @@
   },
 
   "lookback": {
-    "minimum_days": 30,
+    "minimum_days": 14,
     "preferred_days": 60,
     "elite_days": 180,
     "window_days": 30

@@ -11,34 +11,34 @@ Output is a ranked candidate pool report. No trading, no execution — research 
 cd smart-money
 
 # Full pipeline — both default + bot profiles (RECOMMENDED — catches all trader types)
-python main.py --all-profiles --skip-stage2
+python3 main.py --all-profiles --skip-stage2
 
 # Full pipeline — default profile only (consistent long-term traders)
-python main.py --skip-stage2
+python3 main.py --skip-stage2
 
 # Stage 1 only — both profiles (catches consistent traders + short-burst high-ROI bots)
-python run_stage1.py --all-profiles
+python3 run_stage1.py --all-profiles
 
-# Stage 1 only — bot profile (30-60 day wallets, 1000%+ ROI, active bots)
-python run_stage1.py --profile bot
+# Stage 1 only — bot profile (14-60 day wallets, 70% WR, active bots)
+python3 run_stage1.py --profile bot
 
 # Stage 1 only — default profile (consistent human-scale traders)
-python run_stage1.py
+python3 run_stage1.py
 
 # Individual stages (all independently rerunnable)
-python run_stage2.py              # Manual validation helper (read-only)
-python run_stage3.py              # Solana + Ethereum (needs API keys)
-python run_stage4.py              # Forex (needs API keys)
-python run_stage5.py              # Unified final report
+python3 run_stage2.py              # Manual validation helper (read-only)
+python3 run_stage3.py              # Solana + Ethereum (needs API keys)
+python3 run_stage4.py              # Forex (needs API keys)
+python3 run_stage5.py              # Unified final report
 
 # Stage 1 with relaxed win rate (if pool is too small)
-python run_stage1.py --win-rate 0.75
+python3 run_stage1.py --win-rate 0.75
 
 # Stage 1 dry run — skip API calls entirely, re-profile wallets already in DB
-python run_stage1.py --dry-run
+python3 run_stage1.py --dry-run
 
 # Validate a specific wallet address
-python run_stage2.py --address 0xYOUR_WALLET_ADDRESS
+python3 run_stage2.py --address 0xYOUR_WALLET_ADDRESS
 ```
 
 ## Stage Status
@@ -53,46 +53,36 @@ python run_stage2.py --address 0xYOUR_WALLET_ADDRESS
 
 ## Simulation Tool
 
-`simulate_configs.py` re-runs qualification logic across 3,780 config combinations against
-all trades already in the DB. No API calls. Completes in ~5 seconds.
+`simulate_configs.py` re-runs qualification logic against all trades in the DB. No API calls.
+Two grid profiles: default (3,780 combos, ~5s) and bot (~15k combos, ~10s, also varies
+max_hold_hours and max_trade_conc).
 
 ```bash
-python simulate_configs.py                 # top 40 configs by qualifier count
-python simulate_configs.py --min-qualify 5 # only show configs with ≥5 qualifiers
-python simulate_configs.py --detail        # list individual wallets for the best config
-python simulate_configs.py --export        # write reports/sim_results.{json,csv}
-python simulate_configs.py --apply-best    # patch config.json with the best config found
+python3 simulate_configs.py                        # default profile, top 40 configs
+python3 simulate_configs.py --profile bot          # bot-specific grid
+python3 simulate_configs.py --min-qualify 5        # only show configs with ≥5 qualifiers
+python3 simulate_configs.py --detail               # list individual wallets for best config
+python3 simulate_configs.py --export               # write reports/sim_results.{json,csv}
+python3 simulate_configs.py --apply-best           # patch config.json with best config found
+python3 simulate_configs.py --profile bot --apply-best  # patch bot.json instead
 ```
 
-### What the simulation revealed (2026-05-27 run, 814 wallets)
+### Latest scan results (2026-05-28, 3,000 wallets from 37,418 leaderboard entries)
 
-| Finding | Detail |
-|---|---|
-| Max possible qualified traders (any config) | **23** |
-| Current config → qualifiers | **1** (too restrictive) |
-| Biggest single filter killing candidates | `max_drawdown=20%` removes 53% of remaining wallets |
-| Second biggest | `strike_sys` (per-window win rate) removes 25% |
-| Net losers on Hyperliquid | 51% of active wallets — net negative PnL |
-| Wallets active within 30 days with 100+ trades | ~330 |
+**Pass 1 — Default profile (55% WR, 90d age):**
+- 20 qualified (top scored: `0x25a34b7f` = 100.0)
+- 130 watchlist entries (short history but strong stats)
+- Reports: `stage1_top20_20260528_230134.{json,csv,md}`
 
-### Recommended config update
+**Pass 2 — Bot profile (70% WR, 14d age):**
+- 3 qualified (strict 70% per-window floor + 35% DD + 30d recency)
+- Pass 2 used fills cache populated by Pass 1 → only 983 new API calls, ~5 min
 
-These settings yield ~15–20 qualified traders while still filtering noise:
+**Combined: 23 traders in DB across both profiles.**
 
-| Setting | Current | → Use | Reason |
-|---|---|---|---|
-| `min_win_rate` (per window) | 75% | **55%** | 75% → 5 wallets; 55% → 18–22 |
-| `min_overall_win_rate` | 55% | **50%** | Still meaningful; 55% is too high for this leaderboard |
-| `max_inactive_days` | 60 | **30** | Copy trading needs active traders, not last-year stars |
-| `max_drawdown` | 20% | **30%** | 20% cuts 53% of otherwise-good wallets; crypto is volatile |
-| `min_trades` | 100 | 100 | Keep |
-| `min_span_days` | 90 | 90 | Keep |
-
-After changing config.json, clear the cache and re-scan:
-```bash
-# Via dashboard: Smart Money → Clear cache button
-# Then: run pipeline (human profile)
-```
+Bot profile yielded far fewer than the simulation estimate of 14 — the simulation proxies
+per-window WR with overall WR; real per-window checks are stricter. If bot pool is too thin,
+re-run `simulate_configs.py --profile bot` against the refreshed DB to find a better floor.
 
 ## Copy Trading Roadmap
 
@@ -108,18 +98,18 @@ Full automation plan is documented in `COPY_TRADING_ROADMAP.md`. Summary:
 
 ## Where We Left Off
 
-**Last action (2026-05-27, session 4):** Added `--all-profiles` flag to run both default
-and bot profiles in one command. Updated bot profile: span gate 30d, wallet age 30d,
-win rate floor 55%, max_inactive_days 30, leaderboard depth 3000. Clarified that short-burst
-high-ROI bots (30–60 day active wallets) are wanted and supported — they must just not blow
-their accounts (drawdown guard stays at 30%).
+**Last action (2026-05-28, session 5):** Grid-searched bot profile thresholds against 1,778-wallet
+DB — settled on 70% WR, 14d age, 35% DD, 48h hold. Updated `bot.json` and expanded
+`simulate_configs.py` with `--profile bot` grid (~15k combos) that also varies max_hold_hours
+and max_trade_conc. Ran full `--all-profiles` scan (3,000 wallets, 37,418 leaderboard entries):
+20 qualified under default profile, 3 under bot profile. All reports in `reports/`.
 
-**Immediate next step:**
-1. Clear fills cache: `python -c "import database; database.clear_fills_cache()"`
-2. Run both profiles: `python run_stage1.py --all-profiles`
-   - Pass 1 (default): consistent long-term traders (~13–15 min)
-   - Pass 2 (bot): short-burst high-ROI bots (~13–15 min, shares leaderboard fetch)
-3. Review all qualified wallets in dashboard (both profiles write to same DB)
+**Immediate next steps (pick one):**
+- Review qualified wallets: open `reports/stage1_top20_20260528_230134.json` (20 default) and the bot run JSON (3 qualified)
+- If bot pool too thin: `python3 simulate_configs.py --profile bot --min-qualify 2` to find a looser floor
+- Stage 3 (Solana/ETH): needs `DUNE_API_KEY`, `BIRDEYE_API_KEY`
+- Stage 4 (Forex): needs `MYFXBOOK_EMAIL`, `MYFXBOOK_PASSWORD`
+- Phase 2: daily automated scan + Telegram alerts (`scheduler.py`, `notifier.py`)
 
 ### Quality fixes added (2026-05-27, session 2)
 
@@ -175,20 +165,25 @@ All in `config/config.json` (default) or `config/templates/bot.json` / `config/t
 
 | Threshold | Default | Bot | Human |
 |---|---|---|---|
-| Min win rate (per 30-day window) | **55%** | **55%** | 60% |
+| Min win rate (per 30-day window) | **55%** | **70%** | 60% |
 | Min overall win rate (all trades) | **50%** | **45%** | 55% |
 | Max inactive days | **30** | **30** | 30 |
-| Max drawdown | **30%** | 30% | 25% |
+| Max drawdown | **30%** | **35%** | 25% |
 | Min trades | 100 | 100 | 100 |
-| Min wallet age | 90 days | **30 days** | 90 days |
-| Min trading span | 90 days | **30 days** | 90 days |
-| Max hold time | 72 hours | **24 hours** | 72 hours |
+| Min wallet age | 90 days | **14 days** | 90 days |
+| Min trading span | 90 days | **14 days** | 90 days |
+| Max hold time | 72 hours | **48 hours** | 72 hours |
 | Max single trade PnL share | 40% | **disabled** | 40% |
 | Min active weeks per month | 2 | **1** | 2 |
 | Data coverage flag threshold | 10% | 10% | 10% |
 | Leaderboard candidates scanned | 3000 | **3000** | 3000 |
 
-**Bot profile key differences:** wallet age + span gate dropped to 30 days (catches 30–60 day sprint bots); hold time 24h max (scalpers/algos); win rate lowered to 55% (trend-following bots have high R:R not high win %); drawdown stays at 30% (the only hard safety guard); leaderboard depth widened to 3000 (high-ROI bots can be mid-tier in dollar PnL).
+**Bot profile key differences:** wallet age + span gate at 14 days (catches sprint bots active
+as little as 2 weeks); 70% per-window win rate floor (grid-searched: ~21 active traders in the
+old DB — strict by design, algo accounts should be consistently profitable); drawdown 35%
+(slightly more headroom for volatile systems, still a hard safety guard); hold time 48h
+(scalpers and short-term algos); leaderboard depth 3000 (high-ROI bots can be mid-tier in
+dollar PnL).
 
 ## Output Location
 

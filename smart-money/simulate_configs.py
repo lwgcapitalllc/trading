@@ -31,9 +31,10 @@ from datetime import datetime, timezone
 from itertools import product
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "data" / "smart_money.db"
-CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
-REPORTS_DIR = Path(__file__).parent / "reports"
+DB_PATH      = Path(__file__).parent / "data" / "smart_money.db"
+CONFIG_PATH  = Path(__file__).parent / "config" / "config.json"
+BOT_CFG_PATH = Path(__file__).parent / "config" / "templates" / "bot.json"
+REPORTS_DIR  = Path(__file__).parent / "reports"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -226,26 +227,29 @@ def apply_config(s: dict, cfg: dict) -> tuple[bool, str | None]:
 # Grid definition
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_grid() -> list[dict]:
+def build_grid(profile: str = "default") -> list[dict]:
     """
     Generate all config combinations to test.
-    Parameters intentionally cover a wide range so we can identify the
-    minimum relaxation needed to surface quality traders.
 
-    Fixed (not varied):
-      - window_days = 30
-      - min_active_weeks_per_month = 1 (already most relaxed)
-      - max_trade_conc = 0.40 (standard)
-      - max_hold_hours = 72 (standard)
-      - min_instruments = 1 (relaxed — specialism OK)
-      - consec_disq = 2 (standard strike system)
+    profile="default"  — standard human/mixed grid (3,780 combos)
+      Fixed: max_hold_hours=72, max_trade_conc=0.40, min_instruments=1
+      Varied: min_window_wr, min_overall_wr, max_inactive_days,
+              min_span_days, min_trades, max_drawdown
+
+    profile="bot"      — bot/algo-specific grid (~8,640 combos)
+      Adds variation of max_hold_hours (key bot differentiator) and
+      max_trade_conc (specialist single-instrument bots).
+      Uses tighter recency and shorter span ranges for sprint traders.
     """
-    min_window_wrs   = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
-    min_overall_wrs  = [0.30, 0.40, 0.50, 0.55, 0.60]
-    max_inactive_days_options = [0, 30, 60, 90, 180, 365]  # 0 = disabled
-    min_span_days_options = [30, 60, 90]
-    min_trades_options    = [50, 100]
-    max_drawdowns         = [0.20, 0.30, 0.50]
+    if profile == "bot":
+        return _build_bot_grid()
+
+    min_window_wrs            = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
+    min_overall_wrs           = [0.30, 0.40, 0.50, 0.55, 0.60]
+    max_inactive_days_options = [0, 30, 60, 90, 180, 365]
+    min_span_days_options     = [30, 60, 90]
+    min_trades_options        = [50, 100]
+    max_drawdowns             = [0.20, 0.30, 0.50]
 
     configs = []
     for (mwr, mowr, mid, msd, mt, mdd) in product(
@@ -257,17 +261,61 @@ def build_grid() -> list[dict]:
         max_drawdowns,
     ):
         configs.append({
-            "min_window_wr":   mwr,
-            "min_overall_wr":  mowr,
+            "min_window_wr":     mwr,
+            "min_overall_wr":    mowr,
             "max_inactive_days": mid,
-            "min_span_days":   msd,
-            "min_trades":      mt,
-            "max_drawdown":    mdd,
-            # fixed
-            "max_trade_conc":  0.40,
-            "max_hold_hours":  72,
-            "min_instruments": 1,
-            "consec_disq":     2,
+            "min_span_days":     msd,
+            "min_trades":        mt,
+            "max_drawdown":      mdd,
+            "max_trade_conc":    0.40,
+            "max_hold_hours":    72,
+            "min_instruments":   1,
+            "consec_disq":       2,
+        })
+    return configs
+
+
+def _build_bot_grid() -> list[dict]:
+    """
+    Bot-specific grid. Key additions vs default:
+      - max_hold_hours varied: [4, 12, 24, 48, 72] — the primary bot differentiator
+      - max_trade_conc varied: [0.40, 1.0] — specialist single-instrument bots
+      - min_span_days tighter: [14, 21, 30, 45, 60] — sprint traders
+      - max_inactive_days tighter: [0, 14, 21, 30, 45] — must be currently running
+      - max_drawdown wider range: [0.20, 0.30, 0.40, 0.50]
+    Total: 5×3×5×5×2×4×5×2 = 15,000 combos (~10s runtime)
+    """
+    min_window_wrs            = [0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
+    min_overall_wrs           = [0.30, 0.40, 0.50]
+    max_inactive_days_options = [0, 14, 21, 30, 45]
+    min_span_days_options     = [14, 21, 30, 45, 60]
+    min_trades_options        = [50, 100]
+    max_drawdowns             = [0.20, 0.30, 0.40, 0.50]
+    max_hold_hours_options    = [4, 12, 24, 48, 72]
+    max_trade_conc_options    = [0.40, 1.0]
+
+    configs = []
+    for (mwr, mowr, mid, msd, mt, mdd, mhh, mtc) in product(
+        min_window_wrs,
+        min_overall_wrs,
+        max_inactive_days_options,
+        min_span_days_options,
+        min_trades_options,
+        max_drawdowns,
+        max_hold_hours_options,
+        max_trade_conc_options,
+    ):
+        configs.append({
+            "min_window_wr":     mwr,
+            "min_overall_wr":    mowr,
+            "max_inactive_days": mid,
+            "min_span_days":     msd,
+            "min_trades":        mt,
+            "max_drawdown":      mdd,
+            "max_hold_hours":    mhh,
+            "max_trade_conc":    mtc,
+            "min_instruments":   1,
+            "consec_disq":       2,
         })
     return configs
 
@@ -316,7 +364,7 @@ def _fmt_days(v: int) -> str:
     return "off" if v == 0 else f"{v}d"
 
 
-def print_table(results: list[dict], top_n: int = 40, min_qualify: int = 0):
+def print_table(results: list[dict], top_n: int = 40, min_qualify: int = 0, profile: str = "default"):
     """Print a ranked table of the top configs."""
     filtered = [r for r in results if r["qualified"] >= min_qualify]
     filtered = filtered[:top_n]
@@ -325,11 +373,15 @@ def print_table(results: list[dict], top_n: int = 40, min_qualify: int = 0):
         print(f"\n  No configs produced ≥{min_qualify} qualified traders.")
         return
 
+    is_bot = profile == "bot"
+    hold_col = f"{'Hold':>5}  " if is_bot else ""
+    conc_col = f"{'TrdConc':>7}  " if is_bot else ""
     header = (
         f"{'Rank':>4}  {'Q':>4}  "
-        f"{'WinWin':>6}  {'OvrWR':>6}  {'Inact':>5}  "
+        f"{'WinWR':>6}  {'OvrWR':>6}  {'Inact':>5}  "
         f"{'Span':>5}  {'Trades':>6}  {'MaxDD':>5}  "
-        f"  Fail breakdown (recency|span|strike|wr|dd|other)"
+        f"{hold_col}{conc_col}"
+        f"  Fail (recency|span|strike|wr|dd|hold|other)"
     )
     print(f"\n{header}")
     print("─" * len(header))
@@ -343,9 +395,13 @@ def print_table(results: list[dict], top_n: int = 40, min_qualify: int = 0):
             f" strike={fc.get('strike',0)}"
             f" wr={fc.get('overall_wr',0)}"
             f" dd={fc.get('drawdown',0)}"
+            f" hold={fc.get('hold_time',0)}"
             f" net={fc.get('net_profit',0)}"
             f" tc={fc.get('trade_count',0)}"
         )
+        hold_val = f"{c['max_hold_hours']:>3}h   " if is_bot else ""
+        conc_val = f"{'off':>7}  " if c.get('max_trade_conc', 0) >= 1.0 else f"{_fmt_pct(c.get('max_trade_conc', 0.4)):>7}  "
+        conc_str = conc_val if is_bot else ""
         print(
             f"{rank:>4}  {r['qualified']:>4}  "
             f"{_fmt_pct(c['min_window_wr']):>6}  "
@@ -354,6 +410,7 @@ def print_table(results: list[dict], top_n: int = 40, min_qualify: int = 0):
             f"{c['min_span_days']:>4}d  "
             f"{c['min_trades']:>5}+  "
             f"{_fmt_pct(c['max_drawdown']):>5}  "
+            f"{hold_val}{conc_str}"
             f"  {fail_str}"
         )
 
@@ -447,9 +504,10 @@ def export_results(results: list[dict], top_n: int = 100):
     print(f"  CSV  → {csv_path}")
 
 
-def patch_config(best_cfg: dict):
-    """Apply the best config's parameters back to config/config.json."""
-    with CONFIG_PATH.open() as f:
+def patch_config(best_cfg: dict, profile: str = "default"):
+    """Apply the best config's parameters back to the appropriate config file."""
+    target = BOT_CFG_PATH if profile == "bot" else CONFIG_PATH
+    with target.open() as f:
         cfg = json.load(f)
 
     cfg["qualification"]["min_win_rate"]          = best_cfg["min_window_wr"]
@@ -458,10 +516,13 @@ def patch_config(best_cfg: dict):
     cfg["qualification"]["min_trades"]            = best_cfg["min_trades"]
     cfg["qualification"]["max_drawdown"]          = best_cfg["max_drawdown"]
     cfg["lookback"]["minimum_days"]               = best_cfg["min_span_days"]
+    if profile == "bot":
+        cfg["qualification"]["max_avg_hold_hours"]       = best_cfg["max_hold_hours"]
+        cfg["qualification"]["max_single_trade_pnl_share"] = best_cfg["max_trade_conc"]
 
-    with CONFIG_PATH.open("w") as f:
+    with target.open("w") as f:
         json.dump(cfg, f, indent=2)
-    print(f"\n  ✓ Patched {CONFIG_PATH}")
+    print(f"\n  ✓ Patched {target}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -526,6 +587,9 @@ def _strike_disq(windows: list[dict], min_wr: float, consec_disq: int) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="Config grid simulation")
+    parser.add_argument("--profile", choices=["default", "bot"], default="default",
+                        help="Grid profile: 'default' (human/mixed) or 'bot' (algo/sprint traders). "
+                             "Bot grid also varies max_hold_hours and max_trade_conc.")
     parser.add_argument("--min-qualify", type=int, default=0,
                         help="Only show configs with ≥N qualified wallets")
     parser.add_argument("--top-n", type=int, default=40,
@@ -535,7 +599,8 @@ def main():
     parser.add_argument("--export", action="store_true",
                         help="Write top 100 configs to reports/sim_results.{json,csv}")
     parser.add_argument("--apply-best", action="store_true",
-                        help="Patch config/config.json with the best config found")
+                        help="Patch the appropriate config file with the best config found "
+                             "(config.json for default, bot.json for --profile bot)")
     args = parser.parse_args()
 
     if not DB_PATH.exists():
@@ -559,33 +624,38 @@ def main():
     print(f"{len(wallet_stats)} wallets loaded in {time.time()-t0:.1f}s")
 
     # ── Build grid ──────────────────────────────────────────────────────────
-    grid = build_grid()
-    print(f"Running {len(grid):,} config combinations…", end=" ", flush=True)
+    grid = build_grid(profile=args.profile)
+    profile_label = f"[{args.profile} profile]"
+    print(f"Running {len(grid):,} config combinations… {profile_label}", end=" ", flush=True)
     t1 = time.time()
     results = run_grid(wallet_stats, grid)
     print(f"done in {time.time()-t1:.1f}s")
 
     # ── Best config summary ─────────────────────────────────────────────────
     best = results[0]
-    print(f"\n{'═'*72}")
-    print(f"  BEST CONFIG → {best['qualified']} qualified traders")
     bc = best["cfg"]
+    print(f"\n{'═'*72}")
+    print(f"  BEST CONFIG [{args.profile}] → {best['qualified']} qualified traders")
+    hold_str = f"  max_hold={bc['max_hold_hours']}h" if args.profile == "bot" else ""
+    conc_str = f"  max_conc={'off' if bc.get('max_trade_conc',0)>=1 else _fmt_pct(bc.get('max_trade_conc',0.4))}" if args.profile == "bot" else ""
     print(f"  min_window_wr={_fmt_pct(bc['min_window_wr'])}  "
           f"min_overall_wr={_fmt_pct(bc['min_overall_wr'])}  "
           f"max_inactive={_fmt_days(bc['max_inactive_days'])}  "
           f"span>={bc['min_span_days']}d  "
           f"trades>={bc['min_trades']}  "
-          f"max_dd={_fmt_pct(bc['max_drawdown'])}")
+          f"max_dd={_fmt_pct(bc['max_drawdown'])}"
+          f"{hold_str}{conc_str}")
     print(f"{'═'*72}")
 
     # Funnel for best config
     print_funnel(bc, wallet_stats)
 
     # ── Top configs table ───────────────────────────────────────────────────
-    print_table(results, top_n=args.top_n, min_qualify=args.min_qualify)
+    print_table(results, top_n=args.top_n, min_qualify=args.min_qualify, profile=args.profile)
 
     # ── Current config comparison ───────────────────────────────────────────
-    with CONFIG_PATH.open() as f:
+    ref_path = BOT_CFG_PATH if args.profile == "bot" else CONFIG_PATH
+    with ref_path.open() as f:
         current_cfg = json.load(f)
     q = current_cfg["qualification"]
     current = {
@@ -600,20 +670,8 @@ def main():
         "min_instruments":   q.get("min_instruments", 1),
         "consec_disq":       current_cfg["strike_system"]["disqualify_consecutive_months"],
     }
-    current_result = [r for r in results
-                      if r["cfg"]["min_window_wr"] == current["min_window_wr"]
-                      and r["cfg"]["min_overall_wr"] == current["min_overall_wr"]
-                      and r["cfg"]["max_inactive_days"] == current["max_inactive_days"]
-                      and r["cfg"]["min_span_days"] == current["min_span_days"]
-                      and r["cfg"]["min_trades"] == current["min_trades"]
-                      and r["cfg"]["max_drawdown"] == current["max_drawdown"]]
-    if current_result:
-        cq = current_result[0]["qualified"]
-        print(f"\n  Current config.json → {cq} qualified traders")
-    else:
-        ok_count = sum(1 for _, s in wallet_stats.items()
-                       if apply_config(s, current)[0])
-        print(f"\n  Current config.json → {ok_count} qualified traders")
+    ok_count = sum(1 for _, s in wallet_stats.items() if apply_config(s, current)[0])
+    print(f"\n  Current {ref_path.name} → {ok_count} qualified traders")
 
     # ── Optional detail ─────────────────────────────────────────────────────
     if args.detail:
@@ -625,10 +683,11 @@ def main():
 
     # ── Optional patch ──────────────────────────────────────────────────────
     if args.apply_best:
-        print(f"\n  Apply best config to config/config.json? [y/N] ", end="")
+        target_name = "bot.json" if args.profile == "bot" else "config.json"
+        print(f"\n  Apply best config to {target_name}? [y/N] ", end="")
         ans = input().strip().lower()
         if ans == "y":
-            patch_config(bc)
+            patch_config(bc, profile=args.profile)
         else:
             print("  Skipped.")
 
