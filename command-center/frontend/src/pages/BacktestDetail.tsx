@@ -190,7 +190,13 @@ function KpiGrid({ run, fallback }: { run: Run; fallback: FallbackMetrics }) {
         value={run.trade_count ?? '—'}
         sub={
           run.win_count != null && run.trade_count != null
-            ? `${run.win_count}W · ${run.trade_count - run.win_count}L`
+            ? (
+              <span>
+                <span className="text-pos-text">{run.win_count}W</span>
+                <span className="text-text-tertiary"> · </span>
+                <span className="text-neg-text">{run.trade_count - run.win_count}L</span>
+              </span>
+            )
             : run.avg_trade_duration_min != null
             ? `avg ${run.avg_trade_duration_min.toFixed(0)} min / trade`
             : undefined

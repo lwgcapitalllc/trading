@@ -52,6 +52,21 @@ CSV_FIELDS  = ["id", "strategy", "instrument",
                "net_pnl", "max_drawdown", "profit_factor", "win_pct", "trades"]
 
 
+def _safe_float(v) -> float | None:
+    try:
+        f = float(v)
+        return None if (f != f) else f  # reject NaN
+    except Exception:
+        return None
+
+
+def _safe_int(v) -> int | None:
+    try:
+        return int(float(v))
+    except Exception:
+        return None
+
+
 def load_config(path):
     with open(path) as f:
         return json.load(f)
@@ -275,15 +290,24 @@ def read_result_from_xml(combo_id, strategy, instrument, written_after: float = 
             if len(bits) >= 2:
                 metrics[bits[0]] = bits[1]  # "All" column (index 1)
 
+        avg_win  = _safe_float(metrics.get("AverageWinningTrade"))
+        avg_loss = _safe_float(metrics.get("AverageLosingTrade"))
         return {
-            "id":            combo_id,
-            "strategy":      strategy,
-            "instrument":    instrument,
-            "net_pnl":       float(metrics.get("TotalNetProfit",   0)),
-            "max_drawdown":  abs(float(metrics.get("MaxDrawdown",   0))),  # NT8 reports as negative
-            "profit_factor": float(metrics.get("ProfitFactor",      0)),
-            "win_pct":       round(float(metrics.get("PercentProfitable", 0)) * 100, 2),
-            "trades":        int(float(metrics.get("TotalNumTrades", 0))),
+            "id":                     combo_id,
+            "strategy":               strategy,
+            "instrument":             instrument,
+            "net_pnl":                float(metrics.get("TotalNetProfit",   0)),
+            "max_drawdown":           abs(float(metrics.get("MaxDrawdown",   0))),  # NT8 reports as negative
+            "profit_factor":          float(metrics.get("ProfitFactor",      0)),
+            "win_pct":                round(float(metrics.get("PercentProfitable", 0)) * 100, 2),
+            "trades":                 int(float(metrics.get("TotalNumTrades", 0))),
+            # Extended KPIs present in NT8's SummaryPerformancesSerialize
+            "sharpe":                 _safe_float(metrics.get("SharpeRatio")),
+            "sortino":                _safe_float(metrics.get("SortinoRatio")),
+            "avg_win":                avg_win,
+            "avg_loss":               avg_loss,
+            "avg_trade_duration_min": _safe_float(metrics.get("AverageTimeInMarket")),
+            "worst_losing_streak":    _safe_int(metrics.get("MaxConsecLosers")),
         }
     except Exception as e:
         print(f"  WARNING: Could not parse XML {xml_path}: {e}")
@@ -429,14 +453,14 @@ def write_job_result(job_id: str, spec: dict, kpis: dict):
             "win_rate":               kpis.get("win_rate"),
             "win_count":              kpis.get("win_count"),
             "trade_count":            kpis.get("trade_count"),
-            "sharpe":                 None,
-            "sortino":                None,
+            "sharpe":                 kpis.get("sharpe"),
+            "sortino":                kpis.get("sortino"),
             "cagr":                   None,
-            "avg_win":                None,
-            "avg_loss":               None,
-            "avg_trade_duration_min": None,
+            "avg_win":                kpis.get("avg_win"),
+            "avg_loss":               kpis.get("avg_loss"),
+            "avg_trade_duration_min": kpis.get("avg_trade_duration_min"),
             "worst_day_pnl":          None,
-            "worst_losing_streak":    None,
+            "worst_losing_streak":    kpis.get("worst_losing_streak"),
         },
         "equity_curve": [],
         "daily_pnl":    [],
@@ -494,12 +518,18 @@ def run_job_mode(job_id: str, spec_path: str):
         sys.exit(1)
 
     kpis = {
-        "net_pnl":       result["net_pnl"],
-        "max_drawdown":  abs(result["max_drawdown"]),  # ensure positive
-        "profit_factor": result["profit_factor"],
-        "win_rate":      result["win_pct"] / 100.0,
-        "trade_count":   result["trades"],
-        "win_count":     round(result["win_pct"] / 100.0 * result["trades"]),
+        "net_pnl":                result["net_pnl"],
+        "max_drawdown":           abs(result["max_drawdown"]),  # ensure positive
+        "profit_factor":          result["profit_factor"],
+        "win_rate":               result["win_pct"] / 100.0,
+        "trade_count":            result["trades"],
+        "win_count":              round(result["win_pct"] / 100.0 * result["trades"]),
+        "sharpe":                 result.get("sharpe"),
+        "sortino":                result.get("sortino"),
+        "avg_win":                result.get("avg_win"),
+        "avg_loss":               result.get("avg_loss"),
+        "avg_trade_duration_min": result.get("avg_trade_duration_min"),
+        "worst_losing_streak":    result.get("worst_losing_streak"),
     }
     print(f"  Trades={kpis['trade_count']}  NetPnL={kpis['net_pnl']:.2f}"
           f"  PF={kpis['profit_factor']:.4f}  MaxDD={kpis['max_drawdown']:.2f}")
