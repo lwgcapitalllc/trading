@@ -118,23 +118,43 @@ def select_strategy(sa, strategy_name):
     return False
 
 
+_MONTH_ABR = {
+    "01": "JAN", "02": "FEB", "03": "MAR", "04": "APR",
+    "05": "MAY", "06": "JUN", "07": "JUL", "08": "AUG",
+    "09": "SEP", "10": "OCT", "11": "NOV", "12": "DEC",
+}
+
+
+def _to_nt8_instrument(instrument: str) -> str:
+    """Convert internal format 'MNQ 06-26' to NT8 format 'MNQ JUN26'.
+    Passes through anything that doesn't match the MM-YY pattern.
+    """
+    parts = instrument.split()
+    if len(parts) == 2 and "-" in parts[1]:
+        root = parts[0]
+        mm, yy = parts[1].split("-", 1)
+        mon = _MONTH_ABR.get(mm, mm)
+        return f"{root} {mon}{yy}"
+    return instrument  # already in NT8 format or root-only
+
+
 def set_instrument(sa, instrument):
     """Set instrument in the InstrumentSelector control.
-    NT8 SA takes only the root symbol (e.g. 'MNQ'), not the full contract string.
+    Converts internal format 'MNQ 06-26' to NT8 contract format 'MNQ JUN26'.
     """
-    root = instrument.split()[0]  # "MNQ 06-26" -> "MNQ"
+    nt8_instr = _to_nt8_instrument(instrument)
     try:
         selector = sa.child_window(auto_id="InstrumentSelector")
         selector.click_input()
         time.sleep(0.3)
         send_keys("^a")
-        send_keys(root, with_spaces=True)
+        send_keys(nt8_instr, with_spaces=True)
         time.sleep(0.3)
         send_keys("{ENTER}")
         time.sleep(0.5)
         return True
     except Exception as e:
-        print(f"  WARNING: could not set instrument '{root}': {e}")
+        print(f"  WARNING: could not set instrument '{nt8_instr}': {e}")
         return False
 
 
