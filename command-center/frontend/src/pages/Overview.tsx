@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom'
-import { Bot, Radar, ChevronRight } from 'lucide-react'
+import { Bot, Radar, BarChart2, ChevronRight } from 'lucide-react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
+import { useBacktestRuns, useStrategies } from '@/hooks/useLab'
 import { StatCard } from '@/components/StatCard'
 import type { BotStatus } from '@/types'
 
@@ -76,6 +77,21 @@ function JobPill({ job }: { job: { name: string; status: string } }) {
   )
 }
 
+function BacktestStatusPill({ status }: { status: string }) {
+  const isFailed = status.startsWith('failed')
+  const label = isFailed ? 'Failed' : status === 'complete' ? 'Complete' : status === 'running' ? 'Running' : status
+  const cls = status === 'complete'
+    ? 'bg-pos-muted text-pos-text'
+    : status === 'running'
+    ? 'bg-accent-muted text-accent'
+    : 'bg-neg-muted text-neg-text'
+  return (
+    <span className={`inline-flex px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${cls}`}>
+      {label}
+    </span>
+  )
+}
+
 function BotsCardSkeleton() {
   return (
     <div className="animate-pulse">
@@ -106,8 +122,13 @@ export function Overview() {
   const { data: snapshot, isLoading: botsLoading, isError: botsError } = useBotSnapshot()
   const { data: runs } = useSmartMoneyRuns()
   const { data: progress } = useRunProgress()
+  const { data: backtestRuns } = useBacktestRuns()
+  const { data: strategies } = useStrategies()
 
   const latestRun = runs?.[0] ?? null
+  const latestBacktest = backtestRuns?.[0] ?? null
+  const totalBacktestRuns = backtestRuns?.length ?? 0
+  const totalStrategies = strategies?.length ?? 0
 
   const runningBots  = snapshot?.bots.filter(b => b.status === 'RUNNING').length ?? 0
   const totalBots    = snapshot?.bots.length ?? 0
@@ -179,7 +200,7 @@ export function Overview() {
       </div>
 
       {/* ── Module Cards ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-[14px]">
+      <div className="grid grid-cols-3 gap-[14px]">
 
         {/* ── Bots ──────────────────────────────────────────────── */}
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -296,6 +317,49 @@ export function Overview() {
                   Go to Smart Money to run a scan
                 </p>
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Backtests ─────────────────────────────────────── */}
+        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+
+          <button
+            onClick={() => navigate('/backtests')}
+            className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
+          >
+            <div className="flex items-center gap-[8px]">
+              <BarChart2 size={14} className="text-accent" style={{ opacity: 0.85 }} />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+                Backtests
+              </span>
+            </div>
+            <div className="flex items-center gap-[6px] text-[11px] text-text-tertiary group-hover:text-text-secondary transition-colors">
+              <span>View lab</span>
+              <ChevronRight size={12} />
+            </div>
+          </button>
+
+          <div className="px-[15px] py-[12px] space-y-[10px]">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[12px] text-text-tertiary">Strategies</span>
+              <span className="text-[13px] text-text-primary">{totalStrategies > 0 ? totalStrategies : '—'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] text-text-tertiary">Runs</span>
+              <span className="text-[26px] font-semibold tracking-tight leading-none">
+                {totalBacktestRuns > 0 ? totalBacktestRuns : '—'}
+              </span>
+            </div>
+            {latestBacktest ? (
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] text-text-tertiary">Latest</span>
+                <BacktestStatusPill status={latestBacktest.status} />
+              </div>
+            ) : (
+              <p className="text-[11px] text-text-tertiary/60 pt-[4px]">
+                Go to Backtests to run your first experiment
+              </p>
             )}
           </div>
         </div>

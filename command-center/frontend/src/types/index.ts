@@ -230,6 +230,7 @@ export interface ParamSchemaEntry {
   default: unknown
   group: string
   display_name: string
+  description?: string
 }
 
 export interface Strategy {
@@ -238,7 +239,7 @@ export interface Strategy {
   class_name: string
   source_path: string
   category: string | null
-  default_instrument: string | null
+  suggested_instrument: string | null
   default_params: Record<string, unknown>
   param_schema: ParamSchemaEntry[]
   scanned_at: string
@@ -293,6 +294,7 @@ export interface BacktestRunRequest {
 export interface VerdictSummary {
   firm_id: string
   verdict: 'PASS' | 'WARN' | 'DISCARD'
+  notes: string | null
 }
 
 export interface BacktestSummary {

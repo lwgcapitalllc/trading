@@ -49,6 +49,7 @@ def client(fresh_db):
         patch("services.vps_client.job_log", return_value=""),
         patch("services.vps_client.health", return_value={"status": "ok"}),
         patch("routers.backtests.run_backtest_job", new_callable=AsyncMock),
+        patch("routers.backtests.read_progress", return_value={"status": "idle", "pct": 0}),
     ):
         with TestClient(app, raise_server_exceptions=True) as c:
             yield c

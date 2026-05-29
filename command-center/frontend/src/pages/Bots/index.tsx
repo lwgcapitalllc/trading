@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -176,7 +177,9 @@ function RowActionBtn({
 
 export function Bots() {
   const { data: snapshot, isLoading, isFetching, error, dataUpdatedAt, refetch } = useBotSnapshot()
-  const [tab, setTab]                     = useState<PageTab>('monitor')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = (searchParams.get('tab') ?? 'monitor') as PageTab
+  const setTab = (t: PageTab) => setSearchParams({ tab: t }, { replace: true })
   const [filter, setFilter]               = useState<AccountFilter>('all')
   const [expandedBot, setExpandedBot]     = useState<string | null>(null)
   const [logBot, setLogBot]               = useState<string | null>(null)

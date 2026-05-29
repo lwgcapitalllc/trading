@@ -7,6 +7,7 @@ import { SmartMoney } from '@/pages/SmartMoney'
 import { Bots } from '@/pages/Bots'
 import { Backtests } from '@/pages/Backtests'
 import { BacktestDetail } from '@/pages/BacktestDetail'
+import { StrategyDetail } from '@/pages/StrategyDetail'
 import { StressTests } from '@/pages/StressTests'
 import { Settings } from '@/pages/Settings'
 
@@ -30,7 +31,8 @@ export default function App() {
               <Route path="/smart-money/:runId/candidates/:id" element={<SmartMoney />} />
               <Route path="/bots"                     element={<Bots />} />
               <Route path="/backtests"                element={<Backtests />} />
-              <Route path="/backtests/runs/:runId"    element={<BacktestDetail />} />
+              <Route path="/backtests/runs/:runId"           element={<BacktestDetail />} />
+              <Route path="/backtests/strategies/:strategyId" element={<StrategyDetail />} />
               <Route path="/stress-tests"             element={<StressTests />} />
               <Route path="/settings"                 element={<Settings />} />
             </Routes>

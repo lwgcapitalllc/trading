@@ -19,6 +19,7 @@ _STALL_KILL_SEC  = 600   # 10 min — cancel job, mark failed_timeout
 
 _LAB_PROGRESS_PATH = Path(__file__).parent.parent / "data" / "lab_progress.json"
 _LAB_RESULTS_DIR   = Path(__file__).parent.parent / "reports" / "lab"
+LAB_RESULTS_DIR    = _LAB_RESULTS_DIR
 
 
 # ── Progress file helpers ──────────────────────────────────────────────────────
@@ -33,6 +34,10 @@ def read_progress() -> dict:
         return json.loads(_LAB_PROGRESS_PATH.read_text())
     except Exception:
         return {"status": "idle", "pct": 0, "message": ""}
+
+
+def clear_progress() -> None:
+    _write_progress({"status": "idle", "pct": 0, "message": ""})
 
 
 # ── Failure path ───────────────────────────────────────────────────────────────

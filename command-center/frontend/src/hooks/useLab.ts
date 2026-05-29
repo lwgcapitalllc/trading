@@ -17,6 +17,14 @@ export function useStrategies() {
   })
 }
 
+export function useStrategy(strategyId: string | null) {
+  return useQuery({
+    queryKey: ['lab', 'strategies', strategyId],
+    queryFn: () => api.get<Strategy>(`/strategies/${strategyId}`),
+    enabled: !!strategyId,
+  })
+}
+
 export function useScanStrategies() {
   const qc = useQueryClient()
   return useMutation({

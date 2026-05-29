@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -19,7 +20,7 @@ from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
 )
 from services import lab_db, vps_client
-from services.backtest_runner import run_backtest_job, read_progress
+from services.backtest_runner import run_backtest_job, read_progress, LAB_RESULTS_DIR
 from services.evaluator import evaluate_run
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
@@ -203,6 +204,9 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
 def delete_backtest_run(run_id: str) -> Response:
     if not lab_db.delete_run(run_id):
         raise HTTPException(404, "Run not found")
+    run_dir = LAB_RESULTS_DIR / run_id
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
     return Response(status_code=204)
 
 

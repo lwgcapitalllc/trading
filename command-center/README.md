@@ -1,6 +1,6 @@
 # LWG Capital Command Center
 
-Local operations interface for all LWG Capital trading activity.
+Local operations interface for LWG Capital trading activity.
 
 ## Running the app
 
@@ -8,11 +8,12 @@ Local operations interface for all LWG Capital trading activity.
 ./start.sh
 ```
 
-This starts both processes:
-- **Backend** — FastAPI on `http://localhost:8000`
+Starts both processes — creates the Python venv and runs `npm install` on first launch.
+
+- **Backend** — FastAPI on `http://localhost:8000` (API docs at `/docs`)
 - **Frontend** — Vite on `http://localhost:5173`
 
-## Manual start (two terminals)
+## Manual start
 
 ```bash
 # Terminal 1 — backend
@@ -26,12 +27,10 @@ npm install
 npm run dev
 ```
 
-## Design reference
-
-`design/prototype.html` is the interactive visual spec — open in any browser, no build step.
-`design/README.md` has the theme reference (electric cyan accent `#00e5ff`, gold secondary).
-
 ## Config
 
-`backend/config.json` holds all machine-specific paths. Edit this file when moving the monorepo
-or renaming directories — nothing else needs to change.
+`backend/config.json` holds machine-specific paths. Edit this when moving the repo or changing directory layout — nothing else needs to change.
+
+## Theme
+
+Electric cyan accent `#00e5ff`, gold secondary `#d9a441`, indigo-black surfaces. All tokens in `frontend/tailwind.config.js`.

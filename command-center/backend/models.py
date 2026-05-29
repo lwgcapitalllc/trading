@@ -265,7 +265,7 @@ class Strategy(BaseModel):
     class_name: str
     source_path: str
     category: Optional[str] = None
-    default_instrument: Optional[str] = None
+    suggested_instrument: Optional[str] = None
     default_params: dict = {}
     param_schema: list[dict] = []          # [{name, type, min?, max?, default, group, display_name}]
     scanned_at: datetime
@@ -347,7 +347,7 @@ class BacktestSummary(BaseModel):
     profit_factor: Optional[float] = None
     win_rate: Optional[float] = None
     trade_count: Optional[int] = None
-    verdicts: list[dict] = []       # [{firm_id, verdict}]
+    verdicts: list[dict] = []       # [{firm_id, verdict, notes}]
 
 
 class EvaluationDetail(BaseModel):

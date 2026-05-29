@@ -47,7 +47,7 @@ def _infer_name(source: str) -> str:
     return ""
 
 
-def _infer_default_instrument(class_name: str) -> Optional[str]:
+def _infer_suggested_instrument(class_name: str) -> Optional[str]:
     cfg_path = (
         Path(cfg.MONOREPO_ROOT)
         / "algos" / "markets" / "futures" / "lucid_flex" / "tools" / "backtest_config.json"
@@ -201,7 +201,7 @@ def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dic
         "class_name": class_name,
         "source_path": rel_path,
         "category": _infer_category(class_name),
-        "default_instrument": _infer_default_instrument(class_name),
+        "suggested_instrument": _infer_suggested_instrument(class_name),
         "default_params": defaults,
         "param_schema": params,
         "scanned_at": int(time.time()),

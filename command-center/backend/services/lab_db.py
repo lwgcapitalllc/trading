@@ -38,16 +38,16 @@ def init_db() -> None:
     with _connect() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS strategies (
-                id                  TEXT PRIMARY KEY,
-                name                TEXT NOT NULL,
-                class_name          TEXT NOT NULL,
-                source_path         TEXT NOT NULL,
-                category            TEXT,
-                default_instrument  TEXT,
-                default_params      TEXT,
-                param_schema        TEXT,
-                scanned_at          INTEGER NOT NULL,
-                source_hash         TEXT
+                id                   TEXT PRIMARY KEY,
+                name                 TEXT NOT NULL,
+                class_name           TEXT NOT NULL,
+                source_path          TEXT NOT NULL,
+                category             TEXT,
+                suggested_instrument TEXT,
+                default_params       TEXT,
+                param_schema         TEXT,
+                scanned_at           INTEGER NOT NULL,
+                source_hash          TEXT
             );
 
             CREATE TABLE IF NOT EXISTS firms (
@@ -129,6 +129,13 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_evals_firm
                 ON evaluations(firm_id, verdict);
         """)
+        # Migration: rename column on existing databases
+        try:
+            conn.execute(
+                "ALTER TABLE strategies RENAME COLUMN default_instrument TO suggested_instrument"
+            )
+        except Exception:
+            pass
         _seed_firms(conn)
 
 
@@ -272,7 +279,7 @@ def upsert_strategy(data: dict) -> None:
     with _connect() as conn:
         conn.execute("""
             INSERT INTO strategies
-                (id, name, class_name, source_path, category, default_instrument,
+                (id, name, class_name, source_path, category, suggested_instrument,
                  default_params, param_schema, scanned_at, source_hash)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
@@ -280,14 +287,14 @@ def upsert_strategy(data: dict) -> None:
                 class_name=excluded.class_name,
                 source_path=excluded.source_path,
                 category=excluded.category,
-                default_instrument=excluded.default_instrument,
+                suggested_instrument=excluded.suggested_instrument,
                 default_params=excluded.default_params,
                 param_schema=excluded.param_schema,
                 scanned_at=excluded.scanned_at,
                 source_hash=excluded.source_hash
         """, (
             data["id"], data["name"], data["class_name"], data["source_path"],
-            data.get("category"), data.get("default_instrument"),
+            data.get("category"), data.get("suggested_instrument"),
             json.dumps(data.get("default_params", {})),
             json.dumps(data.get("param_schema", [])),
             data["scanned_at"], data.get("source_hash"),
@@ -403,7 +410,9 @@ def list_runs(
     if strategy_id:
         base_clauses.append("r.strategy_id = ?")
         params.append(strategy_id)
-    if status:
+    if status == "failed":
+        base_clauses.append("r.status LIKE 'failed_%'")
+    elif status:
         base_clauses.append("r.status = ?")
         params.append(status)
 
@@ -488,7 +497,7 @@ def delete_run(run_id: str) -> bool:
 def get_run_verdict_summary(run_id: str) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT firm_id, verdict FROM evaluations WHERE run_id = ?", (run_id,)
+            "SELECT firm_id, verdict, notes FROM evaluations WHERE run_id = ?", (run_id,)
         ).fetchall()
     return [dict(r) for r in rows]
 

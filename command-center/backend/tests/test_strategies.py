@@ -66,12 +66,12 @@ def test_strategies_have_populated_param_schema(client):
             assert p["type"] in ("int", "double", "bool")
 
 
-def test_strategies_have_default_instrument(client):
+def test_strategies_have_suggested_instrument(client):
     client.post("/strategies/scan")
     strategies = client.get("/strategies").json()
     for s in strategies:
-        assert s["default_instrument"] is not None, \
-            f"{s['class_name']} missing default_instrument"
+        assert s["suggested_instrument"] is not None, \
+            f"{s['class_name']} missing suggested_instrument"
 
 
 # ── Case 2: idempotence ────────────────────────────────────────────────────────

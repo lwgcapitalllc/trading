@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Play, Download, Trash2 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -368,9 +369,14 @@ const STARTING_PROGRESS: RunProgress = {
 
 export function SmartMoney() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<Tab>('overview')
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null)
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+
+  // 'profile' requires selectedCandidate — fall back to rankings if arriving cold
+  const rawTab = (searchParams.get('tab') ?? 'overview') as Tab
+  const tab = rawTab === 'profile' && !selectedCandidate ? 'rankings' : rawTab
+  const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
   const [rankingsMarket, setRankingsMarket] = useState<'all' | 'crypto' | 'forex'>('all')
 
   // isStarting: true from the moment "Run pipeline" is clicked until the backend

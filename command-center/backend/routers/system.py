@@ -14,7 +14,7 @@ from fastapi.responses import PlainTextResponse
 
 from models import SystemHealth, LabProgress
 from services import vps_client
-from services.backtest_runner import read_progress
+from services.backtest_runner import read_progress, clear_progress
 
 import config as cfg
 
@@ -141,12 +141,14 @@ def lab_stop() -> dict:
     raw = read_progress()
     job_id = raw.get("job_id")
     stopped = False
-    if job_id and raw.get("status") == "running":
-        try:
-            vps_client.cancel_job(job_id)
-            stopped = True
-        except Exception:
-            pass
+    if raw.get("status") == "running":
+        if job_id:
+            try:
+                vps_client.cancel_job(job_id)
+                stopped = True
+            except Exception:
+                pass
+        clear_progress()
     return {"stopped": stopped, "job_id": job_id}
 
 

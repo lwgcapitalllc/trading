@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from routers import smart_money, bots, backtests, stress_tests, settings, strategies, firms, system
 from services import lab_db
+from services.backtest_runner import read_progress, clear_progress
 
 app = FastAPI(title="LWG Capital Command Center API", version="1.0.0")
 
@@ -27,6 +28,10 @@ app.include_router(system.router)
 @app.on_event("startup")
 def startup():
     lab_db.init_db()
+    # Any "running" state left on disk is from a previous process that died.
+    # The asyncio task tracking that job no longer exists, so clear the lock.
+    if read_progress().get("status") == "running":
+        clear_progress()
 
 
 @app.get("/health")

@@ -18,8 +18,8 @@ export default {
         'border-strong':  '#2c2c48',
         // Text — unchanged; good contrast
         'text-primary':   '#e9eaf0',
-        'text-secondary': '#9a9eb0',
-        'text-tertiary':  '#5f6373',
+        'text-secondary': '#c2c6d8',
+        'text-tertiary':  '#8b8fa3',
         'text-inverse':   '#020e12',
         // Accent — electric cyan (was muted teal #2dd4bf)
         accent:          '#00e5ff',
