@@ -97,7 +97,7 @@ def evaluate_run(
     results = []
 
     net_pnl = kpis.get("net_pnl") or 0.0
-    max_drawdown = kpis.get("max_drawdown") or 0.0
+    max_drawdown = abs(kpis.get("max_drawdown") or 0.0)  # NT8 may report negative
 
     for firm_id in firm_ids:
         firm = lab_db.get_firm(firm_id)

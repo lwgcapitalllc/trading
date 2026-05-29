@@ -280,7 +280,7 @@ def read_result_from_xml(combo_id, strategy, instrument, written_after: float = 
             "strategy":      strategy,
             "instrument":    instrument,
             "net_pnl":       float(metrics.get("TotalNetProfit",   0)),
-            "max_drawdown":  float(metrics.get("MaxDrawdown",       0)),
+            "max_drawdown":  abs(float(metrics.get("MaxDrawdown",   0))),  # NT8 reports as negative
             "profit_factor": float(metrics.get("ProfitFactor",      0)),
             "win_pct":       round(float(metrics.get("PercentProfitable", 0)) * 100, 2),
             "trades":        int(float(metrics.get("TotalNumTrades", 0))),
@@ -495,7 +495,7 @@ def run_job_mode(job_id: str, spec_path: str):
 
     kpis = {
         "net_pnl":       result["net_pnl"],
-        "max_drawdown":  result["max_drawdown"],
+        "max_drawdown":  abs(result["max_drawdown"]),  # ensure positive
         "profit_factor": result["profit_factor"],
         "win_rate":      result["win_pct"] / 100.0,
         "trade_count":   result["trades"],
