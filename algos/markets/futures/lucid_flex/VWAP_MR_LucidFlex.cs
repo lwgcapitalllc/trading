@@ -79,10 +79,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         // ── Intraday state ─────────────────────────────────────────────────────
 
-        private bool     longDone, shortDone;
-        private bool     tradingHalted;
+        private bool longDone, shortDone;
+        private bool tradingHalted;
         private DateTime currentDay = DateTime.MinValue;
-        private int      sessionBarCount;
+        private int sessionBarCount;
 
         // Running cumulative sums for VWAP + σ (reset each day)
         private double cumTpv;    // Σ(tp × vol)
@@ -94,8 +94,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double cumulativePnl;
         private double dayStartPnl;
         private double pendingEntryPrice;
-        private int    pendingQty;
-        private int    pendingDir;
+        private int pendingQty;
+        private int pendingDir;
 
         // ── Backtest performance accumulators (exported to CSV on Terminated) ─
 
@@ -103,8 +103,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double maxDrawdown;
         private double grossWins;
         private double grossLosses;
-        private int    winCount;
-        private int    tradeCount;
+        private int winCount;
+        private int tradeCount;
 
         // ── Cached boundaries ──────────────────────────────────────────────────
 
@@ -117,39 +117,39 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (State == State.SetDefaults)
             {
-                Description                  = "VWAP Mean Reversion — LucidFlex Prop Firm";
-                Name                         = "VWAP_MR_LucidFlex";
-                Calculate                    = Calculate.OnBarClose;
+                Description = "VWAP Mean Reversion — LucidFlex Prop Firm";
+                Name = "VWAP_MR_LucidFlex";
+                Calculate = Calculate.OnBarClose;
                 IsExitOnSessionCloseStrategy = false;
-                BarsRequiredToTrade          = 1;
-                EntriesPerDirection          = 1;
-                EntryHandling                = EntryHandling.UniqueEntries;
+                BarsRequiredToTrade = 1;
+                EntriesPerDirection = 1;
+                EntryHandling = EntryHandling.UniqueEntries;
 
-                AccountSize       = 50000;
-                RiskPct           = 0.5;
-                MaxDailyLoss      = 2000;
+                AccountSize = 50000;
+                RiskPct = 0.5;
+                MaxDailyLoss = 2000;
                 DailyHaltFraction = 0.6;
                 CommissionPerSide = 2.25;
-                EntryStd          = 2.0;
-                StopExtension     = 1.0;
-                TpFraction        = 1.0;
+                EntryStd = 2.0;
+                StopExtension = 1.0;
+                TpFraction = 1.0;
                 MinBarsBeforeEntry = 20;
             }
             else if (State == State.Configure)
             {
                 tSessionOpen = new TimeSpan(9, 30, 0);
-                tForceFlat   = new TimeSpan(15, 30, 0);
-                peakEquity   = AccountSize;
+                tForceFlat = new TimeSpan(15, 30, 0);
+                peakEquity = AccountSize;
             }
             else if (State == State.Terminated)
             {
                 try
                 {
-                    double net    = grossWins + grossLosses;
-                    double pf     = (grossLosses != 0) ? grossWins / Math.Abs(grossLosses) : 0;
+                    double net = grossWins + grossLosses;
+                    double pf = (grossLosses != 0) ? grossWins / Math.Abs(grossLosses) : 0;
                     double winPct = (tradeCount > 0) ? (double)winCount / tradeCount * 100.0 : 0;
 
-                    string dir  = Path.Combine(
+                    string dir = Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
                         "NinjaTrader 8");
                     string path = Path.Combine(dir, "lucid_flex_results.csv");
@@ -171,21 +171,21 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (BarsInProgress != 0) return;
 
-            TimeSpan tod     = Time[0].TimeOfDay;
+            TimeSpan tod = Time[0].TimeOfDay;
             DateTime barDate = Time[0].Date;
 
             // ── Day boundary ───────────────────────────────────────────────────
             if (barDate != currentDay)
             {
-                currentDay      = barDate;
-                longDone        = false;
-                shortDone       = false;
-                tradingHalted   = false;
+                currentDay = barDate;
+                longDone = false;
+                shortDone = false;
+                tradingHalted = false;
                 sessionBarCount = 0;
-                cumTpv          = 0;
-                cumVol          = 0;
-                cumTp2v         = 0;
-                dayStartPnl     = cumulativePnl;
+                cumTpv = 0;
+                cumVol = 0;
+                cumTp2v = 0;
+                dayStartPnl = cumulativePnl;
             }
 
             // ── Force flat at 15:30 ────────────────────────────────────────────
@@ -193,7 +193,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
-                    ExitLong("ForceFlat",  "VWAP_Long");
+                    ExitLong("ForceFlat", "VWAP_Long");
                     ExitShort("ForceFlat", "VWAP_Short");
                 }
                 return;
@@ -203,19 +203,19 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (tod < tSessionOpen) return;
 
             // ── Update running VWAP accumulators ──────────────────────────────
-            double tp  = (High[0] + Low[0] + Close[0]) / 3.0;
+            double tp = (High[0] + Low[0] + Close[0]) / 3.0;
             double vol = Math.Max(Volume[0], 1.0);   // guard against zero-volume bars
-            cumTpv  += tp * vol;
-            cumVol  += vol;
+            cumTpv += tp * vol;
+            cumVol += vol;
             cumTp2v += tp * tp * vol;
             sessionBarCount++;
 
             // Not enough bars yet for a stable VWAP estimate
             if (sessionBarCount <= MinBarsBeforeEntry) return;
 
-            double vwap     = cumTpv / cumVol;
+            double vwap = cumTpv / cumVol;
             double variance = Math.Max(0.0, cumTp2v / cumVol - vwap * vwap);
-            double sigma    = Math.Sqrt(variance);
+            double sigma = Math.Sqrt(variance);
 
             if (sigma <= 0) return;
 
@@ -236,16 +236,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!longDone && close < vwap - EntryStd * sigma)
             {
                 longDone = true;
-                double stop   = close - StopExtension * sigma;
+                double stop = close - StopExtension * sigma;
                 double target = close + TpFraction * (vwap - close);
-                double dist   = close - stop;
+                double dist = close - stop;
 
                 if (dist > 0 && target > close)
                 {
                     int qty = CalcContracts(dist);
                     if (qty >= 1)
                     {
-                        SetStopLoss("VWAP_Long",    CalculationMode.Price, stop,   false);
+                        SetStopLoss("VWAP_Long", CalculationMode.Price, stop, false);
                         SetProfitTarget("VWAP_Long", CalculationMode.Price, target);
                         EnterLong(0, qty, "VWAP_Long");
                         pendingDir = 1;
@@ -258,16 +258,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!shortDone && close > vwap + EntryStd * sigma)
             {
                 shortDone = true;
-                double stop   = close + StopExtension * sigma;
+                double stop = close + StopExtension * sigma;
                 double target = close + TpFraction * (vwap - close);   // negative move
-                double dist   = stop - close;
+                double dist = stop - close;
 
                 if (dist > 0 && target < close)
                 {
                     int qty = CalcContracts(dist);
                     if (qty >= 1)
                     {
-                        SetStopLoss("VWAP_Short",    CalculationMode.Price, stop,   false);
+                        SetStopLoss("VWAP_Short", CalculationMode.Price, stop, false);
                         SetProfitTarget("VWAP_Short", CalculationMode.Price, target);
                         EnterShort(0, qty, "VWAP_Short");
                         pendingDir = -1;
@@ -294,19 +294,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                 case OrderAction.BuyToCover:
                     if (pendingEntryPrice > 0 && pendingQty > 0)
                     {
-                        double pv    = Instrument.MasterInstrument.PointValue;
-                        int    dir   = (execution.Order.OrderAction == OrderAction.Sell) ? 1 : -1;
+                        double pv = Instrument.MasterInstrument.PointValue;
+                        int dir = (execution.Order.OrderAction == OrderAction.Sell) ? 1 : -1;
                         double gross = (price - pendingEntryPrice) * dir * quantity * pv;
                         double costs = CommissionPerSide * 2 * quantity;
-                        double tradePnl   = gross - costs;
-                        cumulativePnl    += tradePnl;
+                        double tradePnl = gross - costs;
+                        cumulativePnl += tradePnl;
                         pendingEntryPrice = 0;
-                        pendingQty        = 0;
-                        pendingDir        = 0;
+                        pendingQty = 0;
+                        pendingDir = 0;
 
                         tradeCount++;
                         if (tradePnl > 0) { grossWins += tradePnl; winCount++; }
-                        else                grossLosses += tradePnl;
+                        else grossLosses += tradePnl;
 
                         double equity = AccountSize + cumulativePnl;
                         if (equity > peakEquity) peakEquity = equity;
@@ -320,9 +320,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int CalcContracts(double stopDistPoints)
         {
             if (stopDistPoints <= 0) return 0;
-            double equity     = AccountSize + cumulativePnl;
+            double equity = AccountSize + cumulativePnl;
             double dollarRisk = equity * (RiskPct / 100.0);
-            double pv         = Instrument.MasterInstrument.PointValue;
+            double pv = Instrument.MasterInstrument.PointValue;
             return Math.Max(0, (int)(dollarRisk / (stopDistPoints * pv)));
         }
     }
