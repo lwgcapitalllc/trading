@@ -220,38 +220,181 @@ export interface BotConfigUpdate {
   deploy?: boolean
 }
 
-// ── Backtests ────────────────────────────────────────────────────────────────
+// ── Lab — Strategies ─────────────────────────────────────────────────────────
 
-export interface BacktestResult {
-  strategy: string
-  instrument: string
-  verdict: 'KEEP' | 'WARN' | 'DISCARD'
-  max_drawdown: number
-  max_loss_limit: number
-  drawdown_pass: boolean
-  eval_result: 'would_pass' | 'would_fail'
-  eval_days: number | null
-  daily_pnl: number[]
-  worst_day: number
-  worst_losing_streak: number
-  win_rate: number
-  profit_factor: number
-  avg_win: number
-  avg_loss: number
-  trade_count: number
-  expectancy: number
-  total_return: number
-  cagr: number
-  sharpe: number
-  sortino: number
-  avg_trade_duration_min: number
-  equity_curve: EquityPoint[]
+export interface ParamSchemaEntry {
+  name: string
+  type: string
+  min?: number
+  max?: number
+  default: unknown
+  group: string
+  display_name: string
 }
 
-export interface BacktestRun {
+export interface Strategy {
+  id: string
+  name: string
+  class_name: string
+  source_path: string
+  category: string | null
+  default_instrument: string | null
+  default_params: Record<string, unknown>
+  param_schema: ParamSchemaEntry[]
+  scanned_at: string
+  run_count: number
+}
+
+export interface ScanResult {
+  scanned: number
+  added: number
+  updated: number
+  skipped: number
+}
+
+// ── Lab — Firms ───────────────────────────────────────────────────────────────
+
+export interface Firm {
+  id: string
+  name: string
+  account_size: number
+  profit_target: number
+  max_loss_eod: number
+  max_loss_intraday: number | null
+  drawdown_type: string
+  consistency_pct: number | null
+  min_trading_days: number | null
+  force_flat_time_et: string | null
+  allowed_instruments: string[]
+  max_contracts: Record<string, unknown>
+  platform_support: string[]
+  account_tier: 'eval' | 'funded'
+  docs_url: string | null
+  notes: string | null
+}
+
+export type FirmCreate = Firm
+
+// ── Lab — Backtest Runs ───────────────────────────────────────────────────────
+
+export interface BacktestRunRequest {
+  strategy_id: string
+  instrument: string
+  params: Record<string, unknown>
+  bar_type?: string
+  bar_value?: number
+  start_date: string
+  end_date: string
+  commission_per_side?: number
+  slippage_ticks?: number
+  evaluate_firms: string[]
+}
+
+export interface VerdictSummary {
+  firm_id: string
+  verdict: 'PASS' | 'WARN' | 'DISCARD'
+}
+
+export interface BacktestSummary {
   run_id: string
-  generated_at: string
-  combos: BacktestResult[]
+  strategy_id: string
+  strategy_name: string
+  instrument: string
+  status: string
+  created_at: string
+  completed_at: string | null
+  net_pnl: number | null
+  max_drawdown: number | null
+  profit_factor: number | null
+  win_rate: number | null
+  trade_count: number | null
+  verdicts: VerdictSummary[]
+}
+
+export interface EvaluationDetail {
+  eval_id: string
+  firm_id: string
+  firm_name: string
+  verdict: 'PASS' | 'WARN' | 'DISCARD'
+  drawdown_pass: boolean
+  target_pass: boolean
+  consistency_pass: boolean | null
+  simulated_eval_days: number | null
+  breach_count: number
+  largest_day_share_pct: number | null
+  firm_max_loss_eod: number
+  firm_profit_target: number
+  firm_consistency_pct: number | null
+  notes: string | null
+}
+
+export interface DailyPnlPoint {
+  date: string
+  pnl: number
+}
+
+export interface BacktestDetail {
+  run_id: string
+  strategy_id: string
+  strategy_name: string
+  instrument: string
+  params: Record<string, unknown>
+  bar_type: string
+  bar_value: number
+  start_date: string
+  end_date: string
+  commission_per_side: number
+  slippage_ticks: number
+  status: string
+  error_message: string | null
+  created_at: string
+  completed_at: string | null
+  net_pnl: number | null
+  max_drawdown: number | null
+  profit_factor: number | null
+  win_rate: number | null
+  win_count: number | null
+  trade_count: number | null
+  sharpe: number | null
+  sortino: number | null
+  cagr: number | null
+  avg_win: number | null
+  avg_loss: number | null
+  avg_trade_duration_min: number | null
+  worst_day_pnl: number | null
+  worst_losing_streak: number | null
+  equity_curve: EquityPoint[]
+  daily_pnl: DailyPnlPoint[]
+  evaluations: EvaluationDetail[]
+}
+
+// ── Lab — Progress + System Health ───────────────────────────────────────────
+
+export interface LabProgress {
+  job_id: string | null
+  job_type: string | null
+  // 'idle' | 'running' | 'complete' | 'failed_timeout' | 'failed_unknown'
+  status: string
+  strategy_id: string | null
+  instrument: string | null
+  pct: number
+  message: string
+  started_at: string | null
+  updated_at: string | null
+  heartbeat_age_seconds: number
+  error_message: string | null
+}
+
+export interface SystemHealth {
+  backend: boolean
+  ssh_tunnel: boolean
+  vps_agent: boolean
+  nt8_running: boolean
+  nt8_sa_visible: boolean
+  last_compile_ok: boolean
+  last_compile_at: string | null
+  last_compile_errors: string[]
+  checked_at: string
 }
 
 // ── Stress Tests ─────────────────────────────────────────────────────────────

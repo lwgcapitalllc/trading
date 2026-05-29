@@ -3,9 +3,8 @@ import {
   LayoutDashboard, Radar, Bot, BarChart2,
   Activity, Settings,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
 import type { LucideIcon } from 'lucide-react'
-import { api } from '@/api/client'
+import { SystemHealthStrip } from '@/components/SystemHealthStrip'
 
 const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
   { to: '/',            label: 'Overview',    icon: LayoutDashboard, live: true  },
@@ -14,7 +13,7 @@ const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[
 ]
 
 const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
-  { to: '/backtests',    label: 'Backtests',    icon: BarChart2, live: false },
+  { to: '/backtests',    label: 'Backtests',    icon: BarChart2, live: true  },
   { to: '/stress-tests', label: 'Stress Tests', icon: Activity,  live: false },
 ]
 
@@ -57,31 +56,7 @@ function NavItem({ to, label, icon: Icon, live }: { to: string; label: string; i
   )
 }
 
-function StatusDot({ ok }: { ok: boolean | null }) {
-  if (ok === null)
-    return <span className="w-[7px] h-[7px] rounded-full bg-neutral flex-shrink-0" />
-  return ok
-    ? <span className="w-[7px] h-[7px] rounded-full bg-pos flex-shrink-0" style={{ boxShadow: '0 0 6px #34d399' }} />
-    : <span className="w-[7px] h-[7px] rounded-full bg-neg flex-shrink-0" />
-}
-
 export function Sidebar() {
-  const { data: health, isError: apiError } = useQuery({
-    queryKey: ['health'],
-    queryFn: () => api.get<{ status: string }>('/health'),
-    refetchInterval: 30_000,
-    retry: 1,
-  })
-  const { data: vpsPing, isError: vpsError } = useQuery({
-    queryKey: ['vps', 'ping'],
-    queryFn: () => api.get<{ status: string }>('/bots/ping'),
-    refetchInterval: 30_000,
-    retry: 1,
-  })
-
-  const apiOk = health?.status === 'ok' ? true : apiError ? false : null
-  const vpsOk = vpsPing?.status === 'ok' ? true : vpsError ? false : null
-
   return (
     <aside className="w-[212px] flex-shrink-0 bg-bg-sunken border-r border-border-subtle flex flex-col">
 
@@ -109,14 +84,7 @@ export function Sidebar() {
 
       {/* ── Footer ────────────────────────────────────────────────── */}
       <div className="mt-auto pt-[10px] border-t border-border-subtle">
-        <div className="flex items-center gap-2 text-micro text-text-secondary">
-          <StatusDot ok={vpsOk} />
-          <span>VPS · <span className="text-text-tertiary">{vpsOk === true ? 'forexvps' : vpsOk === false ? 'unreachable' : 'checking'}</span></span>
-        </div>
-        <div className="flex items-center gap-2 text-micro text-text-secondary mt-[6px]">
-          <StatusDot ok={apiOk} />
-          <span>API :8000 · <span className="text-text-tertiary">{apiOk === true ? 'healthy' : apiOk === false ? 'unreachable' : 'checking'}</span></span>
-        </div>
+        <SystemHealthStrip />
 
         {/* Settings — last item */}
         <NavLink

@@ -1,0 +1,215 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { api } from '@/api/client'
+import type {
+  Strategy, ScanResult,
+  Firm, FirmCreate,
+  BacktestRunRequest, BacktestSummary, BacktestDetail,
+  LabProgress, SystemHealth,
+} from '@/types'
+
+// ── Strategies ─────────────────────────────────────────────────────────────────
+
+export function useStrategies() {
+  return useQuery({
+    queryKey: ['lab', 'strategies'],
+    queryFn: () => api.get<Strategy[]>('/strategies'),
+  })
+}
+
+export function useScanStrategies() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<ScanResult>('/strategies/scan'),
+    onSuccess: (data) => {
+      toast.success(`Scanned — ${data.added} added, ${data.updated} updated`)
+      qc.invalidateQueries({ queryKey: ['lab', 'strategies'] })
+    },
+    onError: () => toast.error('Strategy scan failed'),
+  })
+}
+
+// ── Firms ──────────────────────────────────────────────────────────────────────
+
+export function useFirms() {
+  return useQuery({
+    queryKey: ['lab', 'firms'],
+    queryFn: () => api.get<Firm[]>('/firms'),
+  })
+}
+
+export function useCreateFirm() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: FirmCreate) => api.post<Firm>('/firms', body),
+    onSuccess: () => {
+      toast.success('Firm created')
+      qc.invalidateQueries({ queryKey: ['lab', 'firms'] })
+    },
+    onError: () => toast.error('Failed to create firm'),
+  })
+}
+
+export function useUpdateFirm() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ firmId, body }: { firmId: string; body: FirmCreate }) =>
+      api.put<Firm>(`/firms/${firmId}`, body),
+    onSuccess: () => {
+      toast.success('Firm updated')
+      qc.invalidateQueries({ queryKey: ['lab', 'firms'] })
+    },
+    onError: () => toast.error('Failed to update firm'),
+  })
+}
+
+export function useDeleteFirm() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (firmId: string) => api.delete<void>(`/firms/${firmId}`),
+    onSuccess: () => {
+      toast.success('Firm deleted')
+      qc.invalidateQueries({ queryKey: ['lab', 'firms'] })
+    },
+    onError: () => toast.error('Failed to delete firm'),
+  })
+}
+
+// ── Backtest Runs ──────────────────────────────────────────────────────────────
+
+export function useBacktestRuns(filters?: {
+  strategy_id?: string
+  firm_id?: string
+  status?: string
+}) {
+  const params = new URLSearchParams()
+  if (filters?.strategy_id) params.set('strategy_id', filters.strategy_id)
+  if (filters?.firm_id)     params.set('firm_id',     filters.firm_id)
+  if (filters?.status)      params.set('status',      filters.status)
+  const qs = params.toString()
+
+  return useQuery({
+    queryKey: ['lab', 'runs', filters ?? {}],
+    queryFn: () => api.get<BacktestSummary[]>(`/backtests/runs${qs ? `?${qs}` : ''}`),
+  })
+}
+
+export function useBacktestRun(runId: string | null) {
+  return useQuery({
+    queryKey: ['lab', 'run', runId],
+    queryFn: () => api.get<BacktestDetail>(`/backtests/runs/${runId}`),
+    enabled: !!runId,
+    refetchInterval: (query) => {
+      const status = (query.state.data as BacktestDetail | undefined)?.status
+      return status === 'running' ? 3_000 : false
+    },
+  })
+}
+
+export function useRunLog(runId: string | null, lines = 200) {
+  return useQuery({
+    queryKey: ['lab', 'run', runId, 'log', lines],
+    queryFn: () => api.getText(`/backtests/runs/${runId}/log?lines=${lines}`),
+    enabled: !!runId,
+  })
+}
+
+// Module-level timestamp: keeps progress polling fast for 60s after a trigger
+// so the UI reflects state changes while the VPS agent starts the job.
+let _lastTriggerMs = 0
+
+export function useTriggerBacktest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: BacktestRunRequest) =>
+      api.post<{ run_id: string; status: string }>('/backtests/run', body),
+    onSuccess: () => {
+      _lastTriggerMs = Date.now()
+      toast.success('Backtest started')
+      qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'progress'] })
+    },
+    onError: () => toast.error('Failed to start backtest'),
+  })
+}
+
+export function useDeleteRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (runId: string) => api.delete<void>(`/backtests/runs/${runId}`),
+    onSuccess: () => {
+      toast.success('Run deleted')
+      qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+    },
+    onError: () => toast.error('Failed to delete run'),
+  })
+}
+
+export function useReevaluate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ runId, firmIds }: { runId: string; firmIds: string[] }) =>
+      api.post<BacktestDetail>(`/backtests/runs/${runId}/reevaluate`, { firm_ids: firmIds }),
+    onSuccess: (_data, vars) => {
+      toast.success('Re-evaluated')
+      qc.invalidateQueries({ queryKey: ['lab', 'run', vars.runId] })
+    },
+    onError: () => toast.error('Re-evaluate failed'),
+  })
+}
+
+// ── Lab Progress + Control ─────────────────────────────────────────────────────
+
+export function useLabProgress() {
+  return useQuery({
+    queryKey: ['lab', 'progress'],
+    queryFn: () => api.get<LabProgress>('/lab/progress'),
+    refetchInterval: (query) => {
+      const status = (query.state.data as LabProgress | undefined)?.status
+      if (Date.now() - _lastTriggerMs < 60_000) return 2_000
+      return status === 'running' ? 3_000 : 30_000
+    },
+  })
+}
+
+export function useStopLab() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ stopped: boolean; job_id: string | null }>('/lab/stop', {}),
+    onSuccess: (data) => {
+      if (data.stopped) toast.success('Lab job cancelled')
+      else toast.error('No active job to stop')
+      qc.invalidateQueries({ queryKey: ['lab', 'progress'] })
+    },
+    onError: () => toast.error('Failed to stop lab'),
+  })
+}
+
+// ── System Health ──────────────────────────────────────────────────────────────
+
+export function useSystemHealth() {
+  return useQuery({
+    queryKey: ['system', 'health'],
+    queryFn: () => api.get<SystemHealth>('/system/health'),
+    refetchInterval: 30_000,
+  })
+}
+
+// ── VPS Log Proxies ────────────────────────────────────────────────────────────
+
+export function useVpsAgentLog(lines = 200) {
+  return useQuery({
+    queryKey: ['lab', 'vps', 'agent-log', lines],
+    queryFn: () => api.getText(`/vps/agent/log?lines=${lines}`),
+    refetchInterval: 10_000,
+  })
+}
+
+export function useVpsNtLog(lines = 200) {
+  return useQuery({
+    queryKey: ['lab', 'vps', 'nt-log', lines],
+    queryFn: () => api.getText(`/vps/nt/log?lines=${lines}`),
+    refetchInterval: 10_000,
+  })
+}

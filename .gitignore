@@ -61,6 +61,20 @@ smart-money/reports/*
 !smart-money/reports/.gitkeep
 
 # =============================================================
+# Command Center — lab runtime files
+# DB is created on startup via init_db(); reports are per-run
+# output. Neither belongs in version control.
+# =============================================================
+command-center/backend/data/lab.db
+command-center/backend/data/lab.db-shm
+command-center/backend/data/lab.db-wal
+command-center/backend/data/lab_progress.json
+command-center/backend/lab.db
+command-center/backend/lab.db-shm
+command-center/backend/lab.db-wal
+command-center/backend/reports/lab/
+
+# =============================================================
 # Algos — VPS-only runtime files
 # These live only on the VPS and are backed up to the
 # `backups` branch via backup.py. Never overwrite via git pull.

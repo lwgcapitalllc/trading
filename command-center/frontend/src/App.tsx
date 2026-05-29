@@ -6,6 +6,7 @@ import { Overview } from '@/pages/Overview'
 import { SmartMoney } from '@/pages/SmartMoney'
 import { Bots } from '@/pages/Bots'
 import { Backtests } from '@/pages/Backtests'
+import { BacktestDetail } from '@/pages/BacktestDetail'
 import { StressTests } from '@/pages/StressTests'
 import { Settings } from '@/pages/Settings'
 
@@ -24,13 +25,14 @@ export default function App() {
           <TopBar />
           <main className="flex-1 overflow-y-auto p-[22px]">
             <Routes>
-              <Route path="/"             element={<Overview />} />
-              <Route path="/smart-money"  element={<SmartMoney />} />
+              <Route path="/"                         element={<Overview />} />
+              <Route path="/smart-money"              element={<SmartMoney />} />
               <Route path="/smart-money/:runId/candidates/:id" element={<SmartMoney />} />
-              <Route path="/bots"         element={<Bots />} />
-              <Route path="/backtests"    element={<Backtests />} />
-              <Route path="/stress-tests" element={<StressTests />} />
-              <Route path="/settings"     element={<Settings />} />
+              <Route path="/bots"                     element={<Bots />} />
+              <Route path="/backtests"                element={<Backtests />} />
+              <Route path="/backtests/runs/:runId"    element={<BacktestDetail />} />
+              <Route path="/stress-tests"             element={<StressTests />} />
+              <Route path="/settings"                 element={<Settings />} />
             </Routes>
           </main>
         </div>
