@@ -193,8 +193,22 @@ def set_combo(sa, auto_id, value):
 
 
 def wait_for_run_complete(sa, timeout=RUN_TIMEOUT):
-    """Poll until the Run button is re-enabled (backtest finished)."""
+    """
+    Wait for the Run button to go disabled (run started) then enabled (run done).
+    Returns True on success, False on timeout.
+    """
     deadline = time.time() + timeout
+    # Phase 1: wait up to 15s for the button to go disabled (run actually started)
+    phase1_deadline = time.time() + 15
+    while time.time() < phase1_deadline:
+        try:
+            run_btn = sa.child_window(auto_id="Run", control_type="Button")
+            if not run_btn.is_enabled():
+                break
+        except Exception:
+            pass
+        time.sleep(0.5)
+    # Phase 2: wait for the button to become enabled again (run finished)
     while time.time() < deadline:
         try:
             run_btn = sa.child_window(auto_id="Run", control_type="Button")
@@ -206,15 +220,17 @@ def wait_for_run_complete(sa, timeout=RUN_TIMEOUT):
     return False
 
 
-def read_result_from_xml(combo_id, strategy, instrument):
+def read_result_from_xml(combo_id, strategy, instrument, written_after: float = 0.0):
     """
     Find the most recently written SA XML log for this strategy and extract
     performance metrics from the Currency/UsDollar SummaryPerformancesSerialize.
+    written_after: unix timestamp — ignore XML files older than this (avoids stale results).
     Returns a result dict or None on failure.
     """
     today   = datetime.now().strftime("%Y_%m_%d")
     pattern = str(SA_LOG_DIR / f"@@@{strategy}_{today}_*.xml")
-    files   = sorted(glob.glob(pattern))
+    files   = [f for f in sorted(glob.glob(pattern))
+               if os.path.getmtime(f) >= written_after]
     if not files:
         print(f"  WARNING: No XML log found matching {pattern}")
         return None
@@ -302,6 +318,7 @@ def run_combo(app, combo, global_params, idx, total):
     configure_combo(sa, combo, global_params)
     time.sleep(1)
 
+    click_time = time.time()
     try:
         run_btn = sa.child_window(auto_id="Run", control_type="Button")
         run_btn.click_input()
@@ -310,8 +327,6 @@ def run_combo(app, combo, global_params, idx, total):
         print(f"  ERROR clicking Run: {e}")
         return None
 
-    # SA takes a moment to disable the Run button after click
-    time.sleep(2)
     finished = wait_for_run_complete(sa, RUN_TIMEOUT)
     if not finished:
         print(f"  WARNING: Timed out after {RUN_TIMEOUT}s.")
@@ -322,11 +337,12 @@ def run_combo(app, combo, global_params, idx, total):
     pattern = str(SA_LOG_DIR / f"@@@{combo['strategy']}_{today}_*.xml")
     xml_deadline = time.time() + 60
     while time.time() < xml_deadline:
-        if glob.glob(pattern):
+        if any(os.path.getmtime(f) >= click_time for f in glob.glob(pattern)):
             break
         time.sleep(3)
     print("  Backtest complete. Reading results from XML log...")
-    result = read_result_from_xml(combo["id"], combo["strategy"], combo["instrument"])
+    result = read_result_from_xml(combo["id"], combo["strategy"], combo["instrument"],
+                                  written_after=click_time)
     if result:
         print(f"  Trades={result['trades']}  NetPnL={result['net_pnl']:.2f}"
               f"  PF={result['profit_factor']:.4f}  MaxDD={result['max_drawdown']:.2f}")
@@ -427,6 +443,7 @@ def run_job_mode(job_id: str, spec_path: str):
     configure_from_spec(sa, spec)
     time.sleep(1)
 
+    click_time = time.time()
     try:
         run_btn = sa.child_window(auto_id="Run", control_type="Button")
         run_btn.click_input()
@@ -436,23 +453,22 @@ def run_job_mode(job_id: str, spec_path: str):
         sys.exit(1)
 
     _pct(30, "Backtest running")
-    time.sleep(2)
     finished = wait_for_run_complete(sa, RUN_TIMEOUT)
     if not finished:
         print(f"  WARNING: Timed out after {RUN_TIMEOUT}s.")
         sys.exit(1)
 
     _pct(80, "Reading results")
-    # Poll for XML
+    # Poll for XML written after this run's click (avoid stale files from earlier today)
     today   = datetime.now().strftime("%Y_%m_%d")
     pattern = str(SA_LOG_DIR / f"@@@{strategy}_{today}_*.xml")
     xml_deadline = time.time() + 60
     while time.time() < xml_deadline:
-        if glob.glob(pattern):
+        if any(os.path.getmtime(f) >= click_time for f in glob.glob(pattern)):
             break
         time.sleep(3)
 
-    result = read_result_from_xml(job_id, strategy, instr)
+    result = read_result_from_xml(job_id, strategy, instr, written_after=click_time)
     if result is None:
         print("  ERROR: Could not read result from XML.")
         sys.exit(1)
