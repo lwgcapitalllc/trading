@@ -270,8 +270,8 @@ def configure_combo(sa, combo, global_params):
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", gp["bar_value"])
 
     # Date range
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From", gp["start_date"])
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To", gp["end_date"])
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From", _nt8_date(gp["start_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",   _nt8_date(gp["end_date"]))
 
     # Slippage
     set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", gp["slippage"])
@@ -339,6 +339,12 @@ def _pct(n: int, msg: str = ""):
 
 # ── Lab mode (job-keyed) ──────────────────────────────────────────────────────
 
+def _nt8_date(iso: str) -> str:
+    """Convert ISO YYYY-MM-DD to NT8 date format M/D/YYYY."""
+    y, m, d = iso.split("-")
+    return f"{int(m)}/{int(d)}/{y}"
+
+
 def configure_from_spec(sa, spec: dict):
     """Configure Strategy Analyzer from a lab job spec (firm-agnostic)."""
     strategy = spec["strategy_class"]
@@ -350,8 +356,8 @@ def configure_from_spec(sa, spec: dict):
 
     set_instrument(sa, spec["instrument"])
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  spec["start_date"])
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    spec["end_date"])
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  _nt8_date(spec["start_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
     set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
 
     # Prop-firm SA params: set permissive so strategy trades freely;
