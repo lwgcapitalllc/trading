@@ -119,19 +119,22 @@ def select_strategy(sa, strategy_name):
 
 
 def set_instrument(sa, instrument):
-    """Set instrument in the InstrumentSelector control."""
+    """Set instrument in the InstrumentSelector control.
+    NT8 SA takes only the root symbol (e.g. 'MNQ'), not the full contract string.
+    """
+    root = instrument.split()[0]  # "MNQ 06-26" -> "MNQ"
     try:
         selector = sa.child_window(auto_id="InstrumentSelector")
         selector.click_input()
         time.sleep(0.3)
         send_keys("^a")
-        send_keys(instrument, with_spaces=True)
+        send_keys(root, with_spaces=True)
         time.sleep(0.3)
         send_keys("{ENTER}")
         time.sleep(0.5)
         return True
     except Exception as e:
-        print(f"  WARNING: could not set instrument '{instrument}': {e}")
+        print(f"  WARNING: could not set instrument '{root}': {e}")
         return False
 
 
