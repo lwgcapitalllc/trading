@@ -125,7 +125,9 @@ def nt_health():
         return jsonify(result)
     try:
         from pywinauto import Desktop
-        titles = [w.window_text() for w in Desktop(backend="uia").windows()]
+        # win32 backend uses EnumWindows — no COM init needed, works in Flask threads.
+        # uia backend requires CoInitialize() per thread and breaks in threaded Flask.
+        titles = [w.window_text() for w in Desktop(backend="win32").windows()]
         result["sa_visible"] = any("Strategy Analyzer" in t for t in titles)
     except Exception as e:
         result["error"] = f"pywinauto: {e}"
@@ -378,7 +380,7 @@ def legacy_results():
 def diagnose():
     try:
         from pywinauto import Desktop
-        titles = [w.window_text() for w in Desktop(backend="uia").windows()]
+        titles = [w.window_text() for w in Desktop(backend="win32").windows()]
         return jsonify({"windows": titles})
     except Exception as e:
         return jsonify({"error": str(e)})
