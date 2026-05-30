@@ -501,37 +501,74 @@ def export_trades():
         if grid is None:
             return jsonify({"error": "Could not find trades grid", "log": log})
 
-        # Step 3: bring SA to foreground so keyboard input lands there, then
-        # right-click grid center and IMMEDIATELY send 'e' for Export...
+        # Step 3: right-click grid center, find the popup context menu, click Export...
+        import pywinauto.mouse as _mouse
         sa.set_focus()
         time.sleep(0.2)
-        rect = grid.rectangle()
+        rect  = grid.rectangle()
         mid_x = (rect.left + rect.right)  // 2
-        mid_y = (rect.top  + rect.bottom) // 2 + 40   # skip header row
-        import pywinauto.mouse as _mouse
-        _mouse.right_click(coords=(mid_x, mid_y))
-        time.sleep(0.35)   # menu appears instantly; wait just enough for it to render
-        send_keys("e")     # 'e' activates Export... while menu is still open
-        time.sleep(0.3)
-        log.append("Right-clicked grid, sent 'e' for Export")
+        mid_y = (rect.top  + rect.bottom) // 2 + 40  # skip header row
 
-        # Step 4: handle the Export As dialog
+        wins_before = {w.handle for w in dt.windows()}
+        _mouse.right_click(coords=(mid_x, mid_y))
+        time.sleep(0.4)
+
+        # Find the new popup window (the context menu) — it appears as a top-level window
+        popup = None
+        for w in dt.windows():
+            if w.handle not in wins_before:
+                popup = w
+                log.append(f"Popup: '{w.window_text()}'")
+                break
+
+        if popup is None:
+            return jsonify({"error": "Context menu did not appear after right-click", "log": log})
+
+        # Click Export... directly in the popup (fast scan of small menu window)
+        export_clicked = False
+        for el in popup.descendants():
+            try:
+                txt = (el.window_text() or "").strip()
+                if txt.startswith("Export"):
+                    el.click_input()
+                    export_clicked = True
+                    log.append(f"Clicked '{txt}'")
+                    break
+            except Exception:
+                pass
+
+        if not export_clicked:
+            # Dismiss menu and return what we found
+            send_keys("{ESCAPE}")
+            items = []
+            for el in popup.descendants():
+                try:
+                    t = (el.window_text() or "").strip()
+                    if t:
+                        items.append(t)
+                except Exception:
+                    pass
+            return jsonify({"error": "Export item not found in context menu", "log": log, "menu_items": items})
+
+        time.sleep(0.3)
+
+        # Step 4: handle the Export As dialog (appears instantly after clicking Export...)
         dlg = dt.window(title_re=".*(Export As|Export|Save As).*")
-        dlg.wait("visible", timeout=8)
+        dlg.wait("visible", timeout=5)
         log.append(f"Dialog: '{dlg.window_text()}'")
 
-        # Clear filename field and type the full target path
+        # Filename field — clear it, type the full absolute path, press Enter
         try:
             fname = dlg.child_window(auto_id="1148", control_type="Edit")
         except Exception:
             fname = dlg.child_window(control_type="Edit", found_index=0)
         fname.click_input()
-        send_keys("^a")                             # select all existing text
+        send_keys("^a")
         time.sleep(0.1)
-        fname.type_keys(out_path, with_spaces=True) # type full absolute path
+        fname.type_keys(out_path, with_spaces=True)
         time.sleep(0.2)
         send_keys("{ENTER}")
-        time.sleep(2.5)
+        time.sleep(1.5)
         log.append(f"Saved to {out_path}")
 
         # Step 5: read and return the full CSV
