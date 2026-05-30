@@ -546,49 +546,38 @@ def export_trades():
             return jsonify({"error": "Export... not found or rect invalid", "log": log, "menu_items": menu_items})
 
         # Second right-click at the same spot — menu reappears at the same position.
-        # Click Export immediately before the menu can be dismissed again.
+        # Wait 0.6s so menu is fully rendered, then click pre-scanned coordinates.
         _mouse.right_click(coords=(rc_x, rc_y))
-        time.sleep(0.35)
+        time.sleep(0.6)
         _mouse.click(coords=export_coords)
         log.append(f"Clicked Export at {export_coords} (2nd right-click)")
 
-        # Step 4: wait for "Export As" dialog, then just click Save — don't touch filename.
-        # NT8 saves to Documents by default; we read back the newest CSV from there.
-        time.sleep(1.5)   # give dialog time to open
-
-        # Find whichever top-level window now has a Save button and click it
-        saved = False
-        for _ in range(8):
-            for w in dt.windows():
-                try:
-                    btn = w.child_window(title="Save", control_type="Button")
-                    if btn.exists(timeout=0.3):
-                        btn.click_input()
-                        log.append(f"Clicked Save in '{w.window_text()}'")
-                        saved = True
-                        break
-                except Exception:
-                    pass
-            if saved:
-                break
-            time.sleep(0.5)
-
-        if not saved:
-            return jsonify({"error": "Save button not found in any dialog", "log": log})
-
-        time.sleep(0.8)
-
-        # Handle overwrite confirmation ("Yes" to replace existing file)
-        for w in dt.windows():
+        # Step 4: Export As dialog opens. Search the NT8 element tree for Save button
+        # (WPF dialogs may not appear as standalone top-level windows in dt.windows()).
+        time.sleep(2.0)
+        save_clicked = False
+        for el in nt8.descendants():
             try:
-                for btn_title in ["Yes", "OK"]:
-                    btn = w.child_window(title=btn_title, control_type="Button")
-                    if btn.exists(timeout=0.5):
-                        btn.click_input()
-                        log.append(f"Overwrite confirmed via '{btn_title}'")
-                        break
+                txt = (el.window_text() or "").strip()
+                ct  = str(getattr(el.element_info, "control_type", ""))
+                if txt == "Save" and ct == "Button":
+                    el.click_input()
+                    save_clicked = True
+                    log.append("Clicked Save button in NT8 tree")
+                    break
             except Exception:
                 pass
+
+        if not save_clicked:
+            # Fallback: Enter activates the default button in any dialog
+            send_keys("{ENTER}")
+            save_clicked = True
+            log.append("Pressed Enter (Save fallback)")
+
+        time.sleep(0.8)
+        # Handle overwrite confirmation if file already exists
+        send_keys("{ENTER}")
+        log.append("Pressed Enter (overwrite confirm if any)")
 
         time.sleep(1.2)
 
