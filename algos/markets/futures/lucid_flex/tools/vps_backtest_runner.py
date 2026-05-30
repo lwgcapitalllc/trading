@@ -255,7 +255,7 @@ def wait_for_run_complete(sa, timeout=RUN_TIMEOUT):
                 return True
         except Exception:
             pass
-        time.sleep(3)
+        time.sleep(1)
     return False
 
 
@@ -387,7 +387,7 @@ def run_combo(app, combo, global_params, idx, total):
     while time.time() < xml_deadline:
         if any(os.path.getmtime(f) >= click_time for f in glob.glob(pattern)):
             break
-        time.sleep(3)
+        time.sleep(1)
     print("  Backtest complete. Reading results from XML log...")
     result = read_result_from_xml(combo["id"], combo["strategy"], combo["instrument"],
                                   written_after=click_time)
@@ -754,7 +754,7 @@ def run_job_mode(job_id: str, spec_path: str):
     while time.time() < xml_deadline:
         if any(os.path.getmtime(f) >= click_time for f in glob.glob(pattern)):
             break
-        time.sleep(3)
+        time.sleep(1)
 
     result = read_result_from_xml(job_id, strategy, instr, written_after=click_time)
     if result is None:

@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
-  CheckCircle, XCircle, Minus, Info,
+  CheckCircle, XCircle, Minus, Info, Square,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie,
@@ -831,8 +831,9 @@ function RunningBanner({ pct, message, startedAt, onStop }: {
           <span className="text-[11px] text-text-tertiary font-mono tabular-nums">{elapsed}</span>
           <button
             onClick={onStop}
-            className="text-[11px] text-neg-text/70 hover:text-neg-text transition-colors"
+            className="flex items-center gap-[5px] px-[10px] py-[5px] rounded-md text-[12px] font-medium bg-neg-muted border border-neg-text/30 text-neg-text hover:bg-neg-text/20 transition-colors"
           >
+            <Square size={10} fill="currentColor" />
             Stop
           </button>
         </div>
