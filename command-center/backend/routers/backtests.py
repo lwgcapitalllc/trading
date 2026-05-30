@@ -20,7 +20,7 @@ from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
 )
 from services import lab_db, vps_client
-from services.backtest_runner import run_backtest_job, read_progress, LAB_RESULTS_DIR
+from services.backtest_runner import run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR
 from services.evaluator import evaluate_run
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
@@ -198,6 +198,27 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     )
 
     return {"run_id": run_id, "status": "started"}
+
+
+@router.post("/runs/{run_id}/stop", status_code=200)
+async def stop_backtest_run(run_id: str) -> dict:
+    row = lab_db.get_run(run_id)
+    if not row:
+        raise HTTPException(404, "Run not found")
+    if row["status"] != "running":
+        raise HTTPException(400, f"Run is not running (status: {row['status']})")
+
+    progress = read_progress()
+    job_id   = progress.get("job_id") or run_id
+
+    try:
+        await asyncio.to_thread(vps_client.cancel_job, job_id)
+    except Exception:
+        pass  # best-effort — still mark cancelled locally
+
+    lab_db.update_run_status(run_id, "failed_cancelled", "Cancelled by user")
+    clear_progress()
+    return {"run_id": run_id, "status": "failed_cancelled"}
 
 
 @router.delete("/runs/{run_id}", status_code=204)

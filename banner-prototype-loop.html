@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Candlestick Banner — Loop Prototype</title>
+<style>
+  body { background: #0d0f1a; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; gap: 32px; }
+
+  .banner {
+    background: rgba(0,200,180,0.06);
+    border: 1px solid rgba(0,200,180,0.25);
+    border-radius: 12px;
+    padding: 16px 16px 16px;
+    width: 640px;
+  }
+
+  .chart-row {
+    position: relative;
+    height: 100px;
+    margin-bottom: 8px;
+  }
+  canvas {
+    position: absolute;
+    bottom: 0;
+  }
+
+  .stages {
+    display: flex;
+    align-items: flex-start;
+  }
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #1e2235;
+    border: 1.5px solid #2e3350;
+    flex-shrink: 0;
+    transition: background 0.3s, border-color 0.3s;
+  }
+  .dot.done   { background: #00c8b4; border-color: #00c8b4; }
+  .dot.active { background: #00c8b4; border-color: #00c8b4; box-shadow: 0 0 6px 2px rgba(0,200,180,0.55); }
+  .dot.future { background: #1e2235; border-color: #2e3350; }
+  .stage-label {
+    font-size: 10.5px;
+    color: #6b7280;
+    white-space: nowrap;
+    transition: color 0.3s;
+  }
+  .stage-label.done   { color: #00c8b4; }
+  .stage-label.active { color: #e5e7eb; }
+  .connector {
+    flex: 1;
+    height: 1.5px;
+    margin-top: 3.75px;
+    background: #2e3350;
+    transition: background 0.3s;
+  }
+  .connector.done { background: #00c8b4; }
+
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+  }
+  .pulse-row { display: flex; align-items: center; gap: 8px; }
+  .pulse-dot { width: 5px; height: 5px; border-radius: 50%; background: #00c8b4; animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .msg { font-size: 12px; color: #9ca3af; }
+  .elapsed { font-size: 11px; color: #6b7280; font-family: monospace; }
+
+  .controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: #9ca3af;
+    font-size: 13px;
+  }
+  input[type=range] { width: 400px; accent-color: #00c8b4; }
+  .pct-label { font-family: monospace; font-size: 14px; color: #00c8b4; }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <div class="chart-row" id="chartRow">
+    <canvas id="cv" height="90"></canvas>
+  </div>
+  <div class="stages" id="stages"></div>
+  <div class="footer">
+    <div class="pulse-row">
+      <div class="pulse-dot"></div>
+      <span class="msg">Running strategy evaluation…</span>
+    </div>
+    <span class="elapsed" id="elapsed">00:00:12</span>
+  </div>
+</div>
+
+<div class="controls">
+  <div>Progress (drag to simulate): <span class="pct-label" id="pctLabel">40%</span></div>
+  <input type="range" min="0" max="100" value="40" id="slider">
+  <div style="color:#6b7280;font-size:11px;">Loop sweeps from first candle → cursor, then restarts. Cursor stays pinned to real progress.</div>
+</div>
+
+<script>
+// ── Candle data (seeded, same narrative as React impl) ──────────────────────
+const CHART_BULL = '#00c8b4'
+const CHART_BEAR = '#e05c72'
+const CHART_PAD  = 5
+
+const CHART_CANDLES = (() => {
+  let s = 0xC0FFEE42
+  const r = () => { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s >>> 0) / 0xffffffff }
+  const bars = []
+  let p = 0.42
+  const script = [
+    [3, +0.060, 0.075],
+    [2, +0.008, 0.050],
+    [4, -0.090, 0.080],
+    [5, +0.095, 0.085],
+    [4, +0.038, 0.065],
+    [2, +0.022, 0.050],
+  ]
+  for (const [n, trend, vol] of script) {
+    for (let i = 0; i < n; i++) {
+      const o  = p
+      const mv = trend + (r() - 0.5) * vol
+      const c  = Math.max(0.06, Math.min(0.94, o + mv))
+      const hi = Math.max(o, c) + (0.3 + r() * 0.7) * vol * 0.9
+      const lo = Math.min(o, c) - (0.3 + r() * 0.7) * vol * 0.9
+      bars.push({ o, c, h: Math.min(0.96, hi), l: Math.max(0.04, lo) })
+      p = c
+    }
+  }
+  return bars
+})()
+const CHART_N = CHART_CANDLES.length  // 20
+
+// ── Stage definitions ───────────────────────────────────────────────────────
+const STEPS = [
+  { label: 'Connect',   startPct: 0   },
+  { label: 'Configure', startPct: 5   },
+  { label: 'Run',       startPct: 15  },
+  { label: 'Results',   startPct: 80  },
+  { label: 'Evaluate',  startPct: 95  },
+]
+
+// ── Build stage markup ──────────────────────────────────────────────────────
+const stagesEl = document.getElementById('stages')
+STEPS.forEach((step, i) => {
+  const stageDiv = document.createElement('div')
+  stageDiv.className = 'stage'
+  stageDiv.innerHTML = `
+    <span class="dot" data-dot data-idx="${i}"></span>
+    <span class="stage-label" data-label data-idx="${i}">${step.label}</span>
+  `
+  stagesEl.appendChild(stageDiv)
+  if (i < STEPS.length - 1) {
+    const conn = document.createElement('div')
+    conn.className = 'connector'
+    conn.setAttribute('data-conn', i)
+    stagesEl.appendChild(conn)
+  }
+})
+
+// ── Slider / pct state ──────────────────────────────────────────────────────
+const slider   = document.getElementById('slider')
+const pctLabel = document.getElementById('pctLabel')
+let pct = 40
+slider.addEventListener('input', () => {
+  pct = +slider.value
+  pctLabel.textContent = pct + '%'
+  updateStages()
+})
+
+function updateStages() {
+  const activeIdx = STEPS.reduce((best, step, i) => pct >= step.startPct ? i : best, 0)
+  STEPS.forEach((_, i) => {
+    const dot   = document.querySelector(`[data-dot][data-idx="${i}"]`)
+    const label = document.querySelector(`[data-label][data-idx="${i}"]`)
+    const conn  = document.querySelector(`[data-conn="${i}"]`)
+    const done   = i < activeIdx
+    const active = i === activeIdx
+    dot.className   = 'dot'   + (done ? ' done' : active ? ' active' : ' future')
+    label.className = 'stage-label' + (done ? ' done' : active ? ' active' : '')
+    if (conn) conn.className = 'connector' + (done ? ' done' : '')
+  })
+}
+updateStages()
+
+// ── Canvas setup ────────────────────────────────────────────────────────────
+const cv      = document.getElementById('cv')
+const ctx     = cv.getContext('2d')
+const rowEl   = document.getElementById('chartRow')
+
+// Loop config
+const LOOP_MS = 3000   // time for one full sweep (ms)
+// Ease-in-out for the loop phase so it feels alive
+function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t }
+
+let dotXs = []
+let canvasLeft = 0
+
+function measureAndAlign() {
+  const dots = Array.from(document.querySelectorAll('[data-dot]'))
+  if (dots.length < 2) return
+  const rowR = rowEl.getBoundingClientRect()
+  const fR   = dots[0].getBoundingClientRect()
+  const lR   = dots[dots.length - 1].getBoundingClientRect()
+  const left  = fR.left  + fR.width  / 2 - rowR.left
+  const right = lR.left  + lR.width  / 2 - rowR.left
+  cv.style.left = left + 'px'
+  cv.width = Math.round(right - left)
+  canvasLeft = left
+  dotXs = dots.map(d => {
+    const dr = d.getBoundingClientRect()
+    return dr.left + dr.width / 2 - rowR.left - left
+  })
+}
+window.addEventListener('resize', measureAndAlign)
+// Measure after layout
+requestAnimationFrame(() => { measureAndAlign() })
+
+// ── Draw loop ───────────────────────────────────────────────────────────────
+function draw(ts) {
+  requestAnimationFrame(draw)
+
+  const CW = cv.width
+  const CH = cv.height
+  if (CW === 0) return
+
+  const cp       = pct
+  const rawIdx   = Math.min(cp / 100 * CHART_N, CHART_N)
+  const cursorX  = cp / 100 * CW
+  const slotW    = CW / CHART_N
+  const bodyW    = Math.max(3, Math.floor(slotW * 0.42))
+
+  // ── Loop animation: sweep animIdx from 0 → rawIdx, then reset ──────────
+  const loopFrac = easeInOut((ts % LOOP_MS) / LOOP_MS)   // 0..1 eased
+  const animIdx  = loopFrac * rawIdx                       // 0..rawIdx
+
+  const fullCount  = Math.floor(animIdx)
+  const activeProg = animIdx - fullCount
+
+  // Dynamic y-scale: use full visible range (all candles up to rawIdx)
+  // so the scale doesn't jump as animIdx cycles — it's anchored to real progress
+  const visSlice = CHART_CANDLES.slice(0, Math.max(4, Math.ceil(rawIdx)))
+  const rawLo    = Math.min(...visSlice.map(c => c.l))
+  const rawHi    = Math.max(...visSlice.map(c => c.h))
+  const mid      = (rawLo + rawHi) / 2
+  const half     = Math.max(0.07, (rawHi - rawLo) / 2 + 0.012)
+  const priceMin = mid - half
+  const priceRng = half * 2
+  const toY = v => CHART_PAD + (1 - (v - priceMin) / priceRng) * (CH - CHART_PAD * 2)
+
+  ctx.clearRect(0, 0, CW, CH)
+
+  // Checkpoint dashed lines (based on real cursorX, not animIdx)
+  dotXs.forEach((dx, i) => {
+    if (i === 0) return
+    const passed = cursorX >= dx - 1
+    ctx.strokeStyle = passed ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.06)'
+    ctx.setLineDash([2, 4])
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(dx, 0); ctx.lineTo(dx, CH); ctx.stroke()
+    ctx.setLineDash([])
+  })
+
+  // ── Candles: fully-drawn candles behind the sweep fade slightly
+  //    so the "forming" one pops. All passed candles render at prog=1,
+  //    the active one grows in, future ones invisible. ──────────────────
+  for (let i = 0; i < CHART_N; i++) {
+    let prog
+    if      (i < fullCount)  prog = 1
+    else if (i === fullCount) {
+      prog = activeProg
+      if (prog <= 0.01) continue
+    } else break
+
+    const c      = CHART_CANDLES[i]
+    const cx     = slotW * i + slotW / 2
+    const isBull = c.c >= c.o
+    const clr    = isBull ? CHART_BULL : CHART_BEAR
+
+    // Completed candles get a slight opacity lift so the active one stands out
+    const isActive = i === fullCount
+    const opacity  = isActive ? 1 : (prog === 1 ? 0.72 : 0.72)
+
+    const openY  = toY(c.o)
+    const closeY = toY(c.c)
+    const highY  = toY(c.h)
+    const lowY   = toY(c.l)
+    const bodyT  = Math.min(openY, closeY)
+    const bodyB  = Math.max(openY, closeY)
+    const bodyH  = Math.max(2, bodyB - bodyT)
+    const midY   = (bodyT + bodyB) / 2
+
+    const wickP = Math.min(1, prog / 0.25)
+    if (wickP > 0) {
+      ctx.strokeStyle = clr + (isActive ? 'ff' : 'bb')
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(cx, midY); ctx.lineTo(cx, midY - (midY - highY) * wickP)
+      ctx.moveTo(cx, midY); ctx.lineTo(cx, midY + (lowY  - midY) * wickP)
+      ctx.stroke()
+    }
+    const bodyP = Math.max(0, (prog - 0.25) / 0.75)
+    if (bodyP > 0) {
+      ctx.fillStyle = clr + (isActive ? 'ff' : 'cc')
+      ctx.fillRect(cx - bodyW / 2, isBull ? bodyB - bodyH * bodyP : bodyT, bodyW, bodyH * bodyP)
+    }
+  }
+
+  // Cursor line (real pct, not animIdx)
+  if (cp > 0 && cp < 100) {
+    ctx.strokeStyle = 'rgba(0,200,180,0.12)'; ctx.lineWidth = 4
+    ctx.beginPath(); ctx.moveTo(cursorX, 0); ctx.lineTo(cursorX, CH); ctx.stroke()
+    ctx.strokeStyle = 'rgba(0,200,180,0.65)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(cursorX, 0); ctx.lineTo(cursorX, CH); ctx.stroke()
+
+    const label = `${Math.round(cp)}%`
+    ctx.font = 'bold 10.5px "SF Mono","Fira Code",monospace'
+    const tw = ctx.measureText(label).width
+    const px = cursorX + 5
+    ctx.fillStyle = 'rgba(0,28,24,0.85)'
+    ctx.strokeStyle = 'rgba(0,200,180,0.35)'; ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.roundRect(px - 3, 3, tw + 8, 16, 4)
+    ctx.fill(); ctx.stroke()
+    ctx.fillStyle = CHART_BULL; ctx.textAlign = 'left'
+    ctx.fillText(label, px + 1, 15)
+  }
+}
+
+requestAnimationFrame(draw)
+</script>
+</body>
+</html>

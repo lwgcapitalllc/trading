@@ -153,6 +153,20 @@ export function useDeleteRun() {
   })
 }
 
+export function useStopBacktest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (runId: string) =>
+      api.post<{ run_id: string; status: string }>(`/backtests/runs/${runId}/stop`),
+    onSuccess: (_data, runId) => {
+      toast.success('Backtest cancelled')
+      qc.invalidateQueries({ queryKey: ['lab', 'run', runId] })
+      qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+    },
+    onError: () => toast.error('Failed to stop backtest'),
+  })
+}
+
 export function useReevaluate() {
   const qc = useQueryClient()
   return useMutation({

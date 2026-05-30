@@ -117,7 +117,7 @@ def select_strategy(sa, strategy_name):
     for attempt in range(3):
         try:
             selector.click_input()
-            time.sleep(2.5)  # dropdown needs time to populate
+            time.sleep(1.2)  # dropdown needs time to populate
             # found_index=0 picks first match — the MenuItem and its Text child
             # both share the same title, so pywinauto finds 2; we want index 0.
             item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
@@ -164,9 +164,9 @@ def set_instrument(sa, instrument):
         time.sleep(0.3)
         send_keys("^a")
         send_keys(nt8_instr, with_spaces=True)
-        time.sleep(0.3)
+        time.sleep(0.2)
         send_keys("{ENTER}")
-        time.sleep(0.5)
+        time.sleep(0.3)
         return True
     except Exception as e:
         print(f"  WARNING: could not set instrument '{nt8_instr}': {e}")
@@ -177,6 +177,8 @@ def set_edit(sa, auto_id, value, warn=True):
     """Set an Edit field by AutomationId."""
     try:
         ctrl = sa.child_window(auto_id=auto_id, control_type="Edit")
+        if not ctrl.exists(timeout=0.5):
+            return False
         ctrl.set_edit_text(str(value))
         return True
     except Exception as e:
@@ -188,7 +190,9 @@ def set_edit(sa, auto_id, value, warn=True):
 def set_checkbox(sa, auto_id, value):
     """Set a CheckBox field by AutomationId. value should be 'True' or 'False'."""
     try:
-        ctrl   = sa.child_window(auto_id=auto_id, control_type="CheckBox")
+        ctrl = sa.child_window(auto_id=auto_id, control_type="CheckBox")
+        if not ctrl.exists(timeout=0.5):
+            return False
         target = 1 if str(value).lower() == "true" else 0
         if ctrl.get_toggle_state() != target:
             ctrl.click_input()
@@ -200,14 +204,15 @@ def set_checkbox(sa, auto_id, value):
 
 def set_combo(sa, auto_id, value):
     """Set a ComboBox field by AutomationId."""
+    ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
+    if not ctrl.exists(timeout=0.5):
+        return False
     try:
-        ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
         ctrl.select(str(value))
         return True
     except Exception:
         pass
     try:
-        ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
         ctrl.expand()
         time.sleep(0.2)
         ctrl.child_window(title=str(value)).click_input()
@@ -216,7 +221,6 @@ def set_combo(sa, auto_id, value):
         pass
     try:
         # NT8 WPF ComboBoxes: click to open, find ListItem in the whole tree
-        ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
         ctrl.click_input()
         time.sleep(0.3)
         item = sa.child_window(title=str(value), control_type="ListItem")
@@ -413,9 +417,9 @@ def configure_from_spec(sa, spec: dict):
     strategy = spec["strategy_class"]
     pfx      = f"{strategy}PropertyGridEditorPDEX"
 
-    # Strategy switch — NT8 rebuilds the property grid; 3s lets it settle
+    # Strategy switch — NT8 rebuilds the property grid; 2s lets it settle
     select_strategy(sa, strategy)
-    time.sleep(3.0)
+    time.sleep(2.0)
 
     set_instrument(sa, spec["instrument"])
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
@@ -546,38 +550,42 @@ def _try_export_trades(sa, job_id: str) -> tuple:
     csv_path = str(out_dir / "trades.csv")
 
     # ── 1. Click Trades tab ───────────────────────────────────────────────────
-    # NT8 SA tab items live inside saTabControl (left panel) or splitPane (right).
-    # Try multiple navigation paths — the control_type on NT8 tabs varies by version.
+    # Use descendants() to scan the entire SA window tree — avoids guessing
+    # which container holds the tabs (saTabControl, splitPane, etc. vary by NT8 build).
     tab_found = False
-    for parent_id, tab_title in [
-        ("saTabControl", "Trades"),
-        ("saTabControl", "All Trades"),
-        ("splitPane",    "Trades"),
-        ("splitPane",    "All Trades"),
-        (None,           "Trades"),      # direct child of SA window
-        (None,           "All Trades"),
-    ]:
-        try:
-            parent = sa.child_window(auto_id=parent_id) if parent_id else sa
-            # Try both TabItem and Tab control types, and no constraint
-            for ct in ["TabItem", "Tab", None]:
-                try:
-                    kwargs = {"title": tab_title}
-                    if ct:
-                        kwargs["control_type"] = ct
-                    tab = parent.child_window(**kwargs)
-                    if tab.exists(timeout=1):
-                        tab.click_input()
-                        time.sleep(0.8)
-                        tab_found = True
-                        print(f"  [trades] Clicked tab '{tab_title}' via parent '{parent_id}'")
-                        break
-                except Exception:
-                    continue
-            if tab_found:
+    try:
+        all_tabs = sa.descendants(control_type="TabItem")
+        tab_titles = []
+        for t in all_tabs:
+            try:
+                tab_titles.append(t.window_text())
+            except Exception:
+                tab_titles.append("<?>")
+        print(f"  [trades] Found tab items: {tab_titles}")
+
+        for t, title in zip(all_tabs, tab_titles):
+            if "trade" in title.lower():
+                t.click_input()
+                time.sleep(0.8)
+                tab_found = True
+                print(f"  [trades] Clicked tab '{title}'")
                 break
-        except Exception:
-            continue
+    except Exception as e:
+        print(f"  [trades] descendants() scan failed: {e}")
+
+    # Fallback: try known exact titles via child_window if descendants scan found nothing
+    if not tab_found:
+        for tab_title in ["Trades", "All Trades"]:
+            try:
+                tab = sa.child_window(title=tab_title)
+                if tab.exists(timeout=1):
+                    tab.click_input()
+                    time.sleep(0.8)
+                    tab_found = True
+                    print(f"  [trades] Clicked tab '{tab_title}' via direct child_window")
+                    break
+            except Exception:
+                continue
 
     if not tab_found:
         print("  [trades] Could not find Trades tab — dumping controls for diagnosis")
@@ -709,7 +717,7 @@ def run_job_mode(job_id: str, spec_path: str):
 
     app = connect_nt8()
     sa  = find_strategy_analyzer(app)
-    _pct(20, "Configuring SA")
+    _pct(20, "Configuring Strategy Analyzer")
 
     configure_from_spec(sa, spec)
     time.sleep(1)
@@ -723,13 +731,13 @@ def run_job_mode(job_id: str, spec_path: str):
         print(f"  ERROR clicking Run: {e}")
         sys.exit(1)
 
-    _pct(30, "Backtest running")
+    _pct(30, "Executing Backtest")
     finished = wait_for_run_complete(sa, RUN_TIMEOUT)
     if not finished:
         print(f"  WARNING: Timed out after {RUN_TIMEOUT}s.")
         sys.exit(1)
 
-    _pct(70, "Exporting trade data")
+    _pct(70, "Exporting Trade Data")
     equity_curve, daily_pnl = _try_export_trades(sa, job_id)
     if equity_curve:
         print(f"  Trade export OK: {len(equity_curve)-1} trades, {len(daily_pnl)} days")
