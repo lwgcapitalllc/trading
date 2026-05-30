@@ -1,35 +1,43 @@
 # LWG Capital — Trading Operations
 
-## Systems
+## Repo map
 
-### algos/
-Automated algo trading suite for XAUUSD on PU Prime demo accounts.
-Runs on Windows VPS (ForexVPS). Three instances: gold_main, gold_scalper, gold_fft.
-See algos/README.md for full documentation.
-
-### smart-money/
-Smart money replication system. Scans and profiles the most consistent
-crypto and forex traders for copy trading candidate pool construction.
-See smart-money/README.md for full documentation.
-
-### command-center/
-Local operations platform for both systems above. React + FastAPI app.
-Monitors bots via VPS SSH, surfaces Smart Money pipeline output, and
-exposes config editing for the pipeline. See command-center/CLAUDE.md
-for build status and what still needs to be done.
-
-```bash
-cd command-center && ./start.sh
-# Frontend: http://localhost:5173
-# Backend:  http://localhost:8000/docs
+```
+trading/
+├── algos/           ← Live algo trading (XAUUSD, Windows VPS, PU Prime demo)
+├── smart-money/     ← Crypto/forex trader scanner and copy-trading candidate pool
+├── command-center/  ← Local ops platform: bot monitor, smart money UI, backtests lab
+└── docs/            ← Cross-subsystem reference docs and audit tools
 ```
 
-## VPS
-- Provider: ForexVPS
-- OS: Windows
-- SSH alias: forexvps
-- Deploy path: C:\trading\algos
+## Start here
 
-## Repository
-- Main branch: active development
-- Backups branch: VPS data backups (orphan branch, never merges to main)
+Read these in order for full context:
+1. `README.md` (this file) — repo map
+2. `CLAUDE.md` — monorepo standing instructions and VPS workflow
+3. `algos/CLAUDE.md` — bot table, risk rules, current phase
+4. `command-center/CLAUDE.md` — what's built, design decisions
+5. `smart-money/CLAUDE.md` — pipeline status, thresholds, where we left off
+
+## Subsystems
+
+| Subsystem | Purpose | Status | Rules |
+|---|---|---|---|
+| `algos/` | Live algo trading — 4 bots on Windows VPS | Demo trading | `algos/CLAUDE.md` |
+| `smart-money/` | Trader scanner for copy-trading candidates | Stages 1–2, 5 live | `smart-money/CLAUDE.md` |
+| `command-center/` | React + FastAPI ops platform | Live (Stress Tests stub) | `command-center/CLAUDE.md` |
+
+## Conventions
+
+- **Branch model:** `main` for all active development; `backups` (orphan) for VPS runtime data only — never merges to main.
+- **Deploy:** edit on Mac → `git push` → `ssh forexvps "git pull"` → restart bots. Never SCP/rsync.
+- **Secrets:** never commit tokens, API keys, passwords, or `.env` to any branch. See each subsystem's CLAUDE.md Never-Do section.
+- **Subsystem independence:** `algos/`, `smart-money/`, and `command-center/` are fully independent. A change to one never touches the others.
+- **VPS:** ForexVPS Windows Server. SSH alias: `forexvps`. Repo at `C:\trading\`.
+
+## docs/
+
+Cross-subsystem reference documents:
+- `docs/BOT_DEVELOPMENT_METHOD.md` — S.Y.S.T.E.M. six-step process for building and validating any trading bot
+- `docs/Command_Center_Backtest_Engine_Design.md` — Original design spec for the backtests lab (Lab module now built)
+- `docs/audit/` — Doc and dead-code audit prompt templates

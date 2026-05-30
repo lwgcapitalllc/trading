@@ -2,6 +2,8 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
+**Last reviewed:** 2026-05-30
+
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
 - `frontend/CLAUDE.md` — hook patterns, component rules, theme tokens, routing
@@ -89,53 +91,6 @@ Five dots in the left sidebar, sourced from `GET /system/health` (30 s TTL cache
 NT8 compile = grey (unknown) when VPS Agent is red, because we can't reach NT8 to check. Only shows red when the agent is up **and** reports a compile error.
 
 **Stuck progress lock** — if a run dies mid-flight (backend restart, network drop), `data/lab_progress.json` can be left with `status: running`, blocking new runs with a 409. Fix: hit the Stop button, or restart the backend (startup hook resets stale locks automatically).
-
----
-
-## Session — NT8 trade export automation (2026-05-30)
-
-### Goal
-Export all trades from the NT8 Strategy Analyzer to CSV via `GET /export-trades`
-so the backtests lab UI can show equity curve and daily P&L charts.
-
-### Root cause work
-NT8 uses WPF for its UI. Context menus are NOT Win32 class `#32768` — they live
-in NT8's own UIA element tree. `nt8.descendants()` scan dismisses the WPF popup
-via focus events before `click_input()` can run on the found element.
-
-### Solution — two-pass right-click
-1. First right-click: scan `nt8.descendants()` to discover Export's screen coords
-   (menu closes during scan — that's fine). Stop scan immediately on first match.
-2. Cache coordinates in `_export_coords_cache` (module-level) — subsequent calls
-   skip the scan entirely (fast path).
-3. Second right-click: menu reappears at identical position. Click cached coords.
-   Press Enter twice — first for Save, second for overwrite confirmation.
-
-### SA window state
-- `sa.restore()` runs unconditionally before right-click — handles minimised SA.
-- `_dismiss_export_dialog()` runs at start and end of every call — prevents
-  leftover dialogs from blocking future runs.
-
-### Performance
-| Call | Time | Notes |
-|---|---|---|
-| First (discovery) | ~17s | One-time UIA scan to find Export position |
-| Subsequent (cached) | ~12s | Scan skipped; remaining time is sleeps + NT8 UIA overhead |
-
-### vps_agent startup — no longer manual
-`\LucidFlexAgent` scheduled task runs the agent in the active RDP interactive
-session. Claude can start/restart it autonomously:
-`ssh forexvps "schtasks /run /tn LucidFlexAgent"`
-NT8 + SA must be open; the agent itself no longer requires manual launch.
-
-### CSV format (428 trades, ~1 year backtest)
-Columns: `Trade number, Instrument, Account, Strategy, Market pos., Qty,
-Entry price, Exit price, Entry time, Exit time, Entry name, Exit name,
-Profit, Cum. net profit, Commission, Clearing Fee, Exchange Fee, IP Fee,
-NFA Fee, MAE, MFE, ETD, Bars`
-
-Next: wire `/export-trades` into the backtests lab UI — equity curve +
-daily P&L charts using `Cum. net profit` and `Exit time` columns.
 
 ---
 

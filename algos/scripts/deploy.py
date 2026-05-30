@@ -74,10 +74,10 @@ MANIFEST = {
     "launcher.py":                   "bots/launcher.py",
 
     # ── Bot guides ────────────────────────────────────────────────────────────
-    "BOT_SMC_TREND_GUIDE.md":        "bots/BOT_SMC_TREND_GUIDE.md",
-    "BOT_MEAN_REVERSION_GUIDE.md":   "bots/BOT_MEAN_REVERSION_GUIDE.md",
-    "BOT_SCALPER_GUIDE.md":          "bots/BOT_SCALPER_GUIDE.md",
-    "BOT_FFT_GUIDE.md":              "bots/BOT_FFT_GUIDE.md",
+    "BOT_SMC_TREND_GUIDE.md":        "docs/BOT_SMC_TREND_GUIDE.md",
+    "BOT_MEAN_REVERSION_GUIDE.md":   "docs/BOT_MEAN_REVERSION_GUIDE.md",
+    "BOT_SCALPER_GUIDE.md":          "docs/BOT_SCALPER_GUIDE.md",
+    "BOT_FFT_GUIDE.md":              "docs/BOT_FFT_GUIDE.md",
 
     # ── Shared ────────────────────────────────────────────────────────────────
     "shared_ai_brain.py":            "shared/shared_ai_brain.py",
@@ -116,8 +116,6 @@ MANIFEST = {
 
     # ── Docs ─────────────────────────────────────────────────────────────────
     "docs/SETUP.md":                             "docs/SETUP.md",
-    "docs/ALGO_CONTROL_PANEL_GUIDE.md":          "docs/ALGO_CONTROL_PANEL_GUIDE.md",
-
     # ── Scripts ───────────────────────────────────────────────────────────────
     "scripts/stress_test_suite.py":              "scripts/stress_test_suite.py",
     "scripts/deploy.py":                         "scripts/deploy.py",

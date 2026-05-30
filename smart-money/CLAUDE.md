@@ -1,5 +1,7 @@
 # CLAUDE.md — Smart Money Replication System
 
+**Last reviewed:** 2026-05-30
+
 ## What This System Does
 
 Scanner, profiler, and ranker for identifying consistent crypto and forex traders.
@@ -110,54 +112,6 @@ and max_trade_conc. Ran full `--all-profiles` scan (3,000 wallets, 37,418 leader
 - Stage 3 (Solana/ETH): needs `DUNE_API_KEY`, `BIRDEYE_API_KEY`
 - Stage 4 (Forex): needs `MYFXBOOK_EMAIL`, `MYFXBOOK_PASSWORD`
 - Phase 2: daily automated scan + Telegram alerts (`scheduler.py`, `notifier.py`)
-
-### Quality fixes added (2026-05-27, session 2)
-
-After reviewing the first run results (7 qualified wallets, all now failing the new filters), three structural problems were found and fixed:
-
-**1. Recency filter** (`qualification.max_inactive_days`)
-- Wallets must have a trade within the last N days or they are disqualified.
-- Solves: one-time-wonder accounts (made all their money in one month in 2024, dormant since) were ranking at the top because their single-month metrics looked perfect.
-- Bot: 45d | Human: 60d | Default: 60d
-
-**2. Overall win rate floor** (`qualification.min_overall_win_rate`)
-- Aggregate win rate across all matched trades must meet a hard minimum.
-- Solves: high R/R "sniper" strategies (6.9% and 19.2% win rates) were passing qualification because the per-window strike system only disqualifies on *consecutive* bad months — their bad months were always separated by one recovery month.
-- Bot: 50% | Human: 60% | Default: 55%
-
-**3. Data coverage flag** (`hyperliquid.min_data_coverage_pct`)
-- Computes `captured_pnl / leaderboard_all_time_pnl` for each wallet. If below threshold, adds a yellow flag and logs a warning with the dollar gap.
-- Solves: the Hyperliquid fills API only returns a recent slice of history for most wallets (e.g. wallet with $1.65M all-time PnL had only $12.7k captured = 0.8% coverage). All metrics for that wallet are based on unrepresentative data.
-- Does NOT disqualify — just flags. The recency filter handles the main consequence.
-- Threshold: 10% (all profiles)
-- Surfaced in `flags.data_coverage_pct` in JSON, CSV, and `candidates.json`.
-
-**Validation:** All 7 wallets from the 2026-05-27 run now correctly fail:
-- Ranks 1–5: inactive 85–330 days (recency filter)
-- Ranks 6–7: 6.9% and 19.2% overall win rate (win rate floor)
-
-### Config changes made (from original spec)
-| Setting | Original | Current | Reason |
-|---|---|---|---|
-| `min_win_rate` | 80% | 75% (human), 70% (bot) | Pool too thin at 80% |
-| `min_overall_win_rate` | — | 55% (default), 50% (bot), 60% (human) | New — blocks low-win-rate sniper strategies |
-| `max_inactive_days` | — | 60d (default/human), 45d (bot) | New — blocks dormant accounts |
-| `min_data_coverage_pct` | — | 10% (all) | New — yellow flag when fills API coverage is thin |
-| `min_active_weeks_per_month` | 3 | 2 | Too restrictive — top traders burst, not steady |
-| `requests_per_second` | (via delay) | 2 (human), 3 (bot) | Replaced `rate_limit_delay_seconds` with shared token bucket |
-| `fills_cache_hours` | — | 24 | New — skip re-fetching wallets scanned within 24h |
-
-### All bugs found and fixed (session 1)
-1. **Leaderboard endpoint changed** — Hyperliquid deprecated `POST /info` with `type:leaderboard`. Fixed in `scanner/hyperliquid.py`.
-2. **HTTP error retry loop** — `if e.response` evaluates False for 4xx. Fixed: `if e.response is not None`.
-3. **Pre-filtering** — Was making 37k API calls. Fixed by pre-filtering leaderboard and capping to top 500.
-4. **Span gate used window boundaries** — Fixed: now uses `max(close_ts) - min(close_ts)` across actual trades.
-5. **Per-worker rate limiting** — N workers × rate = N× actual RPS → mass 429s. Fixed: shared `_SharedRateLimiter` token bucket across all workers. 429 backoff increased from 0.2-0.8s to 5-15s.
-6. **Disqualified list accumulated all-time DB records** — Fixed: `current_disqualified` list scoped to current run only.
-7. **`KeyError: rate_limit_delay_seconds`** — `run_stage1.py` read removed config key directly. Fixed: `.get()` with fallback.
-
-### Watchlist feature
-Wallets that fail only the span gate (short trading history but strong performance) are preserved in `reports/stage1_watchlist_*.json` instead of silently dropped. Sorted by total PnL descending.
 
 ## Thresholds
 

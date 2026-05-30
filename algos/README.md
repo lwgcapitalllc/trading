@@ -24,10 +24,12 @@ algos/
 ├── algo.py                          ← Mac control panel (run: algo)
 ├── README.md
 ├── docs/
-│   ├── CONTEXT.md                   ← Full project context
+│   ├── ARCHITECTURE.md              ← Multi-instrument system design (Phases 1–5)
 │   ├── SETUP.md                     ← VPS setup and restore guide
-│   ├── ALGO_CONTROL_PANEL_GUIDE.md
-│   └── CLAUDE_CODE_SETUP.md
+│   ├── BOT_SMC_TREND_GUIDE.md
+│   ├── BOT_MEAN_REVERSION_GUIDE.md
+│   ├── BOT_SCALPER_GUIDE.md
+│   └── BOT_FFT_GUIDE.md
 ├── scripts/
 │   ├── backup.py                    ← Twice-daily backup to GitHub (backups branch)
 │   ├── deploy.py                    ← File staging tool
@@ -38,8 +40,7 @@ algos/
 │   ├── bot_scalper.py
 │   ├── bot_fft.py
 │   ├── bot_utils.py
-│   ├── startup_coordinator.py       ← Sequential startup (single entry point)
-│   └── BOT_*_GUIDE.md
+│   └── startup_coordinator.py       ← Sequential startup (single entry point)
 ├── shared/
 │   ├── bot_state.py                 ← Single source of truth (read/write)
 │   ├── shared_ai_brain.py           ← Trade logging + AI brain
@@ -139,6 +140,5 @@ If extra accounts appear in Navigator → Accounts → right-click → Remove.
 
 ## Telegram Bot
 
-- Token: `8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8`
-- Admin: Aaron (@cryptobetta, chat ID: `429207285`)
+- Token: managed in `algos/shared/notify.py` — never commit to docs
 - Commands: `/status`, `/balance`, `/restart`, `/stop`, `/emergency`, `/help`

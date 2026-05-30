@@ -2,6 +2,8 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
+**Last reviewed:** 2026-05-30
+
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
 **Lab design principle:** Run Backtest modal starts with no firms pre-selected. User must actively choose which firm challenges to evaluate against — never auto-select all.

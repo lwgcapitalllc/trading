@@ -4,6 +4,8 @@
 This file is auto-loaded by Claude Code at the start of every session.
 Read it fully before touching any code.
 
+**Last reviewed:** 2026-05-30
+
 ---
 
 ## Who You Are in This Project
@@ -22,6 +24,73 @@ Think like one at all times:
 
 ---
 
+## Fast Index
+
+### The Bots
+
+| Bot | File | Strategy | Watchlist | Account | MT5 Instance |
+|-----|------|----------|-----------|---------|--------------|
+| SMC Trend | `bot_smc_trend.py` | Judas Swing + FVG, H4 trend filter, M15 | XAUUSD, GBPJPY, EURUSD, XAGUSD, USDJPY | gold_main #700103491 | PU Prime Terminal |
+| Mean Reversion | `bot_mean_reversion.py` | BB + RSI + VWAP, 1R target, fast close | XAUUSD, EURUSD, AUDUSD, USDCAD, EURGBP | gold_main #700103491 | PU Prime Terminal |
+| Scalper | `bot_scalper.py` | EMA stack + pullback, M5/M1, 5–20 trades/day | XAUUSD, GBPJPY, NAS100, EURUSD, USDJPY | gold_scalper #700107520 | MT5_Scalper |
+| FFT | `bot_fft.py` | Dual Fibonacci confluence, H1+H4 trend | XAUUSD only (Phase 5 gate) | gold_fft #700107749 | MT5_FFT |
+
+SMC Trend and Mean Reversion share one MT5 account and are designed to be uncorrelated.
+Scalper is isolated on its own account (higher volatility). FFT is lowest risk (1%) — gold-only until 30+ closed trades with solid Calmar.
+
+### Shared Components
+
+| File | Role |
+|------|------|
+| `shared_ai_brain.py` | AI engine (Claude API), trade logger, daily performance logger |
+| `shared_calmar.py` | Calmar ratio tracker, morning report |
+| `shared_regime.py` | Market regime classifier: TRENDING / TRANSITIONING / RANGING |
+| `shared_scanner.py` | Multi-instrument watchlist scanner — `InstrumentScanner`, `SetupCandidate`, `LearningPhaseGate` |
+| `shared_risk.py` | Dynamic risk / capacity engine — `RiskEngine` tracks portfolio-level risk budget per bot |
+| `mt5_ops.py` | All MT5 operations — symbol-parameterized, single shared instance per bot |
+| `bot_utils.py` | Config loader, logging, path resolver |
+| `launcher.py` | Universal Task Scheduler launcher |
+| `startup_coordinator.py` | Orchestrates bot startup sequence |
+| `algo.py` | Mac control panel — start/stop/status/logs/restart |
+
+Multi-instrument architecture (Phases 1–5) explained in `docs/ARCHITECTURE.md`.
+
+### Risk Rules Summary
+
+SMC Trend: 1%/3:1/5% daily/10% weekly. Mean Reversion: 1%/1:1/5%/10%. Scalper: 1–2%/−5% floor/+15% ceiling/10% weekly/8% peak drawdown. FFT: 1%/2:1–5:1/5%/10%. Full rules in each bot's `docs/BOT_*_GUIDE.md`.
+
+### AI Thresholds
+
+SMC Trend: `min_ai_probability = 0.55`. Mean Reversion, Scalper, FFT: `min_ai_probability = 0.52`. All bots train at 15 closed trades, retrain every 5, require AUC ≥ 0.55.
+
+### Current Phase
+
+Demo trading. Targets to advance:
+- 15+ closed trades per bot
+- Calmar >= 2.0 to continue demo
+- Calmar >= 2.5 (SMC Trend) / 2.0 (Mean Reversion) to begin prop firm evaluation
+- FFT risk stays at 1% until 30+ trades with solid Calmar
+
+Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
+
+### What I Am Working On
+
+- Last completed: **Code quality / deduplication pass** — all dead and duplicate code removed across shared and bot files.
+  - `shared/bot_state.py`: removed unused `Optional` import.
+  - `shared/mt5_ops.py`: added `get_rsi(df, period)` free function (shared RSI implementation); added `BotMT5.disconnect()` (wraps `mt5.shutdown()` + logs).
+  - `bots/bot_utils.py`: added `load_weekly_start(week_file, week, balance)` helper — single implementation of the weekly-persistence init pattern.
+  - `bots/bot_mean_reversion.py`: `calc_atr` and `calc_rsi` now delegate to shared `get_atr` / `get_rsi` instead of reimplementing; redundant local `import json as _json2` blocks removed; weekly init replaced with `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
+  - `bots/bot_scalper.py`: `calc_rsi` delegates to shared `get_rsi`; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
+  - `bots/bot_fft.py`: added top-level `import json`; redundant local `import json as _json` blocks removed; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
+  - `bots/bot_smc_trend.py`: redundant local `import json as _json` blocks removed; unused `_eq_file` variable removed; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
+
+- Previously: **Mean Reversion connection resilience hardening** — `manage_positions()` and `handle_dead_zone()` now require deal-history confirmation before removing a trade from `open_trades`; a `_missing_count` retry counter orphans after 3 consecutive misses. `get_deal_result()` now validates `d.position_id == ticket`. Minimum SL distance enforced at `atr * atr_sl_multiplier` to prevent near-zero `sl_d` producing oversized lots. `DailyLogger`/`TradeLogger` load validates JSON is a list before using it.
+- Previously: **FFT Structure Engine** — `shared/structure_engine.py` built and integrated into `bot_fft.py`. Event-driven BOS/SOS/RETRACEMENT detection, body closes confirm breaks, wicks anchor fib points only.
+- Previously: **Phase 5 AI Gate / Learning-Phase Cap** — all Phases 1–5 of multi-instrument upgrade complete. `LearningPhaseGate` in `shared/shared_scanner.py`. Config: `"learning_watchlist"` and `"learning_max_open"` per bot in config.json.
+- Open questions / decisions pending: none at this time.
+
+---
+
 ## Documentation Rules — Non-Negotiable
 
 **After every code change, update all affected docs in the same session.**
@@ -31,10 +100,11 @@ Not as a follow-up. Right now, before moving on.
 
 | Doc | Update when |
 |-----|-------------|
-| `docs/CONTEXT.md` | Any architectural change, new feature, new bot behavior, infrastructure change, or fix that changes how the system works |
+| `CLAUDE.md § Fast Index` | Bots table, shared components, phase, or "What I Am Working On" change |
+| `docs/ARCHITECTURE.md` | Multi-instrument system design changes (scanner, risk engine, correlation, learning gate) |
 | `docs/SETUP.md` | New files added, new dependencies, new VPS steps, backup strategy changes |
 | `README.md` | Repo structure changes, new top-level files/dirs, workflow changes |
-| `bots/BOT_*_GUIDE.md` | Any change to that bot's behavior, config, or risk rules |
+| `docs/BOT_*_GUIDE.md` | Any change to that bot's behavior, config, or risk rules |
 | `notifications/NOTIFICATIONS_GUIDE.md` | Any change to alerts, Telegram commands, monitor behavior |
 | `scheduler/SCHEDULER_GUIDE.md` | Task Scheduler changes |
 
@@ -42,20 +112,20 @@ Not as a follow-up. Right now, before moving on.
 
 1. If a doc describes behavior that no longer exists — correct or delete it. Stale docs are
    worse than no docs.
-2. Keep the repo structure tree in `docs/CONTEXT.md` and `README.md` in sync with actual layout.
+2. Keep the repo structure tree in `README.md` in sync with actual layout.
 3. `docs/SETUP.md` restore steps must always produce a working VPS from scratch — verify mentally
    after any change that affects deploy or VPS setup.
-4. `docs/CONTEXT.md § What I Am Working On` — update this section to reflect current state.
+4. `CLAUDE.md § What I Am Working On` — update this section to reflect current state.
    Never log session history here. Git commits are the changelog.
 
 ---
 
 ## Project Reference
 
-Full context: `docs/CONTEXT.md`
+Architecture deep-dive: `docs/ARCHITECTURE.md`
 Setup guide: `docs/SETUP.md`
 Notification system: `notifications/NOTIFICATIONS_GUIDE.md`
-Bot guides: `bots/BOT_*_GUIDE.md`
+Bot guides: `docs/BOT_*_GUIDE.md`
 
 ---
 

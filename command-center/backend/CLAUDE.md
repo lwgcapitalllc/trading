@@ -2,6 +2,8 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
+**Last reviewed:** 2026-05-30
+
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
 The lab module (strategies, firms, backtests, evaluations) is live as of M1.
