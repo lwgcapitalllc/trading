@@ -445,6 +445,8 @@ def select_and_dump():
         return jsonify({"error": str(e)})
 
 
+_export_coords_cache: tuple | None = None   # cached after first successful discovery
+
 @app.route("/export-trades")
 def export_trades():
     """
@@ -464,7 +466,7 @@ def export_trades():
         for title in ["Export As", "Confirm Save As", "Confirm"]:
             try:
                 w = dt.window(title=title)
-                if w.exists(timeout=0.5):
+                if w.exists(timeout=0.1):   # short timeout — dialog usually absent
                     for btn in ["Cancel", "No", "OK"]:
                         try:
                             w.child_window(title=btn, control_type="Button").click_input()
@@ -513,35 +515,43 @@ def export_trades():
         rc_x = sa_rect.left + (sa_rect.right  - sa_rect.left) // 4
         rc_y = sa_rect.top  + int((sa_rect.bottom - sa_rect.top) * 0.55)
 
-        # First right-click: discover Export's screen coordinates via NT8 element tree.
-        # The scan itself closes the WPF context menu (UIA focus events) — that's fine.
-        # Stop scanning the moment Export is found to minimise scan time.
-        nt8           = sa.top_level_parent()
-        export_coords = None
-        menu_items    = []
-        _mouse.right_click(coords=(rc_x, rc_y))
-        for el in nt8.descendants():
-            try:
-                txt = (el.window_text() or "").strip()
-                ct  = str(getattr(el.element_info, "control_type", ""))
-                if ct == "MenuItem" and txt:
-                    menu_items.append(txt)
-                    if txt.startswith("Export") and export_coords is None:
-                        r = el.rectangle()
-                        if r.width() > 5:
-                            export_coords = ((r.left + r.right) // 2,
-                                             (r.top  + r.bottom) // 2)
-                            break   # stop scan immediately — no need to traverse rest
-            except Exception:
-                pass
-        log.append(f"Menu items: {menu_items}, Export coords: {export_coords}")
+        global _export_coords_cache
+        nt8 = sa.top_level_parent()
 
-        if export_coords is None:
-            send_keys("{ESCAPE}")
-            return jsonify({"error": "Export... not found or rect invalid", "log": log, "menu_items": menu_items})
+        if _export_coords_cache:
+            # Fast path: coordinates known — skip discovery right-click entirely
+            export_coords = _export_coords_cache
+            log.append(f"Export coords from cache: {export_coords}")
+        else:
+            # Discovery pass: right-click once to get menu, scan for Export coords,
+            # stop immediately when found (menu closes during scan — that's fine).
+            export_coords = None
+            menu_items    = []
+            _mouse.right_click(coords=(rc_x, rc_y))
+            for el in nt8.descendants():
+                try:
+                    txt = (el.window_text() or "").strip()
+                    ct  = str(getattr(el.element_info, "control_type", ""))
+                    if ct == "MenuItem" and txt:
+                        menu_items.append(txt)
+                        if txt.startswith("Export") and export_coords is None:
+                            r = el.rectangle()
+                            if r.width() > 5:
+                                export_coords = ((r.left + r.right) // 2,
+                                                 (r.top  + r.bottom) // 2)
+                                break
+                except Exception:
+                    pass
+            log.append(f"Menu items: {menu_items}, Export coords: {export_coords}")
 
-        # Second right-click at same spot — menu appears at same position.
-        # 0.4s is enough for the WPF menu to render before we click Export.
+            if export_coords is None:
+                send_keys("{ESCAPE}")
+                return jsonify({"error": "Export... not found", "log": log, "menu_items": menu_items})
+
+            _export_coords_cache = export_coords   # cache for all future calls
+
+        # Right-click at the trades panel — menu appears at same position every time.
+        # 0.4s is enough for the WPF menu to fully render.
         _mouse.right_click(coords=(rc_x, rc_y))
         time.sleep(0.4)
         _mouse.click(coords=export_coords)
