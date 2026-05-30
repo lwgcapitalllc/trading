@@ -551,112 +551,20 @@ def _try_export_trades(sa, job_id: str) -> tuple:
     csv_path = str(out_dir / "trades.csv")
 
     # ── 1. Switch Display dropdown to "Trades" ────────────────────────────────
-    # NT8 SA has a "Display" ComboBox (Summary/Analysis/Chart/Trades/etc.) at
-    # the top of the results panel. "Trades" is an item in that dropdown, not a tab.
+    # The Display control is auto_id="dmsDisplay" (Custom type, not ComboBox).
+    # Clicking it opens a dropdown whose items are MenuItems in the SA subtree.
     display_switched = False
-    for aid in ["Display", "DisplaySelector", "displayComboBox"]:
-        try:
-            combo = sa.child_window(auto_id=aid, control_type="ComboBox")
-            if combo.exists(timeout=0.5):
-                combo.select("Trades")
-                time.sleep(1.0)
-                display_switched = True
-                print(f"  [trades] Switched Display to 'Trades' via auto_id='{aid}'")
-                break
-        except Exception:
-            pass
+    try:
+        sa.child_window(auto_id="dmsDisplay").click_input()
+        time.sleep(1.0)
+        sa.child_window(title="Trades", control_type="MenuItem", found_index=0).click_input()
+        time.sleep(0.5)
+        display_switched = True
+        print("  [trades] Switched Display to 'Trades'")
+    except Exception as e:
+        print(f"  [trades] Display switch failed: {e}")
 
     if not display_switched:
-        # ── Diagnostic: dump the full SA control tree so we can identify the Display control ──
-        # This block is intentionally verbose — remove once Display combo is identified.
-        print("  [trades] Dumping SA control tree to identify Display combo:")
-        try:
-            nt8_win = sa.top_level_parent()
-            for desc in nt8_win.descendants():
-                try:
-                    txt = desc.window_text() or ""
-                    aid = desc.automation_id() or ""
-                    ct  = getattr(desc.element_info, "control_type", "?")
-                    nm  = getattr(desc.element_info, "name", "") or ""
-                    # Only print controls that have some useful text or id
-                    if txt or aid or nm:
-                        print(f"    {ct:<20} aid='{aid:<50}' text='{txt}' name='{nm}'")
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f"  [trades] SA tree dump failed: {e}")
-
-        # ── Try clicking each unnamed combo and capture what popup appears ────────────
-        try:
-            dt = Desktop(backend="uia")
-            nt8_win = sa.top_level_parent()
-            unnamed_combos = [
-                c for c in sa.descendants(control_type="ComboBox")
-                if not (c.automation_id() or "")
-            ]
-            print(f"  [trades] Found {len(unnamed_combos)} unnamed ComboBox(es) to probe")
-            for i, combo in enumerate(unnamed_combos):
-                try:
-                    wins_before = {w.handle for w in dt.windows()}
-                    combo.click_input()
-                    time.sleep(1.2)
-
-                    # Look for "Trades" everywhere: SA, NT8 window, Desktop (any type)
-                    item = None
-                    for root_label, root in [("sa", sa), ("nt8", nt8_win), ("dt", dt)]:
-                        try:
-                            candidate = root.child_window(title="Trades")
-                            if candidate.exists(timeout=0.5):
-                                item = candidate
-                                print(f"  [trades] combo#{i}: found 'Trades' in {root_label}")
-                                break
-                        except Exception:
-                            pass
-
-                    # Also walk any NEW top-level windows the click spawned
-                    if not item:
-                        wins_after = {w.handle for w in dt.windows()}
-                        new_handles = wins_after - wins_before
-                        print(f"  [trades] combo#{i}: {len(new_handles)} new window(s) appeared")
-                        for hwnd in new_handles:
-                            try:
-                                popup = dt.window(handle=hwnd)
-                                print(f"    popup title='{popup.window_text()}'"
-                                      f" type={getattr(popup.element_info, 'control_type', '?')}")
-                                for desc in popup.descendants():
-                                    try:
-                                        txt = desc.window_text() or ""
-                                        aid = desc.automation_id() or ""
-                                        ct  = getattr(desc.element_info, "control_type", "?")
-                                        if txt:
-                                            print(f"      {ct} aid='{aid}' text='{txt}'")
-                                    except Exception:
-                                        pass
-                                    if desc.window_text() == "Trades":
-                                        item = desc
-                            except Exception:
-                                pass
-                            if item:
-                                break
-
-                    if item:
-                        item.click_input()
-                        time.sleep(0.8)
-                        display_switched = True
-                        print(f"  [trades] Switched Display to 'Trades' via combo#{i}")
-                        break
-
-                    # Not the right combo — close it
-                    combo.click_input()
-                    time.sleep(0.3)
-                except Exception as e:
-                    print(f"  [trades] combo#{i} error: {e}")
-                    continue
-        except Exception as e:
-            print(f"  [trades] ComboBox probe failed: {e}")
-
-    if not display_switched:
-        print("  [trades] All probes exhausted — see diagnostic output above")
         return [], []
 
     # ── 2. Try Export toolbar button (several known NT8 label variants) ───────
