@@ -21,8 +21,11 @@ Legacy endpoints (kept for backward compat):
     GET  /results                   -- reads lucid_flex_results.csv
     POST /run-backtests             -- returns 410 Gone
 
-Usage on VPS (run from RDP terminal, NT8 must be open with Strategy Analyzer):
-    python C:\\trading\\algos\\markets\\futures\\lucid_flex\\tools\\vps_agent.py
+Startup — agent is managed automatically via the \LucidFlexAgent scheduled task:
+    ssh forexvps "schtasks /run /tn LucidFlexAgent"   # start/restart from Mac
+
+The task runs in the active RDP session (interactive desktop), which is required
+for pywinauto UI automation. NT8 + Strategy Analyzer must already be open.
 
 Access from Mac via SSH tunnel:
     ssh -N -L 8765:localhost:8765 forexvps
