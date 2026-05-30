@@ -519,6 +519,10 @@ def export_trades():
         # element tree. Capture screen coords immediately on find; the scan itself
         # can dismiss the menu by the time click_input() runs, so we click by
         # absolute screen position instead of calling element.click_input().
+        # The nt8.descendants() scan triggers UIA focus events that close the WPF
+        # context menu before we can click. Strategy: first right-click to discover
+        # Export's screen coordinates (menu may close during scan — that's ok),
+        # then right-click a second time and immediately click the known position.
         nt8           = sa.top_level_parent()
         export_coords = None
         menu_items    = []
@@ -541,8 +545,12 @@ def export_trades():
             send_keys("{ESCAPE}")
             return jsonify({"error": "Export... not found or rect invalid", "log": log, "menu_items": menu_items})
 
+        # Second right-click at the same spot — menu reappears at the same position.
+        # Click Export immediately before the menu can be dismissed again.
+        _mouse.right_click(coords=(rc_x, rc_y))
+        time.sleep(0.35)
         _mouse.click(coords=export_coords)
-        log.append(f"Clicked Export at {export_coords}")
+        log.append(f"Clicked Export at {export_coords} (2nd right-click)")
 
         # Step 4: wait for "Export As" dialog, then just click Save — don't touch filename.
         # NT8 saves to Documents by default; we read back the newest CSV from there.
