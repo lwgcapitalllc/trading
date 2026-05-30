@@ -14,6 +14,10 @@ export interface RankedItem {
 export interface EquityPoint {
   index: number
   equity: number
+  date?: string
+  direction?: 'Long' | 'Short'
+  profit?: number
+  exit_name?: string
 }
 
 export interface JobStatus {

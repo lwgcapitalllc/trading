@@ -2,14 +2,14 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
-  CheckCircle, XCircle, Minus, Info, Square,
+  CheckCircle, XCircle, Minus, Info, Square, RefreshCw,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts } from '@/hooks/useLab'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -238,33 +238,43 @@ function KpiGrid({ run, fallback }: { run: Run; fallback: FallbackMetrics }) {
 
 // ── Equity curve ──────────────────────────────────────────────────────────────
 
-function EquityCurveChart({ data }: { data: EquityPoint[] }) {
-  if (!data.length) {
-    return (
-      <div className="h-[220px] flex flex-col items-center justify-center gap-2 text-center px-6">
-        <div className="text-text-secondary text-[13px] font-medium">No equity curve yet</div>
-        <div className="text-text-tertiary text-[11px] leading-relaxed max-w-xs">
-          NT8 exports summary statistics only. Re-run the backtest — the runner will attempt to extract per-trade data from the NT8 Trades tab.
-        </div>
-      </div>
-    )
-  }
+function fmtChartDate(d?: string): string {
+  if (!d) return ''
+  const dt = new Date(d + 'T12:00:00')
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
-  const min = Math.min(...data.map(d => d.equity))
-  const max = Math.max(...data.map(d => d.equity))
-  const pad = (max - min) * 0.08 || 200
-  const startEquity = data[0].equity
-  const endEquity   = data[data.length - 1].equity
-  const profitable  = endEquity >= startEquity
-  const curveColor  = profitable ? '#00ff7f' : '#ff3b5c'
+function EquityCurveChart({ data }: { data: EquityPoint[] }) {
+  if (!data.length) return null
+
+  const startEq   = data[0]?.equity ?? 0
+  const endEq     = data[data.length - 1]?.equity ?? 0
+  const profitable = endEq >= startEq
+  const allValues  = data.map(d => d.equity)
+  const min = Math.min(...allValues)
+  const max = Math.max(...allValues)
+  const pad = (max - min) * 0.1 || 500
+  const yMin = Math.min(startEq, min) - pad
+  const yMax = max + pad
+
+  // Split into above/below zero baseline for dual-color fill
+  const POS_COLOR = '#00ff7f'
+  const NEG_COLOR = '#ff3b5c'
+  const curveColor = profitable ? POS_COLOR : NEG_COLOR
+
+  const labelEvery = data.length > 200 ? 50 : data.length > 80 ? 20 : 10
 
   return (
-    <ResponsiveContainer width="100%" height={320}>
+    <ResponsiveContainer width="100%" height={300}>
       <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
-          <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={curveColor} stopOpacity={0.18} />
-            <stop offset="95%" stopColor={curveColor} stopOpacity={0} />
+          <linearGradient id="eqPos" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"  stopColor={POS_COLOR} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={POS_COLOR} stopOpacity={0.02} />
+          </linearGradient>
+          <linearGradient id="eqNeg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"  stopColor={NEG_COLOR} stopOpacity={0.05} />
+            <stop offset="95%" stopColor={NEG_COLOR} stopOpacity={0.22} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="#ffffff07" />
@@ -273,38 +283,169 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
           tick={{ fill: '#6b7280', fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => data.length > 100 ? (v % 50 === 0 ? `#${v}` : '') : `#${v}`}
+          tickFormatter={(v: number, i: number) =>
+            i % labelEvery === 0 ? (data[v - 1]?.date ? fmtChartDate(data[v - 1].date) : `#${v}`) : ''
+          }
         />
         <YAxis
-          domain={[min - pad, max + pad]}
+          domain={[yMin, yMax]}
           tick={{ fill: '#6b7280', fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
-          width={52}
+          tickFormatter={(v: number) => v === 0 ? '$0' : `${v >= 0 ? '+' : ''}$${(v / 1000).toFixed(0)}k`}
+          width={56}
         />
         <Tooltip
           contentStyle={{ background: '#181828', border: '1px solid #2a2a4a', borderRadius: 6, fontSize: 12 }}
           labelStyle={{ color: '#9ca3af' }}
-          formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, 'Equity']}
-          labelFormatter={(i: number) => `Trade #${i}`}
+          formatter={(v: number, _: string, props: { payload?: EquityPoint }) => {
+            const pt = props.payload
+            return [
+              `${v >= 0 ? '+' : ''}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
+              pt?.direction ? `Equity (${pt.direction})` : 'Equity',
+            ]
+          }}
+          labelFormatter={(_: unknown, payload: Array<{ payload?: EquityPoint }>) => {
+            const pt = payload?.[0]?.payload
+            if (!pt) return ''
+            const dateStr = pt.date ? ` · ${fmtChartDate(pt.date)}` : ''
+            return `Trade #${pt.index}${dateStr}`
+          }}
         />
-        <ReferenceLine
-          y={startEquity}
-          stroke="#ffffff18"
-          strokeDasharray="4 4"
-        />
+        <ReferenceLine y={startEq} stroke="#ffffff14" strokeDasharray="4 4" />
+        {startEq !== 0 && <ReferenceLine y={0} stroke="#ffffff22" />}
         <Area
           type="monotone"
           dataKey="equity"
           stroke={curveColor}
-          strokeWidth={2}
-          fill="url(#eqGrad)"
+          strokeWidth={1.5}
+          fill={endEq >= 0 ? 'url(#eqPos)' : 'url(#eqNeg)'}
           dot={false}
           activeDot={{ r: 4, fill: curveColor, stroke: 'transparent' }}
+          baseValue={startEq}
         />
       </AreaChart>
     </ResponsiveContainer>
+  )
+}
+
+// ── Drawdown chart ────────────────────────────────────────────────────────────
+
+function DrawdownChart({ equity }: { equity: EquityPoint[] }) {
+  if (!equity.length) return null
+
+  let peak = equity[0].equity
+  const ddData = equity.map(pt => {
+    if (pt.equity > peak) peak = pt.equity
+    const dd = peak !== 0 ? pt.equity - peak : 0
+    return { index: pt.index, drawdown: Math.round(dd), date: pt.date }
+  })
+
+  const worst = Math.min(...ddData.map(d => d.drawdown))
+  const labelEvery = equity.length > 200 ? 50 : equity.length > 80 ? 20 : 10
+
+  return (
+    <ResponsiveContainer width="100%" height={140}>
+      <AreaChart data={ddData} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
+        <defs>
+          <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"  stopColor="#ff3b5c" stopOpacity={0.12} />
+            <stop offset="95%" stopColor="#ff3b5c" stopOpacity={0.30} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff07" />
+        <XAxis
+          dataKey="index"
+          tick={{ fill: '#6b7280', fontSize: 10 }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number, i: number) =>
+            i % labelEvery === 0 ? (ddData[v - 1]?.date ? fmtChartDate(ddData[v - 1].date) : `#${v}`) : ''
+          }
+        />
+        <YAxis
+          tick={{ fill: '#6b7280', fontSize: 10 }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => v === 0 ? '$0' : `$${(v / 1000).toFixed(0)}k`}
+          width={56}
+          domain={[worst * 1.1, 0]}
+        />
+        <Tooltip
+          contentStyle={{ background: '#181828', border: '1px solid #2a2a4a', borderRadius: 6, fontSize: 12 }}
+          formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, 'Drawdown']}
+          labelFormatter={(_: unknown, payload: Array<{ payload?: { index: number; date?: string } }>) => {
+            const pt = payload?.[0]?.payload
+            if (!pt) return ''
+            const dateStr = pt.date ? ` · ${fmtChartDate(pt.date)}` : ''
+            return `Trade #${pt.index}${dateStr}`
+          }}
+        />
+        <ReferenceLine y={0} stroke="#ffffff20" />
+        <Area
+          type="monotone"
+          dataKey="drawdown"
+          stroke="#ff3b5c"
+          strokeWidth={1.5}
+          fill="url(#ddGrad)"
+          dot={false}
+          activeDot={{ r: 3, fill: '#ff3b5c', stroke: 'transparent' }}
+          baseValue={0}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ── Direction breakdown ───────────────────────────────────────────────────────
+
+function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
+  const trades = equity.filter(pt => pt.direction && pt.profit != null)
+  if (!trades.length) return null
+
+  const sides = ['Long', 'Short'] as const
+  const stats = sides.map(dir => {
+    const group = trades.filter(pt => pt.direction === dir)
+    const wins  = group.filter(pt => (pt.profit ?? 0) > 0).length
+    const totalPnl = group.reduce((s, pt) => s + (pt.profit ?? 0), 0)
+    const avgTrade = group.length ? totalPnl / group.length : 0
+    return { dir, count: group.length, wins, totalPnl, avgTrade }
+  })
+  const total = stats.reduce((s, x) => s + x.count, 0)
+
+  return (
+    <div className="space-y-5">
+      {stats.map(s => {
+        if (!s.count) return null
+        const pct = Math.round((s.count / total) * 100)
+        const winRate = s.count ? s.wins / s.count : 0
+        const pnlCls  = s.totalPnl >= 0 ? 'text-pos-text' : 'text-neg-text'
+        const barColor = s.totalPnl >= 0 ? '#00ff7f' : '#ff3b5c'
+        return (
+          <div key={s.dir}>
+            <div className="flex items-center justify-between mb-[6px]">
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] font-semibold text-text-primary">{s.dir}</span>
+                <span className="text-[10px] text-text-tertiary">{s.count} trades · {(winRate * 100).toFixed(0)}% win</span>
+              </div>
+              <span className={`text-[13px] font-semibold font-mono ${pnlCls}`}>
+                {s.totalPnl >= 0 ? '+' : ''}{s.totalPnl.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="h-[5px] bg-bg-sunken rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${pct}%`, background: barColor, opacity: 0.75 }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-text-tertiary mt-[4px]">
+              <span>{pct}% of trades</span>
+              <span>avg {s.avgTrade >= 0 ? '+' : ''}{s.avgTrade.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}/trade</span>
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -958,10 +1099,11 @@ function StatusBadge({ status }: { status: string }) {
 
 export function BacktestDetail() {
   const { runId } = useParams<{ runId: string }>()
-  const navigate  = useNavigate()
+  const navigate     = useNavigate()
   const { data: run, isLoading } = useBacktestRun(runId ?? null)
   const { data: progress }       = useLabProgress()
   const stopBacktest             = useStopBacktest()
+  const reloadCharts             = useReloadCharts()
 
   const fallback = useMemo(
     () => computeFallbacks(run?.daily_pnl ?? []),
@@ -1069,25 +1211,73 @@ export function BacktestDetail() {
             </div>
           )}
 
-          {/* ── Equity curve ──────────────────────────────────────────────── */}
-          {isComplete && (
-            <div>
-              <SectionLabel>Equity curve</SectionLabel>
-              <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 py-4">
-                <EquityCurveChart data={run.equity_curve} />
-              </div>
-            </div>
-          )}
+          {/* ── Charts (equity / drawdown / daily pnl / direction) ──────── */}
+          {isComplete && (() => {
+            const hasCharts = run.equity_curve.length > 0
+            return (
+              <div className="space-y-3">
+                {/* Header row: section label + reload button */}
+                <div className="flex items-center justify-between">
+                  <SectionLabel>Charts</SectionLabel>
+                  {!hasCharts && (
+                    <button
+                      onClick={() => runId && reloadCharts.mutate(runId)}
+                      disabled={reloadCharts.isPending}
+                      className="flex items-center gap-[6px] px-3 py-[5px] rounded-md text-[12px] font-medium bg-accent-muted border border-accent/30 text-accent hover:bg-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <RefreshCw size={12} className={reloadCharts.isPending ? 'animate-spin' : ''} />
+                      {reloadCharts.isPending ? 'Exporting from NT8…' : 'Load chart data from NT8'}
+                    </button>
+                  )}
+                  {hasCharts && (
+                    <button
+                      onClick={() => runId && reloadCharts.mutate(runId)}
+                      disabled={reloadCharts.isPending}
+                      className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
+                      Refresh
+                    </button>
+                  )}
+                </div>
 
-          {/* ── Daily P&L bars ────────────────────────────────────────────── */}
-          {isComplete && (
-            <div>
-              <SectionLabel>Daily P&amp;L</SectionLabel>
-              <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 py-4">
-                <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} />
+                {!hasCharts ? (
+                  <div className="bg-bg-surface border border-border-subtle rounded-lg flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
+                    <div className="text-text-secondary text-[13px] font-medium">No chart data yet</div>
+                    <div className="text-text-tertiary text-[11px] leading-relaxed max-w-xs">
+                      Click "Load chart data from NT8" — requires NT8 Strategy Analyzer open with this run's results loaded.
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Equity curve */}
+                    <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
+                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1 mb-2">Equity curve</div>
+                      <EquityCurveChart data={run.equity_curve} />
+                    </div>
+
+                    {/* Drawdown */}
+                    <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
+                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1 mb-1">Drawdown from peak</div>
+                      <DrawdownChart equity={run.equity_curve} />
+                    </div>
+
+                    {/* Daily P&L + Direction breakdown */}
+                    <div className="grid grid-cols-[1.6fr_1fr] gap-3">
+                      <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
+                        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1 mb-2">Daily P&amp;L</div>
+                        <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} />
+                      </div>
+                      <div className="bg-bg-surface border border-border-subtle rounded-lg px-5 pt-4 pb-5">
+                        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-5">Long vs Short</div>
+                        <DirectionBreakdown equity={run.equity_curve} />
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* ── Logs ─────────────────────────────────────────────────────── */}
           {runId && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} />}

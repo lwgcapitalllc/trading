@@ -89,3 +89,9 @@ def job_log(job_id: str, lines: int = 200) -> str:
 
 def cancel_job(job_id: str) -> dict:
     return _post(f"/jobs/{job_id}/cancel")
+
+
+def export_trades() -> dict:
+    """Call /export-trades on the VPS agent. Returns {ok, csv, total_lines, log}.
+    Longer timeout because the export automation takes ~12-15s."""
+    return _get("/export-trades", timeout=60)

@@ -25,6 +25,10 @@ class RankedItem(BaseModel):
 class EquityPoint(BaseModel):
     index: int
     equity: float
+    date: Optional[str] = None
+    direction: Optional[str] = None   # 'Long' | 'Short'
+    profit: Optional[float] = None
+    exit_name: Optional[str] = None
 
 
 class JobStatus(BaseModel):

@@ -20,7 +20,7 @@ from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
 )
 from services import lab_db, vps_client
-from services.backtest_runner import run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR
+from services.backtest_runner import run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv
 from services.evaluator import evaluate_run
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
@@ -253,3 +253,38 @@ def reevaluate_run(run_id: str, req: _ReevalRequest) -> BacktestDetail:
     evaluate_run(run_id, req.firm_ids, kpis, equity_curve, daily_pnl)
 
     return _row_to_detail(lab_db.get_run(run_id))
+
+
+@router.post("/runs/{run_id}/reload-charts")
+async def reload_charts(run_id: str) -> dict:
+    """Re-export trades from NT8 SA and repopulate equity_curve + daily_pnl for a run."""
+    row = lab_db.get_run(run_id)
+    if not row:
+        raise HTTPException(404, "Run not found")
+    if row["status"] != "complete":
+        raise HTTPException(409, f"Run status is '{row['status']}' — can only reload charts for completed runs")
+
+    try:
+        export = await asyncio.to_thread(vps_client.export_trades)
+    except Exception as exc:
+        raise HTTPException(502, f"VPS agent error: {exc}")
+
+    csv_text = export.get("csv", "")
+    if not csv_text:
+        raise HTTPException(502, "VPS agent returned no CSV data")
+
+    equity_curve, daily_pnl = parse_trades_csv(csv_text)
+
+    run_dir = LAB_RESULTS_DIR / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    eq_path  = run_dir / "equity_curve.json"
+    dpnl_path = run_dir / "daily_pnl.json"
+    eq_path.write_text(json.dumps(equity_curve))
+    dpnl_path.write_text(json.dumps(daily_pnl))
+
+    lab_db.update_run_chart_paths(run_id, {
+        "equity_curve": str(eq_path),
+        "daily_pnl":    str(dpnl_path),
+    })
+
+    return {"equity_points": len(equity_curve), "daily_bars": len(daily_pnl)}

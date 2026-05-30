@@ -181,6 +181,19 @@ export function useReevaluate() {
   })
 }
 
+export function useReloadCharts() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (runId: string) =>
+      api.post<{ equity_points: number; daily_bars: number }>(`/backtests/runs/${runId}/reload-charts`),
+    onSuccess: (data, runId) => {
+      toast.success(`Charts loaded — ${data.equity_points} trades, ${data.daily_bars} trading days`)
+      qc.invalidateQueries({ queryKey: ['lab', 'run', runId] })
+    },
+    onError: () => toast.error('Chart reload failed — check VPS agent and NT8 SA'),
+  })
+}
+
 // ── Lab Progress + Control ─────────────────────────────────────────────────────
 
 export function useLabProgress() {

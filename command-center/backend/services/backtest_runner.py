@@ -6,12 +6,79 @@ Spawned as an asyncio.Task from the backtests router after POSTing to the VPS ag
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from services import lab_db, evaluator, vps_client
+
+
+# ── NT8 Trades CSV parser ──────────────────────────────────────────────────────
+
+def _parse_dollar(s: str) -> float:
+    """'($2448.00)' → -2448.0, '$594.00' → 594.0"""
+    s = s.replace("$", "").replace(",", "").strip()
+    if s.startswith("(") and s.endswith(")"):
+        try:
+            return -float(s[1:-1])
+        except ValueError:
+            return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def parse_trades_csv(csv_text: str) -> tuple[list[dict], list[dict]]:
+    """Parse NT8 Trades export CSV.
+    Returns (equity_curve, daily_pnl) ready for JSON serialisation."""
+    reader = csv.DictReader(io.StringIO(csv_text))
+    equity_curve: list[dict] = []
+    daily_map: dict[str, float] = {}
+
+    for row in reader:
+        try:
+            trade_num = int(float(row.get("Trade number", 0) or 0))
+        except (ValueError, TypeError):
+            continue
+
+        cum_pnl   = _parse_dollar(row.get("Cum. net profit", "0"))
+        profit    = _parse_dollar(row.get("Profit", "0"))
+        direction = (row.get("Market pos.", "") or "").strip()
+        exit_name = (row.get("Exit name", "") or "").strip()
+
+        exit_date: Optional[str] = None
+        for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S"):
+            try:
+                exit_date = datetime.strptime(
+                    (row.get("Exit time", "") or "").strip(), fmt
+                ).strftime("%Y-%m-%d")
+                break
+            except ValueError:
+                pass
+
+        equity_curve.append({
+            "index":     trade_num,
+            "equity":    round(cum_pnl, 2),
+            "date":      exit_date,
+            "direction": direction or None,
+            "profit":    round(profit, 2),
+            "exit_name": exit_name or None,
+        })
+
+        if exit_date:
+            daily_map[exit_date] = round(
+                daily_map.get(exit_date, 0.0) + profit, 2
+            )
+
+    daily_pnl = [
+        {"date": d, "pnl": v} for d, v in sorted(daily_map.items())
+    ]
+    return equity_curve, daily_pnl
 
 _POLL_INTERVAL   = 5     # seconds between agent polls
 _STALL_WARN_SEC  = 120   # 2 min — warn but keep polling
@@ -73,6 +140,15 @@ async def _handle_complete(
     kpis         = result.get("kpis", {})
     equity_curve = result.get("equity_curve", [])
     daily_pnl    = result.get("daily_pnl", [])
+
+    # Pull per-trade data from NT8 SA Trades export — richer than XML summary
+    try:
+        export_resp = await asyncio.to_thread(vps_client.export_trades)
+        csv_text = export_resp.get("csv", "")
+        if csv_text:
+            equity_curve, daily_pnl = parse_trades_csv(csv_text)
+    except Exception:
+        pass  # non-fatal — KPI summary still populates, charts show empty state
 
     # persist JSON files
     run_dir = _LAB_RESULTS_DIR / run_id

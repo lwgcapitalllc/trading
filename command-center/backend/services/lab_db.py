@@ -455,6 +455,14 @@ def insert_run(data: dict) -> None:
         ))
 
 
+def update_run_chart_paths(run_id: str, paths: dict) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE backtest_runs SET equity_curve_path=?, daily_pnl_path=? WHERE run_id=?",
+            (paths.get("equity_curve"), paths.get("daily_pnl"), run_id),
+        )
+
+
 def update_run_status(run_id: str, status: str, error_message: Optional[str] = None) -> None:
     with _connect() as conn:
         conn.execute(
