@@ -51,7 +51,7 @@ A registered NinjaScript strategy. Source of truth for what can be run.
 | name | str | display name |
 | class_name | str | NinjaScript class name |
 | category | str | breakout / mean-reversion / momentum / etc. |
-| default_instrument | str | e.g. `MNQ 06-26` |
+| suggested_instrument | str | e.g. `MNQ 06-26` — pre-fills the run modal, user can override |
 | default_params | json | e.g. `{"ORMinutes": 15, "TpMultiple": 1.5}` |
 | param_schema | json | type + range per param (for the optimizer UI) |
 | created_at | ts | |
@@ -61,7 +61,8 @@ One row per firm. Pure rules, no code.
 
 | Field | Type | Notes |
 |---|---|---|
-| id | str | `lucidflex_50k`, `apex_50k`, etc. |
+| id | str | `lucidflex_50k_eval`, `lucidflex_50k_funded`, `apex_50k_eval`, etc. |
+| account_tier | str | `"eval"` or `"funded"` — funded skips profit target + consistency checks |
 | name | str | display name |
 | account_size | int | |
 | profit_target | int | eval only |
@@ -388,15 +389,15 @@ parses + serves via HTTP. Backend fetches over the SSH tunnel
 
 Three milestones, in this order. Each is a stop-and-test point.
 
-**M1 — Backtest + Firm abstraction (the foundation)**
+**M1 — Backtest + Firm abstraction (the foundation)** ✅ COMPLETE
 1. Add `strategies` and `firms` tables; seed with the 3 existing NinjaScript
-   files and a `lucidflex_50k` firm config
+   files and 4 LucidFlex firm configs (50k/100k × eval/funded)
 2. Generalize VPS agent: job-keyed results, `/backtest` endpoint accepting any
    strategy
 3. Build /backtests/run + /backtests/runs endpoints
 4. Build Backtest Detail page (equity curve + daily P&L + per-firm eval cards)
 5. **Test:** run the 3 existing strategies, see them pass/fail against
-   LucidFlex 50k from the UI
+   LucidFlex firms from the UI
 
 **M2 — Optimizer + Stress Test**
 1. NT Optimizer integration in VPS agent
@@ -547,3 +548,28 @@ To stop scope creep — explicitly out of scope for this module:
 ---
 
 *End of design doc — review and we iterate before any code is written.*
+
+---
+
+## M1 Retrospective (completed 2026-05-30)
+
+### What we built
+
+Full end-to-end backtest lab: strategy scanner, firm profiles, NT8-driven backtest runs via the VPS agent, tier-aware evaluation engine, and a detailed results page with equity curve, drawdown chart, daily P&L, long/short breakdown, and 11 KPI cards including Calmar ratio.
+
+### What changed vs original spec
+
+**4 firms, not 1.** The spec seeded one `lucidflex_50k` firm. Reality: each firm has two distinct modes — the eval challenge and the funded account. Rules differ meaningfully (funded has no profit target, no consistency rule). We created `lucidflex_50k_eval`, `lucidflex_50k_funded`, `lucidflex_100k_eval`, `lucidflex_100k_funded`. The `account_tier` column (`"eval"` | `"funded"`) drives the evaluation logic.
+
+**`suggested_instrument`, not `default_instrument`.** Renamed during build because "default" implied it was locked in. It pre-fills the run modal; the user always overrides freely.
+
+**No trades.json.** The spec called for a trade-by-trade JSON file (`trades_path`). We parse trades from the NT8 Trades CSV export directly into the equity curve JSON (one point per trade with `profit`, `direction`, `exit_name`). A separate trade list is not needed — the equity curve already carries per-trade data.
+
+**Export automation, not NT XML log.** The spec assumed reading NT8's XML output log. NT8 doesn't expose a clean XML format for arbitrary strategy runs. Instead: the VPS agent automates the Strategy Analyzer's "Export Trades" right-click menu via pywinauto, producing a CSV the backend parses. This took significant debugging to get stable (WPF ComboBox identification, two-pass right-click pattern, coordinate caching).
+
+**Traffic-light verdict + Calmar.** Added to BacktestDetail during M1 UX pass. Not in the original spec. Both turned out to be essential for quick run assessment.
+
+### Decisions we might revisit
+
+- **Inline chart components:** All charts live inside BacktestDetail.tsx rather than as standalone files. Fine at current scale; worth extracting if other pages (optimizer, stress test) need the same charts.
+- **NT8 export via pywinauto:** Brittle if NT8 updates its WPF layout. The coordinate cache (`_export_coords_cache`) helps but it's still screen-position dependent. A proper NT8 API or file-watch approach would be more robust long term.

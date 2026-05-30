@@ -5,7 +5,7 @@ import {
   CheckCircle, XCircle, Minus, Info, Square, RefreshCw,
 } from 'lucide-react'
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie,
+  AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
@@ -34,7 +34,54 @@ function fmtDate(iso: string): string {
 
 function chartDateLabel(iso: string): string {
   const d = new Date(iso + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const yr = String(d.getFullYear()).slice(-2)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` '${yr}`
+}
+
+// ── Calendar tick helpers ─────────────────────────────────────────────────────
+
+const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+// Endpoints show day ("May 30 '23"), interior quarters just month+year ("Apr '24")
+function calTickLabel(iso: string, isEndpoint: boolean): string {
+  const d  = new Date(iso + 'T00:00:00')
+  const m  = _MONTHS[d.getMonth()]
+  const yr = String(d.getFullYear()).slice(-2)
+  return isEndpoint ? `${m} ${d.getDate()} '${yr}` : `${m} '${yr}`
+}
+
+// For index-based charts: tick positions at start, Q1/Q2/Q3/Q4 boundaries, end
+function calIndexTicks(pts: Array<{ index: number; date?: string | null }>): number[] {
+  if (pts.length <= 1) return pts.map(p => p.index)
+  const first = pts[0].date, last = pts[pts.length - 1].date
+  if (!first || !last) return [pts[0].index, pts[pts.length - 1].index]
+
+  const dateToIdx = new Map<string, number>()
+  for (const p of pts) {
+    if (p.date && !dateToIdx.has(p.date)) dateToIdx.set(p.date, p.index)
+  }
+  const sorted = [...dateToIdx.keys()].sort()
+  const nearest = (target: string) => { const d = sorted.find(s => s >= target); return d != null ? dateToIdx.get(d) : undefined }
+
+  const sy = new Date(first + 'T00:00:00').getFullYear()
+  const ey = new Date(last  + 'T00:00:00').getFullYear()
+  const set = new Set<number>([pts[0].index, pts[pts.length - 1].index])
+  for (let y = sy; y <= ey; y++)
+    for (const m of ['01', '04', '07', '10']) { const idx = nearest(`${y}-${m}-01`); if (idx != null) set.add(idx) }
+  return [...set].sort((a, b) => a - b)
+}
+
+// For date-keyed charts: tick values at start, Q1/Q2/Q3/Q4 boundaries, end
+function calDateTicks(data: DailyPnlPoint[]): string[] {
+  if (data.length <= 1) return data.map(d => d.date)
+  const all = data.map(d => d.date)
+  const nearest = (target: string) => all.find(d => d >= target)
+  const sy = new Date(data[0].date + 'T00:00:00').getFullYear()
+  const ey = new Date(data[data.length - 1].date + 'T00:00:00').getFullYear()
+  const set = new Set<string>([data[0].date, data[data.length - 1].date])
+  for (let y = sy; y <= ey; y++)
+    for (const m of ['01', '04', '07', '10']) { const d = nearest(`${y}-${m}-01`); if (d) set.add(d) }
+  return [...set].sort()
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -90,6 +137,39 @@ function worstStreakCls(n: number | null): string {
   if (n >= 6) return 'text-neg-text'
   if (n >= 3) return 'text-warn-text'
   return 'text-text-primary'
+}
+
+// ── Calmar ratio ─────────────────────────────────────────────────────────────
+
+function computeCalmar(
+  netPnl: number | null,
+  maxDrawdown: number | null,
+  equity: EquityPoint[],
+): number | null {
+  if (netPnl == null || maxDrawdown == null) return null
+  const absDd = Math.abs(maxDrawdown)
+  if (absDd === 0 || equity.length < 2) return null
+  const firstDate = equity[0].date
+  const lastDate  = equity[equity.length - 1].date
+  if (!firstDate || !lastDate) return null
+  const days = (new Date(lastDate + 'T00:00:00').getTime() - new Date(firstDate + 'T00:00:00').getTime()) / 86_400_000
+  if (days < 1) return null
+  return (netPnl * (365 / days)) / absDd
+}
+
+function calmarCls(c: number | null): string {
+  if (c == null) return 'text-text-tertiary'
+  if (c >= 3.0) return 'text-pos-text'
+  if (c >= 1.0) return 'text-warn-text'
+  return 'text-neg-text'
+}
+
+function calmarLabel(c: number | null): string {
+  if (c == null) return 'annlzd return ÷ max drawdown'
+  if (c >= 3.0) return 'excellent'
+  if (c >= 1.5) return 'good'
+  if (c >= 1.0) return 'marginal'
+  return 'poor — drawdown outpaces return'
 }
 
 // ── Fallback KPI computation ──────────────────────────────────────────────────
@@ -151,7 +231,7 @@ function MetricCard({ label, value, valueCls = '', sub, subCls = 'text-text-tert
   tooltip?: string
 }) {
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg px-[15px] py-[14px]">
+    <div className="bg-bg-surface border border-border-subtle rounded-lg px-[15px] py-[14px] h-full flex flex-col justify-center">
       <div className="flex items-center text-[10px] text-text-secondary uppercase tracking-[0.6px]">
         {label}
         {tooltip && <InfoTip text={tooltip} />}
@@ -164,16 +244,19 @@ function MetricCard({ label, value, valueCls = '', sub, subCls = 'text-text-tert
 
 // ── KPI grid ──────────────────────────────────────────────────────────────────
 
-function KpiGrid({ run, fallback }: { run: Run; fallback: FallbackMetrics }) {
+function KpiGrid({ run, fallback, equity = [], stretch = false }: {
+  run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; stretch?: boolean
+}) {
   const pnlCls = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
 
   const sharpe      = run.sharpe             ?? fallback.sharpe
   const worstDay    = run.worst_day_pnl      ?? fallback.worstDay
   const worstStreak = run.worst_losing_streak ?? fallback.worstStreak
   const sharpeEst   = run.sharpe == null && fallback.sharpe != null
+  const calmar      = computeCalmar(run.net_pnl, run.max_drawdown, equity)
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className={`grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 ${stretch ? 'h-full auto-rows-fr' : ''}`}>
       <MetricCard
         label="Net P&L"
         value={dollar(run.net_pnl, true)}
@@ -232,6 +315,28 @@ function KpiGrid({ run, fallback }: { run: Run; fallback: FallbackMetrics }) {
         sub="consecutive losing days"
         tooltip="Longest consecutive run of losing days. Tests whether you'd stay disciplined under sustained drawdown. ≥6 days is a red flag."
       />
+      <MetricCard
+        label="Avg Win"
+        value={run.avg_win != null ? `$${run.avg_win.toFixed(0)}` : '—'}
+        valueCls="text-pos-text"
+        tooltip="Average profit per winning trade."
+      />
+      <MetricCard
+        label="Avg Loss"
+        value={run.avg_loss != null ? `-$${Math.abs(run.avg_loss).toFixed(0)}` : '—'}
+        valueCls="text-neg-text"
+        sub={run.avg_win != null && run.avg_loss != null
+          ? `R:R ${(run.avg_win / Math.abs(run.avg_loss)).toFixed(2)}:1`
+          : undefined}
+        tooltip="Average loss per losing trade. Sub-line shows the win:loss ratio (reward:risk). Above 1.0 means wins are larger than losses."
+      />
+      <MetricCard
+        label="Calmar Ratio"
+        value={calmar != null ? calmar.toFixed(2) : '—'}
+        valueCls={calmarCls(calmar)}
+        sub={calmarLabel(calmar)}
+        tooltip="Annualized return divided by max drawdown. The definitive risk-adjusted metric for funded traders — it penalizes large drawdowns directly. ≥3.0 is excellent, ≥1.0 is decent, <1.0 means your drawdown is larger than your annualized gains."
+      />
     </div>
   )
 }
@@ -241,7 +346,8 @@ function KpiGrid({ run, fallback }: { run: Run; fallback: FallbackMetrics }) {
 function fmtChartDate(d?: string): string {
   if (!d) return ''
   const dt = new Date(d + 'T12:00:00')
-  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const yr = String(dt.getFullYear()).slice(-2)
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` '${yr}`
 }
 
 function EquityCurveChart({ data }: { data: EquityPoint[] }) {
@@ -262,7 +368,7 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
   const NEG_COLOR = '#ff3b5c'
   const curveColor = profitable ? POS_COLOR : NEG_COLOR
 
-  const labelEvery = data.length > 200 ? 50 : data.length > 80 ? 20 : 10
+  const eqTicks = calIndexTicks(data)
 
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -280,12 +386,15 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
         <CartesianGrid strokeDasharray="3 3" stroke="#ffffff07" />
         <XAxis
           dataKey="index"
+          ticks={eqTicks}
           tick={{ fill: '#6b7280', fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number, i: number) =>
-            i % labelEvery === 0 ? (data[v - 1]?.date ? fmtChartDate(data[v - 1].date) : `#${v}`) : ''
-          }
+          tickFormatter={(v: number) => {
+            const date = data[v - 1]?.date
+            if (!date) return ''
+            return calTickLabel(date, v === data[0].index || v === data[data.length - 1].index)
+          }}
         />
         <YAxis
           domain={[yMin, yMax]}
@@ -296,8 +405,9 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
           width={56}
         />
         <Tooltip
-          contentStyle={{ background: '#181828', border: '1px solid #2a2a4a', borderRadius: 6, fontSize: 12 }}
+          contentStyle={{ background: '#0c0c1a', border: '1px solid #44446a', borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
           labelStyle={{ color: '#9ca3af' }}
+          itemStyle={{ color: '#e5e7eb' }}
           formatter={(v: number, _: string, props: { payload?: EquityPoint }) => {
             const pt = props.payload
             return [
@@ -331,7 +441,10 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
 
 // ── Drawdown chart ────────────────────────────────────────────────────────────
 
-function DrawdownChart({ equity }: { equity: EquityPoint[] }) {
+function DrawdownChart({ equity, limitLines }: {
+  equity: EquityPoint[]
+  limitLines?: Array<{ limit: number; label: string; pass: boolean }>
+}) {
   if (!equity.length) return null
 
   let peak = equity[0].equity
@@ -341,8 +454,8 @@ function DrawdownChart({ equity }: { equity: EquityPoint[] }) {
     return { index: pt.index, drawdown: Math.round(dd), date: pt.date }
   })
 
-  const worst = Math.min(...ddData.map(d => d.drawdown))
-  const labelEvery = equity.length > 200 ? 50 : equity.length > 80 ? 20 : 10
+  const worst  = Math.min(...ddData.map(d => d.drawdown))
+  const ddTicks = calIndexTicks(ddData)
 
   return (
     <ResponsiveContainer width="100%" height={140}>
@@ -356,12 +469,15 @@ function DrawdownChart({ equity }: { equity: EquityPoint[] }) {
         <CartesianGrid strokeDasharray="3 3" stroke="#ffffff07" />
         <XAxis
           dataKey="index"
+          ticks={ddTicks}
           tick={{ fill: '#6b7280', fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number, i: number) =>
-            i % labelEvery === 0 ? (ddData[v - 1]?.date ? fmtChartDate(ddData[v - 1].date) : `#${v}`) : ''
-          }
+          tickFormatter={(v: number) => {
+            const date = ddData[v - 1]?.date
+            if (!date) return ''
+            return calTickLabel(date, v === ddData[0].index || v === ddData[ddData.length - 1].index)
+          }}
         />
         <YAxis
           tick={{ fill: '#6b7280', fontSize: 10 }}
@@ -372,7 +488,7 @@ function DrawdownChart({ equity }: { equity: EquityPoint[] }) {
           domain={[worst * 1.1, 0]}
         />
         <Tooltip
-          contentStyle={{ background: '#181828', border: '1px solid #2a2a4a', borderRadius: 6, fontSize: 12 }}
+          contentStyle={{ background: '#0c0c1a', border: '1px solid #44446a', borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
           formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, 'Drawdown']}
           labelFormatter={(_: unknown, payload: Array<{ payload?: { index: number; date?: string } }>) => {
             const pt = payload?.[0]?.payload
@@ -382,6 +498,20 @@ function DrawdownChart({ equity }: { equity: EquityPoint[] }) {
           }}
         />
         <ReferenceLine y={0} stroke="#ffffff20" />
+        {limitLines?.map(ll => (
+          <ReferenceLine
+            key={ll.limit}
+            y={-ll.limit}
+            stroke={ll.pass ? '#00ff7f55' : '#ff3b5c99'}
+            strokeDasharray="5 3"
+            label={{
+              value: `$${ll.limit >= 1000 ? `${(ll.limit / 1000).toFixed(0)}k` : ll.limit} limit`,
+              fill: ll.pass ? '#00ff7f99' : '#ff3b5c',
+              fontSize: 9,
+              position: 'insideTopRight',
+            }}
+          />
+        ))}
         <Area
           type="monotone"
           dataKey="drawdown"
@@ -405,42 +535,37 @@ function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
 
   const sides = ['Long', 'Short'] as const
   const stats = sides.map(dir => {
-    const group = trades.filter(pt => pt.direction === dir)
-    const wins  = group.filter(pt => (pt.profit ?? 0) > 0).length
+    const group   = trades.filter(pt => pt.direction === dir)
+    const wins    = group.filter(pt => (pt.profit ?? 0) > 0).length
+    const losses  = group.length - wins
     const totalPnl = group.reduce((s, pt) => s + (pt.profit ?? 0), 0)
     const avgTrade = group.length ? totalPnl / group.length : 0
-    return { dir, count: group.length, wins, totalPnl, avgTrade }
+    return { dir, count: group.length, wins, losses, totalPnl, avgTrade }
   })
-  const total = stats.reduce((s, x) => s + x.count, 0)
 
   return (
-    <div className="space-y-5">
+    <div className="grid grid-cols-2 gap-6">
       {stats.map(s => {
         if (!s.count) return null
-        const pct = Math.round((s.count / total) * 100)
-        const winRate = s.count ? s.wins / s.count : 0
-        const pnlCls  = s.totalPnl >= 0 ? 'text-pos-text' : 'text-neg-text'
-        const barColor = s.totalPnl >= 0 ? '#00ff7f' : '#ff3b5c'
+        const winPct = (s.wins / s.count) * 100
+        const pnlCls = s.totalPnl >= 0 ? 'text-pos-text' : 'text-neg-text'
         return (
-          <div key={s.dir}>
-            <div className="flex items-center justify-between mb-[6px]">
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] font-semibold text-text-primary">{s.dir}</span>
-                <span className="text-[10px] text-text-tertiary">{s.count} trades · {(winRate * 100).toFixed(0)}% win</span>
-              </div>
-              <span className={`text-[13px] font-semibold font-mono ${pnlCls}`}>
-                {s.totalPnl >= 0 ? '+' : ''}{s.totalPnl.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
-              </span>
+          <div key={s.dir} className="space-y-3">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[13px] font-semibold text-text-primary">{s.dir}</span>
+              <span className={`text-[14px] font-semibold font-mono ${pnlCls}`}>{dollar(s.totalPnl, true)}</span>
             </div>
-            <div className="h-[5px] bg-bg-sunken rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{ width: `${pct}%`, background: barColor, opacity: 0.75 }}
-              />
+            <div className="text-[11px] text-text-tertiary">
+              {s.count} trades · avg {dollar(s.avgTrade, true)}/trade
             </div>
-            <div className="flex justify-between text-[10px] text-text-tertiary mt-[4px]">
-              <span>{pct}% of trades</span>
-              <span>avg {s.avgTrade >= 0 ? '+' : ''}{s.avgTrade.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}/trade</span>
+            {/* Split bar: green = won, red = lost */}
+            <div className="h-[8px] flex rounded-full overflow-hidden">
+              <div className="h-full bg-pos-text/75" style={{ width: `${winPct}%` }} />
+              <div className="h-full bg-neg-text/65 flex-1" />
+            </div>
+            <div className="flex justify-between text-[12px] font-semibold">
+              <span className="text-pos-text">{s.wins} won</span>
+              <span className="text-neg-text">{s.losses} lost</span>
             </div>
           </div>
         )
@@ -462,7 +587,7 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
   }
 
   const halfTarget = netPnl != null && netPnl > 0 ? netPnl * 0.5 : null
-  const labelEvery = data.length > 60 ? 30 : data.length > 30 ? 10 : 1
+  const pnlTicks  = calDateTicks(data)
 
   return (
     <ResponsiveContainer width="100%" height={260}>
@@ -470,10 +595,12 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
         <CartesianGrid strokeDasharray="3 3" stroke="#ffffff07" vertical={false} />
         <XAxis
           dataKey="date"
+          ticks={pnlTicks}
+          padding={{ left: 24, right: 8 }}
           tick={{ fill: '#6b7280', fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(d: string, i: number) => i % labelEvery === 0 ? chartDateLabel(d) : ''}
+          tickFormatter={(d: string) => calTickLabel(d, d === data[0].date || d === data[data.length - 1].date)}
         />
         <YAxis
           tick={{ fill: '#6b7280', fontSize: 10 }}
@@ -483,8 +610,9 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
           width={52}
         />
         <Tooltip
-          contentStyle={{ background: '#181828', border: '1px solid #2a2a4a', borderRadius: 6, fontSize: 12 }}
+          contentStyle={{ background: '#0c0c1a', border: '1px solid #44446a', borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
           labelStyle={{ color: '#9ca3af' }}
+          itemStyle={{ color: '#e5e7eb' }}
           formatter={(v: number) => [dollar(v, true), 'P&L']}
           labelFormatter={(d: string) => chartDateLabel(d)}
         />
@@ -507,107 +635,6 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
   )
 }
 
-// ── Win/Loss donut ────────────────────────────────────────────────────────────
-
-function WinLossChart({ winCount, totalTrades }: { winCount: number; totalTrades: number }) {
-  const lossCount = totalTrades - winCount
-  const data = [
-    { name: 'Wins',   value: winCount  },
-    { name: 'Losses', value: lossCount },
-  ]
-  const COLORS = ['#00ff7f', '#ff3b5c']
-  const OPACITY = [0.85, 0.75]
-
-  return (
-    <>
-      <ResponsiveContainer width="100%" height={160}>
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%"
-            cy="50%"
-            innerRadius={52}
-            outerRadius={72}
-            dataKey="value"
-            stroke="transparent"
-            paddingAngle={2}
-          >
-            {data.map((_, i) => (
-              <Cell key={i} fill={COLORS[i]} fillOpacity={OPACITY[i]} />
-            ))}
-          </Pie>
-          <Tooltip
-            contentStyle={{
-              background: '#1a1b2e',
-              border: '1px solid #4a4a6a',
-              borderRadius: 8,
-              fontSize: 13,
-              padding: '6px 12px',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
-            }}
-            labelStyle={{ display: 'none' }}
-            itemStyle={{ color: '#e5e7eb', fontWeight: 600 }}
-            formatter={(v: number, n: string) => [`${v} trades`, n]}
-          />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="flex justify-center gap-6 text-[11px] -mt-2">
-        <span className="flex items-center gap-[5px]">
-          <span className="w-[8px] h-[8px] rounded-full bg-pos-text inline-block" />
-          <span className="text-pos-text font-semibold">{winCount}</span>
-          <span className="text-text-tertiary">wins</span>
-        </span>
-        <span className="flex items-center gap-[5px]">
-          <span className="w-[8px] h-[8px] rounded-full bg-neg-text inline-block" />
-          <span className="text-neg-text font-semibold">{lossCount}</span>
-          <span className="text-text-tertiary">losses</span>
-        </span>
-      </div>
-    </>
-  )
-}
-
-// ── Payoff chart (CSS bars — no recharts) ────────────────────────────────────
-
-function PayoffChart({
-  avgWin, avgLoss, winRate,
-}: { avgWin: number; avgLoss: number; winRate: number }) {
-  const absLoss = Math.abs(avgLoss)
-  const max = Math.max(avgWin, absLoss)
-  const ev  = winRate * avgWin + (1 - winRate) * avgLoss
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <div className="flex items-baseline justify-between mb-[6px]">
-          <span className="text-[11px] text-text-secondary">Avg Win</span>
-          <span className="text-[13px] text-pos-text font-semibold font-mono">${avgWin.toFixed(0)}</span>
-        </div>
-        <div className="h-[5px] bg-bg-sunken rounded-full overflow-hidden">
-          <div className="h-full bg-pos-text/80 rounded-full transition-all"
-            style={{ width: `${(avgWin / max) * 100}%` }} />
-        </div>
-      </div>
-      <div>
-        <div className="flex items-baseline justify-between mb-[6px]">
-          <span className="text-[11px] text-text-secondary">Avg Loss</span>
-          <span className="text-[13px] text-neg-text font-semibold font-mono">-${absLoss.toFixed(0)}</span>
-        </div>
-        <div className="h-[5px] bg-bg-sunken rounded-full overflow-hidden">
-          <div className="h-full bg-neg-text/80 rounded-full transition-all"
-            style={{ width: `${(absLoss / max) * 100}%` }} />
-        </div>
-      </div>
-      <div className="flex items-center justify-between pt-2 border-t border-border-subtle">
-        <span className="text-[11px] text-text-tertiary">Expected value / trade</span>
-        <span className={`text-[13px] font-semibold font-mono ${ev >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>
-          {ev >= 0 ? `+$${ev.toFixed(2)}` : `-$${Math.abs(ev).toFixed(2)}`}
-        </span>
-      </div>
-    </div>
-  )
-}
-
 // ── Evaluation card ───────────────────────────────────────────────────────────
 
 const VERDICT_CONFIG = {
@@ -621,7 +648,7 @@ function EvalCard({ ev }: { ev: EvaluationDetail }) {
   const { Icon } = cfg
 
   return (
-    <div className={`bg-bg-surface border border-border-subtle border-l-[3px] ${cfg.border} rounded-lg overflow-hidden`}>
+    <div className={`bg-bg-surface border border-border-subtle border-l-[3px] ${cfg.border} rounded-lg overflow-hidden h-full flex flex-col`}>
       {/* Header */}
       <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
         <div>
@@ -1095,6 +1122,62 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+// ── Chart verdict banner ──────────────────────────────────────────────────────
+
+function ChartVerdict({ run }: { run: Run }) {
+  if (!run.equity_curve.length || !run.evaluations.length) return null
+
+  const netPnl   = run.net_pnl ?? 0
+  const isProfit = netPnl > 0
+  const ddFails  = run.evaluations.filter(e => !e.drawdown_pass)
+  const ddOk     = ddFails.length === 0
+  const conFails = run.evaluations.filter(e => e.consistency_pass === false)
+  const conOk    = conFails.length === 0
+
+  let level: 'green' | 'yellow' | 'red'
+  let summary: string
+  if (!isProfit) {
+    level = 'red';     summary = 'Net negative — not viable'
+  } else if (!ddOk) {
+    level = 'red';     summary = 'Profitable but breaches firm drawdown limits'
+  } else if (!conOk) {
+    level = 'yellow';  summary = 'Profitable and within drawdown, but fails consistency rule'
+  } else {
+    level = 'green';   summary = 'Profitable, within drawdown limits, and consistent'
+  }
+
+  const dot  = { green: '#00ff7f', yellow: '#ffb300', red: '#ff3b5c' }[level]
+  const txt  = { green: 'text-pos-text', yellow: 'text-warn-text', red: 'text-neg-text' }[level]
+  const bg   = { green: 'bg-pos-muted border-pos-text/20', yellow: 'bg-warn-muted border-warn-text/20', red: 'bg-neg-muted border-neg-text/20' }[level]
+
+  const checks = [
+    { label: 'Equity',      ok: isProfit, val: isProfit ? `+${dollar(netPnl)}` : dollar(netPnl) },
+    { label: 'Drawdown',    ok: ddOk,     val: ddOk  ? 'Within all limits' : `${ddFails.length} breach${ddFails.length > 1 ? 'es' : ''}` },
+    { label: 'Consistency', ok: conOk,    val: conOk ? 'OK'                : `${conFails.length} fail${conFails.length > 1 ? 's' : ''}` },
+  ]
+
+  return (
+    <div className={`border rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 ${bg}`}>
+      <div className="flex items-center gap-2">
+        <span className="w-[9px] h-[9px] rounded-full flex-shrink-0"
+          style={{ background: dot, boxShadow: `0 0 6px ${dot}` }} />
+        <span className={`text-[12px] font-semibold ${txt}`}>{summary}</span>
+      </div>
+      <div className="flex items-center gap-5 ml-auto">
+        {checks.map(c => (
+          <div key={c.label} className="flex items-center gap-[5px] text-[11px]">
+            {c.ok
+              ? <CheckCircle size={11} className="text-pos-text flex-shrink-0" />
+              : <XCircle    size={11} className="text-neg-text flex-shrink-0" />}
+            <span className="text-text-tertiary">{c.label}:</span>
+            <span className={`${c.ok ? 'text-text-primary font-mono' : 'text-neg-text'}`}>{c.val}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function BacktestDetail() {
@@ -1160,65 +1243,63 @@ export function BacktestDetail() {
           {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} />}
           {isFailed  && <FailureBanner run={run} />}
 
-          {/* ── Firm evaluations (verdict first) ──────────────────────────── */}
-          {isComplete && run.evaluations.length > 0 && (
-            <div>
-              <SectionLabel>Evaluation</SectionLabel>
-              <div className={`grid gap-3 ${
-                run.evaluations.length === 1
-                  ? 'grid-cols-1 max-w-sm'
-                  : 'grid-cols-1 sm:grid-cols-2'
-              }`}>
-                {run.evaluations.map(ev => (
-                  <EvalCard key={ev.eval_id} ev={ev} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Performance KPIs (why) ────────────────────────────────────── */}
+          {/* ── Evaluations + Performance (side by side) ──────────────────── */}
           {isComplete && (
-            <div>
-              <SectionLabel>Performance</SectionLabel>
-              <KpiGrid run={run} fallback={fallback} />
-            </div>
-          )}
+            <div className={run.evaluations.length > 0
+              ? 'grid gap-6 lg:grid-cols-[minmax(260px,380px)_1fr]'
+              : ''}>
 
-          {/* ── Trade breakdown (visual) ──────────────────────────────────── */}
-          {isComplete && run.win_count != null && run.trade_count != null && (
-            <div>
-              <SectionLabel>Trade breakdown</SectionLabel>
-              <div className="bg-bg-surface border border-border-subtle rounded-lg px-6 py-5">
-                {run.avg_win != null && run.avg_loss != null ? (
-                  <div className="grid grid-cols-[1fr_1px_1fr] gap-6">
-                    <div>
-                      <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-2">Win / Loss Split</div>
-                      <WinLossChart winCount={run.win_count} totalTrades={run.trade_count} />
-                    </div>
-                    <div className="bg-border-subtle" />
-                    <div className="flex flex-col justify-center py-2">
-                      <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-5">Payoff Comparison</div>
-                      <PayoffChart avgWin={run.avg_win} avgLoss={run.avg_loss} winRate={run.win_rate ?? 0} />
-                    </div>
+              {/* Left: firm evaluation cards — stretches to match KPI height */}
+              {run.evaluations.length > 0 && (
+                <div className="flex flex-col">
+                  <SectionLabel>Evaluation</SectionLabel>
+                  <div className="flex flex-col gap-3 flex-1">
+                    {run.evaluations.map(ev => <EvalCard key={ev.eval_id} ev={ev} />)}
+                  </div>
+                </div>
+              )}
+
+              {/* Right: KPIs — flex-col so grid can stretch to match eval card */}
+              <div className={run.evaluations.length > 0 ? 'flex flex-col' : ''}>
+                <SectionLabel>Performance</SectionLabel>
+                {run.evaluations.length > 0 ? (
+                  <div className="flex-1">
+                    <KpiGrid run={run} fallback={fallback} equity={run.equity_curve} stretch />
                   </div>
                 ) : (
-                  <div className="max-w-xs">
-                    <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-2">Win / Loss Split</div>
-                    <WinLossChart winCount={run.win_count} totalTrades={run.trade_count} />
-                  </div>
+                  <KpiGrid run={run} fallback={fallback} equity={run.equity_curve} />
                 )}
               </div>
             </div>
           )}
 
-          {/* ── Charts (equity / drawdown / daily pnl / direction) ──────── */}
+          {/* ── Charts ────────────────────────────────────────────────────── */}
           {isComplete && (() => {
             const hasCharts = run.equity_curve.length > 0
+            const firstDate = run.equity_curve[0]?.date
+            const lastDate  = run.equity_curve[run.equity_curve.length - 1]?.date
+
+            const seenLimits = new Set<number>()
+            const evalLimits: Array<{ limit: number; label: string; pass: boolean }> = []
+            for (const e of run.evaluations) {
+              if (!seenLimits.has(e.firm_max_loss_eod)) {
+                seenLimits.add(e.firm_max_loss_eod)
+                const same = run.evaluations.filter(x => x.firm_max_loss_eod === e.firm_max_loss_eod)
+                evalLimits.push({ limit: e.firm_max_loss_eod, label: e.firm_name, pass: same.every(x => x.drawdown_pass) })
+              }
+            }
+
             return (
               <div className="space-y-3">
-                {/* Header row: section label + reload button */}
-                <div className="flex items-center justify-between">
-                  <SectionLabel>Charts</SectionLabel>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <SectionLabel>Charts</SectionLabel>
+                    {hasCharts && firstDate && lastDate && (
+                      <p className="text-[11px] text-text-tertiary -mt-2 mb-3">
+                        {run.equity_curve.length.toLocaleString()} trades · {fmtDate(firstDate)} → {fmtDate(lastDate)}
+                      </p>
+                    )}
+                  </div>
                   {!hasCharts && (
                     <button
                       onClick={() => runId && reloadCharts.mutate(runId)}
@@ -1250,29 +1331,38 @@ export function BacktestDetail() {
                   </div>
                 ) : (
                   <>
+                    {/* Traffic-light verdict */}
+                    <ChartVerdict run={run} />
+
                     {/* Equity curve */}
                     <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
-                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1 mb-2">Equity curve</div>
+                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1">Equity curve</div>
+                      <div className="text-[10px] text-text-tertiary px-1 mt-[3px] mb-2">Steadily rising = good. Big peak then long decline = giving back gains.</div>
                       <EquityCurveChart data={run.equity_curve} />
                     </div>
 
                     {/* Drawdown */}
                     <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
-                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1 mb-1">Drawdown from peak</div>
-                      <DrawdownChart equity={run.equity_curve} />
+                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1">Drawdown from peak</div>
+                      <div className="text-[10px] text-text-tertiary px-1 mt-[3px] mb-1">Shallow and short = good. Dips exceeding the firm's drawdown limit = instant fail.</div>
+                      <DrawdownChart equity={run.equity_curve} limitLines={evalLimits} />
                     </div>
 
-                    {/* Daily P&L + Direction breakdown */}
-                    <div className="grid grid-cols-[1.6fr_1fr] gap-3">
-                      <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
-                        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1 mb-2">Daily P&amp;L</div>
-                        <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} />
-                      </div>
+                    {/* Daily P&L — full width */}
+                    <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
+                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1">Daily P&amp;L</div>
+                      <div className="text-[10px] text-text-tertiary px-1 mt-[3px] mb-2">Consistent moderate bars = good. Giant single bars = high daily-limit risk.</div>
+                      <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} />
+                    </div>
+
+                    {/* Long vs Short — below daily P&L */}
+                    {run.equity_curve.some(p => p.direction) && (
                       <div className="bg-bg-surface border border-border-subtle rounded-lg px-5 pt-4 pb-5">
-                        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-5">Long vs Short</div>
+                        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">Long vs Short</div>
+                        <div className="text-[10px] text-text-tertiary mt-[3px] mb-4">Both profitable = robust. One side losing = fragile, market-dependent edge.</div>
                         <DirectionBreakdown equity={run.equity_curve} />
                       </div>
-                    </div>
+                    )}
                   </>
                 )}
               </div>

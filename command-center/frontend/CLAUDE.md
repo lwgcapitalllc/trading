@@ -33,7 +33,8 @@ frontend/src/
 ├── hooks/                   one file per backend domain
 │   ├── useLab.ts            strategies, firms, runs, evals, system health
 │   ├── useBots.ts
-│   └── useSmartMoney.ts
+│   ├── useSmartMoney.ts
+│   └── useStressTests.ts    stub — no live endpoints yet
 ├── components/              reusable, dumb components
 │   ├── Sidebar.tsx
 │   ├── TopBar.tsx
@@ -41,18 +42,27 @@ frontend/src/
 │   ├── ScaffoldBanner.tsx
 │   ├── EmptyState.tsx
 │   ├── SystemHealthStrip.tsx
-│   ├── RunBacktestModal.tsx
-│   ├── EvaluationCard.tsx
-│   ├── EquityCurveChart.tsx
-│   └── DailyPnLChart.tsx
+│   └── RunBacktestModal.tsx
+│                            NOTE: EvaluationCard, EquityCurveChart, DrawdownChart,
+│                            DailyPnlChart, DirectionBreakdown are all inline
+│                            components inside BacktestDetail.tsx — not separate files.
 └── pages/
     ├── Overview.tsx
-    ├── SmartMoney/           index.tsx + sub-components
-    ├── Bots/                 index.tsx + ConfigureTab.tsx + UsersTab.tsx
-    ├── Backtests.tsx         lab landing — URL-based tabs
-    ├── BacktestDetail.tsx
-    ├── StrategyDetail.tsx
-    ├── StressTests.tsx       stub
+    ├── SmartMoney/
+    │   ├── index.tsx         tab shell + scan control
+    │   ├── Rankings.tsx
+    │   ├── CandidateProfile.tsx
+    │   ├── PoolOverview.tsx
+    │   ├── DisqualifiedLog.tsx
+    │   └── Config.tsx
+    ├── Bots/
+    │   ├── index.tsx         monitor tab + live snapshot
+    │   ├── ConfigureTab.tsx  risk caps + deploy
+    │   └── UsersTab.tsx      Telegram users
+    ├── Backtests.tsx         lab landing — Strategies / Runs / Firms tabs (URL-based)
+    ├── BacktestDetail.tsx    full run detail — charts, KPIs, per-firm eval cards, verdict
+    ├── StrategyDetail.tsx    strategy metadata + all runs for that strategy
+    ├── StressTests.tsx       stub — ScaffoldBanner placeholder
     └── Settings.tsx
 ```
 
@@ -212,3 +222,33 @@ toast.error('Failed: ...')
 4. If it needs data, create `src/hooks/useThing.ts`
 5. Add types to `src/types/index.ts`
 6. If it's a stub, use `ScaffoldBanner` + `EmptyState` — delete both when it goes live
+
+---
+
+## Lab UX principle
+
+The lab is a platform for designing and stress-testing trading strategies, not a dashboard. Every page should help the user make a decision: is this strategy viable, which parameter set is most robust, does it survive Monte Carlo? Design for decisions, not metrics.
+
+---
+
+## Backtest detail — chart and KPI conventions
+
+- Charts: equity curve, drawdown, daily P&L (full-width), long/short breakdown
+- KPIs: Net P&L, Max Drawdown, Win Rate, Profit Factor, Trade Count, Sharpe, Worst Day, Worst Streak, Avg Win, Avg Loss, Calmar Ratio (11 cards, `grid-cols-4 lg:grid-cols-6`)
+- Traffic-light verdict banner: green (profitable + no DD breach + consistency pass), yellow (profitable + DD ok + consistency fail), red (net negative or DD breach)
+- Drawdown chart shows firm limit reference lines from evaluations
+- Calendar-based x-axis ticks (start, quarterly, end) — not interval-based
+- All chart tooltips: dark bg `#0c0c1a`, `itemStyle={{ color: '#e5e7eb' }}` for readable text
+
+---
+
+## What's built (status)
+
+| Module | Status | Notes |
+|---|---|---|
+| Overview | ✅ Live | Stat row + cards for each domain |
+| Smart Money | ✅ Live | Full pipeline UI — scan, terminal, rankings, profiles, disqualified, config, cache |
+| Bots | ✅ Live | Monitor, control (global + per-bot), configure (risk caps + deploy), users (Telegram) |
+| Backtests lab | ✅ Live | Strategies, Runs, Firms tabs; run modal; backtest detail with charts + eval cards |
+| Stress Tests | 🔲 Stub | ScaffoldBanner placeholder; M2/M3 scope |
+| Settings | ✅ Live | Config read/write |

@@ -4,6 +4,8 @@ Auto-loaded by Claude Code when editing any file inside `backend/`.
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
+The lab module (strategies, firms, backtests, evaluations) is live as of M1.
+
 **Lab design principle:** The user always picks which firm challenges to evaluate against. Never default `evaluate_firms` to all firms.
 
 ---
@@ -162,3 +164,31 @@ Lab backtests use the same pattern but the "worker" is the VPS agent over HTTP.
 4. Register the router in `main.py`
 5. If it has its own DB, create it under `data/` and call `init_db()` on startup
 6. Update directory layout above
+
+---
+
+## Firm account tiers — eval vs funded
+
+Every firm row has an `account_tier` column: `"eval"` or `"funded"`.
+
+- **eval** firms: full three-way evaluation — drawdown + profit target + consistency rule.
+- **funded** firms: drawdown only. `consistency_pass` is stored as `NULL`, `target_pass` is always `True`. The profit target on a funded account is 0 (no requirement).
+
+Never skip the tier check in `evaluator.py`. The current seeded firms are:
+- `lucidflex_50k_eval`, `lucidflex_100k_eval` — eval challenges
+- `lucidflex_50k_funded`, `lucidflex_100k_funded` — funded account limits
+
+---
+
+## What's built (status)
+
+| Domain | Status | What it does |
+|---|---|---|
+| Smart Money | ✅ Live | Scans and profiles crypto/forex traders for copy-trading candidates. Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
+| Bots | ✅ Live | Monitors all three live algo instances (gold_main, gold_scalper, gold_fft) via SSH. Global + per-bot risk controls, risk cap deploy with Telegram notification, Telegram users tab. |
+| Lab — Strategies | ✅ Live | Registry of NinjaScript strategies scanned from the local repo. Auto-derives param schema from `[NinjaScriptProperty]` attributes. |
+| Lab — Firms | ✅ Live | Prop firm rule profiles (drawdown limits, profit targets, consistency %). CRUD endpoints. Seeded with 4 LucidFlex profiles (50k/100k × eval/funded). |
+| Lab — Backtests | ✅ Live | Trigger NT8 runs on the VPS via the agent. Poll to completion. Evaluate against selected firms. Equity curve, daily P&L, per-firm verdicts, full KPI set including Calmar ratio. |
+| Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. |
+| Lab — Stress Tests | 🔲 Stub | Router exists, no logic yet. M2/M3 scope. |
+| Settings | ✅ Live | Config read/write. |
