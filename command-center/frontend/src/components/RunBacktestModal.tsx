@@ -249,6 +249,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     return match?.label ?? null
   }, [presets, startDate, endDate])
 
+  // ── Bar size ─────────────────────────────────────────────────────────────────
+  const BAR_PRESETS = [1, 3, 5, 15, 30]
+  const [barValue, setBarValue] = useState(5)
+
   // ── Strategy params ──────────────────────────────────────────────────────────
   const [params, setParams] = useState<Record<string, number | boolean | string>>(() => {
     const init: Record<string, number | boolean | string> = {}
@@ -336,7 +340,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         instrument,
         params:              params as Record<string, unknown>,
         bar_type:            'Minute',
-        bar_value:           5,
+        bar_value:           barValue,
         start_date:          startDate,
         end_date:            endDate,
         commission_per_side: commPerSide,
@@ -467,6 +471,24 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   label={p.label}
                   active={activePreset === p.label}
                   onClick={() => { setStartDate(p.start); setEndDate(p.end) }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Bar Size */}
+          <div>
+            <SectionHead
+              label="Bar Size"
+              tooltip="Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size."
+            />
+            <div className="flex gap-2">
+              {BAR_PRESETS.map(v => (
+                <PresetBtn
+                  key={v}
+                  label={`${v}m`}
+                  active={barValue === v}
+                  onClick={() => setBarValue(v)}
                 />
               ))}
             </div>

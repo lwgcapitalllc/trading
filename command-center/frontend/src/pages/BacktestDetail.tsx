@@ -1,8 +1,8 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
-  CheckCircle, XCircle, Minus,
+  CheckCircle, XCircle, Minus, Info,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie,
@@ -127,18 +127,35 @@ function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
   return { worstDay, worstStreak: maxStreak, sharpe }
 }
 
+// ── InfoTip ───────────────────────────────────────────────────────────────────
+
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="relative group/tip inline-flex items-center ml-[5px] cursor-help flex-shrink-0">
+      <Info size={9} className="text-text-tertiary/50 group-hover/tip:text-accent transition-colors" />
+      <span className="absolute bottom-[calc(100%+8px)] left-0 z-50 hidden group-hover/tip:block w-48 rounded-lg bg-bg-base border border-border-default px-3 py-2.5 text-[11px] text-text-secondary shadow-2xl pointer-events-none leading-relaxed normal-case tracking-normal font-normal">
+        {text}
+      </span>
+    </span>
+  )
+}
+
 // ── MetricCard ────────────────────────────────────────────────────────────────
 
-function MetricCard({ label, value, valueCls = '', sub, subCls = 'text-text-tertiary' }: {
+function MetricCard({ label, value, valueCls = '', sub, subCls = 'text-text-tertiary', tooltip }: {
   label: string
   value: React.ReactNode
   valueCls?: string
   sub?: React.ReactNode
   subCls?: string
+  tooltip?: string
 }) {
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg px-[15px] py-[14px]">
-      <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px]">{label}</div>
+      <div className="flex items-center text-[10px] text-text-secondary uppercase tracking-[0.6px]">
+        {label}
+        {tooltip && <InfoTip text={tooltip} />}
+      </div>
       <div className={`text-[24px] font-semibold mt-[6px] tracking-[-0.5px] font-mono ${valueCls}`}>{value}</div>
       {sub && <div className={`text-[11px] mt-[3px] leading-snug ${subCls}`}>{sub}</div>}
     </div>
@@ -161,64 +178,59 @@ function KpiGrid({ run, fallback }: { run: Run; fallback: FallbackMetrics }) {
         label="Net P&L"
         value={dollar(run.net_pnl, true)}
         valueCls={pnlCls}
-        sub={
-          run.avg_win != null && run.avg_loss != null
-            ? `avg ${dollar(run.avg_win, true)} win · ${dollar(run.avg_loss)} loss`
-            : run.trade_count != null ? `${run.trade_count} trades` : undefined
-        }
+        tooltip="Total profit or loss after commissions. The bottom line."
       />
       <MetricCard
         label="Max Drawdown"
         value={dollar(run.max_drawdown)}
         valueCls="text-neg-text"
-        sub="largest equity decline from peak"
+        sub="largest peak-to-trough drop"
+        tooltip="Biggest balance drop from peak to trough before recovery. e.g. $120k → $75k = $45k drawdown. Prop firms cap this hard — breaching it fails the challenge. Lower is better."
       />
       <MetricCard
         label="Win Rate"
         value={pct(run.win_rate)}
         valueCls={winRateCls(run.win_rate)}
         sub={winRateLabel(run.win_rate)}
+        tooltip="% of trades that closed in profit. Good ≥60%, fair ≥50%, weak <50%. High win rate alone doesn't guarantee profitability — size of wins vs losses matters too."
       />
       <MetricCard
         label="Profit Factor"
         value={run.profit_factor != null ? run.profit_factor.toFixed(2) : '—'}
         valueCls={pfCls(run.profit_factor)}
         sub={pfLabel(run.profit_factor)}
+        tooltip="Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0."
       />
       <MetricCard
         label="Trade Count"
         value={run.trade_count ?? '—'}
         sub={
-          run.win_count != null && run.trade_count != null
-            ? (
-              <span>
-                <span className="text-pos-text">{run.win_count}W</span>
-                <span className="text-text-tertiary"> · </span>
-                <span className="text-neg-text">{run.trade_count - run.win_count}L</span>
-              </span>
-            )
-            : run.avg_trade_duration_min != null
+          run.avg_trade_duration_min != null
             ? `avg ${run.avg_trade_duration_min.toFixed(0)} min / trade`
             : undefined
         }
+        tooltip="Total completed trades. More trades = more statistically reliable results."
       />
       <MetricCard
         label="Sharpe (annlzd)"
         value={sharpe != null ? sharpe.toFixed(2) : '—'}
         valueCls={sharpeCls(sharpe)}
         sub={sharpeLabel(sharpe, sharpeEst)}
+        tooltip="Return per unit of risk, annualized. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing."
       />
       <MetricCard
         label="Worst Day"
         value={dollar(worstDay)}
         valueCls={worstDay != null && worstDay < 0 ? 'text-neg-text' : ''}
-        sub={worstDay == null ? 'largest single-day loss' : 'single-day low'}
+        sub="single worst trading day"
+        tooltip="Largest single-day loss. Compare this to your prop firm's daily loss limit — exceeding it would have failed the challenge that day."
       />
       <MetricCard
         label="Worst Streak"
         value={worstStreak != null ? `${worstStreak} L` : '—'}
         valueCls={worstStreakCls(worstStreak)}
         sub="consecutive losing days"
+        tooltip="Longest consecutive run of losing days. Tests whether you'd stay disciplined under sustained drawdown. ≥6 days is a red flag."
       />
     </div>
   )
@@ -367,7 +379,7 @@ function WinLossChart({ winCount, totalTrades }: { winCount: number; totalTrades
 
   return (
     <>
-      <ResponsiveContainer width="100%" height={190}>
+      <ResponsiveContainer width="100%" height={160}>
         <PieChart>
           <Pie
             data={data}
@@ -384,8 +396,17 @@ function WinLossChart({ winCount, totalTrades }: { winCount: number; totalTrades
             ))}
           </Pie>
           <Tooltip
-            contentStyle={{ background: '#181828', border: '1px solid #2a2a4a', borderRadius: 6, fontSize: 12 }}
-            formatter={(v: number, n: string) => [v, n]}
+            contentStyle={{
+              background: '#1a1b2e',
+              border: '1px solid #4a4a6a',
+              borderRadius: 8,
+              fontSize: 13,
+              padding: '6px 12px',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+            }}
+            labelStyle={{ display: 'none' }}
+            itemStyle={{ color: '#e5e7eb', fontWeight: 600 }}
+            formatter={(v: number, n: string) => [`${v} trades`, n]}
           />
         </PieChart>
       </ResponsiveContainer>
@@ -405,53 +426,44 @@ function WinLossChart({ winCount, totalTrades }: { winCount: number; totalTrades
   )
 }
 
-// ── Payoff chart ──────────────────────────────────────────────────────────────
+// ── Payoff chart (CSS bars — no recharts) ────────────────────────────────────
 
 function PayoffChart({
   avgWin, avgLoss, winRate,
 }: { avgWin: number; avgLoss: number; winRate: number }) {
   const absLoss = Math.abs(avgLoss)
-  const ev = winRate * avgWin + (1 - winRate) * avgLoss
-  const data = [
-    { name: 'Avg Win',  value: avgWin,   fill: '#00ff7f' },
-    { name: 'Avg Loss', value: absLoss,  fill: '#ff3b5c' },
-  ]
+  const max = Math.max(avgWin, absLoss)
+  const ev  = winRate * avgWin + (1 - winRate) * avgLoss
+
   return (
-    <>
-      <ResponsiveContainer width="100%" height={110}>
-        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 50, bottom: 0, left: 0 }}
-          barCategoryGap="35%">
-          <XAxis
-            type="number"
-            tick={{ fill: '#6b7280', fontSize: 10 }}
-            axisLine={false}
-            tickLine={false}
-            tickFormatter={(v: number) => `$${v.toFixed(0)}`}
-          />
-          <YAxis
-            type="category"
-            dataKey="name"
-            tick={{ fill: '#9ca3af', fontSize: 11 }}
-            axisLine={false}
-            tickLine={false}
-            width={64}
-          />
-          <Tooltip
-            contentStyle={{ background: '#181828', border: '1px solid #2a2a4a', borderRadius: 6, fontSize: 12 }}
-            formatter={(v: number, n: string) => [`$${v.toFixed(2)}`, n]}
-          />
-          <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-            {data.map((d, i) => <Cell key={i} fill={d.fill} fillOpacity={0.85} />)}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-      <div className="text-[11px] text-text-tertiary text-center mt-3">
-        Expected value per trade:{' '}
-        <span className={ev >= 0 ? 'text-pos-text font-semibold' : 'text-neg-text font-semibold'}>
-          {ev >= 0 ? '+' : ''}${ev.toFixed(2)}
+    <div className="space-y-5">
+      <div>
+        <div className="flex items-baseline justify-between mb-[6px]">
+          <span className="text-[11px] text-text-secondary">Avg Win</span>
+          <span className="text-[13px] text-pos-text font-semibold font-mono">${avgWin.toFixed(0)}</span>
+        </div>
+        <div className="h-[5px] bg-bg-sunken rounded-full overflow-hidden">
+          <div className="h-full bg-pos-text/80 rounded-full transition-all"
+            style={{ width: `${(avgWin / max) * 100}%` }} />
+        </div>
+      </div>
+      <div>
+        <div className="flex items-baseline justify-between mb-[6px]">
+          <span className="text-[11px] text-text-secondary">Avg Loss</span>
+          <span className="text-[13px] text-neg-text font-semibold font-mono">-${absLoss.toFixed(0)}</span>
+        </div>
+        <div className="h-[5px] bg-bg-sunken rounded-full overflow-hidden">
+          <div className="h-full bg-neg-text/80 rounded-full transition-all"
+            style={{ width: `${(absLoss / max) * 100}%` }} />
+        </div>
+      </div>
+      <div className="flex items-center justify-between pt-2 border-t border-border-subtle">
+        <span className="text-[11px] text-text-tertiary">Expected value / trade</span>
+        <span className={`text-[13px] font-semibold font-mono ${ev >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>
+          {ev >= 0 ? `+$${ev.toFixed(2)}` : `-$${Math.abs(ev).toFixed(2)}`}
         </span>
       </div>
-    </>
+    </div>
   )
 }
 
@@ -552,8 +564,25 @@ const RUN_STEPS = [
   { label: 'Evaluate',  startPct: 95 },
 ]
 
-function RunningBanner({ pct, message }: { pct: number; message: string }) {
+function useElapsed(startedAt: string | null): string {
+  const [secs, setSecs] = useState(0)
+  useEffect(() => {
+    const origin = startedAt ? parseFloat(startedAt) * 1000 : Date.now()
+    setSecs(Math.floor((Date.now() - origin) / 1000))
+    const id = setInterval(() => setSecs(Math.floor((Date.now() - origin) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+  if (secs < 60) return `${secs}s`
+  return `${Math.floor(secs / 60)}m ${secs % 60}s`
+}
+
+function RunningBanner({ pct, message, startedAt }: {
+  pct: number
+  message: string
+  startedAt: string | null
+}) {
   const activeIdx = RUN_STEPS.reduce((best, step, i) => pct >= step.startPct ? i : best, 0)
+  const elapsed   = useElapsed(startedAt)
 
   return (
     <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 py-4 space-y-3">
@@ -584,21 +613,34 @@ function RunningBanner({ pct, message }: { pct: number; message: string }) {
         })}
       </div>
 
-      {/* Progress bar */}
-      <div className="flex items-center gap-3">
-        <div className="flex-1 h-[3px] bg-bg-surface rounded-full overflow-hidden">
-          <div
-            className="h-full bg-accent rounded-full transition-all duration-700"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <span className="text-accent font-mono tabular-nums text-[12px] flex-shrink-0">{pct}%</span>
+      {/* Segmented bar — one block per step, perfectly in sync with dots */}
+      <div className="flex gap-[3px]">
+        {RUN_STEPS.map((_, i) => {
+          const done   = i < activeIdx
+          const active = i === activeIdx
+          return (
+            <div
+              key={i}
+              className={`flex-1 h-[3px] rounded-full overflow-hidden ${
+                done ? 'bg-pos-text/70' : 'bg-border-subtle/60'
+              }`}
+            >
+              {active && <div className="h-full w-full bg-accent rounded-full animate-pulse" />}
+            </div>
+          )
+        })}
       </div>
 
-      {/* Current step message */}
-      <div className="flex items-center gap-2">
-        <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse flex-shrink-0" />
-        <span className="text-[12px] text-text-secondary">{message || 'Starting…'}</span>
+      {/* Message + counters */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse flex-shrink-0" />
+          <span className="text-[12px] text-text-secondary">{message || 'Starting…'}</span>
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-text-tertiary font-mono tabular-nums">
+          <span>Step {activeIdx + 1} / {RUN_STEPS.length}</span>
+          <span>{elapsed}</span>
+        </div>
       </div>
     </div>
   )
@@ -705,7 +747,11 @@ function StatusBadge({ status }: { status: string }) {
   const cls      = STATUS_BADGE[status] ?? 'bg-warn-muted text-warn-text'
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-[4px] rounded-full text-[12px] font-semibold uppercase tracking-[0.4px] flex-shrink-0 ${cls}`}>
-      {status === 'running' && <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />}
+      {status === 'running' && (
+        <span className="animate-bounce inline-block leading-none" style={{ animationDuration: '0.45s' }}>
+          🏃
+        </span>
+      )}
       {label}
     </span>
   )
@@ -728,8 +774,9 @@ export function BacktestDetail() {
   const isFailed   = run?.status.startsWith('failed') ?? false
   const isComplete = run?.status === 'complete'
 
-  const runPct     = isRunning ? (progress?.pct ?? 0) : 0
-  const runMessage = isRunning ? (progress?.message ?? 'Starting…') : ''
+  const runPct       = isRunning ? (progress?.pct ?? 0) : 0
+  const runMessage   = isRunning ? (progress?.message ?? 'Starting…') : ''
+  const runStartedAt = isRunning ? (progress?.started_at ?? null) : null
 
   return (
     <div>
@@ -770,10 +817,26 @@ export function BacktestDetail() {
           </div>
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
-          {isRunning && <RunningBanner pct={runPct} message={runMessage} />}
+          {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} />}
           {isFailed  && <FailureBanner run={run} />}
 
-          {/* ── Performance metrics ───────────────────────────────────────── */}
+          {/* ── Firm evaluations (verdict first) ──────────────────────────── */}
+          {isComplete && run.evaluations.length > 0 && (
+            <div>
+              <SectionLabel>Evaluation</SectionLabel>
+              <div className={`grid gap-3 ${
+                run.evaluations.length === 1
+                  ? 'grid-cols-1 max-w-sm'
+                  : 'grid-cols-1 sm:grid-cols-2'
+              }`}>
+                {run.evaluations.map(ev => (
+                  <EvalCard key={ev.eval_id} ev={ev} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Performance KPIs (why) ────────────────────────────────────── */}
           {isComplete && (
             <div>
               <SectionLabel>Performance</SectionLabel>
@@ -781,21 +844,27 @@ export function BacktestDetail() {
             </div>
           )}
 
-          {/* ── Performance breakdown (from aggregate KPIs) ───────────────── */}
+          {/* ── Trade breakdown (visual) ──────────────────────────────────── */}
           {isComplete && run.win_count != null && run.trade_count != null && (
             <div>
-              <SectionLabel>Performance breakdown</SectionLabel>
-              <div className={`grid gap-4 ${run.avg_win != null && run.avg_loss != null ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 max-w-xs'}`}>
-                <div className="bg-bg-surface border border-border-subtle rounded-lg px-5 py-4">
-                  <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-1">Win / Loss Split</div>
-                  <WinLossChart winCount={run.win_count} totalTrades={run.trade_count} />
-                </div>
-                {run.avg_win != null && run.avg_loss != null && (
-                  <div className="bg-bg-surface border border-border-subtle rounded-lg px-5 py-4">
-                    <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-1">Payoff Comparison</div>
-                    <div className="mt-[52px]">
+              <SectionLabel>Trade breakdown</SectionLabel>
+              <div className="bg-bg-surface border border-border-subtle rounded-lg px-6 py-5">
+                {run.avg_win != null && run.avg_loss != null ? (
+                  <div className="grid grid-cols-[1fr_1px_1fr] gap-6">
+                    <div>
+                      <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-2">Win / Loss Split</div>
+                      <WinLossChart winCount={run.win_count} totalTrades={run.trade_count} />
+                    </div>
+                    <div className="bg-border-subtle" />
+                    <div className="flex flex-col justify-center py-2">
+                      <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-5">Payoff Comparison</div>
                       <PayoffChart avgWin={run.avg_win} avgLoss={run.avg_loss} winRate={run.win_rate ?? 0} />
                     </div>
+                  </div>
+                ) : (
+                  <div className="max-w-xs">
+                    <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-2">Win / Loss Split</div>
+                    <WinLossChart winCount={run.win_count} totalTrades={run.trade_count} />
                   </div>
                 )}
               </div>
@@ -818,22 +887,6 @@ export function BacktestDetail() {
               <SectionLabel>Daily P&amp;L</SectionLabel>
               <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 py-4">
                 <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} />
-              </div>
-            </div>
-          )}
-
-          {/* ── Firm evaluations ──────────────────────────────────────────── */}
-          {run.evaluations.length > 0 && (
-            <div>
-              <SectionLabel>Per-firm evaluation</SectionLabel>
-              <div className={`grid gap-3 ${
-                run.evaluations.length === 1
-                  ? 'grid-cols-1 max-w-sm'
-                  : 'grid-cols-1 sm:grid-cols-2'
-              }`}>
-                {run.evaluations.map(ev => (
-                  <EvalCard key={ev.eval_id} ev={ev} />
-                ))}
               </div>
             </div>
           )}

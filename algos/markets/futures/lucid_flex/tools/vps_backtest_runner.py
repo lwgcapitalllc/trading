@@ -441,7 +441,7 @@ def configure_from_spec(sa, spec: dict):
 
 # ── Trade export (pywinauto) ──────────────────────────────────────────────────
 
-def _dump_controls(win, depth: int = 3) -> None:
+def _dump_controls(win, depth: int = 5) -> None:
     """Print control identifiers for a window — used for debugging NT8 UI structure."""
     try:
         print(f"  [debug] Controls (depth={depth}):")
@@ -546,12 +546,41 @@ def _try_export_trades(sa, job_id: str) -> tuple:
     csv_path = str(out_dir / "trades.csv")
 
     # ── 1. Click Trades tab ───────────────────────────────────────────────────
-    try:
-        tab = sa.child_window(title="Trades", control_type="TabItem")
-        tab.click_input()
-        time.sleep(0.8)
-    except Exception as e:
-        print(f"  [trades] Trades tab not found: {e}")
+    # NT8 SA tab items live inside saTabControl (left panel) or splitPane (right).
+    # Try multiple navigation paths — the control_type on NT8 tabs varies by version.
+    tab_found = False
+    for parent_id, tab_title in [
+        ("saTabControl", "Trades"),
+        ("saTabControl", "All Trades"),
+        ("splitPane",    "Trades"),
+        ("splitPane",    "All Trades"),
+        (None,           "Trades"),      # direct child of SA window
+        (None,           "All Trades"),
+    ]:
+        try:
+            parent = sa.child_window(auto_id=parent_id) if parent_id else sa
+            # Try both TabItem and Tab control types, and no constraint
+            for ct in ["TabItem", "Tab", None]:
+                try:
+                    kwargs = {"title": tab_title}
+                    if ct:
+                        kwargs["control_type"] = ct
+                    tab = parent.child_window(**kwargs)
+                    if tab.exists(timeout=1):
+                        tab.click_input()
+                        time.sleep(0.8)
+                        tab_found = True
+                        print(f"  [trades] Clicked tab '{tab_title}' via parent '{parent_id}'")
+                        break
+                except Exception:
+                    continue
+            if tab_found:
+                break
+        except Exception:
+            continue
+
+    if not tab_found:
+        print("  [trades] Could not find Trades tab — dumping controls for diagnosis")
         _dump_controls(sa)
         return [], []
 
