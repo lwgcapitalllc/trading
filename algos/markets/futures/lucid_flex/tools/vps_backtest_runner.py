@@ -549,80 +549,49 @@ def _try_export_trades(sa, job_id: str) -> tuple:
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = str(out_dir / "trades.csv")
 
-    # ── 1. Click Trades tab ───────────────────────────────────────────────────
-    # NT8 wraps results in an outer "Analyzer" TabItem; the inner result tabs
-    # (Trades, Performance, etc.) are only accessible after clicking that outer tab.
-    tab_found = False
-
-    def _scan_tab_items(win) -> list[tuple]:
-        """Return list of (control, title) for all TabItem descendants."""
-        items = []
+    # ── 1. Switch Display dropdown to "Trades" ────────────────────────────────
+    # NT8 SA has a "Display" ComboBox (Summary/Analysis/Chart/Trades/etc.) at
+    # the top of the results panel. "Trades" is an item in that dropdown, not a tab.
+    display_switched = False
+    for aid in ["Display", "DisplaySelector", "displayComboBox"]:
         try:
-            for t in win.descendants(control_type="TabItem"):
+            combo = sa.child_window(auto_id=aid, control_type="ComboBox")
+            if combo.exists(timeout=0.5):
+                combo.select("Trades")
+                time.sleep(1.0)
+                display_switched = True
+                print(f"  [trades] Switched Display to 'Trades' via auto_id='{aid}'")
+                break
+        except Exception:
+            pass
+
+    if not display_switched:
+        # Fallback: scan all ComboBoxes and find the display selector by its known values
+        try:
+            for combo in sa.descendants(control_type="ComboBox"):
                 try:
-                    items.append((t, t.window_text()))
+                    val = combo.window_text()
+                    if any(k in val for k in ["Summary", "Analysis", "Chart", "Trades", "Orders"]):
+                        combo.select("Trades")
+                        time.sleep(1.0)
+                        display_switched = True
+                        print(f"  [trades] Switched Display combo (was '{val}') to 'Trades'")
+                        break
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"  [trades] ComboBox scan failed: {e}")
+
+    if not display_switched:
+        print("  [trades] Could not switch Display to Trades — listing all ComboBoxes:")
+        try:
+            for combo in sa.descendants(control_type="ComboBox"):
+                try:
+                    print(f"    ComboBox auto_id='{combo.automation_id()}' text='{combo.window_text()}'")
                 except Exception:
                     pass
         except Exception:
             pass
-        return items
-
-    try:
-        top_tabs = _scan_tab_items(sa)
-        print(f"  [trades] Top-level tabs: {[t for _, t in top_tabs]}")
-
-        # Click outer "Analyzer" tab if present — reveals inner result tabs
-        for ctrl, title in top_tabs:
-            if "analyzer" in title.lower():
-                ctrl.click_input()
-                time.sleep(1.2)
-                print(f"  [trades] Clicked outer tab '{title}', rescanning")
-                top_tabs = _scan_tab_items(sa)
-                print(f"  [trades] Inner tabs after click: {[t for _, t in top_tabs]}")
-                break
-
-        # Find the Trades tab in whatever is now visible
-        for ctrl, title in top_tabs:
-            if "trade" in title.lower():
-                ctrl.click_input()
-                time.sleep(0.8)
-                tab_found = True
-                print(f"  [trades] Clicked tab '{title}'")
-                break
-    except Exception as e:
-        print(f"  [trades] TabItem scan failed: {e}")
-
-    # Broader fallback — NT8 may use Button/ListItem for inner tabs
-    if not tab_found:
-        print("  [trades] Trying broader control-type search for Trades")
-        for ct in ["Tab", "Button", "ListItem", "RadioButton", "Custom"]:
-            try:
-                for item in sa.descendants(control_type=ct):
-                    try:
-                        title = item.window_text()
-                        if "trade" in title.lower():
-                            print(f"  [trades] Found '{title}' as {ct}")
-                            item.click_input()
-                            time.sleep(0.8)
-                            tab_found = True
-                            break
-                    except Exception:
-                        continue
-                if tab_found:
-                    break
-            except Exception:
-                continue
-
-    if not tab_found:
-        print("  [trades] Could not find Trades tab — listing all named descendants")
-        try:
-            named = [(d.friendly_class_name(), d.window_text())
-                     for d in sa.descendants()
-                     if d.window_text().strip()]
-            for cls, title in named[:60]:
-                print(f"    {cls}: '{title}'")
-        except Exception as e:
-            print(f"  [trades] Descendant list failed: {e}")
         return [], []
 
     # ── 2. Try Export toolbar button (several known NT8 label variants) ───────
