@@ -479,7 +479,6 @@ def export_trades():
         # Use SA window coords directly — grid.rectangle() returns (0,0,0,0) for
         # virtual elements and causes right-click to land on the desktop.
         import pywinauto.mouse as _mouse
-        from pywinauto.findwindows import find_windows
 
         sa.set_focus()
         time.sleep(0.2)
@@ -494,32 +493,30 @@ def export_trades():
         _alog(f"export-trades: right-clicked SA at ({rc_x},{rc_y})")
         log.append(f"Right-clicked SA trades area at ({rc_x},{rc_y})")
 
-        # Step 4: find the context menu and click Export...
-        menu_handles = find_windows(class_name="#32768")
-        if not menu_handles:
-            return jsonify({"error": "No context menu (#32768) found after right-click", "log": log})
-        log.append(f"Context menu handles: {menu_handles}")
-
-        menu_win   = dt.window(handle=menu_handles[0])
+        # Step 3b: find Export... in the WPF context menu.
+        # NT8 uses WPF so its context menus are NOT class #32768 (native Win32).
+        # They live in NT8's own element tree — scan for MenuItem elements.
+        nt8        = sa.top_level_parent()
         export_el  = None
         menu_items = []
-        for el in menu_win.descendants():
+        for el in nt8.descendants():
             try:
                 txt = (el.window_text() or "").strip()
-                if txt:
+                ct  = str(getattr(el.element_info, "control_type", ""))
+                if ct == "MenuItem" and txt:
                     menu_items.append(txt)
-                if txt.startswith("Export"):
-                    export_el = el
+                    if txt.startswith("Export") and export_el is None:
+                        export_el = el
             except Exception:
                 pass
-        log.append(f"Menu items: {menu_items}")
+        log.append(f"Menu items found: {menu_items}")
 
         if export_el is None:
             send_keys("{ESCAPE}")
-            return jsonify({"error": "Export item not in context menu", "log": log, "menu_items": menu_items})
+            return jsonify({"error": "Export MenuItem not found in NT8 tree", "log": log, "menu_items": menu_items})
 
         export_el.click_input()
-        log.append(f"Clicked Export")
+        log.append("Clicked Export")
         time.sleep(0.4)
 
         # Step 5: Export As dialog — type the full target path and press Enter
