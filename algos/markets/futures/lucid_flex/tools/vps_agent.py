@@ -515,13 +515,8 @@ def export_trades():
             send_keys("{ESCAPE}")
             return jsonify({"error": "Export MenuItem not found in NT8 tree", "log": log, "menu_items": menu_items})
 
-        # invoke() is the correct UIA action for a WPF MenuItem (click_input can miss)
-        try:
-            export_el.invoke()
-            log.append("Invoked Export")
-        except Exception:
-            export_el.click_input()
-            log.append("Clicked Export (fallback)")
+        export_el.click_input()
+        log.append("Clicked Export")
         time.sleep(0.5)
 
         # Step 4: Export As dialog
