@@ -445,6 +445,66 @@ def select_and_dump():
         return jsonify({"error": str(e)})
 
 
+@app.route("/probe-display")
+def probe_display():
+    """Click dmsDisplay, wait, dump what's visible in SA + Desktop. Use to confirm Trades item type."""
+    try:
+        from pywinauto import Desktop
+        dt  = Desktop(backend="uia")
+        sa  = dt.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        nt8 = sa.top_level_parent()
+
+        display_ctrl = sa.child_window(auto_id="dmsDisplay")
+        rect = str(display_ctrl.rectangle())
+        display_ctrl.click_input()
+        time.sleep(1.2)
+
+        results = {"dmsDisplay_rect": rect, "found_in_sa": [], "found_in_nt8": [], "found_in_desktop": [], "new_windows": []}
+
+        wins_before = {w.handle for w in dt.windows()}
+
+        for label, root, key in [("sa", sa, "found_in_sa"), ("nt8", nt8, "found_in_nt8")]:
+            for el in root.descendants():
+                try:
+                    txt = (el.window_text() or "").strip()
+                    if txt:
+                        results[key].append({
+                            "text": txt,
+                            "control_type": str(getattr(el.element_info, "control_type", "?")),
+                            "auto_id": (el.automation_id() or "").strip(),
+                        })
+                except Exception:
+                    pass
+
+        wins_after  = {w.handle for w in dt.windows()}
+        new_handles = wins_after - wins_before
+        for hwnd in new_handles:
+            try:
+                popup = dt.window(handle=hwnd)
+                popup_info = {"title": popup.window_text(), "children": []}
+                for el in popup.descendants():
+                    try:
+                        txt = (el.window_text() or "").strip()
+                        if txt:
+                            popup_info["children"].append({
+                                "text": txt,
+                                "control_type": str(getattr(el.element_info, "control_type", "?")),
+                                "auto_id": (el.automation_id() or "").strip(),
+                            })
+                    except Exception:
+                        pass
+                results["new_windows"].append(popup_info)
+            except Exception as e:
+                results["new_windows"].append({"error": str(e)})
+
+        # Close the dropdown
+        display_ctrl.click_input()
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/clear-results", methods=["POST"])
 def clear_results():
     path = NT8_DOCS / "lucid_flex_results.csv"
