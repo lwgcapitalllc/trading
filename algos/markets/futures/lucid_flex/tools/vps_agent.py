@@ -501,15 +501,18 @@ def export_trades():
         if grid is None:
             return jsonify({"error": "Could not find trades grid", "log": log})
 
-        # Step 3: right-click grid center, then IMMEDIATELY send 'e' for Export...
-        # Do NOT scan the UI tree here — that takes seconds and dismisses the menu.
-        rect  = grid.rectangle()
-        cx    = (rect.left + rect.right)  // 2
-        cy    = (rect.top  + rect.bottom) // 2 + 30   # skip header row
-        grid.right_click_input(coords=(cx - rect.left, cy - rect.top))
-        time.sleep(0.35)   # just enough for the menu to appear
-        send_keys("e")     # 'e' activates Export...
-        time.sleep(0.5)
+        # Step 3: bring SA to foreground so keyboard input lands there, then
+        # right-click grid center and IMMEDIATELY send 'e' for Export...
+        sa.set_focus()
+        time.sleep(0.2)
+        rect = grid.rectangle()
+        mid_x = (rect.left + rect.right)  // 2
+        mid_y = (rect.top  + rect.bottom) // 2 + 40   # skip header row
+        import pywinauto.mouse as _mouse
+        _mouse.right_click(coords=(mid_x, mid_y))
+        time.sleep(0.35)   # menu appears instantly; wait just enough for it to render
+        send_keys("e")     # 'e' activates Export... while menu is still open
+        time.sleep(0.3)
         log.append("Right-clicked grid, sent 'e' for Export")
 
         # Step 4: handle the Export As dialog
