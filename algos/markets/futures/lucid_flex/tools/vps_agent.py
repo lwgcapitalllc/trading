@@ -557,7 +557,25 @@ def export_trades():
         except Exception:
             send_keys("{ENTER}")
             log.append("Pressed Enter (Save fallback)")
-        time.sleep(1.5)
+        time.sleep(0.8)
+
+        # If file already exists NT8 shows a "Confirm Save As" overwrite dialog — dismiss it
+        for confirm_title in ["Confirm Save As", "Confirm", "Save As"]:
+            try:
+                confirm = dt.window(title=confirm_title)
+                if confirm.exists(timeout=1.5):
+                    for btn in ["Yes", "OK"]:
+                        try:
+                            confirm.child_window(title=btn, control_type="Button").click_input()
+                            log.append(f"Overwrite confirmed ({btn})")
+                            break
+                        except Exception:
+                            pass
+                    break
+            except Exception:
+                pass
+
+        time.sleep(1.0)
         log.append(f"Saved to {out_path}")
 
         # Step 5: read and return the full CSV
