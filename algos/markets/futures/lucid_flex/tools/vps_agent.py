@@ -445,13 +445,18 @@ def select_and_dump():
         return jsonify({"error": str(e)})
 
 
-@app.route("/test-export-trades")
-def test_export_trades():
+@app.route("/export-trades")
+def export_trades():
     """
-    Full smoke test: switch Display→Trades, right-click grid, click Export..., handle dialog.
-    Saves to NT8_DOCS/lab_results/test_export.csv and returns the first 5 lines.
+    Export all trades from NT8 Strategy Analyzer Trades grid to CSV.
+    Switches Display→Trades, right-clicks grid, presses 'e' for Export immediately
+    (before the context menu can dismiss), handles the Export As dialog, and
+    returns the full CSV content.
     """
-    out_path = str(NT8_DOCS / "lab_results" / "test_export.csv")
+    import os
+    out_dir  = NT8_DOCS / "lab_results"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = str(out_dir / "trades_export.csv")
     log = []
 
     try:
@@ -463,150 +468,80 @@ def test_export_trades():
         sa.wait("visible", timeout=10)
         log.append("SA found")
 
-        # Step 1: switch Display to Trades
+        # Step 1: switch Display → Trades
         sa.child_window(auto_id="dmsDisplay").click_input()
         time.sleep(1.0)
         sa.child_window(title="Trades", control_type="MenuItem", found_index=0).click_input()
         time.sleep(0.8)
         log.append("Display switched to Trades")
 
-        # Step 2: find the trades grid — dump what's there first
-        grid_types = []
-        for el in sa.descendants():
-            try:
-                ct = str(getattr(el.element_info, "control_type", ""))
-                aid = (el.automation_id() or "").strip()
-                nm  = (getattr(el.element_info, "name", "") or "").strip()
-                txt = (el.window_text() or "").strip()
-                if ct in ("DataGrid", "List", "ListView", "Table", "Custom", "Pane") and (aid or nm or txt):
-                    grid_types.append({"ct": ct, "aid": aid, "nm": nm, "txt": txt[:60]})
-            except Exception:
-                pass
-        log.append(f"Grid candidates: {grid_types[:20]}")
-
-        # Try finding the grid by control type
+        # Step 2: find the trades grid (try common control types then descendants)
         grid = None
         for ct in ["DataGrid", "List", "ListView", "Table"]:
             try:
                 g = sa.child_window(control_type=ct)
                 if g.exists(timeout=1):
                     grid = g
-                    log.append(f"Grid found via control_type={ct}")
+                    log.append(f"Grid found: control_type={ct}")
                     break
             except Exception:
                 pass
 
-        # Fallback: find by auto_id patterns seen in NT8
         if grid is None:
-            for aid in ["tradesGrid", "grdTrades", "dataGrid", "TradesGrid"]:
+            for el in sa.descendants():
                 try:
-                    g = sa.child_window(auto_id=aid)
-                    if g.exists(timeout=0.5):
-                        grid = g
-                        log.append(f"Grid found via auto_id={aid}")
+                    ct = str(getattr(el.element_info, "control_type", ""))
+                    if ct in ("DataGrid", "List", "ListView", "Table"):
+                        grid = el
+                        log.append(f"Grid found in descendants: control_type={ct}")
                         break
                 except Exception:
                     pass
 
         if grid is None:
-            return jsonify({"error": "Could not find trades grid", "log": log, "grid_candidates": grid_types})
+            return jsonify({"error": "Could not find trades grid", "log": log})
 
-        # Step 3: right-click and look for Export
-        wins_before = {w.handle for w in dt.windows()}
-        grid.right_click_input()
-        time.sleep(0.6)
-
-        wins_after = {w.handle for w in dt.windows()}
-        new_handles = wins_after - wins_before
-        log.append(f"New windows after right-click: {len(new_handles)}")
-
-        # Dump context menu items
-        menu_items = []
-        for root_label, root in [("sa", sa), ("dt", dt)]:
-            for el in root.descendants():
-                try:
-                    txt = (el.window_text() or "").strip()
-                    ct  = str(getattr(el.element_info, "control_type", ""))
-                    if txt and ct == "MenuItem":
-                        menu_items.append({"root": root_label, "text": txt})
-                except Exception:
-                    pass
-        for hwnd in new_handles:
-            try:
-                popup = dt.window(handle=hwnd)
-                for el in popup.descendants():
-                    try:
-                        txt = (el.window_text() or "").strip()
-                        ct  = str(getattr(el.element_info, "control_type", ""))
-                        if txt:
-                            menu_items.append({"root": f"popup:{popup.window_text()}", "ct": ct, "text": txt})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-        log.append(f"Context menu items: {menu_items}")
-
-        # Step 4: click Export
-        clicked = False
-        for title in ["Export...", "Export", "Export to File", "Export to CSV"]:
-            for root_label, root in [("sa", sa), ("dt", dt)]:
-                try:
-                    item = root.child_window(title=title, control_type="MenuItem")
-                    if item.exists(timeout=0.5):
-                        item.click_input()
-                        clicked = True
-                        log.append(f"Clicked '{title}' in {root_label}")
-                        break
-                except Exception:
-                    pass
-            if clicked:
-                break
-        for hwnd in new_handles:
-            if clicked:
-                break
-            try:
-                popup = dt.window(handle=hwnd)
-                for title in ["Export...", "Export", "Export to File"]:
-                    try:
-                        item = popup.child_window(title=title)
-                        if item.exists(timeout=0.5):
-                            item.click_input()
-                            clicked = True
-                            log.append(f"Clicked '{title}' in popup")
-                            break
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-        if not clicked:
-            return jsonify({"error": "Could not find Export menu item", "log": log})
-
+        # Step 3: right-click grid center, then IMMEDIATELY send 'e' for Export...
+        # Do NOT scan the UI tree here — that takes seconds and dismisses the menu.
+        rect  = grid.rectangle()
+        cx    = (rect.left + rect.right)  // 2
+        cy    = (rect.top  + rect.bottom) // 2 + 30   # skip header row
+        grid.right_click_input(coords=(cx - rect.left, cy - rect.top))
+        time.sleep(0.35)   # just enough for the menu to appear
+        send_keys("e")     # 'e' activates Export...
         time.sleep(0.5)
+        log.append("Right-clicked grid, sent 'e' for Export")
 
-        # Step 5: handle save dialog
-        dlg = dt.window(title_re=".*(Save|Export).*")
-        dlg.wait("visible", timeout=6)
-        log.append(f"Save dialog: '{dlg.window_text()}'")
+        # Step 4: handle the Export As dialog
+        dlg = dt.window(title_re=".*(Export As|Export|Save As).*")
+        dlg.wait("visible", timeout=8)
+        log.append(f"Dialog: '{dlg.window_text()}'")
 
+        # Clear filename field and type the full target path
         try:
-            fname_edit = dlg.child_window(auto_id="1148", control_type="Edit")
+            fname = dlg.child_window(auto_id="1148", control_type="Edit")
         except Exception:
-            fname_edit = dlg.child_window(control_type="Edit")
-
-        fname_edit.set_edit_text(out_path)
+            fname = dlg.child_window(control_type="Edit", found_index=0)
+        fname.click_input()
+        send_keys("^a")                             # select all existing text
+        time.sleep(0.1)
+        fname.type_keys(out_path, with_spaces=True) # type full absolute path
+        time.sleep(0.2)
         send_keys("{ENTER}")
         time.sleep(2.5)
         log.append(f"Saved to {out_path}")
 
-        # Read first 5 lines
-        import os
-        if os.path.exists(out_path):
-            with open(out_path, encoding="utf-8", errors="replace") as f:
-                lines = [f.readline().rstrip() for _ in range(5)]
-            return jsonify({"ok": True, "log": log, "preview": lines})
-        else:
-            return jsonify({"error": "CSV not written", "log": log})
+        # Step 5: read and return the full CSV
+        if not os.path.exists(out_path):
+            return jsonify({"error": "CSV was not written to disk", "log": log})
+
+        with open(out_path, encoding="utf-8", errors="replace") as f:
+            content = f.read()
+
+        lines = content.splitlines()
+        log.append(f"CSV lines: {len(lines)}")
+        return jsonify({"ok": True, "log": log, "total_lines": len(lines),
+                        "header": lines[0] if lines else "", "csv": content})
 
     except Exception as e:
         import traceback
