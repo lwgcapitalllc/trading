@@ -109,16 +109,17 @@ export function useBacktestRun(runId: string | null) {
     enabled: !!runId,
     refetchInterval: (query) => {
       const status = (query.state.data as BacktestDetail | undefined)?.status
-      return status === 'running' ? 3_000 : false
+      return status === 'running' ? 1_500 : false
     },
   })
 }
 
-export function useRunLog(runId: string | null, lines = 200) {
+export function useRunLog(runId: string | null, lines = 200, live = false) {
   return useQuery({
     queryKey: ['lab', 'run', runId, 'log', lines],
     queryFn: () => api.getText(`/backtests/runs/${runId}/log?lines=${lines}`),
     enabled: !!runId,
+    refetchInterval: live ? 2_000 : false,
   })
 }
 
@@ -189,7 +190,7 @@ export function useLabProgress() {
     refetchInterval: (query) => {
       const status = (query.state.data as LabProgress | undefined)?.status
       if (Date.now() - _lastTriggerMs < 60_000) return 2_000
-      return status === 'running' ? 3_000 : 30_000
+      return status === 'running' ? 1_500 : 30_000
     },
   })
 }

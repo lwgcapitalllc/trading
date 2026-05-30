@@ -566,32 +566,42 @@ def _try_export_trades(sa, job_id: str) -> tuple:
             pass
 
     if not display_switched:
-        # Fallback: scan all ComboBoxes and find the display selector by its known values
+        # Fallback: NT8 WPF ComboBoxes return empty window_text(), so we can't identify
+        # the Display combo by its current value. Instead, click each ComboBox and check
+        # whether a "Trades" ListItem appears — that's the Display dropdown.
         try:
+            dt = Desktop(backend="uia")
             for combo in sa.descendants(control_type="ComboBox"):
                 try:
-                    val = combo.window_text()
-                    if any(k in val for k in ["Summary", "Analysis", "Chart", "Trades", "Orders"]):
-                        combo.select("Trades")
-                        time.sleep(1.0)
+                    combo.click_input()
+                    time.sleep(0.4)
+                    item = None
+                    # WPF dropdown popup may be a child of SA or a top-level Desktop window
+                    for root in [sa, dt]:
+                        try:
+                            candidate = root.child_window(title="Trades", control_type="ListItem")
+                            if candidate.exists(timeout=0.3):
+                                item = candidate
+                                break
+                        except Exception:
+                            pass
+                    if item:
+                        item.click_input()
+                        time.sleep(0.8)
                         display_switched = True
-                        print(f"  [trades] Switched Display combo (was '{val}') to 'Trades'")
+                        aid = combo.automation_id() or "<no_id>"
+                        print(f"  [trades] Switched Display to 'Trades' via ListItem (combo aid='{aid}')")
                         break
+                    # Not the Display combo — close dropdown and try the next
+                    send_keys("{ESCAPE}")
+                    time.sleep(0.15)
                 except Exception:
                     continue
         except Exception as e:
-            print(f"  [trades] ComboBox scan failed: {e}")
+            print(f"  [trades] ComboBox click-scan failed: {e}")
 
     if not display_switched:
-        print("  [trades] Could not switch Display to Trades — listing all ComboBoxes:")
-        try:
-            for combo in sa.descendants(control_type="ComboBox"):
-                try:
-                    print(f"    ComboBox auto_id='{combo.automation_id()}' text='{combo.window_text()}'")
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        print("  [trades] Could not switch Display to Trades — no combo opened a 'Trades' ListItem")
         return [], []
 
     # ── 2. Try Export toolbar button (several known NT8 label variants) ───────

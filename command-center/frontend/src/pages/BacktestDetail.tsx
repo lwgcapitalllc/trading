@@ -873,9 +873,9 @@ function FailureBanner({ run }: { run: Run }) {
 
 // ── Logs section ──────────────────────────────────────────────────────────────
 
-function LogsSection({ runId, autoExpand }: { runId: string; autoExpand: boolean }) {
+function LogsSection({ runId, autoExpand, isRunning }: { runId: string; autoExpand: boolean; isRunning: boolean }) {
   const [open, setOpen] = useState(autoExpand)
-  const { data: log, isFetching } = useRunLog(open ? runId : null)
+  const { data: log, isFetching } = useRunLog(open ? runId : null, 200, isRunning)
 
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -1090,7 +1090,7 @@ export function BacktestDetail() {
           )}
 
           {/* ── Logs ─────────────────────────────────────────────────────── */}
-          {runId && <LogsSection runId={runId} autoExpand={isFailed} />}
+          {runId && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} />}
         </div>
       )}
     </div>
