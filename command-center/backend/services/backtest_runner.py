@@ -141,15 +141,6 @@ async def _handle_complete(
     equity_curve = result.get("equity_curve", [])
     daily_pnl    = result.get("daily_pnl", [])
 
-    # Pull per-trade data from NT8 SA Trades export — richer than XML summary
-    try:
-        export_resp = await asyncio.to_thread(vps_client.export_trades)
-        csv_text = export_resp.get("csv", "")
-        if csv_text:
-            equity_curve, daily_pnl = parse_trades_csv(csv_text)
-    except Exception:
-        pass  # non-fatal — KPI summary still populates, charts show empty state
-
     # persist JSON files
     run_dir = _LAB_RESULTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)

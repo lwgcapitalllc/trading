@@ -448,28 +448,24 @@ def select_and_dump():
         return jsonify({"error": str(e)})
 
 
-_export_coords_cache: tuple | None = None   # cached after first successful discovery
-
 @app.route("/export-trades")
 def export_trades():
     """
     Export all trades from NT8 Strategy Analyzer Trades grid to CSV.
-    Switches Display→Trades, right-clicks grid, presses 'e' for Export immediately
-    (before the context menu can dismiss), handles the Export As dialog, and
-    returns the full CSV content.
+
+    Two-pass right-click: pass 1 opens the context menu and scans the NT8 UIA
+    tree for the Export menu item's absolute screen coordinates (menu closes
+    during the scan — that's fine). Pass 2 re-opens the menu and immediately
+    clicks the discovered coordinates. No caching — absolute coordinates drift
+    if the SA window moves between calls, causing misclicks on adjacent items.
     """
-    import os
-    out_dir  = NT8_DOCS / "lab_results"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = str(out_dir / "trades_export.csv")
     log = []
 
     def _dismiss_export_dialog(dt):
-        """Close any leftover Export As / Confirm Save As dialog so SA stays responsive."""
         for title in ["Export As", "Confirm Save As", "Confirm"]:
             try:
                 w = dt.window(title=title)
-                if w.exists(timeout=0.1):   # short timeout — dialog usually absent
+                if w.exists(timeout=0.1):
                     for btn in ["Cancel", "No", "OK"]:
                         try:
                             w.child_window(title=btn, control_type="Button").click_input()
@@ -483,20 +479,14 @@ def export_trades():
     try:
         from pywinauto import Desktop
         from pywinauto.keyboard import send_keys
+        import pywinauto.mouse as _mouse
 
-        dt  = Desktop(backend="uia")
-
-        # Dismiss any leftover Export As dialog before touching SA
+        dt = Desktop(backend="uia")
         _dismiss_export_dialog(dt)
         time.sleep(0.1)
 
-        sa  = dt.window(title_re=".*Strategy Analyzer.*")
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
-
-        # Restore if minimised — minimised windows return a garbage rectangle and
-        # absolute mouse coords land on the taskbar. restore() is a no-op when
-        # the window is already visible, so always call it.
-        import pywinauto.mouse as _mouse
         try:
             sa.restore()
             time.sleep(0.3)
@@ -504,57 +494,47 @@ def export_trades():
             pass
         log.append("SA found")
 
-        # Step 1: switch Display → Trades
+        # Switch Display → Trades
         sa.child_window(auto_id="dmsDisplay").click_input()
         time.sleep(0.5)
         sa.child_window(title="Trades", control_type="MenuItem", found_index=0).click_input()
         time.sleep(0.3)
         log.append("Display switched to Trades")
 
-        # Step 2: right-click in the trades panel using SA window coordinates
         sa.set_focus()
         time.sleep(0.1)
         sa_rect = sa.rectangle()
         rc_x = sa_rect.left + (sa_rect.right  - sa_rect.left) // 4
         rc_y = sa_rect.top  + int((sa_rect.bottom - sa_rect.top) * 0.55)
 
-        global _export_coords_cache
+        # Pass 1: open context menu, scan NT8 UIA tree for Export item coordinates.
+        # The scan dismisses the WPF popup via focus events — that's expected.
+        # We capture the absolute position before the menu closes.
         nt8 = sa.top_level_parent()
+        export_coords = None
+        menu_items    = []
+        _mouse.right_click(coords=(rc_x, rc_y))
+        for el in nt8.descendants():
+            try:
+                txt = (el.window_text() or "").strip()
+                ct  = str(getattr(el.element_info, "control_type", ""))
+                if ct == "MenuItem" and txt:
+                    menu_items.append(txt)
+                    if txt.startswith("Export") and export_coords is None:
+                        r = el.rectangle()
+                        if r.width() > 5:
+                            export_coords = ((r.left + r.right) // 2,
+                                             (r.top  + r.bottom) // 2)
+                            break
+            except Exception:
+                pass
+        log.append(f"Menu items: {menu_items}, Export coords: {export_coords}")
 
-        if _export_coords_cache:
-            # Fast path: coordinates known — skip discovery right-click entirely
-            export_coords = _export_coords_cache
-            log.append(f"Export coords from cache: {export_coords}")
-        else:
-            # Discovery pass: right-click once to get menu, scan for Export coords,
-            # stop immediately when found (menu closes during scan — that's fine).
-            export_coords = None
-            menu_items    = []
-            _mouse.right_click(coords=(rc_x, rc_y))
-            for el in nt8.descendants():
-                try:
-                    txt = (el.window_text() or "").strip()
-                    ct  = str(getattr(el.element_info, "control_type", ""))
-                    if ct == "MenuItem" and txt:
-                        menu_items.append(txt)
-                        if txt.startswith("Export") and export_coords is None:
-                            r = el.rectangle()
-                            if r.width() > 5:
-                                export_coords = ((r.left + r.right) // 2,
-                                                 (r.top  + r.bottom) // 2)
-                                break
-                except Exception:
-                    pass
-            log.append(f"Menu items: {menu_items}, Export coords: {export_coords}")
+        if export_coords is None:
+            send_keys("{ESCAPE}")
+            return jsonify({"error": "Export... not found", "log": log, "menu_items": menu_items})
 
-            if export_coords is None:
-                send_keys("{ESCAPE}")
-                return jsonify({"error": "Export... not found", "log": log, "menu_items": menu_items})
-
-            _export_coords_cache = export_coords   # cache for all future calls
-
-        # Right-click at the trades panel — menu appears at same position every time.
-        # 0.4s is enough for the WPF menu to fully render.
+        # Pass 2: re-open menu and immediately click Export at the discovered position.
         _mouse.right_click(coords=(rc_x, rc_y))
         time.sleep(0.4)
         _mouse.click(coords=export_coords)
