@@ -552,30 +552,13 @@ def export_trades():
         _mouse.click(coords=export_coords)
         log.append(f"Clicked Export at {export_coords} (2nd right-click)")
 
-        # Step 4: Export As dialog opens. Search the NT8 element tree for Save button
-        # (WPF dialogs may not appear as standalone top-level windows in dt.windows()).
+        # Step 4: Export As dialog opens instantly after clicking Export...
+        # Enter activates the default Save button; send it twice to also
+        # dismiss any overwrite confirmation that appears on repeat exports.
         time.sleep(2.0)
-        save_clicked = False
-        for el in nt8.descendants():
-            try:
-                txt = (el.window_text() or "").strip()
-                ct  = str(getattr(el.element_info, "control_type", ""))
-                if txt == "Save" and ct == "Button":
-                    el.click_input()
-                    save_clicked = True
-                    log.append("Clicked Save button in NT8 tree")
-                    break
-            except Exception:
-                pass
-
-        if not save_clicked:
-            # Fallback: Enter activates the default button in any dialog
-            send_keys("{ENTER}")
-            save_clicked = True
-            log.append("Pressed Enter (Save fallback)")
-
+        send_keys("{ENTER}")
+        log.append("Pressed Enter (Save)")
         time.sleep(0.8)
-        # Handle overwrite confirmation if file already exists
         send_keys("{ENTER}")
         log.append("Pressed Enter (overwrite confirm if any)")
 
