@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl http://localhost:*)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(screencapture *)",
+      "Bash(ssh -f -N -L * forexvps)",
+      "Bash(ssh forexvps \"netstat *\")",
+      "Bash(ssh forexvps \"schtasks /query *\")",
+      "Bash(ssh forexvps \"tasklist *\")",
+      "Bash(ssh forexvps \"dir *\")",
+      "Bash(ssh forexvps \"type *\")",
+      "Bash(ssh forexvps \"wmic *\")",
+      "Bash(ssh forexvps \"curl -s *\")"
+    ]
+  }
+}

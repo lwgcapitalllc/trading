@@ -479,172 +479,196 @@ def _parse_nt8_date(raw: str):
     return None
 
 
+def _parse_dollar(s: str) -> float:
+    """Parse NT8 dollar strings: '$594.00' → 594.0, '($2448.00)' → -2448.0."""
+    s = s.replace("$", "").replace(",", "").strip()
+    if s.startswith("(") and s.endswith(")"):
+        try:
+            return -float(s[1:-1])
+        except ValueError:
+            return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
 def _parse_trades_csv(csv_path: str) -> tuple:
     """
     Parse NT8-exported trades CSV → (equity_curve, daily_pnl).
-    NT8 column names vary; we try several known variants.
+    Uses 'Cum. net profit' for equity (authoritative cumulative) with
+    per-trade fields (direction, profit, exit_name) for frontend charts.
     Returns ([], []) on failure.
     """
     import csv as csv_mod
 
-    STARTING_EQUITY = 100_000.0
+    CUM_COLS  = ["Cum. net profit", "Cumulative Net Profit"]
     PNL_COLS  = ["Profit", "Net Profit", "P&L", "Net P&L"]
     DATE_COLS = ["Exit time", "Exit Time", "ExitTime", "Close Time", "Exit Date"]
+    DIR_COLS  = ["Market pos.", "Market Pos", "Direction", "Side"]
+    NAME_COLS = ["Exit name", "Exit Name", "ExitName"]
 
-    equity   = STARTING_EQUITY
-    equity_curve: list = [{"index": 0, "equity": STARTING_EQUITY}]
+    equity_curve: list = []
     daily_map: dict    = {}
 
     try:
         with open(csv_path, newline="", encoding="utf-8-sig") as f:
-            reader    = csv_mod.DictReader(f)
-            fields    = reader.fieldnames or []
-            pnl_col   = next((c for c in PNL_COLS  if c in fields), None)
-            date_col  = next((c for c in DATE_COLS if c in fields), None)
+            reader   = csv_mod.DictReader(f)
+            fields   = reader.fieldnames or []
+            cum_col  = next((c for c in CUM_COLS  if c in fields), None)
+            pnl_col  = next((c for c in PNL_COLS  if c in fields), None)
+            date_col = next((c for c in DATE_COLS if c in fields), None)
+            dir_col  = next((c for c in DIR_COLS  if c in fields), None)
+            name_col = next((c for c in NAME_COLS if c in fields), None)
 
-            if pnl_col is None:
+            if cum_col is None and pnl_col is None:
                 print(f"  [trades] No P&L column found. Available: {fields}")
                 return [], []
 
+            running = 0.0
             for i, row in enumerate(reader):
-                raw_pnl = row.get(pnl_col, "0").replace(",", "").replace("$", "").strip()
-                try:
-                    pnl = float(raw_pnl)
-                except ValueError:
-                    continue
+                trade_num = i + 1
+                pnl   = _parse_dollar(row.get(pnl_col,  "0")) if pnl_col  else 0.0
+                cum   = _parse_dollar(row.get(cum_col,  "0")) if cum_col  else None
+                equity = round(cum, 2) if cum is not None else round(running + pnl, 2)
+                if cum is None:
+                    running += pnl
 
-                equity += pnl
-                equity_curve.append({"index": i + 1, "equity": round(equity, 2)})
+                direction = (row.get(dir_col,  "") or "").strip() if dir_col  else None
+                exit_name = (row.get(name_col, "") or "").strip() if name_col else None
+                date_str  = _parse_nt8_date(row.get(date_col, "") if date_col else "")
 
-                if date_col:
-                    date_str = _parse_nt8_date(row.get(date_col, ""))
-                    if date_str:
-                        daily_map[date_str] = round(daily_map.get(date_str, 0.0) + pnl, 2)
+                equity_curve.append({
+                    "index":     trade_num,
+                    "equity":    equity,
+                    "date":      date_str,
+                    "direction": direction or None,
+                    "profit":    round(pnl, 2),
+                    "exit_name": exit_name or None,
+                })
+
+                if date_str:
+                    daily_map[date_str] = round(daily_map.get(date_str, 0.0) + pnl, 2)
 
     except Exception as e:
         print(f"  [trades] CSV parse error: {e}")
         return [], []
 
     daily_pnl = [{"date": d, "pnl": v} for d, v in sorted(daily_map.items())]
-    print(f"  [trades] Parsed {len(equity_curve)-1} trades, {len(daily_pnl)} trading days")
+    print(f"  [trades] Parsed {len(equity_curve)} trades, {len(daily_pnl)} trading days")
     return equity_curve, daily_pnl
 
 
 def _try_export_trades(sa, job_id: str) -> tuple:
     """
-    Attempt to export individual trades from NT8 Strategy Analyzer.
+    Export trades from NT8 Strategy Analyzer using two-pass right-click.
 
-    Approach:
-      1. Click the Trades tab in the SA panel
-      2. Try an Export toolbar button (several title variants)
-      3. If found: handle the SaveFileDialog and write CSV to job's output folder
-      4. If not found: fall back to right-click context menu on the data grid
-      5. Parse the resulting CSV into equity_curve + daily_pnl
+    NT8 uses WPF — context menus are not Win32 #32768 and UIA scanning of
+    nt8.descendants() dismisses open WPF popups before click_input() can fire.
+    Two-pass approach: pass 1 opens the menu and scans for Export's screen
+    coordinates (menu closes during scan — that's fine); pass 2 right-clicks
+    again and immediately clicks the cached position.
 
     Returns (equity_curve, daily_pnl) — both [] on any failure.
-    This is best-effort: a failure leaves the run complete with empty arrays.
     """
-    from pywinauto import Desktop
+    from pywinauto import mouse as _mouse, Desktop
+    import shutil
 
-    out_dir  = NT8_DOCS / "lab_results" / job_id
+    out_dir = NT8_DOCS / "lab_results" / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = str(out_dir / "trades.csv")
 
-    # ── 1. Switch Display dropdown to "Trades" ────────────────────────────────
-    # The Display control is auto_id="dmsDisplay" (Custom type, not ComboBox).
-    # Clicking it opens a dropdown whose items are MenuItems in the SA subtree.
-    display_switched = False
+    dt = Desktop(backend="uia")
+
+    def _dismiss(desktop):
+        for title in ["Export As", "Confirm Save As", "Confirm"]:
+            try:
+                w = desktop.window(title=title)
+                if w.exists(timeout=0.1):
+                    for btn in ["Cancel", "No", "OK"]:
+                        try:
+                            w.child_window(title=btn, control_type="Button").click_input()
+                            return
+                        except Exception:
+                            pass
+                    w.close()
+            except Exception:
+                pass
+
+    # Dismiss any leftover Export As dialog from a previous run
+    _dismiss(dt)
+    time.sleep(0.1)
+
+    # Switch Display to Trades
     try:
         sa.child_window(auto_id="dmsDisplay").click_input()
-        time.sleep(1.0)
-        sa.child_window(title="Trades", control_type="MenuItem", found_index=0).click_input()
         time.sleep(0.5)
-        display_switched = True
+        sa.child_window(title="Trades", control_type="MenuItem", found_index=0).click_input()
+        time.sleep(0.3)
         print("  [trades] Switched Display to 'Trades'")
     except Exception as e:
         print(f"  [trades] Display switch failed: {e}")
-
-    if not display_switched:
         return [], []
 
-    # ── 2. Try Export toolbar button (several known NT8 label variants) ───────
-    exported = False
-    for title in ["Export", "Export to File", "Export to CSV", "Save to File"]:
-        try:
-            btn = sa.child_window(title=title, control_type="Button")
-            if btn.exists(timeout=1):
-                btn.click_input()
-                time.sleep(0.6)
-                exported = True
-                break
-        except Exception:
-            continue
-
-    # ── 3. Fall back to right-click context menu on the data grid ─────────────
-    if not exported:
-        print("  [trades] Export button not found — trying right-click context menu")
-        try:
-            grid = None
-            for ct in ["DataGrid", "List", "ListView", "Table"]:
-                try:
-                    g = sa.child_window(control_type=ct)
-                    if g.exists(timeout=1):
-                        grid = g
-                        break
-                except Exception:
-                    continue
-
-            if grid is None:
-                print("  [trades] Could not find trades grid")
-                _dump_controls(sa)
-                return [], []
-
-            grid.right_click_input()
-            time.sleep(0.4)
-
-            ctx = Desktop(backend="uia").window(control_type="Menu")
-            for item in ["Export", "Export to CSV", "Export to File", "Save"]:
-                try:
-                    ctx.child_window(title=item).click_input()
-                    exported = True
-                    break
-                except Exception:
-                    continue
-        except Exception as e:
-            print(f"  [trades] Right-click approach failed: {e}")
-            _dump_controls(sa)
-            return [], []
-
-    if not exported:
-        print("  [trades] All export approaches exhausted")
-        _dump_controls(sa)
-        return [], []
-
-    # ── 4. Handle SaveFileDialog ──────────────────────────────────────────────
+    # Restore if minimized — minimized windows have invalid screen rect
     try:
-        dlg = Desktop(backend="uia").window(title_re=".*(Save|Export).*")
-        dlg.wait("visible", timeout=6)
+        sa.restore()
+        time.sleep(0.3)
+    except Exception:
+        pass
 
-        # Standard Windows file dialog: AutomationId "1148" is the filename Edit
-        try:
-            fname = dlg.child_window(auto_id="1148", control_type="Edit")
-        except Exception:
-            fname = dlg.child_window(control_type="Edit")
+    # Right-click target: center-left of SA window, lower half (data area)
+    sa_rect = sa.rectangle()
+    rc_x = sa_rect.left + (sa_rect.right - sa_rect.left) // 4
+    rc_y = sa_rect.top + int((sa_rect.bottom - sa_rect.top) * 0.55)
 
-        fname.set_edit_text(csv_path)
-        send_keys("{ENTER}")
-        time.sleep(2.5)
-    except Exception as e:
-        print(f"  [trades] SaveFileDialog handling failed: {e}")
+    # Pass 1: open context menu, scan NT8 tree for Export menu item coordinates
+    nt8 = sa.top_level_parent()
+    export_coords = None
+    _mouse.right_click(coords=(rc_x, rc_y))
+    time.sleep(0.3)
+    for el in nt8.descendants():
+        txt = (el.window_text() or "").strip()
+        ct  = str(getattr(el.element_info, "control_type", ""))
+        if ct == "MenuItem" and txt.startswith("Export"):
+            r = el.rectangle()
+            if r.width() > 5:
+                export_coords = ((r.left + r.right) // 2, (r.top + r.bottom) // 2)
+                break
+
+    if export_coords is None:
+        print("  [trades] Export menu item not found in NT8 UIA tree")
+        send_keys("{ESC}")
         return [], []
 
-    # ── 5. Parse ──────────────────────────────────────────────────────────────
-    import os as _os
-    if not _os.path.exists(csv_path):
-        print(f"  [trades] CSV not written to {csv_path}")
+    # Pass 2: right-click again, immediately click Export at cached coords
+    _mouse.right_click(coords=(rc_x, rc_y))
+    time.sleep(0.4)
+    _mouse.click(coords=export_coords)
+    time.sleep(0.8)
+
+    # Enter twice: accept default filename, confirm overwrite
+    send_keys("{ENTER}")
+    time.sleep(0.3)
+    send_keys("{ENTER}")
+    time.sleep(1.0)
+
+    _dismiss(dt)
+
+    # Find the CSV NT8 just wrote (default name: "NinjaTrader Grid *.csv" in Documents)
+    docs = Path.home() / "Documents"
+    cutoff = time.time() - 30
+    csvs = [p for p in docs.glob("NinjaTrader Grid*.csv") if p.stat().st_mtime >= cutoff]
+    if not csvs:
+        # Fallback: newest regardless of age
+        csvs = sorted(docs.glob("NinjaTrader Grid*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)[:1]
+
+    if not csvs:
+        print("  [trades] No CSV found after export")
         return [], []
 
-    return _parse_trades_csv(csv_path)
+    csv_path = max(csvs, key=lambda p: p.stat().st_mtime)
+    shutil.copy(str(csv_path), str(out_dir / "trades.csv"))
+    return _parse_trades_csv(str(csv_path))
 
 
 def write_job_result(job_id: str, spec: dict, kpis: dict,
