@@ -481,51 +481,42 @@ def export_trades():
 
         dt  = Desktop(backend="uia")
 
-        # Dismiss any Export As dialog left over from a previous run before touching SA
+        # Dismiss any leftover Export As dialog before touching SA
         _dismiss_export_dialog(dt)
-        time.sleep(0.3)
+        time.sleep(0.1)
 
         sa  = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
+
+        # Restore if minimised — minimised windows have an invalid rectangle and
+        # absolute mouse coords will land on the taskbar instead of the SA grid.
+        import pywinauto.mouse as _mouse
+        if sa.is_minimized():
+            sa.restore()
+            time.sleep(0.4)
         log.append("SA found")
 
         # Step 1: switch Display → Trades
         sa.child_window(auto_id="dmsDisplay").click_input()
-        time.sleep(1.0)
+        time.sleep(0.5)
         sa.child_window(title="Trades", control_type="MenuItem", found_index=0).click_input()
-        time.sleep(0.8)
+        time.sleep(0.3)
         log.append("Display switched to Trades")
 
-        # Step 2: right-click inside the trades panel of the SA window.
-        # Use SA window coords directly — grid.rectangle() returns (0,0,0,0) for
-        # virtual elements and causes right-click to land on the desktop.
-        import pywinauto.mouse as _mouse
-
+        # Step 2: right-click in the trades panel using SA window coordinates
         sa.set_focus()
-        time.sleep(0.2)
+        time.sleep(0.1)
         sa_rect = sa.rectangle()
-        sa_w    = sa_rect.right  - sa_rect.left
-        sa_h    = sa_rect.bottom - sa_rect.top
-        # Trades grid is the left ~60% of SA; click at 25% across, 55% down
-        rc_x = sa_rect.left + sa_w // 4
-        rc_y = sa_rect.top  + int(sa_h * 0.55)
-        _mouse.right_click(coords=(rc_x, rc_y))
-        time.sleep(0.4)
-        _alog(f"export-trades: right-clicked SA at ({rc_x},{rc_y})")
-        log.append(f"Right-clicked SA trades area at ({rc_x},{rc_y})")
+        rc_x = sa_rect.left + (sa_rect.right  - sa_rect.left) // 4
+        rc_y = sa_rect.top  + int((sa_rect.bottom - sa_rect.top) * 0.55)
 
-        # Step 3b: find Export... in the WPF context menu.
-        # NT8 uses WPF — context menus are NOT class #32768. They live in NT8's
-        # element tree. Capture screen coords immediately on find; the scan itself
-        # can dismiss the menu by the time click_input() runs, so we click by
-        # absolute screen position instead of calling element.click_input().
-        # The nt8.descendants() scan triggers UIA focus events that close the WPF
-        # context menu before we can click. Strategy: first right-click to discover
-        # Export's screen coordinates (menu may close during scan — that's ok),
-        # then right-click a second time and immediately click the known position.
+        # First right-click: discover Export's screen coordinates via NT8 element tree.
+        # The scan itself closes the WPF context menu (UIA focus events) — that's fine.
+        # Stop scanning the moment Export is found to minimise scan time.
         nt8           = sa.top_level_parent()
         export_coords = None
         menu_items    = []
+        _mouse.right_click(coords=(rc_x, rc_y))
         for el in nt8.descendants():
             try:
                 txt = (el.window_text() or "").strip()
@@ -537,32 +528,29 @@ def export_trades():
                         if r.width() > 5:
                             export_coords = ((r.left + r.right) // 2,
                                              (r.top  + r.bottom) // 2)
+                            break   # stop scan immediately — no need to traverse rest
             except Exception:
                 pass
-        log.append(f"Menu items: {menu_items}")
+        log.append(f"Menu items: {menu_items}, Export coords: {export_coords}")
 
         if export_coords is None:
             send_keys("{ESCAPE}")
             return jsonify({"error": "Export... not found or rect invalid", "log": log, "menu_items": menu_items})
 
-        # Second right-click at the same spot — menu reappears at the same position.
-        # Wait 0.6s so menu is fully rendered, then click pre-scanned coordinates.
+        # Second right-click at same spot — menu appears at same position.
+        # 0.4s is enough for the WPF menu to render before we click Export.
         _mouse.right_click(coords=(rc_x, rc_y))
-        time.sleep(0.6)
+        time.sleep(0.4)
         _mouse.click(coords=export_coords)
-        log.append(f"Clicked Export at {export_coords} (2nd right-click)")
+        log.append(f"Clicked Export at {export_coords}")
 
-        # Step 4: Export As dialog opens instantly after clicking Export...
-        # Enter activates the default Save button; send it twice to also
-        # dismiss any overwrite confirmation that appears on repeat exports.
-        time.sleep(2.0)
-        send_keys("{ENTER}")
-        log.append("Pressed Enter (Save)")
+        # Step 3: Export As dialog — Enter saves, second Enter handles overwrite confirm.
         time.sleep(0.8)
         send_keys("{ENTER}")
-        log.append("Pressed Enter (overwrite confirm if any)")
+        time.sleep(0.3)
+        send_keys("{ENTER}")
 
-        time.sleep(1.2)
+        time.sleep(0.4)
 
         # Always close the Export As dialog before returning (clean state for next run)
         _dismiss_export_dialog(dt)
