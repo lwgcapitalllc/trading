@@ -1,15 +1,15 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
   CheckCircle, XCircle, Minus,
 } from 'lucide-react'
 import {
-  AreaChart, Area, BarChart, Bar,
+  AreaChart, Area, BarChart, Bar, PieChart, Pie,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import { useBacktestRun, useRunLog } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress } from '@/hooks/useLab'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -229,8 +229,11 @@ function KpiGrid({ run, fallback }: { run: Run; fallback: FallbackMetrics }) {
 function EquityCurveChart({ data }: { data: EquityPoint[] }) {
   if (!data.length) {
     return (
-      <div className="h-[320px] flex items-center justify-center text-text-tertiary text-[13px]">
-        No equity curve data
+      <div className="h-[220px] flex flex-col items-center justify-center gap-2 text-center px-6">
+        <div className="text-text-secondary text-[13px] font-medium">No equity curve yet</div>
+        <div className="text-text-tertiary text-[11px] leading-relaxed max-w-xs">
+          NT8 exports summary statistics only. Re-run the backtest — the runner will attempt to extract per-trade data from the NT8 Trades tab.
+        </div>
       </div>
     )
   }
@@ -298,8 +301,9 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
 function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number | null }) {
   if (!data.length) {
     return (
-      <div className="h-[260px] flex items-center justify-center text-text-tertiary text-[13px]">
-        No daily P&L data
+      <div className="h-[160px] flex flex-col items-center justify-center gap-2 text-center px-6">
+        <div className="text-text-secondary text-[13px] font-medium">No daily P&L data yet</div>
+        <div className="text-text-tertiary text-[11px]">Available once per-trade data is extracted from NT8.</div>
       </div>
     )
   }
@@ -347,6 +351,107 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+  )
+}
+
+// ── Win/Loss donut ────────────────────────────────────────────────────────────
+
+function WinLossChart({ winCount, totalTrades }: { winCount: number; totalTrades: number }) {
+  const lossCount = totalTrades - winCount
+  const data = [
+    { name: 'Wins',   value: winCount  },
+    { name: 'Losses', value: lossCount },
+  ]
+  const COLORS = ['#00ff7f', '#ff3b5c']
+  const OPACITY = [0.85, 0.75]
+
+  return (
+    <>
+      <ResponsiveContainer width="100%" height={190}>
+        <PieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            innerRadius={52}
+            outerRadius={72}
+            dataKey="value"
+            stroke="transparent"
+            paddingAngle={2}
+          >
+            {data.map((_, i) => (
+              <Cell key={i} fill={COLORS[i]} fillOpacity={OPACITY[i]} />
+            ))}
+          </Pie>
+          <Tooltip
+            contentStyle={{ background: '#181828', border: '1px solid #2a2a4a', borderRadius: 6, fontSize: 12 }}
+            formatter={(v: number, n: string) => [v, n]}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="flex justify-center gap-6 text-[11px] -mt-2">
+        <span className="flex items-center gap-[5px]">
+          <span className="w-[8px] h-[8px] rounded-full bg-pos-text inline-block" />
+          <span className="text-pos-text font-semibold">{winCount}</span>
+          <span className="text-text-tertiary">wins</span>
+        </span>
+        <span className="flex items-center gap-[5px]">
+          <span className="w-[8px] h-[8px] rounded-full bg-neg-text inline-block" />
+          <span className="text-neg-text font-semibold">{lossCount}</span>
+          <span className="text-text-tertiary">losses</span>
+        </span>
+      </div>
+    </>
+  )
+}
+
+// ── Payoff chart ──────────────────────────────────────────────────────────────
+
+function PayoffChart({
+  avgWin, avgLoss, winRate,
+}: { avgWin: number; avgLoss: number; winRate: number }) {
+  const absLoss = Math.abs(avgLoss)
+  const ev = winRate * avgWin + (1 - winRate) * avgLoss
+  const data = [
+    { name: 'Avg Win',  value: avgWin,   fill: '#00ff7f' },
+    { name: 'Avg Loss', value: absLoss,  fill: '#ff3b5c' },
+  ]
+  return (
+    <>
+      <ResponsiveContainer width="100%" height={110}>
+        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 50, bottom: 0, left: 0 }}
+          barCategoryGap="35%">
+          <XAxis
+            type="number"
+            tick={{ fill: '#6b7280', fontSize: 10 }}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={(v: number) => `$${v.toFixed(0)}`}
+          />
+          <YAxis
+            type="category"
+            dataKey="name"
+            tick={{ fill: '#9ca3af', fontSize: 11 }}
+            axisLine={false}
+            tickLine={false}
+            width={64}
+          />
+          <Tooltip
+            contentStyle={{ background: '#181828', border: '1px solid #2a2a4a', borderRadius: 6, fontSize: 12 }}
+            formatter={(v: number, n: string) => [`$${v.toFixed(2)}`, n]}
+          />
+          <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+            {data.map((d, i) => <Cell key={i} fill={d.fill} fillOpacity={0.85} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      <div className="text-[11px] text-text-tertiary text-center mt-3">
+        Expected value per trade:{' '}
+        <span className={ev >= 0 ? 'text-pos-text font-semibold' : 'text-neg-text font-semibold'}>
+          {ev >= 0 ? '+' : ''}${ev.toFixed(2)}
+        </span>
+      </div>
+    </>
   )
 }
 
@@ -439,17 +544,62 @@ function EvalRow({
 
 // ── Running banner ────────────────────────────────────────────────────────────
 
-function RunningBanner({ pct: p }: { pct: number }) {
+const RUN_STEPS = [
+  { label: 'Connect',   startPct: 0  },
+  { label: 'Configure', startPct: 20 },
+  { label: 'Run',       startPct: 30 },
+  { label: 'Results',   startPct: 70 },
+  { label: 'Evaluate',  startPct: 95 },
+]
+
+function RunningBanner({ pct, message }: { pct: number; message: string }) {
+  const activeIdx = RUN_STEPS.reduce((best, step, i) => pct >= step.startPct ? i : best, 0)
+
   return (
-    <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 py-3 flex items-center gap-3">
-      <span className="w-2 h-2 rounded-full bg-accent animate-pulse flex-shrink-0" />
-      <div className="flex-1">
-        <div className="text-[13px] font-medium text-accent">Backtest running…</div>
-        <div className="mt-2 h-[3px] bg-bg-surface-2 rounded-full overflow-hidden">
-          <div className="h-full bg-accent rounded-full transition-all duration-500" style={{ width: `${p}%` }} />
-        </div>
+    <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 py-4 space-y-3">
+      {/* Step trail */}
+      <div className="flex items-end gap-0">
+        {RUN_STEPS.map((step, i) => {
+          const done   = i < activeIdx
+          const active = i === activeIdx
+          return (
+            <Fragment key={step.label}>
+              <div className="flex flex-col items-center gap-[5px]">
+                <span className={`text-[9px] whitespace-nowrap ${
+                  done   ? 'text-pos-text' :
+                  active ? 'text-accent font-semibold' :
+                           'text-text-tertiary'
+                }`}>{step.label}</span>
+                <span className={`w-[7px] h-[7px] rounded-full flex-shrink-0 ${
+                  done   ? 'bg-pos-text' :
+                  active ? 'bg-accent animate-pulse' :
+                           'border border-border-default'
+                }`} />
+              </div>
+              {i < RUN_STEPS.length - 1 && (
+                <div className={`flex-1 h-[1px] mb-[3px] mx-1 ${done ? 'bg-pos-text/40' : 'bg-border-subtle'}`} />
+              )}
+            </Fragment>
+          )
+        })}
       </div>
-      <span className="text-accent font-mono tabular-nums text-[13px]">{p}%</span>
+
+      {/* Progress bar */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-[3px] bg-bg-surface rounded-full overflow-hidden">
+          <div
+            className="h-full bg-accent rounded-full transition-all duration-700"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className="text-accent font-mono tabular-nums text-[12px] flex-shrink-0">{pct}%</span>
+      </div>
+
+      {/* Current step message */}
+      <div className="flex items-center gap-2">
+        <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse flex-shrink-0" />
+        <span className="text-[12px] text-text-secondary">{message || 'Starting…'}</span>
+      </div>
     </div>
   )
 }
@@ -567,6 +717,7 @@ export function BacktestDetail() {
   const { runId } = useParams<{ runId: string }>()
   const navigate  = useNavigate()
   const { data: run, isLoading } = useBacktestRun(runId ?? null)
+  const { data: progress }       = useLabProgress()
 
   const fallback = useMemo(
     () => computeFallbacks(run?.daily_pnl ?? []),
@@ -576,6 +727,9 @@ export function BacktestDetail() {
   const isRunning  = run?.status === 'running'
   const isFailed   = run?.status.startsWith('failed') ?? false
   const isComplete = run?.status === 'complete'
+
+  const runPct     = isRunning ? (progress?.pct ?? 0) : 0
+  const runMessage = isRunning ? (progress?.message ?? 'Starting…') : ''
 
   return (
     <div>
@@ -616,7 +770,7 @@ export function BacktestDetail() {
           </div>
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
-          {isRunning && <RunningBanner pct={0} />}
+          {isRunning && <RunningBanner pct={runPct} message={runMessage} />}
           {isFailed  && <FailureBanner run={run} />}
 
           {/* ── Performance metrics ───────────────────────────────────────── */}
@@ -627,10 +781,31 @@ export function BacktestDetail() {
             </div>
           )}
 
-          {/* ── Equity curve (hero) ───────────────────────────────────────── */}
-          {isComplete && run.equity_curve.length > 0 && (
+          {/* ── Performance breakdown (from aggregate KPIs) ───────────────── */}
+          {isComplete && run.win_count != null && run.trade_count != null && (
             <div>
-              <SectionLabel>Equity curve — trade-by-trade</SectionLabel>
+              <SectionLabel>Performance breakdown</SectionLabel>
+              <div className={`grid gap-4 ${run.avg_win != null && run.avg_loss != null ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 max-w-xs'}`}>
+                <div className="bg-bg-surface border border-border-subtle rounded-lg px-5 py-4">
+                  <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-1">Win / Loss Split</div>
+                  <WinLossChart winCount={run.win_count} totalTrades={run.trade_count} />
+                </div>
+                {run.avg_win != null && run.avg_loss != null && (
+                  <div className="bg-bg-surface border border-border-subtle rounded-lg px-5 py-4">
+                    <div className="text-[10px] text-text-secondary uppercase tracking-[0.6px] mb-1">Payoff Comparison</div>
+                    <div className="mt-[52px]">
+                      <PayoffChart avgWin={run.avg_win} avgLoss={run.avg_loss} winRate={run.win_rate ?? 0} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Equity curve ──────────────────────────────────────────────── */}
+          {isComplete && (
+            <div>
+              <SectionLabel>Equity curve</SectionLabel>
               <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 py-4">
                 <EquityCurveChart data={run.equity_curve} />
               </div>
@@ -638,7 +813,7 @@ export function BacktestDetail() {
           )}
 
           {/* ── Daily P&L bars ────────────────────────────────────────────── */}
-          {isComplete && run.daily_pnl.length > 0 && (
+          {isComplete && (
             <div>
               <SectionLabel>Daily P&amp;L</SectionLabel>
               <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 py-4">

@@ -174,12 +174,16 @@ function Divider() {
   return <div className="border-t border-border-subtle" />
 }
 
-function PresetBtn({ label, onClick }: { label: string; onClick: () => void }) {
+function PresetBtn({ label, active, onClick }: { label: string; active?: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="px-[10px] py-[3px] rounded text-[11px] text-text-tertiary hover:text-accent hover:bg-accent/10 border border-border-subtle hover:border-accent/30 transition-colors"
+      className={`px-[10px] py-[3px] rounded text-[11px] border transition-colors ${
+        active
+          ? 'text-accent bg-accent/10 border-accent/50'
+          : 'text-text-tertiary hover:text-accent hover:bg-accent/10 border-border-subtle hover:border-accent/30'
+      }`}
     >
       {label}
     </button>
@@ -229,8 +233,21 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     : instrumentSymbol
 
   // ── Period ───────────────────────────────────────────────────────────────────
-  const [startDate, setStartDate] = useState(yearsAgo(1))
-  const [endDate, setEndDate]     = useState(today())
+  const todayStr = useMemo(() => today(), [])
+  const presets = useMemo(() => [
+    { label: '1Y',  start: yearsAgo(1),    end: todayStr },
+    { label: '3Y',  start: yearsAgo(3),    end: todayStr },
+    { label: '5Y',  start: yearsAgo(5),    end: todayStr },
+    { label: 'All', start: '2019-01-01',   end: todayStr },
+  ], [todayStr])
+
+  const [startDate, setStartDate] = useState(() => yearsAgo(1))
+  const [endDate, setEndDate]     = useState(() => today())
+
+  const activePreset = useMemo(() => {
+    const match = presets.find(p => p.start === startDate && p.end === endDate)
+    return match?.label ?? null
+  }, [presets, startDate, endDate])
 
   // ── Strategy params ──────────────────────────────────────────────────────────
   const [params, setParams] = useState<Record<string, number | boolean | string>>(() => {
@@ -444,10 +461,14 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <p className="text-[11px] text-neg-text mb-2">Start must be before end.</p>
             )}
             <div className="flex gap-2">
-              <PresetBtn label="1Y"  onClick={() => { setStartDate(yearsAgo(1));  setEndDate(today()) }} />
-              <PresetBtn label="3Y"  onClick={() => { setStartDate(yearsAgo(3));  setEndDate(today()) }} />
-              <PresetBtn label="5Y"  onClick={() => { setStartDate(yearsAgo(5));  setEndDate(today()) }} />
-              <PresetBtn label="All" onClick={() => { setStartDate('2019-01-01'); setEndDate(today()) }} />
+              {presets.map(p => (
+                <PresetBtn
+                  key={p.label}
+                  label={p.label}
+                  active={activePreset === p.label}
+                  onClick={() => { setStartDate(p.start); setEndDate(p.end) }}
+                />
+              ))}
             </div>
           </div>
 
