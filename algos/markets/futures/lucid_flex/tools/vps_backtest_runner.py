@@ -550,46 +550,79 @@ def _try_export_trades(sa, job_id: str) -> tuple:
     csv_path = str(out_dir / "trades.csv")
 
     # ── 1. Click Trades tab ───────────────────────────────────────────────────
-    # Use descendants() to scan the entire SA window tree — avoids guessing
-    # which container holds the tabs (saTabControl, splitPane, etc. vary by NT8 build).
+    # NT8 wraps results in an outer "Analyzer" TabItem; the inner result tabs
+    # (Trades, Performance, etc.) are only accessible after clicking that outer tab.
     tab_found = False
-    try:
-        all_tabs = sa.descendants(control_type="TabItem")
-        tab_titles = []
-        for t in all_tabs:
-            try:
-                tab_titles.append(t.window_text())
-            except Exception:
-                tab_titles.append("<?>")
-        print(f"  [trades] Found tab items: {tab_titles}")
 
-        for t, title in zip(all_tabs, tab_titles):
+    def _scan_tab_items(win) -> list[tuple]:
+        """Return list of (control, title) for all TabItem descendants."""
+        items = []
+        try:
+            for t in win.descendants(control_type="TabItem"):
+                try:
+                    items.append((t, t.window_text()))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return items
+
+    try:
+        top_tabs = _scan_tab_items(sa)
+        print(f"  [trades] Top-level tabs: {[t for _, t in top_tabs]}")
+
+        # Click outer "Analyzer" tab if present — reveals inner result tabs
+        for ctrl, title in top_tabs:
+            if "analyzer" in title.lower():
+                ctrl.click_input()
+                time.sleep(1.2)
+                print(f"  [trades] Clicked outer tab '{title}', rescanning")
+                top_tabs = _scan_tab_items(sa)
+                print(f"  [trades] Inner tabs after click: {[t for _, t in top_tabs]}")
+                break
+
+        # Find the Trades tab in whatever is now visible
+        for ctrl, title in top_tabs:
             if "trade" in title.lower():
-                t.click_input()
+                ctrl.click_input()
                 time.sleep(0.8)
                 tab_found = True
                 print(f"  [trades] Clicked tab '{title}'")
                 break
     except Exception as e:
-        print(f"  [trades] descendants() scan failed: {e}")
+        print(f"  [trades] TabItem scan failed: {e}")
 
-    # Fallback: try known exact titles via child_window if descendants scan found nothing
+    # Broader fallback — NT8 may use Button/ListItem for inner tabs
     if not tab_found:
-        for tab_title in ["Trades", "All Trades"]:
+        print("  [trades] Trying broader control-type search for Trades")
+        for ct in ["Tab", "Button", "ListItem", "RadioButton", "Custom"]:
             try:
-                tab = sa.child_window(title=tab_title)
-                if tab.exists(timeout=1):
-                    tab.click_input()
-                    time.sleep(0.8)
-                    tab_found = True
-                    print(f"  [trades] Clicked tab '{tab_title}' via direct child_window")
+                for item in sa.descendants(control_type=ct):
+                    try:
+                        title = item.window_text()
+                        if "trade" in title.lower():
+                            print(f"  [trades] Found '{title}' as {ct}")
+                            item.click_input()
+                            time.sleep(0.8)
+                            tab_found = True
+                            break
+                    except Exception:
+                        continue
+                if tab_found:
                     break
             except Exception:
                 continue
 
     if not tab_found:
-        print("  [trades] Could not find Trades tab — dumping controls for diagnosis")
-        _dump_controls(sa)
+        print("  [trades] Could not find Trades tab — listing all named descendants")
+        try:
+            named = [(d.friendly_class_name(), d.window_text())
+                     for d in sa.descendants()
+                     if d.window_text().strip()]
+            for cls, title in named[:60]:
+                print(f"    {cls}: '{title}'")
+        except Exception as e:
+            print(f"  [trades] Descendant list failed: {e}")
         return [], []
 
     # ── 2. Try Export toolbar button (several known NT8 label variants) ───────

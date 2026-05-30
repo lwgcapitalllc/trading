@@ -33,6 +33,19 @@ function fmtPct(n: number | null): string {
   return `${(n * 100).toFixed(1)}%`
 }
 
+function fmtDuration(createdAt: string, completedAt: string | null): string {
+  if (!completedAt) return '—'
+  const secs = Math.round((new Date(completedAt).getTime() - new Date(createdAt).getTime()) / 1000)
+  if (secs < 0) return '—'
+  if (secs < 60) return `${secs}s`
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`
+  const h = Math.floor(m / 60)
+  const rm = m % 60
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`
+}
+
 // ── Status pill ───────────────────────────────────────────────────────────────
 
 const STATUS_STYLE: Record<string, string> = {
@@ -316,6 +329,7 @@ function RunsTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Duration</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Win%</th>
@@ -389,6 +403,9 @@ function RunRow({
       <td className="px-4 py-3 font-mono text-text-secondary">{run.instrument}</td>
       <td className="px-4 py-3 text-text-secondary">{fmtDate(run.created_at)}</td>
       <td className="px-4 py-3"><StatusPill status={run.status} /></td>
+      <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
+        {fmtDuration(run.created_at, run.completed_at)}
+      </td>
       <td className={`px-4 py-3 font-mono tabular-nums ${pnlClass}`}>
         {fmtMoney(run.net_pnl)}
       </td>
