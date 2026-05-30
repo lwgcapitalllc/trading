@@ -459,11 +459,32 @@ def export_trades():
     out_path = str(out_dir / "trades_export.csv")
     log = []
 
+    def _dismiss_export_dialog(dt):
+        """Close any leftover Export As / Confirm Save As dialog so SA stays responsive."""
+        for title in ["Export As", "Confirm Save As", "Confirm"]:
+            try:
+                w = dt.window(title=title)
+                if w.exists(timeout=0.5):
+                    for btn in ["Cancel", "No", "OK"]:
+                        try:
+                            w.child_window(title=btn, control_type="Button").click_input()
+                            return
+                        except Exception:
+                            pass
+                    w.close()
+            except Exception:
+                pass
+
     try:
         from pywinauto import Desktop
         from pywinauto.keyboard import send_keys
 
         dt  = Desktop(backend="uia")
+
+        # Dismiss any Export As dialog left over from a previous run before touching SA
+        _dismiss_export_dialog(dt)
+        time.sleep(0.3)
+
         sa  = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
         log.append("SA found")
@@ -563,6 +584,9 @@ def export_trades():
 
         time.sleep(1.2)
 
+        # Always close the Export As dialog before returning (clean state for next run)
+        _dismiss_export_dialog(dt)
+
         # Step 5: find the most recently created CSV in Documents (NT8 default save location)
         docs = Path.home() / "Documents"
         csvs = sorted(docs.glob("NinjaTrader Grid*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -581,6 +605,10 @@ def export_trades():
 
     except Exception as e:
         import traceback
+        try:
+            _dismiss_export_dialog(dt)
+        except Exception:
+            pass
         return jsonify({"error": str(e), "traceback": traceback.format_exc(), "log": log})
 
 
