@@ -515,25 +515,48 @@ def export_trades():
             send_keys("{ESCAPE}")
             return jsonify({"error": "Export MenuItem not found in NT8 tree", "log": log, "menu_items": menu_items})
 
-        export_el.click_input()
-        log.append("Clicked Export")
-        time.sleep(0.4)
+        # invoke() is the correct UIA action for a WPF MenuItem (click_input can miss)
+        try:
+            export_el.invoke()
+            log.append("Invoked Export")
+        except Exception:
+            export_el.click_input()
+            log.append("Clicked Export (fallback)")
+        time.sleep(0.5)
 
-        # Step 5: Export As dialog — type the full target path and press Enter
-        dlg = dt.window(title_re=".*(Export As|Export|Save As).*")
-        dlg.wait("visible", timeout=5)
+        # Step 4: Export As dialog
+        dlg = dt.window(title="Export As")
+        dlg.wait("visible", timeout=10)
         log.append(f"Dialog: '{dlg.window_text()}'")
 
-        try:
-            fname = dlg.child_window(auto_id="1148", control_type="Edit")
-        except Exception:
+        # Find the filename Edit field — try auto_id first, then first Edit control
+        fname = None
+        for aid in ["1148", "fileNameTextBox", "FILENAME"]:
+            try:
+                f = dlg.child_window(auto_id=aid, control_type="Edit")
+                if f.exists(timeout=0.3):
+                    fname = f
+                    log.append(f"Filename field via auto_id={aid}")
+                    break
+            except Exception:
+                pass
+        if fname is None:
             fname = dlg.child_window(control_type="Edit", found_index=0)
+            log.append("Filename field via first Edit")
+
+        # set_edit_text is more reliable than type_keys in file dialogs
         fname.click_input()
-        send_keys("^a")
         time.sleep(0.1)
-        fname.type_keys(out_path, with_spaces=True)
+        fname.set_edit_text(out_path)
         time.sleep(0.2)
-        send_keys("{ENTER}")
+
+        # Click Save explicitly rather than relying on Enter key
+        try:
+            dlg.child_window(title="Save", control_type="Button").click_input()
+            log.append("Clicked Save button")
+        except Exception:
+            send_keys("{ENTER}")
+            log.append("Pressed Enter (Save fallback)")
         time.sleep(1.5)
         log.append(f"Saved to {out_path}")
 
