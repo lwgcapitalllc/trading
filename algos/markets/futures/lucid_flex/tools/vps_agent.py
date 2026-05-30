@@ -488,12 +488,15 @@ def export_trades():
         sa  = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
 
-        # Restore if minimised — minimised windows have an invalid rectangle and
-        # absolute mouse coords will land on the taskbar instead of the SA grid.
+        # Restore if minimised — minimised windows return a garbage rectangle and
+        # absolute mouse coords land on the taskbar. restore() is a no-op when
+        # the window is already visible, so always call it.
         import pywinauto.mouse as _mouse
-        if sa.is_minimized():
+        try:
             sa.restore()
-            time.sleep(0.4)
+            time.sleep(0.3)
+        except Exception:
+            pass
         log.append("SA found")
 
         # Step 1: switch Display → Trades
