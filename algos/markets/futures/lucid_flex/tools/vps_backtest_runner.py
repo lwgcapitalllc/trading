@@ -418,7 +418,8 @@ def configure_from_spec(sa, spec: dict):
     pfx      = f"{strategy}PropertyGridEditorPDEX"
 
     # Strategy switch — NT8 rebuilds the property grid; 2s lets it settle
-    select_strategy(sa, strategy)
+    if not select_strategy(sa, strategy):
+        raise RuntimeError(f"Strategy '{strategy}' not found in NT8 — is it compiled?")
     time.sleep(2.0)
 
     set_instrument(sa, spec["instrument"])
@@ -566,17 +567,20 @@ def _try_export_trades(sa, job_id: str) -> tuple:
             pass
 
     if not display_switched:
-        # Fallback: NT8 WPF ComboBoxes return empty window_text(), so we can't identify
-        # the Display combo by its current value. Instead, click each ComboBox and check
-        # whether a "Trades" ListItem appears — that's the Display dropdown.
+        # NT8 WPF ComboBoxes return empty window_text(). The Display combo has no auto_id;
+        # all named combos are strategy/config controls — skip them to avoid leaving the SA
+        # configuration dirty between runs.
         try:
             dt = Desktop(backend="uia")
             for combo in sa.descendants(control_type="ComboBox"):
                 try:
+                    aid = combo.automation_id() or ""
+                    if aid:
+                        continue  # named → config control, never the Display combo
                     combo.click_input()
-                    time.sleep(0.4)
+                    time.sleep(0.5)
                     item = None
-                    # WPF dropdown popup may be a child of SA or a top-level Desktop window
+                    # WPF popup may be a child of SA or a top-level Desktop window
                     for root in [sa, dt]:
                         try:
                             candidate = root.child_window(title="Trades", control_type="ListItem")
@@ -589,12 +593,11 @@ def _try_export_trades(sa, job_id: str) -> tuple:
                         item.click_input()
                         time.sleep(0.8)
                         display_switched = True
-                        aid = combo.automation_id() or "<no_id>"
-                        print(f"  [trades] Switched Display to 'Trades' via ListItem (combo aid='{aid}')")
+                        print("  [trades] Switched Display to 'Trades' via ListItem click")
                         break
-                    # Not the Display combo — close dropdown and try the next
-                    send_keys("{ESCAPE}")
-                    time.sleep(0.15)
+                    # Not the Display combo — click again to close (safer than ESCAPE)
+                    combo.click_input()
+                    time.sleep(0.2)
                 except Exception:
                     continue
         except Exception as e:
@@ -731,7 +734,11 @@ def run_job_mode(job_id: str, spec_path: str):
     sa  = find_strategy_analyzer(app)
     _pct(20, "Configuring Strategy Analyzer")
 
-    configure_from_spec(sa, spec)
+    try:
+        configure_from_spec(sa, spec)
+    except RuntimeError as e:
+        print(f"  ERROR: {e}")
+        sys.exit(1)
     time.sleep(1)
 
     click_time = time.time()
