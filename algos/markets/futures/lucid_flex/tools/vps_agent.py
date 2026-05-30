@@ -475,44 +475,24 @@ def export_trades():
         time.sleep(0.8)
         log.append("Display switched to Trades")
 
-        # Step 2: find the trades grid (try common control types then descendants)
-        grid = None
-        for ct in ["DataGrid", "List", "ListView", "Table"]:
-            try:
-                g = sa.child_window(control_type=ct)
-                if g.exists(timeout=1):
-                    grid = g
-                    log.append(f"Grid found: control_type={ct}")
-                    break
-            except Exception:
-                pass
-
-        if grid is None:
-            for el in sa.descendants():
-                try:
-                    ct = str(getattr(el.element_info, "control_type", ""))
-                    if ct in ("DataGrid", "List", "ListView", "Table"):
-                        grid = el
-                        log.append(f"Grid found in descendants: control_type={ct}")
-                        break
-                except Exception:
-                    pass
-
-        if grid is None:
-            return jsonify({"error": "Could not find trades grid", "log": log})
-
-        # Step 3: right-click the grid — Windows context menus always use class '#32768'
+        # Step 2: right-click inside the trades panel of the SA window.
+        # Use SA window coords directly — grid.rectangle() returns (0,0,0,0) for
+        # virtual elements and causes right-click to land on the desktop.
         import pywinauto.mouse as _mouse
         from pywinauto.findwindows import find_windows
 
         sa.set_focus()
         time.sleep(0.2)
-        rect  = grid.rectangle()
-        mid_x = (rect.left + rect.right) // 2
-        mid_y = (rect.top  + rect.bottom) // 2 + 40  # below header
-        _mouse.right_click(coords=(mid_x, mid_y))
+        sa_rect = sa.rectangle()
+        sa_w    = sa_rect.right  - sa_rect.left
+        sa_h    = sa_rect.bottom - sa_rect.top
+        # Trades grid is the left ~60% of SA; click at 25% across, 55% down
+        rc_x = sa_rect.left + sa_w // 4
+        rc_y = sa_rect.top  + int(sa_h * 0.55)
+        _mouse.right_click(coords=(rc_x, rc_y))
         time.sleep(0.4)
-        log.append("Right-clicked grid")
+        _alog(f"export-trades: right-clicked SA at ({rc_x},{rc_y})")
+        log.append(f"Right-clicked SA trades area at ({rc_x},{rc_y})")
 
         # Step 4: find the context menu and click Export...
         menu_handles = find_windows(class_name="#32768")
