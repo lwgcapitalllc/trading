@@ -75,6 +75,19 @@ Special case — SmartMoney's `profile` tab requires `selectedCandidate` in sess
 
 ---
 
+## Live log streaming during active runs
+
+`useRunLog` accepts a third `live` boolean parameter. Pass `live={isRunning}` from the parent page so logs poll at 2 s during an active run and stop polling when the run completes:
+
+```tsx
+// In LogsSection or equivalent:
+const { data: log } = useRunLog(open ? runId : null, 200, isRunning)
+```
+
+Also auto-expand the log panel when `isRunning` is true (`autoExpand={isFailed || isRunning}`) so the user sees live output without clicking.
+
+---
+
 ## Hook conventions
 
 One hooks file per backend domain. Every hook wraps a single endpoint.

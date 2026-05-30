@@ -97,6 +97,28 @@ Never make a synchronous SSH call from a request handler that could take > 2s. B
 
 ---
 
+## NT8 Strategy Analyzer UI automation (vps_backtest_runner.py)
+
+Hard-won rules for pywinauto + NT8 WPF — violating these causes silent wrong-strategy runs or broken SA state:
+
+**ComboBox identification**
+- All NT8 WPF ComboBoxes return empty `window_text()` — you cannot identify them by their current value.
+- Named ComboBoxes (`auto_id != ''`) are all strategy/config controls (BacktestType, TradingHours, EntryHandling, etc.). **Never click them during trade export** — it corrupts SA configuration for the next run.
+- The Display combo (Summary/Analysis/Chart/Trades/…) always has an empty `auto_id`. Only scan unnamed ComboBoxes.
+- To identify the Display combo: click it, then look for a "Trades" item in the SA subtree or Desktop. Try `control_type="MenuItem"` first, then `"ListItem"`, then a broad `descendants()` scan by `window_text()`.
+- To close a dropdown without selecting: click the same combo again (toggle). **Do not use `send_keys("{ESCAPE}")`** — it sends ESCAPE to the active window and can dismiss unrelated dialogs.
+
+**Strategy selection**
+- `select_strategy()` returns `True/False`. If it returns `False`, the SA still has the previous strategy loaded.
+- `configure_from_spec()` raises `RuntimeError` on strategy-selection failure; `run_job_mode()` catches it and calls `sys.exit(1)`. **Never let a run proceed if strategy selection failed** — NT8 will silently run whatever was last loaded.
+- Strategy dropdown items are `control_type="MenuItem"`, not `ListItem`.
+
+**Timing**
+- After `select_strategy`, sleep 2–3 s — NT8 fully rebuilds the property grid and the UIA tree is temporarily invalid.
+- After clicking a WPF ComboBox to open it, sleep ≥ 0.7 s before searching for items — the popup renders asynchronously.
+
+---
+
 ## Background job pattern
 
 Smart-money `/run` is the canonical pattern:

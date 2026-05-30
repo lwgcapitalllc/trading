@@ -69,6 +69,7 @@ cd command-center
 | Smart Money — full pipeline UI (scan, terminal, rankings, profiles, disqualified, config, cache) | ✅ |
 | Bots — monitor, control (global + per-bot), configure (risk caps + deploy), users (Telegram) | ✅ |
 | Backtests lab — strategies, runs, firms tabs; run modal; strategy detail; verdict pills; delete | ✅ |
+| Backtests lab — runs tab duration column; prominent Stop button; live log streaming (2 s poll during active runs) | ✅ |
 | Stress Tests | 🔲 Stub |
 
 ---
