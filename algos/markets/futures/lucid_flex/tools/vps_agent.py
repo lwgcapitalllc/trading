@@ -522,65 +522,54 @@ def export_trades():
 
         _mouse.click(coords=export_coords)
         log.append(f"Clicked Export at {export_coords}")
-        time.sleep(0.5)
 
-        # Step 4: Export As dialog
-        dlg = dt.window(title="Export As")
-        dlg.wait("visible", timeout=10)
-        log.append(f"Dialog: '{dlg.window_text()}'")
+        # Step 4: wait for "Export As" dialog, then just click Save — don't touch filename.
+        # NT8 saves to Documents by default; we read back the newest CSV from there.
+        time.sleep(1.5)   # give dialog time to open
 
-        # Find the filename Edit field — try auto_id first, then first Edit control
-        fname = None
-        for aid in ["1148", "fileNameTextBox", "FILENAME"]:
-            try:
-                f = dlg.child_window(auto_id=aid, control_type="Edit")
-                if f.exists(timeout=0.3):
-                    fname = f
-                    log.append(f"Filename field via auto_id={aid}")
-                    break
-            except Exception:
-                pass
-        if fname is None:
-            fname = dlg.child_window(control_type="Edit", found_index=0)
-            log.append("Filename field via first Edit")
+        # Find whichever top-level window now has a Save button and click it
+        saved = False
+        for _ in range(8):
+            for w in dt.windows():
+                try:
+                    btn = w.child_window(title="Save", control_type="Button")
+                    if btn.exists(timeout=0.3):
+                        btn.click_input()
+                        log.append(f"Clicked Save in '{w.window_text()}'")
+                        saved = True
+                        break
+                except Exception:
+                    pass
+            if saved:
+                break
+            time.sleep(0.5)
 
-        # set_edit_text is more reliable than type_keys in file dialogs
-        fname.click_input()
-        time.sleep(0.1)
-        fname.set_edit_text(out_path)
-        time.sleep(0.2)
+        if not saved:
+            return jsonify({"error": "Save button not found in any dialog", "log": log})
 
-        # Click Save explicitly rather than relying on Enter key
-        try:
-            dlg.child_window(title="Save", control_type="Button").click_input()
-            log.append("Clicked Save button")
-        except Exception:
-            send_keys("{ENTER}")
-            log.append("Pressed Enter (Save fallback)")
         time.sleep(0.8)
 
-        # If file already exists NT8 shows a "Confirm Save As" overwrite dialog — dismiss it
-        for confirm_title in ["Confirm Save As", "Confirm", "Save As"]:
+        # Handle overwrite confirmation ("Yes" to replace existing file)
+        for w in dt.windows():
             try:
-                confirm = dt.window(title=confirm_title)
-                if confirm.exists(timeout=1.5):
-                    for btn in ["Yes", "OK"]:
-                        try:
-                            confirm.child_window(title=btn, control_type="Button").click_input()
-                            log.append(f"Overwrite confirmed ({btn})")
-                            break
-                        except Exception:
-                            pass
-                    break
+                for btn_title in ["Yes", "OK"]:
+                    btn = w.child_window(title=btn_title, control_type="Button")
+                    if btn.exists(timeout=0.5):
+                        btn.click_input()
+                        log.append(f"Overwrite confirmed via '{btn_title}'")
+                        break
             except Exception:
                 pass
 
-        time.sleep(1.0)
-        log.append(f"Saved to {out_path}")
+        time.sleep(1.2)
 
-        # Step 5: read and return the full CSV
-        if not os.path.exists(out_path):
-            return jsonify({"error": "CSV was not written to disk", "log": log})
+        # Step 5: find the most recently created CSV in Documents (NT8 default save location)
+        docs = Path.home() / "Documents"
+        csvs = sorted(docs.glob("NinjaTrader Grid*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not csvs:
+            return jsonify({"error": "No NinjaTrader Grid CSV found in Documents", "log": log})
+        out_path = str(csvs[0])
+        log.append(f"Found CSV: {csvs[0].name}")
 
         with open(out_path, encoding="utf-8", errors="replace") as f:
             content = f.read()
