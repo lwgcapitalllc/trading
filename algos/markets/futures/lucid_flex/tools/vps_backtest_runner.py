@@ -578,24 +578,45 @@ def _try_export_trades(sa, job_id: str) -> tuple:
                     if aid:
                         continue  # named → config control, never the Display combo
                     combo.click_input()
-                    time.sleep(0.5)
+                    time.sleep(0.8)  # allow WPF popup to fully render
                     item = None
-                    # WPF popup may be a child of SA or a top-level Desktop window
+
+                    # NT8 dropdowns use MenuItem in some panels, ListItem in others.
+                    # Try both; search SA subtree and Desktop (WPF popup may be top-level).
                     for root in [sa, dt]:
+                        for ctype in ["MenuItem", "ListItem"]:
+                            try:
+                                candidate = root.child_window(title="Trades", control_type=ctype)
+                                if candidate.exists(timeout=0.4):
+                                    item = candidate
+                                    break
+                            except Exception:
+                                pass
+                        if item:
+                            break
+
+                    # Broad fallback: walk the SA tree for any control titled "Trades"
+                    if not item:
                         try:
-                            candidate = root.child_window(title="Trades", control_type="ListItem")
-                            if candidate.exists(timeout=0.3):
-                                item = candidate
-                                break
+                            for desc in sa.descendants():
+                                try:
+                                    if desc.window_text() == "Trades":
+                                        ctype = getattr(desc.element_info, "control_type", "?")
+                                        print(f"  [trades] Found 'Trades' (type={ctype}) via descendants scan")
+                                        item = desc
+                                        break
+                                except Exception:
+                                    pass
                         except Exception:
                             pass
+
                     if item:
                         item.click_input()
                         time.sleep(0.8)
                         display_switched = True
-                        print("  [trades] Switched Display to 'Trades' via ListItem click")
+                        print("  [trades] Switched Display to 'Trades'")
                         break
-                    # Not the Display combo — click again to close (safer than ESCAPE)
+                    # Not the Display combo — click again to close
                     combo.click_input()
                     time.sleep(0.2)
                 except Exception:
@@ -604,7 +625,7 @@ def _try_export_trades(sa, job_id: str) -> tuple:
             print(f"  [trades] ComboBox click-scan failed: {e}")
 
     if not display_switched:
-        print("  [trades] Could not switch Display to Trades — no combo opened a 'Trades' ListItem")
+        print("  [trades] Could not switch Display to Trades — no combo opened a 'Trades' item")
         return [], []
 
     # ── 2. Try Export toolbar button (several known NT8 label variants) ───────
