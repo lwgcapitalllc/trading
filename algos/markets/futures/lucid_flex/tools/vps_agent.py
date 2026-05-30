@@ -494,29 +494,34 @@ def export_trades():
         log.append(f"Right-clicked SA trades area at ({rc_x},{rc_y})")
 
         # Step 3b: find Export... in the WPF context menu.
-        # NT8 uses WPF so its context menus are NOT class #32768 (native Win32).
-        # They live in NT8's own element tree — scan for MenuItem elements.
-        nt8        = sa.top_level_parent()
-        export_el  = None
-        menu_items = []
+        # NT8 uses WPF — context menus are NOT class #32768. They live in NT8's
+        # element tree. Capture screen coords immediately on find; the scan itself
+        # can dismiss the menu by the time click_input() runs, so we click by
+        # absolute screen position instead of calling element.click_input().
+        nt8           = sa.top_level_parent()
+        export_coords = None
+        menu_items    = []
         for el in nt8.descendants():
             try:
                 txt = (el.window_text() or "").strip()
                 ct  = str(getattr(el.element_info, "control_type", ""))
                 if ct == "MenuItem" and txt:
                     menu_items.append(txt)
-                    if txt.startswith("Export") and export_el is None:
-                        export_el = el
+                    if txt.startswith("Export") and export_coords is None:
+                        r = el.rectangle()
+                        if r.width() > 5:
+                            export_coords = ((r.left + r.right) // 2,
+                                             (r.top  + r.bottom) // 2)
             except Exception:
                 pass
-        log.append(f"Menu items found: {menu_items}")
+        log.append(f"Menu items: {menu_items}")
 
-        if export_el is None:
+        if export_coords is None:
             send_keys("{ESCAPE}")
-            return jsonify({"error": "Export MenuItem not found in NT8 tree", "log": log, "menu_items": menu_items})
+            return jsonify({"error": "Export... not found or rect invalid", "log": log, "menu_items": menu_items})
 
-        export_el.click_input()
-        log.append("Clicked Export")
+        _mouse.click(coords=export_coords)
+        log.append(f"Clicked Export at {export_coords}")
         time.sleep(0.5)
 
         # Step 4: Export As dialog
