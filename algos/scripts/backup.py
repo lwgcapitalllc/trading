@@ -33,6 +33,7 @@ import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
+from nt8_backup import backup_nt8
 
 ALGOS_ROOT     = Path("C:/trading/algos")
 BACKUP_WORKTREE = Path("C:/trading-backup")   # git worktree for backups branch
@@ -146,7 +147,11 @@ def backup():
     if skipped:
         print(f"  Skipped {len(skipped)} missing files")
 
-    if not copied:
+    nt8 = backup_nt8(dest_root=BACKUP_WORKTREE)
+    if nt8["copied"]:
+        print(f"  NT8 backed up: {nt8['copied']}")
+
+    if not copied and not nt8["copied"]:
         print("Nothing to back up.")
         return
 
@@ -156,6 +161,7 @@ def backup():
             "backed_up_at": now,
             "files_backed_up": len(copied),
             "files": copied,
+            "nt8": nt8,
         }, f, indent=2)
 
     # Commit and push to backups branch

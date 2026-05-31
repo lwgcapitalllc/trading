@@ -32,6 +32,7 @@ algos/
 │   └── BOT_FFT_GUIDE.md
 ├── scripts/
 │   ├── backup.py                    ← Twice-daily backup to GitHub (backups branch)
+│   ├── nt8_backup.py                ← NT8 user-folder backup extension (called by backup.py)
 │   ├── deploy.py                    ← File staging tool
 │   └── cleanup_vps.bat
 ├── bots/
@@ -112,7 +113,9 @@ Critical VPS-only files are backed up to GitHub twice daily (midnight + noon CT)
 
 **What is backed up:** `bot_state.json`, `*_trades.json` (AI training data),
 `*_model.pkl` + `*_model_scaler.pkl` (trained AI models), `*_equity.json`,
-`*_daily.json`, `*_weekly.json`, `*_stdout.log`, `users.json`
+`*_daily.json`, `*_weekly.json`, `*_stdout.log`, `users.json`;
+NT8 user folder: `nt8/bin/Custom` (custom NinjaScript), `nt8/workspaces`,
+`nt8/templates`, `nt8/strategyanalyzerlogs` (backtest result XMLs)
 
 **Where:** The `backups` orphan branch of this repo (separate from `main`).
 Backup commits never land on `main`, so Mac development and VPS backups never conflict.

@@ -113,6 +113,12 @@ copy "C:\trading-restore\markets\fx\instances\gold_fft\fft_daily.json"          
 # Copy Telegram users
 copy "C:\trading-restore\users.json" "C:\trading\algos\users.json"
 
+# Copy NinjaTrader 8 backups (custom NinjaScript, workspaces, chart templates, backtest logs)
+xcopy /E /I /Y "C:\trading-restore\nt8\bin\Custom"           "C:\Users\trader\Documents\NinjaTrader 8\bin\Custom"
+xcopy /E /I /Y "C:\trading-restore\nt8\workspaces"           "C:\Users\trader\Documents\NinjaTrader 8\workspaces"
+xcopy /E /I /Y "C:\trading-restore\nt8\templates"            "C:\Users\trader\Documents\NinjaTrader 8\templates"
+xcopy /E /I /Y "C:\trading-restore\nt8\strategyanalyzerlogs" "C:\Users\trader\Documents\NinjaTrader 8\strategyanalyzerlogs"
+
 # Clean up staging directory
 rmdir /S /Q C:\trading-restore
 
