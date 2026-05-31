@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import type { Candidate } from '@/types'
 import { StatCard } from '@/components/StatCard'
+import { C } from '@/themes/chart'
 
 // ── Money formatters ──────────────────────────────────────────────────────────
 
@@ -128,14 +129,14 @@ export function CandidateProfile({ candidate, onBack }: { candidate: Candidate; 
               <AreaChart data={balanceData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="balGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#34d399" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#34d399" stopOpacity={0}/>
+                    <stop offset="5%" stopColor={C.pos} stopOpacity={0.18}/>
+                    <stop offset="95%" stopColor={C.pos} stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="month" hide />
                 <YAxis hide />
-                <Tooltip contentStyle={{ background: '#181a20', border: '1px solid #313542', borderRadius: 8, fontSize: 11 }} />
-                <Area type="monotone" dataKey="value" stroke="#34d399" fill="url(#balGrad)" strokeWidth={2} dot={false} />
+                <Tooltip contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 11 }} />
+                <Area type="monotone" dataKey="value" stroke={C.pos} fill="url(#balGrad)" strokeWidth={2} dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -148,9 +149,9 @@ export function CandidateProfile({ candidate, onBack }: { candidate: Candidate; 
               <LineChart data={winRateData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <XAxis dataKey="month" hide />
                 <YAxis hide domain={[70, 100]} />
-                <Tooltip contentStyle={{ background: '#181a20', border: '1px solid #313542', borderRadius: 8, fontSize: 11 }} formatter={(v: number) => [`${v.toFixed(1)}%`]} />
-                <ReferenceLine y={80} stroke="#d9a441" strokeDasharray="3 3" strokeOpacity={0.7} />
-                <Line type="monotone" dataKey="value" stroke="#2dd4bf" strokeWidth={2} dot={false} />
+                <Tooltip contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 11 }} formatter={(v: number) => [`${v.toFixed(1)}%`]} />
+                <ReferenceLine y={80} stroke={C.gold} strokeDasharray="3 3" strokeOpacity={0.7} />
+                <Line type="monotone" dataKey="value" stroke={C.accent} strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>

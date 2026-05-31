@@ -20,7 +20,6 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
       { key: 'ssh',     label: 'SSH',          state: 'grey', tip: 'checking…' },
       { key: 'agent',   label: 'VPS agent',    state: 'grey', tip: 'checking…' },
       { key: 'nt8',     label: 'NinjaTrader',  state: 'grey', tip: 'checking…' },
-      { key: 'compile', label: 'NT8 compile',  state: 'grey', tip: 'checking…' },
     ]
   }
 
@@ -60,18 +59,6 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
       label: 'NinjaTrader',
       state: nt8State,
       tip: nt8Tip,
-    },
-    {
-      key: 'compile',
-      label: 'NT8 compile',
-      state: !h.vps_agent
-        ? 'grey'
-        : h.last_compile_ok ? 'green' : 'red',
-      tip: !h.vps_agent
-        ? 'Compile: unknown — VPS agent unreachable'
-        : h.last_compile_ok
-        ? 'NT8 compile: clean — all strategies compiled'
-        : `NT8 compile: ${h.last_compile_errors.length} error${h.last_compile_errors.length !== 1 ? 's' : ''} in NinjaTrader`,
     },
   ]
 }

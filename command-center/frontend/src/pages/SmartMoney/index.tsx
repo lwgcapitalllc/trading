@@ -107,7 +107,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
   const wrapClass = isError
     ? 'border-neg bg-neg-muted'
     : isDone
-    ? 'border-pos/40 bg-pos-muted'
+    ? 'border-accent/40 bg-accent-muted'
     : isIdle
     ? 'border-border-subtle bg-bg-sunken'
     : 'border-border-default bg-bg-sunken'
@@ -124,7 +124,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
               <span className="relative inline-flex rounded-full h-[8px] w-[8px] bg-accent" />
             </span>
           )}
-          {isDone  && <span className="w-[8px] h-[8px] rounded-full bg-pos flex-shrink-0" />}
+          {isDone  && <span className="w-[8px] h-[8px] rounded-full bg-accent flex-shrink-0" />}
           {isError && <span className="w-[8px] h-[8px] rounded-full bg-neg flex-shrink-0" />}
           {isIdle  && <span className="w-[8px] h-[8px] rounded-full bg-text-tertiary/30 flex-shrink-0" />}
           <span className={`text-small font-semibold font-mono tracking-wide uppercase ${isIdle ? 'text-text-tertiary/50' : ''}`}>
@@ -136,7 +136,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
             </span>
           )}
           {isDone && (
-            <span className="text-micro text-pos font-mono">· run complete</span>
+            <span className="text-micro text-accent font-mono">· run complete</span>
           )}
           {isIdle && (
             <span className="text-micro text-text-tertiary/40 font-mono">· idle</span>
@@ -148,7 +148,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
             <span
               className={`font-semibold tabular-nums ${
                 isDone
-                  ? 'text-pos drop-shadow-glow-pos'
+                  ? 'text-accent drop-shadow-glow-accent'
                   : isError
                   ? 'text-neg drop-shadow-glow-neg'
                   : 'text-accent drop-shadow-glow-accent'
@@ -202,12 +202,12 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
                     <span className="block border-b border-dashed border-border-subtle" />
                   </span>
                   {isPass ? (
-                    <span className="text-pos font-semibold tracking-widest text-[10px] drop-shadow-glow-pos">
+                    <span className="text-accent font-semibold tracking-widest text-[10px] drop-shadow-glow-accent">
                       PASS ✓
                     </span>
                   ) : (
-                    <span className="text-text-tertiary tracking-widest text-[10px]">
-                      fail
+                    <span className="text-neg font-semibold tracking-widest text-[10px]">
+                      FAIL ✗
                     </span>
                   )}
                 </div>
@@ -252,9 +252,9 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
           <div className="flex flex-col justify-center h-full gap-[8px]">
             <div className="flex items-center gap-[10px] text-[12px] font-mono">
               {isRunning && <span className="text-accent text-[10px]">▶</span>}
-              {isDone    && <span className="text-pos">✓</span>}
+              {isDone    && <span className="text-accent">✓</span>}
               {isError   && <span className="text-neg">✗</span>}
-              <span className={isError ? 'text-neg-text' : isDone ? 'text-pos-text' : 'text-text-secondary'}>
+              <span className={isError ? 'text-neg-text' : isDone ? 'text-accent-text' : 'text-text-secondary'}>
                 {isError
                   ? (progress.message || 'Error')
                   : isDone
@@ -297,7 +297,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
             </span>
           )}
           {progress.qualified_so_far > 0 && (
-            <span className="text-pos tabular-nums drop-shadow-glow-pos">
+            <span className="text-accent tabular-nums drop-shadow-glow-accent">
               <span className="font-semibold">{progress.qualified_so_far}</span> qualified
             </span>
           )}
@@ -314,7 +314,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
         <div className="h-[3px] bg-bg-surface-2">
           <div
             className={`h-full transition-[width] duration-700 ease-out ${
-              isError ? 'bg-neg' : isDone ? 'bg-pos' : 'bg-accent'
+              isError ? 'bg-neg' : 'bg-accent'
             }`}
             style={{ width: `${Math.max(displayPct, isRunning ? 1 : 0)}%` }}
           />

@@ -66,7 +66,7 @@ function BotRow({ bot }: { bot: BotStatus }) {
 
 function JobPill({ job }: { job: { name: string; status: string } }) {
   const running = job.status === 'RUNNING'
-  const dotCls  = running ? 'bg-pos shadow-[0_0_4px_#34d399]' : 'bg-gold shadow-[0_0_4px_#d9a441]'
+  const dotCls  = running ? 'bg-pos shadow-[0_0_5px_#00ff7f]' : 'bg-gold shadow-[0_0_5px_#d9a441]'
   const textCls = running ? 'text-pos-text' : 'text-gold-text'
   const tip     = running ? 'Running' : 'Scheduled — waiting for next trigger'
   return (

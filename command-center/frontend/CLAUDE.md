@@ -157,9 +157,25 @@ Extend an existing component with a new prop before forking a near-duplicate.
 
 ---
 
-## Theme tokens — never hardcode colors
+## Theme system — how it works and how to swap
 
-`tailwind.config.js` is the source of truth.
+All color values live in **`src/themes/electric-indigo.js`** — the single source of truth.
+
+| File | What it feeds |
+|---|---|
+| `src/themes/electric-indigo.js` | Master color values |
+| `tailwind.config.js` | Imports the theme → builds all Tailwind tokens |
+| `src/themes/chart.ts` | Imports the theme → exports constants for Recharts (SVG can't use Tailwind classes) |
+| `src/index.css` | Body bg + scrollbar are hardcoded here to `bgBase` / `bgSurface2` — update manually when swapping |
+
+**To swap themes:**
+1. Create `src/themes/<new-theme>.js` with the same shape as `electric-indigo.js`
+2. Update the import in `tailwind.config.js` → `from './src/themes/<new-theme>.js'`
+3. Update the import in `src/themes/chart.ts` → `from './<new-theme>.js'`
+4. Update 3 values in `src/index.css` (body bg, scrollbar thumb, scrollbar border — comments label which theme key each maps to)
+5. Rebuild
+
+**Theme token classes — never hardcode colors in components:**
 
 | Use | Class |
 |---|---|
@@ -174,7 +190,9 @@ Extend an existing component with a new prop before forking a near-duplicate.
 | Warning | `text-warn-text`, `bg-warn-muted` |
 | Gold / highlight | `text-gold-text`, `bg-gold-muted` |
 
-No raw hex in JSX or inline styles. Exception: dynamic computed values (glow intensities, animations) and the brand gradient in `TopBar.tsx`.
+**Chart components** — import from `@/themes/chart` and use `C.pos`, `C.neg`, `C.accent`, `C.tooltipBg`, `C.axisTick`, etc. Never paste raw hex in chart props.
+
+No raw hex anywhere else. Exception: brand gradient in `TopBar.tsx` (intentional — it defines the wordmark style).
 
 ---
 

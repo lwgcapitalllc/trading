@@ -81,7 +81,7 @@ function JobDot({ status }: { status: string }) {
     return (
       <span
         title={title}
-        className="inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 bg-pos shadow-[0_0_6px_#34d399] cursor-default"
+        className="inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 bg-pos shadow-[0_0_6px_#00ff7f] cursor-default"
       />
     )
   }

@@ -40,7 +40,7 @@ function NavItem({ to, label, icon: Icon, live }: { to: string; label: string; i
             size={16}
             className={`flex-shrink-0 transition-all duration-[120ms] ${
               isActive
-                ? 'text-accent drop-shadow-[0_0_6px_#34d399]'
+                ? 'text-accent drop-shadow-glow-accent'
                 : 'opacity-85'
             }`}
           />

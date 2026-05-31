@@ -46,6 +46,9 @@ cd command-center
 
 `start.sh` creates the Python venv and runs `npm install` on first launch.
 
+**Backtesting prerequisites** — before submitting a run, the SSH tunnel and VPS agent must be up.
+Full setup and session checklist: [BACKTEST_VPS_SETUP.md](BACKTEST_VPS_SETUP.md)
+
 ---
 
 ## Key design decisions
@@ -78,7 +81,7 @@ cd command-center
 
 ## Sidebar health indicators
 
-Five dots in the left sidebar, sourced from `GET /system/health` (30 s TTL cache).
+Four dots in the left sidebar, sourced from `GET /system/health` (30 s TTL cache).
 
 | Indicator | What it checks | Green | Yellow | Red | Grey |
 |---|---|---|---|---|---|
@@ -86,9 +89,6 @@ Five dots in the left sidebar, sourced from `GET /system/health` (30 s TTL cache
 | **SSH** | SSH tunnel to ForexVPS | Connected | — | Unreachable — check ForexVPS or `~/.ssh/config` | — |
 | **VPS agent** | `vps_agent.py` HTTP on `:8765` (via SSH tunnel) | Responding | — | Not running — restart via `ssh forexvps "schtasks /run /tn LucidFlexAgent"` | — |
 | **NinjaTrader** | NT8 process + Strategy Analyzer window | Running + SA open | Running, SA closed | NT8 not running on VPS | Agent unreachable |
-| **NT8 compile** | C# strategy compilation result from NT8 logs | Clean | — | Compile errors in NinjaTrader — fix the strategy code | Agent unreachable |
-
-NT8 compile = grey (unknown) when VPS Agent is red, because we can't reach NT8 to check. Only shows red when the agent is up **and** reports a compile error.
 
 **Stuck progress lock** — if a run dies mid-flight (backend restart, network drop), `data/lab_progress.json` can be left with `status: running`, blocking new runs with a 409. Fix: hit the Stop button, or restart the backend (startup hook resets stale locks automatically).
 

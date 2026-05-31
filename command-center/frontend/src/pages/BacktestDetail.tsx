@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts } from '@/hooks/useLab'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
+import { C } from '@/themes/chart'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -364,9 +365,7 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
   const yMax = max + pad
 
   // Split into above/below zero baseline for dual-color fill
-  const POS_COLOR = '#00ff7f'
-  const NEG_COLOR = '#ff3b5c'
-  const curveColor = profitable ? POS_COLOR : NEG_COLOR
+  const curveColor = profitable ? C.pos : C.neg
 
   const eqTicks = calIndexTicks(data)
 
@@ -375,19 +374,19 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
       <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           <linearGradient id="eqPos" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={POS_COLOR} stopOpacity={0.22} />
-            <stop offset="95%" stopColor={POS_COLOR} stopOpacity={0.02} />
+            <stop offset="5%"  stopColor={C.pos} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={C.pos} stopOpacity={0.02} />
           </linearGradient>
           <linearGradient id="eqNeg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={NEG_COLOR} stopOpacity={0.05} />
-            <stop offset="95%" stopColor={NEG_COLOR} stopOpacity={0.22} />
+            <stop offset="5%"  stopColor={C.neg} stopOpacity={0.05} />
+            <stop offset="95%" stopColor={C.neg} stopOpacity={0.22} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff07" />
+        <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
         <XAxis
           dataKey="index"
           ticks={eqTicks}
-          tick={{ fill: '#6b7280', fontSize: 10 }}
+          tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v: number) => {
@@ -398,15 +397,15 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
         />
         <YAxis
           domain={[yMin, yMax]}
-          tick={{ fill: '#6b7280', fontSize: 10 }}
+          tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v: number) => v === 0 ? '$0' : `${v >= 0 ? '+' : ''}$${(v / 1000).toFixed(0)}k`}
           width={56}
         />
         <Tooltip
-          contentStyle={{ background: '#0c0c1a', border: '1px solid #44446a', borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
-          labelStyle={{ color: '#9ca3af' }}
+          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+          labelStyle={{ color: C.axisTick }}
           itemStyle={{ color: '#e5e7eb' }}
           formatter={(v: number, _: string, props: { payload?: EquityPoint }) => {
             const pt = props.payload
@@ -422,8 +421,8 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
             return `Trade #${pt.index}${dateStr}`
           }}
         />
-        <ReferenceLine y={startEq} stroke="#ffffff14" strokeDasharray="4 4" />
-        {startEq !== 0 && <ReferenceLine y={0} stroke="#ffffff22" />}
+        <ReferenceLine y={startEq} stroke={C.refLine} strokeDasharray="4 4" />
+        {startEq !== 0 && <ReferenceLine y={0} stroke={C.refLineDim} />}
         <Area
           type="monotone"
           dataKey="equity"
@@ -462,15 +461,15 @@ function DrawdownChart({ equity, limitLines }: {
       <AreaChart data={ddData} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
         <defs>
           <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor="#ff3b5c" stopOpacity={0.12} />
-            <stop offset="95%" stopColor="#ff3b5c" stopOpacity={0.30} />
+            <stop offset="5%"  stopColor={C.neg} stopOpacity={0.12} />
+            <stop offset="95%" stopColor={C.neg} stopOpacity={0.30} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff07" />
+        <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
         <XAxis
           dataKey="index"
           ticks={ddTicks}
-          tick={{ fill: '#6b7280', fontSize: 10 }}
+          tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v: number) => {
@@ -480,7 +479,7 @@ function DrawdownChart({ equity, limitLines }: {
           }}
         />
         <YAxis
-          tick={{ fill: '#6b7280', fontSize: 10 }}
+          tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v: number) => v === 0 ? '$0' : `$${(v / 1000).toFixed(0)}k`}
@@ -488,7 +487,7 @@ function DrawdownChart({ equity, limitLines }: {
           domain={[worst * 1.1, 0]}
         />
         <Tooltip
-          contentStyle={{ background: '#0c0c1a', border: '1px solid #44446a', borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
           formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, 'Drawdown']}
           labelFormatter={(_: unknown, payload: Array<{ payload?: { index: number; date?: string } }>) => {
             const pt = payload?.[0]?.payload
@@ -497,16 +496,16 @@ function DrawdownChart({ equity, limitLines }: {
             return `Trade #${pt.index}${dateStr}`
           }}
         />
-        <ReferenceLine y={0} stroke="#ffffff20" />
+        <ReferenceLine y={0} stroke={C.refLine} />
         {limitLines?.map(ll => (
           <ReferenceLine
             key={ll.limit}
             y={-ll.limit}
-            stroke={ll.pass ? '#00ff7f55' : '#ff3b5c99'}
+            stroke={ll.pass ? `${C.pos}55` : `${C.neg}99`}
             strokeDasharray="5 3"
             label={{
               value: `$${ll.limit >= 1000 ? `${(ll.limit / 1000).toFixed(0)}k` : ll.limit} limit`,
-              fill: ll.pass ? '#00ff7f99' : '#ff3b5c',
+              fill: ll.pass ? `${C.pos}99` : C.neg,
               fontSize: 9,
               position: 'insideTopRight',
             }}
@@ -515,11 +514,11 @@ function DrawdownChart({ equity, limitLines }: {
         <Area
           type="monotone"
           dataKey="drawdown"
-          stroke="#ff3b5c"
+          stroke={C.neg}
           strokeWidth={1.5}
           fill="url(#ddGrad)"
           dot={false}
-          activeDot={{ r: 3, fill: '#ff3b5c', stroke: 'transparent' }}
+          activeDot={{ r: 3, fill: C.neg, stroke: 'transparent' }}
           baseValue={0}
         />
       </AreaChart>
@@ -592,42 +591,42 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
   return (
     <ResponsiveContainer width="100%" height={260}>
       <BarChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }} barCategoryGap="20%">
-        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff07" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke={C.grid} vertical={false} />
         <XAxis
           dataKey="date"
           ticks={pnlTicks}
           padding={{ left: 24, right: 8 }}
-          tick={{ fill: '#6b7280', fontSize: 10 }}
+          tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(d: string) => calTickLabel(d, d === data[0].date || d === data[data.length - 1].date)}
         />
         <YAxis
-          tick={{ fill: '#6b7280', fontSize: 10 }}
+          tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
           width={52}
         />
         <Tooltip
-          contentStyle={{ background: '#0c0c1a', border: '1px solid #44446a', borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
-          labelStyle={{ color: '#9ca3af' }}
+          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+          labelStyle={{ color: C.axisTick }}
           itemStyle={{ color: '#e5e7eb' }}
           formatter={(v: number) => [dollar(v, true), 'P&L']}
           labelFormatter={(d: string) => chartDateLabel(d)}
         />
-        <ReferenceLine y={0} stroke="#ffffff20" />
+        <ReferenceLine y={0} stroke={C.refLine} />
         {halfTarget != null && (
           <ReferenceLine
             y={halfTarget}
-            stroke="#ffb30050"
+            stroke={`${C.gold}50`}
             strokeDasharray="4 4"
-            label={{ value: '50% of target', fill: '#ffb300', fontSize: 10, position: 'insideTopRight' }}
+            label={{ value: '50% of target', fill: C.gold, fontSize: 10, position: 'insideTopRight' }}
           />
         )}
         <Bar dataKey="pnl" radius={[2, 2, 0, 0]}>
           {data.map((d, i) => (
-            <Cell key={i} fill={d.pnl >= 0 ? '#00ff7f' : '#ff3b5c'} fillOpacity={0.85} />
+            <Cell key={i} fill={d.pnl >= 0 ? C.pos : C.neg} fillOpacity={0.85} />
           ))}
         </Bar>
       </BarChart>
@@ -745,8 +744,8 @@ function useElapsed(startedAt: string | null): string {
 }
 
 // Candlestick chart constants — defined once at module level
-const CHART_BULL = '#00c8b4'
-const CHART_BEAR = '#e05c72'
+const CHART_BULL = C.accent
+const CHART_BEAR = C.neg
 const CHART_PAD  = 5
 
 const CHART_CANDLES = ((): Array<{ o: number; c: number; h: number; l: number }> => {
@@ -917,9 +916,9 @@ function RunningBanner({ pct, message, startedAt, onStop }: {
 
       // Cursor line
       if (cp > 0 && cp < 100) {
-        ctx.strokeStyle = 'rgba(0,200,180,0.12)'; ctx.lineWidth = 4
+        ctx.strokeStyle = 'rgba(0,229,255,0.12)'; ctx.lineWidth = 4
         ctx.beginPath(); ctx.moveTo(cursorX, 0); ctx.lineTo(cursorX, CH); ctx.stroke()
-        ctx.strokeStyle = 'rgba(0,200,180,0.65)'; ctx.lineWidth = 1
+        ctx.strokeStyle = 'rgba(0,229,255,0.65)'; ctx.lineWidth = 1
         ctx.beginPath(); ctx.moveTo(cursorX, 0); ctx.lineTo(cursorX, CH); ctx.stroke()
 
         // % pill — just right of cursor
@@ -927,8 +926,8 @@ function RunningBanner({ pct, message, startedAt, onStop }: {
         ctx.font = 'bold 10.5px "SF Mono","Fira Code",monospace'
         const tw = ctx.measureText(label).width
         const px = cursorX + 5
-        ctx.fillStyle = 'rgba(0,28,24,0.85)'
-        ctx.strokeStyle = 'rgba(0,200,180,0.35)'; ctx.lineWidth = 1
+        ctx.fillStyle = 'rgba(0,42,51,0.90)'
+        ctx.strokeStyle = 'rgba(0,229,255,0.35)'; ctx.lineWidth = 1
         ctx.beginPath();
         (ctx as unknown as { roundRect: (...a: unknown[]) => void })
           .roundRect(px - 3, 3, tw + 8, 16, 4)
@@ -967,7 +966,7 @@ function RunningBanner({ pct, message, startedAt, onStop }: {
                     active ? 'bg-accent' :
                              'border border-border-default bg-transparent',
                   ].join(' ')}
-                  style={active ? { boxShadow: '0 0 0 4px rgba(0,200,180,0.15), 0 0 12px rgba(0,200,180,0.45)' } : undefined}
+                  style={active ? { boxShadow: '0 0 0 4px rgba(0,229,255,0.15), 0 0 12px rgba(0,229,255,0.45)' } : undefined}
                 />
                 <span className={[
                   'text-[9px] whitespace-nowrap uppercase tracking-wide leading-none',
@@ -1046,24 +1045,39 @@ function LogsSection({ runId, autoExpand, isRunning }: { runId: string; autoExpa
   const { data: log, isFetching } = useRunLog(open ? runId : null, 200, isRunning)
 
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+    <div className="bg-bg-sunken border border-border-subtle rounded-lg overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 text-[13px] text-text-secondary hover:text-text-primary transition-colors"
+        className="w-full flex items-center justify-between px-4 py-[10px] border-b border-border-subtle hover:bg-bg-hover/40 transition-colors"
       >
-        <span className="font-medium">Run logs</span>
-        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        <div className="flex items-center gap-[10px]">
+          {isRunning ? (
+            <span className="relative flex h-[8px] w-[8px] flex-shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
+              <span className="relative inline-flex rounded-full h-[8px] w-[8px] bg-accent" />
+            </span>
+          ) : (
+            <span className="w-[8px] h-[8px] rounded-full bg-text-tertiary/30 flex-shrink-0" />
+          )}
+          <span className="text-small font-semibold font-mono tracking-wide uppercase text-text-secondary">
+            Run Logs
+          </span>
+          {isRunning && (
+            <span className="text-micro text-text-tertiary font-mono">· live</span>
+          )}
+        </div>
+        {open ? <ChevronUp size={14} className="text-text-tertiary" /> : <ChevronDown size={14} className="text-text-tertiary" />}
       </button>
       {open && (
-        <div className="border-t border-border-subtle">
+        <div>
           {isFetching && !log ? (
-            <div className="px-4 py-3 text-[12px] text-text-tertiary">Loading…</div>
+            <div className="px-4 py-3 text-[12px] text-text-tertiary font-mono">Loading…</div>
           ) : log ? (
             <pre className="px-4 py-3 text-[11px] font-mono text-text-secondary leading-[1.6] overflow-x-auto whitespace-pre-wrap max-h-[400px] overflow-y-auto">
               {log}
             </pre>
           ) : (
-            <div className="px-4 py-3 text-[12px] text-text-tertiary">No log available.</div>
+            <div className="px-4 py-3 text-[12px] text-text-tertiary font-mono">No log output.</div>
           )}
         </div>
       )}

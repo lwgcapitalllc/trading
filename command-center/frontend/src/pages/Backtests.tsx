@@ -150,7 +150,7 @@ function ConfirmDeleteModal({
           <button
             onClick={onConfirm}
             disabled={isPending}
-            className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-neg-text text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+            className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/15 disabled:opacity-50 transition-colors"
           >
             {isPending ? 'Deleting…' : count === 1 ? 'Delete run' : `Delete ${count} runs`}
           </button>
