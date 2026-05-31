@@ -46,6 +46,8 @@ cd command-center
 
 `start.sh` creates the Python venv and runs `npm install` on first launch.
 
+**SSH tunnel** — `start.sh` opens a persistent `ssh -N forexvps` background process on launch. This keeps `LocalForward 8765` alive so `http://127.0.0.1:8765` (vps_agent_tunnel) is reachable for the entire session. Without this, vps_client calls fail even though SSH itself appears healthy. The tunnel is killed automatically on Ctrl-C.
+
 **Backtesting prerequisites** — before submitting a run, the SSH tunnel and VPS agent must be up.
 Full setup and session checklist: [BACKTEST_VPS_SETUP.md](BACKTEST_VPS_SETUP.md)
 
