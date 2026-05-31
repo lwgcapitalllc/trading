@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
+    WorthinessScore,
 )
 from services import lab_db, vps_client
 from services.backtest_runner import run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv
@@ -37,6 +38,16 @@ def _load_json(path: Optional[str]) -> list:
         return []
 
 
+def _worthiness_from_row(row: dict) -> Optional[WorthinessScore]:
+    if not row.get("worthiness_tier"):
+        return None
+    return WorthinessScore(
+        tier=row["worthiness_tier"],
+        reason=row.get("worthiness_reason"),
+        computed_against_firm=row.get("worthiness_computed_against_firm"),
+    )
+
+
 def _row_to_summary(row: dict) -> BacktestSummary:
     return BacktestSummary(
         run_id=row["run_id"],
@@ -52,6 +63,11 @@ def _row_to_summary(row: dict) -> BacktestSummary:
         win_rate=row.get("win_rate"),
         trade_count=row.get("trade_count"),
         verdicts=lab_db.get_run_verdict_summary(row["run_id"]),
+        worthiness=_worthiness_from_row(row),
+        sweep_id=row.get("sweep_id"),
+        optimization_id=row.get("optimization_id"),
+        sharpe=row.get("sharpe"),
+        params=row.get("params") or {},
     )
 
 
@@ -113,6 +129,9 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         equity_curve=_load_json(row.get("equity_curve_path")),
         daily_pnl=_load_json(row.get("daily_pnl_path")),
         evaluations=evals,
+        worthiness=_worthiness_from_row(row),
+        sweep_id=row.get("sweep_id"),
+        optimization_id=row.get("optimization_id"),
     )
 
 
@@ -172,6 +191,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "slippage_ticks":     req.slippage_ticks,
         "status":             "running",
         "created_at":         int(time.time()),
+        "evaluate_firms":     req.evaluate_firms,
     })
 
     job_spec = {
@@ -188,7 +208,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     }
 
     try:
-        await asyncio.to_thread(vps_client.start_backtest, job_spec)
+        await asyncio.to_thread(vps_client.start_backtest, job_spec, strategy.get("runner", "ninjatrader"))
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         raise HTTPException(502, f"VPS agent unreachable: {exc}")
@@ -219,6 +239,66 @@ async def stop_backtest_run(run_id: str) -> dict:
     lab_db.update_run_status(run_id, "failed_cancelled", "Cancelled by user")
     clear_progress()
     return {"run_id": run_id, "status": "failed_cancelled"}
+
+
+@router.post("/runs/{run_id}/retry", status_code=202)
+async def retry_backtest_run(run_id: str) -> dict:
+    row = lab_db.get_run(run_id)
+    if not row:
+        raise HTTPException(404, "Run not found")
+    if not row["status"].startswith("failed"):
+        raise HTTPException(400, f"Run is not failed (status: {row['status']})")
+
+    strategy = lab_db.get_strategy(row["strategy_id"])
+    if not strategy:
+        raise HTTPException(404, f"Strategy '{row['strategy_id']}' not found")
+
+    if read_progress().get("status") == "running":
+        raise HTTPException(409, "A backtest is already running")
+
+    evaluate_firms = row.get("evaluate_firms") or []
+
+    new_run_id = uuid.uuid4().hex[:12]
+    lab_db.insert_run({
+        "run_id":             new_run_id,
+        "strategy_id":        row["strategy_id"],
+        "instrument":         row["instrument"],
+        "params":             row["params"],
+        "bar_type":           row["bar_type"],
+        "bar_value":          row["bar_value"],
+        "start_date":         row["start_date"],
+        "end_date":           row["end_date"],
+        "commission_per_side": row["commission_per_side"],
+        "slippage_ticks":     row["slippage_ticks"],
+        "status":             "running",
+        "created_at":         int(time.time()),
+        "evaluate_firms":     evaluate_firms,
+    })
+
+    job_spec = {
+        "job_id":            new_run_id,
+        "strategy_class":    strategy["class_name"],
+        "instrument":        row["instrument"],
+        "params":            row["params"],
+        "bar_type":          row["bar_type"],
+        "bar_value":         row["bar_value"],
+        "start_date":        row["start_date"],
+        "end_date":          row["end_date"],
+        "commission_per_side": row["commission_per_side"],
+        "slippage_ticks":    row["slippage_ticks"],
+    }
+
+    try:
+        await asyncio.to_thread(vps_client.start_backtest, job_spec, strategy.get("runner", "ninjatrader"))
+    except Exception as exc:
+        lab_db.update_run_status(new_run_id, "failed_unknown", str(exc))
+        raise HTTPException(502, f"VPS agent unreachable: {exc}")
+
+    asyncio.create_task(
+        run_backtest_job(new_run_id, new_run_id, row["strategy_id"], row["instrument"], evaluate_firms)
+    )
+
+    return {"run_id": new_run_id, "status": "started"}
 
 
 @router.delete("/runs/{run_id}", status_code=204)

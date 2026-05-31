@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from services import lab_db, evaluator, vps_client
+from services import lab_db, evaluator, vps_client, worthiness
 
 
 # ── NT8 Trades CSV parser ──────────────────────────────────────────────────────
@@ -156,6 +156,13 @@ async def _handle_complete(
     })
 
     evaluator.evaluate_run(run_id, firm_ids, kpis, equity_curve, daily_pnl)
+
+    w = worthiness.score_run_after_evals(
+        run_id, firm_ids,
+        kpis.get("profit_factor"), kpis.get("max_drawdown"), kpis.get("trade_count"),
+    )
+    if w:
+        lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
 
     _write_progress({
         "job_id":               job_id,

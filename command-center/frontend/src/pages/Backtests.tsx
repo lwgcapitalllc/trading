@@ -1,13 +1,15 @@
 import { useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Trash2 } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, Trash2, Layers, Sliders } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useBacktestRuns, useStrategies, useFirms,
   useScanStrategies, useLabProgress, useDeleteRun,
+  useOptimizations,
 } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
+import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
 import type { BacktestSummary, Strategy, Firm, VerdictSummary } from '@/types'
@@ -162,12 +164,13 @@ function ConfirmDeleteModal({
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-type Tab = 'strategies' | 'runs' | 'firms'
+type Tab = 'strategies' | 'runs' | 'firms' | 'optimizations'
 
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'strategies', label: 'Strategies' },
-  { id: 'runs',       label: 'Runs'       },
-  { id: 'firms',      label: 'Firms'      },
+  { id: 'strategies',   label: 'Strategies'   },
+  { id: 'runs',         label: 'Runs'         },
+  { id: 'firms',        label: 'Firms'        },
+  { id: 'optimizations', label: 'Optimizations' },
 ]
 
 function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
@@ -329,6 +332,7 @@ function RunsTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Duration</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD</th>
@@ -385,6 +389,7 @@ function RunRow({
   onClick: () => void
   onDelete: (e: React.MouseEvent) => void
 }) {
+  const navigate = useNavigate()
   const pnlClass = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
   return (
     <tr
@@ -399,10 +404,25 @@ function RunRow({
           className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
         />
       </td>
-      <td className="px-4 py-3 font-medium">{run.strategy_name || run.strategy_id}</td>
+      <td className="px-4 py-3 font-medium">
+        <div className="flex items-center gap-1">
+          {run.strategy_name || run.strategy_id}
+          {run.sweep_id && (
+            <span title={`Sweep: ${run.sweep_id}`} onClick={e => { e.stopPropagation(); navigate(`/backtests/sweeps/${run.sweep_id}`) }}>
+              <Layers size={11} className="text-accent opacity-70 hover:opacity-100 cursor-pointer" />
+            </span>
+          )}
+          {run.optimization_id && (
+            <span title={`Optimization: ${run.optimization_id}`} onClick={e => { e.stopPropagation(); navigate(`/backtests/optimizations/${run.optimization_id}`) }}>
+              <Sliders size={11} className="text-gold-text opacity-70 hover:opacity-100 cursor-pointer" />
+            </span>
+          )}
+        </div>
+      </td>
       <td className="px-4 py-3 font-mono text-text-secondary">{run.instrument}</td>
       <td className="px-4 py-3 text-text-secondary">{fmtDate(run.created_at)}</td>
       <td className="px-4 py-3"><StatusPill status={run.status} /></td>
+      <td className="px-4 py-3"><WorthinessBadge worthiness={run.worthiness} /></td>
       <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
         {fmtDuration(run.created_at, run.completed_at)}
       </td>
@@ -659,6 +679,85 @@ function FirmsSkeleton() {
   )
 }
 
+// ── Optimizations tab ──────────────────────────────────────────────────────────
+
+function fmtOptStatus(s: string) {
+  if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+  if (s === 'running')  return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
+  return { label: s, cls: 'bg-neg-muted text-neg-text' }
+}
+
+function OptimizationsTab() {
+  const navigate = useNavigate()
+  const { data: opts, isLoading } = useOptimizations()
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-[13px] text-text-secondary">
+          {opts ? `${opts.length} optimization${opts.length !== 1 ? 's' : ''}` : ''}
+        </span>
+      </div>
+
+      {isLoading ? (
+        <RunsTableSkeleton />
+      ) : !opts?.length ? (
+        <EmptyState
+          icon={<Sliders size={20} />}
+          title="No optimizations yet"
+          description='Click "Optimize from this run" on a completed backtest to start a parameter sweep.'
+        />
+      ) : (
+        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b border-border-subtle">
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Firm</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Mode</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Method</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
+                <th className="px-3 py-3 w-10" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-subtle">
+              {opts.map(opt => {
+                const st = fmtOptStatus(opt.status)
+                return (
+                  <tr
+                    key={opt.optimization_id}
+                    onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
+                    className="hover:bg-bg-hover cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium">{opt.strategy_id}</td>
+                    <td className="px-4 py-3 font-mono text-text-secondary">{opt.instrument}</td>
+                    <td className="px-4 py-3 text-text-secondary text-[12px]">{opt.firm_id}</td>
+                    <td className="px-4 py-3 capitalize text-text-secondary">{opt.mode}</td>
+                    <td className="px-4 py-3 capitalize text-text-secondary">{opt.search_method}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
+                      {opt.completed_runs}/{opt.estimated_runs}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>
+                        {st.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <ChevronRight size={14} className="text-text-tertiary" />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page shell ────────────────────────────────────────────────────────────────
 
 export function Backtests() {
@@ -674,9 +773,10 @@ export function Backtests() {
 
       <TabBar active={tab} onChange={setTab} />
 
-      {tab === 'strategies' && <StrategiesTab />}
-      {tab === 'runs'       && <RunsTab />}
-      {tab === 'firms'      && <FirmsTab />}
+      {tab === 'strategies'   && <StrategiesTab />}
+      {tab === 'runs'         && <RunsTab />}
+      {tab === 'firms'        && <FirmsTab />}
+      {tab === 'optimizations' && <OptimizationsTab />}
     </div>
   )
 }

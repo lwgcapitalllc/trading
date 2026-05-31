@@ -2,16 +2,18 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
-  CheckCircle, XCircle, Minus, Info, Square, RefreshCw,
+  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest } from '@/hooks/useLab'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
 import { C } from '@/themes/chart'
+import { WorthinessBadge } from '@/components/WorthinessBadge'
+import { OptimizeButton } from '@/components/OptimizeButton'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -1018,13 +1020,13 @@ const FAILURE_GUIDANCE: Record<string, string> = {
     'An unexpected error occurred. Check the run logs below and the VPS agent log for details.',
 }
 
-function FailureBanner({ run }: { run: Run }) {
+function FailureBanner({ run, onRetry, retrying }: { run: Run; onRetry?: () => void; retrying?: boolean }) {
   const guidance = FAILURE_GUIDANCE[run.status] ?? FAILURE_GUIDANCE.failed_unknown
   return (
     <div className="bg-neg-muted border border-neg-text/30 rounded-lg px-4 py-4">
       <div className="flex items-start gap-3">
         <AlertTriangle size={15} className="text-neg-text flex-shrink-0 mt-[1px]" />
-        <div>
+        <div className="flex-1 min-w-0">
           <div className="text-[13px] font-semibold text-neg-text mb-1">Run failed — {run.status}</div>
           {run.error_message && (
             <div className="text-[12px] font-mono text-neg-text/80 mb-3 whitespace-pre-wrap break-all">
@@ -1033,6 +1035,16 @@ function FailureBanner({ run }: { run: Run }) {
           )}
           <div className="text-[12px] text-text-secondary">{guidance}</div>
         </div>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            disabled={retrying}
+            className="flex-shrink-0 flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-bg-surface border border-border-default text-text-secondary hover:text-text-primary hover:border-border-default/80 disabled:opacity-50 transition-colors"
+          >
+            <RotateCcw size={12} className={retrying ? 'animate-spin' : ''} />
+            {retrying ? 'Starting…' : 'Retry'}
+          </button>
+        )}
       </div>
     </div>
   )
@@ -1201,6 +1213,7 @@ export function BacktestDetail() {
   const { data: progress }       = useLabProgress()
   const stopBacktest             = useStopBacktest()
   const reloadCharts             = useReloadCharts()
+  const retryBacktest            = useRetryBacktest()
 
   const fallback = useMemo(
     () => computeFallbacks(run?.daily_pnl ?? []),
@@ -1232,9 +1245,14 @@ export function BacktestDetail() {
           <div>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h1 className="text-h1 font-semibold leading-tight">
-                  {run.strategy_name || run.strategy_id}
-                </h1>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-h1 font-semibold leading-tight">
+                    {run.strategy_name || run.strategy_id}
+                  </h1>
+                  {run.worthiness && (
+                    <WorthinessBadge worthiness={run.worthiness} size="md" />
+                  )}
+                </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[13px] text-text-secondary">
                   <span className="font-mono text-accent">{run.instrument}</span>
                   <span className="text-text-tertiary">·</span>
@@ -1249,13 +1267,26 @@ export function BacktestDetail() {
                   )}
                 </div>
               </div>
-              {!isRunning && <StatusBadge status={run.status} />}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <OptimizeButton run={run} />
+                {!isRunning && <StatusBadge status={run.status} />}
+              </div>
             </div>
           </div>
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
           {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} />}
-          {isFailed  && <FailureBanner run={run} />}
+          {isFailed && (
+            <FailureBanner
+              run={run}
+              onRetry={!run.sweep_id && !run.optimization_id
+                ? () => retryBacktest.mutate(run.run_id, {
+                    onSuccess: (data) => navigate(`/backtests/runs/${data.run_id}`),
+                  })
+                : undefined}
+              retrying={retryBacktest.isPending}
+            />
+          )}
 
           {/* ── Evaluations + Performance (side by side) ──────────────────── */}
           {isComplete && (

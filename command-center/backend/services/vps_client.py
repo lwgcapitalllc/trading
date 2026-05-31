@@ -67,8 +67,18 @@ def nt_log(lines: int = 100) -> str:
 
 # ── Job control ───────────────────────────────────────────────────────────────
 
-def start_backtest(job_spec: dict) -> dict:
-    return _post("/backtest", job_spec, timeout=30)
+def _dispatch_backtest(strategy_runner: str, job_spec: dict) -> dict:
+    """Route a backtest job to the correct backend based on the strategy's runner field."""
+    if strategy_runner == "ninjatrader":
+        return _post("/backtest", job_spec, timeout=30)
+    elif strategy_runner == "mt5":
+        raise NotImplementedError("MT5 runner planned for forex; not built yet")
+    else:
+        raise ValueError(f"Unknown runner: {strategy_runner!r}")
+
+
+def start_backtest(job_spec: dict, runner: str = "ninjatrader") -> dict:
+    return _dispatch_backtest(runner, job_spec)
 
 
 def job_status(job_id: str) -> dict:

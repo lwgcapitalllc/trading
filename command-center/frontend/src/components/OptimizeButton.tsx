@@ -1,0 +1,353 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Sliders, Plus, Minus } from 'lucide-react'
+import { toast } from 'sonner'
+import { Tier3WarningModal } from '@/components/Tier3WarningModal'
+import { useTriggerOptimization, useFirms } from '@/hooks/useLab'
+import type { BacktestDetail, ParamAxisSpec } from '@/types'
+
+interface Props {
+  run: BacktestDetail
+}
+
+type AxisEdit =
+  | { mode: 'range'; min: string; max: string; step: string }
+  | { mode: 'fixed'; value: string }
+
+// ── Optimizer modal ────────────────────────────────────────────────────────────
+
+function OptimizerModal({
+  run,
+  onClose,
+}: {
+  run: BacktestDetail
+  onClose: () => void
+}) {
+  const navigate      = useNavigate()
+  const { data: firms } = useFirms()
+  const triggerOpt    = useTriggerOptimization()
+
+  const evalFirm = run.evaluations[0]
+  const [firmId, setFirmId]         = useState(evalFirm?.firm_id ?? '')
+  const [mode, setMode]             = useState<'eval' | 'funded'>('eval')
+  const [searchMethod, setMethod]   = useState<'auto' | 'brute' | 'genetic'>('auto')
+
+  // Build initial axis state from current run params
+  const initialAxes: Record<string, AxisEdit> = {}
+  for (const [k, v] of Object.entries(run.params)) {
+    initialAxes[k] = { mode: 'fixed', value: String(v) }
+  }
+  const [axes, setAxes] = useState<Record<string, AxisEdit>>(initialAxes)
+
+  const rangeParamCount = Object.values(axes).filter(a => a.mode === 'range').length
+
+  const toggleAxis = (name: string) => {
+    const cur = axes[name]
+    if (cur.mode === 'fixed') {
+      // Promote to range: use current value as default for min/max
+      const numVal = Number(cur.value)
+      setAxes(prev => ({
+        ...prev,
+        [name]: { mode: 'range', min: String(numVal), max: String(numVal + 10), step: '5' },
+      }))
+    } else {
+      // Demote back to fixed
+      setAxes(prev => ({
+        ...prev,
+        [name]: { mode: 'fixed', value: prev[name].mode === 'range' ? prev[name].min : String(run.params[name] ?? '') },
+      }))
+    }
+  }
+
+  const updateAxis = (name: string, field: string, value: string) => {
+    setAxes(prev => ({ ...prev, [name]: { ...prev[name], [field]: value } as AxisEdit }))
+  }
+
+  const handleGo = () => {
+    if (!firmId) { toast.error('Select a firm'); return }
+
+    const param_grid: Record<string, ParamAxisSpec> = {}
+    for (const [k, ax] of Object.entries(axes)) {
+      if (ax.mode === 'range') {
+        param_grid[k] = { min: Number(ax.min), max: Number(ax.max), step: Number(ax.step) }
+      }
+    }
+
+    if (!Object.keys(param_grid).length) {
+      toast.error('Expand at least one parameter into a range')
+      return
+    }
+
+    triggerOpt.mutate({
+      strategy_id:        run.strategy_id,
+      instrument:         run.instrument,
+      bar_type:           run.bar_type,
+      bar_value:          run.bar_value,
+      start_date:         run.start_date,
+      end_date:           run.end_date,
+      commission_per_side: run.commission_per_side,
+      slippage_ticks:     run.slippage_ticks,
+      firm_id:            firmId,
+      mode,
+      search_method:      searchMethod,
+      param_grid,
+    }, {
+      onSuccess: (data) => {
+        onClose()
+        navigate(`/backtests/optimizations/${data.optimization_id}`)
+      },
+    })
+  }
+
+  const paramEntries = Object.entries(run.params)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[600px] max-h-[85vh] flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-border-subtle flex-shrink-0">
+          <div className="text-[15px] font-semibold">Optimize from this run</div>
+          <div className="text-[12px] text-text-tertiary mt-0.5">
+            {run.strategy_name} · {run.instrument} · {run.start_date} → {run.end_date}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {/* Firm + mode + method */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Firm</label>
+              <select
+                value={firmId}
+                onChange={e => setFirmId(e.target.value)}
+                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
+              >
+                <option value="">Select firm…</option>
+                {firms?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Mode</label>
+              <select
+                value={mode}
+                onChange={e => setMode(e.target.value as 'eval' | 'funded')}
+                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
+              >
+                <option value="eval">Eval</option>
+                <option value="funded">Funded</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Search</label>
+              <select
+                value={searchMethod}
+                onChange={e => setMethod(e.target.value as 'auto' | 'brute' | 'genetic')}
+                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
+              >
+                <option value="auto">Auto</option>
+                <option value="brute">Brute Force</option>
+                <option value="genetic">Genetic</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Param grid editor */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[12px] font-semibold text-text-secondary">Parameters</span>
+              <span className="text-[11px] text-text-tertiary">
+                Click <Plus size={10} className="inline" /> to expand a param into a range
+              </span>
+            </div>
+            <div className="space-y-2">
+              {paramEntries.map(([name, val]) => {
+                const ax = axes[name]
+                return (
+                  <div key={name} className="flex items-center gap-2 bg-bg-sunken rounded-md px-3 py-2">
+                    <button
+                      onClick={() => toggleAxis(name)}
+                      className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center transition-colors ${
+                        ax?.mode === 'range'
+                          ? 'bg-accent text-bg-base'
+                          : 'bg-bg-hover text-text-tertiary hover:text-text-primary'
+                      }`}
+                    >
+                      {ax?.mode === 'range' ? <Minus size={10} /> : <Plus size={10} />}
+                    </button>
+                    <span className="w-32 text-[12px] font-mono text-text-secondary flex-shrink-0">{name}</span>
+
+                    {ax?.mode === 'range' ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          value={ax.min}
+                          onChange={e => updateAxis(name, 'min', e.target.value)}
+                          placeholder="min"
+                          className="w-20 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                        />
+                        <span className="text-text-tertiary text-[11px]">to</span>
+                        <input
+                          value={ax.max}
+                          onChange={e => updateAxis(name, 'max', e.target.value)}
+                          placeholder="max"
+                          className="w-20 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                        />
+                        <span className="text-text-tertiary text-[11px]">step</span>
+                        <input
+                          value={ax.step}
+                          onChange={e => updateAxis(name, 'step', e.target.value)}
+                          placeholder="step"
+                          className="w-16 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-[12px] font-mono text-text-primary flex-1">{String(val)}</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {rangeParamCount > 0 && (
+            <p className="text-[11px] text-text-tertiary">
+              {rangeParamCount} parameter{rangeParamCount !== 1 ? 's' : ''} will be swept.
+              {searchMethod === 'auto' && (
+                <> Auto will use {rangeParamCount <= 2 ? 'brute force' : 'genetic sampling'}.</>
+              )}
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-border-subtle flex-shrink-0 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleGo}
+            disabled={triggerOpt.isPending || rangeParamCount === 0}
+            className="px-5 py-[7px] rounded-md text-[13px] font-semibold bg-accent text-bg-base hover:opacity-90 disabled:opacity-50 transition-opacity"
+          >
+            {triggerOpt.isPending ? 'Starting…' : 'Go'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Tier 1 soft confirm modal ─────────────────────────────────────────────────
+
+function Tier1ConfirmModal({
+  run,
+  onConfirm,
+  onClose,
+}: {
+  run: BacktestDetail
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  const pf = run.profit_factor?.toFixed(2) ?? '—'
+  const dd = run.max_drawdown != null ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[420px] shadow-2xl">
+        <div className="px-5 py-4 border-b border-border-subtle">
+          <div className="text-[15px] font-semibold">Strong strategy — optimize anyway?</div>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-[13px] text-text-secondary">
+            This strategy scored <span className="text-pos-text font-semibold">Tier 1 (STRESS TEST)</span>{' '}
+            with a profit factor of <span className="font-mono">{pf}</span> and max drawdown of{' '}
+            <span className="font-mono">{dd}</span>.
+          </p>
+          <p className="text-[13px] text-text-secondary mt-2">
+            Optimization may lead to overfitting on the training period. Proceed only if you intend
+            to stress-test in M3 afterward.
+          </p>
+        </div>
+        <div className="px-5 py-4 border-t border-border-subtle flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-pos-muted text-pos-text border border-pos-text/30 hover:bg-pos-text/15 transition-colors"
+          >
+            Proceed with optimization
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main OptimizeButton ────────────────────────────────────────────────────────
+
+type ModalState = 'none' | 'tier1-confirm' | 'tier3-warning' | 'optimizer'
+
+export function OptimizeButton({ run }: Props) {
+  const [modal, setModal] = useState<ModalState>('none')
+
+  if (run.status !== 'complete') return null
+
+  const tier = run.worthiness?.tier
+
+  const handleClick = () => {
+    if (tier === 'TIER_1_STRESS_TEST') {
+      setModal('tier1-confirm')
+    } else if (tier === 'TIER_3_DISCARD') {
+      setModal('tier3-warning')
+    } else {
+      setModal('optimizer')
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={handleClick}
+        className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 transition-colors"
+      >
+        <Sliders size={12} />
+        Optimize from this run
+      </button>
+
+      {modal === 'tier1-confirm' && (
+        <Tier1ConfirmModal
+          run={run}
+          onConfirm={() => setModal('optimizer')}
+          onClose={() => setModal('none')}
+        />
+      )}
+
+      {modal === 'tier3-warning' && (
+        <Tier3WarningModal
+          run={run}
+          onClose={() => setModal('none')}
+          onOptimizeAnyway={() => setModal('optimizer')}
+        />
+      )}
+
+      {modal === 'optimizer' && (
+        <OptimizerModal
+          run={run}
+          onClose={() => setModal('none')}
+        />
+      )}
+    </>
+  )
+}

@@ -274,6 +274,7 @@ class Strategy(BaseModel):
     param_schema: list[dict] = []          # [{name, type, min?, max?, default, group, display_name}]
     scanned_at: datetime
     run_count: int = 0
+    runner: str = "ninjatrader"
 
 
 class ScanResult(BaseModel):
@@ -323,6 +324,14 @@ class FirmCreate(BaseModel):
     notes: Optional[str] = None
 
 
+# ── Lab — worthiness scoring ──────────────────────────────────────────────────
+
+class WorthinessScore(BaseModel):
+    tier: str                               # "TIER_1_STRESS_TEST" | "TIER_2_OPTIMIZE" | "TIER_3_DISCARD"
+    reason: Optional[str] = None
+    computed_against_firm: Optional[str] = None
+
+
 # ── Lab — backtest runs ───────────────────────────────────────────────────────
 
 class BacktestRunRequest(BaseModel):
@@ -351,7 +360,12 @@ class BacktestSummary(BaseModel):
     profit_factor: Optional[float] = None
     win_rate: Optional[float] = None
     trade_count: Optional[int] = None
+    sharpe: Optional[float] = None
+    params: dict = {}
     verdicts: list[dict] = []       # [{firm_id, verdict, notes}]
+    worthiness: Optional[WorthinessScore] = None
+    sweep_id: Optional[str] = None
+    optimization_id: Optional[str] = None
 
 
 class EvaluationDetail(BaseModel):
@@ -407,6 +421,9 @@ class BacktestDetail(BaseModel):
     daily_pnl: list[dict] = []     # [{date: 'YYYY-MM-DD', pnl: float}]
     # Per-firm verdicts
     evaluations: list[EvaluationDetail] = []
+    worthiness: Optional[WorthinessScore] = None
+    sweep_id: Optional[str] = None
+    optimization_id: Optional[str] = None
 
 
 # ── Lab — progress + system health ───────────────────────────────────────────
@@ -435,3 +452,104 @@ class SystemHealth(BaseModel):
     last_compile_at: Optional[str] = None
     last_compile_errors: list[str] = []
     checked_at: str
+
+
+# ── Lab — sweeps ──────────────────────────────────────────────────────────────
+
+class SweepRequest(BaseModel):
+    strategy_id: str
+    params: dict
+    bar_type: str = "Minute"
+    bar_value: int = 5
+    start_date: str
+    end_date: str
+    commission_per_side: float = 2.25
+    slippage_ticks: int = 1
+    firm_ids: list[str]
+    instruments: list[str]
+
+
+class SweepResponse(BaseModel):
+    sweep_id: str
+    run_ids: list[str]
+    status: str
+
+
+class SweepDetail(BaseModel):
+    sweep_id: str
+    strategy_id: str
+    strategy_name: str
+    start_date: str
+    end_date: str
+    firm_ids: list[str]
+    total_instruments: int
+    completed_instruments: int
+    runs: list[BacktestSummary]
+
+
+# ── Lab — optimizations ───────────────────────────────────────────────────────
+
+class OptimizationRequest(BaseModel):
+    strategy_id: str
+    instrument: str
+    bar_type: str = "Minute"
+    bar_value: int = 5
+    start_date: str
+    end_date: str
+    commission_per_side: float = 2.25
+    slippage_ticks: int = 1
+    firm_id: str
+    mode: str = "eval"                  # "eval" | "funded"
+    search_method: str = "auto"         # "auto" | "brute" | "genetic"
+    param_grid: dict                    # {param: {min, max, step} | [val, ...]}
+
+
+class OptimizationSummary(BaseModel):
+    optimization_id: str
+    strategy_id: str
+    instrument: str
+    start_date: str
+    end_date: str
+    firm_id: str
+    mode: str
+    search_method: str
+    status: str
+    estimated_runs: int
+    completed_runs: int
+    best_run_id: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class OptimizationDetail(BaseModel):
+    optimization_id: str
+    strategy_id: str
+    strategy_name: str
+    instrument: str
+    start_date: str
+    end_date: str
+    firm_id: str
+    mode: str
+    search_method: str
+    param_grid: dict
+    status: str
+    estimated_runs: int
+    completed_runs: int
+    best_run_id: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    runs: list[BacktestSummary] = []
+
+
+# ── Lab — instrument summary (for Tier 3 modal) ───────────────────────────────
+
+class InstrumentResult(BaseModel):
+    instrument: str
+    best_worthiness: Optional[str] = None
+    best_run_id: Optional[str] = None
+    tested_at: Optional[datetime] = None
+
+
+class InstrumentSummary(BaseModel):
+    instrument_results: list[InstrumentResult]
+    untested_instruments: list[str]

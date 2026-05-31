@@ -6,6 +6,9 @@ import type {
   Firm, FirmCreate,
   BacktestRunRequest, BacktestSummary, BacktestDetail,
   LabProgress, SystemHealth,
+  SweepRequest, SweepResponse, SweepDetail,
+  OptimizationRequest, OptimizationSummary, OptimizationDetail,
+  InstrumentSummary,
 } from '@/types'
 
 // ── Strategies ─────────────────────────────────────────────────────────────────
@@ -168,6 +171,19 @@ export function useStopBacktest() {
   })
 }
 
+export function useRetryBacktest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (runId: string) =>
+      api.post<{ run_id: string; status: string }>(`/backtests/runs/${runId}/retry`),
+    onSuccess: () => {
+      toast.success('Retry started')
+      qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+    },
+    onError: () => toast.error('Failed to retry backtest'),
+  })
+}
+
 export function useReevaluate() {
   const qc = useQueryClient()
   return useMutation({
@@ -229,6 +245,89 @@ export function useSystemHealth() {
     queryKey: ['system', 'health'],
     queryFn: () => api.get<SystemHealth>('/system/health'),
     refetchInterval: 30_000,
+  })
+}
+
+// ── Sweeps ─────────────────────────────────────────────────────────────────────
+
+export function useSweep(sweepId: string | null) {
+  return useQuery({
+    queryKey: ['lab', 'sweep', sweepId],
+    queryFn: () => api.get<SweepDetail>(`/backtests/sweeps/${sweepId}`),
+    enabled: !!sweepId,
+    refetchInterval: (query) => {
+      const data = query.state.data as SweepDetail | undefined
+      if (!data) return 5_000
+      return data.completed_instruments < data.total_instruments ? 3_000 : false
+    },
+  })
+}
+
+export function useTriggerSweep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: SweepRequest) => api.post<SweepResponse>('/backtests/sweep', body),
+    onSuccess: () => {
+      toast.success('Sweep started')
+      qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+    },
+    onError: () => toast.error('Failed to start sweep'),
+  })
+}
+
+// ── Optimizations ──────────────────────────────────────────────────────────────
+
+export function useOptimizations(strategyId?: string) {
+  const qs = strategyId ? `?strategy_id=${strategyId}` : ''
+  return useQuery({
+    queryKey: ['lab', 'optimizations', strategyId ?? 'all'],
+    queryFn: () => api.get<OptimizationSummary[]>(`/optimizations${qs}`),
+  })
+}
+
+export function useOptimization(optimizationId: string | null) {
+  return useQuery({
+    queryKey: ['lab', 'optimization', optimizationId],
+    queryFn: () => api.get<OptimizationDetail>(`/optimizations/${optimizationId}`),
+    enabled: !!optimizationId,
+    refetchInterval: (query) => {
+      const data = query.state.data as OptimizationDetail | undefined
+      return data?.status === 'running' ? 3_000 : false
+    },
+  })
+}
+
+export function useTriggerOptimization() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: OptimizationRequest) =>
+      api.post<{ optimization_id: string; status: string; estimated_runs: number }>('/optimizations/run', body),
+    onSuccess: () => {
+      toast.success('Optimization started')
+      qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+    },
+    onError: () => toast.error('Failed to start optimization'),
+  })
+}
+
+// ── Instrument Summary ─────────────────────────────────────────────────────────
+
+export function useInstrumentSummary(
+  strategyId: string | null,
+  firmId?: string,
+  startDate?: string,
+  endDate?: string,
+) {
+  const params = new URLSearchParams()
+  if (firmId)    params.set('firm_id',    firmId)
+  if (startDate) params.set('start_date', startDate)
+  if (endDate)   params.set('end_date',   endDate)
+  const qs = params.toString()
+
+  return useQuery({
+    queryKey: ['lab', 'instrument-summary', strategyId, firmId, startDate, endDate],
+    queryFn: () => api.get<InstrumentSummary>(`/strategies/${strategyId}/instrument_summary${qs ? `?${qs}` : ''}`),
+    enabled: !!strategyId,
   })
 }
 

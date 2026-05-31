@@ -206,6 +206,7 @@ def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dic
         "param_schema": params,
         "scanned_at": int(time.time()),
         "source_hash": _md5_text(source),
+        "runner": "ninjatrader",
     }
 
 

@@ -248,6 +248,7 @@ export interface Strategy {
   param_schema: ParamSchemaEntry[]
   scanned_at: string
   run_count: number
+  runner: string
 }
 
 export interface ScanResult {
@@ -301,6 +302,12 @@ export interface VerdictSummary {
   notes: string | null
 }
 
+export interface WorthinessScore {
+  tier: 'TIER_1_STRESS_TEST' | 'TIER_2_OPTIMIZE' | 'TIER_3_DISCARD'
+  reason: string | null
+  computed_against_firm: string | null
+}
+
 export interface BacktestSummary {
   run_id: string
   strategy_id: string
@@ -314,7 +321,12 @@ export interface BacktestSummary {
   profit_factor: number | null
   win_rate: number | null
   trade_count: number | null
+  sharpe: number | null
+  params: Record<string, unknown>
   verdicts: VerdictSummary[]
+  worthiness: WorthinessScore | null
+  sweep_id: string | null
+  optimization_id: string | null
 }
 
 export interface EvaluationDetail {
@@ -372,6 +384,9 @@ export interface BacktestDetail {
   equity_curve: EquityPoint[]
   daily_pnl: DailyPnlPoint[]
   evaluations: EvaluationDetail[]
+  worthiness: WorthinessScore | null
+  sweep_id: string | null
+  optimization_id: string | null
 }
 
 // ── Lab — Progress + System Health ───────────────────────────────────────────
@@ -430,4 +445,93 @@ export interface AppSettings {
   instances_dir: string
   ssh_alias: string
   vps_agent_tunnel: string
+}
+
+// ── Lab — Sweeps ──────────────────────────────────────────────────────────────
+
+export interface SweepRequest {
+  strategy_id: string
+  params: Record<string, unknown>
+  bar_type?: string
+  bar_value?: number
+  start_date: string
+  end_date: string
+  commission_per_side?: number
+  slippage_ticks?: number
+  firm_ids: string[]
+  instruments: string[]
+}
+
+export interface SweepResponse {
+  sweep_id: string
+  run_ids: string[]
+  status: string
+}
+
+export interface SweepDetail {
+  sweep_id: string
+  strategy_id: string
+  strategy_name: string
+  start_date: string
+  end_date: string
+  firm_ids: string[]
+  total_instruments: number
+  completed_instruments: number
+  runs: BacktestSummary[]
+}
+
+// ── Lab — Optimizations ───────────────────────────────────────────────────────
+
+export type ParamAxisSpec = { min: number; max: number; step: number } | unknown[]
+
+export interface OptimizationRequest {
+  strategy_id: string
+  instrument: string
+  bar_type?: string
+  bar_value?: number
+  start_date: string
+  end_date: string
+  commission_per_side?: number
+  slippage_ticks?: number
+  firm_id: string
+  mode: 'eval' | 'funded'
+  search_method: 'auto' | 'brute' | 'genetic'
+  param_grid: Record<string, ParamAxisSpec>
+}
+
+export interface OptimizationSummary {
+  optimization_id: string
+  strategy_id: string
+  instrument: string
+  start_date: string
+  end_date: string
+  firm_id: string
+  mode: string
+  search_method: string
+  status: string
+  estimated_runs: number
+  completed_runs: number
+  best_run_id: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+export interface OptimizationDetail extends OptimizationSummary {
+  strategy_name: string
+  param_grid: Record<string, ParamAxisSpec>
+  runs: BacktestSummary[]
+}
+
+// ── Lab — Instrument Summary ──────────────────────────────────────────────────
+
+export interface InstrumentResult {
+  instrument: string
+  best_worthiness: string | null
+  best_run_id: string | null
+  tested_at: string | null
+}
+
+export interface InstrumentSummary {
+  instrument_results: InstrumentResult[]
+  untested_instruments: string[]
 }

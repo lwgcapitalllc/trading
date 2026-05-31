@@ -33,7 +33,7 @@ frontend/src/
 ├── api/client.ts            ONLY place fetch() lives
 ├── types/index.ts           mirrors all backend Pydantic models exactly
 ├── hooks/                   one file per backend domain
-│   ├── useLab.ts            strategies, firms, runs, evals, system health
+│   ├── useLab.ts            strategies, firms, runs, evals, sweeps, optimizations, instrument summary
 │   ├── useBots.ts
 │   ├── useSmartMoney.ts
 │   └── useStressTests.ts    stub — no live endpoints yet
@@ -44,7 +44,11 @@ frontend/src/
 │   ├── ScaffoldBanner.tsx
 │   ├── EmptyState.tsx
 │   ├── SystemHealthStrip.tsx
-│   └── RunBacktestModal.tsx
+│   ├── RunBacktestModal.tsx
+│   ├── WorthinessBadge.tsx  Tier 1/2/3 pill badge (green/cyan/yellow)
+│   ├── OptimizationHeatmap.tsx  SVG 2D heatmap for 2-param optimizer grids
+│   ├── Tier3WarningModal.tsx    smart-routing modal for Tier 3 → sweep or optimize anyway
+│   └── OptimizeButton.tsx   tier-aware optimize trigger (Tier1 soft confirm, Tier2 direct, Tier3 warning)
 │                            NOTE: EvaluationCard, EquityCurveChart, DrawdownChart,
 │                            DailyPnlChart, DirectionBreakdown are all inline
 │                            components inside BacktestDetail.tsx — not separate files.
@@ -61,9 +65,11 @@ frontend/src/
     │   ├── index.tsx         monitor tab + live snapshot
     │   ├── ConfigureTab.tsx  risk caps + deploy
     │   └── UsersTab.tsx      Telegram users
-    ├── Backtests.tsx         lab landing — Strategies / Runs / Firms tabs (URL-based)
-    ├── BacktestDetail.tsx    full run detail — charts, KPIs, per-firm eval cards, verdict
-    ├── StrategyDetail.tsx    strategy metadata + all runs for that strategy
+    ├── Backtests.tsx         lab landing — Strategies / Runs / Firms / Optimizations tabs (URL-based)
+    ├── BacktestDetail.tsx    full run detail — charts, KPIs, per-firm eval cards, verdict, worthiness badge, OptimizeButton
+    ├── StrategyDetail.tsx    strategy metadata + all runs + runner badge
+    ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
+    ├── OptimizationDetail.tsx  optimizer results — heatmap (2D) or top-10 table (3+D), best param callout, CSV export
     ├── StressTests.tsx       stub — ScaffoldBanner placeholder
     └── Settings.tsx
 ```
@@ -269,6 +275,12 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Overview | ✅ Live | Stat row + cards for each domain |
 | Smart Money | ✅ Live | Full pipeline UI — scan, terminal, rankings, profiles, disqualified, config, cache |
 | Bots | ✅ Live | Monitor, control (global + per-bot), configure (risk caps + deploy), users (Telegram) |
-| Backtests lab | ✅ Live | Strategies, Runs, Firms tabs; run modal; backtest detail with charts + eval cards |
-| Stress Tests | 🔲 Stub | ScaffoldBanner placeholder; M2/M3 scope |
+| Backtests lab | ✅ Live | Strategies, Runs, Firms, Optimizations tabs; run modal; backtest detail with charts + eval cards |
+| Worthiness Badges | ✅ Live | Every completed run shows a Tier 1/2/3 pill in the Runs table and on BacktestDetail header |
+| Sweep Detail | ✅ Live | `/backtests/sweeps/:sweepId` — live-updating table sorted by worthiness tier as runs complete |
+| Optimization Detail | ✅ Live | `/backtests/optimizations/:optimizationId` — heatmap (2D) or top-10 table (3+D), best param callout, CSV export |
+| Optimize Button | ✅ Live | Tier-aware button on BacktestDetail: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning with instrument routing |
+| Tier 3 Warning Modal | ✅ Live | Shows past results per instrument, offers sweep of untested instruments |
+| Runner Badge | ✅ Live | StrategyDetail shows "Runs on: NinjaTrader" badge |
+| Stress Tests | 🔲 Stub | ScaffoldBanner placeholder; M3 scope |
 | Settings | ✅ Live | Config read/write |

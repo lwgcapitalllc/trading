@@ -129,13 +129,49 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_evals_firm
                 ON evaluations(firm_id, verdict);
         """)
-        # Migration: rename column on existing databases
-        try:
-            conn.execute(
-                "ALTER TABLE strategies RENAME COLUMN default_instrument TO suggested_instrument"
-            )
-        except Exception:
-            pass
+        # Migrations — idempotent, wrapped in try/except for existing DBs
+        for migration_sql in [
+            "ALTER TABLE strategies RENAME COLUMN default_instrument TO suggested_instrument",
+            "ALTER TABLE strategies ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
+            "ALTER TABLE backtest_runs ADD COLUMN worthiness_tier TEXT",
+            "ALTER TABLE backtest_runs ADD COLUMN worthiness_reason TEXT",
+            "ALTER TABLE backtest_runs ADD COLUMN worthiness_computed_against_firm TEXT",
+            "ALTER TABLE backtest_runs ADD COLUMN sweep_id TEXT",
+            "ALTER TABLE backtest_runs ADD COLUMN optimization_id TEXT",
+            "ALTER TABLE backtest_runs ADD COLUMN evaluate_firms TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_runs_sweep ON backtest_runs(sweep_id)",
+            "CREATE INDEX IF NOT EXISTS idx_runs_optimization ON backtest_runs(optimization_id)",
+        ]:
+            try:
+                conn.execute(migration_sql)
+            except Exception:
+                pass
+
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS optimizations (
+                optimization_id     TEXT PRIMARY KEY,
+                strategy_id         TEXT NOT NULL REFERENCES strategies(id),
+                instrument          TEXT NOT NULL,
+                start_date          TEXT NOT NULL,
+                end_date            TEXT NOT NULL,
+                commission_per_side REAL NOT NULL,
+                slippage_ticks      INTEGER NOT NULL,
+                firm_id             TEXT NOT NULL REFERENCES firms(id),
+                mode                TEXT NOT NULL,
+                search_method       TEXT NOT NULL,
+                param_grid          TEXT NOT NULL,
+                status              TEXT NOT NULL,
+                estimated_runs      INTEGER NOT NULL,
+                completed_runs      INTEGER NOT NULL DEFAULT 0,
+                best_run_id         TEXT,
+                created_at          INTEGER NOT NULL,
+                completed_at        INTEGER
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_opts_strategy
+                ON optimizations(strategy_id, created_at DESC);
+        """)
+
         _seed_firms(conn)
 
 
@@ -280,8 +316,8 @@ def upsert_strategy(data: dict) -> None:
         conn.execute("""
             INSERT INTO strategies
                 (id, name, class_name, source_path, category, suggested_instrument,
-                 default_params, param_schema, scanned_at, source_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 default_params, param_schema, scanned_at, source_hash, runner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -291,13 +327,15 @@ def upsert_strategy(data: dict) -> None:
                 default_params=excluded.default_params,
                 param_schema=excluded.param_schema,
                 scanned_at=excluded.scanned_at,
-                source_hash=excluded.source_hash
+                source_hash=excluded.source_hash,
+                runner=excluded.runner
         """, (
             data["id"], data["name"], data["class_name"], data["source_path"],
             data.get("category"), data.get("suggested_instrument"),
             json.dumps(data.get("default_params", {})),
             json.dumps(data.get("param_schema", [])),
             data["scanned_at"], data.get("source_hash"),
+            data.get("runner", "ninjatrader"),
         ))
 
 
@@ -435,7 +473,7 @@ def get_run(run_id: str) -> Optional[dict]:
         """, (run_id,)).fetchone()
     if not row:
         return None
-    return _parse_json_fields(dict(row), ["params"])
+    return _parse_json_fields(dict(row), ["params", "evaluate_firms"])
 
 
 def insert_run(data: dict) -> None:
@@ -444,14 +482,15 @@ def insert_run(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, evaluate_firms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
             data["status"], data["created_at"],
+            json.dumps(data.get("evaluate_firms") or []),
         ))
 
 
@@ -545,3 +584,141 @@ def insert_evaluation(data: dict) -> None:
             data.get("largest_day_share_pct"), data.get("notes"),
             now,
         ))
+
+
+def update_run_worthiness(run_id: str, tier: str, reason: Optional[str], firm_id: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            """UPDATE backtest_runs
+               SET worthiness_tier=?, worthiness_reason=?, worthiness_computed_against_firm=?
+               WHERE run_id=?""",
+            (tier, reason, firm_id, run_id),
+        )
+
+
+# ── Sweeps ────────────────────────────────────────────────────────────────────
+
+def list_sweep_runs(sweep_id: str) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT r.*, s.name AS strategy_name
+            FROM backtest_runs r
+            JOIN strategies s ON s.id = r.strategy_id
+            WHERE r.sweep_id = ?
+            ORDER BY r.created_at ASC
+        """, (sweep_id,)).fetchall()
+    return [_parse_json_fields(dict(r), ["params"]) for r in rows]
+
+
+def insert_run_sweep(data: dict) -> None:
+    with _connect() as conn:
+        conn.execute("""
+            INSERT INTO backtest_runs
+                (run_id, strategy_id, instrument, params, bar_type, bar_value,
+                 start_date, end_date, commission_per_side, slippage_ticks,
+                 status, created_at, sweep_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data["run_id"], data["strategy_id"], data["instrument"],
+            json.dumps(data["params"]), data["bar_type"], data["bar_value"],
+            data["start_date"], data["end_date"],
+            data["commission_per_side"], data["slippage_ticks"],
+            data["status"], data["created_at"], data["sweep_id"],
+        ))
+
+
+# ── Optimizations ─────────────────────────────────────────────────────────────
+
+def insert_optimization(data: dict) -> None:
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute("""
+            INSERT INTO optimizations
+                (optimization_id, strategy_id, instrument, start_date, end_date,
+                 commission_per_side, slippage_ticks, firm_id, mode, search_method,
+                 param_grid, status, estimated_runs, completed_runs, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+        """, (
+            data["optimization_id"], data["strategy_id"], data["instrument"],
+            data["start_date"], data["end_date"],
+            data["commission_per_side"], data["slippage_ticks"],
+            data["firm_id"], data["mode"], data["search_method"],
+            json.dumps(data["param_grid"]), data["status"], data["estimated_runs"],
+            now,
+        ))
+
+
+def get_optimization(optimization_id: str) -> Optional[dict]:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM optimizations WHERE optimization_id = ?", (optimization_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return _parse_json_fields(dict(row), ["param_grid"])
+
+
+def list_optimizations(strategy_id: Optional[str] = None) -> list[dict]:
+    sql = "SELECT * FROM optimizations"
+    params: list[Any] = []
+    if strategy_id:
+        sql += " WHERE strategy_id = ?"
+        params.append(strategy_id)
+    sql += " ORDER BY created_at DESC"
+    with _connect() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [_parse_json_fields(dict(r), ["param_grid"]) for r in rows]
+
+
+def increment_optimization_completed(optimization_id: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE optimizations SET completed_runs = completed_runs + 1 WHERE optimization_id = ?",
+            (optimization_id,),
+        )
+
+
+def complete_optimization(optimization_id: str, best_run_id: Optional[str]) -> None:
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE optimizations SET status='complete', best_run_id=?, completed_at=? WHERE optimization_id=?",
+            (best_run_id, now, optimization_id),
+        )
+
+
+def fail_optimization(optimization_id: str, error: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE optimizations SET status=? WHERE optimization_id=?",
+            (f"failed: {error[:200]}", optimization_id),
+        )
+
+
+def insert_run_optimization(data: dict) -> None:
+    with _connect() as conn:
+        conn.execute("""
+            INSERT INTO backtest_runs
+                (run_id, strategy_id, instrument, params, bar_type, bar_value,
+                 start_date, end_date, commission_per_side, slippage_ticks,
+                 status, created_at, optimization_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data["run_id"], data["strategy_id"], data["instrument"],
+            json.dumps(data["params"]), data["bar_type"], data["bar_value"],
+            data["start_date"], data["end_date"],
+            data["commission_per_side"], data["slippage_ticks"],
+            data["status"], data["created_at"], data["optimization_id"],
+        ))
+
+
+def list_optimization_runs(optimization_id: str) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT r.*, s.name AS strategy_name
+            FROM backtest_runs r
+            JOIN strategies s ON s.id = r.strategy_id
+            WHERE r.optimization_id = ?
+            ORDER BY r.created_at ASC
+        """, (optimization_id,)).fetchall()
+    return [_parse_json_fields(dict(r), ["params"]) for r in rows]

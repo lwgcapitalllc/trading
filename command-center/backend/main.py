@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import smart_money, bots, backtests, stress_tests, settings, strategies, firms, system
+from routers import smart_money, bots, backtests, stress_tests, settings, strategies, firms, system, sweeps, optimizations
 from services import lab_db
 from services.backtest_runner import read_progress, clear_progress
 
@@ -18,6 +18,8 @@ app.add_middleware(
 app.include_router(smart_money.router)
 app.include_router(bots.router)
 app.include_router(backtests.router)
+app.include_router(sweeps.router)
+app.include_router(optimizations.router)
 app.include_router(stress_tests.router)
 app.include_router(settings.router)
 app.include_router(strategies.router)

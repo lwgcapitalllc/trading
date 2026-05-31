@@ -75,6 +75,11 @@ Full setup and session checklist: [BACKTEST_VPS_SETUP.md](BACKTEST_VPS_SETUP.md)
 | Bots — monitor, control (global + per-bot), configure (risk caps + deploy), users (Telegram) | ✅ |
 | Backtests lab — strategies, runs, firms tabs; run modal; strategy detail; verdict pills; delete | ✅ |
 | Backtests lab — runs tab duration column; prominent Stop button; live log streaming (2 s poll during active runs) | ✅ |
+| Backtests lab M2 — worthiness badges (Tier 1/2/3) on every completed run | ✅ |
+| Backtests lab M2 — instrument sweeps (N parallel runs, Sweep Detail page with live sort-by-tier) | ✅ |
+| Backtests lab M2 — parameter optimizer (brute force + genetic, Optimization Detail with heatmap or top-10 table) | ✅ |
+| Backtests lab M2 — Tier 3 warning modal with smart instrument routing | ✅ |
+| Backtests lab M2 — runner field on strategies; vps_client dispatcher for future MT5 support | ✅ |
 | Stress Tests | 🔲 Stub |
 
 ---

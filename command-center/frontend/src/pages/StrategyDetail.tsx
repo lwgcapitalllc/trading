@@ -371,6 +371,14 @@ export function StrategyDetail() {
                   <span className="font-mono">Suggested: {strategy.suggested_instrument}</span>
                 </>
               )}
+              {strategy.runner && (
+                <>
+                  <span className="text-text-tertiary">·</span>
+                  <span className="inline-flex items-center px-2 py-[2px] rounded text-[10px] font-semibold bg-bg-surface border border-border-subtle text-text-tertiary uppercase tracking-[0.3px]">
+                    Runs on: {strategy.runner === 'ninjatrader' ? 'NinjaTrader' : strategy.runner}
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <button
