@@ -152,6 +152,26 @@ def lab_stop() -> dict:
     return {"stopped": stopped, "job_id": job_id}
 
 
+@router.post("/system/vps-agent/start")
+def start_vps_agent():
+    """Start vps_agent.py on the VPS via SSH by running the LucidFlexAgent scheduled task."""
+    global _health_cache
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
+             cfg.SSH_ALIAS, "schtasks /run /tn LucidFlexAgent"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="SSH timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    if result.returncode != 0:
+        raise HTTPException(status_code=502, detail=f"schtasks failed: {result.stderr.strip()}")
+    _health_cache = None  # force next /system/health to re-probe
+    return {"status": "ok", "output": result.stdout.strip()}
+
+
 @router.get("/vps/agent/log", response_class=PlainTextResponse)
 def vps_agent_log(lines: int = 200) -> str:
     try:

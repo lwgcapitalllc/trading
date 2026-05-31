@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-05-30
+**Last reviewed:** 2026-05-31
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -199,7 +199,7 @@ Never skip the tier check in `evaluator.py`. The current seeded firms are:
 | Lab — Backtests | ✅ Live | Trigger NT8 runs on the VPS via the agent. Poll to completion. Evaluate against selected firms. Equity curve, daily P&L, per-firm verdicts, full KPI set. After evaluation, computes Worthiness Score (Tier 1/2/3). |
 | Lab — Sweeps | ✅ Live | Fan out N parallel backtests across all allowed instruments for a strategy. Each run completes independently with its own worthiness score. |
 | Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer (see note). Generates all param combos, runs each as a child backtest, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. |
-| Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. |
+| Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
 | Lab — Stress Tests | 🔲 Stub | Router exists, no logic yet. M3 scope. |
 | Settings | ✅ Live | Config read/write. |
 

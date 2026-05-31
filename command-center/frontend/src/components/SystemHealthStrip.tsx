@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { useSystemHealth } from '@/hooks/useLab'
+import { useSystemHealth, useStartVpsAgent } from '@/hooks/useLab'
 import type { SystemHealth } from '@/types'
 
 // ── Dot state ─────────────────────────────────────────────────────────────────
@@ -52,7 +52,11 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
       key: 'agent',
       label: 'VPS agent',
       state: h.vps_agent ? 'green' : 'red',
-      tip: h.vps_agent ? 'VPS agent: responding' : 'VPS agent: not running on VPS — start vps_agent.py',
+      tip: h.vps_agent
+        ? 'VPS agent: responding'
+        : h.ssh_tunnel
+        ? 'VPS agent: down — click to start'
+        : 'VPS agent: down — SSH must be up first',
     },
     {
       key: 'nt8',
@@ -95,20 +99,20 @@ const STATUS_TEXT_CLS: Record<DotState, string> = {
 
 // ── Row ───────────────────────────────────────────────────────────────────────
 
-function DotRow({ def, onRedClick }: { def: DotDef; onRedClick: () => void }) {
+function DotRow({ def, onRedClick, loading }: { def: DotDef; onRedClick: () => void; loading?: boolean }) {
   return (
     <div
       className="flex items-center gap-[8px] py-[3px]"
       title={def.tip}
     >
       <span
-        className={`w-[6px] h-[6px] rounded-full flex-shrink-0 transition-colors duration-300 ${DOT_CLS[def.state]} ${def.state === 'red' ? 'cursor-pointer' : ''}`}
+        className={`w-[6px] h-[6px] rounded-full flex-shrink-0 transition-colors duration-300 ${DOT_CLS[def.state]} ${def.state === 'red' ? 'cursor-pointer' : ''} ${loading ? 'animate-pulse' : ''}`}
         style={DOT_GLOW[def.state] ? { boxShadow: DOT_GLOW[def.state] } : undefined}
         onClick={def.state === 'red' ? onRedClick : undefined}
       />
       <span className="text-[11px] text-text-secondary flex-1 leading-none">{def.label}</span>
       <span className={`text-[10px] font-mono leading-none ${STATUS_TEXT_CLS[def.state]}`}>
-        {STATUS_TEXT[def.state]}
+        {loading ? '…' : STATUS_TEXT[def.state]}
       </span>
     </div>
   )
@@ -119,7 +123,16 @@ function DotRow({ def, onRedClick }: { def: DotDef; onRedClick: () => void }) {
 export function SystemHealthStrip() {
   const navigate = useNavigate()
   const { data: health } = useSystemHealth()
+  const startAgent = useStartVpsAgent()
   const dots = buildDots(health)
+
+  function handleRedClick(key: string) {
+    if (key === 'agent' && health?.ssh_tunnel) {
+      startAgent.mutate()
+    } else {
+      navigate('/settings')
+    }
+  }
 
   return (
     <div className="px-2 pb-2">
@@ -127,7 +140,8 @@ export function SystemHealthStrip() {
         <DotRow
           key={def.key}
           def={def}
-          onRedClick={() => navigate('/settings')}
+          onRedClick={() => handleRedClick(def.key)}
+          loading={def.key === 'agent' && startAgent.isPending}
         />
       ))}
     </div>

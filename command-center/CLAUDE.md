@@ -2,7 +2,7 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
-**Last reviewed:** 2026-05-30
+**Last reviewed:** 2026-05-31
 
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
@@ -92,7 +92,7 @@ Four dots in the left sidebar, sourced from `GET /system/health` (30 s TTL cache
 |---|---|---|---|---|---|
 | **API** | Local FastAPI on `:8000` | Backend healthy | — | Backend unreachable — restart it | — |
 | **SSH** | SSH tunnel to ForexVPS | Connected | — | Unreachable — check ForexVPS or `~/.ssh/config` | — |
-| **VPS agent** | `vps_agent.py` HTTP on `:8765` (via SSH tunnel) | Responding | — | Not running — restart via `ssh forexvps "schtasks /run /tn LucidFlexAgent"` | — |
+| **VPS agent** | `vps_agent.py` HTTP on `:8765` (via SSH tunnel) | Responding | — | Not running — click the red dot (if SSH is up) to start via `POST /system/vps-agent/start`; or manually `ssh forexvps "schtasks /run /tn LucidFlexAgent"` | — |
 | **NinjaTrader** | NT8 process + Strategy Analyzer window | Running + SA open | Running, SA closed | NT8 not running on VPS | Agent unreachable |
 
 **Stuck progress lock** — if a run dies mid-flight (backend restart, network drop), `data/lab_progress.json` can be left with `status: running`, blocking new runs with a 409. Fix: hit the Stop button, or restart the backend (startup hook resets stale locks automatically).

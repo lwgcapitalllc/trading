@@ -248,6 +248,18 @@ export function useSystemHealth() {
   })
 }
 
+export function useStartVpsAgent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<{ status: string; output: string }>('/system/vps-agent/start'),
+    onSuccess: () => {
+      toast.success('VPS agent starting…')
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['system', 'health'] }), 4_000)
+    },
+    onError: () => toast.error('Failed to start VPS agent — is SSH up?'),
+  })
+}
+
 // ── Sweeps ─────────────────────────────────────────────────────────────────────
 
 export function useSweep(sweepId: string | null) {
