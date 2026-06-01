@@ -144,6 +144,9 @@ def init_db() -> None:
             "ALTER TABLE optimizations ADD COLUMN source_run_id TEXT",
             "ALTER TABLE backtest_runs ADD COLUMN source_run_id TEXT",
             "CREATE INDEX IF NOT EXISTS idx_runs_source ON backtest_runs(source_run_id)",
+            "ALTER TABLE firms ADD COLUMN eval_cost_usd INTEGER",
+            "ALTER TABLE firms ADD COLUMN activation_fee_usd INTEGER",
+            "ALTER TABLE firms ADD COLUMN profit_split_pct REAL",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -375,8 +378,9 @@ def insert_firm(data: dict) -> None:
                (id, name, account_size, profit_target, max_loss_eod, max_loss_intraday,
                 drawdown_type, consistency_pct, min_trading_days, force_flat_time_et,
                 allowed_instruments, max_contracts, platform_support,
-                account_tier, docs_url, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                account_tier, docs_url, eval_cost_usd, activation_fee_usd,
+                profit_split_pct, notes, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"], data["name"], data["account_size"], data["profit_target"],
                 data["max_loss_eod"], data.get("max_loss_intraday"), data["drawdown_type"],
@@ -385,7 +389,9 @@ def insert_firm(data: dict) -> None:
                 json.dumps(data.get("allowed_instruments", [])),
                 json.dumps(data.get("max_contracts", {})),
                 json.dumps(data.get("platform_support", [])),
-                data.get("account_tier", "eval"), data.get("docs_url"), data.get("notes"),
+                data.get("account_tier", "eval"), data.get("docs_url"),
+                data.get("eval_cost_usd"), data.get("activation_fee_usd"),
+                data.get("profit_split_pct"), data.get("notes"),
                 now, now,
             ),
         )
@@ -400,7 +406,8 @@ def update_firm(firm_id: str, data: dict) -> bool:
                max_loss_intraday=?, drawdown_type=?, consistency_pct=?,
                min_trading_days=?, force_flat_time_et=?, allowed_instruments=?,
                max_contracts=?, platform_support=?, account_tier=?,
-               docs_url=?, notes=?, updated_at=?
+               docs_url=?, eval_cost_usd=?, activation_fee_usd=?,
+               profit_split_pct=?, notes=?, updated_at=?
                WHERE id=?""",
             (
                 data["name"], data["account_size"], data["profit_target"],
@@ -410,7 +417,9 @@ def update_firm(firm_id: str, data: dict) -> bool:
                 json.dumps(data.get("allowed_instruments", [])),
                 json.dumps(data.get("max_contracts", {})),
                 json.dumps(data.get("platform_support", [])),
-                data.get("account_tier", "eval"), data.get("docs_url"), data.get("notes"),
+                data.get("account_tier", "eval"), data.get("docs_url"),
+                data.get("eval_cost_usd"), data.get("activation_fee_usd"),
+                data.get("profit_split_pct"), data.get("notes"),
                 now, firm_id,
             ),
         )

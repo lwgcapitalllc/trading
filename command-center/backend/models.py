@@ -302,6 +302,9 @@ class Firm(BaseModel):
     platform_support: list[str] = []
     account_tier: str = "eval"          # "eval" | "funded"
     docs_url: Optional[str] = None
+    eval_cost_usd: Optional[int] = None
+    activation_fee_usd: Optional[int] = None
+    profit_split_pct: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -321,6 +324,9 @@ class FirmCreate(BaseModel):
     platform_support: list[str] = []
     account_tier: str = "eval"          # "eval" | "funded"
     docs_url: Optional[str] = None
+    eval_cost_usd: Optional[int] = None
+    activation_fee_usd: Optional[int] = None
+    profit_split_pct: Optional[float] = None
     notes: Optional[str] = None
 
 
