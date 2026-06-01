@@ -8,6 +8,7 @@ import asyncio
 import shutil
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Response
@@ -15,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Response
 from typing import Optional
 from models import SweepRequest, SweepResponse, SweepDetail, SweepSummary, BacktestSummary, WorthinessScore
 from services import lab_db
-from services.sweep_runner import run_sweep
+from services.sweep_runner import run_sweep, retry_failed_sweep_runs
 from routers.backtests import _row_to_summary
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
@@ -69,6 +70,7 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
             "status":             "running",
             "created_at":         now,
             "sweep_id":           sweep_id,
+            "source_run_id":      req.source_run_id,
         })
 
         run_specs.append({
@@ -96,6 +98,33 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
     asyncio.create_task(run_sweep(sweep_id, run_specs, job_specs))
 
     return SweepResponse(sweep_id=sweep_id, run_ids=run_ids, status="started")
+
+
+@router.post("/sweeps/{sweep_id}/cancel", status_code=200)
+def cancel_sweep(sweep_id: str) -> dict:
+    rows = lab_db.list_sweep_runs(sweep_id)
+    if not rows:
+        raise HTTPException(404, f"Sweep '{sweep_id}' not found")
+    if not any(r["status"] == "running" for r in rows):
+        raise HTTPException(400, "No running runs to cancel")
+    lab_db.cancel_sweep_runs(sweep_id)
+    return {"sweep_id": sweep_id, "status": "failed_cancelled"}
+
+
+@router.post("/sweeps/{sweep_id}/retry-failed", status_code=202)
+async def retry_sweep_failed(sweep_id: str) -> dict:
+    rows = lab_db.list_sweep_runs(sweep_id)
+    if not rows:
+        raise HTTPException(404, f"Sweep '{sweep_id}' not found")
+    if any(r["status"] == "running" for r in rows):
+        raise HTTPException(409, "Sweep is still running — wait for it to finish before retrying")
+    if lab_db.has_any_running_vps_job():
+        raise HTTPException(409, "Another VPS job is running — wait for it to finish before retrying")
+    failed = lab_db.list_sweep_failed_runs(sweep_id)
+    if not failed:
+        raise HTTPException(400, "No failed runs to retry")
+    asyncio.create_task(retry_failed_sweep_runs(sweep_id))
+    return {"sweep_id": sweep_id, "retrying": len(failed), "status": "running"}
 
 
 @router.delete("/sweeps/{sweep_id}", status_code=204)
@@ -131,6 +160,19 @@ def get_sweep(sweep_id: str) -> SweepDetail:
         for e in lab_db.get_run_verdict_summary(r["run_id"])
     })
 
+    if any(r["status"] == "running" for r in rows):
+        status = "running"
+    elif all(r["status"] == "complete" for r in rows):
+        status = "complete"
+    elif all(r["status"].startswith("failed") for r in rows):
+        status = "failed_cancelled" if any(r["status"] == "failed_cancelled" for r in rows) else "failed"
+    else:
+        status = "partial"
+
+    created_at = datetime.fromtimestamp(min(r["created_at"] for r in rows), tz=timezone.utc)
+    done_ats   = [r["completed_at"] for r in rows if r.get("completed_at")]
+    completed_at = datetime.fromtimestamp(max(done_ats), tz=timezone.utc) if done_ats and status not in ("running", "partial") else None
+
     return SweepDetail(
         sweep_id=sweep_id,
         strategy_id=first["strategy_id"],
@@ -140,5 +182,8 @@ def get_sweep(sweep_id: str) -> SweepDetail:
         firm_ids=firm_ids,
         total_instruments=len(rows),
         completed_instruments=completed,
+        status=status,
+        created_at=created_at,
+        completed_at=completed_at,
         runs=summaries,
     )

@@ -112,3 +112,89 @@ async def run_sweep(
             await _run_one(spec["run_id"], spec["job_id"], job, spec["firm_ids"], spec["runner"])
 
     await asyncio.gather(*[_one(spec, job) for spec, job in zip(run_specs, job_specs)], return_exceptions=True)
+
+
+async def retry_single_sweep_run(run_id: str) -> None:
+    """Re-fire a single sweep run. Caller must have already called reset_run_for_retry."""
+    row = lab_db.get_run(run_id)
+    if not row:
+        return
+    sweep_id = row["sweep_id"]
+    strategy = lab_db.get_strategy(row["strategy_id"])
+    if not strategy:
+        lab_db.update_run_status(run_id, "failed_unknown", "Strategy not found")
+        return
+
+    firm_ids: list[str] = []
+    for r in lab_db.list_sweep_runs(sweep_id):
+        if r["status"] == "complete" and r["run_id"] != run_id:
+            evals = lab_db.get_run_verdict_summary(r["run_id"])
+            if evals:
+                firm_ids = [e["firm_id"] for e in evals]
+                break
+
+    run_specs = [{"run_id": run_id, "job_id": run_id, "strategy_id": row["strategy_id"],
+                  "instrument": row["instrument"], "firm_ids": firm_ids,
+                  "runner": strategy.get("runner", "ninjatrader")}]
+    job_specs = [{"job_id": run_id, "strategy_class": strategy["class_name"],
+                  "instrument": row["instrument"], "params": row["params"],
+                  "bar_type": row["bar_type"], "bar_value": row["bar_value"],
+                  "start_date": row["start_date"], "end_date": row["end_date"],
+                  "commission_per_side": row["commission_per_side"],
+                  "slippage_ticks": row["slippage_ticks"]}]
+    await run_sweep(sweep_id, run_specs, job_specs)
+
+
+async def retry_failed_sweep_runs(sweep_id: str) -> None:
+    """Reset all failed child runs and re-fire them through the SA semaphore."""
+    failed_rows = lab_db.list_sweep_failed_runs(sweep_id)
+    if not failed_rows:
+        return
+
+    first    = failed_rows[0]
+    strategy = lab_db.get_strategy(first["strategy_id"])
+    if not strategy:
+        for row in failed_rows:
+            lab_db.update_run_status(row["run_id"], "failed_unknown", "Strategy not found")
+        return
+
+    # Recover firm_ids from any completed run in the same sweep (evaluations are the source of truth)
+    firm_ids: list[str] = []
+    for r in lab_db.list_sweep_runs(sweep_id):
+        if r["status"] == "complete":
+            evals = lab_db.get_run_verdict_summary(r["run_id"])
+            if evals:
+                firm_ids = [e["firm_id"] for e in evals]
+                break
+
+    for row in failed_rows:
+        lab_db.reset_run_for_retry(row["run_id"])
+
+    run_specs = [
+        {
+            "run_id":      row["run_id"],
+            "job_id":      row["run_id"],
+            "strategy_id": row["strategy_id"],
+            "instrument":  row["instrument"],
+            "firm_ids":    firm_ids,
+            "runner":      strategy.get("runner", "ninjatrader"),
+        }
+        for row in failed_rows
+    ]
+    job_specs = [
+        {
+            "job_id":              row["run_id"],
+            "strategy_class":      strategy["class_name"],
+            "instrument":          row["instrument"],
+            "params":              row["params"],
+            "bar_type":            row["bar_type"],
+            "bar_value":           row["bar_value"],
+            "start_date":          row["start_date"],
+            "end_date":            row["end_date"],
+            "commission_per_side": row["commission_per_side"],
+            "slippage_ticks":      row["slippage_ticks"],
+        }
+        for row in failed_rows
+    ]
+
+    await run_sweep(sweep_id, run_specs, job_specs)

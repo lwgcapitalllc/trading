@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-05-31 (session 2)
+**Last reviewed:** 2026-05-31 (session 4)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -202,10 +202,11 @@ Never skip the tier check in `evaluator.py`. The current seeded firms are:
 | Lab — Strategies | ✅ Live | Registry of NinjaScript strategies scanned from the local repo. Auto-derives param schema from `[NinjaScriptProperty]` attributes. Each strategy has a `runner` field (default `"ninjatrader"`). |
 | Lab — Firms | ✅ Live | Prop firm rule profiles (drawdown limits, profit targets, consistency %). CRUD endpoints. Seeded with 4 LucidFlex profiles (50k/100k × eval/funded). |
 | Lab — Backtests | ✅ Live | Trigger NT8 runs on the VPS via the agent. Poll to completion. Evaluate against selected firms. Equity curve, daily P&L, per-firm verdicts, full KPI set. After evaluation, computes Worthiness Score (Tier 1/2/3). |
-| Lab — Sweeps | ✅ Live | Runs N backtests sequentially (one instrument at a time, `_MAX_CONCURRENT = 1`) across all instruments for a strategy. Each run gets its own worthiness score. Deletable — cascades to all child runs, evaluations, and result files. |
-| Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer. Generates all param combos, runs each sequentially via SA semaphore, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. `source_run_id` links an optimization back to the run it was triggered from. Deletable — cascades to child runs, evaluations, and result files. |
+| Lab — Sweeps | ✅ Live | Runs N backtests sequentially (one instrument at a time, `_MAX_CONCURRENT = 1`) across all instruments for a strategy. Each run gets its own worthiness score. Deletable. Cancel endpoint force-fails stuck `running` rows (backend-restart recovery). Retry-all and per-run retry via `POST /backtests/runs/{id}/retry`. |
+| Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer. Generates all param combos, runs each sequentially via SA semaphore, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. `source_run_id` links an optimization back to the run it was triggered from. Deletable. Per-run retry via `POST /backtests/runs/{id}/retry`. |
 | Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
 | Lab — Stress Tests | 🔲 Stub | Router exists, no logic yet. M3 scope. |
+| Lab — Sweeps (M4) | ✅ Live | `source_run_id` column on `backtest_runs` for sweep child rows; `SweepRequest` accepts and stores it. `list_sweeps` returns `source_run_id` via `MIN()` GROUP BY. `delete_run` now cascades: deletes linked optimizations (and their children) and linked sweep child runs before removing the source run. |
 | Settings | ✅ Live | Config read/write. |
 
 ---
@@ -235,3 +236,55 @@ Never skip the tier check in `evaluator.py`. The current seeded firms are:
 New table: `optimizations` — stores optimizer job metadata, progress, `best_run_id`, and `source_run_id`
 
 New models: `SweepSummary` (aggregated sweep info for list view, derived from GROUP BY `sweep_id`)
+
+---
+
+## Session 3 additions
+
+### Sweep resilience (cancel + retry)
+
+Backend restart mid-sweep kills the asyncio polling task without updating the DB, leaving runs permanently stuck at `status = 'running'`. Two endpoints fix this:
+
+- `POST /backtests/sweeps/{sweep_id}/cancel` — force-sets all `running`/`pending` runs in the sweep to `failed_cancelled`. Recovery path for stuck sweeps.
+- `POST /backtests/sweeps/{sweep_id}/retry-failed` — resets all `failed*` runs and re-fires them via `run_sweep()`. Firm IDs are recovered by scanning completed runs' evaluations (sweeps have no `firm_ids` column — evaluations are the source of truth).
+
+New `lab_db` functions: `cancel_sweep_runs(sweep_id)`, `list_sweep_failed_runs(sweep_id)`.
+
+New `SweepDetail` Pydantic fields: `status`, `created_at`, `completed_at` — derived in the router from run statuses (no dedicated sweep table).
+
+### Per-run retry (context-aware)
+
+`POST /backtests/runs/{run_id}/retry` now dispatches by context:
+
+- **Sweep run** (`sweep_id` set): calls `retry_single_sweep_run(run_id)` — resets in place, re-fires through `run_sweep()` SA semaphore. Firm IDs recovered from completed sibling runs.
+- **Optimization run** (`optimization_id` set): calls `retry_single_optimization_run(run_id)` — resets in place, decrements `completed_runs`, re-fires via `_run_batch`, then re-scores `best_run_id` across all complete runs.
+- **Standalone run**: existing path — creates a new run row with a new ID.
+
+The HTTP handler calls `reset_run_for_retry` before spawning the async task so `has_any_running_vps_job()` immediately sees the run as `running`, blocking concurrent double-retry requests.
+
+### Contract month propagation (Tier3WarningModal)
+
+`summary.untested_instruments` (from `GET /strategies/{id}/instrument_summary`) returns root symbols only (e.g. `"MNQ"`, `"MGC"`). `_to_nt8_instrument()` passes root-only symbols through unchanged, which NT8 cannot resolve.
+
+Fix in `Tier3WarningModal.tsx`: `withContractMonth(instruments, sourceInstrument)` extracts the contract specifier from `run.instrument` (e.g. `"06-26"` from `"MNQ 06-26"`) and appends it to any root-only symbol in the list. Applied at both sweep trigger points (`handleSweepUntested`, `handleRunSweepAll`). Instruments that already carry a contract month are left unchanged.
+
+---
+
+## Session 4 additions
+
+### Sweep source run linkage
+
+`backtest_runs` now has a `source_run_id TEXT` column (migration-safe). When a sweep is triggered from a BacktestDetail page, every child run in that sweep is stored with `source_run_id = <triggering run_id>`. `list_sweeps()` includes `MIN(r.source_run_id) AS source_run_id` in its GROUP BY query so `SweepSummary` carries the link.
+
+`SweepRequest` and `SweepSummary` Pydantic models both accept/expose `source_run_id: Optional[str]`. The `trigger_sweep` router passes it into `insert_run_sweep`. `Tier3WarningModal` sets `source_run_id = run.run_id` on every sweep it triggers.
+
+**Old sweeps** (created before this session) have `source_run_id = NULL` — no backfill is possible since the triggering run was never recorded. Their child runs continue to appear as flat rows in the Runs tab.
+
+### Cascade delete on run delete
+
+`delete_run(run_id)` now cascades before removing the source row:
+1. Finds all `optimizations` where `source_run_id = run_id` → deletes each opt and its child runs/evaluations
+2. Finds all `backtest_runs` where `source_run_id = run_id` (sweep children) → deletes their evaluations and the runs themselves
+3. Deletes the source run's own evaluations and the run row
+
+Frontend shows a warning in the confirm modal listing how many optimizations and sweeps will also be removed.

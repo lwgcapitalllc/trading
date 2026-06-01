@@ -202,8 +202,15 @@ export function useRetryBacktest() {
     onSuccess: () => {
       toast.success('Retry started')
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'sweep'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'optimization'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
     },
-    onError: () => toast.error('Failed to retry backtest'),
+    onError: (e: unknown) => {
+      const msg = (e as { detail?: string })?.detail
+      toast.error(msg ?? 'Failed to retry run')
+    },
   })
 }
 
@@ -319,6 +326,40 @@ export function useDeleteSweep() {
     onError: (e: unknown) => {
       const msg = (e as { detail?: string })?.detail
       toast.error(msg ?? 'Failed to delete sweep')
+    },
+  })
+}
+
+export function useCancelSweep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (sweepId: string) =>
+      api.post<{ sweep_id: string; status: string }>(`/backtests/sweeps/${sweepId}/cancel`),
+    onSuccess: (_data, sweepId) => {
+      toast.success('Sweep cancelled')
+      qc.invalidateQueries({ queryKey: ['lab', 'sweep', sweepId] })
+      qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { detail?: string })?.detail
+      toast.error(msg ?? 'Failed to cancel sweep')
+    },
+  })
+}
+
+export function useRetrySweep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (sweepId: string) =>
+      api.post<{ sweep_id: string; retrying: number; status: string }>(`/backtests/sweeps/${sweepId}/retry-failed`),
+    onSuccess: (data, sweepId) => {
+      toast.success(`Retrying ${data.retrying} failed run${data.retrying !== 1 ? 's' : ''}`)
+      qc.invalidateQueries({ queryKey: ['lab', 'sweep', sweepId] })
+      qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { detail?: string })?.detail
+      toast.error(msg ?? 'Failed to retry sweep')
     },
   })
 }

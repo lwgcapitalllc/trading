@@ -461,6 +461,7 @@ export interface SweepRequest {
   slippage_ticks?: number
   firm_ids: string[]
   instruments: string[]
+  source_run_id?: string | null
 }
 
 export interface SweepResponse {
@@ -480,6 +481,7 @@ export interface SweepSummary {
   failed_instruments: number
   status: string
   created_at: string
+  source_run_id: string | null
 }
 
 export interface SweepDetail {
@@ -491,6 +493,9 @@ export interface SweepDetail {
   firm_ids: string[]
   total_instruments: number
   completed_instruments: number
+  status: string
+  created_at: string
+  completed_at: string | null
   runs: BacktestSummary[]
 }
 

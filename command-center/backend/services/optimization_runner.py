@@ -267,6 +267,60 @@ async def run_optimization(optimization_id: str) -> None:
     lab_db.complete_optimization(optimization_id, best_run_id)
 
 
+async def retry_single_optimization_run(run_id: str) -> None:
+    """Re-fire a single optimization run. Caller must have already called reset_run_for_retry."""
+    row = lab_db.get_run(run_id)
+    if not row:
+        return
+    opt_id = row["optimization_id"]
+    opt = lab_db.get_optimization(opt_id)
+    if not opt:
+        return
+    strategy = lab_db.get_strategy(opt["strategy_id"])
+    if not strategy:
+        lab_db.update_run_status(run_id, "failed_unknown", "Strategy not found")
+        return
+    firm = lab_db.get_firm(opt["firm_id"])
+    if not firm:
+        lab_db.update_run_status(run_id, "failed_unknown", "Firm not found")
+        return
+
+    lab_db.decrement_optimization_completed(opt_id, 1)
+
+    job_spec = {
+        "job_id":             run_id,
+        "strategy_class":     strategy["class_name"],
+        "instrument":         row["instrument"],
+        "params":             row["params"],
+        "bar_type":           row["bar_type"],
+        "bar_value":          row["bar_value"],
+        "start_date":         row["start_date"],
+        "end_date":           row["end_date"],
+        "commission_per_side": row["commission_per_side"],
+        "slippage_ticks":     row["slippage_ticks"],
+    }
+    await _run_batch(
+        [run_id], [job_spec],
+        firm_ids=[opt["firm_id"]],
+        opt_mode=opt["mode"],
+        runner=strategy.get("runner", "ninjatrader"),
+        opt_id=opt_id,
+    )
+
+    # Re-score best run across all complete runs
+    all_complete = [r for r in lab_db.list_optimization_runs(opt_id) if r["status"] == "complete"]
+    obj_fn = choose_objective(opt["mode"])
+    best_run_id: Optional[str] = None
+    best_score = float("-inf")
+    for r in all_complete:
+        evals = lab_db.get_evaluations(r["run_id"])
+        score = obj_fn({**r, "_evaluations": evals}, firm)
+        if score > best_score:
+            best_score  = score
+            best_run_id = r["run_id"]
+    lab_db.complete_optimization(opt_id, best_run_id)
+
+
 async def retry_failed_runs(optimization_id: str) -> None:
     """Reset all failed child runs and re-fire them. Reuses the same run IDs — no new rows."""
     opt = lab_db.get_optimization(optimization_id)

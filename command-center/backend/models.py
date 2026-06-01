@@ -468,6 +468,7 @@ class SweepRequest(BaseModel):
     slippage_ticks: int = 1
     firm_ids: list[str]
     instruments: list[str]
+    source_run_id: Optional[str] = None
 
 
 class SweepResponse(BaseModel):
@@ -487,6 +488,7 @@ class SweepSummary(BaseModel):
     failed_instruments: int
     status: str
     created_at: datetime
+    source_run_id: Optional[str] = None
 
 
 class SweepDetail(BaseModel):
@@ -498,7 +500,10 @@ class SweepDetail(BaseModel):
     firm_ids: list[str]
     total_instruments: int
     completed_instruments: int
-    runs: list[BacktestSummary]
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    runs: list[BacktestSummary] = []
 
 
 # ── Lab — optimizations ───────────────────────────────────────────────────────

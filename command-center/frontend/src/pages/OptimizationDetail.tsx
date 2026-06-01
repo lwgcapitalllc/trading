@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2 } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization } from '@/hooks/useLab'
+import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest } from '@/hooks/useLab'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -223,10 +223,11 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying }: {
 
 // ── Failed runs table ─────────────────────────────────────────────────────────
 
-function FailedRunsTable({ runs, sweptKeys, navigate }: {
+function FailedRunsTable({ runs, sweptKeys, navigate, retryRun }: {
   runs: BacktestSummary[]
   sweptKeys: string[]
   navigate: ReturnType<typeof useNavigate>
+  retryRun: ReturnType<typeof useRetryBacktest>
 }) {
   if (runs.length === 0) return null
   return (
@@ -243,7 +244,7 @@ function FailedRunsTable({ runs, sweptKeys, navigate }: {
               ))}
               <th className="text-left px-3 py-2 text-text-tertiary font-medium">Status</th>
               <th className="text-left px-3 py-2 text-text-tertiary font-medium">Error</th>
-              <th className="px-3 py-2 w-16" />
+              <th className="px-3 py-2 w-24" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
@@ -264,8 +265,18 @@ function FailedRunsTable({ runs, sweptKeys, navigate }: {
                 <td className="px-3 py-[9px] text-text-tertiary text-[11px] max-w-[320px] truncate">
                   {run.error_message ?? '—'}
                 </td>
-                <td className="px-3 py-[9px] text-right">
-                  <span className="text-[11px] text-accent">View →</span>
+                <td className="px-3 py-[9px]">
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); retryRun.mutate(run.run_id) }}
+                      disabled={retryRun.isPending}
+                      title="Retry this run"
+                      className="p-[4px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 disabled:opacity-40 transition-colors"
+                    >
+                      <RotateCcw size={11} className={retryRun.isPending && retryRun.variables === run.run_id ? 'animate-spin' : ''} />
+                    </button>
+                    <span className="text-[11px] text-accent">View →</span>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -358,6 +369,7 @@ export function OptimizationDetail() {
   const cancelOpt  = useCancelOptimization()
   const retryOpt   = useRetryOptimization()
   const deleteOpt  = useDeleteOptimization()
+  const retryRun   = useRetryBacktest()
 
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -430,17 +442,22 @@ export function OptimizationDetail() {
         <div className="space-y-6">
           {/* Header */}
           <div>
-            <h1 className="text-h1 font-semibold leading-tight mb-1">
+            <h1 className="text-h1 font-semibold leading-tight mb-2">
               {opt.strategy_name || opt.strategy_id}
             </h1>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-text-secondary">
-              <span className="font-mono text-accent font-medium">{opt.instrument}</span>
-              <span className="text-text-tertiary">·</span>
-              <span>{fmtDate(opt.start_date)} → {fmtDate(opt.end_date)}</span>
-              <span className="text-text-tertiary">·</span>
-              <span className="capitalize">{opt.mode} mode</span>
-              <span className="text-text-tertiary">·</span>
-              <span>{fmtSearchMethod(opt.search_method)}</span>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+                {opt.instrument}
+              </span>
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
+                {fmtDate(opt.start_date)} → {fmtDate(opt.end_date)}
+              </span>
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary capitalize">
+                {opt.mode} · {fmtSearchMethod(opt.search_method)}
+              </span>
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-tertiary font-mono">
+                {opt.firm_id}
+              </span>
             </div>
           </div>
 
@@ -480,7 +497,7 @@ export function OptimizationDetail() {
           )}
 
           {/* Failed runs — debugging info, always below results */}
-          <FailedRunsTable runs={failedRuns} sweptKeys={sweptKeys} navigate={navigate} />
+          <FailedRunsTable runs={failedRuns} sweptKeys={sweptKeys} navigate={navigate} retryRun={retryRun} />
         </div>
       )}
     </div>

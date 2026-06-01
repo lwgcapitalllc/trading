@@ -23,6 +23,8 @@ from models import (
 from services import lab_db, vps_client
 from services.backtest_runner import run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv
 from services.evaluator import evaluate_run
+from services.sweep_runner import retry_single_sweep_run
+from services.optimization_runner import retry_single_optimization_run
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
 
@@ -253,6 +255,23 @@ async def retry_backtest_run(run_id: str) -> dict:
     if not row["status"].startswith("failed"):
         raise HTTPException(400, f"Run is not failed (status: {row['status']})")
 
+    # Sweep run — reset in place and re-fire via sweep runner
+    if row.get("sweep_id"):
+        if lab_db.has_any_running_vps_job():
+            raise HTTPException(409, "Another VPS job is running — wait for it to finish before retrying")
+        lab_db.reset_run_for_retry(run_id)
+        asyncio.create_task(retry_single_sweep_run(run_id))
+        return {"run_id": run_id, "status": "running"}
+
+    # Optimization run — reset in place and re-fire via optimization runner
+    if row.get("optimization_id"):
+        if lab_db.has_any_running_vps_job():
+            raise HTTPException(409, "Another VPS job is running — wait for it to finish before retrying")
+        lab_db.reset_run_for_retry(run_id)
+        asyncio.create_task(retry_single_optimization_run(run_id))
+        return {"run_id": run_id, "status": "running"}
+
+    # Standalone run — create a fresh run row with a new ID
     strategy = lab_db.get_strategy(row["strategy_id"])
     if not strategy:
         raise HTTPException(404, f"Strategy '{row['strategy_id']}' not found")

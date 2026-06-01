@@ -1052,7 +1052,13 @@ function FailureBanner({ run, onRetry, retrying }: { run: Run; onRetry?: () => v
 
 // ── Logs section ──────────────────────────────────────────────────────────────
 
-function LogsSection({ runId, autoExpand, isRunning }: { runId: string; autoExpand: boolean; isRunning: boolean }) {
+function LogsSection({ runId, autoExpand, isRunning, isComplete, isFailed }: {
+  runId: string
+  autoExpand: boolean
+  isRunning: boolean
+  isComplete?: boolean
+  isFailed?: boolean
+}) {
   const [open, setOpen] = useState(autoExpand)
   const { data: log, isFetching } = useRunLog(open ? runId : null, 200, isRunning)
 
@@ -1068,6 +1074,10 @@ function LogsSection({ runId, autoExpand, isRunning }: { runId: string; autoExpa
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
               <span className="relative inline-flex rounded-full h-[8px] w-[8px] bg-accent" />
             </span>
+          ) : isComplete ? (
+            <span className="w-[8px] h-[8px] rounded-full bg-accent flex-shrink-0" />
+          ) : isFailed ? (
+            <span className="w-[8px] h-[8px] rounded-full bg-neg-text flex-shrink-0" />
           ) : (
             <span className="w-[8px] h-[8px] rounded-full bg-text-tertiary/30 flex-shrink-0" />
           )}
@@ -1076,6 +1086,12 @@ function LogsSection({ runId, autoExpand, isRunning }: { runId: string; autoExpa
           </span>
           {isRunning && (
             <span className="text-micro text-text-tertiary font-mono">· live</span>
+          )}
+          {isComplete && !isRunning && (
+            <span className="text-micro text-accent font-mono">· complete</span>
+          )}
+          {isFailed && !isRunning && (
+            <span className="text-micro text-neg-text font-mono">· failed</span>
           )}
         </div>
         {open ? <ChevronUp size={14} className="text-text-tertiary" /> : <ChevronDown size={14} className="text-text-tertiary" />}
@@ -1247,7 +1263,7 @@ export function BacktestDetail() {
           <div>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap mb-2">
                   <h1 className="text-h1 font-semibold leading-tight">
                     {run.strategy_name || run.strategy_id}
                   </h1>
@@ -1255,17 +1271,17 @@ export function BacktestDetail() {
                     <WorthinessBadge worthiness={run.worthiness} size="md" />
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[13px] text-text-secondary">
-                  <span className="font-mono text-accent">{run.instrument}</span>
-                  <span className="text-text-tertiary">·</span>
-                  <span>{fmtDate(run.start_date)} → {fmtDate(run.end_date)}</span>
-                  <span className="text-text-tertiary">·</span>
-                  <span>{run.bar_value}m bars</span>
-                  {run.commission_per_side > 0 && (
-                    <>
-                      <span className="text-text-tertiary">·</span>
-                      <span>${run.commission_per_side}/side commission</span>
-                    </>
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+                    {run.instrument}
+                  </span>
+                  <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
+                    {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
+                  </span>
+                  {run.evaluations.length > 0 && (
+                    <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-tertiary font-mono">
+                      {run.evaluations.map(e => e.firm_id).join(', ')}
+                    </span>
                   )}
                 </div>
               </div>
@@ -1417,7 +1433,7 @@ export function BacktestDetail() {
           })()}
 
           {/* ── Logs ─────────────────────────────────────────────────────── */}
-          {runId && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} />}
+          {runId && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} isComplete={isComplete} isFailed={isFailed} />}
         </div>
       )}
     </div>

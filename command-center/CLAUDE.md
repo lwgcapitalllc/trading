@@ -2,7 +2,7 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
-**Last reviewed:** 2026-05-31 (session 2)
+**Last reviewed:** 2026-05-31 (session 4)
 
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
@@ -86,6 +86,15 @@ Full setup and session checklist: [BACKTEST_VPS_SETUP.md](BACKTEST_VPS_SETUP.md)
 | Backtests lab M2 — Optimizations tab (delete; count badge; Runs tab nests child runs under source run via `source_run_id`) | ✅ |
 | Backtests lab M2 — global NT8 SA lock: only one job type (backtest/sweep/optimization) may run at a time; 409 with clear message | ✅ |
 | Backtests lab M2 — Overview Backtests card shows optimization count, Tier 1 passes, running optimization banner, best PF result | ✅ |
+| Backtests lab M3 — sweep cancel endpoint + Cancel button (recovers sweeps stuck at `running` after backend restart) | ✅ |
+| Backtests lab M3 — sweep retry-all + per-run retry; optimization per-run retry; `POST /backtests/runs/{id}/retry` context-aware | ✅ |
+| Backtests lab M3 — SweepDetail visual parity with OptimizationDetail (ProgressCard, segmented bar, elapsed timer, status icons) | ✅ |
+| Backtests lab M3 — contract month propagation fix: `withContractMonth()` in Tier3WarningModal stamps root symbols (e.g. "MNQ" → "MNQ 06-26") | ✅ |
+| Backtests lab M4 — sweeps nest under source run in Runs tab (`source_run_id` on sweep child runs; `SweepNestRow` component) | ✅ |
+| Backtests lab M4 — cascade delete: deleting a run also deletes linked sweeps and optimizations; warning shown before confirm | ✅ |
+| Backtests lab M4 — active job indicator: pulsing dot on Runs/Sweeps/Optimizations tabs when any job is running | ✅ |
+| Backtests lab M4 — header redesign: instrument chip accent-colored and first; bar/commission chips removed; chips consolidated | ✅ |
+| Backtests lab M4 — log terminal success color matches SmartMoney (cyan dot + "· complete" label when run finishes) | ✅ |
 | Stress Tests | 🔲 Stub |
 
 ---

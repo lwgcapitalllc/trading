@@ -142,6 +142,8 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_runs_sweep ON backtest_runs(sweep_id)",
             "CREATE INDEX IF NOT EXISTS idx_runs_optimization ON backtest_runs(optimization_id)",
             "ALTER TABLE optimizations ADD COLUMN source_run_id TEXT",
+            "ALTER TABLE backtest_runs ADD COLUMN source_run_id TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_runs_source ON backtest_runs(source_run_id)",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -537,6 +539,36 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
 
 def delete_run(run_id: str) -> bool:
     with _connect() as conn:
+        # Cascade: delete associated optimizations (and their child runs/evals)
+        opt_ids = [
+            r["optimization_id"] for r in conn.execute(
+                "SELECT optimization_id FROM optimizations WHERE source_run_id = ?", (run_id,)
+            ).fetchall()
+        ]
+        for oid in opt_ids:
+            child_ids = [
+                r["run_id"] for r in conn.execute(
+                    "SELECT run_id FROM backtest_runs WHERE optimization_id = ?", (oid,)
+                ).fetchall()
+            ]
+            if child_ids:
+                ph = ",".join("?" * len(child_ids))
+                conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({ph})", child_ids)
+                conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({ph})", child_ids)
+            conn.execute("DELETE FROM optimizations WHERE optimization_id = ?", (oid,))
+
+        # Cascade: delete associated sweeps (runs where source_run_id = this run)
+        sweep_child_ids = [
+            r["run_id"] for r in conn.execute(
+                "SELECT run_id FROM backtest_runs WHERE source_run_id = ?", (run_id,)
+            ).fetchall()
+        ]
+        if sweep_child_ids:
+            ph = ",".join("?" * len(sweep_child_ids))
+            conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({ph})", sweep_child_ids)
+            conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({ph})", sweep_child_ids)
+
+        # Delete the run itself
         conn.execute("DELETE FROM evaluations WHERE run_id = ?", (run_id,))
         cur = conn.execute("DELETE FROM backtest_runs WHERE run_id = ?", (run_id,))
     return cur.rowcount > 0
@@ -643,6 +675,7 @@ def list_sweeps(strategy_id: Optional[str] = None) -> list[dict]:
                 r.start_date,
                 r.end_date,
                 MIN(r.created_at) AS created_at,
+                MIN(r.source_run_id) AS source_run_id,
                 COUNT(*)          AS total_instruments,
                 SUM(CASE WHEN r.status = 'complete'       THEN 1 ELSE 0 END) AS completed_instruments,
                 SUM(CASE WHEN r.status LIKE 'failed%'     THEN 1 ELSE 0 END) AS failed_instruments,
@@ -704,14 +737,15 @@ def insert_run_sweep(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, sweep_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, sweep_id, source_run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
             data["status"], data["created_at"], data["sweep_id"],
+            data.get("source_run_id"),
         ))
 
 
@@ -784,6 +818,15 @@ def fail_optimization(optimization_id: str, error: str) -> None:
         )
 
 
+def cancel_sweep_runs(sweep_id: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE backtest_runs SET status='failed_cancelled', error_message='Sweep cancelled' "
+            "WHERE sweep_id=? AND status IN ('running', 'pending')",
+            (sweep_id,),
+        )
+
+
 def cancel_optimization(optimization_id: str) -> None:
     now = int(time.time())
     with _connect() as conn:
@@ -822,6 +865,17 @@ def list_optimization_failed_runs(optimization_id: str) -> list[dict]:
             "JOIN strategies s ON s.id = r.strategy_id "
             "WHERE r.optimization_id=? AND r.status LIKE 'failed%'",
             (optimization_id,),
+        ).fetchall()
+    return [_parse_json_fields(dict(r), ["params"]) for r in rows]
+
+
+def list_sweep_failed_runs(sweep_id: str) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT r.*, s.name AS strategy_name FROM backtest_runs r "
+            "JOIN strategies s ON s.id = r.strategy_id "
+            "WHERE r.sweep_id=? AND r.status LIKE 'failed%'",
+            (sweep_id,),
         ).fetchall()
     return [_parse_json_fields(dict(r), ["params"]) for r in rows]
 

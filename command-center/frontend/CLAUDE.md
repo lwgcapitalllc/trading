@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-05-30
+**Last reviewed:** 2026-05-31 (session 4)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -277,10 +277,59 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Bots | ✅ Live | Monitor, control (global + per-bot), configure (risk caps + deploy), users (Telegram) |
 | Backtests lab | ✅ Live | Strategies, Runs, Firms, Optimizations tabs; run modal; backtest detail with charts + eval cards |
 | Worthiness Badges | ✅ Live | Every completed run shows a Tier 1/2/3 pill in the Runs table and on BacktestDetail header |
-| Sweep Detail | ✅ Live | `/backtests/sweeps/:sweepId` — live-updating table sorted by worthiness tier as runs complete |
-| Optimization Detail | ✅ Live | `/backtests/optimizations/:optimizationId` — heatmap (2D) or top-10 table (3+D), best param callout, CSV export |
+| Sweep Detail | ✅ Live | `/backtests/sweeps/:sweepId` — ProgressCard (segmented bar, elapsed timer, status icons), ResultsTable, FailedRunsTable. Cancel button for stuck sweeps. Retry-all and per-row retry buttons. Visual parity with OptimizationDetail. |
+| Optimization Detail | ✅ Live | `/backtests/optimizations/:optimizationId` — heatmap (2D) or top-10 table (3+D), best param callout, CSV export. Per-row retry button in FailedRunsTable. |
 | Optimize Button | ✅ Live | Tier-aware button on BacktestDetail: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning with instrument routing |
-| Tier 3 Warning Modal | ✅ Live | Shows past results per instrument, offers sweep of untested instruments |
+| Tier 3 Warning Modal | ✅ Live | Shows past results per instrument, offers sweep of untested instruments. `withContractMonth()` stamps root symbols with contract month from source run before submitting sweep. Now passes `source_run_id: run.run_id` on every sweep trigger. |
 | Runner Badge | ✅ Live | StrategyDetail shows "Runs on: NinjaTrader" badge |
 | Stress Tests | 🔲 Stub | ScaffoldBanner placeholder; M3 scope |
 | Settings | ✅ Live | Config read/write |
+
+---
+
+## ProgressCard pattern (SweepDetail / OptimizationDetail)
+
+Both detail pages use an identical `ProgressCard` sub-component with:
+- Left: status icon + label + segmented progress bar (green = complete, red = failed) + counts
+- Right: elapsed/duration timer (`useElapsed` hook) + Cancel button (while running) + Retry-N-failed button (when not running)
+- Inline warning when failures accumulate during a run
+
+`useElapsed(startIso, endIso, running)` — counts up live when `running`, freezes at final duration when done.
+
+Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBacktest().mutate(run.run_id)`. Spinner activates on the specific row via `retryRun.variables === run.run_id`. `e.stopPropagation()` prevents the row-click navigation from firing.
+
+---
+
+## Session 4 additions
+
+### Sweep nesting in Runs tab
+
+New `SweepNestRow` component renders directly below a run row when the sweep's `source_run_id` matches the run. Style: cyan accent left border (distinct from gold optimization rows). Shows instrument count, status pill with pulse dot while running. Clicking navigates to `/backtests/sweeps/:sweepId`.
+
+Sweep child runs are hidden from the flat Runs list only when their sweep has a `source_run_id` (the sweep is shown nested). Old sweeps without `source_run_id` keep their child runs visible as flat rows with the SWEEP badge — there is no way to backfill the link retroactively.
+
+`sweepsBySourceRun` map built in `RunsTab` alongside the existing `optsBySourceRun` map.
+
+### Active tab indicators
+
+`TabBar` accepts `runsActive`, `sweepsActive`, `optsActive` booleans. A small pulsing cyan dot appears on the tab label when any job in that category is `status = 'running'`. Derived from `allRuns`/`allSweeps`/`allOpts` cache data — no extra fetch.
+
+### Cascade delete warning
+
+When deleting a run that has linked optimizations or sweeps (via `source_run_id`), the `ConfirmDeleteModal` shows a specific message listing the counts: "This run has N optimizations and M sweeps attached — they and all their results will also be permanently deleted."
+
+Backend `delete_run` cascades automatically; the warning is purely informational. Bulk run delete now also invalidates `['lab', 'sweeps']` and `['lab', 'optimizations']` query keys so the tabs update.
+
+### Header consolidation (BacktestDetail / OptimizationDetail / SweepDetail)
+
+- **BacktestDetail**: Removed `bar_value` and `commission_per_side` chips. Added a chip showing evaluated firm IDs (tertiary, font-mono). Instrument chip remains first and accent-colored.
+- **OptimizationDetail**: Instrument chip is now first and accent-colored. Mode + search method merged into one chip (`eval · Brute Force`). "Optimization" type label chip removed (redundant on the detail page itself).
+- **SweepDetail**: Removed standalone "N instruments" chip (already shown in the ProgressCard instrument tracker). Count embedded in the type chip: "5-instrument Sweep".
+
+### Log terminal colors
+
+`LogsSection` in BacktestDetail now matches the SmartMoney terminal pattern:
+- **Running**: pulsing cyan dot (unchanged)
+- **Complete**: solid cyan dot + "· complete" label
+- **Failed**: red dot + "· failed" label
+- **Idle**: dim grey dot (unchanged)

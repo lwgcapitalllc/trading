@@ -167,18 +167,22 @@ type Tab = 'strategies' | 'runs' | 'sweeps' | 'optimizations' | 'firms'
 
 function TabBar({
   active, onChange, runsCount, sweepsCount, optsCount,
+  runsActive, sweepsActive, optsActive,
 }: {
   active: Tab
   onChange: (t: Tab) => void
   runsCount?: number
   sweepsCount?: number
   optsCount?: number
+  runsActive?: boolean
+  sweepsActive?: boolean
+  optsActive?: boolean
 }) {
-  const tabs: Array<{ id: Tab; label: string; count?: number }> = [
+  const tabs: Array<{ id: Tab; label: string; count?: number; active?: boolean }> = [
     { id: 'strategies',    label: 'Strategies' },
-    { id: 'runs',          label: 'Runs',          count: runsCount },
-    { id: 'sweeps',        label: 'Sweeps',         count: sweepsCount },
-    { id: 'optimizations', label: 'Optimizations', count: optsCount },
+    { id: 'runs',          label: 'Runs',          count: runsCount,   active: runsActive },
+    { id: 'sweeps',        label: 'Sweeps',         count: sweepsCount, active: sweepsActive },
+    { id: 'optimizations', label: 'Optimizations', count: optsCount,   active: optsActive },
     { id: 'firms',         label: 'Firms' },
   ]
   return (
@@ -200,6 +204,9 @@ function TabBar({
             }`}>
               {t.count}
             </span>
+          )}
+          {t.active && (
+            <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse flex-shrink-0" />
           )}
         </button>
       ))}
@@ -224,12 +231,20 @@ function RunsTab() {
   const { data: allRuns, isLoading, refetch, isFetching } = useBacktestRuns(
     statusFilter ? { status: statusFilter } : undefined
   )
-  const { data: allOpts } = useOptimizations()
+  const { data: allOpts }   = useOptimizations()
+  const { data: allSweeps } = useSweeps()
 
-  // Standalone runs only — optimization child runs are visible inside optimization detail
+  // sweep_ids that have a known source run — their child runs are shown nested, not as flat rows
+  const linkedSweepIds = useMemo(() => {
+    const set = new Set<string>()
+    allSweeps?.forEach(sw => { if (sw.source_run_id) set.add(sw.sweep_id) })
+    return set
+  }, [allSweeps])
+
+  // Hide: opt child runs always; sweep child runs only when the sweep is linked (shows nested)
   const runs = useMemo(
-    () => allRuns?.filter(r => !r.optimization_id),
-    [allRuns]
+    () => allRuns?.filter(r => !r.optimization_id && !(r.sweep_id && linkedSweepIds.has(r.sweep_id))),
+    [allRuns, linkedSweepIds]
   )
 
   // Map: source_run_id → optimizations started from that run
@@ -244,6 +259,30 @@ function RunsTab() {
     }
     return map
   }, [allOpts])
+
+  // Map: source_run_id → sweeps started from that run
+  const sweepsBySourceRun = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof allSweeps>>()
+    if (!allSweeps) return map
+    for (const sw of allSweeps) {
+      if (!sw.source_run_id) continue
+      const existing = map.get(sw.source_run_id) ?? []
+      existing.push(sw)
+      map.set(sw.source_run_id, existing)
+    }
+    return map
+  }, [allSweeps])
+
+  // Cascade delete message for a run
+  const cascadeMessage = useCallback((runId: string) => {
+    const opts   = optsBySourceRun.get(runId) ?? []
+    const sweeps = sweepsBySourceRun.get(runId) ?? []
+    const parts: string[] = []
+    if (opts.length)   parts.push(`${opts.length} optimization${opts.length !== 1 ? 's' : ''}`)
+    if (sweeps.length) parts.push(`${sweeps.length} sweep${sweeps.length !== 1 ? 's' : ''}`)
+    if (!parts.length) return undefined
+    return `This run has ${parts.join(' and ')} attached — they and all their results will also be permanently deleted.`
+  }, [optsBySourceRun, sweepsBySourceRun])
 
   const isRunning = progress.data?.status === 'running'
 
@@ -278,6 +317,8 @@ function RunsTab() {
       const failed = results.filter(r => r.status === 'rejected').length
       const succeeded = ids.length - failed
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
       if (failed === 0) {
         toast.success(`${ids.length} run${ids.length !== 1 ? 's' : ''} deleted`)
       } else if (succeeded > 0) {
@@ -385,6 +426,14 @@ function RunsTab() {
                     onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
                     onDelete={e => { e.stopPropagation(); setDeleteRunId(run.run_id) }}
                   />
+                  {(sweepsBySourceRun.get(run.run_id) ?? []).map(sw => (
+                    <SweepNestRow
+                      key={sw.sweep_id}
+                      sweep={sw}
+                      colSpan={12}
+                      onClick={() => navigate(`/backtests/sweeps/${sw.sweep_id}`)}
+                    />
+                  ))}
                   {(optsBySourceRun.get(run.run_id) ?? []).map(opt => (
                     <OptimizationNestRow
                       key={opt.optimization_id}
@@ -407,6 +456,7 @@ function RunsTab() {
           onConfirm={handleSingleDelete}
           onCancel={() => setDeleteRunId(null)}
           isPending={deleteRun.isPending}
+          customMessage={cascadeMessage(deleteRunId)}
         />
       )}
 
@@ -440,13 +490,12 @@ function OptimizationNestRow({
       onClick={onClick}
       className="hover:bg-bg-hover cursor-pointer transition-colors bg-gold-muted/5 border-l-2 border-l-gold-text/35"
     >
-      {/* indent spacer replaces checkbox col */}
       <td className="px-3 py-2" />
       <td className="px-4 py-2" colSpan={3}>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
           <span className="text-[11px] font-semibold text-gold-text">Optimization</span>
-          <span className="text-[11px] text-text-tertiary font-mono">{opt.optimization_id}</span>
+          <span className="text-[11px] text-text-tertiary font-mono">{opt.instrument}</span>
           <span className="text-[10px] text-text-tertiary">
             · {doneRuns}/{totalRuns} runs
           </span>
@@ -454,6 +503,55 @@ function OptimizationNestRow({
       </td>
       <td className="px-4 py-2">
         <span className={`inline-flex px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>
+          {st.label}
+        </span>
+      </td>
+      <td colSpan={colSpan - 5} className="px-4 py-2 text-right">
+        <span className="text-[11px] text-accent">View →</span>
+      </td>
+    </tr>
+  )
+}
+
+// ── Nested sweep row (shown under the source run) ─────────────────────────────
+
+function SweepNestRow({
+  sweep, colSpan, onClick,
+}: {
+  sweep: import('@/types').SweepSummary
+  colSpan: number
+  onClick: () => void
+}) {
+  function fmtSweepSt(s: string) {
+    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'running')  return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
+    if (s === 'partial')  return { label: 'Partial',  cls: 'bg-warn-muted text-warn-text' }
+    return { label: s, cls: 'bg-bg-hover text-text-secondary' }
+  }
+  const st = fmtSweepSt(sweep.status)
+  return (
+    <tr
+      onClick={onClick}
+      className="hover:bg-bg-hover cursor-pointer transition-colors bg-accent/[0.03] border-l-2 border-l-accent/30"
+    >
+      <td className="px-3 py-2" />
+      <td className="px-4 py-2" colSpan={3}>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-accent/50 font-mono">↳</span>
+          <span className="text-[11px] font-semibold text-accent/80">Sweep</span>
+          <span className="text-[10px] text-text-tertiary">
+            {sweep.total_instruments} instruments
+          </span>
+          {sweep.status === 'running' && (
+            <span className="text-[10px] text-text-tertiary">
+              · {sweep.completed_instruments}/{sweep.total_instruments} done
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-2">
+        <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>
+          {sweep.status === 'running' && <span className="w-[4px] h-[4px] rounded-full bg-accent animate-pulse" />}
           {st.label}
         </span>
       </td>
@@ -998,13 +1096,16 @@ export function Backtests() {
   const tab = (searchParams.get('tab') ?? 'strategies') as Tab
   const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
 
-  // Counts for tab labels — served from cache when tabs have already loaded data
+  // Counts and active-job flags for tab labels
   const { data: allRuns }   = useBacktestRuns()
   const { data: allOpts }   = useOptimizations()
   const { data: allSweeps } = useSweeps()
-  const runsCount   = allRuns?.filter(r => !r.optimization_id).length
-  const optsCount   = allOpts?.length
-  const sweepsCount = allSweeps?.length
+  const runsCount    = allRuns?.filter(r => !r.optimization_id && !r.sweep_id).length
+  const optsCount    = allOpts?.length
+  const sweepsCount  = allSweeps?.length
+  const runsActive   = allRuns?.some(r => !r.optimization_id && !r.sweep_id && r.status === 'running')
+  const sweepsActive = allSweeps?.some(s => s.status === 'running')
+  const optsActive   = allOpts?.some(o => o.status === 'running')
 
   return (
     <div>
@@ -1012,7 +1113,11 @@ export function Backtests() {
         <h1 className="text-h1 font-semibold">Backtests</h1>
       </div>
 
-      <TabBar active={tab} onChange={setTab} runsCount={runsCount} sweepsCount={sweepsCount} optsCount={optsCount} />
+      <TabBar
+        active={tab} onChange={setTab}
+        runsCount={runsCount} sweepsCount={sweepsCount} optsCount={optsCount}
+        runsActive={runsActive} sweepsActive={sweepsActive} optsActive={optsActive}
+      />
 
       {tab === 'strategies'    && <StrategiesTab />}
       {tab === 'runs'          && <RunsTab />}
