@@ -154,8 +154,28 @@ def lab_stop() -> dict:
 
 @router.post("/system/vps-agent/start")
 def start_vps_agent():
-    """Start vps_agent.py on the VPS via SSH by running the LucidFlexAgent scheduled task."""
+    """Reconnect the SSH port-forward tunnel and restart vps_agent on the VPS.
+
+    After laptop sleep the ssh -N tunnel process dies, breaking localhost:8765
+    even though SSH itself still works. This endpoint kills the stale tunnel,
+    spawns a fresh one, then fires the LucidFlexAgent scheduled task.
+    """
     global _health_cache
+
+    # Kill any stale tunnel process and spawn a fresh one.
+    subprocess.run(["pkill", "-f", r"ssh -N.*forexvps"], capture_output=True)
+    subprocess.Popen(
+        ["ssh", "-N",
+         "-o", "ServerAliveInterval=30",
+         "-o", "ServerAliveCountMax=3",
+         cfg.SSH_ALIAS],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    # Give the tunnel a moment to establish the port-forward before we use it.
+    time.sleep(2)
+
+    # Fire the scheduled task to (re)start vps_agent.py on the VPS.
     try:
         result = subprocess.run(
             ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
@@ -168,7 +188,7 @@ def start_vps_agent():
         raise HTTPException(status_code=502, detail=str(e))
     if result.returncode != 0:
         raise HTTPException(status_code=502, detail=f"schtasks failed: {result.stderr.strip()}")
-    _health_cache = None  # force next /system/health to re-probe
+    _health_cache = None
     return {"status": "ok", "output": result.stdout.strip()}
 
 

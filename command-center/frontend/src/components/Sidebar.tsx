@@ -62,12 +62,14 @@ export function Sidebar() {
 
       {/* ── Logo ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-center px-4 py-5 border-b border-border-subtle">
-        <img
-          src="/logo.png"
-          alt="LWG Capital"
-          className="w-full max-w-[148px] h-auto select-none"
-          draggable={false}
-        />
+        <NavLink to="/">
+          <img
+            src="/logo.png"
+            alt="LWG Capital"
+            className="w-full max-w-[148px] h-auto select-none cursor-pointer"
+            draggable={false}
+          />
+        </NavLink>
       </div>
 
       {/* ── Nav ───────────────────────────────────────────────────── */}

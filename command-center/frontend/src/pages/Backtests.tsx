@@ -72,7 +72,7 @@ function firmShortName(firmId: string): string {
   if (parts.length < 3) return firmId
   const brandMap: Record<string, string> = { lucidflex: 'LF', apex: 'Apex', tradeify: 'TF' }
   const brand = brandMap[parts[0]] ?? parts[0].slice(0, 2).toUpperCase()
-  const size  = (parts[1] ?? '').replace('k', '').replace('K', '')
+  const size  = (parts[1] ?? '').toUpperCase()
   const tier  = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
   return `${brand}${size} ${tier}`
 }
@@ -517,9 +517,10 @@ function SweepNestRow({
   onClick: () => void
 }) {
   function fmtSweepSt(s: string) {
-    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
-    if (s === 'running')  return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
-    if (s === 'partial')  return { label: 'Partial',  cls: 'bg-warn-muted text-warn-text' }
+    if (s === 'complete')       return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'running')        return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
+    if (s === 'partial')        return { label: 'Partial',  cls: 'bg-warn-muted text-warn-text' }
+    if (s.startsWith('failed')) return { label: 'Failed',   cls: 'bg-neg-muted text-neg-text' }
     return { label: s, cls: 'bg-bg-hover text-text-secondary' }
   }
   const st = fmtSweepSt(sweep.status)
@@ -879,9 +880,10 @@ function SweepsTab() {
   const [deleteSweepId, setDeleteSweepId] = useState<string | null>(null)
 
   function fmtSweepStatus(s: string) {
-    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
-    if (s === 'running')  return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
-    if (s === 'partial')  return { label: 'Partial',  cls: 'bg-warn-muted text-warn-text' }
+    if (s === 'complete')              return { label: 'Complete',  cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'running')               return { label: 'Running',   cls: 'bg-accent/10 text-accent' }
+    if (s === 'partial')               return { label: 'Partial',   cls: 'bg-warn-muted text-warn-text' }
+    if (s.startsWith('failed'))        return { label: 'Failed',    cls: 'bg-neg-muted text-neg-text' }
     return { label: s, cls: 'bg-bg-hover text-text-secondary' }
   }
 

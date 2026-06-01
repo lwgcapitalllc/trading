@@ -66,7 +66,7 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
 
   const elapsed = useElapsed(sweep.created_at, sweep.completed_at, isRunning)
 
-  const statusLabel = isRunning ? 'Running' : isComplete ? 'Complete' : isCancelled ? 'Cancelled' : hasFailures ? 'Partial' : 'Failed'
+  const statusLabel = isRunning ? 'Running' : isComplete ? 'Complete' : isCancelled ? 'Cancelled' : allFailed ? 'Failed' : hasFailures ? 'Partial' : 'Failed'
   const borderCls = isComplete && !hasFailures ? 'border-pos-text/20 bg-pos-muted/30'
     : allFailed || isCancelled ? 'border-neg-text/20 bg-neg-muted'
     : hasFailures ? 'border-warn-text/25 bg-warn-muted/20'

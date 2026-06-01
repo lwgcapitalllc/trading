@@ -506,11 +506,18 @@ def update_run_chart_paths(run_id: str, paths: dict) -> None:
 
 
 def update_run_status(run_id: str, status: str, error_message: Optional[str] = None) -> None:
+    now = int(time.time())
     with _connect() as conn:
-        conn.execute(
-            "UPDATE backtest_runs SET status=?, error_message=? WHERE run_id=?",
-            (status, error_message, run_id),
-        )
+        if status.startswith("failed"):
+            conn.execute(
+                "UPDATE backtest_runs SET status=?, error_message=?, completed_at=? WHERE run_id=?",
+                (status, error_message, now, run_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE backtest_runs SET status=?, error_message=? WHERE run_id=?",
+                (status, error_message, run_id),
+            )
 
 
 def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:

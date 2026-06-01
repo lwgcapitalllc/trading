@@ -284,7 +284,7 @@ export function useStartVpsAgent() {
     mutationFn: () => api.post<{ status: string; output: string }>('/system/vps-agent/start'),
     onSuccess: () => {
       toast.success('VPS agent starting…')
-      setTimeout(() => qc.invalidateQueries({ queryKey: ['system', 'health'] }), 4_000)
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['system', 'health'] }), 8_000)
     },
     onError: () => toast.error('Failed to start VPS agent — is SSH up?'),
   })
