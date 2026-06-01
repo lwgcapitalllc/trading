@@ -848,26 +848,16 @@ function FirmsTab() {
     />
   )
 
-  const byTier   = firms.filter(f => f.account_tier === (subTab === 'eval' ? 'eval' : 'funded'))
-  const brands   = [...new Set(byTier.map(f => firmBrand(f.id)))]
-  const visible  = brandFilter ? byTier.filter(f => firmBrand(f.id) === brandFilter) : byTier
-  const isEval   = subTab === 'eval'
-
-  // Group visible firms by brand for separator rows
-  const grouped: { brand: string; firms: Firm[] }[] = []
-  for (const f of visible) {
-    const b = firmBrand(f.id)
-    const last = grouped[grouped.length - 1]
-    if (last?.brand === b) last.firms.push(f)
-    else grouped.push({ brand: b, firms: [f] })
-  }
-
-  const colCount = isEval ? 6 : 4
+  const byTier  = firms.filter(f => f.account_tier === subTab)
+  const brands  = [...new Set(byTier.map(f => firmBrand(f.id)))]
+  const isEval  = subTab === 'eval'
+  // When a brand is selected show only that brand; otherwise show all brands as separate tables
+  const visible = brandFilter ? [brandFilter] : brands
 
   return (
     <div>
-      {/* Sub-tabs */}
       <div className="flex items-center justify-between mb-3">
+        {/* Tier sub-tabs */}
         <div className="flex items-center gap-1">
           {(['eval', 'funded'] as FirmSubTab[]).map(t => (
             <button
@@ -881,13 +871,13 @@ function FirmsTab() {
             >
               {t === 'eval' ? 'Evaluation' : 'Funded'}
               <span className="ml-1.5 text-[10px] opacity-60">
-                {firms.filter(f => f.account_tier === (t === 'eval' ? 'eval' : 'funded')).length}
+                {firms.filter(f => f.account_tier === t).length}
               </span>
             </button>
           ))}
         </div>
 
-        {/* Brand filter chips */}
+        {/* Brand filter chips — only shown when there are multiple brands */}
         {brands.length > 1 && (
           <div className="flex items-center gap-1">
             <button
@@ -929,23 +919,22 @@ function FirmsTab() {
               {isEval && <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>}
             </tr>
           </thead>
-          <tbody className="divide-y divide-border-subtle">
-            {grouped.map(({ brand, firms: groupFirms }) => (
-              <>
-                {grouped.length > 1 && (
-                  <tr key={`hdr-${brand}`} className="bg-bg-hover/40">
-                    <td colSpan={colCount} className="px-4 py-[5px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary">
-                        {brand}
-                      </span>
+          <tbody>
+            {visible.map((brand, bi) => {
+              const brandFirms = byTier.filter(f => firmBrand(f.id) === brand)
+              return (
+                <>
+                  <tr key={`hdr-${brand}`} className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-bg-sunken`}>
+                    <td colSpan={isEval ? 6 : 4} className="px-4 py-2">
+                      <span className="text-[11px] font-semibold text-text-secondary">{brand}</span>
                     </td>
                   </tr>
-                )}
-                {groupFirms.map(firm => (
-                  <FirmRow key={firm.id} firm={firm} showEvalCols={isEval} />
-                ))}
-              </>
-            ))}
+                  {brandFirms.map(firm => (
+                    <FirmRow key={firm.id} firm={firm} showEvalCols={isEval} />
+                  ))}
+                </>
+              )
+            })}
           </tbody>
         </table>
       </div>
