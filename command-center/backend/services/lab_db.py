@@ -688,16 +688,37 @@ def list_sweeps(strategy_id: Optional[str] = None) -> list[dict]:
                 SUM(CASE WHEN r.status LIKE 'failed%'     THEN 1 ELSE 0 END) AS failed_instruments,
                 CASE
                     WHEN SUM(CASE WHEN r.status = 'running'      THEN 1 ELSE 0 END) > 0 THEN 'running'
-                    WHEN COUNT(*) = SUM(CASE WHEN r.status = 'complete' THEN 1 ELSE 0 END) THEN 'complete'
+                    WHEN COUNT(*) = SUM(CASE WHEN r.status = 'complete'    THEN 1 ELSE 0 END) THEN 'complete'
+                    WHEN COUNT(*) = SUM(CASE WHEN r.status LIKE 'failed%'  THEN 1 ELSE 0 END) THEN 'failed'
                     ELSE 'partial'
-                END AS status
+                END AS status,
+                CASE MIN(CASE
+                    WHEN r.worthiness_tier = 'TIER_1_STRESS_TEST' THEN 1
+                    WHEN r.worthiness_tier = 'TIER_2_OPTIMIZE'    THEN 2
+                    WHEN r.worthiness_tier = 'TIER_3_DISCARD'     THEN 3
+                    ELSE NULL
+                END)
+                    WHEN 1 THEN 'TIER_1_STRESS_TEST'
+                    WHEN 2 THEN 'TIER_2_OPTIMIZE'
+                    WHEN 3 THEN 'TIER_3_DISCARD'
+                    ELSE NULL
+                END AS best_worthiness,
+                (SELECT GROUP_CONCAT(DISTINCT e.firm_id)
+                 FROM evaluations e
+                 JOIN backtest_runs br2 ON br2.run_id = e.run_id
+                 WHERE br2.sweep_id = r.sweep_id) AS firm_ids_csv
             FROM backtest_runs r
             LEFT JOIN strategies s ON s.id = r.strategy_id
             {where}
             GROUP BY r.sweep_id
             ORDER BY created_at DESC
         """, params).fetchall()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        d = dict(r)
+        d['firm_ids'] = [f for f in (d.pop('firm_ids_csv') or '').split(',') if f]
+        result.append(d)
+    return result
 
 
 def has_running_sweep(strategy_id: str) -> bool:

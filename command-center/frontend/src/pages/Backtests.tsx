@@ -12,7 +12,7 @@ import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
-import type { BacktestSummary, Strategy, Firm, VerdictSummary } from '@/types'
+import type { BacktestSummary, Strategy, Firm, VerdictSummary, WorthinessScore } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -77,6 +77,12 @@ function firmShortName(firmId: string): string {
   return `${brand}${size} ${tier}`
 }
 
+function challengeCls(firmId: string): string {
+  if (firmId.includes('_eval'))   return 'bg-warn-muted text-warn-text'
+  if (firmId.includes('_funded')) return 'bg-pos-muted text-pos-text'
+  return 'bg-bg-hover text-text-secondary'
+}
+
 function ChallengePills({ verdicts }: { verdicts: VerdictSummary[] }) {
   if (!verdicts.length) return <span className="text-text-tertiary text-[11px]">—</span>
   const visible  = verdicts.slice(0, 2)
@@ -87,7 +93,7 @@ function ChallengePills({ verdicts }: { verdicts: VerdictSummary[] }) {
         <span
           key={v.firm_id}
           title={v.firm_id}
-          className="inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-medium bg-bg-hover text-text-secondary font-mono"
+          className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold font-mono ${challengeCls(v.firm_id)}`}
         >
           {firmShortName(v.firm_id)}
         </span>
@@ -912,6 +918,8 @@ function SweepsTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Challenge</th>
                 <th className="px-3 py-3 w-20" />
               </tr>
             </thead>
@@ -941,6 +949,24 @@ function SweepsTab() {
                         {sw.status === 'running' && <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />}
                         {st.label}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <WorthinessBadge worthiness={sw.best_worthiness ? { tier: sw.best_worthiness as WorthinessScore['tier'], reason: null, computed_against_firm: null } : null} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-[4px] items-center flex-wrap">
+                        {sw.firm_ids.slice(0, 2).map(f => (
+                          <span key={f} className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold font-mono ${challengeCls(f)}`}>
+                            {firmShortName(f)}
+                          </span>
+                        ))}
+                        {sw.firm_ids.length > 2 && (
+                          <span className="text-[10px] text-text-tertiary">+{sw.firm_ids.length - 2}</span>
+                        )}
+                        {sw.firm_ids.length === 0 && (
+                          <span className="text-text-tertiary text-[11px]">—</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1 justify-end">

@@ -19,6 +19,22 @@ function fmtDuration(seconds: number): string {
   return `${h}h ${m}m`
 }
 
+function firmShortName(firmId: string): string {
+  const parts = firmId.split('_')
+  if (parts.length < 3) return firmId
+  const brandMap: Record<string, string> = { lucidflex: 'LF', apex: 'Apex', tradeify: 'TF' }
+  const brand = brandMap[parts[0]] ?? parts[0].slice(0, 2).toUpperCase()
+  const size  = (parts[1] ?? '').toUpperCase()
+  const tier  = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
+  return `${brand}${size} ${tier}`
+}
+
+function firmChipCls(firmId: string): string {
+  if (firmId.includes('_eval'))   return 'bg-warn-muted text-warn-text border border-warn-text/20'
+  if (firmId.includes('_funded')) return 'bg-pos-muted text-pos-text border border-pos-text/20'
+  return 'bg-bg-surface border border-border-subtle text-text-tertiary'
+}
+
 // ── Live elapsed timer ────────────────────────────────────────────────────────
 
 function useElapsed(startIso: string | null, endIso: string | null, running: boolean) {
@@ -402,8 +418,8 @@ export function SweepDetail() {
                 {fmtDate(sweep.start_date)} → {fmtDate(sweep.end_date)}
               </span>
               {sweep.firm_ids.map(f => (
-                <span key={f} className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-tertiary font-mono">
-                  {f}
+                <span key={f} className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(f)}`}>
+                  {firmShortName(f)}
                 </span>
               ))}
             </div>

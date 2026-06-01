@@ -482,6 +482,8 @@ export interface SweepSummary {
   status: string
   created_at: string
   source_run_id: string | null
+  best_worthiness: string | null
+  firm_ids: string[]
 }
 
 export interface SweepDetail {

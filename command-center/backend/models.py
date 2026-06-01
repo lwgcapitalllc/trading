@@ -498,6 +498,8 @@ class SweepSummary(BaseModel):
     status: str
     created_at: datetime
     source_run_id: Optional[str] = None
+    best_worthiness: Optional[str] = None
+    firm_ids: list[str] = []
 
 
 class SweepDetail(BaseModel):

@@ -19,6 +19,22 @@ function fmtDuration(seconds: number): string {
   return `${h}h ${m}m`
 }
 
+function firmShortName(firmId: string): string {
+  const parts = firmId.split('_')
+  if (parts.length < 3) return firmId
+  const brandMap: Record<string, string> = { lucidflex: 'LF', apex: 'Apex', tradeify: 'TF' }
+  const brand = brandMap[parts[0]] ?? parts[0].slice(0, 2).toUpperCase()
+  const size  = (parts[1] ?? '').toUpperCase()
+  const tier  = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
+  return `${brand}${size} ${tier}`
+}
+
+function firmChipCls(firmId: string): string {
+  if (firmId.includes('_eval'))   return 'bg-warn-muted text-warn-text border border-warn-text/20'
+  if (firmId.includes('_funded')) return 'bg-pos-muted text-pos-text border border-pos-text/20'
+  return 'bg-bg-surface border border-border-subtle text-text-tertiary'
+}
+
 function fmtSearchMethod(m: string) {
   if (m === 'brute')   return 'Brute Force'
   if (m === 'genetic') return 'Genetic'
@@ -309,10 +325,10 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
             {sweptKeys.map(k => (
               <th key={k} className="text-left px-3 py-2 text-text-tertiary font-medium font-mono">{k}</th>
             ))}
-            <th className="text-right px-3 py-2 text-text-tertiary font-medium">P&L</th>
-            <th className="text-right px-3 py-2 text-text-tertiary font-medium">Max DD</th>
-            <th className="text-right px-3 py-2 text-text-tertiary font-medium">PF</th>
-            <th className="text-right px-3 py-2 text-text-tertiary font-medium">Trades</th>
+            <th className="text-left px-3 py-2 text-text-tertiary font-medium">P&L</th>
+            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Max DD</th>
+            <th className="text-left px-3 py-2 text-text-tertiary font-medium">PF</th>
+            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Trades</th>
             <th className="text-left px-3 py-2 text-text-tertiary font-medium">Score</th>
             <th className="px-3 py-2 w-16" />
           </tr>
@@ -337,16 +353,16 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
                     {String(run.params?.[k] ?? '—')}
                   </td>
                 ))}
-                <td className={`px-3 py-[9px] font-mono tabular-nums text-right ${pnlCls}`}>
+                <td className={`px-3 py-[9px] font-mono tabular-nums ${pnlCls}`}>
                   {run.net_pnl != null ? `${run.net_pnl >= 0 ? '+' : ''}$${Math.abs(run.net_pnl).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
                 </td>
-                <td className="px-3 py-[9px] font-mono tabular-nums text-right text-neg-text">
+                <td className="px-3 py-[9px] font-mono tabular-nums text-neg-text">
                   {run.max_drawdown != null ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
                 </td>
-                <td className="px-3 py-[9px] font-mono tabular-nums text-right">
+                <td className="px-3 py-[9px] font-mono tabular-nums">
                   {run.profit_factor?.toFixed(2) ?? '—'}
                 </td>
-                <td className="px-3 py-[9px] tabular-nums text-right text-text-secondary">
+                <td className="px-3 py-[9px] tabular-nums text-text-secondary">
                   {run.trade_count ?? '—'}
                 </td>
                 <td className="px-3 py-[9px]">
@@ -461,8 +477,8 @@ export function OptimizationDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary capitalize">
                 {opt.mode} · {fmtSearchMethod(opt.search_method)}
               </span>
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-tertiary font-mono">
-                {opt.firm_id}
+              <span className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(opt.firm_id)}`}>
+                {firmShortName(opt.firm_id)}
               </span>
             </div>
           </div>
