@@ -820,6 +820,8 @@ function StrategiesSkeleton() {
 
 // ── Firms tab ─────────────────────────────────────────────────────────────────
 
+const COL_COUNT = 6
+
 function FirmsTab() {
   const { data: firms, isLoading } = useFirms()
 
@@ -836,56 +838,47 @@ function FirmsTab() {
   const fundedFirms = firms.filter(f => f.account_tier === 'funded')
 
   return (
-    <div className="space-y-6">
-      {evalFirms.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-warn-text px-2 py-[2px] rounded bg-warn-muted/50">
-              Evaluation Challenges
-            </span>
-            <span className="text-[11px] text-text-tertiary">{evalFirms.length} account{evalFirms.length !== 1 ? 's' : ''}</span>
-          </div>
-          <FirmTable firms={evalFirms} showTarget />
-        </div>
-      )}
-      {fundedFirms.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-pos-text px-2 py-[2px] rounded bg-pos-muted/50">
-              Funded Accounts
-            </span>
-            <span className="text-[11px] text-text-tertiary">{fundedFirms.length} account{fundedFirms.length !== 1 ? 's' : ''}</span>
-          </div>
-          <FirmTable firms={fundedFirms} showTarget={false} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function FirmTable({ firms, showTarget }: { firms: Firm[]; showTarget: boolean }) {
-  return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
       <table className="w-full text-[13px]">
         <thead>
           <tr className="border-b border-border-subtle">
             <th className="text-left px-4 py-3 text-text-tertiary font-medium">Firm</th>
             <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
-            {showTarget && <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>}
+            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>
             <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD (EOD)</th>
             <th className="text-left px-4 py-3 text-text-tertiary font-medium">Drawdown Type</th>
-            {showTarget && <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>}
+            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border-subtle">
-          {firms.map(firm => <FirmRow key={firm.id} firm={firm} showTarget={showTarget} />)}
+          {evalFirms.length > 0 && <>
+            <tr className="bg-warn-muted/10 border-b border-border-subtle">
+              <td colSpan={COL_COUNT} className="px-4 py-[6px]">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.7px] text-warn-text/80">
+                  Evaluation Challenges
+                </span>
+              </td>
+            </tr>
+            {evalFirms.map(firm => <FirmRow key={firm.id} firm={firm} />)}
+          </>}
+          {fundedFirms.length > 0 && <>
+            <tr className="bg-pos-muted/10 border-b border-border-subtle">
+              <td colSpan={COL_COUNT} className="px-4 py-[6px]">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.7px] text-pos-text/80">
+                  Funded Accounts
+                </span>
+              </td>
+            </tr>
+            {fundedFirms.map(firm => <FirmRow key={firm.id} firm={firm} />)}
+          </>}
         </tbody>
       </table>
     </div>
   )
 }
 
-function FirmRow({ firm, showTarget }: { firm: Firm; showTarget: boolean }) {
+function FirmRow({ firm }: { firm: Firm }) {
+  const isEval = firm.account_tier === 'eval'
   return (
     <tr className="hover:bg-bg-hover transition-colors">
       <td className="px-4 py-3">
@@ -893,20 +886,16 @@ function FirmRow({ firm, showTarget }: { firm: Firm; showTarget: boolean }) {
         <div className="text-[11px] text-text-tertiary font-mono">{firm.id}</div>
       </td>
       <td className="px-4 py-3 font-mono tabular-nums">${firm.account_size.toLocaleString()}</td>
-      {showTarget && (
-        <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
-          {firm.profit_target > 0 ? `$${firm.profit_target.toLocaleString()}` : '—'}
-        </td>
-      )}
+      <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
+        {isEval && firm.profit_target > 0 ? `$${firm.profit_target.toLocaleString()}` : <span className="text-text-tertiary">—</span>}
+      </td>
       <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
         ${firm.max_loss_eod.toLocaleString()}
       </td>
       <td className="px-4 py-3 text-text-secondary capitalize">{firm.drawdown_type.replace(/_/g, ' ')}</td>
-      {showTarget && (
-        <td className="px-4 py-3 text-text-secondary">
-          {firm.consistency_pct != null ? `≤ ${firm.consistency_pct}%` : <span className="text-text-tertiary">—</span>}
-        </td>
-      )}
+      <td className="px-4 py-3 text-text-secondary">
+        {isEval && firm.consistency_pct != null ? `≤ ${firm.consistency_pct}%` : <span className="text-text-tertiary">—</span>}
+      </td>
     </tr>
   )
 }
