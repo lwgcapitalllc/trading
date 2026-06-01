@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X, Play, Info } from 'lucide-react'
-import { useFirms, useTriggerBacktest } from '@/hooks/useLab'
+import { AlertTriangle } from 'lucide-react'
+import { useFirms, useTriggerBacktest, useRunningVpsJob } from '@/hooks/useLab'
 import type { Strategy, Firm, ParamSchemaEntry } from '@/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -203,6 +204,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const navigate = useNavigate()
   const trigger  = useTriggerBacktest()
   const { data: firms = [], isLoading: firmsLoading } = useFirms()
+  const { data: runningJob } = useRunningVpsJob()
 
   const inputCls = 'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
   const dateCls  = `${inputCls} [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:cursor-pointer`
@@ -324,11 +326,13 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   }, [strategy.param_schema])
 
   // ── Validation ───────────────────────────────────────────────────────────────
+  const jobBlocked = !!runningJob?.running
   const canSubmit =
     instrumentSymbol !== '' &&
     startDate !== '' && endDate !== '' && startDate < endDate &&
     selectedFirms.size > 0 &&
-    !trigger.isPending
+    !trigger.isPending &&
+    !jobBlocked
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   function handleSubmit(e: React.FormEvent) {
@@ -378,6 +382,16 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             <X size={16} />
           </button>
         </div>
+
+        {/* ── Running job warning ─────────────────────────────────────────────── */}
+        {jobBlocked && (
+          <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
+            <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
+            <p className="text-[12px] text-warn-text leading-snug">
+              <span className="font-semibold">NT8 is busy:</span> {runningJob?.description} — wait for it to finish before starting a new run.
+            </p>
+          </div>
+        )}
 
         {/* ── Scrollable body ─────────────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-5 space-y-5">

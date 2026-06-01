@@ -731,6 +731,49 @@ def has_any_running_vps_job() -> bool:
     return (run_count + opt_count) > 0
 
 
+def get_running_job() -> Optional[dict]:
+    """Returns metadata about the currently running VPS job, or None if idle."""
+    with _connect() as conn:
+        # Standalone backtest (no sweep, no optimization parent)
+        row = conn.execute("""
+            SELECT 'backtest' AS job_type, r.run_id AS job_id,
+                   COALESCE(s.name, r.strategy_id) || ' on ' || r.instrument AS description
+            FROM backtest_runs r
+            LEFT JOIN strategies s ON s.id = r.strategy_id
+            WHERE r.status = 'running' AND r.sweep_id IS NULL AND r.optimization_id IS NULL
+            LIMIT 1
+        """).fetchone()
+        if row:
+            return dict(row)
+
+        # Sweep (any child run still running)
+        row = conn.execute("""
+            SELECT 'sweep' AS job_type, r.sweep_id AS job_id,
+                   COALESCE(s.name, r.strategy_id) || ' sweep' AS description
+            FROM backtest_runs r
+            LEFT JOIN strategies s ON s.id = r.strategy_id
+            WHERE r.status = 'running' AND r.sweep_id IS NOT NULL
+            LIMIT 1
+        """).fetchone()
+        if row:
+            return dict(row)
+
+        # Optimization
+        row = conn.execute("""
+            SELECT 'optimization' AS job_type, o.optimization_id AS job_id,
+                   COALESCE(s.name, o.strategy_id) || ' optimization on ' || o.instrument
+                   || ' (' || o.completed_runs || '/' || o.estimated_runs || ')' AS description
+            FROM optimizations o
+            LEFT JOIN strategies s ON s.id = o.strategy_id
+            WHERE o.status = 'running'
+            LIMIT 1
+        """).fetchone()
+        if row:
+            return dict(row)
+
+        return None
+
+
 def insert_run_sweep(data: dict) -> None:
     with _connect() as conn:
         conn.execute("""

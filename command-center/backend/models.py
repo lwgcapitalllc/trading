@@ -455,6 +455,15 @@ class SystemHealth(BaseModel):
     checked_at: str
 
 
+# ── Lab — running job status ─────────────────────────────────────────────────
+
+class RunningJobStatus(BaseModel):
+    running: bool
+    job_type: Optional[str] = None   # "backtest" | "sweep" | "optimization"
+    job_id: Optional[str] = None
+    description: Optional[str] = None
+
+
 # ── Lab — sweeps ──────────────────────────────────────────────────────────────
 
 class SweepRequest(BaseModel):

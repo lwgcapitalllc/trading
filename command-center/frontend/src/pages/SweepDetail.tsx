@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2 } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { useSweep, useDeleteSweep, useRetrySweep, useCancelSweep, useRetryBacktest } from '@/hooks/useLab'
+import { useSweep, useDeleteSweep, useRetrySweep, useCancelSweep, useRetryBacktest, useRunningVpsJob } from '@/hooks/useLab'
 import type { BacktestSummary, SweepDetail as Sweep } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -40,12 +40,13 @@ function useElapsed(startIso: string | null, endIso: string | null, running: boo
 
 // ── Progress card ─────────────────────────────────────────────────────────────
 
-function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying }: {
+function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlocked }: {
   sweep: Sweep
   onCancel: () => void
   onRetry: () => void
   cancelling: boolean
   retrying: boolean
+  jobBlocked: boolean
 }) {
   const isRunning   = sweep.status === 'running'
   const isCancelled = sweep.status === 'failed_cancelled'
@@ -136,7 +137,8 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying }: {
               </button>
             )}
             {hasFailures && (
-              <button onClick={onRetry} disabled={retrying}
+              <button onClick={onRetry} disabled={retrying || jobBlocked}
+                title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : undefined}
                 className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-50 transition-colors">
                 <RotateCcw size={11} className={retrying ? 'animate-spin' : ''} />
                 {retrying ? (isRunning ? 'Queuing…' : 'Starting…') : `Retry ${failedCount} failed`}
@@ -190,10 +192,11 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying }: {
 
 // ── Failed runs table ─────────────────────────────────────────────────────────
 
-function FailedRunsTable({ runs, navigate, retryRun }: {
+function FailedRunsTable({ runs, navigate, retryRun, jobBlocked }: {
   runs: BacktestSummary[]
   navigate: ReturnType<typeof useNavigate>
   retryRun: ReturnType<typeof useRetryBacktest>
+  jobBlocked: boolean
 }) {
   if (runs.length === 0) return null
   return (
@@ -227,8 +230,8 @@ function FailedRunsTable({ runs, navigate, retryRun }: {
                   <div className="flex items-center justify-end gap-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); retryRun.mutate(run.run_id) }}
-                      disabled={retryRun.isPending}
-                      title="Retry this run"
+                      disabled={retryRun.isPending || jobBlocked}
+                      title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : 'Retry this run'}
                       className="p-[4px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 disabled:opacity-40 transition-colors"
                     >
                       <RotateCcw size={11} className={retryRun.isPending && retryRun.variables === run.run_id ? 'animate-spin' : ''} />
@@ -320,6 +323,8 @@ export function SweepDetail() {
   const retrySweep   = useRetrySweep()
   const cancelSweep  = useCancelSweep()
   const retryRun     = useRetryBacktest()
+  const { data: runningJob } = useRunningVpsJob()
+  const jobBlocked = !!runningJob?.running
 
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -411,6 +416,7 @@ export function SweepDetail() {
             onRetry={() => retrySweep.mutate(sweepId!)}
             cancelling={cancelSweep.isPending}
             retrying={retrySweep.isPending}
+            jobBlocked={jobBlocked}
           />
 
           {/* Results table */}
@@ -426,7 +432,7 @@ export function SweepDetail() {
           )}
 
           {/* Failed runs */}
-          <FailedRunsTable runs={failedRuns} navigate={navigate} retryRun={retryRun} />
+          <FailedRunsTable runs={failedRuns} navigate={navigate} retryRun={retryRun} jobBlocked={jobBlocked} />
         </div>
       )}
     </div>

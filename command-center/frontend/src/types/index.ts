@@ -556,3 +556,10 @@ export interface InstrumentSummary {
   instrument_results: InstrumentResult[]
   untested_instruments: string[]
 }
+
+export interface RunningJobStatus {
+  running: boolean
+  job_type: 'backtest' | 'sweep' | 'optimization' | null
+  job_id: string | null
+  description: string | null
+}

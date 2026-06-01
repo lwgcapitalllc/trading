@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Layers } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { useInstrumentSummary, useTriggerSweep } from '@/hooks/useLab'
+import { useInstrumentSummary, useTriggerSweep, useRunningVpsJob } from '@/hooks/useLab'
 import type { BacktestDetail, SweepRequest } from '@/types'
 
 interface Props {
@@ -30,6 +30,8 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
   )
 
   const triggerSweep = useTriggerSweep()
+  const { data: runningJob } = useRunningVpsJob()
+  const jobBlocked = !!runningJob?.running
 
   const handleSweepUntested = () => {
     if (!summary?.untested_instruments.length) return
@@ -168,7 +170,7 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
                 <div className="px-3 py-3 border-t border-border-subtle">
                   <button
                     onClick={handleSweepUntested}
-                    disabled={triggerSweep.isPending}
+                    disabled={triggerSweep.isPending || jobBlocked}
                     className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-[12px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 disabled:opacity-50 transition-colors"
                   >
                     <Layers size={13} />
@@ -183,7 +185,7 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
               other instruments before optimizing.
               <button
                 onClick={handleRunSweepAll}
-                disabled={triggerSweep.isPending}
+                disabled={triggerSweep.isPending || jobBlocked}
                 className="mt-2 flex items-center gap-2 px-3 py-2 rounded-md text-[12px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 disabled:opacity-50"
               >
                 <Layers size={13} />
@@ -195,6 +197,14 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
 
         {/* Footer */}
         <div className="px-5 py-4 border-t border-border-subtle">
+          {jobBlocked && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20 mb-3">
+              <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
+              <p className="text-[12px] text-warn-text leading-snug">
+                <span className="font-semibold">NT8 is busy:</span> {runningJob?.description} — wait for it to finish.
+              </p>
+            </div>
+          )}
           <p className="text-[12px] text-text-tertiary mb-3">
             Still want to optimize on {run.instrument}?
           </p>
@@ -207,7 +217,8 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
             </button>
             <button
               onClick={onOptimizeAnyway}
-              className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-warn-muted text-warn-text border border-warn-text/30 hover:bg-warn-text/15 transition-colors"
+              disabled={jobBlocked}
+              className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-warn-muted text-warn-text border border-warn-text/30 hover:bg-warn-text/15 disabled:opacity-50 transition-colors"
             >
               Optimize {run.instrument} anyway
             </button>

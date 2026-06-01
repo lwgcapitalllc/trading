@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sliders, Plus, Minus } from 'lucide-react'
+import { Sliders, Plus, Minus, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
-import { useTriggerOptimization, useFirms } from '@/hooks/useLab'
+import { useTriggerOptimization, useFirms, useRunningVpsJob } from '@/hooks/useLab'
 import type { BacktestDetail, ParamAxisSpec } from '@/types'
 
 interface Props {
@@ -51,6 +51,8 @@ function OptimizerModal({
   const navigate      = useNavigate()
   const { data: firms } = useFirms()
   const triggerOpt    = useTriggerOptimization()
+  const { data: runningJob } = useRunningVpsJob()
+  const jobBlocked = !!runningJob?.running
 
   const evalFirm = run.evaluations[0]
   const [firmId, setFirmId]         = useState(evalFirm?.firm_id ?? '')
@@ -140,6 +142,16 @@ function OptimizerModal({
             {run.strategy_name} · {run.instrument} · {run.start_date} → {run.end_date}
           </div>
         </div>
+
+        {/* Running job warning */}
+        {jobBlocked && (
+          <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
+            <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
+            <p className="text-[12px] text-warn-text leading-snug">
+              <span className="font-semibold">NT8 is busy:</span> {runningJob?.description} — wait for it to finish.
+            </p>
+          </div>
+        )}
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
@@ -261,7 +273,7 @@ function OptimizerModal({
           </button>
           <button
             onClick={handleGo}
-            disabled={triggerOpt.isPending || rangeParamCount === 0}
+            disabled={triggerOpt.isPending || rangeParamCount === 0 || jobBlocked}
             className="px-5 py-[7px] rounded-md text-[13px] font-semibold bg-accent text-bg-base hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             {triggerOpt.isPending ? 'Starting…' : 'Go'}
@@ -330,12 +342,15 @@ type ModalState = 'none' | 'tier1-confirm' | 'tier3-warning' | 'optimizer'
 
 export function OptimizeButton({ run }: Props) {
   const [modal, setModal] = useState<ModalState>('none')
+  const { data: runningJob } = useRunningVpsJob()
+  const jobBlocked = !!runningJob?.running
 
   if (run.status !== 'complete') return null
 
   const tier = run.worthiness?.tier
 
   const handleClick = () => {
+    if (jobBlocked) return
     if (tier === 'TIER_1_STRESS_TEST') {
       setModal('tier1-confirm')
     } else if (tier === 'TIER_3_DISCARD') {
@@ -349,7 +364,9 @@ export function OptimizeButton({ run }: Props) {
     <>
       <button
         onClick={handleClick}
-        className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 transition-colors"
+        disabled={jobBlocked}
+        title={jobBlocked ? `NT8 is busy: ${runningJob?.description}` : undefined}
+        className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <Sliders size={12} />
         Optimize from this run

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2 } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest } from '@/hooks/useLab'
+import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob } from '@/hooks/useLab'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -68,12 +68,13 @@ function exportCsv(runs: BacktestSummary[], paramKeys: string[]) {
 
 // ── Progress card ─────────────────────────────────────────────────────────────
 
-function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying }: {
+function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked }: {
   opt: Opt
   onCancel: () => void
   onRetry: () => void
   cancelling: boolean
   retrying: boolean
+  jobBlocked: boolean
 }) {
   const isRunning  = opt.status === 'running'
   const isCancelled = opt.status === 'failed_cancelled'
@@ -197,7 +198,8 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying }: {
             {hasFailures && !isRunning && (
               <button
                 onClick={onRetry}
-                disabled={retrying}
+                disabled={retrying || jobBlocked}
+                title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : undefined}
                 className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-50 transition-colors"
               >
                 <RotateCcw size={11} className={retrying ? 'animate-spin' : ''} />
@@ -207,7 +209,8 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying }: {
             {hasFailures && isRunning && (
               <button
                 onClick={onRetry}
-                disabled={retrying}
+                disabled={retrying || jobBlocked}
+                title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : undefined}
                 className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-50 transition-colors"
               >
                 <RotateCcw size={11} className={retrying ? 'animate-spin' : ''} />
@@ -223,11 +226,12 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying }: {
 
 // ── Failed runs table ─────────────────────────────────────────────────────────
 
-function FailedRunsTable({ runs, sweptKeys, navigate, retryRun }: {
+function FailedRunsTable({ runs, sweptKeys, navigate, retryRun, jobBlocked }: {
   runs: BacktestSummary[]
   sweptKeys: string[]
   navigate: ReturnType<typeof useNavigate>
   retryRun: ReturnType<typeof useRetryBacktest>
+  jobBlocked: boolean
 }) {
   if (runs.length === 0) return null
   return (
@@ -269,8 +273,8 @@ function FailedRunsTable({ runs, sweptKeys, navigate, retryRun }: {
                   <div className="flex items-center justify-end gap-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); retryRun.mutate(run.run_id) }}
-                      disabled={retryRun.isPending}
-                      title="Retry this run"
+                      disabled={retryRun.isPending || jobBlocked}
+                      title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : 'Retry this run'}
                       className="p-[4px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 disabled:opacity-40 transition-colors"
                     >
                       <RotateCcw size={11} className={retryRun.isPending && retryRun.variables === run.run_id ? 'animate-spin' : ''} />
@@ -370,6 +374,8 @@ export function OptimizationDetail() {
   const retryOpt   = useRetryOptimization()
   const deleteOpt  = useDeleteOptimization()
   const retryRun   = useRetryBacktest()
+  const { data: runningJob } = useRunningVpsJob()
+  const jobBlocked = !!runningJob?.running
 
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -468,6 +474,7 @@ export function OptimizationDetail() {
             onRetry={() => retryOpt.mutate(optimizationId!)}
             cancelling={cancelOpt.isPending}
             retrying={retryOpt.isPending}
+            jobBlocked={jobBlocked}
           />
 
           {/* Results table — shows while running and when complete */}
@@ -497,7 +504,7 @@ export function OptimizationDetail() {
           )}
 
           {/* Failed runs — debugging info, always below results */}
-          <FailedRunsTable runs={failedRuns} sweptKeys={sweptKeys} navigate={navigate} retryRun={retryRun} />
+          <FailedRunsTable runs={failedRuns} sweptKeys={sweptKeys} navigate={navigate} retryRun={retryRun} jobBlocked={jobBlocked} />
         </div>
       )}
     </div>

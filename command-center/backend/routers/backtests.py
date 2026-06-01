@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
-    WorthinessScore,
+    WorthinessScore, RunningJobStatus,
 )
 from services import lab_db, vps_client
 from services.backtest_runner import run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv
@@ -139,6 +139,14 @@ def _row_to_detail(row: dict) -> BacktestDetail:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/running-job", response_model=RunningJobStatus)
+def get_running_job() -> RunningJobStatus:
+    job = lab_db.get_running_job()
+    if job:
+        return RunningJobStatus(running=True, **job)
+    return RunningJobStatus(running=False)
+
 
 @router.get("/runs")
 def list_backtest_runs(

@@ -8,7 +8,7 @@ import type {
   LabProgress, SystemHealth,
   SweepRequest, SweepResponse, SweepDetail,
   OptimizationRequest, OptimizationSummary, OptimizationDetail,
-  InstrumentSummary,
+  InstrumentSummary, RunningJobStatus,
 } from '@/types'
 
 // ── Strategies ─────────────────────────────────────────────────────────────────
@@ -474,6 +474,16 @@ export function useInstrumentSummary(
     queryKey: ['lab', 'instrument-summary', strategyId, firmId, startDate, endDate],
     queryFn: () => api.get<InstrumentSummary>(`/strategies/${strategyId}/instrument_summary${qs ? `?${qs}` : ''}`),
     enabled: !!strategyId,
+  })
+}
+
+// ── Running VPS job ───────────────────────────────────────────────────────────
+
+export function useRunningVpsJob() {
+  return useQuery({
+    queryKey: ['lab', 'running-job'],
+    queryFn: () => api.get<RunningJobStatus>('/backtests/running-job'),
+    refetchInterval: 5_000,
   })
 }
 
