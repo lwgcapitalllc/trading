@@ -328,6 +328,8 @@ export interface BacktestSummary {
   sweep_id: string | null
   optimization_id: string | null
   error_message: string | null
+  start_date: string | null
+  end_date: string | null
 }
 
 export interface EvaluationDetail {

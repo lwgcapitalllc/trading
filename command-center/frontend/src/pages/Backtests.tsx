@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Trash2, Layers, Sliders } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, ChevronDown, Trash2, Layers, Sliders } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useBacktestRuns, useStrategies, useFirms,
@@ -16,12 +16,6 @@ import type { BacktestSummary, Strategy, Firm, VerdictSummary, WorthinessScore }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  })
-}
-
 function fmtMoney(n: number | null): string {
   if (n == null) return '—'
   const abs = Math.abs(n)
@@ -33,6 +27,15 @@ function fmtMoney(n: number | null): string {
 function fmtPct(n: number | null): string {
   if (n == null) return '—'
   return `${(n * 100).toFixed(1)}%`
+}
+
+function fmtDateRange(start: string, end: string): string {
+  const days = (new Date(end).getTime() - new Date(start).getTime()) / 86_400_000
+  const years = days / 365.25
+  if (years >= 1) return `${years.toFixed(1)} yrs`
+  const months = days / 30.44
+  if (months >= 1) return `${Math.round(months)} mo`
+  return `${Math.round(days)} days`
 }
 
 function fmtDuration(createdAt: string, completedAt: string | null): string {
@@ -227,6 +230,14 @@ function RunsTab() {
   const [deleteRunId, setDeleteRunId]         = useState<string | null>(null)
   const [bulkDeleting, setBulkDeleting]       = useState(false)
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
+  const [collapsedRuns, setCollapsedRuns]     = useState<Set<string>>(new Set())
+
+  const toggleCollapse = (id: string) =>
+    setCollapsedRuns(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
 
   const { data: allRuns, isLoading, refetch, isFetching } = useBacktestRuns(
     statusFilter ? { status: statusFilter } : undefined
@@ -416,34 +427,43 @@ function RunsTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {runs.map(run => (
-                <>
-                  <RunRow
-                    key={run.run_id}
-                    run={run}
-                    selected={selectedIds.has(run.run_id)}
-                    onSelect={() => toggleSelect(run.run_id)}
-                    onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
-                    onDelete={e => { e.stopPropagation(); setDeleteRunId(run.run_id) }}
-                  />
-                  {(sweepsBySourceRun.get(run.run_id) ?? []).map(sw => (
-                    <SweepNestRow
-                      key={sw.sweep_id}
-                      sweep={sw}
-                      colSpan={12}
-                      onClick={() => navigate(`/backtests/sweeps/${sw.sweep_id}`)}
+              {runs.map(run => {
+                const childSweeps = sweepsBySourceRun.get(run.run_id) ?? []
+                const childOpts   = optsBySourceRun.get(run.run_id) ?? []
+                const hasChildren = childSweeps.length > 0 || childOpts.length > 0
+                const isCollapsed = collapsedRuns.has(run.run_id)
+                return (
+                  <>
+                    <RunRow
+                      key={run.run_id}
+                      run={run}
+                      selected={selectedIds.has(run.run_id)}
+                      onSelect={() => toggleSelect(run.run_id)}
+                      onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
+                      onDelete={e => { e.stopPropagation(); setDeleteRunId(run.run_id) }}
+                      hasChildren={hasChildren}
+                      isCollapsed={isCollapsed}
+                      onToggleCollapse={() => toggleCollapse(run.run_id)}
                     />
-                  ))}
-                  {(optsBySourceRun.get(run.run_id) ?? []).map(opt => (
-                    <OptimizationNestRow
-                      key={opt.optimization_id}
-                      opt={opt}
-                      colSpan={12}
-                      onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
-                    />
-                  ))}
-                </>
-              ))}
+                    {!isCollapsed && childSweeps.map(sw => (
+                      <SweepNestRow
+                        key={sw.sweep_id}
+                        sweep={sw}
+                        colSpan={12}
+                        onClick={() => navigate(`/backtests/sweeps/${sw.sweep_id}`)}
+                      />
+                    ))}
+                    {!isCollapsed && childOpts.map(opt => (
+                      <OptimizationNestRow
+                        key={opt.optimization_id}
+                        opt={opt}
+                        colSpan={12}
+                        onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
+                      />
+                    ))}
+                  </>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -566,13 +586,16 @@ function SweepNestRow({
 // ── Run row ───────────────────────────────────────────────────────────────────
 
 function RunRow({
-  run, selected, onSelect, onClick, onDelete,
+  run, selected, onSelect, onClick, onDelete, hasChildren, isCollapsed, onToggleCollapse,
 }: {
   run: BacktestSummary
   selected: boolean
   onSelect: () => void
   onClick: () => void
   onDelete: (e: React.MouseEvent) => void
+  hasChildren?: boolean
+  isCollapsed?: boolean
+  onToggleCollapse?: () => void
 }) {
   const navigate = useNavigate()
   const pnlClass = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
@@ -593,6 +616,15 @@ function RunRow({
       </td>
       <td className="px-4 py-3 font-medium">
         <div className="flex items-center gap-1.5 flex-wrap">
+          {hasChildren && (
+            <button
+              onClick={e => { e.stopPropagation(); onToggleCollapse?.() }}
+              className="flex-shrink-0 text-text-tertiary hover:text-text-secondary transition-colors"
+              title={isCollapsed ? 'Expand children' : 'Collapse children'}
+            >
+              {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+            </button>
+          )}
           {run.strategy_name || run.strategy_id}
           {run.sweep_id && (
             <span
@@ -617,7 +649,9 @@ function RunRow({
         </div>
       </td>
       <td className="px-4 py-3 font-mono text-text-secondary">{run.instrument}</td>
-      <td className="px-4 py-3 text-text-secondary">{fmtDate(run.created_at)}</td>
+      <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">
+        {run.start_date && run.end_date ? fmtDateRange(run.start_date, run.end_date) : '—'}
+      </td>
       <td className="px-4 py-3"><StatusPill status={run.status} /></td>
       <td className="px-4 py-3"><WorthinessBadge worthiness={run.worthiness} /></td>
       <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
@@ -786,77 +820,93 @@ function StrategiesSkeleton() {
 
 // ── Firms tab ─────────────────────────────────────────────────────────────────
 
-const TIER_STYLE: Record<string, string> = {
-  eval:   'bg-warn-muted text-warn-text',
-  funded: 'bg-pos-muted text-pos-text',
-}
-
 function FirmsTab() {
   const { data: firms, isLoading } = useFirms()
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-[13px] text-text-secondary">
-          {firms ? `${firms.length} firm${firms.length !== 1 ? 's' : ''}` : ''}
-        </span>
-      </div>
+  if (isLoading) return <FirmsSkeleton />
+  if (!firms?.length) return (
+    <EmptyState
+      icon={<Play size={20} />}
+      title="No firms configured"
+      description="Firm profiles are seeded automatically from bot.json on backend startup."
+    />
+  )
 
-      {isLoading ? (
-        <FirmsSkeleton />
-      ) : !firms?.length ? (
-        <EmptyState
-          icon={<Play size={20} />}
-          title="No firms configured"
-          description="Firm profiles are seeded automatically from bot.json on backend startup."
-        />
-      ) : (
-        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="border-b border-border-subtle">
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Firm</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Tier</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD (EOD)</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Drawdown Type</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {firms.map(firm => <FirmRow key={firm.id} firm={firm} />)}
-            </tbody>
-          </table>
+  const evalFirms   = firms.filter(f => f.account_tier === 'eval')
+  const fundedFirms = firms.filter(f => f.account_tier === 'funded')
+
+  return (
+    <div className="space-y-6">
+      {evalFirms.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-warn-text px-2 py-[2px] rounded bg-warn-muted/50">
+              Evaluation Challenges
+            </span>
+            <span className="text-[11px] text-text-tertiary">{evalFirms.length} account{evalFirms.length !== 1 ? 's' : ''}</span>
+          </div>
+          <FirmTable firms={evalFirms} showTarget />
+        </div>
+      )}
+      {fundedFirms.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-pos-text px-2 py-[2px] rounded bg-pos-muted/50">
+              Funded Accounts
+            </span>
+            <span className="text-[11px] text-text-tertiary">{fundedFirms.length} account{fundedFirms.length !== 1 ? 's' : ''}</span>
+          </div>
+          <FirmTable firms={fundedFirms} showTarget={false} />
         </div>
       )}
     </div>
   )
 }
 
-function FirmRow({ firm }: { firm: Firm }) {
+function FirmTable({ firms, showTarget }: { firms: Firm[]; showTarget: boolean }) {
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+      <table className="w-full text-[13px]">
+        <thead>
+          <tr className="border-b border-border-subtle">
+            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Firm</th>
+            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
+            {showTarget && <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>}
+            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD (EOD)</th>
+            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Drawdown Type</th>
+            {showTarget && <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border-subtle">
+          {firms.map(firm => <FirmRow key={firm.id} firm={firm} showTarget={showTarget} />)}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function FirmRow({ firm, showTarget }: { firm: Firm; showTarget: boolean }) {
   return (
     <tr className="hover:bg-bg-hover transition-colors">
       <td className="px-4 py-3">
         <div className="font-medium">{firm.name}</div>
         <div className="text-[11px] text-text-tertiary font-mono">{firm.id}</div>
       </td>
-      <td className="px-4 py-3">
-        <span className={`inline-flex px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${TIER_STYLE[firm.account_tier] ?? 'bg-bg-surface-2 text-text-tertiary'}`}>
-          {firm.account_tier}
-        </span>
-      </td>
       <td className="px-4 py-3 font-mono tabular-nums">${firm.account_size.toLocaleString()}</td>
-      <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
-        {firm.profit_target > 0 ? `$${firm.profit_target.toLocaleString()}` : '—'}
-      </td>
+      {showTarget && (
+        <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
+          {firm.profit_target > 0 ? `$${firm.profit_target.toLocaleString()}` : '—'}
+        </td>
+      )}
       <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
         ${firm.max_loss_eod.toLocaleString()}
       </td>
-      <td className="px-4 py-3 text-text-secondary capitalize">{firm.drawdown_type}</td>
-      <td className="px-4 py-3 text-text-secondary">
-        {firm.consistency_pct != null ? `≤ ${firm.consistency_pct}%` : <span className="text-text-tertiary">—</span>}
-      </td>
+      <td className="px-4 py-3 text-text-secondary capitalize">{firm.drawdown_type.replace(/_/g, ' ')}</td>
+      {showTarget && (
+        <td className="px-4 py-3 text-text-secondary">
+          {firm.consistency_pct != null ? `≤ ${firm.consistency_pct}%` : <span className="text-text-tertiary">—</span>}
+        </td>
+      )}
     </tr>
   )
 }
@@ -933,10 +983,8 @@ function SweepsTab() {
                     className="hover:bg-bg-hover cursor-pointer transition-colors"
                   >
                     <td className="px-4 py-3 font-medium">{sw.strategy_name}</td>
-                    <td className="px-4 py-3 text-text-secondary text-[12px]">
-                      {new Date(sw.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      {' → '}
-                      {new Date(sw.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">
+                      {fmtDateRange(sw.start_date, sw.end_date)}
                     </td>
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
                       {sw.completed_instruments}/{sw.total_instruments}

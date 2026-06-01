@@ -373,6 +373,8 @@ class BacktestSummary(BaseModel):
     sweep_id: Optional[str] = None
     optimization_id: Optional[str] = None
     error_message: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class EvaluationDetail(BaseModel):

@@ -71,6 +71,8 @@ def _row_to_summary(row: dict) -> BacktestSummary:
         sharpe=row.get("sharpe"),
         params=row.get("params") or {},
         error_message=row.get("error_message"),
+        start_date=row.get("start_date"),
+        end_date=row.get("end_date"),
     )
 
 
