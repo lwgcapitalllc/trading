@@ -2,7 +2,7 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
-**Last reviewed:** 2026-05-31
+**Last reviewed:** 2026-05-31 (session 2)
 
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
@@ -78,10 +78,14 @@ Full setup and session checklist: [BACKTEST_VPS_SETUP.md](BACKTEST_VPS_SETUP.md)
 | Backtests lab — strategies, runs, firms tabs; run modal; strategy detail; verdict pills; delete | ✅ |
 | Backtests lab — runs tab duration column; prominent Stop button; live log streaming (2 s poll during active runs) | ✅ |
 | Backtests lab M2 — worthiness badges (Tier 1/2/3) on every completed run | ✅ |
-| Backtests lab M2 — instrument sweeps (N parallel runs, Sweep Detail page with live sort-by-tier) | ✅ |
-| Backtests lab M2 — parameter optimizer (brute force + genetic, Optimization Detail with heatmap or top-10 table) | ✅ |
+| Backtests lab M2 — instrument sweeps (N sequential runs via SA semaphore, Sweep Detail page with live sort-by-tier) | ✅ |
+| Backtests lab M2 — parameter optimizer (brute force + genetic, Optimization Detail with ranked results table, ★ best row) | ✅ |
 | Backtests lab M2 — Tier 3 warning modal with smart instrument routing | ✅ |
 | Backtests lab M2 — runner field on strategies; vps_client dispatcher for future MT5 support | ✅ |
+| Backtests lab M2 — Sweeps tab (list view with count badge, progress, status, delete) | ✅ |
+| Backtests lab M2 — Optimizations tab (delete; count badge; Runs tab nests child runs under source run via `source_run_id`) | ✅ |
+| Backtests lab M2 — global NT8 SA lock: only one job type (backtest/sweep/optimization) may run at a time; 409 with clear message | ✅ |
+| Backtests lab M2 — Overview Backtests card shows optimization count, Tier 1 passes, running optimization banner, best PF result | ✅ |
 | Stress Tests | 🔲 Stub |
 
 ---

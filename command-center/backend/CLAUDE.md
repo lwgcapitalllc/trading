@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-05-31
+**Last reviewed:** 2026-05-31 (session 2)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -28,15 +28,15 @@ backend/
 │   ├── firms.py           lab — prop firm rules
 │   ├── system.py          lab — health + log proxies
 │   ├── stress_tests.py    stub
-│   ├── sweeps.py          lab — instrument sweep (POST /backtests/sweep, GET /backtests/sweeps/:id)
-│   ├── optimizations.py   lab — optimizer (POST /optimizations/run, GET /optimizations/*)
+│   ├── sweeps.py          lab — instrument sweep (POST /backtests/sweep, GET /backtests/sweeps, GET/DELETE /backtests/sweeps/:id)
+│   ├── optimizations.py   lab — optimizer (POST /optimizations/run, GET /optimizations/*, DELETE /optimizations/:id)
 │   └── settings.py
 ├── services/              business logic, DB access, external clients
 │   ├── lab_db.py          only module that touches lab.db
 │   ├── strategy_scanner.py
 │   ├── evaluator.py       per-firm pass/fail logic
 │   ├── backtest_runner.py background VPS polling task (single run)
-│   ├── sweep_runner.py    fans out N parallel backtests for a sweep
+│   ├── sweep_runner.py    runs N backtests sequentially (semaphore = 1) for a sweep
 │   ├── optimization_runner.py  multi-call brute-force optimizer (see note below)
 │   ├── worthiness.py      Tier 1/2/3 scoring
 │   ├── objectives.py      optimizer objective functions
@@ -110,6 +110,10 @@ Never make a synchronous SSH call from a request handler that could take > 2s. B
 ## NT8 Strategy Analyzer UI automation (vps_backtest_runner.py)
 
 Hard-won rules for pywinauto + NT8 WPF — violating these causes silent wrong-strategy runs or broken SA state:
+
+**SA auto-open**: `find_strategy_analyzer` opens SA automatically via NT8's New → Strategy Analyzer menu if not already visible. This handles the case where NT8 crashes and restarts without restoring the SA window. Retries once after opening.
+
+**Strategy compile delays**: After NT8 restart, strategies are compiled lazily. `select_strategy` retries with increasing waits (1.5s → 5s → 10s) to allow NT8 time to compile before giving up.
 
 **ComboBox identification**
 - All NT8 WPF ComboBoxes return empty `window_text()` — you cannot identify them by their current value.
@@ -197,8 +201,8 @@ Never skip the tier check in `evaluator.py`. The current seeded firms are:
 | Lab — Strategies | ✅ Live | Registry of NinjaScript strategies scanned from the local repo. Auto-derives param schema from `[NinjaScriptProperty]` attributes. Each strategy has a `runner` field (default `"ninjatrader"`). |
 | Lab — Firms | ✅ Live | Prop firm rule profiles (drawdown limits, profit targets, consistency %). CRUD endpoints. Seeded with 4 LucidFlex profiles (50k/100k × eval/funded). |
 | Lab — Backtests | ✅ Live | Trigger NT8 runs on the VPS via the agent. Poll to completion. Evaluate against selected firms. Equity curve, daily P&L, per-firm verdicts, full KPI set. After evaluation, computes Worthiness Score (Tier 1/2/3). |
-| Lab — Sweeps | ✅ Live | Fan out N parallel backtests across all allowed instruments for a strategy. Each run completes independently with its own worthiness score. |
-| Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer (see note). Generates all param combos, runs each as a child backtest, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. |
+| Lab — Sweeps | ✅ Live | Runs N backtests sequentially (one instrument at a time, `_MAX_CONCURRENT = 1`) across all instruments for a strategy. Each run gets its own worthiness score. Deletable — cascades to all child runs, evaluations, and result files. |
+| Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer. Generates all param combos, runs each sequentially via SA semaphore, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. `source_run_id` links an optimization back to the run it was triggered from. Deletable — cascades to child runs, evaluations, and result files. |
 | Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
 | Lab — Stress Tests | 🔲 Stub | Router exists, no logic yet. M3 scope. |
 | Settings | ✅ Live | Config read/write. |
@@ -207,18 +211,26 @@ Never skip the tier check in `evaluator.py`. The current seeded firms are:
 
 ## M2 key decisions
 
-**Optimizer implementation:** NT8 Optimizer GUI automation (pywinauto) was not attempted. Instead, the optimizer generates all parameter combinations from the grid and drives them as individual backtest calls via the existing VPS agent pipeline (`optimization_runner.py`). Max 4 concurrent VPS jobs (`_MAX_CONCURRENT = 4`). For 3+D grids with "auto" or "genetic" search method, a random subset of up to 200 combinations is sampled. This is slower than NT8's native optimizer but reliable and reuses all M1 infrastructure. If native NT8 optimization is needed in M3, the `vps_client.py` dispatcher pattern makes it easy to route differently.
+**Optimizer implementation:** NT8 Optimizer GUI automation (pywinauto) was not attempted. Instead, the optimizer generates all parameter combinations from the grid and drives them as individual backtest calls via the existing VPS agent pipeline (`optimization_runner.py`). `_MAX_CONCURRENT = 1` — the NT8 Strategy Analyzer window is single-threaded; running more than one job at a time causes SA conflicts, display switch failures, and missing XML logs. For 3+D grids with "auto" or "genetic" search method, a random subset of up to 200 combinations is sampled. If native NT8 optimization is needed in M3, the `vps_client.py` dispatcher pattern makes it easy to route differently.
+
+**NT8 SA global lock:** All three job types (single backtest, sweep, optimization) share the same physical SA window. `lab_db.has_any_running_vps_job()` checks for any `backtest_runs` or `optimizations` row with `status = 'running'`. All three trigger endpoints call it and return 409 if true. This prevents cross-job conflicts (e.g. a sweep starting while an optimization is in progress).
+
+**Sweep serialisation:** `sweep_runner.py` uses `asyncio.Semaphore(1)` — same constraint as the optimizer. Instruments run one at a time through the SA window. Firing all N jobs at once caused NT8 Exit code 1 for all but the first.
 
 **Runner dispatcher:** `vps_client.start_backtest(job_spec, runner)` routes to the appropriate backend. Currently only `"ninjatrader"` is wired; `"mt5"` raises `NotImplementedError` as a placeholder for forex work.
 
 **Sweep vs. progress lock:** Sweep and optimization runs do NOT use `lab_progress.json`. That file is exclusively for the single-run flow. Sweep/optimization state is tracked only in the DB.
 
+**source_run_id:** `optimizations` stores the `run_id` of the backtest that spawned it. The Runs tab in the frontend uses this to nest optimization rows under their source run. Optimizations created before this field existed have `source_run_id = NULL` and appear flat in the Optimizations tab only.
+
 ---
 
-## DB table additions (M2)
+## DB table additions (M2 / session 2)
 
 `strategies` table: added `runner TEXT NOT NULL DEFAULT 'ninjatrader'`
 
 `backtest_runs` table: added `worthiness_tier TEXT`, `worthiness_reason TEXT`, `worthiness_computed_against_firm TEXT`, `sweep_id TEXT`, `optimization_id TEXT`
 
-New table: `optimizations` — stores optimizer job metadata, progress, and `best_run_id`
+New table: `optimizations` — stores optimizer job metadata, progress, `best_run_id`, and `source_run_id`
+
+New models: `SweepSummary` (aggregated sweep info for list view, derived from GROUP BY `sweep_id`)

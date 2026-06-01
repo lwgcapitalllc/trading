@@ -366,6 +366,7 @@ class BacktestSummary(BaseModel):
     worthiness: Optional[WorthinessScore] = None
     sweep_id: Optional[str] = None
     optimization_id: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class EvaluationDetail(BaseModel):
@@ -475,6 +476,19 @@ class SweepResponse(BaseModel):
     status: str
 
 
+class SweepSummary(BaseModel):
+    sweep_id: str
+    strategy_id: str
+    strategy_name: str
+    start_date: str
+    end_date: str
+    total_instruments: int
+    completed_instruments: int
+    failed_instruments: int
+    status: str
+    created_at: datetime
+
+
 class SweepDetail(BaseModel):
     sweep_id: str
     strategy_id: str
@@ -502,6 +516,7 @@ class OptimizationRequest(BaseModel):
     mode: str = "eval"                  # "eval" | "funded"
     search_method: str = "auto"         # "auto" | "brute" | "genetic"
     param_grid: dict                    # {param: {min, max, step} | [val, ...]}
+    source_run_id: Optional[str] = None
 
 
 class OptimizationSummary(BaseModel):
@@ -517,6 +532,7 @@ class OptimizationSummary(BaseModel):
     estimated_runs: int
     completed_runs: int
     best_run_id: Optional[str] = None
+    source_run_id: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 

@@ -141,6 +141,7 @@ def init_db() -> None:
             "ALTER TABLE backtest_runs ADD COLUMN evaluate_firms TEXT",
             "CREATE INDEX IF NOT EXISTS idx_runs_sweep ON backtest_runs(sweep_id)",
             "CREATE INDEX IF NOT EXISTS idx_runs_optimization ON backtest_runs(optimization_id)",
+            "ALTER TABLE optimizations ADD COLUMN source_run_id TEXT",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -541,6 +542,23 @@ def delete_run(run_id: str) -> bool:
     return cur.rowcount > 0
 
 
+def delete_optimization(optimization_id: str) -> bool:
+    with _connect() as conn:
+        child_ids = [
+            r["run_id"] for r in conn.execute(
+                "SELECT run_id FROM backtest_runs WHERE optimization_id = ?", (optimization_id,)
+            ).fetchall()
+        ]
+        if child_ids:
+            placeholders = ",".join("?" * len(child_ids))
+            conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({placeholders})", child_ids)
+            conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({placeholders})", child_ids)
+        cur = conn.execute(
+            "DELETE FROM optimizations WHERE optimization_id = ?", (optimization_id,)
+        )
+    return cur.rowcount > 0, child_ids
+
+
 def get_run_verdict_summary(run_id: str) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
@@ -610,6 +628,76 @@ def list_sweep_runs(sweep_id: str) -> list[dict]:
     return [_parse_json_fields(dict(r), ["params"]) for r in rows]
 
 
+def list_sweeps(strategy_id: Optional[str] = None) -> list[dict]:
+    where = "WHERE r.sweep_id IS NOT NULL"
+    params: list = []
+    if strategy_id:
+        where += " AND r.strategy_id = ?"
+        params.append(strategy_id)
+    with _connect() as conn:
+        rows = conn.execute(f"""
+            SELECT
+                r.sweep_id,
+                r.strategy_id,
+                COALESCE(s.name, r.strategy_id) AS strategy_name,
+                r.start_date,
+                r.end_date,
+                MIN(r.created_at) AS created_at,
+                COUNT(*)          AS total_instruments,
+                SUM(CASE WHEN r.status = 'complete'       THEN 1 ELSE 0 END) AS completed_instruments,
+                SUM(CASE WHEN r.status LIKE 'failed%'     THEN 1 ELSE 0 END) AS failed_instruments,
+                CASE
+                    WHEN SUM(CASE WHEN r.status = 'running'      THEN 1 ELSE 0 END) > 0 THEN 'running'
+                    WHEN COUNT(*) = SUM(CASE WHEN r.status = 'complete' THEN 1 ELSE 0 END) THEN 'complete'
+                    ELSE 'partial'
+                END AS status
+            FROM backtest_runs r
+            LEFT JOIN strategies s ON s.id = r.strategy_id
+            {where}
+            GROUP BY r.sweep_id
+            ORDER BY created_at DESC
+        """, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def has_running_sweep(strategy_id: str) -> bool:
+    with _connect() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM backtest_runs WHERE sweep_id IS NOT NULL AND strategy_id = ? AND status = 'running'",
+            (strategy_id,),
+        ).fetchone()[0]
+    return count > 0
+
+
+def delete_sweep(sweep_id: str) -> tuple[bool, list[str]]:
+    with _connect() as conn:
+        child_ids = [
+            r["run_id"] for r in conn.execute(
+                "SELECT run_id FROM backtest_runs WHERE sweep_id = ?", (sweep_id,)
+            ).fetchall()
+        ]
+        if child_ids:
+            placeholders = ",".join("?" * len(child_ids))
+            conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({placeholders})", child_ids)
+            cur = conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({placeholders})", child_ids)
+        else:
+            cur = conn.execute("SELECT 1 WHERE 0")  # nothing to delete — treat as not found
+    return len(child_ids) > 0, child_ids
+
+
+def has_any_running_vps_job() -> bool:
+    """True if any sweep run, optimization run, or standalone backtest is currently running.
+    Used as a global NT8 SA window lock — only one job type may use it at a time."""
+    with _connect() as conn:
+        run_count = conn.execute(
+            "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running'",
+        ).fetchone()[0]
+        opt_count = conn.execute(
+            "SELECT COUNT(*) FROM optimizations WHERE status = 'running'",
+        ).fetchone()[0]
+    return (run_count + opt_count) > 0
+
+
 def insert_run_sweep(data: dict) -> None:
     with _connect() as conn:
         conn.execute("""
@@ -636,15 +724,16 @@ def insert_optimization(data: dict) -> None:
             INSERT INTO optimizations
                 (optimization_id, strategy_id, instrument, start_date, end_date,
                  commission_per_side, slippage_ticks, firm_id, mode, search_method,
-                 param_grid, status, estimated_runs, completed_runs, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                 param_grid, status, estimated_runs, completed_runs, created_at,
+                 source_run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
         """, (
             data["optimization_id"], data["strategy_id"], data["instrument"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
             data["firm_id"], data["mode"], data["search_method"],
             json.dumps(data["param_grid"]), data["status"], data["estimated_runs"],
-            now,
+            now, data.get("source_run_id"),
         ))
 
 
@@ -693,6 +782,48 @@ def fail_optimization(optimization_id: str, error: str) -> None:
             "UPDATE optimizations SET status=? WHERE optimization_id=?",
             (f"failed: {error[:200]}", optimization_id),
         )
+
+
+def cancel_optimization(optimization_id: str) -> None:
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE optimizations SET status='failed_cancelled', completed_at=? WHERE optimization_id=?",
+            (now, optimization_id),
+        )
+        conn.execute(
+            "UPDATE backtest_runs SET status='failed_cancelled', error_message='Optimization cancelled' "
+            "WHERE optimization_id=? AND status IN ('running', 'pending')",
+            (optimization_id,),
+        )
+
+
+def reset_run_for_retry(run_id: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE backtest_runs SET status='running', error_message=NULL, completed_at=NULL WHERE run_id=?",
+            (run_id,),
+        )
+
+
+def decrement_optimization_completed(optimization_id: str, count: int) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE optimizations SET completed_runs = MAX(0, completed_runs - ?), status='running', completed_at=NULL "
+            "WHERE optimization_id=?",
+            (count, optimization_id),
+        )
+
+
+def list_optimization_failed_runs(optimization_id: str) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT r.*, s.name AS strategy_name FROM backtest_runs r "
+            "JOIN strategies s ON s.id = r.strategy_id "
+            "WHERE r.optimization_id=? AND r.status LIKE 'failed%'",
+            (optimization_id,),
+        ).fetchall()
+    return [_parse_json_fields(dict(r), ["params"]) for r in rows]
 
 
 def insert_run_optimization(data: dict) -> None:

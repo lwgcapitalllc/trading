@@ -14,6 +14,31 @@ type AxisEdit =
   | { mode: 'range'; min: string; max: string; step: string }
   | { mode: 'fixed'; value: string }
 
+// ── Range preview ─────────────────────────────────────────────────────────────
+
+function RangePreview({ min, max, step }: { min: string; max: string; step: string }) {
+  const lo   = parseFloat(min)
+  const hi   = parseFloat(max)
+  const incr = parseFloat(step)
+  if (isNaN(lo) || isNaN(hi) || isNaN(incr) || incr <= 0 || lo > hi) return null
+
+  const values: number[] = []
+  for (let v = lo; v <= hi + incr * 1e-9; v += incr) {
+    values.push(parseFloat(v.toPrecision(10)))
+    if (values.length > 50) break
+  }
+  const count = values.length
+  const SHOW  = 6
+  const shown = values.slice(0, SHOW)
+  const label = shown.join(', ') + (count > SHOW ? ` … (${count} values)` : ` (${count} value${count !== 1 ? 's' : ''})`)
+
+  return (
+    <span className="text-[11px] text-text-tertiary font-mono">
+      → {label}
+    </span>
+  )
+}
+
 // ── Optimizer modal ────────────────────────────────────────────────────────────
 
 function OptimizerModal({
@@ -91,6 +116,7 @@ function OptimizerModal({
       mode,
       search_method:      searchMethod,
       param_grid,
+      source_run_id:      run.run_id,
     }, {
       onSuccess: (data) => {
         onClose()
@@ -160,7 +186,7 @@ function OptimizerModal({
             <div className="flex items-center justify-between mb-2">
               <span className="text-[12px] font-semibold text-text-secondary">Parameters</span>
               <span className="text-[11px] text-text-tertiary">
-                Click <Plus size={10} className="inline" /> to expand a param into a range
+                Click <Plus size={10} className="inline" /> to sweep a param across a range
               </span>
             </div>
             <div className="space-y-2">
@@ -181,27 +207,30 @@ function OptimizerModal({
                     <span className="w-32 text-[12px] font-mono text-text-secondary flex-shrink-0">{name}</span>
 
                     {ax?.mode === 'range' ? (
-                      <div className="flex items-center gap-2 flex-1">
-                        <input
-                          value={ax.min}
-                          onChange={e => updateAxis(name, 'min', e.target.value)}
-                          placeholder="min"
-                          className="w-20 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
-                        />
-                        <span className="text-text-tertiary text-[11px]">to</span>
-                        <input
-                          value={ax.max}
-                          onChange={e => updateAxis(name, 'max', e.target.value)}
-                          placeholder="max"
-                          className="w-20 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
-                        />
-                        <span className="text-text-tertiary text-[11px]">step</span>
-                        <input
-                          value={ax.step}
-                          onChange={e => updateAxis(name, 'step', e.target.value)}
-                          placeholder="step"
-                          className="w-16 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
-                        />
+                      <div className="flex flex-col gap-1 flex-1">
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={ax.min}
+                            onChange={e => updateAxis(name, 'min', e.target.value)}
+                            placeholder="min"
+                            className="w-20 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                          />
+                          <span className="text-text-tertiary text-[11px]">to</span>
+                          <input
+                            value={ax.max}
+                            onChange={e => updateAxis(name, 'max', e.target.value)}
+                            placeholder="max"
+                            className="w-20 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                          />
+                          <span className="text-text-tertiary text-[11px]">every</span>
+                          <input
+                            value={ax.step}
+                            onChange={e => updateAxis(name, 'step', e.target.value)}
+                            placeholder="step"
+                            className="w-16 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                          />
+                        </div>
+                        <RangePreview min={ax.min} max={ax.max} step={ax.step} />
                       </div>
                     ) : (
                       <span className="text-[12px] font-mono text-text-primary flex-1">{String(val)}</span>

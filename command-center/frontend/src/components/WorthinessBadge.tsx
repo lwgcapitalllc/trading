@@ -2,8 +2,8 @@ import type { WorthinessScore } from '@/types'
 
 const TIER_CONFIG = {
   TIER_1_STRESS_TEST: { label: 'STRESS TEST', cls: 'bg-pos-muted text-pos-text border border-pos-text/20' },
-  TIER_2_OPTIMIZE:    { label: 'OPTIMIZE',    cls: 'bg-accent/10 text-accent border border-accent/20' },
-  TIER_3_DISCARD:     { label: 'DISCARD',     cls: 'bg-warn-muted text-warn-text border border-warn-text/20' },
+  TIER_2_OPTIMIZE:    { label: 'OPTIMIZE',    cls: 'bg-warn-muted text-warn-text border border-warn-text/20' },
+  TIER_3_DISCARD:     { label: 'DISCARD',     cls: 'bg-neg-muted text-neg-text border border-neg-text/20' },
 } as const
 
 interface Props {

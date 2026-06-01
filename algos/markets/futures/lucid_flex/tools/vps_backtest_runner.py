@@ -17,7 +17,7 @@ Two modes:
     python vps_backtest_runner.py [--config path/to/backtest_config.json] [--combo ID]
     Writes lucid_flex_results.csv to the NT8 Documents folder.
 
-NOTE: NT8 must already be open with the Strategy Analyzer visible.
+NOTE: NT8 must already be open. The Strategy Analyzer is opened automatically if not visible.
 """
 
 import sys
@@ -88,36 +88,65 @@ def connect_nt8():
         except Exception:
             continue
     print("  ERROR: Could not connect to NT8.")
-    print("  Make sure NinjaTrader 8 is running and Strategy Analyzer is open.")
+    print("  Make sure NinjaTrader 8 is running.")
     sys.exit(1)
 
 
-def find_strategy_analyzer(app):
-    """Locate the Strategy Analyzer window / panel."""
+def _open_sa_via_new_menu(app):
+    """Open a new Strategy Analyzer window via NT8 Control Center New menu.
+    Called when SA is not already visible — happens after a hard NT8 crash/restart."""
+    print("  SA not visible — opening via New menu...")
     try:
-        sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
-        sa.wait("visible", timeout=10)
-        print("  Strategy Analyzer found.")
-        return sa
-    except Exception:
-        pass
-    try:
-        sa = app.window(title_re=".*Strategy Analyzer.*")
-        sa.wait("visible", timeout=10)
-        print("  Strategy Analyzer found (via app).")
-        return sa
+        dt = Desktop(backend="uia")
+        cc = dt.window(title_re=".*NinjaTrader 8.*", control_type="Window")
+        cc.set_focus()
+        time.sleep(0.5)
+        cc.child_window(title="New", control_type="MenuItem").click_input()
+        time.sleep(0.8)
+        # The popup menu item for Strategy Analyzer
+        dt.window(title="Strategy Analyzer", control_type="MenuItem").click_input()
+        time.sleep(4.0)  # SA takes a few seconds to open and load
+        print("  SA opened via New menu.")
     except Exception as e:
-        print(f"  ERROR: Strategy Analyzer not found: {e}")
+        print(f"  ERROR: Could not open SA via New menu: {e}")
         sys.exit(1)
 
 
+def find_strategy_analyzer(app):
+    """Locate the Strategy Analyzer window / panel. Opens it if not already visible."""
+    for attempt in range(2):
+        try:
+            sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
+            sa.wait("visible", timeout=10)
+            print("  Strategy Analyzer found.")
+            return sa
+        except Exception:
+            pass
+        try:
+            sa = app.window(title_re=".*Strategy Analyzer.*")
+            sa.wait("visible", timeout=10)
+            print("  Strategy Analyzer found (via app).")
+            return sa
+        except Exception:
+            pass
+        if attempt == 0:
+            # SA not found — try opening it via New menu, then retry once
+            _open_sa_via_new_menu(app)
+    print("  ERROR: Strategy Analyzer not found after open attempt.")
+    sys.exit(1)
+
+
 def select_strategy(sa, strategy_name):
-    """Select strategy from the NinjaScriptSelector dropdown."""
+    """Select strategy from the NinjaScriptSelector dropdown.
+    Retries with increasing waits — after NT8 restart the strategy list compiles lazily."""
     selector = sa.child_window(auto_id="NinjaScriptSelector")
-    for attempt in range(3):
+    # Delays after clicking the dropdown: short first, longer on retry.
+    # After a crash/restart NT8 may still be compiling strategies when we first try.
+    waits = [1.5, 5.0, 10.0]
+    for attempt, wait in enumerate(waits):
         try:
             selector.click_input()
-            time.sleep(1.2)  # dropdown needs time to populate
+            time.sleep(wait)
             # found_index=0 picks first match — the MenuItem and its Text child
             # both share the same title, so pywinauto finds 2; we want index 0.
             item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
@@ -125,8 +154,9 @@ def select_strategy(sa, strategy_name):
             time.sleep(1.0)
             return True
         except Exception as e:
-            if attempt < 2:
-                send_keys("{ESC}")
+            send_keys("{ESC}")
+            if attempt < len(waits) - 1:
+                print(f"  Strategy '{strategy_name}' not in dropdown yet (attempt {attempt+1}) — waiting {waits[attempt+1]:.0f}s for NT8 compile...")
                 time.sleep(1.0)
             else:
                 print(f"  WARNING: could not select strategy '{strategy_name}': {e}")

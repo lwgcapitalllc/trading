@@ -30,8 +30,10 @@ _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 _POLL_INTERVAL   = 5
 _STALL_KILL_SEC  = 600
 
-# Max concurrent VPS jobs for optimizer runs
-_MAX_CONCURRENT  = 4
+# NT8 Strategy Analyzer is single-window — only one backtest can use it at a time.
+# Running more than 1 concurrent job causes SA window conflicts, display switch failures,
+# and missing XML logs. Runs must be sequential for NinjaTrader.
+_MAX_CONCURRENT  = 1
 
 # Genetic-style: max samples for 3+D grids
 _GENETIC_MAX_SAMPLES = 200
@@ -162,6 +164,11 @@ async def _run_batch(
 
     async def _one(run_id: str, job_spec: dict):
         async with sem:
+            # Abort if the optimization was cancelled while we were queued
+            current_opt = lab_db.get_optimization(opt_id)
+            if current_opt and current_opt.get("status") == "failed_cancelled":
+                lab_db.update_run_status(run_id, "failed_cancelled", "Optimization cancelled")
+                return
             try:
                 await asyncio.to_thread(vps_client.start_backtest, job_spec, runner)
             except Exception as exc:
@@ -256,5 +263,73 @@ async def run_optimization(optimization_id: str) -> None:
         if score > best_score:
             best_score   = score
             best_run_id  = run_id
+
+    lab_db.complete_optimization(optimization_id, best_run_id)
+
+
+async def retry_failed_runs(optimization_id: str) -> None:
+    """Reset all failed child runs and re-fire them. Reuses the same run IDs — no new rows."""
+    opt = lab_db.get_optimization(optimization_id)
+    if not opt:
+        return
+
+    strategy = lab_db.get_strategy(opt["strategy_id"])
+    if not strategy:
+        lab_db.fail_optimization(optimization_id, "Strategy not found")
+        return
+
+    firm = lab_db.get_firm(opt["firm_id"])
+    if not firm:
+        lab_db.fail_optimization(optimization_id, "Firm not found")
+        return
+
+    failed_rows = lab_db.list_optimization_failed_runs(optimization_id)
+    if not failed_rows:
+        return
+
+    # Reset each failed run and decrement the completed counter
+    for row in failed_rows:
+        lab_db.reset_run_for_retry(row["run_id"])
+    lab_db.decrement_optimization_completed(optimization_id, len(failed_rows))
+
+    run_ids   = [r["run_id"] for r in failed_rows]
+    job_specs = [
+        {
+            "job_id":             r["run_id"],
+            "strategy_class":     strategy["class_name"],
+            "instrument":         r["instrument"],
+            "params":             r["params"],
+            "bar_type":           r["bar_type"],
+            "bar_value":          r["bar_value"],
+            "start_date":         r["start_date"],
+            "end_date":           r["end_date"],
+            "commission_per_side": r["commission_per_side"],
+            "slippage_ticks":     r["slippage_ticks"],
+        }
+        for r in failed_rows
+    ]
+
+    await _run_batch(
+        run_ids, job_specs,
+        firm_ids=[opt["firm_id"]],
+        opt_mode=opt["mode"],
+        runner=strategy.get("runner", "ninjatrader"),
+        opt_id=optimization_id,
+    )
+
+    # Re-score best run across all complete runs (original + retried)
+    all_complete = [
+        r for r in lab_db.list_optimization_runs(optimization_id)
+        if r["status"] == "complete"
+    ]
+    obj_fn = choose_objective(opt["mode"])
+    best_run_id: Optional[str] = None
+    best_score  = float("-inf")
+    for row in all_complete:
+        evals = lab_db.get_evaluations(row["run_id"])
+        score = obj_fn({**row, "_evaluations": evals}, firm)
+        if score > best_score:
+            best_score  = score
+            best_run_id = row["run_id"]
 
     lab_db.complete_optimization(optimization_id, best_run_id)

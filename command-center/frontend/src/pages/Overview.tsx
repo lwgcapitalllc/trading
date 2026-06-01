@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom'
-import { Bot, Radar, BarChart2, ChevronRight } from 'lucide-react'
+import { Bot, Radar, BarChart2, ChevronRight, Loader2 } from 'lucide-react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
-import { useBacktestRuns, useStrategies } from '@/hooks/useLab'
+import { useBacktestRuns, useStrategies, useOptimizations } from '@/hooks/useLab'
 import { StatCard } from '@/components/StatCard'
+import { WorthinessBadge } from '@/components/WorthinessBadge'
 import type { BotStatus } from '@/types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -124,11 +125,25 @@ export function Overview() {
   const { data: progress } = useRunProgress()
   const { data: backtestRuns } = useBacktestRuns()
   const { data: strategies } = useStrategies()
+  const { data: optimizations } = useOptimizations()
 
   const latestRun = runs?.[0] ?? null
-  const latestBacktest = backtestRuns?.[0] ?? null
-  const totalBacktestRuns = backtestRuns?.length ?? 0
   const totalStrategies = strategies?.length ?? 0
+
+  // Standalone runs only (exclude optimization children)
+  const standaloneRuns = backtestRuns?.filter(r => !r.optimization_id) ?? []
+  const totalStandaloneRuns = standaloneRuns.length
+  const latestBacktest = standaloneRuns[0] ?? null
+
+  const totalOptimizations = optimizations?.length ?? 0
+  const runningOpt = optimizations?.find(o => o.status === 'running') ?? null
+
+  // Best result across all complete standalone runs
+  const bestRun = standaloneRuns
+    .filter(r => r.status === 'complete' && r.profit_factor != null)
+    .sort((a, b) => (b.profit_factor ?? 0) - (a.profit_factor ?? 0))[0] ?? null
+
+  const tier1Count = standaloneRuns.filter(r => r.worthiness?.tier === 'TIER_1_STRESS_TEST').length
 
   const runningBots  = snapshot?.bots.filter(b => b.status === 'RUNNING').length ?? 0
   const totalBots    = snapshot?.bots.length ?? 0
@@ -340,20 +355,56 @@ export function Overview() {
             </div>
           </button>
 
-          <div className="px-[15px] py-[12px] space-y-[10px]">
+          <div className="px-[15px] py-[12px] space-y-[9px]">
+
+            {/* Running optimization banner */}
+            {runningOpt && (
+              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent mb-[4px]">
+                <Loader2 size={12} className="animate-spin flex-shrink-0" />
+                <span>
+                  Optimization running — {runningOpt.completed_runs}/{runningOpt.estimated_runs} runs
+                </span>
+              </div>
+            )}
+
             <div className="flex items-baseline justify-between">
               <span className="text-[12px] text-text-tertiary">Strategies</span>
-              <span className="text-[13px] text-text-primary">{totalStrategies > 0 ? totalStrategies : '—'}</span>
+              <span className="text-[13px] font-mono text-text-primary">{totalStrategies > 0 ? totalStrategies : '—'}</span>
             </div>
-            <div className="flex items-center justify-between">
+
+            <div className="flex items-baseline justify-between">
               <span className="text-[12px] text-text-tertiary">Runs</span>
-              <span className="text-[26px] font-semibold tracking-tight leading-none">
-                {totalBacktestRuns > 0 ? totalBacktestRuns : '—'}
-              </span>
+              <span className="text-[13px] font-mono text-text-primary">{totalStandaloneRuns > 0 ? totalStandaloneRuns : '—'}</span>
             </div>
-            {latestBacktest ? (
+
+            <div className="flex items-baseline justify-between">
+              <span className="text-[12px] text-text-tertiary">Optimizations</span>
+              <span className="text-[13px] font-mono text-text-primary">{totalOptimizations > 0 ? totalOptimizations : '—'}</span>
+            </div>
+
+            {tier1Count > 0 && (
               <div className="flex items-center justify-between">
-                <span className="text-[12px] text-text-tertiary">Latest</span>
+                <span className="text-[12px] text-text-tertiary">Tier 1 passes</span>
+                <span className="text-[13px] font-mono font-semibold text-pos-text">{tier1Count}</span>
+              </div>
+            )}
+
+            {bestRun ? (
+              <div
+                className="pt-[8px] mt-[4px] border-t border-border-subtle/40 flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => navigate(`/backtests/runs/${bestRun.run_id}`)}
+              >
+                <span className="text-[12px] text-text-tertiary">Best result</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-mono font-semibold text-text-primary">
+                    PF {bestRun.profit_factor?.toFixed(2)}
+                  </span>
+                  <WorthinessBadge worthiness={bestRun.worthiness} size="sm" />
+                </div>
+              </div>
+            ) : latestBacktest ? (
+              <div className="flex items-center justify-between pt-[8px] border-t border-border-subtle/40">
+                <span className="text-[12px] text-text-tertiary">Latest run</span>
                 <BacktestStatusPill status={latestBacktest.status} />
               </div>
             ) : (

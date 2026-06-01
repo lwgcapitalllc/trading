@@ -327,6 +327,7 @@ export interface BacktestSummary {
   worthiness: WorthinessScore | null
   sweep_id: string | null
   optimization_id: string | null
+  error_message: string | null
 }
 
 export interface EvaluationDetail {
@@ -468,6 +469,19 @@ export interface SweepResponse {
   status: string
 }
 
+export interface SweepSummary {
+  sweep_id: string
+  strategy_id: string
+  strategy_name: string
+  start_date: string
+  end_date: string
+  total_instruments: number
+  completed_instruments: number
+  failed_instruments: number
+  status: string
+  created_at: string
+}
+
 export interface SweepDetail {
   sweep_id: string
   strategy_id: string
@@ -497,6 +511,7 @@ export interface OptimizationRequest {
   mode: 'eval' | 'funded'
   search_method: 'auto' | 'brute' | 'genetic'
   param_grid: Record<string, ParamAxisSpec>
+  source_run_id?: string | null
 }
 
 export interface OptimizationSummary {
@@ -512,6 +527,7 @@ export interface OptimizationSummary {
   estimated_runs: number
   completed_runs: number
   best_run_id: string | null
+  source_run_id: string | null
   created_at: string
   completed_at: string | null
 }

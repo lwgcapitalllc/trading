@@ -68,6 +68,7 @@ def _row_to_summary(row: dict) -> BacktestSummary:
         optimization_id=row.get("optimization_id"),
         sharpe=row.get("sharpe"),
         params=row.get("params") or {},
+        error_message=row.get("error_message"),
     )
 
 
@@ -174,6 +175,9 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
 
     if read_progress().get("status") == "running":
         raise HTTPException(409, "A backtest is already running")
+
+    if lab_db.has_any_running_vps_job():
+        raise HTTPException(409, "An optimization or sweep is already running — wait for it to finish before starting a new backtest")
 
     run_id = uuid.uuid4().hex[:12]
     job_id = run_id

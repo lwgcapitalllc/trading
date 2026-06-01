@@ -1124,18 +1124,13 @@ function Skeleton() {
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
-const STATUS_BADGE: Record<string, string> = {
-  complete:          'bg-pos-muted text-pos-text',
-  running:           'bg-accent-muted text-accent',
-  failed_timeout:    'bg-neg-muted text-neg-text',
-  failed_unknown:    'bg-neg-muted text-neg-text',
-  failed_cancelled:  'bg-warn-muted text-warn-text',
-}
-
 function StatusBadge({ status }: { status: string }) {
   const isFailed = status.startsWith('failed')
   const label    = isFailed ? 'failed' : status
-  const cls      = STATUS_BADGE[status] ?? 'bg-warn-muted text-warn-text'
+  const cls      = status === 'complete' ? 'bg-pos-muted text-pos-text'
+    : status === 'running'  ? 'bg-accent-muted text-accent'
+    : isFailed              ? 'bg-neg-muted text-neg-text'
+    : 'bg-bg-hover text-text-secondary'
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-[4px] rounded-full text-[12px] font-semibold uppercase tracking-[0.4px] flex-shrink-0 ${cls}`}>
       {status === 'running' && (
@@ -1228,13 +1223,20 @@ export function BacktestDetail() {
   const runMessage   = isRunning ? (progress?.message ?? 'Starting…') : ''
   const runStartedAt = isRunning ? (progress?.started_at ?? null) : null
 
+  const backLabel = run?.optimization_id ? 'Optimization'
+    : run?.sweep_id ? 'Sweep'
+    : 'Backtests'
+  const backPath  = run?.optimization_id ? `/backtests/optimizations/${run.optimization_id}`
+    : run?.sweep_id ? `/backtests/sweeps/${run.sweep_id}`
+    : '/backtests'
+
   return (
     <div>
       <button
-        onClick={() => navigate('/backtests')}
+        onClick={() => navigate(backPath)}
         className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
       >
-        <ArrowLeft size={14} /> Backtests
+        <ArrowLeft size={14} /> {backLabel}
       </button>
 
       {isLoading && <Skeleton />}

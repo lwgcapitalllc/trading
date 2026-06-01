@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Layers } from 'lucide-react'
+import { ArrowLeft, Layers, Trash2 } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { useSweep } from '@/hooks/useLab'
+import { useSweep, useDeleteSweep } from '@/hooks/useLab'
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -22,6 +23,9 @@ export function SweepDetail() {
   const { sweepId } = useParams<{ sweepId: string }>()
   const navigate    = useNavigate()
   const { data: sweep, isLoading, refetch, isFetching } = useSweep(sweepId ?? null)
+  const deleteSweep = useDeleteSweep()
+
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const isRunning = sweep && sweep.completed_instruments < sweep.total_instruments
 
@@ -31,10 +35,10 @@ export function SweepDetail() {
   return (
     <div>
       <button
-        onClick={() => navigate('/backtests?tab=runs')}
+        onClick={() => navigate('/backtests?tab=sweeps')}
         className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
       >
-        <ArrowLeft size={14} /> Backtests
+        <ArrowLeft size={14} /> Sweeps
       </button>
 
       {isLoading && (
@@ -62,21 +66,60 @@ export function SweepDetail() {
                 <span className="font-mono text-[11px] text-text-tertiary">{sweepId}</span>
               </div>
             </div>
-            <div className="text-right flex-shrink-0">
-              <div className="text-[13px] font-semibold text-text-primary">
-                {sweep.completed_instruments} / {sweep.total_instruments} complete
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="text-right">
+                <div className="text-[13px] font-semibold text-text-primary">
+                  {sweep.completed_instruments} / {sweep.total_instruments} complete
+                </div>
+                {isRunning && (
+                  <button
+                    onClick={() => refetch()}
+                    disabled={isFetching}
+                    className="text-[11px] text-accent hover:underline mt-1 disabled:opacity-50"
+                  >
+                    {isFetching ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                )}
               </div>
-              {isRunning && (
+              {!isRunning && (
                 <button
-                  onClick={() => refetch()}
-                  disabled={isFetching}
-                  className="text-[11px] text-accent hover:underline mt-1 disabled:opacity-50"
+                  onClick={() => setConfirmDelete(true)}
+                  className="p-[6px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors"
+                  title="Delete sweep"
                 >
-                  {isFetching ? 'Refreshing…' : 'Refresh'}
+                  <Trash2 size={15} />
                 </button>
               )}
             </div>
           </div>
+
+          {confirmDelete && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+              <div className="bg-bg-surface border border-border-subtle rounded-lg p-6 max-w-sm w-full space-y-4">
+                <h2 className="text-[15px] font-semibold text-text-primary">Delete sweep?</h2>
+                <p className="text-[13px] text-text-secondary">
+                  This will permanently delete the sweep and all its instrument runs, evaluations, and result files.
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    className="px-4 py-2 text-[13px] rounded-lg border border-border-subtle hover:bg-bg-hover transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => deleteSweep.mutate(sweepId!, {
+                      onSuccess: () => navigate('/backtests?tab=sweeps'),
+                    })}
+                    disabled={deleteSweep.isPending}
+                    className="px-4 py-2 text-[13px] rounded-lg bg-neg-muted text-neg-text hover:opacity-80 transition-opacity disabled:opacity-50"
+                  >
+                    {deleteSweep.isPending ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Progress bar */}
           <div className="w-full bg-bg-surface rounded-full h-[6px] overflow-hidden">

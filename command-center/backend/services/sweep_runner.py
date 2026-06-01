@@ -1,7 +1,10 @@
 """
-Sweep runner — fans out N parallel backtests (one per instrument) for a sweep job.
+Sweep runner — fans out N sequential backtests (one per instrument) for a sweep job.
 Does NOT use lab_progress.json (that's for single-run flow only).
 Each run tracks state independently in backtest_runs.
+
+NT8 Strategy Analyzer is single-window: only one job can use it at a time.
+Sweep runs are serialised with _MAX_CONCURRENT = 1 — same constraint as the optimizer.
 """
 
 from __future__ import annotations
@@ -10,7 +13,6 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Optional
 
 from services import lab_db, evaluator, vps_client, worthiness
 
@@ -19,46 +21,8 @@ _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 _POLL_INTERVAL   = 5
 _STALL_KILL_SEC  = 600
 
-
-async def _run_single(
-    run_id:      str,
-    job_id:      str,
-    strategy_id: str,
-    instrument:  str,
-    firm_ids:    list[str],
-    runner:      str,
-) -> None:
-    """Poll a single sweep child run to completion. No progress file used."""
-    started_at = time.time()
-
-    while True:
-        await asyncio.sleep(_POLL_INTERVAL)
-
-        try:
-            status_data = await asyncio.to_thread(vps_client.job_status, job_id)
-        except Exception:
-            if time.time() - started_at > _STALL_KILL_SEC:
-                lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
-                return
-            continue
-
-        status = status_data.get("status", "running")
-
-        if status == "complete":
-            await _handle_complete(run_id, job_id, firm_ids)
-            return
-
-        if status.startswith("failed"):
-            lab_db.update_run_status(run_id, status, status_data.get("error") or "")
-            return
-
-        if time.time() - started_at > _STALL_KILL_SEC:
-            try:
-                await asyncio.to_thread(vps_client.cancel_job, job_id)
-            except Exception:
-                pass
-            lab_db.update_run_status(run_id, "failed_timeout", "No heartbeat — cancelled")
-            return
+# NT8 SA window can only run one job at a time.
+_MAX_CONCURRENT  = 1
 
 
 async def _handle_complete(run_id: str, job_id: str, firm_ids: list[str]) -> None:
@@ -95,29 +59,56 @@ async def _handle_complete(run_id: str, job_id: str, firm_ids: list[str]) -> Non
         lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
 
 
+async def _run_one(run_id: str, job_id: str, job_spec: dict, firm_ids: list[str], runner: str) -> None:
+    """Start a VPS job and poll it to completion. Called while holding the SA semaphore."""
+    try:
+        await asyncio.to_thread(vps_client.start_backtest, job_spec, runner)
+    except Exception as exc:
+        lab_db.update_run_status(run_id, "failed_unknown", str(exc))
+        return
+
+    started_at = time.time()
+
+    while True:
+        await asyncio.sleep(_POLL_INTERVAL)
+
+        try:
+            status_data = await asyncio.to_thread(vps_client.job_status, job_id)
+        except Exception:
+            if time.time() - started_at > _STALL_KILL_SEC:
+                lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
+                return
+            continue
+
+        status = status_data.get("status", "running")
+
+        if status == "complete":
+            await _handle_complete(run_id, job_id, firm_ids)
+            return
+
+        if status.startswith("failed"):
+            lab_db.update_run_status(run_id, status, status_data.get("error") or "")
+            return
+
+        if time.time() - started_at > _STALL_KILL_SEC:
+            try:
+                await asyncio.to_thread(vps_client.cancel_job, job_id)
+            except Exception:
+                pass
+            lab_db.update_run_status(run_id, "failed_timeout", "No heartbeat — cancelled")
+            return
+
+
 async def run_sweep(
     sweep_id:   str,
     run_specs:  list[dict],   # [{run_id, job_id, strategy_id, instrument, firm_ids, runner}]
     job_specs:  list[dict],   # VPS job_spec payloads, one per run
 ) -> None:
-    """Launch all N runs in parallel and wait for all to finish."""
-    # Fire all VPS jobs first
-    for spec, job in zip(run_specs, job_specs):
-        try:
-            await asyncio.to_thread(vps_client.start_backtest, job, spec["runner"])
-        except Exception as exc:
-            lab_db.update_run_status(spec["run_id"], "failed_unknown", str(exc))
+    """Run all N instruments one at a time through the single NT8 SA window."""
+    sem = asyncio.Semaphore(_MAX_CONCURRENT)
 
-    # Poll all concurrently
-    tasks = [
-        _run_single(
-            spec["run_id"],
-            spec["job_id"],
-            spec["strategy_id"],
-            spec["instrument"],
-            spec["firm_ids"],
-            spec["runner"],
-        )
-        for spec in run_specs
-    ]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    async def _one(spec: dict, job: dict) -> None:
+        async with sem:
+            await _run_one(spec["run_id"], spec["job_id"], job, spec["firm_ids"], spec["runner"])
+
+    await asyncio.gather(*[_one(spec, job) for spec, job in zip(run_specs, job_specs)], return_exceptions=True)

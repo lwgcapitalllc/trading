@@ -5,17 +5,28 @@ Sweeps router — POST /backtests/sweep, GET /backtests/sweeps/:sweep_id
 from __future__ import annotations
 
 import asyncio
+import shutil
 import time
 import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
-from models import SweepRequest, SweepResponse, SweepDetail, BacktestSummary, WorthinessScore
+from typing import Optional
+from models import SweepRequest, SweepResponse, SweepDetail, SweepSummary, BacktestSummary, WorthinessScore
 from services import lab_db
 from services.sweep_runner import run_sweep
 from routers.backtests import _row_to_summary
 
+_LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
+
 router = APIRouter(prefix="/backtests", tags=["sweeps"])
+
+
+@router.get("/sweeps", response_model=list[SweepSummary])
+def list_sweeps(strategy_id: Optional[str] = None) -> list[SweepSummary]:
+    rows = lab_db.list_sweeps(strategy_id=strategy_id)
+    return [SweepSummary(**r) for r in rows]
 
 
 @router.post("/sweep", status_code=202, response_model=SweepResponse)
@@ -30,6 +41,9 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
 
     if not req.instruments:
         raise HTTPException(400, "instruments list cannot be empty")
+
+    if lab_db.has_any_running_vps_job():
+        raise HTTPException(409, "A backtest, sweep, or optimization is already running — wait for it to finish before starting a new sweep")
 
     sweep_id = "sw_" + uuid.uuid4().hex[:10]
     now      = int(time.time())
@@ -82,6 +96,23 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
     asyncio.create_task(run_sweep(sweep_id, run_specs, job_specs))
 
     return SweepResponse(sweep_id=sweep_id, run_ids=run_ids, status="started")
+
+
+@router.delete("/sweeps/{sweep_id}", status_code=204)
+def delete_sweep(sweep_id: str) -> Response:
+    rows = lab_db.list_sweep_runs(sweep_id)
+    if not rows:
+        raise HTTPException(404, f"Sweep '{sweep_id}' not found")
+    if any(r["status"] == "running" for r in rows):
+        raise HTTPException(409, "Cannot delete a running sweep — wait for it to finish first")
+    deleted, child_ids = lab_db.delete_sweep(sweep_id)
+    if not deleted:
+        raise HTTPException(404, f"Sweep '{sweep_id}' not found")
+    for run_id in child_ids:
+        run_dir = _LAB_RESULTS_DIR / run_id
+        if run_dir.exists():
+            shutil.rmtree(run_dir)
+    return Response(status_code=204)
 
 
 @router.get("/sweeps/{sweep_id}", response_model=SweepDetail)

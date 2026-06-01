@@ -1,11 +1,11 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { RefreshCw, Play, ChevronRight, Trash2, Layers, Sliders } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useBacktestRuns, useStrategies, useFirms,
   useScanStrategies, useLabProgress, useDeleteRun,
-  useOptimizations,
+  useOptimizations, useDeleteOptimization, useSweeps, useDeleteSweep,
 } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
@@ -50,18 +50,13 @@ function fmtDuration(createdAt: string, completedAt: string | null): string {
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 
-const STATUS_STYLE: Record<string, string> = {
-  complete:       'bg-pos-muted text-pos-text',
-  running:        'bg-accent-muted text-accent',
-  failed_timeout: 'bg-neg-muted text-neg-text',
-  failed_unknown: 'bg-neg-muted text-neg-text',
-  failed:         'bg-neg-muted text-neg-text',
-}
-
 function StatusPill({ status }: { status: string }) {
   const isFailed = status.startsWith('failed')
   const label    = isFailed ? 'failed' : status
-  const cls      = STATUS_STYLE[status] ?? 'bg-warn-muted text-warn-text'
+  const cls      = status === 'complete'  ? 'bg-pos-muted text-pos-text'
+    : status === 'running'   ? 'bg-accent-muted text-accent'
+    : isFailed               ? 'bg-neg-muted text-neg-text'
+    : 'bg-bg-hover text-text-secondary'
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${cls}`}>
       {status === 'running' && <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />}
@@ -117,12 +112,19 @@ function ConfirmDeleteModal({
   onConfirm,
   onCancel,
   isPending,
+  customMessage,
+  confirmLabel,
 }: {
   count: number
   onConfirm: () => void
   onCancel: () => void
   isPending: boolean
+  customMessage?: string
+  confirmLabel?: string
 }) {
+  const defaultMsg = count === 1
+    ? 'Its evaluations and result files will also be removed.'
+    : `All ${count} runs' evaluations and result files will also be removed.`
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
@@ -131,15 +133,12 @@ function ConfirmDeleteModal({
       <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[400px] shadow-2xl">
         <div className="px-5 py-4 border-b border-border-subtle">
           <div className="text-[15px] font-semibold">
-            Delete {count === 1 ? 'this run' : `${count} runs`}?
+            Delete {count === 1 ? 'this' : count} {count === 1 ? 'item' : 'items'}?
           </div>
         </div>
         <div className="px-5 py-4">
           <p className="text-[13px] text-text-secondary">
-            {count === 1
-              ? 'Its evaluations and result files will also be removed.'
-              : `All ${count} runs' evaluations and result files will also be removed.`}
-            {' '}This cannot be undone.
+            {customMessage ?? defaultMsg}{' '}This cannot be undone.
           </p>
         </div>
         <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle">
@@ -154,7 +153,7 @@ function ConfirmDeleteModal({
             disabled={isPending}
             className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/15 disabled:opacity-50 transition-colors"
           >
-            {isPending ? 'Deleting…' : count === 1 ? 'Delete run' : `Delete ${count} runs`}
+            {isPending ? 'Deleting…' : (confirmLabel ?? (count === 1 ? 'Delete' : `Delete ${count}`))}
           </button>
         </div>
       </div>
@@ -164,29 +163,44 @@ function ConfirmDeleteModal({
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-type Tab = 'strategies' | 'runs' | 'firms' | 'optimizations'
+type Tab = 'strategies' | 'runs' | 'sweeps' | 'optimizations' | 'firms'
 
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'strategies',   label: 'Strategies'   },
-  { id: 'runs',         label: 'Runs'         },
-  { id: 'firms',        label: 'Firms'        },
-  { id: 'optimizations', label: 'Optimizations' },
-]
-
-function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
+function TabBar({
+  active, onChange, runsCount, sweepsCount, optsCount,
+}: {
+  active: Tab
+  onChange: (t: Tab) => void
+  runsCount?: number
+  sweepsCount?: number
+  optsCount?: number
+}) {
+  const tabs: Array<{ id: Tab; label: string; count?: number }> = [
+    { id: 'strategies',    label: 'Strategies' },
+    { id: 'runs',          label: 'Runs',          count: runsCount },
+    { id: 'sweeps',        label: 'Sweeps',         count: sweepsCount },
+    { id: 'optimizations', label: 'Optimizations', count: optsCount },
+    { id: 'firms',         label: 'Firms' },
+  ]
   return (
     <div className="flex gap-0 border-b border-border-subtle mb-6">
-      {TABS.map(t => (
+      {tabs.map(t => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`px-4 py-2 text-[13px] font-medium transition-colors -mb-px border-b-2 ${
+          className={`flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium transition-colors -mb-px border-b-2 ${
             active === t.id
               ? 'text-text-primary border-accent'
               : 'text-text-tertiary border-transparent hover:text-text-secondary'
           }`}
         >
           {t.label}
+          {t.count != null && (
+            <span className={`text-[11px] font-mono tabular-nums px-[5px] py-[1px] rounded-full ${
+              active === t.id ? 'bg-accent/15 text-accent' : 'bg-bg-hover text-text-tertiary'
+            }`}>
+              {t.count}
+            </span>
+          )}
         </button>
       ))}
     </div>
@@ -201,15 +215,35 @@ function RunsTab() {
   const progress  = useLabProgress()
   const deleteRun = useDeleteRun()
 
-  const [statusFilter, setStatusFilter] = useState('')
-  const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set())
-  const [deleteRunId, setDeleteRunId]   = useState<string | null>(null)
-  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [statusFilter, setStatusFilter]       = useState('')
+  const [selectedIds, setSelectedIds]         = useState<Set<string>>(new Set())
+  const [deleteRunId, setDeleteRunId]         = useState<string | null>(null)
+  const [bulkDeleting, setBulkDeleting]       = useState(false)
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
 
-  const { data: runs, isLoading, refetch, isFetching } = useBacktestRuns(
+  const { data: allRuns, isLoading, refetch, isFetching } = useBacktestRuns(
     statusFilter ? { status: statusFilter } : undefined
   )
+  const { data: allOpts } = useOptimizations()
+
+  // Standalone runs only — optimization child runs are visible inside optimization detail
+  const runs = useMemo(
+    () => allRuns?.filter(r => !r.optimization_id),
+    [allRuns]
+  )
+
+  // Map: source_run_id → optimizations started from that run
+  const optsBySourceRun = useMemo(() => {
+    const map = new Map<string, typeof allOpts>()
+    if (!allOpts) return map
+    for (const opt of allOpts) {
+      if (!opt.source_run_id) continue
+      const existing = map.get(opt.source_run_id) ?? []
+      existing.push(opt)
+      map.set(opt.source_run_id, existing)
+    }
+    return map
+  }, [allOpts])
 
   const isRunning = progress.data?.status === 'running'
 
@@ -223,7 +257,7 @@ function RunsTab() {
   const toggleSelectAll = () => {
     if (!runs) return
     if (selectedIds.size === runs.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(runs.map(r => r.run_id)))
+    else setSelectedIds(new Set(runs.map((r: BacktestSummary) => r.run_id)))
   }
 
   const handleSingleDelete = useCallback(() => {
@@ -285,7 +319,6 @@ function RunsTab() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* Status filter */}
           <select
             value={statusFilter}
             onChange={e => { setStatusFilter(e.target.value); setSelectedIds(new Set()) }}
@@ -343,14 +376,24 @@ function RunsTab() {
             </thead>
             <tbody className="divide-y divide-border-subtle">
               {runs.map(run => (
-                <RunRow
-                  key={run.run_id}
-                  run={run}
-                  selected={selectedIds.has(run.run_id)}
-                  onSelect={() => toggleSelect(run.run_id)}
-                  onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
-                  onDelete={e => { e.stopPropagation(); setDeleteRunId(run.run_id) }}
-                />
+                <>
+                  <RunRow
+                    key={run.run_id}
+                    run={run}
+                    selected={selectedIds.has(run.run_id)}
+                    onSelect={() => toggleSelect(run.run_id)}
+                    onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
+                    onDelete={e => { e.stopPropagation(); setDeleteRunId(run.run_id) }}
+                  />
+                  {(optsBySourceRun.get(run.run_id) ?? []).map(opt => (
+                    <OptimizationNestRow
+                      key={opt.optimization_id}
+                      opt={opt}
+                      colSpan={12}
+                      onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
+                    />
+                  ))}
+                </>
               ))}
             </tbody>
           </table>
@@ -380,6 +423,49 @@ function RunsTab() {
   )
 }
 
+// ── Nested optimization row (shown under the source run) ─────────────────────
+
+function OptimizationNestRow({
+  opt, colSpan, onClick,
+}: {
+  opt: import('@/types').OptimizationSummary
+  colSpan: number
+  onClick: () => void
+}) {
+  const st = fmtOptStatus(opt.status)
+  const totalRuns = opt.estimated_runs
+  const doneRuns  = opt.completed_runs
+  return (
+    <tr
+      onClick={onClick}
+      className="hover:bg-bg-hover cursor-pointer transition-colors bg-gold-muted/5 border-l-2 border-l-gold-text/35"
+    >
+      {/* indent spacer replaces checkbox col */}
+      <td className="px-3 py-2" />
+      <td className="px-4 py-2" colSpan={3}>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
+          <span className="text-[11px] font-semibold text-gold-text">Optimization</span>
+          <span className="text-[11px] text-text-tertiary font-mono">{opt.optimization_id}</span>
+          <span className="text-[10px] text-text-tertiary">
+            · {doneRuns}/{totalRuns} runs
+          </span>
+        </div>
+      </td>
+      <td className="px-4 py-2">
+        <span className={`inline-flex px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>
+          {st.label}
+        </span>
+      </td>
+      <td colSpan={colSpan - 5} className="px-4 py-2 text-right">
+        <span className="text-[11px] text-accent">View →</span>
+      </td>
+    </tr>
+  )
+}
+
+// ── Run row ───────────────────────────────────────────────────────────────────
+
 function RunRow({
   run, selected, onSelect, onClick, onDelete,
 }: {
@@ -391,10 +477,12 @@ function RunRow({
 }) {
   const navigate = useNavigate()
   const pnlClass = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
+  const isOptChild = !!run.optimization_id
+  const isSweepChild = !!run.sweep_id
   return (
     <tr
       onClick={onClick}
-      className={`hover:bg-bg-hover cursor-pointer transition-colors ${selected ? 'bg-accent/5' : ''}`}
+      className={`hover:bg-bg-hover cursor-pointer transition-colors ${selected ? 'bg-accent/5' : ''} ${isOptChild ? 'border-l-2 border-l-gold-text/40' : isSweepChild ? 'border-l-2 border-l-accent/40' : ''}`}
     >
       <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
         <input
@@ -405,16 +493,26 @@ function RunRow({
         />
       </td>
       <td className="px-4 py-3 font-medium">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {run.strategy_name || run.strategy_id}
           {run.sweep_id && (
-            <span title={`Sweep: ${run.sweep_id}`} onClick={e => { e.stopPropagation(); navigate(`/backtests/sweeps/${run.sweep_id}`) }}>
-              <Layers size={11} className="text-accent opacity-70 hover:opacity-100 cursor-pointer" />
+            <span
+              onClick={e => { e.stopPropagation(); navigate(`/backtests/sweeps/${run.sweep_id}`) }}
+              title={`Sweep: ${run.sweep_id}`}
+              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent cursor-pointer hover:bg-accent/20 transition-colors"
+            >
+              <Layers size={8} />
+              SWEEP
             </span>
           )}
           {run.optimization_id && (
-            <span title={`Optimization: ${run.optimization_id}`} onClick={e => { e.stopPropagation(); navigate(`/backtests/optimizations/${run.optimization_id}`) }}>
-              <Sliders size={11} className="text-gold-text opacity-70 hover:opacity-100 cursor-pointer" />
+            <span
+              onClick={e => { e.stopPropagation(); navigate(`/backtests/optimizations/${run.optimization_id}`) }}
+              title={`Optimization: ${run.optimization_id}`}
+              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-gold-muted text-gold-text cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <Sliders size={8} />
+              OPT
             </span>
           )}
         </div>
@@ -679,17 +777,129 @@ function FirmsSkeleton() {
   )
 }
 
+// ── Sweeps tab ────────────────────────────────────────────────────────────────
+
+function SweepsTab() {
+  const navigate    = useNavigate()
+  const deleteSweep = useDeleteSweep()
+  const { data: sweeps, isLoading } = useSweeps()
+
+  const [deleteSweepId, setDeleteSweepId] = useState<string | null>(null)
+
+  function fmtSweepStatus(s: string) {
+    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'running')  return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
+    if (s === 'partial')  return { label: 'Partial',  cls: 'bg-warn-muted text-warn-text' }
+    return { label: s, cls: 'bg-bg-hover text-text-secondary' }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-[13px] text-text-secondary">
+          {sweeps ? `${sweeps.length} sweep${sweeps.length !== 1 ? 's' : ''}` : ''}
+        </span>
+      </div>
+
+      {isLoading ? (
+        <RunsTableSkeleton />
+      ) : !sweeps?.length ? (
+        <EmptyState
+          icon={<Layers size={20} />}
+          title="No sweeps yet"
+          description='Run a strategy across multiple instruments from a backtest detail page.'
+        />
+      ) : (
+        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b border-border-subtle">
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
+                <th className="px-3 py-3 w-20" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-subtle">
+              {sweeps.map(sw => {
+                const st = fmtSweepStatus(sw.status)
+                return (
+                  <tr
+                    key={sw.sweep_id}
+                    onClick={() => navigate(`/backtests/sweeps/${sw.sweep_id}`)}
+                    className="hover:bg-bg-hover cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium">{sw.strategy_name}</td>
+                    <td className="px-4 py-3 text-text-secondary text-[12px]">
+                      {new Date(sw.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {' → '}
+                      {new Date(sw.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </td>
+                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
+                      {sw.completed_instruments}/{sw.total_instruments}
+                      {sw.failed_instruments > 0 && (
+                        <span className="ml-1 text-neg-text text-[11px]">({sw.failed_instruments} failed)</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>
+                        {sw.status === 'running' && <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />}
+                        {st.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={e => {
+                            e.stopPropagation()
+                            setDeleteSweepId(sw.sweep_id)
+                          }}
+                          disabled={sw.status === 'running'}
+                          className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={sw.status === 'running' ? 'Wait for sweep to finish before deleting' : 'Delete sweep'}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                        <ChevronRight size={14} className="text-text-tertiary" />
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {deleteSweepId && (
+        <ConfirmDeleteModal
+          count={1}
+          onConfirm={() => deleteSweep.mutate(deleteSweepId, { onSettled: () => setDeleteSweepId(null) })}
+          onCancel={() => setDeleteSweepId(null)}
+          isPending={deleteSweep.isPending}
+          customMessage="This will permanently delete the sweep and all its instrument runs, evaluations, and result files."
+        />
+      )}
+    </div>
+  )
+}
+
 // ── Optimizations tab ──────────────────────────────────────────────────────────
 
 function fmtOptStatus(s: string) {
-  if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
-  if (s === 'running')  return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
-  return { label: s, cls: 'bg-neg-muted text-neg-text' }
+  if (s === 'complete')        return { label: 'Complete',  cls: 'bg-pos-muted text-pos-text' }
+  if (s === 'running')         return { label: 'Running',   cls: 'bg-accent/10 text-accent' }
+  if (s.startsWith('failed'))  return { label: 'Failed',    cls: 'bg-neg-muted text-neg-text' }
+  return { label: s, cls: 'bg-bg-hover text-text-secondary' }
 }
 
 function OptimizationsTab() {
-  const navigate = useNavigate()
+  const navigate   = useNavigate()
+  const deleteOpt  = useDeleteOptimization()
   const { data: opts, isLoading } = useOptimizations()
+
+  const [deleteOptId, setDeleteOptId] = useState<string | null>(null)
 
   return (
     <div>
@@ -719,7 +929,7 @@ function OptimizationsTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Method</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
-                <th className="px-3 py-3 w-10" />
+                <th className="px-3 py-3 w-20" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
@@ -745,7 +955,20 @@ function OptimizationsTab() {
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      <ChevronRight size={14} className="text-text-tertiary" />
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={e => {
+                            e.stopPropagation()
+                            setDeleteOptId(opt.optimization_id)
+                          }}
+                          disabled={opt.status === 'running'}
+                          className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={opt.status === 'running' ? 'Cancel first, then delete' : 'Delete optimization'}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                        <ChevronRight size={14} className="text-text-tertiary" />
+                      </div>
                     </td>
                   </tr>
                 )
@@ -753,6 +976,16 @@ function OptimizationsTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteOptId && (
+        <ConfirmDeleteModal
+          count={1}
+          onConfirm={() => deleteOpt.mutate(deleteOptId, { onSuccess: () => setDeleteOptId(null), onSettled: () => setDeleteOptId(null) })}
+          onCancel={() => setDeleteOptId(null)}
+          isPending={deleteOpt.isPending}
+          customMessage="This will permanently delete the optimization and all its child runs, evaluations, and result files."
+        />
       )}
     </div>
   )
@@ -765,18 +998,27 @@ export function Backtests() {
   const tab = (searchParams.get('tab') ?? 'strategies') as Tab
   const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
 
+  // Counts for tab labels — served from cache when tabs have already loaded data
+  const { data: allRuns }   = useBacktestRuns()
+  const { data: allOpts }   = useOptimizations()
+  const { data: allSweeps } = useSweeps()
+  const runsCount   = allRuns?.filter(r => !r.optimization_id).length
+  const optsCount   = allOpts?.length
+  const sweepsCount = allSweeps?.length
+
   return (
     <div>
       <div className="flex items-end gap-3 mb-[18px]">
         <h1 className="text-h1 font-semibold">Backtests</h1>
       </div>
 
-      <TabBar active={tab} onChange={setTab} />
+      <TabBar active={tab} onChange={setTab} runsCount={runsCount} sweepsCount={sweepsCount} optsCount={optsCount} />
 
-      {tab === 'strategies'   && <StrategiesTab />}
-      {tab === 'runs'         && <RunsTab />}
-      {tab === 'firms'        && <FirmsTab />}
+      {tab === 'strategies'    && <StrategiesTab />}
+      {tab === 'runs'          && <RunsTab />}
+      {tab === 'sweeps'        && <SweepsTab />}
       {tab === 'optimizations' && <OptimizationsTab />}
+      {tab === 'firms'         && <FirmsTab />}
     </div>
   )
 }

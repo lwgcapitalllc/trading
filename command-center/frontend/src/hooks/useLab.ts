@@ -141,7 +141,14 @@ export function useTriggerBacktest() {
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
       qc.invalidateQueries({ queryKey: ['lab', 'progress'] })
     },
-    onError: () => toast.error('Failed to start backtest'),
+    onError: (e: unknown) => {
+      const detail = (e as { detail?: string })?.detail
+      if (detail?.includes('already running')) {
+        toast.error(detail)
+      } else {
+        toast.error('Failed to start backtest')
+      }
+    },
   })
 }
 
@@ -154,6 +161,22 @@ export function useDeleteRun() {
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
     },
     onError: () => toast.error('Failed to delete run'),
+  })
+}
+
+export function useDeleteOptimization() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (optId: string) => api.delete<void>(`/optimizations/${optId}`),
+    onSuccess: () => {
+      toast.success('Optimization deleted')
+      qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { detail?: string })?.detail
+      toast.error(msg ?? 'Failed to delete optimization')
+    },
   })
 }
 
@@ -262,6 +285,15 @@ export function useStartVpsAgent() {
 
 // ── Sweeps ─────────────────────────────────────────────────────────────────────
 
+export function useSweeps(strategyId?: string) {
+  const qs = strategyId ? `?strategy_id=${strategyId}` : ''
+  return useQuery({
+    queryKey: ['lab', 'sweeps', strategyId ?? ''],
+    queryFn: () => api.get<import('@/types').SweepSummary[]>(`/backtests/sweeps${qs}`),
+    refetchInterval: 30_000,
+  })
+}
+
 export function useSweep(sweepId: string | null) {
   return useQuery({
     queryKey: ['lab', 'sweep', sweepId],
@@ -275,6 +307,22 @@ export function useSweep(sweepId: string | null) {
   })
 }
 
+export function useDeleteSweep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (sweepId: string) => api.delete<void>(`/backtests/sweeps/${sweepId}`),
+    onSuccess: () => {
+      toast.success('Sweep deleted')
+      qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { detail?: string })?.detail
+      toast.error(msg ?? 'Failed to delete sweep')
+    },
+  })
+}
+
 export function useTriggerSweep() {
   const qc = useQueryClient()
   return useMutation({
@@ -282,8 +330,16 @@ export function useTriggerSweep() {
     onSuccess: () => {
       toast.success('Sweep started')
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
     },
-    onError: () => toast.error('Failed to start sweep'),
+    onError: (e: unknown) => {
+      const detail = (e as { detail?: string })?.detail
+      if (detail?.includes('already running')) {
+        toast.error(detail)
+      } else {
+        toast.error('Failed to start sweep')
+      }
+    },
   })
 }
 
@@ -304,7 +360,9 @@ export function useOptimization(optimizationId: string | null) {
     enabled: !!optimizationId,
     refetchInterval: (query) => {
       const data = query.state.data as OptimizationDetail | undefined
-      return data?.status === 'running' ? 3_000 : false
+      if (!data) return false
+      const hasRunning = data.runs.some(r => r.status === 'running')
+      return (data.status === 'running' || hasRunning) ? 3_000 : false
     },
   })
 }
@@ -318,7 +376,42 @@ export function useTriggerOptimization() {
       toast.success('Optimization started')
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
     },
-    onError: () => toast.error('Failed to start optimization'),
+    onError: (e: unknown) => {
+      const detail = (e as { detail?: string })?.detail
+      if (detail?.includes('already running')) {
+        toast.error(detail)
+      } else {
+        toast.error('Failed to start optimization')
+      }
+    },
+  })
+}
+
+export function useCancelOptimization() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (optimizationId: string) =>
+      api.post<{ optimization_id: string; status: string }>(`/optimizations/${optimizationId}/cancel`),
+    onSuccess: (_data, optimizationId) => {
+      toast.success('Optimization cancelled')
+      qc.invalidateQueries({ queryKey: ['lab', 'optimization', optimizationId] })
+      qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+    },
+    onError: () => toast.error('Failed to cancel optimization'),
+  })
+}
+
+export function useRetryOptimization() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (optimizationId: string) =>
+      api.post<{ optimization_id: string; retrying: number; status: string }>(`/optimizations/${optimizationId}/retry-failed`),
+    onSuccess: (data, optimizationId) => {
+      toast.success(`Retrying ${data.retrying} failed run${data.retrying !== 1 ? 's' : ''}`)
+      qc.invalidateQueries({ queryKey: ['lab', 'optimization', optimizationId] })
+      qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+    },
+    onError: () => toast.error('Failed to retry optimization'),
   })
 }
 
