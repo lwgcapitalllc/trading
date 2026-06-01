@@ -210,85 +210,55 @@ Never skip the tier check in `evaluator.py`. The current seeded firms are:
 | Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer. Generates all param combos, runs each sequentially via SA semaphore, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. `source_run_id` links an optimization back to the run it was triggered from. Deletable. Per-run retry via `POST /backtests/runs/{id}/retry`. |
 | Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
 | Lab — Stress Tests | 🔲 Stub | Router exists, no logic yet. M3 scope. |
-| Lab — Sweeps (M4) | ✅ Live | `source_run_id` column on `backtest_runs` for sweep child rows; `SweepRequest` accepts and stores it. `list_sweeps` returns `source_run_id` via `MIN()` GROUP BY. `delete_run` now cascades: deletes linked optimizations (and their children) and linked sweep child runs before removing the source run. |
 | Settings | ✅ Live | Config read/write. |
 
 ---
 
-## M2 key decisions
+## Worthiness scoring
 
-**Optimizer implementation:** NT8 Optimizer GUI automation (pywinauto) was not attempted. Instead, the optimizer generates all parameter combinations from the grid and drives them as individual backtest calls via the existing VPS agent pipeline (`optimization_runner.py`). `_MAX_CONCURRENT = 1` — the NT8 Strategy Analyzer window is single-threaded; running more than one job at a time causes SA conflicts, display switch failures, and missing XML logs. For 3+D grids with "auto" or "genetic" search method, a random subset of up to 200 combinations is sampled. If native NT8 optimization is needed in M3, the `vps_client.py` dispatcher pattern makes it easy to route differently.
+`services/worthiness.py`. Scored against the strictest evaluated firm (smallest `max_loss_eod`).
+
+| Tier | Criteria |
+|---|---|
+| **Tier 1 — STRESS_TEST** | PF > 1.3 AND DD ≤ firm limit AND DD not in danger zone AND trade_count ≥ 50 |
+| **Tier 2 — OPTIMIZE** | PF in [0.8, 1.3] OR DD in danger zone (0.7×–1.0× of limit), trade_count ≥ 30 |
+| **Tier 3 — DISCARD** | PF < 0.8 OR DD > firm limit OR trade_count < 30 |
+
+Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_computed_against_firm` (firm_id of the strictest firm used). Added via migration — not in the original CREATE TABLE.
+
+---
+
+## Objective functions
+
+`services/objectives.py`. Two registered objectives; chosen by `mode`:
+
+- **`eval_pass_probability`** (default) — score 0.0–1.5. 1.0 = DD ok + target hit; speed bonus up to +0.5 for hitting target in fewer than 30 simulated days. Partial credit (0–0.5) if DD passes but target not reached. 0.0 if DD breached.
+- **`funded_sharpe_under_drawdown`** — Sharpe ratio if DD within limit, −∞ if breached. Used when `mode = "funded"`.
+
+---
+
+## DB schema — notable columns added via migration
+
+`backtest_runs` additions (not in original CREATE TABLE):
+- `worthiness_tier`, `worthiness_reason`, `worthiness_computed_against_firm` — see Worthiness scoring above
+- `sweep_id` — set on all child runs of an instrument sweep
+- `optimization_id` — set on all child runs of an optimizer job
+- `source_run_id` — set when a sweep or optimization is triggered from a BacktestDetail page; links children back to the originating run
+
+`optimizations` table key fields: `optimization_id`, `strategy_id`, `instrument`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `firm_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`, `created_at`, `completed_at`.
+
+---
+
+## Key architectural decisions
+
+**Optimizer implementation:** NT8 Optimizer GUI automation (pywinauto) was not attempted. Instead, the optimizer generates all parameter combinations from the grid and drives them as individual backtest calls via the existing VPS agent pipeline (`optimization_runner.py`). `_MAX_CONCURRENT = 1` — the NT8 Strategy Analyzer window is single-threaded; running more than one job at a time causes SA conflicts, display switch failures, and missing XML logs. For 3+D grids with "auto" or "genetic" search method, a random subset of up to 200 combinations is sampled.
 
 **NT8 SA global lock:** All three job types (single backtest, sweep, optimization) share the same physical SA window. `lab_db.has_any_running_vps_job()` checks for any `backtest_runs` or `optimizations` row with `status = 'running'`. All three trigger endpoints call it and return 409 if true. This prevents cross-job conflicts (e.g. a sweep starting while an optimization is in progress).
 
-**Sweep serialisation:** `sweep_runner.py` uses `asyncio.Semaphore(1)` — same constraint as the optimizer. Instruments run one at a time through the SA window. Firing all N jobs at once caused NT8 Exit code 1 for all but the first.
+**Sweep serialisation:** `sweep_runner.py` uses `asyncio.Semaphore(1)` — same constraint as the optimizer. Instruments run one at a time through the SA window.
 
 **Runner dispatcher:** `vps_client.start_backtest(job_spec, runner)` routes to the appropriate backend. Currently only `"ninjatrader"` is wired; `"mt5"` raises `NotImplementedError` as a placeholder for forex work.
 
 **Sweep vs. progress lock:** Sweep and optimization runs do NOT use `lab_progress.json`. That file is exclusively for the single-run flow. Sweep/optimization state is tracked only in the DB.
 
-**source_run_id:** `optimizations` stores the `run_id` of the backtest that spawned it. The Runs tab in the frontend uses this to nest optimization rows under their source run. Optimizations created before this field existed have `source_run_id = NULL` and appear flat in the Optimizations tab only.
-
----
-
-## DB table additions (M2 / session 2)
-
-`strategies` table: added `runner TEXT NOT NULL DEFAULT 'ninjatrader'`
-
-`backtest_runs` table: added `worthiness_tier TEXT`, `worthiness_reason TEXT`, `worthiness_computed_against_firm TEXT`, `sweep_id TEXT`, `optimization_id TEXT`
-
-New table: `optimizations` — stores optimizer job metadata, progress, `best_run_id`, and `source_run_id`
-
-New models: `SweepSummary` (aggregated sweep info for list view, derived from GROUP BY `sweep_id`)
-
----
-
-## Session 3 additions
-
-### Sweep resilience (cancel + retry)
-
-Backend restart mid-sweep kills the asyncio polling task without updating the DB, leaving runs permanently stuck at `status = 'running'`. Two endpoints fix this:
-
-- `POST /backtests/sweeps/{sweep_id}/cancel` — force-sets all `running`/`pending` runs in the sweep to `failed_cancelled`. Recovery path for stuck sweeps.
-- `POST /backtests/sweeps/{sweep_id}/retry-failed` — resets all `failed*` runs and re-fires them via `run_sweep()`. Firm IDs are recovered by scanning completed runs' evaluations (sweeps have no `firm_ids` column — evaluations are the source of truth).
-
-New `lab_db` functions: `cancel_sweep_runs(sweep_id)`, `list_sweep_failed_runs(sweep_id)`.
-
-New `SweepDetail` Pydantic fields: `status`, `created_at`, `completed_at` — derived in the router from run statuses (no dedicated sweep table).
-
-### Per-run retry (context-aware)
-
-`POST /backtests/runs/{run_id}/retry` now dispatches by context:
-
-- **Sweep run** (`sweep_id` set): calls `retry_single_sweep_run(run_id)` — resets in place, re-fires through `run_sweep()` SA semaphore. Firm IDs recovered from completed sibling runs.
-- **Optimization run** (`optimization_id` set): calls `retry_single_optimization_run(run_id)` — resets in place, decrements `completed_runs`, re-fires via `_run_batch`, then re-scores `best_run_id` across all complete runs.
-- **Standalone run**: existing path — creates a new run row with a new ID.
-
-The HTTP handler calls `reset_run_for_retry` before spawning the async task so `has_any_running_vps_job()` immediately sees the run as `running`, blocking concurrent double-retry requests.
-
-### Contract month propagation (Tier3WarningModal)
-
-`summary.untested_instruments` (from `GET /strategies/{id}/instrument_summary`) returns root symbols only (e.g. `"MNQ"`, `"MGC"`). `_to_nt8_instrument()` passes root-only symbols through unchanged, which NT8 cannot resolve.
-
-Fix in `Tier3WarningModal.tsx`: `withContractMonth(instruments, sourceInstrument)` extracts the contract specifier from `run.instrument` (e.g. `"06-26"` from `"MNQ 06-26"`) and appends it to any root-only symbol in the list. Applied at both sweep trigger points (`handleSweepUntested`, `handleRunSweepAll`). Instruments that already carry a contract month are left unchanged.
-
----
-
-## Session 4 additions
-
-### Sweep source run linkage
-
-`backtest_runs` now has a `source_run_id TEXT` column (migration-safe). When a sweep is triggered from a BacktestDetail page, every child run in that sweep is stored with `source_run_id = <triggering run_id>`. `list_sweeps()` includes `MIN(r.source_run_id) AS source_run_id` in its GROUP BY query so `SweepSummary` carries the link.
-
-`SweepRequest` and `SweepSummary` Pydantic models both accept/expose `source_run_id: Optional[str]`. The `trigger_sweep` router passes it into `insert_run_sweep`. `Tier3WarningModal` sets `source_run_id = run.run_id` on every sweep it triggers.
-
-**Old sweeps** (created before this session) have `source_run_id = NULL` — no backfill is possible since the triggering run was never recorded. Their child runs continue to appear as flat rows in the Runs tab.
-
-### Cascade delete on run delete
-
-`delete_run(run_id)` now cascades before removing the source row:
-1. Finds all `optimizations` where `source_run_id = run_id` → deletes each opt and its child runs/evaluations
-2. Finds all `backtest_runs` where `source_run_id = run_id` (sweep children) → deletes their evaluations and the runs themselves
-3. Deletes the source run's own evaluations and the run row
-
-Frontend shows a warning in the confirm modal listing how many optimizations and sweeps will also be removed.
+**source_run_id:** `optimizations` stores the `run_id` of the backtest that spawned it. Sweep child runs store the `run_id` of the run that triggered the sweep. The Runs tab uses this to nest linked jobs under their source run. Rows without `source_run_id` (created before this was added) appear flat — no backfill is possible.

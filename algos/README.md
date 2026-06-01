@@ -21,7 +21,6 @@ Starting balance for all accounts: **$1,000**
 
 ```
 algos/
-├── algo.py                          ← Mac control panel (run: algo)
 ├── README.md
 ├── docs/
 │   ├── ARCHITECTURE.md              ← Multi-instrument system design (Phases 1–5)
@@ -44,9 +43,15 @@ algos/
 │   └── startup_coordinator.py       ← Sequential startup (single entry point)
 ├── shared/
 │   ├── bot_state.py                 ← Single source of truth (read/write)
+│   ├── mt5_ops.py                   ← All MT5 operations (BotMT5 class + free functions)
+│   ├── notify.py                    ← Telegram notification helpers
 │   ├── shared_ai_brain.py           ← Trade logging + AI brain
 │   ├── shared_calmar.py             ← Calmar ratio tracker
-│   └── shared_regime.py             ← Market regime detection
+│   ├── shared_regime.py             ← Market regime detection
+│   ├── shared_risk.py               ← Dynamic risk / capacity engine (RiskEngine)
+│   ├── shared_scanner.py            ← Multi-instrument scanner (InstrumentScanner, LearningPhaseGate)
+│   ├── structure_engine.py          ← BOS/SOS/retracement event detection (used by FFT)
+│   └── thresholds.json              ← Risk cap overrides (written by command-center deploy)
 ├── notifications/
 │   ├── monitor.py                   ← Process watchdog (every 1 min)
 │   ├── pnl_tracker.py               ← P&L engine (every 1 min)
@@ -58,20 +63,31 @@ algos/
 │   ├── *_task.xml                   ← Task Scheduler definitions
 │   └── SCHEDULER_GUIDE.md
 └── markets/
-    └── fx/instances/
-        ├── gold_main/
-        │   ├── config.json
-        │   ├── bot_state.json       ← Live state (balance, P&L, status)
-        │   ├── smc_trend_trades.json
-        │   └── mean_reversion_trades.json
-        ├── gold_scalper/
-        │   ├── config.json
-        │   ├── bot_state.json
-        │   └── scalper_trades.json
-        └── gold_fft/
-            ├── config.json
-            ├── bot_state.json
-            └── fft_trades.json
+    ├── fx/instances/
+    │   ├── gold_main/
+    │   │   ├── config.json
+    │   │   ├── bot_state.json       ← Live state (balance, P&L, status)
+    │   │   ├── smc_trend_trades.json
+    │   │   └── mean_reversion_trades.json
+    │   ├── gold_scalper/
+    │   │   ├── config.json
+    │   │   ├── bot_state.json
+    │   │   └── scalper_trades.json
+    │   └── gold_fft/
+    │       ├── config.json
+    │       ├── bot_state.json
+    │       └── fft_trades.json
+    ├── futures/lucid_flex/
+    │   ├── *.cs                     ← NinjaScript strategies (Momentum, ORB, VWAP_MR)
+    │   └── tools/
+    │       ├── vps_agent.py         ← HTTP agent running on VPS (NT8 control)
+    │       ├── vps_backtest_runner.py ← pywinauto NT8 Strategy Analyzer automation
+    │       ├── setup_agent_task.py  ← Registers LucidFlexAgent Task Scheduler entry
+    │       ├── deploy.py            ← Deploys .cs strategies to NT8 user folder
+    │       ├── run_all.py           ← Batch backtest runner
+    │       ├── analyze.py           ← Backtest result analyzer
+    │       └── backtest_config.json ← Default backtest parameters
+    └── crypto/instances/            ← Reserved (empty)
 ```
 
 ---
@@ -83,7 +99,7 @@ component reads from. Nothing else is authoritative.
 
 | Field | Set by | Read by |
 |---|---|---|
-| `started` | startup_coordinator + each bot at `run()` start | algo.py, telegram /status |
+| `started` | startup_coordinator + each bot at `run()` start | command-center, telegram /status |
 | `status` | monitor.py | telegram /status |
 | `balance`, P&L fields | pnl_tracker.py | telegram /balance, reporter |
 | `day_locked` | pnl_tracker.py | monitor alerts |

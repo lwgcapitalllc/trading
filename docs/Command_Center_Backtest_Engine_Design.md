@@ -1,5 +1,5 @@
 # Command Center — Backtest, Optimize, Stress-Test, Overfit Engine
-## Design Document (v1 — for discussion, not build)
+## Design Document
 
 ---
 
@@ -42,87 +42,43 @@ of it.
 
 Five core entities. SQLite database (consistent with smart-money pattern).
 
-### `strategies` — the registry
-A registered NinjaScript strategy. Source of truth for what can be run.
+**M1+M2 entities are implemented — see `backend/CLAUDE.md` for full schema and migration history.**
 
-| Field | Type | Notes |
-|---|---|---|
-| id | str | e.g. `orb_lucidflex_v1` |
-| name | str | display name |
-| class_name | str | NinjaScript class name |
-| category | str | breakout / mean-reversion / momentum / etc. |
-| suggested_instrument | str | e.g. `MNQ 06-26` — pre-fills the run modal, user can override |
-| default_params | json | e.g. `{"ORMinutes": 15, "TpMultiple": 1.5}` |
-| param_schema | json | type + range per param (for the optimizer UI) |
-| created_at | ts | |
+### `strategies` — the registry
+Key fields: `id`, `name`, `class_name`, `category`, `suggested_instrument` (pre-fills modal, always overridable), `default_params`, `param_schema`, `runner` (default `"ninjatrader"`), `created_at`.
 
 ### `firms` — prop firm rules
 One row per firm. Pure rules, no code.
 
 | Field | Type | Notes |
 |---|---|---|
-| id | str | `lucidflex_50k_eval`, `lucidflex_50k_funded`, `apex_50k_eval`, etc. |
+| id | str | e.g. `lucidflex_50k_eval`, `lucidflex_50k_funded` |
 | account_tier | str | `"eval"` or `"funded"` — funded skips profit target + consistency checks |
 | name | str | display name |
 | account_size | int | |
 | profit_target | int | eval only |
 | max_loss_eod | int | end-of-day drawdown limit |
-| max_loss_intraday | int | trailing intraday limit (Apex etc.) |
-| consistency_pct | float | 50 = no single day > 50% of total profit |
-| min_trading_days | int | LucidFlex has 5, Apex has 7 |
-| force_flat_time_et | str | e.g. `"15:30"` |
+| max_loss_intraday | int | trailing intraday limit |
+| consistency_pct | float | e.g. 40 = no single day > 40% of total profit |
+| min_trading_days | int | |
+| force_flat_time_et | str | e.g. `"16:45"` |
 | allowed_instruments | json | `["MES", "MNQ", "MGC", "MCL"]` |
-| max_contracts | json | `{"MES": 4, "MNQ": 4, "MES_micros": 40}` |
-| platform_support | json | `["NinjaTrader", "Tradovate"]` |
+| max_contracts | json | free-form; carries optional `scaling` object and `mix_allowed` flags |
+| docs_url | str | link to firm's published rules — required on insert |
 
 ### `backtest_runs` — raw results
-Firm-agnostic. One row per `(strategy, instrument, params, date_range)` combo.
+Firm-agnostic. Key fields: core KPIs, file paths for heavy data (equity curve, daily P&L), plus `worthiness_tier / worthiness_reason / worthiness_computed_against_firm`, `sweep_id`, `optimization_id`, `source_run_id`. See `backend/CLAUDE.md § DB schema — notable columns` for migration-added fields.
 
-| Field | Type | Notes |
-|---|---|---|
-| run_id | str | uuid |
-| strategy_id | str | FK strategies |
-| instrument | str | |
-| params | json | exact param set used |
-| bar_type / bar_value | str / int | e.g. `Minute / 5` |
-| start_date / end_date | date | |
-| commission_per_side | float | |
-| slippage_ticks | int | |
-| status | str | running / complete / error |
-| created_at | ts | |
-| net_pnl | float | KPI |
-| max_drawdown | float | KPI |
-| profit_factor | float | KPI |
-| win_rate | float | KPI |
-| win_count / trade_count | int | KPI |
-| sharpe / sortino / cagr | float | KPI |
-| equity_curve_path | str | reference to JSON file with full curve |
-| trades_path | str | reference to JSON file with all trades |
-| daily_pnl_path | str | reference to JSON file with daily P&L |
-
-Heavy data (full equity curve, trade-by-trade, daily P&L) lives in JSON files
-on disk, not in SQLite blobs. The DB holds the index + summary KPIs.
+Heavy data (equity curve, daily P&L) lives in JSON files under `reports/lab/<run_id>/`, not in SQLite. The DB holds the index + summary KPIs.
 
 ### `evaluations` — firm-specific verdicts
-The join layer. One row per `(backtest_run, firm)` combo.
+One row per `(backtest_run, firm)`. Fields: `verdict` (PASS/WARN/DISCARD), `drawdown_pass`, `target_pass`, `consistency_pass`, `simulated_eval_days`, `worst_day_pnl`, `worst_losing_streak`, `breach_count`, `notes`.
 
-| Field | Type | Notes |
-|---|---|---|
-| eval_id | str | uuid |
-| run_id | str | FK backtest_runs |
-| firm_id | str | FK firms |
-| verdict | str | PASS / WARN / DISCARD |
-| drawdown_pass | bool | dd vs firm's max_loss_eod |
-| target_pass | bool | net_pnl vs firm's profit_target |
-| consistency_pass | bool | check 50% rule from daily P&L |
-| simulated_eval_days | int | days to hit target (null if didn't pass) |
-| worst_day_pnl | float | for the daily P&L distribution |
-| worst_losing_streak | int | |
-| breach_count | int | how many times drawdown hit the limit |
-| notes | text | reasons for verdict |
+### `optimizations`
+One row per optimizer job. Key fields: `optimization_id`, `strategy_id`, `instrument`, `firm_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`. See `backend/CLAUDE.md § DB schema`.
 
-### `optimization_runs` and `stress_test_runs` and `overfit_runs`
-Similar pattern — index in SQLite, heavy data on disk.
+### `stress_test_runs` and `overfit_runs` (M3 — not yet built)
+Same pattern — index in SQLite, heavy data on disk.
 
 ---
 
@@ -165,24 +121,11 @@ Mac.
 
 ## 5. The four "lab" features
 
-### 5.1 Backtest
-Single strategy + single param set + single date range = one run. Shows equity
-curve, daily P&L histogram, trade list, KPIs. Then runs evaluation against
-selected firms and shows pass/fail per firm.
+### 5.1 Backtest — ✅ implemented
+See `backend/CLAUDE.md § What's built (status)` and `frontend/CLAUDE.md § What's built (status)`.
 
-### 5.2 Optimizer (parameter sweep)
-User defines a param grid (e.g. `ORMinutes: [5, 10, 15, 20, 30]` ×
-`TpMultiple: [1.0, 1.5, 2.0, 2.5]`). NT8's built-in Optimizer runs the grid.
-Results come back as N backtests.
-
-**The thing NT can't do well, that we build:** the **objective function**.
-Default options:
-- "Maximize prop firm eval pass probability" (most important)
-- "Maximize Sharpe with drawdown < firm limit"
-- "Maximize profit factor while passing consistency rule"
-
-User picks the firm, picks the objective, gets a ranked param-set list.
-Heatmap UI for 2D param grids. Hover any cell to see the full backtest.
+### 5.2 Optimizer — ✅ implemented (brute-force multi-call, not NT8 Optimizer GUI)
+See `backend/CLAUDE.md § Key architectural decisions` for the approach and `§ Objective functions` for scoring detail. NT8's built-in Optimizer tab was not used — driving individual SA runs via the existing pipeline is more stable and gives full control over the objective function.
 
 ### 5.3 Monte Carlo Stress Test
 Take the trades from a backtest, reshuffle 10k times, plus bootstrap-resample.
@@ -207,32 +150,13 @@ charts. A strategy that doesn't get at least a B doesn't deploy.
 
 ---
 
-## 6. Backend endpoints to add
+## 6. Backend endpoints
 
-Extends the existing FastAPI app. Same router pattern as smart-money / bots.
+**M1+M2 — implemented.** See `backend/CLAUDE.md § Directory layout` for the current router and service file list.
+
+**M3 — to add:**
 
 ```
-GET    /strategies                   - list registered strategies
-POST   /strategies/scan              - re-scan local NinjaScript repo, upsert into DB
-GET    /strategies/{id}              - detail (incl. all backtests across all firms)
-DELETE /strategies/{id}              - remove
-
-GET    /firms                        - list prop firm profiles
-POST   /firms                        - add new firm
-GET    /firms/{id}                   - detail
-PUT    /firms/{id}                   - update rules
-DELETE /firms/{id}
-
-GET    /backtests/runs               - list runs (filter by strategy, firm, status)
-GET    /backtests/runs/{id}          - detail (full equity curve, trades, evals)
-POST   /backtests/run                - trigger new run
-POST   /backtests/runs/{id}/evaluate - re-run evaluations against new firm set
-DELETE /backtests/runs/{id}
-
-GET    /optimize/runs                - list
-GET    /optimize/runs/{id}           - detail (param grid results + heatmap data)
-POST   /optimize/run                 - trigger
-
 GET    /stress-tests/runs            - list
 GET    /stress-tests/runs/{id}       - detail (distribution data + fan paths)
 POST   /stress-tests/run             - trigger on existing backtest_run
@@ -240,99 +164,30 @@ POST   /stress-tests/run             - trigger on existing backtest_run
 GET    /overfit/runs                 - list
 GET    /overfit/runs/{id}            - detail
 POST   /overfit/run                  - trigger walk-forward + sensitivity
-
-GET    /lab/progress                 - unified progress endpoint (poll while running)
-POST   /lab/stop                     - kill any running lab job
-
-GET    /lab/runs/{run_id}/log        - tail a run's log file
-GET    /system/health                - aggregated: backend, ssh, vps_agent, NT8, compile
-GET    /vps/agent/log                - proxy to vps_agent's /agent-log
-GET    /vps/nt/log                   - proxy to vps_agent's /nt-log
 ```
-
-All POST triggers return 202 and a job ID. Frontend polls /lab/progress for
-live status — same pattern as smart-money already uses.
 
 ---
 
-## 7. VPS agent — what to add
+## 7. VPS agent
 
-Your existing `vps_agent.py` already does the LucidFlex 6-combo run. Generalize
-its endpoints:
+**M1+M2 — implemented.** `POST /backtest` (job-keyed, any strategy/instrument/params), job status/results/log endpoints, strategy list, instrument list, NT8 health, compile status, and agent log are all live in `algos/markets/futures/lucid_flex/tools/vps_agent.py`.
 
-**Job execution:**
+Note: `POST /optimize` driving NT8's built-in Optimizer GUI was **not implemented** — M2 used multi-call `/backtest` with brute force instead.
+
+**M3 — to add:**
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /backtest` | run one backtest combo (any strategy, any instrument, any params); accepts a `job_id` |
-| `POST /optimize` | drive NT8 Optimizer with a param grid |
 | `POST /walk-forward` | drive NT8 Walk Forward tool |
-| `POST /jobs/{job_id}/cancel` | stop a specific job (sends signal to pywinauto thread) |
-
-**Discovery & metadata:**
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /strategies` | list compiled NinjaScript strategies in NT8 |
-| `GET /instruments` | list contract names NT8 knows + their front-month codes |
-
-**Results:**
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /jobs/{job_id}/results` | results for a specific job (job-keyed, not single-CSV) |
-| `GET /jobs/{job_id}/status` | live status (running / complete / failed_* / heartbeat ts) |
-| `GET /jobs/{job_id}/log` | tail this job's log file |
-
-**Observability (new — for §12):**
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | agent alive (already exists) |
-| `GET /nt-health` | NT8 process running + Strategy Analyzer window detected via pywinauto |
-| `GET /nt-compile-status` | parse NT's NinjaScript log; report last compile result, errors if any |
-| `GET /nt-log` | tail of NT8's most recent NinjaScript log file |
-| `GET /agent-log` | tail of vps_agent.py's own log |
-
-The current vps_agent has `/results` returning one fixed CSV. That doesn't
-scale to multiple parallel jobs — needs the job_id keying.
+| `POST /jobs/{job_id}/cancel` | stop a specific job mid-run |
 
 ---
 
 ## 8. Frontend dashboards
 
-Six pages, designed to match your existing cyan-on-indigo theme.
+**M1+M2 — implemented.** See `frontend/CLAUDE.md § Directory layout` and `§ What's built (status)`.
 
-### Lab Overview (the index page)
-- Stat row: # strategies registered, # backtests this week, # firms tracked
-- "Currently running" panel (poll /lab/progress)
-- Recent backtests table — strategy, firm verdicts as colored dots, sparkline,
-  click-through
-
-### Strategy Detail
-One page per strategy. Shows:
-- Strategy metadata (NS class, default params, param schema)
-- **Multi-firm evaluation matrix** — strategy × every firm, color-coded
-  pass/warn/fail. The headline insight. Click any cell → backtest detail.
-- All backtest runs for this strategy, sortable
-- Buttons: Backtest / Optimize / Stress Test / Overfit Check
-
-### Backtest Detail
-- Equity curve (Recharts)
-- Daily P&L histogram — **the most important chart for prop trading**. Shows
-  the consistency-rule shape at a glance.
-- Trade list (paginated)
-- Per-firm evaluation cards: verdict, dd vs limit, target hit y/n,
-  consistency check y/n
-- Worst day, worst losing streak, longest winning streak
-
-### Optimizer
-- Param grid setup (sliders / multi-select from param_schema)
-- Objective function picker
-- Firm selector
-- Heatmap (Recharts custom or a simple SVG grid) for 2D grids
-- Top-10 param-set table for 3+D grids
-- Click any param set → full backtest detail
+**M3 — to build:**
 
 ### Stress Test Detail
 - Fan chart of equity paths (semi-transparent overlay of 100 sampled paths)
@@ -345,11 +200,6 @@ One page per strategy. Shows:
 - Walk-forward chart (in-sample vs out-of-sample equity)
 - Parameter sensitivity radar / line chart
 - IS vs OOS Sharpe comparison
-
-### Prop Firm Config (under Settings)
-- List of firms
-- Add / edit / delete form for rules
-- Pre-loaded: LucidFlex 50k, LucidFlex 100k
 
 ---
 
@@ -389,28 +239,18 @@ parses + serves via HTTP. Backend fetches over the SSH tunnel
 
 Three milestones, in this order. Each is a stop-and-test point.
 
-**M1 — Backtest + Firm abstraction (the foundation)** ✅ COMPLETE
-1. Add `strategies` and `firms` tables; seed with the 3 existing NinjaScript
-   files and 4 LucidFlex firm configs (50k/100k × eval/funded)
-2. Generalize VPS agent: job-keyed results, `/backtest` endpoint accepting any
-   strategy
-3. Build /backtests/run + /backtests/runs endpoints
-4. Build Backtest Detail page (equity curve + daily P&L + per-firm eval cards)
-5. **Test:** run the 3 existing strategies, see them pass/fail against
-   LucidFlex firms from the UI
+**M1 — Backtest + Firm abstraction** ✅ COMPLETE
+Strategy registry, firm profiles, NT8-driven backtest runs via VPS agent, per-firm evaluation engine, full KPI set, equity curve + daily P&L charts, traffic-light verdict, Calmar ratio.
 
-**M2 — Optimizer + Stress Test**
-1. NT Optimizer integration in VPS agent
-2. Objective function module (prob-of-eval-pass calculator)
-3. Monte Carlo engine (Python-side, reads backtest trades)
-4. Optimizer UI + Stress Test UI
+**M2 — Worthiness Scorer + Instrument Sweeps + Brute-Force Optimizer** ✅ COMPLETE
+Tier 1/2/3 worthiness scoring, instrument sweeps (N sequential runs, SA semaphore), brute-force parameter optimizer (multi-call, not NT8 Optimizer GUI), Tier 3 smart routing modal, NT8 SA global lock, runner field + vps_client dispatcher. Monte Carlo stress test moved to M3.
 
-**M3 — Overfitting + multi-firm UX**
-1. Walk-forward in VPS agent
-2. Parameter sensitivity runner
-3. Overfitting detail page + robustness grade
-4. Add 2nd firm (Apex 50k) to validate the abstraction holds
-5. Strategy Detail page with multi-firm evaluation matrix
+**M3 — Stress Tests + Walk-Forward + Overfitting** (active scope)
+1. Monte Carlo stress test (Python-side, reads backtest trades)
+2. Walk-forward in VPS agent (drive NT8 Walk Forward tool)
+3. Parameter sensitivity runner
+4. Overfitting detail page + robustness grade (A–F)
+5. Strategy Detail multi-firm evaluation matrix
 
 ---
 
@@ -551,25 +391,41 @@ To stop scope creep — explicitly out of scope for this module:
 
 ---
 
-## M1 Retrospective (completed 2026-05-30)
+## M1 + M2 Retrospective
 
-### What we built
+### What M1 built
 
 Full end-to-end backtest lab: strategy scanner, firm profiles, NT8-driven backtest runs via the VPS agent, tier-aware evaluation engine, and a detailed results page with equity curve, drawdown chart, daily P&L, long/short breakdown, and 11 KPI cards including Calmar ratio.
 
+### What M2 built
+
+Worthiness scorer (Tier 1/2/3 — PF, drawdown, trade count against strictest firm). Instrument sweeps (N sequential NT8 runs, SA semaphore = 1, each run gets its own worthiness score). Brute-force parameter optimizer (generates all param combos, drives as individual NT8 runs, up to 200-combo cap for 3+D grids, objective = eval_pass_probability or funded_sharpe_under_drawdown). Tier 3 Warning Modal with smart instrument routing. NT8 SA global lock (single physical SA window shared across all job types). Runner field on strategies + vps_client dispatcher. source_run_id linkage — sweep and optimization children nest under source run in the Runs tab. Cascade delete.
+
 ### What changed vs original spec
 
-**4 firms, not 1.** The spec seeded one `lucidflex_50k` firm. Reality: each firm has two distinct modes — the eval challenge and the funded account. Rules differ meaningfully (funded has no profit target, no consistency rule). We created `lucidflex_50k_eval`, `lucidflex_50k_funded`, `lucidflex_100k_eval`, `lucidflex_100k_funded`. The `account_tier` column (`"eval"` | `"funded"`) drives the evaluation logic.
+**M1 changes:**
 
-**`suggested_instrument`, not `default_instrument`.** Renamed during build because "default" implied it was locked in. It pre-fills the run modal; the user always overrides freely.
+**12 firms, not 2.** The spec seeded two LucidFlex configs. Reality: each firm needs both eval and funded variants (rules differ meaningfully — funded has no profit target, no consistency rule). Seeded 4 LucidFlex + 4 Tradeify Select + 4 FundedNext Futures Flex (3 providers × 2 account sizes × eval/funded = 12). The `account_tier` column drives evaluation logic.
 
-**No trades.json.** The spec called for a trade-by-trade JSON file (`trades_path`). We parse trades from the NT8 Trades CSV export directly into the equity curve JSON (one point per trade with `profit`, `direction`, `exit_name`). A separate trade list is not needed — the equity curve already carries per-trade data.
+**`suggested_instrument`, not `default_instrument`.** Renamed during build — "default" implied it was locked in. It pre-fills the run modal; the user always overrides freely.
 
-**Export automation, not NT XML log.** The spec assumed reading NT8's XML output log. NT8 doesn't expose a clean XML format for arbitrary strategy runs. Instead: the VPS agent automates the Strategy Analyzer's "Export Trades" right-click menu via pywinauto, producing a CSV the backend parses. This took significant debugging to get stable (WPF ComboBox identification, two-pass right-click pattern, coordinate caching).
+**Export automation, not NT XML log.** NT8 doesn't expose a clean XML format. The VPS agent automates the Strategy Analyzer's "Export Trades" right-click menu via pywinauto. WPF ComboBox identification required significant debugging (coordinate caching, two-pass right-click pattern).
 
-**Traffic-light verdict + Calmar.** Added to BacktestDetail during M1 UX pass. Not in the original spec. Both turned out to be essential for quick run assessment.
+**Traffic-light verdict + Calmar.** Added during M1 UX pass — not in original spec. Both essential for quick run assessment.
+
+**M2 changes:**
+
+**Brute-force optimizer, not NT8 Optimizer GUI.** NT8's Optimizer tab has poor pywinauto accessibility. Multi-call individual SA runs through the existing pipeline is more stable and gives full control over the objective function.
+
+**Worthiness scorer not in original M2 spec.** Emerged during design as a prerequisite for smart routing — you need a quality signal to decide whether to sweep, optimize, or discard.
+
+**Tier 3 Warning Modal not in original spec.** The smart routing UX (show past results per instrument, offer untested instrument sweep) wasn't planned — it came from the realization that Tier 3 alone isn't actionable enough.
+
+**Monte Carlo stress test moved to M3.** M2 was already large enough without it.
 
 ### Decisions we might revisit
 
-- **Inline chart components:** All charts live inside BacktestDetail.tsx rather than as standalone files. Fine at current scale; worth extracting if other pages (optimizer, stress test) need the same charts.
-- **NT8 export via pywinauto:** Brittle if NT8 updates its WPF layout. The coordinate cache (`_export_coords_cache`) helps but it's still screen-position dependent. A proper NT8 API or file-watch approach would be more robust long term.
+- **Sweep state without a dedicated table.** `SweepSummary` is derived via GROUP BY on `backtest_runs`. Works but complicates sweep-level metadata. A dedicated `sweeps` table in M3 would clean this up.
+- **200-combo brute-force cap.** Works for typical 2–3 param grids. For larger search spaces, sequential model-based optimization (e.g. tree-structured Parzen estimator) would be more efficient.
+- **Inline chart components.** All charts live inside `BacktestDetail.tsx`. Fine now; worth extracting if stress test and walk-forward pages need the same charts.
+- **NT8 export via pywinauto.** Still screen-position dependent. A proper NT8 API or file-watch approach would be more robust long-term.

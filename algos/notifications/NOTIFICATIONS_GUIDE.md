@@ -25,14 +25,13 @@ Bot status notifications are event-driven, not polling-based:
 | Event | Source | Latency |
 |---|---|---|
 | Bot starts (any cause) | Bot calls `notify.send_telegram` at top of `run()` | Immediate |
-| Start/stop/restart from control panel | `algo.py notify_telegram` after confirmation | Immediate |
+| Start/stop/restart from command center | command-center bots router sends Telegram notification | Immediate |
 | Stop/restart from Telegram command | Result message returned to user via `/confirm` flow | Immediate |
 | Bot crashes unexpectedly | `monitor.py` crash detector (every 1 min) | ≤ 1 min |
 | Bot comes back online after crash | `monitor.py` (same cycle as crash detection) | ≤ 1 min |
 | Telegram bot goes down | `monitor.py` watchdog (every 1 min) | ≤ 1 min |
 
-`shared/notify.py` is the single helper used by all VPS-side components.
-`algo.py` (runs on Mac) has an inline `notify_telegram()` using stdlib `urllib`.
+`shared/notify.py` is the single helper used by all VPS-side components. Mac-side Telegram calls go through the command-center bots router.
 
 ### monitor.py (SYS_MONITOR — every 1 min)
 Bot availability and heartbeat monitor. Handles availability alerting and Telegram bot watchdog only.
@@ -47,7 +46,7 @@ If the bot's suppress key is in the file, the stop was intentional — no alert 
 Suppress keys: `fft`, `scalper`, `smc`, `reversion`.
 
 The suppress file is written by:
-- `algo.py` — via SSH before stopping from the control panel (`suppress_stop_alert()`)
+- command-center bots router — writes `stop_suppress.json` via SSH before stopping a bot
 - `telegram_bot.py` — locally before executing `/stop`, `/restart`, `/emergency` commands
 
 **`/restart` full-restart sequence (all bots):**

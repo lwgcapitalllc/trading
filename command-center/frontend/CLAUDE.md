@@ -287,15 +287,11 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 
 ---
 
-## M2 completion notes (session 4)
-
-All M2 scope is shipped. Key design decisions that should not be revisited without reason:
+## Key UI decisions
 
 **NT8 single-instance lock** — `GET /backtests/running-job` (polled at 5s via `useRunningVpsJob()`) is the UI-side source of truth. All job-trigger surfaces (RunBacktestModal, OptimizeButton, Tier3WarningModal, retry buttons) check this and show a banner + disable their action. The backend 409 guard (`has_any_running_vps_job`) remains the authoritative lock; the UI enforcement prevents wasted round-trips.
 
 **Runs table columns** — "Score" = WorthinessBadge (Tier 1/2/3, the quality verdict). "Challenge" = firm name chip(s) showing which challenges the run was evaluated against. These are intentionally separated: score = how good, challenge = under what rules. Per-firm PASS/WARN/DISCARD detail lives only on BacktestDetail.
-
-**Sweep source linkage** — `source_run_id` on sweep child runs links a sweep back to the run that triggered it. Only sweeps created after this session carry the link; old sweeps remain in the Sweeps tab only. No automatic backfill is possible.
 
 ---
 
@@ -310,38 +306,3 @@ Both detail pages use an identical `ProgressCard` sub-component with:
 
 Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBacktest().mutate(run.run_id)`. Spinner activates on the specific row via `retryRun.variables === run.run_id`. `e.stopPropagation()` prevents the row-click navigation from firing.
 
----
-
-## Session 4 additions
-
-### Sweep nesting in Runs tab
-
-New `SweepNestRow` component renders directly below a run row when the sweep's `source_run_id` matches the run. Style: cyan accent left border (distinct from gold optimization rows). Shows instrument count, status pill with pulse dot while running. Clicking navigates to `/backtests/sweeps/:sweepId`.
-
-Sweep child runs are hidden from the flat Runs list only when their sweep has a `source_run_id` (the sweep is shown nested). Old sweeps without `source_run_id` keep their child runs visible as flat rows with the SWEEP badge — there is no way to backfill the link retroactively.
-
-`sweepsBySourceRun` map built in `RunsTab` alongside the existing `optsBySourceRun` map.
-
-### Active tab indicators
-
-`TabBar` accepts `runsActive`, `sweepsActive`, `optsActive` booleans. A small pulsing cyan dot appears on the tab label when any job in that category is `status = 'running'`. Derived from `allRuns`/`allSweeps`/`allOpts` cache data — no extra fetch.
-
-### Cascade delete warning
-
-When deleting a run that has linked optimizations or sweeps (via `source_run_id`), the `ConfirmDeleteModal` shows a specific message listing the counts: "This run has N optimizations and M sweeps attached — they and all their results will also be permanently deleted."
-
-Backend `delete_run` cascades automatically; the warning is purely informational. Bulk run delete now also invalidates `['lab', 'sweeps']` and `['lab', 'optimizations']` query keys so the tabs update.
-
-### Header consolidation (BacktestDetail / OptimizationDetail / SweepDetail)
-
-- **BacktestDetail**: Removed `bar_value` and `commission_per_side` chips. Added a chip showing evaluated firm IDs (tertiary, font-mono). Instrument chip remains first and accent-colored.
-- **OptimizationDetail**: Instrument chip is now first and accent-colored. Mode + search method merged into one chip (`eval · Brute Force`). "Optimization" type label chip removed (redundant on the detail page itself).
-- **SweepDetail**: Removed standalone "N instruments" chip (already shown in the ProgressCard instrument tracker). Count embedded in the type chip: "5-instrument Sweep".
-
-### Log terminal colors
-
-`LogsSection` in BacktestDetail now matches the SmartMoney terminal pattern:
-- **Running**: pulsing cyan dot (unchanged)
-- **Complete**: solid cyan dot + "· complete" label
-- **Failed**: red dot + "· failed" label
-- **Idle**: dim grey dot (unchanged)

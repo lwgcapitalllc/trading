@@ -83,4 +83,4 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
   folders to the `backups` branch. Stays in `algos/` (algos-specific).
 - `algos/scripts/nt8_backup.py` — NT8 backup module imported by `backup.py`. Must sit
   next to it so the import resolves.
-- `docs/SETUP.md` — detailed MT5 fresh-VPS runbook (these scripts automate it).
+- `algos/docs/ARCHITECTURE.md` — multi-instrument system design (scanner, risk engine, learning gate).

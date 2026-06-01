@@ -69,22 +69,6 @@ python3 simulate_configs.py --apply-best           # patch config.json with best
 python3 simulate_configs.py --profile bot --apply-best  # patch bot.json instead
 ```
 
-### Latest scan results (2026-05-28, 3,000 wallets from 37,418 leaderboard entries)
-
-**Pass 1 — Default profile (55% WR, 90d age):**
-- 20 qualified (top scored: `0x25a34b7f` = 100.0)
-- 130 watchlist entries (short history but strong stats)
-- Reports: `stage1_top20_20260528_230134.{json,csv,md}`
-
-**Pass 2 — Bot profile (70% WR, 14d age):**
-- 3 qualified (strict 70% per-window floor + 35% DD + 30d recency)
-- Pass 2 used fills cache populated by Pass 1 → only 983 new API calls, ~5 min
-
-**Combined: 23 traders in DB across both profiles.**
-
-Bot profile yielded far fewer than the simulation estimate of 14 — the simulation proxies
-per-window WR with overall WR; real per-window checks are stricter. If bot pool is too thin,
-re-run `simulate_configs.py --profile bot` against the refreshed DB to find a better floor.
 
 ## Copy Trading Roadmap
 
@@ -97,21 +81,6 @@ Full automation plan is documented in `COPY_TRADING_ROADMAP.md`. Summary:
 | 3 | Live WebSocket mirroring — copy trades in real time | Not started |
 | 4 | Vault copy integration (deposit into trader's Hyperliquid vault) | Not started |
 | 5 | Risk framework (per-trader allocation, daily loss limits) | Designed, not built |
-
-## Where We Left Off
-
-**Last action (2026-05-28, session 5):** Grid-searched bot profile thresholds against 1,778-wallet
-DB — settled on 70% WR, 14d age, 35% DD, 48h hold. Updated `bot.json` and expanded
-`simulate_configs.py` with `--profile bot` grid (~15k combos) that also varies max_hold_hours
-and max_trade_conc. Ran full `--all-profiles` scan (3,000 wallets, 37,418 leaderboard entries):
-20 qualified under default profile, 3 under bot profile. All reports in `reports/`.
-
-**Immediate next steps (pick one):**
-- Review qualified wallets: open `reports/stage1_top20_20260528_230134.json` (20 default) and the bot run JSON (3 qualified)
-- If bot pool too thin: `python3 simulate_configs.py --profile bot --min-qualify 2` to find a looser floor
-- Stage 3 (Solana/ETH): needs `DUNE_API_KEY`, `BIRDEYE_API_KEY`
-- Stage 4 (Forex): needs `MYFXBOOK_EMAIL`, `MYFXBOOK_PASSWORD`
-- Phase 2: daily automated scan + Telegram alerts (`scheduler.py`, `notifier.py`)
 
 ## Thresholds
 

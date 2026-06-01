@@ -51,7 +51,6 @@ Scalper is isolated on its own account (higher volatility). FFT is lowest risk (
 | `bot_utils.py` | Config loader, logging, path resolver |
 | `launcher.py` | Universal Task Scheduler launcher |
 | `startup_coordinator.py` | Orchestrates bot startup sequence |
-| `algo.py` | Mac control panel — start/stop/status/logs/restart |
 
 Multi-instrument architecture (Phases 1–5) explained in `docs/ARCHITECTURE.md`.
 
@@ -75,19 +74,9 @@ Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
 
 ### What I Am Working On
 
-- Last completed: **Code quality / deduplication pass** — all dead and duplicate code removed across shared and bot files.
-  - `shared/bot_state.py`: removed unused `Optional` import.
-  - `shared/mt5_ops.py`: added `get_rsi(df, period)` free function (shared RSI implementation); added `BotMT5.disconnect()` (wraps `mt5.shutdown()` + logs).
-  - `bots/bot_utils.py`: added `load_weekly_start(week_file, week, balance)` helper — single implementation of the weekly-persistence init pattern.
-  - `bots/bot_mean_reversion.py`: `calc_atr` and `calc_rsi` now delegate to shared `get_atr` / `get_rsi` instead of reimplementing; redundant local `import json as _json2` blocks removed; weekly init replaced with `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
-  - `bots/bot_scalper.py`: `calc_rsi` delegates to shared `get_rsi`; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
-  - `bots/bot_fft.py`: added top-level `import json`; redundant local `import json as _json` blocks removed; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
-  - `bots/bot_smc_trend.py`: redundant local `import json as _json` blocks removed; unused `_eq_file` variable removed; weekly init → `load_weekly_start`; `mt5.shutdown()` → `_mt5.disconnect()`.
+**Phase:** Demo trading — accumulating trade history toward Calmar targets. All Phases 1–5 of the multi-instrument architecture are complete. No open architectural questions.
 
-- Previously: **Mean Reversion connection resilience hardening** — `manage_positions()` and `handle_dead_zone()` now require deal-history confirmation before removing a trade from `open_trades`; a `_missing_count` retry counter orphans after 3 consecutive misses. `get_deal_result()` now validates `d.position_id == ticket`. Minimum SL distance enforced at `atr * atr_sl_multiplier` to prevent near-zero `sl_d` producing oversized lots. `DailyLogger`/`TradeLogger` load validates JSON is a list before using it.
-- Previously: **FFT Structure Engine** — `shared/structure_engine.py` built and integrated into `bot_fft.py`. Event-driven BOS/SOS/RETRACEMENT detection, body closes confirm breaks, wicks anchor fib points only.
-- Previously: **Phase 5 AI Gate / Learning-Phase Cap** — all Phases 1–5 of multi-instrument upgrade complete. `LearningPhaseGate` in `shared/shared_scanner.py`. Config: `"learning_watchlist"` and `"learning_max_open"` per bot in config.json.
-- Open questions / decisions pending: none at this time.
+Update this section when the phase changes or a new open question arises.
 
 ---
 
@@ -102,7 +91,7 @@ Not as a follow-up. Right now, before moving on.
 |-----|-------------|
 | `CLAUDE.md § Fast Index` | Bots table, shared components, phase, or "What I Am Working On" change |
 | `docs/ARCHITECTURE.md` | Multi-instrument system design changes (scanner, risk engine, correlation, learning gate) |
-| `docs/SETUP.md` | New files added, new dependencies, new VPS steps, backup strategy changes |
+
 | `README.md` | Repo structure changes, new top-level files/dirs, workflow changes |
 | `docs/BOT_*_GUIDE.md` | Any change to that bot's behavior, config, or risk rules |
 | `notifications/NOTIFICATIONS_GUIDE.md` | Any change to alerts, Telegram commands, monitor behavior |
@@ -123,7 +112,7 @@ Not as a follow-up. Right now, before moving on.
 ## Project Reference
 
 Architecture deep-dive: `docs/ARCHITECTURE.md`
-Setup guide: `docs/SETUP.md`
+VPS recovery: `scripts/README.md` + `scripts/bootstrap_vps.ps1`
 Notification system: `notifications/NOTIFICATIONS_GUIDE.md`
 Bot guides: `docs/BOT_*_GUIDE.md`
 
