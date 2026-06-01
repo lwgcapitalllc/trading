@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, ChevronDown, Trash2, Layers, Sliders } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, ChevronDown, Trash2, Layers, Sliders, ExternalLink } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useBacktestRuns, useStrategies, useFirms,
@@ -924,9 +924,9 @@ function FirmsTab() {
               const brandFirms = byTier.filter(f => firmBrand(f.id) === brand)
               return (
                 <>
-                  <tr key={`hdr-${brand}`} className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-bg-sunken`}>
+                  <tr key={`hdr-${brand}`} className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-accent/5 border-l-2 border-l-accent`}>
                     <td colSpan={isEval ? 6 : 4} className="px-4 py-2">
-                      <span className="text-[11px] font-semibold text-text-secondary">{brand}</span>
+                      <span className="text-[12px] font-semibold text-accent uppercase tracking-[0.4px]">{brand}</span>
                     </td>
                   </tr>
                   {brandFirms.map(firm => (
@@ -946,7 +946,21 @@ function FirmRow({ firm, showEvalCols }: { firm: Firm; showEvalCols: boolean }) 
   return (
     <tr className="hover:bg-bg-hover transition-colors">
       <td className="px-4 py-3">
-        <div className="font-medium">{firm.name}</div>
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium">{firm.name}</span>
+          {firm.docs_url && (
+            <a
+              href={firm.docs_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              title="View rules documentation"
+              className="text-text-tertiary hover:text-accent transition-colors"
+            >
+              <ExternalLink size={11} />
+            </a>
+          )}
+        </div>
         <div className="text-[11px] text-text-tertiary font-mono">{firm.id}</div>
       </td>
       <td className="px-4 py-3 font-mono tabular-nums">${firm.account_size.toLocaleString()}</td>
