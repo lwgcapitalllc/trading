@@ -77,13 +77,7 @@ function firmShortName(firmId: string): string {
   return `${brand}${size} ${tier}`
 }
 
-const VERDICT_PILL_STYLE: Record<string, string> = {
-  PASS:    'bg-pos-muted text-pos-text',
-  WARN:    'bg-warn-muted text-warn-text',
-  DISCARD: 'bg-neg-muted text-neg-text',
-}
-
-function VerdictPills({ verdicts }: { verdicts: VerdictSummary[] }) {
+function ChallengePills({ verdicts }: { verdicts: VerdictSummary[] }) {
   if (!verdicts.length) return <span className="text-text-tertiary text-[11px]">—</span>
   const visible  = verdicts.slice(0, 2)
   const overflow = verdicts.length - visible.length
@@ -92,14 +86,14 @@ function VerdictPills({ verdicts }: { verdicts: VerdictSummary[] }) {
       {visible.map(v => (
         <span
           key={v.firm_id}
-          title={v.notes ?? `${firmShortName(v.firm_id)}: ${v.verdict}`}
-          className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold ${VERDICT_PILL_STYLE[v.verdict] ?? 'bg-bg-hover text-text-tertiary'}`}
+          title={v.firm_id}
+          className="inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-medium bg-bg-hover text-text-secondary font-mono"
         >
-          {firmShortName(v.firm_id)}: {v.verdict}
+          {firmShortName(v.firm_id)}
         </span>
       ))}
       {overflow > 0 && (
-        <span className="text-[10px] text-text-tertiary">+{overflow} more</span>
+        <span className="text-[10px] text-text-tertiary">+{overflow}</span>
       )}
     </div>
   )
@@ -411,7 +405,7 @@ function RunsTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Win%</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Verdicts</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Challenge</th>
                 <th className="px-3 py-3 w-16" />
               </tr>
             </thead>
@@ -629,7 +623,7 @@ function RunRow({
         {run.max_drawdown != null ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
       </td>
       <td className="px-4 py-3 font-mono tabular-nums">{fmtPct(run.win_rate)}</td>
-      <td className="px-4 py-3"><VerdictPills verdicts={run.verdicts} /></td>
+      <td className="px-4 py-3"><ChallengePills verdicts={run.verdicts} /></td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-1 justify-end">
           <button

@@ -2,7 +2,7 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
-**Last reviewed:** 2026-05-31 (session 4)
+**Last reviewed:** 2026-05-31 (session 4 — M2 complete)
 
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
@@ -95,6 +95,8 @@ Full setup and session checklist: [BACKTEST_VPS_SETUP.md](BACKTEST_VPS_SETUP.md)
 | Backtests lab M4 — active job indicator: pulsing dot on Runs/Sweeps/Optimizations tabs when any job is running | ✅ |
 | Backtests lab M4 — header redesign: instrument chip accent-colored and first; bar/commission chips removed; chips consolidated | ✅ |
 | Backtests lab M4 — log terminal success color matches SmartMoney (cyan dot + "· complete" label when run finishes) | ✅ |
+| Backtests lab M4 — NT8 single-instance lock enforced in UI: all job triggers disabled with inline warning when NT8 is busy | ✅ |
+| Backtests lab M4 — Runs table: "Verdicts" column renamed "Challenge", shows firm name only; "Score" column shows worthiness tier (no duplication) | ✅ |
 | Stress Tests | 🔲 Stub |
 
 ---

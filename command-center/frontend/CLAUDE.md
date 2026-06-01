@@ -287,6 +287,18 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 
 ---
 
+## M2 completion notes (session 4)
+
+All M2 scope is shipped. Key design decisions that should not be revisited without reason:
+
+**NT8 single-instance lock** — `GET /backtests/running-job` (polled at 5s via `useRunningVpsJob()`) is the UI-side source of truth. All job-trigger surfaces (RunBacktestModal, OptimizeButton, Tier3WarningModal, retry buttons) check this and show a banner + disable their action. The backend 409 guard (`has_any_running_vps_job`) remains the authoritative lock; the UI enforcement prevents wasted round-trips.
+
+**Runs table columns** — "Score" = WorthinessBadge (Tier 1/2/3, the quality verdict). "Challenge" = firm name chip(s) showing which challenges the run was evaluated against. These are intentionally separated: score = how good, challenge = under what rules. Per-firm PASS/WARN/DISCARD detail lives only on BacktestDetail.
+
+**Sweep source linkage** — `source_run_id` on sweep child runs links a sweep back to the run that triggered it. Only sweeps created after this session carry the link; old sweeps remain in the Sweeps tab only. No automatic backfill is possible.
+
+---
+
 ## ProgressCard pattern (SweepDetail / OptimizationDetail)
 
 Both detail pages use an identical `ProgressCard` sub-component with:
