@@ -820,10 +820,24 @@ function StrategiesSkeleton() {
 
 // ── Firms tab ─────────────────────────────────────────────────────────────────
 
-const COL_COUNT = 6
+type FirmSubTab = 'eval' | 'funded'
+
+const FIRM_BRAND_NAMES: Record<string, string> = {
+  lucidflex:   'LucidFlex',
+  tradeify:    'Tradeify',
+  fundednext:  'FundedNext',
+  apex:        'Apex',
+}
+
+function firmBrand(firmId: string): string {
+  const prefix = firmId.split('_')[0]
+  return FIRM_BRAND_NAMES[prefix] ?? (prefix.charAt(0).toUpperCase() + prefix.slice(1))
+}
 
 function FirmsTab() {
   const { data: firms, isLoading } = useFirms()
+  const [subTab,      setSubTab]      = useState<FirmSubTab>('eval')
+  const [brandFilter, setBrandFilter] = useState<string | null>(null)
 
   if (isLoading) return <FirmsSkeleton />
   if (!firms?.length) return (
@@ -834,51 +848,112 @@ function FirmsTab() {
     />
   )
 
-  const evalFirms   = firms.filter(f => f.account_tier === 'eval')
-  const fundedFirms = firms.filter(f => f.account_tier === 'funded')
+  const byTier   = firms.filter(f => f.account_tier === (subTab === 'eval' ? 'eval' : 'funded'))
+  const brands   = [...new Set(byTier.map(f => firmBrand(f.id)))]
+  const visible  = brandFilter ? byTier.filter(f => firmBrand(f.id) === brandFilter) : byTier
+  const isEval   = subTab === 'eval'
+
+  // Group visible firms by brand for separator rows
+  const grouped: { brand: string; firms: Firm[] }[] = []
+  for (const f of visible) {
+    const b = firmBrand(f.id)
+    const last = grouped[grouped.length - 1]
+    if (last?.brand === b) last.firms.push(f)
+    else grouped.push({ brand: b, firms: [f] })
+  }
+
+  const colCount = isEval ? 6 : 4
 
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-      <table className="w-full text-[13px]">
-        <thead>
-          <tr className="border-b border-border-subtle">
-            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Firm</th>
-            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
-            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>
-            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD (EOD)</th>
-            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Drawdown Type</th>
-            <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border-subtle">
-          {evalFirms.length > 0 && <>
-            <tr className="bg-warn-muted/10 border-b border-border-subtle">
-              <td colSpan={COL_COUNT} className="px-4 py-[6px]">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.7px] text-warn-text/80">
-                  Evaluation Challenges
-                </span>
-              </td>
+    <div>
+      {/* Sub-tabs */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-1">
+          {(['eval', 'funded'] as FirmSubTab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => { setSubTab(t); setBrandFilter(null) }}
+              className={`px-3 py-[5px] rounded-md text-[12px] font-medium transition-colors ${
+                subTab === t
+                  ? t === 'eval' ? 'bg-warn-muted text-warn-text' : 'bg-pos-muted text-pos-text'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
+              }`}
+            >
+              {t === 'eval' ? 'Evaluation' : 'Funded'}
+              <span className="ml-1.5 text-[10px] opacity-60">
+                {firms.filter(f => f.account_tier === (t === 'eval' ? 'eval' : 'funded')).length}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Brand filter chips */}
+        {brands.length > 1 && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setBrandFilter(null)}
+              className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${
+                brandFilter === null
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'
+              }`}
+            >
+              All
+            </button>
+            {brands.map(b => (
+              <button
+                key={b}
+                onClick={() => setBrandFilter(brandFilter === b ? null : b)}
+                className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${
+                  brandFilter === b
+                    ? 'bg-accent/15 text-accent'
+                    : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'
+                }`}
+              >
+                {b}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="border-b border-border-subtle">
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Challenge</th>
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
+              {isEval && <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>}
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD (EOD)</th>
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Drawdown Type</th>
+              {isEval && <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>}
             </tr>
-            {evalFirms.map(firm => <FirmRow key={firm.id} firm={firm} />)}
-          </>}
-          {fundedFirms.length > 0 && <>
-            <tr className="bg-pos-muted/10 border-b border-border-subtle">
-              <td colSpan={COL_COUNT} className="px-4 py-[6px]">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.7px] text-pos-text/80">
-                  Funded Accounts
-                </span>
-              </td>
-            </tr>
-            {fundedFirms.map(firm => <FirmRow key={firm.id} firm={firm} />)}
-          </>}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-border-subtle">
+            {grouped.map(({ brand, firms: groupFirms }) => (
+              <>
+                {grouped.length > 1 && (
+                  <tr key={`hdr-${brand}`} className="bg-bg-hover/40">
+                    <td colSpan={colCount} className="px-4 py-[5px]">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary">
+                        {brand}
+                      </span>
+                    </td>
+                  </tr>
+                )}
+                {groupFirms.map(firm => (
+                  <FirmRow key={firm.id} firm={firm} showEvalCols={isEval} />
+                ))}
+              </>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
 
-function FirmRow({ firm }: { firm: Firm }) {
-  const isEval = firm.account_tier === 'eval'
+function FirmRow({ firm, showEvalCols }: { firm: Firm; showEvalCols: boolean }) {
   return (
     <tr className="hover:bg-bg-hover transition-colors">
       <td className="px-4 py-3">
@@ -886,16 +961,20 @@ function FirmRow({ firm }: { firm: Firm }) {
         <div className="text-[11px] text-text-tertiary font-mono">{firm.id}</div>
       </td>
       <td className="px-4 py-3 font-mono tabular-nums">${firm.account_size.toLocaleString()}</td>
-      <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
-        {isEval && firm.profit_target > 0 ? `$${firm.profit_target.toLocaleString()}` : <span className="text-text-tertiary">—</span>}
-      </td>
+      {showEvalCols && (
+        <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
+          {firm.profit_target > 0 ? `$${firm.profit_target.toLocaleString()}` : <span className="text-text-tertiary">—</span>}
+        </td>
+      )}
       <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
         ${firm.max_loss_eod.toLocaleString()}
       </td>
       <td className="px-4 py-3 text-text-secondary capitalize">{firm.drawdown_type.replace(/_/g, ' ')}</td>
-      <td className="px-4 py-3 text-text-secondary">
-        {isEval && firm.consistency_pct != null ? `≤ ${firm.consistency_pct}%` : <span className="text-text-tertiary">—</span>}
-      </td>
+      {showEvalCols && (
+        <td className="px-4 py-3 text-text-secondary">
+          {firm.consistency_pct != null ? `≤ ${firm.consistency_pct}%` : <span className="text-text-tertiary">—</span>}
+        </td>
+      )}
     </tr>
   )
 }
