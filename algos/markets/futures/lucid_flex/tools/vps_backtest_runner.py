@@ -136,29 +136,47 @@ def find_strategy_analyzer(app):
     sys.exit(1)
 
 
+def _find_strategy_item(sa, strategy_name):
+    """Find a strategy MenuItem in the open NinjaScriptSelector dropdown.
+
+    WPF ComboBox popups render either as a child of the SA window or as a
+    top-level Desktop element depending on NT8's internal state (e.g. after
+    a completed run the popup moves to Desktop level). Try both.
+    """
+    # Pass 1: within SA subtree (works on first/fresh SA open)
+    try:
+        item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
+        if item.exists(timeout=0.5):
+            return item
+    except Exception:
+        pass
+    # Pass 2: Desktop-level popup (WPF renders popup outside SA after first run)
+    try:
+        item = Desktop(backend="uia").window(title=strategy_name, control_type="MenuItem", found_index=0)
+        if item.exists(timeout=0.5):
+            return item
+    except Exception:
+        pass
+    return None
+
+
 def select_strategy(sa, strategy_name):
-    """Select strategy from the NinjaScriptSelector dropdown.
-    Retries with increasing waits — after NT8 restart the strategy list compiles lazily."""
+    """Select strategy from the NinjaScriptSelector dropdown."""
     selector = sa.child_window(auto_id="NinjaScriptSelector")
-    # Delays after clicking the dropdown: short first, longer on retry.
-    # After a crash/restart NT8 may still be compiling strategies when we first try.
-    waits = [1.5, 5.0, 10.0]
-    for attempt, wait in enumerate(waits):
+    for attempt in range(3):
         try:
             selector.click_input()
-            time.sleep(wait)
-            # found_index=0 picks first match — the MenuItem and its Text child
-            # both share the same title, so pywinauto finds 2; we want index 0.
-            item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
+            time.sleep(1.5)  # popup renders asynchronously; ≥0.7 s per CLAUDE.md
+            item = _find_strategy_item(sa, strategy_name)
+            if item is None:
+                raise RuntimeError("not found in SA subtree or Desktop")
             item.click_input()
             time.sleep(1.0)
             return True
         except Exception as e:
             send_keys("{ESC}")
-            if attempt < len(waits) - 1:
-                print(f"  Strategy '{strategy_name}' not in dropdown yet (attempt {attempt+1}) — waiting {waits[attempt+1]:.0f}s for NT8 compile...")
-                time.sleep(1.0)
-            else:
+            time.sleep(1.0)
+            if attempt == 2:
                 print(f"  WARNING: could not select strategy '{strategy_name}': {e}")
     return False
 

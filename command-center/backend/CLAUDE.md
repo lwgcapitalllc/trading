@@ -126,6 +126,7 @@ Hard-won rules for pywinauto + NT8 WPF — violating these causes silent wrong-s
 - `select_strategy()` returns `True/False`. If it returns `False`, the SA still has the previous strategy loaded.
 - `configure_from_spec()` raises `RuntimeError` on strategy-selection failure; `run_job_mode()` catches it and calls `sys.exit(1)`. **Never let a run proceed if strategy selection failed** — NT8 will silently run whatever was last loaded.
 - Strategy dropdown items are `control_type="MenuItem"`, not `ListItem`.
+- **WPF popup location changes after first run**: On a fresh SA the dropdown popup is a child of the SA window in the UIA tree. After a backtest completes, subsequent clicks on the selector render the popup as a top-level Desktop element. `select_strategy` uses `_find_strategy_item` which tries both: `sa.child_window(...)` first, then `Desktop(backend="uia").window(...)`. Never search only within SA.
 
 **Timing**
 - After `select_strategy`, sleep 2–3 s — NT8 fully rebuilds the property grid and the UIA tree is temporarily invalid.

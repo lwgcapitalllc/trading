@@ -433,7 +433,13 @@ def select_and_dump():
         selector = sa.child_window(auto_id="NinjaScriptSelector")
         selector.click_input()
         time.sleep(1.5)
-        item = sa.child_window(title=strategy, control_type="MenuItem", found_index=0)
+        # Try SA subtree first; fall back to Desktop (WPF popup moves top-level after first run)
+        try:
+            item = sa.child_window(title=strategy, control_type="MenuItem", found_index=0)
+            if not item.exists(timeout=0.5):
+                raise Exception("not in SA subtree")
+        except Exception:
+            item = Desktop(backend="uia").window(title=strategy, control_type="MenuItem", found_index=0)
         item.click_input()
         time.sleep(2.0)
         controls = []
