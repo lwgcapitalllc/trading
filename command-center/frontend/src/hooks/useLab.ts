@@ -364,6 +364,23 @@ export function useRetrySweep() {
   })
 }
 
+export function useReevaluateSweep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ sweepId, firm_ids }: { sweepId: string; firm_ids: string[] }) =>
+      api.post<{ sweep_id: string; reevaluated: number }>(`/backtests/sweeps/${sweepId}/reevaluate`, { firm_ids }),
+    onSuccess: (data, { sweepId }) => {
+      toast.success(`Scored ${data.reevaluated} run${data.reevaluated !== 1 ? 's' : ''}`)
+      qc.invalidateQueries({ queryKey: ['lab', 'sweep', sweepId] })
+      qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { detail?: string })?.detail
+      toast.error(msg ?? 'Re-evaluation failed')
+    },
+  })
+}
+
 export function useTriggerSweep() {
   const qc = useQueryClient()
   return useMutation({

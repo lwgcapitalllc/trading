@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2 } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { useSweep, useDeleteSweep, useRetrySweep, useCancelSweep, useRetryBacktest, useRunningVpsJob } from '@/hooks/useLab'
+import { useSweep, useDeleteSweep, useRetrySweep, useCancelSweep, useRetryBacktest, useRunningVpsJob, useFirms, useReevaluateSweep } from '@/hooks/useLab'
 import type { BacktestSummary, SweepDetail as Sweep } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -335,14 +335,17 @@ export function SweepDetail() {
   const { sweepId }  = useParams<{ sweepId: string }>()
   const navigate     = useNavigate()
   const { data: sweep, isLoading } = useSweep(sweepId ?? null)
-  const deleteSweep  = useDeleteSweep()
-  const retrySweep   = useRetrySweep()
-  const cancelSweep  = useCancelSweep()
-  const retryRun     = useRetryBacktest()
-  const { data: runningJob } = useRunningVpsJob()
+  const deleteSweep    = useDeleteSweep()
+  const retrySweep     = useRetrySweep()
+  const cancelSweep    = useCancelSweep()
+  const retryRun       = useRetryBacktest()
+  const reevalSweep    = useReevaluateSweep()
+  const { data: firms }          = useFirms()
+  const { data: runningJob }     = useRunningVpsJob()
   const jobBlocked = !!runningJob?.running
 
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [evalFirmId, setEvalFirmId]       = useState('')
 
   const isRunning    = sweep?.status === 'running'
   const completeRuns = sweep?.runs.filter(r => r.status === 'complete') ?? []
@@ -434,6 +437,34 @@ export function SweepDetail() {
             retrying={retrySweep.isPending}
             jobBlocked={jobBlocked}
           />
+
+          {/* Re-evaluate prompt — shown when sweep has no firm evaluations */}
+          {completeRuns.length > 0 && sweep.firm_ids.length === 0 && !isRunning && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-warn-muted/30 border border-warn-text/20">
+              <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />
+              <span className="text-[12px] text-warn-text flex-1">
+                This sweep was run without firm evaluation — Score and Challenge will be empty.
+              </span>
+              <select
+                value={evalFirmId}
+                onChange={e => setEvalFirmId(e.target.value)}
+                className="bg-bg-sunken border border-border-subtle rounded px-2 py-[5px] text-[12px] focus:outline-none focus:border-accent min-w-[140px]"
+              >
+                <option value="">Select firm…</option>
+                {firms?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+              <button
+                onClick={() => {
+                  if (!evalFirmId || !sweepId) return
+                  reevalSweep.mutate({ sweepId, firm_ids: [evalFirmId] })
+                }}
+                disabled={!evalFirmId || reevalSweep.isPending}
+                className="px-3 py-[5px] rounded text-[12px] font-semibold bg-accent text-bg-base hover:opacity-90 disabled:opacity-40 transition-opacity"
+              >
+                {reevalSweep.isPending ? 'Scoring…' : 'Score'}
+              </button>
+            </div>
+          )}
 
           {/* Results table */}
           {completeRuns.length > 0 && (

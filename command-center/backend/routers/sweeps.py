@@ -5,19 +5,31 @@ Sweeps router — POST /backtests/sweep, GET /backtests/sweeps/:sweep_id
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
+from pydantic import BaseModel
 
-from typing import Optional
 from models import SweepRequest, SweepResponse, SweepDetail, SweepSummary, BacktestSummary, WorthinessScore
-from services import lab_db
+from services import lab_db, worthiness
+from services.evaluator import evaluate_run
 from services.sweep_runner import run_sweep, retry_failed_sweep_runs
 from routers.backtests import _row_to_summary
+
+
+def _load_json(path: Optional[str]) -> list:
+    if not path:
+        return []
+    try:
+        return json.loads(Path(path).read_text())
+    except Exception:
+        return []
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 
@@ -125,6 +137,45 @@ async def retry_sweep_failed(sweep_id: str) -> dict:
         raise HTTPException(400, "No failed runs to retry")
     asyncio.create_task(retry_failed_sweep_runs(sweep_id))
     return {"sweep_id": sweep_id, "retrying": len(failed), "status": "running"}
+
+
+class _SweepReevalRequest(BaseModel):
+    firm_ids: list[str]
+
+
+@router.post("/sweeps/{sweep_id}/reevaluate", status_code=200)
+def reevaluate_sweep(sweep_id: str, req: _SweepReevalRequest) -> dict:
+    for fid in req.firm_ids:
+        if not lab_db.get_firm(fid):
+            raise HTTPException(404, f"Firm '{fid}' not found")
+
+    rows = lab_db.list_sweep_runs(sweep_id)
+    if not rows:
+        raise HTTPException(404, f"Sweep '{sweep_id}' not found")
+
+    complete_rows = [r for r in rows if r["status"] == "complete"]
+    if not complete_rows:
+        raise HTTPException(400, "No complete runs to re-evaluate")
+
+    for row in complete_rows:
+        run_id = row["run_id"]
+        kpis = {k: row.get(k) for k in (
+            "net_pnl", "max_drawdown", "profit_factor",
+            "win_rate", "win_count", "trade_count", "sharpe", "sortino",
+        )}
+        equity_curve = _load_json(row.get("equity_curve_path"))
+        daily_pnl    = _load_json(row.get("daily_pnl_path"))
+
+        evaluate_run(run_id, req.firm_ids, kpis, equity_curve, daily_pnl)
+
+        w = worthiness.score_run_after_evals(
+            run_id, req.firm_ids,
+            row.get("profit_factor"), row.get("max_drawdown"), row.get("trade_count"),
+        )
+        if w:
+            lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
+
+    return {"sweep_id": sweep_id, "reevaluated": len(complete_rows)}
 
 
 @router.delete("/sweeps/{sweep_id}", status_code=204)
