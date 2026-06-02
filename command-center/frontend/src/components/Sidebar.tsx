@@ -14,7 +14,7 @@ const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[
 
 const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
   { to: '/backtests',    label: 'Backtests',    icon: BarChart2, live: true  },
-  { to: '/stress-tests', label: 'Stress Tests', icon: Activity,  live: false },
+  { to: '/stress-tests', label: 'Stress Tests', icon: Activity,  live: true  },
 ]
 
 function NavItem({ to, label, icon: Icon, live }: { to: string; label: string; icon: LucideIcon; live: boolean }) {

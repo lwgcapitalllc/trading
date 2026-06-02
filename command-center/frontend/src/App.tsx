@@ -39,7 +39,8 @@ export default function App() {
               <Route path="/backtests/sweeps/:sweepId"         element={<SweepDetail />} />
               <Route path="/backtests/optimizations/:optimizationId" element={<OptimizationDetail />} />
               <Route path="/backtests/stress-tests/:stressTestId" element={<StressTestDetail />} />
-              <Route path="/stress-tests"             element={<StressTests />} />
+              <Route path="/stress-tests"                       element={<StressTests />} />
+              <Route path="/stress-tests/:stressTestId"         element={<StressTestDetail />} />
               <Route path="/settings"                 element={<Settings />} />
             </Routes>
           </main>

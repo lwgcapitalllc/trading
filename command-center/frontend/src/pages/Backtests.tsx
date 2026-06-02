@@ -1281,7 +1281,7 @@ function StressTestsTab() {
             <tr
               key={t.stress_test_id}
               className="border-b border-border-subtle/50 hover:bg-bg-hover cursor-pointer"
-              onClick={() => navigate(`/backtests/stress-tests/${t.stress_test_id}`)}
+              onClick={() => navigate(`/stress-tests/${t.stress_test_id}`)}
             >
               <td className="py-2 pr-4">
                 {t.grade ? <RobustnessGradeBadge grade={t.grade} /> : <span className="text-text-tertiary text-xs">—</span>}
