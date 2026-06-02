@@ -435,19 +435,76 @@ export interface SystemHealth {
 
 // ── Stress Tests ─────────────────────────────────────────────────────────────
 
-export interface StressTestResult {
-  strategy: string
-  instrument: string
-  runs: number
-  max_dd_median: number
-  max_dd_p95: number
-  max_dd_p99: number
-  prob_breach: number
-  prob_pass_eval: number
-  final_pnl_median: number
-  final_pnl_p10: number
-  final_pnl_worst: number
-  equity_paths: EquityPoint[][]
+export interface WalkForwardWindow {
+  window: number
+  is_pnl: number | null
+  oos_pnl: number | null
+  is_sharpe: number | null
+  oos_sharpe: number | null
+}
+
+export interface SensitivityShift {
+  run_id: string
+  new_value: number
+  pnl_delta: number
+  pnl_delta_pct: number
+}
+
+export interface StressTest {
+  stress_test_id: string
+  run_id: string
+  ruleset_id: string | null
+  status: string
+  created_at: number
+  completed_at: number | null
+  num_simulations: number
+  num_bootstrap: number
+  median_final_pnl: number | null
+  pct5_final_pnl: number | null
+  pct1_final_pnl: number | null
+  median_max_dd: number | null
+  pct5_max_dd: number | null
+  pct1_max_dd: number | null
+  prob_breach: number | null
+  prob_pass_eval: number | null
+  walk_forward_windows: number
+  walk_forward_summary: WalkForwardWindow[] | null
+  walk_forward_degradation: number | null
+  sensitivity_summary: Record<string, Record<string, SensitivityShift>> | null
+  sensitivity_max_degradation: number | null
+  grade: 'A' | 'B' | 'C' | 'D' | 'F' | null
+  grade_reasons: string[] | null
+  equity_paths_path: string | null
+  distribution_path: string | null
+  error_message: string | null
+  strategy_name: string | null
+  strategy_id: string | null
+  instrument: string | null
+}
+
+export interface StressTestDetail extends StressTest {
+  equity_paths: number[][] | null
+  distribution: {
+    max_dd: { counts: number[]; edges: number[] }
+    final_pnl: { counts: number[]; edges: number[] }
+  } | null
+}
+
+export interface StressTestCreate {
+  run_id: string
+  ruleset_id?: string
+  include_walk_forward: boolean
+  include_sensitivity: boolean
+  num_simulations: number
+  num_bootstrap: number
+  walk_forward_windows: number
+}
+
+export interface StressTestTriggerResponse {
+  stress_test_id: string
+  status: string
+  estimated_duration_min: number | null
+  notes: string[]
 }
 
 // ── App Settings ─────────────────────────────────────────────────────────────

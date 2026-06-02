@@ -181,6 +181,37 @@ def init_db() -> None:
                 pass
 
         conn.executescript("""
+            CREATE TABLE IF NOT EXISTS stress_tests (
+                stress_test_id     TEXT PRIMARY KEY,
+                run_id             TEXT NOT NULL REFERENCES backtest_runs(run_id),
+                ruleset_id         TEXT REFERENCES rulesets(id),
+                status             TEXT NOT NULL,
+                created_at         INTEGER NOT NULL,
+                completed_at       INTEGER,
+                num_simulations    INTEGER NOT NULL DEFAULT 10000,
+                num_bootstrap      INTEGER NOT NULL DEFAULT 1000,
+                median_final_pnl   REAL,
+                pct5_final_pnl     REAL,
+                pct1_final_pnl     REAL,
+                median_max_dd      REAL,
+                pct5_max_dd        REAL,
+                pct1_max_dd        REAL,
+                prob_breach        REAL,
+                prob_pass_eval     REAL,
+                walk_forward_windows   INTEGER NOT NULL DEFAULT 5,
+                walk_forward_summary   TEXT,
+                walk_forward_degradation REAL,
+                sensitivity_summary    TEXT,
+                sensitivity_max_degradation REAL,
+                grade              TEXT,
+                grade_reasons      TEXT,
+                equity_paths_path  TEXT,
+                distribution_path  TEXT,
+                error_message      TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_stress_tests_run ON stress_tests(run_id);
+            CREATE INDEX IF NOT EXISTS idx_stress_tests_grade ON stress_tests(grade);
+
             CREATE TABLE IF NOT EXISTS optimizations (
                 optimization_id     TEXT PRIMARY KEY,
                 strategy_id         TEXT NOT NULL REFERENCES strategies(id),
@@ -210,6 +241,9 @@ def init_db() -> None:
         for migration_sql in [
             "ALTER TABLE optimizations RENAME COLUMN firm_id TO ruleset_id",
             "ALTER TABLE optimizations ADD COLUMN source_run_id TEXT",
+            "ALTER TABLE backtest_runs ADD COLUMN stress_test_id TEXT",
+            "ALTER TABLE backtest_runs ADD COLUMN walk_forward_window_id TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_runs_stress ON backtest_runs(stress_test_id)",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -1073,3 +1107,157 @@ def list_optimization_runs(optimization_id: str) -> list[dict]:
             ORDER BY r.created_at ASC
         """, (optimization_id,)).fetchall()
     return [_parse_json_fields(dict(r), ["params"]) for r in rows]
+
+
+# ── Stress Tests ──────────────────────────────────────────────────────────────
+
+def insert_stress_test(data: dict) -> None:
+    with _connect() as conn:
+        conn.execute("""
+            INSERT INTO stress_tests
+                (stress_test_id, run_id, ruleset_id, status, created_at,
+                 num_simulations, num_bootstrap, walk_forward_windows)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data["stress_test_id"], data["run_id"], data.get("ruleset_id"),
+            data["status"], data["created_at"],
+            data.get("num_simulations", 10_000),
+            data.get("num_bootstrap", 1_000),
+            data.get("walk_forward_windows", 5),
+        ))
+
+
+def get_stress_test(stress_test_id: str) -> Optional[dict]:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM stress_tests WHERE stress_test_id = ?", (stress_test_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return _parse_json_fields(dict(row), ["walk_forward_summary", "sensitivity_summary", "grade_reasons"])
+
+
+def get_latest_stress_test_for_run(run_id: str) -> Optional[dict]:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM stress_tests WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return _parse_json_fields(dict(row), ["walk_forward_summary", "sensitivity_summary", "grade_reasons"])
+
+
+def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None) -> list[dict]:
+    clauses, params = [], []
+    if run_id:
+        clauses.append("st.run_id = ?"); params.append(run_id)
+    if grade:
+        clauses.append("st.grade = ?"); params.append(grade)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    with _connect() as conn:
+        rows = conn.execute(f"""
+            SELECT st.*, r.strategy_id, r.instrument,
+                   COALESCE(s.name, r.strategy_id) AS strategy_name
+            FROM stress_tests st
+            JOIN backtest_runs r ON r.run_id = st.run_id
+            LEFT JOIN strategies s ON s.id = r.strategy_id
+            {where}
+            ORDER BY st.created_at DESC
+        """, params).fetchall()
+    return [_parse_json_fields(dict(r), ["walk_forward_summary", "sensitivity_summary", "grade_reasons"]) for r in rows]
+
+
+def update_stress_test_status(stress_test_id: str, status: str, error_message: Optional[str] = None) -> None:
+    now = int(time.time())
+    with _connect() as conn:
+        if status in ("complete", ) or status.startswith("failed"):
+            conn.execute(
+                "UPDATE stress_tests SET status=?, error_message=?, completed_at=? WHERE stress_test_id=?",
+                (status, error_message, now, stress_test_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE stress_tests SET status=?, error_message=? WHERE stress_test_id=?",
+                (status, error_message, stress_test_id),
+            )
+
+
+def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict) -> None:
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute("""
+            UPDATE stress_tests SET
+                status='complete', completed_at=?,
+                median_final_pnl=?, pct5_final_pnl=?, pct1_final_pnl=?,
+                median_max_dd=?, pct5_max_dd=?, pct1_max_dd=?,
+                prob_breach=?, prob_pass_eval=?,
+                equity_paths_path=?, distribution_path=?
+            WHERE stress_test_id=?
+        """, (
+            now,
+            mc.get("median_final_pnl"), mc.get("pct5_final_pnl"), mc.get("pct1_final_pnl"),
+            mc.get("median_max_dd"), mc.get("pct5_max_dd"), mc.get("pct1_max_dd"),
+            mc.get("prob_breach"), mc.get("prob_pass_eval"),
+            paths.get("equity_paths_path"), paths.get("distribution_path"),
+            stress_test_id,
+        ))
+
+
+def update_stress_test_walk_forward(stress_test_id: str, summary: list, degradation: float) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE stress_tests SET status='running_sens', walk_forward_summary=?, walk_forward_degradation=? WHERE stress_test_id=?",
+            (json.dumps(summary), degradation, stress_test_id),
+        )
+
+
+def update_stress_test_sensitivity(stress_test_id: str, summary: dict, max_degradation: float) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE stress_tests SET sensitivity_summary=?, sensitivity_max_degradation=? WHERE stress_test_id=?",
+            (json.dumps(summary), max_degradation, stress_test_id),
+        )
+
+
+def update_stress_test_grade(stress_test_id: str, grade: str, reasons: list[str]) -> None:
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE stress_tests SET status='complete', completed_at=?, grade=?, grade_reasons=? WHERE stress_test_id=?",
+            (now, grade, json.dumps(reasons), stress_test_id),
+        )
+
+
+def delete_stress_test(stress_test_id: str) -> bool:
+    with _connect() as conn:
+        # cascade: delete stress-test child runs
+        child_ids = [
+            r["run_id"] for r in conn.execute(
+                "SELECT run_id FROM backtest_runs WHERE stress_test_id=?", (stress_test_id,)
+            ).fetchall()
+        ]
+        if child_ids:
+            ph = ",".join("?" * len(child_ids))
+            conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({ph})", child_ids)
+            conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({ph})", child_ids)
+        cur = conn.execute("DELETE FROM stress_tests WHERE stress_test_id=?", (stress_test_id,))
+    return cur.rowcount > 0
+
+
+def insert_run_stress_test_child(data: dict) -> None:
+    with _connect() as conn:
+        conn.execute("""
+            INSERT INTO backtest_runs
+                (run_id, strategy_id, instrument, params, bar_type, bar_value,
+                 start_date, end_date, commission_per_side, slippage_ticks,
+                 status, created_at, stress_test_id, walk_forward_window_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data["run_id"], data["strategy_id"], data["instrument"],
+            json.dumps(data["params"]), data["bar_type"], data["bar_value"],
+            data["start_date"], data["end_date"],
+            data["commission_per_side"], data["slippage_ticks"],
+            data["status"], data["created_at"],
+            data["stress_test_id"], data.get("walk_forward_window_id"),
+        ))

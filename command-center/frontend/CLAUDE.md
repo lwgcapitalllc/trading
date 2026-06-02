@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-01 (session 5 — M3 Step 1: Ruleset abstraction)
+**Last reviewed:** 2026-06-01 (session 5 — M3 Steps 2-6: stress testing, grading, frontend)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -36,7 +36,7 @@ frontend/src/
 │   ├── useLab.ts            strategies, rulesets (useRulesets + useFirms alias), runs, evals, sweeps, optimizations
 │   ├── useBots.ts
 │   ├── useSmartMoney.ts
-│   └── useStressTests.ts    stub — no live endpoints yet
+│   └── useStressTests.ts    stress tests — useStressTests, useStressTest, useRunStressTest, useDeleteStressTest
 ├── components/              reusable, dumb components
 │   ├── Sidebar.tsx
 │   ├── TopBar.tsx
@@ -49,7 +49,13 @@ frontend/src/
 │   ├── OptimizationHeatmap.tsx  SVG 2D heatmap for 2-param optimizer grids
 │   ├── Tier3WarningModal.tsx    smart-routing modal for Tier 3 → sweep or optimize anyway
 │   ├── OptimizeButton.tsx   tier-aware optimize trigger (Tier1 soft confirm, Tier2 direct, Tier3 warning)
-│   └── RulesetTypeBadge.tsx PROP EVAL / PROP FUNDED / PERSONAL / DEMO type badge for ruleset rows
+│   ├── RulesetTypeBadge.tsx PROP EVAL / PROP FUNDED / PERSONAL / DEMO type badge for ruleset rows
+│   ├── RobustnessGradeBadge.tsx  A/B/C/D/F letter grade pill
+│   ├── MonteCarloFan.tsx    equity path fan chart (100 paths, percentile bands)
+│   ├── DrawdownDistribution.tsx  drawdown histogram with ruleset limit line
+│   ├── WalkForwardChart.tsx IS vs OOS Sharpe grouped bar chart
+│   ├── SensitivityRadar.tsx param sensitivity horizontal bar chart (PnL delta %)
+│   └── PreDeploymentChecklist.tsx  5-item manual checklist on StrategyDetail
 │                            NOTE: EvaluationCard, EquityCurveChart, DrawdownChart,
 │                            DailyPnlChart, DirectionBreakdown are all inline
 │                            components inside BacktestDetail.tsx — not separate files.
@@ -71,7 +77,8 @@ frontend/src/
     ├── StrategyDetail.tsx    strategy metadata + all runs + runner badge
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
     ├── OptimizationDetail.tsx  optimizer results — heatmap (2D) or top-10 table (3+D), best param callout, CSV export
-    ├── StressTests.tsx       stub — ScaffoldBanner placeholder
+    ├── StressTests.tsx       legacy redirect (directs to Backtests?tab=stress-tests)
+    ├── StressTestDetail.tsx  stress test detail — grade, MC stats, fan chart, drawdown dist, walk-forward, sensitivity
     └── Settings.tsx
 ```
 
@@ -283,7 +290,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Optimize Button | ✅ Live | Tier-aware button on BacktestDetail: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning with instrument routing |
 | Tier 3 Warning Modal | ✅ Live | Shows past results per instrument, offers sweep of untested instruments. `withContractMonth()` stamps root symbols with contract month from source run before submitting sweep. Now passes `source_run_id: run.run_id` on every sweep trigger. |
 | Runner Badge | ✅ Live | StrategyDetail shows "Runs on: NinjaTrader" badge |
-| Stress Tests | 🔲 Stub | ScaffoldBanner placeholder; M3 scope |
+| Stress Tests | ✅ Live | Stress Tests tab in Backtests (list with grade/prob columns). StressTestDetail page: grade badge + reasons, MC stats grid, probability bars, equity fan chart, drawdown distribution, walk-forward IS/OOS chart, sensitivity bar chart. "Stress Test" button on BacktestDetail header (visible when complete). Auto-triggered stress test result shown as grade badge next to button. |
 | Settings | ✅ Live | Config read/write |
 
 ---

@@ -265,6 +265,11 @@ async def run_optimization(optimization_id: str) -> None:
             best_run_id  = run_id
 
     lab_db.complete_optimization(optimization_id, best_run_id)
+    if best_run_id:
+        from services import stress_tester
+        asyncio.create_task(stress_tester.trigger_auto_stress_test(
+            best_run_id, [opt["ruleset_id"]]
+        ))
 
 
 async def retry_single_optimization_run(run_id: str) -> None:
@@ -319,6 +324,11 @@ async def retry_single_optimization_run(run_id: str) -> None:
             best_score  = score
             best_run_id = r["run_id"]
     lab_db.complete_optimization(opt_id, best_run_id)
+    if best_run_id:
+        from services import stress_tester
+        asyncio.create_task(stress_tester.trigger_auto_stress_test(
+            best_run_id, [opt["ruleset_id"]]
+        ))
 
 
 async def retry_failed_runs(optimization_id: str) -> None:
@@ -387,3 +397,8 @@ async def retry_failed_runs(optimization_id: str) -> None:
             best_run_id = row["run_id"]
 
     lab_db.complete_optimization(optimization_id, best_run_id)
+    if best_run_id:
+        from services import stress_tester
+        asyncio.create_task(stress_tester.trigger_auto_stress_test(
+            best_run_id, [opt["ruleset_id"]]
+        ))

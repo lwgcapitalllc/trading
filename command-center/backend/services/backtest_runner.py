@@ -164,6 +164,11 @@ async def _handle_complete(
     if w:
         lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
 
+    # Auto-trigger Monte Carlo stress test on Tier 1 results
+    if w and w[0] == "TIER_1_STRESS_TEST":
+        from services import stress_tester
+        asyncio.create_task(stress_tester.trigger_auto_stress_test(run_id, firm_ids))
+
     _write_progress({
         "job_id":               job_id,
         "job_type":             "backtest",

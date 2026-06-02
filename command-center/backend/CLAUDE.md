@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-01 (session 5 — M3 Step 1: Ruleset abstraction)
+**Last reviewed:** 2026-06-01 (session 5 — M3 Steps 2-6: stress testing, grading, frontend)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -28,7 +28,7 @@ backend/
 │   ├── rulesets.py        lab — ruleset CRUD (/rulesets)
 │   ├── firms.py           backward-compat redirect /firms → /rulesets (deprecated, remove in M4)
 │   ├── system.py          lab — health + log proxies
-│   ├── stress_tests.py    stub — M3 scope
+│   ├── stress_tests.py    lab — stress test CRUD + trigger (GET /stress-tests, GET /:id, POST /run, DELETE /:id)
 │   ├── sweeps.py          lab — instrument sweep (POST /backtests/sweep, GET /backtests/sweeps, GET/DELETE /backtests/sweeps/:id)
 │   ├── optimizations.py   lab — optimizer (POST /optimizations/run, GET /optimizations/*, DELETE /optimizations/:id)
 │   └── settings.py
@@ -41,8 +41,11 @@ backend/
 │   ├── optimization_runner.py  multi-call brute-force optimizer (see note below)
 │   ├── worthiness.py      Tier 1/2/3 scoring
 │   ├── objectives.py      optimizer objective functions
+│   ├── stress_tester.py   Monte Carlo + walk-forward + sensitivity + auto-trigger
+│   ├── grading.py         compute_grade() → A/B/C/D/F with plain-English reasons
+│   ├── correlation_table.py  hardcoded correlated instrument pairs (M4 will replace with live data)
 │   └── vps_client.py      typed HTTP wrapper over vps_agent; runner dispatcher
-├── data/lab.db            strategies, firms, runs, evaluations, optimizations
+├── data/lab.db            strategies, rulesets, runs, evaluations, optimizations, stress_tests
 └── reports/lab/           run output files — equity curves, logs, progress.json
 ```
 
@@ -218,7 +221,7 @@ Seeded rulesets (13 rows): 4 LucidFlex × (eval/funded) + 4 Tradeify × (eval/fu
 | Lab — Sweeps | ✅ Live | Runs N backtests sequentially (one instrument at a time, `_MAX_CONCURRENT = 1`) across all instruments for a strategy. Each run gets its own worthiness score. Deletable. Cancel endpoint force-fails stuck `running` rows (backend-restart recovery). Retry-all and per-run retry via `POST /backtests/runs/{id}/retry`. |
 | Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer. Generates all param combos, runs each sequentially via SA semaphore, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. `source_run_id` links an optimization back to the run it was triggered from. Deletable. Per-run retry via `POST /backtests/runs/{id}/retry`. |
 | Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
-| Lab — Stress Tests | 🔲 Stub | Router exists, no logic yet. M3 Step 2+ scope. |
+| Lab — Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap, vectorised numpy). Walk-forward (N sequential NT8 windows, IS/OOS Sharpe). Sensitivity (±10%/±25% param perturbations via NT8). Auto-triggered (MC only) on Tier 1 backtests and optimizer winners. Graded A-F. |
 | Settings | ✅ Live | Config read/write. |
 
 ---
@@ -253,6 +256,8 @@ Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_
 - `sweep_id` — set on all child runs of an instrument sweep
 - `optimization_id` — set on all child runs of an optimizer job
 - `source_run_id` — set when a sweep or optimization is triggered from a BacktestDetail page; links children back to the originating run
+- `stress_test_id` — set on walk-forward and sensitivity child runs; links them back to the parent stress test
+- `walk_forward_window_id` — identifies the window and period (e.g. `wf_2_oos`, `sens_EntryOffset_+10%`)
 
 `optimizations` table key fields: `optimization_id`, `strategy_id`, `instrument`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `ruleset_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`, `created_at`, `completed_at`.
 
@@ -262,7 +267,25 @@ Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_
 
 **Optimizer implementation:** NT8 Optimizer GUI automation (pywinauto) was not attempted. Instead, the optimizer generates all parameter combinations from the grid and drives them as individual backtest calls via the existing VPS agent pipeline (`optimization_runner.py`). `_MAX_CONCURRENT = 1` — the NT8 Strategy Analyzer window is single-threaded; running more than one job at a time causes SA conflicts, display switch failures, and missing XML logs. For 3+D grids with "auto" or "genetic" search method, a random subset of up to 200 combinations is sampled.
 
-**NT8 SA global lock:** All three job types (single backtest, sweep, optimization) share the same physical SA window. `lab_db.has_any_running_vps_job()` checks for any `backtest_runs` or `optimizations` row with `status = 'running'`. All three trigger endpoints call it and return 409 if true. This prevents cross-job conflicts (e.g. a sweep starting while an optimization is in progress).
+**NT8 SA global lock:** All three job types (single backtest, sweep, optimization) share the same physical SA window. `lab_db.has_any_running_vps_job()` checks for any `backtest_runs` or `optimizations` row with `status = 'running'`. All three trigger endpoints call it and return 409 if true. This prevents cross-job conflicts (e.g. a sweep starting while an optimization is in progress). Walk-forward and sensitivity stress tests also check this lock before triggering.
+
+**Stress test architecture:** `services/stress_tester.py` runs three phases: (1) Monte Carlo — pure numpy, vectorised, ~5s even for 700+ trades. (2) Walk-forward — N windows × 2 NT8 backtests (IS + OOS), sequential through SA. (3) Sensitivity — N params × 4 perturbations × NT8 backtests, sequential. Auto-trigger (Tier 1 backtests + optimizer winners) runs MC only — no NT8 needed. Manual trigger can optionally include walk-forward and sensitivity.
+
+**Robustness grading:** `services/grading.py`. Grade A-F based on Monte Carlo tail risk + optional walk-forward IS→OOS degradation + parameter sensitivity.
+
+| Grade | MC condition | Walk-forward (if run) | Sensitivity (if run) |
+|---|---|---|---|
+| A | worst-1% DD ≤ limit | degradation < 20% | max drop < 25% |
+| B | worst-5% DD ≤ limit | degradation < 30% | max drop < 40% |
+| C | median DD ≤ limit | — | — |
+| D | median profitable but DD fails | — | — |
+| F | median loses money | — | — |
+
+When walk-forward/sensitivity weren't run, those conditions are skipped (grade is based on MC alone — still valid but grade_reasons notes the gap).
+
+**Deployment gates (UI only, soft):** A = funded; B = eval purchase; C = demo. Shown as warnings, never blocking.
+
+**Correlation table:** `services/correlation_table.py`. Hardcoded pairs: MES/MNQ, ES/NQ, GC/MGC, CL/MCL, MYM/M2K, plus micro/full equivalents. Shown as an informational note on StrategyDetail when the strategy has been run on both instruments of a pair. M4 will replace with a real correlation matrix.
 
 **Sweep serialisation:** `sweep_runner.py` uses `asyncio.Semaphore(1)` — same constraint as the optimizer. Instruments run one at a time through the SA window.
 

@@ -4,7 +4,13 @@ import { ArrowLeft, Play, Trash2, RefreshCw, ChevronRight } from 'lucide-react'
 import { useStrategy, useBacktestRuns, useDeleteRun } from '@/hooks/useLab'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { EmptyState } from '@/components/EmptyState'
+import PreDeploymentChecklist from '@/components/PreDeploymentChecklist'
 import type { BacktestSummary, VerdictSummary } from '@/types'
+
+const CORRELATED_PAIRS: [string, string][] = [
+  ['MES', 'MNQ'], ['ES', 'NQ'], ['GC', 'MGC'], ['CL', 'MCL'], ['MYM', 'M2K'],
+  ['ES', 'MES'], ['NQ', 'MNQ'],
+]
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -313,6 +319,14 @@ export function StrategyDetail() {
   const [showModal, setShowModal] = useState(false)
 
   const { data: strategy, isLoading } = useStrategy(strategyId ?? null)
+  const { data: runs } = useBacktestRuns(strategyId ? { strategy_id: strategyId } : undefined)
+
+  const completedInstruments = [...new Set(
+    (runs?.filter(r => r.status === 'complete') ?? []).map(r => r.instrument)
+  )]
+  const correlatedPairs = CORRELATED_PAIRS.filter(
+    ([a, b]) => completedInstruments.includes(a) && completedInstruments.includes(b)
+  )
 
   if (isLoading) {
     return (
@@ -403,6 +417,21 @@ export function StrategyDetail() {
           <SectionLabel>Runs for this strategy</SectionLabel>
           {strategyId && <StrategyRunsTable strategyId={strategyId} />}
         </div>
+
+        {/* Correlated instrument note */}
+        {correlatedPairs.length > 0 && (
+          <div className="rounded-lg border border-warn-text/30 bg-warn-muted p-4">
+            <p className="text-sm text-warn-text font-medium mb-1">Correlated instrument note</p>
+            {correlatedPairs.map(([a, b], i) => (
+              <p key={i} className="text-xs text-warn-text/80">
+                {a} and {b} are highly correlated. For independent confirmation, test on an uncorrelated instrument.
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Pre-Deployment Checklist */}
+        <PreDeploymentChecklist />
       </div>
 
       {showModal && (

@@ -2,18 +2,20 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
-  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw,
+  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRulesets } from '@/hooks/useLab'
+import { useStressTests, useRunStressTest } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
 import { C } from '@/themes/chart'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { OptimizeButton } from '@/components/OptimizeButton'
+import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -1215,6 +1217,76 @@ function ChartVerdict({ run }: { run: Run }) {
   )
 }
 
+// ── Run Stress Test Modal ─────────────────────────────────────────────────────
+
+function RunStressTestModal({ runId, onClose }: { runId: string; onClose: () => void }) {
+  const { data: rulesets } = useRulesets()
+  const runTest = useRunStressTest()
+  const [rulesetId, setRulesetId] = useState<string>('')
+  const [includeWF, setIncludeWF] = useState(false)
+  const [includeSens, setIncludeSens] = useState(false)
+
+  const estMin = (includeWF ? 50 : 0) + (includeSens ? 30 : 0)
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+        <h2 className="text-base font-semibold text-text-primary">Run Stress Test</h2>
+
+        <div className="space-y-1">
+          <label className="text-xs text-text-secondary">Evaluate against ruleset</label>
+          <select
+            value={rulesetId}
+            onChange={e => setRulesetId(e.target.value)}
+            className="w-full text-sm bg-bg-sunken border border-border-subtle rounded px-3 py-1.5 text-text-primary"
+          >
+            <option value="">None (Monte Carlo only)</option>
+            {rulesets?.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={includeWF} onChange={e => setIncludeWF(e.target.checked)} className="accent-accent" />
+            <span className="text-sm text-text-primary">Include walk-forward (runs 10 NT8 backtests, ~50 min)</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={includeSens} onChange={e => setIncludeSens(e.target.checked)} className="accent-accent" />
+            <span className="text-sm text-text-primary">Include sensitivity analysis (~30 min)</span>
+          </label>
+        </div>
+
+        {estMin > 0 && (
+          <div className="rounded border border-warn-text/30 bg-warn-muted p-3 text-xs text-warn-text">
+            This will run NT8 backtests sequentially. Estimated time: ~{estMin} min. NT8 must be idle.
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={() => {
+              runTest.mutate({
+                run_id: runId,
+                ruleset_id: rulesetId || undefined,
+                include_walk_forward: includeWF,
+                include_sensitivity: includeSens,
+                num_simulations: 10_000,
+                num_bootstrap: 1_000,
+                walk_forward_windows: 5,
+              }, { onSuccess: () => onClose() })
+            }}
+            disabled={runTest.isPending}
+            className="flex-1 py-1.5 text-sm bg-accent text-bg-base rounded font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            {runTest.isPending ? 'Starting…' : 'Run Stress Test'}
+          </button>
+          <button onClick={onClose} className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover">Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function BacktestDetail() {
@@ -1225,6 +1297,9 @@ export function BacktestDetail() {
   const stopBacktest             = useStopBacktest()
   const reloadCharts             = useReloadCharts()
   const retryBacktest            = useRetryBacktest()
+  const { data: stressTests }    = useStressTests(run?.run_id)
+  const latestStress             = stressTests?.[0]
+  const [showStressModal, setShowStressModal] = useState(false)
 
   const fallback = useMemo(
     () => computeFallbacks(run?.daily_pnl ?? []),
@@ -1287,8 +1362,19 @@ export function BacktestDetail() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <OptimizeButton run={run} />
+                {run?.status === 'complete' && (
+                  <button
+                    onClick={() => setShowStressModal(true)}
+                    className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                  >
+                    <Activity size={14} />
+                    Stress Test
+                    {latestStress?.grade && <RobustnessGradeBadge grade={latestStress.grade} size="sm" />}
+                  </button>
+                )}
                 {!isRunning && <StatusBadge status={run.status} />}
               </div>
+              {showStressModal && run && <RunStressTestModal runId={run.run_id} onClose={() => setShowStressModal(false)} />}
             </div>
           </div>
 

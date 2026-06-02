@@ -11,6 +11,7 @@ import { StrategyDetail } from '@/pages/StrategyDetail'
 import { SweepDetail } from '@/pages/SweepDetail'
 import { OptimizationDetail } from '@/pages/OptimizationDetail'
 import { StressTests } from '@/pages/StressTests'
+import StressTestDetail from '@/pages/StressTestDetail'
 import { Settings } from '@/pages/Settings'
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
               <Route path="/backtests/strategies/:strategyId"  element={<StrategyDetail />} />
               <Route path="/backtests/sweeps/:sweepId"         element={<SweepDetail />} />
               <Route path="/backtests/optimizations/:optimizationId" element={<OptimizationDetail />} />
+              <Route path="/backtests/stress-tests/:stressTestId" element={<StressTestDetail />} />
               <Route path="/stress-tests"             element={<StressTests />} />
               <Route path="/settings"                 element={<Settings />} />
             </Routes>

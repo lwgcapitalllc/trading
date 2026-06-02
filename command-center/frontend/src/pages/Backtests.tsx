@@ -1,16 +1,18 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, ChevronDown, Trash2, Layers, Sliders, ExternalLink } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, ChevronDown, Trash2, Layers, Sliders, ExternalLink, Activity } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useBacktestRuns, useStrategies, useFirms,
   useScanStrategies, useLabProgress, useDeleteRun,
   useOptimizations, useDeleteOptimization, useSweeps, useDeleteSweep,
 } from '@/hooks/useLab'
+import { useStressTests } from '@/hooks/useStressTests'
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { RulesetTypeBadge } from '@/components/RulesetTypeBadge'
+import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
 import type { BacktestSummary, Strategy, Ruleset, VerdictSummary, WorthinessScore } from '@/types'
@@ -167,10 +169,10 @@ function ConfirmDeleteModal({
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-type Tab = 'strategies' | 'runs' | 'sweeps' | 'optimizations' | 'rulesets'
+type Tab = 'strategies' | 'runs' | 'sweeps' | 'optimizations' | 'rulesets' | 'stress-tests'
 
 function TabBar({
-  active, onChange, runsCount, sweepsCount, optsCount,
+  active, onChange, runsCount, sweepsCount, optsCount, stressCount,
   runsActive, sweepsActive, optsActive,
 }: {
   active: Tab
@@ -178,6 +180,7 @@ function TabBar({
   runsCount?: number
   sweepsCount?: number
   optsCount?: number
+  stressCount?: number
   runsActive?: boolean
   sweepsActive?: boolean
   optsActive?: boolean
@@ -188,6 +191,7 @@ function TabBar({
     { id: 'sweeps',        label: 'Sweeps',         count: sweepsCount, active: sweepsActive },
     { id: 'optimizations', label: 'Optimizations', count: optsCount,   active: optsActive },
     { id: 'rulesets',      label: 'Rulesets' },
+    { id: 'stress-tests',  label: 'Stress Tests',  count: stressCount },
   ]
   return (
     <div className="flex gap-0 border-b border-border-subtle mb-6">
@@ -1247,6 +1251,67 @@ function OptimizationsTab() {
   )
 }
 
+// ── Stress Tests tab ──────────────────────────────────────────────────────────
+
+function StressTestsTab() {
+  const { data: tests, isLoading } = useStressTests()
+  const navigate = useNavigate()
+
+  if (isLoading) return <div className="p-6 text-text-secondary text-sm">Loading…</div>
+  if (!tests?.length) return (
+    <EmptyState icon={<Activity size={24} />} title="No stress tests yet" description="Run a stress test on any completed backtest to see results here." />
+  )
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border-subtle text-left">
+            <th className="pb-2 pr-4 text-text-tertiary font-medium">Grade</th>
+            <th className="pb-2 pr-4 text-text-tertiary font-medium">Strategy</th>
+            <th className="pb-2 pr-4 text-text-tertiary font-medium">Instrument</th>
+            <th className="pb-2 pr-4 text-text-tertiary font-medium">Status</th>
+            <th className="pb-2 pr-4 text-text-tertiary font-medium text-right">Prob Breach</th>
+            <th className="pb-2 pr-4 text-text-tertiary font-medium text-right">Prob Pass</th>
+            <th className="pb-2 text-text-tertiary font-medium text-right">Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tests.map(t => (
+            <tr
+              key={t.stress_test_id}
+              className="border-b border-border-subtle/50 hover:bg-bg-hover cursor-pointer"
+              onClick={() => navigate(`/backtests/stress-tests/${t.stress_test_id}`)}
+            >
+              <td className="py-2 pr-4">
+                {t.grade ? <RobustnessGradeBadge grade={t.grade} /> : <span className="text-text-tertiary text-xs">—</span>}
+              </td>
+              <td className="py-2 pr-4 text-text-primary">{t.strategy_name ?? t.strategy_id}</td>
+              <td className="py-2 pr-4 font-mono text-accent">{t.instrument}</td>
+              <td className="py-2 pr-4">
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  t.status === 'complete' ? 'bg-pos-muted text-pos-text' :
+                  t.status.startsWith('failed') ? 'bg-neg-muted text-neg-text' :
+                  'bg-warn-muted text-warn-text'
+                }`}>{t.status}</span>
+              </td>
+              <td className="py-2 pr-4 text-right font-mono text-text-secondary">
+                {t.prob_breach != null ? `${(t.prob_breach * 100).toFixed(1)}%` : '—'}
+              </td>
+              <td className="py-2 pr-4 text-right font-mono text-text-secondary">
+                {t.prob_pass_eval != null ? `${(t.prob_pass_eval * 100).toFixed(1)}%` : '—'}
+              </td>
+              <td className="py-2 text-right text-text-tertiary text-xs">
+                {new Date(t.created_at * 1000).toLocaleDateString()}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ── Page shell ────────────────────────────────────────────────────────────────
 
 export function Backtests() {
@@ -1255,12 +1320,14 @@ export function Backtests() {
   const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
 
   // Counts and active-job flags for tab labels
-  const { data: allRuns }   = useBacktestRuns()
-  const { data: allOpts }   = useOptimizations()
-  const { data: allSweeps } = useSweeps()
+  const { data: allRuns }     = useBacktestRuns()
+  const { data: allOpts }     = useOptimizations()
+  const { data: allSweeps }   = useSweeps()
+  const { data: allStress }   = useStressTests()
   const runsCount    = allRuns?.filter(r => !r.optimization_id && !r.sweep_id).length
   const optsCount    = allOpts?.length
   const sweepsCount  = allSweeps?.length
+  const stressCount  = allStress?.length
   const runsActive   = allRuns?.some(r => !r.optimization_id && !r.sweep_id && r.status === 'running')
   const sweepsActive = allSweeps?.some(s => s.status === 'running')
   const optsActive   = allOpts?.some(o => o.status === 'running')
@@ -1273,7 +1340,7 @@ export function Backtests() {
 
       <TabBar
         active={tab} onChange={setTab}
-        runsCount={runsCount} sweepsCount={sweepsCount} optsCount={optsCount}
+        runsCount={runsCount} sweepsCount={sweepsCount} optsCount={optsCount} stressCount={stressCount}
         runsActive={runsActive} sweepsActive={sweepsActive} optsActive={optsActive}
       />
 
@@ -1282,6 +1349,7 @@ export function Backtests() {
       {tab === 'sweeps'        && <SweepsTab />}
       {tab === 'optimizations' && <OptimizationsTab />}
       {tab === 'rulesets'      && <RulesetsTab />}
+      {tab === 'stress-tests'  && <StressTestsTab />}
     </div>
   )
 }

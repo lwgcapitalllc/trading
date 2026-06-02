@@ -618,3 +618,61 @@ class InstrumentResult(BaseModel):
 class InstrumentSummary(BaseModel):
     instrument_results: list[InstrumentResult]
     untested_instruments: list[str]
+
+
+# ── Stress Tests ──────────────────────────────────────────────────────────────
+
+class StressTestCreate(BaseModel):
+    run_id: str
+    ruleset_id: Optional[str] = None
+    include_walk_forward: bool = False
+    include_sensitivity: bool = False
+    num_simulations: int = 10_000
+    num_bootstrap: int = 1_000
+    walk_forward_windows: int = 5
+
+
+class WalkForwardWindow(BaseModel):
+    window: int
+    is_pnl: Optional[float] = None
+    oos_pnl: Optional[float] = None
+    is_sharpe: Optional[float] = None
+    oos_sharpe: Optional[float] = None
+
+
+class StressTest(BaseModel):
+    stress_test_id: str
+    run_id: str
+    ruleset_id: Optional[str] = None
+    status: str
+    created_at: int
+    completed_at: Optional[int] = None
+    num_simulations: int = 10_000
+    num_bootstrap: int = 1_000
+    median_final_pnl: Optional[float] = None
+    pct5_final_pnl: Optional[float] = None
+    pct1_final_pnl: Optional[float] = None
+    median_max_dd: Optional[float] = None
+    pct5_max_dd: Optional[float] = None
+    pct1_max_dd: Optional[float] = None
+    prob_breach: Optional[float] = None
+    prob_pass_eval: Optional[float] = None
+    walk_forward_windows: int = 5
+    walk_forward_summary: Optional[list[WalkForwardWindow]] = None
+    walk_forward_degradation: Optional[float] = None
+    sensitivity_summary: Optional[dict] = None
+    sensitivity_max_degradation: Optional[float] = None
+    grade: Optional[str] = None
+    grade_reasons: Optional[list[str]] = None
+    equity_paths_path: Optional[str] = None
+    distribution_path: Optional[str] = None
+    error_message: Optional[str] = None
+    # From JOIN
+    strategy_name: Optional[str] = None
+    strategy_id: Optional[str] = None
+    instrument: Optional[str] = None
+
+
+class StressTestDetail(StressTest):
+    equity_paths: Optional[list] = None
+    distribution: Optional[dict] = None
