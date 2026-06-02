@@ -35,9 +35,9 @@ export function StressTests() {
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Strategy</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Instrument</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Status</th>
-                <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium text-right">Prob Breach</th>
-                <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium text-right">Prob Pass</th>
-                <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium text-right">Created</th>
+                <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Prob Breach</th>
+                <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Prob Pass</th>
+                <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Created</th>
               </tr>
             </thead>
             <tbody>
@@ -62,13 +62,13 @@ export function StressTests() {
                                                         'bg-warn-muted text-warn-text'
                     }`}>{t.status}</span>
                   </td>
-                  <td className="py-2 pr-4 text-right font-mono text-text-secondary">
+                  <td className="py-2 pr-4 font-mono text-text-secondary">
                     {t.prob_breach != null ? `${(t.prob_breach * 100).toFixed(1)}%` : '—'}
                   </td>
-                  <td className="py-2 pr-4 text-right font-mono text-text-secondary">
+                  <td className="py-2 pr-4 font-mono text-text-secondary">
                     {t.prob_pass_eval != null ? `${(t.prob_pass_eval * 100).toFixed(1)}%` : '—'}
                   </td>
-                  <td className="py-2 pr-4 text-right text-text-tertiary text-xs">
+                  <td className="py-2 pr-4 text-text-tertiary text-xs">
                     {new Date(t.created_at * 1000).toLocaleDateString()}
                   </td>
                 </tr>
