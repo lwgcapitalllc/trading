@@ -3,8 +3,10 @@ import { Bot, Radar, BarChart2, ChevronRight, Loader2 } from 'lucide-react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import { useBacktestRuns, useStrategies, useOptimizations } from '@/hooks/useLab'
+import { useStressTests } from '@/hooks/useStressTests'
 import { StatCard } from '@/components/StatCard'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
+import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import type { BotStatus } from '@/types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -126,6 +128,7 @@ export function Overview() {
   const { data: backtestRuns } = useBacktestRuns()
   const { data: strategies } = useStrategies()
   const { data: optimizations } = useOptimizations()
+  const { data: stressTests } = useStressTests()
 
   const latestRun = runs?.[0] ?? null
   const totalStrategies = strategies?.length ?? 0
@@ -144,6 +147,16 @@ export function Overview() {
     .sort((a, b) => (b.profit_factor ?? 0) - (a.profit_factor ?? 0))[0] ?? null
 
   const tier1Count = standaloneRuns.filter(r => r.worthiness?.tier === 'TIER_1_STRESS_TEST').length
+
+  const GRADE_ORDER = ['A', 'B', 'C', 'D', 'F']
+  const completedTests = stressTests?.filter(s => s.grade != null) ?? []
+  const robustCount = completedTests.filter(s => s.grade === 'A' || s.grade === 'B').length
+  const bestGrade: 'A' | 'B' | 'C' | 'D' | 'F' | null = completedTests.length > 0
+    ? completedTests.reduce((best, s) =>
+        GRADE_ORDER.indexOf(s.grade!) < GRADE_ORDER.indexOf(best) ? s.grade! : best,
+        'F' as 'A' | 'B' | 'C' | 'D' | 'F')
+    : null
+  const runningStressTest = stressTests?.some(s => s.status === 'running' || s.status === 'running_wf' || s.status === 'running_sens') ?? false
 
   const runningBots  = snapshot?.bots.filter(b => b.status === 'RUNNING').length ?? 0
   const totalBots    = snapshot?.bots.length ?? 0
@@ -357,6 +370,14 @@ export function Overview() {
 
           <div className="px-[15px] py-[12px] space-y-[9px]">
 
+            {/* Running stress test banner */}
+            {runningStressTest && (
+              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-warn-muted border border-warn-text/20 text-[12px] text-warn-text mb-[4px]">
+                <Loader2 size={12} className="animate-spin flex-shrink-0" />
+                <span>Stress test running…</span>
+              </div>
+            )}
+
             {/* Running optimization banner */}
             {runningOpt && (
               <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent mb-[4px]">
@@ -381,6 +402,18 @@ export function Overview() {
               <span className="text-[12px] text-text-tertiary">Optimizations</span>
               <span className="text-[13px] font-mono text-text-primary">{totalOptimizations > 0 ? totalOptimizations : '—'}</span>
             </div>
+
+            {completedTests.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] text-text-tertiary">Stress tests</span>
+                <div className="flex items-center gap-2">
+                  {robustCount > 0 && (
+                    <span className="text-[11px] text-pos-text font-mono">{robustCount} robust</span>
+                  )}
+                  {bestGrade && <RobustnessGradeBadge grade={bestGrade} size="sm" />}
+                </div>
+              </div>
+            )}
 
             {tier1Count > 0 && (
               <div className="flex items-center justify-between">
