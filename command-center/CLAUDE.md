@@ -2,7 +2,7 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
-**Last reviewed:** 2026-06-01 (session 5 — M3 Step 1: Ruleset abstraction)
+**Last reviewed:** 2026-06-01 (session 5 — M3 complete: stress testing, grading, ruleset abstraction)
 
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
@@ -96,7 +96,7 @@ cd command-center
 | Backtests lab M4 — log terminal success color matches SmartMoney (cyan dot + "· complete" label when run finishes) | ✅ |
 | Backtests lab M4 — NT8 single-instance lock enforced in UI: all job triggers disabled with inline warning when NT8 is busy | ✅ |
 | Backtests lab M4 — Runs table: "Verdicts" column renamed "Challenge", shows firm name only; "Score" column shows worthiness tier (no duplication) | ✅ |
-| Stress Tests | 🔲 Stub |
+| Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap), walk-forward (N NT8 windows), sensitivity (±10%/±25% per param), A–F grade, auto-trigger on Tier 1 + optimizer winners |
 
 ---
 

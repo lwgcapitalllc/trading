@@ -59,7 +59,7 @@ def get_stress_test(stress_test_id: str):
 
 
 @router.post("/run", status_code=202)
-def trigger_stress_test(body: StressTestCreate):
+async def trigger_stress_test(body: StressTestCreate):
     run = lab_db.get_run(body.run_id)
     if not run:
         raise HTTPException(404, "Run not found")
