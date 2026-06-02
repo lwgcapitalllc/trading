@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-01 (session 5 — M3 Steps 2-6: stress testing, grading, frontend)
+**Last reviewed:** 2026-06-02 (session 7 — no backend changes; frontend StressTestDetail redesigned)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 

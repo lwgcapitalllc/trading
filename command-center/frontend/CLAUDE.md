@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-01 (session 6 — stress tests promoted to own sidebar page, tooltip fix, styling alignment)
+**Last reviewed:** 2026-06-02 (session 7 — StressTestDetail full redesign; StressTests list alignment fix)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -77,8 +77,8 @@ frontend/src/
     ├── StrategyDetail.tsx    strategy metadata + all runs + runner badge
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
     ├── OptimizationDetail.tsx  optimizer results — heatmap (2D) or top-10 table (3+D), best param callout, CSV export
-    ├── StressTests.tsx       legacy redirect (directs to Backtests?tab=stress-tests)
-    ├── StressTestDetail.tsx  stress test detail — grade, MC stats, fan chart, drawdown dist, walk-forward, sensitivity
+    ├── StressTests.tsx       stress test list — grade badge, strategy/instrument/status columns, prob breach/pass, created; all left-aligned
+    ├── StressTestDetail.tsx  stress test detail — grade column card (coloured strip + name + ruleset chip + reasons), source backtest card (links back to run via useBacktestRun), MetricCard MC stats with pos/neg colouring, InfoTip tooltips, prob bars, fan chart, drawdown dist, walk-forward, sensitivity
     └── Settings.tsx
 ```
 
@@ -290,7 +290,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Optimize Button | ✅ Live | Tier-aware button on BacktestDetail: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning with instrument routing |
 | Tier 3 Warning Modal | ✅ Live | Shows past results per instrument, offers sweep of untested instruments. `withContractMonth()` stamps root symbols with contract month from source run before submitting sweep. Now passes `source_run_id: run.run_id` on every sweep trigger. |
 | Runner Badge | ✅ Live | StrategyDetail shows "Runs on: NinjaTrader" badge |
-| Stress Tests | ✅ Live | Own sidebar page at `/stress-tests` (dedicated list, removed from Backtests tabs). StressTestDetail at `/stress-tests/:id`: grade badge + chip header, StatCard MC stats, color-coded ProbBars (breach red→yellow→green by severity), equity fan, drawdown dist, walk-forward, sensitivity. "Stress Test" button on BacktestDetail. Overview card shows best grade + robust count. |
+| Stress Tests | ✅ Live | Own sidebar page at `/stress-tests`. StressTestDetail: **grade column card** (coloured left strip A–F, name, gold ruleset chip, grade reasons inline); **source backtest card** below it (strategy name, instrument, date range, Net P&L, trades, "View Run →" → `/backtests/:run_id`); MetricCard with pos/neg coloured values + InfoTip hover tooltips on all stats; ProbBars color-coded by severity; equity fan, drawdown dist, walk-forward, sensitivity charts. "Stress Test" button on BacktestDetail. No COMPLETE status pill (implied). |
 | Settings | ✅ Live | Config read/write |
 
 ---
