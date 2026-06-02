@@ -31,9 +31,9 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
     if not strategy:
         raise HTTPException(404, f"Strategy '{req.strategy_id}' not found")
 
-    firm = lab_db.get_firm(req.firm_id)
-    if not firm:
-        raise HTTPException(404, f"Firm '{req.firm_id}' not found")
+    ruleset = lab_db.get_ruleset(req.ruleset_id)
+    if not ruleset:
+        raise HTTPException(404, f"Ruleset '{req.ruleset_id}' not found")
 
     if not req.param_grid:
         raise HTTPException(400, "param_grid cannot be empty")
@@ -56,7 +56,7 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         "end_date":           req.end_date,
         "commission_per_side": req.commission_per_side,
         "slippage_ticks":     req.slippage_ticks,
-        "firm_id":            req.firm_id,
+        "ruleset_id":         req.ruleset_id,
         "mode":               req.mode,
         "search_method":      method,
         "param_grid":         req.param_grid,
@@ -97,7 +97,7 @@ def get_optimization(optimization_id: str) -> OptimizationDetail:
         instrument=opt["instrument"],
         start_date=opt["start_date"],
         end_date=opt["end_date"],
-        firm_id=opt["firm_id"],
+        ruleset_id=opt["ruleset_id"],
         mode=opt["mode"],
         search_method=opt["search_method"],
         param_grid=opt["param_grid"],
@@ -159,7 +159,7 @@ def _row_to_opt_summary(row: dict) -> OptimizationSummary:
         instrument=row["instrument"],
         start_date=row["start_date"],
         end_date=row["end_date"],
-        firm_id=row["firm_id"],
+        ruleset_id=row["ruleset_id"],
         mode=row["mode"],
         search_method=row["search_method"],
         status=row["status"],

@@ -653,8 +653,8 @@ function EvalCard({ ev }: { ev: EvaluationDetail }) {
       {/* Header */}
       <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
         <div>
-          <div className="text-[13px] font-semibold text-text-primary leading-tight">{ev.firm_name}</div>
-          <div className="text-[11px] text-text-tertiary font-mono mt-1">{ev.firm_id}</div>
+          <div className="text-[13px] font-semibold text-text-primary leading-tight">{ev.ruleset_name}</div>
+          <div className="text-[11px] text-text-tertiary font-mono mt-1">{ev.ruleset_id}</div>
         </div>
         <span className={`inline-flex items-center gap-[5px] px-3 py-[5px] rounded-full text-[11px] font-bold uppercase tracking-[0.4px] flex-shrink-0 ${cfg.bg} ${cfg.text}`}>
           <Icon size={11} />
@@ -1280,7 +1280,7 @@ export function BacktestDetail() {
                   </span>
                   {run.evaluations.length > 0 && (
                     <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-tertiary font-mono">
-                      {run.evaluations.map(e => e.firm_id).join(', ')}
+                      {run.evaluations.map(e => e.ruleset_id).join(', ')}
                     </span>
                   )}
                 </div>
@@ -1348,7 +1348,7 @@ export function BacktestDetail() {
               if (!seenLimits.has(e.firm_max_loss_eod)) {
                 seenLimits.add(e.firm_max_loss_eod)
                 const same = run.evaluations.filter(x => x.firm_max_loss_eod === e.firm_max_loss_eod)
-                evalLimits.push({ limit: e.firm_max_loss_eod, label: e.firm_name, pass: same.every(x => x.drawdown_pass) })
+                evalLimits.push({ limit: e.firm_max_loss_eod, label: e.ruleset_name, pass: same.every(x => x.drawdown_pass) })
               }
             }
 

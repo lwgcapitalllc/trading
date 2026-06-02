@@ -1,5 +1,5 @@
 """
-Lab SQLite helper — strategies, firms, backtest_runs, evaluations.
+Lab SQLite helper — strategies, rulesets, backtest_runs, evaluations.
 Single entry point for all lab DB access. No other module touches lab.db.
 """
 
@@ -36,6 +36,12 @@ def _parse_json_fields(row: dict, fields: list[str]) -> dict:
 def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _connect() as conn:
+        # Rename firms→rulesets for existing DBs (idempotent — fails silently if done or N/A)
+        try:
+            conn.execute("ALTER TABLE firms RENAME TO rulesets")
+        except Exception:
+            pass
+
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS strategies (
                 id                   TEXT PRIMARY KEY,
@@ -50,7 +56,7 @@ def init_db() -> None:
                 source_hash          TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS firms (
+            CREATE TABLE IF NOT EXISTS rulesets (
                 id                  TEXT PRIMARY KEY,
                 name                TEXT NOT NULL,
                 account_size        INTEGER NOT NULL,
@@ -68,7 +74,15 @@ def init_db() -> None:
                 docs_url            TEXT,
                 notes               TEXT,
                 created_at          INTEGER NOT NULL,
-                updated_at          INTEGER NOT NULL
+                updated_at          INTEGER NOT NULL,
+                eval_cost_usd       INTEGER,
+                activation_fee_usd  INTEGER,
+                profit_split_pct    REAL,
+                ruleset_type        TEXT NOT NULL DEFAULT 'prop_eval',
+                daily_loss_cap      INTEGER,
+                weekly_loss_cap     INTEGER,
+                daily_profit_goal   INTEGER,
+                description         TEXT
             );
 
             CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -113,7 +127,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS evaluations (
                 eval_id               TEXT PRIMARY KEY,
                 run_id                TEXT NOT NULL REFERENCES backtest_runs(run_id),
-                firm_id               TEXT NOT NULL REFERENCES firms(id),
+                ruleset_id            TEXT NOT NULL REFERENCES rulesets(id),
                 verdict               TEXT NOT NULL,
                 drawdown_pass         INTEGER NOT NULL,
                 target_pass           INTEGER NOT NULL,
@@ -123,16 +137,17 @@ def init_db() -> None:
                 largest_day_share_pct REAL,
                 notes                 TEXT,
                 created_at            INTEGER NOT NULL,
-                UNIQUE(run_id, firm_id)
+                UNIQUE(run_id, ruleset_id)
             );
 
-            CREATE INDEX IF NOT EXISTS idx_evals_firm
-                ON evaluations(firm_id, verdict);
         """)
-        # Migrations — idempotent, wrapped in try/except for existing DBs
+
+        # Idempotent migrations — each wrapped in try/except
         for migration_sql in [
+            # Strategy migrations
             "ALTER TABLE strategies RENAME COLUMN default_instrument TO suggested_instrument",
             "ALTER TABLE strategies ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
+            # backtest_runs additions
             "ALTER TABLE backtest_runs ADD COLUMN worthiness_tier TEXT",
             "ALTER TABLE backtest_runs ADD COLUMN worthiness_reason TEXT",
             "ALTER TABLE backtest_runs ADD COLUMN worthiness_computed_against_firm TEXT",
@@ -141,12 +156,24 @@ def init_db() -> None:
             "ALTER TABLE backtest_runs ADD COLUMN evaluate_firms TEXT",
             "CREATE INDEX IF NOT EXISTS idx_runs_sweep ON backtest_runs(sweep_id)",
             "CREATE INDEX IF NOT EXISTS idx_runs_optimization ON backtest_runs(optimization_id)",
-            "ALTER TABLE optimizations ADD COLUMN source_run_id TEXT",
             "ALTER TABLE backtest_runs ADD COLUMN source_run_id TEXT",
             "CREATE INDEX IF NOT EXISTS idx_runs_source ON backtest_runs(source_run_id)",
-            "ALTER TABLE firms ADD COLUMN eval_cost_usd INTEGER",
-            "ALTER TABLE firms ADD COLUMN activation_fee_usd INTEGER",
-            "ALTER TABLE firms ADD COLUMN profit_split_pct REAL",
+            # rulesets new columns (existing DBs had them as firms)
+            "ALTER TABLE rulesets ADD COLUMN eval_cost_usd INTEGER",
+            "ALTER TABLE rulesets ADD COLUMN activation_fee_usd INTEGER",
+            "ALTER TABLE rulesets ADD COLUMN profit_split_pct REAL",
+            # M3 new columns on rulesets
+            "ALTER TABLE rulesets ADD COLUMN ruleset_type TEXT NOT NULL DEFAULT 'prop_eval'",
+            "ALTER TABLE rulesets ADD COLUMN daily_loss_cap INTEGER",
+            "ALTER TABLE rulesets ADD COLUMN weekly_loss_cap INTEGER",
+            "ALTER TABLE rulesets ADD COLUMN daily_profit_goal INTEGER",
+            "ALTER TABLE rulesets ADD COLUMN description TEXT",
+            # Backfill ruleset_type from account_tier
+            "UPDATE rulesets SET ruleset_type = 'prop_funded' WHERE account_tier = 'funded'",
+            "UPDATE rulesets SET daily_loss_cap = max_loss_eod WHERE daily_loss_cap IS NULL",
+            # Rename firm_id → ruleset_id in evaluations (M3)
+            "ALTER TABLE evaluations RENAME COLUMN firm_id TO ruleset_id",
+            "CREATE INDEX IF NOT EXISTS idx_evals_ruleset ON evaluations(ruleset_id, verdict)",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -162,7 +189,7 @@ def init_db() -> None:
                 end_date            TEXT NOT NULL,
                 commission_per_side REAL NOT NULL,
                 slippage_ticks      INTEGER NOT NULL,
-                firm_id             TEXT NOT NULL REFERENCES firms(id),
+                ruleset_id          TEXT NOT NULL REFERENCES rulesets(id),
                 mode                TEXT NOT NULL,
                 search_method       TEXT NOT NULL,
                 param_grid          TEXT NOT NULL,
@@ -170,6 +197,7 @@ def init_db() -> None:
                 estimated_runs      INTEGER NOT NULL,
                 completed_runs      INTEGER NOT NULL DEFAULT 0,
                 best_run_id         TEXT,
+                source_run_id       TEXT,
                 created_at          INTEGER NOT NULL,
                 completed_at        INTEGER
             );
@@ -178,104 +206,152 @@ def init_db() -> None:
                 ON optimizations(strategy_id, created_at DESC);
         """)
 
-        _seed_firms(conn)
+        # Optimizations column rename (existing DBs had firm_id)
+        for migration_sql in [
+            "ALTER TABLE optimizations RENAME COLUMN firm_id TO ruleset_id",
+            "ALTER TABLE optimizations ADD COLUMN source_run_id TEXT",
+        ]:
+            try:
+                conn.execute(migration_sql)
+            except Exception:
+                pass
+
+        _seed_rulesets(conn)
 
 
-def _seed_firms(conn: sqlite3.Connection) -> None:
-    if conn.execute("SELECT COUNT(*) FROM firms").fetchone()[0] > 0:
-        return
+def _seed_rulesets(conn: sqlite3.Connection) -> None:
     now = int(time.time())
     _INSTRUMENTS = ["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]
     _PLATFORMS = ["NinjaTrader", "Tradovate"]
-    seeds = [
-        {
-            "id": "lucidflex_50k_eval",
-            "name": "LucidFlex $50k Eval",
-            "account_size": 50000,
-            "profit_target": 3000,
-            "max_loss_eod": 2000,
-            "max_loss_intraday": None,
-            "drawdown_type": "eod",
-            "consistency_pct": 50.0,
-            "min_trading_days": 5,
-            "force_flat_time_et": "15:30",
-            "allowed_instruments": _INSTRUMENTS,
-            "max_contracts": {"mini_max": 4, "micro_max": 40},
-            "platform_support": _PLATFORMS,
-            "account_tier": "eval",
-            "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
-            "notes": "Verified from docs_url on 2026-05-29",
-        },
-        {
-            "id": "lucidflex_50k_funded",
-            "name": "LucidFlex $50k Funded",
-            "account_size": 50000,
-            "profit_target": 0,
-            "max_loss_eod": 2000,
-            "max_loss_intraday": None,
-            "drawdown_type": "eod",
-            "consistency_pct": None,
-            "min_trading_days": None,
-            "force_flat_time_et": "15:30",
-            "allowed_instruments": _INSTRUMENTS,
-            "max_contracts": {"mini_max": 4, "micro_max": 40},
-            "platform_support": _PLATFORMS,
-            "account_tier": "funded",
-            "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
-            "notes": "Verified from docs_url on 2026-05-29",
-        },
-        {
-            "id": "lucidflex_100k_eval",
-            "name": "LucidFlex $100k Eval",
-            "account_size": 100000,
-            "profit_target": 6000,
-            "max_loss_eod": 3000,
-            "max_loss_intraday": None,
-            "drawdown_type": "eod",
-            "consistency_pct": 50.0,
-            "min_trading_days": 5,
-            "force_flat_time_et": "15:30",
-            "allowed_instruments": _INSTRUMENTS,
-            "max_contracts": {"mini_max": 6, "micro_max": 60},
-            "platform_support": _PLATFORMS,
-            "account_tier": "eval",
-            "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
-            "notes": "Verified from docs_url on 2026-05-29",
-        },
-        {
-            "id": "lucidflex_100k_funded",
-            "name": "LucidFlex $100k Funded",
-            "account_size": 100000,
-            "profit_target": 0,
-            "max_loss_eod": 3000,
-            "max_loss_intraday": None,
-            "drawdown_type": "eod",
-            "consistency_pct": None,
-            "min_trading_days": None,
-            "force_flat_time_et": "15:30",
-            "allowed_instruments": _INSTRUMENTS,
-            "max_contracts": {"mini_max": 6, "micro_max": 60},
-            "platform_support": _PLATFORMS,
-            "account_tier": "funded",
-            "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
-            "notes": "Verified from docs_url on 2026-05-29",
-        },
-    ]
-    for f in seeds:
+
+    # Seed initial LucidFlex rows only on a fresh DB
+    if conn.execute("SELECT COUNT(*) FROM rulesets").fetchone()[0] == 0:
+        seeds = [
+            {
+                "id": "lucidflex_50k_eval",
+                "name": "LucidFlex $50k Eval",
+                "account_size": 50000,
+                "profit_target": 3000,
+                "max_loss_eod": 2000,
+                "max_loss_intraday": None,
+                "drawdown_type": "eod",
+                "consistency_pct": 50.0,
+                "min_trading_days": 5,
+                "force_flat_time_et": "15:30",
+                "allowed_instruments": _INSTRUMENTS,
+                "max_contracts": {"mini_max": 4, "micro_max": 40},
+                "platform_support": _PLATFORMS,
+                "account_tier": "eval",
+                "ruleset_type": "prop_eval",
+                "daily_loss_cap": 2000,
+                "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
+                "notes": "Verified from docs_url on 2026-05-29",
+            },
+            {
+                "id": "lucidflex_50k_funded",
+                "name": "LucidFlex $50k Funded",
+                "account_size": 50000,
+                "profit_target": 0,
+                "max_loss_eod": 2000,
+                "max_loss_intraday": None,
+                "drawdown_type": "eod",
+                "consistency_pct": None,
+                "min_trading_days": None,
+                "force_flat_time_et": "15:30",
+                "allowed_instruments": _INSTRUMENTS,
+                "max_contracts": {"mini_max": 4, "micro_max": 40},
+                "platform_support": _PLATFORMS,
+                "account_tier": "funded",
+                "ruleset_type": "prop_funded",
+                "daily_loss_cap": 2000,
+                "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
+                "notes": "Verified from docs_url on 2026-05-29",
+            },
+            {
+                "id": "lucidflex_100k_eval",
+                "name": "LucidFlex $100k Eval",
+                "account_size": 100000,
+                "profit_target": 6000,
+                "max_loss_eod": 3000,
+                "max_loss_intraday": None,
+                "drawdown_type": "eod",
+                "consistency_pct": 50.0,
+                "min_trading_days": 5,
+                "force_flat_time_et": "15:30",
+                "allowed_instruments": _INSTRUMENTS,
+                "max_contracts": {"mini_max": 6, "micro_max": 60},
+                "platform_support": _PLATFORMS,
+                "account_tier": "eval",
+                "ruleset_type": "prop_eval",
+                "daily_loss_cap": 3000,
+                "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
+                "notes": "Verified from docs_url on 2026-05-29",
+            },
+            {
+                "id": "lucidflex_100k_funded",
+                "name": "LucidFlex $100k Funded",
+                "account_size": 100000,
+                "profit_target": 0,
+                "max_loss_eod": 3000,
+                "max_loss_intraday": None,
+                "drawdown_type": "eod",
+                "consistency_pct": None,
+                "min_trading_days": None,
+                "force_flat_time_et": "15:30",
+                "allowed_instruments": _INSTRUMENTS,
+                "max_contracts": {"mini_max": 6, "micro_max": 60},
+                "platform_support": _PLATFORMS,
+                "account_tier": "funded",
+                "ruleset_type": "prop_funded",
+                "daily_loss_cap": 3000,
+                "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
+                "notes": "Verified from docs_url on 2026-05-29",
+            },
+        ]
+        for f in seeds:
+            conn.execute(
+                """INSERT INTO rulesets
+                   (id, name, account_size, profit_target, max_loss_eod, max_loss_intraday,
+                    drawdown_type, consistency_pct, min_trading_days, force_flat_time_et,
+                    allowed_instruments, max_contracts, platform_support,
+                    account_tier, ruleset_type, daily_loss_cap, docs_url, notes, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    f["id"], f["name"], f["account_size"], f["profit_target"],
+                    f["max_loss_eod"], f.get("max_loss_intraday"), f["drawdown_type"],
+                    f.get("consistency_pct"), f.get("min_trading_days"), f.get("force_flat_time_et"),
+                    json.dumps(f["allowed_instruments"]), json.dumps(f["max_contracts"]),
+                    json.dumps(f["platform_support"]),
+                    f["account_tier"], f.get("ruleset_type", "prop_eval"),
+                    f.get("daily_loss_cap"), f.get("docs_url"), f.get("notes"),
+                    now, now,
+                ),
+            )
+
+    # Always ensure the personal example exists (idempotent)
+    if not conn.execute(
+        "SELECT 1 FROM rulesets WHERE id=?", ("personal_futures_10k_example",)
+    ).fetchone():
         conn.execute(
-            """INSERT INTO firms
+            """INSERT INTO rulesets
                (id, name, account_size, profit_target, max_loss_eod, max_loss_intraday,
                 drawdown_type, consistency_pct, min_trading_days, force_flat_time_et,
                 allowed_instruments, max_contracts, platform_support,
-                account_tier, docs_url, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                account_tier, ruleset_type, daily_loss_cap, weekly_loss_cap,
+                daily_profit_goal, description, notes, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                f["id"], f["name"], f["account_size"], f["profit_target"],
-                f["max_loss_eod"], f["max_loss_intraday"], f["drawdown_type"],
-                f["consistency_pct"], f["min_trading_days"], f["force_flat_time_et"],
-                json.dumps(f["allowed_instruments"]), json.dumps(f["max_contracts"]),
-                json.dumps(f["platform_support"]),
-                f["account_tier"], f.get("docs_url"), f.get("notes"),
+                "personal_futures_10k_example",
+                "Personal $10k Futures (Example)",
+                10000, 0, 200, None,
+                "static", None, None, "15:50",
+                json.dumps(["MES", "MNQ", "MGC", "MCL"]),
+                json.dumps({"any": 2}),
+                json.dumps(["NinjaTrader", "Tradovate"]),
+                "live", "personal",
+                200, 700, 150,
+                "Example template — adjust limits to match your real capital and risk tolerance.",
+                "Seed example for the personal ruleset type. Edit or delete as needed.",
                 now, now,
             ),
         )
@@ -351,36 +427,42 @@ def delete_strategy(strategy_id: str) -> bool:
     return cur.rowcount > 0
 
 
-# ── Firms ─────────────────────────────────────────────────────────────────────
+# ── Rulesets ──────────────────────────────────────────────────────────────────
 
-_FIRM_JSON_FIELDS = ["allowed_instruments", "max_contracts", "platform_support"]
+_RULESET_JSON_FIELDS = ["allowed_instruments", "max_contracts", "platform_support"]
 
 
-def list_firms() -> list[dict]:
+def list_rulesets() -> list[dict]:
     with _connect() as conn:
-        rows = conn.execute("SELECT * FROM firms ORDER BY account_size").fetchall()
-    return [_parse_json_fields(dict(r), _FIRM_JSON_FIELDS) for r in rows]
+        rows = conn.execute("SELECT * FROM rulesets ORDER BY account_size").fetchall()
+    return [_parse_json_fields(dict(r), _RULESET_JSON_FIELDS) for r in rows]
 
 
-def get_firm(firm_id: str) -> Optional[dict]:
+def get_ruleset(ruleset_id: str) -> Optional[dict]:
     with _connect() as conn:
-        row = conn.execute("SELECT * FROM firms WHERE id = ?", (firm_id,)).fetchone()
+        row = conn.execute("SELECT * FROM rulesets WHERE id = ?", (ruleset_id,)).fetchone()
     if not row:
         return None
-    return _parse_json_fields(dict(row), _FIRM_JSON_FIELDS)
+    return _parse_json_fields(dict(row), _RULESET_JSON_FIELDS)
 
 
-def insert_firm(data: dict) -> None:
+# Keep old name as alias for any callers not yet updated (will remove post-M3)
+def get_firm(firm_id: str) -> Optional[dict]:
+    return get_ruleset(firm_id)
+
+
+def insert_ruleset(data: dict) -> None:
     now = int(time.time())
     with _connect() as conn:
         conn.execute(
-            """INSERT INTO firms
+            """INSERT INTO rulesets
                (id, name, account_size, profit_target, max_loss_eod, max_loss_intraday,
                 drawdown_type, consistency_pct, min_trading_days, force_flat_time_et,
                 allowed_instruments, max_contracts, platform_support,
-                account_tier, docs_url, eval_cost_usd, activation_fee_usd,
-                profit_split_pct, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                account_tier, ruleset_type, daily_loss_cap, weekly_loss_cap,
+                daily_profit_goal, description, docs_url, eval_cost_usd,
+                activation_fee_usd, profit_split_pct, notes, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"], data["name"], data["account_size"], data["profit_target"],
                 data["max_loss_eod"], data.get("max_loss_intraday"), data["drawdown_type"],
@@ -389,24 +471,29 @@ def insert_firm(data: dict) -> None:
                 json.dumps(data.get("allowed_instruments", [])),
                 json.dumps(data.get("max_contracts", {})),
                 json.dumps(data.get("platform_support", [])),
-                data.get("account_tier", "eval"), data.get("docs_url"),
-                data.get("eval_cost_usd"), data.get("activation_fee_usd"),
-                data.get("profit_split_pct"), data.get("notes"),
-                now, now,
+                data.get("account_tier", "eval"),
+                data.get("ruleset_type", "prop_eval"),
+                data.get("daily_loss_cap"), data.get("weekly_loss_cap"),
+                data.get("daily_profit_goal"), data.get("description"),
+                data.get("docs_url"), data.get("eval_cost_usd"),
+                data.get("activation_fee_usd"), data.get("profit_split_pct"),
+                data.get("notes"), now, now,
             ),
         )
 
 
-def update_firm(firm_id: str, data: dict) -> bool:
+def update_ruleset(ruleset_id: str, data: dict) -> bool:
     now = int(time.time())
     with _connect() as conn:
         cur = conn.execute(
-            """UPDATE firms SET
+            """UPDATE rulesets SET
                name=?, account_size=?, profit_target=?, max_loss_eod=?,
                max_loss_intraday=?, drawdown_type=?, consistency_pct=?,
                min_trading_days=?, force_flat_time_et=?, allowed_instruments=?,
                max_contracts=?, platform_support=?, account_tier=?,
-               docs_url=?, eval_cost_usd=?, activation_fee_usd=?,
+               ruleset_type=?, daily_loss_cap=?, weekly_loss_cap=?,
+               daily_profit_goal=?, description=?, docs_url=?,
+               eval_cost_usd=?, activation_fee_usd=?,
                profit_split_pct=?, notes=?, updated_at=?
                WHERE id=?""",
             (
@@ -417,18 +504,21 @@ def update_firm(firm_id: str, data: dict) -> bool:
                 json.dumps(data.get("allowed_instruments", [])),
                 json.dumps(data.get("max_contracts", {})),
                 json.dumps(data.get("platform_support", [])),
-                data.get("account_tier", "eval"), data.get("docs_url"),
-                data.get("eval_cost_usd"), data.get("activation_fee_usd"),
-                data.get("profit_split_pct"), data.get("notes"),
-                now, firm_id,
+                data.get("account_tier", "eval"),
+                data.get("ruleset_type", "prop_eval"),
+                data.get("daily_loss_cap"), data.get("weekly_loss_cap"),
+                data.get("daily_profit_goal"), data.get("description"),
+                data.get("docs_url"), data.get("eval_cost_usd"),
+                data.get("activation_fee_usd"), data.get("profit_split_pct"),
+                data.get("notes"), now, ruleset_id,
             ),
         )
     return cur.rowcount > 0
 
 
-def delete_firm(firm_id: str) -> bool:
+def delete_ruleset(ruleset_id: str) -> bool:
     with _connect() as conn:
-        cur = conn.execute("DELETE FROM firms WHERE id = ?", (firm_id,))
+        cur = conn.execute("DELETE FROM rulesets WHERE id = ?", (ruleset_id,))
     return cur.rowcount > 0
 
 
@@ -436,20 +526,20 @@ def delete_firm(firm_id: str) -> bool:
 
 def list_runs(
     strategy_id: Optional[str] = None,
-    firm_id: Optional[str] = None,
+    ruleset_id: Optional[str] = None,
     status: Optional[str] = None,
 ) -> list[dict]:
     base_clauses: list[str] = []
     params: list[Any] = []
 
-    if firm_id:
+    if ruleset_id:
         sql = """
             SELECT r.*, s.name AS strategy_name
             FROM backtest_runs r
             JOIN strategies s ON s.id = r.strategy_id
-            JOIN evaluations e ON e.run_id = r.run_id AND e.firm_id = ?
+            JOIN evaluations e ON e.run_id = r.run_id AND e.ruleset_id = ?
         """
-        params.append(firm_id)
+        params.append(ruleset_id)
     else:
         sql = """
             SELECT r.*, s.name AS strategy_name
@@ -502,7 +592,7 @@ def insert_run(data: dict) -> None:
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
             data["status"], data["created_at"],
-            json.dumps(data.get("evaluate_firms") or []),
+            json.dumps(data.get("evaluate_rulesets") or data.get("evaluate_firms") or []),
         ))
 
 
@@ -610,7 +700,7 @@ def delete_optimization(optimization_id: str) -> bool:
 def get_run_verdict_summary(run_id: str) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT firm_id, verdict, notes FROM evaluations WHERE run_id = ?", (run_id,)
+            "SELECT ruleset_id, verdict, notes FROM evaluations WHERE run_id = ?", (run_id,)
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -621,12 +711,12 @@ def get_evaluations(run_id: str) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute("""
             SELECT e.*,
-                   f.name             AS firm_name,
-                   f.max_loss_eod     AS firm_max_loss_eod,
-                   f.profit_target    AS firm_profit_target,
-                   f.consistency_pct  AS firm_consistency_pct
+                   rs.name            AS ruleset_name,
+                   rs.max_loss_eod    AS firm_max_loss_eod,
+                   rs.profit_target   AS firm_profit_target,
+                   rs.consistency_pct AS firm_consistency_pct
             FROM evaluations e
-            JOIN firms f ON f.id = e.firm_id
+            JOIN rulesets rs ON rs.id = e.ruleset_id
             WHERE e.run_id = ?
         """, (run_id,)).fetchall()
     return [dict(r) for r in rows]
@@ -637,12 +727,12 @@ def insert_evaluation(data: dict) -> None:
     with _connect() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO evaluations
-                (eval_id, run_id, firm_id, verdict, drawdown_pass, target_pass,
+                (eval_id, run_id, ruleset_id, verdict, drawdown_pass, target_pass,
                  consistency_pass, simulated_eval_days, breach_count,
                  largest_day_share_pct, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            data["eval_id"], data["run_id"], data["firm_id"],
+            data["eval_id"], data["run_id"], data["ruleset_id"],
             data["verdict"],
             int(data["drawdown_pass"]), int(data["target_pass"]),
             int(data["consistency_pass"]) if data.get("consistency_pass") is not None else None,
@@ -652,13 +742,13 @@ def insert_evaluation(data: dict) -> None:
         ))
 
 
-def update_run_worthiness(run_id: str, tier: str, reason: Optional[str], firm_id: str) -> None:
+def update_run_worthiness(run_id: str, tier: str, reason: Optional[str], ruleset_id: str) -> None:
     with _connect() as conn:
         conn.execute(
             """UPDATE backtest_runs
                SET worthiness_tier=?, worthiness_reason=?, worthiness_computed_against_firm=?
                WHERE run_id=?""",
-            (tier, reason, firm_id, run_id),
+            (tier, reason, ruleset_id, run_id),
         )
 
 
@@ -712,10 +802,10 @@ def list_sweeps(strategy_id: Optional[str] = None) -> list[dict]:
                     WHEN 3 THEN 'TIER_3_DISCARD'
                     ELSE NULL
                 END AS best_worthiness,
-                (SELECT GROUP_CONCAT(DISTINCT e.firm_id)
+                (SELECT GROUP_CONCAT(DISTINCT e.ruleset_id)
                  FROM evaluations e
                  JOIN backtest_runs br2 ON br2.run_id = e.run_id
-                 WHERE br2.sweep_id = r.sweep_id) AS firm_ids_csv
+                 WHERE br2.sweep_id = r.sweep_id) AS ruleset_ids_csv
             FROM backtest_runs r
             LEFT JOIN strategies s ON s.id = r.strategy_id
             {where}
@@ -725,7 +815,7 @@ def list_sweeps(strategy_id: Optional[str] = None) -> list[dict]:
     result = []
     for r in rows:
         d = dict(r)
-        d['firm_ids'] = [f for f in (d.pop('firm_ids_csv') or '').split(',') if f]
+        d['ruleset_ids'] = [f for f in (d.pop('ruleset_ids_csv') or '').split(',') if f]
         result.append(d)
     return result
 
@@ -751,13 +841,12 @@ def delete_sweep(sweep_id: str) -> tuple[bool, list[str]]:
             conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({placeholders})", child_ids)
             cur = conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({placeholders})", child_ids)
         else:
-            cur = conn.execute("SELECT 1 WHERE 0")  # nothing to delete — treat as not found
+            cur = conn.execute("SELECT 1 WHERE 0")
     return len(child_ids) > 0, child_ids
 
 
 def has_any_running_vps_job() -> bool:
-    """True if any sweep run, optimization run, or standalone backtest is currently running.
-    Used as a global NT8 SA window lock — only one job type may use it at a time."""
+    """True if any sweep run, optimization run, or standalone backtest is currently running."""
     with _connect() as conn:
         run_count = conn.execute(
             "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running'",
@@ -771,7 +860,6 @@ def has_any_running_vps_job() -> bool:
 def get_running_job() -> Optional[dict]:
     """Returns metadata about the currently running VPS job, or None if idle."""
     with _connect() as conn:
-        # Standalone backtest (no sweep, no optimization parent)
         row = conn.execute("""
             SELECT 'backtest' AS job_type, r.run_id AS job_id,
                    COALESCE(s.name, r.strategy_id) || ' on ' || r.instrument AS description
@@ -783,7 +871,6 @@ def get_running_job() -> Optional[dict]:
         if row:
             return dict(row)
 
-        # Sweep (any child run still running)
         row = conn.execute("""
             SELECT 'sweep' AS job_type, r.sweep_id AS job_id,
                    COALESCE(s.name, r.strategy_id) || ' sweep' AS description
@@ -795,7 +882,6 @@ def get_running_job() -> Optional[dict]:
         if row:
             return dict(row)
 
-        # Optimization
         row = conn.execute("""
             SELECT 'optimization' AS job_type, o.optimization_id AS job_id,
                    COALESCE(s.name, o.strategy_id) || ' optimization on ' || o.instrument
@@ -837,7 +923,7 @@ def insert_optimization(data: dict) -> None:
         conn.execute("""
             INSERT INTO optimizations
                 (optimization_id, strategy_id, instrument, start_date, end_date,
-                 commission_per_side, slippage_ticks, firm_id, mode, search_method,
+                 commission_per_side, slippage_ticks, ruleset_id, mode, search_method,
                  param_grid, status, estimated_runs, completed_runs, created_at,
                  source_run_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
@@ -845,7 +931,7 @@ def insert_optimization(data: dict) -> None:
             data["optimization_id"], data["strategy_id"], data["instrument"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
-            data["firm_id"], data["mode"], data["search_method"],
+            data["ruleset_id"], data["mode"], data["search_method"],
             json.dumps(data["param_grid"]), data["status"], data["estimated_runs"],
             now, data.get("source_run_id"),
         ))

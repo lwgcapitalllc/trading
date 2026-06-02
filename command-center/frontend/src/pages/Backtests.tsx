@@ -10,9 +10,10 @@ import {
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
+import { RulesetTypeBadge } from '@/components/RulesetTypeBadge'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
-import type { BacktestSummary, Strategy, Firm, VerdictSummary, WorthinessScore } from '@/types'
+import type { BacktestSummary, Strategy, Ruleset, VerdictSummary, WorthinessScore } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -94,11 +95,11 @@ function ChallengePills({ verdicts }: { verdicts: VerdictSummary[] }) {
     <div className="flex gap-[4px] items-center flex-wrap">
       {visible.map(v => (
         <span
-          key={v.firm_id}
-          title={v.firm_id}
-          className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold font-mono ${challengeCls(v.firm_id)}`}
+          key={v.ruleset_id}
+          title={v.ruleset_id}
+          className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold font-mono ${challengeCls(v.ruleset_id)}`}
         >
-          {firmShortName(v.firm_id)}
+          {firmShortName(v.ruleset_id)}
         </span>
       ))}
       {overflow > 0 && (
@@ -166,7 +167,7 @@ function ConfirmDeleteModal({
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-type Tab = 'strategies' | 'runs' | 'sweeps' | 'optimizations' | 'firms'
+type Tab = 'strategies' | 'runs' | 'sweeps' | 'optimizations' | 'rulesets'
 
 function TabBar({
   active, onChange, runsCount, sweepsCount, optsCount,
@@ -186,7 +187,7 @@ function TabBar({
     { id: 'runs',          label: 'Runs',          count: runsCount,   active: runsActive },
     { id: 'sweeps',        label: 'Sweeps',         count: sweepsCount, active: sweepsActive },
     { id: 'optimizations', label: 'Optimizations', count: optsCount,   active: optsActive },
-    { id: 'firms',         label: 'Firms' },
+    { id: 'rulesets',      label: 'Rulesets' },
   ]
   return (
     <div className="flex gap-0 border-b border-border-subtle mb-6">
@@ -818,9 +819,7 @@ function StrategiesSkeleton() {
   )
 }
 
-// ── Firms tab ─────────────────────────────────────────────────────────────────
-
-type FirmSubTab = 'eval' | 'funded'
+// ── Rulesets tab ──────────────────────────────────────────────────────────────
 
 const FIRM_BRAND_NAMES: Record<string, string> = {
   lucidflex:   'LucidFlex',
@@ -834,123 +833,127 @@ function firmBrand(firmId: string): string {
   return FIRM_BRAND_NAMES[prefix] ?? (prefix.charAt(0).toUpperCase() + prefix.slice(1))
 }
 
-function FirmsTab() {
-  const { data: firms, isLoading } = useFirms()
-  const [subTab,      setSubTab]      = useState<FirmSubTab>('eval')
+function RulesetsTab() {
+  const { data: rulesets, isLoading } = useFirms()
   const [brandFilter, setBrandFilter] = useState<string | null>(null)
 
   if (isLoading) return <FirmsSkeleton />
-  if (!firms?.length) return (
+  if (!rulesets?.length) return (
     <EmptyState
       icon={<Play size={20} />}
-      title="No firms configured"
-      description="Firm profiles are seeded automatically from bot.json on backend startup."
+      title="No rulesets configured"
+      description="Rulesets are seeded automatically on backend startup."
     />
   )
 
-  const byTier  = firms.filter(f => f.account_tier === subTab)
-  const brands  = [...new Set(byTier.map(f => firmBrand(f.id)))]
-  const isEval  = subTab === 'eval'
-  // When a brand is selected show only that brand; otherwise show all brands as separate tables
+  const propRulesets = rulesets.filter(r => r.ruleset_type === 'prop_eval' || r.ruleset_type === 'prop_funded')
+  const otherRulesets = rulesets.filter(r => r.ruleset_type !== 'prop_eval' && r.ruleset_type !== 'prop_funded')
+
+  const brands = [...new Set(propRulesets.map(r => firmBrand(r.id)))]
   const visible = brandFilter ? [brandFilter] : brands
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        {/* Tier sub-tabs */}
-        <div className="flex items-center gap-1">
-          {(['eval', 'funded'] as FirmSubTab[]).map(t => (
-            <button
-              key={t}
-              onClick={() => { setSubTab(t); setBrandFilter(null) }}
-              className={`px-3 py-[5px] rounded-md text-[12px] font-medium transition-colors ${
-                subTab === t
-                  ? t === 'eval' ? 'bg-warn-muted text-warn-text' : 'bg-pos-muted text-pos-text'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
-              }`}
-            >
-              {t === 'eval' ? 'Evaluation' : 'Funded'}
-              <span className="ml-1.5 text-[10px] opacity-60">
-                {firms.filter(f => f.account_tier === t).length}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* Brand filter chips — only shown when there are multiple brands */}
-        {brands.length > 1 && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setBrandFilter(null)}
-              className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${
-                brandFilter === null
-                  ? 'bg-accent/15 text-accent'
-                  : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'
-              }`}
-            >
-              All
-            </button>
-            {brands.map(b => (
-              <button
-                key={b}
-                onClick={() => setBrandFilter(brandFilter === b ? null : b)}
-                className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${
-                  brandFilter === b
-                    ? 'bg-accent/15 text-accent'
-                    : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'
-                }`}
-              >
-                {b}
-              </button>
-            ))}
+    <div className="space-y-6">
+      {/* Prop firm rulesets */}
+      {propRulesets.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wide">Prop Firm Challenges</span>
+            {brands.length > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setBrandFilter(null)}
+                  className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${
+                    brandFilter === null ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'
+                  }`}
+                >
+                  All
+                </button>
+                {brands.map(b => (
+                  <button
+                    key={b}
+                    onClick={() => setBrandFilter(brandFilter === b ? null : b)}
+                    className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${
+                      brandFilter === b ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'
+                    }`}
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-
-      <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="border-b border-border-subtle">
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Challenge</th>
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
-              {isEval && <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>}
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD (EOD)</th>
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Drawdown Type</th>
-              {isEval && <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>}
+          <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-border-subtle">
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Ruleset</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Type</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD (EOD)</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>
             </tr>
           </thead>
           <tbody>
-            {visible.map((brand, bi) => {
-              const brandFirms = byTier.filter(f => firmBrand(f.id) === brand)
-              return (
-                <>
-                  <tr key={`hdr-${brand}`} className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-accent/5 border-l-2 border-l-accent`}>
-                    <td colSpan={isEval ? 6 : 4} className="px-4 py-2">
-                      <span className="text-[12px] font-semibold text-accent uppercase tracking-[0.4px]">{brand}</span>
-                    </td>
-                  </tr>
-                  {brandFirms.map(firm => (
-                    <FirmRow key={firm.id} firm={firm} showEvalCols={isEval} />
-                  ))}
-                </>
-              )
-            })}
+            {visible.map((brand, bi) => (
+              <>
+                <tr key={`hdr-${brand}`} className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-accent/5 border-l-2 border-l-accent`}>
+                  <td colSpan={6} className="px-4 py-2">
+                    <span className="text-[12px] font-semibold text-accent uppercase tracking-[0.4px]">{brand}</span>
+                  </td>
+                </tr>
+                {propRulesets.filter(r => firmBrand(r.id) === brand).map(r => (
+                  <RulesetRow key={r.id} ruleset={r} />
+                ))}
+              </>
+            ))}
           </tbody>
         </table>
       </div>
     </div>
+  )}
+
+  {/* Personal & demo rulesets */}
+  {otherRulesets.length > 0 && (
+    <div>
+      <div className="mb-3">
+        <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wide">Personal & Demo Accounts</span>
+      </div>
+      <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="border-b border-border-subtle">
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Ruleset</th>
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Type</th>
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Daily Cap</th>
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Weekly Cap</th>
+              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Daily Goal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {otherRulesets.map(r => (
+              <RulesetRow key={r.id} ruleset={r} personal />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )}
+    </div>
   )
 }
 
-function FirmRow({ firm, showEvalCols }: { firm: Firm; showEvalCols: boolean }) {
+function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?: boolean }) {
   return (
     <tr className="hover:bg-bg-hover transition-colors">
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
-          <span className="font-medium">{firm.name}</span>
-          {firm.docs_url && (
+          <span className="font-medium">{ruleset.name}</span>
+          {ruleset.docs_url && (
             <a
-              href={firm.docs_url}
+              href={ruleset.docs_url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
@@ -961,22 +964,36 @@ function FirmRow({ firm, showEvalCols }: { firm: Firm; showEvalCols: boolean }) 
             </a>
           )}
         </div>
-        <div className="text-[11px] text-text-tertiary font-mono">{firm.id}</div>
+        <div className="text-[11px] text-text-tertiary font-mono">{ruleset.id}</div>
       </td>
-      <td className="px-4 py-3 font-mono tabular-nums">${firm.account_size.toLocaleString()}</td>
-      {showEvalCols && (
-        <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
-          {firm.profit_target > 0 ? `$${firm.profit_target.toLocaleString()}` : <span className="text-text-tertiary">—</span>}
-        </td>
-      )}
-      <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
-        ${firm.max_loss_eod.toLocaleString()}
+      <td className="px-4 py-3">
+        <RulesetTypeBadge ruleset_type={ruleset.ruleset_type} size="sm" />
       </td>
-      <td className="px-4 py-3 text-text-secondary capitalize">{firm.drawdown_type.replace(/_/g, ' ')}</td>
-      {showEvalCols && (
-        <td className="px-4 py-3 text-text-secondary">
-          {firm.consistency_pct != null ? `≤ ${firm.consistency_pct}%` : <span className="text-text-tertiary">—</span>}
-        </td>
+      <td className="px-4 py-3 font-mono tabular-nums">${ruleset.account_size.toLocaleString()}</td>
+      {!personal ? (
+        <>
+          <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
+            {ruleset.profit_target > 0 ? `$${ruleset.profit_target.toLocaleString()}` : <span className="text-text-tertiary">—</span>}
+          </td>
+          <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
+            ${ruleset.max_loss_eod.toLocaleString()}
+          </td>
+          <td className="px-4 py-3 text-text-secondary">
+            {ruleset.consistency_pct != null ? `≤ ${ruleset.consistency_pct}%` : <span className="text-text-tertiary">—</span>}
+          </td>
+        </>
+      ) : (
+        <>
+          <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
+            {ruleset.daily_loss_cap != null ? `$${ruleset.daily_loss_cap.toLocaleString()}` : <span className="text-text-tertiary">—</span>}
+          </td>
+          <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
+            {ruleset.weekly_loss_cap != null ? `$${ruleset.weekly_loss_cap.toLocaleString()}` : <span className="text-text-tertiary">—</span>}
+          </td>
+          <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
+            {ruleset.daily_profit_goal != null ? `$${ruleset.daily_profit_goal.toLocaleString()}` : <span className="text-text-tertiary">—</span>}
+          </td>
+        </>
       )}
     </tr>
   )
@@ -1074,15 +1091,15 @@ function SweepsTab() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-[4px] items-center flex-wrap">
-                        {sw.firm_ids.slice(0, 2).map(f => (
+                        {sw.ruleset_ids.slice(0, 2).map(f => (
                           <span key={f} className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold font-mono ${challengeCls(f)}`}>
                             {firmShortName(f)}
                           </span>
                         ))}
-                        {sw.firm_ids.length > 2 && (
-                          <span className="text-[10px] text-text-tertiary">+{sw.firm_ids.length - 2}</span>
+                        {sw.ruleset_ids.length > 2 && (
+                          <span className="text-[10px] text-text-tertiary">+{sw.ruleset_ids.length - 2}</span>
                         )}
-                        {sw.firm_ids.length === 0 && (
+                        {sw.ruleset_ids.length === 0 && (
                           <span className="text-text-tertiary text-[11px]">—</span>
                         )}
                       </div>
@@ -1182,7 +1199,7 @@ function OptimizationsTab() {
                   >
                     <td className="px-4 py-3 font-medium">{opt.strategy_id}</td>
                     <td className="px-4 py-3 font-mono text-text-secondary">{opt.instrument}</td>
-                    <td className="px-4 py-3 text-text-secondary text-[12px]">{opt.firm_id}</td>
+                    <td className="px-4 py-3 text-text-secondary text-[12px]">{opt.ruleset_id}</td>
                     <td className="px-4 py-3 capitalize text-text-secondary">{opt.mode}</td>
                     <td className="px-4 py-3 capitalize text-text-secondary">{opt.search_method}</td>
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
@@ -1264,7 +1281,7 @@ export function Backtests() {
       {tab === 'runs'          && <RunsTab />}
       {tab === 'sweeps'        && <SweepsTab />}
       {tab === 'optimizations' && <OptimizationsTab />}
-      {tab === 'firms'         && <FirmsTab />}
+      {tab === 'rulesets'      && <RulesetsTab />}
     </div>
   )
 }

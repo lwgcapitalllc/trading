@@ -258,9 +258,9 @@ export interface ScanResult {
   skipped: number
 }
 
-// ── Lab — Firms ───────────────────────────────────────────────────────────────
+// ── Lab — Rulesets ────────────────────────────────────────────────────────────
 
-export interface Firm {
+export interface Ruleset {
   id: string
   name: string
   account_size: number
@@ -274,12 +274,24 @@ export interface Firm {
   allowed_instruments: string[]
   max_contracts: Record<string, unknown>
   platform_support: string[]
-  account_tier: 'eval' | 'funded'
+  account_tier: string
+  ruleset_type: 'prop_eval' | 'prop_funded' | 'personal' | 'demo'
+  daily_loss_cap: number | null
+  weekly_loss_cap: number | null
+  daily_profit_goal: number | null
+  description: string | null
   docs_url: string | null
+  eval_cost_usd: number | null
+  activation_fee_usd: number | null
+  profit_split_pct: number | null
   notes: string | null
 }
 
-export type FirmCreate = Firm
+export type RulesetCreate = Ruleset
+
+// Backward-compat aliases — M3 only
+export type Firm = Ruleset
+export type FirmCreate = Ruleset
 
 // ── Lab — Backtest Runs ───────────────────────────────────────────────────────
 
@@ -293,11 +305,11 @@ export interface BacktestRunRequest {
   end_date: string
   commission_per_side?: number
   slippage_ticks?: number
-  evaluate_firms: string[]
+  evaluate_rulesets: string[]
 }
 
 export interface VerdictSummary {
-  firm_id: string
+  ruleset_id: string
   verdict: 'PASS' | 'WARN' | 'DISCARD'
   notes: string | null
 }
@@ -334,8 +346,8 @@ export interface BacktestSummary {
 
 export interface EvaluationDetail {
   eval_id: string
-  firm_id: string
-  firm_name: string
+  ruleset_id: string
+  ruleset_name: string
   verdict: 'PASS' | 'WARN' | 'DISCARD'
   drawdown_pass: boolean
   target_pass: boolean
@@ -461,7 +473,7 @@ export interface SweepRequest {
   end_date: string
   commission_per_side?: number
   slippage_ticks?: number
-  firm_ids: string[]
+  ruleset_ids: string[]
   instruments: string[]
   source_run_id?: string | null
 }
@@ -485,7 +497,7 @@ export interface SweepSummary {
   created_at: string
   source_run_id: string | null
   best_worthiness: string | null
-  firm_ids: string[]
+  ruleset_ids: string[]
 }
 
 export interface SweepDetail {
@@ -494,7 +506,7 @@ export interface SweepDetail {
   strategy_name: string
   start_date: string
   end_date: string
-  firm_ids: string[]
+  ruleset_ids: string[]
   total_instruments: number
   completed_instruments: number
   status: string
@@ -516,7 +528,7 @@ export interface OptimizationRequest {
   end_date: string
   commission_per_side?: number
   slippage_ticks?: number
-  firm_id: string
+  ruleset_id: string
   mode: 'eval' | 'funded'
   search_method: 'auto' | 'brute' | 'genetic'
   param_grid: Record<string, ParamAxisSpec>
@@ -529,7 +541,7 @@ export interface OptimizationSummary {
   instrument: string
   start_date: string
   end_date: string
-  firm_id: string
+  ruleset_id: string
   mode: string
   search_method: string
   status: string

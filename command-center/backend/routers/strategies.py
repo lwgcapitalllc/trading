@@ -39,7 +39,8 @@ def delete_strategy(strategy_id: str):
 @router.get("/{strategy_id}/instrument_summary", response_model=InstrumentSummary)
 def instrument_summary(
     strategy_id: str,
-    firm_id:     Optional[str] = None,
+    ruleset_id:  Optional[str] = None,
+    firm_id:     Optional[str] = None,   # backward-compat alias
     start_date:  Optional[str] = None,
     end_date:    Optional[str] = None,
 ) -> InstrumentSummary:
@@ -47,10 +48,11 @@ def instrument_summary(
     if not lab_db.get_strategy(strategy_id):
         raise HTTPException(404, f"Strategy '{strategy_id}' not found")
 
-    # Collect all allowed instruments from firm (or default list)
-    firm = lab_db.get_firm(firm_id) if firm_id else None
-    if firm and firm.get("allowed_instruments"):
-        all_instruments = firm["allowed_instruments"]
+    # Collect all allowed instruments from ruleset (or default list)
+    rid = ruleset_id or firm_id
+    ruleset = lab_db.get_ruleset(rid) if rid else None
+    if ruleset and ruleset.get("allowed_instruments"):
+        all_instruments = ruleset["allowed_instruments"]
     else:
         all_instruments = ["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]
 

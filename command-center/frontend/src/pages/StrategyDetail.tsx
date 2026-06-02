@@ -71,11 +71,11 @@ function VerdictPills({ verdicts }: { verdicts: VerdictSummary[] }) {
     <div className="flex gap-[4px] items-center flex-wrap">
       {visible.map(v => (
         <span
-          key={v.firm_id}
-          title={v.notes ?? `${firmShortName(v.firm_id)}: ${v.verdict}`}
+          key={v.ruleset_id}
+          title={v.notes ?? `${firmShortName(v.ruleset_id)}: ${v.verdict}`}
           className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold ${VERDICT_PILL_STYLE[v.verdict] ?? 'bg-bg-hover text-text-tertiary'}`}
         >
-          {firmShortName(v.firm_id)}: {v.verdict}
+          {firmShortName(v.ruleset_id)}: {v.verdict}
         </span>
       ))}
       {overflow > 0 && <span className="text-[10px] text-text-tertiary">+{overflow} more</span>}

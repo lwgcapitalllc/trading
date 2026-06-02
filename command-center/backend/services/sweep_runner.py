@@ -25,7 +25,7 @@ _STALL_KILL_SEC  = 600
 _MAX_CONCURRENT  = 1
 
 
-async def _handle_complete(run_id: str, job_id: str, firm_ids: list[str]) -> None:
+async def _handle_complete(run_id: str, job_id: str, ruleset_ids: list[str]) -> None:
     try:
         result = await asyncio.to_thread(vps_client.job_results, job_id)
     except Exception as exc:
@@ -49,17 +49,17 @@ async def _handle_complete(run_id: str, job_id: str, firm_ids: list[str]) -> Non
         "daily_pnl":    str(dpnl_path),
     })
 
-    evaluator.evaluate_run(run_id, firm_ids, kpis, equity_curve, daily_pnl)
+    evaluator.evaluate_run(run_id, ruleset_ids, kpis, equity_curve, daily_pnl)
 
     w = worthiness.score_run_after_evals(
-        run_id, firm_ids,
+        run_id, ruleset_ids,
         kpis.get("profit_factor"), kpis.get("max_drawdown"), kpis.get("trade_count"),
     )
     if w:
         lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
 
 
-async def _run_one(run_id: str, job_id: str, job_spec: dict, firm_ids: list[str], runner: str) -> None:
+async def _run_one(run_id: str, job_id: str, job_spec: dict, ruleset_ids: list[str], runner: str) -> None:
     """Start a VPS job and poll it to completion. Called while holding the SA semaphore."""
     try:
         await asyncio.to_thread(vps_client.start_backtest, job_spec, runner)
@@ -83,7 +83,7 @@ async def _run_one(run_id: str, job_id: str, job_spec: dict, firm_ids: list[str]
         status = status_data.get("status", "running")
 
         if status == "complete":
-            await _handle_complete(run_id, job_id, firm_ids)
+            await _handle_complete(run_id, job_id, ruleset_ids)
             return
 
         if status.startswith("failed"):
@@ -101,7 +101,7 @@ async def _run_one(run_id: str, job_id: str, job_spec: dict, firm_ids: list[str]
 
 async def run_sweep(
     sweep_id:   str,
-    run_specs:  list[dict],   # [{run_id, job_id, strategy_id, instrument, firm_ids, runner}]
+    run_specs:  list[dict],   # [{run_id, job_id, strategy_id, instrument, ruleset_ids, runner}]
     job_specs:  list[dict],   # VPS job_spec payloads, one per run
 ) -> None:
     """Run all N instruments one at a time through the single NT8 SA window."""
@@ -109,7 +109,7 @@ async def run_sweep(
 
     async def _one(spec: dict, job: dict) -> None:
         async with sem:
-            await _run_one(spec["run_id"], spec["job_id"], job, spec["firm_ids"], spec["runner"])
+            await _run_one(spec["run_id"], spec["job_id"], job, spec["ruleset_ids"], spec["runner"])
 
     await asyncio.gather(*[_one(spec, job) for spec, job in zip(run_specs, job_specs)], return_exceptions=True)
 
@@ -125,16 +125,16 @@ async def retry_single_sweep_run(run_id: str) -> None:
         lab_db.update_run_status(run_id, "failed_unknown", "Strategy not found")
         return
 
-    firm_ids: list[str] = []
+    ruleset_ids: list[str] = []
     for r in lab_db.list_sweep_runs(sweep_id):
         if r["status"] == "complete" and r["run_id"] != run_id:
             evals = lab_db.get_run_verdict_summary(r["run_id"])
             if evals:
-                firm_ids = [e["firm_id"] for e in evals]
+                ruleset_ids = [e["ruleset_id"] for e in evals]
                 break
 
     run_specs = [{"run_id": run_id, "job_id": run_id, "strategy_id": row["strategy_id"],
-                  "instrument": row["instrument"], "firm_ids": firm_ids,
+                  "instrument": row["instrument"], "ruleset_ids": ruleset_ids,
                   "runner": strategy.get("runner", "ninjatrader")}]
     job_specs = [{"job_id": run_id, "strategy_class": strategy["class_name"],
                   "instrument": row["instrument"], "params": row["params"],
@@ -158,13 +158,13 @@ async def retry_failed_sweep_runs(sweep_id: str) -> None:
             lab_db.update_run_status(row["run_id"], "failed_unknown", "Strategy not found")
         return
 
-    # Recover firm_ids from any completed run in the same sweep (evaluations are the source of truth)
-    firm_ids: list[str] = []
+    # Recover ruleset_ids from any completed run in the same sweep
+    ruleset_ids: list[str] = []
     for r in lab_db.list_sweep_runs(sweep_id):
         if r["status"] == "complete":
             evals = lab_db.get_run_verdict_summary(r["run_id"])
             if evals:
-                firm_ids = [e["firm_id"] for e in evals]
+                ruleset_ids = [e["ruleset_id"] for e in evals]
                 break
 
     for row in failed_rows:
@@ -172,12 +172,12 @@ async def retry_failed_sweep_runs(sweep_id: str) -> None:
 
     run_specs = [
         {
-            "run_id":      row["run_id"],
-            "job_id":      row["run_id"],
-            "strategy_id": row["strategy_id"],
-            "instrument":  row["instrument"],
-            "firm_ids":    firm_ids,
-            "runner":      strategy.get("runner", "ninjatrader"),
+            "run_id":       row["run_id"],
+            "job_id":       row["run_id"],
+            "strategy_id":  row["strategy_id"],
+            "instrument":   row["instrument"],
+            "ruleset_ids":  ruleset_ids,
+            "runner":       strategy.get("runner", "ninjatrader"),
         }
         for row in failed_rows
     ]

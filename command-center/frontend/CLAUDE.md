@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-05-31 (session 4)
+**Last reviewed:** 2026-06-01 (session 5 — M3 Step 1: Ruleset abstraction)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -33,7 +33,7 @@ frontend/src/
 ├── api/client.ts            ONLY place fetch() lives
 ├── types/index.ts           mirrors all backend Pydantic models exactly
 ├── hooks/                   one file per backend domain
-│   ├── useLab.ts            strategies, firms, runs, evals, sweeps, optimizations, instrument summary
+│   ├── useLab.ts            strategies, rulesets (useRulesets + useFirms alias), runs, evals, sweeps, optimizations
 │   ├── useBots.ts
 │   ├── useSmartMoney.ts
 │   └── useStressTests.ts    stub — no live endpoints yet
@@ -48,7 +48,8 @@ frontend/src/
 │   ├── WorthinessBadge.tsx  Tier 1/2/3 pill badge (green/cyan/yellow)
 │   ├── OptimizationHeatmap.tsx  SVG 2D heatmap for 2-param optimizer grids
 │   ├── Tier3WarningModal.tsx    smart-routing modal for Tier 3 → sweep or optimize anyway
-│   └── OptimizeButton.tsx   tier-aware optimize trigger (Tier1 soft confirm, Tier2 direct, Tier3 warning)
+│   ├── OptimizeButton.tsx   tier-aware optimize trigger (Tier1 soft confirm, Tier2 direct, Tier3 warning)
+│   └── RulesetTypeBadge.tsx PROP EVAL / PROP FUNDED / PERSONAL / DEMO type badge for ruleset rows
 │                            NOTE: EvaluationCard, EquityCurveChart, DrawdownChart,
 │                            DailyPnlChart, DirectionBreakdown are all inline
 │                            components inside BacktestDetail.tsx — not separate files.
@@ -65,7 +66,7 @@ frontend/src/
     │   ├── index.tsx         monitor tab + live snapshot
     │   ├── ConfigureTab.tsx  risk caps + deploy
     │   └── UsersTab.tsx      Telegram users
-    ├── Backtests.tsx         lab landing — Strategies / Runs / Firms / Optimizations tabs (URL-based)
+    ├── Backtests.tsx         lab landing — Strategies / Runs / Rulesets / Sweeps / Optimizations tabs (URL-based)
     ├── BacktestDetail.tsx    full run detail — charts, KPIs, per-firm eval cards, verdict, worthiness badge, OptimizeButton
     ├── StrategyDetail.tsx    strategy metadata + all runs + runner badge
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
@@ -275,7 +276,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Overview | ✅ Live | Stat row + cards for each domain |
 | Smart Money | ✅ Live | Full pipeline UI — scan, terminal, rankings, profiles, disqualified, config, cache |
 | Bots | ✅ Live | Monitor, control (global + per-bot), configure (risk caps + deploy), users (Telegram) |
-| Backtests lab | ✅ Live | Strategies, Runs, Firms, Optimizations tabs; run modal; backtest detail with charts + eval cards |
+| Backtests lab | ✅ Live | Strategies, Runs, Rulesets, Sweeps, Optimizations tabs; run modal; backtest detail with charts + per-ruleset eval cards |
 | Worthiness Badges | ✅ Live | Every completed run shows a Tier 1/2/3 pill in the Runs table and on BacktestDetail header |
 | Sweep Detail | ✅ Live | `/backtests/sweeps/:sweepId` — ProgressCard (segmented bar, elapsed timer, status icons), ResultsTable, FailedRunsTable. Cancel button for stuck sweeps. Retry-all and per-row retry buttons. Visual parity with OptimizationDetail. |
 | Optimization Detail | ✅ Live | `/backtests/optimizations/:optimizationId` — heatmap (2D) or top-10 table (3+D), best param callout, CSV export. Per-row retry button in FailedRunsTable. |

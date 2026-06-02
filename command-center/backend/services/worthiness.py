@@ -49,27 +49,27 @@ def compute_worthiness(
 
 def score_run_after_evals(
     run_id: str,
-    firm_ids: list[str],
+    ruleset_ids: list[str],
     profit_factor: Optional[float],
     max_drawdown: Optional[float],
     trade_count: Optional[int],
 ) -> Optional[tuple[str, Optional[str], str]]:
     """
-    Find the strictest evaluated firm, compute tier, return (tier, reason, firm_id).
-    Returns None if no firms available.
+    Find the strictest evaluated ruleset, compute tier, return (tier, reason, ruleset_id).
+    Returns None if no rulesets available.
     """
     from services import lab_db
 
-    if not firm_ids:
+    if not ruleset_ids:
         return None
 
     strictest = None
-    for fid in firm_ids:
-        firm = lab_db.get_firm(fid)
-        if firm is None:
+    for rid in ruleset_ids:
+        ruleset = lab_db.get_ruleset(rid)
+        if ruleset is None:
             continue
-        if strictest is None or firm["max_loss_eod"] < strictest["max_loss_eod"]:
-            strictest = firm
+        if strictest is None or ruleset["max_loss_eod"] < strictest["max_loss_eod"]:
+            strictest = ruleset
 
     if strictest is None:
         return None

@@ -477,8 +477,8 @@ export function OptimizationDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary capitalize">
                 {opt.mode} · {fmtSearchMethod(opt.search_method)}
               </span>
-              <span className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(opt.firm_id)}`}>
-                {firmShortName(opt.firm_id)}
+              <span className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(opt.ruleset_id)}`}>
+                {firmShortName(opt.ruleset_id)}
               </span>
             </div>
           </div>

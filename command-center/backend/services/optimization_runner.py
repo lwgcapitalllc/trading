@@ -83,7 +83,7 @@ def sample_combinations(combos: list[dict], method: str) -> list[dict]:
 
 # ── Single run poller ─────────────────────────────────────────────────────────
 
-async def _poll_one(run_id: str, job_id: str, firm_ids: list[str], opt_mode: str) -> None:
+async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str) -> None:
     started_at = time.time()
 
     while True:
@@ -100,7 +100,7 @@ async def _poll_one(run_id: str, job_id: str, firm_ids: list[str], opt_mode: str
         status = status_data.get("status", "running")
 
         if status == "complete":
-            await _handle_opt_complete(run_id, job_id, firm_ids, opt_mode)
+            await _handle_opt_complete(run_id, job_id, ruleset_ids, opt_mode)
             return
 
         if status.startswith("failed"):
@@ -116,7 +116,7 @@ async def _poll_one(run_id: str, job_id: str, firm_ids: list[str], opt_mode: str
             return
 
 
-async def _handle_opt_complete(run_id: str, job_id: str, firm_ids: list[str], opt_mode: str) -> None:
+async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str) -> None:
     try:
         result = await asyncio.to_thread(vps_client.job_results, job_id)
     except Exception as exc:
@@ -140,10 +140,10 @@ async def _handle_opt_complete(run_id: str, job_id: str, firm_ids: list[str], op
         "daily_pnl":    str(dpnl_path),
     })
 
-    evaluator.evaluate_run(run_id, firm_ids, kpis, equity_curve, daily_pnl)
+    evaluator.evaluate_run(run_id, ruleset_ids, kpis, equity_curve, daily_pnl)
 
     w = worthiness.score_run_after_evals(
-        run_id, firm_ids,
+        run_id, ruleset_ids,
         kpis.get("profit_factor"), kpis.get("max_drawdown"), kpis.get("trade_count"),
     )
     if w:
@@ -153,12 +153,12 @@ async def _handle_opt_complete(run_id: str, job_id: str, firm_ids: list[str], op
 # ── Semaphore-limited batch runner ────────────────────────────────────────────
 
 async def _run_batch(
-    run_ids:     list[str],
-    job_specs:   list[dict],
-    firm_ids:    list[str],
-    opt_mode:    str,
-    runner:      str,
-    opt_id:      str,
+    run_ids:      list[str],
+    job_specs:    list[dict],
+    ruleset_ids:  list[str],
+    opt_mode:     str,
+    runner:       str,
+    opt_id:       str,
 ) -> None:
     sem = asyncio.Semaphore(_MAX_CONCURRENT)
 
@@ -175,7 +175,7 @@ async def _run_batch(
                 lab_db.update_run_status(run_id, "failed_unknown", str(exc))
                 lab_db.increment_optimization_completed(opt_id)
                 return
-            await _poll_one(run_id, job_spec["job_id"], firm_ids, opt_mode)
+            await _poll_one(run_id, job_spec["job_id"], ruleset_ids, opt_mode)
             lab_db.increment_optimization_completed(opt_id)
 
     await asyncio.gather(*[_one(rid, spec) for rid, spec in zip(run_ids, job_specs)])
@@ -193,7 +193,7 @@ async def run_optimization(optimization_id: str) -> None:
         lab_db.fail_optimization(optimization_id, "Strategy not found")
         return
 
-    firm = lab_db.get_firm(opt["firm_id"])
+    firm = lab_db.get_ruleset(opt["ruleset_id"])
     if not firm:
         lab_db.fail_optimization(optimization_id, "Firm not found")
         return
@@ -242,7 +242,7 @@ async def run_optimization(optimization_id: str) -> None:
 
     await _run_batch(
         run_ids, job_specs,
-        firm_ids=[opt["firm_id"]],
+        ruleset_ids=[opt["ruleset_id"]],
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
         opt_id=optimization_id,
@@ -280,7 +280,7 @@ async def retry_single_optimization_run(run_id: str) -> None:
     if not strategy:
         lab_db.update_run_status(run_id, "failed_unknown", "Strategy not found")
         return
-    firm = lab_db.get_firm(opt["firm_id"])
+    firm = lab_db.get_ruleset(opt["ruleset_id"])
     if not firm:
         lab_db.update_run_status(run_id, "failed_unknown", "Firm not found")
         return
@@ -301,7 +301,7 @@ async def retry_single_optimization_run(run_id: str) -> None:
     }
     await _run_batch(
         [run_id], [job_spec],
-        firm_ids=[opt["firm_id"]],
+        ruleset_ids=[opt["ruleset_id"]],
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
         opt_id=opt_id,
@@ -332,7 +332,7 @@ async def retry_failed_runs(optimization_id: str) -> None:
         lab_db.fail_optimization(optimization_id, "Strategy not found")
         return
 
-    firm = lab_db.get_firm(opt["firm_id"])
+    firm = lab_db.get_ruleset(opt["ruleset_id"])
     if not firm:
         lab_db.fail_optimization(optimization_id, "Firm not found")
         return
@@ -365,7 +365,7 @@ async def retry_failed_runs(optimization_id: str) -> None:
 
     await _run_batch(
         run_ids, job_specs,
-        firm_ids=[opt["firm_id"]],
+        ruleset_ids=[opt["ruleset_id"]],
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
         opt_id=optimization_id,

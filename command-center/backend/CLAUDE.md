@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-05-31 (session 4)
+**Last reviewed:** 2026-06-01 (session 5 — M3 Step 1: Ruleset abstraction)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -25,9 +25,10 @@ backend/
 │   ├── bots.py
 │   ├── backtests.py       lab — backtest runs
 │   ├── strategies.py      lab — strategy registry + GET /:id/instrument_summary
-│   ├── firms.py           lab — prop firm rules
+│   ├── rulesets.py        lab — ruleset CRUD (/rulesets)
+│   ├── firms.py           backward-compat redirect /firms → /rulesets (deprecated, remove in M4)
 │   ├── system.py          lab — health + log proxies
-│   ├── stress_tests.py    stub
+│   ├── stress_tests.py    stub — M3 scope
 │   ├── sweeps.py          lab — instrument sweep (POST /backtests/sweep, GET /backtests/sweeps, GET/DELETE /backtests/sweeps/:id)
 │   ├── optimizations.py   lab — optimizer (POST /optimizations/run, GET /optimizations/*, DELETE /optimizations/:id)
 │   └── settings.py
@@ -180,20 +181,28 @@ Lab backtests use the same pattern but the "worker" is the VPS agent over HTTP.
 
 ---
 
-## Firm account tiers — eval vs funded
+## Ruleset abstraction (M3)
 
-Every firm row has an `account_tier` column: `"eval"` or `"funded"`.
+The `firms` table was renamed to `rulesets` in M3. All references updated. `/firms/*` routes redirect to `/rulesets/*` (deprecated, remove in M4).
 
-- **eval** firms: full three-way evaluation — drawdown + profit target + consistency rule.
-- **funded** firms: drawdown only. `consistency_pass` is stored as `NULL`, `target_pass` is always `True`. The profit target on a funded account is 0 (no requirement).
+**`ruleset_type` values and evaluation logic:**
 
-Never skip the tier check in `evaluator.py`. The current seeded firms are:
-- `lucidflex_50k_eval`, `lucidflex_100k_eval` — eval challenges
-- `lucidflex_50k_funded`, `lucidflex_100k_funded` — funded account limits
-- `tradeify_50k_eval`, `tradeify_100k_eval` — eval challenges
-- `tradeify_50k_funded`, `tradeify_100k_funded` — funded account limits
-- `fundednext_flex_50k_eval`, `fundednext_flex_100k_eval` — eval challenges
-- `fundednext_flex_50k_funded`, `fundednext_flex_100k_funded` — funded account limits
+| ruleset_type | Who uses it | Evaluator behavior |
+|---|---|---|
+| `prop_eval` | Prop firm eval challenges | drawdown + profit target + consistency |
+| `prop_funded` | Prop firm funded accounts | drawdown only; PASS if under limit |
+| `personal` | Personal trading accounts | daily_loss_cap + weekly_loss_cap; WARN if weekly breached |
+| `demo` | Paper/demo accounts | always PASS/WARN based on net P&L; never DISCARD |
+
+`account_tier` is still present on rows (eval/funded/live) — useful for prop rulesets. `ruleset_type` is the broader category.
+
+New columns on `rulesets`: `ruleset_type`, `daily_loss_cap`, `weekly_loss_cap`, `daily_profit_goal`, `description`.
+
+Seeded rulesets (13 rows): 4 LucidFlex × (eval/funded) + 4 Tradeify × (eval/funded) + 4 FundedNext × (eval/funded) + 1 personal example (`personal_futures_10k_example`).
+
+**Evaluations table:** `firm_id` column renamed to `ruleset_id`. `optimizations` table: `firm_id` → `ruleset_id` too.
+
+`BacktestRunRequest.evaluate_rulesets` — replaces `evaluate_firms` (backward-compat alias still accepted).
 
 ---
 
@@ -204,12 +213,12 @@ Never skip the tier check in `evaluator.py`. The current seeded firms are:
 | Smart Money | ✅ Live | Scans and profiles crypto/forex traders for copy-trading candidates. Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
 | Bots | ✅ Live | Monitors all three live algo instances (gold_main, gold_scalper, gold_fft) via SSH. Global + per-bot risk controls, risk cap deploy with Telegram notification, Telegram users tab. |
 | Lab — Strategies | ✅ Live | Registry of NinjaScript strategies scanned from the local repo. Auto-derives param schema from `[NinjaScriptProperty]` attributes. Each strategy has a `runner` field (default `"ninjatrader"`). |
-| Lab — Firms | ✅ Live | Prop firm rule profiles (drawdown limits, profit targets, consistency %). CRUD endpoints. Firms: 4 LucidFlex (50k/100k × eval/funded) + 4 Tradeify Select (50k/100k × eval/funded) + 4 FundedNext Futures Flex (50k/100k × eval/funded). Schema has `eval_cost_usd`, `activation_fee_usd`, `profit_split_pct` columns. `max_contracts` is free-form JSON dict: carries optional `scaling` object (Tradeify `cumulative_ratchet`, LucidFlex `bidirectional_band`) and optional `mix_allowed`/`mix_ratio_micro_per_mini` flags (FundedNext — minis and micros are mixable at 1:10, unlike Tradeify). FundedNext has fixed contract limits (no scaling), EOD trailing drawdown locking $100 above start, 40% challenge-only consistency (unusual: breach raises target, does not fail), no daily loss limit. LucidFlex rows corrected 2026-05-31: `drawdown_type` -> `trailing_eod`, `force_flat_time_et` -> `16:45`, eval contracts fixed, funded bidirectional scaling added. TODO: verify LucidFlex DLL — `max_loss_intraday` left NULL. |
+| Lab — Rulesets | ✅ Live | Ruleset profiles (formerly "Firms"). CRUD at `/rulesets`. Supports 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. Seeded: 12 prop firm rows + 1 personal example. Evaluator branches on `ruleset_type`. |
 | Lab — Backtests | ✅ Live | Trigger NT8 runs on the VPS via the agent. Poll to completion. Evaluate against selected firms. Equity curve, daily P&L, per-firm verdicts, full KPI set. After evaluation, computes Worthiness Score (Tier 1/2/3). |
 | Lab — Sweeps | ✅ Live | Runs N backtests sequentially (one instrument at a time, `_MAX_CONCURRENT = 1`) across all instruments for a strategy. Each run gets its own worthiness score. Deletable. Cancel endpoint force-fails stuck `running` rows (backend-restart recovery). Retry-all and per-run retry via `POST /backtests/runs/{id}/retry`. |
 | Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer. Generates all param combos, runs each sequentially via SA semaphore, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. `source_run_id` links an optimization back to the run it was triggered from. Deletable. Per-run retry via `POST /backtests/runs/{id}/retry`. |
 | Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
-| Lab — Stress Tests | 🔲 Stub | Router exists, no logic yet. M3 scope. |
+| Lab — Stress Tests | 🔲 Stub | Router exists, no logic yet. M3 Step 2+ scope. |
 | Settings | ✅ Live | Config read/write. |
 
 ---
@@ -245,7 +254,7 @@ Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_
 - `optimization_id` — set on all child runs of an optimizer job
 - `source_run_id` — set when a sweep or optimization is triggered from a BacktestDetail page; links children back to the originating run
 
-`optimizations` table key fields: `optimization_id`, `strategy_id`, `instrument`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `firm_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`, `created_at`, `completed_at`.
+`optimizations` table key fields: `optimization_id`, `strategy_id`, `instrument`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `ruleset_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`, `created_at`, `completed_at`.
 
 ---
 

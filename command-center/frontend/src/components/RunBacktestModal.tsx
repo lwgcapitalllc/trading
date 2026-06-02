@@ -349,7 +349,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         end_date:            endDate,
         commission_per_side: commPerSide,
         slippage_ticks:      slippageTicks,
-        evaluate_firms:      Array.from(selectedFirms),
+        evaluate_rulesets:   Array.from(selectedFirms),
       },
       {
         onSuccess: (data) => {
@@ -414,7 +414,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 {firmsLoading ? (
                   <div className={`${inputCls} text-text-tertiary`}>Loading…</div>
                 ) : allowedSymbols.length === 0 ? (
-                  <div className={`${inputCls} text-text-tertiary`}>No firms configured</div>
+                  <div className={`${inputCls} text-text-tertiary`}>No rulesets configured</div>
                 ) : (
                   <select
                     value={instrumentSymbol}
@@ -514,15 +514,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div>
             <SectionHead label="Evaluate Against" />
             {firmsLoading ? (
-              <div className="text-[12px] text-text-tertiary">Loading firms…</div>
+              <div className="text-[12px] text-text-tertiary">Loading rulesets…</div>
             ) : firms.length === 0 ? (
-              <div className="text-[12px] text-text-tertiary">No firms configured.</div>
+              <div className="text-[12px] text-text-tertiary">No rulesets configured.</div>
             ) : (
               <div className="space-y-4">
                 {/* Prop firm radio — only shown when multiple brands */}
                 {brandNames.length > 1 && (
                   <div>
-                    <div className="text-[11px] text-text-tertiary mb-2">Prop firm</div>
+                    <div className="text-[11px] text-text-tertiary mb-2">Prop firm challenges</div>
                     <div className="space-y-[6px]">
                       {brandNames.map(brand => (
                         <label key={brand} className="flex items-center gap-2 cursor-pointer">

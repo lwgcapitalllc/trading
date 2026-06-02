@@ -420,7 +420,7 @@ export function SweepDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
                 {fmtDate(sweep.start_date)} → {fmtDate(sweep.end_date)}
               </span>
-              {sweep.firm_ids.map(f => (
+              {sweep.ruleset_ids.map(f => (
                 <span key={f} className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(f)}`}>
                   {firmShortName(f)}
                 </span>
@@ -439,7 +439,7 @@ export function SweepDetail() {
           />
 
           {/* Re-evaluate prompt — shown when sweep has no firm evaluations */}
-          {completeRuns.length > 0 && sweep.firm_ids.length === 0 && !isRunning && (
+          {completeRuns.length > 0 && sweep.ruleset_ids.length === 0 && !isRunning && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-warn-muted/30 border border-warn-text/20">
               <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />
               <span className="text-[12px] text-warn-text flex-1">
@@ -456,7 +456,7 @@ export function SweepDetail() {
               <button
                 onClick={() => {
                   if (!evalFirmId || !sweepId) return
-                  reevalSweep.mutate({ sweepId, firm_ids: [evalFirmId] })
+                  reevalSweep.mutate({ sweepId, ruleset_ids: [evalFirmId] })
                 }}
                 disabled={!evalFirmId || reevalSweep.isPending}
                 className="px-3 py-[5px] rounded text-[12px] font-semibold bg-accent text-bg-base hover:opacity-90 disabled:opacity-40 transition-opacity"

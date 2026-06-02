@@ -284,9 +284,9 @@ class ScanResult(BaseModel):
     skipped: int
 
 
-# ── Lab — firms ───────────────────────────────────────────────────────────────
+# ── Lab — rulesets ────────────────────────────────────────────────────────────
 
-class Firm(BaseModel):
+class Ruleset(BaseModel):
     id: str
     name: str
     account_size: int
@@ -300,7 +300,12 @@ class Firm(BaseModel):
     allowed_instruments: list[str] = []
     max_contracts: dict = {}
     platform_support: list[str] = []
-    account_tier: str = "eval"          # "eval" | "funded"
+    account_tier: str = "eval"          # "eval" | "funded" | "live"
+    ruleset_type: str = "prop_eval"     # "prop_eval" | "prop_funded" | "personal" | "demo"
+    daily_loss_cap: Optional[int] = None
+    weekly_loss_cap: Optional[int] = None
+    daily_profit_goal: Optional[int] = None
+    description: Optional[str] = None
     docs_url: Optional[str] = None
     eval_cost_usd: Optional[int] = None
     activation_fee_usd: Optional[int] = None
@@ -308,7 +313,7 @@ class Firm(BaseModel):
     notes: Optional[str] = None
 
 
-class FirmCreate(BaseModel):
+class RulesetCreate(BaseModel):
     id: str
     name: str
     account_size: int
@@ -322,12 +327,22 @@ class FirmCreate(BaseModel):
     allowed_instruments: list[str] = []
     max_contracts: dict = {}
     platform_support: list[str] = []
-    account_tier: str = "eval"          # "eval" | "funded"
+    account_tier: str = "eval"          # "eval" | "funded" | "live"
+    ruleset_type: str = "prop_eval"     # "prop_eval" | "prop_funded" | "personal" | "demo"
+    daily_loss_cap: Optional[int] = None
+    weekly_loss_cap: Optional[int] = None
+    daily_profit_goal: Optional[int] = None
+    description: Optional[str] = None
     docs_url: Optional[str] = None
     eval_cost_usd: Optional[int] = None
     activation_fee_usd: Optional[int] = None
     profit_split_pct: Optional[float] = None
     notes: Optional[str] = None
+
+
+# Backward-compat aliases — used in M3 only; removed in M4
+Firm = Ruleset
+FirmCreate = RulesetCreate
 
 
 # ── Lab — worthiness scoring ──────────────────────────────────────────────────
@@ -350,7 +365,12 @@ class BacktestRunRequest(BaseModel):
     end_date: str
     commission_per_side: float = 2.25
     slippage_ticks: int = 1
-    evaluate_firms: list[str]       # firm_ids to evaluate against
+    evaluate_rulesets: list[str] = []   # ruleset_ids to evaluate against
+    evaluate_firms: list[str] = []      # backward-compat alias; prefer evaluate_rulesets
+
+    @property
+    def ruleset_ids(self) -> list[str]:
+        return self.evaluate_rulesets or self.evaluate_firms
 
 
 class BacktestSummary(BaseModel):
@@ -379,8 +399,8 @@ class BacktestSummary(BaseModel):
 
 class EvaluationDetail(BaseModel):
     eval_id: str
-    firm_id: str
-    firm_name: str
+    ruleset_id: str
+    ruleset_name: str
     verdict: str                    # 'PASS' | 'WARN' | 'DISCARD'
     drawdown_pass: bool
     target_pass: bool
@@ -483,9 +503,14 @@ class SweepRequest(BaseModel):
     end_date: str
     commission_per_side: float = 2.25
     slippage_ticks: int = 1
-    firm_ids: list[str]
+    ruleset_ids: list[str] = []
+    firm_ids: list[str] = []            # backward-compat alias
     instruments: list[str]
     source_run_id: Optional[str] = None
+
+    @property
+    def effective_ruleset_ids(self) -> list[str]:
+        return self.ruleset_ids or self.firm_ids
 
 
 class SweepResponse(BaseModel):
@@ -507,7 +532,7 @@ class SweepSummary(BaseModel):
     created_at: datetime
     source_run_id: Optional[str] = None
     best_worthiness: Optional[str] = None
-    firm_ids: list[str] = []
+    ruleset_ids: list[str] = []
 
 
 class SweepDetail(BaseModel):
@@ -516,7 +541,7 @@ class SweepDetail(BaseModel):
     strategy_name: str
     start_date: str
     end_date: str
-    firm_ids: list[str]
+    ruleset_ids: list[str]
     total_instruments: int
     completed_instruments: int
     status: str
@@ -536,7 +561,7 @@ class OptimizationRequest(BaseModel):
     end_date: str
     commission_per_side: float = 2.25
     slippage_ticks: int = 1
-    firm_id: str
+    ruleset_id: str
     mode: str = "eval"                  # "eval" | "funded"
     search_method: str = "auto"         # "auto" | "brute" | "genetic"
     param_grid: dict                    # {param: {min, max, step} | [val, ...]}
@@ -549,7 +574,7 @@ class OptimizationSummary(BaseModel):
     instrument: str
     start_date: str
     end_date: str
-    firm_id: str
+    ruleset_id: str
     mode: str
     search_method: str
     status: str
@@ -568,7 +593,7 @@ class OptimizationDetail(BaseModel):
     instrument: str
     start_date: str
     end_date: str
-    firm_id: str
+    ruleset_id: str
     mode: str
     search_method: str
     param_grid: dict

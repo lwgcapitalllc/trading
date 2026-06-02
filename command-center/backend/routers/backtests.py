@@ -80,8 +80,8 @@ def _row_to_detail(row: dict) -> BacktestDetail:
     evals = [
         EvaluationDetail(
             eval_id=e["eval_id"],
-            firm_id=e["firm_id"],
-            firm_name=e["firm_name"],
+            ruleset_id=e["ruleset_id"],
+            ruleset_name=e["ruleset_name"],
             verdict=e["verdict"],
             drawdown_pass=bool(e["drawdown_pass"]),
             target_pass=bool(e["target_pass"]),
@@ -153,10 +153,12 @@ def get_running_job() -> RunningJobStatus:
 @router.get("/runs")
 def list_backtest_runs(
     strategy_id: Optional[str] = None,
-    firm_id:     Optional[str] = None,
+    ruleset_id:  Optional[str] = None,
+    firm_id:     Optional[str] = None,  # backward-compat alias
     status:      Optional[str] = None,
 ) -> list[BacktestSummary]:
-    rows = lab_db.list_runs(strategy_id=strategy_id, firm_id=firm_id, status=status)
+    effective_ruleset_id = ruleset_id or firm_id
+    rows = lab_db.list_runs(strategy_id=strategy_id, ruleset_id=effective_ruleset_id, status=status)
     return [_row_to_summary(r) for r in rows]
 
 
@@ -181,9 +183,10 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     if not strategy:
         raise HTTPException(404, f"Strategy '{req.strategy_id}' not found")
 
-    for fid in req.evaluate_firms:
-        if not lab_db.get_firm(fid):
-            raise HTTPException(404, f"Firm '{fid}' not found")
+    ruleset_ids = req.ruleset_ids
+    for rid in ruleset_ids:
+        if not lab_db.get_ruleset(rid):
+            raise HTTPException(404, f"Ruleset '{rid}' not found")
 
     if read_progress().get("status") == "running":
         raise HTTPException(409, "A backtest is already running")
@@ -207,7 +210,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "slippage_ticks":     req.slippage_ticks,
         "status":             "running",
         "created_at":         int(time.time()),
-        "evaluate_firms":     req.evaluate_firms,
+        "evaluate_rulesets":  ruleset_ids,
     })
 
     job_spec = {
@@ -230,7 +233,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         raise HTTPException(502, f"VPS agent unreachable: {exc}")
 
     asyncio.create_task(
-        run_backtest_job(run_id, job_id, req.strategy_id, req.instrument, req.evaluate_firms)
+        run_backtest_job(run_id, job_id, req.strategy_id, req.instrument, ruleset_ids)
     )
 
     return {"run_id": run_id, "status": "started"}
@@ -289,7 +292,7 @@ async def retry_backtest_run(run_id: str) -> dict:
     if read_progress().get("status") == "running":
         raise HTTPException(409, "A backtest is already running")
 
-    evaluate_firms = row.get("evaluate_firms") or []
+    evaluate_rulesets = row.get("evaluate_firms") or []
 
     new_run_id = uuid.uuid4().hex[:12]
     lab_db.insert_run({
@@ -305,7 +308,7 @@ async def retry_backtest_run(run_id: str) -> dict:
         "slippage_ticks":     row["slippage_ticks"],
         "status":             "running",
         "created_at":         int(time.time()),
-        "evaluate_firms":     evaluate_firms,
+        "evaluate_rulesets":  evaluate_rulesets,
     })
 
     job_spec = {
@@ -328,7 +331,7 @@ async def retry_backtest_run(run_id: str) -> dict:
         raise HTTPException(502, f"VPS agent unreachable: {exc}")
 
     asyncio.create_task(
-        run_backtest_job(new_run_id, new_run_id, row["strategy_id"], row["instrument"], evaluate_firms)
+        run_backtest_job(new_run_id, new_run_id, row["strategy_id"], row["instrument"], evaluate_rulesets)
     )
 
     return {"run_id": new_run_id, "status": "started"}
@@ -345,7 +348,8 @@ def delete_backtest_run(run_id: str) -> Response:
 
 
 class _ReevalRequest(BaseModel):
-    firm_ids: list[str]
+    ruleset_ids: list[str] = []
+    firm_ids: list[str] = []  # backward-compat alias
 
 
 @router.post("/runs/{run_id}/reevaluate")
@@ -356,6 +360,7 @@ def reevaluate_run(run_id: str, req: _ReevalRequest) -> BacktestDetail:
     if row["status"] != "complete":
         raise HTTPException(400, f"Run status is '{row['status']}', not 'complete'")
 
+    ids = req.ruleset_ids or req.firm_ids
     kpis = {k: row.get(k) for k in (
         "net_pnl", "max_drawdown", "profit_factor", "win_rate",
         "win_count", "trade_count", "sharpe", "sortino",
@@ -363,7 +368,7 @@ def reevaluate_run(run_id: str, req: _ReevalRequest) -> BacktestDetail:
     equity_curve = _load_json(row.get("equity_curve_path"))
     daily_pnl    = _load_json(row.get("daily_pnl_path"))
 
-    evaluate_run(run_id, req.firm_ids, kpis, equity_curve, daily_pnl)
+    evaluate_run(run_id, ids, kpis, equity_curve, daily_pnl)
 
     return _row_to_detail(lab_db.get_run(run_id))
 

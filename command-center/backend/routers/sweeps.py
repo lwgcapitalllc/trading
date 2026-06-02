@@ -48,9 +48,10 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
     if not strategy:
         raise HTTPException(404, f"Strategy '{req.strategy_id}' not found")
 
-    for fid in req.firm_ids:
-        if not lab_db.get_firm(fid):
-            raise HTTPException(404, f"Firm '{fid}' not found")
+    ruleset_ids = req.effective_ruleset_ids
+    for rid in ruleset_ids:
+        if not lab_db.get_ruleset(rid):
+            raise HTTPException(404, f"Ruleset '{rid}' not found")
 
     if not req.instruments:
         raise HTTPException(400, "instruments list cannot be empty")
@@ -86,12 +87,12 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
         })
 
         run_specs.append({
-            "run_id":      run_id,
-            "job_id":      run_id,
-            "strategy_id": req.strategy_id,
-            "instrument":  instrument,
-            "firm_ids":    req.firm_ids,
-            "runner":      strategy.get("runner", "ninjatrader"),
+            "run_id":       run_id,
+            "job_id":       run_id,
+            "strategy_id":  req.strategy_id,
+            "instrument":   instrument,
+            "ruleset_ids":  ruleset_ids,
+            "runner":       strategy.get("runner", "ninjatrader"),
         })
 
         job_specs.append({
@@ -140,14 +141,16 @@ async def retry_sweep_failed(sweep_id: str) -> dict:
 
 
 class _SweepReevalRequest(BaseModel):
-    firm_ids: list[str]
+    ruleset_ids: list[str] = []
+    firm_ids: list[str] = []  # backward-compat alias
 
 
 @router.post("/sweeps/{sweep_id}/reevaluate", status_code=200)
 def reevaluate_sweep(sweep_id: str, req: _SweepReevalRequest) -> dict:
-    for fid in req.firm_ids:
-        if not lab_db.get_firm(fid):
-            raise HTTPException(404, f"Firm '{fid}' not found")
+    ids = req.ruleset_ids or req.firm_ids
+    for rid in ids:
+        if not lab_db.get_ruleset(rid):
+            raise HTTPException(404, f"Ruleset '{rid}' not found")
 
     rows = lab_db.list_sweep_runs(sweep_id)
     if not rows:
@@ -166,10 +169,10 @@ def reevaluate_sweep(sweep_id: str, req: _SweepReevalRequest) -> dict:
         equity_curve = _load_json(row.get("equity_curve_path"))
         daily_pnl    = _load_json(row.get("daily_pnl_path"))
 
-        evaluate_run(run_id, req.firm_ids, kpis, equity_curve, daily_pnl)
+        evaluate_run(run_id, ids, kpis, equity_curve, daily_pnl)
 
         w = worthiness.score_run_after_evals(
-            run_id, req.firm_ids,
+            run_id, ids,
             row.get("profit_factor"), row.get("max_drawdown"), row.get("trade_count"),
         )
         if w:
@@ -205,8 +208,8 @@ def get_sweep(sweep_id: str) -> SweepDetail:
     summaries = [_row_to_summary(r) for r in rows]
     completed = sum(1 for r in rows if r["status"] == "complete")
 
-    firm_ids = list({
-        e["firm_id"]
+    seen_ruleset_ids = list({
+        e["ruleset_id"]
         for r in rows
         for e in lab_db.get_run_verdict_summary(r["run_id"])
     })
@@ -230,7 +233,7 @@ def get_sweep(sweep_id: str) -> SweepDetail:
         strategy_name=first.get("strategy_name", ""),
         start_date=first["start_date"],
         end_date=first["end_date"],
-        firm_ids=firm_ids,
+        ruleset_ids=seen_ruleset_ids,
         total_instruments=len(rows),
         completed_instruments=completed,
         status=status,

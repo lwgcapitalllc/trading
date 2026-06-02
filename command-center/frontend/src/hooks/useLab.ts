@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
   Strategy, ScanResult,
-  Firm, FirmCreate,
+  Ruleset, RulesetCreate,
   BacktestRunRequest, BacktestSummary, BacktestDetail,
   LabProgress, SystemHealth,
   SweepRequest, SweepResponse, SweepDetail,
@@ -40,49 +40,52 @@ export function useScanStrategies() {
   })
 }
 
-// ── Firms ──────────────────────────────────────────────────────────────────────
+// ── Rulesets ───────────────────────────────────────────────────────────────────
 
-export function useFirms() {
+export function useRulesets() {
   return useQuery({
-    queryKey: ['lab', 'firms'],
-    queryFn: () => api.get<Firm[]>('/firms'),
+    queryKey: ['lab', 'rulesets'],
+    queryFn: () => api.get<Ruleset[]>('/rulesets'),
   })
 }
 
-export function useCreateFirm() {
+// Backward-compat alias — components not yet updated use this
+export const useFirms = useRulesets
+
+export function useCreateRuleset() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: FirmCreate) => api.post<Firm>('/firms', body),
+    mutationFn: (body: RulesetCreate) => api.post<Ruleset>('/rulesets', body),
     onSuccess: () => {
-      toast.success('Firm created')
-      qc.invalidateQueries({ queryKey: ['lab', 'firms'] })
+      toast.success('Ruleset created')
+      qc.invalidateQueries({ queryKey: ['lab', 'rulesets'] })
     },
-    onError: () => toast.error('Failed to create firm'),
+    onError: () => toast.error('Failed to create ruleset'),
   })
 }
 
-export function useUpdateFirm() {
+export function useUpdateRuleset() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ firmId, body }: { firmId: string; body: FirmCreate }) =>
-      api.put<Firm>(`/firms/${firmId}`, body),
+    mutationFn: ({ rulesetId, body }: { rulesetId: string; body: RulesetCreate }) =>
+      api.put<Ruleset>(`/rulesets/${rulesetId}`, body),
     onSuccess: () => {
-      toast.success('Firm updated')
-      qc.invalidateQueries({ queryKey: ['lab', 'firms'] })
+      toast.success('Ruleset updated')
+      qc.invalidateQueries({ queryKey: ['lab', 'rulesets'] })
     },
-    onError: () => toast.error('Failed to update firm'),
+    onError: () => toast.error('Failed to update ruleset'),
   })
 }
 
-export function useDeleteFirm() {
+export function useDeleteRuleset() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (firmId: string) => api.delete<void>(`/firms/${firmId}`),
+    mutationFn: (rulesetId: string) => api.delete<void>(`/rulesets/${rulesetId}`),
     onSuccess: () => {
-      toast.success('Firm deleted')
-      qc.invalidateQueries({ queryKey: ['lab', 'firms'] })
+      toast.success('Ruleset deleted')
+      qc.invalidateQueries({ queryKey: ['lab', 'rulesets'] })
     },
-    onError: () => toast.error('Failed to delete firm'),
+    onError: () => toast.error('Failed to delete ruleset'),
   })
 }
 
@@ -90,12 +93,12 @@ export function useDeleteFirm() {
 
 export function useBacktestRuns(filters?: {
   strategy_id?: string
-  firm_id?: string
+  ruleset_id?: string
   status?: string
 }) {
   const params = new URLSearchParams()
   if (filters?.strategy_id) params.set('strategy_id', filters.strategy_id)
-  if (filters?.firm_id)     params.set('firm_id',     filters.firm_id)
+  if (filters?.ruleset_id)  params.set('ruleset_id',  filters.ruleset_id)
   if (filters?.status)      params.set('status',      filters.status)
   const qs = params.toString()
 
@@ -367,8 +370,8 @@ export function useRetrySweep() {
 export function useReevaluateSweep() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ sweepId, firm_ids }: { sweepId: string; firm_ids: string[] }) =>
-      api.post<{ sweep_id: string; reevaluated: number }>(`/backtests/sweeps/${sweepId}/reevaluate`, { firm_ids }),
+    mutationFn: ({ sweepId, ruleset_ids }: { sweepId: string; ruleset_ids: string[] }) =>
+      api.post<{ sweep_id: string; reevaluated: number }>(`/backtests/sweeps/${sweepId}/reevaluate`, { ruleset_ids }),
     onSuccess: (data, { sweepId }) => {
       toast.success(`Scored ${data.reevaluated} run${data.reevaluated !== 1 ? 's' : ''}`)
       qc.invalidateQueries({ queryKey: ['lab', 'sweep', sweepId] })
@@ -477,18 +480,18 @@ export function useRetryOptimization() {
 
 export function useInstrumentSummary(
   strategyId: string | null,
-  firmId?: string,
+  rulesetId?: string,
   startDate?: string,
   endDate?: string,
 ) {
   const params = new URLSearchParams()
-  if (firmId)    params.set('firm_id',    firmId)
+  if (rulesetId) params.set('ruleset_id', rulesetId)
   if (startDate) params.set('start_date', startDate)
   if (endDate)   params.set('end_date',   endDate)
   const qs = params.toString()
 
   return useQuery({
-    queryKey: ['lab', 'instrument-summary', strategyId, firmId, startDate, endDate],
+    queryKey: ['lab', 'instrument-summary', strategyId, rulesetId, startDate, endDate],
     queryFn: () => api.get<InstrumentSummary>(`/strategies/${strategyId}/instrument_summary${qs ? `?${qs}` : ''}`),
     enabled: !!strategyId,
   })

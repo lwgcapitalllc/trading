@@ -2,7 +2,7 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
-**Last reviewed:** 2026-05-31 (session 4 — M2 complete)
+**Last reviewed:** 2026-06-01 (session 5 — M3 Step 1: Ruleset abstraction)
 
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
@@ -21,7 +21,7 @@ command-center/
 │   ├── models.py          all Pydantic models in one file
 │   ├── routers/           one file per domain
 │   ├── services/          business logic, DB access, VPS client
-│   ├── data/lab.db        SQLite — strategies, firms, runs, evaluations
+│   ├── data/lab.db        SQLite — strategies, rulesets, runs, evaluations
 │   └── reports/lab/       run output files (equity curves, logs)
 ├── frontend/
 │   └── src/
@@ -62,7 +62,7 @@ cd command-center
 
 **Bot risk cap deploy** — `PATCH /bots/{name}/caps` writes `algos/shared/thresholds.json` + instance `config.json`, commits both, pushes to VPS, restarts the bot, sends Telegram notification. All in one endpoint.
 
-**Lab experiment model** — user always specifies which firm challenges to evaluate against. The system never auto-evaluates against all firms. `evaluate_firms` is always set explicitly.
+**Lab experiment model** — user always specifies which rulesets to evaluate against. The system never auto-evaluates against all rulesets. `evaluate_rulesets` is always set explicitly.
 
 ---
 
@@ -74,7 +74,7 @@ cd command-center
 | Overview — stat row + Bots + Smart Money + Backtests cards | ✅ |
 | Smart Money — full pipeline UI (scan, terminal, rankings, profiles, disqualified, config, cache) | ✅ |
 | Bots — monitor, control (global + per-bot), configure (risk caps + deploy), users (Telegram) | ✅ |
-| Backtests lab — strategies, runs, firms tabs; run modal; strategy detail; verdict pills; delete | ✅ |
+| Backtests lab — strategies, runs, rulesets tabs; run modal; strategy detail; verdict pills; delete | ✅ |
 | Backtests lab — runs tab duration column; prominent Stop button; live log streaming (2 s poll during active runs) | ✅ |
 | Backtests lab M2 — worthiness badges (Tier 1/2/3) on every completed run | ✅ |
 | Backtests lab M2 — instrument sweeps (N sequential runs via SA semaphore, Sweep Detail page with live sort-by-tier) | ✅ |

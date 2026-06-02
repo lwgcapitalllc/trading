@@ -19,12 +19,12 @@ function withContractMonth(instruments: string[], sourceInstrument: string): str
 
 export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
   const navigate  = useNavigate()
-  const firmIds   = run.evaluations.map(e => e.firm_id)
-  const primaryFirmId = firmIds[0] ?? undefined
+  const rulesetIds = run.evaluations.map(e => e.ruleset_id)
+  const primaryRulesetId = rulesetIds[0] ?? undefined
 
   const { data: summary, isLoading } = useInstrumentSummary(
     run.strategy_id,
-    primaryFirmId,
+    primaryRulesetId,
     run.start_date,
     run.end_date,
   )
@@ -44,7 +44,7 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
       end_date:           run.end_date,
       commission_per_side: run.commission_per_side,
       slippage_ticks:     run.slippage_ticks,
-      firm_ids:           firmIds,
+      ruleset_ids:        rulesetIds,
       instruments:        withContractMonth(summary.untested_instruments, run.instrument),
       source_run_id:      run.run_id,
     }
@@ -71,7 +71,7 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
       end_date:           run.end_date,
       commission_per_side: run.commission_per_side,
       slippage_ticks:     run.slippage_ticks,
-      firm_ids:           firmIds,
+      ruleset_ids:        rulesetIds,
       instruments:        withContractMonth(allInstruments, run.instrument),
       source_run_id:      run.run_id,
     }

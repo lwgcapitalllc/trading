@@ -55,7 +55,7 @@ function OptimizerModal({
   const jobBlocked = !!runningJob?.running
 
   const evalFirm = run.evaluations[0]
-  const [firmId, setFirmId]         = useState(evalFirm?.firm_id ?? '')
+  const [firmId, setFirmId]         = useState(evalFirm?.ruleset_id ?? '')
   const [mode, setMode]             = useState<'eval' | 'funded'>('eval')
   const [searchMethod, setMethod]   = useState<'auto' | 'brute' | 'genetic'>('auto')
 
@@ -91,7 +91,7 @@ function OptimizerModal({
   }
 
   const handleGo = () => {
-    if (!firmId) { toast.error('Select a firm'); return }
+    if (!firmId) { toast.error('Select a ruleset'); return }
 
     const param_grid: Record<string, ParamAxisSpec> = {}
     for (const [k, ax] of Object.entries(axes)) {
@@ -114,7 +114,7 @@ function OptimizerModal({
       end_date:           run.end_date,
       commission_per_side: run.commission_per_side,
       slippage_ticks:     run.slippage_ticks,
-      firm_id:            firmId,
+      ruleset_id:         firmId,
       mode,
       search_method:      searchMethod,
       param_grid,
@@ -158,13 +158,13 @@ function OptimizerModal({
           {/* Firm + mode + method */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Firm</label>
+              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Ruleset</label>
               <select
                 value={firmId}
                 onChange={e => setFirmId(e.target.value)}
                 className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
               >
-                <option value="">Select firm…</option>
+                <option value="">Select ruleset…</option>
                 {firms?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
             </div>
