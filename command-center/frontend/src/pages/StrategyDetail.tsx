@@ -2,10 +2,13 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Play, Trash2, RefreshCw, ChevronRight } from 'lucide-react'
 import { useStrategy, useBacktestRuns, useDeleteRun } from '@/hooks/useLab'
+import { useStressTests } from '@/hooks/useStressTests'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { EmptyState } from '@/components/EmptyState'
 import PreDeploymentChecklist from '@/components/PreDeploymentChecklist'
 import type { BacktestSummary, VerdictSummary } from '@/types'
+
+const GRADE_ORDER = ['A', 'B', 'C', 'D', 'F']
 
 const CORRELATED_PAIRS: [string, string][] = [
   ['MES', 'MNQ'], ['ES', 'NQ'], ['GC', 'MGC'], ['CL', 'MCL'], ['MYM', 'M2K'],
@@ -320,6 +323,13 @@ export function StrategyDetail() {
 
   const { data: strategy, isLoading } = useStrategy(strategyId ?? null)
   const { data: runs } = useBacktestRuns(strategyId ? { strategy_id: strategyId } : undefined)
+  const { data: allStressTests } = useStressTests()
+
+  const runIds = new Set((runs ?? []).map(r => r.run_id))
+  const strategyGrades = (allStressTests ?? [])
+    .filter(st => runIds.has(st.run_id) && st.grade)
+    .map(st => st.grade as string)
+  const bestGrade = strategyGrades.sort((a, b) => GRADE_ORDER.indexOf(a) - GRADE_ORDER.indexOf(b))[0] ?? null
 
   const completedInstruments = [...new Set(
     (runs?.filter(r => r.status === 'complete') ?? []).map(r => r.instrument)
@@ -431,7 +441,7 @@ export function StrategyDetail() {
         )}
 
         {/* Pre-Deployment Checklist */}
-        <PreDeploymentChecklist />
+        <PreDeploymentChecklist bestGrade={bestGrade} />
       </div>
 
       {showModal && (

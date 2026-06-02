@@ -457,6 +457,8 @@ export interface StressTest {
   status: string
   created_at: number
   completed_at: number | null
+  mc_completed_at: number | null
+  wf_completed_at: number | null
   num_simulations: number
   num_bootstrap: number
   median_final_pnl: number | null

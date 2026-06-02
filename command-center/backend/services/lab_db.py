@@ -244,6 +244,8 @@ def init_db() -> None:
             "ALTER TABLE backtest_runs ADD COLUMN stress_test_id TEXT",
             "ALTER TABLE backtest_runs ADD COLUMN walk_forward_window_id TEXT",
             "CREATE INDEX IF NOT EXISTS idx_runs_stress ON backtest_runs(stress_test_id)",
+            "ALTER TABLE stress_tests ADD COLUMN mc_completed_at INTEGER",
+            "ALTER TABLE stress_tests ADD COLUMN wf_completed_at INTEGER",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -1188,14 +1190,14 @@ def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict) -> None:
     with _connect() as conn:
         conn.execute("""
             UPDATE stress_tests SET
-                status='complete', completed_at=?,
+                status='complete', completed_at=?, mc_completed_at=?,
                 median_final_pnl=?, pct5_final_pnl=?, pct1_final_pnl=?,
                 median_max_dd=?, pct5_max_dd=?, pct1_max_dd=?,
                 prob_breach=?, prob_pass_eval=?,
                 equity_paths_path=?, distribution_path=?
             WHERE stress_test_id=?
         """, (
-            now,
+            now, now,
             mc.get("median_final_pnl"), mc.get("pct5_final_pnl"), mc.get("pct1_final_pnl"),
             mc.get("median_max_dd"), mc.get("pct5_max_dd"), mc.get("pct1_max_dd"),
             mc.get("prob_breach"), mc.get("prob_pass_eval"),
@@ -1205,10 +1207,11 @@ def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict) -> None:
 
 
 def update_stress_test_walk_forward(stress_test_id: str, summary: list, degradation: float) -> None:
+    now = int(time.time())
     with _connect() as conn:
         conn.execute(
-            "UPDATE stress_tests SET status='running_sens', walk_forward_summary=?, walk_forward_degradation=? WHERE stress_test_id=?",
-            (json.dumps(summary), degradation, stress_test_id),
+            "UPDATE stress_tests SET status='running_sens', wf_completed_at=?, walk_forward_summary=?, walk_forward_degradation=? WHERE stress_test_id=?",
+            (now, json.dumps(summary), degradation, stress_test_id),
         )
 
 

@@ -56,11 +56,25 @@ export function StressTests() {
                   <td className="py-2 pr-4 text-text-primary">{t.strategy_name ?? t.strategy_id}</td>
                   <td className="py-2 pr-4 font-mono text-accent">{t.instrument}</td>
                   <td className="py-2 pr-4">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      t.status === 'complete'         ? 'bg-pos-muted text-pos-text' :
-                      t.status.startsWith('failed')   ? 'bg-neg-muted text-neg-text' :
-                                                        'bg-warn-muted text-warn-text'
-                    }`}>{t.status}</span>
+                    {(() => {
+                      const s = t.status
+                      const label =
+                        s === 'complete'      ? 'Complete' :
+                        s === 'running'       ? 'Running' :
+                        s === 'running_wf'    ? 'Walk-forward' :
+                        s === 'running_sens'  ? 'Sensitivity' :
+                        s.startsWith('failed') ? 'Failed' : s
+                      const cls =
+                        s === 'complete'       ? 'bg-pos-muted text-pos-text' :
+                        s.startsWith('failed') ? 'bg-neg-muted text-neg-text' :
+                                                 'bg-accent/10 text-accent'
+                      return (
+                        <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full ${cls}`}>
+                          {s.startsWith('running') && <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />}
+                          {label}
+                        </span>
+                      )
+                    })()}
                   </td>
                   <td className="py-2 pr-4 font-mono text-text-secondary">
                     {t.prob_breach != null ? `${(t.prob_breach * 100).toFixed(1)}%` : '—'}

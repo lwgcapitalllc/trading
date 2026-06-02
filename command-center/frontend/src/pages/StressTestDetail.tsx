@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { Trash2, ArrowLeft, RefreshCw, Info } from 'lucide-react'
+import { Trash2, ArrowLeft, RefreshCw, Info, Check } from 'lucide-react'
 import { useStressTest, useDeleteStressTest } from '@/hooks/useStressTests'
 import { useRulesets, useBacktestRun } from '@/hooks/useLab'
 import MonteCarloFan from '@/components/MonteCarloFan'
@@ -101,6 +101,59 @@ export default function StressTestDetail() {
   const ruleset = rulesets?.find(r => r.id === st.ruleset_id)
   const isRunning = !st.status.startsWith('failed') && st.status !== 'complete'
 
+  const hasWF   = st.walk_forward_summary != null || st.status === 'running_wf'
+  const hasSens = st.sensitivity_summary  != null || st.status === 'running_sens'
+
+  const nowSec = Math.floor(Date.now() / 1000)
+  function fmtDuration(startSec: number | null, endSec: number | null): string | null {
+    if (!startSec) return null
+    const secs = (endSec ?? nowSec) - startSec
+    if (secs < 60) return `${secs}s`
+    return `${Math.floor(secs / 60)}m ${secs % 60}s`
+  }
+  const totalElapsed = fmtDuration(st.created_at, st.completed_at)
+
+  // done fallbacks: use status when phase timestamps aren't available (pre-migration tests)
+  const mcDone   = st.mc_completed_at != null || st.status !== 'running'
+  const wfDone   = st.wf_completed_at != null || st.walk_forward_summary != null
+  const sensDone = st.sensitivity_summary != null
+
+  type PipelineStep = { key: string; label: string; sub: string; timer: string | null; done: boolean; active: boolean }
+  const pipelineSteps: PipelineStep[] = [
+    {
+      key: 'mc',
+      label: 'Monte Carlo',
+      sub: '10k simulations',
+      timer: fmtDuration(st.created_at, st.mc_completed_at),
+      done: mcDone,
+      active: st.status === 'running',
+    },
+    ...(hasWF ? [{
+      key: 'wf',
+      label: 'Walk-forward',
+      sub: 'In-sample vs out-of-sample',
+      timer: fmtDuration(st.mc_completed_at, st.wf_completed_at),
+      done: wfDone,
+      active: st.status === 'running_wf',
+    }] : []),
+    ...(hasSens ? [{
+      key: 'sens',
+      label: 'Sensitivity',
+      sub: 'Parameter stability',
+      timer: fmtDuration(st.wf_completed_at ?? st.mc_completed_at, st.status === 'complete' ? st.completed_at : null),
+      done: sensDone,
+      active: st.status === 'running_sens',
+    }] : []),
+    {
+      key: 'grade',
+      label: 'Grade',
+      sub: 'A – F',
+      timer: null,
+      done: st.grade != null,
+      active: false,
+    },
+  ]
+
   const gradeCls = st.grade === 'A' || st.grade === 'B' ? 'text-pos-text bg-pos-muted'
     : st.grade === 'C' ? 'text-warn-text bg-warn-muted'
     : 'text-neg-text bg-neg-muted'
@@ -168,6 +221,52 @@ export default function StressTestDetail() {
           </div>
         </div>
       </div>
+
+      {/* ── Pipeline progress (running only) ──────────────────────────────────── */}
+      {isRunning && (
+        <div className="rounded-lg border border-accent/20 bg-accent/5 px-5 py-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-text-secondary">Running</span>
+            <span className="text-[11px] font-mono text-text-tertiary">Total elapsed: <span className="text-accent">{totalElapsed}</span></span>
+          </div>
+          <div className="flex items-start">
+            {pipelineSteps.map((step, i) => (
+              <>
+                {i > 0 && (
+                  <div key={`line-${step.key}`}
+                    className={`flex-1 h-px mt-3 mx-2 ${pipelineSteps[i - 1].done ? 'bg-accent/40' : 'bg-border-subtle'}`}
+                  />
+                )}
+                <div key={step.key} className="flex flex-col items-center gap-[6px] w-[88px] flex-shrink-0">
+                  <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${
+                    step.active ? 'border-accent bg-accent/10' :
+                    step.done   ? 'border-pos bg-pos-muted'    :
+                                  'border-border-default bg-bg-surface'
+                  }`}>
+                    {step.done
+                      ? <Check size={11} className="text-pos-text" />
+                      : step.active
+                        ? <span className="w-[7px] h-[7px] rounded-full bg-accent animate-pulse" />
+                        : <span className="w-[6px] h-[6px] rounded-full bg-border-default" />
+                    }
+                  </div>
+                  <div className="text-center">
+                    <div className={`text-[11px] font-semibold leading-none ${step.active ? 'text-accent' : step.done ? 'text-text-primary' : 'text-text-tertiary'}`}>
+                      {step.label}
+                    </div>
+                    <div className="text-[10px] text-text-tertiary mt-[3px] leading-none">{step.sub}</div>
+                    {step.timer && (
+                      <div className={`text-[10px] font-mono mt-[4px] leading-none ${step.active ? 'text-accent/70' : 'text-text-tertiary'}`}>
+                        {step.active ? '⏱ ' : ''}{step.timer}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Source backtest card ───────────────────────────────────────────────── */}
       {run && (

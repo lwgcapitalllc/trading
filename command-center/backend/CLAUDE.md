@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-02 (session 7 — no backend changes; frontend StressTestDetail redesigned)
+**Last reviewed:** 2026-06-02 (session 9 — phase timing columns, checklist grade enforcement)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -260,6 +260,25 @@ Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_
 - `walk_forward_window_id` — identifies the window and period (e.g. `wf_2_oos`, `sens_EntryOffset_+10%`)
 
 `optimizations` table key fields: `optimization_id`, `strategy_id`, `instrument`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `ruleset_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`, `created_at`, `completed_at`.
+
+`stress_tests` additions (added via migration, not in original CREATE TABLE):
+- `mc_completed_at` — unix timestamp when Monte Carlo phase finished; used by frontend pipeline stepper to show per-phase elapsed time
+- `wf_completed_at` — unix timestamp when walk-forward phase finished; same purpose
+
+---
+
+## How stress tests work
+
+**Monte Carlo** — pure Python (numpy), no NT8 involved. Takes the trade P&L list from a completed backtest and runs two simulations:
+- 10,000 reshuffles: same trades, random order. Probes whether the sequence of wins/losses was lucky. Sum is invariant, so final PnL doesn't vary across reshuffles — only drawdown does.
+- 1,000 bootstrap resamples: samples trades with replacement. Both total PnL and drawdown vary.
+Merges both pools (~11,000 paths) and computes: median/P95/P99 drawdown, prob of breaching the firm's loss limit, prob of passing the eval. Runs in ~5s even for 700+ trades.
+
+**Walk-forward** — sends real backtests to NT8. Splits the original date range into N equal windows. Each window is split 70% in-sample / 30% out-of-sample — two separate NT8 backtests per window. Measures how much Sharpe drops from in-sample to out-of-sample. Large drop = strategy may be overfit to the training period.
+
+**Sensitivity** — also sends real backtests to NT8. Re-runs the strategy with each numeric parameter shifted ±10% and ±25%, one NT8 run per shift. Booleans are skipped. Measures PnL delta vs the baseline run. Large swings = strategy is fragile to exact parameter values.
+
+**Auto-trigger** — fires MC only (no NT8) automatically when a Tier 1 backtest completes or an optimizer picks a winner. Walk-forward and sensitivity are manual-only.
 
 ---
 

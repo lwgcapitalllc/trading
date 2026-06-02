@@ -647,6 +647,8 @@ class StressTest(BaseModel):
     status: str
     created_at: int
     completed_at: Optional[int] = None
+    mc_completed_at: Optional[int] = None
+    wf_completed_at: Optional[int] = None
     num_simulations: int = 10_000
     num_bootstrap: int = 1_000
     median_final_pnl: Optional[float] = None
