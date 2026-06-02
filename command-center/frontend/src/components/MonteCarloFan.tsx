@@ -34,9 +34,10 @@ export default function MonteCarloFan({ paths, ruleset, tradeCount }: Props) {
         <XAxis dataKey="index" tick={{ fill: C.axisTick, fontSize: 11 }} tickLine={false} />
         <YAxis tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fill: C.axisTick, fontSize: 11 }} tickLine={false} axisLine={false} />
         <Tooltip
-          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 6 }}
-          itemStyle={{ color: C.tooltipBorder }}
-          formatter={(v: number) => [`$${v.toFixed(0)}`, '']}
+          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+          labelStyle={{ color: C.axisTick }}
+          itemStyle={{ color: '#e5e7eb' }}
+          formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, '']}
         />
         {ruleset?.max_loss_eod && (
           <ReferenceLine y={-ruleset.max_loss_eod} stroke={C.neg} strokeDasharray="4 2" label={{ value: 'Limit', fill: C.neg, fontSize: 10 }} />

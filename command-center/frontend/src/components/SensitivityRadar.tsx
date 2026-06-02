@@ -23,14 +23,16 @@ export default function SensitivityRadar({ sensitivity }: Props) {
         <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} tick={{ fill: C.axisTick, fontSize: 10 }} tickLine={false} />
         <YAxis type="category" dataKey="label" tick={{ fill: C.axisTick, fontSize: 10 }} tickLine={false} axisLine={false} width={120} />
         <Tooltip
-          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 6 }}
-          itemStyle={{ color: C.tooltipBorder }}
+          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+          labelStyle={{ color: C.axisTick }}
+          itemStyle={{ color: '#e5e7eb' }}
+          cursor={false}
           formatter={(v: number) => [`${v.toFixed(1)}%`, 'PnL Delta']}
         />
         <ReferenceLine x={0} stroke={C.refLine} />
-        <Bar dataKey="pnl_delta_pct" radius={[0, 2, 2, 0]}>
+        <Bar dataKey="pnl_delta_pct" radius={[0, 2, 2, 0]} activeBar={{ fillOpacity: 1 }}>
           {data.map((d, i) => (
-            <Cell key={i} fill={d.pnl_delta_pct >= 0 ? C.pos : C.neg} fillOpacity={0.8} />
+            <Cell key={i} fill={d.pnl_delta_pct >= 0 ? C.pos : C.neg} fillOpacity={0.6} />
           ))}
         </Bar>
       </BarChart>

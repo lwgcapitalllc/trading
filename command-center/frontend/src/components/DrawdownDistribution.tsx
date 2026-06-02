@@ -21,17 +21,19 @@ export default function DrawdownDistribution({ distribution, maxLoss }: Props) {
         <XAxis dataKey="dd" tickFormatter={v => `$${v}`} tick={{ fill: C.axisTick, fontSize: 10 }} tickLine={false} />
         <YAxis tick={{ fill: C.axisTick, fontSize: 10 }} tickLine={false} axisLine={false} />
         <Tooltip
-          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 6 }}
-          itemStyle={{ color: C.tooltipBorder }}
+          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+          labelStyle={{ color: C.axisTick }}
+          itemStyle={{ color: '#e5e7eb' }}
+          cursor={false}
           formatter={(v: number) => [`${v} sims`, 'Count']}
-          labelFormatter={v => `Max DD: $${v}`}
+          labelFormatter={(v: number) => `Max DD: $${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
         />
         {maxLoss != null && (
           <ReferenceLine x={maxLoss} stroke={C.neg} strokeDasharray="4 2" label={{ value: 'Limit', fill: C.neg, fontSize: 10 }} />
         )}
-        <Bar dataKey="count" radius={[2, 2, 0, 0]}>
+        <Bar dataKey="count" radius={[2, 2, 0, 0]} activeBar={{ fillOpacity: 1 }}>
           {data.map((d, i) => (
-            <Cell key={i} fill={d.overLimit ? C.neg : C.accent} fillOpacity={d.overLimit ? 0.8 : 0.6} />
+            <Cell key={i} fill={d.overLimit ? C.neg : C.accent} fillOpacity={d.overLimit ? 0.75 : 0.55} />
           ))}
         </Bar>
       </BarChart>

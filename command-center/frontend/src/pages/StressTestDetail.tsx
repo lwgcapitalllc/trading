@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Trash2, ArrowLeft, RefreshCw } from 'lucide-react'
 import { useStressTest, useDeleteStressTest } from '@/hooks/useStressTests'
 import { useRulesets } from '@/hooks/useLab'
+import { StatCard } from '@/components/StatCard'
 import MonteCarloFan from '@/components/MonteCarloFan'
 import DrawdownDistribution from '@/components/DrawdownDistribution'
 import WalkForwardChart from '@/components/WalkForwardChart'
@@ -9,25 +10,34 @@ import SensitivityRadar from '@/components/SensitivityRadar'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 
 function StatusPill({ status }: { status: string }) {
-  const base = 'text-xs font-medium px-2 py-0.5 rounded-full'
-  if (status === 'complete') return <span className={`${base} bg-pos-muted text-pos-text`}>Complete</span>
-  if (status.startsWith('failed')) return <span className={`${base} bg-neg-muted text-neg-text`}>Failed</span>
+  const base = 'text-[11px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px]'
+  if (status === 'complete')        return <span className={`${base} bg-pos-muted text-pos-text`}>Complete</span>
+  if (status.startsWith('failed'))  return <span className={`${base} bg-neg-muted text-neg-text`}>Failed</span>
   return <span className={`${base} bg-warn-muted text-warn-text`}>Running…</span>
 }
 
-function ProbBar({ prob, label }: { prob: number; label: string }) {
+function ProbBar({ prob, label, variant }: { prob: number; label: string; variant: 'breach' | 'pass' }) {
   const pct = Math.round(prob * 100)
+  const barCls = variant === 'breach'
+    ? pct > 50 ? 'bg-neg' : pct > 10 ? 'bg-warn' : 'bg-pos'
+    : pct > 50 ? 'bg-pos' : 'bg-warn'
   return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs text-text-secondary">
-        <span>{label}</span>
-        <span className="font-mono text-text-primary">{pct}%</span>
+    <div className="space-y-[5px]">
+      <div className="flex justify-between text-[12px]">
+        <span className="text-text-secondary">{label}</span>
+        <span className="font-mono font-semibold text-text-primary">{pct}%</span>
       </div>
-      <div className="h-2 bg-bg-sunken rounded-full overflow-hidden">
-        <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+      <div className="h-[6px] bg-bg-sunken rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${barCls}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
+}
+
+function fmt$(n: number | null | undefined): string {
+  if (n == null) return '—'
+  const sign = n < 0 ? '-' : ''
+  return `${sign}$${Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 }
 
 export default function StressTestDetail() {
@@ -37,28 +47,49 @@ export default function StressTestDetail() {
   const { data: rulesets } = useRulesets()
   const deleteTest = useDeleteStressTest()
 
-  if (isLoading) return <div className="p-8 text-text-secondary">Loading…</div>
-  if (!st) return <div className="p-8 text-text-secondary">Stress test not found</div>
+  if (isLoading) return <div className="text-text-secondary text-[13px] pt-8">Loading…</div>
+  if (!st) return <div className="text-text-secondary text-[13px] pt-8">Stress test not found</div>
 
   const ruleset = rulesets?.find(r => r.id === st.ruleset_id)
   const isRunning = !st.status.startsWith('failed') && st.status !== 'complete'
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
-      {/* Header */}
+    <div className="space-y-8">
+
+      {/* ── Back ──────────────────────────────────────────────────────────────── */}
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
+      >
+        <ArrowLeft size={14} /> Stress Tests
+      </button>
+
+      {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-secondary mb-2">
-            <ArrowLeft size={12} /> Back
-          </button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-text-primary">Stress Test</h1>
+        <div>
+          <div className="flex items-center gap-3 flex-wrap mb-2">
+            <h1 className="text-h1 font-semibold leading-tight">Stress Test</h1>
             <StatusPill status={st.status} />
-            {st.grade && <RobustnessGradeBadge grade={st.grade} size="lg" />}
+            {st.grade && <RobustnessGradeBadge grade={st.grade} size="md" />}
             {isRunning && <RefreshCw size={14} className="text-accent animate-spin" />}
           </div>
-          <p className="text-sm text-text-secondary font-mono">{st.strategy_name} · {st.instrument}</p>
-          {ruleset && <p className="text-xs text-text-tertiary">Evaluated against: {ruleset.name}</p>}
+          <div className="flex flex-wrap gap-1.5">
+            {st.strategy_name && (
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary">
+                {st.strategy_name}
+              </span>
+            )}
+            {st.instrument && (
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+                {st.instrument}
+              </span>
+            )}
+            {ruleset && (
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-tertiary">
+                vs {ruleset.name}
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={() => {
@@ -66,56 +97,69 @@ export default function StressTestDetail() {
               deleteTest.mutate(st.stress_test_id, { onSuccess: () => navigate(-1) })
             }
           }}
-          className="p-2 rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted"
+          className="p-2 rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors"
         >
           <Trash2 size={16} />
         </button>
       </div>
 
-      {/* Grade reasons */}
+      {/* ── Grade reasons ─────────────────────────────────────────────────────── */}
       {st.grade_reasons && st.grade_reasons.length > 0 && (
         <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-2">
-          <p className="text-sm font-semibold text-text-primary">Grade Reasons</p>
-          <ul className="space-y-1">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.5px] text-text-tertiary">Grade Reasons</p>
+          <ul className="space-y-1.5">
             {st.grade_reasons.map((r, i) => (
-              <li key={i} className="text-sm text-text-secondary flex items-start gap-2">
-                <span className="text-accent mt-0.5">·</span>{r}
+              <li key={i} className="text-[13px] text-text-secondary flex items-start gap-2">
+                <span className="text-accent mt-[3px] flex-shrink-0">·</span>{r}
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* MC stats */}
+      {/* ── MC stats grid ─────────────────────────────────────────────────────── */}
       {st.status === 'complete' && st.median_final_pnl != null && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: 'Median PnL',     value: `$${st.median_final_pnl?.toFixed(0)}` },
-            { label: 'Worst 5% PnL',   value: `$${st.pct5_final_pnl?.toFixed(0)}` },
-            { label: 'Worst 5% DD',    value: `$${st.pct5_max_dd?.toFixed(0)}` },
-            { label: 'Worst 1% DD',    value: `$${st.pct1_max_dd?.toFixed(0)}` },
-          ].map(({ label, value }) => (
-            <div key={label} className="rounded-lg border border-border-subtle bg-bg-surface p-3">
-              <p className="text-xs text-text-tertiary">{label}</p>
-              <p className="text-lg font-mono font-semibold text-text-primary">{value}</p>
-            </div>
-          ))}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-[10px]">
+          <StatCard
+            label="Median PnL"
+            value={fmt$(st.median_final_pnl)}
+            subVariant={st.median_final_pnl >= 0 ? 'pos' : 'neg'}
+          />
+          <StatCard
+            label="Worst 5% PnL"
+            value={fmt$(st.pct5_final_pnl)}
+            subVariant={st.pct5_final_pnl != null && st.pct5_final_pnl >= 0 ? 'pos' : 'neg'}
+          />
+          <StatCard
+            label="Worst 5% Drawdown"
+            value={fmt$(st.pct5_max_dd)}
+            sub={ruleset ? `limit ${fmt$(ruleset.max_loss_eod)}` : undefined}
+            subVariant={ruleset && st.pct5_max_dd != null && st.pct5_max_dd <= (ruleset.max_loss_eod ?? Infinity) ? 'pos' : 'neg'}
+          />
+          <StatCard
+            label="Worst 1% Drawdown"
+            value={fmt$(st.pct1_max_dd)}
+            subVariant="neutral"
+          />
         </div>
       )}
 
-      {/* Probability bars */}
+      {/* ── Probability bars ──────────────────────────────────────────────────── */}
       {st.prob_breach != null && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
-          <p className="text-sm font-semibold text-text-primary">Probability Metrics</p>
-          <ProbBar prob={st.prob_breach} label="Probability of breaching ruleset limit" />
-          <ProbBar prob={st.prob_pass_eval ?? 0} label="Probability of passing eval" />
+        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-4">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.5px] text-text-tertiary">Probability Metrics</p>
+          <ProbBar prob={st.prob_breach}     label="Probability of breaching ruleset limit" variant="breach" />
+          <ProbBar prob={st.prob_pass_eval ?? 0} label="Probability of passing eval"        variant="pass"   />
         </div>
       )}
 
-      {/* Monte Carlo fan */}
+      {/* ── Monte Carlo fan ───────────────────────────────────────────────────── */}
       {st.equity_paths && st.equity_paths.length > 0 && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-2">
-          <p className="text-sm font-semibold text-text-primary">Equity Path Fan (100 simulations)</p>
+        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+          <div className="flex items-baseline justify-between">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.5px] text-text-tertiary">Equity Path Fan</p>
+            <span className="text-[11px] text-text-tertiary">100 simulations · p10/p25/p50/p75/p90</span>
+          </div>
           <MonteCarloFan
             paths={st.equity_paths}
             ruleset={ruleset}
@@ -124,10 +168,13 @@ export default function StressTestDetail() {
         </div>
       )}
 
-      {/* Drawdown distribution */}
+      {/* ── Drawdown distribution ─────────────────────────────────────────────── */}
       {st.distribution && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-2">
-          <p className="text-sm font-semibold text-text-primary">Max Drawdown Distribution</p>
+        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+          <div className="flex items-baseline justify-between">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.5px] text-text-tertiary">Max Drawdown Distribution</p>
+            {ruleset && <span className="text-[11px] text-text-tertiary">Red = over limit</span>}
+          </div>
           <DrawdownDistribution
             distribution={st.distribution.max_dd}
             maxLoss={ruleset?.max_loss_eod}
@@ -135,13 +182,13 @@ export default function StressTestDetail() {
         </div>
       )}
 
-      {/* Walk-forward */}
+      {/* ── Walk-forward ──────────────────────────────────────────────────────── */}
       {st.walk_forward_summary && st.walk_forward_summary.length > 0 && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-text-primary">Walk-Forward Analysis</p>
+        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+          <div className="flex items-baseline justify-between">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.5px] text-text-tertiary">Walk-Forward Analysis</p>
             {st.walk_forward_degradation != null && (
-              <span className="text-xs text-text-secondary font-mono">
+              <span className="text-[11px] text-text-tertiary font-mono">
                 IS→OOS degradation: {(st.walk_forward_degradation * 100).toFixed(0)}%
               </span>
             )}
@@ -150,13 +197,13 @@ export default function StressTestDetail() {
         </div>
       )}
 
-      {/* Sensitivity */}
+      {/* ── Sensitivity ───────────────────────────────────────────────────────── */}
       {st.sensitivity_summary && Object.keys(st.sensitivity_summary).length > 0 && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-text-primary">Parameter Sensitivity</p>
+        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+          <div className="flex items-baseline justify-between">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.5px] text-text-tertiary">Parameter Sensitivity</p>
             {st.sensitivity_max_degradation != null && (
-              <span className="text-xs text-text-secondary font-mono">
+              <span className="text-[11px] text-text-tertiary font-mono">
                 Worst case: {(st.sensitivity_max_degradation * 100).toFixed(0)}%
               </span>
             )}
@@ -165,12 +212,13 @@ export default function StressTestDetail() {
         </div>
       )}
 
-      {/* Error */}
+      {/* ── Error ─────────────────────────────────────────────────────────────── */}
       {st.error_message && (
         <div className="rounded-lg border border-neg-text/30 bg-neg-muted p-4">
-          <p className="text-sm text-neg-text font-mono">{st.error_message}</p>
+          <p className="text-[13px] text-neg-text font-mono">{st.error_message}</p>
         </div>
       )}
+
     </div>
   )
 }

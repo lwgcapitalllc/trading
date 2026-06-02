@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-01 (session 5 — M3 Steps 2-6: stress testing, grading, frontend)
+**Last reviewed:** 2026-06-01 (session 6 — stress tests promoted to own sidebar page, tooltip fix, styling alignment)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -272,7 +272,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 - Traffic-light verdict banner: green (profitable + no DD breach + consistency pass), yellow (profitable + DD ok + consistency fail), red (net negative or DD breach)
 - Drawdown chart shows firm limit reference lines from evaluations
 - Calendar-based x-axis ticks (start, quarterly, end) — not interval-based
-- All chart tooltips: dark bg `#0c0c1a`, `itemStyle={{ color: '#e5e7eb' }}` for readable text
+- All chart tooltips: `contentStyle={{ background: C.tooltipBg, border: '1px solid ${C.tooltipBorder}', borderRadius: 8, fontSize: 13, padding: '8px 12px' }}`, `labelStyle={{ color: C.axisTick }}`, `itemStyle={{ color: '#e5e7eb' }}`. Never use `C.tooltipBorder` as text color — it's a dark border hex, not readable text.
 
 ---
 
@@ -290,7 +290,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Optimize Button | ✅ Live | Tier-aware button on BacktestDetail: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning with instrument routing |
 | Tier 3 Warning Modal | ✅ Live | Shows past results per instrument, offers sweep of untested instruments. `withContractMonth()` stamps root symbols with contract month from source run before submitting sweep. Now passes `source_run_id: run.run_id` on every sweep trigger. |
 | Runner Badge | ✅ Live | StrategyDetail shows "Runs on: NinjaTrader" badge |
-| Stress Tests | ✅ Live | Stress Tests tab in Backtests (list with grade/prob columns). StressTestDetail page: grade badge + reasons, MC stats grid, probability bars, equity fan chart, drawdown distribution, walk-forward IS/OOS chart, sensitivity bar chart. "Stress Test" button on BacktestDetail header (visible when complete). Auto-triggered stress test result shown as grade badge next to button. |
+| Stress Tests | ✅ Live | Own sidebar page at `/stress-tests` (dedicated list, removed from Backtests tabs). StressTestDetail at `/stress-tests/:id`: grade badge + chip header, StatCard MC stats, color-coded ProbBars (breach red→yellow→green by severity), equity fan, drawdown dist, walk-forward, sensitivity. "Stress Test" button on BacktestDetail. Overview card shows best grade + robust count. |
 | Settings | ✅ Live | Config read/write |
 
 ---
