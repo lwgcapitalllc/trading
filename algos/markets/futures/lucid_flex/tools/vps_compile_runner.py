@@ -78,11 +78,12 @@ def open_ns_editor(dt) -> object:
 
     log(f"Control Center HWND: {cc_hwnd}")
     cc = dt.window(handle=cc_hwnd)
-    cc.set_focus()
-    time.sleep(0.5)
-    cc.child_window(title="New", control_type="MenuItem").click_input()
+    # Use invoke() (UIA Invoke pattern) — activates menu items without moving
+    # the mouse cursor. Required for disconnected RDP sessions where SetCursorPos
+    # fails with "no active desktop".
+    cc.child_window(title="New", control_type="MenuItem").invoke()
     time.sleep(0.8)
-    dt.window(title="NinjaScript Editor", control_type="MenuItem").click_input()
+    dt.window(title="NinjaScript Editor", control_type="MenuItem").invoke()
     time.sleep(3.0)
 
     ed = dt.window(title_re=".*NinjaScript Editor.*")
@@ -96,12 +97,18 @@ def main():
     log(f"Pre-compile dll mtime: {pre_mtime}")
 
     try:
+        import ctypes
         dt = Desktop(backend="uia")
         ed = open_ns_editor(dt)
-        ed.set_focus()
-        time.sleep(0.5)
-        send_keys("{F5}")
-        log("F5 sent to NinjaScript Editor — waiting for dll update...")
+        # PostMessage F5 directly to the window handle — works without an active
+        # desktop/mouse cursor (disconnected RDP sessions are fine with WM_KEY*).
+        VK_F5 = 0x74
+        WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
+        hwnd = ed.element_info.handle
+        ctypes.windll.user32.PostMessageW(hwnd, WM_KEYDOWN, VK_F5, 0)
+        time.sleep(0.1)
+        ctypes.windll.user32.PostMessageW(hwnd, WM_KEYUP, VK_F5, 0)
+        log("F5 posted to NinjaScript Editor — waiting for dll update...")
     except Exception as e:
         print(f"ERROR:{e}", flush=True)
         print("STATUS:error", flush=True)
