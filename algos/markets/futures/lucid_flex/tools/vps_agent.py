@@ -330,21 +330,15 @@ def _run_compile(compile_job_id: str):
 
     start_ts = time.time()
     try:
-        import pywinauto.mouse as _mouse
         from pywinauto import Desktop
         from pywinauto.keyboard import send_keys
 
         dt = Desktop(backend="uia")
-        # Find NinjaTrader main window
-        nt8_win = None
-        for win in dt.windows():
-            if "NinjaTrader" in (win.window_text() or ""):
-                nt8_win = win
-                break
-        if nt8_win is None:
-            raise RuntimeError("NinjaTrader window not found — is NT8 running?")
-
-        nt8_win.set_focus()
+        # Use the SA window — same approach as the backtest runner.
+        # F5 recompiles regardless of which NT8 window has focus.
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        sa.set_focus()
         time.sleep(0.5)
         send_keys("{F5}")
         _alog(f"Compile job {compile_job_id[:8]}: F5 sent, polling NT8 log")
