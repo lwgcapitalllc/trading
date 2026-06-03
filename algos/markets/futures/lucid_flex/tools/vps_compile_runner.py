@@ -78,12 +78,34 @@ def open_ns_editor(dt) -> object:
 
     log(f"Control Center HWND: {cc_hwnd}")
     cc = dt.window(handle=cc_hwnd)
+
+    # Dump direct children to help debug "New" menu structure
+    try:
+        kids = [(c.window_text(), str(getattr(c.element_info, 'control_type', '?')),
+                 (c.automation_id() or '').strip())
+                for c in cc.children()]
+        log(f"CC direct children ({len(kids)}): {kids[:8]}")
+    except Exception as ex:
+        log(f"CC children dump failed: {ex}")
+
     # Use invoke() (UIA Invoke pattern) — activates menu items without moving
     # the mouse cursor. Required for disconnected RDP sessions where SetCursorPos
     # fails with "no active desktop".
-    cc.child_window(title="New", control_type="MenuItem").invoke()
+    try:
+        new_item = cc.child_window(title="New", control_type="MenuItem")
+        log(f"New item found: {new_item.window_text()!r}")
+        new_item.invoke()
+    except Exception as ex:
+        import traceback
+        raise RuntimeError(f"invoke New: {ex!r}\n{traceback.format_exc()}")
     time.sleep(0.8)
-    dt.window(title="NinjaScript Editor", control_type="MenuItem").invoke()
+    try:
+        ns_item = dt.window(title="NinjaScript Editor", control_type="MenuItem")
+        log(f"NS Editor item found: {ns_item.window_text()!r}")
+        ns_item.invoke()
+    except Exception as ex:
+        import traceback
+        raise RuntimeError(f"invoke NinjaScript Editor: {ex!r}\n{traceback.format_exc()}")
     time.sleep(3.0)
 
     ed = dt.window(title_re=".*NinjaScript Editor.*")
