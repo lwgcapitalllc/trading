@@ -304,12 +304,15 @@ def _open_ns_editor(dt):
     except Exception:
         pass
 
-    # Open via Control Center "New" menu — same pattern as SA
+    # Open via Control Center "New" menu — same pattern as SA.
+    # Don't constrain control_type — NT8's WPF windows can map to Pane/Custom
+    # in UIA depending on version.
     cc = None
     for cc_pattern in [".*NinjaTrader 8.*", ".*Control Center.*"]:
         try:
-            cc = dt.window(title_re=cc_pattern, control_type="Window")
-            if cc.exists(timeout=1):
+            candidate = dt.window(title_re=cc_pattern)
+            if candidate.exists(timeout=1):
+                cc = candidate
                 break
         except Exception:
             continue
