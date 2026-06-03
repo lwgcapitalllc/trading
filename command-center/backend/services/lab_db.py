@@ -246,11 +246,28 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_runs_stress ON backtest_runs(stress_test_id)",
             "ALTER TABLE stress_tests ADD COLUMN mc_completed_at INTEGER",
             "ALTER TABLE stress_tests ADD COLUMN wf_completed_at INTEGER",
+            "ALTER TABLE optimizations ADD COLUMN regime_filter TEXT",
         ]:
             try:
                 conn.execute(migration_sql)
             except Exception:
                 pass
+
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS instrument_daily_ohlc (
+                instrument  TEXT NOT NULL,
+                date        TEXT NOT NULL,
+                open        REAL NOT NULL,
+                high        REAL NOT NULL,
+                low         REAL NOT NULL,
+                close       REAL NOT NULL,
+                fetched_at  INTEGER NOT NULL,
+                source      TEXT NOT NULL,
+                PRIMARY KEY (instrument, date)
+            );
+            CREATE INDEX IF NOT EXISTS idx_ohlc_instrument
+                ON instrument_daily_ohlc(instrument);
+        """)
 
         _seed_rulesets(conn)
 
@@ -961,15 +978,15 @@ def insert_optimization(data: dict) -> None:
                 (optimization_id, strategy_id, instrument, start_date, end_date,
                  commission_per_side, slippage_ticks, ruleset_id, mode, search_method,
                  param_grid, status, estimated_runs, completed_runs, created_at,
-                 source_run_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                 source_run_id, regime_filter)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
         """, (
             data["optimization_id"], data["strategy_id"], data["instrument"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
             data["ruleset_id"], data["mode"], data["search_method"],
             json.dumps(data["param_grid"]), data["status"], data["estimated_runs"],
-            now, data.get("source_run_id"),
+            now, data.get("source_run_id"), data.get("regime_filter"),
         ))
 
 
@@ -1246,6 +1263,37 @@ def delete_stress_test(stress_test_id: str) -> bool:
             conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({ph})", child_ids)
         cur = conn.execute("DELETE FROM stress_tests WHERE stress_test_id=?", (stress_test_id,))
     return cur.rowcount > 0
+
+
+# ── OHLC Cache ────────────────────────────────────────────────────────────────
+
+def get_cached_ohlc(instrument: str, start_date: str, end_date: str) -> list[dict]:
+    """Return cached OHLC rows for instrument in [start_date, end_date], sorted by date asc."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT date, open, high, low, close FROM instrument_daily_ohlc "
+            "WHERE instrument = ? AND date BETWEEN ? AND ? ORDER BY date ASC",
+            (instrument, start_date, end_date),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_ohlc_rows(rows: list[dict]) -> None:
+    """Insert or replace OHLC rows. Each row: instrument, date, open, high, low, close, source."""
+    if not rows:
+        return
+    now = int(time.time())
+    with _connect() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO instrument_daily_ohlc "
+            "(instrument, date, open, high, low, close, fetched_at, source) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (r["instrument"], r["date"], r["open"], r["high"],
+                 r["low"], r["close"], now, r["source"])
+                for r in rows
+            ],
+        )
 
 
 def insert_run_stress_test_child(data: dict) -> None:

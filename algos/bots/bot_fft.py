@@ -135,6 +135,16 @@ MAGIC = 20240005
 
 log.info(f"BOT_FFT | FFT Strategy | watchlist={WATCHLIST} | risk={RISK_PCT}%")
 
+# 5-label regime decision table for Bot 5 (Fibonacci trend strategy — requires trending)
+REGIME_RISK_TABLE = {
+    "TRENDING":        {"risk_multiplier": 1.0, "trade_allowed": True},
+    "TRANSITIONING":   {"risk_multiplier": 0.5, "trade_allowed": True},
+    "RANGING":         {"risk_multiplier": 0.0, "trade_allowed": False},
+    "HIGH_VOLATILITY": {"risk_multiplier": 0.0, "trade_allowed": False},
+    "LOW_VOLATILITY":  {"risk_multiplier": 0.0, "trade_allowed": False},
+    "UNKNOWN":         {"risk_multiplier": 0.0, "trade_allowed": False},
+}
+
 _mt5 = BotMT5(SYMBOL, MAGIC, "BOT_FFT", _CFG, ACCOUNT, log)
 
 
@@ -905,9 +915,10 @@ def run():
                 continue
             reg_result = regime.classify(df_h1_primary, df_h4_primary)
             reg_state  = reg_result["regime"]
-            risk_mult  = reg_result["risk_multiplier"]
-            if reg_state == "RANGING":
-                log.info("Regime RANGING — FFT strategy needs trending. Waiting.")
+            _re = REGIME_RISK_TABLE.get(reg_state, REGIME_RISK_TABLE["UNKNOWN"])
+            risk_mult  = _re["risk_multiplier"]
+            if not _re["trade_allowed"]:
+                log.info(f"Regime {reg_state} — FFT strategy needs trending. Waiting.")
                 time.sleep(60)
                 continue
 

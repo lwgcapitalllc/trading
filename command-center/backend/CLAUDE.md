@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-02 (session 9 — phase timing columns, checklist grade enforcement)
+**Last reviewed:** 2026-06-03 (session 10 — M4 regime classifier integration complete)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -43,7 +43,8 @@ backend/
 │   ├── objectives.py      optimizer objective functions
 │   ├── stress_tester.py   Monte Carlo + walk-forward + sensitivity + auto-trigger
 │   ├── grading.py         compute_grade() → A/B/C/D/F with plain-English reasons
-│   ├── correlation_table.py  hardcoded correlated instrument pairs (M4 will replace with live data)
+│   ├── correlation_table.py  hardcoded correlated instrument pairs
+│   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
 │   └── vps_client.py      typed HTTP wrapper over vps_agent; runner dispatcher
 ├── data/lab.db            strategies, rulesets, runs, evaluations, optimizations, stress_tests
 └── reports/lab/           run output files — equity curves, logs, progress.json
@@ -222,6 +223,7 @@ Seeded rulesets (13 rows): 4 LucidFlex × (eval/funded) + 4 Tradeify × (eval/fu
 | Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer. Generates all param combos, runs each sequentially via SA semaphore, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. `source_run_id` links an optimization back to the run it was triggered from. Deletable. Per-run retry via `POST /backtests/runs/{id}/retry`. |
 | Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
 | Lab — Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap, vectorised numpy). Walk-forward (N sequential NT8 windows, IS/OOS Sharpe). Sensitivity (±10%/±25% param perturbations via NT8). Auto-triggered (MC only) on Tier 1 backtests and optimizer winners. Graded A-F. |
+| Lab — Regime Tags (M4) | ✅ Live | Each `daily_pnl` entry gains a `regime_tag` (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Pipeline auto-tags on every new backtest. Manual backfill via `POST /backtests/runs/{id}/backfill_regime`. Optimizer accepts optional `regime_filter` field to score child runs only against trades in that regime. |
 | Settings | ✅ Live | Config read/write. |
 
 ---
@@ -259,7 +261,9 @@ Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_
 - `stress_test_id` — set on walk-forward and sensitivity child runs; links them back to the parent stress test
 - `walk_forward_window_id` — identifies the window and period (e.g. `wf_2_oos`, `sens_EntryOffset_+10%`)
 
-`optimizations` table key fields: `optimization_id`, `strategy_id`, `instrument`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `ruleset_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`, `created_at`, `completed_at`.
+`optimizations` table key fields: `optimization_id`, `strategy_id`, `instrument`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `ruleset_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`, `regime_filter` (M4 — one of the 5 regime labels or NULL), `created_at`, `completed_at`.
+
+`instrument_daily_ohlc` table (M4): caches OHLC by (instrument, date). Source can be `"yfinance"` or `"nt8"`. Cache freshness: dates > 5 days old are fetched once and never refetched. Recent dates always refetched.
 
 `stress_tests` additions (added via migration, not in original CREATE TABLE):
 - `mc_completed_at` — unix timestamp when Monte Carlo phase finished; used by frontend pipeline stepper to show per-phase elapsed time
@@ -304,7 +308,20 @@ When walk-forward/sensitivity weren't run, those conditions are skipped (grade i
 
 **Deployment gates (UI only, soft):** A = funded; B = eval purchase; C = demo. Shown as warnings, never blocking.
 
-**Correlation table:** `services/correlation_table.py`. Hardcoded pairs: MES/MNQ, ES/NQ, GC/MGC, CL/MCL, MYM/M2K, plus micro/full equivalents. Shown as an informational note on StrategyDetail when the strategy has been run on both instruments of a pair. M4 will replace with a real correlation matrix.
+**Correlation table:** `services/correlation_table.py`. Hardcoded pairs: MES/MNQ, ES/NQ, GC/MGC, CL/MCL, MYM/M2K, plus micro/full equivalents. Shown as an informational note on StrategyDetail when the strategy has been run on both instruments of a pair.
+
+**Regime classifier (M4):** Import from `trading/regime/` — the canonical implementation lives there, never duplicate it here. The canonical algorithm doc is at `trading/regime/REGIME_CLASSIFIER.md`. Import pattern:
+```python
+import sys
+from pathlib import Path
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from regime import classify_regime  # returns one of 5 labels + UNKNOWN
+```
+Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long` (`classify_regime(df_daily, df_daily)`). Warmup: fetch 50 extra days before `start_date` so day 1 gets a real label. Window: 34 bars. The OHLC cache is in `instrument_daily_ohlc` — use `services/ohlc_fetcher.get_ohlc()`, never fetch directly in service code.
+
+**Regime filter in optimizer (M4):** When `regime_filter` is set on an optimization, `_pick_best_run` builds a `date → regime` map once from OHLC, then scores each child run using only trades from matching-regime days. NT8 still runs the full backtest period — filtering happens at scoring time only. All three scoring paths (initial run, retry-one, retry-all) go through `_pick_best_run`.
 
 **Sweep serialisation:** `sweep_runner.py` uses `asyncio.Semaphore(1)` — same constraint as the optimizer. Instruments run one at a time through the SA window.
 

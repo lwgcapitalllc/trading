@@ -245,12 +245,11 @@ Strategy registry, firm profiles, NT8-driven backtest runs via VPS agent, per-fi
 **M2 — Worthiness Scorer + Instrument Sweeps + Brute-Force Optimizer** ✅ COMPLETE
 Tier 1/2/3 worthiness scoring, instrument sweeps (N sequential runs, SA semaphore), brute-force parameter optimizer (multi-call, not NT8 Optimizer GUI), Tier 3 smart routing modal, NT8 SA global lock, runner field + vps_client dispatcher. Monte Carlo stress test moved to M3.
 
-**M3 — Stress Tests + Walk-Forward + Overfitting** (active scope)
-1. Monte Carlo stress test (Python-side, reads backtest trades)
-2. Walk-forward in VPS agent (drive NT8 Walk Forward tool)
-3. Parameter sensitivity runner
-4. Overfitting detail page + robustness grade (A–F)
-5. Strategy Detail multi-firm evaluation matrix
+**M3 — Stress Tests + Walk-Forward + Overfitting** ✅ COMPLETE
+Monte Carlo stress test, walk-forward (N NT8 windows), parameter sensitivity, A–F robustness grade, auto-trigger on Tier 1, pipeline stepper UI, pre-deployment checklist.
+
+**M4 — Regime Classifier Integration** ✅ COMPLETE (2026-06-03, UI finalized 2026-06-02 session 11)
+Regime tags on every backtest's daily_pnl (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Pipeline auto-tags on every new run. Manual backfill endpoint + "Tag Regimes" button in BacktestDetail header. Performance by Regime table slides in/out below equity curve (CSS max-height transition) when Regimes toggle is active. Equity curve **colored-line overlay** — equity line split into per-regime `Area` segments (fill=transparent, regime-colored stroke). Optimizer regime filter (scores child runs on regime-only trades). End-to-end verified on 12-month ORB/MNQ.
 
 ---
 
@@ -431,32 +430,18 @@ Only the classifier's source location changed. Every other M4 deliverable is unc
 - TRANSITIONING: yellow (`#eab308`)
 - UNKNOWN: dark gray (`#374151`) with hatching pattern
 
-### The mode split
-
-The classifier supports two modes:
-
-**Lab** uses `mode="fine"` (5 labels: TRENDING, RANGING, HIGH_VOLATILITY, LOW_VOLATILITY, TRANSITIONING). Richer segmentation for the Performance by Regime table and regime-filtered optimizer runs.
-
-**Live forex bots** use `mode="coarse"` (3 labels: TRENDING, TRANSITIONING, RANGING) via the shim in `algos/shared/shared_regime.py`. Bot decision logic and risk multipliers are tied to these 3 labels and must not change.
-
-The shim handles the coarse mode call internally — bot code never touches the canonical module directly. The fine→coarse mapping (HIGH_VOLATILITY → RANGING, LOW_VOLATILITY → RANGING) ensures every fine label collapses cleanly when needed.
+*Note: The classifier was simplified from two modes (coarse/fine) to a single 5-label output set on 2026-06-02. All callers — bots and lab — now use 5-label output directly. Each bot owns its own `REGIME_RISK_TABLE`.*
 
 **Import pattern for M4 lab services:**
 ```python
 # Pass the same daily df for both arguments when working with lab data
 from regime import classify_regime, compute_signals
 
-label = classify_regime(df_daily, df_daily, mode="fine")
+label = classify_regime(df_daily, df_daily)
 # Returns: TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY | UNKNOWN
 
 signals = compute_signals(df_daily, df_daily)
 # Returns: {"adx": float, "atr_ratio": float, "rsi_range": float, "score_norm": int} | None
-```
-
-**Fine → coarse mapping** (for UI display if needed):
-```python
-from regime import coarse_label
-coarse = coarse_label("HIGH_VOLATILITY")  # → "RANGING"
 ```
 
 **Thresholds:** all cutoffs live in `regime/thresholds.py`. To adjust them for the lab context, pass a `thresholds=` dict override to `classify_regime`. Do not fork or copy the math.
@@ -497,9 +482,24 @@ Worthiness scorer (Tier 1/2/3 — PF, drawdown, trade count against strictest fi
 
 **Monte Carlo stress test moved to M3.** M2 was already large enough without it.
 
+### M4 Retrospective
+
+**What M4 built:** Regime classification integrated into the backtest pipeline. Every new backtest automatically tags each `daily_pnl` entry with one of 5 regime labels (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY) or UNKNOWN. Pre-M4 backtests can be tagged via a one-click backfill. On BacktestDetail: Performance by Regime table (Days/Trades/Net P&L/Win Rate/PF/Worst Day per regime, with Overall row pulled from run summary fields) — slides in below the equity curve with a CSS transition when the Regimes toggle is active. Equity curve gets a regime colored-line overlay. Optimizer gains a `regime_filter` field that scores child runs on regime-filtered trades only.
+
+**What changed vs original spec:**
+
+**Dual-mode classifier eliminated before M4 started.** The classifier had two modes (coarse 3-label for bots, fine 5-label for lab). Before M4 began, both were collapsed into a single 5-label output. All three bots gained `REGIME_RISK_TABLE` dicts mapping all 5 labels. The shim (`algos/shared/shared_regime.py`) returns neutral defaults; bots own their own decision tables.
+
+**Colored equity line, not background bands.** The spec left the overlay strategy open. Initial implementation used `ReferenceArea` background bands (transparent-to-colored gradient fills), but these created muddy visual noise on the dark chart background. Final design: the equity curve itself is split into per-regime colored `Area` segments (`fill="transparent"`, regime-colored `stroke`). The data is augmented with per-segment keys (`_s0`, `_s1`, …); a hidden base Area anchors the Recharts tooltip. When the overlay is off, the chart reverts to the normal single-color green line. Regimes are per-day, not per-trade — a segment spans all trades that share a date.
+
+**Optimizer filter at scoring time, not at run time.** NT8 runs the full backtest period regardless of `regime_filter`. The filter is applied when scoring child runs after they complete: trades on non-matching days are excluded from the objective function. OHLC is fetched once per optimization (not once per child run) and reused across all scoring.
+
+**`from __future__ import annotations` fix.** `dict | None` union syntax in `regime/classifier.py` requires Python 3.10+ at runtime. The Mac runs 3.9.6. Adding `from __future__ import annotations` at the top of the module fixes it without changing behavior.
+
 ### Decisions we might revisit
 
-- **Sweep state without a dedicated table.** `SweepSummary` is derived via GROUP BY on `backtest_runs`. Works but complicates sweep-level metadata. A dedicated `sweeps` table in M3 would clean this up.
+- **Sweep state without a dedicated table.** `SweepSummary` is derived via GROUP BY on `backtest_runs`. Works but complicates sweep-level metadata.
 - **200-combo brute-force cap.** Works for typical 2–3 param grids. For larger search spaces, sequential model-based optimization (e.g. tree-structured Parzen estimator) would be more efficient.
-- **Inline chart components.** All charts live inside `BacktestDetail.tsx`. Fine now; worth extracting if stress test and walk-forward pages need the same charts.
+- **Inline chart components.** All charts live inside `BacktestDetail.tsx`. Fine now; worth extracting if additional pages need the same charts.
 - **NT8 export via pywinauto.** Still screen-position dependent. A proper NT8 API or file-watch approach would be more robust long-term.
+- **Regime classifier uses daily OHLC for both `df_short` and `df_long`.** The classifier was designed for H1/H4 pairs (bots). Passing the same daily DataFrame twice is a reasonable approximation for the lab's daily-granularity use case. If the classifier is tuned for multi-timeframe data, this will need revisiting.

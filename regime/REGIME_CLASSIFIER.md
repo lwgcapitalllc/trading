@@ -61,35 +61,15 @@ When price is trending, RSI reaches extreme values (high or low) and stays there
 Raw score = sum of three signal scores = 0 to 6.
 Normalized score = min(5, round(raw × 5/6)) = 0 to 5.
 
-| Normalized score | Coarse label | Meaning |
+| Normalized score | Label | Meaning |
 |---|---|---|
 | 3–5 | TRENDING | Strong directional move. Trend strategies trade full size. |
-| 2 | TRANSITIONING | Mixed signals. All strategies trade at half size. |
-| 0–1 | RANGING | No trend, no momentum. Trend strategies sit out. |
+| 2 | TRANSITIONING | Mixed signals. Strategies reduce size. |
+| 0–1, atr_ratio ≥ 1.5 | HIGH_VOLATILITY | Big moves but no momentum — stop-hunt or whipsaw territory. |
+| 0–1, atr_ratio ≤ 0.5 | LOW_VOLATILITY | Compressed and quiet — price coiled, no breakout yet. |
+| 0–1, neither above | RANGING | Ordinary sideways chop. |
 
-### Fine-mode only: splitting the RANGING space
-
-When `score_norm ≤ 1` and `mode="fine"`, ATR ratio is checked a second time with tighter bounds to distinguish two distinct types of quiet market:
-
-| Condition | Fine label | Meaning |
-|---|---|---|
-| score_norm ≤ 1 AND atr_ratio ≥ 1.5 | HIGH_VOLATILITY | Big moves but no momentum — likely stop-hunt or whipsaw territory. |
-| score_norm ≤ 1 AND atr_ratio ≤ 0.5 | LOW_VOLATILITY | Compressed and quiet — price coiled, no breakout yet. |
-| score_norm ≤ 1, neither above | RANGING | Ordinary sideways chop. |
-
-TRENDING and TRANSITIONING are identical in both modes. Fine mode only adds nuance within the RANGING space.
-
-### Coarse ↔ fine mapping (lossless round-trip)
-
-| Fine label | Coarse equivalent |
-|---|---|
-| TRENDING | TRENDING |
-| TRANSITIONING | TRANSITIONING |
-| RANGING | RANGING |
-| HIGH_VOLATILITY | RANGING |
-| LOW_VOLATILITY | RANGING |
-
-Both HIGH_VOLATILITY and LOW_VOLATILITY collapse to RANGING in coarse mode because both represent "do not trade with directional bias" — the same instruction the bots need.
+When score_norm ≤ 1, ATR ratio is checked a second time with tighter bounds to distinguish the three quiet-market types. Each strategy applies its own decision table to map these labels to `(risk_multiplier, trade_allowed)` pairs.
 
 ---
 

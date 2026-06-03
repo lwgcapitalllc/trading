@@ -22,13 +22,131 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
+import logging
+import statistics
+
 from services import lab_db, evaluator, vps_client, worthiness
 from services.objectives import choose_objective
+from services.backtest_runner import build_date_regime_map, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
+
+log = logging.getLogger("optimization_runner")
 
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 _POLL_INTERVAL   = 5
 _STALL_KILL_SEC  = 600
+
+# ── Regime-filtered scoring ───────────────────────────────────────────────────
+
+def _regime_filtered_score(
+    run_id: str,
+    date_to_regime: dict[str, str],
+    regime_filter: str,
+    obj_fn,
+    firm: dict,
+) -> float:
+    """
+    Load this run's equity_curve, keep only trades on regime_filter days,
+    compute KPIs from that subset, and apply obj_fn.
+    Returns -inf if the run has no trades in the target regime.
+    """
+    eq_path = _BR_RESULTS_DIR / run_id / "equity_curve.json"
+    try:
+        equity_curve: list[dict] = json.loads(eq_path.read_text())
+    except Exception:
+        return float("-inf")
+
+    regime_trades = [
+        t for t in equity_curve
+        if t.get("date") and date_to_regime.get(t["date"]) == regime_filter
+    ]
+    if not regime_trades:
+        return float("-inf")
+
+    profits = [t.get("profit") or 0.0 for t in regime_trades]
+    net_pnl  = sum(profits)
+    wins     = [p for p in profits if p > 0]
+    losses   = [abs(p) for p in profits if p < 0]
+    pf       = sum(wins) / sum(losses) if losses else (1.5 if net_pnl > 0 else 0.0)
+    win_rate = len(wins) / len(profits) if profits else 0.0
+
+    # Cumulative DD on regime sub-sequence
+    peak = eq = max_dd = 0.0
+    for p in profits:
+        eq += p
+        if eq > peak:
+            peak = eq
+        dd = peak - eq
+        if dd > max_dd:
+            max_dd = dd
+
+    # Daily-regime pnl for Sharpe (requires ≥2 distinct days)
+    daily: dict[str, float] = {}
+    for t in regime_trades:
+        d = t.get("date") or ""
+        daily[d] = daily.get(d, 0.0) + (t.get("profit") or 0.0)
+    daily_vals = list(daily.values())
+    if len(daily_vals) >= 2:
+        mean = statistics.mean(daily_vals)
+        std  = statistics.stdev(daily_vals)
+        sharpe = (mean / std) * (252 ** 0.5) if std > 0 else 0.0
+    else:
+        sharpe = 0.0
+
+    filtered_kpis = {
+        "net_pnl":       net_pnl,
+        "profit_factor": pf,
+        "max_drawdown":  max_dd,
+        "trade_count":   len(profits),
+        "win_rate":      win_rate,
+        "sharpe":        sharpe,
+    }
+    return obj_fn(filtered_kpis, firm)
+
+
+async def _pick_best_run(
+    complete_rows: list[dict],
+    opt: dict,
+    firm: dict,
+) -> Optional[str]:
+    """
+    Score all complete child runs and return the best run_id.
+    If opt["regime_filter"] is set, scores using regime-filtered KPIs.
+    """
+    obj_fn = choose_objective(opt["mode"])
+    regime_filter: Optional[str] = opt.get("regime_filter") or None
+
+    date_to_regime: dict[str, str] = {}
+    if regime_filter:
+        try:
+            date_to_regime = await asyncio.to_thread(
+                build_date_regime_map,
+                opt["instrument"],
+                opt["start_date"],
+                opt["end_date"],
+            )
+            log.info("Regime filter '%s': %d trading days mapped", regime_filter, len(date_to_regime))
+        except Exception as exc:
+            log.warning("Could not build regime map (filter='%s'): %s — scoring unfiltered", regime_filter, exc)
+            regime_filter = None
+
+    best_run_id: Optional[str] = None
+    best_score = float("-inf")
+
+    for row in complete_rows:
+        run_id = row["run_id"]
+        if regime_filter and date_to_regime:
+            score = _regime_filtered_score(run_id, date_to_regime, regime_filter, obj_fn, firm)
+        else:
+            evals = lab_db.get_evaluations(run_id)
+            score = obj_fn({**row, "_evaluations": evals}, firm)
+
+        if score > best_score:
+            best_score  = score
+            best_run_id = run_id
+
+    return best_run_id
+
 
 # NT8 Strategy Analyzer is single-window — only one backtest can use it at a time.
 # Running more than 1 concurrent job causes SA window conflicts, display switch failures,
@@ -248,22 +366,12 @@ async def run_optimization(optimization_id: str) -> None:
         opt_id=optimization_id,
     )
 
-    # Find best run by objective score
-    obj_fn = choose_objective(opt["mode"])
-    best_run_id: Optional[str] = None
-    best_score  = float("-inf")
-
-    for run_id in run_ids:
-        row = lab_db.get_run(run_id)
-        if not row or row["status"] != "complete":
-            continue
-        evals = lab_db.get_evaluations(run_id)
-        run_with_evals = {**row, "_evaluations": evals}
-        score = obj_fn(run_with_evals, firm)
-        if score > best_score:
-            best_score   = score
-            best_run_id  = run_id
-
+    # Find best run by objective score (regime-filtered if opt["regime_filter"] is set)
+    complete_rows = [
+        row for run_id in run_ids
+        if (row := lab_db.get_run(run_id)) and row["status"] == "complete"
+    ]
+    best_run_id = await _pick_best_run(complete_rows, opt, firm)
     lab_db.complete_optimization(optimization_id, best_run_id)
     if best_run_id:
         from services import stress_tester
@@ -314,15 +422,7 @@ async def retry_single_optimization_run(run_id: str) -> None:
 
     # Re-score best run across all complete runs
     all_complete = [r for r in lab_db.list_optimization_runs(opt_id) if r["status"] == "complete"]
-    obj_fn = choose_objective(opt["mode"])
-    best_run_id: Optional[str] = None
-    best_score = float("-inf")
-    for r in all_complete:
-        evals = lab_db.get_evaluations(r["run_id"])
-        score = obj_fn({**r, "_evaluations": evals}, firm)
-        if score > best_score:
-            best_score  = score
-            best_run_id = r["run_id"]
+    best_run_id = await _pick_best_run(all_complete, opt, firm)
     lab_db.complete_optimization(opt_id, best_run_id)
     if best_run_id:
         from services import stress_tester
@@ -386,16 +486,7 @@ async def retry_failed_runs(optimization_id: str) -> None:
         r for r in lab_db.list_optimization_runs(optimization_id)
         if r["status"] == "complete"
     ]
-    obj_fn = choose_objective(opt["mode"])
-    best_run_id: Optional[str] = None
-    best_score  = float("-inf")
-    for row in all_complete:
-        evals = lab_db.get_evaluations(row["run_id"])
-        score = obj_fn({**row, "_evaluations": evals}, firm)
-        if score > best_score:
-            best_score  = score
-            best_run_id = row["run_id"]
-
+    best_run_id = await _pick_best_run(all_complete, opt, firm)
     lab_db.complete_optimization(optimization_id, best_run_id)
     if best_run_id:
         from services import stress_tester

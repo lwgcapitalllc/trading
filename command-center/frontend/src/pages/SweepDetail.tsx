@@ -83,7 +83,7 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
   const elapsed = useElapsed(sweep.created_at, sweep.completed_at, isRunning)
 
   const statusLabel = isRunning ? 'Running' : isComplete ? 'Complete' : isCancelled ? 'Cancelled' : allFailed ? 'Failed' : hasFailures ? 'Partial' : 'Failed'
-  const borderCls = isComplete && !hasFailures ? 'border-pos-text/20 bg-pos-muted/30'
+  const borderCls = isComplete && !hasFailures ? 'border-accent/20 bg-accent/5'
     : allFailed || isCancelled ? 'border-neg-text/20 bg-neg-muted'
     : hasFailures ? 'border-warn-text/25 bg-warn-muted/20'
     : 'border-border-default bg-bg-surface'
@@ -96,12 +96,12 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             {isRunning   && <Loader2      size={14} className="text-accent animate-spin flex-shrink-0" />}
-            {isComplete  && !hasFailures  && <CheckCircle2  size={14} className="text-pos-text flex-shrink-0" />}
+            {isComplete  && !hasFailures  && <CheckCircle2  size={14} className="text-accent flex-shrink-0" />}
             {isComplete  && hasFailures   && <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />}
             {!isRunning  && !isComplete   && <XCircle       size={14} className="text-neg-text flex-shrink-0" />}
             <span className={`text-[13px] font-semibold ${
               isRunning ? 'text-accent'
-              : isComplete && !hasFailures ? 'text-pos-text'
+              : isComplete && !hasFailures ? 'text-accent'
               : isComplete && hasFailures  ? 'text-warn-text'
               : 'text-neg-text'
             }`}>
@@ -111,14 +111,14 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
           </div>
 
           <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2 flex">
-            <div className="h-full bg-pos-text transition-all duration-700" style={{ width: `${completePct}%` }} />
+            <div className="h-full bg-accent transition-all duration-700" style={{ width: `${completePct}%` }} />
             <div className="h-full bg-neg-text/70 transition-all duration-700" style={{ width: `${failedPct}%` }} />
           </div>
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 text-[12px]">
               <span className="text-text-secondary">
-                <span className="font-mono font-semibold text-pos-text">{completeCount}</span>
+                <span className="font-mono font-semibold text-accent">{completeCount}</span>
                 <span className="text-text-tertiary"> complete</span>
               </span>
               {failedCount > 0 && (
@@ -173,7 +173,7 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
             <span
               key={r.run_id}
               className={`inline-flex items-center gap-[5px] px-2 py-[3px] rounded text-[11px] font-mono border ${
-                done   ? 'border-pos-text/25 bg-pos-muted/20 text-pos-text' :
+                done   ? 'border-accent/25 bg-accent/10 text-accent' :
                 failed ? 'border-neg-text/25 bg-neg-muted text-neg-text' :
                          'border-border-subtle text-text-tertiary'
               }`}
@@ -414,7 +414,7 @@ export function SweepDetail() {
               {sweep.strategy_name || sweep.strategy_id}
             </h1>
             <div className="flex flex-wrap gap-1.5">
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20">
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
                 {sweep.total_instruments}-instrument Sweep
               </span>
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">

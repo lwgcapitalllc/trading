@@ -58,6 +58,7 @@ function OptimizerModal({
   const [firmId, setFirmId]         = useState(evalFirm?.ruleset_id ?? '')
   const [mode, setMode]             = useState<'eval' | 'funded'>('eval')
   const [searchMethod, setMethod]   = useState<'auto' | 'brute' | 'genetic'>('auto')
+  const [regimeFilter, setRegimeFilter] = useState<string>('')
 
   // Build initial axis state from current run params
   const initialAxes: Record<string, AxisEdit> = {}
@@ -118,6 +119,7 @@ function OptimizerModal({
       mode,
       search_method:      searchMethod,
       param_grid,
+      regime_filter:      regimeFilter || null,
       source_run_id:      run.run_id,
     }, {
       onSuccess: (data) => {
@@ -155,7 +157,7 @@ function OptimizerModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* Firm + mode + method */}
+          {/* Firm + mode + method + regime filter */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Ruleset</label>
@@ -189,6 +191,23 @@ function OptimizerModal({
                 <option value="auto">Auto</option>
                 <option value="brute">Brute Force</option>
                 <option value="genetic">Genetic</option>
+              </select>
+            </div>
+            <div className="col-span-3">
+              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">
+                Regime Filter <span className="normal-case font-normal">(optional — score only trades in this regime)</span>
+              </label>
+              <select
+                value={regimeFilter}
+                onChange={e => setRegimeFilter(e.target.value)}
+                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
+              >
+                <option value="">No filter — score all trades</option>
+                <option value="TRENDING">Trending</option>
+                <option value="TRANSITIONING">Transitioning</option>
+                <option value="RANGING">Ranging</option>
+                <option value="HIGH_VOLATILITY">High Volatility</option>
+                <option value="LOW_VOLATILITY">Low Volatility</option>
               </select>
             </div>
           </div>

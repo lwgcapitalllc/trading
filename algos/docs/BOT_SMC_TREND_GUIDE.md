@@ -53,7 +53,7 @@ Bot 1 identifies institutional manipulation — moments when large players fake 
 - **Target per trade:** 3R minimum (1:3 risk/reward)
 - **Runner system:** Best trade at 2R becomes a runner with trailing stop — can capture 5R, 8R, or more on strong trending days
 - **Re-entry:** If stopped at breakeven and bias unchanged, re-enters once — maximises capture on strong moves
-- **Regime boost:** Full size in TRENDING, 50% in TRANSITIONING
+- **Regime boost:** Full size in TRENDING, 50% in TRANSITIONING; blocked in RANGING, HIGH_VOLATILITY, LOW_VOLATILITY, UNKNOWN
 
 ---
 
@@ -116,11 +116,14 @@ market close) calls `log_close(ticket, close_price, pnl_usd)` which writes `outc
 
 ## Regime Behaviour
 
-| Regime | Response |
-|---|---|
-| TRENDING | Full size |
-| TRANSITIONING | 50% size |
-| RANGING | No new entries |
+| Regime | Risk Multiplier | Trade Allowed |
+|---|---|---|
+| TRENDING | 1.0× | Yes |
+| TRANSITIONING | 0.5× | Yes |
+| RANGING | 0.0× | No |
+| HIGH_VOLATILITY | 0.0× | No |
+| LOW_VOLATILITY | 0.0× | No |
+| UNKNOWN | 0.0× | No |
 
 ---
 

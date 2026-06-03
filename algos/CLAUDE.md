@@ -44,7 +44,7 @@ Scalper is isolated on its own account (higher volatility). FFT is lowest risk (
 |------|------|
 | `shared_ai_brain.py` | AI engine (Claude API), trade logger, daily performance logger |
 | `shared_calmar.py` | Calmar ratio tracker, morning report |
-| `shared_regime.py` | Market regime classifier: TRENDING / TRANSITIONING / RANGING |
+| `shared_regime.py` | Market regime classifier shim: 5 labels (TRENDING / TRANSITIONING / RANGING / HIGH_VOLATILITY / LOW_VOLATILITY). Each bot owns its own REGIME_RISK_TABLE. |
 | `shared_scanner.py` | Multi-instrument watchlist scanner — `InstrumentScanner`, `SetupCandidate`, `LearningPhaseGate` |
 | `shared_risk.py` | Dynamic risk / capacity engine — `RiskEngine` tracks portfolio-level risk budget per bot |
 | `mt5_ops.py` | All MT5 operations — symbol-parameterized, single shared instance per bot |

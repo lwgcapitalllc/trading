@@ -120,11 +120,14 @@ the `risk_mult` regime multiplier).
 
 ## Regime Behaviour
 
-| Regime | Response |
-|---|---|
-| TRENDING | Full size — required |
-| TRANSITIONING | Reduced entries |
-| RANGING | No new entries — strategy requires trend |
+| Regime | Risk Multiplier | Trade Allowed |
+|---|---|---|
+| TRENDING | 1.0× | Yes — required |
+| TRANSITIONING | 0.5× | Yes — reduced entries |
+| RANGING | 0.0× | No — strategy requires trend |
+| HIGH_VOLATILITY | 0.0× | No |
+| LOW_VOLATILITY | 0.0× | No |
+| UNKNOWN | 0.0× | No |
 
 ---
 

@@ -9,12 +9,26 @@ import asyncio
 import csv
 import io
 import json
+import logging
+import sys
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
 from services import lab_db, evaluator, vps_client, worthiness
+
+# Add repo root so we can import from trading/regime/
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from regime import classify_regime
+from services.ohlc_fetcher import get_ohlc
+
+log = logging.getLogger("backtest_runner")
 
 
 # ── NT8 Trades CSV parser ──────────────────────────────────────────────────────
@@ -122,6 +136,149 @@ def _fail(run_id: str, job_id: str, status: str, error_msg: str) -> None:
     })
 
 
+# ── Regime classification helper ──────────────────────────────────────────────
+
+_WARMUP_DAYS = 50   # fetch this many extra days before backtest start for classifier warmup
+_WINDOW_SIZE = 34   # classifier needs 34 bars to produce a non-UNKNOWN label
+
+
+def _tag_daily_pnl_with_regime(
+    instrument: str,
+    start_date: str,
+    end_date: str,
+    daily_pnl: list[dict],
+) -> list[dict]:
+    """
+    Fetch OHLC for the backtest period (extended back by _WARMUP_DAYS for warmup),
+    then classify each daily_pnl entry by running the rolling 34-bar window through
+    classify_regime(). Returns the daily_pnl list with 'regime_tag' added to every entry.
+    """
+    try:
+        warmup_start = (
+            date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)
+        ).isoformat()
+        ohlc_df = get_ohlc(instrument, warmup_start, end_date)
+    except Exception as exc:
+        log.warning("OHLC fetch failed for %s [%s, %s]: %s — all regime_tags = UNKNOWN",
+                    instrument, start_date, end_date, exc)
+        return [{**entry, "regime_tag": "UNKNOWN"} for entry in daily_pnl]
+
+    if ohlc_df.empty:
+        log.warning("No OHLC rows for %s [%s, %s] — all regime_tags = UNKNOWN",
+                    instrument, start_date, end_date)
+        return [{**entry, "regime_tag": "UNKNOWN"} for entry in daily_pnl]
+
+    result = []
+    for entry in daily_pnl:
+        entry_date = entry.get("date")
+        if not entry_date:
+            result.append({**entry, "regime_tag": "UNKNOWN"})
+            continue
+
+        try:
+            cutoff = pd.Timestamp(entry_date)
+        except Exception:
+            result.append({**entry, "regime_tag": "UNKNOWN"})
+            continue
+
+        window = ohlc_df[ohlc_df.index <= cutoff].tail(_WINDOW_SIZE)
+        if len(window) < _WINDOW_SIZE:
+            result.append({**entry, "regime_tag": "UNKNOWN"})
+            continue
+
+        try:
+            label = classify_regime(window, window)
+        except Exception as exc:
+            log.warning("classify_regime failed for %s on %s: %s", instrument, entry_date, exc)
+            label = "UNKNOWN"
+
+        result.append({**entry, "regime_tag": label})
+
+    tagged = sum(1 for r in result if r.get("regime_tag") != "UNKNOWN")
+    log.info("Regime classification: %d/%d days tagged (instrument=%s)",
+             tagged, len(result), instrument)
+    return result
+
+
+def build_date_regime_map(
+    instrument: str,
+    start_date: str,
+    end_date: str,
+) -> dict[str, str]:
+    """
+    Fetch OHLC for the given range (with warmup) and classify each trading day.
+    Returns {date_str: regime_label} for all dates within [start_date, end_date].
+    Intended for optimizer scoring — called once per optimization, not once per child run.
+    """
+    warmup_start = (
+        date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)
+    ).isoformat()
+    try:
+        ohlc_df = get_ohlc(instrument, warmup_start, end_date)
+    except Exception as exc:
+        log.warning("build_date_regime_map: OHLC fetch failed for %s: %s", instrument, exc)
+        return {}
+
+    if ohlc_df.empty:
+        return {}
+
+    result: dict[str, str] = {}
+    for ts in ohlc_df.index:
+        date_str = str(ts.date())
+        if date_str < start_date or date_str > end_date:
+            continue
+        window = ohlc_df[ohlc_df.index <= ts].tail(_WINDOW_SIZE)
+        if len(window) < _WINDOW_SIZE:
+            result[date_str] = "UNKNOWN"
+        else:
+            try:
+                result[date_str] = classify_regime(window, window)
+            except Exception:
+                result[date_str] = "UNKNOWN"
+
+    log.info("build_date_regime_map: %d trading days classified for %s [%s, %s]",
+             len(result), instrument, start_date, end_date)
+    return result
+
+
+# ── Backfill tracker ─────────────────────────────────────────────────────────
+
+_backfill_jobs: dict[str, dict] = {}
+
+
+def get_backfill_status(run_id: str) -> dict:
+    return _backfill_jobs.get(run_id, {"status": "idle", "tagged": 0, "total": 0})
+
+
+async def run_backfill(
+    run_id: str,
+    instrument: str,
+    start_date: str,
+    end_date: str,
+    daily_pnl_path: Path,
+) -> None:
+    _backfill_jobs[run_id] = {"status": "running", "tagged": 0, "total": 0}
+    try:
+        raw: list[dict] = json.loads(daily_pnl_path.read_text())
+    except Exception as exc:
+        log.warning("Backfill: could not read daily_pnl for %s: %s", run_id, exc)
+        _backfill_jobs[run_id] = {"status": "failed", "tagged": 0, "total": 0}
+        return
+
+    _backfill_jobs[run_id]["total"] = len(raw)
+    tagged = await asyncio.to_thread(
+        _tag_daily_pnl_with_regime,
+        instrument,
+        start_date,
+        end_date,
+        raw,
+    )
+    daily_pnl_path.write_text(json.dumps(tagged, default=str))
+    n_tagged = sum(1 for r in tagged if r.get("regime_tag") != "UNKNOWN")
+    _backfill_jobs[run_id] = {"status": "complete", "tagged": n_tagged, "total": len(tagged)}
+    log.info("Backfill complete for %s: %d/%d days tagged", run_id, n_tagged, len(tagged))
+
+
 # ── Completion path ────────────────────────────────────────────────────────────
 
 async def _handle_complete(
@@ -168,6 +325,18 @@ async def _handle_complete(
     if w and w[0] == "TIER_1_STRESS_TEST":
         from services import stress_tester
         asyncio.create_task(stress_tester.trigger_auto_stress_test(run_id, firm_ids))
+
+    # Regime classification — tag each daily_pnl entry with its regime label
+    run_row = lab_db.get_run(run_id)
+    if run_row and daily_pnl:
+        tagged_pnl = await asyncio.to_thread(
+            _tag_daily_pnl_with_regime,
+            instrument,
+            run_row.get("start_date", ""),
+            run_row.get("end_date", ""),
+            daily_pnl,
+        )
+        daily_pnl_path.write_text(json.dumps(tagged_pnl, default=str))
 
     _write_progress({
         "job_id":               job_id,

@@ -566,6 +566,7 @@ class OptimizationRequest(BaseModel):
     search_method: str = "auto"         # "auto" | "brute" | "genetic"
     param_grid: dict                    # {param: {min, max, step} | [val, ...]}
     source_run_id: Optional[str] = None
+    regime_filter: Optional[str] = None  # TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY
 
 
 class OptimizationSummary(BaseModel):
@@ -582,6 +583,7 @@ class OptimizationSummary(BaseModel):
     completed_runs: int
     best_run_id: Optional[str] = None
     source_run_id: Optional[str] = None
+    regime_filter: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 
@@ -601,6 +603,7 @@ class OptimizationDetail(BaseModel):
     estimated_runs: int
     completed_runs: int
     best_run_id: Optional[str] = None
+    regime_filter: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
     runs: list[BacktestSummary] = []

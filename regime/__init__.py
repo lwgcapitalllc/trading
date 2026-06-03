@@ -1,4 +1,4 @@
-from .classifier import classify_regime, compute_signals, coarse_label
+from .classifier import classify_regime, compute_signals
 from .thresholds import (
     ADX_TRENDING,
     ADX_RANGING,
@@ -15,7 +15,6 @@ from .thresholds import (
 __all__ = [
     "classify_regime",
     "compute_signals",
-    "coarse_label",
     "ADX_TRENDING",
     "ADX_RANGING",
     "ATR_EXPANDING",

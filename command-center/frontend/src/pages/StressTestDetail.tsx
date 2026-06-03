@@ -279,7 +279,7 @@ export default function StressTestDetail() {
                 <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
                   {run.instrument}
                 </span>
-                <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-mono bg-bg-sunken border border-border-subtle text-text-tertiary">
+                <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
                   {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
                 </span>
               </div>

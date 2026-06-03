@@ -111,7 +111,7 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
   const elapsed = useElapsed(opt.created_at, opt.completed_at ?? null, isRunning)
 
   const statusLabel = isRunning ? 'Running' : isComplete ? 'Complete' : isCancelled ? 'Cancelled' : 'Failed'
-  const borderCls   = isComplete && !hasFailures ? 'border-pos-text/20 bg-pos-muted/30'
+  const borderCls   = isComplete && !hasFailures ? 'border-accent/20 bg-accent/5'
     : allFailed || isCancelled ? 'border-neg-text/20 bg-neg-muted'
     : hasFailures && isComplete ? 'border-warn-text/25 bg-warn-muted/20'
     : 'border-border-default bg-bg-surface'
@@ -123,12 +123,12 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             {isRunning   && <Loader2     size={14} className="text-accent animate-spin flex-shrink-0" />}
-            {isComplete  && !hasFailures && <CheckCircle2 size={14} className="text-pos-text flex-shrink-0" />}
+            {isComplete  && !hasFailures && <CheckCircle2 size={14} className="text-accent flex-shrink-0" />}
             {isComplete  && hasFailures  && <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />}
             {!isRunning  && !isComplete  && <XCircle size={14} className="text-neg-text flex-shrink-0" />}
             <span className={`text-[13px] font-semibold ${
               isRunning ? 'text-accent'
-              : isComplete && !hasFailures ? 'text-pos-text'
+              : isComplete && !hasFailures ? 'text-accent'
               : isComplete && hasFailures  ? 'text-warn-text'
               : 'text-neg-text'
             }`}>
@@ -140,7 +140,7 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
           {/* Segmented progress bar */}
           <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2 flex">
             <div
-              className="h-full bg-pos-text transition-all duration-700"
+              className="h-full bg-accent transition-all duration-700"
               style={{ width: `${completePct}%` }}
             />
             <div
@@ -152,7 +152,7 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4 text-[12px]">
               <span className="text-text-secondary">
-                <span className="font-mono font-semibold text-pos-text">{completeCount}</span>
+                <span className="font-mono font-semibold text-accent">{completeCount}</span>
                 <span className="text-text-tertiary"> passed</span>
               </span>
               {failedCount > 0 && (
@@ -474,12 +474,17 @@ export function OptimizationDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
                 {fmtDate(opt.start_date)} → {fmtDate(opt.end_date)}
               </span>
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary capitalize">
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
                 {opt.mode} · {fmtSearchMethod(opt.search_method)}
               </span>
               <span className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(opt.ruleset_id)}`}>
                 {firmShortName(opt.ruleset_id)}
               </span>
+              {opt.regime_filter && (
+                <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary">
+                  Regime: {opt.regime_filter.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
+                </span>
+              )}
             </div>
           </div>
 

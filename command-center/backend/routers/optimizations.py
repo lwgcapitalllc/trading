@@ -63,6 +63,7 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         "status":             "running",
         "estimated_runs":     estimated,
         "source_run_id":      req.source_run_id,
+        "regime_filter":      req.regime_filter,
     })
 
     asyncio.create_task(run_optimization(opt_id))
@@ -105,7 +106,7 @@ def get_optimization(optimization_id: str) -> OptimizationDetail:
         estimated_runs=opt["estimated_runs"],
         completed_runs=opt["completed_runs"],
         best_run_id=opt.get("best_run_id"),
-        source_run_id=opt.get("source_run_id"),
+        regime_filter=opt.get("regime_filter"),
         created_at=opt["created_at"],
         completed_at=opt.get("completed_at"),
         runs=summaries,
@@ -167,6 +168,7 @@ def _row_to_opt_summary(row: dict) -> OptimizationSummary:
         completed_runs=row["completed_runs"],
         best_run_id=row.get("best_run_id"),
         source_run_id=row.get("source_run_id"),
+        regime_filter=row.get("regime_filter"),
         created_at=row["created_at"],
         completed_at=row.get("completed_at"),
     )

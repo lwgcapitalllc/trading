@@ -112,6 +112,16 @@ TRAIL_ATR_MULT    = _B2.get("trail_atr_mult",       0.3)
 log.info(f"Config loaded | watchlist={WATCHLIST} | risk={RISK_PCT}% | "
          f"daily_cap={MAX_DAILY_LOSS}% | weekly_cap={MAX_WEEKLY_LOSS}%")
 
+# 5-label regime decision table for Bot 2 (mean-reversion strategy — INVERTED logic vs Bot 1)
+REGIME_RISK_TABLE = {
+    "TRENDING":        {"risk_multiplier": 0.4, "trade_allowed": True},
+    "TRANSITIONING":   {"risk_multiplier": 0.75, "trade_allowed": True},
+    "RANGING":         {"risk_multiplier": 1.0,  "trade_allowed": True},
+    "HIGH_VOLATILITY": {"risk_multiplier": 0.5,  "trade_allowed": True},
+    "LOW_VOLATILITY":  {"risk_multiplier": 1.0,  "trade_allowed": True},
+    "UNKNOWN":         {"risk_multiplier": 0.0,  "trade_allowed": False},
+}
+
 _mt5 = BotMT5(SYMBOL, MAGIC, "BOT_MEAN_REVERSION", _CFG, ACCOUNT, log)
 
 
@@ -649,12 +659,13 @@ def run():
                     df_h4 = get_candles(mt5.TIMEFRAME_H4, 50)
                     if not df_h1.empty and not df_h4.empty:
                         regime.classify(df_h1, df_h4)
-                    if regime.current_regime in ("RANGING", "TRANSITIONING"):
+                    _re = REGIME_RISK_TABLE.get(regime.current_regime, REGIME_RISK_TABLE["UNKNOWN"])
+                    if _re["trade_allowed"]:
                         trading_halted = False
                         consec_losses  = 0
                         log.info(f"Regime={regime.current_regime}. Bot 2 resuming.")
                     else:
-                        log.warning("Regime TRENDING. Waiting 1 more hour.")
+                        log.warning(f"Regime {regime.current_regime} (no data). Waiting 1 more hour.")
                         for _ in range(60):
                             time.sleep(60)
                             write_bot("mean_reversion", {"heartbeat": time.time()})
@@ -713,13 +724,13 @@ def run():
                     regime.classify(df_h1, df_h4)
 
             reg_state = regime.current_regime
-            if reg_state == "RANGING":
-                risk_mult = 1.0
-            elif reg_state == "TRANSITIONING":
-                risk_mult = 0.75
-            else:  # TRENDING
-                risk_mult = 0.4
-                log.info(f"Regime TRENDING — Bot 2 using 40% size")
+            _re = REGIME_RISK_TABLE.get(reg_state, REGIME_RISK_TABLE["UNKNOWN"])
+            risk_mult = _re["risk_multiplier"]
+            if not _re["trade_allowed"]:
+                log.info(f"Regime {reg_state} — entries blocked (no data)")
+                time.sleep(60); continue
+            if risk_mult < 1.0:
+                log.info(f"Regime {reg_state} — Bot 2 using {int(risk_mult * 100)}% size")
 
             # ── Track metrics ─────────────────────────────────────────────
             max_open_today    = max(max_open_today, len(open_trades))

@@ -1,19 +1,21 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
-  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity,
+  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Tag, Layers,
 } from 'lucide-react'
 import {
-  AreaChart, Area, BarChart, Bar,
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Label,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRulesets } from '@/hooks/useLab'
+import { toast } from 'sonner'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRulesets, useBackfillRegime, useBackfillStatus } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
 import { C } from '@/themes/chart'
-import { WorthinessBadge } from '@/components/WorthinessBadge'
+
 import { OptimizeButton } from '@/components/OptimizeButton'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 
@@ -346,6 +348,49 @@ function KpiGrid({ run, fallback, equity = [], stretch = false }: {
   )
 }
 
+// ── Regime overlay — colored line design ──────────────────────────────────────
+
+const REGIME_COLORS: Record<string, string> = {
+  TRENDING:        '#06b6d4',
+  TRANSITIONING:   '#8b5cf6',
+  RANGING:         '#f59e0b',
+  HIGH_VOLATILITY: '#ef4444',
+  LOW_VOLATILITY:  '#64748b',
+  UNKNOWN:         '#6b7280',
+}
+
+const REGIME_LABEL: Record<string, string> = {
+  TRENDING: 'Trending', RANGING: 'Ranging', HIGH_VOLATILITY: 'High Volatility',
+  LOW_VOLATILITY: 'Low Volatility', TRANSITIONING: 'Transitioning', UNKNOWN: 'Unknown',
+}
+
+const _OVERLAY_KEY = 'regime_overlay_enabled'
+function getOverlayPref(): boolean {
+  try { return localStorage.getItem(_OVERLAY_KEY) !== 'false' } catch { return true }
+}
+function setOverlayPref(v: boolean) {
+  try { localStorage.setItem(_OVERLAY_KEY, String(v)) } catch { /* quota */ }
+}
+
+interface RegimeBand { x1: number; x2: number; regime: string }
+
+function computeRegimeBands(equity: EquityPoint[], dailyPnl: DailyPnlPoint[]): RegimeBand[] {
+  const dateToRegime = new Map<string, string>()
+  for (const d of dailyPnl) dateToRegime.set(d.date, d.regime_tag ?? 'UNKNOWN')
+  const bands: RegimeBand[] = []
+  let cur: RegimeBand | null = null
+  for (const trade of equity) {
+    const regime = trade.date ? (dateToRegime.get(trade.date) ?? 'UNKNOWN') : 'UNKNOWN'
+    if (!cur || cur.regime !== regime) {
+      cur = { x1: trade.index, x2: trade.index, regime }
+      bands.push(cur)
+    } else {
+      cur.x2 = trade.index
+    }
+  }
+  return bands
+}
+
 // ── Equity curve ──────────────────────────────────────────────────────────────
 
 function fmtChartDate(d?: string): string {
@@ -355,11 +400,27 @@ function fmtChartDate(d?: string): string {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` '${yr}`
 }
 
-function EquityCurveChart({ data }: { data: EquityPoint[] }) {
+type AugPoint = EquityPoint & { [k: string]: unknown }
+
+function EquityCurveChart({ data, bands = [] }: { data: EquityPoint[]; bands?: RegimeBand[] }) {
+  // Build per-segment data keys for the colored line approach.
+  // Each segment extends one point into the next band so adjacent segments connect seamlessly.
+  const augData: AugPoint[] = useMemo(() => {
+    if (!bands.length) return data as AugPoint[]
+    return data.map(pt => {
+      const extra: Record<string, number | null> = {}
+      for (let i = 0; i < bands.length; i++) {
+        const hi = i < bands.length - 1 ? bands[i + 1].x1 : bands[i].x2
+        extra[`_s${i}`] = (pt.index >= bands[i].x1 && pt.index <= hi) ? pt.equity : null
+      }
+      return { ...pt, ...extra }
+    })
+  }, [data, bands])
+
   if (!data.length) return null
 
-  const startEq   = data[0]?.equity ?? 0
-  const endEq     = data[data.length - 1]?.equity ?? 0
+  const startEq    = data[0]?.equity ?? 0
+  const endEq      = data[data.length - 1]?.equity ?? 0
   const profitable = endEq >= startEq
   const allValues  = data.map(d => d.equity)
   const min = Math.min(...allValues)
@@ -368,14 +429,13 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
   const yMin = Math.min(startEq, min) - pad
   const yMax = max + pad
 
-  // Split into above/below zero baseline for dual-color fill
   const curveColor = profitable ? C.pos : C.neg
-
-  const eqTicks = calIndexTicks(data)
+  const eqTicks    = calIndexTicks(data)
+  const hasBands   = bands.length > 0
 
   return (
-    <ResponsiveContainer width="100%" height={300}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+    <ResponsiveContainer key={hasBands ? 'regime' : 'base'} width="100%" height={300}>
+      <AreaChart data={augData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           <linearGradient id="eqPos" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%"  stopColor={C.pos} stopOpacity={0.22} />
@@ -407,36 +467,67 @@ function EquityCurveChart({ data }: { data: EquityPoint[] }) {
           tickFormatter={(v: number) => v === 0 ? '$0' : `${v >= 0 ? '+' : ''}$${(v / 1000).toFixed(0)}k`}
           width={56}
         />
+        {/* Custom tooltip: always shows the 'equity' entry, ignores _sN segment keys */}
         <Tooltip
-          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
-          labelStyle={{ color: C.axisTick }}
-          itemStyle={{ color: '#e5e7eb' }}
-          formatter={(v: number, _: string, props: { payload?: EquityPoint }) => {
-            const pt = props.payload
-            return [
-              `${v >= 0 ? '+' : ''}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
-              pt?.direction ? `Equity (${pt.direction})` : 'Equity',
-            ]
-          }}
-          labelFormatter={(_: unknown, payload: Array<{ payload?: EquityPoint }>) => {
-            const pt = payload?.[0]?.payload
-            if (!pt) return ''
-            const dateStr = pt.date ? ` · ${fmtChartDate(pt.date)}` : ''
-            return `Trade #${pt.index}${dateStr}`
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null
+            const eq = payload.find((p: { dataKey?: string | number }) => p.dataKey === 'equity') ?? payload[0]
+            if (!eq) return null
+            const pt = (eq as { payload?: EquityPoint }).payload
+            const v  = ((eq as { value?: number }).value ?? 0)
+            const dateStr = pt?.date ? ` · ${fmtChartDate(pt.date)}` : ''
+            return (
+              <div style={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}>
+                <p style={{ color: C.axisTick, marginBottom: 4 }}>Trade #{pt?.index}{dateStr}</p>
+                <p style={{ color: '#e5e7eb' }}>
+                  {pt?.direction ? `Equity (${pt.direction})` : 'Equity'}&nbsp;
+                  {v >= 0 ? '+' : ''}${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+            )
           }}
         />
         <ReferenceLine y={startEq} stroke={C.refLine} strokeDasharray="4 4" />
         {startEq !== 0 && <ReferenceLine y={0} stroke={C.refLineDim} />}
-        <Area
-          type="monotone"
-          dataKey="equity"
-          stroke={curveColor}
-          strokeWidth={1.5}
-          fill={endEq >= 0 ? 'url(#eqPos)' : 'url(#eqNeg)'}
-          dot={false}
-          activeDot={{ r: 4, fill: curveColor, stroke: 'transparent' }}
-          baseValue={startEq}
-        />
+        {/* Without overlay: normal single-color area + fill */}
+        {!hasBands && (
+          <Area
+            type="monotone"
+            dataKey="equity"
+            stroke={curveColor}
+            strokeWidth={1.5}
+            fill={endEq >= 0 ? 'url(#eqPos)' : 'url(#eqNeg)'}
+            dot={false}
+            activeDot={{ r: 4, fill: curveColor, stroke: 'transparent' }}
+            baseValue={startEq}
+          />
+        )}
+        {/* With overlay: invisible base Area anchors tooltip; per-segment Areas draw colored lines */}
+        {hasBands && (
+          <>
+            <Area
+              type="monotone" dataKey="equity"
+              stroke="none" fill="transparent"
+              dot={false} activeDot={false} baseValue={startEq}
+            />
+            {bands.map((band, i) => {
+              const color = REGIME_COLORS[band.regime] ?? REGIME_COLORS.UNKNOWN
+              return (
+                <Area
+                  key={i}
+                  type="monotone"
+                  dataKey={`_s${i}`}
+                  stroke={color}
+                  strokeWidth={2}
+                  fill="transparent"
+                  dot={false}
+                  activeDot={{ r: 4, fill: color, stroke: 'transparent' }}
+                  connectNulls={false}
+                />
+              )
+            })}
+          </>
+        )}
       </AreaChart>
     </ResponsiveContainer>
   )
@@ -530,6 +621,39 @@ function DrawdownChart({ equity, limitLines }: {
   )
 }
 
+// ── Regime legend + overlay toggle ───────────────────────────────────────────
+
+function RegimeLegend({ bands }: { bands: RegimeBand[] }) {
+  const regimes = [...new Set(bands.map(b => b.regime))].filter(r => r !== 'UNKNOWN')
+  if (!regimes.length) return null
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 px-2 mt-2 mb-1">
+      {regimes.map(regime => (
+        <div key={regime} className="flex items-center gap-1.5">
+          <div style={{ width: 20, height: 2, background: REGIME_COLORS[regime] ?? REGIME_COLORS.UNKNOWN, borderRadius: 1 }} />
+          <span className="text-[10px] text-text-tertiary">{REGIME_LABEL[regime] ?? regime}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RegimeOverlayToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      className={`flex items-center gap-1.5 px-2 py-[4px] rounded text-[11px] transition-colors ${
+        on
+          ? 'text-accent bg-accent/10 border border-accent/25'
+          : 'text-text-tertiary hover:text-text-secondary border border-border-subtle'
+      }`}
+    >
+      <Layers size={11} />
+      Regimes
+    </button>
+  )
+}
+
 // ── Direction breakdown ───────────────────────────────────────────────────────
 
 function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
@@ -538,37 +662,48 @@ function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
 
   const sides = ['Long', 'Short'] as const
   const stats = sides.map(dir => {
-    const group   = trades.filter(pt => pt.direction === dir)
-    const wins    = group.filter(pt => (pt.profit ?? 0) > 0).length
-    const losses  = group.length - wins
+    const group    = trades.filter(pt => pt.direction === dir)
+    const wins     = group.filter(pt => (pt.profit ?? 0) > 0).length
+    const losses   = group.length - wins
     const totalPnl = group.reduce((s, pt) => s + (pt.profit ?? 0), 0)
     const avgTrade = group.length ? totalPnl / group.length : 0
     return { dir, count: group.length, wins, losses, totalPnl, avgTrade }
-  })
+  }).filter(s => s.count > 0)
 
   return (
-    <div className="grid grid-cols-2 gap-6">
+    <div className="grid grid-cols-2 gap-4">
       {stats.map(s => {
-        if (!s.count) return null
-        const winPct = (s.wins / s.count) * 100
+        const winPct = Math.round((s.wins / s.count) * 100)
         const pnlCls = s.totalPnl >= 0 ? 'text-pos-text' : 'text-neg-text'
+        const data = [
+          { name: 'Won',  value: s.wins },
+          { name: 'Lost', value: s.losses },
+        ]
         return (
-          <div key={s.dir} className="space-y-3">
-            <div className="flex items-baseline justify-between">
-              <span className="text-[13px] font-semibold text-text-primary">{s.dir}</span>
-              <span className={`text-[14px] font-semibold font-mono ${pnlCls}`}>{dollar(s.totalPnl, true)}</span>
-            </div>
-            <div className="text-[11px] text-text-tertiary">
-              {s.count} trades · avg {dollar(s.avgTrade, true)}/trade
-            </div>
-            {/* Split bar: green = won, red = lost */}
-            <div className="h-[8px] flex rounded-full overflow-hidden">
-              <div className="h-full bg-pos-text/75" style={{ width: `${winPct}%` }} />
-              <div className="h-full bg-neg-text/65 flex-1" />
-            </div>
-            <div className="flex justify-between text-[12px] font-semibold">
-              <span className="text-pos-text">{s.wins} won</span>
+          <div key={s.dir} className="flex flex-col items-center gap-1">
+            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px]">{s.dir}</div>
+            <div className={`text-[18px] font-semibold font-mono tabular-nums ${pnlCls}`}>{dollar(s.totalPnl, true)}</div>
+            <ResponsiveContainer width="100%" height={160}>
+              <PieChart>
+                <Pie
+                  data={data}
+                  cx="50%" cy="50%"
+                  innerRadius={50} outerRadius={70}
+                  startAngle={90} endAngle={-270}
+                  paddingAngle={2}
+                  dataKey="value"
+                  strokeWidth={0}
+                >
+                  <Cell fill={C.pos} fillOpacity={0.85} />
+                  <Cell fill={C.neg} fillOpacity={0.75} />
+                  <Label value={`${winPct}%`} position="center" fill="#e6edf3" fontSize={20} fontWeight={700} />
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="text-[10px] text-text-tertiary">{s.count} trades · avg {dollar(s.avgTrade, true)}/trade</div>
+            <div className="flex gap-5 text-[11px] font-semibold mt-[2px]">
               <span className="text-neg-text">{s.losses} lost</span>
+              <span className="text-pos-text">{s.wins} won</span>
             </div>
           </div>
         )
@@ -646,19 +781,22 @@ const VERDICT_CONFIG = {
   DISCARD: { label: 'DISCARD', bg: 'bg-neg-muted',  text: 'text-neg-text',  border: 'border-l-neg-text/50',  Icon: XCircle     },
 } as const
 
-function EvalCard({ ev }: { ev: EvaluationDetail }) {
+function EvalCard({ ev, netPnl }: { ev: EvaluationDetail; netPnl?: number | null }) {
   const cfg = VERDICT_CONFIG[ev.verdict as keyof typeof VERDICT_CONFIG] ?? VERDICT_CONFIG.DISCARD
-  const { Icon } = cfg
+  // Profitable runs that fail a firm rule get amber styling (not red) — keep the DISCARD label.
+  const isWarnColor = cfg === VERDICT_CONFIG.DISCARD && (netPnl ?? 0) > 0
+  const colorCfg    = isWarnColor ? VERDICT_CONFIG.WARN : cfg
+  const { Icon }    = cfg
 
   return (
-    <div className={`bg-bg-surface border border-border-subtle border-l-[3px] ${cfg.border} rounded-lg overflow-hidden h-full flex flex-col`}>
+    <div className={`bg-bg-surface border border-border-subtle border-l-[3px] ${colorCfg.border} rounded-lg overflow-hidden h-full flex flex-col`}>
       {/* Header */}
       <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
         <div>
           <div className="text-[13px] font-semibold text-text-primary leading-tight">{ev.ruleset_name}</div>
           <div className="text-[11px] text-text-tertiary font-mono mt-1">{ev.ruleset_id}</div>
         </div>
-        <span className={`inline-flex items-center gap-[5px] px-3 py-[5px] rounded-full text-[11px] font-bold uppercase tracking-[0.4px] flex-shrink-0 ${cfg.bg} ${cfg.text}`}>
+        <span className={`inline-flex items-center gap-[5px] px-3 py-[5px] rounded-full text-[11px] font-bold uppercase tracking-[0.4px] flex-shrink-0 ${colorCfg.bg} ${colorCfg.text}`}>
           <Icon size={11} />
           {cfg.label}
         </span>
@@ -1163,57 +1301,149 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Chart verdict banner ──────────────────────────────────────────────────────
 
-function ChartVerdict({ run }: { run: Run }) {
-  if (!run.equity_curve.length || !run.evaluations.length) return null
+// ── Performance by Regime ────────────────────────────────────────────────────
 
-  const netPnl   = run.net_pnl ?? 0
-  const isProfit = netPnl > 0
-  const ddFails  = run.evaluations.filter(e => !e.drawdown_pass)
-  const ddOk     = ddFails.length === 0
-  const conFails = run.evaluations.filter(e => e.consistency_pass === false)
-  const conOk    = conFails.length === 0
+interface RegimeRow {
+  regime: string; days: number; trades: number; netPnl: number
+  winRate: number | null; profitFactor: number | null; worstDay: number | null
+}
 
-  let level: 'green' | 'yellow' | 'red'
-  let summary: string
-  if (!isProfit) {
-    level = 'red';     summary = 'Net negative — not viable'
-  } else if (!ddOk) {
-    level = 'red';     summary = 'Profitable but breaches firm drawdown limits'
-  } else if (!conOk) {
-    level = 'yellow';  summary = 'Profitable and within drawdown, but fails consistency rule'
-  } else {
-    level = 'green';   summary = 'Profitable, within drawdown limits, and consistent'
+function computeRegimeBreakdown(run: Run): RegimeRow[] {
+  const { equity_curve, daily_pnl } = run
+  if (!equity_curve.length || !daily_pnl.length) return []
+
+  const dateToRegime  = new Map<string, string>()
+  const regimeDays    = new Map<string, Set<string>>()
+  const regimeDailyPnl = new Map<string, number[]>()
+
+  for (const d of daily_pnl) {
+    const regime = d.regime_tag ?? 'UNKNOWN'
+    dateToRegime.set(d.date, regime)
+    if (!regimeDays.has(regime)) regimeDays.set(regime, new Set())
+    regimeDays.get(regime)!.add(d.date)
+    if (!regimeDailyPnl.has(regime)) regimeDailyPnl.set(regime, [])
+    regimeDailyPnl.get(regime)!.push(d.pnl)
   }
 
-  const dot  = { green: '#00ff7f', yellow: '#ffb300', red: '#ff3b5c' }[level]
-  const txt  = { green: 'text-pos-text', yellow: 'text-warn-text', red: 'text-neg-text' }[level]
-  const bg   = { green: 'bg-pos-muted border-pos-text/20', yellow: 'bg-warn-muted border-warn-text/20', red: 'bg-neg-muted border-neg-text/20' }[level]
+  const stats = new Map<string, { netPnl: number; wins: number; grossWins: number; grossLosses: number; trades: number }>()
+  for (let i = 0; i < equity_curve.length; i++) {
+    const trade  = equity_curve[i]
+    const regime = trade.date ? (dateToRegime.get(trade.date) ?? 'UNKNOWN') : 'UNKNOWN'
+    const pnl    = i === 0 ? trade.equity : trade.equity - equity_curve[i - 1].equity
+    if (!stats.has(regime)) stats.set(regime, { netPnl: 0, wins: 0, grossWins: 0, grossLosses: 0, trades: 0 })
+    const s = stats.get(regime)!
+    s.netPnl += pnl; s.trades++
+    if (pnl > 0) { s.wins++; s.grossWins += pnl } else if (pnl < 0) { s.grossLosses += Math.abs(pnl) }
+  }
 
-  const checks = [
-    { label: 'Equity',      ok: isProfit, val: isProfit ? `+${dollar(netPnl)}` : dollar(netPnl) },
-    { label: 'Drawdown',    ok: ddOk,     val: ddOk  ? 'Within all limits' : `${ddFails.length} breach${ddFails.length > 1 ? 'es' : ''}` },
-    { label: 'Consistency', ok: conOk,    val: conOk ? 'OK'                : `${conFails.length} fail${conFails.length > 1 ? 's' : ''}` },
-  ]
+  const rows: RegimeRow[] = []
+  for (const [regime, s] of stats) {
+    const dp = regimeDailyPnl.get(regime) ?? []
+    rows.push({
+      regime, days: regimeDays.get(regime)?.size ?? 0, trades: s.trades, netPnl: s.netPnl,
+      winRate: s.trades > 0 ? s.wins / s.trades : null,
+      profitFactor: s.grossLosses > 0 ? s.grossWins / s.grossLosses : null,
+      worstDay: dp.length ? Math.min(...dp) : null,
+    })
+  }
+  rows.sort((a, b) => b.days - a.days)
+  const ui = rows.findIndex(r => r.regime === 'UNKNOWN')
+  if (ui > 0) rows.push(rows.splice(ui, 1)[0])
+  return rows
+}
+
+function PerformanceByRegimeTable({ run }: { run: Run }) {
+  const rows = useMemo(() => computeRegimeBreakdown(run), [run])
+  if (!rows.length) return null
+  const worstOverall = run.daily_pnl.length ? Math.min(...run.daily_pnl.map(d => d.pnl)) : null
 
   return (
-    <div className={`border rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 ${bg}`}>
-      <div className="flex items-center gap-2">
-        <span className="w-[9px] h-[9px] rounded-full flex-shrink-0"
-          style={{ background: dot, boxShadow: `0 0 6px ${dot}` }} />
-        <span className={`text-[12px] font-semibold ${txt}`}>{summary}</span>
+    <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b border-border-subtle">
+        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">Performance by Regime</div>
+        <div className="text-[10px] text-text-tertiary mt-[2px]">How the strategy performs in each market condition.</div>
       </div>
-      <div className="flex items-center gap-5 ml-auto">
-        {checks.map(c => (
-          <div key={c.label} className="flex items-center gap-[5px] text-[11px]">
-            {c.ok
-              ? <CheckCircle size={11} className="text-pos-text flex-shrink-0" />
-              : <XCircle    size={11} className="text-neg-text flex-shrink-0" />}
-            <span className="text-text-tertiary">{c.label}:</span>
-            <span className={`${c.ok ? 'text-text-primary font-mono' : 'text-neg-text'}`}>{c.val}</span>
-          </div>
-        ))}
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="border-b border-border-subtle">
+              {['Regime','Days','Trades','Net P&L','Win Rate','Prof. Factor','Worst Day'].map(h => (
+                <th key={h} className={`text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] px-4 py-2 ${h === 'Regime' ? 'text-left' : 'text-right'}`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => {
+              const color = REGIME_COLORS[row.regime] ?? REGIME_COLORS.UNKNOWN
+              return (
+                <tr key={i} className={i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''}>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div style={{ width: 16, height: 2, background: color, borderRadius: 1, flexShrink: 0 }} />
+                      <span className="text-text-secondary">{REGIME_LABEL[row.regime] ?? row.regime}</span>
+                    </div>
+                  </td>
+                  <td className="text-right px-4 py-2.5 text-text-secondary tabular-nums">{row.days}</td>
+                  <td className="text-right px-4 py-2.5 text-text-secondary tabular-nums">{row.trades}</td>
+                  <td className={`text-right px-4 py-2.5 tabular-nums font-medium ${row.netPnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(row.netPnl, true)}</td>
+                  <td className={`text-right px-4 py-2.5 tabular-nums ${winRateCls(row.winRate)}`}>{row.winRate != null ? `${(row.winRate * 100).toFixed(1)}%` : '—'}</td>
+                  <td className={`text-right px-4 py-2.5 tabular-nums ${pfCls(row.profitFactor)}`}>{row.profitFactor != null ? row.profitFactor.toFixed(2) : '—'}</td>
+                  <td className={`text-right px-4 py-2.5 tabular-nums ${row.worstDay != null && row.worstDay < 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{row.worstDay != null ? dollar(row.worstDay) : '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-border-subtle bg-bg-elevated/30">
+              <td className="px-4 py-2.5 text-[11px] font-semibold text-text-secondary">Overall</td>
+              <td className="text-right px-4 py-2.5 text-[11px] font-medium text-text-secondary tabular-nums">{run.daily_pnl.length}</td>
+              <td className="text-right px-4 py-2.5 text-[11px] font-medium text-text-secondary tabular-nums">{run.trade_count ?? run.equity_curve.length}</td>
+              <td className={`text-right px-4 py-2.5 text-[11px] font-semibold tabular-nums ${(run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(run.net_pnl, true)}</td>
+              <td className={`text-right px-4 py-2.5 text-[11px] font-medium tabular-nums ${winRateCls(run.win_rate)}`}>{run.win_rate != null ? `${(run.win_rate * 100).toFixed(1)}%` : '—'}</td>
+              <td className={`text-right px-4 py-2.5 text-[11px] font-medium tabular-nums ${pfCls(run.profit_factor)}`}>{run.profit_factor != null ? run.profit_factor.toFixed(2) : '—'}</td>
+              <td className={`text-right px-4 py-2.5 text-[11px] font-medium tabular-nums ${worstOverall != null && worstOverall < 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{worstOverall != null ? dollar(worstOverall) : '—'}</td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
     </div>
+  )
+}
+
+// ── Backfill regime button ────────────────────────────────────────────────────
+
+function BackfillRegimeButton({ run }: { run: Run }) {
+  const queryClient = useQueryClient()
+  const backfill    = useBackfillRegime()
+  const hasRealTags = run.daily_pnl.some(d => d.regime_tag && d.regime_tag !== 'UNKNOWN')
+  const [polling, setPolling] = useState(false)
+  const { data: status } = useBackfillStatus(run.run_id, polling)
+
+  useEffect(() => {
+    if (status?.status === 'complete') {
+      setPolling(false)
+      queryClient.invalidateQueries({ queryKey: ['lab', 'run', run.run_id] })
+      toast.success('Regime tags applied')
+    } else if (status?.status === 'failed') {
+      setPolling(false)
+      toast.error('Backfill failed')
+    }
+  }, [status?.status, run.run_id, queryClient])
+
+  if (hasRealTags || run.status !== 'complete') return null
+
+  const isRunning = status?.status === 'running' || polling
+  return (
+    <button
+      onClick={() => backfill.mutate(run.run_id, { onSuccess: () => setPolling(true) })}
+      disabled={isRunning || backfill.isPending}
+      className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      <Tag size={14} />
+      {isRunning
+        ? (status?.total ? `Tagging ${status.tagged}/${status.total}…` : 'Tagging…')
+        : 'Tag Regimes'}
+    </button>
   )
 }
 
@@ -1300,10 +1530,24 @@ export function BacktestDetail() {
   const { data: stressTests }    = useStressTests(run?.run_id)
   const latestStress             = stressTests?.[0]
   const [showStressModal, setShowStressModal] = useState(false)
+  const [overlayOn, setOverlayOn] = useState(getOverlayPref)
+  const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
 
   const fallback = useMemo(
     () => computeFallbacks(run?.daily_pnl ?? []),
     [run?.daily_pnl],
+  )
+
+  const hasRealRegimeTags = useMemo(
+    () => run?.daily_pnl.some(d => d.regime_tag && d.regime_tag !== 'UNKNOWN') ?? false,
+    [run?.daily_pnl],
+  )
+
+  const regimeBands = useMemo(
+    () => (overlayOn && hasRealRegimeTags && run)
+      ? computeRegimeBands(run.equity_curve, run.daily_pnl)
+      : [],
+    [overlayOn, hasRealRegimeTags, run?.equity_curve, run?.daily_pnl],
   )
 
   const isRunning  = run?.status === 'running'
@@ -1342,9 +1586,6 @@ export function BacktestDetail() {
                   <h1 className="text-h1 font-semibold leading-tight">
                     {run.strategy_name || run.strategy_id}
                   </h1>
-                  {run.worthiness && (
-                    <WorthinessBadge worthiness={run.worthiness} size="md" />
-                  )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
@@ -1354,13 +1595,14 @@ export function BacktestDetail() {
                     {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
                   </span>
                   {run.evaluations.length > 0 && (
-                    <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-tertiary font-mono">
+                    <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text">
                       {run.evaluations.map(e => e.ruleset_id).join(', ')}
                     </span>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                <BackfillRegimeButton run={run} />
                 <OptimizeButton run={run} />
                 {run?.status === 'complete' && (
                   <button
@@ -1372,7 +1614,7 @@ export function BacktestDetail() {
                     {latestStress?.grade && <RobustnessGradeBadge grade={latestStress.grade} size="sm" />}
                   </button>
                 )}
-                {!isRunning && <StatusBadge status={run.status} />}
+                {isRunning && <StatusBadge status={run.status} />}
               </div>
               {showStressModal && run && <RunStressTestModal runId={run.run_id} onClose={() => setShowStressModal(false)} />}
             </div>
@@ -1403,7 +1645,7 @@ export function BacktestDetail() {
                 <div className="flex flex-col">
                   <SectionLabel>Evaluation</SectionLabel>
                   <div className="flex flex-col gap-3 flex-1">
-                    {run.evaluations.map(ev => <EvalCard key={ev.eval_id} ev={ev} />)}
+                    {run.evaluations.map(ev => <EvalCard key={ev.eval_id} ev={ev} netPnl={run.net_pnl} />)}
                   </div>
                 </div>
               )}
@@ -1425,8 +1667,6 @@ export function BacktestDetail() {
           {/* ── Charts ────────────────────────────────────────────────────── */}
           {isComplete && (() => {
             const hasCharts = run.equity_curve.length > 0
-            const firstDate = run.equity_curve[0]?.date
-            const lastDate  = run.equity_curve[run.equity_curve.length - 1]?.date
 
             const seenLimits = new Set<number>()
             const evalLimits: Array<{ limit: number; label: string; pass: boolean }> = []
@@ -1443,11 +1683,6 @@ export function BacktestDetail() {
                 <div className="flex items-start justify-between">
                   <div>
                     <SectionLabel>Charts</SectionLabel>
-                    {hasCharts && firstDate && lastDate && (
-                      <p className="text-[11px] text-text-tertiary -mt-2 mb-3">
-                        {run.equity_curve.length.toLocaleString()} trades · {fmtDate(firstDate)} → {fmtDate(lastDate)}
-                      </p>
-                    )}
                   </div>
                   {!hasCharts && (
                     <button
@@ -1460,14 +1695,19 @@ export function BacktestDetail() {
                     </button>
                   )}
                   {hasCharts && (
-                    <button
-                      onClick={() => runId && reloadCharts.mutate(runId)}
-                      disabled={reloadCharts.isPending}
-                      className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
-                    >
-                      <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
-                      Refresh
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {hasRealRegimeTags && (
+                        <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
+                      )}
+                      <button
+                        onClick={() => runId && reloadCharts.mutate(runId)}
+                        disabled={reloadCharts.isPending}
+                        className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
+                      >
+                        <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
+                        Refresh
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -1480,15 +1720,25 @@ export function BacktestDetail() {
                   </div>
                 ) : (
                   <>
-                    {/* Traffic-light verdict */}
-                    <ChartVerdict run={run} />
-
                     {/* Equity curve */}
                     <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
                       <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1">Equity curve</div>
                       <div className="text-[10px] text-text-tertiary px-1 mt-[3px] mb-2">Steadily rising = good. Big peak then long decline = giving back gains.</div>
-                      <EquityCurveChart data={run.equity_curve} />
+                      <EquityCurveChart data={run.equity_curve} bands={regimeBands} />
+                      {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
                     </div>
+
+                    {/* Performance by Regime — immediately below equity curve when overlay is on */}
+                    {hasRealRegimeTags && (
+                      <div style={{
+                        maxHeight: overlayOn ? '1000px' : '0',
+                        opacity: overlayOn ? 1 : 0,
+                        overflow: 'hidden',
+                        transition: 'max-height 0.35s ease, opacity 0.25s ease',
+                      }}>
+                        <PerformanceByRegimeTable run={run} />
+                      </div>
+                    )}
 
                     {/* Drawdown */}
                     <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">

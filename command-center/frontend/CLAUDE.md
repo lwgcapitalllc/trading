@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-02 (session 9 — pipeline stepper + timers on StressTestDetail; checklist grade enforcement)
+**Last reviewed:** 2026-06-02 (session 11 — M4 overlay redesign: colored line, pie charts, header cleanup, terminal color parity)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -233,6 +233,21 @@ toast.error('Failed: ...')
 
 ---
 
+## Regime color constants
+
+Regime visualization uses a `REGIME_COLORS` constant defined inline in `BacktestDetail.tsx`. Applied via inline style since these data-driven colors aren't in the Tailwind theme.
+
+| Regime | Hex | Notes |
+|---|---|---|
+| TRENDING | `#06b6d4` | cyan — app accent |
+| TRANSITIONING | `#8b5cf6` | violet |
+| RANGING | `#f59e0b` | amber |
+| HIGH_VOLATILITY | `#ef4444` | red |
+| LOW_VOLATILITY | `#64748b` | slate |
+| UNKNOWN | `#6b7280` | produces no colored segment in the overlay |
+
+Companion constants in `BacktestDetail.tsx`: `REGIME_LABEL` (full display strings), `REGIME_LABEL_SHORT` (abbreviated for narrow zones, e.g. `Trans.`, `Hi Vol.`).
+
 ## What NOT to do
 
 - Call `fetch()` directly
@@ -267,12 +282,18 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 
 ## Backtest detail — chart and KPI conventions
 
-- Charts: equity curve, drawdown, daily P&L (full-width), long/short breakdown
+- Charts: equity curve (+ regime overlay when enabled), drawdown, daily P&L (full-width), long/short breakdown (pie charts)
 - KPIs: Net P&L, Max Drawdown, Win Rate, Profit Factor, Trade Count, Sharpe, Worst Day, Worst Streak, Avg Win, Avg Loss, Calmar Ratio (11 cards, `grid-cols-4 lg:grid-cols-6`)
-- Traffic-light verdict banner: green (profitable + no DD breach + consistency pass), yellow (profitable + DD ok + consistency fail), red (net negative or DD breach)
+- No standalone traffic-light verdict banner — evaluation state is conveyed entirely through the EvalCard (amber border/badge when profitable DISCARD, red when net-negative DISCARD)
+- EvalCard color override: when `ev.verdict === 'DISCARD'` but `netPnl > 0`, use amber (`VERDICT_CONFIG.WARN`) colors for border/badge — but keep the DISCARD label and icon from the original verdict
+- Header chips: instrument = `font-semibold font-mono bg-accent/10 text-accent border border-accent/20`; date = `font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary`; ruleset = `font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text`
+- WorthinessBadge removed from BacktestDetail header — verdict lives in EvalCard only
+- StatusBadge only rendered while the run is actively `running` — not shown for `complete` (implied by being on the detail page)
 - Drawdown chart shows firm limit reference lines from evaluations
 - Calendar-based x-axis ticks (start, quarterly, end) — not interval-based
+- Long vs Short section uses donut pie charts (Recharts `PieChart`/`Pie`/`Label`): won (green) vs lost (red) slices, win rate % as center label. Won label on right (matches green arc), lost label on left.
 - All chart tooltips: `contentStyle={{ background: C.tooltipBg, border: '1px solid ${C.tooltipBorder}', borderRadius: 8, fontSize: 13, padding: '8px 12px' }}`, `labelStyle={{ color: C.axisTick }}`, `itemStyle={{ color: '#e5e7eb' }}`. Never use `C.tooltipBorder` as text color — it's a dark border hex, not readable text.
+- Equity curve custom tooltip: uses `content` prop (not `formatter`/`labelFormatter`) to filter out `_s0..N` segment keys from the payload — only the `equity` entry is shown.
 
 ---
 
@@ -291,6 +312,9 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Tier 3 Warning Modal | ✅ Live | Shows past results per instrument, offers sweep of untested instruments. `withContractMonth()` stamps root symbols with contract month from source run before submitting sweep. Now passes `source_run_id: run.run_id` on every sweep trigger. |
 | Runner Badge | ✅ Live | StrategyDetail shows "Runs on: NinjaTrader" badge |
 | Stress Tests | ✅ Live | Own sidebar page at `/stress-tests`. StressTestDetail: **grade column card** (coloured left strip A–F, name, gold ruleset chip, grade reasons inline); **source backtest card** below it (strategy name, instrument, date range, Net P&L, trades, "View Run →" → `/backtests/:run_id`); MetricCard with pos/neg coloured values + InfoTip hover tooltips on all stats; ProbBars color-coded by severity; equity fan, drawdown dist, walk-forward, sensitivity charts. "Stress Test" button on BacktestDetail. No COMPLETE status pill (implied). Running status pill is cyan (matches all other tables). **Pipeline stepper** shown while running: fixed-width phase nodes (MC → Walk-forward → Sensitivity) with flex-1 connector lines, per-phase elapsed timers using `mc_completed_at` / `wf_completed_at` DB columns. |
+| Backtests lab M4 — Regime tagging | ✅ Live | `RegimeBadge` inline component (colored dot + label, spec colors). `PerformanceByRegimeTable` inline component on BacktestDetail — shown when ≥1 non-UNKNOWN tag exists; columns: Regime/Days/Trades/Net P&L/Win Rate/PF/Worst Day; Overall row pulls from `run.*` fields, never recomputed from regime rows. `BackfillRegimeButton` in header action row — shown when any `daily_pnl` entry has missing or UNKNOWN `regime_tag`; polls backfill status at 1s; invalidates run query on completion. |
+| Backtests lab M4 — Equity overlay | ✅ Live | `RegimeOverlayToggle` button in Charts header — active when non-UNKNOWN tags exist. Toggle persists to `localStorage` (`regime_overlay_enabled`), defaults to on. **Colored equity line**: `EquityCurveChart` augments the data with per-band segment keys (`_s0`, `_s1`, …); each regime segment renders as a separate `Area` with `fill="transparent"` and the regime's stroke color. When overlay is off, falls back to the normal single-color green line + fill. `RegimeLegend` (dash swatches, not dots) below equity curve when overlay is on. `PerformanceByRegimeTable` slides in/out below the equity curve with a CSS `max-height` + `opacity` transition (350ms) — only mounts when tags exist, visibility driven by `overlayOn`. UNKNOWN days produce no colored segment. |
+| Backtests lab M4 — Optimizer regime filter | ✅ Live | `OptimizerModal` gains a "Regime Filter" select (col-span-3, all 5 labels + no-filter option). `regime_filter` flows through types → hook → backend. `OptimizationDetail` shows regime chip in metadata row when set. |
 | Settings | ✅ Live | Config read/write |
 
 ---
@@ -306,9 +330,15 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 ## ProgressCard pattern (SweepDetail / OptimizationDetail)
 
 Both detail pages use an identical `ProgressCard` sub-component with:
-- Left: status icon + label + segmented progress bar (green = complete, red = failed) + counts
+- Left: status icon + label + segmented progress bar + counts
 - Right: elapsed/duration timer (`useElapsed` hook) + Cancel button (while running) + Retry-N-failed button (when not running)
 - Inline warning when failures accumulate during a run
+
+**Terminal color scheme** (matches Smart Money terminal aesthetic):
+- Complete (no failures): `border-accent/20 bg-accent/5` background, `text-accent` status label + icon, `bg-accent` progress bar, `text-accent` count
+- Instrument/combo done pills: `border-accent/25 bg-accent/10 text-accent`
+- Failed/partial: unchanged (red/amber)
+- Running: unchanged (cyan spinner, already matched)
 
 `useElapsed(startIso, endIso, running)` — counts up live when `running`, freezes at final duration when done.
 

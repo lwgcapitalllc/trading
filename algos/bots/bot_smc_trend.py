@@ -106,6 +106,16 @@ RUNNER_TRAIL_R  = {
 LONDON  = ((_B1["london_kz_start_utc"], 0), (_B1["london_kz_end_utc"], 0))
 NY      = ((_B1["ny_kz_start_utc"],     0), (_B1["ny_kz_end_utc"],     0))
 
+# 5-label regime decision table for Bot 1 (trend-following strategy)
+REGIME_RISK_TABLE = {
+    "TRENDING":        {"risk_multiplier": 1.0, "trade_allowed": True},
+    "TRANSITIONING":   {"risk_multiplier": 0.5, "trade_allowed": True},
+    "RANGING":         {"risk_multiplier": 0.0, "trade_allowed": False},
+    "HIGH_VOLATILITY": {"risk_multiplier": 0.0, "trade_allowed": False},
+    "LOW_VOLATILITY":  {"risk_multiplier": 0.0, "trade_allowed": False},
+    "UNKNOWN":         {"risk_multiplier": 0.0, "trade_allowed": False},
+}
+
 log.info(f"Config loaded | watchlist={WATCHLIST} | risk={RISK_PCT}% | "
          f"daily_cap={MAX_DAILY_LOSS}% | weekly_cap={MAX_WEEKLY_LOSS}%")
 
@@ -696,13 +706,13 @@ def run():
                     df_h4 = get_candles(mt5.TIMEFRAME_H4, 50)
                     if not df_h1.empty and not df_h4.empty:
                         regime.classify(df_h1, df_h4)
-                    ok, _, reason = regime.is_trade_allowed()
-                    if ok:
+                    _re = REGIME_RISK_TABLE.get(regime.current_regime, REGIME_RISK_TABLE["UNKNOWN"])
+                    if _re["trade_allowed"]:
                         trading_halted = False
                         consec_losses  = 0
-                        log.info(f"Regime OK ({reason}). Resuming.")
+                        log.info(f"Regime OK ({regime.current_regime} score={regime.regime_score}). Resuming.")
                     else:
-                        log.warning(f"Regime still bad ({reason}). Waiting 1hr.")
+                        log.warning(f"Regime still bad ({regime.current_regime} score={regime.regime_score}). Waiting 1hr.")
                         for _ in range(60):
                             time.sleep(60)
                             write_bot("smc_trend", {"heartbeat": time.time()})
@@ -772,9 +782,10 @@ def run():
                 if not df_h1.empty and not df_h4.empty:
                     regime.classify(df_h1, df_h4)
 
-            ok, risk_mult, reason = regime.is_trade_allowed()
-            if not ok:
-                log.info(f"Regime block: {reason}")
+            _re = REGIME_RISK_TABLE.get(regime.current_regime, REGIME_RISK_TABLE["UNKNOWN"])
+            risk_mult = _re["risk_multiplier"]
+            if not _re["trade_allowed"]:
+                log.info(f"Regime block: {regime.current_regime} (score={regime.regime_score})")
                 time.sleep(60); continue
 
             # ── Track metrics ─────────────────────────────────────────────

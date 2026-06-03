@@ -364,6 +364,13 @@ export interface EvaluationDetail {
 export interface DailyPnlPoint {
   date: string
   pnl: number
+  regime_tag?: string
+}
+
+export interface BackfillRegimeStatus {
+  status: 'idle' | 'running' | 'complete' | 'failed'
+  tagged: number
+  total: number
 }
 
 export interface BacktestDetail {
@@ -592,6 +599,7 @@ export interface OptimizationRequest {
   search_method: 'auto' | 'brute' | 'genetic'
   param_grid: Record<string, ParamAxisSpec>
   source_run_id?: string | null
+  regime_filter?: string | null
 }
 
 export interface OptimizationSummary {
@@ -608,6 +616,7 @@ export interface OptimizationSummary {
   completed_runs: number
   best_run_id: string | null
   source_run_id: string | null
+  regime_filter: string | null
   created_at: string
   completed_at: string | null
 }

@@ -21,7 +21,10 @@ from models import (
     WorthinessScore, RunningJobStatus,
 )
 from services import lab_db, vps_client
-from services.backtest_runner import run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv
+from services.backtest_runner import (
+    run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv,
+    get_backfill_status, run_backfill,
+)
 from services.evaluator import evaluate_run
 from services.sweep_runner import retry_single_sweep_run
 from services.optimization_runner import retry_single_optimization_run
@@ -406,3 +409,36 @@ async def reload_charts(run_id: str) -> dict:
     })
 
     return {"equity_points": len(equity_curve), "daily_bars": len(daily_pnl)}
+
+
+@router.post("/runs/{run_id}/backfill_regime", status_code=202)
+async def backfill_regime(run_id: str) -> dict:
+    """Classify regime for each daily_pnl entry on a pre-M4 (or OHLC-failed) backtest."""
+    row = lab_db.get_run(run_id)
+    if not row:
+        raise HTTPException(404, "Run not found")
+    if row["status"] != "complete":
+        raise HTTPException(400, f"Run is not complete (status: {row['status']})")
+
+    daily_pnl_path = Path(row.get("daily_pnl_path") or "")
+    if not daily_pnl_path.exists():
+        raise HTTPException(400, "No daily_pnl file found for this run")
+
+    asyncio.create_task(
+        run_backfill(
+            run_id,
+            row["instrument"],
+            row.get("start_date", ""),
+            row.get("end_date", ""),
+            daily_pnl_path,
+        )
+    )
+    return {"run_id": run_id, "status": "started"}
+
+
+@router.get("/runs/{run_id}/backfill_status")
+def backfill_regime_status(run_id: str) -> dict:
+    """Poll status of an in-progress or completed regime backfill."""
+    if not lab_db.get_run(run_id):
+        raise HTTPException(404, "Run not found")
+    return get_backfill_status(run_id)

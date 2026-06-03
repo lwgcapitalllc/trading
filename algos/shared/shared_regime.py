@@ -4,15 +4,9 @@ shared_regime.py — Thin shim over trading/regime/classifier.py
 Preserves the RegimeClassifier class interface used by all bots unchanged.
 All signal math and classification logic now lives in trading/regime/.
 
-Three signals scored every hour:
-  ADX(14)    — trend strength (>25 trending, <20 ranging)
-  ATR ratio  — current vs 20-period average (expansion vs compression)
-  RSI range  — how wide RSI has swung over 20 bars (directional vs choppy)
-
-Score 0–5:
-  0–1 = RANGING     → Bot 1 pauses, Bot 2 trades full size
-  2   = TRANSITIONING → both trade at reduced size
-  3–5 = TRENDING    → Bot 1 trades full size, Bot 2 reduces
+Returns one of 5 labels: TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY | UNKNOWN
+Each bot owns its own REGIME_RISK_TABLE mapping these labels to (risk_multiplier, trade_allowed).
+The shim returns risk_multiplier=1.0 and trade_allowed=True as defaults — bots override from their table.
 """
 
 import sys
@@ -82,25 +76,20 @@ class RegimeClassifier:
     def classify(self, df_h1: pd.DataFrame, df_h4: pd.DataFrame) -> dict:
         """Run all three signals and return classification dict."""
         sigs  = _compute_signals(df_h1, df_h4)
-        label = _classify_regime(df_h1, df_h4, mode="coarse")
+        label = _classify_regime(df_h1, df_h4)
 
         if label == "UNKNOWN":
             log.warning(f"[{self.bot_name}] Insufficient data for regime classification "
                         f"— keeping cached state {self.current_regime}")
-            allowed = self.current_regime != "RANGING"
-            mult    = 1.0 if self.current_regime == "TRENDING" else (0.5 if self.current_regime == "TRANSITIONING" else 0.0)
             return {
                 "regime":          self.current_regime,
                 "score":           self.regime_score,
-                "trade_allowed":   allowed,
-                "risk_multiplier": mult,
+                "trade_allowed":   True,
+                "risk_multiplier": 1.0,
                 "adx":             0.0,
                 "atr_ratio":       0.0,
                 "rsi_range":       0.0,
             }
-
-        allowed = label != "RANGING"
-        mult    = 1.0 if label == "TRENDING" else (0.5 if label == "TRANSITIONING" else 0.0)
 
         self.current_regime = label
         self.regime_score   = sigs["score_norm"]
@@ -113,17 +102,13 @@ class RegimeClassifier:
         return {
             "regime":          label,
             "score":           sigs["score_norm"],
-            "trade_allowed":   allowed,
-            "risk_multiplier": mult,
+            "trade_allowed":   True,
+            "risk_multiplier": 1.0,
             "adx":             sigs["adx"],
             "atr_ratio":       sigs["atr_ratio"],
             "rsi_range":       sigs["rsi_range"],
         }
 
     def is_trade_allowed(self) -> tuple:
-        """Quick gate check without re-running classification."""
-        if self.current_regime == "RANGING":
-            return False, 0.0, f"RANGING (score={self.regime_score}) — entries blocked"
-        elif self.current_regime == "TRANSITIONING":
-            return True, 0.5, f"TRANSITIONING (score={self.regime_score}) — half size"
-        return True, 1.0, f"TRENDING (score={self.regime_score}) — full size"
+        """Quick gate check without re-running classification. Bots override via REGIME_RISK_TABLE."""
+        return True, 1.0, f"{self.current_regime} (score={self.regime_score})"

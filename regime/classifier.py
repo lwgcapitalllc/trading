@@ -3,16 +3,17 @@ Canonical regime classifier for LWG Capital.
 
 Public API:
   compute_signals(df_short, df_long, cfg=None) -> dict | None
-  classify_regime(df_short, df_long, mode="fine", thresholds=None) -> str
-  coarse_label(fine_label) -> str
+  classify_regime(df_short, df_long, thresholds=None) -> str
 
 df_short: higher-frequency dataframe (H1 for bots, daily for lab).
           ADX(14) and RSI range(14-period RSI, 20-bar rolling max/min) computed here.
 df_long:  lower-frequency dataframe (H4 for bots, daily for lab — pass the same df twice).
           ATR ratio (14-period rolling ATR / 20-period rolling mean of that ATR) computed here.
 
-Signal math is bit-for-bit identical to the pre-migration shared_regime.py.
+Returns one of: TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY | UNKNOWN
 """
+
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
@@ -66,26 +67,18 @@ def compute_signals(
 def classify_regime(
     df_short: pd.DataFrame,
     df_long: pd.DataFrame,
-    mode: str = "fine",
     thresholds: dict | None = None,
 ) -> str:
     """
     Classify the current market regime.
 
-    mode="coarse": returns TRENDING | TRANSITIONING | RANGING
-    mode="fine":   returns TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY
-
+    Returns TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY
     Returns "UNKNOWN" when there is insufficient history or any signal is NaN.
 
-    Coarse mode is bit-for-bit identical to pre-migration shared_regime.py output.
-    Fine mode splits the RANGING space by ATR ratio; TRENDING and TRANSITIONING are unchanged.
-
-    Coarse ↔ fine mapping (lossless round-trip):
-      TRENDING       → TRENDING
-      TRANSITIONING  → TRANSITIONING
-      RANGING        → RANGING
-      HIGH_VOLATILITY → RANGING   (high ATR but no momentum = don't trade directionally)
-      LOW_VOLATILITY  → RANGING   (compressed and quiet = don't trade directionally)
+    Score 3–5 → TRENDING. Score 2 → TRANSITIONING.
+    Score 0–1 with high ATR ratio → HIGH_VOLATILITY.
+    Score 0–1 with low ATR ratio  → LOW_VOLATILITY.
+    Score 0–1 otherwise           → RANGING.
     """
     t    = _resolve(thresholds)
     sigs = compute_signals(df_short, df_long, thresholds)
@@ -100,27 +93,14 @@ def classify_regime(
     if score_norm == 2:
         return "TRANSITIONING"
 
-    # score_norm <= 1: the RANGING space — fine mode adds volatility nuance here
-    if mode == "fine":
-        atr_ratio = sigs["atr_ratio"]
-        if atr_ratio >= t["HIGH_VOL_ATR"]:
-            return "HIGH_VOLATILITY"
-        if atr_ratio <= t["LOW_VOL_ATR"]:
-            return "LOW_VOLATILITY"
+    # score_norm <= 1: split by volatility level
+    atr_ratio = sigs["atr_ratio"]
+    if atr_ratio >= t["HIGH_VOL_ATR"]:
+        return "HIGH_VOLATILITY"
+    if atr_ratio <= t["LOW_VOL_ATR"]:
+        return "LOW_VOLATILITY"
 
     return "RANGING"
-
-
-def coarse_label(fine_label: str) -> str:
-    """Map a fine-mode label to its coarse (3-label) equivalent."""
-    return {
-        "TRENDING":        "TRENDING",
-        "TRANSITIONING":   "TRANSITIONING",
-        "RANGING":         "RANGING",
-        "HIGH_VOLATILITY": "RANGING",
-        "LOW_VOLATILITY":  "RANGING",
-        "UNKNOWN":         "UNKNOWN",
-    }.get(fine_label, "UNKNOWN")
 
 
 # ── Private signal calculators (identical math to shared_regime.py) ───────────

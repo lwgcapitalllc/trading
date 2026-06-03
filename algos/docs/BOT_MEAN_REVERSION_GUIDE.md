@@ -91,11 +91,14 @@ recorded at entry.
 
 Bot 2 is the INVERSE of Bot 1 — it thrives when Bot 1 struggles:
 
-| Regime | Response |
-|---|---|
-| RANGING | Full size — ideal, price oscillates predictably |
-| TRANSITIONING | 75% size |
-| TRENDING | 40% size — trends fight reversion |
+| Regime | Risk Multiplier | Trade Allowed |
+|---|---|---|
+| RANGING | 1.0× | Yes — ideal, price oscillates predictably |
+| LOW_VOLATILITY | 1.0× | Yes — compressed range, same logic applies |
+| TRANSITIONING | 0.75× | Yes |
+| HIGH_VOLATILITY | 0.5× | Yes — volatile but tradeable at reduced size |
+| TRENDING | 0.4× | Yes — trends fight reversion |
+| UNKNOWN | 0.0× | No |
 
 ---
 
