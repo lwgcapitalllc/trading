@@ -94,7 +94,7 @@ def _jupdate(job_id: str, **kwargs):
 @app.after_request
 def _cors(response):
     response.headers["Access-Control-Allow-Origin"]  = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
@@ -198,6 +198,90 @@ def agent_log():
     with _lock:
         tail = list(_agent_log[-lines:])
     return jsonify({"log": "\n".join(tail)})
+
+
+# ── Strategy file management ──────────────────────────────────────────────────
+
+STRATEGIES_DIR   = NT8_DOCS / "bin" / "Custom" / "Strategies"
+MAX_UPLOAD_BYTES = 256 * 1024  # 256 KB — NinjaScript files are typically 5–30 KB
+
+
+def _is_locked(filepath: Path) -> bool:
+    """Try to open the file for writing; IOError means NT8 has it locked."""
+    try:
+        with open(filepath, "r+b"):
+            pass
+        return False
+    except IOError:
+        return True
+
+
+def _file_info(p: Path) -> dict:
+    st = p.stat()
+    import datetime
+    return {
+        "filename":    p.name,
+        "size_bytes":  st.st_size,
+        "modified_at": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(),
+    }
+
+
+@app.route("/files/strategies")
+def list_strategy_files():
+    try:
+        files = [_file_info(p) for p in sorted(STRATEGIES_DIR.glob("*.cs"))]
+        return jsonify(files)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/files/strategies/<filename>", methods=["POST"])
+def upload_strategy_file(filename):
+    if not filename.endswith(".cs"):
+        return jsonify({"error": "Only .cs files are allowed"}), 400
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file in request"}), 400
+
+    f = request.files["file"]
+    content = f.read()
+
+    if len(content) > MAX_UPLOAD_BYTES:
+        return jsonify({"error": f"File exceeds 256 KB limit ({len(content)} bytes)"}), 400
+
+    overwrite = request.form.get("overwrite", "false").lower() in ("true", "1", "yes")
+    dest = STRATEGIES_DIR / filename
+
+    if dest.exists():
+        if not overwrite:
+            return jsonify({"error": "File already exists", "filename": filename}), 409
+        if _is_locked(dest):
+            return jsonify({
+                "error": "File is in use by NT8. Stop the running strategy or close it from charts before redeploying."
+            }), 423
+
+    dest.write_bytes(content)
+    _alog(f"Uploaded {filename} ({len(content)} bytes, overwrite={overwrite})")
+    return jsonify(_file_info(dest))
+
+
+@app.route("/files/strategies/<filename>", methods=["DELETE"])
+def delete_strategy_file(filename):
+    if not filename.endswith(".cs"):
+        return jsonify({"error": "Only .cs files are allowed"}), 400
+
+    dest = STRATEGIES_DIR / filename
+    if not dest.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    if _is_locked(dest):
+        return jsonify({
+            "error": "File is in use by NT8. Stop the running strategy or close it from charts first."
+        }), 423
+
+    dest.unlink()
+    _alog(f"Deleted {filename}")
+    return jsonify({"deleted": True, "filename": filename})
 
 
 # ── Job control ───────────────────────────────────────────────────────────────
