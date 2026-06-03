@@ -94,15 +94,15 @@ def open_ns_editor(dt) -> object:
     try:
         new_item = cc.child_window(title="New", control_type="MenuItem")
         log(f"New item found: {new_item.window_text()!r}")
-        new_item.invoke()
+        new_item.expand()  # "New" is a submenu — expand(), not invoke()
     except Exception as ex:
         import traceback
-        raise RuntimeError(f"invoke New: {ex!r}\n{traceback.format_exc()}")
+        raise RuntimeError(f"expand New: {ex!r}\n{traceback.format_exc()}")
     time.sleep(0.8)
     try:
         ns_item = dt.window(title="NinjaScript Editor", control_type="MenuItem")
         log(f"NS Editor item found: {ns_item.window_text()!r}")
-        ns_item.invoke()
+        ns_item.invoke()  # leaf menu item — invoke()
     except Exception as ex:
         import traceback
         raise RuntimeError(f"invoke NinjaScript Editor: {ex!r}\n{traceback.format_exc()}")
