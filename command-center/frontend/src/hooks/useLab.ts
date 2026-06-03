@@ -10,6 +10,7 @@ import type {
   OptimizationRequest, OptimizationSummary, OptimizationDetail,
   InstrumentSummary, RunningJobStatus,
   BackfillRegimeStatus,
+  StrategyFile, StrategyFileSyncStatus, CompileJobStatus,
 } from '@/types'
 
 // ── Strategies ─────────────────────────────────────────────────────────────────
@@ -545,5 +546,79 @@ export function useVpsNtLog(lines = 200) {
     queryKey: ['lab', 'vps', 'nt-log', lines],
     queryFn: () => api.getText(`/vps/nt/log?lines=${lines}`),
     refetchInterval: 10_000,
+  })
+}
+
+// ── Strategy file management ──────────────────────────────────────────────────
+
+export function useStrategyFiles() {
+  return useQuery({
+    queryKey: ['lab', 'strategy-files'],
+    queryFn: () => api.get<StrategyFile[]>('/strategy-files'),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useStrategyFileSyncStatus() {
+  return useQuery({
+    queryKey: ['lab', 'strategy-files', 'sync-status'],
+    queryFn: () => api.get<StrategyFileSyncStatus[]>('/strategy-files/sync-status'),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useUploadStrategyFile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ filename, file, overwrite }: { filename: string; file: File; overwrite: boolean }) => {
+      const fd = new FormData()
+      fd.append('file', file, filename)
+      fd.append('filename', filename)
+      fd.append('overwrite', String(overwrite))
+      const res = await fetch('/api/strategy-files/upload', { method: 'POST', body: fd })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw Object.assign(new Error(err.detail ?? res.statusText), { status: res.status })
+      }
+      return res.json() as Promise<StrategyFile>
+    },
+    onSuccess: (_, vars) => {
+      toast.success(`${vars.filename} uploaded`)
+      qc.invalidateQueries({ queryKey: ['lab', 'strategy-files'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'strategy-files', 'sync-status'] })
+    },
+    onError: (err: Error) => toast.error(`Upload failed: ${err.message}`),
+  })
+}
+
+export function useDeleteStrategyFile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (filename: string) => api.delete(`/strategy-files/${encodeURIComponent(filename)}`),
+    onSuccess: (_, filename) => {
+      toast.success(`${filename} deleted`)
+      qc.invalidateQueries({ queryKey: ['lab', 'strategy-files'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'strategy-files', 'sync-status'] })
+    },
+    onError: () => toast.error('Delete failed'),
+  })
+}
+
+export function useTriggerCompile() {
+  return useMutation({
+    mutationFn: () => api.post<{ compile_job_id: string }>('/strategy-files/compile', {}),
+    onError: () => toast.error('Could not start compile'),
+  })
+}
+
+export function useCompileStatus(compileJobId: string | null) {
+  return useQuery({
+    queryKey: ['lab', 'compile', compileJobId],
+    queryFn: () => api.get<CompileJobStatus>(`/strategy-files/compile/${compileJobId}`),
+    enabled: !!compileJobId,
+    refetchInterval: (query) => {
+      const data = query.state.data as CompileJobStatus | undefined
+      return data?.status === 'running' ? 2_000 : false
+    },
   })
 }

@@ -659,3 +659,29 @@ export interface RunningJobStatus {
   job_id: string | null
   description: string | null
 }
+
+// ── Strategy files (Pass 2 — deployment manager) ─────────────────────────────
+
+export interface StrategyFile {
+  filename: string
+  size_bytes: number
+  modified_at: string
+}
+
+export interface StrategyFileSyncStatus {
+  strategy_id: string
+  expected_filename: string
+  file_exists_on_vps: boolean
+  file_size_bytes: number | null
+  file_modified_at: string | null
+  in_sync: boolean
+}
+
+export interface CompileJobStatus {
+  compile_job_id: string
+  status: 'running' | 'success' | 'failed'
+  errors: string[]
+  warnings: string[]
+  started_at: number | null
+  completed_at: number | null
+}
