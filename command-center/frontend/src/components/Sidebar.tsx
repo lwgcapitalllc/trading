@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Radar, Bot, BarChart2,
+  LayoutDashboard, Radar, Bot, BookOpen, BarChart2,
   Activity, Settings,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -13,6 +13,7 @@ const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[
 ]
 
 const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
+  { to: '/strategies',   label: 'Strategies',   icon: BookOpen,  live: true  },
   { to: '/backtests',    label: 'Backtests',    icon: BarChart2, live: true  },
   { to: '/stress-tests', label: 'Stress Tests', icon: Activity,  live: true  },
 ]

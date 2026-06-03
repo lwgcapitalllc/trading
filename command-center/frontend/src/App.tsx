@@ -5,6 +5,7 @@ import { TopBar } from '@/components/TopBar'
 import { Overview } from '@/pages/Overview'
 import { SmartMoney } from '@/pages/SmartMoney'
 import { Bots } from '@/pages/Bots'
+import { Strategies } from '@/pages/Strategies'
 import { Backtests } from '@/pages/Backtests'
 import { BacktestDetail } from '@/pages/BacktestDetail'
 import { StrategyDetail } from '@/pages/StrategyDetail'
@@ -33,6 +34,7 @@ export default function App() {
               <Route path="/smart-money"              element={<SmartMoney />} />
               <Route path="/smart-money/:runId/candidates/:id" element={<SmartMoney />} />
               <Route path="/bots"                     element={<Bots />} />
+              <Route path="/strategies"                             element={<Strategies />} />
               <Route path="/backtests"                              element={<Backtests />} />
               <Route path="/backtests/runs/:runId"              element={<BacktestDetail />} />
               <Route path="/backtests/strategies/:strategyId"  element={<StrategyDetail />} />
