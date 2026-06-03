@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-03 (Pass 1 — foundational config layer: param filtering, readonly section, ruleset edit modal)
+**Last reviewed:** 2026-06-03 (Pass 2 — strategy deployment manager)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -345,6 +345,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Backtests lab M4 — Regime tagging | ✅ Live | `RegimeBadge` inline component (colored dot + label, spec colors). `PerformanceByRegimeTable` inline component on BacktestDetail — shown when ≥1 non-UNKNOWN tag exists; columns: Regime/Days/Trades/Net P&L/Win Rate/PF/Worst Day; Overall row pulls from `run.*` fields, never recomputed from regime rows. `BackfillRegimeButton` in header action row — shown when any `daily_pnl` entry has missing or UNKNOWN `regime_tag`; polls backfill status at 1s; invalidates run query on completion. |
 | Backtests lab M4 — Equity overlay | ✅ Live | `RegimeOverlayToggle` button in Charts header — active when non-UNKNOWN tags exist. Toggle persists to `localStorage` (`regime_overlay_enabled`), defaults to on. **Colored equity line**: `EquityCurveChart` augments the data with per-band segment keys (`_s0`, `_s1`, …); each regime segment renders as a separate `Area` with `fill="transparent"` and the regime's stroke color. When overlay is off, falls back to the normal single-color green line + fill. `RegimeLegend` (dash swatches, not dots) below equity curve when overlay is on. `PerformanceByRegimeTable` slides in/out below the equity curve with a CSS `max-height` + `opacity` transition (350ms) — only mounts when tags exist, visibility driven by `overlayOn`. UNKNOWN days produce no colored segment. |
 | Backtests lab M4 — Optimizer regime filter | ✅ Live | `OptimizerModal` gains a "Regime Filter" select (col-span-3, all 5 labels + no-filter option). `regime_filter` flows through types → hook → backend. `OptimizationDetail` shows regime chip in metadata row when set. |
+| Backtests lab Pass 2 — Strategy Files | ✅ Live | New "Files" sub-tab in Backtests. `FilesTab` in `Backtests.tsx`: drag/drop zone, file list table, ⋯ actions menu (delete with confirmation), overwrite confirmation modal, "Compile All" button → `CompileModal` with live 2s polling. `StrategiesTab` gains a "Deploy" column with ● In sync / ● Needs deploy badges; Needs deploy badge clicks through to Files tab. |
 | Settings | ✅ Live | Config read/write |
 
 ---
@@ -373,4 +374,41 @@ Both detail pages use an identical `ProgressCard` sub-component with:
 `useElapsed(startIso, endIso, running)` — counts up live when `running`, freezes at final duration when done.
 
 Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBacktest().mutate(run.run_id)`. Spinner activates on the specific row via `retryRun.variables === run.run_id`. `e.stopPropagation()` prevents the row-click navigation from firing.
+
+---
+
+## Pass 2 — Strategy Deployment Manager (frontend changes)
+
+### New components in `Backtests.tsx`
+
+**`FilesTab`** — New sub-tab under Strategies. Contains:
+- Drag/drop zone (detects `.cs` files only; toasts on non-.cs drop)
+- File list table: Filename, Size, Modified, Status badge, ⋯ menu
+- "Compile All" button → triggers `useTriggerCompile()` → shows `CompileModal`
+- Overwrite confirmation modal: shown when a dropped file already exists on the VPS
+- Delete confirmation modal: shown when "Delete" is chosen from the ⋯ menu
+- `FileStatusBadge`: green "In sync" pill for files that exist on VPS
+
+**`CompileModal`** — polls `useCompileStatus(compileJobId)` at 2s intervals. Shows spinner + elapsed time while running. Shows success/errors on completion. "Close" button only appears when compile is not running.
+
+### `StrategiesTab` changes
+
+Added `useStrategyFileSyncStatus()` call (60s refetch). Passes `inSync` prop to `StrategyRow`. New "Deploy" column: green ● In sync badge or amber ● Needs deploy button (clicking navigates to `?tab=files`).
+
+### New hooks in `useLab.ts`
+
+| Hook | Purpose |
+|---|---|
+| `useStrategyFiles()` | `GET /strategy-files` — 30s refetch |
+| `useStrategyFileSyncStatus()` | `GET /strategy-files/sync-status` — 60s refetch |
+| `useUploadStrategyFile()` | `POST /strategy-files/upload` — multipart via native `fetch()` (not `api.post`) |
+| `useDeleteStrategyFile()` | `DELETE /strategy-files/{filename}` |
+| `useTriggerCompile()` | `POST /strategy-files/compile` |
+| `useCompileStatus(id)` | `GET /strategy-files/compile/{id}` — polls at 2s while running |
+
+Upload hook uses native `fetch()` with `FormData` (not `api.post`) because multipart encoding requires special handling not available in the `api` wrapper.
+
+### New types in `types/index.ts`
+
+`StrategyFile`, `StrategyFileSyncStatus`, `CompileJobStatus`.
 

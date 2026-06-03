@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-03 (Pass 1 — foundational config layer + strategy genericization)
+**Last reviewed:** 2026-06-03 (Pass 2 — strategy deployment manager)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -28,6 +28,7 @@ backend/
 │   ├── rulesets.py        lab — ruleset CRUD (/rulesets)
 │   ├── firms.py           backward-compat redirect /firms → /rulesets (deprecated, remove in M4)
 │   ├── system.py          lab — health + log proxies
+│   ├── strategy_files.py  lab — strategy file deployment (list, upload, delete, compile, sync-status)
 │   ├── stress_tests.py    lab — stress test CRUD + trigger (GET /stress-tests, GET /:id, POST /run, DELETE /:id)
 │   ├── sweeps.py          lab — instrument sweep (POST /backtests/sweep, GET /backtests/sweeps, GET/DELETE /backtests/sweeps/:id)
 │   ├── optimizations.py   lab — optimizer (POST /optimizations/run, GET /optimizations/*, DELETE /optimizations/:id)
@@ -302,6 +303,7 @@ On startup `_migrate_strategy_renames()` renames `orb_lucidflex` → `orb`, `vwa
 | Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
 | Lab — Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap, vectorised numpy). Walk-forward (N sequential NT8 windows, IS/OOS Sharpe). Sensitivity (±10%/±25% param perturbations via NT8). Auto-triggered (MC only) on Tier 1 backtests and optimizer winners. Graded A-F. |
 | Lab — Regime Tags (M4) | ✅ Live | Each `daily_pnl` entry gains a `regime_tag` (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Pipeline auto-tags on every new backtest. Manual backfill via `POST /backtests/runs/{id}/backfill_regime`. Optimizer accepts optional `regime_filter` field to score child runs only against trades in that regime. |
+| Lab — Strategy Files (Pass 2) | ✅ Live | Deploy .cs strategy files to VPS without SSH. `GET /strategy-files`, `POST /strategy-files/upload`, `DELETE /strategy-files/{filename}`, `POST /strategy-files/compile`, `GET /strategy-files/compile/{id}`, `GET /strategy-files/sync-status`. |
 | Settings | ✅ Live | Config read/write. |
 
 ---
@@ -408,3 +410,49 @@ Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long
 **Sweep vs. progress lock:** Sweep and optimization runs do NOT use `lab_progress.json`. That file is exclusively for the single-run flow. Sweep/optimization state is tracked only in the DB.
 
 **source_run_id:** `optimizations` stores the `run_id` of the backtest that spawned it. Sweep child runs store the `run_id` of the run that triggered the sweep. The Runs tab uses this to nest linked jobs under their source run. Rows without `source_run_id` (created before this was added) appear flat — no backfill is possible.
+
+---
+
+## Pass 2 — Strategy Deployment Manager
+
+### Strategy file endpoints on VPS agent
+
+New endpoints added to `algos/markets/futures/lucid_flex/tools/vps_agent.py`:
+
+```
+GET    /files/strategies              list .cs files in NT8 strategy folder
+POST   /files/strategies/<filename>  upload via multipart (overwrite=bool)
+DELETE /files/strategies/<filename>  delete a .cs file
+POST   /compile                       trigger NT8 compile → {compile_job_id}
+GET    /compile/<id>                  poll compile status (running/success/failed)
+```
+
+NT8 strategy folder path: `C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\`
+
+### Compile approach: pywinauto F5 (Approach A)
+
+`NCompile.exe` does NOT exist in this NT8 install (no `bin64` folder; `bin` has only `NinjaTrader.exe`, `NinjaTrader.Adapter.exe`, `ntau.exe`). Approach B was ruled out at Step 2.
+
+Compile implementation in `vps_compile_runner.py`:
+1. Find NT8 Control Center HWND via Win32 `EnumWindows` (it appears in Win32 but not as a UIA top-level window)
+2. Wrap HWND in pywinauto: `dt.window(handle=cc_hwnd)`
+3. `expand()` the "New" submenu (uses `IExpandCollapseProvider`, not `IInvokeProvider`)
+4. `invoke()` the "NinjaScript Editor" child item (leaf item)
+5. `SetForegroundWindow(hwnd)` to route keyboard focus to the editor (no cursor needed)
+6. `send_keys("{F5}")` — uses `SendInput` (keyboard-only, works in disconnected RDP)
+7. Poll `NinjaTrader.Custom.dll` mtime — NT8 rewrites it on every successful compile
+8. If mtime updated within 90s → `STATUS:success`; else → `STATUS:failed`
+
+The subprocess is launched with `STARTUPINFO.lpDesktop = "winsta0\\default"` to ensure it runs on the interactive desktop.
+
+### 256 KB upload limit
+
+Enforced on both the VPS agent and the backend router. NinjaScript files are typically 5–30 KB; anything larger is suspicious.
+
+### Lock detection
+
+Before uploading or deleting, the VPS agent tries to open the file in `r+b` mode. `IOError` means NT8 has it locked (strategy is running or open in a chart). Returns HTTP 423 with a clear message.
+
+### Sync-status
+
+`GET /strategy-files/sync-status` returns one entry per DB strategy. A strategy is "in sync" when its expected `.cs` file (derived from `class_name + ".cs"`) exists on the VPS. For now, file presence = in sync. A more precise check (hash comparison) can be added later.
