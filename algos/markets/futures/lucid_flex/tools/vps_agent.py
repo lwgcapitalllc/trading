@@ -303,10 +303,15 @@ def _run_compile(compile_job_id: str):
     status = "running"
 
     try:
+        # Explicitly set the interactive desktop so pywinauto can move the mouse.
+        # Without this, piped subprocesses get no desktop access and click_input fails.
+        si = subprocess.STARTUPINFO()
+        si.lpDesktop = "winsta0\\default"
         proc = subprocess.Popen(
             [sys.executable, "-u", str(runner)],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1,
+            startupinfo=si,
         )
         for line in proc.stdout:
             line = line.rstrip()
