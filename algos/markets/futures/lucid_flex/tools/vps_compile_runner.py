@@ -105,15 +105,16 @@ def main():
         import ctypes
         dt = Desktop(backend="uia")
         ed = open_ns_editor(dt)
-        # PostMessage F5 directly to the window handle — works without an active
-        # desktop/mouse cursor (disconnected RDP sessions are fine with WM_KEY*).
-        VK_F5 = 0x74
-        WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
+        # SetForegroundWindow makes the editor receive keyboard input without
+        # cursor movement (no mouse needed). send_keys uses SendInput (keyboard
+        # only) which works in disconnected RDP sessions.
         hwnd = ed.element_info.handle
-        ctypes.windll.user32.PostMessageW(hwnd, WM_KEYDOWN, VK_F5, 0)
-        time.sleep(0.1)
-        ctypes.windll.user32.PostMessageW(hwnd, WM_KEYUP, VK_F5, 0)
-        log("F5 posted to NinjaScript Editor — waiting for dll update...")
+        log(f"NS Editor HWND: {hwnd}")
+        if hwnd:
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            time.sleep(0.5)
+        send_keys("{F5}")
+        log("F5 sent to NinjaScript Editor — waiting for dll update...")
     except Exception as e:
         print(f"ERROR:{e}", flush=True)
         print("STATUS:error", flush=True)
