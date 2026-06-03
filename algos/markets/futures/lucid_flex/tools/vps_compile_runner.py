@@ -38,6 +38,28 @@ def log(msg: str):
     print(f"LOG:{msg}", flush=True)
 
 
+def _find_cc_hwnd() -> int | None:
+    """Find the NT8 Control Center HWND via Win32 EnumWindows.
+
+    The Control Center is a WPF docked panel that appears in Win32's window
+    list but NOT as a top-level UIA window. We locate it by HWND, then wrap
+    it in pywinauto for child interaction.
+    """
+    import ctypes
+    found: list[int] = []
+    buf = ctypes.create_unicode_buffer(512)
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def _cb(hwnd, _):
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)
+        if "Control Center" in buf.value:
+            found.append(hwnd)
+        return True
+
+    ctypes.windll.user32.EnumWindows(_cb, None)
+    return found[0] if found else None
+
+
 def open_ns_editor(dt) -> object:
     """Return the NinjaScript Editor window, opening it if necessary."""
     # Already open?
@@ -49,24 +71,16 @@ def open_ns_editor(dt) -> object:
     except Exception:
         pass
 
-    log("Opening NinjaScript Editor via NinjaTrader.exe New menu...")
+    log("Opening NinjaScript Editor via NT8 Control Center New menu...")
+    cc_hwnd = _find_cc_hwnd()
+    if cc_hwnd is None:
+        raise RuntimeError("NT8 Control Center window not found via Win32 — is NT8 running?")
 
-    # The NT8 Control Center is a docked panel inside the main NT8 process window
-    # and doesn't appear as its own top-level UIA window. Connect via process name.
-    from pywinauto import Application
-    try:
-        nt8_app = Application(backend="uia").connect(path="NinjaTrader.exe", timeout=10)
-        log("Connected to NinjaTrader.exe process")
-    except Exception as e:
-        raise RuntimeError(f"Could not connect to NinjaTrader.exe: {e}")
-
-    main_win = nt8_app.top_window()
-    log(f"NT8 main window: {main_win.window_text()!r}")
-    main_win.set_focus()
-    time.sleep(0.3)
-
-    # NT8 Control Center "New" menu — same path as SA is opened
-    main_win.child_window(title="New", control_type="MenuItem").click_input()
+    log(f"Control Center HWND: {cc_hwnd}")
+    cc = dt.window(handle=cc_hwnd)
+    cc.set_focus()
+    time.sleep(0.5)
+    cc.child_window(title="New", control_type="MenuItem").click_input()
     time.sleep(0.8)
     dt.window(title="NinjaScript Editor", control_type="MenuItem").click_input()
     time.sleep(3.0)
