@@ -67,7 +67,15 @@ def _infer_suggested_instrument(class_name: str) -> Optional[str]:
 def _parse_params(source: str) -> list[dict]:
     """
     Walk lines, collect [NinjaScriptProperty] blocks.
-    Skip any block whose [Display] has GroupName = "Prop Firm".
+
+    Pass 1 style (ORB.cs and later): [Category("Strategy Logic")] or
+    [Category("Foundational")] attributes drive the category field directly.
+
+    Legacy style (pre-Pass-1 files): GroupName="Prop Firm" → foundational,
+    GroupName="Strategy" (or absent) → strategy_logic.
+
+    All params are included in the schema regardless of category.
+    Foundational params are hidden in the UI but present for dispatcher docs.
     """
     params: list[dict] = []
     lines = source.splitlines()
@@ -76,17 +84,22 @@ def _parse_params(source: str) -> list[dict]:
         if lines[i].strip() == "[NinjaScriptProperty]":
             range_str: Optional[str] = None
             display_str: Optional[str] = None
+            category_attr: Optional[str] = None   # value from [Category("...")] if present
             cs_type: Optional[str] = None
             prop_name: Optional[str] = None
 
             j = i + 1
-            while j < min(i + 10, len(lines)):
+            # Window of 15 lines covers up to 4 attributes + public declaration
+            while j < min(i + 15, len(lines)):
                 l = lines[j].strip()
                 if l.startswith("[Range("):
-                    # [Range(5, 60)] — strip the wrapper
                     range_str = l[7:].rstrip(")]")
                 elif l.startswith("[Display("):
                     display_str = l[9:].rstrip(")]")
+                elif l.startswith("[Category("):
+                    cm = re.search(r'\[Category\("([^"]+)"\)\]', l)
+                    if cm:
+                        category_attr = cm.group(1)
                 elif l.startswith("public "):
                     parts = l.split()
                     if len(parts) >= 3:
@@ -95,44 +108,57 @@ def _parse_params(source: str) -> list[dict]:
                     break
                 j += 1
 
-            if prop_name and display_str and cs_type:
+            if not (prop_name and cs_type):
+                i = j + 1
+                continue
+
+            # Determine category — [Category] wins; fall back to GroupName heuristic
+            if category_attr is not None:
+                param_category = "foundational" if category_attr == "Foundational" else "strategy_logic"
+                group = category_attr
+            elif display_str:
                 group_m = re.search(r'GroupName\s*=\s*"([^"]*)"', display_str)
                 group = group_m.group(1) if group_m else "Strategy"
+                param_category = "foundational" if group == "Prop Firm" else "strategy_logic"
+            else:
+                group = "Strategy"
+                param_category = "strategy_logic"
 
-                if group == "Prop Firm":
-                    i = j + 1
-                    continue
-
+            # Display name and sort order from [Display(...)]
+            display_name = prop_name
+            order = 99
+            if display_str:
                 name_m = re.search(r'(?:^|,\s*)Name\s*=\s*"([^"]*)"', display_str)
-                display_name = name_m.group(1) if name_m else prop_name
-
+                if name_m:
+                    display_name = name_m.group(1)
                 order_m = re.search(r'Order\s*=\s*(\d+)', display_str)
-                order = int(order_m.group(1)) if order_m else 99
+                if order_m:
+                    order = int(order_m.group(1))
 
-                param: dict = {
-                    "name": prop_name,
-                    "type": _cs_type(cs_type),
-                    "display_name": display_name,
-                    "group": group,
-                    "order": order,
-                }
+            param: dict = {
+                "name": prop_name,
+                "type": _cs_type(cs_type),
+                "display_name": display_name,
+                "category": param_category,
+                "group": group,
+                "order": order,
+            }
 
-                if range_str:
-                    parts = range_str.split(",")
-                    if len(parts) == 2:
-                        try:
-                            lo, hi = float(parts[0].strip()), float(parts[1].strip())
-                            if param["type"] == "int":
-                                param["min"] = int(lo)
-                                param["max"] = int(hi)
-                            else:
-                                param["min"] = lo
-                                param["max"] = hi
-                        except ValueError:
-                            pass
+            if range_str:
+                parts = range_str.split(",")
+                if len(parts) == 2:
+                    try:
+                        lo, hi = float(parts[0].strip()), float(parts[1].strip())
+                        if param["type"] == "int":
+                            param["min"] = int(lo)
+                            param["max"] = int(hi)
+                        else:
+                            param["min"] = lo
+                            param["max"] = hi
+                    except ValueError:
+                        pass
 
-                params.append(param)
-
+            params.append(param)
             i = j + 1
         else:
             i += 1
@@ -146,6 +172,8 @@ def _cs_type(cs_type: str) -> str:
         return "bool"
     if t == "int":
         return "int"
+    if t == "string":
+        return "string"
     return "double"
 
 
@@ -172,6 +200,9 @@ def _parse_defaults(source: str, params: list[dict]) -> dict:
                 defaults[name] = val_str.lower() == "true"
             elif param["type"] == "int":
                 defaults[name] = int(float(val_str))
+            elif param["type"] == "string":
+                # Strip surrounding quotes from string literals like "" or "09:30"
+                defaults[name] = val_str.strip('"')
             else:
                 defaults[name] = float(val_str)
         except ValueError:

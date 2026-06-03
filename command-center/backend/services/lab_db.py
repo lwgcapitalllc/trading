@@ -57,32 +57,42 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS rulesets (
-                id                  TEXT PRIMARY KEY,
-                name                TEXT NOT NULL,
-                account_size        INTEGER NOT NULL,
-                profit_target       INTEGER NOT NULL,
-                max_loss_eod        INTEGER NOT NULL,
-                max_loss_intraday   INTEGER,
-                drawdown_type       TEXT NOT NULL,
-                consistency_pct     REAL,
-                min_trading_days    INTEGER,
-                force_flat_time_et  TEXT,
-                allowed_instruments TEXT,
-                max_contracts       TEXT,
-                platform_support    TEXT,
-                account_tier        TEXT NOT NULL DEFAULT 'eval',
-                docs_url            TEXT,
-                notes               TEXT,
-                created_at          INTEGER NOT NULL,
-                updated_at          INTEGER NOT NULL,
-                eval_cost_usd       INTEGER,
-                activation_fee_usd  INTEGER,
-                profit_split_pct    REAL,
-                ruleset_type        TEXT NOT NULL DEFAULT 'prop_eval',
-                daily_loss_cap      INTEGER,
-                weekly_loss_cap     INTEGER,
-                daily_profit_goal   INTEGER,
-                description         TEXT
+                id                          TEXT PRIMARY KEY,
+                name                        TEXT NOT NULL,
+                account_size                INTEGER NOT NULL,
+                profit_target               INTEGER NOT NULL,
+                max_loss_eod                INTEGER NOT NULL,
+                max_loss_intraday           INTEGER,
+                drawdown_type               TEXT NOT NULL,
+                consistency_pct             REAL,
+                min_trading_days            INTEGER,
+                force_flat_time_et          TEXT,
+                allowed_instruments         TEXT,
+                max_contracts               TEXT,
+                platform_support            TEXT,
+                account_tier                TEXT NOT NULL DEFAULT 'eval',
+                docs_url                    TEXT,
+                notes                       TEXT,
+                created_at                  INTEGER NOT NULL,
+                updated_at                  INTEGER NOT NULL,
+                eval_cost_usd               INTEGER,
+                activation_fee_usd          INTEGER,
+                profit_split_pct            REAL,
+                ruleset_type                TEXT NOT NULL DEFAULT 'prop_eval',
+                daily_loss_cap              INTEGER,
+                weekly_loss_cap             INTEGER,
+                daily_profit_goal           INTEGER,
+                description                 TEXT,
+                risk_per_trade_pct          REAL,
+                max_consecutive_losses      INTEGER,
+                earliest_entry_time_et      TEXT,
+                latest_entry_time_et        TEXT,
+                days_of_week_allowed        TEXT,
+                daily_profit_target         INTEGER,
+                daily_profit_lock_pct       REAL,
+                default_commission_per_side REAL,
+                default_slippage_ticks      INTEGER,
+                daily_halt_fraction         REAL
             );
 
             CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -247,11 +257,54 @@ def init_db() -> None:
             "ALTER TABLE stress_tests ADD COLUMN mc_completed_at INTEGER",
             "ALTER TABLE stress_tests ADD COLUMN wf_completed_at INTEGER",
             "ALTER TABLE optimizations ADD COLUMN regime_filter TEXT",
+            # Pass 1 — foundational config columns
+            "ALTER TABLE rulesets ADD COLUMN risk_per_trade_pct REAL",
+            "ALTER TABLE rulesets ADD COLUMN max_consecutive_losses INTEGER",
+            "ALTER TABLE rulesets ADD COLUMN earliest_entry_time_et TEXT",
+            "ALTER TABLE rulesets ADD COLUMN latest_entry_time_et TEXT",
+            "ALTER TABLE rulesets ADD COLUMN days_of_week_allowed TEXT",
+            "ALTER TABLE rulesets ADD COLUMN daily_profit_target INTEGER",
+            "ALTER TABLE rulesets ADD COLUMN daily_profit_lock_pct REAL",
+            "ALTER TABLE rulesets ADD COLUMN default_commission_per_side REAL",
+            "ALTER TABLE rulesets ADD COLUMN default_slippage_ticks INTEGER",
+            "ALTER TABLE rulesets ADD COLUMN daily_halt_fraction REAL",
         ]:
             try:
                 conn.execute(migration_sql)
             except Exception:
                 pass
+
+        # Pass 1 — backfill foundational config for all existing rulesets where null.
+        # Personal-specific overrides must run BEFORE the blanket defaults so the
+        # blanket update (which only touches NULL rows) doesn't overwrite them.
+        _DAYS_JSON = '["mon","tue","wed","thu","fri"]'
+        for sql in [
+            # personal example: 1.0% risk (higher — smaller account), 0.5 halt fraction
+            "UPDATE rulesets SET risk_per_trade_pct = 1.0 "
+            "WHERE id = 'personal_futures_10k_example' AND risk_per_trade_pct IS NULL",
+            "UPDATE rulesets SET daily_halt_fraction = 0.5 "
+            "WHERE id = 'personal_futures_10k_example' AND daily_halt_fraction IS NULL",
+            # personal example: $150 daily target with 80% lock-in
+            "UPDATE rulesets SET daily_profit_target = 150, daily_profit_lock_pct = 0.80 "
+            "WHERE id = 'personal_futures_10k_example' AND daily_profit_target IS NULL",
+            # prop_eval rows: $1500 daily target with 80% lock-in, 0.6 halt fraction
+            "UPDATE rulesets SET daily_profit_target = 1500, daily_profit_lock_pct = 0.80 "
+            "WHERE daily_profit_target IS NULL AND ruleset_type = 'prop_eval'",
+            "UPDATE rulesets SET daily_halt_fraction = 0.6 "
+            "WHERE daily_halt_fraction IS NULL AND ruleset_type = 'prop_eval'",
+            # blanket defaults for all remaining NULL rows
+            "UPDATE rulesets SET risk_per_trade_pct = 0.5 WHERE risk_per_trade_pct IS NULL",
+            "UPDATE rulesets SET max_consecutive_losses = 3 WHERE max_consecutive_losses IS NULL",
+            f"UPDATE rulesets SET earliest_entry_time_et = '09:30' WHERE earliest_entry_time_et IS NULL",
+            f"UPDATE rulesets SET latest_entry_time_et = '15:00' WHERE latest_entry_time_et IS NULL",
+            f"UPDATE rulesets SET days_of_week_allowed = '{_DAYS_JSON}' WHERE days_of_week_allowed IS NULL",
+            "UPDATE rulesets SET default_commission_per_side = 2.25 WHERE default_commission_per_side IS NULL",
+            "UPDATE rulesets SET default_slippage_ticks = 1 WHERE default_slippage_ticks IS NULL",
+            # prop_funded and demo rows: daily_profit_target, daily_profit_lock_pct, daily_halt_fraction intentionally NULL
+        ]:
+            conn.execute(sql)
+
+        pass  # strategy rename handled after this block via _migrate_strategy_renames()
 
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS instrument_daily_ohlc (
@@ -270,6 +323,50 @@ def init_db() -> None:
         """)
 
         _seed_rulesets(conn)
+
+    # Run outside the main context manager — needs FK enforcement off, which
+    # can't be toggled inside an active transaction in SQLite.
+    _migrate_strategy_renames()
+
+
+def _migrate_strategy_renames() -> None:
+    """
+    Rename strategy rows when .cs files drop the _LucidFlex suffix (Pass 1).
+    Uses a raw connection with FK off so we can update the PK and its FK
+    references atomically without the constraint firing mid-migration.
+    """
+    raw = sqlite3.connect(DB_PATH)
+    raw.execute("PRAGMA journal_mode=WAL")
+    # FK off is only safe here because we immediately update all referencing rows
+    # before committing, leaving no dangling references in the final state.
+    raw.execute("PRAGMA foreign_keys=OFF")
+    try:
+        for old_id, new_id, new_class, new_name in [
+            ("orb_lucidflex",      "orb",      "ORB",      "Opening Range Breakout"),
+            ("vwap_mr_lucidflex",  "vwap_mr",  "VWAP_MR",  "VWAP Mean Reversion"),
+            ("momentum_lucidflex", "momentum", "Momentum",  "Intraday Momentum Pullback"),
+        ]:
+            if not raw.execute("SELECT 1 FROM strategies WHERE id=?", (old_id,)).fetchone():
+                continue
+            # Update children first so no row references the old PK after commit
+            for tbl, col in [("backtest_runs", "strategy_id"), ("optimizations", "strategy_id")]:
+                raw.execute(f"UPDATE {tbl} SET {col}=? WHERE {col}=?", (new_id, old_id))
+            new_exists = raw.execute("SELECT 1 FROM strategies WHERE id=?", (new_id,)).fetchone()
+            if new_exists:
+                # new_id already exists (scanner created it first) — drop the stale old row
+                raw.execute("DELETE FROM strategies WHERE id=?", (old_id,))
+            else:
+                raw.execute(
+                    "UPDATE strategies SET id=?, class_name=?, name=? WHERE id=?",
+                    (new_id, new_class, new_name, old_id),
+                )
+        raw.commit()
+    except Exception:
+        raw.rollback()
+        raise
+    finally:
+        raw.execute("PRAGMA foreign_keys=ON")
+        raw.close()
 
 
 def _seed_rulesets(conn: sqlite3.Connection) -> None:
@@ -482,7 +579,7 @@ def delete_strategy(strategy_id: str) -> bool:
 
 # ── Rulesets ──────────────────────────────────────────────────────────────────
 
-_RULESET_JSON_FIELDS = ["allowed_instruments", "max_contracts", "platform_support"]
+_RULESET_JSON_FIELDS = ["allowed_instruments", "max_contracts", "platform_support", "days_of_week_allowed"]
 
 
 def list_rulesets() -> list[dict]:
@@ -514,8 +611,14 @@ def insert_ruleset(data: dict) -> None:
                 allowed_instruments, max_contracts, platform_support,
                 account_tier, ruleset_type, daily_loss_cap, weekly_loss_cap,
                 daily_profit_goal, description, docs_url, eval_cost_usd,
-                activation_fee_usd, profit_split_pct, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                activation_fee_usd, profit_split_pct, notes,
+                risk_per_trade_pct, max_consecutive_losses,
+                earliest_entry_time_et, latest_entry_time_et, days_of_week_allowed,
+                daily_profit_target, daily_profit_lock_pct,
+                default_commission_per_side, default_slippage_ticks,
+                daily_halt_fraction,
+                created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"], data["name"], data["account_size"], data["profit_target"],
                 data["max_loss_eod"], data.get("max_loss_intraday"), data["drawdown_type"],
@@ -530,7 +633,14 @@ def insert_ruleset(data: dict) -> None:
                 data.get("daily_profit_goal"), data.get("description"),
                 data.get("docs_url"), data.get("eval_cost_usd"),
                 data.get("activation_fee_usd"), data.get("profit_split_pct"),
-                data.get("notes"), now, now,
+                data.get("notes"),
+                data.get("risk_per_trade_pct"), data.get("max_consecutive_losses"),
+                data.get("earliest_entry_time_et"), data.get("latest_entry_time_et"),
+                json.dumps(data.get("days_of_week_allowed", [])) if data.get("days_of_week_allowed") is not None else None,
+                data.get("daily_profit_target"), data.get("daily_profit_lock_pct"),
+                data.get("default_commission_per_side"), data.get("default_slippage_ticks"),
+                data.get("daily_halt_fraction"),
+                now, now,
             ),
         )
 
@@ -546,8 +656,13 @@ def update_ruleset(ruleset_id: str, data: dict) -> bool:
                max_contracts=?, platform_support=?, account_tier=?,
                ruleset_type=?, daily_loss_cap=?, weekly_loss_cap=?,
                daily_profit_goal=?, description=?, docs_url=?,
-               eval_cost_usd=?, activation_fee_usd=?,
-               profit_split_pct=?, notes=?, updated_at=?
+               eval_cost_usd=?, activation_fee_usd=?, profit_split_pct=?, notes=?,
+               risk_per_trade_pct=?, max_consecutive_losses=?,
+               earliest_entry_time_et=?, latest_entry_time_et=?, days_of_week_allowed=?,
+               daily_profit_target=?, daily_profit_lock_pct=?,
+               default_commission_per_side=?, default_slippage_ticks=?,
+               daily_halt_fraction=?,
+               updated_at=?
                WHERE id=?""",
             (
                 data["name"], data["account_size"], data["profit_target"],
@@ -563,7 +678,14 @@ def update_ruleset(ruleset_id: str, data: dict) -> bool:
                 data.get("daily_profit_goal"), data.get("description"),
                 data.get("docs_url"), data.get("eval_cost_usd"),
                 data.get("activation_fee_usd"), data.get("profit_split_pct"),
-                data.get("notes"), now, ruleset_id,
+                data.get("notes"),
+                data.get("risk_per_trade_pct"), data.get("max_consecutive_losses"),
+                data.get("earliest_entry_time_et"), data.get("latest_entry_time_et"),
+                json.dumps(data.get("days_of_week_allowed", [])) if data.get("days_of_week_allowed") is not None else None,
+                data.get("daily_profit_target"), data.get("daily_profit_lock_pct"),
+                data.get("default_commission_per_side"), data.get("default_slippage_ticks"),
+                data.get("daily_halt_fraction"),
+                now, ruleset_id,
             ),
         )
     return cur.rowcount > 0

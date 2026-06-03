@@ -311,6 +311,17 @@ class Ruleset(BaseModel):
     activation_fee_usd: Optional[int] = None
     profit_split_pct: Optional[float] = None
     notes: Optional[str] = None
+    # Pass 1 — foundational config fields
+    risk_per_trade_pct: Optional[float] = None
+    max_consecutive_losses: Optional[int] = None
+    earliest_entry_time_et: Optional[str] = None
+    latest_entry_time_et: Optional[str] = None
+    days_of_week_allowed: list[str] = []
+    daily_profit_target: Optional[int] = None
+    daily_profit_lock_pct: Optional[float] = None
+    default_commission_per_side: Optional[float] = None
+    default_slippage_ticks: Optional[int] = None
+    daily_halt_fraction: Optional[float] = None
 
 
 class RulesetCreate(BaseModel):
@@ -338,6 +349,17 @@ class RulesetCreate(BaseModel):
     activation_fee_usd: Optional[int] = None
     profit_split_pct: Optional[float] = None
     notes: Optional[str] = None
+    # Pass 1 — foundational config fields
+    risk_per_trade_pct: Optional[float] = None
+    max_consecutive_losses: Optional[int] = None
+    earliest_entry_time_et: Optional[str] = None
+    latest_entry_time_et: Optional[str] = None
+    days_of_week_allowed: list[str] = []
+    daily_profit_target: Optional[int] = None
+    daily_profit_lock_pct: Optional[float] = None
+    default_commission_per_side: Optional[float] = None
+    default_slippage_ticks: Optional[int] = None
+    daily_halt_fraction: Optional[float] = None
 
 
 # Backward-compat aliases — used in M3 only; removed in M4

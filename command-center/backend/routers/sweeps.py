@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from models import SweepRequest, SweepResponse, SweepDetail, SweepSummary, BacktestSummary, WorthinessScore
-from services import lab_db, worthiness
+from services import lab_db, vps_client, worthiness
 from services.evaluator import evaluate_run
 from services.sweep_runner import run_sweep, retry_failed_sweep_runs
 from routers.backtests import _row_to_summary
@@ -65,6 +65,10 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
     job_specs: list[dict] = []
     run_ids:   list[str]  = []
 
+    # Inject foundational config from primary ruleset once for all sweep instruments.
+    primary_ruleset = lab_db.get_ruleset(ruleset_ids[0]) if ruleset_ids else None
+    merged_params = vps_client.inject_foundational(req.params, primary_ruleset)
+
     for instrument in req.instruments:
         run_id = uuid.uuid4().hex[:12]
         run_ids.append(run_id)
@@ -73,7 +77,7 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
             "run_id":             run_id,
             "strategy_id":        req.strategy_id,
             "instrument":         instrument,
-            "params":             req.params,
+            "params":             merged_params,
             "bar_type":           req.bar_type,
             "bar_value":          req.bar_value,
             "start_date":         req.start_date,
@@ -99,7 +103,7 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
             "job_id":            run_id,
             "strategy_class":    strategy["class_name"],
             "instrument":        instrument,
-            "params":            req.params,
+            "params":            merged_params,
             "bar_type":          req.bar_type,
             "bar_value":         req.bar_value,
             "start_date":        req.start_date,

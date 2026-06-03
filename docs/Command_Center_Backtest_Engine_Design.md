@@ -496,6 +496,27 @@ Worthiness scorer (Tier 1/2/3 — PF, drawdown, trade count against strictest fi
 
 **`from __future__ import annotations` fix.** `dict | None` union syntax in `regime/classifier.py` requires Python 3.10+ at runtime. The Mac runs 3.9.6. Adding `from __future__ import annotations` at the top of the module fixes it without changing behavior.
 
+### Pass 1 — Foundational Config (2026-06-03)
+
+**What Pass 1 built:** A runtime config injection layer that separates firm-specific trading rules from strategy signal logic. Every strategy now reads all account-level and risk-management parameters from the active ruleset at runtime rather than from hardcoded defaults in the `.cs` file.
+
+**Strategy genericization:** All three `.cs` files renamed to drop firm suffixes:
+- `ORB_LucidFlex.cs` → `ORB.cs` (class `ORB`)
+- `VWAP_MR_LucidFlex.cs` → `VWAP_MR.cs` (class `VWAP_MR`)
+- `Momentum_LucidFlex.cs` → `Momentum.cs` (class `Momentum`)
+
+Each file uses `[Category("Foundational")]` / `[Category("Strategy Logic")]` attributes on every `[NinjaScriptProperty]`. The scanner reads this attribute and tags each param with `category: "foundational"` or `"strategy_logic"`. New behavioral blocks added to all three: daily profit target, profit lock-in (50% risk halve, one-way ratchet), consecutive loss halt, day-of-week gate, earliest/latest entry hours, and `ForceFlatTimeET` promoted from hardcoded to a runtime param.
+
+**Category-based scanning:** `strategy_scanner.py` now reads `[Category("...")]` as the authoritative source, with `GroupName` as a legacy fallback for pre-Pass-1 files. String params (`string`) now recognized as a distinct type (no longer misclassified as `"double"`).
+
+**Dispatcher injection:** `vps_client.inject_foundational(user_params, ruleset)` merges 12 foundational param keys from the primary ruleset into every job spec before it's sent to the VPS agent. Primary ruleset = first `evaluate_rulesets` entry. Foundational config stored in the DB at creation time so retries pick it up without re-injection.
+
+**Foundational config columns on `rulesets`:** 10 new columns added via idempotent `ALTER TABLE` migrations: `risk_per_trade_pct`, `max_consecutive_losses`, `daily_halt_fraction`, `earliest_entry_time_et`, `latest_entry_time_et`, `days_of_week_allowed`, `daily_profit_target`, `daily_profit_lock_pct`, `default_commission_per_side`, `default_slippage_ticks`. All 13 existing rulesets backfilled. Editable via a new foundational config modal in the Rulesets tab.
+
+**Frontend param filtering:** Run Backtest Modal and Optimizer Modal hide foundational params from the user. A readonly "Foundational Config" section shows what will be injected (from the primary selected ruleset) for transparency.
+
+**What changed vs spec:** The smoke-test requirement ("results identical to pre-Pass-1") cannot be met because the new behavioral blocks (profit lock-in, consecutive loss halt, hours gate) genuinely change strategy behavior. These are intentional additions. The injection mechanism itself is verified correct (all 12 foundational params match strategy schema with zero mismatches).
+
 ### Decisions we might revisit
 
 - **Sweep state without a dedicated table.** `SweepSummary` is derived via GROUP BY on `backtest_runs`. Works but complicates sweep-level metadata.

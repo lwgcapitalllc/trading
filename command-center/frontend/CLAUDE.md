@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-02 (session 11 — M4 overlay redesign: colored line, pie charts, header cleanup, terminal color parity)
+**Last reviewed:** 2026-06-03 (Pass 1 — foundational config layer: param filtering, readonly section, ruleset edit modal)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -247,6 +247,36 @@ Regime visualization uses a `REGIME_COLORS` constant defined inline in `Backtest
 | UNKNOWN | `#6b7280` | produces no colored segment in the overlay |
 
 Companion constants in `BacktestDetail.tsx`: `REGIME_LABEL` (full display strings), `REGIME_LABEL_SHORT` (abbreviated for narrow zones, e.g. `Trans.`, `Hi Vol.`).
+
+## Pass 1 — Foundational Config (frontend changes)
+
+### Param filtering in Run Backtest Modal and Optimizer Modal
+
+`ParamSchemaEntry` now has a `category?: 'strategy_logic' | 'foundational'` field served by the backend scanner. Both modals filter on it:
+
+**RunBacktestModal:**
+- `params` state initializes only from entries where `category !== 'foundational'`
+- `paramGroups` skips foundational entries entirely — they're never shown as editable inputs
+- A readonly "Foundational Config" section appears below the Evaluate section once a firm is selected. It shows 10 values (Account Size, Risk/Trade, Max Daily Loss, Halt Fraction, Max Consecutive Losses, Force Flat, Entry Hours, Days Allowed, Daily Target, Lock-In At) pulled from the primary ruleset (first selected firm)
+- Commission and slippage inputs pre-fill from the primary ruleset's `default_commission_per_side` / `default_slippage_ticks` when a firm is first selected (user can still override)
+
+**OptimizerModal (OptimizeButton.tsx):**
+- `FOUNDATIONAL_PARAMS` set filters `run.params` so axes state only includes strategy-logic keys
+- `paramEntries` filtered to same set — foundational params never appear in the optimizer grid
+
+### Ruleset foundational config edit
+
+`FoundationalEditModal` component in `Backtests.tsx` — appears when the pencil icon is clicked on any ruleset row. Four sections:
+- **Capital & Risk**: Risk % per Trade, Daily Halt Fraction (0–1), Max Consecutive Losses
+- **Trading Hours & Days**: Earliest/Latest Entry ET (HH:MM), Days Allowed (comma-separated)
+- **Daily Goals**: Daily Profit Target ($), Lock-In At (% of target → stored as 0–1)
+- **Execution Defaults**: Commission/Side ($), Slippage (ticks)
+
+Validation: lock_pct 0–100, times match `HH:MM` regex, days subset of valid day names. Calls `useUpdateRuleset` on save. The modal passes the full ruleset through `...ruleset` so existing non-foundational fields aren't overwritten.
+
+The `Ruleset` type in `types/index.ts` now carries all 10 new foundational fields (`risk_per_trade_pct`, `max_consecutive_losses`, `earliest_entry_time_et`, `latest_entry_time_et`, `days_of_week_allowed`, `daily_profit_target`, `daily_profit_lock_pct`, `default_commission_per_side`, `default_slippage_ticks`, `daily_halt_fraction`).
+
+---
 
 ## What NOT to do
 

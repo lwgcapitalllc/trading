@@ -255,11 +255,13 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const BAR_PRESETS = [1, 3, 5, 15, 30]
   const [barValue, setBarValue] = useState(5)
 
-  // ── Strategy params ──────────────────────────────────────────────────────────
+  // ── Strategy params (strategy_logic only — foundational injected by dispatcher) ─
   const [params, setParams] = useState<Record<string, number | boolean | string>>(() => {
     const init: Record<string, number | boolean | string> = {}
     for (const e of strategy.param_schema) {
-      init[e.name] = e.default as number | boolean | string
+      if (e.category !== 'foundational') {
+        init[e.name] = e.default as number | boolean | string
+      }
     }
     return init
   })
@@ -310,14 +312,31 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     }
   }
 
-  // ── Advanced ─────────────────────────────────────────────────────────────────
+  // ── Primary ruleset (first selected — drives foundational config display) ─────
+  const primaryRuleset = useMemo(() => {
+    if (selectedFirms.size === 0) return null
+    const firstId = Array.from(selectedFirms)[0]
+    return firms.find(f => f.id === firstId) ?? null
+  }, [selectedFirms, firms])
+
+  // ── Advanced — pre-filled from primary ruleset, user-editable ────────────────
   const [commPerSide, setCommPerSide]     = useState(2.25)
   const [slippageTicks, setSlippageTicks] = useState(1)
 
-  // ── Param groups ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (primaryRuleset?.default_commission_per_side != null) {
+      setCommPerSide(primaryRuleset.default_commission_per_side)
+    }
+    if (primaryRuleset?.default_slippage_ticks != null) {
+      setSlippageTicks(primaryRuleset.default_slippage_ticks)
+    }
+  }, [primaryRuleset?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Param groups (strategy_logic only — foundational hidden from user) ────────
   const paramGroups = useMemo(() => {
     const map = new Map<string, ParamSchemaEntry[]>()
     for (const e of strategy.param_schema) {
+      if (e.category === 'foundational') continue
       const g = e.group || 'General'
       if (!map.has(g)) map.set(g, [])
       map.get(g)!.push(e)
@@ -623,6 +642,45 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                           />
                         ))}
                       </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Foundational config — readonly display from primary ruleset */}
+          {primaryRuleset && (
+            <>
+              <Divider />
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <SectionHead label="Foundational Config" />
+                  <span className="text-[11px] text-text-tertiary">
+                    from <span className="text-text-secondary font-medium">{primaryRuleset.name}</span>
+                  </span>
+                </div>
+                <p className="text-[11px] text-text-tertiary mb-3">
+                  These values are injected automatically. To change them, edit the ruleset.
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    ['Account Size',        primaryRuleset.account_size != null ? `$${primaryRuleset.account_size.toLocaleString()}` : '—'],
+                    ['Risk / Trade',        primaryRuleset.risk_per_trade_pct != null ? `${primaryRuleset.risk_per_trade_pct}%` : '—'],
+                    ['Max Daily Loss',      primaryRuleset.daily_loss_cap != null ? `$${primaryRuleset.daily_loss_cap.toLocaleString()}` : '—'],
+                    ['Halt Fraction',       primaryRuleset.daily_halt_fraction != null ? String(primaryRuleset.daily_halt_fraction) : '—'],
+                    ['Max Consec. Losses',  primaryRuleset.max_consecutive_losses != null ? String(primaryRuleset.max_consecutive_losses) : '—'],
+                    ['Force Flat ET',       primaryRuleset.force_flat_time_et ?? '—'],
+                    ['Entry Hours ET',      (primaryRuleset.earliest_entry_time_et && primaryRuleset.latest_entry_time_et)
+                                              ? `${primaryRuleset.earliest_entry_time_et} – ${primaryRuleset.latest_entry_time_et}`
+                                              : '—'],
+                    ['Days Allowed',        primaryRuleset.days_of_week_allowed?.join(', ') || '—'],
+                    ['Daily Target',        primaryRuleset.daily_profit_target != null ? `$${primaryRuleset.daily_profit_target.toLocaleString()}` : '—'],
+                    ['Lock-In At',          primaryRuleset.daily_profit_lock_pct != null ? `${(primaryRuleset.daily_profit_lock_pct * 100).toFixed(0)}% of target` : '—'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex items-center justify-between px-2.5 py-1.5 rounded bg-bg-sunken border border-border-subtle/50">
+                      <span className="text-[11px] text-text-tertiary">{label}</span>
+                      <span className="text-[11px] font-mono text-text-secondary tabular-nums">{value}</span>
                     </div>
                   ))}
                 </div>

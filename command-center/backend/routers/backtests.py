@@ -200,11 +200,16 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     run_id = uuid.uuid4().hex[:12]
     job_id = run_id
 
+    # Inject foundational config from primary ruleset (first in evaluate list).
+    # Merged params are stored in the DB so retries pick them up without re-injection.
+    primary_ruleset = lab_db.get_ruleset(ruleset_ids[0]) if ruleset_ids else None
+    merged_params = vps_client.inject_foundational(req.params, primary_ruleset)
+
     lab_db.insert_run({
         "run_id":             run_id,
         "strategy_id":        req.strategy_id,
         "instrument":         req.instrument,
-        "params":             req.params,
+        "params":             merged_params,
         "bar_type":           req.bar_type,
         "bar_value":          req.bar_value,
         "start_date":         req.start_date,
@@ -220,7 +225,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "job_id":            job_id,
         "strategy_class":    strategy["class_name"],
         "instrument":        req.instrument,
-        "params":            req.params,
+        "params":            merged_params,
         "bar_type":          req.bar_type,
         "bar_value":         req.bar_value,
         "start_date":        req.start_date,

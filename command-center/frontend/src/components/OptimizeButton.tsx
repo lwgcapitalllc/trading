@@ -60,10 +60,20 @@ function OptimizerModal({
   const [searchMethod, setMethod]   = useState<'auto' | 'brute' | 'genetic'>('auto')
   const [regimeFilter, setRegimeFilter] = useState<string>('')
 
-  // Build initial axis state from current run params
+  // Foundational params are injected from the ruleset — never exposed in the optimizer grid.
+  const FOUNDATIONAL_PARAMS = new Set([
+    'AccountSize', 'RiskPerTradePct', 'MaxDailyLoss', 'DailyHaltFraction',
+    'MaxConsecutiveLosses', 'CommissionPerSide', 'ForceFlatTimeET',
+    'EarliestEntryTimeET', 'LatestEntryTimeET', 'DaysOfWeekAllowed',
+    'DailyProfitTarget', 'DailyProfitLockPct',
+  ])
+
+  // Build initial axis state from strategy_logic params only
   const initialAxes: Record<string, AxisEdit> = {}
   for (const [k, v] of Object.entries(run.params)) {
-    initialAxes[k] = { mode: 'fixed', value: String(v) }
+    if (!FOUNDATIONAL_PARAMS.has(k)) {
+      initialAxes[k] = { mode: 'fixed', value: String(v) }
+    }
   }
   const [axes, setAxes] = useState<Record<string, AxisEdit>>(initialAxes)
 
@@ -129,7 +139,7 @@ function OptimizerModal({
     })
   }
 
-  const paramEntries = Object.entries(run.params)
+  const paramEntries = Object.entries(run.params).filter(([k]) => !FOUNDATIONAL_PARAMS.has(k))
 
   return (
     <div

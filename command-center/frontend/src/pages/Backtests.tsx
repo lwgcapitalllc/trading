@@ -1,11 +1,12 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, ChevronDown, Trash2, Layers, Sliders, ExternalLink } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, ChevronDown, Trash2, Layers, Sliders, ExternalLink, Pencil, X } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useBacktestRuns, useStrategies, useFirms,
   useScanStrategies, useLabProgress, useDeleteRun,
   useOptimizations, useDeleteOptimization, useSweeps, useDeleteSweep,
+  useUpdateRuleset,
 } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
@@ -833,6 +834,123 @@ function firmBrand(firmId: string): string {
   return FIRM_BRAND_NAMES[prefix] ?? (prefix.charAt(0).toUpperCase() + prefix.slice(1))
 }
 
+// ── Foundational config edit modal ────────────────────────────────────────────
+
+function FoundationalEditModal({ ruleset, onClose }: { ruleset: Ruleset; onClose: () => void }) {
+  const update = useUpdateRuleset()
+  const inputCls = 'bg-bg-sunken border border-border-subtle rounded px-2.5 py-[5px] text-[12px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
+  const labelCls = 'text-[11px] text-text-secondary block mb-1'
+
+  const [form, setForm] = useState({
+    risk_per_trade_pct:          String(ruleset.risk_per_trade_pct ?? ''),
+    max_consecutive_losses:      String(ruleset.max_consecutive_losses ?? ''),
+    daily_halt_fraction:         String(ruleset.daily_halt_fraction ?? ''),
+    earliest_entry_time_et:      ruleset.earliest_entry_time_et ?? '',
+    latest_entry_time_et:        ruleset.latest_entry_time_et ?? '',
+    days_of_week_allowed:        (ruleset.days_of_week_allowed ?? []).join(','),
+    daily_profit_target:         String(ruleset.daily_profit_target ?? ''),
+    daily_profit_lock_pct:       String(ruleset.daily_profit_lock_pct != null ? ruleset.daily_profit_lock_pct * 100 : ''),
+    default_commission_per_side: String(ruleset.default_commission_per_side ?? ''),
+    default_slippage_ticks:      String(ruleset.default_slippage_ticks ?? ''),
+  })
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(prev => ({ ...prev, [k]: e.target.value }))
+
+  function handleSave() {
+    const pct = parseFloat(form.daily_profit_lock_pct)
+    if (form.daily_profit_lock_pct !== '' && (pct < 0 || pct > 100)) {
+      toast.error('Lock-in % must be between 0 and 100')
+      return
+    }
+    const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/
+    for (const [field, val] of [['Earliest entry', form.earliest_entry_time_et], ['Latest entry', form.latest_entry_time_et]] as const) {
+      if (val && !timeRe.test(val)) { toast.error(`${field} time must be HH:MM`); return }
+    }
+    const validDays = new Set(['mon','tue','wed','thu','fri','sat','sun'])
+    const days = form.days_of_week_allowed.split(',').map(d => d.trim().toLowerCase()).filter(Boolean)
+    if (days.some(d => !validDays.has(d))) {
+      toast.error('Days must be comma-separated: mon,tue,wed,thu,fri')
+      return
+    }
+
+    const lock = form.daily_profit_lock_pct !== '' ? parseFloat(form.daily_profit_lock_pct) / 100 : null
+
+    update.mutate({
+      rulesetId: ruleset.id,
+      body: {
+        ...ruleset,
+        risk_per_trade_pct:          form.risk_per_trade_pct !== '' ? parseFloat(form.risk_per_trade_pct) : null,
+        max_consecutive_losses:      form.max_consecutive_losses !== '' ? parseInt(form.max_consecutive_losses, 10) : null,
+        daily_halt_fraction:         form.daily_halt_fraction !== '' ? parseFloat(form.daily_halt_fraction) : null,
+        earliest_entry_time_et:      form.earliest_entry_time_et || null,
+        latest_entry_time_et:        form.latest_entry_time_et || null,
+        days_of_week_allowed:        days,
+        daily_profit_target:         form.daily_profit_target !== '' ? parseInt(form.daily_profit_target, 10) : null,
+        daily_profit_lock_pct:       lock,
+        default_commission_per_side: form.default_commission_per_side !== '' ? parseFloat(form.default_commission_per_side) : null,
+        default_slippage_ticks:      form.default_slippage_ticks !== '' ? parseInt(form.default_slippage_ticks, 10) : null,
+      },
+    }, { onSuccess: onClose })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[520px] max-h-[85vh] flex flex-col shadow-2xl">
+        <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between flex-shrink-0">
+          <div>
+            <div className="text-[14px] font-semibold">Edit Foundational Config</div>
+            <div className="text-[11px] text-text-tertiary font-mono mt-0.5">{ruleset.id}</div>
+          </div>
+          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary transition-colors"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {/* Capital & Risk */}
+          <div>
+            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-2">Capital &amp; Risk</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={labelCls}>Risk % per Trade</label><input type="number" step="0.1" min="0" max="5" className={inputCls} value={form.risk_per_trade_pct} onChange={set('risk_per_trade_pct')} placeholder="0.5" /></div>
+              <div><label className={labelCls}>Daily Halt Fraction (0–1)</label><input type="number" step="0.05" min="0" max="1" className={inputCls} value={form.daily_halt_fraction} onChange={set('daily_halt_fraction')} placeholder="0.6" /></div>
+              <div><label className={labelCls}>Max Consecutive Losses</label><input type="number" step="1" min="0" className={inputCls} value={form.max_consecutive_losses} onChange={set('max_consecutive_losses')} placeholder="3" /></div>
+            </div>
+          </div>
+          {/* Hours */}
+          <div>
+            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-2">Trading Hours &amp; Days</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={labelCls}>Earliest Entry ET (HH:MM)</label><input type="text" className={inputCls} value={form.earliest_entry_time_et} onChange={set('earliest_entry_time_et')} placeholder="09:30" /></div>
+              <div><label className={labelCls}>Latest Entry ET (HH:MM)</label><input type="text" className={inputCls} value={form.latest_entry_time_et} onChange={set('latest_entry_time_et')} placeholder="15:00" /></div>
+              <div className="col-span-2"><label className={labelCls}>Days Allowed (comma-separated: mon,tue,wed,thu,fri)</label><input type="text" className={inputCls} value={form.days_of_week_allowed} onChange={set('days_of_week_allowed')} placeholder="mon,tue,wed,thu,fri" /></div>
+            </div>
+          </div>
+          {/* Daily goals */}
+          <div>
+            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-2">Daily Goals</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={labelCls}>Daily Profit Target ($)</label><input type="number" step="50" min="0" className={inputCls} value={form.daily_profit_target} onChange={set('daily_profit_target')} placeholder="1500" /></div>
+              <div><label className={labelCls}>Lock-In At (% of target)</label><input type="number" step="5" min="0" max="100" className={inputCls} value={form.daily_profit_lock_pct} onChange={set('daily_profit_lock_pct')} placeholder="80" /></div>
+            </div>
+          </div>
+          {/* Execution */}
+          <div>
+            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-2">Execution Defaults</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={labelCls}>Commission / Side ($)</label><input type="number" step="0.25" min="0" className={inputCls} value={form.default_commission_per_side} onChange={set('default_commission_per_side')} placeholder="2.25" /></div>
+              <div><label className={labelCls}>Slippage (ticks)</label><input type="number" step="1" min="0" className={inputCls} value={form.default_slippage_ticks} onChange={set('default_slippage_ticks')} placeholder="1" /></div>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors">Cancel</button>
+          <button onClick={handleSave} disabled={update.isPending} className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-accent text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed">
+            {update.isPending ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RulesetsTab() {
   const { data: rulesets, isLoading } = useFirms()
   const [brandFilter, setBrandFilter] = useState<string | null>(null)
@@ -946,7 +1064,10 @@ function RulesetsTab() {
 }
 
 function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?: boolean }) {
+  const [editing, setEditing] = useState(false)
   return (
+    <>
+      {editing && <FoundationalEditModal ruleset={ruleset} onClose={() => setEditing(false)} />}
     <tr className="hover:bg-bg-hover transition-colors">
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
@@ -963,6 +1084,13 @@ function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?
               <ExternalLink size={11} />
             </a>
           )}
+          <button
+            onClick={e => { e.stopPropagation(); setEditing(true) }}
+            title="Edit foundational config"
+            className="text-text-tertiary hover:text-accent transition-colors ml-0.5"
+          >
+            <Pencil size={10} />
+          </button>
         </div>
         <div className="text-[11px] text-text-tertiary font-mono">{ruleset.id}</div>
       </td>
@@ -996,6 +1124,7 @@ function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?
         </>
       )}
     </tr>
+    </>
   )
 }
 

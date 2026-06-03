@@ -328,7 +328,11 @@ async def run_optimization(optimization_id: str) -> None:
         run_id = uuid.uuid4().hex[:12]
         run_ids.append(run_id)
 
-        merged_params = {**strategy.get("default_params", {}), **combo}
+        # Merge: strategy defaults ← foundational from ruleset ← optimizer combo values.
+        # Combo values win so the optimizer can sweep strategy-logic params freely.
+        merged_params = vps_client.inject_foundational(
+            {**strategy.get("default_params", {}), **combo}, firm
+        )
         lab_db.insert_run_optimization({
             "run_id":             run_id,
             "strategy_id":        opt["strategy_id"],

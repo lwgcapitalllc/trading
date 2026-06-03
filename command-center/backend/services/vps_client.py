@@ -65,6 +65,47 @@ def nt_log(lines: int = 100) -> str:
         return ""
 
 
+# ── Foundational config injection ────────────────────────────────────────────
+
+def build_foundational_params(ruleset: dict) -> dict:
+    """Return the strategy-param key/value pairs sourced from a ruleset's foundational config.
+
+    These map directly to [Category("Foundational")] NinjaScriptProperty names.
+    Call inject_foundational() rather than this directly.
+    """
+    days = ruleset.get("days_of_week_allowed") or []
+    return {
+        "AccountSize":          float(ruleset.get("account_size") or 0),
+        "RiskPerTradePct":      float(ruleset.get("risk_per_trade_pct") or 0),
+        "MaxDailyLoss":         float(ruleset.get("daily_loss_cap") or 0),
+        "DailyHaltFraction":    float(ruleset.get("daily_halt_fraction") or 0),
+        "MaxConsecutiveLosses": int(ruleset.get("max_consecutive_losses") or 0),
+        "CommissionPerSide":    float(ruleset.get("default_commission_per_side") or 0),
+        "ForceFlatTimeET":      ruleset.get("force_flat_time_et") or "",
+        "EarliestEntryTimeET":  ruleset.get("earliest_entry_time_et") or "",
+        "LatestEntryTimeET":    ruleset.get("latest_entry_time_et") or "",
+        "DaysOfWeekAllowed":    ",".join(days) if isinstance(days, list) else (days or ""),
+        "DailyProfitTarget":    float(ruleset.get("daily_profit_target") or 0),
+        "DailyProfitLockPct":   float(ruleset.get("daily_profit_lock_pct") or 0),
+    }
+
+
+def inject_foundational(user_params: dict, ruleset: Optional[dict]) -> dict:
+    """Merge foundational config from ruleset into user-provided strategy params.
+
+    Primary ruleset rule: only the primary (first evaluate) ruleset injects config.
+    User-provided strategy-logic params override foundational if names collide
+    (the UI prevents this in practice by hiding foundational params from users).
+    Returns user_params unchanged when ruleset is None (backward compat for
+    strategies that don't use foundational config, or runs with no evaluate list).
+    """
+    if ruleset is None:
+        return user_params
+    merged = build_foundational_params(ruleset)
+    merged.update(user_params)
+    return merged
+
+
 # ── Job control ───────────────────────────────────────────────────────────────
 
 def _dispatch_backtest(strategy_runner: str, job_spec: dict) -> dict:

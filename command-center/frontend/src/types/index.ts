@@ -235,6 +235,7 @@ export interface ParamSchemaEntry {
   group: string
   display_name: string
   description?: string
+  category?: 'strategy_logic' | 'foundational'
 }
 
 export interface Strategy {
@@ -285,6 +286,17 @@ export interface Ruleset {
   activation_fee_usd: number | null
   profit_split_pct: number | null
   notes: string | null
+  // Pass 1 — foundational config
+  risk_per_trade_pct: number | null
+  max_consecutive_losses: number | null
+  earliest_entry_time_et: string | null
+  latest_entry_time_et: string | null
+  days_of_week_allowed: string[]
+  daily_profit_target: number | null
+  daily_profit_lock_pct: number | null
+  default_commission_per_side: number | null
+  default_slippage_ticks: number | null
+  daily_halt_fraction: number | null
 }
 
 export type RulesetCreate = Ruleset

@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-03 (session 10 — M4 regime classifier integration complete)
+**Last reviewed:** 2026-06-03 (Pass 1 — foundational config layer + strategy genericization)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -200,13 +200,91 @@ The `firms` table was renamed to `rulesets` in M3. All references updated. `/fir
 
 `account_tier` is still present on rows (eval/funded/live) — useful for prop rulesets. `ruleset_type` is the broader category.
 
-New columns on `rulesets`: `ruleset_type`, `daily_loss_cap`, `weekly_loss_cap`, `daily_profit_goal`, `description`.
+New columns on `rulesets` (M3): `ruleset_type`, `daily_loss_cap`, `weekly_loss_cap`, `daily_profit_goal`, `description`.
 
 Seeded rulesets (13 rows): 4 LucidFlex × (eval/funded) + 4 Tradeify × (eval/funded) + 4 FundedNext × (eval/funded) + 1 personal example (`personal_futures_10k_example`).
 
 **Evaluations table:** `firm_id` column renamed to `ruleset_id`. `optimizations` table: `firm_id` → `ruleset_id` too.
 
 `BacktestRunRequest.evaluate_rulesets` — replaces `evaluate_firms` (backward-compat alias still accepted).
+
+---
+
+## Pass 1 — Foundational Config Layer
+
+### Foundational config fields on `rulesets` (added via migration in `init_db`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `risk_per_trade_pct` | REAL | % of equity risked per trade |
+| `max_consecutive_losses` | INTEGER | Stop trading after N losses in a day (0 = off) |
+| `daily_halt_fraction` | REAL | Halt if day loss ≥ fraction × daily_loss_cap (0 = off) |
+| `earliest_entry_time_et` | TEXT | HH:MM — no entries before this time (null = no restriction) |
+| `latest_entry_time_et` | TEXT | HH:MM — no entries after this time (null = no restriction) |
+| `days_of_week_allowed` | TEXT | JSON array: `["mon","tue","wed","thu","fri"]` |
+| `daily_profit_target` | INTEGER | USD — stop trading for the day if hit (null = no target) |
+| `daily_profit_lock_pct` | REAL | 0.0–1.0 — halve risk when dayPnL ≥ lock_pct × target (null = off) |
+| `default_commission_per_side` | REAL | Pre-fills the SA commission setting and strategy's CommissionPerSide param |
+| `default_slippage_ticks` | INTEGER | Pre-fills the SA slippage setting |
+
+`daily_profit_lock_pct` is ignored (and the validator warns) if `daily_profit_target` is null.
+
+Backfill values applied to all 13 existing rulesets on startup (idempotent, WHERE NULL guards):
+- `prop_eval` rows: risk=0.5%, halt=0.6, target=$1500, lock=80%, consec=3, comm=$2.25, slip=1
+- `prop_funded` rows: same except target=null, lock=null, halt=null
+- `personal_futures_10k_example`: risk=1.0%, halt=0.5, target=$150, lock=80%, consec=3
+
+### Category-based parameter tagging
+
+Strategy files use `[Category("Foundational")]` or `[Category("Strategy Logic")]` on each `[NinjaScriptProperty]`. The scanner reads this attribute and emits a `"category"` field on every param in the schema:
+
+```
+"category": "strategy_logic"   # tunable by optimizer
+"category": "foundational"     # injected from ruleset; hidden from UI
+```
+
+Legacy files using `[Display(GroupName = "Prop Firm")]` fall back to `"foundational"` via the GroupName heuristic. New files must use `[Category]`.
+
+### Dispatcher injection pattern
+
+`vps_client.build_foundational_params(ruleset)` → dict of 12 strategy param keys.
+`vps_client.inject_foundational(user_params, ruleset)` → merged dict (foundational first, user params override).
+
+Injection happens at three creation points before the VPS job_spec is sent:
+- `routers/backtests.py` `trigger_backtest()` — primary ruleset = `evaluate_rulesets[0]`
+- `routers/sweeps.py` `trigger_sweep()` — primary ruleset = `ruleset_ids[0]`
+- `services/optimization_runner.py` `run_optimization()` — single `ruleset_id` from the optimization row
+
+Merged params are stored in the DB at creation time, so all retry paths pick them up without re-injection.
+
+**Primary ruleset rule:** When a run is evaluated against multiple rulesets, only the first in the list injects foundational config into the strategy. Other rulesets are used for evaluation only. To run against two rulesets' foundational configs simultaneously, run two separate backtests.
+
+### Strategy genericization
+
+All three strategy files are now generic — class names no longer reference firm names:
+
+| Old | New | Strategy Logic Params |
+|---|---|---|
+| `ORB_LucidFlex.cs` → `ORB.cs` | class `ORB` | ORMinutes, TpMultiple, OneTradePer |
+| `VWAP_MR_LucidFlex.cs` → `VWAP_MR.cs` | class `VWAP_MR` | EntryStd, StopExtension, TpFraction, MinBarsBeforeEntry |
+| `Momentum_LucidFlex.cs` → `Momentum.cs` | class `Momentum` | MaPeriod, RrRatio |
+
+Strategies refuse to trade (print a warning, return) if required foundational params are still at placeholder values (-1 or empty string). This catches dispatcher failures early rather than running with silent wrong defaults.
+
+### Behavioral additions in each strategy
+
+New logic added to all three generic strategy files:
+- **Daily profit target**: stop trading for the day when `dayPnl >= DailyProfitTarget` (if >0)
+- **Profit lock-in**: when `dayPnl >= DailyProfitLockPct × DailyProfitTarget`, halve risk for rest of day (one-way ratchet, resets next day)
+- **Consecutive losses**: stop trading for the day when `_consecutiveLosses >= MaxConsecutiveLosses` (if >0), resets at day boundary
+- **Daily halt fraction**: stop if day loss ≥ `DailyHaltFraction × MaxDailyLoss` (if >0); replaces the old hardcoded 0.6 default
+- **Entry hours gate**: no entries before `EarliestEntryTimeET` or after `LatestEntryTimeET` (if set)
+- **Day-of-week gate**: skip trading on days not in `DaysOfWeekAllowed` (if non-empty)
+- **ForceFlatTimeET**: now a runtime param injected from ruleset, replacing the old hardcoded `15:30`
+
+### DB strategy ID migration
+
+On startup `_migrate_strategy_renames()` renames `orb_lucidflex` → `orb`, `vwap_mr_lucidflex` → `vwap_mr`, `momentum_lucidflex` → `momentum` in the strategies table and updates all backtest_runs and optimizations referencing the old IDs. The rename uses FK=OFF on a raw connection to avoid the PK-update constraint. Idempotent — skips rows where old_id doesn't exist or new_id already exists.
 
 ---
 
