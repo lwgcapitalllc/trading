@@ -2,8 +2,8 @@
 
 **Purpose:** Standing instructions for Claude Code across all subsystems.
 **Scope:** This covers repo-wide rules, VPS workflow, and branch conventions. It does NOT cover subsystem internals — each subsystem has its own CLAUDE.md.
-**Status:** Active — three subsystems in various stages of production.
-**Last reviewed:** 2026-05-30
+**Status:** Active — four subsystems in various stages of production.
+**Last reviewed:** 2026-06-02
 
 ---
 
@@ -14,10 +14,11 @@ trading/
 ├── algos/           ← Live algo trading suite (XAUUSD, Windows VPS)
 ├── smart-money/     ← Smart money replication system (Mac-only, active)
 ├── command-center/  ← Local operations platform (React + FastAPI)
+├── regime/          ← Shared market regime classifier (bots + backtest lab)
 └── docs/            ← Cross-subsystem reference docs and audit tools
 ```
 
-These systems are **fully independent**. Changes to one never affect the other.
+`algos/`, `smart-money/`, and `command-center/` are fully independent from each other. `regime/` is a shared library imported by `algos/` (via shim) and `command-center/` (directly).
 
 ---
 
@@ -31,6 +32,9 @@ Scans and profiles consistent crypto/forex traders for copy trading candidate po
 
 ### command-center/
 React + FastAPI local operations platform. Monitors bots via SSH, surfaces Smart Money pipeline output, runs and evaluates NinjaTrader backtests. Full rules in `command-center/CLAUDE.md`.
+
+### regime/
+Shared market regime classifier. Imported by the live bots (via `algos/shared/shared_regime.py` thin shim) and by the command-center backtest lab. Two modes: coarse (3 labels — what the bots use) and fine (5 labels — what the lab uses). Full rules in `regime/CLAUDE.md`. Algorithm documented in `regime/REGIME_CLASSIFIER.md`.
 
 ---
 
@@ -64,3 +68,4 @@ VPS paths: `C:\trading\algos\` (main), `C:\trading-backup\` (backups worktree)
 
 - Commit `credentials.json`, `users.json`, `.env`, any `.pkl` model files, or API tokens/keys to main branch
 - Touch `algos/` when working on `smart-money/` or `command-center/` and vice versa
+- Build a second regime classifier in `command-center/` or anywhere else — `regime/classifier.py` is the canonical implementation; all consumers import from there

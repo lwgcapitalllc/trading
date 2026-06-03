@@ -7,6 +7,7 @@ trading/
 ├── algos/           ← Live algo trading (XAUUSD, Windows VPS, PU Prime demo)
 ├── smart-money/     ← Crypto/forex trader scanner and copy-trading candidate pool
 ├── command-center/  ← Local ops platform: bot monitor, smart money UI, backtests lab
+├── regime/          ← Shared market regime classifier (live bots + backtest lab)
 ├── scripts/         ← Cross-subsystem VPS recovery and bootstrap scripts
 └── docs/            ← Cross-subsystem reference docs and audit tools
 ```
@@ -27,6 +28,7 @@ Read these in order for full context:
 | `algos/` | Live algo trading — 4 bots on Windows VPS | Demo trading | `algos/CLAUDE.md` |
 | `smart-money/` | Trader scanner for copy-trading candidates | Stages 1–2, 5 live | `smart-money/CLAUDE.md` |
 | `command-center/` | React + FastAPI ops platform | Live (Stress Tests stub) | `command-center/CLAUDE.md` |
+| `regime/` | Shared regime classifier for live bots and backtest lab | Production | `regime/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |
 
 ## Conventions

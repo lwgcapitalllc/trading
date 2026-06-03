@@ -391,6 +391,80 @@ To stop scope creep — explicitly out of scope for this module:
 
 ---
 
+## Pre-M4 Architecture Note — Regime Classifier Location
+
+Before M4 begins, the regime classifier was promoted to a shared top-level subsystem at `trading/regime/`. M4 must import from there rather than building a new classifier in `command-center/backend/services/`.
+
+```python
+# Correct — import the canonical classifier
+from regime import classify_regime, compute_signals
+
+# Never — do not create a new classifier here
+# command-center/backend/services/regime_classifier.py  ← must not exist
+```
+
+### M4 scope — what to build
+
+Only the classifier's source location changed. Every other M4 deliverable is unchanged. The complete M4 scope is:
+
+**Backend:**
+- New service: `ohlc_fetcher.py` (with NT8 path first, yfinance fallback)
+- New table: `instrument_daily_ohlc` — caches OHLC by (instrument, date) to avoid refetching
+- Pipeline integration in `backtest_runner.py` — classifier runs at end of every backtest, filling in `regime_tag` on each `daily_pnl` entry
+- New endpoint: `POST /backtests/{run_id}/backfill_regime` — for backtests that pre-date M4
+- Updated endpoint: optimizer accepts optional `regime_filter` field (one of the 5 fine labels or null)
+
+**Frontend:**
+- New components: `RegimeBadge`, `PerformanceByRegimeTable`, `RegimeOverlayToggle`, `BackfillRegimeButton`
+- Backtest Detail page gains a "Performance by Regime" section (KPIs sliced by regime)
+- Equity curve gains an optional color overlay toggle to color-code days by regime
+- Optimize Modal gains a "Regime filter (optional)" dropdown
+
+**Documentation:**
+- The canonical algorithm doc lives at `trading/regime/REGIME_CLASSIFIER.md` (already written during the unification pass). M4 does not create a duplicate doc in `backend/docs/`. Instead, `backend/CLAUDE.md` should reference the canonical doc by path so future Claude Code sessions know where to look.
+
+**Color scheme for regime visualization** (used by `RegimeBadge`, `RegimeOverlayToggle`, `PerformanceByRegimeTable`):
+- TRENDING: green (`#10b981`)
+- RANGING: blue (`#3b82f6`)
+- HIGH_VOLATILITY: orange (`#f97316`)
+- LOW_VOLATILITY: gray (`#9ca3af`)
+- TRANSITIONING: yellow (`#eab308`)
+- UNKNOWN: dark gray (`#374151`) with hatching pattern
+
+### The mode split
+
+The classifier supports two modes:
+
+**Lab** uses `mode="fine"` (5 labels: TRENDING, RANGING, HIGH_VOLATILITY, LOW_VOLATILITY, TRANSITIONING). Richer segmentation for the Performance by Regime table and regime-filtered optimizer runs.
+
+**Live forex bots** use `mode="coarse"` (3 labels: TRENDING, TRANSITIONING, RANGING) via the shim in `algos/shared/shared_regime.py`. Bot decision logic and risk multipliers are tied to these 3 labels and must not change.
+
+The shim handles the coarse mode call internally — bot code never touches the canonical module directly. The fine→coarse mapping (HIGH_VOLATILITY → RANGING, LOW_VOLATILITY → RANGING) ensures every fine label collapses cleanly when needed.
+
+**Import pattern for M4 lab services:**
+```python
+# Pass the same daily df for both arguments when working with lab data
+from regime import classify_regime, compute_signals
+
+label = classify_regime(df_daily, df_daily, mode="fine")
+# Returns: TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY | UNKNOWN
+
+signals = compute_signals(df_daily, df_daily)
+# Returns: {"adx": float, "atr_ratio": float, "rsi_range": float, "score_norm": int} | None
+```
+
+**Fine → coarse mapping** (for UI display if needed):
+```python
+from regime import coarse_label
+coarse = coarse_label("HIGH_VOLATILITY")  # → "RANGING"
+```
+
+**Thresholds:** all cutoffs live in `regime/thresholds.py`. To adjust them for the lab context, pass a `thresholds=` dict override to `classify_regime`. Do not fork or copy the math.
+
+**Reference:** `trading/regime/REGIME_CLASSIFIER.md` — full plain-English algorithm doc.
+
+---
+
 ## M1 + M2 Retrospective
 
 ### What M1 built
