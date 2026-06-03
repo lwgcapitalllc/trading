@@ -99,10 +99,22 @@ def open_ns_editor(dt) -> object:
         import traceback
         raise RuntimeError(f"expand New: {ex!r}\n{traceback.format_exc()}")
     time.sleep(0.8)
+    # The "New" popup menu renders inside the CC UIA subtree, not top-level.
+    # Try CC children first, fall back to Desktop top-level (matches SA pattern).
     try:
-        ns_item = dt.window(title="NinjaScript Editor", control_type="MenuItem")
-        log(f"NS Editor item found: {ns_item.window_text()!r}")
-        ns_item.invoke()  # leaf menu item — invoke()
+        ns_item = cc.child_window(title="NinjaScript Editor", control_type="MenuItem")
+        ns_item.exists(timeout=1)  # force resolution so we get an error if missing
+        log(f"NS Editor item found in CC subtree: {ns_item.window_text()!r}")
+    except Exception:
+        try:
+            ns_item = dt.window(title="NinjaScript Editor", control_type="MenuItem")
+            ns_item.exists(timeout=1)
+            log(f"NS Editor item found at Desktop level: {ns_item.window_text()!r}")
+        except Exception as ex2:
+            import traceback
+            raise RuntimeError(f"NinjaScript Editor item not found: {ex2!r}\n{traceback.format_exc()}")
+    try:
+        ns_item.invoke()
     except Exception as ex:
         import traceback
         raise RuntimeError(f"invoke NinjaScript Editor: {ex!r}\n{traceback.format_exc()}")
