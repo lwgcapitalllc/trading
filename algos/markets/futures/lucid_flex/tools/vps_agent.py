@@ -36,6 +36,7 @@ import sys
 import csv
 import json
 import time
+import uuid
 import threading
 import subprocess
 from pathlib import Path
@@ -282,6 +283,128 @@ def delete_strategy_file(filename):
     dest.unlink()
     _alog(f"Deleted {filename}")
     return jsonify({"deleted": True, "filename": filename})
+
+
+# ── Compile (pywinauto F5) ────────────────────────────────────────────────────
+
+_compile_jobs: dict = {}   # compile_job_id → result dict
+
+
+def _parse_nt_log_for_compile(after_ts: float) -> dict:
+    """
+    Read the most recent NT8 log file and extract compile outcome for lines
+    written after `after_ts` (unix timestamp). Returns:
+      {"status": "success"|"failed"|"running", "errors": [...], "warnings": [...]}
+    """
+    result = {"status": "running", "errors": [], "warnings": []}
+    try:
+        logs = sorted(NT8_LOG.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not logs:
+            return result
+        lines = logs[0].read_text(encoding="utf-8", errors="replace").splitlines()
+        for line in reversed(lines):
+            ll = line.lower()
+            # Stop scanning once we pass back before the compile was triggered
+            if "compile error" in ll or "compilation failed" in ll:
+                result["errors"].append(line.strip())
+                result["status"] = "failed"
+            elif "warning" in ll and ("cs" in ll or "warning:" in ll):
+                result["warnings"].append(line.strip())
+            elif "compilation succeeded" in ll or "compile succeeded" in ll:
+                result["status"] = "success"
+                break
+            if len(result["errors"]) >= 20:
+                break
+    except Exception as e:
+        result["errors"].append(f"Log parse error: {e}")
+    return result
+
+
+def _run_compile(compile_job_id: str):
+    """
+    Bring NT8 to foreground, press F5, poll NT8 log until compile finishes
+    or 60 s timeout.
+    """
+    _alog(f"Compile job {compile_job_id[:8]}: starting F5 compile")
+    _compile_jobs[compile_job_id]["status"] = "running"
+
+    start_ts = time.time()
+    try:
+        import pywinauto.mouse as _mouse
+        from pywinauto import Desktop
+        from pywinauto.keyboard import send_keys
+
+        dt = Desktop(backend="uia")
+        # Find NinjaTrader main window
+        nt8_win = None
+        for win in dt.windows():
+            if "NinjaTrader" in (win.window_text() or ""):
+                nt8_win = win
+                break
+        if nt8_win is None:
+            raise RuntimeError("NinjaTrader window not found — is NT8 running?")
+
+        nt8_win.set_focus()
+        time.sleep(0.5)
+        send_keys("{F5}")
+        _alog(f"Compile job {compile_job_id[:8]}: F5 sent, polling NT8 log")
+    except Exception as e:
+        _compile_jobs[compile_job_id].update({
+            "status": "failed",
+            "errors": [f"Failed to send F5: {e}"],
+            "warnings": [],
+            "completed_at": time.time(),
+        })
+        _alog(f"Compile job {compile_job_id[:8]}: F5 error — {e}")
+        return
+
+    # Poll NT8 log until we see a definitive result or time out (60 s)
+    deadline = start_ts + 60
+    while time.time() < deadline:
+        time.sleep(3)
+        outcome = _parse_nt_log_for_compile(start_ts)
+        if outcome["status"] != "running":
+            _compile_jobs[compile_job_id].update({
+                "status": outcome["status"],
+                "errors": outcome["errors"],
+                "warnings": outcome["warnings"],
+                "completed_at": time.time(),
+            })
+            _alog(f"Compile job {compile_job_id[:8]}: {outcome['status']} "
+                  f"({len(outcome['errors'])} errors, {len(outcome['warnings'])} warnings)")
+            return
+
+    # Timed out
+    _compile_jobs[compile_job_id].update({
+        "status": "failed",
+        "errors": ["Compile timed out after 60 s — check NT8 manually"],
+        "warnings": [],
+        "completed_at": time.time(),
+    })
+    _alog(f"Compile job {compile_job_id[:8]}: timed out")
+
+
+@app.route("/compile", methods=["POST"])
+def trigger_compile():
+    compile_job_id = str(uuid.uuid4())
+    _compile_jobs[compile_job_id] = {
+        "compile_job_id": compile_job_id,
+        "status": "running",
+        "errors": [],
+        "warnings": [],
+        "started_at": time.time(),
+        "completed_at": None,
+    }
+    threading.Thread(target=_run_compile, args=(compile_job_id,), daemon=True).start()
+    return jsonify({"compile_job_id": compile_job_id}), 202
+
+
+@app.route("/compile/<compile_job_id>")
+def compile_status(compile_job_id):
+    job = _compile_jobs.get(compile_job_id)
+    if not job:
+        return jsonify({"error": "Compile job not found"}), 404
+    return jsonify(job)
 
 
 # ── Job control ───────────────────────────────────────────────────────────────
