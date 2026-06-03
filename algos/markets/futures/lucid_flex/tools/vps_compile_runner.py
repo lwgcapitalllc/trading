@@ -49,24 +49,24 @@ def open_ns_editor(dt) -> object:
     except Exception:
         pass
 
-    log("Opening NinjaScript Editor via Control Center New menu...")
-    cc = None
-    for pattern in [".*NinjaTrader 8.*", ".*Control Center.*"]:
-        try:
-            candidate = dt.window(title_re=pattern)
-            if candidate.exists(timeout=1):
-                cc = candidate
-                log(f"Control Center found via pattern: {pattern}")
-                break
-        except Exception:
-            continue
+    log("Opening NinjaScript Editor via NinjaTrader.exe New menu...")
 
-    if cc is None:
-        raise RuntimeError("NT8 Control Center window not found — is NT8 running?")
+    # The NT8 Control Center is a docked panel inside the main NT8 process window
+    # and doesn't appear as its own top-level UIA window. Connect via process name.
+    from pywinauto import Application
+    try:
+        nt8_app = Application(backend="uia").connect(path="NinjaTrader.exe", timeout=10)
+        log("Connected to NinjaTrader.exe process")
+    except Exception as e:
+        raise RuntimeError(f"Could not connect to NinjaTrader.exe: {e}")
 
-    cc.set_focus()
+    main_win = nt8_app.top_window()
+    log(f"NT8 main window: {main_win.window_text()!r}")
+    main_win.set_focus()
     time.sleep(0.3)
-    cc.child_window(title="New", control_type="MenuItem").click_input()
+
+    # NT8 Control Center "New" menu — same path as SA is opened
+    main_win.child_window(title="New", control_type="MenuItem").click_input()
     time.sleep(0.8)
     dt.window(title="NinjaScript Editor", control_type="MenuItem").click_input()
     time.sleep(3.0)
