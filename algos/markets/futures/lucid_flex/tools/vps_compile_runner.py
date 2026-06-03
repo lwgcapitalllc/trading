@@ -99,20 +99,34 @@ def open_ns_editor(dt) -> object:
         import traceback
         raise RuntimeError(f"expand New: {ex!r}\n{traceback.format_exc()}")
     time.sleep(0.8)
-    # The "New" popup menu renders inside the CC UIA subtree, not top-level.
-    # Try CC children first, fall back to Desktop top-level (matches SA pattern).
+    # After expand(), submenu items become children of new_item in the UIA tree.
+    # Dump children of new_item to verify the popup structure, then invoke.
     try:
-        ns_item = cc.child_window(title="NinjaScript Editor", control_type="MenuItem")
-        ns_item.exists(timeout=1)  # force resolution so we get an error if missing
-        log(f"NS Editor item found in CC subtree: {ns_item.window_text()!r}")
-    except Exception:
+        kids = [(c.window_text(), str(getattr(c.element_info, 'control_type', '?')))
+                for c in new_item.children()]
+        log(f"New submenu children ({len(kids)}): {kids}")
+    except Exception as ex:
+        log(f"new_item children dump failed: {ex}")
+
+    # Try 3 locations in order: new_item's children, CC's full subtree, Desktop
+    ns_item = None
+    for search_fn, label in [
+        (lambda: new_item.child_window(title="NinjaScript Editor", control_type="MenuItem"), "new_item children"),
+        (lambda: cc.child_window(title="NinjaScript Editor", control_type="MenuItem"), "CC subtree"),
+        (lambda: dt.window(title="NinjaScript Editor", control_type="MenuItem"), "Desktop"),
+    ]:
         try:
-            ns_item = dt.window(title="NinjaScript Editor", control_type="MenuItem")
-            ns_item.exists(timeout=1)
-            log(f"NS Editor item found at Desktop level: {ns_item.window_text()!r}")
-        except Exception as ex2:
-            import traceback
-            raise RuntimeError(f"NinjaScript Editor item not found: {ex2!r}\n{traceback.format_exc()}")
+            candidate = search_fn()
+            if candidate.exists(timeout=1):
+                ns_item = candidate
+                log(f"NS Editor found via {label}: {ns_item.window_text()!r}")
+                break
+        except Exception:
+            continue
+
+    if ns_item is None:
+        raise RuntimeError("NinjaScript Editor menu item not found after expanding New")
+
     try:
         ns_item.invoke()
     except Exception as ex:
