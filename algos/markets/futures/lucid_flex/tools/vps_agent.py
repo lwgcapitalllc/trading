@@ -290,105 +290,47 @@ def delete_strategy_file(filename):
 _compile_jobs: dict = {}   # compile_job_id → result dict
 
 
-NT8_CUSTOM_DLL = NT8_DOCS / "bin" / "Custom" / "NinjaTrader.Custom.dll"
-
-
-def _open_ns_editor(dt):
-    """Open NinjaScript Editor via NT8 Control Center's New menu.
-    Returns the editor window.  Raises RuntimeError if it can't be opened."""
-    # Check if it's already open
-    try:
-        ed = dt.window(title_re=".*NinjaScript Editor.*")
-        ed.wait("visible", timeout=2)
-        return ed
-    except Exception:
-        pass
-
-    # Open via Control Center "New" menu — same pattern as SA.
-    # Don't constrain control_type — NT8's WPF windows can map to Pane/Custom
-    # in UIA depending on version.
-    cc = None
-    for cc_pattern in [".*NinjaTrader 8.*", ".*Control Center.*"]:
-        try:
-            candidate = dt.window(title_re=cc_pattern)
-            if candidate.exists(timeout=1):
-                cc = candidate
-                break
-        except Exception:
-            continue
-    if cc is None:
-        raise RuntimeError("Could not find NT8 Control Center window")
-
-    cc.set_focus()
-    time.sleep(0.3)
-    cc.child_window(title="New", control_type="MenuItem").click_input()
-    time.sleep(0.8)
-    dt.window(title="NinjaScript Editor", control_type="MenuItem").click_input()
-    time.sleep(3.0)
-    ed = dt.window(title_re=".*NinjaScript Editor.*")
-    ed.wait("visible", timeout=10)
-    return ed
-
-
 def _run_compile(compile_job_id: str):
     """
-    Open the NT8 NinjaScript Editor (or reuse the existing one), press F5
-    to compile all strategies, and confirm success by watching the
-    NinjaTrader.Custom.dll modification time.
+    Launch vps_compile_runner.py as a subprocess so pywinauto COM is
+    initialized in a fresh process (same pattern as the backtest runner).
     """
     _alog(f"Compile job {compile_job_id[:8]}: starting")
     _compile_jobs[compile_job_id]["status"] = "running"
-    start_ts = time.time()
 
-    pre_mtime = NT8_CUSTOM_DLL.stat().st_mtime if NT8_CUSTOM_DLL.exists() else 0
+    runner = SCRIPT_DIR / "vps_compile_runner.py"
+    errors, warnings = [], []
+    status = "running"
 
     try:
-        from pywinauto import Desktop
-        from pywinauto.keyboard import send_keys
-
-        dt = Desktop(backend="uia")
-        ed = _open_ns_editor(dt)
-        ed.set_focus()
-        time.sleep(0.5)
-        send_keys("{F5}")
-        _alog(f"Compile job {compile_job_id[:8]}: F5 sent to NinjaScript Editor")
+        proc = subprocess.Popen(
+            [sys.executable, "-u", str(runner)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+        for line in proc.stdout:
+            line = line.rstrip()
+            _alog(f"[compile {compile_job_id[:8]}] {line}")
+            if line.startswith("STATUS:"):
+                status = line[7:]
+            elif line.startswith("ERROR:"):
+                errors.append(line[6:])
+            elif line.startswith("WARNING:"):
+                warnings.append(line[8:])
+        proc.wait()
+        if status == "running":
+            status = "failed" if proc.returncode != 0 else "success"
     except Exception as e:
-        _compile_jobs[compile_job_id].update({
-            "status": "failed",
-            "errors": [f"Could not trigger compile: {e}"],
-            "warnings": [],
-            "completed_at": time.time(),
-        })
-        _alog(f"Compile job {compile_job_id[:8]}: setup error — {e}")
-        return
+        status = "failed"
+        errors.append(f"Runner launch failed: {e}")
 
-    # Poll NinjaTrader.Custom.dll mtime — NT8 always rewrites it on successful compile.
-    # Timeout 90 s to give the compiler time for large strategy sets.
-    deadline = start_ts + 90
-    while time.time() < deadline:
-        time.sleep(3)
-        if NT8_CUSTOM_DLL.exists() and NT8_CUSTOM_DLL.stat().st_mtime > pre_mtime:
-            _compile_jobs[compile_job_id].update({
-                "status": "success",
-                "errors": [],
-                "warnings": [],
-                "completed_at": time.time(),
-            })
-            elapsed = round(time.time() - start_ts, 1)
-            _alog(f"Compile job {compile_job_id[:8]}: success in {elapsed}s")
-            return
-
-    # Timed out — dll didn't update, likely a compile error.
     _compile_jobs[compile_job_id].update({
-        "status": "failed",
-        "errors": [
-            "Compile did not complete within 90 s. "
-            "Check the NinjaScript Editor output panel for errors."
-        ],
-        "warnings": [],
+        "status": status,
+        "errors": errors,
+        "warnings": warnings,
         "completed_at": time.time(),
     })
-    _alog(f"Compile job {compile_job_id[:8]}: timed out (dll not updated)")
+    _alog(f"Compile job {compile_job_id[:8]}: {status} ({len(errors)} errors)")
 
 
 @app.route("/compile", methods=["POST"])
