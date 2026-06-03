@@ -703,3 +703,29 @@ class StressTest(BaseModel):
 class StressTestDetail(StressTest):
     equity_paths: Optional[list] = None
     distribution: Optional[dict] = None
+
+
+# ── Strategy files (Pass 2 — deployment manager) ─────────────────────────────
+
+class StrategyFile(BaseModel):
+    filename: str
+    size_bytes: int
+    modified_at: str  # ISO-8601 from the VPS agent
+
+
+class StrategyFileSyncStatus(BaseModel):
+    strategy_id: str
+    expected_filename: str
+    file_exists_on_vps: bool
+    file_size_bytes: Optional[int] = None
+    file_modified_at: Optional[str] = None
+    in_sync: bool
+
+
+class CompileJobStatus(BaseModel):
+    compile_job_id: str
+    status: str        # "running" | "success" | "failed"
+    errors: list[str] = []
+    warnings: list[str] = []
+    started_at: Optional[float] = None
+    completed_at: Optional[float] = None

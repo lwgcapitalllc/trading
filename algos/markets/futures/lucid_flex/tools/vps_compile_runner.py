@@ -79,59 +79,16 @@ def open_ns_editor(dt) -> object:
     log(f"Control Center HWND: {cc_hwnd}")
     cc = dt.window(handle=cc_hwnd)
 
-    # Dump direct children to help debug "New" menu structure
-    try:
-        kids = [(c.window_text(), str(getattr(c.element_info, 'control_type', '?')),
-                 (c.automation_id() or '').strip())
-                for c in cc.children()]
-        log(f"CC direct children ({len(kids)}): {kids[:8]}")
-    except Exception as ex:
-        log(f"CC children dump failed: {ex}")
-
-    # Use invoke() (UIA Invoke pattern) — activates menu items without moving
-    # the mouse cursor. Required for disconnected RDP sessions where SetCursorPos
-    # fails with "no active desktop".
-    try:
-        new_item = cc.child_window(title="New", control_type="MenuItem")
-        log(f"New item found: {new_item.window_text()!r}")
-        new_item.expand()  # "New" is a submenu — expand(), not invoke()
-    except Exception as ex:
-        import traceback
-        raise RuntimeError(f"expand New: {ex!r}\n{traceback.format_exc()}")
+    # "New" is a submenu — use expand() (IExpandCollapseProvider), not invoke().
+    cc.child_window(title="New", control_type="MenuItem").expand()
     time.sleep(0.8)
-    # After expand(), submenu items become children of new_item in the UIA tree.
-    # Dump children of new_item to verify the popup structure, then invoke.
-    try:
-        kids = [(c.window_text(), str(getattr(c.element_info, 'control_type', '?')))
-                for c in new_item.children()]
-        log(f"New submenu children ({len(kids)}): {kids}")
-    except Exception as ex:
-        log(f"new_item children dump failed: {ex}")
 
-    # Try 3 locations in order: new_item's children, CC's full subtree, Desktop
-    ns_item = None
-    for search_fn, label in [
-        (lambda: new_item.child_window(title="NinjaScript Editor", control_type="MenuItem"), "new_item children"),
-        (lambda: cc.child_window(title="NinjaScript Editor", control_type="MenuItem"), "CC subtree"),
-        (lambda: dt.window(title="NinjaScript Editor", control_type="MenuItem"), "Desktop"),
-    ]:
-        try:
-            candidate = search_fn()
-            if candidate.exists(timeout=1):
-                ns_item = candidate
-                log(f"NS Editor found via {label}: {ns_item.window_text()!r}")
-                break
-        except Exception:
-            continue
-
-    if ns_item is None:
+    # After expand(), "NinjaScript Editor" becomes a child of the "New" menu item.
+    new_item = cc.child_window(title="New", control_type="MenuItem")
+    ns_item = new_item.child_window(title="NinjaScript Editor", control_type="MenuItem")
+    if not ns_item.exists(timeout=2):
         raise RuntimeError("NinjaScript Editor menu item not found after expanding New")
-
-    try:
-        ns_item.invoke()
-    except Exception as ex:
-        import traceback
-        raise RuntimeError(f"invoke NinjaScript Editor: {ex!r}\n{traceback.format_exc()}")
+    ns_item.invoke()  # leaf item — invoke() works
     time.sleep(3.0)
 
     ed = dt.window(title_re=".*NinjaScript Editor.*")

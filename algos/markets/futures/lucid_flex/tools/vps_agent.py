@@ -554,27 +554,6 @@ def legacy_results():
 
 # ── Diagnostic endpoints ──────────────────────────────────────────────────────
 
-@app.route("/diagnose-uia")
-def diagnose_uia():
-    """Enumerate top-level windows via pywinauto UIA — returns their accessible names."""
-    try:
-        from pywinauto import Desktop
-        dt = Desktop(backend="uia")
-        wins = []
-        for w in dt.windows():
-            try:
-                wins.append({
-                    "title": w.window_text(),
-                    "auto_id": (w.automation_id() or "").strip(),
-                    "control_type": str(getattr(w.element_info, "control_type", "?")),
-                })
-            except Exception as ex:
-                wins.append({"error": str(ex)})
-        return jsonify({"windows": wins})
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
-
 @app.route("/diagnose")
 def diagnose():
     try:

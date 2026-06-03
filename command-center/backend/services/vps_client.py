@@ -6,6 +6,8 @@ All outbound calls to the agent go through this module.
 from __future__ import annotations
 
 from typing import Any, Optional
+import io
+import uuid
 import urllib.request
 import urllib.error
 import json
@@ -146,3 +148,54 @@ def export_trades() -> dict:
     """Call /export-trades on the VPS agent. Returns {ok, csv, total_lines, log}.
     Longer timeout because the export automation takes ~12-15s."""
     return _get("/export-trades", timeout=60)
+
+
+# ── Strategy file management ──────────────────────────────────────────────────
+
+def list_strategy_files() -> list[dict]:
+    return _get("/files/strategies")
+
+
+def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict:
+    url = cfg.VPS_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
+    boundary = uuid.uuid4().hex
+    body_parts = [
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+        f"filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n".encode(),
+        content,
+        f"\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\n"
+        f"{'true' if overwrite else 'false'}\r\n--{boundary}--\r\n".encode(),
+    ]
+    body = b"".join(body_parts)
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"Upload {filename}: HTTP {exc.code} — {exc.read().decode()}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Upload {filename}: {exc}") from exc
+
+
+def delete_strategy_file(filename: str) -> dict:
+    url = cfg.VPS_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
+    req = urllib.request.Request(url, method="DELETE")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"Delete {filename}: HTTP {exc.code} — {exc.read().decode()}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Delete {filename}: {exc}") from exc
+
+
+def trigger_compile() -> dict:
+    return _post("/compile", timeout=10)
+
+
+def get_compile_status(compile_job_id: str) -> dict:
+    return _get(f"/compile/{compile_job_id}", timeout=10)
