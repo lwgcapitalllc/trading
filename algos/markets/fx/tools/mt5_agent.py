@@ -655,36 +655,36 @@ def _run_backtest(job_id: str, spec: dict) -> None:
 
     jl(f"Backtest: {strategy_class} {symbol} {timeframe} [{from_date} → {to_date}]")
 
-    set_filename = _write_set_file(data_dir, job_id, inputs)
-    jl(f"Set file: {set_filename}")
-
-    reports_dir   = data_dir / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    report_stem   = f"bt_{job_id[:8]}"
-    report_prefix = f"reports\\{report_stem}"
-    report_file   = reports_dir / f"{report_stem}.htm"
-
-    ini_path = data_dir / f"tester_{job_id[:8]}.ini"
-    _write_tester_ini(
-        ini_path,
-        expert=strategy_class,
-        set_filename=set_filename,
-        symbol=symbol,
-        period=timeframe,
-        from_date=from_date,
-        to_date=to_date,
-        model=model,
-        deposit=deposit,
-        currency=currency,
-        leverage=leverage,
-        report_prefix=report_prefix,
-    )
-    jl(f"Config: {ini_path}")
-
     try:
+        set_filename = _write_set_file(data_dir, job_id, inputs)
+        jl(f"Set file: {set_filename}")
+
+        reports_dir   = data_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        report_stem   = f"bt_{job_id[:8]}"
+        report_prefix = f"reports\\{report_stem}"
+        report_file   = reports_dir / f"{report_stem}.htm"
+
+        ini_path = data_dir / f"tester_{job_id[:8]}.ini"
+        _write_tester_ini(
+            ini_path,
+            expert=strategy_class,
+            set_filename=set_filename,
+            symbol=symbol,
+            period=timeframe,
+            from_date=from_date,
+            to_date=to_date,
+            model=model,
+            deposit=deposit,
+            currency=currency,
+            leverage=leverage,
+            report_prefix=report_prefix,
+        )
+        jl(f"Config: {ini_path}")
+
         proc = _launch_tester(tester_exe, ini_path)
     except Exception as exc:
-        fail(f"Launch failed: {exc}")
+        fail(f"Setup/launch failed: {exc}")
         return
 
     with _lock:
