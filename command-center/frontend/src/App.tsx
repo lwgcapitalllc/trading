@@ -37,7 +37,7 @@ export default function App() {
               <Route path="/strategies"                             element={<Strategies />} />
               <Route path="/backtests"                              element={<Backtests />} />
               <Route path="/backtests/runs/:runId"              element={<BacktestDetail />} />
-              <Route path="/backtests/strategies/:strategyId"  element={<StrategyDetail />} />
+              <Route path="/strategies/:strategyId"            element={<StrategyDetail />} />
               <Route path="/backtests/sweeps/:sweepId"         element={<SweepDetail />} />
               <Route path="/backtests/optimizations/:optimizationId" element={<OptimizationDetail />} />
               <Route path="/backtests/stress-tests/:stressTestId" element={<StressTestDetail />} />

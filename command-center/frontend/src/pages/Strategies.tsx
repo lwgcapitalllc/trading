@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Pencil, X, Upload, Trash2, ExternalLink, CloudUpload, RotateCcw } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, Pencil, X, Upload, Trash2, ExternalLink, CloudUpload } from 'lucide-react'
 import {
   useStrategies, useFirms,
   useScanStrategies, useUpdateRuleset,
@@ -128,7 +128,7 @@ function StrategiesTab() {
                   strategy={s}
                   inSync={syncMap[s.id]}
                   isDeploying={deployingId === s.id}
-                  onView={() => navigate(`/backtests/strategies/${s.id}`)}
+                  onView={() => navigate(`/strategies/${s.id}`)}
                   onRun={() => setRunStrategy(s)}
                   onDeploy={() => handleDeploy(s.id)}
                 />
@@ -181,17 +181,7 @@ function StrategyRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-          {inSync ? (
-            <button
-              onClick={onDeploy}
-              disabled={isDeploying}
-              title="Redeploy to VPS"
-              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium text-text-tertiary border border-border-subtle hover:text-text-primary hover:border-border-default transition-colors disabled:opacity-40"
-            >
-              {isDeploying ? <RefreshCw size={10} className="animate-spin" /> : <RotateCcw size={10} />}
-              Redeploy
-            </button>
-          ) : (
+          {!inSync && (
             <button
               onClick={onDeploy}
               disabled={isDeploying}
@@ -203,7 +193,9 @@ function StrategyRow({
           )}
           <button
             onClick={onRun}
-            className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors"
+            disabled={inSync === false}
+            title={inSync === false ? 'Deploy strategy before running' : undefined}
+            className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <Play size={10} />
             Run

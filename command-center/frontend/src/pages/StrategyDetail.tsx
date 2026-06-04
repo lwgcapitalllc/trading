@@ -342,10 +342,10 @@ export function StrategyDetail() {
     return (
       <div>
         <button
-          onClick={() => navigate('/backtests')}
+          onClick={() => navigate('/strategies')}
           className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
         >
-          <ArrowLeft size={14} /> Backtests
+          <ArrowLeft size={14} /> Strategies
         </button>
         <Skeleton />
       </div>
@@ -356,10 +356,10 @@ export function StrategyDetail() {
     return (
       <div>
         <button
-          onClick={() => navigate('/backtests')}
+          onClick={() => navigate('/strategies')}
           className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
         >
-          <ArrowLeft size={14} /> Backtests
+          <ArrowLeft size={14} /> Strategies
         </button>
         <EmptyState icon={<Play size={20} />} title="Strategy not found" description="This strategy may have been removed." />
       </div>
@@ -370,10 +370,10 @@ export function StrategyDetail() {
     <div>
       {/* Back nav */}
       <button
-        onClick={() => navigate('/backtests')}
+        onClick={() => navigate('/strategies')}
         className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
       >
-        <ArrowLeft size={14} /> Backtests
+        <ArrowLeft size={14} /> Strategies
       </button>
 
       <div className="space-y-8">
