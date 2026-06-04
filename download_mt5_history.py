@@ -21,7 +21,6 @@ import argparse
 import sys
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
 try:
     import MetaTrader5 as mt5
@@ -53,12 +52,15 @@ SYMBOLS = [
 ]
 
 # Timeframes needed by the lab:
+# - M5 + M15 for low-timeframe strategies (scalping, fast mean reversion)
 # - H1 + H4 for forex regime classification (matches the bots)
 # - D1 for daily-bar metrics if ever needed
 TIMEFRAMES = {
-    "H1": mt5.TIMEFRAME_H1,
-    "H4": mt5.TIMEFRAME_H4,
-    "D1": mt5.TIMEFRAME_D1,
+    "M5":  mt5.TIMEFRAME_M5,
+    "M15": mt5.TIMEFRAME_M15,
+    "H1":  mt5.TIMEFRAME_H1,
+    "H4":  mt5.TIMEFRAME_H4,
+    "D1":  mt5.TIMEFRAME_D1,
 }
 
 # Default years of history to fetch
@@ -66,9 +68,11 @@ DEFAULT_YEARS_BACK = 3
 
 # How many bars to expect per timeframe per year (rough estimates for verification)
 EXPECTED_BARS_PER_YEAR = {
-    "H1": 6000,    # ~24h * 252 trading days, less weekend gaps
-    "H4": 1500,    # ~6 bars/day * 252 days
-    "D1": 252,     # trading days per year
+    "M5":  70000,   # ~24h × 252 trading days × 12 bars/hour
+    "M15": 24000,   # ~24h × 252 trading days × 4 bars/hour
+    "H1":  6000,    # ~24h × 252 days
+    "H4":  1500,    # ~6 bars/day × 252 days
+    "D1":  252,     # trading days per year
 }
 
 # Common broker suffixes to try if the bare symbol doesn't exist
@@ -89,29 +93,26 @@ def init_mt5() -> bool:
 
     info = mt5.terminal_info()
     if info is None:
-        print("ERROR: terminal_info() returned None — MT5 not properly connected")
+        print("ERROR: terminal_info() returned None - MT5 not properly connected")
         return False
 
     account = mt5.account_info()
     if account is None:
-        print("ERROR: account_info() returned None — not logged into an account")
+        print("ERROR: account_info() returned None - not logged into an account")
         print("Log into a demo account in MT5 first, then re-run.")
         return False
 
     print(f"  Connected. Terminal data path: {info.data_path}")
-    print(f"  Account: #{account.login} ({account.server}) — {account.name}")
+    print(f"  Account: #{account.login} ({account.server}) - {account.name}")
     print(f"  Balance: {account.balance} {account.currency}")
     print()
     return True
 
 
-def resolve_symbol(symbol: str) -> str | None:
+def resolve_symbol(symbol):
     """
     Try to find the actual symbol name on this broker.
     Returns the resolved name or None if not found.
-
-    PU Prime uses .s suffix on most symbols (e.g. EURUSD.s).
-    Other brokers use different conventions.
     """
     for suffix in SUFFIX_CANDIDATES:
         candidate = symbol + suffix
@@ -121,7 +122,7 @@ def resolve_symbol(symbol: str) -> str | None:
     return None
 
 
-def ensure_symbol_in_market_watch(symbol: str) -> bool:
+def ensure_symbol_in_market_watch(symbol):
     """
     Make sure the symbol is visible in Market Watch.
     Required before MT5 will fetch history for it.
@@ -136,7 +137,7 @@ def ensure_symbol_in_market_watch(symbol: str) -> bool:
     return True
 
 
-def download_history(symbol: str, timeframe_name: str, timeframe_const: int, years_back: int) -> int:
+def download_history(symbol, timeframe_name, timeframe_const, years_back):
     """
     Download history for one symbol/timeframe combination.
     Returns the number of bars actually fetched.
@@ -144,8 +145,6 @@ def download_history(symbol: str, timeframe_name: str, timeframe_const: int, yea
     end = datetime.now()
     start = end - timedelta(days=years_back * 365)
 
-    # copy_rates_range pulls the history into MT5's internal cache.
-    # This is what Strategy Tester reads from later.
     rates = mt5.copy_rates_range(symbol, timeframe_const, start, end)
 
     if rates is None or len(rates) == 0:
@@ -156,7 +155,7 @@ def download_history(symbol: str, timeframe_name: str, timeframe_const: int, yea
     return len(rates)
 
 
-def verify_history(symbol: str, timeframe_name: str, timeframe_const: int, years_back: int) -> tuple[bool, int]:
+def verify_history(symbol, timeframe_name, timeframe_const, years_back):
     """
     Check whether enough history exists for this symbol/timeframe.
     Returns (is_sufficient, bar_count).
@@ -169,7 +168,7 @@ def verify_history(symbol: str, timeframe_name: str, timeframe_const: int, years
         return (False, 0)
 
     bar_count = len(rates)
-    expected_minimum = EXPECTED_BARS_PER_YEAR[timeframe_name] * years_back * 0.7  # 70% threshold
+    expected_minimum = EXPECTED_BARS_PER_YEAR[timeframe_name] * years_back * 0.7
     return (bar_count >= expected_minimum, bar_count)
 
 
@@ -188,14 +187,13 @@ def main():
                         help="Verify existing data, do not re-download")
     args = parser.parse_args()
 
-    # Filter symbol list
     if args.symbols:
         target_symbols = [s.strip() for s in args.symbols.split(",")]
     else:
         target_symbols = SYMBOLS
 
     print("=" * 70)
-    print("LWG Capital — MT5 Historical Data Download")
+    print("LWG Capital - MT5 Historical Data Download")
     print("=" * 70)
     print(f"  Mode:       {'VERIFY ONLY' if args.verify else 'DOWNLOAD'}")
     print(f"  Years back: {args.years}")
@@ -206,7 +204,6 @@ def main():
     if not init_mt5():
         sys.exit(1)
 
-    # Step 1: resolve symbol names (handle broker suffixes)
     print("Resolving symbol names on this broker...")
     resolved = {}
     for symbol in target_symbols:
@@ -216,7 +213,7 @@ def main():
         else:
             resolved[symbol] = actual
             if actual != symbol:
-                print(f"  OK    {symbol} → {actual}")
+                print(f"  OK    {symbol} -> {actual}")
             else:
                 print(f"  OK    {symbol}")
     print()
@@ -226,7 +223,6 @@ def main():
         mt5.shutdown()
         sys.exit(1)
 
-    # Step 2: ensure each symbol is in Market Watch
     print("Adding symbols to Market Watch...")
     for symbol, actual in resolved.items():
         if ensure_symbol_in_market_watch(actual):
@@ -235,7 +231,6 @@ def main():
             print(f"  FAIL  {actual}")
     print()
 
-    # Step 3: download (or verify) each symbol × timeframe
     print(f"{'Verifying' if args.verify else 'Downloading'} history...")
     print(f"  {'Symbol':<15} {'TF':<5} {'Bars':>10} {'Status':<15}")
     print(f"  {'-'*15} {'-'*5} {'-'*10} {'-'*15}")
@@ -261,7 +256,6 @@ def main():
                 print(f"  {actual:<15} {tf_name:<5} {bars:>10} {status:<15}")
                 if bars > 0:
                     successful += 1
-                # Small pause to be nice to the broker's data server
                 time.sleep(0.2)
 
     print()
