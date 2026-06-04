@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Pencil, X, Upload, MoreHorizontal, ExternalLink } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, Pencil, X, Upload, Trash2, ExternalLink } from 'lucide-react'
 import {
   useStrategies, useFirms,
   useScanStrategies, useUpdateRuleset,
@@ -16,13 +16,17 @@ import type { Strategy, Ruleset, StrategyFile } from '@/types'
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-type Tab = 'strategies' | 'rulesets' | 'files'
+type Tab = 'strategies' | 'rulesets' | 'deployed'
 
-function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
+function TabBar({ active, onChange, counts }: {
+  active: Tab
+  onChange: (t: Tab) => void
+  counts: Partial<Record<Tab, number>>
+}) {
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: 'strategies', label: 'Strategies' },
     { id: 'rulesets',   label: 'Rulesets' },
-    { id: 'files',      label: 'Files' },
+    { id: 'deployed',   label: 'Deployed' },
   ]
   return (
     <div className="flex gap-0 border-b border-border-subtle mb-6">
@@ -30,13 +34,22 @@ function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void 
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`px-4 py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-colors ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-colors ${
             active === t.id
               ? 'border-accent text-accent'
               : 'border-transparent text-text-secondary hover:text-text-primary'
           }`}
         >
           {t.label}
+          {counts[t.id] != null && (
+            <span className={`text-[11px] font-semibold px-1.5 py-[1px] rounded-full min-w-[18px] text-center tabular-nums ${
+              active === t.id
+                ? 'bg-accent/15 text-accent'
+                : 'bg-bg-surface-2 text-text-tertiary'
+            }`}>
+              {counts[t.id]}
+            </span>
+          )}
         </button>
       ))}
     </div>
@@ -149,7 +162,7 @@ function StrategyRow({
           <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
         ) : (
           <button
-            onClick={e => { e.stopPropagation(); navigate('/strategies?tab=files') }}
+            onClick={e => { e.stopPropagation(); navigate('/strategies?tab=deployed') }}
             className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20 hover:opacity-80"
           >
             ● Needs deploy
@@ -463,6 +476,17 @@ function fmtBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function PlatformBadge({ platform }: { platform: string }) {
+  const cls = platform === 'NT8'
+    ? 'bg-accent/10 text-accent border border-accent/20'
+    : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+  return (
+    <span className={`text-[11px] font-semibold px-1.5 py-[2px] rounded font-mono ${cls}`}>
+      {platform}
+    </span>
+  )
+}
+
 function FileStatusBadge({ filename, vpsFiles }: { filename: string; vpsFiles: StrategyFile[] }) {
   const vpsFile = vpsFiles.find(f => f.filename === filename)
   if (!vpsFile) return <span className="text-[11px] px-2 py-[2px] rounded-full bg-neg-muted text-neg-text border border-neg-text/20">● Missing</span>
@@ -520,8 +544,17 @@ function FilesTab() {
   const [dragging, setDragging] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [overwriteConfirm, setOverwriteConfirm] = useState<{ file: File; filename: string } | null>(null)
-  const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [activeCompileId, setActiveCompileId] = useState<string | null>(null)
+  const [platformFilter, setPlatformFilter] = useState<string | null>(null)
+
+  const platforms = useMemo(
+    () => [...new Set((files ?? []).map(f => f.platform))].sort(),
+    [files]
+  )
+  const visibleFiles = useMemo(
+    () => platformFilter ? (files ?? []).filter(f => f.platform === platformFilter) : (files ?? []),
+    [files, platformFilter]
+  )
 
   const lastRefreshed = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -606,16 +639,37 @@ function FilesTab() {
         )}
       </div>
 
+      {platforms.length > 1 && (
+        <div className="flex items-center gap-1 mb-4">
+          <button
+            onClick={() => setPlatformFilter(null)}
+            className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${platformFilter === null ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'}`}
+          >
+            All
+          </button>
+          {platforms.map(p => (
+            <button
+              key={p}
+              onClick={() => setPlatformFilter(platformFilter === p ? null : p)}
+              className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${platformFilter === p ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'}`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="text-text-tertiary text-[13px]">Loading files…</div>
       ) : !files?.length ? (
-        <EmptyState icon={<Upload size={24} />} title="No .cs files on VPS" description="Drop a strategy file above to deploy it." />
+        <EmptyState icon={<Upload size={24} />} title="No files deployed" description="Drop a strategy file above to deploy it." />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-border-subtle text-text-tertiary text-left">
                 <th className="px-4 py-2.5 font-medium">Filename</th>
+                <th className="px-4 py-2.5 font-medium">Platform</th>
                 <th className="px-4 py-2.5 font-medium">Size</th>
                 <th className="px-4 py-2.5 font-medium">Modified</th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
@@ -623,32 +677,22 @@ function FilesTab() {
               </tr>
             </thead>
             <tbody>
-              {files.map(f => (
+              {visibleFiles.map(f => (
                 <tr key={f.filename} className="border-b border-border-subtle last:border-0 hover:bg-bg-sunken">
                   <td className="px-4 py-3 font-mono text-text-primary">{f.filename}</td>
+                  <td className="px-4 py-3"><PlatformBadge platform={f.platform} /></td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{fmtBytes(f.size_bytes)}</td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{new Date(f.modified_at).toLocaleString()}</td>
                   <td className="px-4 py-3"><FileStatusBadge filename={f.filename} vpsFiles={files} /></td>
-                  <td className="px-4 py-3 relative">
+                  <td className="px-4 py-3">
                     {!f.filename.startsWith('@') && (
-                      <>
-                        <button
-                          onClick={() => setOpenMenu(openMenu === f.filename ? null : f.filename)}
-                          className="p-1 rounded hover:bg-bg-surface text-text-tertiary hover:text-text-primary"
-                        >
-                          <MoreHorizontal size={15} />
-                        </button>
-                        {openMenu === f.filename && (
-                          <div className="absolute right-4 top-8 z-20 bg-bg-surface border border-border-default rounded-md shadow-lg min-w-[120px] py-1">
-                            <button
-                              onClick={() => { setConfirmDelete(f.filename); setOpenMenu(null) }}
-                              className="w-full text-left px-3 py-1.5 text-[13px] text-neg-text hover:bg-bg-sunken"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        )}
-                      </>
+                      <button
+                        onClick={() => setConfirmDelete(f.filename)}
+                        className="p-1 rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors"
+                        title="Delete file from VPS"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -693,7 +737,6 @@ function FilesTab() {
         </div>
       )}
 
-      {openMenu && <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />}
       {activeCompileId && <CompileModal compileJobId={activeCompileId} onClose={() => setActiveCompileId(null)} />}
     </div>
   )
@@ -706,15 +749,25 @@ export function Strategies() {
   const tab = (searchParams.get('tab') ?? 'strategies') as Tab
   const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
 
+  const { data: strategies } = useStrategies()
+  const { data: rulesets } = useFirms()
+  const { data: files } = useStrategyFiles()
+
+  const counts: Partial<Record<Tab, number>> = {
+    strategies: strategies?.length,
+    rulesets:   rulesets?.length,
+    deployed:   files?.length,
+  }
+
   return (
     <div>
       <div className="flex items-end gap-3 mb-[18px]">
         <h1 className="text-h1 font-semibold">Strategies</h1>
       </div>
-      <TabBar active={tab} onChange={setTab} />
+      <TabBar active={tab} onChange={setTab} counts={counts} />
       {tab === 'strategies' && <StrategiesTab />}
       {tab === 'rulesets'   && <RulesetsTab />}
-      {tab === 'files'      && <FilesTab />}
+      {tab === 'deployed'   && <FilesTab />}
     </div>
   )
 }

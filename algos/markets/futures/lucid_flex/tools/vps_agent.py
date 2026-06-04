@@ -217,13 +217,14 @@ def _is_locked(filepath: Path) -> bool:
         return True
 
 
-def _file_info(p: Path) -> dict:
+def _file_info(p: Path, platform: str = "NT8") -> dict:
     st = p.stat()
     import datetime
     return {
         "filename":    p.name,
         "size_bytes":  st.st_size,
         "modified_at": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(),
+        "platform":    platform,
     }
 
 

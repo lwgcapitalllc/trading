@@ -711,6 +711,7 @@ class StrategyFile(BaseModel):
     filename: str
     size_bytes: int
     modified_at: str  # ISO-8601 from the VPS agent
+    platform: str = "NT8"
 
 
 class StrategyFileSyncStatus(BaseModel):

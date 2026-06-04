@@ -666,6 +666,7 @@ export interface StrategyFile {
   filename: string
   size_bytes: number
   modified_at: string
+  platform: string
 }
 
 export interface StrategyFileSyncStatus {
