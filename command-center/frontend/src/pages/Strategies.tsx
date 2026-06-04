@@ -1,12 +1,13 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Pencil, X, Upload, Trash2, ExternalLink } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, Pencil, X, Upload, Trash2, ExternalLink, CloudUpload, RotateCcw } from 'lucide-react'
 import {
   useStrategies, useFirms,
   useScanStrategies, useUpdateRuleset,
   useStrategyFiles, useStrategyFileSyncStatus,
   useUploadStrategyFile, useDeleteStrategyFile,
   useTriggerCompile, useCompileStatus,
+  useDeployStrategy,
 } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
@@ -63,13 +64,24 @@ function StrategiesTab() {
   const { data: strategies, isLoading } = useStrategies()
   const { data: syncStatus } = useStrategyFileSyncStatus()
   const scan = useScanStrategies()
+  const deploy = useDeployStrategy()
   const [runStrategy, setRunStrategy] = useState<Strategy | null>(null)
+  const [deployingId, setDeployingId] = useState<string | null>(null)
 
   const syncMap = useMemo(() => {
     const m: Record<string, boolean> = {}
     syncStatus?.forEach(s => { m[s.strategy_id] = s.in_sync })
     return m
   }, [syncStatus])
+
+  const handleDeploy = async (strategyId: string) => {
+    setDeployingId(strategyId)
+    try {
+      await deploy.mutateAsync(strategyId)
+    } finally {
+      setDeployingId(null)
+    }
+  }
 
   return (
     <div>
@@ -93,7 +105,7 @@ function StrategiesTab() {
         <EmptyState
           icon={<RefreshCw size={20} />}
           title="No strategies registered"
-          description='Click "Scan Strategies" to discover NinjaTrader strategy classes in the algos folder.'
+          description='Click "Scan Strategies" to discover NinjaTrader strategy classes in the strategies folder.'
         />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -105,7 +117,7 @@ function StrategiesTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Suggested Instrument</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Params</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runs</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Deploy</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -115,8 +127,10 @@ function StrategiesTab() {
                   key={s.id}
                   strategy={s}
                   inSync={syncMap[s.id]}
+                  isDeploying={deployingId === s.id}
                   onView={() => navigate(`/backtests/strategies/${s.id}`)}
                   onRun={() => setRunStrategy(s)}
+                  onDeploy={() => handleDeploy(s.id)}
                 />
               ))}
             </tbody>
@@ -135,14 +149,15 @@ function StrategiesTab() {
 }
 
 function StrategyRow({
-  strategy: s, inSync, onView, onRun,
+  strategy: s, inSync, isDeploying, onView, onRun, onDeploy,
 }: {
   strategy: Strategy
   inSync?: boolean
+  isDeploying: boolean
   onView: () => void
   onRun: () => void
+  onDeploy: () => void
 }) {
-  const navigate = useNavigate()
   return (
     <tr onClick={onView} className="hover:bg-bg-hover cursor-pointer transition-colors">
       <td className="px-4 py-3 font-medium">
@@ -161,22 +176,39 @@ function StrategyRow({
         {inSync === undefined ? null : inSync ? (
           <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
         ) : (
-          <button
-            onClick={e => { e.stopPropagation(); navigate('/strategies?tab=deployed') }}
-            className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20 hover:opacity-80"
-          >
-            ● Needs deploy
-          </button>
+          <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs deploy</span>
         )}
       </td>
       <td className="px-4 py-3">
-        <button
-          onClick={e => { e.stopPropagation(); onRun() }}
-          className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors"
-        >
-          <Play size={10} />
-          Run
-        </button>
+        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          {inSync ? (
+            <button
+              onClick={onDeploy}
+              disabled={isDeploying}
+              title="Redeploy to VPS"
+              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium text-text-tertiary border border-border-subtle hover:text-text-primary hover:border-border-default transition-colors disabled:opacity-40"
+            >
+              {isDeploying ? <RefreshCw size={10} className="animate-spin" /> : <RotateCcw size={10} />}
+              Redeploy
+            </button>
+          ) : (
+            <button
+              onClick={onDeploy}
+              disabled={isDeploying}
+              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent text-bg-base hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {isDeploying ? <RefreshCw size={10} className="animate-spin" /> : <CloudUpload size={10} />}
+              Deploy
+            </button>
+          )}
+          <button
+            onClick={onRun}
+            className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors"
+          >
+            <Play size={10} />
+            Run
+          </button>
+        </div>
       </td>
     </tr>
   )

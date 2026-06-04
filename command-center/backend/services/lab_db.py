@@ -268,6 +268,10 @@ def init_db() -> None:
             "ALTER TABLE rulesets ADD COLUMN default_commission_per_side REAL",
             "ALTER TABLE rulesets ADD COLUMN default_slippage_ticks INTEGER",
             "ALTER TABLE rulesets ADD COLUMN daily_halt_fraction REAL",
+            # Pass 2.5 — update source_path to new strategies/ top-level location
+            "UPDATE strategies SET source_path = 'strategies/ninjatrader/ORB.cs' WHERE id = 'orb'",
+            "UPDATE strategies SET source_path = 'strategies/ninjatrader/VWAP_MR.cs' WHERE id = 'vwap_mr'",
+            "UPDATE strategies SET source_path = 'strategies/ninjatrader/Momentum.cs' WHERE id = 'momentum'",
         ]:
             try:
                 conn.execute(migration_sql)

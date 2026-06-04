@@ -78,8 +78,7 @@ algos/
     │       ├── bot_state.json
     │       └── fft_trades.json
     ├── futures/lucid_flex/
-    │   ├── *.cs                     ← NinjaScript strategies (Momentum, ORB, VWAP_MR)
-    │   └── tools/
+    │   └── tools/                   ← NinjaScript strategy source files moved to strategies/ninjatrader/
     │       ├── vps_agent.py         ← HTTP agent running on VPS (NT8 control)
     │       ├── vps_backtest_runner.py ← pywinauto NT8 Strategy Analyzer automation
     │       ├── setup_agent_task.py  ← Registers LucidFlexAgent Task Scheduler entry

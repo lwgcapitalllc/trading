@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-03 (Pass 2 — strategy deployment manager)
+**Last reviewed:** 2026-06-04 (Pass 2.5 — strategy location cleanup + deploy endpoint)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -24,9 +24,9 @@ backend/
 │   ├── smart_money.py
 │   ├── bots.py
 │   ├── backtests.py       lab — backtest runs
-│   ├── strategies.py      lab — strategy registry + GET /:id/instrument_summary
+│   ├── strategies.py      lab — strategy registry + deploy endpoint + GET /:id/instrument_summary
 │   ├── rulesets.py        lab — ruleset CRUD (/rulesets)
-│   ├── firms.py           backward-compat redirect /firms → /rulesets (deprecated, remove in M4)
+│   ├── firms.py           backward-compat redirect /firms → /rulesets (deprecated, keep until all callers confirmed updated)
 │   ├── system.py          lab — health + log proxies
 │   ├── strategy_files.py  lab — strategy file deployment (list, upload, delete, compile, sync-status)
 │   ├── stress_tests.py    lab — stress test CRUD + trigger (GET /stress-tests, GET /:id, POST /run, DELETE /:id)
@@ -35,7 +35,7 @@ backend/
 │   └── settings.py
 ├── services/              business logic, DB access, external clients
 │   ├── lab_db.py          only module that touches lab.db
-│   ├── strategy_scanner.py
+│   ├── strategy_scanner.py  reads from strategies/ (not algos/); emits warnings for stale source_paths
 │   ├── evaluator.py       per-firm pass/fail logic
 │   ├── backtest_runner.py background VPS polling task (single run)
 │   ├── sweep_runner.py    runs N backtests sequentially (semaphore = 1) for a sweep
@@ -188,7 +188,7 @@ Lab backtests use the same pattern but the "worker" is the VPS agent over HTTP.
 
 ## Ruleset abstraction (M3)
 
-The `firms` table was renamed to `rulesets` in M3. All references updated. `/firms/*` routes redirect to `/rulesets/*` (deprecated, remove in M4).
+The `firms` table was renamed to `rulesets` in M3. All references updated. `/firms/*` routes redirect to `/rulesets/*` via `routers/firms.py` (deprecated backward-compat shim; keep until all callers are confirmed updated).
 
 **`ruleset_type` values and evaluation logic:**
 
@@ -303,7 +303,8 @@ On startup `_migrate_strategy_renames()` renames `orb_lucidflex` → `orb`, `vwa
 | Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
 | Lab — Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap, vectorised numpy). Walk-forward (N sequential NT8 windows, IS/OOS Sharpe). Sensitivity (±10%/±25% param perturbations via NT8). Auto-triggered (MC only) on Tier 1 backtests and optimizer winners. Graded A-F. |
 | Lab — Regime Tags (M4) | ✅ Live | Each `daily_pnl` entry gains a `regime_tag` (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Pipeline auto-tags on every new backtest. Manual backfill via `POST /backtests/runs/{id}/backfill_regime`. Optimizer accepts optional `regime_filter` field to score child runs only against trades in that regime. |
-| Lab — Strategy Files (Pass 2) | ✅ Live | Deploy .cs strategy files to VPS without SSH. `GET /strategy-files`, `POST /strategy-files/upload`, `DELETE /strategy-files/{filename}`, `POST /strategy-files/compile`, `GET /strategy-files/compile/{id}`, `GET /strategy-files/sync-status`. |
+| Lab — Strategy Files (Pass 2) | ✅ Live | Deploy .cs strategy files to VPS without SSH. `GET /strategy-files`, `POST /strategy-files/upload`, `DELETE /strategy-files/{filename}`, `POST /strategy-files/compile`, `GET /strategy-files/compile/{id}`, `GET /strategy-files/sync-status`. Each file now carries a `platform` field (NT8/MT5). |
+| Lab — Strategy Deploy (Pass 2.5) | ✅ Live | One-click deploy from repo to VPS. `POST /strategies/{id}/deploy` reads the strategy's `source_path` from the DB, reads the file from disk, uploads via VPS agent (overwrite=True), caches result in `_deploy_jobs` dict. `GET /strategies/{id}/deploy/{job_id}` returns the cached result. `ScanResult` now includes a `warnings` list for DB rows whose `source_path` no longer exists on disk. Scanner reads from `strategies/` (top-level); `source_path` column backfilled via migration. |
 | Settings | ✅ Live | Config read/write. |
 
 ---
@@ -456,3 +457,27 @@ Before uploading or deleting, the VPS agent tries to open the file in `r+b` mode
 ### Sync-status
 
 `GET /strategy-files/sync-status` returns one entry per DB strategy. A strategy is "in sync" when its expected `.cs` file (derived from `class_name + ".cs"`) exists on the VPS. For now, file presence = in sync. A more precise check (hash comparison) can be added later.
+
+---
+
+## Pass 2.5 — Strategy Location Cleanup
+
+### Scanner path change
+
+`strategy_scanner.scan_strategies()` now reads from `strategies/` (the new top-level subsystem) instead of `algos/markets/futures/`. Specifically it uses `strategies_dir.rglob("*.cs")`. The `source_path` field on each strategy row is set to the path relative to the monorepo root (e.g. `strategies/ninjatrader/ORB.cs`). If a DB row's `source_path` no longer exists on disk, the scanner includes a warning in its result — it does not auto-delete.
+
+### source_path migration
+
+Three `UPDATE strategies SET source_path = ...` statements were added to `_run_migrations()` in `lab_db.py` to backfill the three existing strategies to their new locations under `strategies/ninjatrader/`. These run idempotently on startup.
+
+### Deploy endpoint
+
+`POST /strategies/{strategy_id}/deploy` — reads `source_path` from the DB, reads the file from disk, calls `vps_client.upload_strategy_file(filename, content, overwrite=True)`, stores the result in an in-memory `_deploy_jobs` dict, returns 202 with `{deploy_job_id, status: "started"}`.
+
+`GET /strategies/{strategy_id}/deploy/{deploy_job_id}` — returns the cached `DeployJobStatus` from `_deploy_jobs`. Because the upload is synchronous (fast over the SSH tunnel), the job is complete by the time the client first polls.
+
+Edge cases handled: `source_path` null → 400, file missing on disk → 404, VPS file locked → 423 (propagated from VPS agent).
+
+### New model
+
+`DeployJobStatus` — `deploy_job_id`, `strategy_id`, `status` (running/complete/failed), `filename`, `uploaded_size_bytes`, `error`. `ScanResult` gains a `warnings: list[str]` field.

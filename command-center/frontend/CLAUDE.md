@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-03 (Pass 2 — strategy deployment manager)
+**Last reviewed:** 2026-06-04 (Pass 2.5 — strategy location cleanup + deploy button)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -345,7 +345,8 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Backtests lab M4 — Regime tagging | ✅ Live | `RegimeBadge` inline component (colored dot + label, spec colors). `PerformanceByRegimeTable` inline component on BacktestDetail — shown when ≥1 non-UNKNOWN tag exists; columns: Regime/Days/Trades/Net P&L/Win Rate/PF/Worst Day; Overall row pulls from `run.*` fields, never recomputed from regime rows. `BackfillRegimeButton` in header action row — shown when any `daily_pnl` entry has missing or UNKNOWN `regime_tag`; polls backfill status at 1s; invalidates run query on completion. |
 | Backtests lab M4 — Equity overlay | ✅ Live | `RegimeOverlayToggle` button in Charts header — active when non-UNKNOWN tags exist. Toggle persists to `localStorage` (`regime_overlay_enabled`), defaults to on. **Colored equity line**: `EquityCurveChart` augments the data with per-band segment keys (`_s0`, `_s1`, …); each regime segment renders as a separate `Area` with `fill="transparent"` and the regime's stroke color. When overlay is off, falls back to the normal single-color green line + fill. `RegimeLegend` (dash swatches, not dots) below equity curve when overlay is on. `PerformanceByRegimeTable` slides in/out below the equity curve with a CSS `max-height` + `opacity` transition (350ms) — only mounts when tags exist, visibility driven by `overlayOn`. UNKNOWN days produce no colored segment. |
 | Backtests lab M4 — Optimizer regime filter | ✅ Live | `OptimizerModal` gains a "Regime Filter" select (col-span-3, all 5 labels + no-filter option). `regime_filter` flows through types → hook → backend. `OptimizationDetail` shows regime chip in metadata row when set. |
-| Backtests lab Pass 2 — Strategy Files | ✅ Live | New "Files" sub-tab in Backtests. `FilesTab` in `Backtests.tsx`: drag/drop zone, file list table, ⋯ actions menu (delete with confirmation), overwrite confirmation modal, "Compile All" button → `CompileModal` with live 2s polling. `StrategiesTab` gains a "Deploy" column with ● In sync / ● Needs deploy badges; Needs deploy badge clicks through to Files tab. |
+| Backtests lab Pass 2 — Strategy Deployment | ✅ Live | "Deployed" sub-tab in `Strategies.tsx` (moved from Backtests): drag/drop zone, file list table with Platform column (NT8/MT5 badge) and platform filter chips, trash-can delete (no ⋯ menu), overwrite confirmation, "Compile All" → `CompileModal`. `StrategiesTab` shows ● In sync / ● Needs deploy status badges. Tab counts (number badges) on all three Strategies tabs. |
+| Backtests lab Pass 2.5 — Deploy button | ✅ Live | Per-strategy Deploy/Redeploy buttons in the Strategies tab. `useDeployStrategy()` fires `POST /strategies/{id}/deploy` + chained GET in one mutation (synchronous backend). Filled accent "Deploy" button when out of sync; outlined "Redeploy" when in sync. Spinner on the specific row while deploying. On success: toast + sync-status invalidation. `DeployJobStatus` type added. `ScanResult` gains `warnings: string[]`. |
 | Settings | ✅ Live | Config read/write |
 
 ---
@@ -379,21 +380,23 @@ Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBac
 
 ## Pass 2 — Strategy Deployment Manager (frontend changes)
 
-### New components in `Backtests.tsx`
+### Components — live in `Strategies.tsx` (moved from `Backtests.tsx` during nav refactor)
 
-**`FilesTab`** — New sub-tab under Strategies. Contains:
+**`FilesTab`** — Now the "Deployed" sub-tab under Strategies. Contains:
 - Drag/drop zone (detects `.cs` files only; toasts on non-.cs drop)
-- File list table: Filename, Size, Modified, Status badge, ⋯ menu
+- File list table: Filename, Platform badge, Size, Modified, Status badge, Trash2 delete icon (no ⋯ menu)
+- Platform filter chips (All / NT8 / MT5) — only shown when multiple platforms are present
 - "Compile All" button → triggers `useTriggerCompile()` → shows `CompileModal`
 - Overwrite confirmation modal: shown when a dropped file already exists on the VPS
-- Delete confirmation modal: shown when "Delete" is chosen from the ⋯ menu
-- `FileStatusBadge`: green "In sync" pill for files that exist on VPS
+- Delete confirmation modal: shown when trash icon is clicked
+- `FileStatusBadge`: green "In sync" / red "Missing" pill
+- `PlatformBadge`: cyan for NT8, purple for MT5
 
 **`CompileModal`** — polls `useCompileStatus(compileJobId)` at 2s intervals. Shows spinner + elapsed time while running. Shows success/errors on completion. "Close" button only appears when compile is not running.
 
 ### `StrategiesTab` changes
 
-Added `useStrategyFileSyncStatus()` call (60s refetch). Passes `inSync` prop to `StrategyRow`. New "Deploy" column: green ● In sync badge or amber ● Needs deploy button (clicking navigates to `?tab=files`).
+Sync-status badges (● In sync / ● Needs deploy) are now display-only. Tab counts (number pills on each tab label) fetched at page-shell level via three hooks — TanStack Query deduplicates requests.
 
 ### New hooks in `useLab.ts`
 
@@ -405,10 +408,25 @@ Added `useStrategyFileSyncStatus()` call (60s refetch). Passes `inSync` prop to 
 | `useDeleteStrategyFile()` | `DELETE /strategy-files/{filename}` |
 | `useTriggerCompile()` | `POST /strategy-files/compile` |
 | `useCompileStatus(id)` | `GET /strategy-files/compile/{id}` — polls at 2s while running |
+| `useDeployStrategy()` | `POST /strategies/{id}/deploy` + chained GET — returns `DeployJobStatus` |
 
 Upload hook uses native `fetch()` with `FormData` (not `api.post`) because multipart encoding requires special handling not available in the `api` wrapper.
 
 ### New types in `types/index.ts`
 
-`StrategyFile`, `StrategyFileSyncStatus`, `CompileJobStatus`.
+`StrategyFile` (+ `platform: string`), `StrategyFileSyncStatus`, `CompileJobStatus`, `DeployJobStatus`. `ScanResult` gains `warnings: string[]`.
+
+---
+
+## Pass 2.5 — Strategy Location Cleanup (frontend changes)
+
+### Deploy / Redeploy buttons on `StrategyRow`
+
+Each row in the Strategies tab now has a Deploy button (when out of sync) or a Redeploy button (when in sync), alongside the existing Run button. Both call `handleDeploy(strategyId)` in the parent `StrategiesTab`, which calls `deploy.mutateAsync(strategyId)` and tracks the deploying row via `deployingId` state. Spinner shown on the specific row while deploying. On success: toast + `sync-status` query invalidation.
+
+- Out of sync: filled accent button, `CloudUpload` icon, label "Deploy"
+- In sync: outlined subtle button, `RotateCcw` icon, label "Redeploy", title="Redeploy to VPS"
+- Disabled + spinner while `deployingId === s.id`
+
+The "Needs deploy" badge is now a plain status indicator (not a navigating button). The Deploy button is the action.
 

@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
-  Strategy, ScanResult,
+  Strategy, ScanResult, DeployJobStatus,
   Ruleset, RulesetCreate,
   BacktestRunRequest, BacktestSummary, BacktestDetail,
   LabProgress, SystemHealth,
@@ -27,6 +27,22 @@ export function useStrategy(strategyId: string | null) {
     queryKey: ['lab', 'strategies', strategyId],
     queryFn: () => api.get<Strategy>(`/strategies/${strategyId}`),
     enabled: !!strategyId,
+  })
+}
+
+export function useDeployStrategy() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (strategyId: string) => {
+      const { deploy_job_id } = await api.post<{ deploy_job_id: string }>(`/strategies/${strategyId}/deploy`, {})
+      return api.get<DeployJobStatus>(`/strategies/${strategyId}/deploy/${deploy_job_id}`)
+    },
+    onSuccess: (data) => {
+      toast.success(`${data.filename} deployed`)
+      qc.invalidateQueries({ queryKey: ['lab', 'strategy-files', 'sync-status'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'strategy-files'] })
+    },
+    onError: (err: Error) => toast.error(`Deploy failed: ${err.message}`),
   })
 }
 

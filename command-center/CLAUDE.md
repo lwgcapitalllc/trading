@@ -2,7 +2,7 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
-**Last reviewed:** 2026-06-03 (session 10 — M4 complete: regime classifier integration, overlay, table, optimizer filter)
+**Last reviewed:** 2026-06-04 (Pass 2.5 — strategy location cleanup, deploy button, nav refactor)
 
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
@@ -74,7 +74,7 @@ cd command-center
 | Overview — stat row + Bots + Smart Money + Backtests cards | ✅ |
 | Smart Money — full pipeline UI (scan, terminal, rankings, profiles, disqualified, config, cache) | ✅ |
 | Bots — monitor, control (global + per-bot), configure (risk caps + deploy), users (Telegram) | ✅ |
-| Backtests lab — strategies, runs, rulesets tabs; run modal; strategy detail; verdict pills; delete | ✅ |
+| Backtests lab — Runs / Sweeps / Optimizations tabs; run modal; BacktestDetail; verdict pills; delete | ✅ |
 | Backtests lab — runs tab duration column; prominent Stop button; live log streaming (2 s poll during active runs) | ✅ |
 | Backtests lab M2 — worthiness badges (Tier 1/2/3) on every completed run | ✅ |
 | Backtests lab M2 — instrument sweeps (N sequential runs via SA semaphore, Sweep Detail page with live sort-by-tier) | ✅ |
@@ -98,6 +98,8 @@ cd command-center
 | Backtests lab M4 — Runs table: "Verdicts" column renamed "Challenge", shows firm name only; "Score" column shows worthiness tier (no duplication) | ✅ |
 | Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap), walk-forward (N NT8 windows), sensitivity (±10%/±25% per param), A–F grade, auto-trigger on Tier 1 + optimizer winners |
 | Regime Tags (M4) | ✅ Live | Every backtest's `daily_pnl` entries are tagged with a regime label (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Auto-tagged via pipeline; manual backfill via UI button. Performance by Regime table on BacktestDetail. Equity curve regime overlay (background bands + diagonal stripes for UNKNOWN). Optimizer regime filter. |
+| Pass 2 — Strategy deployment | ✅ Live | Upload, delete, and compile NT8 strategy files from the UI without RDP. VPS agent extended with file management + compile endpoints. pywinauto F5 compile via NinjaScript Editor. |
+| Pass 2.5 — Strategy location + deploy button | ✅ Live | `strategies/` top-level subsystem. Files moved from `algos/`. Scanner updated. One-click Deploy button per strategy in Strategies tab. Strategies / Rulesets / Deployed nav page split from Backtests. Tab counts, platform column, trash-can delete on Deployed tab. |
 
 ---
 

@@ -257,6 +257,16 @@ export interface ScanResult {
   added: number
   updated: number
   skipped: number
+  warnings: string[]
+}
+
+export interface DeployJobStatus {
+  deploy_job_id: string
+  strategy_id: string
+  status: 'running' | 'complete' | 'failed'
+  filename: string | null
+  uploaded_size_bytes: number | null
+  error: string | null
 }
 
 // ── Lab — Rulesets ────────────────────────────────────────────────────────────

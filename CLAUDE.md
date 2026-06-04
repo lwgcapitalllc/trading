@@ -2,8 +2,8 @@
 
 **Purpose:** Standing instructions for Claude Code across all subsystems.
 **Scope:** This covers repo-wide rules, VPS workflow, and branch conventions. It does NOT cover subsystem internals — each subsystem has its own CLAUDE.md.
-**Status:** Active — four subsystems in various stages of production.
-**Last reviewed:** 2026-06-02
+**Status:** Active — five subsystems in various stages of production.
+**Last reviewed:** 2026-06-04 (Pass 2.5 — added strategies/ subsystem)
 
 ---
 
@@ -15,10 +15,11 @@ trading/
 ├── smart-money/     ← Smart money replication system (Mac-only, active)
 ├── command-center/  ← Local operations platform (React + FastAPI)
 ├── regime/          ← Shared market regime classifier (bots + backtest lab)
+├── strategies/      ← Generic trading strategy source files, organized by runner platform
 └── docs/            ← Cross-subsystem reference docs and audit tools
 ```
 
-`algos/`, `smart-money/`, and `command-center/` are fully independent from each other. `regime/` is a shared library imported by `algos/` (via shim) and `command-center/` (directly).
+`algos/`, `smart-money/`, and `command-center/` are fully independent from each other. `regime/` is a shared library imported by `algos/` (via shim) and `command-center/` (directly). `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS (NT8 strategy folder).
 
 ---
 
@@ -35,6 +36,9 @@ React + FastAPI local operations platform. Monitors bots via SSH, surfaces Smart
 
 ### regime/
 Shared market regime classifier. Imported by the live bots (via `algos/shared/shared_regime.py` thin shim) and by the command-center backtest lab. Single output set: 5 labels (TRENDING, TRANSITIONING, RANGING, HIGH_VOLATILITY, LOW_VOLATILITY). Each bot owns its own `REGIME_RISK_TABLE` mapping labels to trade decisions. Full rules in `regime/CLAUDE.md`. Algorithm documented in `regime/REGIME_CLASSIFIER.md`.
+
+### strategies/
+Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the three live NinjaScript strategies (ORB, VWAP_MR, Momentum). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS NT8 strategy folder. `strategies/mt5/` and `strategies/tradovate/` are placeholders. Full rules in `strategies/CLAUDE.md`.
 
 ---
 

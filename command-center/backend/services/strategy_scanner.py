@@ -1,6 +1,6 @@
 """
-NinjaScript strategy parser. Scans .cs files under algos/markets/futures/
-and extracts metadata for the strategies table.
+NinjaScript strategy parser. Scans .cs files under strategies/ (organized
+by runner platform) and extracts metadata for the strategies table.
 """
 
 from __future__ import annotations
@@ -242,14 +242,14 @@ def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dic
 
 
 def scan_strategies() -> dict:
-    """Scan algos/markets/futures/**/*.cs; upsert changed strategies. Returns counts."""
+    """Scan strategies/**/*.cs; upsert changed strategies. Returns counts + warnings."""
     monorepo_root = Path(cfg.MONOREPO_ROOT)
-    futures_dir = monorepo_root / "algos" / "markets" / "futures"
+    strategies_dir = monorepo_root / "strategies"
 
-    if not futures_dir.exists():
-        return {"scanned": 0, "added": 0, "updated": 0, "skipped": 0}
+    if not strategies_dir.exists():
+        return {"scanned": 0, "added": 0, "updated": 0, "skipped": 0, "warnings": []}
 
-    cs_files = list(futures_dir.rglob("*.cs"))
+    cs_files = list(strategies_dir.rglob("*.cs"))
     added = updated = skipped = strategy_count = 0
 
     for cs_path in cs_files:
@@ -279,4 +279,11 @@ def scan_strategies() -> dict:
         else:
             updated += 1
 
-    return {"scanned": strategy_count, "added": added, "updated": updated, "skipped": skipped}
+    # Warn about DB rows whose source_path no longer exists on disk
+    warnings: list[str] = []
+    for s in lab_db.list_strategies():
+        sp = s.get("source_path")
+        if sp and not (monorepo_root / sp).exists():
+            warnings.append(f"{s['id']}: source_path '{sp}' not found on disk")
+
+    return {"scanned": strategy_count, "added": added, "updated": updated, "skipped": skipped, "warnings": warnings}

@@ -8,6 +8,7 @@ trading/
 ├── smart-money/     ← Crypto/forex trader scanner and copy-trading candidate pool
 ├── command-center/  ← Local ops platform: bot monitor, smart money UI, backtests lab
 ├── regime/          ← Shared market regime classifier (live bots + backtest lab)
+├── strategies/      ← Generic strategy source files organized by runner platform
 ├── scripts/         ← Cross-subsystem VPS recovery and bootstrap scripts
 └── docs/            ← Cross-subsystem reference docs and audit tools
 ```
@@ -20,6 +21,8 @@ Read these in order for full context:
 3. `algos/CLAUDE.md` — bot table, risk rules, current phase
 4. `command-center/CLAUDE.md` — what's built, design decisions
 5. `smart-money/CLAUDE.md` — pipeline status, thresholds, where we left off
+6. `regime/CLAUDE.md` — shared classifier, public API, consumers
+7. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
 
 ## Subsystems
 
@@ -29,6 +32,7 @@ Read these in order for full context:
 | `smart-money/` | Trader scanner for copy-trading candidates | Stages 1–2, 5 live | `smart-money/CLAUDE.md` |
 | `command-center/` | React + FastAPI ops platform | Live (Stress Tests stub) | `command-center/CLAUDE.md` |
 | `regime/` | Shared regime classifier for live bots and backtest lab | Production | `regime/CLAUDE.md` |
+| `strategies/` | Generic strategy source files (NT8, MT5 placeholder) | Production | `strategies/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |
 
 ## Conventions
@@ -43,5 +47,9 @@ Read these in order for full context:
 
 Cross-subsystem reference documents:
 - `docs/BOT_DEVELOPMENT_METHOD.md` — S.Y.S.T.E.M. six-step process for building and validating any trading bot
-- `docs/Command_Center_Backtest_Engine_Design.md` — Original design spec for the backtests lab (Lab module now built)
-- `docs/audit/` — Doc and dead-code audit prompt templates
+- `docs/Command_Center_Backtest_Engine_Design.md` — Original design doc for the backtests lab (historical reference)
+- `docs/LWG_Project_State_Snapshot.md` — Current platform state; hand to new Claude.ai chats
+- `docs/LWG_Roadmap_And_Open_Questions.md` — Forward plan and open questions; hand to new Claude.ai chats
+- `docs/Pass2.5_Strategy_Location_Cleanup.md` — In-flight build spec (delete after Pass 2.5 ships)
+- `docs/audit/` — Audit and snapshot prompt templates
+- `docs/archive/` — Shipped build specs (historical record)

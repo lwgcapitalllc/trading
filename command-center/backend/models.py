@@ -282,6 +282,16 @@ class ScanResult(BaseModel):
     added: int
     updated: int
     skipped: int
+    warnings: list[str] = []
+
+
+class DeployJobStatus(BaseModel):
+    deploy_job_id: str
+    strategy_id: str
+    status: str  # "running" | "complete" | "failed"
+    filename: Optional[str] = None
+    uploaded_size_bytes: Optional[int] = None
+    error: Optional[str] = None
 
 
 # ── Lab — rulesets ────────────────────────────────────────────────────────────

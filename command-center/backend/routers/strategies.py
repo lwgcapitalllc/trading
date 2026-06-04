@@ -4,10 +4,15 @@ Strategies router — /strategies/*
 
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, HTTPException
-from models import Strategy, ScanResult, InstrumentSummary, InstrumentResult
-from services import lab_db, strategy_scanner
+from models import Strategy, ScanResult, InstrumentSummary, InstrumentResult, DeployJobStatus
+from services import lab_db, strategy_scanner, vps_client
+import config as cfg
+
+_deploy_jobs: dict[str, dict] = {}
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
 
@@ -34,6 +39,57 @@ def get_strategy(strategy_id: str):
 def delete_strategy(strategy_id: str):
     if not lab_db.delete_strategy(strategy_id):
         raise HTTPException(404, f"Strategy '{strategy_id}' not found")
+
+
+@router.post("/{strategy_id}/deploy", status_code=202)
+def deploy_strategy(strategy_id: str):
+    strategy = lab_db.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(404, f"Strategy '{strategy_id}' not found")
+
+    source_path = strategy.get("source_path")
+    if not source_path:
+        raise HTTPException(400, "Strategy has no source_path. Set it first or use the Deployed tab to upload manually.")
+
+    file_path = Path(cfg.MONOREPO_ROOT) / source_path
+    if not file_path.exists():
+        raise HTTPException(404, f"Source file not found on disk: {source_path}")
+
+    filename = file_path.name
+    content = file_path.read_bytes()
+
+    job_id = str(uuid.uuid4())
+    _deploy_jobs[job_id] = {
+        "deploy_job_id": job_id,
+        "strategy_id": strategy_id,
+        "status": "running",
+        "filename": filename,
+        "uploaded_size_bytes": None,
+        "error": None,
+    }
+
+    try:
+        result = vps_client.upload_strategy_file(filename, content, overwrite=True)
+        _deploy_jobs[job_id].update({
+            "status": "complete",
+            "uploaded_size_bytes": result.get("size_bytes"),
+        })
+    except RuntimeError as exc:
+        msg = str(exc)
+        _deploy_jobs[job_id].update({"status": "failed", "error": msg})
+        if "HTTP 423" in msg:
+            raise HTTPException(423, detail=msg)
+        raise HTTPException(502, detail=msg)
+
+    return {"deploy_job_id": job_id, "status": "started"}
+
+
+@router.get("/{strategy_id}/deploy/{deploy_job_id}", response_model=DeployJobStatus)
+def get_deploy_status(strategy_id: str, deploy_job_id: str):
+    job = _deploy_jobs.get(deploy_job_id)
+    if not job:
+        raise HTTPException(404, "Deploy job not found")
+    return job
 
 
 @router.get("/{strategy_id}/instrument_summary", response_model=InstrumentSummary)
