@@ -1,6 +1,10 @@
 """
-NinjaScript strategy parser. Scans .cs files under strategies/ (organized
-by runner platform) and extracts metadata for the strategies table.
+Strategy parser. Scans strategy source files under strategies/ and extracts
+metadata for the strategies table.
+
+Supported runners:
+  ninjatrader — .cs files (NinjaScript / C#)
+  mt5         — .mq5 files (MQL5)
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ _CATEGORY_MAP = {
     "orb": "breakout",
     "vwap_mr": "mean_reversion",
     "momentum": "momentum",
+    "meanreversion": "mean_reversion",
 }
 
 
@@ -241,18 +246,149 @@ def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dic
     }
 
 
+# ── MQL5 parser ───────────────────────────────────────────────────────────────
+
+# Matches single-line input declarations in MQL5 source.
+# Group 1: type (int, double, string, bool)
+# Group 2: variable name
+# Group 3: default value (raw — may include quotes for strings)
+# Group 4: trailing comment text (optional)
+# Skips extern declarations (legacy MQL4 style) since only `input` is matched.
+_MQL5_INPUT_RE = re.compile(
+    r'^\s*input\s+(\w+)\s+(\w+)\s*=\s*(.+?)\s*;(?:\s*//(.*))?$',
+    re.MULTILINE,
+)
+
+
+def _mql5_type(type_str: str) -> str:
+    t = type_str.lower()
+    if t == "bool":
+        return "bool"
+    if t == "int":
+        return "int"
+    if t == "string":
+        return "string"
+    return "double"  # double, float, color, etc.
+
+
+def _parse_mql5_params(source: str) -> list[dict]:
+    """Parse MQL5 `input` declarations and return param schema dicts.
+
+    Category priority (highest to lowest):
+    1. Trailing comment contains "strategy_logic" → strategy_logic (explicit override)
+    2. Trailing comment contains "foundational"   → foundational   (explicit override)
+    3. Variable name starts with f_               → foundational   (naming convention)
+    4. Default                                    → strategy_logic
+    """
+    params: list[dict] = []
+    for order, m in enumerate(_MQL5_INPUT_RE.finditer(source)):
+        mql5_type = m.group(1)
+        name      = m.group(2)
+        raw_val   = m.group(3).strip()
+        comment   = (m.group(4) or "").strip()
+
+        comment_lower = comment.lower()
+        if "strategy_logic" in comment_lower:
+            category = "strategy_logic"
+        elif "foundational" in comment_lower:
+            category = "foundational"
+        elif name.startswith("f_"):
+            category = "foundational"
+        else:
+            category = "strategy_logic"
+
+        param_type = _mql5_type(mql5_type)
+
+        default = None
+        try:
+            if param_type == "bool":
+                default = raw_val.lower() == "true"
+            elif param_type == "int":
+                default = int(float(raw_val))
+            elif param_type == "string":
+                default = raw_val.strip('"')
+            else:
+                default = float(raw_val)
+        except ValueError:
+            pass
+
+        # Use the trailing comment as display_name unless it is purely a category marker
+        is_category_marker = "strategy_logic" in comment_lower or "foundational" in comment_lower
+        display_name = name if (not comment or is_category_marker) else comment
+
+        param: dict = {
+            "name":         name,
+            "type":         param_type,
+            "display_name": display_name,
+            "category":     category,
+            "group":        "Foundational" if category == "foundational" else "Strategy Logic",
+            "order":        order,
+        }
+        if default is not None:
+            param["default"] = default
+
+        params.append(param)
+
+    return params
+
+
+def _mql5_display_name(stem: str, source: str) -> str:
+    """Extract a display name from the first descriptive comment line.
+
+    Skips the standard MQL5 header block (//| and //+ lines). Falls back to
+    inserting spaces before capitals in the filename stem if no comment is found.
+    """
+    for line in source.splitlines()[:20]:
+        line = line.strip()
+        if line.startswith("//") and not line.startswith("//|") and not line.startswith("//+"):
+            text = line[2:].strip()
+            if len(text) > 5:
+                return text.split(" — ")[0].strip() if " — " in text else text
+    return re.sub(r"([A-Z])", r" \1", stem).strip()
+
+
+def _parse_mql5_file(mq5_path: Path, monorepo_root: Path, source: str) -> Optional[dict]:
+    """Parse a .mq5 EA file and return a strategy dict ready for lab_db.upsert_strategy.
+
+    Uses the filename stem as both class_name and the basis for the strategy ID
+    (lowercased). Returns None if the file has no `input` declarations (not an EA).
+    """
+    params = _parse_mql5_params(source)
+    if not params:
+        return None
+
+    stem        = mq5_path.stem          # "MeanReversion"
+    strategy_id = stem.lower()           # "meanreversion"
+    rel_path    = str(mq5_path.relative_to(monorepo_root)).replace("\\", "/")
+    defaults    = {p["name"]: p["default"] for p in params if "default" in p}
+
+    return {
+        "id":                   strategy_id,
+        "name":                 _mql5_display_name(stem, source),
+        "class_name":           stem,
+        "source_path":          rel_path,
+        "category":             _infer_category(strategy_id),
+        "suggested_instrument": None,
+        "default_params":       defaults,
+        "param_schema":         params,
+        "scanned_at":           int(time.time()),
+        "source_hash":          _md5_text(source),
+        "runner":               "mt5",
+    }
+
+
 def scan_strategies() -> dict:
-    """Scan strategies/**/*.cs; upsert changed strategies. Returns counts + warnings."""
-    monorepo_root = Path(cfg.MONOREPO_ROOT)
+    """Scan strategies/**/*.cs and **/*.mq5; upsert changed strategies."""
+    monorepo_root  = Path(cfg.MONOREPO_ROOT)
     strategies_dir = monorepo_root / "strategies"
 
     if not strategies_dir.exists():
         return {"scanned": 0, "added": 0, "updated": 0, "skipped": 0, "warnings": []}
 
-    cs_files = list(strategies_dir.rglob("*.cs"))
     added = updated = skipped = strategy_count = 0
 
-    for cs_path in cs_files:
+    # ── NinjaTrader (.cs) ─────────────────────────────────────────────────────
+    for cs_path in strategies_dir.rglob("*.cs"):
         source = cs_path.read_text(encoding="utf-8", errors="replace")
 
         class_m = re.search(r'public\s+class\s+(\w+)\s*:\s*Strategy\b', source)
@@ -260,7 +396,7 @@ def scan_strategies() -> dict:
             continue
 
         strategy_count += 1
-        class_name = class_m.group(1)
+        class_name  = class_m.group(1)
         strategy_id = class_name.lower()
         current_hash = _md5_text(source)
 
@@ -270,6 +406,30 @@ def scan_strategies() -> dict:
 
         data = _parse_file(cs_path, monorepo_root, source=source)
         if data is None:
+            continue
+
+        is_new = lab_db.get_strategy(strategy_id) is None
+        lab_db.upsert_strategy(data)
+        if is_new:
+            added += 1
+        else:
+            updated += 1
+
+    # ── MT5 (.mq5) ────────────────────────────────────────────────────────────
+    for mq5_path in strategies_dir.rglob("*.mq5"):
+        source = mq5_path.read_text(encoding="utf-8", errors="replace")
+
+        strategy_id  = mq5_path.stem.lower()
+        current_hash = _md5_text(source)
+
+        data = _parse_mql5_file(mq5_path, monorepo_root, source)
+        if data is None:
+            continue  # no input declarations — skip silently
+
+        strategy_count += 1
+
+        if lab_db.get_strategy_hash(strategy_id) == current_hash:
+            skipped += 1
             continue
 
         is_new = lab_db.get_strategy(strategy_id) is None

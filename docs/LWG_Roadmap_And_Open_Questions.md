@@ -7,76 +7,203 @@
 
 ## Immediate next work (priority order)
 
-1. **Finish Pass 2.5 — E2E test** (platform task, nearly complete)
-   Doc and code cleanup is done. One remaining step: E2E test — click Deploy on each of the three strategies from `/strategies`, click Compile All, run a small backtest with each to confirm the full one-click deploy flow works end-to-end.
+### 1. Finish M5 — MT5 Runner (in flight)
 
-2. **Strategy improvements pass — ORB first** (strategy task)
-   ORB is the primary strategy. All 13 baseline runs are Tier 3. The improvement pass adds: regime filter (only trade in TRENDING/TRANSITIONING), trailing stop (move SL to breakeven after 1R), daily P&L circuit breaker (stop trading after hitting a daily target), optional re-entry logic. Goal is to reach Tier 1 on at least MES or MNQ. This pass was explicitly deferred during Pass 2 and Pass 2.5.
+The MT5 platform spec is being executed by Claude Code in one session. The
+Mean Reversion port is being executed in a separate session. Convergence at
+M5 Step 10 where the port gets deployed and tested end-to-end.
 
-3. **First Tier 1 run → stress test** (strategy task)
-   Once any ORB variant reaches Tier 1, the MC stress test auto-triggers. Walk-forward and sensitivity are manual. Goal: grade A or B (A = funded-ready, B = eval-purchase-ready).
+Current state:
+- M5 Step 1 done (mt5_agent.py skeleton, ports configured)
+- Mean Reversion port Steps 1-7 done (`strategies/mt5/MeanReversion.mq5` exists)
+- VPS prep in flight: MT5 installed at `C:\MT5_Lab`, demo account active,
+  historical data partially downloaded (H1/H4/D1 = 3 years, M15 = 2 years,
+  M5 = 8 months — broker limits)
+- Awaiting: smoke test of MeanReversion.mq5 in Strategy Tester, then
+  greenlight M5 Step 2 (dispatcher refactor)
 
-4. **Expand rulesets** (platform task, lower priority)
-   Apex Trader Funding is not yet seeded. FundedNext and Tradeify rules need periodic verification against their published docs (rules drift). A prop firm rules audit prompt exists at `docs/audit/PROP_FIRM_RULES_AUDIT_PROMPT.md`.
+### 2. Validate Pass 1 + Pass 2 + Pass 2.5 end-to-end
+
+Once M5 ships, do the deferred Pass 1/2/2.5 validation:
+- Deploy ORB, VWAP_MR, Momentum via the new Strategies-tab Deploy buttons
+- Compile via Compile All
+- Run a backtest with each against LucidFlex 50k Eval on MNQ
+- Run the same backtest against `personal_futures_10k_example` — results
+  should differ
+
+### 3. Strategy improvements pass
+
+Pick ORB first (M4 showed it has a real edge on TRENDING days).
+
+Add to `strategies/ninjatrader/ORB.cs`:
+- **Regime filter** — use the same ADX/ATR/RSI math from `trading/regime/`.
+  Only allow trades when classification is TRENDING.
+- **Trailing stop after +1R** — move stop to entry at +1R. After +2R, trail
+  by 1×ATR.
+- **Optional re-entry** — if stopped out at breakeven and signal still valid,
+  allow one re-entry per day.
+
+After ORB is updated:
+1. Deploy via Pass 2.5's one-click flow
+2. Run through M1 backtest → check worthiness
+3. Run through M2 optimizer with `regime_filter="TRENDING"` to find best params
+4. Run through M3 stress test → check robustness grade
+5. Run through M4 to confirm the regime split still works
+
+Success criteria: grade B or A. If yes → attempt LucidFlex eval. If no →
+iterate or move to other strategies.
+
+### 4. M4 diagnostic on VWAP_MR, Momentum, and MeanReversion (MT5)
+
+Run the Performance by Regime breakdown on the other strategies. Identify
+which has the strongest single-regime edge as the next strategy to invest
+improvement effort in.
 
 ---
 
 ## Future platform milestones (in order, not yet started)
 
-### M5 — Live strategy deployment and execution (future)
-Wire NT8 live trading to the command center. Monitor active positions and daily P&L in real time via the Bots page. Risk cap deployment for NT8 (similar to MT5 bot caps). Prerequisites: at least one strategy grading B+ on stress tests against the target firm's rules.
+### Pass 3 — Data Manager (planned, after M5 ships)
 
-### M6 — Multi-account management (future)
-Track multiple simultaneous eval accounts (e.g. three LucidFlex $50k evals running in parallel on different NT8 accounts). Aggregate daily P&L view. Per-account status and reset history. Prerequisites: at least one passing eval to establish the workflow.
+A UI-based historical data manager that handles per-broker limits, symbol
+naming, and incremental refresh. Lives under a new "Data" tab in the command
+center.
 
-### M7 — MT5 strategy integration (future)
-Extend the `strategies/mt5/` placeholder into a real subsystem. The runner dispatcher in `vps_client.py` already has a `NotImplementedError` stub for `"mt5"`. Strategy deployment would upload `.ex5` files to MT5's `Experts/` folder instead of NT8's strategy folder. The Deployed tab's platform filter (All / NT8 / MT5) is already built and will show MT5 files automatically once the data source is wired.
+**Capabilities:**
+- Select broker / runner / symbol / timeframe / date range from UI
+- Auto-detect broker max history per timeframe (fall back gracefully when
+  broker limit is hit — automate what the user just did manually for PU Prime)
+- Multi-broker fallback chain (try PU Prime, then IC Markets, then Dukascopy
+  CSV, etc.)
+- **Canonical symbol naming internally, broker-specific translation at the
+  agent boundary.** Lab database uses canonical names like `EURUSD`; each
+  agent has its own mapping table to add broker suffixes (`.s` on PU Prime,
+  `.raw` on IC Markets, slashes for some CSV vendors, etc.)
+- Incremental refresh (fetch only bars since last download, not full
+  re-download)
+- Quality indicators: bar count vs expected, gap detection, source labeled
+  per dataset
+- Dukascopy CSV import support for long-history M5 data (free, 10+ years
+  for majors)
+
+**Why before M6:** stacking analyses run across more strategies and more
+time ranges. The data infrastructure gets hammered. Solid cache layer first.
+
+**Why not now:** M5 needs to ship first so the UI has at least one runner
+to fetch from. And the manual `download_mt5_history.py` script is good
+enough to unblock immediate strategy testing.
+
+### M6 — Strategy stacking / portfolio construction (was M5)
+
+Combine multiple winning strategies into a portfolio. Naive aggregation —
+take daily P&L series from each strategy and combine them. Compute
+portfolio-level KPIs: combined Sharpe, correlation matrix, max drawdown of
+combined curve, ruleset evaluation on combined daily P&L. New "Portfolios"
+tab. Portfolio Detail page with member list, correlation heatmap, combined
+equity curve, grade.
+
+**Prerequisite:** at least 2-3 strategies grading B+ individually. Stacking
+losers makes a smoother loser, not a winner.
+
+### M7 — Dynamic risk allocation in stacking backtests (was M6)
+
+The realistic stacking simulator. Walks through combined trades
+chronologically and respects a shared daily risk budget. Reference
+implementation exists in `algos/shared/shared_risk.py` (forex side) — port
+into the lab backtest engine.
+
+### M8 — Live deployment integration (was M7)
+
+One-click push from Grade A strategy to NT8 or MT5 live. Command center
+triggers the strategy on the right account on the VPS with the right ruleset
+parameters injected. Live monitoring exposed in the command center UI.
+
+### M9 — Additional runners as needed
+
+Tradovate, cTrader, or other platforms when need arises. The runner
+abstraction is in place from M2; new runners are mostly building a new agent
+that speaks the same shape of endpoints.
 
 ---
 
 ## Smaller items raised but deferred
 
-- **NT8 auto-start after VPS reboot.** NT8 and the Strategy Analyzer need a scheduled task so strategies resume without manual RDP. Documented at `memory/project_nt8_autostart.md`. Not blocking anything today but will matter once live.
-
-- **Apex Trader Funding ruleset seeding.** Apex is a major prop firm not yet in the DB. Needs rules research and a seeded row before any Apex evaluation can run.
-
-- **Hash-based sync detection.** Current sync-status only checks file presence on VPS, not content. A future improvement would compare MD5 of the local `.cs` file against the VPS copy to detect drift after edits. The `source_hash` field already exists in the strategies DB table.
-
-- **Instrument-specific regime thresholds.** The classifier uses ADX/ATR/RSI thresholds tuned for XAUUSD on H1/H4. NAS100, bonds, and other instruments may need different values. Noted in `regime/REGIME_CLASSIFIER.md` as a future improvement.
-
-- **Regime persistence filter.** Prevent rapid label flips by requiring two consecutive identical classifications before committing a change. Mentioned in regime docs as a future enhancement.
-
-- **`tradovate/` strategy placeholder.** Created as a gitkeep in Pass 2.5. No plan to use it in the near term.
-
-- **Smart Money pipeline Stages 3–4.** The smart-money subsystem needs API keys to run stages 3 and 4. Stages 1, 2, and 5 are live. Not a priority while the prop firm path is the focus.
+- **Sniper fib (reverse fib / green zone) component for FFT strategy** —
+  explicitly deferred. Will need a separate training session before building.
+- **FFT bot rebuild** — a build spec was generated in a prior session for
+  Claude Code to implement the structure engine and locked rules. Belongs
+  to the algos/forex side, not the command center.
+- **News blackout windows in foundational config** — considered, deferred.
+  Building a calendar API integration is meaningful work for a nice-to-have.
+  Strategy-level feature later if needed.
+- **Dynamic per-trade risk scaling (beyond the simple 50% lock-in halving)** —
+  considered, deferred. Becomes part of M7's portfolio engine, not
+  single-strategy logic.
+- **Tradovate as a third runner** — placeholder folder may be created in
+  Pass 2.5. No active work planned. Could become M9 if needed.
+- **Per-instrument regime threshold tuning** — REGIME_CLASSIFIER.md mentions
+  this as future improvement. Not actively planned.
+- **Hidden Markov Model regime classifier** — explicitly considered and
+  rejected. The rules-based classifier is intentional. Transparency over
+  marginal accuracy gains.
+- **Port `bot_smc_trend` and `bot_fft` to MQL5** — only Mean Reversion is
+  being ported in M5. The other two are deferred until/if they're worth
+  testing through the lab.
 
 ---
 
 ## Parallel tracks Aaron is running separately
 
-- **Prop firm research workshop** (separate Claude.ai chat). Researching and comparing LucidFlex, Apex, Tradeify, and FundedNext rules, pricing, and payout structures. Output feeds into which rulesets to prioritize and which account sizes to target first.
+These have their own dedicated chat sessions and aren't worked on here:
+
+- **Prop firm research workshop** — adding new firms (Apex, TopstepFutures,
+  TakeProfitTrader, MyFundedFutures, Tradeify) to the rulesets database
+  one at a time. Aaron brings the firm docs, that chat helps select which
+  challenge to seed, outputs a Claude Code prompt for seeding.
+- **Strategy development discussions** — Aaron is working out strategy
+  improvement ideas (ORB regime filter, trailing stops, etc.) in another
+  chat. The lab waits to be the testing ground.
+
+Don't proactively bring these up unless Aaron does.
 
 ---
 
 ## Open architectural questions
 
-**Deploy endpoint is synchronous — is that OK long-term?** The `POST /strategies/{id}/deploy` handler reads the file, uploads to VPS, and returns 202 with the completed result before the response goes back to the client. This works because the upload is fast (~1-2s over the SSH tunnel). If NT8 file locking or a slow VPS ever makes uploads take longer, this should be moved to a true background task. For now it's fine — the job_id polling pattern is wired up on both ends so the switch is easy later.
+These have been discussed but not fully resolved. Surface them if relevant
+to the current task; don't proactively re-litigate them otherwise.
 
-**Scanner discovers all `.cs` files in `strategies/` recursively.** If MT5 ever adds `.cs` files (unlikely — MT5 uses MQL5/`.mq5`), the scanner would try to parse them as NinjaScript and skip them on the class regex check. Not a problem in practice but worth knowing.
-
-**Compiler success detection via DLL mtime is fragile if NT8 has a background activity** that rewrites `NinjaTrader.Custom.dll` for other reasons. In 10+ compile runs this has not been an issue, but it's not a guaranteed-correct signal. A more robust approach would parse the NT8 output window for error/success text — not implemented.
-
-**NT8 SA lock is in-memory only (lab_progress.json + DB status).** If the backend restarts mid-run, the lock can be stale. The startup hook resets stale locks automatically, but a run that was genuinely active when the backend died will show as abandoned. The Stop button (which resets the lock manually) and the startup hook reset handle the practical cases.
+- **Personal trading capital amounts and ruleset** — `personal_futures_10k_example`
+  and `personal_forex_main` exist as seeds. Aaron will edit them with real
+  numbers when ready to trade his own money. Real daily loss cap, weekly
+  cap, daily profit goal are TBD.
+- **M5 data shortage for low timeframes** — PU Prime demo serves only ~8
+  months of M5 data, ~2 years of M15. Limits backtest confidence on
+  low-timeframe strategies. Dukascopy CSV import via Pass 3 is the
+  long-term answer.
+- **Strategy parameter optimization across multiple instruments
+  simultaneously** — current optimizer is single-instrument. M4's instrument
+  sweep handles multi-instrument discovery but not joint optimization.
+- **Long-term: who manages the prop firm accounts when there are 30-50** —
+  the platform handles per-account evaluation but the operational layer
+  (logging in, tracking which accounts are funded, managing payout requests,
+  rotating accounts) isn't built. Out of scope for now but will become real.
 
 ---
 
 ## Communication rules for new chats
 
-(Repeated here so a chat that only received this document gets the rules.)
+When starting a new chat with this snapshot + roadmap:
 
-- Plain English replies. No code blocks unless explicitly asked.
-- One clear question with concrete options when input is needed.
-- Stop and report after each numbered step in any build spec.
-- Smallest viable change first — no speculative abstractions, no premature cleanup.
-- Update CLAUDE.md files in the same session as the changes that made them stale.
-- No comments in code explaining what it does — only non-obvious constraints or invariants.
+1. **Don't re-explain milestones.** They're documented above. Refer back to
+   them by name (M3, Pass 1, etc.).
+2. **Plain English in all replies.** No verbose framing.
+3. **Stop and ask one clear question** when input is needed.
+4. **Don't suggest reverting decisions that were already made** — see the
+   architectural principles in the snapshot. They're locked.
+5. **Update both this roadmap and the snapshot** whenever a milestone ships
+   or a major decision is made.
+
+---
+
+*End of roadmap document.*

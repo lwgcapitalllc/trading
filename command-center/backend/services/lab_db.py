@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -272,6 +273,10 @@ def init_db() -> None:
             "UPDATE strategies SET source_path = 'strategies/ninjatrader/ORB.cs' WHERE id = 'orb'",
             "UPDATE strategies SET source_path = 'strategies/ninjatrader/VWAP_MR.cs' WHERE id = 'vwap_mr'",
             "UPDATE strategies SET source_path = 'strategies/ninjatrader/Momentum.cs' WHERE id = 'momentum'",
+            # M5 — market and drawdown_unit on rulesets
+            # NOT NULL DEFAULT means existing rows get the default automatically in SQLite.
+            "ALTER TABLE rulesets ADD COLUMN market TEXT NOT NULL DEFAULT 'futures'",
+            "ALTER TABLE rulesets ADD COLUMN drawdown_unit TEXT NOT NULL DEFAULT 'usd'",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -324,6 +329,32 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_ohlc_instrument
                 ON instrument_daily_ohlc(instrument);
+
+            CREATE TABLE IF NOT EXISTS instrument_metadata (
+                symbol            TEXT PRIMARY KEY,
+                market            TEXT NOT NULL,
+                display_name      TEXT NOT NULL,
+                tick_size         REAL,
+                point_value_usd   REAL,
+                broker_suffix     TEXT,
+                default_session   TEXT,
+                notes             TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS instrument_intraday_ohlc (
+                instrument  TEXT NOT NULL,
+                timeframe   TEXT NOT NULL,
+                timestamp   TEXT NOT NULL,
+                open        REAL NOT NULL,
+                high        REAL NOT NULL,
+                low         REAL NOT NULL,
+                close       REAL NOT NULL,
+                fetched_at  INTEGER NOT NULL,
+                source      TEXT NOT NULL,
+                PRIMARY KEY (instrument, timeframe, timestamp)
+            );
+            CREATE INDEX IF NOT EXISTS idx_intraday_ohlc_instrument
+                ON instrument_intraday_ohlc(instrument, timeframe);
         """)
 
         _seed_rulesets(conn)
@@ -482,7 +513,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
                 ),
             )
 
-    # Always ensure the personal example exists (idempotent)
+    # Always ensure the personal futures example exists (idempotent)
     if not conn.execute(
         "SELECT 1 FROM rulesets WHERE id=?", ("personal_futures_10k_example",)
     ).fetchone():
@@ -509,6 +540,112 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
                 now, now,
             ),
         )
+
+    # M5 — personal forex rulesets (idempotent)
+    _FX_INSTRUMENTS = json.dumps([
+        "XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "GBPJPY",
+        "USDJPY", "AUDUSD", "USDCAD", "EURGBP", "NAS100",
+    ])
+    _FX_DAYS = json.dumps(["sun", "mon", "tue", "wed", "thu"])
+
+    _FX_RULESET_SQL = """
+        INSERT INTO rulesets
+            (id, name, account_size, profit_target, max_loss_eod, max_loss_intraday,
+             drawdown_type, consistency_pct, min_trading_days, force_flat_time_et,
+             allowed_instruments, max_contracts, platform_support,
+             account_tier, ruleset_type, market, drawdown_unit,
+             daily_loss_cap, weekly_loss_cap, daily_profit_target,
+             daily_profit_lock_pct, risk_per_trade_pct, max_consecutive_losses,
+             earliest_entry_time_et, latest_entry_time_et, days_of_week_allowed,
+             default_commission_per_side, default_slippage_ticks, description,
+             created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+
+    if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_forex_main",)).fetchone():
+        conn.execute(_FX_RULESET_SQL, (
+            "personal_forex_main",
+            "Personal Forex Main Account",
+            10000, 0, 200, None,
+            "static", None, None, None,        # force_flat_time_et null — MT5 strategies manage sessions
+            _FX_INSTRUMENTS,
+            json.dumps({"any": 5}),
+            json.dumps(["MT5"]),
+            "live", "personal", "forex", "usd",
+            200, 700, 150,
+            0.80, 1.0, 3,
+            None, None,                         # entry hours null — FX runs 24h
+            _FX_DAYS,
+            0.0, 1,
+            "Personal forex trading account. Edit with real numbers.",
+            now, now,
+        ))
+
+    if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_forex_demo",)).fetchone():
+        conn.execute(_FX_RULESET_SQL, (
+            "personal_forex_demo",
+            "Personal Forex Demo Account",
+            10000, 0, 200, None,
+            "static", None, None, None,
+            _FX_INSTRUMENTS,
+            json.dumps({"any": 5}),
+            json.dumps(["MT5"]),
+            "live", "demo", "forex", "usd",
+            200, 700, 150,
+            0.80, 1.0, 3,
+            None, None,
+            _FX_DAYS,
+            0.0, 1,
+            "Forex demo/paper account. No real capital at risk.",
+            now, now,
+        ))
+
+    _seed_instrument_metadata(conn)
+
+
+def _seed_instrument_metadata(conn: sqlite3.Connection) -> None:
+    """Seed instrument_metadata with forex + futures instruments.
+
+    Uses INSERT OR IGNORE so existing rows (including user edits) are never overwritten.
+    Run on every startup — idempotent.
+    """
+    rows = [
+        # ── Forex ────────────────────────────────────────────────────────────
+        # broker_suffix is blank — user populates after checking PU Prime symbol names.
+        # point_value_usd is per standard lot (100k units) where applicable; null where
+        # it depends heavily on the current exchange rate (JPY pairs, NAS100).
+        ("XAUUSD",  "forex", "Gold (XAU/USD)",                 0.01,    1.0,    "", "24h",     "Spread-based; point value per 0.01 move per lot"),
+        ("XAGUSD",  "forex", "Silver (XAG/USD)",               0.001,   None,   "", "24h",     "Highly variable point value; update after testing"),
+        ("EURUSD",  "forex", "Euro / US Dollar",               0.00001, 10.0,   "", "london",  "Majors pair; $10/pip per std lot"),
+        ("GBPUSD",  "forex", "British Pound / US Dollar",      0.00001, 10.0,   "", "london",  "Majors pair; $10/pip per std lot"),
+        ("GBPJPY",  "forex", "British Pound / Japanese Yen",   0.001,   None,   "", "london",  "Cross pair; pip value varies with JPY rate"),
+        ("USDJPY",  "forex", "US Dollar / Japanese Yen",       0.001,   None,   "", "london",  "Majors pair; pip value varies with JPY rate"),
+        ("AUDUSD",  "forex", "Australian Dollar / US Dollar",  0.00001, 10.0,   "", "london",  "Majors pair; $10/pip per std lot"),
+        ("USDCAD",  "forex", "US Dollar / Canadian Dollar",    0.00001, None,   "", "newyork", "Pip value varies with CAD rate"),
+        ("EURGBP",  "forex", "Euro / British Pound",           0.00001, None,   "", "london",  "Cross pair; pip value varies with GBP rate"),
+        ("NAS100",  "forex", "Nasdaq 100 (Index CFD)",         0.01,    None,   "", "newyork", "Index CFD; contract size broker-specific"),
+        # ── Futures ──────────────────────────────────────────────────────────
+        # point_value_usd = dollar value of one full point (not tick).
+        ("MES",     "futures", "Micro E-mini S&P 500",         0.25,    5.0,    "", "newyork", "$1.25/tick; $5/point"),
+        ("ES",      "futures", "E-mini S&P 500",               0.25,    50.0,   "", "newyork", "$12.50/tick; $50/point"),
+        ("MNQ",     "futures", "Micro E-mini Nasdaq 100",      0.25,    2.0,    "", "newyork", "$0.50/tick; $2/point"),
+        ("NQ",      "futures", "E-mini Nasdaq 100",            0.25,    20.0,   "", "newyork", "$5.00/tick; $20/point"),
+        ("MGC",     "futures", "Micro Gold",                   0.10,    1.0,    "", "newyork", "$0.10/tick; $1/point"),
+        ("GC",      "futures", "Gold (full)",                  0.10,    10.0,   "", "newyork", "$1.00/tick; $10/point"),
+        ("MCL",     "futures", "Micro Crude Oil",              0.01,    1.0,    "", "newyork", "$0.01/tick; $1/point"),
+        ("CL",      "futures", "Crude Oil (full)",             0.01,    10.0,   "", "newyork", "$0.10/tick; $10/point"),
+        ("MYM",     "futures", "Micro E-mini Dow",             1.0,     0.5,    "", "newyork", "$0.50/tick; $0.50/point"),
+        ("YM",      "futures", "E-mini Dow",                   1.0,     5.0,    "", "newyork", "$5.00/tick; $5/point"),
+        ("M2K",     "futures", "Micro E-mini Russell 2000",    0.10,    0.5,    "", "newyork", "$0.05/tick; $0.50/point"),
+        ("RTY",     "futures", "E-mini Russell 2000",          0.10,    5.0,    "", "newyork", "$0.50/tick; $5/point"),
+    ]
+    conn.executemany(
+        """INSERT OR IGNORE INTO instrument_metadata
+           (symbol, market, display_name, tick_size, point_value_usd,
+            broker_suffix, default_session, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        rows,
+    )
 
 
 # ── Strategies ────────────────────────────────────────────────────────────────
@@ -613,7 +750,8 @@ def insert_ruleset(data: dict) -> None:
                (id, name, account_size, profit_target, max_loss_eod, max_loss_intraday,
                 drawdown_type, consistency_pct, min_trading_days, force_flat_time_et,
                 allowed_instruments, max_contracts, platform_support,
-                account_tier, ruleset_type, daily_loss_cap, weekly_loss_cap,
+                account_tier, ruleset_type, market, drawdown_unit,
+                daily_loss_cap, weekly_loss_cap,
                 daily_profit_goal, description, docs_url, eval_cost_usd,
                 activation_fee_usd, profit_split_pct, notes,
                 risk_per_trade_pct, max_consecutive_losses,
@@ -622,7 +760,7 @@ def insert_ruleset(data: dict) -> None:
                 default_commission_per_side, default_slippage_ticks,
                 daily_halt_fraction,
                 created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"], data["name"], data["account_size"], data["profit_target"],
                 data["max_loss_eod"], data.get("max_loss_intraday"), data["drawdown_type"],
@@ -633,6 +771,8 @@ def insert_ruleset(data: dict) -> None:
                 json.dumps(data.get("platform_support", [])),
                 data.get("account_tier", "eval"),
                 data.get("ruleset_type", "prop_eval"),
+                data.get("market", "futures"),
+                data.get("drawdown_unit", "usd"),
                 data.get("daily_loss_cap"), data.get("weekly_loss_cap"),
                 data.get("daily_profit_goal"), data.get("description"),
                 data.get("docs_url"), data.get("eval_cost_usd"),
@@ -658,7 +798,8 @@ def update_ruleset(ruleset_id: str, data: dict) -> bool:
                max_loss_intraday=?, drawdown_type=?, consistency_pct=?,
                min_trading_days=?, force_flat_time_et=?, allowed_instruments=?,
                max_contracts=?, platform_support=?, account_tier=?,
-               ruleset_type=?, daily_loss_cap=?, weekly_loss_cap=?,
+               ruleset_type=?, market=?, drawdown_unit=?,
+               daily_loss_cap=?, weekly_loss_cap=?,
                daily_profit_goal=?, description=?, docs_url=?,
                eval_cost_usd=?, activation_fee_usd=?, profit_split_pct=?, notes=?,
                risk_per_trade_pct=?, max_consecutive_losses=?,
@@ -678,6 +819,8 @@ def update_ruleset(ruleset_id: str, data: dict) -> bool:
                 json.dumps(data.get("platform_support", [])),
                 data.get("account_tier", "eval"),
                 data.get("ruleset_type", "prop_eval"),
+                data.get("market", "futures"),
+                data.get("drawdown_unit", "usd"),
                 data.get("daily_loss_cap"), data.get("weekly_loss_cap"),
                 data.get("daily_profit_goal"), data.get("description"),
                 data.get("docs_url"), data.get("eval_cost_usd"),
@@ -699,6 +842,48 @@ def delete_ruleset(ruleset_id: str) -> bool:
     with _connect() as conn:
         cur = conn.execute("DELETE FROM rulesets WHERE id = ?", (ruleset_id,))
     return cur.rowcount > 0
+
+
+# ── Instrument metadata ───────────────────────────────────────────────────────
+
+def list_instrument_metadata() -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM instrument_metadata ORDER BY market, symbol"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_instrument_metadata(symbol: str) -> Optional[dict]:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM instrument_metadata WHERE symbol = ?", (symbol.upper(),)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_instrument_metadata(data: dict) -> None:
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO instrument_metadata
+               (symbol, market, display_name, tick_size, point_value_usd,
+                broker_suffix, default_session, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(symbol) DO UPDATE SET
+                   market=excluded.market,
+                   display_name=excluded.display_name,
+                   tick_size=excluded.tick_size,
+                   point_value_usd=excluded.point_value_usd,
+                   broker_suffix=excluded.broker_suffix,
+                   default_session=excluded.default_session,
+                   notes=excluded.notes""",
+            (
+                data["symbol"].upper(), data["market"], data["display_name"],
+                data.get("tick_size"), data.get("point_value_usd"),
+                data.get("broker_suffix", ""), data.get("default_session"),
+                data.get("notes"),
+            ),
+        )
 
 
 # ── Backtest runs ─────────────────────────────────────────────────────────────
@@ -747,7 +932,7 @@ def list_runs(
 def get_run(run_id: str) -> Optional[dict]:
     with _connect() as conn:
         row = conn.execute("""
-            SELECT r.*, s.name AS strategy_name
+            SELECT r.*, s.runner, s.name AS strategy_name
             FROM backtest_runs r
             JOIN strategies s ON s.id = r.strategy_id
             WHERE r.run_id = ?
@@ -1417,6 +1602,47 @@ def upsert_ohlc_rows(rows: list[dict]) -> None:
             [
                 (r["instrument"], r["date"], r["open"], r["high"],
                  r["low"], r["close"], now, r["source"])
+                for r in rows
+            ],
+        )
+
+
+def get_cached_intraday_ohlc(
+    instrument: str, timeframe: str, start_date: str, end_date: str
+) -> list[dict]:
+    """Return cached intraday OHLC rows for (instrument, timeframe) in [start_date, end_date].
+
+    Uses ISO string ordering: timestamp >= start_date works because
+    "2025-01-01" < "2025-01-01T00:00:00", and timestamp < next day covers
+    the last day inclusive (end_date "2025-01-31" → < "2025-02-01").
+    """
+    next_day = (date.fromisoformat(end_date) + timedelta(days=1)).isoformat()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT timestamp, open, high, low, close FROM instrument_intraday_ohlc "
+            "WHERE instrument = ? AND timeframe = ? AND timestamp >= ? AND timestamp < ? "
+            "ORDER BY timestamp ASC",
+            (instrument, timeframe, start_date, next_day),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_intraday_ohlc_rows(rows: list[dict]) -> None:
+    """Insert or replace intraday OHLC rows.
+
+    Each row must have: instrument, timeframe, timestamp, open, high, low, close, source.
+    """
+    if not rows:
+        return
+    now = int(time.time())
+    with _connect() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO instrument_intraday_ohlc "
+            "(instrument, timeframe, timestamp, open, high, low, close, fetched_at, source) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (r["instrument"], r["timeframe"], r["timestamp"],
+                 r["open"], r["high"], r["low"], r["close"], now, r["source"])
                 for r in rows
             ],
         )

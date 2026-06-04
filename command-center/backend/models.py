@@ -332,6 +332,9 @@ class Ruleset(BaseModel):
     default_commission_per_side: Optional[float] = None
     default_slippage_ticks: Optional[int] = None
     daily_halt_fraction: Optional[float] = None
+    # M5 — market and drawdown unit
+    market: str = "futures"       # "futures" | "forex" | "mixed"
+    drawdown_unit: str = "usd"    # "usd" | "percent"
 
 
 class RulesetCreate(BaseModel):
@@ -370,6 +373,20 @@ class RulesetCreate(BaseModel):
     default_commission_per_side: Optional[float] = None
     default_slippage_ticks: Optional[int] = None
     daily_halt_fraction: Optional[float] = None
+    # M5 — market and drawdown unit
+    market: str = "futures"
+    drawdown_unit: str = "usd"
+
+
+class InstrumentMetadata(BaseModel):
+    symbol: str
+    market: str                             # "futures" | "forex"
+    display_name: str
+    tick_size: Optional[float] = None
+    point_value_usd: Optional[float] = None
+    broker_suffix: Optional[str] = None
+    default_session: Optional[str] = None  # "london" | "newyork" | "24h"
+    notes: Optional[str] = None
 
 
 # Backward-compat aliases — used in M3 only; removed in M4

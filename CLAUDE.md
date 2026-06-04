@@ -1,3 +1,9 @@
+## Communication Rules — Non-Negotiable
+
+- Plain English only. Short sentences.
+- Never use bullet points to explain a simple thing.
+- No preamble. No "Great question." No "Sure, I can help with that."
+
 # CLAUDE.md — LWG Capital Monorepo
 
 **Purpose:** Standing instructions for Claude Code across all subsystems.
@@ -38,7 +44,7 @@ React + FastAPI local operations platform. Monitors bots via SSH, surfaces Smart
 Shared market regime classifier. Imported by the live bots (via `algos/shared/shared_regime.py` thin shim) and by the command-center backtest lab. Single output set: 5 labels (TRENDING, TRANSITIONING, RANGING, HIGH_VOLATILITY, LOW_VOLATILITY). Each bot owns its own `REGIME_RISK_TABLE` mapping labels to trade decisions. Full rules in `regime/CLAUDE.md`. Algorithm documented in `regime/REGIME_CLASSIFIER.md`.
 
 ### strategies/
-Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the three live NinjaScript strategies (ORB, VWAP_MR, Momentum). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS NT8 strategy folder. `strategies/mt5/` and `strategies/tradovate/` are placeholders. Full rules in `strategies/CLAUDE.md`.
+Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the three live NinjaScript strategies (ORB, VWAP_MR, Momentum). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS NT8 strategy folder. `strategies/mt5/` holds `MeanReversion.mq5` (ported from `algos/bots/bot_mean_reversion.py`, smoke-tested on EURUSD H1). `strategies/tradovate/` is a placeholder. Full rules in `strategies/CLAUDE.md`.
 
 ---
 

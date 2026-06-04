@@ -142,28 +142,70 @@ _WARMUP_DAYS = 50   # fetch this many extra days before backtest start for class
 _WINDOW_SIZE = 34   # classifier needs 34 bars to produce a non-UNKNOWN label
 
 
+def _fetch_regime_dfs(
+    instrument: str,
+    warmup_start: str,
+    end_date: str,
+    runner: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return (df_short, df_long) for classify_regime().
+
+    ninjatrader — daily via yfinance; same df passed for both short and long.
+    mt5         — H1 for short, H4 for long; fetched from MT5 agent via tunnel.
+
+    50 calendar days of warmup gives ~214 H4 bars for MT5 (>> 34 needed) so
+    both paths produce real labels from day 1 of the backtest.
+    """
+    if runner == "mt5":
+        h1 = get_ohlc(instrument, warmup_start, end_date, timeframe="H1", runner="mt5")
+        h4 = get_ohlc(instrument, warmup_start, end_date, timeframe="H4", runner="mt5")
+        return h1, h4
+    daily = get_ohlc(instrument, warmup_start, end_date)
+    return daily, daily
+
+
+def _build_window(df: pd.DataFrame, entry_date: str, intraday: bool) -> pd.DataFrame:
+    """Return the tail(_WINDOW_SIZE) window of df up to and including entry_date.
+
+    For daily bars, cutoff = midnight of entry_date (index <= cutoff includes that day).
+    For intraday bars, cutoff = midnight of the next day (index < day_end includes all
+    bars on entry_date, including late-evening bars that would be missed by <= midnight).
+    """
+    if intraday:
+        day_end = pd.Timestamp(entry_date) + pd.Timedelta(days=1)
+        return df[df.index < day_end].tail(_WINDOW_SIZE)
+    cutoff = pd.Timestamp(entry_date)
+    return df[df.index <= cutoff].tail(_WINDOW_SIZE)
+
+
 def _tag_daily_pnl_with_regime(
     instrument: str,
     start_date: str,
     end_date: str,
     daily_pnl: list[dict],
+    runner: str = "ninjatrader",
 ) -> list[dict]:
     """
     Fetch OHLC for the backtest period (extended back by _WARMUP_DAYS for warmup),
     then classify each daily_pnl entry by running the rolling 34-bar window through
     classify_regime(). Returns the daily_pnl list with 'regime_tag' added to every entry.
+
+    runner="ninjatrader" — daily OHLC via yfinance; classify_regime(daily, daily).
+    runner="mt5"         — H1 + H4 via MT5 agent; classify_regime(h1, h4).
     """
+    warmup_start = (
+        date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)
+    ).isoformat()
+    intraday = runner == "mt5"
+
     try:
-        warmup_start = (
-            date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)
-        ).isoformat()
-        ohlc_df = get_ohlc(instrument, warmup_start, end_date)
+        df_short, df_long = _fetch_regime_dfs(instrument, warmup_start, end_date, runner)
     except Exception as exc:
         log.warning("OHLC fetch failed for %s [%s, %s]: %s — all regime_tags = UNKNOWN",
                     instrument, start_date, end_date, exc)
         return [{**entry, "regime_tag": "UNKNOWN"} for entry in daily_pnl]
 
-    if ohlc_df.empty:
+    if df_long.empty:
         log.warning("No OHLC rows for %s [%s, %s] — all regime_tags = UNKNOWN",
                     instrument, start_date, end_date)
         return [{**entry, "regime_tag": "UNKNOWN"} for entry in daily_pnl]
@@ -176,18 +218,18 @@ def _tag_daily_pnl_with_regime(
             continue
 
         try:
-            cutoff = pd.Timestamp(entry_date)
+            window_short = _build_window(df_short, entry_date, intraday)
+            window_long  = _build_window(df_long,  entry_date, intraday)
         except Exception:
             result.append({**entry, "regime_tag": "UNKNOWN"})
             continue
 
-        window = ohlc_df[ohlc_df.index <= cutoff].tail(_WINDOW_SIZE)
-        if len(window) < _WINDOW_SIZE:
+        if len(window_long) < _WINDOW_SIZE or len(window_short) < _WINDOW_SIZE:
             result.append({**entry, "regime_tag": "UNKNOWN"})
             continue
 
         try:
-            label = classify_regime(window, window)
+            label = classify_regime(window_short, window_long)
         except Exception as exc:
             log.warning("classify_regime failed for %s on %s: %s", instrument, entry_date, exc)
             label = "UNKNOWN"
@@ -195,8 +237,8 @@ def _tag_daily_pnl_with_regime(
         result.append({**entry, "regime_tag": label})
 
     tagged = sum(1 for r in result if r.get("regime_tag") != "UNKNOWN")
-    log.info("Regime classification: %d/%d days tagged (instrument=%s)",
-             tagged, len(result), instrument)
+    log.info("Regime classification (%s): %d/%d days tagged (instrument=%s)",
+             runner, tagged, len(result), instrument)
     return result
 
 
@@ -204,40 +246,66 @@ def build_date_regime_map(
     instrument: str,
     start_date: str,
     end_date: str,
+    runner: str = "ninjatrader",
 ) -> dict[str, str]:
     """
     Fetch OHLC for the given range (with warmup) and classify each trading day.
     Returns {date_str: regime_label} for all dates within [start_date, end_date].
     Intended for optimizer scoring — called once per optimization, not once per child run.
+
+    runner="ninjatrader" — daily OHLC; iterates over daily bar timestamps.
+    runner="mt5"         — H1+H4 OHLC; collects distinct dates from H4 bars,
+                           builds intraday windows at end of each day.
     """
     warmup_start = (
         date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)
     ).isoformat()
+    intraday = runner == "mt5"
+
     try:
-        ohlc_df = get_ohlc(instrument, warmup_start, end_date)
+        df_short, df_long = _fetch_regime_dfs(instrument, warmup_start, end_date, runner)
     except Exception as exc:
         log.warning("build_date_regime_map: OHLC fetch failed for %s: %s", instrument, exc)
         return {}
 
-    if ohlc_df.empty:
+    if df_long.empty:
         return {}
 
     result: dict[str, str] = {}
-    for ts in ohlc_df.index:
-        date_str = str(ts.date())
-        if date_str < start_date or date_str > end_date:
-            continue
-        window = ohlc_df[ohlc_df.index <= ts].tail(_WINDOW_SIZE)
-        if len(window) < _WINDOW_SIZE:
-            result[date_str] = "UNKNOWN"
-        else:
-            try:
-                result[date_str] = classify_regime(window, window)
-            except Exception:
-                result[date_str] = "UNKNOWN"
 
-    log.info("build_date_regime_map: %d trading days classified for %s [%s, %s]",
-             len(result), instrument, start_date, end_date)
+    if intraday:
+        # Use H4 bar dates as the set of "trading days" to classify (H4 has fewer
+        # bars than H1, so iterating over it is the natural anchor).
+        trading_dates = sorted({
+            str(ts.date()) for ts in df_long.index
+            if start_date <= str(ts.date()) <= end_date
+        })
+        for date_str in trading_dates:
+            window_short = _build_window(df_short, date_str, intraday=True)
+            window_long  = _build_window(df_long,  date_str, intraday=True)
+            if len(window_long) < _WINDOW_SIZE or len(window_short) < _WINDOW_SIZE:
+                result[date_str] = "UNKNOWN"
+            else:
+                try:
+                    result[date_str] = classify_regime(window_short, window_long)
+                except Exception:
+                    result[date_str] = "UNKNOWN"
+    else:
+        for ts in df_long.index:
+            date_str = str(ts.date())
+            if date_str < start_date or date_str > end_date:
+                continue
+            window = df_long[df_long.index <= ts].tail(_WINDOW_SIZE)
+            if len(window) < _WINDOW_SIZE:
+                result[date_str] = "UNKNOWN"
+            else:
+                try:
+                    result[date_str] = classify_regime(window, window)
+                except Exception:
+                    result[date_str] = "UNKNOWN"
+
+    log.info("build_date_regime_map (%s): %d trading days classified for %s [%s, %s]",
+             runner, len(result), instrument, start_date, end_date)
     return result
 
 
@@ -265,6 +333,9 @@ async def run_backfill(
         _backfill_jobs[run_id] = {"status": "failed", "tagged": 0, "total": 0}
         return
 
+    run_row = lab_db.get_run(run_id)
+    backfill_runner = run_row.get("runner", "ninjatrader") if run_row else "ninjatrader"
+
     _backfill_jobs[run_id]["total"] = len(raw)
     tagged = await asyncio.to_thread(
         _tag_daily_pnl_with_regime,
@@ -272,6 +343,7 @@ async def run_backfill(
         start_date,
         end_date,
         raw,
+        backfill_runner,
     )
     daily_pnl_path.write_text(json.dumps(tagged, default=str))
     n_tagged = sum(1 for r in tagged if r.get("regime_tag") != "UNKNOWN")
@@ -335,6 +407,7 @@ async def _handle_complete(
             run_row.get("start_date", ""),
             run_row.get("end_date", ""),
             daily_pnl,
+            run_row.get("runner", "ninjatrader"),
         )
         daily_pnl_path.write_text(json.dumps(tagged_pnl, default=str))
 

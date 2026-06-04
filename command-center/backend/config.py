@@ -19,3 +19,4 @@ SMART_MONEY_REPORTS_DIR = Path(_cfg["smart_money_reports_dir"])
 INSTANCES_DIR = Path(_cfg["instances_dir"])
 SSH_ALIAS: str = _cfg["ssh_alias"]
 VPS_AGENT_TUNNEL: str = _cfg["vps_agent_tunnel"]
+MT5_AGENT_TUNNEL: str = _cfg["mt5_agent_tunnel"]

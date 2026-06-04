@@ -119,11 +119,14 @@ async def _pick_best_run(
     date_to_regime: dict[str, str] = {}
     if regime_filter:
         try:
+            opt_strategy = lab_db.get_strategy(opt["strategy_id"])
+            opt_runner = opt_strategy.get("runner", "ninjatrader") if opt_strategy else "ninjatrader"
             date_to_regime = await asyncio.to_thread(
                 build_date_regime_map,
                 opt["instrument"],
                 opt["start_date"],
                 opt["end_date"],
+                opt_runner,
             )
             log.info("Regime filter '%s': %d trading days mapped", regime_filter, len(date_to_regime))
         except Exception as exc:

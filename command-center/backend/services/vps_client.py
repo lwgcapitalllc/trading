@@ -1,18 +1,31 @@
 """
-Typed HTTP wrapper over the VPS agent (http://localhost:8765 via SSH tunnel).
-All outbound calls to the agent go through this module.
+Dispatcher + NT8 agent client.
+
+This module serves two roles:
+  1. NT8 agent client — typed HTTP wrapper over vps_agent.py at
+     http://localhost:8765 (via SSH tunnel). All NT8-specific calls
+     (_get/_post, nt_health, nt_log, export_trades, compile, etc.) live here.
+  2. Runner dispatcher — start_backtest, job_status, job_results, job_log,
+     and cancel_job route to either this module (ninjatrader) or
+     mt5_agent_client (mt5) based on the strategy's runner field.
+
+All callers import `vps_client` and call the same functions regardless of
+runner. The dispatcher is transparent to every call site.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 import io
+import time
 import uuid
 import urllib.request
 import urllib.error
 import json
 
 import config as cfg
+from services import lab_db
+from services import mt5_agent_client
 
 _TIMEOUT = 10  # seconds for all agent calls
 
@@ -108,31 +121,115 @@ def inject_foundational(user_params: dict, ruleset: Optional[dict]) -> dict:
     return merged
 
 
+# ── Runner dispatcher ─────────────────────────────────────────────────────────
+
+def _resolve_runner(job_id: str, explicit_runner: Optional[str] = None) -> str:
+    """Return the runner for a job, preferring an explicit value over a DB lookup.
+
+    Falls back to "ninjatrader" when the job_id isn't in the DB (legacy rows
+    predate the runner column on strategies, or the strategy was deleted).
+    """
+    if explicit_runner:
+        return explicit_runner
+    run = lab_db.get_run(job_id)
+    if run and run.get("runner"):
+        return run["runner"]
+    return "ninjatrader"
+
+
 # ── Job control ───────────────────────────────────────────────────────────────
 
-def _dispatch_backtest(strategy_runner: str, job_spec: dict) -> dict:
-    """Route a backtest job to the correct backend based on the strategy's runner field."""
-    if strategy_runner == "ninjatrader":
-        return _post("/backtest", job_spec, timeout=30)
-    elif strategy_runner == "mt5":
-        raise NotImplementedError("MT5 runner planned for forex; not built yet")
+def _nt8_to_mt5_spec(spec: dict) -> dict:
+    """
+    Translate the NT8-style job_spec to the MT5 agent's expected format.
+    NT8: instrument, params, start_date/end_date, bar_type/bar_value
+    MT5: symbol, inputs, from_date/to_date, timeframe (H1/H4/D1), deposit, currency, leverage
+    """
+    bar_type  = spec.get("bar_type", "Minute")
+    bar_value = int(spec.get("bar_value") or 60)
+
+    if bar_type == "Day":
+        timeframe = "D1"
+    elif bar_type == "Minute":
+        timeframe = "H4" if bar_value >= 240 else "H1"
     else:
-        raise ValueError(f"Unknown runner: {strategy_runner!r}")
+        timeframe = "H1"
+
+    params = spec.get("params", {})
+    # Derive deposit from foundational param if present (MT5 uses f_ prefix convention)
+    deposit = float(
+        params.get("f_AccountSize") or params.get("AccountSize") or 10000
+    )
+
+    return {
+        "strategy_class": spec["strategy_class"],
+        "symbol":         spec["instrument"],
+        "timeframe":      timeframe,
+        "from_date":      spec["start_date"],
+        "to_date":        spec["end_date"],
+        "model":          0,
+        "deposit":        deposit,
+        "currency":       "USD",
+        "leverage":       100,
+        "inputs":         params,
+    }
 
 
 def start_backtest(job_spec: dict, runner: str = "ninjatrader") -> dict:
-    return _dispatch_backtest(runner, job_spec)
+    """Submit a backtest job. Routes to the NT8 or MT5 agent based on runner."""
+    if runner == "ninjatrader":
+        return _post("/backtest", job_spec, timeout=30)
+    elif runner == "mt5":
+        return mt5_agent_client.start_backtest(_nt8_to_mt5_spec(job_spec))
+    else:
+        raise ValueError(f"Unknown runner: {runner!r}")
 
 
-def job_status(job_id: str) -> dict:
+def _normalize_mt5_status(raw: dict) -> dict:
+    """
+    MT5 agent uses "done"/"cancelled"; polling loop expects "complete"/"failed_*".
+    Sets updated_at to now so the heartbeat stall detector sees a live agent response.
+    """
+    status = raw.get("status", "running")
+    if status == "done":
+        status = "complete"
+    elif status == "cancelled":
+        status = "failed_cancelled"
+    return {
+        "status":     status,
+        "pct":        100 if status == "complete" else 0,
+        "message":    raw.get("error", "") or "",
+        "updated_at": str(time.time()),
+        "error":      raw.get("error"),
+    }
+
+
+def job_status(job_id: str, runner: Optional[str] = None) -> dict:
+    if _resolve_runner(job_id, runner) == "mt5":
+        return _normalize_mt5_status(mt5_agent_client.job_status(job_id))
     return _get(f"/jobs/{job_id}/status")
 
 
-def job_results(job_id: str) -> dict:
+def _normalize_mt5_results(raw: dict) -> dict:
+    """MT5 agent returns KPIs flat; translate to the NT8 nested {kpis, equity_curve, daily_pnl} shape."""
+    _KPI_KEYS = {"net_pnl", "profit_factor", "win_rate", "max_drawdown", "sharpe", "trade_count"}
+    return {
+        "kpis":         {k: raw[k] for k in _KPI_KEYS if k in raw},
+        "equity_curve": raw.get("equity_curve", []),
+        "daily_pnl":    raw.get("daily_pnl", []),
+        "trades":       raw.get("trades", []),
+    }
+
+
+def job_results(job_id: str, runner: Optional[str] = None) -> dict:
+    if _resolve_runner(job_id, runner) == "mt5":
+        return _normalize_mt5_results(mt5_agent_client.job_results(job_id))
     return _get(f"/jobs/{job_id}/results")
 
 
-def job_log(job_id: str, lines: int = 200) -> str:
+def job_log(job_id: str, lines: int = 200, runner: Optional[str] = None) -> str:
+    if _resolve_runner(job_id, runner) == "mt5":
+        return mt5_agent_client.job_log(job_id, lines)
     try:
         data = _get(f"/jobs/{job_id}/log?lines={lines}")
         return data.get("log", "")
@@ -140,7 +237,9 @@ def job_log(job_id: str, lines: int = 200) -> str:
         return ""
 
 
-def cancel_job(job_id: str) -> dict:
+def cancel_job(job_id: str, runner: Optional[str] = None) -> dict:
+    if _resolve_runner(job_id, runner) == "mt5":
+        return mt5_agent_client.cancel_job(job_id)
     return _post(f"/jobs/{job_id}/cancel")
 
 
