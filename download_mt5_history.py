@@ -5,9 +5,15 @@ Downloads historical OHLC data for the LWG Capital lab into a specific MT5 insta
 
 Run this ON THE VPS, against the dedicated lab MT5 install at C:\\MT5_Lab.
 
+Per-timeframe windows are sized to what PU Prime demo actually serves:
+  M5:  240 days  (broker limit ~270)
+  M15: 720 days  (broker limit ~730)
+  H1:  3 years
+  H4:  3 years
+  D1:  3 years
+
 Usage:
     python download_mt5_history.py
-    python download_mt5_history.py --years 5         # change history depth
     python download_mt5_history.py --symbols EURUSD,GBPUSD    # limit symbols
     python download_mt5_history.py --verify          # check existing data, don't re-download
 
@@ -36,8 +42,7 @@ except ImportError:
 # Path to the dedicated lab MT5 install
 MT5_PATH = r"C:\MT5_Lab\terminal64.exe"
 
-# Symbols to download. Broker suffixes (e.g. ".s") may be applied automatically
-# at runtime — see resolve_symbol() below.
+# Symbols to download
 SYMBOLS = [
     "XAUUSD",
     "XAGUSD",
@@ -51,28 +56,23 @@ SYMBOLS = [
     "NAS100",
 ]
 
-# Timeframes needed by the lab:
-# - M5 + M15 for low-timeframe strategies (scalping, fast mean reversion)
-# - H1 + H4 for forex regime classification (matches the bots)
-# - D1 for daily-bar metrics if ever needed
-TIMEFRAMES = {
-    "M5":  mt5.TIMEFRAME_M5,
-    "M15": mt5.TIMEFRAME_M15,
-    "H1":  mt5.TIMEFRAME_H1,
-    "H4":  mt5.TIMEFRAME_H4,
-    "D1":  mt5.TIMEFRAME_D1,
+# Per-timeframe configuration: (mt5_constant, days_back, label)
+# Days are sized to what PU Prime demo serves with a small safety margin
+TIMEFRAME_CONFIG = {
+    "M5":  (mt5.TIMEFRAME_M5,  240),    # ~8 months (limit ~270d)
+    "M15": (mt5.TIMEFRAME_M15, 720),    # ~2 years (limit ~730d)
+    "H1":  (mt5.TIMEFRAME_H1,  1095),   # 3 years
+    "H4":  (mt5.TIMEFRAME_H4,  1095),   # 3 years
+    "D1":  (mt5.TIMEFRAME_D1,  1095),   # 3 years
 }
 
-# Default years of history to fetch
-DEFAULT_YEARS_BACK = 3
-
-# How many bars to expect per timeframe per year (rough estimates for verification)
-EXPECTED_BARS_PER_YEAR = {
-    "M5":  70000,   # ~24h × 252 trading days × 12 bars/hour
-    "M15": 24000,   # ~24h × 252 trading days × 4 bars/hour
-    "H1":  6000,    # ~24h × 252 days
-    "H4":  1500,    # ~6 bars/day × 252 days
-    "D1":  252,     # trading days per year
+# Rough expected bar counts (per the windows above) for verification
+EXPECTED_BARS = {
+    "M5":  240 * 288 * 0.7,    # 288 bars/24h, 70% threshold for weekend gaps
+    "M15": 720 * 96 * 0.7,
+    "H1":  1095 * 24 * 0.7,
+    "H4":  1095 * 6 * 0.7,
+    "D1":  1095 * 0.7,
 }
 
 # Common broker suffixes to try if the bare symbol doesn't exist
@@ -84,7 +84,7 @@ SUFFIX_CANDIDATES = ["", ".s", ".m", ".raw", "#", "."]
 # ============================================================
 
 
-def init_mt5() -> bool:
+def init_mt5():
     """Initialize connection to the specific lab MT5 instance."""
     print(f"Connecting to MT5 at {MT5_PATH}...")
     if not mt5.initialize(path=MT5_PATH):
@@ -110,10 +110,6 @@ def init_mt5() -> bool:
 
 
 def resolve_symbol(symbol):
-    """
-    Try to find the actual symbol name on this broker.
-    Returns the resolved name or None if not found.
-    """
     for suffix in SUFFIX_CANDIDATES:
         candidate = symbol + suffix
         info = mt5.symbol_info(candidate)
@@ -123,10 +119,6 @@ def resolve_symbol(symbol):
 
 
 def ensure_symbol_in_market_watch(symbol):
-    """
-    Make sure the symbol is visible in Market Watch.
-    Required before MT5 will fetch history for it.
-    """
     info = mt5.symbol_info(symbol)
     if info is None:
         return False
@@ -137,39 +129,24 @@ def ensure_symbol_in_market_watch(symbol):
     return True
 
 
-def download_history(symbol, timeframe_name, timeframe_const, years_back):
-    """
-    Download history for one symbol/timeframe combination.
-    Returns the number of bars actually fetched.
-    """
+def download_history(symbol, timeframe_const, days_back):
     end = datetime.now()
-    start = end - timedelta(days=years_back * 365)
-
+    start = end - timedelta(days=days_back)
     rates = mt5.copy_rates_range(symbol, timeframe_const, start, end)
 
     if rates is None or len(rates) == 0:
         err = mt5.last_error()
-        print(f"  FAIL  {symbol} {timeframe_name}: no data returned. Error: {err}")
-        return 0
-
-    return len(rates)
+        return 0, err
+    return len(rates), None
 
 
-def verify_history(symbol, timeframe_name, timeframe_const, years_back):
-    """
-    Check whether enough history exists for this symbol/timeframe.
-    Returns (is_sufficient, bar_count).
-    """
+def verify_history(symbol, timeframe_const, days_back):
     end = datetime.now()
-    start = end - timedelta(days=years_back * 365)
-
+    start = end - timedelta(days=days_back)
     rates = mt5.copy_rates_range(symbol, timeframe_const, start, end)
     if rates is None:
         return (False, 0)
-
-    bar_count = len(rates)
-    expected_minimum = EXPECTED_BARS_PER_YEAR[timeframe_name] * years_back * 0.7
-    return (bar_count >= expected_minimum, bar_count)
+    return (True, len(rates))
 
 
 # ============================================================
@@ -179,8 +156,6 @@ def verify_history(symbol, timeframe_name, timeframe_const, years_back):
 
 def main():
     parser = argparse.ArgumentParser(description="Download MT5 historical data for the LWG lab")
-    parser.add_argument("--years", type=int, default=DEFAULT_YEARS_BACK,
-                        help=f"Years of history to download (default: {DEFAULT_YEARS_BACK})")
     parser.add_argument("--symbols", type=str, default=None,
                         help="Comma-separated symbol list (default: all). Example: EURUSD,GBPUSD")
     parser.add_argument("--verify", action="store_true",
@@ -195,10 +170,13 @@ def main():
     print("=" * 70)
     print("LWG Capital - MT5 Historical Data Download")
     print("=" * 70)
-    print(f"  Mode:       {'VERIFY ONLY' if args.verify else 'DOWNLOAD'}")
-    print(f"  Years back: {args.years}")
-    print(f"  Symbols:    {len(target_symbols)}")
-    print(f"  Timeframes: {', '.join(TIMEFRAMES.keys())}")
+    print(f"  Mode:     {'VERIFY ONLY' if args.verify else 'DOWNLOAD'}")
+    print(f"  Symbols:  {len(target_symbols)}")
+    print(f"  Windows:  M5={TIMEFRAME_CONFIG['M5'][1]}d, "
+          f"M15={TIMEFRAME_CONFIG['M15'][1]}d, "
+          f"H1={TIMEFRAME_CONFIG['H1'][1]}d, "
+          f"H4={TIMEFRAME_CONFIG['H4'][1]}d, "
+          f"D1={TIMEFRAME_CONFIG['D1'][1]}d")
     print()
 
     if not init_mt5():
@@ -209,17 +187,14 @@ def main():
     for symbol in target_symbols:
         actual = resolve_symbol(symbol)
         if actual is None:
-            print(f"  WARN  {symbol}: not found on this broker (tried all suffix candidates)")
+            print(f"  WARN  {symbol}: not found")
         else:
             resolved[symbol] = actual
-            if actual != symbol:
-                print(f"  OK    {symbol} -> {actual}")
-            else:
-                print(f"  OK    {symbol}")
+            print(f"  OK    {symbol}{' -> ' + actual if actual != symbol else ''}")
     print()
 
     if not resolved:
-        print("ERROR: No symbols could be resolved on this broker. Check broker settings.")
+        print("ERROR: No symbols resolved on this broker.")
         mt5.shutdown()
         sys.exit(1)
 
@@ -232,28 +207,30 @@ def main():
     print()
 
     print(f"{'Verifying' if args.verify else 'Downloading'} history...")
-    print(f"  {'Symbol':<15} {'TF':<5} {'Bars':>10} {'Status':<15}")
-    print(f"  {'-'*15} {'-'*5} {'-'*10} {'-'*15}")
+    print(f"  {'Symbol':<15} {'TF':<5} {'Days':>5} {'Bars':>10} {'Status':<15}")
+    print(f"  {'-'*15} {'-'*5} {'-'*5} {'-'*10} {'-'*15}")
 
     total_ops = 0
     successful = 0
     insufficient = []
 
     for symbol, actual in resolved.items():
-        for tf_name, tf_const in TIMEFRAMES.items():
+        for tf_name, (tf_const, days_back) in TIMEFRAME_CONFIG.items():
             total_ops += 1
             if args.verify:
-                is_ok, bar_count = verify_history(actual, tf_name, tf_const, args.years)
-                status = "SUFFICIENT" if is_ok else "INSUFFICIENT"
-                print(f"  {actual:<15} {tf_name:<5} {bar_count:>10} {status:<15}")
-                if is_ok:
+                is_ok, bar_count = verify_history(actual, tf_const, days_back)
+                expected = EXPECTED_BARS[tf_name]
+                sufficient = is_ok and bar_count >= expected
+                status = "SUFFICIENT" if sufficient else "INSUFFICIENT"
+                print(f"  {actual:<15} {tf_name:<5} {days_back:>5} {bar_count:>10} {status:<15}")
+                if sufficient:
                     successful += 1
                 else:
                     insufficient.append((actual, tf_name, bar_count))
             else:
-                bars = download_history(actual, tf_name, tf_const, args.years)
-                status = "OK" if bars > 0 else "FAILED"
-                print(f"  {actual:<15} {tf_name:<5} {bars:>10} {status:<15}")
+                bars, err = download_history(actual, tf_const, days_back)
+                status = "OK" if bars > 0 else f"FAIL: {err}"
+                print(f"  {actual:<15} {tf_name:<5} {days_back:>5} {bars:>10} {status}")
                 if bars > 0:
                     successful += 1
                 time.sleep(0.2)
@@ -268,8 +245,6 @@ def main():
         print("The following need a fresh download:")
         for actual, tf_name, bar_count in insufficient:
             print(f"  - {actual} {tf_name} (only {bar_count} bars)")
-        print()
-        print("Run without --verify to download them.")
 
     mt5.shutdown()
 
