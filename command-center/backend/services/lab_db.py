@@ -185,6 +185,8 @@ def init_db() -> None:
             # Rename firm_id → ruleset_id in evaluations (M3)
             "ALTER TABLE evaluations RENAME COLUMN firm_id TO ruleset_id",
             "CREATE INDEX IF NOT EXISTS idx_evals_ruleset ON evaluations(ruleset_id, verdict)",
+            # Compile gate — default 1 (compiled) so existing strategies aren't blocked
+            "ALTER TABLE strategies ADD COLUMN is_compiled INTEGER NOT NULL DEFAULT 1",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -710,6 +712,22 @@ def upsert_strategy(data: dict) -> None:
             data["scanned_at"], data.get("source_hash"),
             data.get("runner", "ninjatrader"),
         ))
+
+
+def mark_strategy_needs_compile(class_name: str) -> None:
+    """Called after a source file is uploaded — marks that strategy as needing compile."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE strategies SET is_compiled = 0 WHERE class_name = ?", (class_name,)
+        )
+
+
+def mark_runner_compiled(runner: str) -> None:
+    """Called after a successful compile — marks all strategies for that runner as compiled."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE strategies SET is_compiled = 1 WHERE runner = ?", (runner,)
+        )
 
 
 def delete_strategy(strategy_id: str) -> bool:

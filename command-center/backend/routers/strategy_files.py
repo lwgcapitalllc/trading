@@ -61,7 +61,7 @@ async def upload_strategy_file(
         )
 
     try:
-        return nt8_agent_client.upload_strategy_file(filename, content, overwrite)
+        result = nt8_agent_client.upload_strategy_file(filename, content, overwrite)
     except RuntimeError as exc:
         msg = str(exc)
         if "HTTP 409" in msg:
@@ -69,6 +69,10 @@ async def upload_strategy_file(
         if "HTTP 423" in msg:
             raise HTTPException(status_code=423, detail=msg)
         raise HTTPException(status_code=502, detail=msg)
+    # File uploaded — strategy needs a fresh compile before it can be run
+    class_name = filename.rsplit(".", 1)[0]
+    lab_db.mark_strategy_needs_compile(class_name)
+    return result
 
 
 @router.delete("/{filename}")
@@ -97,9 +101,12 @@ def trigger_compile():
 @router.get("/compile/{compile_job_id}", response_model=CompileJobStatus)
 def get_compile_status(compile_job_id: str):
     try:
-        return nt8_agent_client.get_compile_status(compile_job_id)
+        result = nt8_agent_client.get_compile_status(compile_job_id)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+    if result.get("status") == "success":
+        lab_db.mark_runner_compiled("ninjatrader")
+    return result
 
 
 @router.post("/compile-mt5", status_code=202)
@@ -113,9 +120,12 @@ def trigger_compile_mt5():
 @router.get("/compile-mt5/{compile_job_id}", response_model=CompileJobStatus)
 def get_compile_mt5_status(compile_job_id: str):
     try:
-        return mt5_agent_client.get_compile_status(compile_job_id)
+        result = mt5_agent_client.get_compile_status(compile_job_id)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+    if result.get("status") == "success":
+        lab_db.mark_runner_compiled("mt5")
+    return result
 
 
 @router.get("/sync-status", response_model=list[StrategyFileSyncStatus])
@@ -143,7 +153,10 @@ def sync_status():
         is_mt5 = s.get("runner") == "mt5"
         expected = f"{class_name}.mq5" if is_mt5 else f"{class_name}.cs"
         vps_file = (mt5_files if is_mt5 else nt8_files).get(expected)
-        is_compiled = mt5_files.get(f"{class_name}.ex5") is not None if is_mt5 else None
+        if is_mt5:
+            is_compiled = mt5_files.get(f"{class_name}.ex5") is not None
+        else:
+            is_compiled = bool(s.get("is_compiled", 1))
         result.append(StrategyFileSyncStatus(
             strategy_id=s["id"],
             expected_filename=expected,

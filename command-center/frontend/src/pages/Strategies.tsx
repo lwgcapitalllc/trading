@@ -97,9 +97,13 @@ function strategyMarket(runner: string): 'futures' | 'forex' {
 function StrategiesTab() {
   const navigate = useNavigate()
   const { data: strategies, isLoading } = useStrategies()
-  const { data: syncStatus } = useStrategyFileSyncStatus()
+  const { data: syncStatus, refetch: refetchSync } = useStrategyFileSyncStatus()
   const scan = useScanStrategies()
   const deploy = useDeployStrategy()
+  const compileMut = useTriggerCompile()
+  const compileMt5Mut = useTriggerCompileMt5()
+  const [activeCompileId, setActiveCompileId] = useState<string | null>(null)
+  const [activeMt5CompileId, setActiveMt5CompileId] = useState<string | null>(null)
   const [runStrategy, setRunStrategy] = useState<Strategy | null>(null)
   const [deployingId, setDeployingId] = useState<string | null>(null)
   const [marketFilter, setMarketFilter] = useState<MarketFilter>('all')
@@ -138,6 +142,20 @@ function StrategiesTab() {
       await deploy.mutateAsync(strategyId)
     } finally {
       setDeployingId(null)
+    }
+  }
+
+  const handleCompile = async (runner: string) => {
+    try {
+      if (runner === 'mt5') {
+        const result = await compileMt5Mut.mutateAsync()
+        setActiveMt5CompileId(result.compile_job_id)
+      } else {
+        const result = await compileMut.mutateAsync()
+        setActiveCompileId(result.compile_job_id)
+      }
+    } catch {
+      // toast shown by hook
     }
   }
 
@@ -192,6 +210,7 @@ function StrategiesTab() {
                   onView={() => navigate(`/strategies/${s.id}`)}
                   onRun={() => setRunStrategy(s)}
                   onDeploy={() => handleDeploy(s.id)}
+                  onCompile={() => handleCompile(s.runner)}
                 />
               ))}
             </tbody>
@@ -205,12 +224,27 @@ function StrategiesTab() {
           onClose={() => setRunStrategy(null)}
         />
       )}
+      {activeCompileId && (
+        <CompileModal
+          compileJobId={activeCompileId}
+          onClose={() => { setActiveCompileId(null); refetchSync() }}
+          usePollHook={useCompileStatus}
+        />
+      )}
+      {activeMt5CompileId && (
+        <CompileModal
+          compileJobId={activeMt5CompileId}
+          title="Compiling MT5 Strategy"
+          onClose={() => { setActiveMt5CompileId(null); refetchSync() }}
+          usePollHook={useCompileStatusMt5}
+        />
+      )}
     </div>
   )
 }
 
 function StrategyRow({
-  strategy: s, inSync, isCompiled, isDeploying, onView, onRun, onDeploy,
+  strategy: s, inSync, isCompiled, isDeploying, onView, onRun, onDeploy, onCompile,
 }: {
   strategy: Strategy
   inSync?: boolean
@@ -219,6 +253,7 @@ function StrategyRow({
   onView: () => void
   onRun: () => void
   onDeploy: () => void
+  onCompile: () => void
 }) {
   return (
     <tr onClick={onView} className="hover:bg-bg-hover cursor-pointer transition-colors">
@@ -252,10 +287,19 @@ function StrategyRow({
               Deploy
             </button>
           )}
+          {inSync && isCompiled === false && (
+            <button
+              onClick={onCompile}
+              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-warn-muted text-warn-text border border-warn-text/30 hover:opacity-80 transition-opacity"
+            >
+              <RefreshCw size={10} />
+              Compile
+            </button>
+          )}
           <button
             onClick={onRun}
             disabled={inSync === false || isCompiled === false}
-            title={inSync === false ? 'Deploy strategy before running' : isCompiled === false ? 'Compile MT5 strategy before running' : undefined}
+            title={inSync === false ? 'Deploy strategy before running' : isCompiled === false ? 'Compile strategy before running' : undefined}
             className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <Play size={10} />
