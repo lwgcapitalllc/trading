@@ -196,7 +196,7 @@ function StrategiesTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Params</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runs</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
-                <th className="px-4 py-3 text-right" />
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
@@ -275,8 +275,8 @@ function StrategyRow({
           <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
         )}
       </td>
-      <td className="px-4 py-3 text-right">
-        <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
           {!inSync && (
             <button
               onClick={onDeploy}
