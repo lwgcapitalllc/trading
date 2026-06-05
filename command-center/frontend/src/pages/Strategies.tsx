@@ -196,7 +196,7 @@ function StrategiesTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Params</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runs</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
-                <th className="px-4 py-3" />
+                <th className="px-4 py-3 text-right" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
@@ -275,8 +275,8 @@ function StrategyRow({
           <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
         )}
       </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+      <td className="px-4 py-3 text-right">
+        <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
           {!inSync && (
             <button
               onClick={onDeploy}
@@ -296,15 +296,15 @@ function StrategyRow({
               Compile
             </button>
           )}
-          <button
-            onClick={onRun}
-            disabled={inSync === false || isCompiled === false}
-            title={inSync === false ? 'Deploy strategy before running' : isCompiled === false ? 'Compile strategy before running' : undefined}
-            className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <Play size={10} />
-            Run
-          </button>
+          {inSync && isCompiled !== false && (
+            <button
+              onClick={onRun}
+              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors"
+            >
+              <Play size={10} />
+              Run
+            </button>
+          )}
         </div>
       </td>
     </tr>
