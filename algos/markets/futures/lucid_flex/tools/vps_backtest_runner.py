@@ -8,7 +8,7 @@ Prerequisites on VPS:
 
 Two modes:
 
-  Lab mode (job-keyed, called by vps_agent.py):
+  Lab mode (job-keyed, called by nt8_agent.py):
     python vps_backtest_runner.py --job-id <id> --job-spec <path/to/job_spec.json>
     Reads a single job spec, runs it, writes NT8_DOCS/lab_results/<job_id>/result.json.
     Emits PCT:N:message lines for agent progress tracking.

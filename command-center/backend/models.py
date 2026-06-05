@@ -523,7 +523,7 @@ class LabProgress(BaseModel):
 class SystemHealth(BaseModel):
     backend: bool = True
     ssh_tunnel: bool = False
-    vps_agent: bool = False    # NT8 agent (port 8765)
+    nt8_agent: bool = False    # NT8 agent (port 8765)
     mt5_agent: bool = False    # MT5 agent (port 8766)
     nt8_running: bool = False
     nt8_sa_visible: bool = False

@@ -1,5 +1,5 @@
 """
-VPS Agent — job-keyed HTTP bridge for NinjaTrader 8 backtests.
+NT8 Agent — job-keyed HTTP bridge for NinjaTrader 8 backtests.
 
 Runs persistently in the RDP session on the VPS. NT8 + Strategy Analyzer must
 be open before any /backtest job is submitted.
@@ -815,6 +815,6 @@ def clear_results():
 
 
 if __name__ == "__main__":
-    _alog(f"VPS Agent starting on port {PORT}...")
+    _alog(f"NT8 Agent starting on port {PORT}...")
     _alog("NT8 must be running with Strategy Analyzer open.")
     app.run(host="127.0.0.1", port=PORT, threaded=True)

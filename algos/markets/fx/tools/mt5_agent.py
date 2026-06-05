@@ -1,7 +1,7 @@
 """
 MT5 Agent — HTTP bridge for MetaTrader 5 backtests and historical data.
 
-Runs persistently on the VPS alongside the NT8 agent (vps_agent.py).
+Runs persistently on the VPS alongside the NT8 agent (nt8_agent.py).
 MT5 terminal must be running for full functionality; the agent starts
 and returns a degraded status if MT5 is not yet connected.
 

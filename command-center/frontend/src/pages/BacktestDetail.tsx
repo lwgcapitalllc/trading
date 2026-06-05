@@ -181,7 +181,7 @@ function calmarLabel(c: number | null): string {
 
 // ── Fallback KPI computation ──────────────────────────────────────────────────
 // Derives Sharpe / Worst Day / Worst Streak from daily_pnl when the
-// VPS agent doesn't report them directly.
+// NT8 agent doesn't report them directly.
 
 interface FallbackMetrics {
   worstDay: number | null
@@ -1155,9 +1155,9 @@ function RunningBanner({ pct, message, startedAt, onStop }: {
 
 const FAILURE_GUIDANCE: Record<string, string> = {
   failed_timeout:
-    'The VPS agent stopped responding mid-run. Verify NT8 is running and the Strategy Analyzer is open in the RDP session, then re-run.',
+    'The NT8 agent stopped responding mid-run. Verify NT8 is running and the Strategy Analyzer is open in the RDP session, then re-run.',
   failed_unknown:
-    'An unexpected error occurred. Check the run logs below and the VPS agent log for details.',
+    'An unexpected error occurred. Check the run logs below and the NT8 agent log for details.',
 }
 
 function FailureBanner({ run, onRetry, retrying }: { run: Run; onRetry?: () => void; retrying?: boolean }) {

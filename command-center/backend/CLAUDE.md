@@ -46,7 +46,7 @@ backend/
 │   ├── grading.py         compute_grade() → A/B/C/D/F with plain-English reasons
 │   ├── correlation_table.py  hardcoded correlated instrument pairs
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
-│   ├── vps_client.py      typed HTTP wrapper over NT8 vps_agent; runner dispatcher (routes mt5 → mt5_agent_client)
+│   ├── nt8_agent_client.py      typed HTTP wrapper over NT8 nt8_agent; runner dispatcher (routes mt5 → mt5_agent_client)
 │   └── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel)
 ├── data/lab.db            strategies, rulesets, runs, evaluations, optimizations, stress_tests
 └── reports/lab/           run output files — equity curves, logs, progress.json
@@ -108,7 +108,7 @@ All in `models.py`. One file. Never split it.
 | Channel | Use for | How |
 |---|---|---|
 | SSH (subprocess) | File transfer, Task Scheduler, taskkill | `subprocess.run(["ssh", cfg.SSH_ALIAS, ...])` |
-| HTTP (vps_agent) | NT8 control, pywinauto, live job control | `services/vps_client.py` — always use the typed wrapper |
+| HTTP (nt8_agent) | NT8 control, pywinauto, live job control | `services/nt8_agent_client.py` — always use the typed wrapper |
 
 Never make a synchronous SSH call from a request handler that could take > 2s. Background it.
 
@@ -153,7 +153,7 @@ Smart-money `/run` is the canonical pattern:
 6. `/progress` endpoint reads the file; frontend polls
 7. `/stop` reads PID, sends SIGTERM, resets progress
 
-Lab backtests use the same pattern but the "worker" is the VPS agent over HTTP.
+Lab backtests use the same pattern but the "worker" is the NT8 agent over HTTP.
 
 ---
 
@@ -249,8 +249,8 @@ Legacy files using `[Display(GroupName = "Prop Firm")]` fall back to `"foundatio
 
 ### Dispatcher injection pattern
 
-`vps_client.build_foundational_params(ruleset)` → dict of 12 strategy param keys.
-`vps_client.inject_foundational(user_params, ruleset)` → merged dict (foundational first, user params override).
+`nt8_agent_client.build_foundational_params(ruleset)` → dict of 12 strategy param keys.
+`nt8_agent_client.inject_foundational(user_params, ruleset)` → merged dict (foundational first, user params override).
 
 Injection happens at three creation points before the VPS job_spec is sent:
 - `routers/backtests.py` `trigger_backtest()` — primary ruleset = `evaluate_rulesets[0]`
@@ -301,12 +301,12 @@ On startup `_migrate_strategy_renames()` renames `orb_lucidflex` → `orb`, `vwa
 | Lab — Backtests | ✅ Live | Trigger NT8 runs on the VPS via the agent. Poll to completion. Evaluate against selected firms. Equity curve, daily P&L, per-firm verdicts, full KPI set. After evaluation, computes Worthiness Score (Tier 1/2/3). |
 | Lab — Sweeps | ✅ Live | Runs N backtests sequentially (one instrument at a time, `_MAX_CONCURRENT = 1`) across all instruments for a strategy. Each run gets its own worthiness score. Deletable. Cancel endpoint force-fails stuck `running` rows (backend-restart recovery). Retry-all and per-run retry via `POST /backtests/runs/{id}/retry`. |
 | Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer. Generates all param combos, runs each sequentially via SA semaphore, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. `source_run_id` links an optimization back to the run it was triggered from. Deletable. Per-run retry via `POST /backtests/runs/{id}/retry`. |
-| Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
+| Lab — System | ✅ Live | Health endpoints (SSH, NT8 agent, NT8, compile status). Log proxies. Progress file read. `POST /system/nt8-agent/start` restarts nt8_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
 | Lab — Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap, vectorised numpy). Walk-forward (N sequential NT8 windows, IS/OOS Sharpe). Sensitivity (±10%/±25% param perturbations via NT8). Auto-triggered (MC only) on Tier 1 backtests and optimizer winners. Graded A-F. |
 | Lab — Regime Tags (M4) | ✅ Live | Each `daily_pnl` entry gains a `regime_tag` (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Pipeline auto-tags on every new backtest. Manual backfill via `POST /backtests/runs/{id}/backfill_regime`. Optimizer accepts optional `regime_filter` field to score child runs only against trades in that regime. |
 | Lab — Strategy Files (Pass 2) | ✅ Live | Deploy strategy files to VPS without SSH. NT8 `.cs` and MT5 `.mq5` both supported. `GET /strategy-files`, `POST /strategy-files/upload`, `DELETE /strategy-files/{filename}`, `POST /strategy-files/compile` (NT8 F5), `GET /strategy-files/compile/{id}`, `POST /strategy-files/compile-mt5` (MetaEditor), `GET /strategy-files/compile-mt5/{id}`, `GET /strategy-files/sync-status`. sync_status routes by `runner` field: `runner=mt5` → checks MT5 agent for `.mq5`; others → checks NT8 agent for `.cs`. |
-| Lab — Strategy Deploy (Pass 2.5) | ✅ Live | One-click deploy from repo to VPS. `POST /strategies/{id}/deploy` reads `source_path`, reads the file from disk, uploads via vps_client (which dispatches `.mq5` → MT5 agent, `.cs` → NT8 agent, overwrite=True), caches result in `_deploy_jobs` dict. `GET /strategies/{id}/deploy/{job_id}` returns the cached result. `ScanResult` now includes a `warnings` list for DB rows whose `source_path` no longer exists on disk. Scanner reads from `strategies/` (top-level); `source_path` column backfilled via migration. |
-| Lab — MT5 runner (Steps 1-7) | ✅ Live | `mt5_agent.py` on VPS (port 8766) — health/status, historical data, Strategy Tester driver (`_run_backtest`: writes `.ini` + `.set`, launches `terminal64.exe`, polls for HTML report, parses with `_parse_mt5_report`). `mt5_agent_client.py` on Mac — typed wrapper at `http://127.0.0.1:8766`. `vps_client` routes `runner="mt5"` jobs through `mt5_agent_client` with spec translation (`_nt8_to_mt5_spec`) and response normalisation (`_normalize_mt5_status/results`). |
+| Lab — Strategy Deploy (Pass 2.5) | ✅ Live | One-click deploy from repo to VPS. `POST /strategies/{id}/deploy` reads `source_path`, reads the file from disk, uploads via nt8_agent_client (which dispatches `.mq5` → MT5 agent, `.cs` → NT8 agent, overwrite=True), caches result in `_deploy_jobs` dict. `GET /strategies/{id}/deploy/{job_id}` returns the cached result. `ScanResult` now includes a `warnings` list for DB rows whose `source_path` no longer exists on disk. Scanner reads from `strategies/` (top-level); `source_path` column backfilled via migration. |
+| Lab — MT5 runner (Steps 1-7) | ✅ Live | `mt5_agent.py` on VPS (port 8766) — health/status, historical data, Strategy Tester driver (`_run_backtest`: writes `.ini` + `.set`, launches `terminal64.exe`, polls for HTML report, parses with `_parse_mt5_report`). `mt5_agent_client.py` on Mac — typed wrapper at `http://127.0.0.1:8766`. `nt8_agent_client` routes `runner="mt5"` jobs through `mt5_agent_client` with spec translation (`_nt8_to_mt5_spec`) and response normalisation (`_normalize_mt5_status/results`). |
 | Lab — MT5 deployment (Step 9) | ✅ Live | MT5 agent `POST/DELETE /files/strategies/<filename>` for `.mq5` upload/delete. `POST /compile` triggers `metaeditor64.exe /compile:<experts_dir>` in a background thread, parses `N error(s)` from the log file, stores result in `_compile_jobs`. `GET /compile/<id>` polls status. Corresponding backend endpoints: `POST/GET /strategy-files/compile-mt5`. |
 | Settings | ✅ Live | Config read/write. |
 
@@ -372,7 +372,7 @@ Merges both pools (~11,000 paths) and computes: median/P95/P99 drawdown, prob of
 
 ## Key architectural decisions
 
-**Optimizer implementation:** NT8 Optimizer GUI automation (pywinauto) was not attempted. Instead, the optimizer generates all parameter combinations from the grid and drives them as individual backtest calls via the existing VPS agent pipeline (`optimization_runner.py`). `_MAX_CONCURRENT = 1` — the NT8 Strategy Analyzer window is single-threaded; running more than one job at a time causes SA conflicts, display switch failures, and missing XML logs. For 3+D grids with "auto" or "genetic" search method, a random subset of up to 200 combinations is sampled.
+**Optimizer implementation:** NT8 Optimizer GUI automation (pywinauto) was not attempted. Instead, the optimizer generates all parameter combinations from the grid and drives them as individual backtest calls via the existing NT8 agent pipeline (`optimization_runner.py`). `_MAX_CONCURRENT = 1` — the NT8 Strategy Analyzer window is single-threaded; running more than one job at a time causes SA conflicts, display switch failures, and missing XML logs. For 3+D grids with "auto" or "genetic" search method, a random subset of up to 200 combinations is sampled.
 
 **NT8 SA global lock:** All three job types (single backtest, sweep, optimization) share the same physical SA window. `lab_db.has_any_running_vps_job()` checks for any `backtest_runs` or `optimizations` row with `status = 'running'`. All three trigger endpoints call it and return 409 if true. This prevents cross-job conflicts (e.g. a sweep starting while an optimization is in progress). Walk-forward and sensitivity stress tests also check this lock before triggering.
 
@@ -409,7 +409,7 @@ Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long
 
 **Sweep serialisation:** `sweep_runner.py` uses `asyncio.Semaphore(1)` — same constraint as the optimizer. Instruments run one at a time through the SA window.
 
-**Runner dispatcher:** `vps_client.start_backtest(job_spec, runner)` routes to the appropriate backend. Both `"ninjatrader"` (NT8 Strategy Analyzer) and `"mt5"` (MT5 Strategy Tester via `mt5_agent_client`) are wired. `vps_client._nt8_to_mt5_spec()` translates the NT8-style job_spec to the MT5 agent's format. `_normalize_mt5_status/results()` translates the MT5 agent's response shape back to the NT8 shape so all callers remain runner-agnostic. File upload/delete also dispatch by extension: `.mq5` files go to `mt5_agent_client`, `.cs` files go to the NT8 vps_agent.
+**Runner dispatcher:** `nt8_agent_client.start_backtest(job_spec, runner)` routes to the appropriate backend. Both `"ninjatrader"` (NT8 Strategy Analyzer) and `"mt5"` (MT5 Strategy Tester via `mt5_agent_client`) are wired. `nt8_agent_client._nt8_to_mt5_spec()` translates the NT8-style job_spec to the MT5 agent's format. `_normalize_mt5_status/results()` translates the MT5 agent's response shape back to the NT8 shape so all callers remain runner-agnostic. File upload/delete also dispatch by extension: `.mq5` files go to `mt5_agent_client`, `.cs` files go to the NT8 nt8_agent.
 
 **Sweep vs. progress lock:** Sweep and optimization runs do NOT use `lab_progress.json`. That file is exclusively for the single-run flow. Sweep/optimization state is tracked only in the DB.
 
@@ -419,9 +419,9 @@ Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long
 
 ## Pass 2 — Strategy Deployment Manager
 
-### Strategy file endpoints on VPS agent
+### Strategy file endpoints on NT8 agent
 
-New endpoints added to `algos/markets/futures/lucid_flex/tools/vps_agent.py`:
+New endpoints added to `algos/markets/futures/lucid_flex/tools/nt8_agent.py`:
 
 ```
 GET    /files/strategies              list .cs files in NT8 strategy folder
@@ -451,11 +451,11 @@ The subprocess is launched with `STARTUPINFO.lpDesktop = "winsta0\\default"` to 
 
 ### 256 KB upload limit
 
-Enforced on both the VPS agent and the backend router. NinjaScript files are typically 5–30 KB; anything larger is suspicious.
+Enforced on both the NT8 agent and the backend router. NinjaScript files are typically 5–30 KB; anything larger is suspicious.
 
 ### Lock detection
 
-Before uploading or deleting, the VPS agent tries to open the file in `r+b` mode. `IOError` means NT8 has it locked (strategy is running or open in a chart). Returns HTTP 423 with a clear message.
+Before uploading or deleting, the NT8 agent tries to open the file in `r+b` mode. `IOError` means NT8 has it locked (strategy is running or open in a chart). Returns HTTP 423 with a clear message.
 
 ### Sync-status
 
@@ -475,11 +475,11 @@ Three `UPDATE strategies SET source_path = ...` statements were added to `_run_m
 
 ### Deploy endpoint
 
-`POST /strategies/{strategy_id}/deploy` — reads `source_path` from the DB, reads the file from disk, calls `vps_client.upload_strategy_file(filename, content, overwrite=True)`, stores the result in an in-memory `_deploy_jobs` dict, returns 202 with `{deploy_job_id, status: "started"}`.
+`POST /strategies/{strategy_id}/deploy` — reads `source_path` from the DB, reads the file from disk, calls `nt8_agent_client.upload_strategy_file(filename, content, overwrite=True)`, stores the result in an in-memory `_deploy_jobs` dict, returns 202 with `{deploy_job_id, status: "started"}`.
 
 `GET /strategies/{strategy_id}/deploy/{deploy_job_id}` — returns the cached `DeployJobStatus` from `_deploy_jobs`. Because the upload is synchronous (fast over the SSH tunnel), the job is complete by the time the client first polls.
 
-Edge cases handled: `source_path` null → 400, file missing on disk → 404, VPS file locked → 423 (propagated from VPS agent).
+Edge cases handled: `source_path` null → 400, file missing on disk → 404, VPS file locked → 423 (propagated from NT8 agent).
 
 ### New model
 

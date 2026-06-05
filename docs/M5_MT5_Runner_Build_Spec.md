@@ -25,7 +25,7 @@ Read `backend/CLAUDE.md`, `frontend/CLAUDE.md`,
 ## 1. What M5 delivers (acceptance checklist)
 
 - [ ] New `mt5_agent.py` running on the VPS — sister to the existing
-  `vps_agent.py` for NT8. Exposes the same shape of endpoints but drives
+  `nt8_agent.py` for NT8. Exposes the same shape of endpoints but drives
   MT5 instead of NT8.
 - [ ] Backend dispatcher routes by the `runner` field on strategies:
   `ninjatrader` strategies go to the NT8 agent, `mt5` strategies go to
@@ -127,7 +127,7 @@ just produces it in the same format.
 Default port: 8766. SSH tunnel from Mac to VPS: `localhost:8766`.
 
 The Mac backend has two agent clients now:
-- `services/nt8_agent_client.py` (rename from `vps_client.py` — clearer)
+- `services/nt8_agent_client.py` (rename from `nt8_agent_client.py` — clearer)
 - `services/mt5_agent_client.py` (new)
 
 Both implement the same interface. Dispatcher picks one based on
@@ -139,7 +139,7 @@ strategy.runner.
 
 ### Dispatcher refactor
 
-The existing dispatcher in `services/vps_client.py` (or wherever it lives
+The existing dispatcher in `services/nt8_agent_client.py` (or wherever it lives
 now after Pass 1) needs to become a clean router:
 
 ```python
@@ -357,7 +357,7 @@ Pass 2 built the deployment manager for NT8. Extending it for MT5:
 
 ### Upload path
 
-For a `.mq5` file: VPS agent uploads to MT5's `MQL5/Experts/` folder
+For a `.mq5` file: NT8 agent uploads to MT5's `MQL5/Experts/` folder
 (typically `C:\Users\Administrator\AppData\Roaming\MetaQuotes\Terminal\
 <terminal_id>\MQL5\Experts\`).
 
@@ -472,8 +472,8 @@ Strict. Stop and report after each:
 
 **backend/CLAUDE.md additions:**
 - New services: `mt5_agent_client.py`
-- Updated services: `nt8_agent_client.py` (renamed from `vps_client.py`),
-  dispatcher in `vps_client.py` or new `agent_dispatcher.py`
+- Updated services: `nt8_agent_client.py` (renamed from `nt8_agent_client.py`),
+  dispatcher in `nt8_agent_client.py` or new `agent_dispatcher.py`
 - New tables: `instrument_metadata`
 - Updated tables: `rulesets` (new `market` and `drawdown_unit` columns)
 - Regime classification routing rule (H1/H4 for mt5, daily for

@@ -4,7 +4,7 @@ Shared fixtures for the lab test suite.
 DB isolation: every test gets a fresh SQLite DB via monkeypatching lab_db.DB_PATH
 to a temp path before any lab_db function runs.
 
-VPS isolation: client fixture stubs out all vps_client calls and the async
+VPS isolation: client fixture stubs out all nt8_agent_client calls and the async
 background job (run_backtest_job), so unit tests never open network connections.
 """
 
@@ -45,9 +45,9 @@ def client(fresh_db):
     from fastapi.testclient import TestClient
 
     with (
-        patch("services.vps_client.start_backtest", return_value={"status": "ok"}),
-        patch("services.vps_client.job_log", return_value=""),
-        patch("services.vps_client.health", return_value={"status": "ok"}),
+        patch("services.nt8_agent_client.start_backtest", return_value={"status": "ok"}),
+        patch("services.nt8_agent_client.job_log", return_value=""),
+        patch("services.nt8_agent_client.health", return_value={"status": "ok"}),
         patch("routers.backtests.run_backtest_job", new_callable=AsyncMock),
         patch("routers.backtests.read_progress", return_value={"status": "idle", "pct": 0}),
     ):

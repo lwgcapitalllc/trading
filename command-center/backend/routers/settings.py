@@ -22,7 +22,7 @@ class AppSettings(BaseModel):
     smart_money_reports_dir: str
     instances_dir: str
     ssh_alias: str
-    vps_agent_tunnel: str
+    nt8_agent_tunnel: str
 
 
 @router.get("", response_model=AppSettings)

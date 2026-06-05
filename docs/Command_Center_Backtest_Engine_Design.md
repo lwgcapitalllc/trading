@@ -91,15 +91,15 @@ Same pattern — index in SQLite, heavy data on disk.
 2. Backend POST /backtests/run
    - Validates inputs against strategies + firms tables
    - Creates backtest_runs row with status="running"
-   - Calls VPS agent at http://localhost:8765/run-backtest
+   - Calls NT8 agent at http://localhost:8765/run-backtest
         ↓
-3. VPS agent (already exists, needs extension)
+3. NT8 agent (already exists, needs extension)
    - Receives the JSON spec
    - Writes a backtest_config.json on the VPS
    - Drives NT8 Strategy Analyzer via pywinauto (the code you already have)
    - Reads NT's XML log + writes results JSON to a shared folder
         ↓
-4. Backend polls VPS agent /status until done
+4. Backend polls NT8 agent /status until done
         ↓
 5. Backend fetches /results, parses, writes to SQLite + JSON files
         ↓
@@ -168,9 +168,9 @@ POST   /overfit/run                  - trigger walk-forward + sensitivity
 
 ---
 
-## 7. VPS agent
+## 7. NT8 agent
 
-**M1+M2 — implemented.** `POST /backtest` (job-keyed, any strategy/instrument/params), job status/results/log endpoints, strategy list, instrument list, NT8 health, compile status, and agent log are all live in `algos/markets/futures/lucid_flex/tools/vps_agent.py`.
+**M1+M2 — implemented.** `POST /backtest` (job-keyed, any strategy/instrument/params), job status/results/log endpoints, strategy list, instrument list, NT8 health, compile status, and agent log are all live in `algos/markets/futures/lucid_flex/tools/nt8_agent.py`.
 
 Note: `POST /optimize` driving NT8's built-in Optimizer GUI was **not implemented** — M2 used multi-call `/backtest` with brute force instead.
 
@@ -229,7 +229,7 @@ command-center/backend/
       lab_progress.json             ← poll target while a job runs
 ```
 
-NT8 output stays on the VPS in its standard NinjaTrader folder; the VPS agent
+NT8 output stays on the VPS in its standard NinjaTrader folder; the NT8 agent
 parses + serves via HTTP. Backend fetches over the SSH tunnel
 (`http://localhost:8765`) and writes its own copy to disk.
 
@@ -240,10 +240,10 @@ parses + serves via HTTP. Backend fetches over the SSH tunnel
 Three milestones, in this order. Each is a stop-and-test point.
 
 **M1 — Backtest + Firm abstraction** ✅ COMPLETE
-Strategy registry, firm profiles, NT8-driven backtest runs via VPS agent, per-firm evaluation engine, full KPI set, equity curve + daily P&L charts, traffic-light verdict, Calmar ratio.
+Strategy registry, firm profiles, NT8-driven backtest runs via NT8 agent, per-firm evaluation engine, full KPI set, equity curve + daily P&L charts, traffic-light verdict, Calmar ratio.
 
 **M2 — Worthiness Scorer + Instrument Sweeps + Brute-Force Optimizer** ✅ COMPLETE
-Tier 1/2/3 worthiness scoring, instrument sweeps (N sequential runs, SA semaphore), brute-force parameter optimizer (multi-call, not NT8 Optimizer GUI), Tier 3 smart routing modal, NT8 SA global lock, runner field + vps_client dispatcher. Monte Carlo stress test moved to M3.
+Tier 1/2/3 worthiness scoring, instrument sweeps (N sequential runs, SA semaphore), brute-force parameter optimizer (multi-call, not NT8 Optimizer GUI), Tier 3 smart routing modal, NT8 SA global lock, runner field + nt8_agent_client dispatcher. Monte Carlo stress test moved to M3.
 
 **M3 — Stress Tests + Walk-Forward + Overfitting** ✅ COMPLETE
 Monte Carlo stress test, walk-forward (N NT8 windows), parameter sensitivity, A–F robustness grade, auto-trigger on Tier 1, pipeline stepper UI, pre-deployment checklist.
@@ -274,7 +274,7 @@ These were open questions in the v1 draft. All resolved.
 ## 12. Observability & failure visibility — non-negotiable
 
 **Principle:** the command center is the only place you ever look. If anything
-breaks anywhere — Mac backend, SSH tunnel, VPS agent, NT8, a strategy compile
+breaks anywhere — Mac backend, SSH tunnel, NT8 agent, NT8, a strategy compile
 error — the command center shows you what broke, where, and why. You never
 SSH to the VPS to diagnose. You never RDP in to "check on" anything. If you
 have to, that's a bug in this design.
@@ -288,11 +288,11 @@ has a tooltip with the failure reason if not green.
 |---|---|---|
 | **Backend** | self | FastAPI alive |
 | **SSH tunnel** | `ssh forexvps echo ok` | tunnel up |
-| **VPS agent** | `GET http://localhost:8765/health` | agent responding |
+| **NT8 agent** | `GET http://localhost:8765/health` | agent responding |
 | **NT8** | `GET /vps/nt-health` (new endpoint, agent-side) | NT8 process running + Strategy Analyzer window present |
 | **Strategy compile** | `GET /vps/nt-compile-status` | last compile succeeded, no errors in NT log |
 
-The first three are easy. The NT8 ones need new VPS agent endpoints — see
+The first three are easy. The NT8 ones need new NT8 agent endpoints — see
 §7 update below.
 
 ### Job-level failure capture
@@ -325,7 +325,7 @@ The backend already has `/bots/{bot_name}/log` for live bots. Mirror that:
 
 ```
 GET /lab/runs/{run_id}/log         - tail the run's log file
-GET /vps/agent/log                 - tail vps_agent.py's log
+GET /vps/agent/log                 - tail nt8_agent.py's log
 GET /vps/nt/log                    - tail NT8's NinjaScript log (errors only)
 ```
 
@@ -333,11 +333,11 @@ Frontend shows a "Logs" tab on every run detail page. No SSH needed.
 
 ### Heartbeat & stuck-job detection
 
-The VPS agent updates a heartbeat field every 30s while running. Backend
+The NT8 agent updates a heartbeat field every 30s while running. Backend
 watches for staleness:
 
 - > 2 min stale → status changes to "stalled" (warning)
-- > 10 min stale → status changes to "failed_timeout" (error), VPS agent
+- > 10 min stale → status changes to "failed_timeout" (error), NT8 agent
   receives a "kill current job" signal
 
 This catches NT freezes that pywinauto can't see.
@@ -454,11 +454,11 @@ signals = compute_signals(df_daily, df_daily)
 
 ### What M1 built
 
-Full end-to-end backtest lab: strategy scanner, firm profiles, NT8-driven backtest runs via the VPS agent, tier-aware evaluation engine, and a detailed results page with equity curve, drawdown chart, daily P&L, long/short breakdown, and 11 KPI cards including Calmar ratio.
+Full end-to-end backtest lab: strategy scanner, firm profiles, NT8-driven backtest runs via the NT8 agent, tier-aware evaluation engine, and a detailed results page with equity curve, drawdown chart, daily P&L, long/short breakdown, and 11 KPI cards including Calmar ratio.
 
 ### What M2 built
 
-Worthiness scorer (Tier 1/2/3 — PF, drawdown, trade count against strictest firm). Instrument sweeps (N sequential NT8 runs, SA semaphore = 1, each run gets its own worthiness score). Brute-force parameter optimizer (generates all param combos, drives as individual NT8 runs, up to 200-combo cap for 3+D grids, objective = eval_pass_probability or funded_sharpe_under_drawdown). Tier 3 Warning Modal with smart instrument routing. NT8 SA global lock (single physical SA window shared across all job types). Runner field on strategies + vps_client dispatcher. source_run_id linkage — sweep and optimization children nest under source run in the Runs tab. Cascade delete.
+Worthiness scorer (Tier 1/2/3 — PF, drawdown, trade count against strictest firm). Instrument sweeps (N sequential NT8 runs, SA semaphore = 1, each run gets its own worthiness score). Brute-force parameter optimizer (generates all param combos, drives as individual NT8 runs, up to 200-combo cap for 3+D grids, objective = eval_pass_probability or funded_sharpe_under_drawdown). Tier 3 Warning Modal with smart instrument routing. NT8 SA global lock (single physical SA window shared across all job types). Runner field on strategies + nt8_agent_client dispatcher. source_run_id linkage — sweep and optimization children nest under source run in the Runs tab. Cascade delete.
 
 ### What changed vs original spec
 
@@ -468,7 +468,7 @@ Worthiness scorer (Tier 1/2/3 — PF, drawdown, trade count against strictest fi
 
 **`suggested_instrument`, not `default_instrument`.** Renamed during build — "default" implied it was locked in. It pre-fills the run modal; the user always overrides freely.
 
-**Export automation, not NT XML log.** NT8 doesn't expose a clean XML format. The VPS agent automates the Strategy Analyzer's "Export Trades" right-click menu via pywinauto. WPF ComboBox identification required significant debugging (coordinate caching, two-pass right-click pattern).
+**Export automation, not NT XML log.** NT8 doesn't expose a clean XML format. The NT8 agent automates the Strategy Analyzer's "Export Trades" right-click menu via pywinauto. WPF ComboBox identification required significant debugging (coordinate caching, two-pass right-click pattern).
 
 **Traffic-light verdict + Calmar.** Added during M1 UX pass — not in original spec. Both essential for quick run assessment.
 
@@ -509,7 +509,7 @@ Each file uses `[Category("Foundational")]` / `[Category("Strategy Logic")]` att
 
 **Category-based scanning:** `strategy_scanner.py` now reads `[Category("...")]` as the authoritative source, with `GroupName` as a legacy fallback for pre-Pass-1 files. String params (`string`) now recognized as a distinct type (no longer misclassified as `"double"`).
 
-**Dispatcher injection:** `vps_client.inject_foundational(user_params, ruleset)` merges 12 foundational param keys from the primary ruleset into every job spec before it's sent to the VPS agent. Primary ruleset = first `evaluate_rulesets` entry. Foundational config stored in the DB at creation time so retries pick it up without re-injection.
+**Dispatcher injection:** `nt8_agent_client.inject_foundational(user_params, ruleset)` merges 12 foundational param keys from the primary ruleset into every job spec before it's sent to the NT8 agent. Primary ruleset = first `evaluate_rulesets` entry. Foundational config stored in the DB at creation time so retries pick it up without re-injection.
 
 **Foundational config columns on `rulesets`:** 10 new columns added via idempotent `ALTER TABLE` migrations: `risk_per_trade_pct`, `max_consecutive_losses`, `daily_halt_fraction`, `earliest_entry_time_et`, `latest_entry_time_et`, `days_of_week_allowed`, `daily_profit_target`, `daily_profit_lock_pct`, `default_commission_per_side`, `default_slippage_ticks`. All 13 existing rulesets backfilled. Editable via a new foundational config modal in the Rulesets tab.
 

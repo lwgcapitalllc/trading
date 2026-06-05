@@ -148,9 +148,9 @@ def _estimate_sens_duration_min(n_params: int) -> int:
 
 async def _run_child_backtest(run_id: str, job_spec: dict) -> bool:
     """Start a VPS backtest and poll to completion. Returns True on success."""
-    from services import vps_client
+    from services import nt8_agent_client
     try:
-        await asyncio.to_thread(vps_client.start_backtest, job_spec, "ninjatrader")
+        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, "ninjatrader")
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         return False
@@ -159,7 +159,7 @@ async def _run_child_backtest(run_id: str, job_spec: dict) -> bool:
     while True:
         await asyncio.sleep(_POLL_INTERVAL)
         try:
-            sd = await asyncio.to_thread(vps_client.job_status, run_id)
+            sd = await asyncio.to_thread(nt8_agent_client.job_status, run_id)
         except Exception:
             if time.time() - started_at > _STALL_KILL_SEC:
                 lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
@@ -169,7 +169,7 @@ async def _run_child_backtest(run_id: str, job_spec: dict) -> bool:
         status = sd.get("status", "running")
         if status == "complete":
             try:
-                result = await asyncio.to_thread(vps_client.job_results, run_id)
+                result = await asyncio.to_thread(nt8_agent_client.job_results, run_id)
                 kpis = result.get("kpis", {})
                 equity_curve = result.get("equity_curve", [])
                 daily_pnl    = result.get("daily_pnl", [])
@@ -194,7 +194,7 @@ async def _run_child_backtest(run_id: str, job_spec: dict) -> bool:
             return False
 
         if time.time() - started_at > _STALL_KILL_SEC:
-            from services import vps_client as vc
+            from services import nt8_agent_client as vc
             try:
                 await asyncio.to_thread(vc.cancel_job, run_id)
             except Exception:

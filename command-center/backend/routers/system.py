@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from models import SystemHealth, LabProgress
-from services import vps_client, mt5_agent_client
+from services import nt8_agent_client, mt5_agent_client
 from services.backtest_runner import read_progress, clear_progress
 
 import config as cfg
@@ -69,7 +69,7 @@ def _build_health() -> dict:
     last_compile_errors: list[str] = []
 
     try:
-        h = vps_client.health()
+        h = nt8_agent_client.health()
         vps_ok = h.get("status") == "ok"
     except Exception:
         pass
@@ -82,14 +82,14 @@ def _build_health() -> dict:
 
     if vps_ok:
         try:
-            nth = vps_client.nt_health()
+            nth = nt8_agent_client.nt_health()
             nt8_running    = bool(nth.get("nt8_running") or nth.get("nt_running"))
             nt8_sa_visible = bool(nth.get("sa_visible"))
         except Exception:
             pass
 
         try:
-            cs = vps_client.nt_compile_status()
+            cs = nt8_agent_client.nt_compile_status()
             ok = cs.get("ok")
             last_compile_ok = bool(ok) if ok is not None else False
             last_compile_at = cs.get("at") or cs.get("checked_at")
@@ -104,7 +104,7 @@ def _build_health() -> dict:
     return {
         "backend":              True,
         "ssh_tunnel":           ssh_ok,
-        "vps_agent":            vps_ok,
+        "nt8_agent":            vps_ok,
         "mt5_agent":            mt5_ok,
         "nt8_running":          nt8_running,
         "nt8_sa_visible":       nt8_sa_visible,
@@ -152,7 +152,7 @@ def lab_stop() -> dict:
     if raw.get("status") == "running":
         if job_id:
             try:
-                vps_client.cancel_job(job_id)
+                nt8_agent_client.cancel_job(job_id)
                 stopped = True
             except Exception:
                 pass
@@ -193,8 +193,8 @@ def _schtasks_run(task_name: str) -> dict:
     return {"status": "ok", "output": result.stdout.strip()}
 
 
-@router.post("/system/vps-agent/start")
-def start_vps_agent():
+@router.post("/system/nt8-agent/start")
+def start_nt8_agent():
     """Restart SSH tunnel (ports 8765 + 8766) and fire the NT8 agent scheduled task."""
     global _health_cache
     _restart_tunnel()
@@ -213,17 +213,17 @@ def start_mt5_agent():
     return out
 
 
-@router.get("/vps/agent/log", response_class=PlainTextResponse)
-def vps_agent_log(lines: int = 200) -> str:
+@router.get("/nt8/agent/log", response_class=PlainTextResponse)
+def nt8_agent_log(lines: int = 200) -> str:
     try:
-        return vps_client.agent_log(lines=lines)
+        return nt8_agent_client.agent_log(lines=lines)
     except Exception as exc:
-        raise HTTPException(502, f"VPS agent unreachable: {exc}")
+        raise HTTPException(502, f"NT8 agent unreachable: {exc}")
 
 
-@router.get("/vps/nt/log", response_class=PlainTextResponse)
+@router.get("/nt8/nt/log", response_class=PlainTextResponse)
 def vps_nt_log(lines: int = 200) -> str:
     try:
-        return vps_client.nt_log(lines=lines)
+        return nt8_agent_client.nt_log(lines=lines)
     except Exception as exc:
-        raise HTTPException(502, f"VPS agent unreachable: {exc}")
+        raise HTTPException(502, f"NT8 agent unreachable: {exc}")

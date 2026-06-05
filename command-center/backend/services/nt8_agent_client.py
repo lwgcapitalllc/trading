@@ -2,14 +2,14 @@
 Dispatcher + NT8 agent client.
 
 This module serves two roles:
-  1. NT8 agent client — typed HTTP wrapper over vps_agent.py at
+  1. NT8 agent client — typed HTTP wrapper over nt8_agent.py at
      http://localhost:8765 (via SSH tunnel). All NT8-specific calls
      (_get/_post, nt_health, nt_log, export_trades, compile, etc.) live here.
   2. Runner dispatcher — start_backtest, job_status, job_results, job_log,
      and cancel_job route to either this module (ninjatrader) or
      mt5_agent_client (mt5) based on the strategy's runner field.
 
-All callers import `vps_client` and call the same functions regardless of
+All callers import `nt8_agent_client` and call the same functions regardless of
 runner. The dispatcher is transparent to every call site.
 """
 
@@ -31,7 +31,7 @@ _TIMEOUT = 10  # seconds for all agent calls
 
 
 def _get(path: str, timeout: int = _TIMEOUT) -> dict:
-    url = cfg.VPS_AGENT_TUNNEL.rstrip("/") + path
+    url = cfg.NT8_AGENT_TUNNEL.rstrip("/") + path
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
             return json.loads(r.read())
@@ -40,7 +40,7 @@ def _get(path: str, timeout: int = _TIMEOUT) -> dict:
 
 
 def _post(path: str, body: Optional[dict] = None, timeout: int = _TIMEOUT) -> dict:
-    url = cfg.VPS_AGENT_TUNNEL.rstrip("/") + path
+    url = cfg.NT8_AGENT_TUNNEL.rstrip("/") + path
     data = json.dumps(body or {}).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     try:
@@ -258,7 +258,7 @@ def list_strategy_files() -> list[dict]:
 def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict:
     if filename.endswith(".mq5"):
         return mt5_agent_client.upload_strategy_file(filename, content, overwrite)
-    url = cfg.VPS_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
+    url = cfg.NT8_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
     boundary = uuid.uuid4().hex
     body_parts = [
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
@@ -285,7 +285,7 @@ def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict
 def delete_strategy_file(filename: str) -> dict:
     if filename.endswith((".mq5", ".ex5")):
         return mt5_agent_client.delete_strategy_file(filename)
-    url = cfg.VPS_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
+    url = cfg.NT8_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
     req = urllib.request.Request(url, method="DELETE")
     try:
         with urllib.request.urlopen(req, timeout=10) as r:

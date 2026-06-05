@@ -7,7 +7,7 @@ These tests hit the LIVE backend at localhost:8000 and require:
   - Strategy Analyzer tab open in NT8
   - VPS agent running inside RDP:
       cd C:\\trading\\algos\\markets\\futures\\lucid_flex\\tools
-      python vps_agent.py
+      python nt8_agent.py
 
 Run with:
   pytest tests/test_integration.py -m integration -v -s
@@ -285,7 +285,7 @@ def test_system_health_endpoint_shape():
     r = httpx.get(f"{BASE}/system/health", timeout=TIMEOUT)
     assert r.status_code == 200
     h = r.json()
-    required = {"backend", "ssh_tunnel", "vps_agent", "nt8_running",
+    required = {"backend", "ssh_tunnel", "nt8_agent", "nt8_running",
                 "nt8_sa_visible", "last_compile_ok", "checked_at"}
     assert required.issubset(h.keys()), f"Missing keys: {required - h.keys()}"
     assert isinstance(h["backend"], bool)
@@ -298,4 +298,4 @@ def test_system_health_vps_live():
     h = httpx.get(f"{BASE}/system/health", timeout=TIMEOUT).json()
     assert h["backend"] is True,     "Backend should report healthy"
     assert h["ssh_tunnel"] is True,  "SSH tunnel should be up (VPS is live)"
-    assert h["vps_agent"] is True,   "VPS agent should respond (agent is running)"
+    assert h["nt8_agent"] is True,   "VPS agent should respond (agent is running)"

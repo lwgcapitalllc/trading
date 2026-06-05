@@ -85,7 +85,7 @@ export function Settings() {
         <Field label="Smart money reports dir" value={form.smart_money_reports_dir} onChange={set('smart_money_reports_dir')} />
         <Field label="Bot instances dir" value={form.instances_dir} onChange={set('instances_dir')} />
         <Field label="SSH alias" description="Used for all VPS connections" value={form.ssh_alias} onChange={set('ssh_alias')} />
-        <Field label="VPS agent tunnel" description="HTTP tunnel to vps_agent.py" value={form.vps_agent_tunnel} onChange={set('vps_agent_tunnel')} />
+        <Field label="NT8 agent tunnel" description="HTTP tunnel to nt8_agent.py" value={form.nt8_agent_tunnel} onChange={set('nt8_agent_tunnel')} />
       </div>
 
       <div className="mt-4 text-micro text-text-tertiary bg-bg-sunken border border-border-subtle rounded-md px-3 py-[10px]">

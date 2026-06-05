@@ -46,7 +46,7 @@ def sh(cmd, check=True, echo=True):
 
 
 def fetch_results_via_agent(local_path, agent_url="http://localhost:8765"):
-    """Fetch results from vps_agent /results endpoint and write CSV locally."""
+    """Fetch results from nt8_agent /results endpoint and write CSV locally."""
     import csv as csv_mod
     import urllib.request, urllib.error
     print(f"\nFetching results from agent ({agent_url}/results)...")
@@ -249,7 +249,7 @@ def main():
     parser.add_argument("--deploy-only",   action="store_true")
     parser.add_argument("--analyze-only",  action="store_true")
     parser.add_argument("--http",          action="store_true",
-                        help="Use vps_agent HTTP API (requires SSH tunnel on port 8765)")
+                        help="Use nt8_agent HTTP API (requires SSH tunnel on port 8765)")
     parser.add_argument("--auto-run",      action="store_true",
                         help="Automate Strategy Analyzer via pywinauto (requires NT8 open on VPS)")
     parser.add_argument("--local-results", action="store_true",

@@ -18,7 +18,7 @@ from typing import Optional
 
 import pandas as pd
 
-from services import lab_db, evaluator, vps_client, worthiness
+from services import lab_db, evaluator, nt8_agent_client, worthiness
 
 # Add repo root so we can import from trading/regime/
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -361,7 +361,7 @@ async def _handle_complete(
     firm_ids: list[str],
 ) -> None:
     try:
-        result = await asyncio.to_thread(vps_client.job_results, job_id)
+        result = await asyncio.to_thread(nt8_agent_client.job_results, job_id)
     except Exception as exc:
         _fail(run_id, job_id, "failed_unknown", f"Could not fetch results from agent: {exc}")
         return
@@ -456,7 +456,7 @@ async def run_backtest_job(
         await asyncio.sleep(_POLL_INTERVAL)
 
         try:
-            status_data = await asyncio.to_thread(vps_client.job_status, job_id)
+            status_data = await asyncio.to_thread(nt8_agent_client.job_status, job_id)
         except Exception as exc:
             elapsed = time.time() - started_at
             if elapsed > _STALL_KILL_SEC:
@@ -506,7 +506,7 @@ async def run_backtest_job(
         # kill if stalled too long
         if heartbeat_age > _STALL_KILL_SEC or (now - started_at) > _STALL_KILL_SEC:
             try:
-                await asyncio.to_thread(vps_client.cancel_job, job_id)
+                await asyncio.to_thread(nt8_agent_client.cancel_job, job_id)
             except Exception:
                 pass
             _fail(run_id, job_id, "failed_timeout",

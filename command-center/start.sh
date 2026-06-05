@@ -12,7 +12,7 @@ lsof -ti:8000 | xargs kill -9 2>/dev/null || true
 lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 
 # ── Persistent SSH tunnels ────────────────────────────────────────────────────
-# 8765 → NT8 vps_agent   (LocalForward also in ~/.ssh/config — compatible)
+# 8765 → NT8 nt8_agent   (LocalForward also in ~/.ssh/config — compatible)
 # 8766 → MT5 mt5_agent   (explicit -L here; add to ~/.ssh/config if needed)
 # Kill any stale tunnel from a previous run, then open a fresh one.
 pkill -f "ssh -N.*forexvps" 2>/dev/null || true

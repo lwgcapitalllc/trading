@@ -24,7 +24,7 @@ LWG Capital is a personal algorithmic trading operation building toward 30–50 
 
 **Windows VPS (ForexVPS)**
 - NinjaTrader 8 — backtest engine and eventually live execution
-- `vps_agent.py` — Flask HTTP server on port 8765, accessed via SSH LocalForward tunnel
+- `nt8_agent.py` — Flask HTTP server on port 8765, accessed via SSH LocalForward tunnel
 - `vps_compile_runner.py` — pywinauto subprocess: opens NinjaScript Editor, presses F5, polls DLL mtime for success
 - MT5 (PU Prime demo) — forex bots only, separate from the futures work
 - SSH alias: `forexvps` — repo at `C:\trading\`
@@ -59,7 +59,7 @@ trading/
 ## What's shipped (chronological)
 
 ### M1 — Lab foundation ✅
-Strategy registry: scanner reads `.cs` files, extracts class name, param schema (via regex on `[NinjaScriptProperty]` blocks), suggested instrument. Rulesets (one row per prop firm challenge or personal account). Single backtest runs triggered via `vps_agent.py` driving NT8's Strategy Analyzer via pywinauto. Per-ruleset evaluation: PASS/WARN/DISCARD verdicts computed server-side against firm rules (drawdown, profit target, consistency). Equity curve, daily P&L, trade list stored as JSON files; KPIs in SQLite.
+Strategy registry: scanner reads `.cs` files, extracts class name, param schema (via regex on `[NinjaScriptProperty]` blocks), suggested instrument. Rulesets (one row per prop firm challenge or personal account). Single backtest runs triggered via `nt8_agent.py` driving NT8's Strategy Analyzer via pywinauto. Per-ruleset evaluation: PASS/WARN/DISCARD verdicts computed server-side against firm rules (drawdown, profit target, consistency). Equity curve, daily P&L, trade list stored as JSON files; KPIs in SQLite.
 
 ### M2 — Sweeps, optimizer, worthiness scoring ✅
 Instrument sweeps: one strategy across all instruments, NT8 runs sequentially (SA semaphore = 1). Brute-force and genetic parameter optimizer: each combo is a separate NT8 run, ranked by objective function (eval pass probability or funded Sharpe). Worthiness tiers: Tier 1 (stress-test), Tier 2 (optimize), Tier 3 (discard). Tier 3 warning modal with smart instrument routing. NT8 global SA lock (409 on collision). Source run nesting in Runs table.
@@ -77,7 +77,7 @@ Every backtest's `daily_pnl` entries tagged with a regime label at pipeline time
 Genericized all three NT8 strategies. Renamed from `*_LucidFlex.cs` to `ORB.cs`, `VWAP_MR.cs`, `Momentum.cs`. Categorized parameters: `[Category("Strategy Logic")]` (tunable) vs `[Category("Foundational")]` (injected from ruleset). Ruleset foundational fields: risk %, daily halt fraction, max consecutive losses, entry hours ET, days allowed, daily profit target, profit lock-in, commission/slippage defaults. RunBacktestModal shows readonly Foundational Config; optimizer grid excludes foundational params. Strategy DB IDs migrated from `orb_lucidflex` → `orb` etc.
 
 ### Pass 2 — Strategy deployment manager ✅ shipped 2026-06-03
-Upload, delete, and compile NT8 strategy files from the command center UI without manual RDP. VPS agent: `GET/POST/DELETE /files/strategies`, `POST/GET /compile`. Compile via pywinauto F5 through the NinjaScript Editor (NCompile.exe does not exist on this NT8 install). Success detection by polling `NinjaTrader.Custom.dll` mtime (90s timeout). Deployed tab on Strategies page: file list, drag/drop upload, overwrite confirmation, trash-can delete, Compile All. Sync-status badges on Strategies list. Platform field on each file (NT8/MT5) with filter chips when multiple platforms present.
+Upload, delete, and compile NT8 strategy files from the command center UI without manual RDP. NT8 agent: `GET/POST/DELETE /files/strategies`, `POST/GET /compile`. Compile via pywinauto F5 through the NinjaScript Editor (NCompile.exe does not exist on this NT8 install). Success detection by polling `NinjaTrader.Custom.dll` mtime (90s timeout). Deployed tab on Strategies page: file list, drag/drop upload, overwrite confirmation, trash-can delete, Compile All. Sync-status badges on Strategies list. Platform field on each file (NT8/MT5) with filter chips when multiple platforms present.
 
 ### Pass 2.5 — Strategy location cleanup 🚧 in flight (Steps 1–3 of 8 complete as of 2026-06-04)
 Moving strategies to a top-level `strategies/` peer subsystem organized by runner platform. **Complete:** moved ORB.cs, VWAP_MR.cs, Momentum.cs to `strategies/ninjatrader/`. Scanner updated to read from `strategies/` (not `algos/`). DB `source_path` values migrated. `POST /strategies/{id}/deploy` endpoint added (reads local file, uploads to VPS). Per-strategy Deploy/Redeploy buttons on Strategies tab with spinner feedback. **Remaining:** cross-repo path reference cleanup, `strategies/CLAUDE.md`, README/root CLAUDE.md update, E2E test of the new one-click deploy flow.

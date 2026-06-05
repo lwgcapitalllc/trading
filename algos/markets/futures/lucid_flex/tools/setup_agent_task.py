@@ -1,12 +1,12 @@
 """
 Register the LucidFlex Agent as a Windows Task Scheduler logon task on the VPS.
 
-Run once from Mac after deploying vps_agent.py:
+Run once from Mac after deploying nt8_agent.py:
     python3 markets/futures/lucid_flex/tools/setup_agent_task.py
 
 What it does:
   1. SSHes to VPS and installs flask (if missing)
-  2. Creates a Task Scheduler task that auto-starts vps_agent.py when
+  2. Creates a Task Scheduler task that auto-starts nt8_agent.py when
      Administrator logs in via RDP
 
 After setup, the agent will start automatically on each RDP login.
@@ -24,7 +24,7 @@ import json
 import os
 
 CFG_PATH = os.path.join(os.path.dirname(__file__), "backtest_config.json")
-AGENT_WIN = r"C:\trading\algos\markets\futures\lucid_flex\tools\vps_agent.py"
+AGENT_WIN = r"C:\trading\algos\markets\futures\lucid_flex\tools\nt8_agent.py"
 TASK_NAME = "LucidFlexAgent"
 
 

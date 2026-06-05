@@ -148,7 +148,7 @@ export function useRunLog(runId: string | null, lines = 200, live = false) {
 }
 
 // Module-level timestamp: keeps progress polling fast for 60s after a trigger
-// so the UI reflects state changes while the VPS agent starts the job.
+// so the UI reflects state changes while the NT8 agent starts the job.
 let _lastTriggerMs = 0
 
 export function useTriggerBacktest() {
@@ -257,7 +257,7 @@ export function useReloadCharts() {
       toast.success(`Charts loaded — ${data.equity_points} trades, ${data.daily_bars} trading days`)
       qc.invalidateQueries({ queryKey: ['lab', 'run', runId] })
     },
-    onError: () => toast.error('Chart reload failed — check VPS agent and NT8 SA'),
+    onError: () => toast.error('Chart reload failed — check NT8 agent and SA'),
   })
 }
 
@@ -299,10 +299,10 @@ export function useSystemHealth() {
   })
 }
 
-export function useStartVpsAgent() {
+export function useStartNt8Agent() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => api.post<{ status: string; output: string }>('/system/vps-agent/start'),
+    mutationFn: () => api.post<{ status: string; output: string }>('/system/nt8-agent/start'),
     onSuccess: () => {
       toast.success('NT8 agent starting…')
       setTimeout(() => qc.invalidateQueries({ queryKey: ['system', 'health'] }), 8_000)

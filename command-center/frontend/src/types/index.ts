@@ -455,7 +455,7 @@ export interface LabProgress {
 export interface SystemHealth {
   backend: boolean
   ssh_tunnel: boolean
-  vps_agent: boolean   // NT8 agent (port 8765)
+  nt8_agent: boolean   // NT8 agent (port 8765)
   mt5_agent: boolean   // MT5 agent (port 8766)
   nt8_running: boolean
   nt8_sa_visible: boolean
@@ -550,7 +550,7 @@ export interface AppSettings {
   smart_money_reports_dir: string
   instances_dir: string
   ssh_alias: string
-  vps_agent_tunnel: string
+  nt8_agent_tunnel: string
 }
 
 // ── Lab — Sweeps ──────────────────────────────────────────────────────────────

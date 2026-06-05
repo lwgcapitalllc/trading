@@ -67,7 +67,7 @@ with forex/MT5 planned but not built.
 
 ### Stack and infrastructure
 List: Mac dev environment (FastAPI, Vite/React, SQLite, VS Code, Claude
-Code, Claude.ai chat), Windows VPS (NT8, vps_agent.py, pywinauto, MT5
+Code, Claude.ai chat), Windows VPS (NT8, nt8_agent.py, pywinauto, MT5
 forex bots), GitHub repo locations.
 
 ### Monorepo structure

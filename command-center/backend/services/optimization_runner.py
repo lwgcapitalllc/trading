@@ -25,7 +25,7 @@ from typing import Any, Optional
 import logging
 import statistics
 
-from services import lab_db, evaluator, vps_client, worthiness
+from services import lab_db, evaluator, nt8_agent_client, worthiness
 from services.objectives import choose_objective
 from services.backtest_runner import build_date_regime_map, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
 
@@ -211,7 +211,7 @@ async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: 
         await asyncio.sleep(_POLL_INTERVAL)
 
         try:
-            status_data = await asyncio.to_thread(vps_client.job_status, job_id)
+            status_data = await asyncio.to_thread(nt8_agent_client.job_status, job_id)
         except Exception:
             if time.time() - started_at > _STALL_KILL_SEC:
                 lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
@@ -230,7 +230,7 @@ async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: 
 
         if time.time() - started_at > _STALL_KILL_SEC:
             try:
-                await asyncio.to_thread(vps_client.cancel_job, job_id)
+                await asyncio.to_thread(nt8_agent_client.cancel_job, job_id)
             except Exception:
                 pass
             lab_db.update_run_status(run_id, "failed_timeout", "No heartbeat — cancelled")
@@ -239,7 +239,7 @@ async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: 
 
 async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str) -> None:
     try:
-        result = await asyncio.to_thread(vps_client.job_results, job_id)
+        result = await asyncio.to_thread(nt8_agent_client.job_results, job_id)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         return
@@ -291,7 +291,7 @@ async def _run_batch(
                 lab_db.update_run_status(run_id, "failed_cancelled", "Optimization cancelled")
                 return
             try:
-                await asyncio.to_thread(vps_client.start_backtest, job_spec, runner)
+                await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
             except Exception as exc:
                 lab_db.update_run_status(run_id, "failed_unknown", str(exc))
                 lab_db.increment_optimization_completed(opt_id)
@@ -333,7 +333,7 @@ async def run_optimization(optimization_id: str) -> None:
 
         # Merge: strategy defaults ← foundational from ruleset ← optimizer combo values.
         # Combo values win so the optimizer can sweep strategy-logic params freely.
-        merged_params = vps_client.inject_foundational(
+        merged_params = nt8_agent_client.inject_foundational(
             {**strategy.get("default_params", {}), **combo}, firm
         )
         lab_db.insert_run_optimization({

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from models import Strategy, ScanResult, InstrumentSummary, InstrumentResult, DeployJobStatus
-from services import lab_db, strategy_scanner, vps_client
+from services import lab_db, strategy_scanner, nt8_agent_client
 import config as cfg
 
 _deploy_jobs: dict[str, dict] = {}
@@ -69,7 +69,7 @@ def deploy_strategy(strategy_id: str):
     }
 
     try:
-        result = vps_client.upload_strategy_file(filename, content, overwrite=True)
+        result = nt8_agent_client.upload_strategy_file(filename, content, overwrite=True)
         _deploy_jobs[job_id].update({
             "status": "complete",
             "uploaded_size_bytes": result.get("size_bytes"),

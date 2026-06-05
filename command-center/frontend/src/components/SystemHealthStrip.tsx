@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { useSystemHealth, useStartVpsAgent, useStartMt5Agent } from '@/hooks/useLab'
+import { useSystemHealth, useStartNt8Agent, useStartMt5Agent } from '@/hooks/useLab'
 import type { SystemHealth } from '@/types'
 
 // ── Dot state ─────────────────────────────────────────────────────────────────
@@ -52,8 +52,8 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
     {
       key: 'agent',
       label: 'NT8 Agent',
-      state: h.vps_agent ? 'green' : 'red',
-      tip: h.vps_agent
+      state: h.nt8_agent ? 'green' : 'red',
+      tip: h.nt8_agent
         ? 'NT8 agent: responding'
         : h.ssh_tunnel
         ? 'NT8 agent: down — click to start'
@@ -134,7 +134,7 @@ function DotRow({ def, onRedClick, loading }: { def: DotDef; onRedClick: () => v
 export function SystemHealthStrip() {
   const navigate = useNavigate()
   const { data: health } = useSystemHealth()
-  const startNt8Agent = useStartVpsAgent()
+  const startNt8Agent = useStartNt8Agent()
   const startMt5Agent = useStartMt5Agent()
   const dots = buildDots(health)
 

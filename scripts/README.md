@@ -7,7 +7,7 @@ because they rebuild or recover the whole VPS.
 | Script | Covers | Run as |
 |---|---|---|
 | `bootstrap_vps.ps1` | MT5 / algos side — clone, deps, MT5 check, secrets, data restore, Task Scheduler, start | elevated PowerShell |
-| `bootstrap_ninjatrader.ps1` | Futures side — NT8 + .NET check, user-folder restore, deploy `.cs`, vps_agent deps + task, health | PowerShell as `trader` (elevated for task creation) |
+| `bootstrap_ninjatrader.ps1` | Futures side — NT8 + .NET check, user-folder restore, deploy `.cs`, nt8_agent deps + task, health | PowerShell as `trader` (elevated for task creation) |
 
 Both are **idempotent** — safe to re-run. Each runs in independent phases; a failed
 phase reports and the run continues, ending with a status summary.
@@ -34,7 +34,7 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
    and verify the Telegram admin ID in `algos\users.json`. Re-run without `-RestoreData`
    to finish startup once secrets are in place.
 
-3. **Register the vps_agent task (from your Mac, one time)**
+3. **Register the nt8_agent task (from your Mac, one time)**
    The `LucidFlexAgent` task has no XML in the repo — it's created from the Mac:
    ```bash
    python3 algos/markets/futures/lucid_flex/tools/setup_agent_task.py
@@ -62,7 +62,7 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
    algo            # control panel — all 4 MT5 bots RUNNING
    ```
    Telegram: `/status` (4 bots green), `/balance` (correct balances).
-   Command-center sidebar: API / SSH / VPS agent / NinjaTrader / NT8-compile dots green.
+   Command-center sidebar: API / SSH / NT8 agent / NinjaTrader / NT8-compile dots green.
 
 ---
 

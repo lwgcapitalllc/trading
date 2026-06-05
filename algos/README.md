@@ -79,7 +79,7 @@ algos/
     │       └── fft_trades.json
     ├── futures/lucid_flex/
     │   └── tools/                   ← NinjaScript strategy source files moved to strategies/ninjatrader/
-    │       ├── vps_agent.py         ← HTTP agent running on VPS (NT8 control)
+    │       ├── nt8_agent.py         ← HTTP agent running on VPS (NT8 control)
     │       ├── vps_backtest_runner.py ← pywinauto NT8 Strategy Analyzer automation
     │       ├── setup_agent_task.py  ← Registers LucidFlexAgent Task Scheduler entry
     │       ├── deploy.py            ← Deploys .cs strategies to NT8 user folder

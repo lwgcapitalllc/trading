@@ -46,9 +46,9 @@ cd command-center
 
 `start.sh` creates the Python venv and runs `npm install` on first launch.
 
-**SSH tunnel** — `start.sh` opens a persistent `ssh -N forexvps` background process on launch. This keeps two LocalForwards alive: `8765` (NT8 vps_agent_tunnel) and `8766` (MT5 mt5_agent_tunnel). Without the tunnel, both vps_client and mt5_agent_client calls fail even though SSH itself appears healthy. The tunnel is killed automatically on Ctrl-C.
+**SSH tunnel** — `start.sh` opens a persistent `ssh -N forexvps` background process on launch. This keeps two LocalForwards alive: `8765` (NT8 nt8_agent_tunnel) and `8766` (MT5 mt5_agent_tunnel). Without the tunnel, both nt8_agent_client and mt5_agent_client calls fail even though SSH itself appears healthy. The tunnel is killed automatically on Ctrl-C.
 
-**Backtesting prerequisites** — before submitting a run, the SSH tunnel and VPS agent must be up. See Sidebar health indicators below.
+**Backtesting prerequisites** — before submitting a run, the SSH tunnel and NT8 agent must be up. See Sidebar health indicators below.
 
 ---
 
@@ -80,7 +80,7 @@ cd command-center
 | Backtests lab M2 — instrument sweeps (N sequential runs via SA semaphore, Sweep Detail page with live sort-by-tier) | ✅ |
 | Backtests lab M2 — parameter optimizer (brute force + genetic, Optimization Detail with ranked results table, ★ best row) | ✅ |
 | Backtests lab M2 — Tier 3 warning modal with smart instrument routing | ✅ |
-| Backtests lab M2 — runner field on strategies; vps_client dispatcher for future MT5 support | ✅ |
+| Backtests lab M2 — runner field on strategies; nt8_agent_client dispatcher for future MT5 support | ✅ |
 | Backtests lab M2 — Sweeps tab (list view with count badge, progress, status, delete) | ✅ |
 | Backtests lab M2 — Optimizations tab (delete; count badge; Runs tab nests child runs under source run via `source_run_id`) | ✅ |
 | Backtests lab M2 — global NT8 SA lock: only one job type (backtest/sweep/optimization) may run at a time; 409 with clear message | ✅ |
@@ -98,9 +98,9 @@ cd command-center
 | Backtests lab M4 — Runs table: "Verdicts" column renamed "Challenge", shows firm name only; "Score" column shows worthiness tier (no duplication) | ✅ |
 | Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap), walk-forward (N NT8 windows), sensitivity (±10%/±25% per param), A–F grade, auto-trigger on Tier 1 + optimizer winners |
 | Regime Tags (M4) | ✅ Live | Every backtest's `daily_pnl` entries are tagged with a regime label (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Auto-tagged via pipeline; manual backfill via UI button. Performance by Regime table on BacktestDetail. Equity curve regime overlay (background bands + diagonal stripes for UNKNOWN). Optimizer regime filter. |
-| Pass 2 — Strategy deployment | ✅ Live | Upload, delete, and compile NT8 strategy files from the UI without RDP. VPS agent extended with file management + compile endpoints. pywinauto F5 compile via NinjaScript Editor. |
+| Pass 2 — Strategy deployment | ✅ Live | Upload, delete, and compile NT8 strategy files from the UI without RDP. NT8 agent extended with file management + compile endpoints. pywinauto F5 compile via NinjaScript Editor. |
 | Pass 2.5 — Strategy location + deploy button | ✅ Live | `strategies/` top-level subsystem. Files moved from `algos/`. Scanner updated. One-click Deploy button per strategy in Strategies tab. Strategies / Rulesets / Deployed nav page split from Backtests. Tab counts, platform column, trash-can delete on Deployed tab. |
-| Steps 1-7 — MT5 runner | ✅ Live | `mt5_agent.py` on VPS (port 8766) — health/status, historical data, Strategy Tester driver (ini+set file, terminal64.exe, HTML report parser). `mt5_agent_client.py` on backend. `vps_client` dispatches backtests to MT5 agent when `strategy.runner == "mt5"`. `MeanReversion.mq5` smoke-tested. |
+| Steps 1-7 — MT5 runner | ✅ Live | `mt5_agent.py` on VPS (port 8766) — health/status, historical data, Strategy Tester driver (ini+set file, terminal64.exe, HTML report parser). `mt5_agent_client.py` on backend. `nt8_agent_client` dispatches backtests to MT5 agent when `strategy.runner == "mt5"`. `MeanReversion.mq5` smoke-tested. |
 | Step 8 — Runner badges + market filter | ✅ Live | `RunnerBadge` component shows NT8/MT5 on each strategy row. `MarketFilterBar` on Strategies and Runs tabs filters to Futures or Forex. Instrument→market mapping: MT5 runner → Forex, all others → Futures. |
 | Step 9 — MT5 deployment manager | ✅ Live | Upload/delete `.mq5` files via MT5 agent. `POST /strategy-files/compile-mt5` triggers `metaeditor64.exe /compile:<experts_dir>` async; polls log for `N error(s)`. Drop zone in Deployed tab accepts `.mq5`. "Compile MT5" button (purple) appears when MT5 files are present. sync_status checks MT5 agent for `runner=mt5` strategies. |
 
@@ -114,7 +114,7 @@ Four dots in the left sidebar, sourced from `GET /system/health` (30 s TTL cache
 |---|---|---|---|---|---|
 | **API** | Local FastAPI on `:8000` | Backend healthy | — | Backend unreachable — restart it | — |
 | **SSH** | SSH tunnel to ForexVPS | Connected | — | Unreachable — check ForexVPS or `~/.ssh/config` | — |
-| **VPS agent** | `vps_agent.py` HTTP on `:8765` (via SSH tunnel) | Responding | — | Not running — click the red dot (if SSH is up) to start via `POST /system/vps-agent/start`; or manually `ssh forexvps "schtasks /run /tn LucidFlexAgent"` | — |
+| **NT8 agent** | `nt8_agent.py` HTTP on `:8765` (via SSH tunnel) | Responding | — | Not running — click the red dot (if SSH is up) to start via `POST /system/nt8-agent/start`; or manually `ssh forexvps "schtasks /run /tn LucidFlexAgent"` | — |
 | **NinjaTrader** | NT8 process + Strategy Analyzer window | Running + SA open | Running, SA closed | NT8 not running on VPS | Agent unreachable |
 
 **Stuck progress lock** — if a run dies mid-flight (backend restart, network drop), `data/lab_progress.json` can be left with `status: running`, blocking new runs with a 409. Fix: hit the Stop button, or restart the backend (startup hook resets stale locks automatically).

@@ -5,6 +5,6 @@
   "smart_money_reports_dir": "/Users/alwg/trading/smart-money/reports",
   "instances_dir": "/Users/alwg/trading/algos/markets/fx/instances",
   "ssh_alias": "forexvps",
-  "vps_agent_tunnel": "http://127.0.0.1:8765",
+  "nt8_agent_tunnel": "http://127.0.0.1:8765",
   "mt5_agent_tunnel": "http://127.0.0.1:8766"
 }

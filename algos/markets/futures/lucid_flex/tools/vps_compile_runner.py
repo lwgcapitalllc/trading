@@ -1,5 +1,5 @@
 """
-VPS Compile Runner — triggered by vps_agent.py via subprocess.
+VPS Compile Runner — triggered by nt8_agent.py via subprocess.
 
 Opens the NT8 NinjaScript Editor (or reuses an existing one), presses F5
 to compile all strategies, and detects success by watching
