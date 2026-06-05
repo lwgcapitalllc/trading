@@ -37,7 +37,7 @@ def require_vps():
     try:
         httpx.get("http://localhost:8765/health", timeout=5)
     except Exception as e:
-        pytest.skip(f"VPS agent not reachable on localhost:8765: {e}")
+        pytest.skip(f"NT8 agent not reachable on localhost:8765: {e}")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -298,4 +298,4 @@ def test_system_health_vps_live():
     h = httpx.get(f"{BASE}/system/health", timeout=TIMEOUT).json()
     assert h["backend"] is True,     "Backend should report healthy"
     assert h["ssh_tunnel"] is True,  "SSH tunnel should be up (VPS is live)"
-    assert h["nt8_agent"] is True,   "VPS agent should respond (agent is running)"
+    assert h["nt8_agent"] is True,   "NT8 agent should respond (agent is running)"

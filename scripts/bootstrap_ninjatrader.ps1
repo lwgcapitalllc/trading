@@ -3,11 +3,11 @@
     LWG Capital — NinjaTrader 8 (futures) VPS bootstrap / recovery script.
 
     Companion to bootstrap_vps.ps1 (which covers the MT5 algos side). This one
-    rebuilds the NinjaTrader 8 + vps_agent side of the same VPS.
+    rebuilds the NinjaTrader 8 + nt8_agent side of the same VPS.
 
     HONEST SCOPE NOTE: your uploaded docs include a full runbook for the MT5
     suite (SETUP.md) but NO equivalent for NinjaTrader. What the docs DO tell us
-    is the integration shape: NT8 on the VPS, a vps_agent.py on :8765 started by
+    is the integration shape: NT8 on the VPS, a nt8_agent.py on :8765 started by
     a scheduled task named `LucidFlexAgent`, health = NT8 process + Strategy
     Analyzer open + clean NinjaScript compile. Everything keyed off those facts
     is grounded; the rest uses standard NinjaTrader-on-VPS layout and is exposed
@@ -41,7 +41,7 @@
     deploy into <Nt8UserDir>\bin\Custom\Strategies. If omitted, this step is skipped.
 
 .PARAMETER AgentScript
-    Optional. Full path to vps_agent.py. Used only for the python-deps step.
+    Optional. Full path to nt8_agent.py. Used only for the python-deps step.
 
 .PARAMETER AgentReq
     Optional. Path to a requirements.txt for the agent. If given, installed
@@ -67,7 +67,7 @@
     # Fresh box, restore NT8 data from a backup share, deploy strategies from repo:
     .\bootstrap_ninjatrader.ps1 -RestoreUserData -UserDataBackup '\\nas\backups\NinjaTrader 8' `
         -StrategySourceDir 'C:\trading\command-center\strategies' `
-        -AgentScript 'C:\trading\vps_agent.py' -AgentTaskXml 'C:\trading\scheduler\lucidflex_agent_task.xml'
+        -AgentScript 'C:\trading\nt8_agent.py' -AgentTaskXml 'C:\trading\scheduler\lucidflex_agent_task.xml'
 
 .NOTES
     Run as the `trader` user where possible (so the NT8 user folder + agent task
@@ -84,7 +84,7 @@ param(
     [string] $UserDataBackup,
     [switch] $Force,
     [string] $StrategySourceDir = 'C:\trading\algos\markets\futures\lucid_flex',
-    [string] $AgentScript  = 'C:\trading\algos\markets\futures\lucid_flex\tools\vps_agent.py',
+    [string] $AgentScript  = 'C:\trading\algos\markets\futures\lucid_flex\tools\nt8_agent.py',
     [string] $AgentReq,
     [string] $AgentTaskXml,
     [string] $AgentTaskName = 'LucidFlexAgent',
@@ -107,7 +107,7 @@ if (-not $Nt8UserDir) {
     if (-not $Nt8UserDir) { $Nt8UserDir = $candidates[0] }
 }
 
-# Confirmed agent deps (no requirements.txt in the repo): vps_agent.py imports
+# Confirmed agent deps (no requirements.txt in the repo): nt8_agent.py imports
 # flask + pywinauto + comtypes; vps_backtest_runner.py imports pywinauto + comtypes.
 # Everything else is stdlib. pip will pull pywinauto's own deps (incl. pywin32).
 $AgentDepsDefault = @('flask', 'pywinauto', 'comtypes')
@@ -239,9 +239,9 @@ function P4 {
     $script:Results['Deploy strategies'] = "OK ($($cs.Count) files)"
 }
 
-# Phase 5 — vps_agent deps + scheduled task ---------------------------------
+# Phase 5 — nt8_agent deps + scheduled task ---------------------------------
 function P5 {
-    Write-Phase 'Phase 5 — vps_agent (port + task)'
+    Write-Phase 'Phase 5 — nt8_agent (port + task)'
     # Python deps
     if ($script:Py) {
         if ($AgentReq -and (Test-Path $AgentReq)) {
@@ -254,7 +254,7 @@ function P5 {
                 & $script:Py -m pip install $p --break-system-packages 2>&1 | Out-Null
                 if ($LASTEXITCODE -eq 0) { Write-Ok "$p installed." } else { Write-Warn2 "could not install $p" }
             }
-            Write-Warn2 'Verify these match vps_agent.py / vps_backtest_runner.py imports.'
+            Write-Warn2 'Verify these match nt8_agent.py / vps_backtest_runner.py imports.'
         }
     } else { Write-Warn2 'No python — skipped agent deps.' }
 
@@ -281,7 +281,7 @@ function P5 {
     # Start it
     & schtasks /run /tn $AgentTaskName 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { Write-Info "Started '$AgentTaskName'."; Start-Sleep -Seconds 5 }
-    $script:Results['vps_agent task'] = if ($exists -or ($LASTEXITCODE -eq 0)) { 'OK' } else { 'needs setup' }
+    $script:Results['nt8_agent task'] = if ($exists -or ($LASTEXITCODE -eq 0)) { 'OK' } else { 'needs setup' }
 }
 
 # Phase 6 — Launch reminder + health ----------------------------------------
@@ -294,7 +294,7 @@ function P6 {
     } else { Write-Ok 'NinjaTrader process is running.' }
 
     if (Test-Port -Port $AgentPort) {
-        Write-Ok "vps_agent reachable on :$AgentPort."
+        Write-Ok "nt8_agent reachable on :$AgentPort."
         $script:Results['Agent port'] = 'OK'
         # The agent exposes GET /health and GET /nt-health — probe them for real status.
         foreach ($route in @('/health', '/nt-health')) {
@@ -316,7 +316,7 @@ Invoke-Phase 'NT8 install'      { P1 }
 Invoke-Phase '.NET 4.8'         { P2 }
 Invoke-Phase 'Restore NT8 data' { P3 }
 Invoke-Phase 'Deploy strategies'{ P4 }
-Invoke-Phase 'vps_agent task'   { P5 }
+Invoke-Phase 'nt8_agent task'   { P5 }
 Invoke-Phase 'Health'           { P6 }
 
 Write-Phase 'Summary'

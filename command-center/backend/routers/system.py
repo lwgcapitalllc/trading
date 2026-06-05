@@ -1,5 +1,5 @@
 """
-System router — /system/health, /lab/progress, /lab/stop, /vps/* log proxies.
+System router — /system/health, /lab/progress, /lab/stop, /nt8/* log proxies.
 """
 
 from __future__ import annotations
@@ -222,7 +222,7 @@ def nt8_agent_log(lines: int = 200) -> str:
 
 
 @router.get("/nt8/nt/log", response_class=PlainTextResponse)
-def vps_nt_log(lines: int = 200) -> str:
+def nt8_nt_log(lines: int = 200) -> str:
     try:
         return nt8_agent_client.nt_log(lines=lines)
     except Exception as exc:
