@@ -7,6 +7,7 @@ import {
   useStrategyFiles, useStrategyFileSyncStatus,
   useUploadStrategyFile, useDeleteStrategyFile,
   useTriggerCompile, useCompileStatus,
+  useTriggerCompileMt5, useCompileStatusMt5,
   useDeployStrategy,
 } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
@@ -567,14 +568,19 @@ function FileStatusBadge({ filename, vpsFiles }: { filename: string; vpsFiles: S
   return <span className="text-[11px] px-2 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
 }
 
-function CompileModal({ compileJobId, onClose }: { compileJobId: string; onClose: () => void }) {
-  const { data: job } = useCompileStatus(compileJobId)
+function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', usePollHook }: {
+  compileJobId: string
+  onClose: () => void
+  title?: string
+  usePollHook: (id: string | null) => { data: import('@/types').CompileJobStatus | undefined }
+}) {
+  const { data: job } = usePollHook(compileJobId)
   const elapsed = job?.started_at ? Math.round((Date.now() / 1000) - job.started_at) : 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-[480px] shadow-xl">
-        <h3 className="text-text-primary font-semibold mb-4">Compiling NinjaScript</h3>
+        <h3 className="text-text-primary font-semibold mb-4">{title}</h3>
         {(!job || job.status === 'running') && (
           <div className="text-text-secondary text-[13px] space-y-1">
             <div className="flex items-center gap-2">
@@ -613,13 +619,17 @@ function FilesTab() {
   const uploadMut = useUploadStrategyFile()
   const deleteMut = useDeleteStrategyFile()
   const compileMut = useTriggerCompile()
+  const compileMt5Mut = useTriggerCompileMt5()
   const dropRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [overwriteConfirm, setOverwriteConfirm] = useState<{ file: File; filename: string } | null>(null)
   const [activeCompileId, setActiveCompileId] = useState<string | null>(null)
+  const [activeMt5CompileId, setActiveMt5CompileId] = useState<string | null>(null)
   const [platformFilter, setPlatformFilter] = useState<string | null>(null)
+
+  const hasMt5Files = useMemo(() => (files ?? []).some(f => f.platform === 'MT5'), [files])
 
   const platforms = useMemo(
     () => [...new Set((files ?? []).map(f => f.platform))].sort(),
@@ -643,10 +653,19 @@ function FilesTab() {
     }
   }
 
+  const startCompileMt5 = async () => {
+    try {
+      const result = await compileMt5Mut.mutateAsync()
+      setActiveMt5CompileId(result.compile_job_id)
+    } catch {
+      // toast shown by hook
+    }
+  }
+
   const handleFiles = (droppedFiles: FileList | null) => {
     if (!droppedFiles?.length) return
     const f = droppedFiles[0]
-    if (!f.name.endsWith('.cs')) { toast.error('Only .cs files are allowed'); return }
+    if (!f.name.endsWith('.cs') && !f.name.endsWith('.mq5')) { toast.error('Only .cs or .mq5 files are allowed'); return }
     const existing = files?.find(vf => vf.filename === f.name)
     if (existing) {
       setOverwriteConfirm({ file: f, filename: f.name })
@@ -691,8 +710,18 @@ function FilesTab() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 text-[13px] disabled:opacity-50"
           >
             <RefreshCw size={13} className={compileMut.isPending ? 'animate-spin' : ''} />
-            Compile All
+            Compile NT8
           </button>
+          {hasMt5Files && (
+            <button
+              onClick={startCompileMt5}
+              disabled={compileMt5Mut.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-purple-500/10 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 text-[13px] disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={compileMt5Mut.isPending ? 'animate-spin' : ''} />
+              Compile MT5
+            </button>
+          )}
         </div>
       </div>
 
@@ -704,8 +733,8 @@ function FilesTab() {
         }`}
       >
         <Upload size={24} className="mx-auto mb-2 text-text-tertiary" />
-        <p className="text-text-secondary text-[13px]">Drop a <span className="font-mono">.cs</span> file here to upload, or click to browse</p>
-        <input ref={fileInputRef} type="file" accept=".cs" className="hidden" onChange={e => handleFiles(e.target.files)} />
+        <p className="text-text-secondary text-[13px]">Drop a <span className="font-mono">.cs</span> or <span className="font-mono">.mq5</span> file here to upload, or click to browse</p>
+        <input ref={fileInputRef} type="file" accept=".cs,.mq5" className="hidden" onChange={e => handleFiles(e.target.files)} />
         {uploadMut.isPending && (
           <div className="absolute inset-0 bg-bg-base/60 flex items-center justify-center rounded-lg">
             <span className="text-accent text-[13px]">Uploading…</span>
@@ -811,7 +840,22 @@ function FilesTab() {
         </div>
       )}
 
-      {activeCompileId && <CompileModal compileJobId={activeCompileId} onClose={() => setActiveCompileId(null)} />}
+      {activeCompileId && (
+        <CompileModal
+          compileJobId={activeCompileId}
+          onClose={() => setActiveCompileId(null)}
+          title="Compiling NinjaScript"
+          usePollHook={useCompileStatus}
+        />
+      )}
+      {activeMt5CompileId && (
+        <CompileModal
+          compileJobId={activeMt5CompileId}
+          onClose={() => setActiveMt5CompileId(null)}
+          title="Compiling MQL5 (MetaEditor)"
+          usePollHook={useCompileStatusMt5}
+        />
+      )}
     </div>
   )
 }

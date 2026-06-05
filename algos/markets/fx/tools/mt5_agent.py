@@ -70,6 +70,7 @@ app = Flask(__name__)
 
 _agent_log: list[str] = []
 _jobs: dict[str, dict] = {}
+_compile_jobs: dict[str, dict] = {}
 _lock = threading.Lock()
 
 # Detected at first successful MT5 connection; None until then.
@@ -908,26 +909,169 @@ def cancel_job(job_id: str):
     return jsonify({"ok": True})
 
 
-# ── Step 9 stubs (MT5 deployment) ─────────────────────────────────────────────
+# ── Step 9: MT5 deployment ────────────────────────────────────────────────────
+
+def _find_metaeditor() -> Optional[Path]:
+    """Locate metaeditor64.exe — same directory as terminal64.exe."""
+    candidates: list[Path] = []
+    env = os.environ.get("METAEDITOR_PATH", "")
+    if env:
+        candidates.append(Path(env))
+    tester = _get_tester_exe()
+    if tester is not None:
+        candidates.append(tester.parent / "metaeditor64.exe")
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def _run_compile(job_id: str, experts_dir: Path) -> None:
+    with _lock:
+        _compile_jobs[job_id]["started_at"] = time.time()
+
+    meta = _find_metaeditor()
+    if meta is None:
+        with _lock:
+            _compile_jobs[job_id].update({
+                "status": "failed",
+                "errors": ["metaeditor64.exe not found — set METAEDITOR_PATH or ensure it is in the MT5 terminal directory"],
+                "completed_at": time.time(),
+            })
+        return
+
+    log_path = experts_dir / f"_compile_{job_id[:8]}.log"
+    try:
+        subprocess.run(
+            [str(meta), f"/compile:{experts_dir}", f"/log:{log_path}"],
+            timeout=120,
+            capture_output=True,
+        )
+        errors: list[str] = []
+        warnings: list[str] = []
+        n_errors = 0
+        if log_path.exists():
+            text = log_path.read_text(encoding="utf-8", errors="replace")
+            for line in text.splitlines():
+                ln = line.strip()
+                if not ln:
+                    continue
+                low = ln.lower()
+                m = re.search(r"(\d+)\s+error\(s\)", low)
+                if m:
+                    n_errors += int(m.group(1))
+                mw = re.search(r"(\d+)\s+warning\(s\)", low)
+                if mw and int(mw.group(1)) > 0:
+                    warnings.append(ln)
+                if ": error:" in low:
+                    errors.append(ln)
+        status = "success" if n_errors == 0 else "failed"
+        with _lock:
+            _compile_jobs[job_id].update({
+                "status": status, "errors": errors,
+                "warnings": warnings, "completed_at": time.time(),
+            })
+        _alog(f"Compile {job_id[:8]}: {status} — {n_errors} error(s), {len(warnings)} warning(s)")
+    except subprocess.TimeoutExpired:
+        with _lock:
+            _compile_jobs[job_id].update({
+                "status": "failed",
+                "errors": ["MetaEditor compile timed out (120 s)"],
+                "completed_at": time.time(),
+            })
+    except Exception as exc:
+        with _lock:
+            _compile_jobs[job_id].update({"status": "failed", "errors": [str(exc)], "completed_at": time.time()})
+    finally:
+        try:
+            if log_path.exists():
+                log_path.unlink()
+        except Exception:
+            pass
+
 
 @app.route("/files/strategies/<filename>", methods=["POST"])
 def upload_strategy_file(filename: str):
-    return jsonify({"error": "MT5 file upload not yet implemented (Step 9)"}), 501
+    if not filename.endswith(".mq5"):
+        return jsonify({"error": "Only .mq5 files are allowed"}), 400
+
+    experts = _detect_experts_dir()
+    if experts is None:
+        return jsonify({"error": "MT5 Experts folder not found — is MT5 running?"}), 503
+
+    dest = experts / filename
+    overwrite = request.form.get("overwrite", "false").lower() == "true"
+    if dest.exists() and not overwrite:
+        return jsonify({"error": f"{filename} already exists on VPS"}), 409
+
+    f = request.files.get("file")
+    if f is None:
+        return jsonify({"error": "Missing 'file' in multipart body"}), 400
+
+    content = f.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        return jsonify({"error": f"File exceeds 256 KB limit ({len(content)} bytes)"}), 400
+
+    try:
+        dest.write_bytes(content)
+    except IOError as exc:
+        return jsonify({"error": f"Write failed: {exc}"}), 423
+
+    _alog(f"Uploaded {filename} ({len(content)} bytes)")
+    return jsonify(_file_info(dest)), 201
 
 
 @app.route("/files/strategies/<filename>", methods=["DELETE"])
 def delete_strategy_file(filename: str):
-    return jsonify({"error": "MT5 file delete not yet implemented (Step 9)"}), 501
+    if not filename.endswith((".mq5", ".ex5")):
+        return jsonify({"error": "Only .mq5 or .ex5 files may be deleted"}), 400
+
+    experts = _detect_experts_dir()
+    if experts is None:
+        return jsonify({"error": "MT5 Experts folder not found — is MT5 running?"}), 503
+
+    target = experts / filename
+    if not target.exists():
+        return jsonify({"error": f"{filename} not found"}), 404
+
+    try:
+        target.unlink()
+    except IOError as exc:
+        return jsonify({"error": f"File locked: {exc}"}), 423
+
+    _alog(f"Deleted {filename}")
+    return jsonify({"ok": True, "filename": filename})
 
 
 @app.route("/compile", methods=["POST"])
 def trigger_compile():
-    return jsonify({"error": "MT5 compile not yet implemented (Step 9)"}), 501
+    experts = _detect_experts_dir()
+    if experts is None:
+        return jsonify({"error": "MT5 Experts folder not found — is MT5 running?"}), 503
+
+    job_id = str(uuid.uuid4())
+    with _lock:
+        _compile_jobs[job_id] = {
+            "compile_job_id": job_id,
+            "status": "running",
+            "errors": [],
+            "warnings": [],
+            "started_at": None,
+            "completed_at": None,
+        }
+
+    threading.Thread(target=_run_compile, args=(job_id, experts), daemon=True).start()
+    _alog(f"Compile job {job_id[:8]} started (Experts: {experts})")
+    return jsonify({"compile_job_id": job_id, "status": "running"}), 202
 
 
 @app.route("/compile/<compile_job_id>")
 def compile_status(compile_job_id: str):
-    return jsonify({"error": "MT5 compile not yet implemented (Step 9)"}), 501
+    with _lock:
+        job = _compile_jobs.get(compile_job_id)
+    if job is None:
+        return jsonify({"error": "Compile job not found"}), 404
+    return jsonify(job)
 
 
 # ── Startup ────────────────────────────────────────────────────────────────────

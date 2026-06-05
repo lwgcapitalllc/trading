@@ -14,6 +14,7 @@ This module abstracts that difference — callers in vps_client see identical si
 from __future__ import annotations
 
 import json
+import uuid
 import urllib.error
 import urllib.request
 from typing import Optional
@@ -106,8 +107,56 @@ def get_historical_data(
     return _get(path, timeout=30)
 
 
-# ── Strategy file management (Step 9) ─────────────────────────────────────────
+# ── Strategy file management ───────────────────────────────────────────────────
 
 def list_strategy_files() -> list[dict]:
     """GET /files/strategies — list .mq5/.ex5 in MT5 Experts folder."""
     return _get("/files/strategies")
+
+
+def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict:
+    """POST /files/strategies/<filename> — upload a .mq5 file (multipart)."""
+    url = cfg.MT5_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
+    boundary = uuid.uuid4().hex
+    body_parts = [
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+        f"filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n".encode(),
+        content,
+        f"\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\n"
+        f"{'true' if overwrite else 'false'}\r\n--{boundary}--\r\n".encode(),
+    ]
+    req = urllib.request.Request(
+        url, data=b"".join(body_parts),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"MT5 upload {filename}: HTTP {exc.code} — {exc.read().decode()}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"MT5 upload {filename}: {exc}") from exc
+
+
+def delete_strategy_file(filename: str) -> dict:
+    """DELETE /files/strategies/<filename> — delete a .mq5 or .ex5 file."""
+    url = cfg.MT5_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
+    req = urllib.request.Request(url, method="DELETE")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"MT5 delete {filename}: HTTP {exc.code} — {exc.read().decode()}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"MT5 delete {filename}: {exc}") from exc
+
+
+def trigger_compile() -> dict:
+    """POST /compile — trigger MetaEditor to compile all .mq5 files in Experts folder."""
+    return _post("/compile", timeout=15)
+
+
+def get_compile_status(compile_job_id: str) -> dict:
+    """GET /compile/<id> — poll MetaEditor compile job status."""
+    return _get(f"/compile/{compile_job_id}")

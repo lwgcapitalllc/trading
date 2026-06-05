@@ -2,21 +2,24 @@
 Strategy file deployment router.
 
 Proxies VPS agent file management and compile endpoints. Also provides
-sync-status: for each strategy in the DB, reports whether its .cs file
-exists on the VPS.
+sync-status: for each strategy in the DB, reports whether its source file
+exists on the VPS. NT8 strategies use .cs files (NT8 VPS agent on :8765);
+MT5 strategies use .mq5 files (MT5 agent on :8766).
 
 Endpoints:
-    GET    /strategy-files               list .cs files on VPS
-    POST   /strategy-files/upload        upload a .cs file (multipart/form-data)
-    DELETE /strategy-files/{filename}    delete a .cs file from VPS
-    POST   /strategy-files/compile       trigger NT8 recompile
-    GET    /strategy-files/compile/{id}  poll compile status
-    GET    /strategy-files/sync-status   per-strategy file presence on VPS
+    GET    /strategy-files                  list .cs files on NT8 VPS
+    POST   /strategy-files/upload           upload a .cs or .mq5 file
+    DELETE /strategy-files/{filename}       delete a file from VPS
+    POST   /strategy-files/compile          trigger NT8 recompile (pywinauto F5)
+    GET    /strategy-files/compile/{id}     poll NT8 compile status
+    POST   /strategy-files/compile-mt5      trigger MetaEditor compile
+    GET    /strategy-files/compile-mt5/{id} poll MT5 compile status
+    GET    /strategy-files/sync-status      per-strategy file presence on VPS
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from models import StrategyFile, StrategyFileSyncStatus, CompileJobStatus
-from services import vps_client, lab_db
+from services import vps_client, lab_db, mt5_agent_client
 
 router = APIRouter(prefix="/strategy-files", tags=["strategy-files"])
 
@@ -37,8 +40,8 @@ async def upload_strategy_file(
     filename: str = Form(...),
     overwrite: bool = Form(False),
 ):
-    if not filename.endswith(".cs"):
-        raise HTTPException(status_code=400, detail="Only .cs files are allowed")
+    if not (filename.endswith(".cs") or filename.endswith(".mq5")):
+        raise HTTPException(status_code=400, detail="Only .cs or .mq5 files are allowed")
 
     content = await file.read()
     if len(content) > _MAX_UPLOAD_BYTES:
@@ -60,8 +63,8 @@ async def upload_strategy_file(
 
 @router.delete("/{filename}")
 def delete_strategy_file(filename: str):
-    if not filename.endswith(".cs"):
-        raise HTTPException(status_code=400, detail="Only .cs files are allowed")
+    if not (filename.endswith(".cs") or filename.endswith((".mq5", ".ex5"))):
+        raise HTTPException(status_code=400, detail="Only .cs, .mq5, or .ex5 files are allowed")
     try:
         return vps_client.delete_strategy_file(filename)
     except RuntimeError as exc:
@@ -89,24 +92,47 @@ def get_compile_status(compile_job_id: str):
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+@router.post("/compile-mt5", status_code=202)
+def trigger_compile_mt5():
+    try:
+        return mt5_agent_client.trigger_compile()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@router.get("/compile-mt5/{compile_job_id}", response_model=CompileJobStatus)
+def get_compile_mt5_status(compile_job_id: str):
+    try:
+        return mt5_agent_client.get_compile_status(compile_job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @router.get("/sync-status", response_model=list[StrategyFileSyncStatus])
 def sync_status():
     """
-    For each strategy in the DB, report whether its .cs file exists on the VPS.
-    A strategy is "in sync" when the expected .cs file is present on the VPS.
+    For each strategy in the DB, report whether its source file exists on the VPS.
+    NT8 strategies (.cs) are checked against the NT8 agent; MT5 strategies (.mq5)
+    are checked against the MT5 agent.
     """
     try:
-        vps_files = {f["filename"]: f for f in vps_client.list_strategy_files()}
+        nt8_files = {f["filename"]: f for f in vps_client.list_strategy_files()}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not reach VPS agent: {exc}")
+
+    mt5_files: dict[str, dict] = {}
+    try:
+        mt5_files = {f["filename"]: f for f in mt5_agent_client.list_strategy_files()}
+    except Exception:
+        pass  # MT5 agent unreachable — degrade gracefully, MT5 strategies show not-in-sync
 
     strategies = lab_db.list_strategies()
     result = []
     for s in strategies:
-        # Expected filename: <class_name>.cs (class_name comes from the scanner)
         class_name = s.get("class_name") or s.get("id", "")
-        expected = f"{class_name}.cs"
-        vps_file = vps_files.get(expected)
+        is_mt5 = s.get("runner") == "mt5"
+        expected = f"{class_name}.mq5" if is_mt5 else f"{class_name}.cs"
+        vps_file = (mt5_files if is_mt5 else nt8_files).get(expected)
         result.append(StrategyFileSyncStatus(
             strategy_id=s["id"],
             expected_filename=expected,

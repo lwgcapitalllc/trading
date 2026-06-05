@@ -623,7 +623,7 @@ export function useDeleteStrategyFile() {
 export function useTriggerCompile() {
   return useMutation({
     mutationFn: () => api.post<{ compile_job_id: string }>('/strategy-files/compile', {}),
-    onError: () => toast.error('Could not start compile'),
+    onError: () => toast.error('Could not start NT8 compile'),
   })
 }
 
@@ -631,6 +631,25 @@ export function useCompileStatus(compileJobId: string | null) {
   return useQuery({
     queryKey: ['lab', 'compile', compileJobId],
     queryFn: () => api.get<CompileJobStatus>(`/strategy-files/compile/${compileJobId}`),
+    enabled: !!compileJobId,
+    refetchInterval: (query) => {
+      const data = query.state.data as CompileJobStatus | undefined
+      return data?.status === 'running' ? 2_000 : false
+    },
+  })
+}
+
+export function useTriggerCompileMt5() {
+  return useMutation({
+    mutationFn: () => api.post<{ compile_job_id: string }>('/strategy-files/compile-mt5', {}),
+    onError: () => toast.error('Could not start MT5 compile'),
+  })
+}
+
+export function useCompileStatusMt5(compileJobId: string | null) {
+  return useQuery({
+    queryKey: ['lab', 'compile-mt5', compileJobId],
+    queryFn: () => api.get<CompileJobStatus>(`/strategy-files/compile-mt5/${compileJobId}`),
     enabled: !!compileJobId,
     refetchInterval: (query) => {
       const data = query.state.data as CompileJobStatus | undefined

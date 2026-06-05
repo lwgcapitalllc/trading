@@ -256,6 +256,8 @@ def list_strategy_files() -> list[dict]:
 
 
 def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict:
+    if filename.endswith(".mq5"):
+        return mt5_agent_client.upload_strategy_file(filename, content, overwrite)
     url = cfg.VPS_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
     boundary = uuid.uuid4().hex
     body_parts = [
@@ -281,6 +283,8 @@ def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict
 
 
 def delete_strategy_file(filename: str) -> dict:
+    if filename.endswith((".mq5", ".ex5")):
+        return mt5_agent_client.delete_strategy_file(filename)
     url = cfg.VPS_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
     req = urllib.request.Request(url, method="DELETE")
     try:
