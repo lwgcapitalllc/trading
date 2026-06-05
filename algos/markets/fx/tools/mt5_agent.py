@@ -700,9 +700,13 @@ def _run_backtest(job_id: str, spec: dict) -> None:
             break
         time.sleep(_REPORT_POLL_INTERVAL)
     else:
-        jl(f"Timeout after {_BACKTEST_TIMEOUT}s - force-killing tester")
+        jl(f"Timeout after {_BACKTEST_TIMEOUT}s - force-killing tester (pid={proc.pid})")
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        # Only kill metatester64 by name — never terminal64, which may be running live bots
         _kill_by_name("metatester64.exe")
-        _kill_by_name("terminal64.exe")
         fail(f"Backtest timed out after {_BACKTEST_TIMEOUT}s")
         return
 
@@ -834,8 +838,8 @@ def cancel_job(job_id: str):
             proc.kill()
         except Exception:
             pass
+    # Only kill metatester64 by name — never terminal64, which may be running live bots
     _kill_by_name("metatester64.exe")
-    _kill_by_name("terminal64.exe")
     _alog(f"Job {job_id[:8]} cancelled")
     return jsonify({"ok": True})
 
