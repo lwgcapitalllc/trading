@@ -2,7 +2,7 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
-**Last reviewed:** 2026-06-04 (Pass 2.5 — strategy location cleanup, deploy button, nav refactor)
+**Last reviewed:** 2026-06-04 (Steps 7-9 complete — MT5 backtest driver, runner badges, MT5 deployment)
 
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
@@ -46,7 +46,7 @@ cd command-center
 
 `start.sh` creates the Python venv and runs `npm install` on first launch.
 
-**SSH tunnel** — `start.sh` opens a persistent `ssh -N forexvps` background process on launch. This keeps `LocalForward 8765` alive so `http://127.0.0.1:8765` (vps_agent_tunnel) is reachable for the entire session. Without this, vps_client calls fail even though SSH itself appears healthy. The tunnel is killed automatically on Ctrl-C.
+**SSH tunnel** — `start.sh` opens a persistent `ssh -N forexvps` background process on launch. This keeps two LocalForwards alive: `8765` (NT8 vps_agent_tunnel) and `8766` (MT5 mt5_agent_tunnel). Without the tunnel, both vps_client and mt5_agent_client calls fail even though SSH itself appears healthy. The tunnel is killed automatically on Ctrl-C.
 
 **Backtesting prerequisites** — before submitting a run, the SSH tunnel and VPS agent must be up. See Sidebar health indicators below.
 
@@ -100,6 +100,9 @@ cd command-center
 | Regime Tags (M4) | ✅ Live | Every backtest's `daily_pnl` entries are tagged with a regime label (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Auto-tagged via pipeline; manual backfill via UI button. Performance by Regime table on BacktestDetail. Equity curve regime overlay (background bands + diagonal stripes for UNKNOWN). Optimizer regime filter. |
 | Pass 2 — Strategy deployment | ✅ Live | Upload, delete, and compile NT8 strategy files from the UI without RDP. VPS agent extended with file management + compile endpoints. pywinauto F5 compile via NinjaScript Editor. |
 | Pass 2.5 — Strategy location + deploy button | ✅ Live | `strategies/` top-level subsystem. Files moved from `algos/`. Scanner updated. One-click Deploy button per strategy in Strategies tab. Strategies / Rulesets / Deployed nav page split from Backtests. Tab counts, platform column, trash-can delete on Deployed tab. |
+| Steps 1-7 — MT5 runner | ✅ Live | `mt5_agent.py` on VPS (port 8766) — health/status, historical data, Strategy Tester driver (ini+set file, terminal64.exe, HTML report parser). `mt5_agent_client.py` on backend. `vps_client` dispatches backtests to MT5 agent when `strategy.runner == "mt5"`. `MeanReversion.mq5` smoke-tested. |
+| Step 8 — Runner badges + market filter | ✅ Live | `RunnerBadge` component shows NT8/MT5 on each strategy row. `MarketFilterBar` on Strategies and Runs tabs filters to Futures or Forex. Instrument→market mapping: MT5 runner → Forex, all others → Futures. |
+| Step 9 — MT5 deployment manager | ✅ Live | Upload/delete `.mq5` files via MT5 agent. `POST /strategy-files/compile-mt5` triggers `metaeditor64.exe /compile:<experts_dir>` async; polls log for `N error(s)`. Drop zone in Deployed tab accepts `.mq5`. "Compile MT5" button (purple) appears when MT5 files are present. sync_status checks MT5 agent for `runner=mt5` strategies. |
 
 ---
 

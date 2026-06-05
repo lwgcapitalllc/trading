@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-04 (Pass 2.5 — strategy location cleanup + deploy button)
+**Last reviewed:** 2026-06-04 (Steps 7-9 — MT5 runner, runner badges, market filter, MT5 deployment)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -340,13 +340,14 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Optimization Detail | ✅ Live | `/backtests/optimizations/:optimizationId` — heatmap (2D) or top-10 table (3+D), best param callout, CSV export. Per-row retry button in FailedRunsTable. |
 | Optimize Button | ✅ Live | Tier-aware button on BacktestDetail: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning with instrument routing |
 | Tier 3 Warning Modal | ✅ Live | Shows past results per instrument, offers sweep of untested instruments. `withContractMonth()` stamps root symbols with contract month from source run before submitting sweep. Now passes `source_run_id: run.run_id` on every sweep trigger. |
-| Runner Badge | ✅ Live | StrategyDetail shows "Runs on: NinjaTrader" badge |
+| Runner Badge | ✅ Live | `RunnerBadge` component on Strategies tab, StrategyDetail, and Runs tab rows. Shows NT8 (cyan) or MT5 (purple) platform pill. |
+| Market Filter (Step 8) | ✅ Live | `MarketFilterBar` on Strategies and Runs tabs. Three chips: All / Futures / Forex. Instrument→market mapping: `runner=mt5` → Forex, all others → Futures. State in `useState` (not URL — it's a filter, not a nav destination). |
 | Stress Tests | ✅ Live | Own sidebar page at `/stress-tests`. StressTestDetail: **grade column card** (coloured left strip A–F, name, gold ruleset chip, grade reasons inline); **source backtest card** below it (strategy name, instrument, date range, Net P&L, trades, "View Run →" → `/backtests/:run_id`); MetricCard with pos/neg coloured values + InfoTip hover tooltips on all stats; ProbBars color-coded by severity; equity fan, drawdown dist, walk-forward, sensitivity charts. "Stress Test" button on BacktestDetail. No COMPLETE status pill (implied). Running status pill is cyan (matches all other tables). **Pipeline stepper** shown while running: fixed-width phase nodes (MC → Walk-forward → Sensitivity) with flex-1 connector lines, per-phase elapsed timers using `mc_completed_at` / `wf_completed_at` DB columns. |
 | Backtests lab M4 — Regime tagging | ✅ Live | `RegimeBadge` inline component (colored dot + label, spec colors). `PerformanceByRegimeTable` inline component on BacktestDetail — shown when ≥1 non-UNKNOWN tag exists; columns: Regime/Days/Trades/Net P&L/Win Rate/PF/Worst Day; Overall row pulls from `run.*` fields, never recomputed from regime rows. `BackfillRegimeButton` in header action row — shown when any `daily_pnl` entry has missing or UNKNOWN `regime_tag`; polls backfill status at 1s; invalidates run query on completion. |
 | Backtests lab M4 — Equity overlay | ✅ Live | `RegimeOverlayToggle` button in Charts header — active when non-UNKNOWN tags exist. Toggle persists to `localStorage` (`regime_overlay_enabled`), defaults to on. **Colored equity line**: `EquityCurveChart` augments the data with per-band segment keys (`_s0`, `_s1`, …); each regime segment renders as a separate `Area` with `fill="transparent"` and the regime's stroke color. When overlay is off, falls back to the normal single-color green line + fill. `RegimeLegend` (dash swatches, not dots) below equity curve when overlay is on. `PerformanceByRegimeTable` slides in/out below the equity curve with a CSS `max-height` + `opacity` transition (350ms) — only mounts when tags exist, visibility driven by `overlayOn`. UNKNOWN days produce no colored segment. |
 | Backtests lab M4 — Optimizer regime filter | ✅ Live | `OptimizerModal` gains a "Regime Filter" select (col-span-3, all 5 labels + no-filter option). `regime_filter` flows through types → hook → backend. `OptimizationDetail` shows regime chip in metadata row when set. |
-| Backtests lab Pass 2 — Strategy Deployment | ✅ Live | "Deployed" sub-tab in `Strategies.tsx` (moved from Backtests): drag/drop zone, file list table with Platform column (NT8/MT5 badge) and platform filter chips, trash-can delete (no ⋯ menu), overwrite confirmation, "Compile All" → `CompileModal`. `StrategiesTab` shows ● In sync / ● Needs deploy status badges. Tab counts (number badges) on all three Strategies tabs. |
-| Backtests lab Pass 2.5 — Deploy button | ✅ Live | Per-strategy Deploy/Redeploy buttons in the Strategies tab. `useDeployStrategy()` fires `POST /strategies/{id}/deploy` + chained GET in one mutation (synchronous backend). Filled accent "Deploy" button when out of sync; outlined "Redeploy" when in sync. Spinner on the specific row while deploying. On success: toast + sync-status invalidation. `DeployJobStatus` type added. `ScanResult` gains `warnings: string[]`. |
+| Backtests lab Pass 2 — Strategy Deployment | ✅ Live | "Deployed" sub-tab in `Strategies.tsx`: drag/drop zone (`.cs` and `.mq5`), file list table with Platform badge and platform filter chips, trash-can delete, overwrite confirmation, "Compile NT8" button → NT8 `CompileModal`, "Compile MT5" button (purple, shown only when MT5 files present) → MT5 `CompileModal`. `StrategiesTab` shows ● In sync / ● Needs deploy status badges. `CompileModal` takes `title` + `usePollHook` props — one component used for both NT8 and MT5. |
+| Backtests lab Pass 2.5 — Deploy button | ✅ Live | Per-strategy Deploy/Redeploy buttons in the Strategies tab. Works for both `.cs` (NT8) and `.mq5` (MT5) — routing is transparent (handled by vps_client on the backend). `useDeployStrategy()` fires `POST /strategies/{id}/deploy` + chained GET. Filled accent "Deploy" when out of sync; outlined "Redeploy" when in sync. |
 | Settings | ✅ Live | Config read/write |
 
 ---
@@ -383,16 +384,17 @@ Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBac
 ### Components — live in `Strategies.tsx` (moved from `Backtests.tsx` during nav refactor)
 
 **`FilesTab`** — Now the "Deployed" sub-tab under Strategies. Contains:
-- Drag/drop zone (detects `.cs` files only; toasts on non-.cs drop)
+- Drag/drop zone (accepts `.cs` and `.mq5`; toasts on other file types)
 - File list table: Filename, Platform badge, Size, Modified, Status badge, Trash2 delete icon (no ⋯ menu)
 - Platform filter chips (All / NT8 / MT5) — only shown when multiple platforms are present
-- "Compile All" button → triggers `useTriggerCompile()` → shows `CompileModal`
+- "Compile NT8" button → triggers `useTriggerCompile()` → shows NT8 `CompileModal`
+- "Compile MT5" button (purple) — only shown when MT5 files are present → triggers `useTriggerCompileMt5()` → shows MT5 `CompileModal`
 - Overwrite confirmation modal: shown when a dropped file already exists on the VPS
 - Delete confirmation modal: shown when trash icon is clicked
 - `FileStatusBadge`: green "In sync" / red "Missing" pill
 - `PlatformBadge`: cyan for NT8, purple for MT5
 
-**`CompileModal`** — polls `useCompileStatus(compileJobId)` at 2s intervals. Shows spinner + elapsed time while running. Shows success/errors on completion. "Close" button only appears when compile is not running.
+**`CompileModal`** — generic for both NT8 and MT5. Props: `compileJobId`, `onClose`, `title` (e.g. "Compiling NinjaScript" vs "Compiling MQL5 (MetaEditor)"), `usePollHook` (either `useCompileStatus` or `useCompileStatusMt5`). Polls at 2s while running. Shows spinner + elapsed time. "Close" only appears when done.
 
 ### `StrategiesTab` changes
 
@@ -406,8 +408,10 @@ Sync-status badges (● In sync / ● Needs deploy) are now display-only. Tab co
 | `useStrategyFileSyncStatus()` | `GET /strategy-files/sync-status` — 60s refetch |
 | `useUploadStrategyFile()` | `POST /strategy-files/upload` — multipart via native `fetch()` (not `api.post`) |
 | `useDeleteStrategyFile()` | `DELETE /strategy-files/{filename}` |
-| `useTriggerCompile()` | `POST /strategy-files/compile` |
+| `useTriggerCompile()` | `POST /strategy-files/compile` — NT8 pywinauto F5 |
 | `useCompileStatus(id)` | `GET /strategy-files/compile/{id}` — polls at 2s while running |
+| `useTriggerCompileMt5()` | `POST /strategy-files/compile-mt5` — MetaEditor compile |
+| `useCompileStatusMt5(id)` | `GET /strategy-files/compile-mt5/{id}` — polls at 2s while running |
 | `useDeployStrategy()` | `POST /strategies/{id}/deploy` + chained GET — returns `DeployJobStatus` |
 
 Upload hook uses native `fetch()` with `FormData` (not `api.post`) because multipart encoding requires special handling not available in the `api` wrapper.

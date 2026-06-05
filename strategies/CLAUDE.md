@@ -3,7 +3,7 @@
 **Purpose:** Generic trading strategy implementations, organized by runner platform.
 **Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5 when added). Does NOT cover backtest infrastructure (see `command-center/`), live bot runtime logic (see `algos/`), or regime classification (see `regime/`).
 **Status:** Production. NinjaTrader strategies are live and deployed via the command center. MT5 has one strategy (MeanReversion.mq5, smoke-tested). Tradovate is a placeholder.
-**Last reviewed:** 2026-06-04 (MeanReversion.mq5 added to mt5/)
+**Last reviewed:** 2026-06-04 (Step 9 — MT5 deploy/compile wired; MeanReversion.mq5 deployable via Deploy button)
 
 ---
 
@@ -45,8 +45,17 @@ strategies/
 3. Foundational params must default to sentinel values (e.g. -1 or empty string) so the strategy refuses to trade if injection fails
 4. From the command center, click "Scan Strategies" to register it in the database
 5. Click "Deploy" next to the strategy on the Strategies tab to upload to VPS
-6. Click "Compile All" on the Deployed tab
+6. Click "Compile NT8" on the Deployed tab
 7. Run a backtest to verify
+
+## Adding a new MT5 strategy
+
+1. Create `<StrategyName>.mq5` in `strategies/mt5/`
+2. The strategy's class name must match the filename (MetaEditor requirement)
+3. From the command center, click "Scan Strategies" to register it in the database (scanner picks up `.mq5` via `strategies/mt5/` rglob)
+4. Click "Deploy" next to the strategy on the Strategies tab — routes to the MT5 agent (port 8766) automatically based on `.mq5` extension
+5. Click "Compile MT5" on the Deployed tab — runs `metaeditor64.exe /compile:<experts_dir>`; the button only appears when MT5 files are present
+6. Run a backtest to verify (requires MT5 terminal running on VPS; strategy Tester ini+set approach)
 
 ---
 
@@ -74,7 +83,9 @@ To fix: add a Windows scheduled task (trigger: At startup, run whether user is l
 ## References
 
 - Pass 1 spec — foundational config rules and parameter categorization
-- Pass 2 spec — VPS deployment manager (upload, compile, sync-status)
+- Pass 2 spec — VPS deployment manager (upload, compile, sync-status) for NT8
 - Pass 2.5 spec — this directory's creation; moved from `algos/markets/futures/lucid_flex/`
-- `command-center/backend/CLAUDE.md` — scanner, deploy endpoint, sync-status logic
-- `command-center/frontend/CLAUDE.md` — Strategies page, Deployed tab, Deploy button
+- Step 9 — MT5 deployment manager (upload/delete `.mq5`, MetaEditor compile)
+- `command-center/backend/CLAUDE.md` — scanner, deploy endpoint, sync-status logic, MT5 agent client
+- `command-center/frontend/CLAUDE.md` — Strategies page, Deployed tab, Deploy button, MT5 compile button
+- `algos/markets/fx/tools/mt5_agent.py` — MT5 agent on VPS (port 8766); owns the Experts folder write path

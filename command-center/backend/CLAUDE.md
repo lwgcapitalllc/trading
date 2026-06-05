@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-04 (Pass 2.5 — strategy location cleanup + deploy endpoint)
+**Last reviewed:** 2026-06-04 (Steps 7-9 — MT5 backtest driver, runner badges, MT5 deployment)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -46,7 +46,8 @@ backend/
 │   ├── grading.py         compute_grade() → A/B/C/D/F with plain-English reasons
 │   ├── correlation_table.py  hardcoded correlated instrument pairs
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
-│   └── vps_client.py      typed HTTP wrapper over vps_agent; runner dispatcher
+│   ├── vps_client.py      typed HTTP wrapper over NT8 vps_agent; runner dispatcher (routes mt5 → mt5_agent_client)
+│   └── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel)
 ├── data/lab.db            strategies, rulesets, runs, evaluations, optimizations, stress_tests
 └── reports/lab/           run output files — equity curves, logs, progress.json
 ```
@@ -303,8 +304,10 @@ On startup `_migrate_strategy_renames()` renames `orb_lucidflex` → `orb`, `vwa
 | Lab — System | ✅ Live | Health endpoints (SSH, VPS agent, NT8, compile status). Log proxies. Progress file read. `POST /system/vps-agent/start` restarts vps_agent via SSH (`schtasks /run /tn LucidFlexAgent`). |
 | Lab — Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap, vectorised numpy). Walk-forward (N sequential NT8 windows, IS/OOS Sharpe). Sensitivity (±10%/±25% param perturbations via NT8). Auto-triggered (MC only) on Tier 1 backtests and optimizer winners. Graded A-F. |
 | Lab — Regime Tags (M4) | ✅ Live | Each `daily_pnl` entry gains a `regime_tag` (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Pipeline auto-tags on every new backtest. Manual backfill via `POST /backtests/runs/{id}/backfill_regime`. Optimizer accepts optional `regime_filter` field to score child runs only against trades in that regime. |
-| Lab — Strategy Files (Pass 2) | ✅ Live | Deploy .cs strategy files to VPS without SSH. `GET /strategy-files`, `POST /strategy-files/upload`, `DELETE /strategy-files/{filename}`, `POST /strategy-files/compile`, `GET /strategy-files/compile/{id}`, `GET /strategy-files/sync-status`. Each file now carries a `platform` field (NT8/MT5). |
-| Lab — Strategy Deploy (Pass 2.5) | ✅ Live | One-click deploy from repo to VPS. `POST /strategies/{id}/deploy` reads the strategy's `source_path` from the DB, reads the file from disk, uploads via VPS agent (overwrite=True), caches result in `_deploy_jobs` dict. `GET /strategies/{id}/deploy/{job_id}` returns the cached result. `ScanResult` now includes a `warnings` list for DB rows whose `source_path` no longer exists on disk. Scanner reads from `strategies/` (top-level); `source_path` column backfilled via migration. |
+| Lab — Strategy Files (Pass 2) | ✅ Live | Deploy strategy files to VPS without SSH. NT8 `.cs` and MT5 `.mq5` both supported. `GET /strategy-files`, `POST /strategy-files/upload`, `DELETE /strategy-files/{filename}`, `POST /strategy-files/compile` (NT8 F5), `GET /strategy-files/compile/{id}`, `POST /strategy-files/compile-mt5` (MetaEditor), `GET /strategy-files/compile-mt5/{id}`, `GET /strategy-files/sync-status`. sync_status routes by `runner` field: `runner=mt5` → checks MT5 agent for `.mq5`; others → checks NT8 agent for `.cs`. |
+| Lab — Strategy Deploy (Pass 2.5) | ✅ Live | One-click deploy from repo to VPS. `POST /strategies/{id}/deploy` reads `source_path`, reads the file from disk, uploads via vps_client (which dispatches `.mq5` → MT5 agent, `.cs` → NT8 agent, overwrite=True), caches result in `_deploy_jobs` dict. `GET /strategies/{id}/deploy/{job_id}` returns the cached result. `ScanResult` now includes a `warnings` list for DB rows whose `source_path` no longer exists on disk. Scanner reads from `strategies/` (top-level); `source_path` column backfilled via migration. |
+| Lab — MT5 runner (Steps 1-7) | ✅ Live | `mt5_agent.py` on VPS (port 8766) — health/status, historical data, Strategy Tester driver (`_run_backtest`: writes `.ini` + `.set`, launches `terminal64.exe`, polls for HTML report, parses with `_parse_mt5_report`). `mt5_agent_client.py` on Mac — typed wrapper at `http://127.0.0.1:8766`. `vps_client` routes `runner="mt5"` jobs through `mt5_agent_client` with spec translation (`_nt8_to_mt5_spec`) and response normalisation (`_normalize_mt5_status/results`). |
+| Lab — MT5 deployment (Step 9) | ✅ Live | MT5 agent `POST/DELETE /files/strategies/<filename>` for `.mq5` upload/delete. `POST /compile` triggers `metaeditor64.exe /compile:<experts_dir>` in a background thread, parses `N error(s)` from the log file, stores result in `_compile_jobs`. `GET /compile/<id>` polls status. Corresponding backend endpoints: `POST/GET /strategy-files/compile-mt5`. |
 | Settings | ✅ Live | Config read/write. |
 
 ---
@@ -406,7 +409,7 @@ Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long
 
 **Sweep serialisation:** `sweep_runner.py` uses `asyncio.Semaphore(1)` — same constraint as the optimizer. Instruments run one at a time through the SA window.
 
-**Runner dispatcher:** `vps_client.start_backtest(job_spec, runner)` routes to the appropriate backend. Currently only `"ninjatrader"` is wired; `"mt5"` raises `NotImplementedError` as a placeholder for forex work.
+**Runner dispatcher:** `vps_client.start_backtest(job_spec, runner)` routes to the appropriate backend. Both `"ninjatrader"` (NT8 Strategy Analyzer) and `"mt5"` (MT5 Strategy Tester via `mt5_agent_client`) are wired. `vps_client._nt8_to_mt5_spec()` translates the NT8-style job_spec to the MT5 agent's format. `_normalize_mt5_status/results()` translates the MT5 agent's response shape back to the NT8 shape so all callers remain runner-agnostic. File upload/delete also dispatch by extension: `.mq5` files go to `mt5_agent_client`, `.cs` files go to the NT8 vps_agent.
 
 **Sweep vs. progress lock:** Sweep and optimization runs do NOT use `lab_progress.json`. That file is exclusively for the single-run flow. Sweep/optimization state is tracked only in the DB.
 
