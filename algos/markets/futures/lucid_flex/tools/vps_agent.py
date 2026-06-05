@@ -48,7 +48,6 @@ except ImportError:
     sys.exit(1)
 
 SCRIPT_DIR = Path(__file__).parent
-CFG_PATH   = SCRIPT_DIR / "backtest_config.json"
 PORT       = 8765
 NT8_DOCS   = Path.home() / "Documents" / "NinjaTrader 8"
 NT8_LOG    = NT8_DOCS / "log"
@@ -817,6 +816,5 @@ def clear_results():
 
 if __name__ == "__main__":
     _alog(f"VPS Agent starting on port {PORT}...")
-    _alog(f"Config: {CFG_PATH}")
     _alog("NT8 must be running with Strategy Analyzer open.")
     app.run(host="127.0.0.1", port=PORT, threaded=True)
