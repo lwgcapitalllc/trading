@@ -354,12 +354,14 @@ def _get_tester_exe() -> Optional[Path]:
                 dirs.append(Path(raw))
 
     for d in dirs:
-        mt = d / "metatester64.exe"
+        # Prefer terminal64 — it handles data download and runs backtest fully standalone.
+        # metatester64 hangs without a running terminal as data provider.
         t  = d / "terminal64.exe"
-        if mt.is_file():
-            _terminal_path = mt
-        elif t.is_file():
+        mt = d / "metatester64.exe"
+        if t.is_file():
             _terminal_path = t
+        elif mt.is_file():
+            _terminal_path = mt
         if _terminal_path:
             _alog(f"Tester exe: {_terminal_path}")
             return _terminal_path
