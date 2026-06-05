@@ -719,7 +719,7 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
     return (
       <div className="h-[160px] flex flex-col items-center justify-center gap-2 text-center px-6">
         <div className="text-text-secondary text-[13px] font-medium">No daily P&L data yet</div>
-        <div className="text-text-tertiary text-[11px]">Available once per-trade data is extracted from NT8.</div>
+        <div className="text-text-tertiary text-[11px]">Available once the backtest report has been parsed.</div>
       </div>
     )
   }
@@ -865,12 +865,18 @@ function EvalRow({
 
 // ── Running banner ────────────────────────────────────────────────────────────
 
-const RUN_STEPS = [
+const NT8_RUN_STEPS = [
   { label: 'Connect',   startPct: 0  },
   { label: 'Configure', startPct: 20 },
   { label: 'Run',       startPct: 30 },
   { label: 'Results',   startPct: 70 },
   { label: 'Evaluate',  startPct: 95 },
+]
+
+const MT5_RUN_STEPS = [
+  { label: 'Launch',  startPct: 0  },
+  { label: 'Testing', startPct: 10 },
+  { label: 'Parse',   startPct: 90 },
 ]
 
 function useElapsed(startedAt: string | null): string {
@@ -919,14 +925,15 @@ const CHART_CANDLES = ((): Array<{ o: number; c: number; h: number; l: number }>
 const CHART_N    = CHART_CANDLES.length  // 26
 const CHART_LOOP = 4800                  // ms per sweep cycle
 
-function RunningBanner({ pct, message, startedAt, onStop }: {
+function RunningBanner({ pct, message, startedAt, onStop, steps = NT8_RUN_STEPS }: {
   pct: number
   message: string
   startedAt: string | null
   onStop: () => void
+  steps?: typeof NT8_RUN_STEPS
 }) {
   const elapsed   = useElapsed(startedAt)
-  const activeIdx = RUN_STEPS.reduce((best, step, i) => pct >= step.startPct ? i : best, 0)
+  const activeIdx = steps.reduce((best, step, i) => pct >= step.startPct ? i : best, 0)
 
   const canvasRef   = useRef<HTMLCanvasElement>(null)
   const chartRowRef = useRef<HTMLDivElement>(null)
@@ -1094,7 +1101,7 @@ function RunningBanner({ pct, message, startedAt, onStop }: {
 
       {/* Stage pipeline */}
       <div ref={stagesRef} className="flex items-start">
-        {RUN_STEPS.map((step, i) => {
+        {steps.map((step, i) => {
           const done   = i < activeIdx
           const active = i === activeIdx
           return (
@@ -1119,7 +1126,7 @@ function RunningBanner({ pct, message, startedAt, onStop }: {
                   {step.label}
                 </span>
               </div>
-              {i < RUN_STEPS.length - 1 && (
+              {i < steps.length - 1 && (
                 <div className={[
                   'flex-1 h-[1.5px] mt-[3.75px]',
                   done ? 'bg-accent/40' : 'bg-border-subtle',
@@ -1153,15 +1160,19 @@ function RunningBanner({ pct, message, startedAt, onStop }: {
 
 // ── Failure banner ────────────────────────────────────────────────────────────
 
-const FAILURE_GUIDANCE: Record<string, string> = {
-  failed_timeout:
-    'The NT8 agent stopped responding mid-run. Verify NT8 is running and the Strategy Analyzer is open in the RDP session, then re-run.',
-  failed_unknown:
-    'An unexpected error occurred. Check the run logs below and the NT8 agent log for details.',
+function getFailureGuidance(status: string, runner: string): string {
+  if (status === 'failed_timeout') {
+    return runner === 'mt5'
+      ? 'The MT5 agent stopped responding mid-run. Check the MT5 agent log on the VPS, then re-run.'
+      : 'The NT8 agent stopped responding mid-run. Verify NT8 is running and the Strategy Analyzer is open in the RDP session, then re-run.'
+  }
+  return runner === 'mt5'
+    ? 'An unexpected error occurred. Check the run logs below and the MT5 agent log for details.'
+    : 'An unexpected error occurred. Check the run logs below and the NT8 agent log for details.'
 }
 
 function FailureBanner({ run, onRetry, retrying }: { run: Run; onRetry?: () => void; retrying?: boolean }) {
-  const guidance = FAILURE_GUIDANCE[run.status] ?? FAILURE_GUIDANCE.failed_unknown
+  const guidance = getFailureGuidance(run.status, run.runner ?? 'ninjatrader')
   return (
     <div className="bg-neg-muted border border-neg-text/30 rounded-lg px-4 py-4">
       <div className="flex items-start gap-3">
@@ -1553,6 +1564,7 @@ export function BacktestDetail() {
   const isRunning  = run?.status === 'running'
   const isFailed   = run?.status.startsWith('failed') ?? false
   const isComplete = run?.status === 'complete'
+  const isMt5      = run?.runner === 'mt5'
 
   const runPct       = isRunning ? (progress?.pct ?? 0) : 0
   const runMessage   = isRunning ? (progress?.message ?? 'Starting…') : ''
@@ -1604,7 +1616,7 @@ export function BacktestDetail() {
               <div className="flex items-center gap-2 flex-shrink-0">
                 <BackfillRegimeButton run={run} />
                 <OptimizeButton run={run} />
-                {run?.status === 'complete' && (
+                {run?.status === 'complete' && !isMt5 && (
                   <button
                     onClick={() => setShowStressModal(true)}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
@@ -1621,7 +1633,7 @@ export function BacktestDetail() {
           </div>
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
-          {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} />}
+          {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} steps={isMt5 ? MT5_RUN_STEPS : NT8_RUN_STEPS} />}
           {isFailed && (
             <FailureBanner
               run={run}
@@ -1684,7 +1696,7 @@ export function BacktestDetail() {
                   <div>
                     <SectionLabel>Charts</SectionLabel>
                   </div>
-                  {!hasCharts && (
+                  {!hasCharts && !isMt5 && (
                     <button
                       onClick={() => runId && reloadCharts.mutate(runId)}
                       disabled={reloadCharts.isPending}
@@ -1699,14 +1711,16 @@ export function BacktestDetail() {
                       {hasRealRegimeTags && (
                         <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
                       )}
-                      <button
-                        onClick={() => runId && reloadCharts.mutate(runId)}
-                        disabled={reloadCharts.isPending}
-                        className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
-                      >
-                        <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
-                        Refresh
-                      </button>
+                      {!isMt5 && (
+                        <button
+                          onClick={() => runId && reloadCharts.mutate(runId)}
+                          disabled={reloadCharts.isPending}
+                          className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
+                        >
+                          <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
+                          Refresh
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1715,7 +1729,9 @@ export function BacktestDetail() {
                   <div className="bg-bg-surface border border-border-subtle rounded-lg flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
                     <div className="text-text-secondary text-[13px] font-medium">No chart data yet</div>
                     <div className="text-text-tertiary text-[11px] leading-relaxed max-w-xs">
-                      Click "Load chart data from NT8" — requires NT8 Strategy Analyzer open with this run's results loaded.
+                      {isMt5
+                        ? 'Chart data is parsed from the MT5 report at completion. If empty, the report may not have included trade data.'
+                        : 'Click "Load chart data from NT8" — requires NT8 Strategy Analyzer open with this run\'s results loaded.'}
                     </div>
                   </div>
                 ) : (

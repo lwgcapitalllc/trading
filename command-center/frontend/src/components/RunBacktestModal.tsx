@@ -59,6 +59,8 @@ const INSTRUMENT_NAMES: Record<string, string> = {
   MET:  'Micro Ether',
 }
 
+const MT5_SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'GBPJPY', 'AUDUSD', 'USDCAD', 'EURGBP']
+
 function getAllowedSymbols(firms: Firm[]): string[] {
   const set = new Set<string>()
   for (const f of firms) {
@@ -206,6 +208,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const { data: firms = [], isLoading: firmsLoading } = useFirms()
   const { data: runningJob } = useRunningVpsJob()
 
+  const isMt5 = strategy.runner === 'mt5'
+
   const inputCls = 'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
   const dateCls  = `${inputCls} [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:cursor-pointer`
   const labelCls = 'block text-[11px] text-text-secondary mb-1'
@@ -219,20 +223,25 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     [strategy.suggested_instrument, frontMonth],
   )
 
-  const [instrumentSymbol, setInstrumentSymbol] = useState(parsed.symbol)
-  const [contractMonth, setContractMonth]       = useState(parsed.month)
+  const [instrumentSymbol, setInstrumentSymbol] = useState(
+    isMt5 ? 'EURUSD' : parsed.symbol
+  )
+  const [contractMonth, setContractMonth] = useState(parsed.month)
 
-  // Once firms load, ensure symbol is valid
+  // NT8 only: once firms load, ensure symbol is in allowed list
   useEffect(() => {
+    if (isMt5) return
     if (allowedSymbols.length === 0) return
     if (!instrumentSymbol || !allowedSymbols.includes(instrumentSymbol)) {
       setInstrumentSymbol(allowedSymbols[0])
     }
   }, [allowedSymbols]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const instrument = contractMonth.trim()
-    ? `${instrumentSymbol} ${contractMonth.trim()}`
-    : instrumentSymbol
+  const instrument = isMt5
+    ? instrumentSymbol
+    : contractMonth.trim()
+      ? `${instrumentSymbol} ${contractMonth.trim()}`
+      : instrumentSymbol
 
   // ── Period ───────────────────────────────────────────────────────────────────
   const todayStr = useMemo(() => today(), [])
@@ -252,8 +261,14 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   }, [presets, startDate, endDate])
 
   // ── Bar size ─────────────────────────────────────────────────────────────────
-  const BAR_PRESETS = [1, 3, 5, 15, 30]
-  const [barValue, setBarValue] = useState(5)
+  const BAR_PRESETS = isMt5 ? [5, 15, 30, 60, 240] : [1, 3, 5, 15, 30]
+  const [barValue, setBarValue] = useState(isMt5 ? 60 : 5)
+
+  function barLabel(v: number) {
+    if (v < 60) return `${v}m`
+    const h = v / 60
+    return `${h}h`
+  }
 
   // ── Strategy params (strategy_logic only — foundational injected by dispatcher) ─
   const [params, setParams] = useState<Record<string, number | boolean | string>>(() => {
@@ -349,7 +364,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const canSubmit =
     instrumentSymbol !== '' &&
     startDate !== '' && endDate !== '' && startDate < endDate &&
-    selectedFirms.size > 0 &&
+    (isMt5 || selectedFirms.size > 0) &&
     !trigger.isPending &&
     !jobBlocked
 
@@ -368,7 +383,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         end_date:            endDate,
         commission_per_side: commPerSide,
         slippage_ticks:      slippageTicks,
-        evaluate_rulesets:   Array.from(selectedFirms),
+        evaluate_rulesets:   isMt5 ? [] : Array.from(selectedFirms),
       },
       {
         onSuccess: (data) => {
@@ -407,7 +422,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
             <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
             <p className="text-[12px] text-warn-text leading-snug">
-              <span className="font-semibold">NT8 is busy:</span> {runningJob?.description} — wait for it to finish before starting a new run.
+              <span className="font-semibold">A backtest is already running:</span> {runningJob?.description} — wait for it to finish before starting a new run.
             </p>
           </div>
         )}
@@ -426,52 +441,74 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           {/* Instrument */}
           <div>
             <SectionHead label="Instrument" />
-            <div className="grid grid-cols-[1fr_auto] gap-2 items-start">
-              {/* Symbol dropdown */}
-              <div>
-                <label className={labelCls}>Symbol</label>
-                {firmsLoading ? (
-                  <div className={`${inputCls} text-text-tertiary`}>Loading…</div>
-                ) : allowedSymbols.length === 0 ? (
-                  <div className={`${inputCls} text-text-tertiary`}>No rulesets configured</div>
-                ) : (
-                  <select
-                    value={instrumentSymbol}
-                    onChange={e => setInstrumentSymbol(e.target.value)}
-                    className={inputCls}
-                  >
-                    {allowedSymbols.map(sym => (
-                      <option key={sym} value={sym}>
-                        {sym}{INSTRUMENT_NAMES[sym] ? ` — ${INSTRUMENT_NAMES[sym]}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              {/* Contract month */}
-              <div className="w-[90px]">
-                <div className="flex items-center mb-1">
-                  <label className={labelCls.replace(' mb-1', '')}>Contract</label>
-                  <InfoTooltip content="NinjaTrader contract month in MM-YY format. Defaults to the current front-month quarterly contract. Contract-specific data typically begins 3–6 months before expiry." side="left" />
-                </div>
+            {isMt5 ? (
+              <>
                 <input
                   type="text"
-                  value={contractMonth}
-                  onChange={e => setContractMonth(e.target.value)}
-                  placeholder="06-26"
+                  value={instrumentSymbol}
+                  onChange={e => setInstrumentSymbol(e.target.value.toUpperCase())}
+                  placeholder="EURUSD"
                   className={inputCls}
                 />
-              </div>
-            </div>
-            {instrumentSymbol && (
-              <div className="flex items-center justify-between mt-[4px]">
-                {INSTRUMENT_NAMES[instrumentSymbol] && (
-                  <span className="text-[10px] text-text-tertiary">{INSTRUMENT_NAMES[instrumentSymbol]}</span>
+                <div className="flex gap-1.5 mt-2 flex-wrap">
+                  {MT5_SYMBOLS.map(sym => (
+                    <PresetBtn
+                      key={sym}
+                      label={sym}
+                      active={instrumentSymbol === sym}
+                      onClick={() => setInstrumentSymbol(sym)}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-[1fr_auto] gap-2 items-start">
+                  <div>
+                    <label className={labelCls}>Symbol</label>
+                    {firmsLoading ? (
+                      <div className={`${inputCls} text-text-tertiary`}>Loading…</div>
+                    ) : allowedSymbols.length === 0 ? (
+                      <div className={`${inputCls} text-text-tertiary`}>No rulesets configured</div>
+                    ) : (
+                      <select
+                        value={instrumentSymbol}
+                        onChange={e => setInstrumentSymbol(e.target.value)}
+                        className={inputCls}
+                      >
+                        {allowedSymbols.map(sym => (
+                          <option key={sym} value={sym}>
+                            {sym}{INSTRUMENT_NAMES[sym] ? ` — ${INSTRUMENT_NAMES[sym]}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div className="w-[90px]">
+                    <div className="flex items-center mb-1">
+                      <label className={labelCls.replace(' mb-1', '')}>Contract</label>
+                      <InfoTooltip content="NinjaTrader contract month in MM-YY format. Defaults to the current front-month quarterly contract. Contract-specific data typically begins 3–6 months before expiry." side="left" />
+                    </div>
+                    <input
+                      type="text"
+                      value={contractMonth}
+                      onChange={e => setContractMonth(e.target.value)}
+                      placeholder="06-26"
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+                {instrumentSymbol && (
+                  <div className="flex items-center justify-between mt-[4px]">
+                    {INSTRUMENT_NAMES[instrumentSymbol] && (
+                      <span className="text-[10px] text-text-tertiary">{INSTRUMENT_NAMES[instrumentSymbol]}</span>
+                    )}
+                    <span className="text-[10px] text-text-tertiary ml-auto">
+                      Submits as: <span className="font-mono text-text-secondary">{instrument}</span>
+                    </span>
+                  </div>
                 )}
-                <span className="text-[10px] text-text-tertiary ml-auto">
-                  Submits as: <span className="font-mono text-text-secondary">{instrument}</span>
-                </span>
-              </div>
+              </>
             )}
           </div>
 
@@ -513,13 +550,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div>
             <SectionHead
               label="Bar Size"
-              tooltip="Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size."
+              tooltip={isMt5
+                ? "Candle interval for the MT5 Strategy Tester. Strategy parameters (e.g. lookback periods) are in bar-counts — retune them when changing bar size."
+                : "Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size."}
             />
             <div className="flex gap-2">
               {BAR_PRESETS.map(v => (
                 <PresetBtn
                   key={v}
-                  label={`${v}m`}
+                  label={barLabel(v)}
                   active={barValue === v}
                   onClick={() => setBarValue(v)}
                 />
@@ -529,8 +568,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
           <Divider />
 
-          {/* Evaluate Against */}
-          <div>
+          {/* Evaluate Against — NT8 only (prop firm challenges are futures-specific) */}
+          {!isMt5 && <div>
             <SectionHead label="Evaluate Against" />
             {firmsLoading ? (
               <div className="text-[12px] text-text-tertiary">Loading rulesets…</div>
@@ -615,7 +654,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             {!firmsLoading && selectedFirms.size === 0 && (
               <p className="text-[11px] text-neg-text mt-2">Select at least one challenge.</p>
             )}
-          </div>
+          </div>}
 
           {/* Strategy parameters */}
           {strategy.param_schema.length > 0 && (
@@ -649,8 +688,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             </>
           )}
 
-          {/* Foundational config — readonly display from primary ruleset */}
-          {primaryRuleset && (
+          {/* Foundational config — NT8 only (NinjaScript injection, not applicable to MT5) */}
+          {!isMt5 && primaryRuleset && (
             <>
               <Divider />
               <div>
@@ -697,7 +736,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <div className="flex items-center mb-1">
                   <label className={labelCls.replace(' mb-1', '')}>Commission / side ($)</label>
-                  <InfoTooltip content="Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill." />
+                  <InfoTooltip content={isMt5 ? "Commission per side in account currency. Applied to every fill by the MT5 Strategy Tester." : "Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill."} />
                 </div>
                 <input
                   type="number" step="0.01" min="0" value={commPerSide}
@@ -708,7 +747,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <div className="flex items-center mb-1">
                   <label className={labelCls.replace(' mb-1', '')}>Slippage (ticks)</label>
-                  <InfoTooltip content="Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks." side="left" />
+                  <InfoTooltip content={isMt5 ? "Additional points deducted per fill to model spread and slippage. Conservative backtests use 1–3 points for major forex pairs." : "Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks."} side="left" />
                 </div>
                 <input
                   type="number" step="1" min="0" value={slippageTicks}

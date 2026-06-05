@@ -433,6 +433,7 @@ export interface BacktestDetail {
   worthiness: WorthinessScore | null
   sweep_id: string | null
   optimization_id: string | null
+  runner: string
 }
 
 // ── Lab — Progress + System Health ───────────────────────────────────────────

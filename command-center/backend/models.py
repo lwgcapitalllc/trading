@@ -502,6 +502,7 @@ class BacktestDetail(BaseModel):
     worthiness: Optional[WorthinessScore] = None
     sweep_id: Optional[str] = None
     optimization_id: Optional[str] = None
+    runner: str = "ninjatrader"
 
 
 # ── Lab — progress + system health ───────────────────────────────────────────

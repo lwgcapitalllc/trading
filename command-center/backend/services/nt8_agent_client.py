@@ -143,7 +143,10 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
     """
     Translate the NT8-style job_spec to the MT5 agent's expected format.
     NT8: instrument, params, start_date/end_date, bar_type/bar_value
-    MT5: symbol, inputs, from_date/to_date, timeframe (H1/H4/D1), deposit, currency, leverage
+    MT5: symbol, inputs, from_date/to_date, timeframe, deposit, currency, leverage
+
+    job_id is passed through so the MT5 agent stores the job under our run_id —
+    without this the agent generates its own UUID and status polls return 404.
     """
     bar_type  = spec.get("bar_type", "Minute")
     bar_value = int(spec.get("bar_value") or 60)
@@ -151,7 +154,18 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
     if bar_type == "Day":
         timeframe = "D1"
     elif bar_type == "Minute":
-        timeframe = "H4" if bar_value >= 240 else "H1"
+        if bar_value >= 240:
+            timeframe = "H4"
+        elif bar_value >= 60:
+            timeframe = "H1"
+        elif bar_value >= 30:
+            timeframe = "M30"
+        elif bar_value >= 15:
+            timeframe = "M15"
+        elif bar_value >= 5:
+            timeframe = "M5"
+        else:
+            timeframe = "M1"
     else:
         timeframe = "H1"
 
@@ -162,6 +176,7 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
     )
 
     return {
+        "job_id":         spec.get("job_id"),
         "strategy_class": spec["strategy_class"],
         "symbol":         spec["instrument"],
         "timeframe":      timeframe,
@@ -197,8 +212,8 @@ def _normalize_mt5_status(raw: dict) -> dict:
         status = "failed_cancelled"
     return {
         "status":     status,
-        "pct":        100 if status == "complete" else 0,
-        "message":    raw.get("error", "") or "",
+        "pct":        100 if status == "complete" else 30,
+        "message":    raw.get("error", "") or ("MT5 Strategy Tester running…" if status not in ("complete", "failed_cancelled") else ""),
         "updated_at": str(time.time()),
         "error":      raw.get("error"),
     }

@@ -571,7 +571,12 @@ class _TableParser(HTMLParser):
 
 
 # "DAILY" is how the ohlc_fetcher calls it; D1 is what the .ini expects.
-_TF_PERIOD = {"DAILY": "D1", "M1": "M1", "H1": "H1", "H4": "H4", "D1": "D1"}
+_TF_PERIOD = {
+    "DAILY": "D1",
+    "M1": "M1", "M5": "M5", "M15": "M15", "M30": "M30",
+    "H1": "H1", "H4": "H4",
+    "D1": "D1",
+}
 
 
 def _parse_mt5_report(html: str) -> dict:
@@ -843,7 +848,7 @@ def start_backtest():
     if missing:
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
-    job_id = str(uuid.uuid4())
+    job_id = body.get("job_id") or str(uuid.uuid4())
     with _lock:
         _jobs[job_id] = {
             "job_id":     job_id,

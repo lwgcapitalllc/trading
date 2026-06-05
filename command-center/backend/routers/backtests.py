@@ -140,6 +140,7 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         worthiness=_worthiness_from_row(row),
         sweep_id=row.get("sweep_id"),
         optimization_id=row.get("optimization_id"),
+        runner=row.get("runner", "ninjatrader"),
     )
 
 
