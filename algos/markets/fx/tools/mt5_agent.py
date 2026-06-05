@@ -116,12 +116,16 @@ _mt5_lock = threading.Lock()
 def _ensure_mt5() -> tuple[bool, Optional[str]]:
     """
     Ensure MT5 is initialized. Returns (ok, error_message).
-    Safe to call from any thread.
+    If TERMINAL_PATH is set, connect specifically to that terminal executable so
+    the agent uses the right data_path/accounts rather than whichever MT5 answers first.
     """
     if not MT5_AVAILABLE:
         return False, "MetaTrader5 package not installed"
+    env = os.environ.get("TERMINAL_PATH", "")
+    mt5_path = str(Path(env) / "terminal64.exe") if env else None
     with _mt5_lock:
-        if mt5.initialize():
+        ok = mt5.initialize(path=mt5_path) if mt5_path else mt5.initialize()
+        if ok:
             return True, None
         err = mt5.last_error()
         return False, f"MT5 init failed: {err}"
@@ -370,7 +374,17 @@ def _get_tester_exe() -> Optional[Path]:
 
 
 def _tester_data_dir(tester_exe: Path) -> Path:
-    """With /portable, data dir = directory containing the executable."""
+    """Return the MT5 data directory (where MQL5/, reports/, config/ live).
+    Uses terminal_info().data_path when available — this is the non-portable
+    AppData path where accounts.dat and compiled EAs live. Falls back to
+    tester_exe.parent only if the MT5 library is unavailable."""
+    if MT5_AVAILABLE:
+        with _mt5_lock:
+            info = mt5.terminal_info()
+        if info:
+            data_path = getattr(info, "data_path", None)
+            if data_path:
+                return Path(data_path)
     return tester_exe.parent
 
 
@@ -435,7 +449,7 @@ def _launch_tester(tester_exe: Path, ini_path: Path) -> "subprocess.Popen[bytes]
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = 6  # SW_MINIMIZE
     return subprocess.Popen(
-        [str(tester_exe), f"/config:{ini_path}", "/portable"],
+        [str(tester_exe), f"/config:{ini_path}"],
         startupinfo=startupinfo,
     )
 
