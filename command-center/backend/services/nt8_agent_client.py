@@ -175,6 +175,24 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
         params.get("f_AccountSize") or params.get("AccountSize") or 10000
     )
 
+    # MeanReversion.mq5 (and all MT5 EAs) call ValidateFoundationalParams() in OnInit and
+    # return INIT_FAILED if any f_ param is still at its sentinel value of -1.
+    # MT5 backtests have no ruleset, so inject_foundational is never called — provide
+    # sensible standalone defaults here. User strategy params override these.
+    foundational_defaults = {
+        "f_AccountSize":           deposit,
+        "f_RiskPerTradePct":       1.0,
+        "f_DailyLossCap":          round(deposit * 0.05, 2),
+        "f_DailyHaltFraction":     0.6,
+        "f_MaxConsecutiveLosses":  0,    # 0 = disabled
+        "f_DailyProfitTarget":     0,    # 0 = disabled
+        "f_DailyProfitLockPct":    0,    # 0 = disabled
+        "f_BrokerToEtOffsetHours": 99,   # 99 = auto-detect
+        "f_CommissionPerSide":     float(spec.get("commission_per_side") or 0),
+        "f_SlippageTicks":         int(spec.get("slippage_ticks") or 0),
+    }
+    inputs = {**foundational_defaults, **params}
+
     return {
         "job_id":         spec.get("job_id"),
         "strategy_class": spec["strategy_class"],
@@ -186,7 +204,7 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
         "deposit":        deposit,
         "currency":       "USD",
         "leverage":       100,
-        "inputs":         params,
+        "inputs":         inputs,
     }
 
 

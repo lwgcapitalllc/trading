@@ -514,6 +514,34 @@ def _kill_by_name(name: str) -> None:
         pass
 
 
+def _kill_by_path(exe_path: Path) -> bool:
+    """Kill the specific terminal64.exe at exe_path (not other MT5 instances).
+
+    Uses PowerShell MainModule.FileName filter so only MT5_Lab is killed —
+    live bot terminals (MT5_Scalper, MT5_FFT, PU Prime) run from different
+    paths and are not affected.  Returns True if a process was found and killed.
+    """
+    if sys.platform != "win32":
+        return False
+    exe_str = str(exe_path).replace("'", "\\'")
+    script = (
+        f"$p = Get-Process -Name terminal64 -ErrorAction SilentlyContinue | "
+        f"Where-Object {{ $_.MainModule.FileName -eq '{exe_str}' }}; "
+        f"if ($p) {{ $p | Stop-Process -Force; exit 0 }} else {{ exit 1 }}"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NonInteractive", "-Command", script],
+            capture_output=True, timeout=15,
+        )
+        if result.returncode == 0:
+            time.sleep(4)  # let the terminal release the single-instance lock
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _col_idx(hdr: list[str], names: list[str]) -> int:
     """Return first matching column index in a header row; -1 if not found."""
     for n in names:
@@ -738,7 +766,9 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         fail("Cannot locate metatester64.exe / terminal64.exe. Set TERMINAL_PATH env var.")
         return
 
-    data_dir       = _tester_data_dir(tester_exe)
+    data_dir = _tester_data_dir(tester_exe)
+    jl(f"Data dir: {data_dir}")
+
     strategy_class = spec.get("strategy_class", "")
     symbol         = spec.get("symbol", "").upper()
     timeframe      = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
@@ -769,8 +799,9 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         reports_dir.mkdir(parents=True, exist_ok=True)
         report_stem   = f"bt_{job_id[:8]}"
         report_file   = reports_dir / f"{report_stem}.htm"
-        # Absolute path avoids MT5 resolving Report= relative to its exe dir instead of data dir
-        report_prefix = str(reports_dir / report_stem)
+        # MT5 resolves Report= relative to the data directory, not the exe directory.
+        # Use a relative path so MT5 writes <data_dir>/reports/<stem>.htm.
+        report_prefix = f"reports\\{report_stem}"
 
         ini_path = data_dir / f"tester_{job_id[:8]}.ini"
         _write_tester_ini(
@@ -789,6 +820,9 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         )
         jl(f"Config: {ini_path}")
 
+        killed = _kill_by_path(tester_exe)
+        if killed:
+            jl(f"Closed existing {tester_exe.name} instance before launch")
         proc = _launch_tester(tester_exe, ini_path)
     except Exception as exc:
         fail(f"Setup/launch failed: {exc}")
