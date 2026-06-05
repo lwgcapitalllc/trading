@@ -132,8 +132,20 @@ def _ensure_mt5() -> tuple[bool, Optional[str]]:
 def _get_lab_data_dir() -> Optional[Path]:
     """
     Find the non-portable AppData directory for MT5_Lab without launching it.
-    Scans MetaQuotes/Terminal/* for the folder whose origin.txt matches TERMINAL_PATH.
+
+    Resolution order:
+    1. MT5_DATA_DIR env var — explicit override, always wins.
+    2. Scan APPDATA/MetaQuotes/Terminal/*/origin.txt for the folder that
+       matches TERMINAL_PATH. Works when the agent runs as the same user
+       who owns the MT5_Lab installation.
     """
+    explicit = os.environ.get("MT5_DATA_DIR", "")
+    if explicit:
+        p = Path(explicit)
+        if p.is_dir():
+            _alog(f"Lab data dir (MT5_DATA_DIR): {p}")
+            return p
+
     terminal_path = os.environ.get("TERMINAL_PATH", "")
     if not terminal_path:
         return None
@@ -149,6 +161,7 @@ def _get_lab_data_dir() -> Optional[Path]:
         if origin.is_file():
             try:
                 if origin.read_text(encoding="utf-8", errors="replace").strip().lower() == target:
+                    _alog(f"Lab data dir (origin.txt scan): {folder}")
                     return folder
             except Exception:
                 pass
