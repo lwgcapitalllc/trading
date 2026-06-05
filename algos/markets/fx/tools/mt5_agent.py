@@ -116,19 +116,43 @@ _mt5_lock = threading.Lock()
 def _ensure_mt5() -> tuple[bool, Optional[str]]:
     """
     Ensure MT5 is initialized. Returns (ok, error_message).
-    If TERMINAL_PATH is set, connect specifically to that terminal executable so
-    the agent uses the right data_path/accounts rather than whichever MT5 answers first.
+    Connects to whichever terminal answers first (typically the live trading terminal).
+    MT5_Lab is intentionally NOT pre-launched here — it must be free when we
+    launch terminal64.exe fresh for each backtest.
     """
     if not MT5_AVAILABLE:
         return False, "MetaTrader5 package not installed"
-    env = os.environ.get("TERMINAL_PATH", "")
-    mt5_path = str(Path(env) / "terminal64.exe") if env else None
     with _mt5_lock:
-        ok = mt5.initialize(path=mt5_path) if mt5_path else mt5.initialize()
-        if ok:
+        if mt5.initialize():
             return True, None
         err = mt5.last_error()
         return False, f"MT5 init failed: {err}"
+
+
+def _get_lab_data_dir() -> Optional[Path]:
+    """
+    Find the non-portable AppData directory for MT5_Lab without launching it.
+    Scans MetaQuotes/Terminal/* for the folder whose origin.txt matches TERMINAL_PATH.
+    """
+    terminal_path = os.environ.get("TERMINAL_PATH", "")
+    if not terminal_path:
+        return None
+    target = str(Path(terminal_path)).lower()
+    appdata = os.environ.get("APPDATA", "")
+    if not appdata:
+        return None
+    base = Path(appdata) / "MetaQuotes" / "Terminal"
+    if not base.is_dir():
+        return None
+    for folder in base.iterdir():
+        origin = folder / "origin.txt"
+        if origin.is_file():
+            try:
+                if origin.read_text(encoding="utf-8", errors="replace").strip().lower() == target:
+                    return folder
+            except Exception:
+                pass
+    return None
 
 
 def _detect_experts_dir() -> Optional[Path]:
@@ -374,17 +398,12 @@ def _get_tester_exe() -> Optional[Path]:
 
 
 def _tester_data_dir(tester_exe: Path) -> Path:
-    """Return the MT5 data directory (where MQL5/, reports/, config/ live).
-    Uses terminal_info().data_path when available — this is the non-portable
-    AppData path where accounts.dat and compiled EAs live. Falls back to
-    tester_exe.parent only if the MT5 library is unavailable."""
-    if MT5_AVAILABLE:
-        with _mt5_lock:
-            info = mt5.terminal_info()
-        if info:
-            data_path = getattr(info, "data_path", None)
-            if data_path:
-                return Path(data_path)
+    """Return the MT5 data directory for MT5_Lab (AppData, not the exe dir).
+    Uses _get_lab_data_dir() which scans origin.txt without requiring a running terminal.
+    Falls back to tester_exe.parent only as a last resort."""
+    lab_dir = _get_lab_data_dir()
+    if lab_dir:
+        return lab_dir
     return tester_exe.parent
 
 
