@@ -265,7 +265,7 @@ def historical_data():
         }), 404
 
     bars = _rates_to_bars(rates)
-    _alog(f"historical_data: {symbol} {timeframe} [{start_date}, {end_date}] → {len(bars)} bars")
+    _alog(f"historical_data: {symbol} {timeframe} [{start_date}, {end_date}] -> {len(bars)} bars")
     return jsonify({"bars": bars, "symbol": symbol, "timeframe": timeframe, "count": len(bars)})
 
 
@@ -653,7 +653,7 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         fail(f"EA not found: {ex5}. Deploy and compile the strategy first (Step 9).")
         return
 
-    jl(f"Backtest: {strategy_class} {symbol} {timeframe} [{from_date} → {to_date}]")
+    jl(f"Backtest: {strategy_class} {symbol} {timeframe} [{from_date} -> {to_date}]")
 
     try:
         set_filename = _write_set_file(data_dir, job_id, inputs)
@@ -700,7 +700,7 @@ def _run_backtest(job_id: str, spec: dict) -> None:
             break
         time.sleep(_REPORT_POLL_INTERVAL)
     else:
-        jl(f"Timeout after {_BACKTEST_TIMEOUT}s — force-killing tester")
+        jl(f"Timeout after {_BACKTEST_TIMEOUT}s - force-killing tester")
         _kill_by_name("metatester64.exe")
         _kill_by_name("terminal64.exe")
         fail(f"Backtest timed out after {_BACKTEST_TIMEOUT}s")
@@ -729,7 +729,7 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         return
 
     jl(
-        f"Complete — pnl={result['net_pnl']:.2f}  "
+        f"Complete - pnl={result['net_pnl']:.2f}  "
         f"trades={result['trade_count']}  "
         f"pf={result['profit_factor']:.2f}"
     )
@@ -867,7 +867,7 @@ def compile_status(compile_job_id: str):
 if __name__ == "__main__":
     _alog(f"MT5 Agent starting on port {PORT}...")
     if not MT5_AVAILABLE:
-        _alog("WARNING: MetaTrader5 package not installed — run: pip install MetaTrader5")
+        _alog("WARNING: MetaTrader5 package not installed - run: pip install MetaTrader5")
         _alog("Historical data and backtests will return 503 until the package is installed.")
     else:
         ok, err = _ensure_mt5()
