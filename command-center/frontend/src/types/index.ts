@@ -307,6 +307,8 @@ export interface Ruleset {
   default_commission_per_side: number | null
   default_slippage_ticks: number | null
   daily_halt_fraction: number | null
+  market: string    // "futures" | "forex"
+  drawdown_unit: string
 }
 
 export type RulesetCreate = Ruleset

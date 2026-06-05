@@ -12,6 +12,34 @@ import { api } from '@/api/client'
 import { toast } from 'sonner'
 import type { BacktestSummary, VerdictSummary, WorthinessScore } from '@/types'
 
+// ── Market helpers ────────────────────────────────────────────────────────────
+
+type MarketFilter = 'all' | 'futures' | 'forex'
+
+function isForexInstrument(instrument: string): boolean {
+  // Forex pairs are exactly 6 uppercase letters (EURUSD, XAUUSD, etc.)
+  return /^[A-Z]{6}$/.test(instrument.split(' ')[0])
+}
+
+function MarketFilterBar({ value, onChange }: { value: MarketFilter; onChange: (v: MarketFilter) => void }) {
+  const opts: Array<{ id: MarketFilter; label: string }> = [
+    { id: 'all',     label: 'All' },
+    { id: 'futures', label: 'Futures' },
+    { id: 'forex',   label: 'Forex' },
+  ]
+  return (
+    <div className="flex gap-[2px] bg-bg-sunken rounded-md p-[3px]">
+      {opts.map(o => (
+        <button key={o.id} onClick={() => onChange(o.id)}
+          className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${
+            value === o.id ? 'bg-bg-surface text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'
+          }`}
+        >{o.label}</button>
+      ))}
+    </div>
+  )
+}
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 function fmtMoney(n: number | null): string {
@@ -212,6 +240,7 @@ function RunsTab() {
   const deleteRun = useDeleteRun()
 
   const [statusFilter, setStatusFilter]       = useState('')
+  const [marketFilter, setMarketFilter]       = useState<MarketFilter>('all')
   const [selectedIds, setSelectedIds]         = useState<Set<string>>(new Set())
   const [deleteRunId, setDeleteRunId]         = useState<string | null>(null)
   const [bulkDeleting, setBulkDeleting]       = useState(false)
@@ -238,8 +267,10 @@ function RunsTab() {
   }, [allSweeps])
 
   const runs = useMemo(
-    () => allRuns?.filter(r => !r.optimization_id && !(r.sweep_id && linkedSweepIds.has(r.sweep_id))),
-    [allRuns, linkedSweepIds]
+    () => allRuns
+      ?.filter(r => !r.optimization_id && !(r.sweep_id && linkedSweepIds.has(r.sweep_id)))
+      ?.filter(r => marketFilter === 'all' || (isForexInstrument(r.instrument) ? 'forex' : 'futures') === marketFilter),
+    [allRuns, linkedSweepIds, marketFilter]
   )
 
   const optsBySourceRun = useMemo(() => {
@@ -351,6 +382,7 @@ function RunsTab() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <MarketFilterBar value={marketFilter} onChange={v => { setMarketFilter(v); setSelectedIds(new Set()) }} />
           <select
             value={statusFilter}
             onChange={e => { setStatusFilter(e.target.value); setSelectedIds(new Set()) }}

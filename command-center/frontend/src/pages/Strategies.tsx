@@ -12,6 +12,7 @@ import {
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { RulesetTypeBadge } from '@/components/RulesetTypeBadge'
+import { RunnerBadge } from '@/components/RunnerBadge'
 import { toast } from 'sonner'
 import type { Strategy, Ruleset, StrategyFile } from '@/types'
 
@@ -57,7 +58,40 @@ function TabBar({ active, onChange, counts }: {
   )
 }
 
+// ── Market filter ─────────────────────────────────────────────────────────────
+
+function MarketFilterBar({ value, onChange }: { value: MarketFilter; onChange: (v: MarketFilter) => void }) {
+  const opts: Array<{ id: MarketFilter; label: string }> = [
+    { id: 'all',     label: 'All' },
+    { id: 'futures', label: 'Futures' },
+    { id: 'forex',   label: 'Forex' },
+  ]
+  return (
+    <div className="flex gap-[2px] bg-bg-sunken rounded-md p-[3px]">
+      {opts.map(o => (
+        <button
+          key={o.id}
+          onClick={() => onChange(o.id)}
+          className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${
+            value === o.id
+              ? 'bg-bg-surface text-text-primary shadow-sm'
+              : 'text-text-tertiary hover:text-text-secondary'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ── Strategies tab ────────────────────────────────────────────────────────────
+
+type MarketFilter = 'all' | 'futures' | 'forex'
+
+function strategyMarket(runner: string): 'futures' | 'forex' {
+  return runner === 'mt5' ? 'forex' : 'futures'
+}
 
 function StrategiesTab() {
   const navigate = useNavigate()
@@ -67,12 +101,20 @@ function StrategiesTab() {
   const deploy = useDeployStrategy()
   const [runStrategy, setRunStrategy] = useState<Strategy | null>(null)
   const [deployingId, setDeployingId] = useState<string | null>(null)
+  const [marketFilter, setMarketFilter] = useState<MarketFilter>('all')
 
   const syncMap = useMemo(() => {
     const m: Record<string, boolean> = {}
     syncStatus?.forEach(s => { m[s.strategy_id] = s.in_sync })
     return m
   }, [syncStatus])
+
+  const visible = useMemo(() =>
+    (strategies ?? []).filter(s =>
+      marketFilter === 'all' || strategyMarket(s.runner) === marketFilter
+    ),
+    [strategies, marketFilter]
+  )
 
   const handleDeploy = async (strategyId: string) => {
     setDeployingId(strategyId)
@@ -86,9 +128,12 @@ function StrategiesTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <span className="text-[13px] text-text-secondary">
-          {strategies ? `${strategies.length} registered` : ''}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-[13px] text-text-secondary">
+            {strategies ? `${visible.length} of ${strategies.length}` : ''}
+          </span>
+          <MarketFilterBar value={marketFilter} onChange={setMarketFilter} />
+        </div>
         <button
           onClick={() => scan.mutate()}
           disabled={scan.isPending}
@@ -105,7 +150,7 @@ function StrategiesTab() {
         <EmptyState
           icon={<RefreshCw size={20} />}
           title="No strategies registered"
-          description='Click "Scan Strategies" to discover NinjaTrader strategy classes in the strategies folder.'
+          description='Click "Scan Strategies" to discover strategy classes in the strategies folder.'
         />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -113,6 +158,7 @@ function StrategiesTab() {
             <thead>
               <tr className="border-b border-border-subtle">
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Name</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runner</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Class</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Suggested Instrument</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Params</th>
@@ -122,7 +168,7 @@ function StrategiesTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {strategies.map(s => (
+              {visible.map(s => (
                 <StrategyRow
                   key={s.id}
                   strategy={s}
@@ -166,6 +212,7 @@ function StrategyRow({
           <ChevronRight size={13} className="text-text-tertiary opacity-60" />
         </div>
       </td>
+      <td className="px-4 py-3"><RunnerBadge runner={s.runner} /></td>
       <td className="px-4 py-3 font-mono text-text-secondary text-[12px]">{s.class_name}</td>
       <td className="px-4 py-3 font-mono text-text-secondary">
         {s.suggested_instrument ?? <span className="text-text-tertiary">—</span>}
@@ -446,6 +493,9 @@ function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?
         <td className="px-4 py-3">
           <div className="flex items-center gap-1.5">
             <span className="font-medium">{ruleset.name}</span>
+            {ruleset.market === 'forex' && (
+              <span className="text-[10px] font-bold px-1 py-[1px] rounded bg-blue-500/12 text-blue-400 border border-blue-500/20">FX</span>
+            )}
             {ruleset.docs_url && (
               <a href={ruleset.docs_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} title="View rules documentation" className="text-text-tertiary hover:text-accent transition-colors">
                 <ExternalLink size={11} />
