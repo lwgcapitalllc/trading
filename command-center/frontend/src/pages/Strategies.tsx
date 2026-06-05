@@ -159,9 +159,7 @@ function StrategiesTab() {
             <thead>
               <tr className="border-b border-border-subtle">
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Name</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runner</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Class</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Suggested Instrument</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Platform</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Params</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runs</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
@@ -209,15 +207,11 @@ function StrategyRow({
     <tr onClick={onView} className="hover:bg-bg-hover cursor-pointer transition-colors">
       <td className="px-4 py-3 font-medium">
         <div className="flex items-center gap-1">
-          {s.name}
+          {s.class_name}
           <ChevronRight size={13} className="text-text-tertiary opacity-60" />
         </div>
       </td>
       <td className="px-4 py-3"><RunnerBadge runner={s.runner} /></td>
-      <td className="px-4 py-3 font-mono text-text-secondary text-[12px]">{s.class_name}</td>
-      <td className="px-4 py-3 font-mono text-text-secondary">
-        {s.suggested_instrument ?? <span className="text-text-tertiary">—</span>}
-      </td>
       <td className="px-4 py-3 text-text-secondary">{s.param_schema.length}</td>
       <td className="px-4 py-3 tabular-nums">{s.run_count}</td>
       <td className="px-4 py-3">
@@ -616,6 +610,7 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
 
 function FilesTab() {
   const { data: files, isLoading, refetch, dataUpdatedAt } = useStrategyFiles()
+  const { data: syncStatus } = useStrategyFileSyncStatus()
   const uploadMut = useUploadStrategyFile()
   const deleteMut = useDeleteStrategyFile()
   const compileMut = useTriggerCompile()
@@ -629,15 +624,25 @@ function FilesTab() {
   const [activeMt5CompileId, setActiveMt5CompileId] = useState<string | null>(null)
   const [platformFilter, setPlatformFilter] = useState<string | null>(null)
 
-  const hasMt5Files = useMemo(() => (files ?? []).some(f => f.platform === 'MT5'), [files])
+  // Only show files that match a registered strategy — excludes platform defaults
+  const ourFilenames = useMemo(
+    () => new Set(syncStatus?.map(s => s.expected_filename) ?? []),
+    [syncStatus]
+  )
+  const ourFiles = useMemo(
+    () => (files ?? []).filter(f => ourFilenames.has(f.filename)),
+    [files, ourFilenames]
+  )
+
+  const hasMt5Files = useMemo(() => ourFiles.some(f => f.platform === 'MT5'), [ourFiles])
 
   const platforms = useMemo(
-    () => [...new Set((files ?? []).map(f => f.platform))].sort(),
-    [files]
+    () => [...new Set(ourFiles.map(f => f.platform))].sort(),
+    [ourFiles]
   )
   const visibleFiles = useMemo(
-    () => platformFilter ? (files ?? []).filter(f => f.platform === platformFilter) : (files ?? []),
-    [files, platformFilter]
+    () => platformFilter ? ourFiles.filter(f => f.platform === platformFilter) : ourFiles,
+    [ourFiles, platformFilter]
   )
 
   const lastRefreshed = dataUpdatedAt
@@ -764,7 +769,7 @@ function FilesTab() {
 
       {isLoading ? (
         <div className="text-text-tertiary text-[13px]">Loading files…</div>
-      ) : !files?.length ? (
+      ) : !ourFiles.length ? (
         <EmptyState icon={<Upload size={24} />} title="No files deployed" description="Drop a strategy file above to deploy it." />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -786,7 +791,7 @@ function FilesTab() {
                   <td className="px-4 py-3"><PlatformBadge platform={f.platform} /></td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{fmtBytes(f.size_bytes)}</td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{new Date(f.modified_at).toLocaleString()}</td>
-                  <td className="px-4 py-3"><FileStatusBadge filename={f.filename} vpsFiles={files} /></td>
+                  <td className="px-4 py-3"><FileStatusBadge filename={f.filename} vpsFiles={files ?? []} /></td>
                   <td className="px-4 py-3">
                     {!f.filename.startsWith('@') && (
                       <button

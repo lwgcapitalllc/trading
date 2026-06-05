@@ -170,10 +170,27 @@ def _get_lab_data_dir() -> Optional[Path]:
 
 
 def _detect_experts_dir() -> Optional[Path]:
-    """Detect and cache the MT5 Experts folder path via terminal_info()."""
+    """
+    Detect and cache the MT5 Experts folder path.
+
+    Resolution order:
+    1. MT5_DATA_DIR env var + "/MQL5/Experts" — works without MT5 running.
+    2. terminal_info().data_path — requires a live MT5 connection.
+    """
     global _experts_dir
     if _experts_dir is not None:
         return _experts_dir
+
+    # Env var path — no MT5 connection needed
+    explicit = os.environ.get("MT5_DATA_DIR", "")
+    if explicit:
+        p = Path(explicit) / "MQL5" / "Experts"
+        if p.exists():
+            _experts_dir = p
+            _alog(f"MT5 Experts dir (MT5_DATA_DIR): {_experts_dir}")
+            return _experts_dir
+
+    # Live terminal_info() fallback
     ok, _ = _ensure_mt5()
     if not ok:
         return None
@@ -187,7 +204,7 @@ def _detect_experts_dir() -> Optional[Path]:
     path = Path(data_path) / "MQL5" / "Experts"
     if path.exists():
         _experts_dir = path
-        _alog(f"MT5 Experts dir: {_experts_dir}")
+        _alog(f"MT5 Experts dir (terminal_info): {_experts_dir}")
     return _experts_dir
 
 
