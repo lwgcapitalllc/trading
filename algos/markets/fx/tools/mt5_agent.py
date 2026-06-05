@@ -515,21 +515,28 @@ def _parse_mt5_report(html: str) -> dict:
     tp = _TableParser()
     tp.feed(html)
 
-    # Flat KPI map — collect all (label, value) cell pairs from every table
+    # Flat KPI map — all (label, value) pairs from every row in every table.
+    # Each KPI row has multiple pairs (e.g. 3 side-by-side per row), so iterate
+    # through all even/odd index pairs. Strip trailing colons from labels.
     kpis: dict[str, str] = {}
     for table in tp.tables:
         for row in table:
-            if len(row) >= 2 and row[0] and row[1]:
-                kpis[row[0].strip()] = row[1].strip()
+            for i in range(0, len(row) - 1, 2):
+                k = row[i].strip().rstrip(":")
+                v = row[i + 1].strip() if i + 1 < len(row) else ""
+                if k:
+                    kpis[k] = v
 
     def _f(key: str, default: float = 0.0) -> float:
-        val = kpis.get(key, "").replace(" ", "").replace(",", "")
+        raw = kpis.get(key, "")
+        # Values like "99.28 (0.97%)" — take only the part before "("
+        val = raw.split("(")[0].strip().replace(" ", "").replace(",", "")
         try:
             return float(val.rstrip("%"))
         except ValueError:
             return default
 
-    net_pnl      = _f("Net Profit")
+    net_pnl      = _f("Total Net Profit")
     gross_profit = _f("Gross Profit")
     gross_loss   = abs(_f("Gross Loss"))
     pf_raw       = _f("Profit Factor")
@@ -538,67 +545,76 @@ def _parse_mt5_report(html: str) -> dict:
     sharpe       = _f("Sharpe Ratio")
     total_trades = int(_f("Total Trades"))
 
+    # Win rate: use "Profit Trades (% of total)" which always appears; fall back to "Win Trades"
     win_trades = 0
-    for key, val in kpis.items():
-        if "Win Trades" in key:
-            m = re.match(r"^(\d+)", val.replace(" ", ""))
-            if m:
-                win_trades = int(m.group(1))
+    for key in ("Profit Trades (% of total)", "Win Trades"):
+        val = kpis.get(key, "")
+        m = re.match(r"^(\d+)", val.replace(" ", ""))
+        if m:
+            win_trades = int(m.group(1))
             break
     win_rate = win_trades / total_trades if total_trades > 0 else 0.0
 
-    # Deals table: first table that contains a "Balance" column
+    # Deals table: scan ALL rows of every table to find the one with Time + Balance + Direction headers.
+    # The Deals header is not always the first row — in MT5 reports it follows an Orders section.
     trades: list[dict] = []
     equity_curve: list[dict] = []
     daily_map: dict[str, float] = {}
 
+    found = False
     for table in tp.tables:
-        if not table:
-            continue
-        hdr = table[0]
-        if "Balance" not in hdr:
-            continue
-
-        i_time    = _col_idx(hdr, ["Time", "Open Time"])
-        i_dir     = _col_idx(hdr, ["Direction", "Type"])
-        i_vol     = _col_idx(hdr, ["Volume", "Size", "Lots"])
-        i_price   = _col_idx(hdr, ["Price", "Open Price"])
-        i_profit  = _col_idx(hdr, ["Profit"])
-        i_balance = _col_idx(hdr, ["Balance"])
-
-        if i_time < 0 or i_balance < 0:
-            continue
-
-        for row in table[1:]:
-            if len(row) <= max(i_time, i_balance):
-                continue
-            raw_time = row[i_time].strip()
-            if not raw_time:
-                continue
-            try:
-                ts = datetime.datetime.strptime(raw_time[:16], "%Y.%m.%d %H:%M")
-            except ValueError:
+        if found:
+            break
+        for hdr_idx, hdr in enumerate(table):
+            if "Balance" not in hdr or "Time" not in hdr:
                 continue
 
-            balance = _cell_float(row, i_balance)
-            if balance == 0.0:
-                continue  # skip blank / sub-header rows
+            i_time    = _col_idx(hdr, ["Time", "Open Time"])
+            i_dir     = _col_idx(hdr, ["Direction", "Type"])
+            i_vol     = _col_idx(hdr, ["Volume", "Size", "Lots"])
+            i_price   = _col_idx(hdr, ["Price", "Open Price"])
+            i_profit  = _col_idx(hdr, ["Profit"])
+            i_balance = _col_idx(hdr, ["Balance"])
 
-            equity_curve.append({"date": ts.isoformat(), "equity": balance})
+            if i_time < 0 or i_balance < 0:
+                continue
 
-            profit = _cell_float(row, i_profit)
-            day = ts.date().isoformat()
-            daily_map[day] = daily_map.get(day, 0.0) + profit
+            for row in table[hdr_idx + 1:]:
+                if len(row) <= max(i_time, i_balance):
+                    continue
+                raw_time = row[i_time].strip()
+                if not raw_time:
+                    continue
+                try:
+                    ts = datetime.datetime.strptime(raw_time[:16], "%Y.%m.%d %H:%M")
+                except ValueError:
+                    continue
 
-            direction = row[i_dir].strip().lower() if 0 <= i_dir < len(row) else ""
-            trades.append({
-                "time":      ts.isoformat(),
-                "direction": direction,
-                "volume":    _cell_float(row, i_vol),
-                "price":     _cell_float(row, i_price),
-                "profit":    profit,
-            })
-        break  # stop after the first matching table
+                balance = _cell_float(row, i_balance)
+                if balance == 0.0:
+                    continue
+
+                equity_curve.append({"date": ts.isoformat(), "equity": balance})
+
+                direction = row[i_dir].strip().lower() if 0 <= i_dir < len(row) else ""
+                profit = _cell_float(row, i_profit)
+
+                # Skip balance/deposit rows (no direction) — they inflate daily_pnl
+                if not direction:
+                    continue
+
+                day = ts.date().isoformat()
+                daily_map[day] = daily_map.get(day, 0.0) + profit
+
+                trades.append({
+                    "time":      ts.isoformat(),
+                    "direction": direction,
+                    "volume":    _cell_float(row, i_vol),
+                    "price":     _cell_float(row, i_price),
+                    "profit":    profit,
+                })
+            found = True
+            break
 
     daily_pnl = [{"date": d, "pnl": round(p, 2)} for d, p in sorted(daily_map.items())]
 
