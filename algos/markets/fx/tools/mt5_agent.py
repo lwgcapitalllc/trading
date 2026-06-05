@@ -700,6 +700,25 @@ def _parse_mt5_report(html: str) -> dict:
     }
 
 
+def _read_mt5_journal(data_dir: Path, lines: int = 30) -> str:
+    """Read the most recent MT5 journal log from <data_dir>/logs/. Returns empty string on any failure."""
+    logs_dir = data_dir / "logs"
+    if not logs_dir.is_dir():
+        return ""
+    today = datetime.date.today().strftime("%Y%m%d")
+    log_file = logs_dir / f"{today}.log"
+    if not log_file.is_file():
+        candidates = sorted(logs_dir.glob("*.log"), key=lambda p: p.stat().st_mtime)
+        if not candidates:
+            return ""
+        log_file = candidates[-1]
+    try:
+        text = log_file.read_text(encoding="utf-8", errors="replace")
+        return "\n".join(text.splitlines()[-lines:])
+    except Exception:
+        return ""
+
+
 def _run_backtest(job_id: str, spec: dict) -> None:
     """Worker thread: configure, launch, poll, parse, store result."""
 
@@ -749,8 +768,9 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         reports_dir   = data_dir / "reports"
         reports_dir.mkdir(parents=True, exist_ok=True)
         report_stem   = f"bt_{job_id[:8]}"
-        report_prefix = f"reports\\{report_stem}"
         report_file   = reports_dir / f"{report_stem}.htm"
+        # Absolute path avoids MT5 resolving Report= relative to its exe dir instead of data dir
+        report_prefix = str(reports_dir / report_stem)
 
         ini_path = data_dir / f"tester_{job_id[:8]}.ini"
         _write_tester_ini(
@@ -807,7 +827,9 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         report_file = alts[-1] if alts else None  # type: ignore[assignment]
 
     if report_file is None or not report_file.is_file():  # type: ignore[union-attr]
-        fail("Backtest finished but no report file found. Check symbol, dates, and EA.")
+        journal = _read_mt5_journal(data_dir)
+        detail  = f"\nMT5 journal (last lines):\n{journal}" if journal else ""
+        fail(f"Backtest finished but no report file found. Check symbol, dates, and EA.{detail}")
         return
 
     jl(f"Report: {report_file.name}")  # type: ignore[union-attr]
