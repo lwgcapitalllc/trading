@@ -455,7 +455,8 @@ export interface LabProgress {
 export interface SystemHealth {
   backend: boolean
   ssh_tunnel: boolean
-  vps_agent: boolean
+  vps_agent: boolean   // NT8 agent (port 8765)
+  mt5_agent: boolean   // MT5 agent (port 8766)
   nt8_running: boolean
   nt8_sa_visible: boolean
   last_compile_ok: boolean

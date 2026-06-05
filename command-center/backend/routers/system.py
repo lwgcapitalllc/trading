@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from models import SystemHealth, LabProgress
-from services import vps_client
+from services import vps_client, mt5_agent_client
 from services.backtest_runner import read_progress, clear_progress
 
 import config as cfg
@@ -61,6 +61,7 @@ def _build_health() -> dict:
     ssh_ok = _check_ssh()
 
     vps_ok = False
+    mt5_ok = False
     nt8_running = False
     nt8_sa_visible = False
     last_compile_ok = False
@@ -70,6 +71,12 @@ def _build_health() -> dict:
     try:
         h = vps_client.health()
         vps_ok = h.get("status") == "ok"
+    except Exception:
+        pass
+
+    try:
+        h5 = mt5_agent_client.health()
+        mt5_ok = h5.get("status") == "ok"
     except Exception:
         pass
 
@@ -98,6 +105,7 @@ def _build_health() -> dict:
         "backend":              True,
         "ssh_tunnel":           ssh_ok,
         "vps_agent":            vps_ok,
+        "mt5_agent":            mt5_ok,
         "nt8_running":          nt8_running,
         "nt8_sa_visible":       nt8_sa_visible,
         "last_compile_ok":      last_compile_ok,
@@ -152,34 +160,28 @@ def lab_stop() -> dict:
     return {"stopped": stopped, "job_id": job_id}
 
 
-@router.post("/system/vps-agent/start")
-def start_vps_agent():
-    """Reconnect the SSH port-forward tunnel and restart vps_agent on the VPS.
-
-    After laptop sleep the ssh -N tunnel process dies, breaking localhost:8765
-    even though SSH itself still works. This endpoint kills the stale tunnel,
-    spawns a fresh one, then fires the LucidFlexAgent scheduled task.
-    """
-    global _health_cache
-
-    # Kill any stale tunnel process and spawn a fresh one.
+def _restart_tunnel() -> None:
+    """Kill any stale ssh -N tunnel and spawn a fresh one with both port forwards."""
     subprocess.run(["pkill", "-f", r"ssh -N.*forexvps"], capture_output=True)
     subprocess.Popen(
         ["ssh", "-N",
+         "-L", "8765:localhost:8765",
+         "-L", "8766:localhost:8766",
          "-o", "ServerAliveInterval=30",
          "-o", "ServerAliveCountMax=3",
          cfg.SSH_ALIAS],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    # Give the tunnel a moment to establish the port-forward before we use it.
-    time.sleep(2)
+    time.sleep(2)  # let the port-forwards establish before first use
 
-    # Fire the scheduled task to (re)start vps_agent.py on the VPS.
+
+def _schtasks_run(task_name: str) -> dict:
+    """Fire a Windows scheduled task via SSH. Returns {status, output}."""
     try:
         result = subprocess.run(
             ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
-             cfg.SSH_ALIAS, "schtasks /run /tn LucidFlexAgent"],
+             cfg.SSH_ALIAS, f"schtasks /run /tn {task_name}"],
             capture_output=True, text=True, timeout=15,
         )
     except subprocess.TimeoutExpired:
@@ -188,8 +190,27 @@ def start_vps_agent():
         raise HTTPException(status_code=502, detail=str(e))
     if result.returncode != 0:
         raise HTTPException(status_code=502, detail=f"schtasks failed: {result.stderr.strip()}")
-    _health_cache = None
     return {"status": "ok", "output": result.stdout.strip()}
+
+
+@router.post("/system/vps-agent/start")
+def start_vps_agent():
+    """Restart SSH tunnel (ports 8765 + 8766) and fire the NT8 agent scheduled task."""
+    global _health_cache
+    _restart_tunnel()
+    out = _schtasks_run("LucidFlexAgent")
+    _health_cache = None
+    return out
+
+
+@router.post("/system/mt5-agent/start")
+def start_mt5_agent():
+    """Restart SSH tunnel (ports 8765 + 8766) and fire the MT5 agent scheduled task."""
+    global _health_cache
+    _restart_tunnel()
+    out = _schtasks_run("MT5Agent")
+    _health_cache = None
+    return out
 
 
 @router.get("/vps/agent/log", response_class=PlainTextResponse)

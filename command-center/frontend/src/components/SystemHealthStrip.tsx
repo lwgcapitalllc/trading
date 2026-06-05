@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { useSystemHealth, useStartVpsAgent } from '@/hooks/useLab'
+import { useSystemHealth, useStartVpsAgent, useStartMt5Agent } from '@/hooks/useLab'
 import type { SystemHealth } from '@/types'
 
 // ── Dot state ─────────────────────────────────────────────────────────────────
@@ -16,10 +16,11 @@ interface DotDef {
 function buildDots(h: SystemHealth | undefined): DotDef[] {
   if (!h) {
     return [
-      { key: 'api',     label: 'API',          state: 'grey', tip: 'checking…' },
-      { key: 'ssh',     label: 'SSH',          state: 'grey', tip: 'checking…' },
-      { key: 'agent',   label: 'VPS agent',    state: 'grey', tip: 'checking…' },
-      { key: 'nt8',     label: 'NinjaTrader',  state: 'grey', tip: 'checking…' },
+      { key: 'api',     label: 'API',        state: 'grey', tip: 'checking…' },
+      { key: 'ssh',     label: 'SSH',        state: 'grey', tip: 'checking…' },
+      { key: 'agent',   label: 'NT8 Agent',  state: 'grey', tip: 'checking…' },
+      { key: 'mt5',     label: 'MT5 Agent',  state: 'grey', tip: 'checking…' },
+      { key: 'nt8',     label: 'NinjaTrader',state: 'grey', tip: 'checking…' },
     ]
   }
 
@@ -50,13 +51,23 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
     },
     {
       key: 'agent',
-      label: 'VPS agent',
+      label: 'NT8 Agent',
       state: h.vps_agent ? 'green' : 'red',
       tip: h.vps_agent
-        ? 'VPS agent: responding'
+        ? 'NT8 agent: responding'
         : h.ssh_tunnel
-        ? 'VPS agent: down — click to start'
-        : 'VPS agent: down — SSH must be up first',
+        ? 'NT8 agent: down — click to start'
+        : 'NT8 agent: down — SSH must be up first',
+    },
+    {
+      key: 'mt5',
+      label: 'MT5 Agent',
+      state: h.mt5_agent ? 'green' : 'red',
+      tip: h.mt5_agent
+        ? 'MT5 agent: responding'
+        : h.ssh_tunnel
+        ? 'MT5 agent: down — click to start'
+        : 'MT5 agent: down — SSH must be up first',
     },
     {
       key: 'nt8',
@@ -123,12 +134,15 @@ function DotRow({ def, onRedClick, loading }: { def: DotDef; onRedClick: () => v
 export function SystemHealthStrip() {
   const navigate = useNavigate()
   const { data: health } = useSystemHealth()
-  const startAgent = useStartVpsAgent()
+  const startNt8Agent = useStartVpsAgent()
+  const startMt5Agent = useStartMt5Agent()
   const dots = buildDots(health)
 
   function handleRedClick(key: string) {
     if (key === 'agent' && health?.ssh_tunnel) {
-      startAgent.mutate()
+      startNt8Agent.mutate()
+    } else if (key === 'mt5' && health?.ssh_tunnel) {
+      startMt5Agent.mutate()
     } else {
       navigate('/settings')
     }
@@ -141,7 +155,10 @@ export function SystemHealthStrip() {
           key={def.key}
           def={def}
           onRedClick={() => handleRedClick(def.key)}
-          loading={def.key === 'agent' && startAgent.isPending}
+          loading={
+            (def.key === 'agent' && startNt8Agent.isPending) ||
+            (def.key === 'mt5'   && startMt5Agent.isPending)
+          }
         />
       ))}
     </div>
