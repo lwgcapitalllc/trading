@@ -1,10 +1,17 @@
+// Accepts runner values ("ninjatrader", "mt5") or platform values ("NT8", "MT5").
 type Props = { runner: string; className?: string }
 
 function NinjaTraderIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
       <rect width="15" height="15" rx="2.5" fill="#ff6a00"/>
-      <path d="M2.5 11.5V3.5H4.4L7.5 8.6L10.6 3.5H12.5V11.5H10.8V6.4L7.5 11.2L4.2 6.4V11.5H2.5Z" fill="white"/>
+      {/*
+        Bold N: left bar + diagonal top-left→bottom-right + right bar.
+        Path traces: up left outer, across top-left, diagonal down-right,
+        up inner-right, across top-right, down right outer, across bottom-right,
+        diagonal up-left, down inner-left, across bottom-left.
+      */}
+      <path d="M2.5 12V3H4.5L10.5 9.5V3H12.5V12H10.5L4.5 5.5V12H2.5Z" fill="white"/>
     </svg>
   )
 }
@@ -22,7 +29,7 @@ function Mt5Icon() {
 }
 
 export function RunnerBadge({ runner, className = '' }: Props) {
-  const isMt5 = runner === 'mt5'
+  const isMt5 = runner === 'mt5' || runner === 'MT5'
   return (
     <span className={`inline-flex items-center gap-1 ${className}`}>
       {isMt5 ? <Mt5Icon /> : <NinjaTraderIcon />}

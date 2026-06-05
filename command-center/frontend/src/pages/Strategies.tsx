@@ -545,16 +545,6 @@ function fmtBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function PlatformBadge({ platform }: { platform: string }) {
-  const cls = platform === 'NT8'
-    ? 'bg-accent/10 text-accent border border-accent/20'
-    : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-  return (
-    <span className={`text-[11px] font-semibold px-1.5 py-[2px] rounded font-mono ${cls}`}>
-      {platform}
-    </span>
-  )
-}
 
 function FileStatusBadge({ filename, vpsFiles }: { filename: string; vpsFiles: StrategyFile[] }) {
   const vpsFile = vpsFiles.find(f => f.filename === filename)
@@ -788,7 +778,7 @@ function FilesTab() {
               {visibleFiles.map(f => (
                 <tr key={f.filename} className="border-b border-border-subtle last:border-0 hover:bg-bg-sunken">
                   <td className="px-4 py-3 font-mono text-text-primary">{f.filename}</td>
-                  <td className="px-4 py-3"><PlatformBadge platform={f.platform} /></td>
+                  <td className="px-4 py-3"><RunnerBadge runner={f.platform} /></td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{fmtBytes(f.size_bytes)}</td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{new Date(f.modified_at).toLocaleString()}</td>
                   <td className="px-4 py-3"><FileStatusBadge filename={f.filename} vpsFiles={files ?? []} /></td>
