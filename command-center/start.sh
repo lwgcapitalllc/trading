@@ -17,8 +17,8 @@ lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 # Kill any stale tunnel from a previous run, then open a fresh one.
 pkill -f "ssh -N.*forexvps" 2>/dev/null || true
 ssh -N \
-  -L 8765:localhost:8765 \
-  -L 8766:localhost:8766 \
+  -L 8765:127.0.0.1:8765 \
+  -L 8766:127.0.0.1:8766 \
   -o "ServerAliveInterval=30" \
   -o "ServerAliveCountMax=3" \
   forexvps &

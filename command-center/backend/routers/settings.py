@@ -23,6 +23,7 @@ class AppSettings(BaseModel):
     instances_dir: str
     ssh_alias: str
     nt8_agent_tunnel: str
+    mt5_agent_tunnel: str
 
 
 @router.get("", response_model=AppSettings)

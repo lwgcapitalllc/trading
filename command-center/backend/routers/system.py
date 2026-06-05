@@ -165,8 +165,8 @@ def _restart_tunnel() -> None:
     subprocess.run(["pkill", "-f", r"ssh -N.*forexvps"], capture_output=True)
     subprocess.Popen(
         ["ssh", "-N",
-         "-L", "8765:localhost:8765",
-         "-L", "8766:localhost:8766",
+         "-L", "8765:127.0.0.1:8765",
+         "-L", "8766:127.0.0.1:8766",
          "-o", "ServerAliveInterval=30",
          "-o", "ServerAliveCountMax=3",
          cfg.SSH_ALIAS],
@@ -208,7 +208,7 @@ def start_mt5_agent():
     """Restart SSH tunnel (ports 8765 + 8766) and fire the MT5 agent scheduled task."""
     global _health_cache
     _restart_tunnel()
-    out = _schtasks_run("MT5Agent")
+    out = _schtasks_run("MT5AgentRDP")
     _health_cache = None
     return out
 

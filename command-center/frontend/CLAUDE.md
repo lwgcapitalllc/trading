@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-04 (Steps 7-9 — MT5 runner, runner badges, market filter, MT5 deployment)
+**Last reviewed:** 2026-06-05
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -346,9 +346,10 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Backtests lab M4 — Regime tagging | ✅ Live | `RegimeBadge` inline component (colored dot + label, spec colors). `PerformanceByRegimeTable` inline component on BacktestDetail — shown when ≥1 non-UNKNOWN tag exists; columns: Regime/Days/Trades/Net P&L/Win Rate/PF/Worst Day; Overall row pulls from `run.*` fields, never recomputed from regime rows. `BackfillRegimeButton` in header action row — shown when any `daily_pnl` entry has missing or UNKNOWN `regime_tag`; polls backfill status at 1s; invalidates run query on completion. |
 | Backtests lab M4 — Equity overlay | ✅ Live | `RegimeOverlayToggle` button in Charts header — active when non-UNKNOWN tags exist. Toggle persists to `localStorage` (`regime_overlay_enabled`), defaults to on. **Colored equity line**: `EquityCurveChart` augments the data with per-band segment keys (`_s0`, `_s1`, …); each regime segment renders as a separate `Area` with `fill="transparent"` and the regime's stroke color. When overlay is off, falls back to the normal single-color green line + fill. `RegimeLegend` (dash swatches, not dots) below equity curve when overlay is on. `PerformanceByRegimeTable` slides in/out below the equity curve with a CSS `max-height` + `opacity` transition (350ms) — only mounts when tags exist, visibility driven by `overlayOn`. UNKNOWN days produce no colored segment. |
 | Backtests lab M4 — Optimizer regime filter | ✅ Live | `OptimizerModal` gains a "Regime Filter" select (col-span-3, all 5 labels + no-filter option). `regime_filter` flows through types → hook → backend. `OptimizationDetail` shows regime chip in metadata row when set. |
-| Backtests lab Pass 2 — Strategy Deployment | ✅ Live | "Deployed" sub-tab in `Strategies.tsx`: drag/drop zone (`.cs` and `.mq5`), file list table with Platform badge and platform filter chips, trash-can delete, overwrite confirmation, "Compile NT8" button → NT8 `CompileModal`, "Compile MT5" button (purple, shown only when MT5 files present) → MT5 `CompileModal`. `StrategiesTab` shows ● In sync / ● Needs deploy status badges. `CompileModal` takes `title` + `usePollHook` props — one component used for both NT8 and MT5. |
+| Backtests lab Pass 2 — Strategy Deployment | ✅ Live | "Deployed" sub-tab in `Strategies.tsx`: drag/drop zone (`.cs` and `.mq5`), file list sorted by platform then filename, trash-can delete, overwrite confirmation, "Compile NT8" button → NT8 `CompileModal`, "Compile MT5" button (purple, shown only when MT5 files present) → MT5 `CompileModal`. `StrategiesTab` shows ● In sync / ● Needs deploy status badges; rows sorted by platform then name. `CompileModal` takes `title` + `usePollHook` props — one component for both NT8 and MT5. |
 | Backtests lab Pass 2.5 — Deploy button | ✅ Live | Per-strategy Deploy/Redeploy buttons in the Strategies tab. Works for both `.cs` (NT8) and `.mq5` (MT5) — routing is transparent (handled by nt8_agent_client on the backend). `useDeployStrategy()` fires `POST /strategies/{id}/deploy` + chained GET. Filled accent "Deploy" when out of sync; outlined "Redeploy" when in sync. |
-| Settings | ✅ Live | Config read/write |
+| Settings | ✅ Live | Config read/write. Fields: `nt8_agent_tunnel` and `mt5_agent_tunnel` both present. |
+| Sidebar health strip | ✅ Live | 4 dots: API, SSH, NT8, MT5 Agent. NT8 dot is three-state: red (agent down, clickable) → yellow (agent up, NT8/SA not ready) → green (all clear). MT5 Agent dot: red (down, clickable) → green. `SystemHealthStrip.tsx`. |
 
 ---
 
@@ -385,14 +386,13 @@ Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBac
 
 **`FilesTab`** — Now the "Deployed" sub-tab under Strategies. Contains:
 - Drag/drop zone (accepts `.cs` and `.mq5`; toasts on other file types)
-- File list table: Filename, Platform badge, Size, Modified, Status badge, Trash2 delete icon (no ⋯ menu)
-- Platform filter chips (All / NT8 / MT5) — only shown when multiple platforms are present
+- File list table: Filename, Platform badge, Size, Modified, Status badge, Trash2 delete icon — rows sorted by platform then filename
+- No platform filter chips (removed — sorting by platform is sufficient)
 - "Compile NT8" button → triggers `useTriggerCompile()` → shows NT8 `CompileModal`
-- "Compile MT5" button (purple) — only shown when MT5 files are present → triggers `useTriggerCompileMt5()` → shows MT5 `CompileModal`
+- "Compile MT5" button (purple) — only shown when MT5 files present (`hasMt5Files`) → triggers `useTriggerCompileMt5()` → shows MT5 `CompileModal`
 - Overwrite confirmation modal: shown when a dropped file already exists on the VPS
 - Delete confirmation modal: shown when trash icon is clicked
 - `FileStatusBadge`: green "In sync" / red "Missing" pill
-- `PlatformBadge`: cyan for NT8, purple for MT5
 
 **`CompileModal`** — generic for both NT8 and MT5. Props: `compileJobId`, `onClose`, `title` (e.g. "Compiling NinjaScript" vs "Compiling MQL5 (MetaEditor)"), `usePollHook` (either `useCompileStatus` or `useCompileStatusMt5`). Polls at 2s while running. Shows spinner + elapsed time. "Close" only appears when done.
 

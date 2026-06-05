@@ -117,6 +117,15 @@ function StrategiesTab() {
     [strategies, marketFilter]
   )
 
+  const sorted = useMemo(() =>
+    [...visible].sort((a, b) => {
+      const pa = a.runner === 'mt5' ? 'MT5' : 'NT8'
+      const pb = b.runner === 'mt5' ? 'MT5' : 'NT8'
+      return pa.localeCompare(pb) || a.class_name.localeCompare(b.class_name)
+    }),
+    [visible]
+  )
+
   const handleDeploy = async (strategyId: string) => {
     setDeployingId(strategyId)
     try {
@@ -167,7 +176,7 @@ function StrategiesTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {visible.map(s => (
+              {sorted.map(s => (
                 <StrategyRow
                   key={s.id}
                   strategy={s}
@@ -612,7 +621,6 @@ function FilesTab() {
   const [overwriteConfirm, setOverwriteConfirm] = useState<{ file: File; filename: string } | null>(null)
   const [activeCompileId, setActiveCompileId] = useState<string | null>(null)
   const [activeMt5CompileId, setActiveMt5CompileId] = useState<string | null>(null)
-  const [platformFilter, setPlatformFilter] = useState<string | null>(null)
 
   // Only show files that match a registered strategy — excludes platform defaults
   const ourFilenames = useMemo(
@@ -626,13 +634,11 @@ function FilesTab() {
 
   const hasMt5Files = useMemo(() => ourFiles.some(f => f.platform === 'MT5'), [ourFiles])
 
-  const platforms = useMemo(
-    () => [...new Set(ourFiles.map(f => f.platform))].sort(),
+  const sortedFiles = useMemo(() =>
+    [...ourFiles].sort((a, b) =>
+      a.platform.localeCompare(b.platform) || a.filename.localeCompare(b.filename)
+    ),
     [ourFiles]
-  )
-  const visibleFiles = useMemo(
-    () => platformFilter ? ourFiles.filter(f => f.platform === platformFilter) : ourFiles,
-    [ourFiles, platformFilter]
   )
 
   const lastRefreshed = dataUpdatedAt
@@ -737,26 +743,6 @@ function FilesTab() {
         )}
       </div>
 
-      {platforms.length > 1 && (
-        <div className="flex items-center gap-1 mb-4">
-          <button
-            onClick={() => setPlatformFilter(null)}
-            className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${platformFilter === null ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'}`}
-          >
-            All
-          </button>
-          {platforms.map(p => (
-            <button
-              key={p}
-              onClick={() => setPlatformFilter(platformFilter === p ? null : p)}
-              className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${platformFilter === p ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'}`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-      )}
-
       {isLoading ? (
         <div className="text-text-tertiary text-[13px]">Loading files…</div>
       ) : !ourFiles.length ? (
@@ -774,9 +760,9 @@ function FilesTab() {
                 <th className="px-4 py-2.5 w-10" />
               </tr>
             </thead>
-            <tbody>
-              {visibleFiles.map(f => (
-                <tr key={f.filename} className="border-b border-border-subtle last:border-0 hover:bg-bg-sunken">
+            <tbody className="divide-y divide-border-subtle">
+              {sortedFiles.map(f => (
+                <tr key={f.filename} className="hover:bg-bg-sunken">
                   <td className="px-4 py-3 font-mono text-text-primary">{f.filename}</td>
                   <td className="px-4 py-3"><RunnerBadge runner={f.platform} /></td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{fmtBytes(f.size_bytes)}</td>

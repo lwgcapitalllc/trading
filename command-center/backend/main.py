@@ -1,8 +1,11 @@
+import threading
+import time
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import smart_money, bots, backtests, stress_tests, settings, strategies, firms, rulesets, system, sweeps, optimizations, strategy_files
-from services import lab_db
+from services import lab_db, nt8_agent_client, mt5_agent_client
 from services.backtest_runner import read_progress, clear_progress
 
 app = FastAPI(title="LWG Capital Command Center API", version="1.0.0")
@@ -29,6 +32,24 @@ app.include_router(system.router)
 app.include_router(strategy_files.router)
 
 
+def _auto_start_agents():
+    """Wait for the SSH tunnel then start any agents that aren't responding."""
+    time.sleep(8)  # give start.sh tunnel time to establish
+    for client, task in [
+        (nt8_agent_client, "LucidFlexAgent"),
+        (mt5_agent_client, "MT5AgentRDP"),
+    ]:
+        try:
+            client.health()
+            continue  # already up
+        except Exception:
+            pass
+        try:
+            system._schtasks_run(task)
+        except Exception:
+            pass  # SSH not up yet — user will see red dot and can click
+
+
 @app.on_event("startup")
 def startup():
     lab_db.init_db()
@@ -36,6 +57,7 @@ def startup():
     # The asyncio task tracking that job no longer exists, so clear the lock.
     if read_progress().get("status") == "running":
         clear_progress()
+    threading.Thread(target=_auto_start_agents, daemon=True).start()
 
 
 @app.get("/health")

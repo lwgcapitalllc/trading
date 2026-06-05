@@ -7,7 +7,7 @@ exists on the VPS. NT8 strategies use .cs files (NT8 VPS agent on :8765);
 MT5 strategies use .mq5 files (MT5 agent on :8766).
 
 Endpoints:
-    GET    /strategy-files                  list .cs files on NT8 VPS
+    GET    /strategy-files                  list .cs (NT8) + .mq5 (MT5) files on VPS
     POST   /strategy-files/upload           upload a .cs or .mq5 file
     DELETE /strategy-files/{filename}       delete a file from VPS
     POST   /strategy-files/compile          trigger NT8 recompile (pywinauto F5)
@@ -28,10 +28,20 @@ _MAX_UPLOAD_BYTES = 256 * 1024  # 256 KB — matches VPS agent limit
 
 @router.get("", response_model=list[StrategyFile])
 def list_strategy_files():
+    files: list[dict] = []
     try:
-        return nt8_agent_client.list_strategy_files()
+        for f in nt8_agent_client.list_strategy_files():
+            f["platform"] = "NT8"
+            files.append(f)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail=f"NT8 agent: {exc}")
+    try:
+        for f in mt5_agent_client.list_strategy_files():
+            f["platform"] = "MT5"
+            files.append(f)
+    except Exception:
+        pass  # MT5 agent down — degrade gracefully, show NT8 files only
+    return files
 
 
 @router.post("/upload", response_model=StrategyFile)

@@ -16,25 +16,31 @@ interface DotDef {
 function buildDots(h: SystemHealth | undefined): DotDef[] {
   if (!h) {
     return [
-      { key: 'api',     label: 'API',        state: 'grey', tip: 'checking…' },
-      { key: 'ssh',     label: 'SSH',        state: 'grey', tip: 'checking…' },
-      { key: 'agent',   label: 'NT8 Agent',  state: 'grey', tip: 'checking…' },
-      { key: 'mt5',     label: 'MT5 Agent',  state: 'grey', tip: 'checking…' },
-      { key: 'nt8',     label: 'NinjaTrader',state: 'grey', tip: 'checking…' },
+      { key: 'api',   label: 'API',       state: 'grey', tip: 'checking…' },
+      { key: 'ssh',   label: 'SSH',       state: 'grey', tip: 'checking…' },
+      { key: 'nt8',   label: 'NT8',       state: 'grey', tip: 'checking…' },
+      { key: 'mt5',   label: 'MT5 Agent', state: 'grey', tip: 'checking…' },
     ]
   }
 
-  const nt8State: DotState = !h.nt8_running
+  // NT8: three-state — agent down → red; agent up but SA not ready → yellow; fully ready → green
+  const nt8State: DotState = !h.nt8_agent
     ? 'red'
+    : !h.nt8_running
+    ? 'yellow'
     : !h.nt8_sa_visible
     ? 'yellow'
     : 'green'
 
-  const nt8Tip = !h.nt8_running
-    ? 'NinjaTrader: not running on VPS'
+  const nt8Tip = !h.nt8_agent
+    ? h.ssh_tunnel
+      ? 'NT8: agent not running — click to start'
+      : 'NT8: agent not running — SSH must be up first'
+    : !h.nt8_running
+    ? 'NT8: agent OK — NinjaTrader not running on VPS (open NT8 via RDP)'
     : !h.nt8_sa_visible
-    ? 'NinjaTrader: running — Strategy Analyzer not open'
-    : 'NinjaTrader: running + Strategy Analyzer open'
+    ? 'NT8: agent OK, NinjaTrader running — Strategy Analyzer not open (open it in NT8)'
+    : 'NT8: agent OK, NinjaTrader running, Strategy Analyzer open'
 
   return [
     {
@@ -50,14 +56,10 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
       tip: h.ssh_tunnel ? 'SSH to VPS: connected' : 'SSH to VPS: unreachable — check ForexVPS or ssh config',
     },
     {
-      key: 'agent',
-      label: 'NT8 Agent',
-      state: h.nt8_agent ? 'green' : 'red',
-      tip: h.nt8_agent
-        ? 'NT8 agent: responding'
-        : h.ssh_tunnel
-        ? 'NT8 agent: down — click to start'
-        : 'NT8 agent: down — SSH must be up first',
+      key: 'nt8',
+      label: 'NT8',
+      state: nt8State,
+      tip: nt8Tip,
     },
     {
       key: 'mt5',
@@ -68,12 +70,6 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
         : h.ssh_tunnel
         ? 'MT5 agent: down — click to start'
         : 'MT5 agent: down — SSH must be up first',
-    },
-    {
-      key: 'nt8',
-      label: 'NinjaTrader',
-      state: nt8State,
-      tip: nt8Tip,
     },
   ]
 }
@@ -139,7 +135,7 @@ export function SystemHealthStrip() {
   const dots = buildDots(health)
 
   function handleRedClick(key: string) {
-    if (key === 'agent' && health?.ssh_tunnel) {
+    if (key === 'nt8' && health?.ssh_tunnel) {
       startNt8Agent.mutate()
     } else if (key === 'mt5' && health?.ssh_tunnel) {
       startMt5Agent.mutate()
@@ -156,7 +152,7 @@ export function SystemHealthStrip() {
           def={def}
           onRedClick={() => handleRedClick(def.key)}
           loading={
-            (def.key === 'agent' && startNt8Agent.isPending) ||
+            (def.key === 'nt8'   && startNt8Agent.isPending) ||
             (def.key === 'mt5'   && startMt5Agent.isPending)
           }
         />

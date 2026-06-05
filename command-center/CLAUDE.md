@@ -2,7 +2,7 @@
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
-**Last reviewed:** 2026-06-04 (Steps 7-9 complete — MT5 backtest driver, runner badges, MT5 deployment)
+**Last reviewed:** 2026-06-05
 
 Sub-directory CLAUDE.md files are auto-loaded when editing files in those directories:
 - `backend/CLAUDE.md` — Python conventions, router rules, SQLite patterns, VPS interaction
@@ -46,7 +46,9 @@ cd command-center
 
 `start.sh` creates the Python venv and runs `npm install` on first launch.
 
-**SSH tunnel** — `start.sh` opens a persistent `ssh -N forexvps` background process on launch. This keeps two LocalForwards alive: `8765` (NT8 nt8_agent_tunnel) and `8766` (MT5 mt5_agent_tunnel). Without the tunnel, both nt8_agent_client and mt5_agent_client calls fail even though SSH itself appears healthy. The tunnel is killed automatically on Ctrl-C.
+**SSH tunnel** — `start.sh` opens a persistent `ssh -N forexvps` background process on launch. This keeps two LocalForwards alive: `8765` (NT8 nt8_agent_tunnel) and `8766` (MT5 mt5_agent_tunnel). Without the tunnel, both nt8_agent_client and mt5_agent_client calls fail even though SSH itself appears healthy. The tunnel is killed automatically on Ctrl-C. **Important:** the `-L` flags must use `127.0.0.1` (not `localhost`) as the remote target — the VPS resolves `localhost` to `::1` (IPv6) but Flask agents bind only `127.0.0.1` (IPv4). Both `start.sh` and `_restart_tunnel()` in `system.py` use `127.0.0.1` explicitly.
+
+**Auto-start agents** — `main.py` spawns a daemon thread on startup (8s delay to let the tunnel establish) that calls `/health` on each agent and fires the schtask for any that don't respond. NT8 agent: `LucidFlexAgent`. MT5 agent: `MT5AgentRDP`. If SSH is not yet up the thread silently skips — red dots remain clickable.
 
 **Backtesting prerequisites** — before submitting a run, the SSH tunnel and NT8 agent must be up. See Sidebar health indicators below.
 
@@ -110,12 +112,14 @@ cd command-center
 
 Four dots in the left sidebar, sourced from `GET /system/health` (30 s TTL cache).
 
-| Indicator | What it checks | Green | Yellow | Red | Grey |
-|---|---|---|---|---|---|
-| **API** | Local FastAPI on `:8000` | Backend healthy | — | Backend unreachable — restart it | — |
-| **SSH** | SSH tunnel to ForexVPS | Connected | — | Unreachable — check ForexVPS or `~/.ssh/config` | — |
-| **NT8 agent** | `nt8_agent.py` HTTP on `:8765` (via SSH tunnel) | Responding | — | Not running — click the red dot (if SSH is up) to start via `POST /system/nt8-agent/start`; or manually `ssh forexvps "schtasks /run /tn LucidFlexAgent"` | — |
-| **NinjaTrader** | NT8 process + Strategy Analyzer window | Running + SA open | Running, SA closed | NT8 not running on VPS | Agent unreachable |
+| Indicator | What it checks | Green | Yellow | Red |
+|---|---|---|---|---|
+| **API** | Local FastAPI on `:8000` | Backend healthy | — | Unreachable — restart backend |
+| **SSH** | SSH tunnel to ForexVPS | Connected | — | Unreachable — check ForexVPS or `~/.ssh/config` |
+| **NT8** | Agent HTTP + NT8 running + Strategy Analyzer open | All three up | Agent up, NT8 not running or SA closed | Agent down — click to start (`LucidFlexAgent` schtask) |
+| **MT5 Agent** | `mt5_agent.py` HTTP on `:8766` | Responding | — | Down — click to start (`MT5AgentRDP` schtask) |
+
+NT8 and NinjaTrader were merged into one dot. Red = agent down (clickable); yellow = agent up but NT8 not running or Strategy Analyzer not open (needs RDP intervention).
 
 **Stuck progress lock** — if a run dies mid-flight (backend restart, network drop), `data/lab_progress.json` can be left with `status: running`, blocking new runs with a 409. Fix: hit the Stop button, or restart the backend (startup hook resets stale locks automatically).
 

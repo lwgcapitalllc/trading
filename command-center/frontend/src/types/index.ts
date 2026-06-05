@@ -551,6 +551,7 @@ export interface AppSettings {
   instances_dir: string
   ssh_alias: string
   nt8_agent_tunnel: string
+  mt5_agent_tunnel: string
 }
 
 // ── Lab — Sweeps ──────────────────────────────────────────────────────────────
