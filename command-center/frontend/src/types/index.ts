@@ -691,6 +691,7 @@ export interface StrategyFileSyncStatus {
   file_size_bytes: number | null
   file_modified_at: string | null
   in_sync: boolean
+  is_compiled: boolean | null
 }
 
 export interface CompileJobStatus {

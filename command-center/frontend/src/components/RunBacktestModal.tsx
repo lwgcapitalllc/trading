@@ -59,7 +59,7 @@ const INSTRUMENT_NAMES: Record<string, string> = {
   MET:  'Micro Ether',
 }
 
-const MT5_SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'GBPJPY', 'AUDUSD', 'USDCAD', 'EURGBP']
+const MT5_SYMBOLS = ['EURUSD.s', 'GBPUSD.s', 'USDJPY.s', 'XAUUSD.s', 'GBPJPY.s', 'AUDUSD.s', 'USDCAD.s', 'EURGBP.s']
 
 function getAllowedSymbols(firms: Firm[]): string[] {
   const set = new Set<string>()
@@ -224,7 +224,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   )
 
   const [instrumentSymbol, setInstrumentSymbol] = useState(
-    isMt5 ? 'EURUSD' : parsed.symbol
+    isMt5 ? 'EURUSD.s' : parsed.symbol
   )
   const [contractMonth, setContractMonth] = useState(parsed.month)
 

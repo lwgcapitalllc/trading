@@ -110,6 +110,12 @@ function StrategiesTab() {
     return m
   }, [syncStatus])
 
+  const compiledMap = useMemo(() => {
+    const m: Record<string, boolean | null> = {}
+    syncStatus?.forEach(s => { m[s.strategy_id] = s.is_compiled })
+    return m
+  }, [syncStatus])
+
   const visible = useMemo(() =>
     (strategies ?? []).filter(s =>
       marketFilter === 'all' || strategyMarket(s.runner) === marketFilter
@@ -181,6 +187,7 @@ function StrategiesTab() {
                   key={s.id}
                   strategy={s}
                   inSync={syncMap[s.id]}
+                  isCompiled={compiledMap[s.id]}
                   isDeploying={deployingId === s.id}
                   onView={() => navigate(`/strategies/${s.id}`)}
                   onRun={() => setRunStrategy(s)}
@@ -203,10 +210,11 @@ function StrategiesTab() {
 }
 
 function StrategyRow({
-  strategy: s, inSync, isDeploying, onView, onRun, onDeploy,
+  strategy: s, inSync, isCompiled, isDeploying, onView, onRun, onDeploy,
 }: {
   strategy: Strategy
   inSync?: boolean
+  isCompiled?: boolean | null
   isDeploying: boolean
   onView: () => void
   onRun: () => void
@@ -224,10 +232,12 @@ function StrategyRow({
       <td className="px-4 py-3 text-text-secondary">{s.param_schema.length}</td>
       <td className="px-4 py-3 tabular-nums">{s.run_count}</td>
       <td className="px-4 py-3">
-        {inSync === undefined ? null : inSync ? (
-          <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
-        ) : (
+        {inSync === undefined ? null : !inSync ? (
           <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs deploy</span>
+        ) : isCompiled === false ? (
+          <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs compile</span>
+        ) : (
+          <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
         )}
       </td>
       <td className="px-4 py-3">
@@ -244,8 +254,8 @@ function StrategyRow({
           )}
           <button
             onClick={onRun}
-            disabled={inSync === false}
-            title={inSync === false ? 'Deploy strategy before running' : undefined}
+            disabled={inSync === false || isCompiled === false}
+            title={inSync === false ? 'Deploy strategy before running' : isCompiled === false ? 'Compile MT5 strategy before running' : undefined}
             className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <Play size={10} />

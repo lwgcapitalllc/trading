@@ -143,6 +143,7 @@ def sync_status():
         is_mt5 = s.get("runner") == "mt5"
         expected = f"{class_name}.mq5" if is_mt5 else f"{class_name}.cs"
         vps_file = (mt5_files if is_mt5 else nt8_files).get(expected)
+        is_compiled = mt5_files.get(f"{class_name}.ex5") is not None if is_mt5 else None
         result.append(StrategyFileSyncStatus(
             strategy_id=s["id"],
             expected_filename=expected,
@@ -150,5 +151,6 @@ def sync_status():
             file_size_bytes=vps_file["size_bytes"] if vps_file else None,
             file_modified_at=vps_file["modified_at"] if vps_file else None,
             in_sync=vps_file is not None,
+            is_compiled=is_compiled,
         ))
     return result

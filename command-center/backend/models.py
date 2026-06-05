@@ -750,6 +750,7 @@ class StrategyFileSyncStatus(BaseModel):
     file_size_bytes: Optional[int] = None
     file_modified_at: Optional[str] = None
     in_sync: bool
+    is_compiled: Optional[bool] = None  # MT5 only: True if .ex5 exists alongside .mq5
 
 
 class CompileJobStatus(BaseModel):

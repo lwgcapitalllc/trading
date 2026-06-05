@@ -770,7 +770,7 @@ def _run_backtest(job_id: str, spec: dict) -> None:
     jl(f"Data dir: {data_dir}")
 
     strategy_class = spec.get("strategy_class", "")
-    symbol         = spec.get("symbol", "").upper()
+    symbol         = spec.get("symbol", "")  # preserve broker suffix case (e.g. XAUUSD.s on PU Prime)
     timeframe      = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
     from_date      = spec.get("from_date", "")
     to_date        = spec.get("to_date", "")
