@@ -106,7 +106,10 @@ def _alog(msg: str):
         _agent_log.append(entry)
         if len(_agent_log) > 1000:
             _agent_log.pop(0)
-    print(entry, flush=True)
+    try:
+        print(entry, flush=True)
+    except OSError:
+        pass
 
 
 # ── MT5 connection ─────────────────────────────────────────────────────────────
@@ -206,6 +209,17 @@ def _detect_experts_dir() -> Optional[Path]:
         _experts_dir = path
         _alog(f"MT5 Experts dir (terminal_info): {_experts_dir}")
     return _experts_dir
+
+
+# ── Global error handler ──────────────────────────────────────────────────────
+
+import traceback as _traceback
+
+@app.errorhandler(Exception)
+def _unhandled(exc):
+    tb = _traceback.format_exc()
+    _alog(f"UNHANDLED EXCEPTION in {exc.__class__.__name__}: {exc}\n{tb}")
+    return jsonify({"error": str(exc)}), 500
 
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
@@ -387,10 +401,14 @@ def agent_log():
 
 def _get_tester_exe() -> Optional[Path]:
     """
-    Locate metatester64.exe (preferred — avoids single-instance lock with running
-    live terminal) or terminal64.exe as fallback. Resolution order:
-    1. TERMINAL_PATH env var
-    2. Auto-detect from running MT5 via terminal_info().path
+    Locate terminal64.exe for the lab MT5 installation. Resolution order:
+    1. TERMINAL_PATH env var — explicit terminal directory, always wins.
+    2. MT5_DATA_DIR env var — read origin.txt to resolve the terminal directory.
+       This is the normal production path: Task Scheduler sets MT5_DATA_DIR to the
+       MT5_Lab AppData folder; origin.txt inside it contains 'C:\\MT5_Lab'.
+    3. Auto-detect from running MT5 via terminal_info().path — last resort only,
+       may return a live trading terminal (MT5_FFT, MT5_Scalper) which must not
+       be used for backtesting.
     """
     global _terminal_path
     if _terminal_path is not None:
@@ -403,18 +421,31 @@ def _get_tester_exe() -> Optional[Path]:
         p = Path(env)
         dirs.append(p if p.is_dir() else p.parent)
 
-    ok, _ = _ensure_mt5()
-    if ok:
-        with _mt5_lock:
-            info = mt5.terminal_info()
-        if info:
-            raw = getattr(info, "path", None)
-            if raw:
-                dirs.append(Path(raw))
+    if not dirs:
+        data_dir_env = os.environ.get("MT5_DATA_DIR", "")
+        if data_dir_env:
+            origin = Path(data_dir_env) / "origin.txt"
+            if origin.is_file():
+                try:
+                    terminal_dir = Path(origin.read_text(encoding="utf-8", errors="replace").strip())
+                    if terminal_dir.is_dir():
+                        dirs.append(terminal_dir)
+                        _alog(f"Terminal dir (origin.txt): {terminal_dir}")
+                except Exception:
+                    pass
+
+    if not dirs:
+        ok, _ = _ensure_mt5()
+        if ok:
+            with _mt5_lock:
+                info = mt5.terminal_info()
+            if info:
+                raw = getattr(info, "path", None)
+                if raw:
+                    dirs.append(Path(raw))
+                    _alog(f"WARNING: falling back to connected terminal {raw} — set TERMINAL_PATH or MT5_DATA_DIR to use the lab terminal")
 
     for d in dirs:
-        # Prefer terminal64 — it handles data download and runs backtest fully standalone.
-        # metatester64 hangs without a running terminal as data provider.
         t  = d / "terminal64.exe"
         mt = d / "metatester64.exe"
         if t.is_file():
