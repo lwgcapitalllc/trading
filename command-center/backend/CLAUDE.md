@@ -44,7 +44,6 @@ backend/
 │   ├── objectives.py      optimizer objective functions
 │   ├── stress_tester.py   Monte Carlo + walk-forward + sensitivity + auto-trigger
 │   ├── grading.py         compute_grade() → A/B/C/D/F with plain-English reasons
-│   ├── correlation_table.py  hardcoded correlated instrument pairs
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
 │   ├── nt8_agent_client.py      typed HTTP wrapper over NT8 nt8_agent; runner dispatcher (routes mt5 → mt5_agent_client)
 │   └── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel)
@@ -328,8 +327,6 @@ Merges both pools (~11,000 paths) and computes: median/P95/P99 drawdown, prob of
 When walk-forward/sensitivity weren't run, those conditions are skipped (grade is based on MC alone — still valid but grade_reasons notes the gap).
 
 **Deployment gates (UI only, soft):** A = funded; B = eval purchase; C = demo. Shown as warnings, never blocking.
-
-**Correlation table:** `services/correlation_table.py`. Hardcoded pairs: MES/MNQ, ES/NQ, GC/MGC, CL/MCL, MYM/M2K, plus micro/full equivalents. Shown as an informational note on StrategyDetail when the strategy has been run on both instruments of a pair.
 
 **Regime classifier (M4):** Import from `trading/regime/` — the canonical implementation lives there, never duplicate it here. The canonical algorithm doc is at `trading/regime/REGIME_CLASSIFIER.md`. Import pattern:
 ```python

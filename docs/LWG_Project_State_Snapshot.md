@@ -17,7 +17,7 @@ LWG Capital is a personal algorithmic trading operation building toward 30–50 
 ## Stack and infrastructure
 
 **Mac dev environment**
-- FastAPI (Python 3.11) backend on `:8000`
+- FastAPI (Python 3.9) backend on `:8000`
 - React 18 + Vite + TypeScript frontend on `:5173`
 - SQLite at `command-center/backend/data/lab.db`
 - VS Code, Claude Code (terminal agent), Claude.ai (planning chats)
@@ -26,7 +26,7 @@ LWG Capital is a personal algorithmic trading operation building toward 30–50 
 - NinjaTrader 8 — backtest engine and eventually live execution
 - `nt8_agent.py` — Flask HTTP server on port 8765, accessed via SSH LocalForward tunnel
 - `vps_compile_runner.py` — pywinauto subprocess: opens NinjaScript Editor, presses F5, polls DLL mtime for success
-- MT5 (PU Prime demo, `C:\MT5_FFT`) — live forex bots only
+- MT5 (PU Prime demo, multiple instances: `PU Prime Terminal`, `MT5_Scalper`, `MT5_FFT`) — live forex bots only
 - MT5 Lab (`C:\MT5_Lab`, PU Prime demo) — Strategy Tester for backtest lab only; driven by `mt5_agent.py` on port 8766
 - SSH alias: `forexvps` — repo at `C:\trading\`
 
@@ -78,28 +78,36 @@ Every backtest's `daily_pnl` entries tagged with a regime label at pipeline time
 Genericized all three NT8 strategies. Renamed from `*_LucidFlex.cs` to `ORB.cs`, `VWAP_MR.cs`, `Momentum.cs`. Categorized parameters: `[Category("Strategy Logic")]` (tunable) vs `[Category("Foundational")]` (injected from ruleset). Ruleset foundational fields: risk %, daily halt fraction, max consecutive losses, entry hours ET, days allowed, daily profit target, profit lock-in, commission/slippage defaults. RunBacktestModal shows readonly Foundational Config; optimizer grid excludes foundational params. Strategy DB IDs migrated from `orb_lucidflex` → `orb` etc.
 
 ### Pass 2 — Strategy deployment manager ✅ shipped 2026-06-03
-Upload, delete, and compile NT8 strategy files from the command center UI without manual RDP. NT8 agent: `GET/POST/DELETE /files/strategies`, `POST/GET /compile`. Compile via pywinauto F5 through the NinjaScript Editor (NCompile.exe does not exist on this NT8 install). Success detection by polling `NinjaTrader.Custom.dll` mtime (90s timeout). Deployed tab on Strategies page: file list, drag/drop upload, overwrite confirmation, trash-can delete, Compile All. Sync-status badges on Strategies list. Platform field on each file (NT8/MT5) with filter chips when multiple platforms present.
+Upload, delete, and compile NT8 strategy files from the command center UI without manual RDP. NT8 agent: `GET/POST/DELETE /files/strategies`, `POST/GET /compile`. Compile via pywinauto F5 through the NinjaScript Editor (NCompile.exe does not exist on this NT8 install). Success detection by polling `NinjaTrader.Custom.dll` mtime (90s timeout). Deployed tab on Strategies page: file list, drag/drop upload, overwrite confirmation, trash-can delete, Compile All. Sync-status badges on Strategies list.
 
 ### Pass 2.5 — Strategy location cleanup ✅ shipped 2026-06-04
 Moved ORB.cs, VWAP_MR.cs, Momentum.cs to `strategies/ninjatrader/`. Scanner reads from `strategies/` (not `algos/`). DB `source_path` migrated. `POST /strategies/{id}/deploy` endpoint + per-strategy Deploy/Redeploy buttons on Strategies tab. `strategies/CLAUDE.md` created. All path references updated across monorepo.
 
-### M5 — MT5 runner ✅ shipped 2026-06-06
-`mt5_agent.py` on VPS (port 8766) — health, historical data, Strategy Tester driver (ini+set file, terminal64.exe, HTML report parser). `mt5_agent_client.py` on backend. `nt8_agent_client` dispatches to MT5 when `strategy.runner == "mt5"`. Runner badges (NT8/MT5) on Strategies and Runs tabs. Market filter (Futures/Forex). MT5 deployment manager: upload/delete `.mq5` files, MetaEditor compile. `RunBacktestModal` and `BacktestDetail` fully MT5-aware. `MeanReversion.mq5` smoke-tested end-to-end.
+### M5 — MT5 runner ✅ shipped 2026-06-05 through 2026-06-06
+`mt5_agent.py` on VPS (port 8766): health, historical data, Strategy Tester driver (ini+set file, terminal64.exe, HTML report parser — decoded as UTF-16 LE). `mt5_agent_client.py` on backend. `nt8_agent_client` dispatches to MT5 when `strategy.runner == "mt5"`. Platform-based job lock: NT8 and MT5 lock independently. Runner badges (NT8/MT5) on Strategies and Runs tabs. Market filter (Futures/Forex). MT5 deployment manager: upload/delete `.mq5` files, MetaEditor compile. `RunBacktestModal` and `BacktestDetail` fully MT5-aware with runner-specific step sequences. Multiple bug fixes shipped across 2026-06-05 and 2026-06-06: stdout OSError in Task Scheduler, wrong terminal resolution via `origin.txt`, UTF-16 LE HTML reports, MT5_Lab terminal not closing after run, equity curve index injection. `MeanReversion.mq5` smoke-tested end-to-end on USDJPY.
+
+### MT5 optimization ✅ shipped 2026-06-06
+Optimizer supports MT5 strategies without a ruleset (`ruleset_id: null`, `mode: "raw"`). `raw_profit_factor` objective maximizes PF. `optimizations.ruleset_id` migrated to nullable. `OptimizerModal` hides firm-specific fields for MT5. Optimization detail shows "Raw PF" chip when no ruleset.
+
+### BacktestDetail polish ✅ shipped 2026-06-06
+Rerun button on detail header. Stale progress guard (`job_id` match before trusting progress bar state). Progress bar redesigned as milestone-dot track with segment fills. Equity curve gradient direction based on net equity change (not absolute sign). `StatusPill` extracted as shared component. Strategy `<h1>` title is navigable; run table strategy name is plain text.
 
 ---
 
 ## Current state of strategies
 
-Four strategies across two runners. NT8 strategies are at `strategies/ninjatrader/`; MT5 strategy is at `strategies/mt5/`. None has reached Tier 1 or Tier 2 yet — these are baseline runs only.
+Four strategies across two runners, registered in the database. NT8 strategies live at `strategies/ninjatrader/`; MT5 strategy at `strategies/mt5/`.
 
-| Strategy | Runner | Runs | Best result | Status |
+**Database:** 23 complete runs, 3 complete optimizations (all on ORB), 3 stress tests (all ORB, all grade F).
+
+| Strategy | Runner | Complete runs | Best result | Notes |
 |---|---|---|---|---|
-| ORB | NT8 | 20 complete | +$7.6k on MNQ (still Tier 3) | Tier 3 across all instruments. Needs optimization. |
-| Momentum | NT8 | 2 complete | -$1.2k on best run | Tier 3. Barely tested. |
-| VWAP_MR | NT8 | 0 | — | Not yet run. |
-| MeanReversion | MT5 | 1 complete | -$9.3k (smoke test run) | Smoke test complete. No further MT5 runs yet. |
+| Opening Range Breakout | NT8 | 20 | +$7,608 on MNQ 06-26 (PF 1.03, 465 trades) | All Tier 3. Optimizer run on MES showed best params. ORB has shown TRENDING-regime edge on M4 breakdown. |
+| Intraday Momentum Pullback | NT8 | 2 | -$1,168 on MNQ 06-26 (PF 0.94) | Tier 3. Barely tested. |
+| VWAP Mean Reversion | NT8 | 0 | — | Not yet run. |
+| Mean Reversion strategy | MT5 | 1 | -$9,309 on USDJPY (PF 0.70, 695 trades) | Smoke test. No tier assigned (MT5 runs not yet evaluated against rulesets). |
 
-ORB has been run on MES, MNQ, MGC, MCL, MYM, M2K — all TIER_3_DISCARD, most with large negative net P&L. These are pre-optimization baseline runs. Strategy improvement work (regime filter, trailing stop, daily P&L circuit breaker, re-entry) is the next priority.
+All NT8 runs are Tier 3 (discard). These are pre-optimization baseline runs. The ORB regime breakdown in M4 showed meaningful edge in TRENDING conditions, making it the best candidate for strategy improvement work next.
 
 ---
 
@@ -113,6 +121,8 @@ ORB has been run on MES, MNQ, MGC, MCL, MYM, M2K — all TIER_3_DISCARD, most wi
 
 All rulesets carry the full foundational config fields from Pass 1 (risk %, halt fraction, consecutive loss limit, entry hours, days allowed, daily profit target, lock-in percentage, commission, slippage).
 
+Prop firm seeding (Apex, TopstepFutures, TakeProfitTrader, MyFundedFutures) is handled in a separate dedicated chat session — see the Roadmap's Parallel Tracks section.
+
 ---
 
 ## Architectural principles locked in
@@ -125,11 +135,11 @@ All rulesets carry the full foundational config fields from Pass 1 (risk %, halt
 
 4. **One shared regime classifier.** `regime/classifier.py` is the only implementation. Live bots use it via a thin shim. The backtest lab imports directly. No duplicate anywhere.
 
-5. **NT8 is the backtest and execution engine.** The command center drives NT8 via pywinauto. There is no Python-native backtest engine.
+5. **NT8 is the backtest and execution engine for futures.** The command center drives NT8 via pywinauto. MT5 is the engine for forex. There is no Python-native backtest engine.
 
 6. **Strategies are a top-level peer subsystem.** `strategies/<runner>/` is the canonical home for all strategy source files. The command center scanner reads from there; the Deploy button ships them to VPS.
 
-7. **NT8 global SA lock.** Only one job may use the Strategy Analyzer at a time. Backend enforces with a DB check (409 on collision); frontend disables all job triggers when any job is running.
+7. **Platform-based SA lock.** NT8 and MT5 lock independently. Only one NT8 job may run at a time; only one MT5 job may run at a time. Backend enforces with a DB check (409 on collision).
 
 8. **Heavy data off SQLite.** Equity curves, trade lists, daily P&L → JSON files under `reports/lab/<run_id>/`. DB holds index and KPIs only.
 

@@ -35,7 +35,7 @@ one bot at a time and waiting for connection confirmation before the next.
 ## Install All Tasks (PowerShell)
 
 ```powershell
-$pass = "312MXFjt7Q8Zoec"
+$pass = "<vps-trader-password>"
 $tasks = @(
     "startup_coordinator_task.xml:SYS_STARTUP",
     "telegram_task.xml:SYS_TELEGRAM",

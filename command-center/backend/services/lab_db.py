@@ -390,7 +390,20 @@ def _migrate_optimizations_nullable_ruleset() -> None:
         col = next((c for c in info if c[1] == "ruleset_id"), None)
         if not col or col[3] == 0:
             return  # Already nullable or column missing
-        raw.executescript("""
+        # Use explicit column list so column ordering in the old table never causes
+        # data to shift into wrong columns (SELECT * maps by position, not name).
+        existing_cols = {c[1] for c in info}
+        col_list = ", ".join(
+            c for c in [
+                "optimization_id", "strategy_id", "instrument", "start_date",
+                "end_date", "commission_per_side", "slippage_ticks", "ruleset_id",
+                "mode", "search_method", "param_grid", "status", "estimated_runs",
+                "completed_runs", "best_run_id", "source_run_id", "created_at",
+                "completed_at", "regime_filter",
+            ]
+            if c in existing_cols
+        )
+        raw.executescript(f"""
             BEGIN;
             CREATE TABLE optimizations_new (
                 optimization_id     TEXT PRIMARY KEY,
@@ -413,7 +426,7 @@ def _migrate_optimizations_nullable_ruleset() -> None:
                 completed_at        INTEGER,
                 regime_filter       TEXT
             );
-            INSERT INTO optimizations_new SELECT * FROM optimizations;
+            INSERT INTO optimizations_new ({col_list}) SELECT {col_list} FROM optimizations;
             DROP TABLE optimizations;
             ALTER TABLE optimizations_new RENAME TO optimizations;
             CREATE INDEX IF NOT EXISTS idx_opts_strategy ON optimizations(strategy_id, created_at DESC);
