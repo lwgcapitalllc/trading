@@ -672,12 +672,13 @@ function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
 
   return (
     <div className="grid grid-cols-2 gap-4">
-      {stats.map(s => {
+      {stats.map((s, i) => {
         const winPct = Math.round((s.wins / s.count) * 100)
         const pnlCls = s.totalPnl >= 0 ? 'text-pos-text' : 'text-neg-text'
+        // Lost first so the animation sweeps red → green (losing to winning)
         const data = [
-          { name: 'Won',  value: s.wins },
           { name: 'Lost', value: s.losses },
+          { name: 'Won',  value: s.wins },
         ]
         return (
           <div key={s.dir} className="flex flex-col items-center gap-1">
@@ -693,9 +694,13 @@ function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
                   paddingAngle={2}
                   dataKey="value"
                   strokeWidth={0}
+                  isAnimationActive={true}
+                  animationBegin={i * 150}
+                  animationDuration={900}
+                  animationEasing="ease-out"
                 >
-                  <Cell fill={C.pos} fillOpacity={0.85} />
                   <Cell fill={C.neg} fillOpacity={0.75} />
+                  <Cell fill={C.pos} fillOpacity={0.85} />
                   <Label value={`${winPct}%`} position="center" fill="#e6edf3" fontSize={20} fontWeight={700} />
                 </Pie>
               </PieChart>
