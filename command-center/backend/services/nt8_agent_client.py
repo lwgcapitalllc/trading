@@ -248,7 +248,7 @@ def _normalize_mt5_results(raw: dict) -> dict:
     _KPI_KEYS = {"net_pnl", "profit_factor", "win_rate", "max_drawdown", "sharpe", "trade_count"}
     return {
         "kpis":         {k: raw[k] for k in _KPI_KEYS if k in raw},
-        "equity_curve": raw.get("equity_curve", []),
+        "equity_curve": [{"index": i, **pt} for i, pt in enumerate(raw.get("equity_curve", []))],
         "daily_pnl":    raw.get("daily_pnl", []),
         "trades":       raw.get("trades", []),
     }
