@@ -136,37 +136,42 @@ def find_strategy_analyzer(app):
     sys.exit(1)
 
 
-def _find_strategy_item(sa, strategy_name):
-    """Find a strategy MenuItem in the open NinjaScriptSelector dropdown.
+def _find_strategy_item(sa, strategy_name, timeout=2.5):
+    """Find a strategy MenuItem, polling until the WPF popup renders.
 
-    WPF ComboBox popups render either as a child of the SA window or as a
-    top-level Desktop element depending on NT8's internal state (e.g. after
-    a completed run the popup moves to Desktop level). Try both.
+    WPF ComboBox popups render asynchronously and appear either as a child of
+    the SA window (fresh SA) or as a top-level Desktop element (after the first
+    run). Poll in 100ms increments so we return as soon as the item is present
+    rather than burning a fixed sleep.
     """
-    # Pass 1: within SA subtree (works on first/fresh SA open)
-    try:
-        item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
-        if item.exists(timeout=0.5):
-            return item
-    except Exception:
-        pass
-    # Pass 2: Desktop-level popup (WPF renders popup outside SA after first run)
-    try:
-        item = Desktop(backend="uia").window(title=strategy_name, control_type="MenuItem", found_index=0)
-        if item.exists(timeout=0.5):
-            return item
-    except Exception:
-        pass
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            item = sa.child_window(title=strategy_name, control_type="MenuItem", found_index=0)
+            if item.exists(timeout=0):
+                return item
+        except Exception:
+            pass
+        try:
+            item = Desktop(backend="uia").window(title=strategy_name, control_type="MenuItem", found_index=0)
+            if item.exists(timeout=0):
+                return item
+        except Exception:
+            pass
+        time.sleep(0.1)
     return None
 
 
 def select_strategy(sa, strategy_name):
-    """Select strategy from the NinjaScriptSelector dropdown."""
+    """Select strategy from the NinjaScriptSelector dropdown.
+
+    Tries twice. On failure closes the dropdown by clicking the selector again
+    (not ESC — ESC can dismiss unrelated dialogs per NT8 WPF behaviour).
+    """
     selector = sa.child_window(auto_id="NinjaScriptSelector")
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             selector.click_input()
-            time.sleep(1.5)  # popup renders asynchronously; ≥0.7 s per CLAUDE.md
             item = _find_strategy_item(sa, strategy_name)
             if item is None:
                 raise RuntimeError("not found in SA subtree or Desktop")
@@ -174,9 +179,12 @@ def select_strategy(sa, strategy_name):
             time.sleep(1.0)
             return True
         except Exception as e:
-            send_keys("{ESC}")
-            time.sleep(1.0)
-            if attempt == 2:
+            try:
+                selector.click_input()  # toggle dropdown closed
+            except Exception:
+                pass
+            time.sleep(0.5)
+            if attempt == 1:
                 print(f"  WARNING: could not select strategy '{strategy_name}': {e}")
     return False
 

@@ -1161,6 +1161,9 @@ function RunningBanner({ pct, message, startedAt, onStop, steps = NT8_RUN_STEPS 
 // ── Failure banner ────────────────────────────────────────────────────────────
 
 function getFailureGuidance(status: string, runner: string): string {
+  if (status === 'failed_strategy_not_found') {
+    return 'NT8 could not find the strategy in the Strategy Analyzer dropdown. Open NinjaScript Editor and press F5 to recompile, then retry.'
+  }
   if (status === 'failed_timeout') {
     return runner === 'mt5'
       ? 'The MT5 agent stopped responding mid-run. Check the MT5 agent log on the VPS, then re-run.'

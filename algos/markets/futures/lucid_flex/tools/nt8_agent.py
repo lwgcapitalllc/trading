@@ -514,6 +514,8 @@ def _classify_failure(job_id: str, log_text: str, returncode: int):
     status = "failed_unknown"
     if "compile error" in lt or "compilation failed" in lt:
         status = "failed_compile"
+    elif "not found in nt8" in lt or ("strategy" in lt and "not found" in lt):
+        status = "failed_strategy_not_found"
     elif "no data" in lt or "no historical data" in lt or "insufficient data" in lt:
         status = "failed_no_data"
     elif "strategy analyzer" not in lt and returncode != 0:
@@ -522,10 +524,15 @@ def _classify_failure(job_id: str, log_text: str, returncode: int):
         status = "failed_timeout"
     elif returncode != 0:
         status = "failed_runtime"
+
+    # Extract the last ERROR: line from the log as the human-readable message
+    error_lines = [l for l in log_text.splitlines() if "ERROR:" in l]
+    error_msg = error_lines[-1].split("ERROR:", 1)[-1].strip() if error_lines else f"Exit code {returncode}"
+
     _jupdate(job_id, status=status,
              message=status.replace("_", " ").title(),
-             error=f"Exit code {returncode}")
-    _alog(f"Job {job_id} classified as {status}")
+             error=error_msg)
+    _alog(f"Job {job_id} classified as {status}: {error_msg}")
 
 
 # ── Legacy endpoints ──────────────────────────────────────────────────────────
