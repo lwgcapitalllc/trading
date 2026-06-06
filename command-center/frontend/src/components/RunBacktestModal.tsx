@@ -49,14 +49,43 @@ function firmChallengeName(firmName: string): string {
 }
 
 const INSTRUMENT_NAMES: Record<string, string> = {
+  // Micro E-mini equity index
   MES:  'Micro E-mini S&P 500',
   MNQ:  'Micro E-mini Nasdaq-100',
   MYM:  'Micro E-mini Dow Jones',
   M2K:  'Micro E-mini Russell 2000',
+  // Full-size E-mini equity index
+  ES:   'E-mini S&P 500',
+  NQ:   'E-mini Nasdaq-100',
+  YM:   'E-mini Dow Jones',
+  RTY:  'E-mini Russell 2000',
+  // Metals
   MGC:  'Micro Gold',
+  GC:   'Gold',
+  MSI:  'Micro Silver',
+  SI:   'Silver',
+  // Energy
   MCL:  'Micro Crude Oil',
+  CL:   'Crude Oil',
+  NG:   'Natural Gas',
+  // Crypto
   MBT:  'Micro Bitcoin',
   MET:  'Micro Ether',
+  BTC:  'Bitcoin',
+  ETH:  'Ether',
+  // Fixed income
+  ZB:   '30-Year T-Bond',
+  ZN:   '10-Year T-Note',
+  ZF:   '5-Year T-Note',
+  ZT:   '2-Year T-Note',
+}
+
+function lookupInstrumentName(sym: string): string {
+  if (INSTRUMENT_NAMES[sym]) return INSTRUMENT_NAMES[sym]
+  // Continuous contract: @MNQ #C → MNQ
+  const m = sym.match(/^@([A-Z0-9]+)(?:\s+#C)?$/)
+  if (m && INSTRUMENT_NAMES[m[1]]) return `${INSTRUMENT_NAMES[m[1]]} (continuous)`
+  return ''
 }
 
 const MT5_SYMBOLS = ['EURUSD.s', 'GBPUSD.s', 'USDJPY.s', 'XAUUSD.s', 'GBPJPY.s', 'AUDUSD.s', 'USDCAD.s', 'EURGBP.s']
@@ -216,7 +245,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
   // ── Instrument ───────────────────────────────────────────────────────────────
   const frontMonth = useMemo(() => currentFrontMonth(), [])
-  const allowedSymbols = useMemo(() => getAllowedSymbols(firms), [firms])
+  const futuresFirms = useMemo(() => firms.filter(f => f.market !== 'forex'), [firms])
+  const allowedSymbols = useMemo(() => getAllowedSymbols(futuresFirms), [futuresFirms])
 
   const parsed = useMemo(
     () => parseSuggestedInstrument(strategy.suggested_instrument, frontMonth),
@@ -284,13 +314,13 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // ── Firm grouping ────────────────────────────────────────────────────────────
   const firmsByBrand = useMemo(() => {
     const map = new Map<string, Firm[]>()
-    for (const f of firms) {
+    for (const f of futuresFirms) {
       const brand = firmBrandName(f.name)
       if (!map.has(brand)) map.set(brand, [])
       map.get(brand)!.push(f)
     }
     return map
-  }, [firms])
+  }, [futuresFirms])
 
   const brandNames = useMemo(() => Array.from(firmsByBrand.keys()), [firmsByBrand])
   const [selectedBrand, setSelectedBrand] = useState<string>('')
@@ -331,8 +361,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const primaryRuleset = useMemo(() => {
     if (selectedFirms.size === 0) return null
     const firstId = Array.from(selectedFirms)[0]
-    return firms.find(f => f.id === firstId) ?? null
-  }, [selectedFirms, firms])
+    return futuresFirms.find(f => f.id === firstId) ?? null
+  }, [selectedFirms, futuresFirms])
 
   // ── Advanced — pre-filled from primary ruleset, user-editable ────────────────
   const [commPerSide, setCommPerSide]     = useState(2.25)
@@ -411,7 +441,16 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
         {/* ── Header ──────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle flex-shrink-0">
-          <div className="text-[15px] font-semibold">Run Backtest</div>
+          <div className="flex items-center gap-2">
+            <div className="text-[15px] font-semibold">Run Backtest</div>
+            <span className={`text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border ${
+              isMt5
+                ? 'bg-warn-muted text-warn-text border-warn-text/30'
+                : 'bg-accent/10 text-accent border-accent/20'
+            }`}>
+              {isMt5 ? 'Forex' : 'Futures'}
+            </span>
+          </div>
           <button onClick={onClose} className="text-text-tertiary hover:text-text-primary transition-colors">
             <X size={16} />
           </button>
@@ -476,11 +515,14 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                         onChange={e => setInstrumentSymbol(e.target.value)}
                         className={inputCls}
                       >
-                        {allowedSymbols.map(sym => (
-                          <option key={sym} value={sym}>
-                            {sym}{INSTRUMENT_NAMES[sym] ? ` — ${INSTRUMENT_NAMES[sym]}` : ''}
-                          </option>
-                        ))}
+                        {allowedSymbols.map(sym => {
+                          const name = lookupInstrumentName(sym)
+                          return (
+                            <option key={sym} value={sym}>
+                              {name ? `${sym} — ${name}` : sym}
+                            </option>
+                          )
+                        })}
                       </select>
                     )}
                   </div>
@@ -500,8 +542,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 </div>
                 {instrumentSymbol && (
                   <div className="flex items-center justify-between mt-[4px]">
-                    {INSTRUMENT_NAMES[instrumentSymbol] && (
-                      <span className="text-[10px] text-text-tertiary">{INSTRUMENT_NAMES[instrumentSymbol]}</span>
+                    {lookupInstrumentName(instrumentSymbol) && (
+                      <span className="text-[10px] text-text-tertiary">{lookupInstrumentName(instrumentSymbol)}</span>
                     )}
                     <span className="text-[10px] text-text-tertiary ml-auto">
                       Submits as: <span className="font-mono text-text-secondary">{instrument}</span>
@@ -573,39 +615,24 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             <SectionHead label="Evaluate Against" />
             {firmsLoading ? (
               <div className="text-[12px] text-text-tertiary">Loading rulesets…</div>
-            ) : firms.length === 0 ? (
-              <div className="text-[12px] text-text-tertiary">No rulesets configured.</div>
+            ) : futuresFirms.length === 0 ? (
+              <div className="text-[12px] text-text-tertiary">No prop firm challenges configured.</div>
             ) : (
               <div className="space-y-4">
-                {/* Prop firm radio — only shown when multiple brands */}
-                {brandNames.length > 1 && (
-                  <div>
-                    <div className="text-[11px] text-text-tertiary mb-2">Prop firm challenges</div>
-                    <div className="space-y-[6px]">
-                      {brandNames.map(brand => (
-                        <label key={brand} className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio" name="brand"
-                            checked={selectedBrand === brand}
-                            onChange={() => {
-                              setSelectedBrand(brand)
-                              setSelectedFirms(new Set())
-                            }}
-                            className="accent-accent"
-                          />
-                          <span className="text-[13px] text-text-primary">{brand}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Single brand: show name as header */}
-                {brandNames.length === 1 && (
-                  <div className="text-[13px] font-medium text-text-primary">
-                    {brandNames[0]}
-                  </div>
-                )}
+                {/* Prop firm selector — dropdown scales to any number of brands */}
+                {brandNames.length > 1 ? (
+                  <select
+                    value={selectedBrand}
+                    onChange={e => { setSelectedBrand(e.target.value); setSelectedFirms(new Set()) }}
+                    className={inputCls}
+                  >
+                    {brandNames.map(brand => (
+                      <option key={brand} value={brand}>{brand}</option>
+                    ))}
+                  </select>
+                ) : brandNames.length === 1 ? (
+                  <div className="text-[13px] font-medium text-text-primary">{brandNames[0]}</div>
+                ) : null}
 
                 {/* Challenge checkboxes */}
                 <div>
