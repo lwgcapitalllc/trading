@@ -982,6 +982,76 @@ def optimize_mode_dump():
         return jsonify({"error": str(e)})
 
 
+@app.route("/opt-param-click-dump")
+def opt_param_click_dump():
+    """
+    Diagnostic: in Optimization mode with a strategy loaded, click on a specific
+    param cell, wait for the UI to update, then dump all new controls.
+
+    Use this to discover the AutomationIds that appear when a param is selected
+    for range editing (the Start/End/Increment sub-controls, if any).
+
+    Query params:
+        ?strategy=ORB   (required)
+        ?param=ORMinutes  (required — the NinjaScript property name)
+    """
+    strategy   = request.args.get("strategy", "")
+    param_name = request.args.get("param", "")
+    if not strategy or not param_name:
+        return jsonify({"error": "Pass ?strategy=X&param=Y"}), 400
+    try:
+        from pywinauto import Desktop
+        dt = Desktop(backend="uia")
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+
+        pfx = f"{strategy}PropertyGridEditorPDEX"
+        param_aid = f"{pfx}_{param_name}"
+
+        # Snapshot controls BEFORE click
+        def _snap():
+            out = {}
+            for el in sa.descendants():
+                aid   = el.element_info.automation_id or ""
+                title = el.window_text() or ""
+                ctype = str(el.element_info.control_type or "")
+                if aid or title:
+                    out[f"{aid}||{title}||{ctype}"] = {
+                        "auto_id": aid, "title": title, "control_type": ctype
+                    }
+            return out
+
+        before = _snap()
+
+        # Click the param cell
+        try:
+            ctrl = sa.child_window(auto_id=param_aid)
+            ctrl.click_input()
+            _alog(f"[diag] Clicked {param_aid}")
+        except Exception as e:
+            return jsonify({"error": f"Could not click {param_aid}: {e}"})
+
+        time.sleep(1.5)
+        after = _snap()
+
+        new_keys = set(after.keys()) - set(before.keys())
+        new_controls = [after[k] for k in sorted(new_keys)]
+        changed = [
+            after[k] for k in (set(after.keys()) & set(before.keys()))
+            if after[k]["title"] != before[k]["title"]
+        ]
+
+        return jsonify({
+            "param_aid":      param_aid,
+            "new_controls":   new_controls,
+            "changed_titles": changed,
+            "total_before":   len(before),
+            "total_after":    len(after),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/clear-results", methods=["POST"])
 def clear_results():
     path = NT8_DOCS / "lucid_flex_results.csv"
