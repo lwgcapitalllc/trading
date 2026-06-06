@@ -1358,7 +1358,11 @@ function BackfillRegimeButton({ run }: { run: Run }) {
     if (status?.status === 'complete') {
       setPolling(false)
       queryClient.invalidateQueries({ queryKey: ['lab', 'run', run.run_id] })
-      toast.success('Regime tags applied')
+      if ((status.tagged ?? 0) > 0) {
+        toast.success(`${status.tagged}/${status.total} days tagged`)
+      } else {
+        toast.warning('Tagging finished but no regime data — OHLC unavailable for this symbol')
+      }
     } else if (status?.status === 'failed') {
       setPolling(false)
       toast.error('Backfill failed')

@@ -32,28 +32,41 @@ _RECENT_DAYS = 5
 # Map root CME futures symbols to yfinance tickers.
 # Strip contract month before lookup: 'MNQ 06-26' → 'MNQ'.
 INSTRUMENT_YFINANCE_MAP: dict[str, str] = {
-    "MES":  "^GSPC",
-    "ES":   "^GSPC",
-    "MNQ":  "^NDX",
-    "NQ":   "^NDX",
-    "MGC":  "GC=F",
-    "GC":   "GC=F",
-    "MCL":  "CL=F",
-    "CL":   "CL=F",
-    "MYM":  "^DJI",
-    "YM":   "^DJI",
-    "M2K":  "^RUT",
-    "RTY":  "^RUT",
-    "M6E":  "EURUSD=X",
-    "M6B":  "GBPUSD=X",
-    "ZN":   "^TNX",
-    "ZB":   "^TYX",
+    # CME futures
+    "MES":    "^GSPC",
+    "ES":     "^GSPC",
+    "MNQ":    "^NDX",
+    "NQ":     "^NDX",
+    "MGC":    "GC=F",
+    "GC":     "GC=F",
+    "MCL":    "CL=F",
+    "CL":     "CL=F",
+    "MYM":    "^DJI",
+    "YM":     "^DJI",
+    "M2K":    "^RUT",
+    "RTY":    "^RUT",
+    "M6E":    "EURUSD=X",
+    "M6B":    "GBPUSD=X",
+    "ZN":     "^TNX",
+    "ZB":     "^TYX",
+    # Forex / spot (MT5 broker symbols; broker suffix stripped before lookup)
+    "XAUUSD": "GC=F",
+    "EURUSD":  "EURUSD=X",
+    "GBPUSD":  "GBPUSD=X",
+    "AUDUSD":  "AUDUSD=X",
+    "USDCAD":  "CAD=X",
+    "EURGBP":  "EURGBP=X",
+    "USDJPY":  "JPY=X",
+    "GBPJPY":  "GBPJPY=X",
+    "XAGUSD":  "SI=F",
+    "NAS100":  "^NDX",
 }
 
 
 def _root_symbol(instrument: str) -> str:
-    """Strip contract month suffix: 'MNQ 06-26' → 'MNQ', 'MGC' → 'MGC'."""
-    return instrument.split()[0].upper()
+    """Strip contract month and broker suffix: 'MNQ 06-26' → 'MNQ', 'XAUUSD.s' → 'XAUUSD'."""
+    base = instrument.split()[0].upper()   # strip contract month
+    return base.split(".")[0]              # strip broker suffix (.s, .r, etc.)
 
 
 def _yfinance_ticker(instrument: str) -> Optional[str]:

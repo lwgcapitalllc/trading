@@ -721,7 +721,10 @@ def _parse_mt5_report(html: str) -> dict:
                 continue
 
             i_time    = _col_idx(hdr, ["Time", "Open Time"])
-            i_dir     = _col_idx(hdr, ["Direction", "Type"])
+            # "Direction" col = "in"/"out" (entry vs exit); "Type" col = "buy"/"sell" (long vs short).
+            # Keep them separate so we can filter by Direction and map Long/Short from Type.
+            i_dir     = _col_idx(hdr, ["Direction", "Type"])   # non-empty → trade row
+            i_type    = _col_idx(hdr, ["Type"])                 # buy/sell → Long/Short
             i_vol     = _col_idx(hdr, ["Volume", "Size", "Lots"])
             i_price   = _col_idx(hdr, ["Price", "Open Price"])
             i_profit  = _col_idx(hdr, ["Profit"])
@@ -754,12 +757,16 @@ def _parse_mt5_report(html: str) -> dict:
                 if not direction:
                     continue
 
+                # Use the Type column (buy/sell) for Long/Short when it's a separate column;
+                # fall back to direction (covers reports where Type IS the only direction col).
+                trade_type = row[i_type].strip().lower() if 0 <= i_type < len(row) and i_type != i_dir else direction
+
                 day = ts.date().isoformat()
                 daily_map[day] = daily_map.get(day, 0.0) + profit
 
                 trades.append({
                     "time":      ts.isoformat(),
-                    "direction": direction,
+                    "direction": trade_type,   # "buy"/"sell" → mapped to Long/Short by backend
                     "volume":    _cell_float(row, i_vol),
                     "price":     _cell_float(row, i_price),
                     "profit":    profit,

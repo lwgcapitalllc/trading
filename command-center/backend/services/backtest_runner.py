@@ -157,9 +157,15 @@ def _fetch_regime_dfs(
     both paths produce real labels from day 1 of the backtest.
     """
     if runner == "mt5":
-        h1 = get_ohlc(instrument, warmup_start, end_date, timeframe="H1", runner="mt5")
-        h4 = get_ohlc(instrument, warmup_start, end_date, timeframe="H4", runner="mt5")
-        return h1, h4
+        try:
+            h1 = get_ohlc(instrument, warmup_start, end_date, timeframe="H1", runner="mt5")
+            h4 = get_ohlc(instrument, warmup_start, end_date, timeframe="H4", runner="mt5")
+            if not h1.empty and not h4.empty:
+                return h1, h4
+        except Exception as exc:
+            log.warning("MT5 H1/H4 fetch failed for %s, falling back to yfinance daily: %s", instrument, exc)
+        # Fall back to yfinance daily (same path as ninjatrader) — works for all
+        # forex symbols now that INSTRUMENT_YFINANCE_MAP covers XAUUSD, EURUSD, etc.
     daily = get_ohlc(instrument, warmup_start, end_date)
     return daily, daily
 
