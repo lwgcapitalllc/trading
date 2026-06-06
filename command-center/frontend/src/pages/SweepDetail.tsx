@@ -342,7 +342,7 @@ export function SweepDetail() {
   const reevalSweep    = useReevaluateSweep()
   const { data: firms }          = useFirms()
   const { data: runningJob }     = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.running
+  const jobBlocked = !!runningJob?.nt8?.running
 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [evalFirmId, setEvalFirmId]       = useState('')

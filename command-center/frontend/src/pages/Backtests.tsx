@@ -1,13 +1,14 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, Fragment } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  useBacktestRuns, useLabProgress, useDeleteRun, useRetryBacktest,
+  useBacktestRuns, useLabProgress, useDeleteRun, useRetryBacktest, useRunningVpsJob,
   useOptimizations, useDeleteOptimization, useSweeps, useDeleteSweep,
 } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
+import { StatusPill } from '@/components/StatusPill'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
 import type { BacktestSummary, VerdictSummary, WorthinessScore } from '@/types'
@@ -79,20 +80,6 @@ function fmtDuration(createdAt: string, completedAt: string | null): string {
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 
-function StatusPill({ status }: { status: string }) {
-  const isFailed = status.startsWith('failed')
-  const label    = isFailed ? 'failed' : status
-  const cls      = status === 'complete'  ? 'bg-pos-muted text-pos-text'
-    : status === 'running'   ? 'bg-accent-muted text-accent'
-    : isFailed               ? 'bg-neg-muted text-neg-text'
-    : 'bg-bg-hover text-text-secondary'
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${cls}`}>
-      {status === 'running' && <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />}
-      {label}
-    </span>
-  )
-}
 
 // ── Verdict pills ─────────────────────────────────────────────────────────────
 
@@ -440,9 +427,8 @@ function RunsTab() {
                 const hasChildren = childSweeps.length > 0 || childOpts.length > 0
                 const isCollapsed = collapsedRuns.has(run.run_id)
                 return (
-                  <>
+                  <Fragment key={run.run_id}>
                     <RunRow
-                      key={run.run_id}
                       run={run}
                       selected={selectedIds.has(run.run_id)}
                       onSelect={() => toggleSelect(run.run_id)}
@@ -467,7 +453,7 @@ function RunsTab() {
                         onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
                       />
                     ))}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>
@@ -593,6 +579,9 @@ function RunRow({
 }) {
   const navigate = useNavigate()
   const retry = useRetryBacktest()
+  const { data: runningJob } = useRunningVpsJob()
+  const isMt5 = run.runner === 'mt5'
+  const platformLocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
   const pnlClass = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
   const isOptChild   = !!run.optimization_id
   const isSweepChild = !!run.sweep_id
@@ -615,12 +604,7 @@ function RunRow({
               {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
             </button>
           )}
-          <span
-            onClick={e => { e.stopPropagation(); navigate(`/strategies/${run.strategy_id}`) }}
-            className="hover:text-accent hover:underline underline-offset-2 cursor-pointer transition-colors"
-          >
-            {run.strategy_name || run.strategy_id}
-          </span>
+          <span>{run.strategy_name || run.strategy_id}</span>
           {run.sweep_id && (
             <span
               onClick={e => { e.stopPropagation(); navigate(`/backtests/sweeps/${run.sweep_id}`) }}
@@ -660,9 +644,9 @@ function RunRow({
         <div className="flex items-center gap-1 justify-end">
           <button
             onClick={e => { e.stopPropagation(); retry.mutate(run.run_id) }}
-            disabled={retry.isPending}
+            disabled={retry.isPending || platformLocked}
             className="p-[5px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
-            title="Rerun"
+            title={platformLocked ? `${isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry' : 'Rerun'}
           >
             <Play size={13} />
           </button>

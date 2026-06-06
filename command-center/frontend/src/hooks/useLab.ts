@@ -174,6 +174,7 @@ export function useTriggerBacktest() {
       toast.success('Backtest started')
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
       qc.invalidateQueries({ queryKey: ['lab', 'progress'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
     onError: (e: unknown) => {
       const detail = (e as { detail?: string })?.detail
@@ -223,6 +224,7 @@ export function useStopBacktest() {
       toast.success('Backtest cancelled')
       qc.invalidateQueries({ queryKey: ['lab', 'run', runId] })
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
     onError: () => toast.error('Failed to stop backtest'),
   })
@@ -233,17 +235,19 @@ export function useRetryBacktest() {
   return useMutation({
     mutationFn: (runId: string) =>
       api.post<{ run_id: string; status: string }>(`/backtests/runs/${runId}/retry`),
-    onSuccess: () => {
-      toast.success('Retry started')
+    onSuccess: (data) => {
+      toast.success('Rerun started')
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'run', data.run_id] })
       qc.invalidateQueries({ queryKey: ['lab', 'sweep'] })
       qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
       qc.invalidateQueries({ queryKey: ['lab', 'optimization'] })
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
     onError: (e: unknown) => {
       const msg = (e as { detail?: string })?.detail
-      toast.error(msg ?? 'Failed to retry run')
+      toast.error(msg ?? 'Failed to start rerun')
     },
   })
 }
@@ -297,6 +301,7 @@ export function useStopLab() {
       if (data.stopped) toast.success('Lab job cancelled')
       else toast.error('No active job to stop')
       qc.invalidateQueries({ queryKey: ['lab', 'progress'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
     onError: () => toast.error('Failed to stop lab'),
   })
@@ -435,6 +440,7 @@ export function useTriggerSweep() {
       toast.success('Sweep started')
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
       qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
     onError: (e: unknown) => {
       const detail = (e as { detail?: string })?.detail
@@ -479,6 +485,7 @@ export function useTriggerOptimization() {
     onSuccess: () => {
       toast.success('Optimization started')
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
     onError: (e: unknown) => {
       const detail = (e as { detail?: string })?.detail

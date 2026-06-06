@@ -56,8 +56,13 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
     if not req.instruments:
         raise HTTPException(400, "instruments list cannot be empty")
 
-    if lab_db.has_any_running_vps_job():
-        raise HTTPException(409, "A backtest, sweep, or optimization is already running — wait for it to finish before starting a new sweep")
+    runner = strategy.get("runner", "ninjatrader")
+    if runner == "mt5":
+        if lab_db.has_running_mt5_job():
+            raise HTTPException(409, "An MT5 backtest is already running — wait for it to finish")
+    else:
+        if lab_db.has_running_nt8_job():
+            raise HTTPException(409, "An NT8 job is already running — wait for it to finish before starting a new sweep")
 
     sweep_id = "sw_" + uuid.uuid4().hex[:10]
     now      = int(time.time())
@@ -135,8 +140,8 @@ async def retry_sweep_failed(sweep_id: str) -> dict:
         raise HTTPException(404, f"Sweep '{sweep_id}' not found")
     if any(r["status"] == "running" for r in rows):
         raise HTTPException(409, "Sweep is still running — wait for it to finish before retrying")
-    if lab_db.has_any_running_vps_job():
-        raise HTTPException(409, "Another VPS job is running — wait for it to finish before retrying")
+    if lab_db.has_running_nt8_job():
+        raise HTTPException(409, "An NT8 job is already running — wait for it to finish before retrying")
     failed = lab_db.list_sweep_failed_runs(sweep_id)
     if not failed:
         raise HTTPException(400, "No failed runs to retry")

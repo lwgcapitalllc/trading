@@ -365,6 +365,7 @@ async def _handle_complete(
     strategy_id: str,
     instrument: str,
     firm_ids: list[str],
+    started_at: float = 0.0,
 ) -> None:
     try:
         result = await asyncio.to_thread(nt8_agent_client.job_results, job_id)
@@ -379,10 +380,37 @@ async def _handle_complete(
     # persist JSON files
     run_dir = _LAB_RESULTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    equity_path   = run_dir / "equity_curve.json"
+    equity_path    = run_dir / "equity_curve.json"
     daily_pnl_path = run_dir / "daily_pnl.json"
     equity_path.write_text(json.dumps(equity_curve, default=str))
     daily_pnl_path.write_text(json.dumps(daily_pnl, default=str))
+
+    # Regime tagging — happens BEFORE DB update so the run stays "running" during tagging,
+    # letting the frontend show the Tagging milestone step in the progress bar.
+    if daily_pnl:
+        run_row = lab_db.get_run(run_id)
+        _write_progress({
+            "job_id":               job_id,
+            "job_type":             "backtest",
+            "status":               "running",
+            "strategy_id":          strategy_id,
+            "instrument":           instrument,
+            "pct":                  96,
+            "message":              "Tagging regimes…",
+            "started_at":           str(started_at) if started_at else None,
+            "updated_at":           str(time.time()),
+            "heartbeat_age_seconds": 0.0,
+            "error_message":        None,
+        })
+        tagged_pnl = await asyncio.to_thread(
+            _tag_daily_pnl_with_regime,
+            instrument,
+            (run_row or {}).get("start_date", ""),
+            (run_row or {}).get("end_date", ""),
+            daily_pnl,
+            (run_row or {}).get("runner", "ninjatrader"),
+        )
+        daily_pnl_path.write_text(json.dumps(tagged_pnl, default=str))
 
     lab_db.update_run_complete(run_id, kpis, {
         "equity_curve": str(equity_path),
@@ -403,19 +431,6 @@ async def _handle_complete(
     if w and w[0] == "TIER_1_STRESS_TEST":
         from services import stress_tester
         asyncio.create_task(stress_tester.trigger_auto_stress_test(run_id, firm_ids))
-
-    # Regime classification — tag each daily_pnl entry with its regime label
-    run_row = lab_db.get_run(run_id)
-    if run_row and daily_pnl:
-        tagged_pnl = await asyncio.to_thread(
-            _tag_daily_pnl_with_regime,
-            instrument,
-            run_row.get("start_date", ""),
-            run_row.get("end_date", ""),
-            daily_pnl,
-            run_row.get("runner", "ninjatrader"),
-        )
-        daily_pnl_path.write_text(json.dumps(tagged_pnl, default=str))
 
     _write_progress({
         "job_id":               job_id,
@@ -440,6 +455,7 @@ async def run_backtest_job(
     strategy_id: str,
     instrument:  str,
     firm_ids:    list[str],
+    runner:      str = "ninjatrader",
 ) -> None:
     started_at = time.time()
     stall_warned = False
@@ -447,6 +463,7 @@ async def run_backtest_job(
     _write_progress({
         "job_id":               job_id,
         "job_type":             "backtest",
+        "runner":               runner,
         "status":               "running",
         "strategy_id":          strategy_id,
         "instrument":           instrument,
@@ -502,7 +519,7 @@ async def run_backtest_job(
         })
 
         if status == "complete":
-            await _handle_complete(run_id, job_id, strategy_id, instrument, firm_ids)
+            await _handle_complete(run_id, job_id, strategy_id, instrument, firm_ids, started_at)
             return
 
         if status.startswith("failed"):

@@ -38,8 +38,8 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
     if not req.param_grid:
         raise HTTPException(400, "param_grid cannot be empty")
 
-    if lab_db.has_any_running_vps_job():
-        raise HTTPException(409, "A backtest, sweep, or optimization is already running — wait for it to finish before starting a new optimization")
+    if lab_db.has_running_nt8_job():
+        raise HTTPException(409, "An NT8 job is already running — wait for it to finish before starting a new optimization")
 
     method = pick_search_method(req.param_grid, req.search_method)
     all_combos = expand_grid(req.param_grid)

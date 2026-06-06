@@ -8,7 +8,7 @@ import {
   useUploadStrategyFile, useDeleteStrategyFile,
   useTriggerCompile, useCompileStatus,
   useTriggerCompileMt5, useCompileStatusMt5,
-  useDeployStrategy,
+  useDeployStrategy, useRunningVpsJob,
 } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
@@ -98,6 +98,7 @@ function StrategiesTab() {
   const navigate = useNavigate()
   const { data: strategies, isLoading } = useStrategies()
   const { data: syncStatus, refetch: refetchSync } = useStrategyFileSyncStatus()
+  useRunningVpsJob()
   const scan = useScanStrategies()
   const deploy = useDeployStrategy()
   const compileMut = useTriggerCompile()

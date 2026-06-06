@@ -31,7 +31,7 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
 
   const triggerSweep = useTriggerSweep()
   const { data: runningJob } = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.running
+  const jobBlocked = !!runningJob?.nt8?.running
 
   const handleSweepUntested = () => {
     if (!summary?.untested_instruments.length) return
@@ -201,7 +201,7 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20 mb-3">
               <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
               <p className="text-[12px] text-warn-text leading-snug">
-                <span className="font-semibold">NT8 is busy:</span> {runningJob?.description} — wait for it to finish.
+                <span className="font-semibold">NT8 is busy:</span> {runningJob?.nt8?.description} — wait for it to finish.
               </p>
             </div>
           )}

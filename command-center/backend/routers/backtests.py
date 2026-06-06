@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
-    WorthinessScore, RunningJobStatus,
+    WorthinessScore, RunningJobStatus, RunningJobInfo,
 )
 from services import lab_db, nt8_agent_client
 from services.backtest_runner import (
@@ -148,10 +148,11 @@ def _row_to_detail(row: dict) -> BacktestDetail:
 
 @router.get("/running-job", response_model=RunningJobStatus)
 def get_running_job() -> RunningJobStatus:
-    job = lab_db.get_running_job()
-    if job:
-        return RunningJobStatus(running=True, **job)
-    return RunningJobStatus(running=False)
+    jobs = lab_db.get_running_job()
+    return RunningJobStatus(
+        nt8=RunningJobInfo(**jobs["nt8"]),
+        mt5=RunningJobInfo(**jobs["mt5"]),
+    )
 
 
 @router.get("/runs")
@@ -192,11 +193,15 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         if not lab_db.get_ruleset(rid):
             raise HTTPException(404, f"Ruleset '{rid}' not found")
 
-    if read_progress().get("status") == "running":
-        raise HTTPException(409, "A backtest is already running")
-
-    if lab_db.has_any_running_vps_job():
-        raise HTTPException(409, "An optimization or sweep is already running — wait for it to finish before starting a new backtest")
+    runner = strategy.get("runner", "ninjatrader")
+    if runner == "mt5":
+        if lab_db.has_running_mt5_job():
+            raise HTTPException(409, "An MT5 backtest is already running — wait for it to finish")
+    else:
+        if read_progress().get("status") == "running":
+            raise HTTPException(409, "An NT8 backtest is already running")
+        if lab_db.has_running_nt8_job():
+            raise HTTPException(409, "An NT8 job is already running — wait for it to finish")
 
     run_id = uuid.uuid4().hex[:12]
     job_id = run_id
@@ -220,6 +225,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "status":             "running",
         "created_at":         int(time.time()),
         "evaluate_rulesets":  ruleset_ids,
+        "runner":             runner,
     })
 
     job_spec = {
@@ -236,13 +242,13 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     }
 
     try:
-        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, strategy.get("runner", "ninjatrader"))
+        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         raise HTTPException(502, f"VPS agent unreachable: {exc}")
 
     asyncio.create_task(
-        run_backtest_job(run_id, job_id, req.strategy_id, req.instrument, ruleset_ids)
+        run_backtest_job(run_id, job_id, req.strategy_id, req.instrument, ruleset_ids, runner)
     )
 
     return {"run_id": run_id, "status": "started"}
@@ -274,54 +280,55 @@ async def retry_backtest_run(run_id: str) -> dict:
     row = lab_db.get_run(run_id)
     if not row:
         raise HTTPException(404, "Run not found")
-    if not row["status"].startswith("failed"):
-        raise HTTPException(400, f"Run is not failed (status: {row['status']})")
+    if row["status"] == "running":
+        raise HTTPException(409, "Run is still in progress")
 
     # Sweep run — reset in place and re-fire via sweep runner
     if row.get("sweep_id"):
-        if lab_db.has_any_running_vps_job():
-            raise HTTPException(409, "Another VPS job is running — wait for it to finish before retrying")
+        if lab_db.has_running_nt8_job():
+            raise HTTPException(409, "An NT8 job is already running — wait for it to finish before retrying")
         lab_db.reset_run_for_retry(run_id)
         asyncio.create_task(retry_single_sweep_run(run_id))
         return {"run_id": run_id, "status": "running"}
 
     # Optimization run — reset in place and re-fire via optimization runner
     if row.get("optimization_id"):
-        if lab_db.has_any_running_vps_job():
-            raise HTTPException(409, "Another VPS job is running — wait for it to finish before retrying")
+        if lab_db.has_running_nt8_job():
+            raise HTTPException(409, "An NT8 job is already running — wait for it to finish before retrying")
         lab_db.reset_run_for_retry(run_id)
         asyncio.create_task(retry_single_optimization_run(run_id))
         return {"run_id": run_id, "status": "running"}
 
-    # Standalone run — create a fresh run row with a new ID
+    # Standalone run — reset the existing record in place and re-fire
     strategy = lab_db.get_strategy(row["strategy_id"])
     if not strategy:
         raise HTTPException(404, f"Strategy '{row['strategy_id']}' not found")
 
-    if read_progress().get("status") == "running":
-        raise HTTPException(409, "A backtest is already running")
+    runner = row.get("runner") or strategy.get("runner", "ninjatrader")
+    if runner == "mt5":
+        if lab_db.has_running_mt5_job():
+            raise HTTPException(409, "An MT5 backtest is already running — wait for it to finish")
+    else:
+        if read_progress().get("status") == "running":
+            raise HTTPException(409, "An NT8 backtest is already running")
+        if lab_db.has_running_nt8_job():
+            raise HTTPException(409, "An NT8 job is already running — wait for it to finish")
 
     evaluate_rulesets = row.get("evaluate_firms") or []
 
-    new_run_id = uuid.uuid4().hex[:12]
-    lab_db.insert_run({
-        "run_id":             new_run_id,
-        "strategy_id":        row["strategy_id"],
-        "instrument":         row["instrument"],
-        "params":             row["params"],
-        "bar_type":           row["bar_type"],
-        "bar_value":          row["bar_value"],
-        "start_date":         row["start_date"],
-        "end_date":           row["end_date"],
-        "commission_per_side": row["commission_per_side"],
-        "slippage_ticks":     row["slippage_ticks"],
-        "status":             "running",
-        "created_at":         int(time.time()),
-        "evaluate_rulesets":  evaluate_rulesets,
-    })
+    # Reset the existing row (clears status, error, completed_at, worthiness)
+    lab_db.reset_run_for_retry(run_id)
+    lab_db.delete_run_evaluations(run_id)
+
+    # Clear stale report files so the UI starts fresh
+    run_dir = Path(LAB_RESULTS_DIR) / run_id
+    for fname in ("equity_curve.json", "daily_pnl.json"):
+        p = run_dir / fname
+        if p.exists():
+            p.unlink()
 
     job_spec = {
-        "job_id":            new_run_id,
+        "job_id":            run_id,
         "strategy_class":    strategy["class_name"],
         "instrument":        row["instrument"],
         "params":            row["params"],
@@ -334,16 +341,16 @@ async def retry_backtest_run(run_id: str) -> dict:
     }
 
     try:
-        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, strategy.get("runner", "ninjatrader"))
+        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
     except Exception as exc:
-        lab_db.update_run_status(new_run_id, "failed_unknown", str(exc))
+        lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         raise HTTPException(502, f"VPS agent unreachable: {exc}")
 
     asyncio.create_task(
-        run_backtest_job(new_run_id, new_run_id, row["strategy_id"], row["instrument"], evaluate_rulesets)
+        run_backtest_job(run_id, run_id, row["strategy_id"], row["instrument"], evaluate_rulesets, runner)
     )
 
-    return {"run_id": new_run_id, "status": "started"}
+    return {"run_id": run_id, "status": "running"}
 
 
 @router.delete("/runs/{run_id}", status_code=204)

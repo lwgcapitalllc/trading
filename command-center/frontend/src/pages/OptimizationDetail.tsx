@@ -391,7 +391,7 @@ export function OptimizationDetail() {
   const deleteOpt  = useDeleteOptimization()
   const retryRun   = useRetryBacktest()
   const { data: runningJob } = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.running
+  const jobBlocked = !!runningJob?.nt8?.running
 
   const [confirmDelete, setConfirmDelete] = useState(false)
 

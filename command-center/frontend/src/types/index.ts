@@ -367,6 +367,7 @@ export interface BacktestSummary {
   error_message: string | null
   start_date: string | null
   end_date: string | null
+  runner: string
 }
 
 export interface EvaluationDetail {
@@ -669,11 +670,16 @@ export interface InstrumentSummary {
   untested_instruments: string[]
 }
 
-export interface RunningJobStatus {
+export interface RunningJobInfo {
   running: boolean
   job_type: 'backtest' | 'sweep' | 'optimization' | null
   job_id: string | null
   description: string | null
+}
+
+export interface RunningJobStatus {
+  nt8: RunningJobInfo
+  mt5: RunningJobInfo
 }
 
 // ── Strategy files (Pass 2 — deployment manager) ─────────────────────────────

@@ -390,7 +390,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   }, [strategy.param_schema])
 
   // ── Validation ───────────────────────────────────────────────────────────────
-  const jobBlocked = !!runningJob?.running
+  const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
   const canSubmit =
     instrumentSymbol !== '' &&
     startDate !== '' && endDate !== '' && startDate < endDate &&
@@ -461,7 +461,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
             <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
             <p className="text-[12px] text-warn-text leading-snug">
-              <span className="font-semibold">A backtest is already running:</span> {runningJob?.description} — wait for it to finish before starting a new run.
+              <span className="font-semibold">{isMt5 ? 'MT5' : 'NT8'} is busy:</span> {(isMt5 ? runningJob?.mt5 : runningJob?.nt8)?.description} — wait for it to finish before starting a new run.
             </p>
           </div>
         )}

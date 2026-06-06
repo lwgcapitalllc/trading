@@ -52,7 +52,7 @@ function OptimizerModal({
   const { data: firms } = useFirms()
   const triggerOpt    = useTriggerOptimization()
   const { data: runningJob } = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.running
+  const jobBlocked = !!runningJob?.nt8?.running
 
   const evalFirm = run.evaluations[0]
   const [firmId, setFirmId]         = useState(evalFirm?.ruleset_id ?? '')
@@ -160,7 +160,7 @@ function OptimizerModal({
           <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
             <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
             <p className="text-[12px] text-warn-text leading-snug">
-              <span className="font-semibold">NT8 is busy:</span> {runningJob?.description} — wait for it to finish.
+              <span className="font-semibold">NT8 is busy:</span> {runningJob?.nt8?.description} — wait for it to finish.
             </p>
           </div>
         )}
@@ -372,7 +372,7 @@ type ModalState = 'none' | 'tier1-confirm' | 'tier3-warning' | 'optimizer'
 export function OptimizeButton({ run }: Props) {
   const [modal, setModal] = useState<ModalState>('none')
   const { data: runningJob } = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.running
+  const jobBlocked = !!runningJob?.nt8?.running
 
   if (run.status !== 'complete') return null
 
@@ -394,7 +394,7 @@ export function OptimizeButton({ run }: Props) {
       <button
         onClick={handleClick}
         disabled={jobBlocked}
-        title={jobBlocked ? `NT8 is busy: ${runningJob?.description}` : undefined}
+        title={jobBlocked ? `NT8 is busy: ${runningJob?.nt8?.description}` : undefined}
         className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <Sliders size={12} />

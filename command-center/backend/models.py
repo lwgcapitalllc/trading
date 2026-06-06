@@ -537,11 +537,16 @@ class SystemHealth(BaseModel):
 
 # ── Lab — running job status ─────────────────────────────────────────────────
 
-class RunningJobStatus(BaseModel):
+class RunningJobInfo(BaseModel):
     running: bool
     job_type: Optional[str] = None   # "backtest" | "sweep" | "optimization"
     job_id: Optional[str] = None
     description: Optional[str] = None
+
+
+class RunningJobStatus(BaseModel):
+    nt8: RunningJobInfo = RunningJobInfo(running=False)
+    mt5: RunningJobInfo = RunningJobInfo(running=False)
 
 
 # ── Lab — sweeps ──────────────────────────────────────────────────────────────

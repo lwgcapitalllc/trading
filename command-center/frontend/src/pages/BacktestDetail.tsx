@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
-  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Tag, Layers,
+  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Tag, Layers, Play,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Label,
@@ -11,13 +11,14 @@ import {
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
 import { toast } from 'sonner'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRulesets, useBackfillRegime, useBackfillStatus } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRulesets, useBackfillRegime, useBackfillStatus, useRunningVpsJob } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
 import { C } from '@/themes/chart'
 
 import { OptimizeButton } from '@/components/OptimizeButton'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
+import { StatusPill } from '@/components/StatusPill'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','No
 
 // Endpoints show day ("May 30 '23"), interior quarters just month+year ("Apr '24")
 function calTickLabel(iso: string, isEndpoint: boolean): string {
-  const d  = new Date(iso + 'T00:00:00')
+  const d  = new Date(iso.slice(0, 10) + 'T00:00:00')
   const m  = _MONTHS[d.getMonth()]
   const yr = String(d.getFullYear()).slice(-2)
   return isEndpoint ? `${m} ${d.getDate()} '${yr}` : `${m} '${yr}`
@@ -70,8 +71,8 @@ function calIndexTicks(pts: Array<{ index: number; date?: string | null }>): num
   const sorted = [...dateToIdx.keys()].sort()
   const nearest = (target: string) => { const d = sorted.find(s => s >= target); return d != null ? dateToIdx.get(d) : undefined }
 
-  const sy = new Date(first + 'T00:00:00').getFullYear()
-  const ey = new Date(last  + 'T00:00:00').getFullYear()
+  const sy = new Date(first.slice(0, 10) + 'T00:00:00').getFullYear()
+  const ey = new Date(last.slice(0, 10)  + 'T00:00:00').getFullYear()
   const set = new Set<number>([pts[0].index, pts[pts.length - 1].index])
   for (let y = sy; y <= ey; y++)
     for (const m of ['01', '04', '07', '10']) { const idx = nearest(`${y}-${m}-01`); if (idx != null) set.add(idx) }
@@ -381,7 +382,8 @@ function computeRegimeBands(equity: EquityPoint[], dailyPnl: DailyPnlPoint[]): R
   const bands: RegimeBand[] = []
   let cur: RegimeBand | null = null
   for (const trade of equity) {
-    const regime = trade.date ? (dateToRegime.get(trade.date) ?? 'UNKNOWN') : 'UNKNOWN'
+    const dateKey = trade.date?.slice(0, 10)
+    const regime = dateKey ? (dateToRegime.get(dateKey) ?? 'UNKNOWN') : 'UNKNOWN'
     if (!cur || cur.regime !== regime) {
       cur = { x1: trade.index, x2: trade.index, regime }
       bands.push(cur)
@@ -396,7 +398,7 @@ function computeRegimeBands(equity: EquityPoint[], dailyPnl: DailyPnlPoint[]): R
 
 function fmtChartDate(d?: string): string {
   if (!d) return ''
-  const dt = new Date(d + 'T12:00:00')
+  const dt = new Date(d.slice(0, 10) + 'T12:00:00')
   const yr = String(dt.getFullYear()).slice(-2)
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` '${yr}`
 }
@@ -497,18 +499,18 @@ function EquityCurveChart({ data, bands = [] }: { data: EquityPoint[]; bands?: R
             dataKey="equity"
             stroke={curveColor}
             strokeWidth={1.5}
-            fill={endEq >= 0 ? 'url(#eqPos)' : 'url(#eqNeg)'}
+            fill={endEq >= startEq ? 'url(#eqPos)' : 'url(#eqNeg)'}
             dot={false}
             activeDot={{ r: 4, fill: curveColor, stroke: 'transparent' }}
             baseValue={startEq}
           />
         )}
-        {/* With overlay: invisible base Area anchors tooltip; per-segment Areas draw colored lines */}
+        {/* With overlay: base Area keeps the gradient fill; per-segment Areas draw colored lines on top */}
         {hasBands && (
           <>
             <Area
               type="monotone" dataKey="equity"
-              stroke="none" fill="transparent"
+              stroke="none" fill={endEq >= startEq ? 'url(#eqPos)' : 'url(#eqNeg)'}
               dot={false} activeDot={false} baseValue={startEq}
             />
             {bands.map((band, i) => {
@@ -878,12 +880,14 @@ const NT8_RUN_STEPS = [
   { label: 'Run',       startPct: 30 },
   { label: 'Results',   startPct: 70 },
   { label: 'Evaluate',  startPct: 95 },
+  { label: 'Tagging',   startPct: 97 },
 ]
 
 const MT5_RUN_STEPS = [
   { label: 'Launch',  startPct: 0  },
   { label: 'Testing', startPct: 10 },
-  { label: 'Parse',   startPct: 90 },
+  { label: 'Results', startPct: 90 },
+  { label: 'Tagging', startPct: 95 },
 ]
 
 function useElapsed(startedAt: string | null): string {
@@ -994,34 +998,28 @@ function RunningBanner({ pct, message, startedAt, onStop, runId, runner, steps =
   return (
     <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 pt-4 pb-4 space-y-4">
 
-      {/* Progress bar */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[10px] font-semibold text-accent uppercase tracking-[0.6px]">Running</span>
-          <span className="text-[11px] font-mono text-accent tabular-nums">{Math.round(pct)}%</span>
-        </div>
-        <div className="h-[3px] bg-bg-sunken rounded-full overflow-hidden">
-          <div
-            className="h-full bg-accent rounded-full transition-all duration-700 ease-out"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-accent uppercase tracking-[0.6px]">Running</span>
+        <span className="text-[11px] font-mono text-accent tabular-nums">{Math.round(pct)}%</span>
       </div>
 
-      {/* Stage pipeline */}
+      {/* Stage pipeline — connectors are the progress bar */}
       <div className="flex items-start">
         {steps.map((step, i) => {
           const done   = i < activeIdx
           const active = i === activeIdx
+          const isLast = i === steps.length - 1
+          const segFill = isLast ? 0 : Math.min(1, Math.max(0,
+            (pct - step.startPct) / (steps[i + 1].startPct - step.startPct)
+          ))
           return (
             <Fragment key={step.label}>
               <div className="flex flex-col items-center gap-[6px]">
                 <span
                   className={[
                     'w-[9px] h-[9px] rounded-full flex-shrink-0 transition-all duration-300',
-                    done   ? 'bg-accent/50' :
-                    active ? 'bg-accent' :
-                             'border border-border-default bg-transparent',
+                    done || active ? 'bg-accent' : 'border border-border-default bg-transparent',
                   ].join(' ')}
                   style={active ? { boxShadow: '0 0 0 4px rgba(0,229,255,0.15), 0 0 12px rgba(0,229,255,0.45)' } : undefined}
                 />
@@ -1034,11 +1032,13 @@ function RunningBanner({ pct, message, startedAt, onStop, runId, runner, steps =
                   {step.label}
                 </span>
               </div>
-              {i < steps.length - 1 && (
-                <div className={[
-                  'flex-1 h-[1.5px] mt-[3.75px]',
-                  done ? 'bg-accent/40' : 'bg-border-subtle',
-                ].join(' ')} />
+              {!isLast && (
+                <div className="flex-1 h-[3px] mt-[3.75px] bg-bg-sunken rounded-full overflow-hidden relative">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-accent rounded-full transition-all duration-700 ease-out"
+                    style={{ width: `${segFill * 100}%` }}
+                  />
+                </div>
               )}
             </Fragment>
           )
@@ -1215,24 +1215,6 @@ function Skeleton() {
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: string }) {
-  const isFailed = status.startsWith('failed')
-  const label    = isFailed ? 'failed' : status
-  const cls      = status === 'complete' ? 'bg-pos-muted text-pos-text'
-    : status === 'running'  ? 'bg-accent-muted text-accent'
-    : isFailed              ? 'bg-neg-muted text-neg-text'
-    : 'bg-bg-hover text-text-secondary'
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-[4px] rounded-full text-[12px] font-semibold uppercase tracking-[0.4px] flex-shrink-0 ${cls}`}>
-      {status === 'running' && (
-        <span className="animate-bounce inline-block leading-none" style={{ animationDuration: '0.45s' }}>
-          🏃
-        </span>
-      )}
-      {label}
-    </span>
-  )
-}
 
 // ── Chart verdict banner ──────────────────────────────────────────────────────
 
@@ -1469,6 +1451,7 @@ export function BacktestDetail() {
   const stopBacktest             = useStopBacktest()
   const reloadCharts             = useReloadCharts()
   const retryBacktest            = useRetryBacktest()
+  const { data: runningJob }     = useRunningVpsJob()
   const { data: stressTests }    = useStressTests(run?.run_id)
   const latestStress             = stressTests?.[0]
   const [showStressModal, setShowStressModal] = useState(false)
@@ -1497,9 +1480,10 @@ export function BacktestDetail() {
   const isComplete = run?.status === 'complete'
   const isMt5      = run?.runner === 'mt5'
 
-  const runPct       = isRunning ? (progress?.pct ?? 0) : 0
-  const runMessage   = isRunning ? (progress?.message ?? 'Starting…') : ''
-  const runStartedAt = isRunning ? (progress?.started_at ?? null) : null
+  const progressMatches = progress?.job_id === run?.run_id
+  const runPct       = isRunning ? (progressMatches ? (progress?.pct ?? 0) : 0) : 0
+  const runMessage   = isRunning ? (progressMatches ? (progress?.message ?? 'Starting…') : 'Starting…') : ''
+  const runStartedAt = isRunning ? (progressMatches ? (progress?.started_at ?? null) : null) : null
 
   const backLabel = run?.optimization_id ? 'Optimization'
     : run?.sweep_id ? 'Sweep'
@@ -1526,7 +1510,11 @@ export function BacktestDetail() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-3 flex-wrap mb-2">
-                  <h1 className="text-h1 font-semibold leading-tight">
+                  <h1
+                    className="text-h1 font-semibold leading-tight cursor-pointer hover:text-accent transition-colors"
+                    onClick={() => navigate(`/strategies/${run.strategy_id}`)}
+                    title="Go to strategy"
+                  >
                     {run.strategy_name || run.strategy_id}
                   </h1>
                 </div>
@@ -1545,7 +1533,19 @@ export function BacktestDetail() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {(run.trade_count ?? 0) > 0 && <BackfillRegimeButton run={run} />}
+                {!isRunning && (
+                  <button
+                    onClick={() => retryBacktest.mutate(run.run_id)}
+                    disabled={retryBacktest.isPending || (isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running)}
+                    className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40"
+                    title={(isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running) ? `${isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry this backtest' : 'Rerun this backtest'}
+                  >
+                    {retryBacktest.isPending
+                      ? <RefreshCw size={14} className="animate-spin" />
+                      : <Play size={14} />}
+                    {run.status.startsWith('failed') ? 'Retry' : 'Rerun'}
+                  </button>
+                )}
                 {(run.trade_count ?? 0) > 0 && <OptimizeButton run={run} />}
                 {run?.status === 'complete' && !isMt5 && (run.trade_count ?? 0) > 0 && (
                   <button
@@ -1557,7 +1557,7 @@ export function BacktestDetail() {
                     {latestStress?.grade && <RobustnessGradeBadge grade={latestStress.grade} size="sm" />}
                   </button>
                 )}
-                {isRunning && <StatusBadge status={run.status} />}
+                {isRunning && <StatusPill status={run.status} size="md" />}
               </div>
               {showStressModal && run && <RunStressTestModal runId={run.run_id} onClose={() => setShowStressModal(false)} />}
             </div>
@@ -1565,17 +1565,7 @@ export function BacktestDetail() {
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
           {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={isMt5 ? MT5_RUN_STEPS : NT8_RUN_STEPS} />}
-          {isFailed && (
-            <FailureBanner
-              run={run}
-              onRetry={!run.sweep_id && !run.optimization_id
-                ? () => retryBacktest.mutate(run.run_id, {
-                    onSuccess: (data) => navigate(`/backtests/runs/${data.run_id}`),
-                  })
-                : undefined}
-              retrying={retryBacktest.isPending}
-            />
-          )}
+          {isFailed && <FailureBanner run={run} />}
 
           {/* ── Evaluations + Performance (side by side) ──────────────────── */}
           {isComplete && (

@@ -189,6 +189,8 @@ def init_db() -> None:
             "ALTER TABLE strategies ADD COLUMN is_compiled INTEGER NOT NULL DEFAULT 1",
             # User-editable description
             "ALTER TABLE strategies ADD COLUMN description TEXT",
+            # Runner field on backtest_runs for platform-specific locking
+            "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -976,8 +978,8 @@ def insert_run(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, evaluate_firms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, evaluate_firms, runner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
@@ -985,6 +987,7 @@ def insert_run(data: dict) -> None:
             data["commission_per_side"], data["slippage_ticks"],
             data["status"], data["created_at"],
             json.dumps(data.get("evaluate_rulesets") or data.get("evaluate_firms") or []),
+            data.get("runner", "ninjatrader"),
         ))
 
 
@@ -1249,44 +1252,89 @@ def has_any_running_vps_job() -> bool:
     return (run_count + opt_count) > 0
 
 
-def get_running_job() -> Optional[dict]:
-    """Returns metadata about the currently running VPS job, or None if idle."""
+def has_running_nt8_job() -> bool:
+    """True if any NT8 job (backtest, sweep, or optimization) is currently running."""
     with _connect() as conn:
+        run_count = conn.execute(
+            "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running' AND COALESCE(runner, 'ninjatrader') != 'mt5'",
+        ).fetchone()[0]
+        opt_count = conn.execute(
+            "SELECT COUNT(*) FROM optimizations WHERE status = 'running'",
+        ).fetchone()[0]
+    return (run_count + opt_count) > 0
+
+
+def has_running_mt5_job() -> bool:
+    """True if any MT5 backtest is currently running."""
+    with _connect() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running' AND runner = 'mt5'",
+        ).fetchone()[0]
+    return count > 0
+
+
+def delete_run_evaluations(run_id: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM evaluations WHERE run_id = ?", (run_id,))
+
+
+def get_running_job() -> dict:
+    """Returns info about any running NT8 and MT5 jobs separately."""
+    result = {"nt8": {"running": False}, "mt5": {"running": False}}
+    with _connect() as conn:
+        # NT8 standalone backtest
         row = conn.execute("""
             SELECT 'backtest' AS job_type, r.run_id AS job_id,
                    COALESCE(s.name, r.strategy_id) || ' on ' || r.instrument AS description
             FROM backtest_runs r
             LEFT JOIN strategies s ON s.id = r.strategy_id
             WHERE r.status = 'running' AND r.sweep_id IS NULL AND r.optimization_id IS NULL
+              AND COALESCE(r.runner, 'ninjatrader') != 'mt5'
             LIMIT 1
         """).fetchone()
         if row:
-            return dict(row)
+            result["nt8"] = {"running": True, **dict(row)}
 
+        # MT5 standalone backtest
         row = conn.execute("""
-            SELECT 'sweep' AS job_type, r.sweep_id AS job_id,
-                   COALESCE(s.name, r.strategy_id) || ' sweep' AS description
+            SELECT 'backtest' AS job_type, r.run_id AS job_id,
+                   COALESCE(s.name, r.strategy_id) || ' on ' || r.instrument AS description
             FROM backtest_runs r
             LEFT JOIN strategies s ON s.id = r.strategy_id
-            WHERE r.status = 'running' AND r.sweep_id IS NOT NULL
+            WHERE r.status = 'running' AND r.runner = 'mt5'
             LIMIT 1
         """).fetchone()
         if row:
-            return dict(row)
+            result["mt5"] = {"running": True, **dict(row)}
 
-        row = conn.execute("""
-            SELECT 'optimization' AS job_type, o.optimization_id AS job_id,
-                   COALESCE(s.name, o.strategy_id) || ' optimization on ' || o.instrument
-                   || ' (' || o.completed_runs || '/' || o.estimated_runs || ')' AS description
-            FROM optimizations o
-            LEFT JOIN strategies s ON s.id = o.strategy_id
-            WHERE o.status = 'running'
-            LIMIT 1
-        """).fetchone()
-        if row:
-            return dict(row)
+        # NT8 sweep (sweeps are NT8-only for now)
+        if not result["nt8"]["running"]:
+            row = conn.execute("""
+                SELECT 'sweep' AS job_type, r.sweep_id AS job_id,
+                       COALESCE(s.name, r.strategy_id) || ' sweep' AS description
+                FROM backtest_runs r
+                LEFT JOIN strategies s ON s.id = r.strategy_id
+                WHERE r.status = 'running' AND r.sweep_id IS NOT NULL
+                LIMIT 1
+            """).fetchone()
+            if row:
+                result["nt8"] = {"running": True, **dict(row)}
 
-        return None
+        # NT8 optimization
+        if not result["nt8"]["running"]:
+            row = conn.execute("""
+                SELECT 'optimization' AS job_type, o.optimization_id AS job_id,
+                       COALESCE(s.name, o.strategy_id) || ' optimization on ' || o.instrument
+                       || ' (' || o.completed_runs || '/' || o.estimated_runs || ')' AS description
+                FROM optimizations o
+                LEFT JOIN strategies s ON s.id = o.strategy_id
+                WHERE o.status = 'running'
+                LIMIT 1
+            """).fetchone()
+            if row:
+                result["nt8"] = {"running": True, **dict(row)}
+
+    return result
 
 
 def insert_run_sweep(data: dict) -> None:
