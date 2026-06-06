@@ -1536,9 +1536,9 @@ export function BacktestDetail() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <BackfillRegimeButton run={run} />
-                <OptimizeButton run={run} />
-                {run?.status === 'complete' && !isMt5 && (
+                {(run.trade_count ?? 0) > 0 && <BackfillRegimeButton run={run} />}
+                {(run.trade_count ?? 0) > 0 && <OptimizeButton run={run} />}
+                {run?.status === 'complete' && !isMt5 && (run.trade_count ?? 0) > 0 && (
                   <button
                     onClick={() => setShowStressModal(true)}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
