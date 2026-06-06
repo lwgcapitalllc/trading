@@ -940,6 +940,9 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         f"pf={result['profit_factor']:.2f}"
     )
 
+    # Kill the terminal in case ShutdownTerminal=1 didn't take effect
+    _kill_by_path(tester_exe)
+
     for p in [ini_path, data_dir / "MQL5" / "Profiles" / "Tester" / set_filename]:
         try:
             p.unlink(missing_ok=True)

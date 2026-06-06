@@ -1,9 +1,9 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, ChevronDown, Trash2, Layers, Sliders } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  useBacktestRuns, useLabProgress, useDeleteRun,
+  useBacktestRuns, useLabProgress, useDeleteRun, useRetryBacktest,
   useOptimizations, useDeleteOptimization, useSweeps, useDeleteSweep,
 } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
@@ -447,7 +447,6 @@ function RunsTab() {
                       selected={selectedIds.has(run.run_id)}
                       onSelect={() => toggleSelect(run.run_id)}
                       onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
-                      onDelete={e => { e.stopPropagation(); setDeleteRunId(run.run_id) }}
                       hasChildren={hasChildren}
                       isCollapsed={isCollapsed}
                       onToggleCollapse={() => toggleCollapse(run.run_id)}
@@ -582,18 +581,18 @@ function SweepNestRow({
 // ── Run row ───────────────────────────────────────────────────────────────────
 
 function RunRow({
-  run, selected, onSelect, onClick, onDelete, hasChildren, isCollapsed, onToggleCollapse,
+  run, selected, onSelect, onClick, hasChildren, isCollapsed, onToggleCollapse,
 }: {
   run: BacktestSummary
   selected: boolean
   onSelect: () => void
   onClick: () => void
-  onDelete: (e: React.MouseEvent) => void
   hasChildren?: boolean
   isCollapsed?: boolean
   onToggleCollapse?: () => void
 }) {
   const navigate = useNavigate()
+  const retry = useRetryBacktest()
   const pnlClass = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
   const isOptChild   = !!run.optimization_id
   const isSweepChild = !!run.sweep_id
@@ -659,8 +658,13 @@ function RunRow({
       <td className="px-4 py-3"><ChallengePills verdicts={run.verdicts} /></td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-1 justify-end">
-          <button onClick={onDelete} className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors" title="Delete run">
-            <Trash2 size={13} />
+          <button
+            onClick={e => { e.stopPropagation(); retry.mutate(run.run_id) }}
+            disabled={retry.isPending}
+            className="p-[5px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
+            title="Rerun"
+          >
+            <Play size={13} />
           </button>
           <ChevronRight size={14} className="text-text-tertiary" />
         </div>

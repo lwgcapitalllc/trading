@@ -246,11 +246,41 @@ def job_status(job_id: str, runner: Optional[str] = None) -> dict:
 def _normalize_mt5_results(raw: dict) -> dict:
     """MT5 agent returns KPIs flat; translate to the NT8 nested {kpis, equity_curve, daily_pnl} shape."""
     _KPI_KEYS = {"net_pnl", "profit_factor", "win_rate", "max_drawdown", "sharpe", "trade_count"}
+    trades = raw.get("trades", [])
+
+    # Compute avg_win / avg_loss from the trades list (MT5 agent doesn't report these)
+    profits = [t["profit"] for t in trades if "profit" in t]
+    wins   = [p for p in profits if p > 0]
+    losses = [p for p in profits if p < 0]
+    kpis   = {k: raw[k] for k in _KPI_KEYS if k in raw}
+    if wins:
+        kpis["avg_win"]  = round(sum(wins)   / len(wins),   2)
+    if losses:
+        kpis["avg_loss"] = round(sum(losses) / len(losses), 2)
+
+    # Build a timestamp → {direction, profit} map so equity curve points at trade-close
+    # timestamps get direction/profit fields (used by the Long vs Short pie charts).
+    _DIR = {"buy": "Long", "sell": "Short"}
+    trade_by_ts: dict[str, dict] = {}
+    for t in trades:
+        ts = t.get("time", "")
+        if ts and t.get("direction"):
+            trade_by_ts[ts] = t
+
+    equity_curve = []
+    for i, pt in enumerate(raw.get("equity_curve", [])):
+        ep: dict = {"index": i, **pt}
+        td = trade_by_ts.get(pt.get("date", ""))
+        if td:
+            ep["direction"] = _DIR.get(td["direction"].lower(), td["direction"].capitalize())
+            ep["profit"]    = td.get("profit")
+        equity_curve.append(ep)
+
     return {
-        "kpis":         {k: raw[k] for k in _KPI_KEYS if k in raw},
-        "equity_curve": [{"index": i, **pt} for i, pt in enumerate(raw.get("equity_curve", []))],
+        "kpis":         kpis,
+        "equity_curve": equity_curve,
         "daily_pnl":    raw.get("daily_pnl", []),
-        "trades":       raw.get("trades", []),
+        "trades":       trades,
     }
 
 

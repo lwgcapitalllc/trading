@@ -905,11 +905,18 @@ export function Strategies() {
   const { data: strategies } = useStrategies()
   const { data: rulesets } = useFirms()
   const { data: files } = useStrategyFiles()
+  const { data: syncStatus } = useStrategyFileSyncStatus()
+
+  const deployedCount = useMemo(() => {
+    if (!files || !syncStatus) return undefined
+    const ourFilenames = new Set(syncStatus.map(s => s.expected_filename))
+    return files.filter(f => ourFilenames.has(f.filename)).length
+  }, [files, syncStatus])
 
   const counts: Partial<Record<Tab, number>> = {
     strategies: strategies?.length,
     rulesets:   rulesets?.length,
-    deployed:   files?.length,
+    deployed:   deployedCount,
   }
 
   return (

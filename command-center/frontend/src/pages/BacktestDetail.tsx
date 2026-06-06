@@ -156,10 +156,11 @@ function computeCalmar(
   if (netPnl == null || maxDrawdown == null) return null
   const absDd = Math.abs(maxDrawdown)
   if (absDd === 0 || equity.length < 2) return null
-  const firstDate = equity[0].date
-  const lastDate  = equity[equity.length - 1].date
+  // Slice to YYYY-MM-DD — MT5 equity dates are full ISO datetimes; appending T00:00:00 breaks parsing
+  const firstDate = equity[0].date?.slice(0, 10)
+  const lastDate  = equity[equity.length - 1].date?.slice(0, 10)
   if (!firstDate || !lastDate) return null
-  const days = (new Date(lastDate + 'T00:00:00').getTime() - new Date(firstDate + 'T00:00:00').getTime()) / 86_400_000
+  const days = (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / 86_400_000
   if (days < 1) return null
   return (netPnl * (365 / days)) / absDd
 }
@@ -753,6 +754,7 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
           width={52}
         />
         <Tooltip
+          cursor={{ fill: 'rgba(255,255,255,0.04)' }}
           contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
           labelStyle={{ color: C.axisTick }}
           itemStyle={{ color: '#e5e7eb' }}
@@ -1368,7 +1370,10 @@ function BackfillRegimeButton({ run }: { run: Run }) {
   const isRunning = status?.status === 'running' || polling
   return (
     <button
-      onClick={() => backfill.mutate(run.run_id, { onSuccess: () => setPolling(true) })}
+      onClick={() => backfill.mutate(run.run_id, {
+        onSuccess: () => setPolling(true),
+        onError:   (e: unknown) => toast.error(`Tag failed: ${(e as { detail?: string })?.detail ?? 'Unknown error'}`),
+      })}
       disabled={isRunning || backfill.isPending}
       className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
     >
