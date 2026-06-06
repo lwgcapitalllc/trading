@@ -76,6 +76,7 @@ def _row_to_summary(row: dict) -> BacktestSummary:
         error_message=row.get("error_message"),
         start_date=row.get("start_date"),
         end_date=row.get("end_date"),
+        runner=row.get("runner", "ninjatrader"),
     )
 
 

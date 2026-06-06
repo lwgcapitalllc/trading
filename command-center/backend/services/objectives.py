@@ -66,8 +66,16 @@ def funded_sharpe_under_drawdown(run: dict, firm: dict) -> float:
     return run.get("sharpe") or 0.0
 
 
+@_register("raw_profit_factor")
+def raw_profit_factor(run: dict, firm) -> float:
+    """For MT5/no-ruleset mode. Maximise profit factor directly."""
+    return run.get("profit_factor") or 0.0
+
+
 def choose_objective(mode: str):
     """Return the appropriate objective function for the given mode."""
     if mode == "funded":
         return OBJECTIVES["funded_sharpe_under_drawdown"]
+    if mode == "raw":
+        return OBJECTIVES["raw_profit_factor"]
     return OBJECTIVES["eval_pass_probability"]

@@ -43,7 +43,7 @@ def _regime_filtered_score(
     date_to_regime: dict[str, str],
     regime_filter: str,
     obj_fn,
-    firm: dict,
+    firm: Optional[dict],
 ) -> float:
     """
     Load this run's equity_curve, keep only trades on regime_filter days,
@@ -107,7 +107,7 @@ def _regime_filtered_score(
 async def _pick_best_run(
     complete_rows: list[dict],
     opt: dict,
-    firm: dict,
+    firm: Optional[dict],
 ) -> Optional[str]:
     """
     Score all complete child runs and return the best run_id.
@@ -314,10 +314,7 @@ async def run_optimization(optimization_id: str) -> None:
         lab_db.fail_optimization(optimization_id, "Strategy not found")
         return
 
-    firm = lab_db.get_ruleset(opt["ruleset_id"])
-    if not firm:
-        lab_db.fail_optimization(optimization_id, "Firm not found")
-        return
+    firm = lab_db.get_ruleset(opt["ruleset_id"]) if opt.get("ruleset_id") else None
 
     method = pick_search_method(opt["param_grid"], opt["search_method"])
     all_combos = expand_grid(opt["param_grid"])
@@ -331,10 +328,9 @@ async def run_optimization(optimization_id: str) -> None:
         run_id = uuid.uuid4().hex[:12]
         run_ids.append(run_id)
 
-        # Merge: strategy defaults ← foundational from ruleset ← optimizer combo values.
-        # Combo values win so the optimizer can sweep strategy-logic params freely.
-        merged_params = nt8_agent_client.inject_foundational(
-            {**strategy.get("default_params", {}), **combo}, firm
+        base_params = {**strategy.get("default_params", {}), **combo}
+        merged_params = (
+            nt8_agent_client.inject_foundational(base_params, firm) if firm else base_params
         )
         lab_db.insert_run_optimization({
             "run_id":             run_id,
@@ -365,9 +361,10 @@ async def run_optimization(optimization_id: str) -> None:
             "slippage_ticks":    opt["slippage_ticks"],
         })
 
+    ruleset_ids = [opt["ruleset_id"]] if opt.get("ruleset_id") else []
     await _run_batch(
         run_ids, job_specs,
-        ruleset_ids=[opt["ruleset_id"]],
+        ruleset_ids=ruleset_ids,
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
         opt_id=optimization_id,
@@ -380,10 +377,10 @@ async def run_optimization(optimization_id: str) -> None:
     ]
     best_run_id = await _pick_best_run(complete_rows, opt, firm)
     lab_db.complete_optimization(optimization_id, best_run_id)
-    if best_run_id:
+    if best_run_id and ruleset_ids:
         from services import stress_tester
         asyncio.create_task(stress_tester.trigger_auto_stress_test(
-            best_run_id, [opt["ruleset_id"]]
+            best_run_id, ruleset_ids
         ))
 
 
@@ -400,10 +397,8 @@ async def retry_single_optimization_run(run_id: str) -> None:
     if not strategy:
         lab_db.update_run_status(run_id, "failed_unknown", "Strategy not found")
         return
-    firm = lab_db.get_ruleset(opt["ruleset_id"])
-    if not firm:
-        lab_db.update_run_status(run_id, "failed_unknown", "Firm not found")
-        return
+    firm = lab_db.get_ruleset(opt["ruleset_id"]) if opt.get("ruleset_id") else None
+    ruleset_ids = [opt["ruleset_id"]] if opt.get("ruleset_id") else []
 
     lab_db.decrement_optimization_completed(opt_id, 1)
 
@@ -421,7 +416,7 @@ async def retry_single_optimization_run(run_id: str) -> None:
     }
     await _run_batch(
         [run_id], [job_spec],
-        ruleset_ids=[opt["ruleset_id"]],
+        ruleset_ids=ruleset_ids,
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
         opt_id=opt_id,
@@ -431,10 +426,10 @@ async def retry_single_optimization_run(run_id: str) -> None:
     all_complete = [r for r in lab_db.list_optimization_runs(opt_id) if r["status"] == "complete"]
     best_run_id = await _pick_best_run(all_complete, opt, firm)
     lab_db.complete_optimization(opt_id, best_run_id)
-    if best_run_id:
+    if best_run_id and ruleset_ids:
         from services import stress_tester
         asyncio.create_task(stress_tester.trigger_auto_stress_test(
-            best_run_id, [opt["ruleset_id"]]
+            best_run_id, ruleset_ids
         ))
 
 
@@ -449,10 +444,8 @@ async def retry_failed_runs(optimization_id: str) -> None:
         lab_db.fail_optimization(optimization_id, "Strategy not found")
         return
 
-    firm = lab_db.get_ruleset(opt["ruleset_id"])
-    if not firm:
-        lab_db.fail_optimization(optimization_id, "Firm not found")
-        return
+    firm = lab_db.get_ruleset(opt["ruleset_id"]) if opt.get("ruleset_id") else None
+    ruleset_ids = [opt["ruleset_id"]] if opt.get("ruleset_id") else []
 
     failed_rows = lab_db.list_optimization_failed_runs(optimization_id)
     if not failed_rows:
@@ -482,7 +475,7 @@ async def retry_failed_runs(optimization_id: str) -> None:
 
     await _run_batch(
         run_ids, job_specs,
-        ruleset_ids=[opt["ruleset_id"]],
+        ruleset_ids=ruleset_ids,
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
         opt_id=optimization_id,
@@ -495,8 +488,8 @@ async def retry_failed_runs(optimization_id: str) -> None:
     ]
     best_run_id = await _pick_best_run(all_complete, opt, firm)
     lab_db.complete_optimization(optimization_id, best_run_id)
-    if best_run_id:
+    if best_run_id and ruleset_ids:
         from services import stress_tester
         asyncio.create_task(stress_tester.trigger_auto_stress_test(
-            best_run_id, [opt["ruleset_id"]]
+            best_run_id, ruleset_ids
         ))

@@ -445,6 +445,7 @@ class BacktestSummary(BaseModel):
     error_message: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    runner: str = "ninjatrader"
 
 
 class EvaluationDetail(BaseModel):
@@ -618,8 +619,8 @@ class OptimizationRequest(BaseModel):
     end_date: str
     commission_per_side: float = 2.25
     slippage_ticks: int = 1
-    ruleset_id: str
-    mode: str = "eval"                  # "eval" | "funded"
+    ruleset_id: Optional[str] = None    # null for MT5 / "raw" mode
+    mode: str = "eval"                  # "eval" | "funded" | "raw"
     search_method: str = "auto"         # "auto" | "brute" | "genetic"
     param_grid: dict                    # {param: {min, max, step} | [val, ...]}
     source_run_id: Optional[str] = None
@@ -632,7 +633,7 @@ class OptimizationSummary(BaseModel):
     instrument: str
     start_date: str
     end_date: str
-    ruleset_id: str
+    ruleset_id: Optional[str] = None
     mode: str
     search_method: str
     status: str
@@ -652,7 +653,7 @@ class OptimizationDetail(BaseModel):
     instrument: str
     start_date: str
     end_date: str
-    ruleset_id: str
+    ruleset_id: Optional[str] = None
     mode: str
     search_method: str
     param_grid: dict

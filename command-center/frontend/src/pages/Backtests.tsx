@@ -827,7 +827,7 @@ function OptimizationsTab() {
                   >
                     <td className="px-4 py-3 font-medium">{opt.strategy_id}</td>
                     <td className="px-4 py-3 font-mono text-text-secondary">{opt.instrument}</td>
-                    <td className="px-4 py-3 text-text-secondary text-[12px]">{opt.ruleset_id}</td>
+                    <td className="px-4 py-3 text-text-secondary text-[12px]">{opt.ruleset_id ?? '—'}</td>
                     <td className="px-4 py-3 capitalize text-text-secondary">{opt.mode}</td>
                     <td className="px-4 py-3 capitalize text-text-secondary">{opt.search_method}</td>
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{opt.completed_runs}/{opt.estimated_runs}</td>

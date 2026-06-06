@@ -477,9 +477,15 @@ export function OptimizationDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
                 {opt.mode} · {fmtSearchMethod(opt.search_method)}
               </span>
-              <span className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(opt.ruleset_id)}`}>
-                {firmShortName(opt.ruleset_id)}
-              </span>
+              {opt.ruleset_id ? (
+                <span className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(opt.ruleset_id)}`}>
+                  {firmShortName(opt.ruleset_id)}
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary">
+                  Raw PF
+                </span>
+              )}
               {opt.regime_filter && (
                 <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary">
                   Regime: {opt.regime_filter.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}

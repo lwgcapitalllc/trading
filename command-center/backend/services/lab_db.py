@@ -289,6 +289,15 @@ def init_db() -> None:
             except Exception:
                 pass
 
+        # Backfill runner on backtest_runs for rows created before the runner column existed.
+        # The column defaulted to 'ninjatrader', so MT5 strategy runs got the wrong value.
+        conn.execute("""
+            UPDATE backtest_runs
+            SET runner = 'mt5'
+            WHERE runner = 'ninjatrader'
+            AND strategy_id IN (SELECT id FROM strategies WHERE runner = 'mt5')
+        """)
+
         # Pass 1 — backfill foundational config for all existing rulesets where null.
         # Personal-specific overrides must run BEFORE the blanket defaults so the
         # blanket update (which only touches NULL rows) doesn't overwrite them.
@@ -368,6 +377,54 @@ def init_db() -> None:
     # Run outside the main context manager — needs FK enforcement off, which
     # can't be toggled inside an active transaction in SQLite.
     _migrate_strategy_renames()
+    _migrate_optimizations_nullable_ruleset()
+
+
+def _migrate_optimizations_nullable_ruleset() -> None:
+    """Make optimizations.ruleset_id nullable so MT5 optimizations need no ruleset."""
+    raw = sqlite3.connect(DB_PATH)
+    raw.execute("PRAGMA journal_mode=WAL")
+    raw.execute("PRAGMA foreign_keys=OFF")
+    try:
+        info = raw.execute("PRAGMA table_info(optimizations)").fetchall()
+        col = next((c for c in info if c[1] == "ruleset_id"), None)
+        if not col or col[3] == 0:
+            return  # Already nullable or column missing
+        raw.executescript("""
+            BEGIN;
+            CREATE TABLE optimizations_new (
+                optimization_id     TEXT PRIMARY KEY,
+                strategy_id         TEXT NOT NULL REFERENCES strategies(id),
+                instrument          TEXT NOT NULL,
+                start_date          TEXT NOT NULL,
+                end_date            TEXT NOT NULL,
+                commission_per_side REAL NOT NULL,
+                slippage_ticks      INTEGER NOT NULL,
+                ruleset_id          TEXT REFERENCES rulesets(id),
+                mode                TEXT NOT NULL,
+                search_method       TEXT NOT NULL,
+                param_grid          TEXT NOT NULL,
+                status              TEXT NOT NULL,
+                estimated_runs      INTEGER NOT NULL,
+                completed_runs      INTEGER NOT NULL DEFAULT 0,
+                best_run_id         TEXT,
+                source_run_id       TEXT,
+                created_at          INTEGER NOT NULL,
+                completed_at        INTEGER,
+                regime_filter       TEXT
+            );
+            INSERT INTO optimizations_new SELECT * FROM optimizations;
+            DROP TABLE optimizations;
+            ALTER TABLE optimizations_new RENAME TO optimizations;
+            CREATE INDEX IF NOT EXISTS idx_opts_strategy ON optimizations(strategy_id, created_at DESC);
+            COMMIT;
+        """)
+    except Exception:
+        try: raw.execute("ROLLBACK")
+        except Exception: pass
+    finally:
+        raw.execute("PRAGMA foreign_keys=ON")
+        raw.close()
 
 
 def _migrate_strategy_renames() -> None:

@@ -31,15 +31,20 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
     if not strategy:
         raise HTTPException(404, f"Strategy '{req.strategy_id}' not found")
 
-    ruleset = lab_db.get_ruleset(req.ruleset_id)
-    if not ruleset:
-        raise HTTPException(404, f"Ruleset '{req.ruleset_id}' not found")
+    if req.ruleset_id:
+        if not lab_db.get_ruleset(req.ruleset_id):
+            raise HTTPException(404, f"Ruleset '{req.ruleset_id}' not found")
 
     if not req.param_grid:
         raise HTTPException(400, "param_grid cannot be empty")
 
-    if lab_db.has_running_nt8_job():
-        raise HTTPException(409, "An NT8 job is already running — wait for it to finish before starting a new optimization")
+    runner = strategy.get("runner", "ninjatrader")
+    if runner == "mt5":
+        if lab_db.has_running_mt5_job():
+            raise HTTPException(409, "An MT5 job is already running — wait for it to finish")
+    else:
+        if lab_db.has_running_nt8_job():
+            raise HTTPException(409, "An NT8 job is already running — wait for it to finish before starting a new optimization")
 
     method = pick_search_method(req.param_grid, req.search_method)
     all_combos = expand_grid(req.param_grid)

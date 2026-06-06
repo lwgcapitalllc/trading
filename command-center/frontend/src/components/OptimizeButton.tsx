@@ -52,7 +52,8 @@ function OptimizerModal({
   const { data: firms } = useFirms()
   const triggerOpt    = useTriggerOptimization()
   const { data: runningJob } = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.nt8?.running
+  const isMt5 = run.runner === 'mt5'
+  const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
 
   const evalFirm = run.evaluations[0]
   const [firmId, setFirmId]         = useState(evalFirm?.ruleset_id ?? '')
@@ -102,7 +103,7 @@ function OptimizerModal({
   }
 
   const handleGo = () => {
-    if (!firmId) { toast.error('Select a ruleset'); return }
+    if (!isMt5 && !firmId) { toast.error('Select a ruleset'); return }
 
     const param_grid: Record<string, ParamAxisSpec> = {}
     for (const [k, ax] of Object.entries(axes)) {
@@ -125,11 +126,11 @@ function OptimizerModal({
       end_date:           run.end_date,
       commission_per_side: run.commission_per_side,
       slippage_ticks:     run.slippage_ticks,
-      ruleset_id:         firmId,
-      mode,
+      ruleset_id:         isMt5 ? null : firmId,
+      mode:               isMt5 ? 'raw' : mode,
       search_method:      searchMethod,
       param_grid,
-      regime_filter:      regimeFilter || null,
+      regime_filter:      isMt5 ? null : (regimeFilter || null),
       source_run_id:      run.run_id,
     }, {
       onSuccess: (data) => {
@@ -160,38 +161,42 @@ function OptimizerModal({
           <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
             <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
             <p className="text-[12px] text-warn-text leading-snug">
-              <span className="font-semibold">NT8 is busy:</span> {runningJob?.nt8?.description} — wait for it to finish.
+              <span className="font-semibold">{isMt5 ? 'MT5' : 'NT8'} is busy:</span> {(isMt5 ? runningJob?.mt5 : runningJob?.nt8)?.description} — wait for it to finish.
             </p>
           </div>
         )}
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* Firm + mode + method + regime filter */}
+          {/* Config — NT8 shows ruleset/mode/regime; MT5 shows only search method */}
           <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Ruleset</label>
-              <select
-                value={firmId}
-                onChange={e => setFirmId(e.target.value)}
-                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
-              >
-                <option value="">Select ruleset…</option>
-                {firms?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Mode</label>
-              <select
-                value={mode}
-                onChange={e => setMode(e.target.value as 'eval' | 'funded')}
-                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
-              >
-                <option value="eval">Eval</option>
-                <option value="funded">Funded</option>
-              </select>
-            </div>
-            <div>
+            {!isMt5 && (
+              <>
+                <div>
+                  <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Ruleset</label>
+                  <select
+                    value={firmId}
+                    onChange={e => setFirmId(e.target.value)}
+                    className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
+                  >
+                    <option value="">Select ruleset…</option>
+                    {firms?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Mode</label>
+                  <select
+                    value={mode}
+                    onChange={e => setMode(e.target.value as 'eval' | 'funded')}
+                    className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
+                  >
+                    <option value="eval">Eval</option>
+                    <option value="funded">Funded</option>
+                  </select>
+                </div>
+              </>
+            )}
+            <div className={isMt5 ? 'col-span-3' : ''}>
               <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Search</label>
               <select
                 value={searchMethod}
@@ -203,23 +208,25 @@ function OptimizerModal({
                 <option value="genetic">Genetic</option>
               </select>
             </div>
-            <div className="col-span-3">
-              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">
-                Regime Filter <span className="normal-case font-normal">(optional — score only trades in this regime)</span>
-              </label>
-              <select
-                value={regimeFilter}
-                onChange={e => setRegimeFilter(e.target.value)}
-                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
-              >
-                <option value="">No filter — score all trades</option>
-                <option value="TRENDING">Trending</option>
-                <option value="TRANSITIONING">Transitioning</option>
-                <option value="RANGING">Ranging</option>
-                <option value="HIGH_VOLATILITY">High Volatility</option>
-                <option value="LOW_VOLATILITY">Low Volatility</option>
-              </select>
-            </div>
+            {!isMt5 && (
+              <div className="col-span-3">
+                <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">
+                  Regime Filter <span className="normal-case font-normal">(optional — score only trades in this regime)</span>
+                </label>
+                <select
+                  value={regimeFilter}
+                  onChange={e => setRegimeFilter(e.target.value)}
+                  className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
+                >
+                  <option value="">No filter — score all trades</option>
+                  <option value="TRENDING">Trending</option>
+                  <option value="TRANSITIONING">Transitioning</option>
+                  <option value="RANGING">Ranging</option>
+                  <option value="HIGH_VOLATILITY">High Volatility</option>
+                  <option value="LOW_VOLATILITY">Low Volatility</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Param grid editor */}
@@ -372,7 +379,8 @@ type ModalState = 'none' | 'tier1-confirm' | 'tier3-warning' | 'optimizer'
 export function OptimizeButton({ run }: Props) {
   const [modal, setModal] = useState<ModalState>('none')
   const { data: runningJob } = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.nt8?.running
+  const isMt5Platform = run.runner === 'mt5'
+  const jobBlocked = isMt5Platform ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
 
   if (run.status !== 'complete') return null
 
@@ -394,7 +402,7 @@ export function OptimizeButton({ run }: Props) {
       <button
         onClick={handleClick}
         disabled={jobBlocked}
-        title={jobBlocked ? `NT8 is busy: ${runningJob?.nt8?.description}` : undefined}
+        title={jobBlocked ? `${isMt5Platform ? 'MT5' : 'NT8'} is busy: ${(isMt5Platform ? runningJob?.mt5 : runningJob?.nt8)?.description}` : undefined}
         className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <Sliders size={12} />

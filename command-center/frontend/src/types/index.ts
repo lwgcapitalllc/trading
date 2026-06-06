@@ -623,8 +623,8 @@ export interface OptimizationRequest {
   end_date: string
   commission_per_side?: number
   slippage_ticks?: number
-  ruleset_id: string
-  mode: 'eval' | 'funded'
+  ruleset_id: string | null
+  mode: 'eval' | 'funded' | 'raw'
   search_method: 'auto' | 'brute' | 'genetic'
   param_grid: Record<string, ParamAxisSpec>
   source_run_id?: string | null
@@ -637,7 +637,7 @@ export interface OptimizationSummary {
   instrument: string
   start_date: string
   end_date: string
-  ruleset_id: string
+  ruleset_id: string | null
   mode: string
   search_method: string
   status: string
