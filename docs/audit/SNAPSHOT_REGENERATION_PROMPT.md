@@ -32,18 +32,12 @@ clean Markdown files.
 Read these in order:
 
 1. **Repo root README.md and CLAUDE.md** — overall map and standing rules
-2. **`docs/Command_Center_Backtest_Engine_Design.md`** — the architecture
-   doc with M-milestone retrospectives
-3. **`command-center/CLAUDE.md`** — top-level command center status
-4. **`command-center/backend/CLAUDE.md`** — backend services, tables,
-   endpoints, what's built
-5. **`command-center/frontend/CLAUDE.md`** — frontend pages, components,
-   what's built
-6. **`algos/CLAUDE.md`** — forex bots and shared utilities (live MT5 side)
-7. **`regime/CLAUDE.md`** and **`regime/REGIME_CLASSIFIER.md`** — the
-   shared classifier
-8. **`strategies/CLAUDE.md`** if it exists — the generic strategies
-   subsystem (created in Pass 2.5)
+2. **`command-center/CLAUDE.md`** — top-level command center status and full feature changelog
+3. **`command-center/backend/CLAUDE.md`** — backend services, tables, endpoints, architectural decisions, what's built
+4. **`command-center/frontend/CLAUDE.md`** — frontend pages, components, what's built
+5. **`algos/CLAUDE.md`** — forex bots and shared utilities (live MT5 side)
+6. **`regime/CLAUDE.md`** and **`regime/REGIME_CLASSIFIER.md`** — the shared classifier
+7. **`strategies/CLAUDE.md`** — the generic strategies subsystem
 
 Also look at:
 - The actual `strategies/` directory structure to confirm what runners and
@@ -164,10 +158,10 @@ roadmap document still gets the rules.
 
 ## Output
 
-Write both documents to `/mnt/user-data/outputs/`:
+Write both documents to `docs/` in the repo root:
 
-- `LWG_Project_State_Snapshot.md`
-- `LWG_Roadmap_And_Open_Questions.md`
+- `docs/LWG_Project_State_Snapshot.md`
+- `docs/LWG_Roadmap_And_Open_Questions.md`
 
 After writing, report back in plain English:
 

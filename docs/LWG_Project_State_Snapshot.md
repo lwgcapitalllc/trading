@@ -1,5 +1,5 @@
 # LWG Capital — Project State Snapshot
-**Last updated:** 2026-06-04
+**Last updated:** 2026-06-06
 **Source:** live repo state — verified against filesystem, DB, and CLAUDE.md files
 
 > Hand this document to any new Claude.ai chat as the first message, along with
@@ -26,7 +26,8 @@ LWG Capital is a personal algorithmic trading operation building toward 30–50 
 - NinjaTrader 8 — backtest engine and eventually live execution
 - `nt8_agent.py` — Flask HTTP server on port 8765, accessed via SSH LocalForward tunnel
 - `vps_compile_runner.py` — pywinauto subprocess: opens NinjaScript Editor, presses F5, polls DLL mtime for success
-- MT5 (PU Prime demo) — forex bots only, separate from the futures work
+- MT5 (PU Prime demo, `C:\MT5_FFT`) — live forex bots only
+- MT5 Lab (`C:\MT5_Lab`, PU Prime demo) — Strategy Tester for backtest lab only; driven by `mt5_agent.py` on port 8766
 - SSH alias: `forexvps` — repo at `C:\trading\`
 
 **Repository:** lwgcapitalllc/trading (private GitHub)
@@ -89,13 +90,14 @@ Moved ORB.cs, VWAP_MR.cs, Momentum.cs to `strategies/ninjatrader/`. Scanner read
 
 ## Current state of strategies
 
-All three strategies live at `strategies/ninjatrader/`. All run on NinjaTrader 8 via the command center backtest lab. None has reached Tier 1 or Tier 2 yet — these are baseline runs only.
+Four strategies across two runners. NT8 strategies are at `strategies/ninjatrader/`; MT5 strategy is at `strategies/mt5/`. None has reached Tier 1 or Tier 2 yet — these are baseline runs only.
 
-| Strategy | Runs | Best result | Status |
-|---|---|---|---|
-| ORB | 13 complete | +$7.6k on MNQ (still Tier 3) | Tier 3 across all instruments. Needs optimization. |
-| Momentum | 1 complete | -$14k on MGC | Tier 3. Barely tested. |
-| VWAP_MR | 0 | — | Not yet run. |
+| Strategy | Runner | Runs | Best result | Status |
+|---|---|---|---|---|
+| ORB | NT8 | 20 complete | +$7.6k on MNQ (still Tier 3) | Tier 3 across all instruments. Needs optimization. |
+| Momentum | NT8 | 2 complete | -$1.2k on best run | Tier 3. Barely tested. |
+| VWAP_MR | NT8 | 0 | — | Not yet run. |
+| MeanReversion | MT5 | 1 complete | -$9.3k (smoke test run) | Smoke test complete. No further MT5 runs yet. |
 
 ORB has been run on MES, MNQ, MGC, MCL, MYM, M2K — all TIER_3_DISCARD, most with large negative net P&L. These are pre-optimization baseline runs. Strategy improvement work (regime filter, trailing stop, daily P&L circuit breaker, re-entry) is the next priority.
 
@@ -103,10 +105,11 @@ ORB has been run on MES, MNQ, MGC, MCL, MYM, M2K — all TIER_3_DISCARD, most wi
 
 ## Current state of rulesets
 
-**13 rulesets seeded in the database:**
+**15 rulesets seeded in the database:**
 - 6 `prop_eval`: LucidFlex $50k + $100k, Tradeify $50k + $100k, FundedNext $50k + $100k
 - 6 `prop_funded`: same firms, same sizes, funded-account rules (drawdown only, no profit target)
-- 1 `personal`: `personal_futures_10k_example` (demo/personal account template)
+- 2 `personal`: Personal $10k Futures (Example), Personal Forex Main Account
+- 1 `demo`: Personal Forex Demo Account
 
 All rulesets carry the full foundational config fields from Pass 1 (risk %, halt fraction, consecutive loss limit, entry hours, days allowed, daily profit target, lock-in percentage, commission, slippage).
 

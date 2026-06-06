@@ -130,8 +130,8 @@ that speaks the same shape of endpoints.
 - **Hidden Markov Model regime classifier** — explicitly considered and
   rejected. The rules-based classifier is intentional. Transparency over
   marginal accuracy gains.
-- **Port `bot_smc_trend` and `bot_fft` to MQL5** — only Mean Reversion is
-  being ported in M5. The other two are deferred until/if they're worth
+- **Port `bot_smc_trend` and `bot_fft` to MQL5** — only Mean Reversion was
+  ported in M5. The other two are deferred until/if they're worth
   testing through the lab.
 
 ---
