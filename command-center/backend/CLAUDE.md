@@ -308,7 +308,13 @@ Merges both pools (~11,000 paths) and computes: median/P95/P99 drawdown, prob of
 
 ## Key architectural decisions
 
-**Optimizer implementation:** NT8 Optimizer GUI automation (pywinauto) was not attempted. Instead, the optimizer generates all parameter combinations from the grid and drives them as individual backtest calls via the existing NT8 agent pipeline (`optimization_runner.py`). `_MAX_CONCURRENT = 1` — the NT8 Strategy Analyzer window is single-threaded; running more than one job at a time causes SA conflicts, display switch failures, and missing XML logs. For 3+D grids with "auto" or "genetic" search method, a random subset of up to 200 combinations is sampled.
+**Optimizer implementation:** Two paths, selected by `search_method` on the optimization row:
+
+- **`"brute"` / `"genetic"` / `"auto"`** (legacy) — generates all param combos on the backend and fires them as individual backtest calls via `nt8_agent_client.start_backtest`. `_MAX_CONCURRENT = 1` — the SA window is single-threaded. "genetic" samples up to 200 combos for 3+D grids.
+
+- **`"native"`** (Step 1 fast path, NT8 only) — sends ONE `POST /native-optimize` to the VPS agent. `vps_backtest_runner.run_native_optimize_mode` switches the SA to Optimization mode, sets Start/End/Increment ranges for each Strategy Logic param, fires a single Run that uses all CPU cores, then exports the results grid to CSV. The backend creates run rows for every combo after the grid is returned. No per-combo equity curve — auto-trigger stress test is skipped; winner must be stress-tested via a manual single rerun. `estimated_runs` is always the full grid size (no sampling in native mode).
+
+**Parity check:** before trusting the native path, run one combo through it and compare to the existing single-run path. Optimize mode under pywinauto differs from Run mode — the parity check catches setup bugs.
 
 **NT8 SA global lock:** All three job types (single backtest, sweep, optimization) share the same physical SA window. `lab_db.has_any_running_vps_job()` checks for any `backtest_runs` or `optimizations` row with `status = 'running'`. All three trigger endpoints call it and return 409 if true. This prevents cross-job conflicts (e.g. a sweep starting while an optimization is in progress). Walk-forward and sensitivity stress tests also check this lock before triggering.
 

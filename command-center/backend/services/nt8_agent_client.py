@@ -208,6 +208,21 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
     }
 
 
+def start_native_optimization(opt_spec: dict) -> dict:
+    """
+    Submit a native optimizer job to the NT8 agent (POST /native-optimize).
+
+    opt_spec must include: job_id, strategy_class, instrument, start_date, end_date,
+    param_ranges ({name: {min, max, step} | [val, ...]}) and fixed_params ({name: value}).
+    """
+    return _post("/native-optimize", opt_spec, timeout=30)
+
+
+def native_opt_results(job_id: str) -> dict:
+    """Fetch the native optimizer result grid (combos + KPIs) after job completes."""
+    return _get(f"/jobs/{job_id}/native-opt-results")
+
+
 def start_backtest(job_spec: dict, runner: str = "ninjatrader") -> dict:
     """Submit a backtest job. Routes to the NT8 or MT5 agent based on runner."""
     if runner == "ninjatrader":

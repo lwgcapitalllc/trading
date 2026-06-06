@@ -188,6 +188,8 @@ def expand_grid(param_grid: dict) -> list[dict]:
 
 
 def pick_search_method(param_grid: dict, requested: str) -> str:
+    if requested == "native":
+        return "native"
     if requested != "auto":
         return requested
     return "brute" if len(param_grid) <= 2 else "genetic"
@@ -199,7 +201,7 @@ def sample_combinations(combos: list[dict], method: str) -> list[dict]:
         if len(combos) <= _GENETIC_MAX_SAMPLES:
             return combos
         return random.sample(combos, _GENETIC_MAX_SAMPLES)
-    return combos  # brute: run all
+    return combos  # brute, native: run all combos
 
 
 # ── Single run poller ─────────────────────────────────────────────────────────
@@ -302,11 +304,179 @@ async def _run_batch(
     await asyncio.gather(*[_one(rid, spec) for rid, spec in zip(run_ids, job_specs)])
 
 
+# ── Native optimizer path ─────────────────────────────────────────────────────
+
+# Max seconds to wait for the native optimizer VPS job (all combos in one run)
+_NATIVE_OPT_STALL_SEC = 7200  # 2 hours
+
+
+async def run_native_optimization(optimization_id: str) -> None:
+    """
+    Drive NT8's built-in optimizer for one strategy in a single VPS job.
+
+    Instead of N individual backtest calls, sends ONE /native-optimize request
+    that runs NT8's Strategy Analyzer in Optimization mode (one data load, all CPU
+    cores).  Result is a grid of {params, kpis} combos.  Run rows are created
+    after the grid comes back, marked complete immediately.
+
+    Auto-trigger stress test is skipped — native combo runs have no per-combo
+    equity curve.  The winner can be stress-tested manually via a separate run.
+    """
+    opt = lab_db.get_optimization(optimization_id)
+    if not opt:
+        return
+
+    strategy = lab_db.get_strategy(opt["strategy_id"])
+    if not strategy:
+        lab_db.fail_optimization(optimization_id, "Strategy not found")
+        return
+
+    firm = lab_db.get_ruleset(opt["ruleset_id"]) if opt.get("ruleset_id") else None
+
+    # Build fixed_params: foundational config (from ruleset) + strategy defaults not in the grid
+    param_ranges = opt["param_grid"]
+    fixed_params: dict = {}
+    if firm:
+        fixed_params.update(nt8_agent_client.build_foundational_params(firm))
+    for k, v in (strategy.get("default_params") or {}).items():
+        if k not in param_ranges:
+            fixed_params[k] = v
+
+    opt_job_id = f"nopt_{optimization_id}"
+
+    spec = {
+        "job_id":             opt_job_id,
+        "strategy_class":     strategy["class_name"],
+        "instrument":         opt["instrument"],
+        "bar_type":           opt.get("bar_type", "Minute"),
+        "bar_value":          opt.get("bar_value", 5),
+        "start_date":         opt["start_date"],
+        "end_date":           opt["end_date"],
+        "commission_per_side": opt["commission_per_side"],
+        "slippage_ticks":     opt["slippage_ticks"],
+        "param_ranges":       param_ranges,
+        "fixed_params":       fixed_params,
+    }
+
+    try:
+        await asyncio.to_thread(nt8_agent_client.start_native_optimization, spec)
+    except Exception as exc:
+        lab_db.fail_optimization(optimization_id, f"VPS submit failed: {exc}")
+        return
+
+    # Poll the single VPS job until it completes or stalls
+    started_at = time.time()
+    while True:
+        await asyncio.sleep(_POLL_INTERVAL)
+
+        try:
+            status_data = await asyncio.to_thread(nt8_agent_client.job_status, opt_job_id)
+        except Exception:
+            if time.time() - started_at > _NATIVE_OPT_STALL_SEC:
+                lab_db.fail_optimization(optimization_id, "Lost VPS contact")
+                return
+            continue
+
+        status = status_data.get("status", "running")
+
+        if status == "complete":
+            break
+
+        if status.startswith("failed"):
+            lab_db.fail_optimization(
+                optimization_id,
+                status_data.get("error") or status,
+            )
+            return
+
+        if time.time() - started_at > _NATIVE_OPT_STALL_SEC:
+            try:
+                await asyncio.to_thread(nt8_agent_client.cancel_job, opt_job_id)
+            except Exception:
+                pass
+            lab_db.fail_optimization(optimization_id, "Native optimizer timed out")
+            return
+
+    # Retrieve the full combo grid
+    try:
+        result = await asyncio.to_thread(nt8_agent_client.native_opt_results, opt_job_id)
+    except Exception as exc:
+        lab_db.fail_optimization(optimization_id, f"Could not fetch grid: {exc}")
+        return
+
+    combos = result.get("combos", [])
+    if not combos:
+        lab_db.fail_optimization(optimization_id, "Native optimizer returned no combos")
+        return
+
+    ruleset_ids = [opt["ruleset_id"]] if opt.get("ruleset_id") else []
+    now         = int(time.time())
+    run_ids: list[str] = []
+
+    for combo in combos:
+        run_id = uuid.uuid4().hex[:12]
+        run_ids.append(run_id)
+
+        kpis        = combo.get("kpis", {})
+        combo_params = combo.get("params", {})
+        full_params  = {**fixed_params, **combo_params}
+
+        lab_db.insert_run_optimization({
+            "run_id":             run_id,
+            "strategy_id":        opt["strategy_id"],
+            "instrument":         opt["instrument"],
+            "params":             full_params,
+            "bar_type":           opt.get("bar_type", "Minute"),
+            "bar_value":          opt.get("bar_value", 5),
+            "start_date":         opt["start_date"],
+            "end_date":           opt["end_date"],
+            "commission_per_side": opt["commission_per_side"],
+            "slippage_ticks":     opt["slippage_ticks"],
+            "status":             "complete",
+            "created_at":         now,
+            "optimization_id":    optimization_id,
+        })
+
+        # Persist KPIs (no equity curve / daily PnL for native combo runs)
+        lab_db.update_run_complete(run_id, kpis, {
+            "equity_curve": None,
+            "trades":       None,
+            "daily_pnl":    None,
+        })
+
+        # Evaluate against rulesets — equity_curve is empty, drawdown eval uses kpis directly
+        from services import evaluator, worthiness
+        evaluator.evaluate_run(run_id, ruleset_ids, kpis, [], [])
+
+        w = worthiness.score_run_after_evals(
+            run_id, ruleset_ids,
+            kpis.get("profit_factor"), kpis.get("max_drawdown"), kpis.get("trade_count"),
+        )
+        if w:
+            lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
+
+        lab_db.increment_optimization_completed(optimization_id)
+
+    # Score all completed runs and pick the winner
+    complete_rows = [
+        row for run_id in run_ids
+        if (row := lab_db.get_run(run_id)) and row["status"] == "complete"
+    ]
+    best_run_id = await _pick_best_run(complete_rows, opt, firm)
+    lab_db.complete_optimization(optimization_id, best_run_id)
+    # Note: no auto-trigger stress test — native runs have no equity curve per combo.
+    # To stress-test the winner, rerun it as a single backtest from the detail page.
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 async def run_optimization(optimization_id: str) -> None:
     opt = lab_db.get_optimization(optimization_id)
     if not opt:
+        return
+
+    if opt.get("search_method") == "native":
+        await run_native_optimization(optimization_id)
         return
 
     strategy = lab_db.get_strategy(opt["strategy_id"])

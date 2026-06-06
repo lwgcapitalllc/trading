@@ -81,6 +81,7 @@ cd command-center
 | Backtests lab M2 — worthiness badges (Tier 1/2/3) on every completed run | ✅ |
 | Backtests lab M2 — instrument sweeps (N sequential runs via SA semaphore, Sweep Detail page with live sort-by-tier) | ✅ |
 | Backtests lab M2 — parameter optimizer (brute force + genetic, Optimization Detail with ranked results table, ★ best row) | ✅ |
+| Backtests Speed Step 1 — native NT8 optimizer path (`search_method="native"`): one VPS job, all CPU cores, export CSV results grid, create run rows on return. VPS: `vps_backtest_runner.run_native_optimize_mode` switches SA to Optimization mode, sets Start/End/Increment per param, exports results. Agent: `POST /native-optimize`, `GET /jobs/{id}/native-opt-results`, `GET /optimize-mode-dump?strategy=X` diagnostic. Backend: `run_native_optimization()` in `optimization_runner.py`. Guard: native method rejected for MT5 strategies. No auto-trigger stress test (no per-combo equity curve). **Parity check required before relying on results.** | ✅ |
 | Backtests lab M2 — Tier 3 warning modal with smart instrument routing | ✅ |
 | Backtests lab M2 — runner field on strategies; nt8_agent_client dispatcher for future MT5 support | ✅ |
 | Backtests lab M2 — Sweeps tab (list view with count badge, progress, status, delete) | ✅ |

@@ -39,6 +39,9 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         raise HTTPException(400, "param_grid cannot be empty")
 
     runner = strategy.get("runner", "ninjatrader")
+    if req.search_method == "native" and runner != "ninjatrader":
+        raise HTTPException(400, "Native optimizer is only supported for NT8 (ninjatrader) strategies")
+
     if runner == "mt5":
         if lab_db.has_running_mt5_job():
             raise HTTPException(409, "An MT5 job is already running — wait for it to finish")

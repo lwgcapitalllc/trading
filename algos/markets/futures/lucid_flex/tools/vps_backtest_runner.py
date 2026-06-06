@@ -468,6 +468,367 @@ def _nt8_date(iso: str) -> str:
     return f"{int(m)}/{int(d)}/{y}"
 
 
+# ── Native Optimizer Mode ─────────────────────────────────────────────────────
+
+# Longer timeout for the optimizer — it runs all combos in one shot.
+_OPT_TIMEOUT = 7200  # 2 hours max
+
+
+def _set_param_range_native(sa, pfx: str, name: str, range_spec) -> bool:
+    """
+    Set one param's optimization range in NT8's Strategy Analyzer Optimize mode.
+
+    range_spec: {"min": float, "max": float, "step": float} for continuous ranges
+                [val, val, ...] for discrete lists (infers step from first two values)
+                scalar for a fixed (non-optimized) value
+
+    NT8 Optimize property grid sub-field AutomationIds follow the pattern:
+        {pfx}_{name}_Start, {pfx}_{name}_End, {pfx}_{name}_Increment
+
+    Falls back to the single-value field {pfx}_{name} for scalar / single-item specs,
+    which keeps the param at a fixed value without including it in the optimize grid.
+
+    Returns True if at least the Start field was set successfully.
+    """
+    if isinstance(range_spec, dict):
+        lo   = range_spec["min"]
+        hi   = range_spec["max"]
+        step = range_spec["step"]
+    elif isinstance(range_spec, list):
+        if len(range_spec) == 0:
+            return False
+        if len(range_spec) == 1:
+            # Single value — set as fixed
+            aid = f"{pfx}_{name}"
+            ok = set_edit(sa, aid, range_spec[0], warn=False)
+            return ok or set_checkbox(sa, aid, range_spec[0])
+        lo   = range_spec[0]
+        hi   = range_spec[-1]
+        step = round(range_spec[1] - range_spec[0], 8) if len(range_spec) > 1 else 1
+    else:
+        # Scalar — set as fixed value (param is not part of the optimize grid)
+        aid = f"{pfx}_{name}"
+        ok = set_edit(sa, aid, range_spec, warn=False)
+        return ok or set_checkbox(sa, aid, range_spec)
+
+    # Set Start, End, Increment (try both _Increment and _Step suffixes)
+    ok_start = set_edit(sa, f"{pfx}_{name}_Start",     lo,   warn=False)
+    ok_end   = set_edit(sa, f"{pfx}_{name}_End",       hi,   warn=False)
+    ok_step  = (
+        set_edit(sa, f"{pfx}_{name}_Increment", step, warn=False)
+        or set_edit(sa, f"{pfx}_{name}_Step",   step, warn=False)
+    )
+    if not ok_start:
+        print(f"  WARNING: could not set {pfx}_{name}_Start — param may not be optimized")
+    if not ok_end:
+        print(f"  WARNING: could not set {pfx}_{name}_End")
+    if not ok_step:
+        print(f"  WARNING: could not set {pfx}_{name}_Increment or _Step")
+    return ok_start
+
+
+def _dismiss_dialog(dt) -> None:
+    """Dismiss any lingering Export As or Confirm Save dialog."""
+    for title in ["Export As", "Confirm Save As", "Confirm"]:
+        try:
+            w = dt.window(title=title)
+            if w.exists(timeout=0.1):
+                for btn in ["Cancel", "No", "OK"]:
+                    try:
+                        w.child_window(title=btn, control_type="Button").click_input()
+                        return
+                    except Exception:
+                        pass
+                w.close()
+        except Exception:
+            pass
+
+
+def _parse_optimization_csv(csv_path: str, param_names: set) -> list:
+    """
+    Parse NT8 optimization results CSV into list of {params: {...}, kpis: {...}} dicts.
+
+    NT8 column names for params match the NinjaScript property names exactly.
+    KPI columns use NT8's display names — we map the most common ones to our
+    internal names (net_pnl, profit_factor, etc.).
+    """
+    import csv as csv_mod
+
+    # NT8 optimization results CSV header → internal KPI name.
+    # Covers NT8 7–8.x column naming variations.
+    _KPI_MAP = {
+        "Net Profit":               "net_pnl",
+        "Total Net Profit":         "net_pnl",
+        "Profit Factor":            "profit_factor",
+        "Max. Drawdown":            "max_drawdown",
+        "Max Drawdown":             "max_drawdown",
+        "% Profitable":             "win_rate",
+        "Percent Profitable":       "win_rate",
+        "# Trades":                 "trade_count",
+        "Total # of Trades":        "trade_count",
+        "Num. Trades":              "trade_count",
+        "Sharpe Ratio":             "sharpe",
+        "Avg. Win Trade":           "avg_win",
+        "Average Win":              "avg_win",
+        "Avg. Losing Trade":        "avg_loss",
+        "Average Loss":             "avg_loss",
+        "Max. Consecutive Winners": "worst_losing_streak",  # repurposed key
+        "Max. Consecutive Losers":  "worst_losing_streak",
+    }
+
+    combos = []
+    try:
+        with open(csv_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv_mod.DictReader(f)
+            for row in reader:
+                params: dict = {}
+                kpis:   dict = {}
+                for col, val in row.items():
+                    col_stripped = (col or "").strip()
+                    val_stripped = (val or "").strip()
+
+                    if col_stripped in param_names:
+                        # Coerce to appropriate type
+                        if val_stripped.lower() in ("true", "false"):
+                            params[col_stripped] = val_stripped.lower() == "true"
+                        else:
+                            try:
+                                f_val = float(val_stripped.replace(",", ""))
+                                params[col_stripped] = int(f_val) if f_val == int(f_val) else f_val
+                            except ValueError:
+                                params[col_stripped] = val_stripped
+                    elif col_stripped in _KPI_MAP:
+                        internal = _KPI_MAP[col_stripped]
+                        try:
+                            v = float(
+                                val_stripped
+                                .replace("$", "")
+                                .replace(",", "")
+                                .replace("%", "")
+                                .strip()
+                            )
+                            # NT8 reports win_rate as 0–100; we store as 0–1
+                            if internal == "win_rate":
+                                v = round(v / 100.0, 4)
+                            # NT8 may report max_drawdown as negative
+                            if internal == "max_drawdown":
+                                v = abs(v)
+                            kpis[internal] = round(v, 4)
+                        except ValueError:
+                            pass
+
+                if params or kpis:
+                    combos.append({"params": params, "kpis": kpis})
+    except Exception as e:
+        print(f"  [opt-export] CSV parse error: {e}")
+
+    print(f"  [opt-export] Parsed {len(combos)} combos from optimization results")
+    return combos
+
+
+def _export_optimization_results(sa, job_id: str, param_names: set) -> list:
+    """
+    Export NT8 optimization results grid to CSV via the two-pass right-click method.
+
+    After the optimizer completes NT8 shows the results grid in the SA main area.
+    We right-click that area to find and click Export, then parse the resulting CSV.
+
+    Returns list of {params: {...}, kpis: {...}} — empty on any failure.
+    """
+    from pywinauto import mouse as _mouse, Desktop
+    import shutil
+
+    out_dir = NT8_DOCS / "lab_results" / job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    dt = Desktop(backend="uia")
+    _dismiss_dialog(dt)
+    time.sleep(0.1)
+
+    # Restore SA if minimized — minimized windows have invalid screen rect
+    try:
+        sa.restore()
+        time.sleep(0.3)
+    except Exception:
+        pass
+
+    # Right-click target: center of SA content area (optimization results grid lives here)
+    sa_rect = sa.rectangle()
+    rc_x = sa_rect.left + (sa_rect.right  - sa_rect.left) // 2
+    rc_y = sa_rect.top  + int((sa_rect.bottom - sa_rect.top) * 0.55)
+
+    nt8          = sa.top_level_parent()
+    export_coords = None
+
+    # Pass 1: open context menu, scan NT8 UIA tree for Export item screen coordinates.
+    # The UIA scan closes the WPF popup (expected) — we capture coords before menu closes.
+    _mouse.right_click(coords=(rc_x, rc_y))
+    time.sleep(0.3)
+    for el in nt8.descendants():
+        txt = (el.window_text() or "").strip()
+        ct  = str(getattr(el.element_info, "control_type", ""))
+        if ct == "MenuItem" and txt.startswith("Export"):
+            r = el.rectangle()
+            if r.width() > 5:
+                export_coords = ((r.left + r.right) // 2, (r.top + r.bottom) // 2)
+                break
+
+    if export_coords is None:
+        print("  [opt-export] Export menu item not found in NT8 UIA tree")
+        send_keys("{ESCAPE}")
+        return []
+
+    # Pass 2: right-click again, immediately click Export at the cached coordinates.
+    _mouse.right_click(coords=(rc_x, rc_y))
+    time.sleep(0.4)
+    _mouse.click(coords=export_coords)
+    print(f"  [opt-export] Clicked Export at {export_coords}")
+    time.sleep(0.8)
+
+    # Enter twice: accept default filename, confirm overwrite
+    send_keys("{ENTER}")
+    time.sleep(0.3)
+    send_keys("{ENTER}")
+    time.sleep(1.0)
+
+    _dismiss_dialog(dt)
+
+    # Find the CSV NT8 just wrote (default name: "NinjaTrader Grid *.csv" in Documents)
+    docs   = Path.home() / "Documents"
+    cutoff = time.time() - 30
+    csvs   = [p for p in docs.glob("NinjaTrader Grid*.csv") if p.stat().st_mtime >= cutoff]
+    if not csvs:
+        csvs = sorted(docs.glob("NinjaTrader Grid*.csv"),
+                      key=lambda p: p.stat().st_mtime, reverse=True)[:1]
+
+    if not csvs:
+        print("  [opt-export] No CSV found after optimization export")
+        return []
+
+    csv_path = max(csvs, key=lambda p: p.stat().st_mtime)
+    dest     = out_dir / "opt_results.csv"
+    shutil.copy(str(csv_path), str(dest))
+    print(f"  [opt-export] CSV saved to {dest.name}")
+
+    return _parse_optimization_csv(str(csv_path), param_names)
+
+
+def run_native_optimize_mode(job_id: str, spec: dict):
+    """
+    Native optimizer mode: run NT8's Strategy Analyzer in Optimization mode.
+
+    Switches the SA BacktestType to "Optimization", sets per-param Start/End/Increment
+    ranges for Strategy Logic params, keeps Foundational params as fixed values,
+    fires Run, waits for all combos to complete, then exports the results grid to CSV.
+
+    Writes native_opt_result.json to lab_results/<job_id>/ on success.
+    Exits non-zero on failure so nt8_agent.py classifies the run correctly.
+
+    spec fields:
+        strategy_class   str
+        instrument       str   (internal format, e.g. "MNQ 06-26")
+        bar_type         str   "Minute" / "Day"
+        bar_value        int
+        start_date       str   YYYY-MM-DD
+        end_date         str   YYYY-MM-DD
+        commission_per_side  float
+        slippage_ticks   int
+        param_ranges     dict  {name: {min, max, step} | [val, ...] | scalar}
+        fixed_params     dict  {name: value}  (Foundational + non-optimized defaults)
+    """
+    strategy     = spec["strategy_class"]
+    instr        = spec["instrument"]
+    param_ranges = spec.get("param_ranges", {})
+    fixed_params = spec.get("fixed_params", {})
+
+    print(f"JOB {job_id}: native optimize {strategy} on {instr}")
+    print(f"  Ranges: { {k: (v if isinstance(v, list) else v) for k, v in param_ranges.items()} }")
+    _pct(10, "Connecting to NT8")
+
+    app = connect_nt8()
+    sa  = find_strategy_analyzer(app)
+    _pct(20, "Switching SA to Optimization mode")
+
+    pfx = f"{strategy}PropertyGridEditorPDEX"
+
+    # Switch BacktestType ComboBox from "Backtest" to "Optimization"
+    if not set_combo(sa, "BacktestType", "Optimization"):
+        print("  WARNING: BacktestType combo set failed — SA may already be in Optimize mode or ID differs")
+    time.sleep(1.0)
+
+    # Select strategy (triggers property grid rebuild — 3s wait)
+    if not select_strategy(sa, strategy):
+        print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
+        sys.exit(1)
+    time.sleep(3.0)
+
+    _pct(25, "Configuring parameters")
+
+    # Standard controls: instrument, dates, bar value, slippage
+    set_instrument(sa, instr)
+    set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  _nt8_date(spec["start_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
+    set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
+
+    # Fixed params (Foundational and any non-optimized strategy params)
+    for name, value in fixed_params.items():
+        aid = f"{pfx}_{name}"
+        if not set_edit(sa, aid, value, warn=False):
+            set_checkbox(sa, aid, value)
+
+    # Strategy Logic param ranges — these become Start/End/Increment in the SA
+    for name, range_spec in param_ranges.items():
+        ok = _set_param_range_native(sa, pfx, name, range_spec)
+        status = "OK" if ok else "FAILED"
+        print(f"  Param range {name}: {status}")
+
+    _pct(30, "Starting native optimization")
+
+    click_time = time.time()
+    try:
+        run_btn = sa.child_window(auto_id="Run", control_type="Button")
+        run_btn.click_input()
+        print("  Optimization Run clicked. Waiting for all combos...")
+    except Exception as e:
+        print(f"  ERROR clicking Run: {e}")
+        sys.exit(1)
+
+    _pct(35, "Optimization running")
+
+    # wait_for_run_complete uses the same Run-button heuristic and works for optimize mode
+    finished = wait_for_run_complete(sa, timeout=_OPT_TIMEOUT)
+    if not finished:
+        print(f"  ERROR: Optimization timed out after {_OPT_TIMEOUT}s")
+        sys.exit(1)
+
+    elapsed = round(time.time() - click_time, 1)
+    print(f"  Optimization finished in {elapsed}s")
+    _pct(80, "Exporting optimization results")
+
+    param_names = set(param_ranges.keys())
+    combos = _export_optimization_results(sa, job_id, param_names)
+
+    if not combos:
+        print("  ERROR: Could not parse optimization results from NT8 CSV export")
+        sys.exit(1)
+
+    out_dir = NT8_DOCS / "lab_results" / job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    result = {
+        "job_id":         job_id,
+        "strategy_class": strategy,
+        "instrument":     instr,
+        "combos":         combos,
+        "combo_count":    len(combos),
+        "elapsed_sec":    elapsed,
+        "completed_at":   datetime.now().isoformat(),
+    }
+    (out_dir / "native_opt_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    print(f"  Native opt result written: {len(combos)} combos in {elapsed}s")
+    _pct(100, f"Complete — {len(combos)} combos")
+
+
 def configure_from_spec(sa, spec: dict):
     """Configure Strategy Analyzer from a lab job spec (firm-agnostic)."""
     strategy = spec["strategy_class"]
@@ -848,10 +1209,17 @@ def main():
                         help="Run only this combo ID (e.g. ORB_MNQ). Omit to run all.")
     parser.add_argument("--job-id",   default=None, help="Lab mode: job ID")
     parser.add_argument("--job-spec", default=None, help="Lab mode: path to job_spec.json")
+    parser.add_argument("--mode",     default=None,
+                        help="Runner mode: omit for single-run lab mode, 'native-optimize' for native optimizer")
     args = parser.parse_args()
 
     if args.job_id and args.job_spec:
-        run_job_mode(args.job_id, args.job_spec)
+        if args.mode == "native-optimize":
+            with open(args.job_spec) as f:
+                spec = json.load(f)
+            run_native_optimize_mode(args.job_id, spec)
+        else:
+            run_job_mode(args.job_id, args.job_spec)
         return
 
     # Legacy config-driven mode
