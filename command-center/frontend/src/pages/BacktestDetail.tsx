@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -896,216 +896,118 @@ function useElapsed(startedAt: string | null): string {
   return `${Math.floor(secs / 60)}m ${secs % 60}s`
 }
 
-// Candlestick chart constants — defined once at module level
-const CHART_BULL = C.accent
-const CHART_BEAR = C.neg
-const CHART_PAD  = 5
+// ── Milestone log parser ──────────────────────────────────────────────────────
 
-const CHART_CANDLES = ((): Array<{ o: number; c: number; h: number; l: number }> => {
-  let s = 0xC0FFEE42
-  const r = () => { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s >>> 0) / 0xffffffff }
-  const bars: Array<{ o: number; c: number; h: number; l: number }> = []
-  let p = 0.42
-  const script: Array<[number, number, number]> = [
-    [4, +0.060, 0.075],  // Connect:   gentle uptrend
-    [3, +0.008, 0.050],  // Configure: sideways
-    [5, -0.090, 0.080],  // Run:       sharp dip
-    [6, +0.095, 0.085],  // Run:       strong recovery
-    [5, +0.038, 0.065],  // Results:   steady climb
-    [3, +0.022, 0.050],  // Evaluate:  final push
-  ]
-  for (const [n, trend, vol] of script) {
-    for (let i = 0; i < n; i++) {
-      const o  = p
-      const mv = trend + (r() - 0.5) * vol
-      const c  = Math.max(0.06, Math.min(0.94, o + mv))
-      const hi = Math.max(o, c) + (0.3 + r() * 0.7) * vol * 0.9
-      const lo = Math.min(o, c) - (0.3 + r() * 0.7) * vol * 0.9
-      bars.push({ o, c, h: Math.min(0.96, hi), l: Math.max(0.04, lo) })
-      p = c
+interface Milestone { time: string; text: string; accent: boolean }
+
+const NT8_MILESTONE_PATTERNS: Array<{
+  re: RegExp
+  format: (m: RegExpMatchArray, line: string) => { text: string; accent: boolean }
+}> = [
+  {
+    re: /Connected \(via process name\)/,
+    format: () => ({ text: 'NT8 connected', accent: true }),
+  },
+  {
+    re: /Strategy Analyzer found/,
+    format: () => ({ text: 'Strategy Analyzer open', accent: true }),
+  },
+  {
+    re: /Run clicked/,
+    format: () => ({ text: 'Backtest executing', accent: false }),
+  },
+  {
+    re: /could not select strategy '(.+)'/,
+    format: (m) => ({ text: `Strategy not found: ${m[1]}`, accent: false }),
+  },
+  {
+    re: /\[trades\] Parsed (\d+) trades, (\d+) trading days/,
+    format: (m) => ({ text: `Parsed ${m[1]} trades · ${m[2]} days`, accent: false }),
+  },
+  {
+    re: /Trades=(\d+)\s+NetPnL=([\d.-]+)\s+PF=([\d.]+)\s+MaxDD=([\d.]+)/,
+    format: (m) => {
+      const pnl = parseFloat(m[2])
+      const sign = pnl >= 0 ? '+' : ''
+      return {
+        text: `${m[1]} trades · P&L ${sign}$${Math.abs(pnl).toLocaleString('en-US', { maximumFractionDigits: 0 })} · PF ${parseFloat(m[3]).toFixed(2)} · DD $${parseFloat(m[4]).toFixed(0)}`,
+        accent: pnl >= 0,
+      }
+    },
+  },
+]
+
+const MT5_MILESTONE_PATTERNS: Array<{
+  re: RegExp
+  format: (m: RegExpMatchArray, line: string) => { text: string; accent: boolean }
+}> = [
+  {
+    re: /terminal64\.exe|Launching MT5/i,
+    format: () => ({ text: 'MT5 terminal launched', accent: true }),
+  },
+  {
+    re: /Strategy Tester running|backtest started/i,
+    format: () => ({ text: 'Strategy Tester running', accent: false }),
+  },
+  {
+    re: /Parsing.*report|report.*parsed/i,
+    format: () => ({ text: 'Parsing report', accent: false }),
+  },
+]
+
+function parseMilestones(logText: string, runner: string): Milestone[] {
+  const patterns = runner === 'mt5' ? MT5_MILESTONE_PATTERNS : NT8_MILESTONE_PATTERNS
+  const results: Milestone[] = []
+  for (const raw of logText.split('\n')) {
+    const lineMatch = raw.match(/^\[(\d{2}:\d{2}:\d{2})\]\s+(.+)$/)
+    if (!lineMatch) continue
+    const [, time, content] = lineMatch
+    for (const { re, format } of patterns) {
+      const m = content.match(re)
+      if (m) {
+        results.push({ time, ...format(m, content) })
+        break
+      }
     }
   }
-  return bars
-})()
-const CHART_N    = CHART_CANDLES.length  // 26
-const CHART_LOOP = 4800                  // ms per sweep cycle
+  return results
+}
 
-function RunningBanner({ pct, message, startedAt, onStop, steps = NT8_RUN_STEPS }: {
+// ── Running banner ────────────────────────────────────────────────────────────
+
+function RunningBanner({ pct, message, startedAt, onStop, runId, runner, steps = NT8_RUN_STEPS }: {
   pct: number
   message: string
   startedAt: string | null
   onStop: () => void
+  runId: string
+  runner: string
   steps?: typeof NT8_RUN_STEPS
 }) {
   const elapsed   = useElapsed(startedAt)
   const activeIdx = steps.reduce((best, step, i) => pct >= step.startPct ? i : best, 0)
-
-  const canvasRef   = useRef<HTMLCanvasElement>(null)
-  const chartRowRef = useRef<HTMLDivElement>(null)
-  const stagesRef   = useRef<HTMLDivElement>(null)
-  const pctRef      = useRef(pct)
-  const cwRef       = useRef(0)
-  const dotXsRef    = useRef<number[]>([])
-
-  // Keep pct ref current without restarting the animation loop
-  useEffect(() => { pctRef.current = pct }, [pct])
-
-  const measureAndAlign = useCallback(() => {
-    const canvas = canvasRef.current
-    const row    = chartRowRef.current
-    const stages = stagesRef.current
-    if (!canvas || !row || !stages) return
-    const dots = Array.from(stages.querySelectorAll('[data-dot]')) as HTMLElement[]
-    if (dots.length < 2) return
-    const rowR = row.getBoundingClientRect()
-    const fR   = dots[0].getBoundingClientRect()
-    const lR   = dots[dots.length - 1].getBoundingClientRect()
-    const left  = fR.left + fR.width  / 2 - rowR.left
-    const right = lR.left + lR.width  / 2 - rowR.left
-    canvas.style.left = `${left}px`
-    const newCW = Math.round(right - left)
-    if (newCW !== cwRef.current) { canvas.width = newCW; cwRef.current = newCW }
-    const canvasLeft = parseFloat(canvas.style.left) || 0
-    dotXsRef.current = dots.map(d => {
-      const dr = d.getBoundingClientRect()
-      return dr.left + dr.width / 2 - rowR.left - canvasLeft
-    })
-  }, [])
-
-  useEffect(() => {
-    measureAndAlign()
-    window.addEventListener('resize', measureAndAlign)
-    return () => window.removeEventListener('resize', measureAndAlign)
-  }, [measureAndAlign])
-
-  // Canvas animation loop — starts once, reads pct from ref each frame
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')!
-    const CH  = canvas.height
-    let rafId: number
-
-    function draw(ts: number) {
-      const CW  = cwRef.current
-      if (CW === 0) { rafId = requestAnimationFrame(draw); return }
-
-      const cp = pctRef.current
-      ctx.clearRect(0, 0, CW, CH)
-
-      const rawIdx  = Math.min(cp / 100 * CHART_N, CHART_N)
-      const cursorX = cp / 100 * CW
-      const slotW   = CW / CHART_N
-      const bodyW   = Math.max(3, Math.floor(slotW * 0.42))
-
-      // Loop sweep: animIdx cycles 0 → rawIdx with ease-in-out, then restarts
-      const t         = (ts % CHART_LOOP) / CHART_LOOP
-      const eased     = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
-      const animIdx   = eased * rawIdx
-      const fullCount  = Math.floor(animIdx)
-      const activeProg = animIdx - fullCount
-
-      // Dynamic y-scale anchored to real rawIdx so it never jumps mid-loop
-      const visSlice  = CHART_CANDLES.slice(0, Math.max(4, Math.ceil(rawIdx)))
-      const rawLo     = Math.min(...visSlice.map(c => c.l))
-      const rawHi     = Math.max(...visSlice.map(c => c.h))
-      const mid       = (rawLo + rawHi) / 2
-      const half      = Math.max(0.07, (rawHi - rawLo) / 2 + 0.012)
-      const priceMin  = mid - half
-      const priceRng  = half * 2
-      const toY       = (v: number) => CHART_PAD + (1 - (v - priceMin) / priceRng) * (CH - CHART_PAD * 2)
-
-      // Checkpoint dashed lines at exact dot positions
-      dotXsRef.current.forEach((dx, i) => {
-        if (i === 0) return
-        const passed = cursorX >= dx - 1
-        ctx.strokeStyle = passed ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.06)'
-        ctx.setLineDash([2, 4])
-        ctx.lineWidth = 1
-        ctx.beginPath(); ctx.moveTo(dx, 0); ctx.lineTo(dx, CH); ctx.stroke()
-        ctx.setLineDash([])
-      })
-
-      // Candles — stop before any candle bleeds past the cursor line
-      for (let i = 0; i < CHART_N; i++) {
-        let prog: number
-        if      (i < fullCount)    prog = 1
-        else if (i === fullCount)  { prog = activeProg; if (prog <= 0.01) continue }
-        else break
-
-        const c        = CHART_CANDLES[i]
-        const cx       = slotW * i + slotW / 2
-        if (cx >= cursorX) break   // candle center at or past cursor — stop
-
-        const isBull   = c.c >= c.o
-        const clr      = isBull ? CHART_BULL : CHART_BEAR
-        const isActive = i === fullCount
-
-        const openY  = toY(c.o)
-        const closeY = toY(c.c)
-        const highY  = toY(c.h)
-        const lowY   = toY(c.l)
-        const bodyT  = Math.min(openY, closeY)
-        const bodyB  = Math.max(openY, closeY)
-        const bodyH  = Math.max(2, bodyB - bodyT)
-        const midY   = (bodyT + bodyB) / 2
-
-        // Cap body width so right edge never passes cursorX
-        const cappedW = Math.min(bodyW, Math.max(1, cursorX - (cx - bodyW / 2)))
-
-        const wickP = Math.min(1, prog / 0.25)
-        if (wickP > 0) {
-          ctx.strokeStyle = clr + (isActive ? 'ff' : 'bb'); ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.moveTo(cx, midY); ctx.lineTo(cx, midY - (midY - highY) * wickP)
-          ctx.moveTo(cx, midY); ctx.lineTo(cx, midY + (lowY  - midY) * wickP)
-          ctx.stroke()
-        }
-        const bodyP = Math.max(0, (prog - 0.25) / 0.75)
-        if (bodyP > 0) {
-          ctx.fillStyle = clr + 'ff'
-          ctx.fillRect(cx - cappedW / 2, isBull ? bodyB - bodyH * bodyP : bodyT, cappedW, bodyH * bodyP)
-        }
-      }
-
-      // Cursor line
-      if (cp > 0 && cp < 100) {
-        ctx.strokeStyle = 'rgba(0,229,255,0.12)'; ctx.lineWidth = 4
-        ctx.beginPath(); ctx.moveTo(cursorX, 0); ctx.lineTo(cursorX, CH); ctx.stroke()
-        ctx.strokeStyle = 'rgba(0,229,255,0.65)'; ctx.lineWidth = 1
-        ctx.beginPath(); ctx.moveTo(cursorX, 0); ctx.lineTo(cursorX, CH); ctx.stroke()
-
-        // % pill — just right of cursor
-        const label = `${Math.round(cp)}%`
-        ctx.font = 'bold 10.5px "SF Mono","Fira Code",monospace'
-        const tw = ctx.measureText(label).width
-        const px = cursorX + 5
-        ctx.fillStyle = 'rgba(0,42,51,0.90)'
-        ctx.strokeStyle = 'rgba(0,229,255,0.35)'; ctx.lineWidth = 1
-        ctx.beginPath();
-        (ctx as unknown as { roundRect: (...a: unknown[]) => void })
-          .roundRect(px - 3, 3, tw + 8, 16, 4)
-        ctx.fill(); ctx.stroke()
-        ctx.fillStyle = CHART_BULL; ctx.textAlign = 'left'
-        ctx.fillText(label, px + 1, 15)
-      }
-
-      rafId = requestAnimationFrame(draw)
-    }
-
-    rafId = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(rafId)
-  }, [])
+  const { data: logText = '' } = useRunLog(runId, 500, true)
+  const milestones = useMemo(() => parseMilestones(logText, runner), [logText, runner])
 
   return (
-    <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 pt-3 pb-4">
-      {/* Candlestick chart — canvas spans between first and last dot */}
-      <div ref={chartRowRef} className="relative h-[100px] mb-2">
-        <canvas ref={canvasRef} height={90} className="absolute bottom-0" />
+    <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 pt-4 pb-4 space-y-4">
+
+      {/* Progress bar */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] font-semibold text-accent uppercase tracking-[0.6px]">Running</span>
+          <span className="text-[11px] font-mono text-accent tabular-nums">{Math.round(pct)}%</span>
+        </div>
+        <div className="h-[3px] bg-bg-sunken rounded-full overflow-hidden">
+          <div
+            className="h-full bg-accent rounded-full transition-all duration-700 ease-out"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
       </div>
 
       {/* Stage pipeline */}
-      <div ref={stagesRef} className="flex items-start">
+      <div className="flex items-start">
         {steps.map((step, i) => {
           const done   = i < activeIdx
           const active = i === activeIdx
@@ -1113,10 +1015,9 @@ function RunningBanner({ pct, message, startedAt, onStop, steps = NT8_RUN_STEPS 
             <Fragment key={step.label}>
               <div className="flex flex-col items-center gap-[6px]">
                 <span
-                  data-dot=""
                   className={[
                     'w-[9px] h-[9px] rounded-full flex-shrink-0 transition-all duration-300',
-                    done   ? 'bg-accent/80' :
+                    done   ? 'bg-accent/50' :
                     active ? 'bg-accent' :
                              'border border-border-default bg-transparent',
                   ].join(' ')}
@@ -1142,11 +1043,23 @@ function RunningBanner({ pct, message, startedAt, onStop, steps = NT8_RUN_STEPS 
         })}
       </div>
 
+      {/* Milestone log */}
+      {milestones.length > 0 && (
+        <div className="space-y-[5px]">
+          {milestones.map((m, i) => (
+            <div key={i} className="flex items-baseline gap-3 font-mono text-[11px] leading-snug">
+              <span className="text-text-tertiary flex-shrink-0">{m.time}</span>
+              <span className={m.accent ? 'text-accent' : 'text-text-secondary'}>{m.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Message + elapsed + stop */}
-      <div className="flex items-center justify-between mt-3">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse flex-shrink-0" />
-          <span className="text-[12px] text-text-secondary">{message || 'Starting…'}</span>
+          <span className="text-[12px] text-text-secondary">{message || 'Starting\u2026'}</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-text-tertiary font-mono tabular-nums">{elapsed}</span>
@@ -1159,6 +1072,7 @@ function RunningBanner({ pct, message, startedAt, onStop, steps = NT8_RUN_STEPS 
           </button>
         </div>
       </div>
+
     </div>
   )
 }
@@ -1641,7 +1555,7 @@ export function BacktestDetail() {
           </div>
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
-          {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} steps={isMt5 ? MT5_RUN_STEPS : NT8_RUN_STEPS} />}
+          {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={isMt5 ? MT5_RUN_STEPS : NT8_RUN_STEPS} />}
           {isFailed && (
             <FailureBanner
               run={run}
