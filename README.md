@@ -23,6 +23,8 @@ Read these in order for full context:
 5. `smart-money/CLAUDE.md` — pipeline status, thresholds, where we left off
 6. `regime/CLAUDE.md` — shared classifier, public API, consumers
 7. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
+8. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
+9. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
 
 ## Subsystems
 
@@ -50,6 +52,5 @@ Cross-subsystem reference documents:
 - `docs/Command_Center_Backtest_Engine_Design.md` — Original design doc for the backtests lab (historical reference)
 - `docs/LWG_Project_State_Snapshot.md` — Current platform state; hand to new Claude.ai chats
 - `docs/LWG_Roadmap_And_Open_Questions.md` — Forward plan and open questions; hand to new Claude.ai chats
-- `docs/Pass2.5_Strategy_Location_Cleanup.md` — In-flight build spec (delete after Pass 2.5 ships)
 - `docs/audit/` — Audit and snapshot prompt templates
 - `docs/archive/` — Shipped build specs (historical record)

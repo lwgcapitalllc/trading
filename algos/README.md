@@ -24,7 +24,6 @@ algos/
 ├── README.md
 ├── docs/
 │   ├── ARCHITECTURE.md              ← Multi-instrument system design (Phases 1–5)
-│   ├── SETUP.md                     ← VPS setup and restore guide
 │   ├── BOT_SMC_TREND_GUIDE.md
 │   ├── BOT_MEAN_REVERSION_GUIDE.md
 │   ├── BOT_SCALPER_GUIDE.md
@@ -139,7 +138,7 @@ Backup commits never land on `main`, so Mac development and VPS backups never co
 `backups` branch. The `main` branch working tree at `C:\trading\algos` is never touched
 by backup operations.
 
-To restore after VPS rebuild — see `docs/SETUP.md` § Restore Data from Backup.
+To restore after VPS rebuild — see `scripts/README.md` § Full VPS recovery.
 
 ---
 

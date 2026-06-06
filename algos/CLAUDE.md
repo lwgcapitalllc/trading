@@ -4,7 +4,7 @@
 This file is auto-loaded by Claude Code at the start of every session.
 Read it fully before touching any code.
 
-**Last reviewed:** 2026-05-30
+**Last reviewed:** 2026-06-04
 
 ---
 
@@ -102,7 +102,7 @@ Not as a follow-up. Right now, before moving on.
 1. If a doc describes behavior that no longer exists — correct or delete it. Stale docs are
    worse than no docs.
 2. Keep the repo structure tree in `README.md` in sync with actual layout.
-3. `docs/SETUP.md` restore steps must always produce a working VPS from scratch — verify mentally
+3. `scripts/README.md` bootstrap procedure must always produce a working VPS from scratch — verify mentally
    after any change that affects deploy or VPS setup.
 4. `CLAUDE.md § What I Am Working On` — update this section to reflect current state.
    Never log session history here. Git commits are the changelog.

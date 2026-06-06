@@ -33,4 +33,4 @@ npm run dev
 
 ## Theme
 
-Electric cyan accent `#00e5ff`, gold secondary `#d9a441`, indigo-black surfaces. All tokens in `frontend/tailwind.config.js`.
+Electric cyan accent `#00e5ff`, gold secondary `#d9a441`, indigo-black surfaces. Color tokens in `frontend/src/themes/electric-indigo.js`; imported by `tailwind.config.js`.

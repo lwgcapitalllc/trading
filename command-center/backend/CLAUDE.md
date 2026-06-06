@@ -212,81 +212,17 @@ Seeded rulesets (13 rows): 4 LucidFlex × (eval/funded) + 4 Tradeify × (eval/fu
 
 ---
 
-## Pass 1 — Foundational Config Layer
+## Pass 1 — Foundational Config
 
-### Foundational config fields on `rulesets` (added via migration in `init_db`)
+Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss limit, entry hours ET, days allowed, daily profit target, profit lock-in %, commission/side, slippage ticks). Injected into strategy params at run creation by `nt8_agent_client.inject_foundational()`.
 
-| Column | Type | Meaning |
-|---|---|---|
-| `risk_per_trade_pct` | REAL | % of equity risked per trade |
-| `max_consecutive_losses` | INTEGER | Stop trading after N losses in a day (0 = off) |
-| `daily_halt_fraction` | REAL | Halt if day loss ≥ fraction × daily_loss_cap (0 = off) |
-| `earliest_entry_time_et` | TEXT | HH:MM — no entries before this time (null = no restriction) |
-| `latest_entry_time_et` | TEXT | HH:MM — no entries after this time (null = no restriction) |
-| `days_of_week_allowed` | TEXT | JSON array: `["mon","tue","wed","thu","fri"]` |
-| `daily_profit_target` | INTEGER | USD — stop trading for the day if hit (null = no target) |
-| `daily_profit_lock_pct` | REAL | 0.0–1.0 — halve risk when dayPnL ≥ lock_pct × target (null = off) |
-| `default_commission_per_side` | REAL | Pre-fills the SA commission setting and strategy's CommissionPerSide param |
-| `default_slippage_ticks` | INTEGER | Pre-fills the SA slippage setting |
+**Category tagging:** every `[NinjaScriptProperty]` in a strategy file carries `[Category("Strategy Logic")]` (tunable, optimizer-visible) or `[Category("Foundational")]` (injected from ruleset, hidden in UI). Legacy files with `[Display(GroupName = "Prop Firm")]` fall back to `"foundational"` via GroupName heuristic.
 
-`daily_profit_lock_pct` is ignored (and the validator warns) if `daily_profit_target` is null.
+**Dispatcher injection:** happens at three creation points — `trigger_backtest()`, `trigger_sweep()`, and `run_optimization()` — using the primary ruleset (first in `evaluate_rulesets`). Merged params stored in DB at creation so all retry paths pick them up without re-injection.
 
-Backfill values applied to all 13 existing rulesets on startup (idempotent, WHERE NULL guards):
-- `prop_eval` rows: risk=0.5%, halt=0.6, target=$1500, lock=80%, consec=3, comm=$2.25, slip=1
-- `prop_funded` rows: same except target=null, lock=null, halt=null
-- `personal_futures_10k_example`: risk=1.0%, halt=0.5, target=$150, lock=80%, consec=3
+**Primary ruleset rule:** only the first ruleset in the list injects foundational config. Others evaluate only. To test two rulesets' configs simultaneously, run two separate backtests.
 
-### Category-based parameter tagging
-
-Strategy files use `[Category("Foundational")]` or `[Category("Strategy Logic")]` on each `[NinjaScriptProperty]`. The scanner reads this attribute and emits a `"category"` field on every param in the schema:
-
-```
-"category": "strategy_logic"   # tunable by optimizer
-"category": "foundational"     # injected from ruleset; hidden from UI
-```
-
-Legacy files using `[Display(GroupName = "Prop Firm")]` fall back to `"foundational"` via the GroupName heuristic. New files must use `[Category]`.
-
-### Dispatcher injection pattern
-
-`nt8_agent_client.build_foundational_params(ruleset)` → dict of 12 strategy param keys.
-`nt8_agent_client.inject_foundational(user_params, ruleset)` → merged dict (foundational first, user params override).
-
-Injection happens at three creation points before the VPS job_spec is sent:
-- `routers/backtests.py` `trigger_backtest()` — primary ruleset = `evaluate_rulesets[0]`
-- `routers/sweeps.py` `trigger_sweep()` — primary ruleset = `ruleset_ids[0]`
-- `services/optimization_runner.py` `run_optimization()` — single `ruleset_id` from the optimization row
-
-Merged params are stored in the DB at creation time, so all retry paths pick them up without re-injection.
-
-**Primary ruleset rule:** When a run is evaluated against multiple rulesets, only the first in the list injects foundational config into the strategy. Other rulesets are used for evaluation only. To run against two rulesets' foundational configs simultaneously, run two separate backtests.
-
-### Strategy genericization
-
-All three strategy files are now generic — class names no longer reference firm names:
-
-| Old | New | Strategy Logic Params |
-|---|---|---|
-| `ORB_LucidFlex.cs` → `ORB.cs` | class `ORB` | ORMinutes, TpMultiple, OneTradePer |
-| `VWAP_MR_LucidFlex.cs` → `VWAP_MR.cs` | class `VWAP_MR` | EntryStd, StopExtension, TpFraction, MinBarsBeforeEntry |
-| `Momentum_LucidFlex.cs` → `Momentum.cs` | class `Momentum` | MaPeriod, RrRatio |
-
-Strategies refuse to trade (print a warning, return) if required foundational params are still at placeholder values (-1 or empty string). This catches dispatcher failures early rather than running with silent wrong defaults.
-
-### Behavioral additions in each strategy
-
-New logic added to all three generic strategy files:
-- **Daily profit target**: stop trading for the day when `dayPnl >= DailyProfitTarget` (if >0)
-- **Profit lock-in**: when `dayPnl >= DailyProfitLockPct × DailyProfitTarget`, halve risk for rest of day (one-way ratchet, resets next day)
-- **Consecutive losses**: stop trading for the day when `_consecutiveLosses >= MaxConsecutiveLosses` (if >0), resets at day boundary
-- **Daily halt fraction**: stop if day loss ≥ `DailyHaltFraction × MaxDailyLoss` (if >0); replaces the old hardcoded 0.6 default
-- **Entry hours gate**: no entries before `EarliestEntryTimeET` or after `LatestEntryTimeET` (if set)
-- **Day-of-week gate**: skip trading on days not in `DaysOfWeekAllowed` (if non-empty)
-- **ForceFlatTimeET**: now a runtime param injected from ruleset, replacing the old hardcoded `15:30`
-
-### DB strategy ID migration
-
-On startup `_migrate_strategy_renames()` renames `orb_lucidflex` → `orb`, `vwap_mr_lucidflex` → `vwap_mr`, `momentum_lucidflex` → `momentum` in the strategies table and updates all backtest_runs and optimizations referencing the old IDs. The rename uses FK=OFF on a raw connection to avoid the PK-update constraint. Idempotent — skips rows where old_id doesn't exist or new_id already exists.
+**Sentinel guard:** strategies refuse to trade (print warning + return) if foundational params are still at placeholder values (-1 or empty string). This catches dispatcher failures early.
 
 ---
 
@@ -294,22 +230,22 @@ On startup `_migrate_strategy_renames()` renames `orb_lucidflex` → `orb`, `vwa
 
 | Domain | Status | What it does |
 |---|---|---|
-| Smart Money | ✅ Live | Scans and profiles crypto/forex traders for copy-trading candidates. Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
-| Bots | ✅ Live | Monitors all three live algo instances (gold_main, gold_scalper, gold_fft) via SSH. Global + per-bot risk controls, risk cap deploy with Telegram notification, Telegram users tab. |
-| Lab — Strategies | ✅ Live | Registry of NinjaScript strategies scanned from the local repo. Auto-derives param schema from `[NinjaScriptProperty]` attributes. Each strategy has a `runner` field (default `"ninjatrader"`). |
-| Lab — Rulesets | ✅ Live | Ruleset profiles (formerly "Firms"). CRUD at `/rulesets`. Supports 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. Seeded: 12 prop firm rows + 1 personal example. Evaluator branches on `ruleset_type`. |
-| Lab — Backtests | ✅ Live | Trigger NT8 runs on the VPS via the agent. Poll to completion. Evaluate against selected firms. Equity curve, daily P&L, per-firm verdicts, full KPI set. After evaluation, computes Worthiness Score (Tier 1/2/3). |
-| Lab — Sweeps | ✅ Live | Runs N backtests sequentially (one instrument at a time, `_MAX_CONCURRENT = 1`) across all instruments for a strategy. Each run gets its own worthiness score. Deletable. Cancel endpoint force-fails stuck `running` rows (backend-restart recovery). Retry-all and per-run retry via `POST /backtests/runs/{id}/retry`. |
-| Lab — Optimizations | ✅ Live | Multi-call brute-force optimizer. Generates all param combos, runs each sequentially via SA semaphore, scores by objective (eval_pass_prob or funded_sharpe). Best run tracked in `optimizations.best_run_id`. `source_run_id` links an optimization back to the run it was triggered from. Deletable. Per-run retry via `POST /backtests/runs/{id}/retry`. |
-| Lab — System | ✅ Live | Health endpoints (SSH, NT8 agent, NT8, MT5 agent, compile status). Log proxies. Progress file read. `POST /system/nt8-agent/start` restarts SSH tunnel + fires `LucidFlexAgent` schtask. `POST /system/mt5-agent/start` fires `MT5AgentRDP` schtask. `_restart_tunnel()` always uses `127.0.0.1` (not `localhost`) in `-L` flags — VPS resolves `localhost` to IPv6. |
-| Lab — Stress Tests | ✅ Live | Monte Carlo (10k reshuffles + 1k bootstrap, vectorised numpy). Walk-forward (N sequential NT8 windows, IS/OOS Sharpe). Sensitivity (±10%/±25% param perturbations via NT8). Auto-triggered (MC only) on Tier 1 backtests and optimizer winners. Graded A-F. |
-| Lab — Regime Tags (M4) | ✅ Live | Each `daily_pnl` entry gains a `regime_tag` (TRENDING/TRANSITIONING/RANGING/HIGH_VOLATILITY/LOW_VOLATILITY/UNKNOWN). Pipeline auto-tags on every new backtest. Manual backfill via `POST /backtests/runs/{id}/backfill_regime`. Optimizer accepts optional `regime_filter` field to score child runs only against trades in that regime. |
-| Lab — Strategy Files (Pass 2) | ✅ Live | Deploy strategy files to VPS without SSH. NT8 `.cs` and MT5 `.mq5` both supported. `GET /strategy-files` returns merged list from both agents (each file tagged `platform: NT8\|MT5`). `POST /strategy-files/upload`, `DELETE /strategy-files/{filename}`, `POST /strategy-files/compile` (NT8 F5), `GET /strategy-files/compile/{id}`, `POST /strategy-files/compile-mt5` (MetaEditor), `GET /strategy-files/compile-mt5/{id}`, `GET /strategy-files/sync-status`. sync_status routes by `runner` field: `runner=mt5` → checks MT5 agent for `.mq5`; others → checks NT8 agent for `.cs`. |
-| Lab — Strategy Deploy (Pass 2.5) | ✅ Live | One-click deploy from repo to VPS. `POST /strategies/{id}/deploy` reads `source_path`, reads the file from disk, uploads via nt8_agent_client (which dispatches `.mq5` → MT5 agent, `.cs` → NT8 agent, overwrite=True), caches result in `_deploy_jobs` dict. `GET /strategies/{id}/deploy/{job_id}` returns the cached result. `ScanResult` now includes a `warnings` list for DB rows whose `source_path` no longer exists on disk. Scanner reads from `strategies/` (top-level); `source_path` column backfilled via migration. |
-| Lab — MT5 runner (Steps 1-7) | ✅ Live | `mt5_agent.py` on VPS (port 8766) — health/status, historical data, Strategy Tester driver (`_run_backtest`: writes `.ini` + `.set`, launches `terminal64.exe`, polls for HTML report, parses with `_parse_mt5_report`). `mt5_agent_client.py` on Mac — typed wrapper at `http://127.0.0.1:8766`. `nt8_agent_client` routes `runner="mt5"` jobs through `mt5_agent_client` with spec translation (`_nt8_to_mt5_spec`) and response normalisation (`_normalize_mt5_status/results`). `_nt8_to_mt5_spec` passes `job_id` through; `mt5_agent.py POST /backtests` accepts client `job_id`. `BacktestDetail` model carries `runner` field. |
-| Lab — MT5 deployment (Step 9) | ✅ Live | MT5 agent `POST/DELETE /files/strategies/<filename>` for `.mq5` upload/delete. `POST /compile` triggers `metaeditor64.exe /compile:<experts_dir>` in a background thread, parses `N error(s)` from the log file, stores result in `_compile_jobs`. `GET /compile/<id>` polls status. Corresponding backend endpoints: `POST/GET /strategy-files/compile-mt5`. |
-| Settings | ✅ Live | Config read/write. `AppSettings` includes both `nt8_agent_tunnel` and `mt5_agent_tunnel`. |
-| Startup — auto-start agents | ✅ Live | `main.py` spawns a daemon thread on startup (8s delay). Calls `/health` on each agent; fires `LucidFlexAgent` (NT8) or `MT5AgentRDP` (MT5) schtask for any that don't respond. Silent if SSH is not up. |
+| Smart Money | ✅ Live | Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
+| Bots | ✅ Live | SSH monitor for gold_main/gold_scalper/gold_fft. Global + per-bot risk controls, cap deploy, Telegram users tab. |
+| Lab — Strategies | ✅ Live | Registry scanned from `strategies/`. Param schema from `[NinjaScriptProperty]`. `runner` field per strategy. |
+| Lab — Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 13 seeded rows. |
+| Lab — Backtests | ✅ Live | NT8/MT5 runs via agent. Equity curve, daily P&L, per-ruleset verdicts, Worthiness tier (1/2/3). |
+| Lab — Sweeps | ✅ Live | N sequential backtests across instruments (`_MAX_CONCURRENT = 1`). Cancel, retry-all, per-run retry. |
+| Lab — Optimizations | ✅ Live | Brute-force + genetic optimizer. Scores by objective. `best_run_id` tracked. Source run nesting. Per-run retry. |
+| Lab — System | ✅ Live | Health (SSH, NT8, MT5 agents). Log proxies. `POST /system/{nt8,mt5}-agent/start` fires schtasks. |
+| Lab — Stress Tests | ✅ Live | MC (10k reshuffles + 1k bootstrap), walk-forward (IS/OOS NT8 windows), sensitivity (±10%/±25%). A–F grade. |
+| Lab — Regime Tags (M4) | ✅ Live | `daily_pnl` entries tagged with regime label. Auto-tagged at pipeline time. Optimizer `regime_filter`. |
+| Lab — Strategy Files (Pass 2) | ✅ Live | Upload/delete/compile `.cs` (NT8 F5) and `.mq5` (MetaEditor) files. Sync-status badges. |
+| Lab — Strategy Deploy (Pass 2.5) | ✅ Live | `POST /strategies/{id}/deploy` reads `source_path`, uploads to VPS. `.mq5` → MT5 agent, `.cs` → NT8 agent. |
+| Lab — MT5 runner (M5) | ✅ Live | `mt5_agent.py` port 8766: Strategy Tester driver (ini+set, terminal64, HTML report). `mt5_agent_client.py` typed wrapper. Runner dispatch via `nt8_agent_client`. |
+| Lab — MT5 deployment (Step 9) | ✅ Live | MT5 agent upload/delete `.mq5`. `POST /compile` → MetaEditor. Backend: `POST/GET /strategy-files/compile-mt5`. |
+| Settings | ✅ Live | Config read/write. `nt8_agent_tunnel` and `mt5_agent_tunnel` both present. |
+| Startup — auto-start agents | ✅ Live | Daemon thread on startup (8s delay): `/health` each agent, fires schtask for any that don't respond. |
 
 ---
 
@@ -420,68 +356,20 @@ Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long
 
 ## Pass 2 — Strategy Deployment Manager
 
-### Strategy file endpoints on NT8 agent
+NT8 agent endpoints: `GET/POST/DELETE /files/strategies/<filename>`, `POST/GET /compile`. NT8 strategy folder: `C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\`.
 
-New endpoints added to `algos/markets/futures/lucid_flex/tools/nt8_agent.py`:
+**Compile:** `vps_compile_runner.py` uses pywinauto F5 via NinjaScript Editor (`NCompile.exe` does not exist on this install). Success detected by polling `NinjaTrader.Custom.dll` mtime — NT8 rewrites it on every successful compile (90s timeout).
 
-```
-GET    /files/strategies              list .cs files in NT8 strategy folder
-POST   /files/strategies/<filename>  upload via multipart (overwrite=bool)
-DELETE /files/strategies/<filename>  delete a .cs file
-POST   /compile                       trigger NT8 compile → {compile_job_id}
-GET    /compile/<id>                  poll compile status (running/success/failed)
-```
+**Upload limit:** 256 KB enforced on both agent and backend router.
 
-NT8 strategy folder path: `C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\`
+**Lock detection:** NT8 agent tries `r+b` open before upload/delete. `IOError` → HTTP 423.
 
-### Compile approach: pywinauto F5 (Approach A)
-
-`NCompile.exe` does NOT exist in this NT8 install (no `bin64` folder; `bin` has only `NinjaTrader.exe`, `NinjaTrader.Adapter.exe`, `ntau.exe`). Approach B was ruled out at Step 2.
-
-Compile implementation in `vps_compile_runner.py`:
-1. Find NT8 Control Center HWND via Win32 `EnumWindows` (it appears in Win32 but not as a UIA top-level window)
-2. Wrap HWND in pywinauto: `dt.window(handle=cc_hwnd)`
-3. `expand()` the "New" submenu (uses `IExpandCollapseProvider`, not `IInvokeProvider`)
-4. `invoke()` the "NinjaScript Editor" child item (leaf item)
-5. `SetForegroundWindow(hwnd)` to route keyboard focus to the editor (no cursor needed)
-6. `send_keys("{F5}")` — uses `SendInput` (keyboard-only, works in disconnected RDP)
-7. Poll `NinjaTrader.Custom.dll` mtime — NT8 rewrites it on every successful compile
-8. If mtime updated within 90s → `STATUS:success`; else → `STATUS:failed`
-
-The subprocess is launched with `STARTUPINFO.lpDesktop = "winsta0\\default"` to ensure it runs on the interactive desktop.
-
-### 256 KB upload limit
-
-Enforced on both the NT8 agent and the backend router. NinjaScript files are typically 5–30 KB; anything larger is suspicious.
-
-### Lock detection
-
-Before uploading or deleting, the NT8 agent tries to open the file in `r+b` mode. `IOError` means NT8 has it locked (strategy is running or open in a chart). Returns HTTP 423 with a clear message.
-
-### Sync-status
-
-`GET /strategy-files/sync-status` returns one entry per DB strategy. A strategy is "in sync" when its expected `.cs` file (derived from `class_name + ".cs"`) exists on the VPS. For now, file presence = in sync. A more precise check (hash comparison) can be added later.
+**Sync-status:** `GET /strategy-files/sync-status` — in sync when expected `.cs` file exists on VPS. File presence = in sync (no hash comparison yet).
 
 ---
 
 ## Pass 2.5 — Strategy Location Cleanup
 
-### Scanner path change
+Scanner reads from `strategies/` via `rglob("*.cs")` and `rglob("*.mq5")`. `source_path` stored relative to monorepo root (e.g. `strategies/ninjatrader/ORB.cs`). Missing `source_path` emits a warning, never auto-deletes.
 
-`strategy_scanner.scan_strategies()` now reads from `strategies/` (the new top-level subsystem) instead of `algos/markets/futures/`. Specifically it uses `strategies_dir.rglob("*.cs")`. The `source_path` field on each strategy row is set to the path relative to the monorepo root (e.g. `strategies/ninjatrader/ORB.cs`). If a DB row's `source_path` no longer exists on disk, the scanner includes a warning in its result — it does not auto-delete.
-
-### source_path migration
-
-Three `UPDATE strategies SET source_path = ...` statements were added to `_run_migrations()` in `lab_db.py` to backfill the three existing strategies to their new locations under `strategies/ninjatrader/`. These run idempotently on startup.
-
-### Deploy endpoint
-
-`POST /strategies/{strategy_id}/deploy` — reads `source_path` from the DB, reads the file from disk, calls `nt8_agent_client.upload_strategy_file(filename, content, overwrite=True)`, stores the result in an in-memory `_deploy_jobs` dict, returns 202 with `{deploy_job_id, status: "started"}`.
-
-`GET /strategies/{strategy_id}/deploy/{deploy_job_id}` — returns the cached `DeployJobStatus` from `_deploy_jobs`. Because the upload is synchronous (fast over the SSH tunnel), the job is complete by the time the client first polls.
-
-Edge cases handled: `source_path` null → 400, file missing on disk → 404, VPS file locked → 423 (propagated from NT8 agent).
-
-### New model
-
-`DeployJobStatus` — `deploy_job_id`, `strategy_id`, `status` (running/complete/failed), `filename`, `uploaded_size_bytes`, `error`. `ScanResult` gains a `warnings: list[str]` field.
+`POST /strategies/{id}/deploy` reads `source_path`, uploads via `nt8_agent_client` (dispatches `.mq5` → MT5 agent, `.cs` → NT8 agent). Returns 202 + `deploy_job_id`. Edge cases: `source_path` null → 400, file missing → 404, VPS locked → 423.

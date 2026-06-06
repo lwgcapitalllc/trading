@@ -48,7 +48,7 @@ trading/
 ├── regime/           ← Shared market regime classifier (live bots + backtest lab)
 ├── strategies/       ← Generic strategy source files, organized by runner platform
 │   ├── ninjatrader/  ← ORB.cs, VWAP_MR.cs, Momentum.cs (NinjaScript / C#)
-│   ├── mt5/          ← placeholder (no strategies yet)
+│   ├── mt5/          ← MeanReversion.mq5 (BB+RSI+VWAP, ported from bot_mean_reversion.py, smoke-tested)
 │   └── tradovate/    ← placeholder (no strategies yet)
 ├── scripts/          ← VPS bootstrap and full-recovery PowerShell scripts
 └── docs/             ← Cross-subsystem design docs, audit prompt templates, snapshots
@@ -79,8 +79,11 @@ Genericized all three NT8 strategies. Renamed from `*_LucidFlex.cs` to `ORB.cs`,
 ### Pass 2 — Strategy deployment manager ✅ shipped 2026-06-03
 Upload, delete, and compile NT8 strategy files from the command center UI without manual RDP. NT8 agent: `GET/POST/DELETE /files/strategies`, `POST/GET /compile`. Compile via pywinauto F5 through the NinjaScript Editor (NCompile.exe does not exist on this NT8 install). Success detection by polling `NinjaTrader.Custom.dll` mtime (90s timeout). Deployed tab on Strategies page: file list, drag/drop upload, overwrite confirmation, trash-can delete, Compile All. Sync-status badges on Strategies list. Platform field on each file (NT8/MT5) with filter chips when multiple platforms present.
 
-### Pass 2.5 — Strategy location cleanup 🚧 in flight (Steps 1–3 of 8 complete as of 2026-06-04)
-Moving strategies to a top-level `strategies/` peer subsystem organized by runner platform. **Complete:** moved ORB.cs, VWAP_MR.cs, Momentum.cs to `strategies/ninjatrader/`. Scanner updated to read from `strategies/` (not `algos/`). DB `source_path` values migrated. `POST /strategies/{id}/deploy` endpoint added (reads local file, uploads to VPS). Per-strategy Deploy/Redeploy buttons on Strategies tab with spinner feedback. **Remaining:** cross-repo path reference cleanup, `strategies/CLAUDE.md`, README/root CLAUDE.md update, E2E test of the new one-click deploy flow.
+### Pass 2.5 — Strategy location cleanup ✅ shipped 2026-06-04
+Moved ORB.cs, VWAP_MR.cs, Momentum.cs to `strategies/ninjatrader/`. Scanner reads from `strategies/` (not `algos/`). DB `source_path` migrated. `POST /strategies/{id}/deploy` endpoint + per-strategy Deploy/Redeploy buttons on Strategies tab. `strategies/CLAUDE.md` created. All path references updated across monorepo.
+
+### M5 — MT5 runner ✅ shipped 2026-06-06
+`mt5_agent.py` on VPS (port 8766) — health, historical data, Strategy Tester driver (ini+set file, terminal64.exe, HTML report parser). `mt5_agent_client.py` on backend. `nt8_agent_client` dispatches to MT5 when `strategy.runner == "mt5"`. Runner badges (NT8/MT5) on Strategies and Runs tabs. Market filter (Futures/Forex). MT5 deployment manager: upload/delete `.mq5` files, MetaEditor compile. `RunBacktestModal` and `BacktestDetail` fully MT5-aware. `MeanReversion.mq5` smoke-tested end-to-end.
 
 ---
 
@@ -94,7 +97,7 @@ All three strategies live at `strategies/ninjatrader/`. All run on NinjaTrader 8
 | Momentum | 1 complete | -$14k on MGC | Tier 3. Barely tested. |
 | VWAP_MR | 0 | — | Not yet run. |
 
-ORB has been run on MES, MNQ, MGC, MCL, MYM, M2K — all TIER_3_DISCARD, most with large negative net P&L. These are pre-optimization baseline runs. Strategy improvement work (regime filter, trailing stop, daily P&L circuit breaker, re-entry) begins after Pass 2.5 ships.
+ORB has been run on MES, MNQ, MGC, MCL, MYM, M2K — all TIER_3_DISCARD, most with large negative net P&L. These are pre-optimization baseline runs. Strategy improvement work (regime filter, trailing stop, daily P&L circuit breaker, re-entry) is the next priority.
 
 ---
 

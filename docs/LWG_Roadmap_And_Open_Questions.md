@@ -1,5 +1,5 @@
 # LWG Capital — Roadmap and Open Questions
-**Last updated:** 2026-06-04
+**Last updated:** 2026-06-06
 
 > Companion to the Project State Snapshot. Hand both to any new Claude.ai chat.
 
@@ -7,31 +7,16 @@
 
 ## Immediate next work (priority order)
 
-### 1. Finish M5 — MT5 Runner (in flight)
+### 1. Validate Pass 1 + Pass 2 + Pass 2.5 + M5 end-to-end
 
-The MT5 platform spec is being executed by Claude Code in one session. The
-Mean Reversion port is being executed in a separate session. Convergence at
-M5 Step 10 where the port gets deployed and tested end-to-end.
-
-Current state:
-- M5 Step 1 done (mt5_agent.py skeleton, ports configured)
-- Mean Reversion port Steps 1-7 done (`strategies/mt5/MeanReversion.mq5` exists)
-- VPS prep in flight: MT5 installed at `C:\MT5_Lab`, demo account active,
-  historical data partially downloaded (H1/H4/D1 = 3 years, M15 = 2 years,
-  M5 = 8 months — broker limits)
-- Awaiting: smoke test of MeanReversion.mq5 in Strategy Tester, then
-  greenlight M5 Step 2 (dispatcher refactor)
-
-### 2. Validate Pass 1 + Pass 2 + Pass 2.5 end-to-end
-
-Once M5 ships, do the deferred Pass 1/2/2.5 validation:
-- Deploy ORB, VWAP_MR, Momentum via the new Strategies-tab Deploy buttons
+M5, Pass 2.5, Pass 2, and Pass 1 have all shipped. Do the deferred E2E test:
+- Deploy ORB, VWAP_MR, Momentum via Strategies-tab Deploy buttons
 - Compile via Compile All
 - Run a backtest with each against LucidFlex 50k Eval on MNQ
-- Run the same backtest against `personal_futures_10k_example` — results
-  should differ
+- Run the same backtest against `personal_futures_10k_example` — results should differ
+- Run a MeanReversion.mq5 backtest end-to-end on MT5 runner
 
-### 3. Strategy improvements pass
+### 2. Strategy improvements pass
 
 Pick ORB first (M4 showed it has a real edge on TRENDING days).
 
@@ -44,7 +29,7 @@ Add to `strategies/ninjatrader/ORB.cs`:
   allow one re-entry per day.
 
 After ORB is updated:
-1. Deploy via Pass 2.5's one-click flow
+1. Deploy via the one-click Deploy button on the Strategies tab
 2. Run through M1 backtest → check worthiness
 3. Run through M2 optimizer with `regime_filter="TRENDING"` to find best params
 4. Run through M3 stress test → check robustness grade
@@ -53,7 +38,7 @@ After ORB is updated:
 Success criteria: grade B or A. If yes → attempt LucidFlex eval. If no →
 iterate or move to other strategies.
 
-### 4. M4 diagnostic on VWAP_MR, Momentum, and MeanReversion (MT5)
+### 3. M4 diagnostic on VWAP_MR, Momentum, and MeanReversion (MT5)
 
 Run the Performance by Regime breakdown on the other strategies. Identify
 which has the strongest single-regime edge as the next strategy to invest
@@ -63,7 +48,7 @@ improvement effort in.
 
 ## Future platform milestones (in order, not yet started)
 
-### Pass 3 — Data Manager (planned, after M5 ships)
+### Pass 3 — Data Manager (planned)
 
 A UI-based historical data manager that handles per-broker limits, symbol
 naming, and incremental refresh. Lives under a new "Data" tab in the command
@@ -89,9 +74,8 @@ center.
 **Why before M6:** stacking analyses run across more strategies and more
 time ranges. The data infrastructure gets hammered. Solid cache layer first.
 
-**Why not now:** M5 needs to ship first so the UI has at least one runner
-to fetch from. And the manual `download_mt5_history.py` script is good
-enough to unblock immediate strategy testing.
+**Why not now:** The manual `download_mt5_history.py` script is good enough
+to unblock immediate strategy testing. Pass 3 adds polish, not capability.
 
 ### M6 — Strategy stacking / portfolio construction (was M5)
 

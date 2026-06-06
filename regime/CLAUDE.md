@@ -40,7 +40,7 @@ sigs = compute_signals(df_short, df_long)
 
 | Consumer | Path |
 |---|---|
-| Live forex bots (Bot 1, Bot 2, FFT) | `algos/shared/shared_regime.py` (thin shim — preserves `RegimeClassifier` class interface) |
+| Live forex bots (SMC Trend, Mean Reversion, FFT) | `algos/shared/shared_regime.py` (thin shim — preserves `RegimeClassifier` class interface) |
 | Command-center backtest lab (M4+) | `command-center/backend/services/` |
 
 All consumers receive 5-label output directly. Each bot owns its own `REGIME_RISK_TABLE` mapping labels to `(risk_multiplier, trade_allowed)` pairs.
