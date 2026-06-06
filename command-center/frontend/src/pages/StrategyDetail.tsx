@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Play, Trash2, RefreshCw, ChevronRight } from 'lucide-react'
-import { useStrategy, useBacktestRuns, useDeleteRun } from '@/hooks/useLab'
+import { ArrowLeft, Play, Trash2, RefreshCw, ChevronRight, Pencil, Check, X } from 'lucide-react'
+import { useStrategy, useBacktestRuns, useDeleteRun, useUpdateStrategyDescription } from '@/hooks/useLab'
 import { useStressTests } from '@/hooks/useStressTests'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { EmptyState } from '@/components/EmptyState'
@@ -320,10 +320,18 @@ export function StrategyDetail() {
   const { strategyId } = useParams<{ strategyId: string }>()
   const navigate = useNavigate()
   const [showModal, setShowModal] = useState(false)
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [descDraft, setDescDraft] = useState('')
+  const descInputRef = useRef<HTMLInputElement>(null)
+  const updateDesc = useUpdateStrategyDescription()
 
   const { data: strategy, isLoading } = useStrategy(strategyId ?? null)
   const { data: runs } = useBacktestRuns(strategyId ? { strategy_id: strategyId } : undefined)
   const { data: allStressTests } = useStressTests()
+
+  useEffect(() => {
+    if (editingDesc) descInputRef.current?.focus()
+  }, [editingDesc])
 
   const runIds = new Set((runs ?? []).map(r => r.run_id))
   const strategyGrades = (allStressTests ?? [])
@@ -381,27 +389,69 @@ export function StrategyDetail() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-h1 font-semibold leading-tight">{strategy.name}</h1>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[13px] text-text-secondary">
-              <span className="font-mono">{strategy.class_name}</span>
-              {strategy.category && (
-                <>
-                  <span className="text-text-tertiary">·</span>
-                  <span className="capitalize">{strategy.category}</span>
-                </>
-              )}
-              {strategy.suggested_instrument && (
-                <>
-                  <span className="text-text-tertiary">·</span>
-                  <span className="font-mono">Suggested: {strategy.suggested_instrument}</span>
-                </>
-              )}
-              {strategy.runner && (
-                <>
-                  <span className="text-text-tertiary">·</span>
-                  <span className="inline-flex items-center px-2 py-[2px] rounded text-[10px] font-semibold bg-bg-surface border border-border-subtle text-text-tertiary uppercase tracking-[0.3px]">
-                    Runs on: {strategy.runner === 'ninjatrader' ? 'NinjaTrader' : strategy.runner}
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              {strategy.category && (() => {
+                const label = strategy.category.replace(/_/g, ' ')
+                const cls =
+                  strategy.category === 'mean_reversion' ? 'bg-accent/10 text-accent border-accent/25' :
+                  strategy.category === 'breakout'       ? 'bg-warn-muted text-warn-text border-warn-text/30' :
+                  strategy.category === 'momentum'       ? 'bg-pos-muted text-pos-text border-pos-text/30' :
+                  'bg-bg-hover text-text-secondary border-border-subtle'
+                return (
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold border capitalize tracking-wide ${cls}`}>
+                    {label}
                   </span>
-                </>
+                )
+              })()}
+              {strategy.runner && (
+                <img
+                  src={strategy.runner === 'mt5' ? '/mt5-icon.png' : '/nt8-icon.png'}
+                  alt={strategy.runner === 'mt5' ? 'MetaTrader 5' : 'NinjaTrader 8'}
+                  title={strategy.runner === 'mt5' ? 'MetaTrader 5' : 'NinjaTrader 8'}
+                  className="w-7 h-7 rounded-md object-cover"
+                />
+              )}
+            </div>
+
+            {/* Description */}
+            <div className="mt-3">
+              {editingDesc ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={descInputRef}
+                    value={descDraft}
+                    onChange={e => setDescDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        updateDesc.mutate({ strategyId: strategy.id, description: descDraft })
+                        setEditingDesc(false)
+                      }
+                      if (e.key === 'Escape') setEditingDesc(false)
+                    }}
+                    placeholder="Add a one-line description…"
+                    className="flex-1 bg-bg-sunken border border-border-default rounded-md px-3 py-[6px] text-[13px] text-text-primary placeholder-text-tertiary focus:outline-none focus:border-accent transition-colors"
+                  />
+                  <button
+                    onClick={() => { updateDesc.mutate({ strategyId: strategy.id, description: descDraft }); setEditingDesc(false) }}
+                    className="p-[6px] rounded text-pos-text hover:bg-pos-muted transition-colors"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button onClick={() => setEditingDesc(false)} className="p-[6px] rounded text-text-tertiary hover:bg-bg-hover transition-colors">
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setDescDraft(strategy.description ?? ''); setEditingDesc(true) }}
+                  className="group flex items-center gap-2 text-[13px] text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  {strategy.description
+                    ? <span>{strategy.description}</span>
+                    : <span className="text-text-tertiary italic">Add a description…</span>
+                  }
+                  <Pencil size={11} className="opacity-0 group-hover:opacity-50 transition-opacity flex-shrink-0" />
+                </button>
               )}
             </div>
           </div>

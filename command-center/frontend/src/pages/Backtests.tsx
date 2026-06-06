@@ -616,7 +616,12 @@ function RunRow({
               {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
             </button>
           )}
-          {run.strategy_name || run.strategy_id}
+          <span
+            onClick={e => { e.stopPropagation(); navigate(`/strategies/${run.strategy_id}`) }}
+            className="hover:text-accent hover:underline underline-offset-2 cursor-pointer transition-colors"
+          >
+            {run.strategy_name || run.strategy_id}
+          </span>
           {run.sweep_id && (
             <span
               onClick={e => { e.stopPropagation(); navigate(`/backtests/sweeps/${run.sweep_id}`) }}

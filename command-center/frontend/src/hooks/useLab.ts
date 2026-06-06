@@ -30,6 +30,19 @@ export function useStrategy(strategyId: string | null) {
   })
 }
 
+export function useUpdateStrategyDescription() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ strategyId, description }: { strategyId: string; description: string }) =>
+      api.patch<Strategy>(`/strategies/${strategyId}`, { description }),
+    onSuccess: (data) => {
+      qc.setQueryData(['lab', 'strategies', data.id], data)
+      qc.invalidateQueries({ queryKey: ['lab', 'strategies'] })
+    },
+    onError: () => toast.error('Failed to save description'),
+  })
+}
+
 export function useDeployStrategy() {
   const qc = useQueryClient()
   return useMutation({

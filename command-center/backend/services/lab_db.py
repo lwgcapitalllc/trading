@@ -187,6 +187,8 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_evals_ruleset ON evaluations(ruleset_id, verdict)",
             # Compile gate — default 1 (compiled) so existing strategies aren't blocked
             "ALTER TABLE strategies ADD COLUMN is_compiled INTEGER NOT NULL DEFAULT 1",
+            # User-editable description
+            "ALTER TABLE strategies ADD COLUMN description TEXT",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -684,6 +686,14 @@ def get_strategy_hash(strategy_id: str) -> Optional[str]:
             "SELECT source_hash FROM strategies WHERE id = ?", (strategy_id,)
         ).fetchone()
     return row["source_hash"] if row else None
+
+
+def update_strategy_description(strategy_id: str, description: Optional[str]) -> bool:
+    with _connect() as conn:
+        result = conn.execute(
+            "UPDATE strategies SET description = ? WHERE id = ?", (description, strategy_id)
+        )
+    return result.rowcount > 0
 
 
 def upsert_strategy(data: dict) -> None:

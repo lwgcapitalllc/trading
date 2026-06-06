@@ -270,6 +270,7 @@ class Strategy(BaseModel):
     source_path: str
     category: Optional[str] = None
     suggested_instrument: Optional[str] = None
+    description: Optional[str] = None
     default_params: dict = {}
     param_schema: list[dict] = []          # [{name, type, min?, max?, default, group, display_name}]
     scanned_at: datetime

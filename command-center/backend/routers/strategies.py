@@ -8,7 +8,12 @@ import uuid
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from models import Strategy, ScanResult, InstrumentSummary, InstrumentResult, DeployJobStatus
+
+
+class StrategyPatch(BaseModel):
+    description: Optional[str] = None
 from services import lab_db, strategy_scanner, nt8_agent_client
 import config as cfg
 
@@ -32,6 +37,15 @@ def get_strategy(strategy_id: str):
     row = lab_db.get_strategy(strategy_id)
     if not row:
         raise HTTPException(404, f"Strategy '{strategy_id}' not found")
+    return row
+
+
+@router.patch("/{strategy_id}", response_model=Strategy)
+def patch_strategy(strategy_id: str, body: StrategyPatch):
+    if not lab_db.get_strategy(strategy_id):
+        raise HTTPException(404, f"Strategy '{strategy_id}' not found")
+    lab_db.update_strategy_description(strategy_id, body.description or None)
+    row = lab_db.get_strategy(strategy_id)
     return row
 
 

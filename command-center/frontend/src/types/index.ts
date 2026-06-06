@@ -245,6 +245,7 @@ export interface Strategy {
   source_path: string
   category: string | null
   suggested_instrument: string | null
+  description: string | null
   default_params: Record<string, unknown>
   param_schema: ParamSchemaEntry[]
   scanned_at: string
