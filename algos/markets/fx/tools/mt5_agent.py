@@ -66,6 +66,29 @@ except ImportError:
 PORT = 8766
 MAX_UPLOAD_BYTES = 256 * 1024  # 256 KB — MQL5 files are typically 5–50 KB
 
+# Task Scheduler on Windows disconnects stdout/stderr; writing to the broken
+# handle raises OSError. Replace with devnull so Flask and our code can print
+# freely without raising.
+def _fix_stdio() -> None:
+    for _attr in ("stdout", "stderr"):
+        _s = getattr(sys, _attr, None)
+        if _s is None:
+            try:
+                setattr(sys, _attr, open(os.devnull, "w"))
+            except Exception:
+                pass
+        else:
+            try:
+                _s.write("")
+                _s.flush()
+            except Exception:
+                try:
+                    setattr(sys, _attr, open(os.devnull, "w"))
+                except Exception:
+                    pass
+
+_fix_stdio()
+
 app = Flask(__name__)
 
 _agent_log: list[str] = []
@@ -108,7 +131,7 @@ def _alog(msg: str):
             _agent_log.pop(0)
     try:
         print(entry, flush=True)
-    except OSError:
+    except Exception:
         pass
 
 
