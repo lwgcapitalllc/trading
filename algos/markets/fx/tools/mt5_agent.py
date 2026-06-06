@@ -923,8 +923,13 @@ def _run_backtest(job_id: str, spec: dict) -> None:
     jl(f"Report: {report_file.name}")  # type: ignore[union-attr]
 
     try:
-        html_text = report_file.read_text(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
-        result    = _parse_mt5_report(html_text)
+        raw_bytes = report_file.read_bytes()  # type: ignore[union-attr]
+        # MT5 writes HTML reports as UTF-16 LE (BOM ff fe). Detect and decode correctly.
+        if raw_bytes[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            html_text = raw_bytes.decode("utf-16")
+        else:
+            html_text = raw_bytes.decode("utf-8", errors="replace")
+        result = _parse_mt5_report(html_text)
     except Exception as exc:
         fail(f"Report parsing failed: {exc}")
         return
