@@ -1275,6 +1275,70 @@ def opt_param_click_dump():
         return jsonify({"error": str(e)})
 
 
+@app.route("/export-grid-test")
+def export_grid_test():
+    """
+    Diagnostic: right-click SA at ?y_pct=N (default 15) and report what menu
+    items are found. If Export... is present, optionally click it (?do_export=1)
+    and return the first line of the resulting CSV so we can verify the format.
+    """
+    import glob as _glob
+    from pywinauto import mouse as _mouse, Desktop
+    y_pct     = float(request.args.get("y_pct", 15))
+    do_export = request.args.get("do_export", "0") == "1"
+    try:
+        dt = Desktop(backend="uia")
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=5)
+        r  = sa.rectangle()
+        sw = r.right  - r.left
+        sh = r.bottom - r.top
+        cx = r.left + int(sw * 0.25)
+        cy = r.top  + int(sh * y_pct / 100)
+        _alog(f"[export-grid-test] right-click at ({cx},{cy}) = ({25}%x, {y_pct}%y)")
+        _mouse.right_click(coords=(cx, cy))
+        time.sleep(0.5)
+        nt8 = sa.top_level_parent()
+        items = []
+        export_coords = None
+        for el in nt8.descendants():
+            txt = (el.window_text() or "").strip()
+            ct  = str(getattr(el.element_info, "control_type", ""))
+            if ct == "MenuItem" and txt:
+                er = el.rectangle()
+                items.append(f"{txt}@{er.width()}x{er.height()}")
+                if txt.startswith("Export") and er.width() > 5 and export_coords is None:
+                    export_coords = ((er.left + er.right) // 2, (er.top + er.bottom) // 2)
+        csv_first_line = None
+        if do_export and export_coords:
+            before_csvs = set(_glob.glob(str(Path.home() / "Documents" / "NinjaTrader Grid*.csv")))
+            _mouse.right_click(coords=(cx, cy))
+            time.sleep(0.4)
+            _mouse.click(coords=export_coords)
+            time.sleep(0.8)
+            from pywinauto.keyboard import send_keys as _sk
+            _sk("{ENTER}")
+            time.sleep(0.3)
+            _sk("{ENTER}")
+            time.sleep(1.5)
+            after_csvs = set(_glob.glob(str(Path.home() / "Documents" / "NinjaTrader Grid*.csv")))
+            new_csvs = sorted(after_csvs - before_csvs, key=lambda p: p)
+            if new_csvs:
+                try:
+                    with open(new_csvs[-1], encoding="utf-8-sig") as f:
+                        csv_first_line = f.readline().strip()
+                except Exception as e:
+                    csv_first_line = f"read error: {e}"
+        return jsonify({
+            "click_pos": {"x": cx, "y": cy, "x_pct": 25, "y_pct": y_pct},
+            "menu_items": items,
+            "export_coords": export_coords,
+            "csv_first_line": csv_first_line,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/clear-results", methods=["POST"])
 def clear_results():
     path = NT8_DOCS / "lucid_flex_results.csv"
