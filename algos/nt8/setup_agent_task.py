@@ -30,8 +30,8 @@ TASK_NAME = "LucidFlexAgent"
 
 def ssh(host, cmd, check=True):
     result = subprocess.run(
-        f'ssh {host} "{cmd}"',
-        shell=True, capture_output=True, text=True
+        ["ssh", host, cmd],
+        capture_output=True, text=True
     )
     if check and result.returncode != 0:
         print(f"  SSH ERROR: {result.stderr.strip() or result.stdout.strip()}")
