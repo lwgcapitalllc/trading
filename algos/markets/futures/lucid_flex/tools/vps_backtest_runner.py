@@ -562,6 +562,13 @@ def _set_range_in_grid(grid_map: dict, code_name: str, lo, hi, step,
         print(f"  WARNING: no Optimize-mode txtBox found for param '{code_name}'")
         return False
     el = grid_map[display_key]
+    # WPF property grid virtualizes — scroll the element into view before writing
+    # so it's rendered and actionable even if a prior set_edit_text scrolled it away.
+    try:
+        el.scroll_into_view()
+        time.sleep(0.1)
+    except Exception:
+        pass
     el.set_edit_text(f"{lo};{hi};{step}")
     print(f"  Param range '{code_name}' -> '{display_key}' = {lo};{hi};{step}")
     return True
