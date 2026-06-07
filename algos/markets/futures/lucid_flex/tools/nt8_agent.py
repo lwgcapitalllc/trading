@@ -951,9 +951,14 @@ def optimize_mode_dump():
         sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
 
-        # Switch to Optimization mode
-        from vps_backtest_runner import set_combo
-        set_combo(sa, "BacktestType", "Optimization")
+        # Switch to Optimization mode — full AutomationId discovered via /optimize-mode-dump
+        _BACKTEST_TYPE_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+        try:
+            bt_combo = sa.child_window(auto_id=_BACKTEST_TYPE_AID, control_type="ComboBox")
+            bt_combo.select("Optimization")
+            _alog("[diag] BacktestType set to Optimization")
+        except Exception as e:
+            _alog(f"[diag] BacktestType set failed: {e}")
         time.sleep(1.0)
 
         # Select the strategy

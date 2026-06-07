@@ -751,9 +751,10 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     pfx = f"{strategy}PropertyGridEditorPDEX"
 
-    # Switch BacktestType ComboBox from "Backtest" to "Optimization"
-    if not set_combo(sa, "BacktestType", "Optimization"):
-        print("  WARNING: BacktestType combo set failed — SA may already be in Optimize mode or ID differs")
+    # Switch BacktestType to Optimization — full AutomationId from /optimize-mode-dump diagnostic
+    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+    if not set_combo(sa, _BT_AID, "Optimization"):
+        print(f"  WARNING: BacktestType combo set failed (aid={_BT_AID})")
     time.sleep(1.0)
 
     # Select strategy (triggers property grid rebuild — 3s wait)
