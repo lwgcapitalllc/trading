@@ -1588,14 +1588,15 @@ def insert_run_optimization(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, optimization_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, optimization_id, runner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
             data["status"], data["created_at"], data["optimization_id"],
+            data.get("runner", "ninjatrader"),
         ))
 
 

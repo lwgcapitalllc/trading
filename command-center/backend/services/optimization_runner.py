@@ -610,6 +610,7 @@ async def run_native_optimization(optimization_id: str) -> None:
             "status":             "complete",
             "created_at":         now,
             "optimization_id":    optimization_id,
+            "runner":             runner_str,
         })
 
         # Persist KPIs (no equity curve / daily PnL for native combo runs)
@@ -702,6 +703,7 @@ async def run_optimization(optimization_id: str) -> None:
             "status":             "running",
             "created_at":         now,
             "optimization_id":    optimization_id,
+            "runner":             strategy.get("runner", "ninjatrader"),
         })
 
         job_specs.append({
