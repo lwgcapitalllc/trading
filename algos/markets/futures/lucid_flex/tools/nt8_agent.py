@@ -1011,36 +1011,54 @@ def opt_param_groups():
         sa.wait("visible", timeout=10)
         _switch_to_opt_mode_and_select(sa, strategy, dt)
 
+        # Flat ordered dump — Group labels and txtBox values are siblings.
+        # Capture every element; post-process to pair each Group label with
+        # the next txtBox (or ComboBox) that follows it in document order.
+        all_els = list(sa.descendants())
+        entries = []
+        for i, el in enumerate(all_els):
+            ct    = str(el.element_info.control_type)
+            aid   = el.element_info.automation_id or ""
+            title = el.window_text() or ""
+            if ct in ("Group", "Edit", "ComboBox") or aid == "txtBox":
+                entries.append({"idx": i, "type": ct, "aid": aid, "title": title})
+
+        # Build param rows: each Group with a real title precedes its range control
         rows = []
-        for grp in sa.descendants(control_type="Group"):
-            label = grp.window_text()
-            if not label:
-                continue
-            # Try to find a txtBox child (optimization range edit)
-            txt_val = None
-            try:
-                txt = grp.child_window(auto_id="txtBox", control_type="Edit")
-                txt_val = txt.window_text()
-            except Exception:
-                pass
-            # Try to find a ComboBox child (bool params)
-            combo_val = None
-            combo_items = []
-            try:
-                cb = grp.child_window(control_type="ComboBox")
-                combo_val = cb.window_text()
-                cb.expand()
-                time.sleep(0.2)
-                combo_items = [li.window_text() for li in cb.descendants(control_type="ListItem")]
-                cb.collapse()
-            except Exception:
-                pass
-            rows.append({
-                "label": label,
-                "txtbox_value": txt_val,
-                "combo_value": combo_val,
-                "combo_items": combo_items,
-            })
+        i = 0
+        while i < len(entries):
+            e = entries[i]
+            if e["type"] == "Group" and e["title"] and e["title"] not in (
+                "General", "Misc", "Strategy parameters", "Data Series",
+                "Time frame", "Setup", "Historical fill processing",
+                "Optimize", "Order handling", "Order properties", "template",
+            ):
+                row = {"label": e["title"], "idx": e["idx"], "txtbox_value": None,
+                       "combo_value": None, "combo_items": []}
+                # Peek ahead for the next Edit or ComboBox
+                j = i + 1
+                while j < len(entries) and entries[j]["type"] == "Group":
+                    j += 1
+                if j < len(entries):
+                    nxt = entries[j]
+                    if nxt["type"] == "Edit":
+                        row["txtbox_value"] = nxt["title"]
+                    elif nxt["type"] == "ComboBox":
+                        row["combo_value"] = nxt["title"]
+                        # Get combo items
+                        try:
+                            real_el = all_els[nxt["idx"]]
+                            real_el.expand()
+                            time.sleep(0.2)
+                            row["combo_items"] = [
+                                li.window_text()
+                                for li in real_el.descendants(control_type="ListItem")
+                            ]
+                            real_el.collapse()
+                        except Exception:
+                            pass
+                rows.append(row)
+            i += 1
         return jsonify({"strategy": strategy, "rows": rows})
     except Exception as e:
         return jsonify({"error": str(e)})
