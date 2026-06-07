@@ -170,15 +170,15 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
         timeframe = "H1"
 
     params = spec.get("params", {})
-    # Derive deposit from foundational param if present (MT5 uses f_ prefix convention)
-    deposit = float(
-        params.get("f_AccountSize") or params.get("AccountSize") or 10000
-    )
+    # Derive deposit — guard against -1 sentinel value (means "not injected yet")
+    _f_acct = params.get("f_AccountSize") or params.get("AccountSize")
+    deposit = float(_f_acct if _f_acct and _f_acct > 0 else 10000)
 
     # MeanReversion.mq5 (and all MT5 EAs) call ValidateFoundationalParams() in OnInit and
     # return INIT_FAILED if any f_ param is still at its sentinel value of -1.
     # MT5 backtests have no ruleset, so inject_foundational is never called — provide
-    # sensible standalone defaults here. User strategy params override these.
+    # sensible standalone defaults here. Strip -1 sentinel f_ values from params before
+    # merging so they don't override the defaults we just built.
     foundational_defaults = {
         "f_AccountSize":           deposit,
         "f_RiskPerTradePct":       1.0,
@@ -191,7 +191,10 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
         "f_CommissionPerSide":     float(spec.get("commission_per_side") or 0),
         "f_SlippageTicks":         int(spec.get("slippage_ticks") or 0),
     }
-    inputs = {**foundational_defaults, **params}
+    # Drop -1 sentinel f_ values so foundational_defaults fill in instead
+    safe_params = {k: v for k, v in params.items()
+                   if not (k.startswith("f_") and isinstance(v, (int, float)) and v < 0)}
+    inputs = {**foundational_defaults, **safe_params}
 
     return {
         "job_id":         spec.get("job_id"),
