@@ -286,6 +286,9 @@ def init_db() -> None:
             # Speed Step 3 — grid sensitivity stored on the optimization row
             "ALTER TABLE optimizations ADD COLUMN grid_sensitivity_score REAL",
             "ALTER TABLE optimizations ADD COLUMN grid_sensitivity_summary TEXT",
+            # bar_type/bar_value were missing from optimizations table
+            "ALTER TABLE optimizations ADD COLUMN bar_type TEXT NOT NULL DEFAULT 'Minute'",
+            "ALTER TABLE optimizations ADD COLUMN bar_value INTEGER NOT NULL DEFAULT 5",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -1453,8 +1456,8 @@ def insert_optimization(data: dict) -> None:
                 (optimization_id, strategy_id, instrument, start_date, end_date,
                  commission_per_side, slippage_ticks, ruleset_id, mode, search_method,
                  param_grid, status, estimated_runs, completed_runs, created_at,
-                 source_run_id, regime_filter)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+                 source_run_id, regime_filter, bar_type, bar_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
         """, (
             data["optimization_id"], data["strategy_id"], data["instrument"],
             data["start_date"], data["end_date"],
@@ -1462,6 +1465,7 @@ def insert_optimization(data: dict) -> None:
             data["ruleset_id"], data["mode"], data["search_method"],
             json.dumps(data["param_grid"]), data["status"], data["estimated_runs"],
             now, data.get("source_run_id"), data.get("regime_filter"),
+            data.get("bar_type", "Minute"), data.get("bar_value", 5),
         ))
 
 

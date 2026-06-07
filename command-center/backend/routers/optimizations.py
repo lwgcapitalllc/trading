@@ -72,6 +72,8 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         "estimated_runs":     estimated,
         "source_run_id":      req.source_run_id,
         "regime_filter":      req.regime_filter,
+        "bar_type":           req.bar_type,
+        "bar_value":          req.bar_value,
     })
 
     asyncio.create_task(run_optimization(opt_id))
