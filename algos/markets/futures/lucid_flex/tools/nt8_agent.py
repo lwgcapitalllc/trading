@@ -991,6 +991,61 @@ def combo_items():
         return jsonify({"error": str(e)})
 
 
+@app.route("/opt-param-groups")
+def opt_param_groups():
+    """
+    Diagnostic: in Optimize mode, map every Group control title to its child
+    txtBox value and any sibling ComboBox value.  Returns the full param→range
+    layout so we know which display name maps to which param.
+
+    Query params:
+        ?strategy=ORB  (required)
+    """
+    strategy = request.args.get("strategy", "")
+    if not strategy:
+        return jsonify({"error": "Pass ?strategy=StrategyName"}), 400
+    try:
+        from pywinauto import Desktop
+        dt = Desktop(backend="uia")
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        _switch_to_opt_mode_and_select(sa, strategy, dt)
+
+        rows = []
+        for grp in sa.descendants(control_type="Group"):
+            label = grp.window_text()
+            if not label:
+                continue
+            # Try to find a txtBox child (optimization range edit)
+            txt_val = None
+            try:
+                txt = grp.child_window(auto_id="txtBox", control_type="Edit")
+                txt_val = txt.window_text()
+            except Exception:
+                pass
+            # Try to find a ComboBox child (bool params)
+            combo_val = None
+            combo_items = []
+            try:
+                cb = grp.child_window(control_type="ComboBox")
+                combo_val = cb.window_text()
+                cb.expand()
+                time.sleep(0.2)
+                combo_items = [li.window_text() for li in cb.descendants(control_type="ListItem")]
+                cb.collapse()
+            except Exception:
+                pass
+            rows.append({
+                "label": label,
+                "txtbox_value": txt_val,
+                "combo_value": combo_val,
+                "combo_items": combo_items,
+            })
+        return jsonify({"strategy": strategy, "rows": rows})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/backtest-type-check")
 def backtest_type_check():
     """
