@@ -18,10 +18,10 @@ places everything under trader cleanly.
 | File | Line | Current value | Action |
 |---|---|---|---|
 | `algos/docs/SETUP.md` | 10 | `C:\Users\Administrator\AppData\Local\Programs\Python\Python311\` | Change prereq guidance to install Python all-users at `C:\Python311` |
-| `algos/markets/futures/lucid_flex/tools/backtest_config.json` | 3 | `"vps_user": "Administrator"` | → `"trader"` |
-| `algos/markets/futures/lucid_flex/tools/setup_agent_task.py` | 10 | docstring: `Administrator logs in via RDP` | → `trader logs in via RDP` |
-| `algos/markets/futures/lucid_flex/tools/setup_agent_task.py` | 58 | comment: `fires when Administrator logs in` | → `trader logs in` |
-| `algos/markets/futures/lucid_flex/tools/setup_agent_task.py` | 61 | comment: `Omit /ru so it defaults to current user (Administrator)` | Add explicit `/ru trader` to the schtasks command instead of omitting /ru |
+| `algos/nt8/backtest_config.json` | 3 | `"vps_user": "Administrator"` | → `"trader"` |
+| `algos/nt8/setup_agent_task.py` | 10 | docstring: `Administrator logs in via RDP` | → `trader logs in via RDP` |
+| `algos/nt8/setup_agent_task.py` | 58 | comment: `fires when Administrator logs in` | → `trader logs in` |
+| `algos/nt8/setup_agent_task.py` | 61 | comment: `Omit /ru so it defaults to current user (Administrator)` | Add explicit `/ru trader` to the schtasks command instead of omitting /ru |
 | `algos/scheduler/backup_task.xml` | 37 | `C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe` | → `C:\Python311\python.exe` |
 | `algos/scheduler/fft_task.xml` | 32 | same Administrator python path | → `C:\Python311\python.exe` |
 | `algos/scheduler/mean_reversion_task.xml` | 32 | same | → `C:\Python311\python.exe` |
@@ -55,7 +55,7 @@ places everything under trader cleanly.
 | `scripts/bootstrap_ninjatrader.ps1` | 125 | `[Security.Principal.WindowsBuiltInRole]::Administrator` | .NET enum value for admin-elevation check — not a profile reference |
 | `scripts/bootstrap_vps.ps1` | 182 | `[Security.Principal.WindowsBuiltInRole]::Administrator` | Same |
 | `algos/docs/SETUP.md` | 133 | `Run in PowerShell as Administrator:` | Means "elevated shell" (Windows UAC), not the Administrator account |
-| `algos/markets/futures/lucid_flex/tools/run_all.py` | 127 | `Administrator's interactive RDP session` | Explains the SSH→Task Scheduler bridge (architectural why); will be naturally accurate once trader is the RDP login |
+| `algos/nt8/run_all.py` | 127 | `Administrator's interactive RDP session` | Explains the SSH→Task Scheduler bridge (architectural why); will be naturally accurate once trader is the RDP login |
 
 ---
 

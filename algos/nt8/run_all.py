@@ -16,7 +16,7 @@ Modes:
 
 Automated backtest runs (requires NT8 open on VPS with Strategy Analyzer visible):
     python run_all.py --auto-run
-    This SSHes to VPS and runs vps_backtest_runner.py via pywinauto.
+    This SSHes to VPS and runs nt8_backtest_runner.py via pywinauto.
 """
 
 import subprocess
@@ -134,16 +134,16 @@ def run_auto_backtest(cfg):
     print("=" * 60)
     host      = cfg["vps_host"]
     # Use C:\trading\algos path — no spaces, already exists on VPS from git pull
-    tools_win = r"C:\trading\algos\markets\futures\lucid_flex\tools"
-    runner_win = rf"{tools_win}\vps_backtest_runner.py"
+    tools_win = r"C:\trading\algos\nt8"
+    runner_win = rf"{tools_win}\nt8_backtest_runner.py"
     cfg_win    = rf"{tools_win}\backtest_config.json"
     log_win    = rf"{tools_win}\backtest_runner.log"
 
-    local_runner = os.path.join(SCRIPT_DIR, "vps_backtest_runner.py")
+    local_runner = os.path.join(SCRIPT_DIR, "nt8_backtest_runner.py")
     local_cfg    = CFG_PATH
 
     # Upload runner + config (SCP to home → move to tools dir)
-    for local, fname in [(local_runner, "vps_backtest_runner.py"),
+    for local, fname in [(local_runner, "nt8_backtest_runner.py"),
                          (local_cfg,    "backtest_config.json")]:
         r = subprocess.run(["scp", local, f"{host}:{fname}"],
                            capture_output=True, text=True)

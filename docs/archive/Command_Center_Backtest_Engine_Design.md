@@ -170,7 +170,7 @@ POST   /overfit/run                  - trigger walk-forward + sensitivity
 
 ## 7. NT8 agent
 
-**M1+M2 — implemented.** `POST /backtest` (job-keyed, any strategy/instrument/params), job status/results/log endpoints, strategy list, instrument list, NT8 health, compile status, and agent log are all live in `algos/markets/futures/lucid_flex/tools/nt8_agent.py`.
+**M1+M2 — implemented.** `POST /backtest` (job-keyed, any strategy/instrument/params), job status/results/log endpoints, strategy list, instrument list, NT8 health, compile status, and agent log are all live in `algos/nt8/nt8_agent.py`.
 
 Note: `POST /optimize` driving NT8's built-in Optimizer GUI was **not implemented** — M2 used multi-call `/backtest` with brute force instead.
 

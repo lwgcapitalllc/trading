@@ -116,7 +116,7 @@ Never make a synchronous SSH call from a request handler that could take > 2s. B
 
 ---
 
-## NT8 Strategy Analyzer UI automation (vps_backtest_runner.py)
+## NT8 Strategy Analyzer UI automation (nt8_backtest_runner.py)
 
 Hard-won rules for pywinauto + NT8 WPF — violating these causes silent wrong-strategy runs or broken SA state:
 
@@ -318,7 +318,7 @@ Merges both pools (~11,000 paths) and computes: median/P95/P99 drawdown, prob of
 
 - **`"brute"` / `"genetic"` / `"auto"`** (legacy) — generates all param combos on the backend and fires them as individual backtest calls via `nt8_agent_client.start_backtest`. `_MAX_CONCURRENT = 1` — the SA window is single-threaded. "genetic" samples up to 200 combos for 3+D grids.
 
-- **`"native"`** (Step 1 fast path, NT8 only) — sends ONE `POST /native-optimize` to the VPS agent. `vps_backtest_runner.run_native_optimize_mode` switches the SA to Optimization mode, sets Start/End/Increment ranges for each Strategy Logic param, fires a single Run that uses all CPU cores, then exports the results grid to CSV. The backend creates run rows for every combo after the grid is returned. No per-combo equity curve — auto-trigger stress test is skipped; winner must be stress-tested via a manual single rerun. `estimated_runs` is always the full grid size (no sampling in native mode).
+- **`"native"`** (Step 1 fast path, NT8 only) — sends ONE `POST /native-optimize` to the VPS agent. `nt8_backtest_runner.run_native_optimize_mode` switches the SA to Optimization mode, sets Start/End/Increment ranges for each Strategy Logic param, fires a single Run that uses all CPU cores, then exports the results grid to CSV. The backend creates run rows for every combo after the grid is returned. No per-combo equity curve — auto-trigger stress test is skipped; winner must be stress-tested via a manual single rerun. `estimated_runs` is always the full grid size (no sampling in native mode).
 
 **Parity check:** before trusting the native path, run one combo through it and compare to the existing single-run path. Optimize mode under pywinauto differs from Run mode — the parity check catches setup bugs.
 
@@ -367,7 +367,7 @@ Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long
 
 NT8 agent endpoints: `GET/POST/DELETE /files/strategies/<filename>`, `POST/GET /compile`. NT8 strategy folder: `C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\`.
 
-**Compile:** `vps_compile_runner.py` uses pywinauto F5 via NinjaScript Editor (`NCompile.exe` does not exist on this install). Success detected by polling `NinjaTrader.Custom.dll` mtime — NT8 rewrites it on every successful compile (90s timeout).
+**Compile:** `nt8_compile_runner.py` uses pywinauto F5 via NinjaScript Editor (`NCompile.exe` does not exist on this install). Success detected by polling `NinjaTrader.Custom.dll` mtime — NT8 rewrites it on every successful compile (90s timeout).
 
 **Upload limit:** 256 KB enforced on both agent and backend router.
 

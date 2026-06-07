@@ -292,13 +292,13 @@ _compile_jobs: dict = {}   # compile_job_id → result dict
 
 def _run_compile(compile_job_id: str):
     """
-    Launch vps_compile_runner.py as a subprocess so pywinauto COM is
+    Launch nt8_compile_runner.py as a subprocess so pywinauto COM is
     initialized in a fresh process (same pattern as the backtest runner).
     """
     _alog(f"Compile job {compile_job_id[:8]}: starting")
     _compile_jobs[compile_job_id]["status"] = "running"
 
-    runner = SCRIPT_DIR / "vps_compile_runner.py"
+    runner = SCRIPT_DIR / "nt8_compile_runner.py"
     errors, warnings = [], []
     status = "running"
 
@@ -558,7 +558,7 @@ def cancel_job(job_id):
 # ── Background job runner ─────────────────────────────────────────────────────
 
 def _run_job(job_id: str, spec: dict):
-    runner    = str(SCRIPT_DIR / "vps_backtest_runner.py")
+    runner    = str(SCRIPT_DIR / "nt8_backtest_runner.py")
     spec_dir  = NT8_DOCS / "lab_results" / job_id
     spec_dir.mkdir(parents=True, exist_ok=True)
     spec_path = spec_dir / "job_spec.json"
@@ -621,7 +621,7 @@ def _run_job(job_id: str, spec: dict):
 
 def _run_native_wf_job(job_id: str, spec: dict):
     """Background runner for /native-walkforward — same pattern as _run_native_opt_job."""
-    runner    = str(SCRIPT_DIR / "vps_backtest_runner.py")
+    runner    = str(SCRIPT_DIR / "nt8_backtest_runner.py")
     spec_dir  = NT8_DOCS / "lab_results" / job_id
     spec_dir.mkdir(parents=True, exist_ok=True)
     spec_path = spec_dir / "job_spec.json"
@@ -686,7 +686,7 @@ def _run_native_wf_job(job_id: str, spec: dict):
 
 def _run_native_opt_job(job_id: str, spec: dict):
     """Background runner for /native-optimize — same pattern as _run_job."""
-    runner    = str(SCRIPT_DIR / "vps_backtest_runner.py")
+    runner    = str(SCRIPT_DIR / "nt8_backtest_runner.py")
     spec_dir  = NT8_DOCS / "lab_results" / job_id
     spec_dir.mkdir(parents=True, exist_ok=True)
     spec_path = spec_dir / "job_spec.json"
@@ -1219,7 +1219,7 @@ def opt_set_ranges_dry_run():
     """
     Diagnostic: switch SA to Optimize mode, select a strategy, then set the
     provided param ranges using the real _set_range_in_grid / _build_opt_grid_map
-    logic from vps_backtest_runner.  After setting, re-read the txtBox values
+    logic from nt8_backtest_runner.  After setting, re-read the txtBox values
     to confirm what was written.  Does NOT click Run.
 
     Body JSON:
@@ -1239,7 +1239,7 @@ def opt_set_ranges_dry_run():
     try:
         import sys
         sys.path.insert(0, str(SCRIPT_DIR))
-        from vps_backtest_runner import _build_opt_grid_map, _set_range_in_grid, _match_display_name
+        from nt8_backtest_runner import _build_opt_grid_map, _set_range_in_grid, _match_display_name
         from pywinauto import Desktop
 
         dt = Desktop(backend="uia")

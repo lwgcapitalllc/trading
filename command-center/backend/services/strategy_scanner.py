@@ -55,7 +55,7 @@ def _infer_name(source: str) -> str:
 def _infer_suggested_instrument(class_name: str) -> Optional[str]:
     cfg_path = (
         Path(cfg.MONOREPO_ROOT)
-        / "algos" / "markets" / "futures" / "lucid_flex" / "tools" / "backtest_config.json"
+        / "algos" / "nt8" / "backtest_config.json"
     )
     if not cfg_path.exists():
         return None

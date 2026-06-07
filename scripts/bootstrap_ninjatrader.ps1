@@ -83,8 +83,8 @@ param(
     [switch] $RestoreUserData,
     [string] $UserDataBackup,
     [switch] $Force,
-    [string] $StrategySourceDir = 'C:\trading\algos\markets\futures\lucid_flex',
-    [string] $AgentScript  = 'C:\trading\algos\markets\futures\lucid_flex\tools\nt8_agent.py',
+    [string] $StrategySourceDir = 'C:\trading\strategies\ninjatrader',
+    [string] $AgentScript  = 'C:\trading\algos\nt8\nt8_agent.py',
     [string] $AgentReq,
     [string] $AgentTaskXml,
     [string] $AgentTaskName = 'LucidFlexAgent',
@@ -274,7 +274,7 @@ function P5 {
     } else {
         Write-Warn2 "Task '$AgentTaskName' not found and no -AgentTaskXml given."
         Write-Warn2 "This task has no XML in the repo — it is created from your MAC by running:"
-        Write-Warn2 "    python3 algos/markets/futures/lucid_flex/tools/setup_agent_task.py"
+        Write-Warn2 "    python3 algos/nt8/setup_agent_task.py"
         Write-Warn2 "(it SSHes to the VPS and registers the task). Run that, then re-run this script."
     }
 

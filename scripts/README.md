@@ -37,7 +37,7 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
 3. **Register the nt8_agent task (from your Mac, one time)**
    The `LucidFlexAgent` task has no XML in the repo — it's created from the Mac:
    ```bash
-   python3 algos/markets/futures/lucid_flex/tools/setup_agent_task.py
+   python3 algos/nt8/setup_agent_task.py
    ```
 
 4. **Futures / NinjaTrader side**

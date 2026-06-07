@@ -76,15 +76,15 @@ algos/
     │       ├── config.json
     │       ├── bot_state.json
     │       └── fft_trades.json
-    ├── futures/lucid_flex/
-    │   └── tools/                   ← NinjaScript strategy source files moved to strategies/ninjatrader/
-    │       ├── nt8_agent.py         ← HTTP agent running on VPS (NT8 control)
-    │       ├── vps_backtest_runner.py ← pywinauto NT8 Strategy Analyzer automation
-    │       ├── setup_agent_task.py  ← Registers LucidFlexAgent Task Scheduler entry
-    │       ├── deploy.py            ← Deploys .cs strategies to NT8 user folder
-    │       ├── run_all.py           ← Batch backtest runner
-    │       ├── analyze.py           ← Backtest result analyzer
-    │       └── backtest_config.json ← Default backtest parameters
+    ├── nt8/
+    │       ├── nt8_agent.py           ← HTTP agent running on VPS (NT8 control)
+    │       ├── nt8_backtest_runner.py ← pywinauto NT8 Strategy Analyzer automation
+    │       ├── nt8_compile_runner.py  ← pywinauto NinjaScript Editor compile subprocess
+    │       ├── setup_agent_task.py    ← Registers LucidFlexAgent Task Scheduler entry
+    │       ├── deploy.py              ← Deploys .cs strategies to NT8 user folder
+    │       ├── run_all.py             ← Batch backtest runner
+    │       ├── analyze.py             ← Backtest result analyzer
+    │       └── backtest_config.json   ← Default backtest parameters
     └── crypto/instances/            ← Reserved (empty)
 ```
 

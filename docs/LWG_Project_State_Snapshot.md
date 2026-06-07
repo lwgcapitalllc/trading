@@ -25,7 +25,7 @@ LWG Capital is a personal algorithmic trading operation building toward 30–50 
 **Windows VPS (ForexVPS)**
 - NinjaTrader 8 — backtest engine and eventually live execution
 - `nt8_agent.py` — Flask HTTP server on port 8765, accessed via SSH LocalForward tunnel
-- `vps_compile_runner.py` — pywinauto subprocess: opens NinjaScript Editor, presses F5, polls DLL mtime for success
+- `nt8_compile_runner.py` — pywinauto subprocess: opens NinjaScript Editor, presses F5, polls DLL mtime for success
 - MT5 (PU Prime demo, multiple instances: `PU Prime Terminal`, `MT5_Scalper`, `MT5_FFT`) — live forex bots only
 - MT5 Lab (`C:\MT5_Lab`, PU Prime demo) — Strategy Tester for backtest lab only; driven by `mt5_agent.py` on port 8766
 - SSH alias: `forexvps` — repo at `C:\trading\`

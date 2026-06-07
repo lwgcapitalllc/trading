@@ -9,12 +9,12 @@ Prerequisites on VPS:
 Two modes:
 
   Lab mode (job-keyed, called by nt8_agent.py):
-    python vps_backtest_runner.py --job-id <id> --job-spec <path/to/job_spec.json>
+    python nt8_backtest_runner.py --job-id <id> --job-spec <path/to/job_spec.json>
     Reads a single job spec, runs it, writes NT8_DOCS/lab_results/<job_id>/result.json.
     Emits PCT:N:message lines for agent progress tracking.
 
   Legacy mode (config-driven, all combos):
-    python vps_backtest_runner.py [--config path/to/backtest_config.json] [--combo ID]
+    python nt8_backtest_runner.py [--config path/to/backtest_config.json] [--combo ID]
     Writes lucid_flex_results.csv to the NT8 Documents folder.
 
 NOTE: NT8 must already be open. The Strategy Analyzer is opened automatically if not visible.

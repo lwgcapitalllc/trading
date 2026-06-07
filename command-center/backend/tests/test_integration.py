@@ -6,7 +6,7 @@ These tests hit the LIVE backend at localhost:8000 and require:
   - NT8 running in VPS RDP session (Session 1)
   - Strategy Analyzer tab open in NT8
   - VPS agent running inside RDP:
-      cd C:\\trading\\algos\\markets\\futures\\lucid_flex\\tools
+      cd C:\\trading\\algos\\nt8
       python nt8_agent.py
 
 Run with:

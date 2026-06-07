@@ -95,11 +95,11 @@ def test_range_change_updates_param_schema(fresh_db, monkeypatch, tmp_path):
     import config as cfg
     from services import lab_db, strategy_scanner
 
-    # Build fake futures dir matching the scanner's expected structure
-    futures_dir = tmp_path / "algos" / "markets" / "futures" / "lucid_flex"
-    futures_dir.mkdir(parents=True)
+    # Build fake nt8 dir matching the scanner's expected structure
+    nt8_dir = tmp_path / "algos" / "nt8"
+    nt8_dir.mkdir(parents=True)
 
-    cs_file = futures_dir / "SyntheticStrat.cs"
+    cs_file = nt8_dir / "SyntheticStrat.cs"
     cs_file.write_text(SYNTHETIC_CS.format(range_max=60))
 
     monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
@@ -128,9 +128,9 @@ def test_source_hash_updates_on_change(fresh_db, monkeypatch, tmp_path):
     import config as cfg
     from services import lab_db, strategy_scanner
 
-    futures_dir = tmp_path / "algos" / "markets" / "futures" / "lucid_flex"
-    futures_dir.mkdir(parents=True)
-    cs_file = futures_dir / "SyntheticStrat.cs"
+    nt8_dir = tmp_path / "algos" / "nt8"
+    nt8_dir.mkdir(parents=True)
+    cs_file = nt8_dir / "SyntheticStrat.cs"
     cs_file.write_text(SYNTHETIC_CS.format(range_max=60))
 
     monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
