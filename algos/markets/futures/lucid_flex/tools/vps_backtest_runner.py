@@ -474,57 +474,97 @@ def _nt8_date(iso: str) -> str:
 _OPT_TIMEOUT = 7200  # 2 hours max
 
 
-def _set_param_range_native(sa, pfx: str, name: str, range_spec) -> bool:
+def _build_opt_grid_map(sa) -> dict:
     """
-    Set one param's optimization range in NT8's Strategy Analyzer Optimize mode.
+    In NT8 Optimize mode, scan SA descendants in document order and build a
+    mapping from each param's display label (lowercased) to its txtBox Edit element.
 
-    range_spec: {"min": float, "max": float, "step": float} for continuous ranges
-                [val, val, ...] for discrete lists (infers step from first two values)
-                scalar for a fixed (non-optimized) value
-
-    NT8 Optimize property grid sub-field AutomationIds follow the pattern:
-        {pfx}_{name}_Start, {pfx}_{name}_End, {pfx}_{name}_Increment
-
-    Falls back to the single-value field {pfx}_{name} for scalar / single-item specs,
-    which keeps the param at a fixed value without including it in the optimize grid.
-
-    Returns True if at least the Start field was set successfully.
+    Each optimizable param row consists of a Group (label) followed immediately
+    by an Edit with auto_id='txtBox' (the Start;End;Step range field).  They are
+    siblings in the UIA tree — not parent/child.
     """
-    if isinstance(range_spec, dict):
-        lo   = range_spec["min"]
-        hi   = range_spec["max"]
-        step = range_spec["step"]
-    elif isinstance(range_spec, list):
-        if len(range_spec) == 0:
-            return False
-        if len(range_spec) == 1:
-            # Single value — set as fixed
-            aid = f"{pfx}_{name}"
-            ok = set_edit(sa, aid, range_spec[0], warn=False)
-            return ok or set_checkbox(sa, aid, range_spec[0])
-        lo   = range_spec[0]
-        hi   = range_spec[-1]
-        step = round(range_spec[1] - range_spec[0], 8) if len(range_spec) > 1 else 1
-    else:
-        # Scalar — set as fixed value (param is not part of the optimize grid)
-        aid = f"{pfx}_{name}"
-        ok = set_edit(sa, aid, range_spec, warn=False)
-        return ok or set_checkbox(sa, aid, range_spec)
+    result          = {}
+    last_group_text = None
 
-    # Set Start, End, Increment (try both _Increment and _Step suffixes)
-    ok_start = set_edit(sa, f"{pfx}_{name}_Start",     lo,   warn=False)
-    ok_end   = set_edit(sa, f"{pfx}_{name}_End",       hi,   warn=False)
-    ok_step  = (
-        set_edit(sa, f"{pfx}_{name}_Increment", step, warn=False)
-        or set_edit(sa, f"{pfx}_{name}_Step",   step, warn=False)
-    )
-    if not ok_start:
-        print(f"  WARNING: could not set {pfx}_{name}_Start — param may not be optimized")
-    if not ok_end:
-        print(f"  WARNING: could not set {pfx}_{name}_End")
-    if not ok_step:
-        print(f"  WARNING: could not set {pfx}_{name}_Increment or _Step")
-    return ok_start
+    for el in sa.descendants():
+        ct  = str(el.element_info.control_type)
+        aid = el.element_info.automation_id or ""
+
+        if ct == "Group":
+            t = el.window_text()
+            if t:
+                last_group_text = t
+        elif ct == "Edit" and aid == "txtBox":
+            if last_group_text:
+                result[last_group_text.lower()] = el
+                last_group_text = None  # consumed — reset for the next pair
+
+    return result
+
+
+import re as _re
+
+def _camel_words(name: str) -> list:
+    """Split a camelCase/PascalCase identifier into lowercase words."""
+    return [w.lower() for w in _re.findall(r'[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+', name)]
+
+
+def _match_display_name(code_name: str, grid_map: dict,
+                         explicit: dict | None = None) -> str | None:
+    """
+    Find the grid_map key that best matches a NinjaScript property code name.
+
+    explicit: optional {code_name: display_name} dict supplied in the spec.
+              When present and the display_name exists in grid_map, use it directly.
+
+    Fuzzy fallback: split both names into words, count substring overlaps, require
+    >= 70 % of code words to match.  Short words (< 4 chars) are skipped to avoid
+    common-word false positives (e.g. 'per', 'one').
+    """
+    if explicit and code_name in explicit:
+        dn = explicit[code_name].lower()
+        return dn if dn in grid_map else None
+
+    code_words = [w for w in _camel_words(code_name) if len(w) >= 4]
+    if not code_words:
+        return None
+
+    best_key   = None
+    best_score = 0.0
+
+    for key in grid_map:
+        display_words = _re.sub(r'[^a-z0-9\s]', ' ', key).split()
+        matches = sum(
+            1 for cw in code_words
+            if any(cw in dw or dw.startswith(cw) for dw in display_words)
+        )
+        score = matches / len(code_words)
+        if score > best_score:
+            best_score = score
+            best_key   = key
+
+    return best_key if best_score >= 0.70 else None
+
+
+def _set_range_in_grid(grid_map: dict, code_name: str, lo, hi, step,
+                       explicit: dict | None = None) -> bool:
+    """
+    Set a param's optimization range in NT8's Optimize-mode property grid.
+
+    Finds the txtBox Edit element by matching code_name to a display label in
+    grid_map (using explicit dict first, fuzzy fallback second), then writes
+    'lo;hi;step'.
+
+    Returns True on success, False if the param was not found.
+    """
+    display_key = _match_display_name(code_name, grid_map, explicit)
+    if display_key is None:
+        print(f"  WARNING: no Optimize-mode txtBox found for param '{code_name}'")
+        return False
+    el = grid_map[display_key]
+    el.set_edit_text(f"{lo};{hi};{step}")
+    print(f"  Param range '{code_name}' → '{display_key}' = {lo};{hi};{step}")
+    return True
 
 
 def _dismiss_dialog(dt) -> None:
@@ -715,9 +755,9 @@ def _export_optimization_results(sa, job_id: str, param_names: set) -> list:
 
 def run_native_optimize_mode(job_id: str, spec: dict):
     """
-    Native optimizer mode: run NT8's Strategy Analyzer in Optimization mode.
+    Native optimizer mode: run NT8's Strategy Analyzer in Optimize mode.
 
-    Switches the SA BacktestType to "Optimization", sets per-param Start/End/Increment
+    Switches the SA BacktestType to "Optimize", sets per-param Start;End;Step
     ranges for Strategy Logic params, keeps Foundational params as fixed values,
     fires Run, waits for all combos to complete, then exports the results grid to CSV.
 
@@ -736,10 +776,11 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         param_ranges     dict  {name: {min, max, step} | [val, ...] | scalar}
         fixed_params     dict  {name: value}  (Foundational + non-optimized defaults)
     """
-    strategy     = spec["strategy_class"]
-    instr        = spec["instrument"]
-    param_ranges = spec.get("param_ranges", {})
-    fixed_params = spec.get("fixed_params", {})
+    strategy           = spec["strategy_class"]
+    instr              = spec["instrument"]
+    param_ranges       = spec.get("param_ranges", {})
+    fixed_params       = spec.get("fixed_params", {})
+    param_display_names = spec.get("param_display_names", {})
 
     print(f"JOB {job_id}: native optimize {strategy} on {instr}")
     print(f"  Ranges: { {k: (v if isinstance(v, list) else v) for k, v in param_ranges.items()} }")
@@ -765,6 +806,12 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     _pct(25, "Configuring parameters")
 
+    # Build the Optimize-mode grid map (Group label → txtBox element).
+    # In Optimize mode, optimizable params lose their ORBPropertyGridEditorPDEX_*
+    # AutomationIds and appear as Group+txtBox(Start;End;Step) pairs instead.
+    grid_map = _build_opt_grid_map(sa)
+    print(f"  Optimize grid map: {list(grid_map.keys())}")
+
     # Standard controls: instrument, dates, bar value, slippage
     set_instrument(sa, instr)
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
@@ -772,17 +819,36 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
     set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
 
-    # Fixed params (Foundational and any non-optimized strategy params)
+    # Fixed params: strategy Logic params appear in grid_map → set as value;value;1.
+    # Foundational params keep their ORBPropertyGridEditorPDEX_* IDs → set_edit.
+    # Bool params are ComboBoxes in the Misc section — skip, leave at current SA value.
     for name, value in fixed_params.items():
-        aid = f"{pfx}_{name}"
-        if not set_edit(sa, aid, value, warn=False):
-            set_checkbox(sa, aid, value)
+        if isinstance(value, bool):
+            continue  # bool params are ComboBoxes; not settable via txtBox grid
+        if _match_display_name(name, grid_map, param_display_names):
+            _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+        else:
+            aid = f"{pfx}_{name}"
+            if not set_edit(sa, aid, value, warn=False):
+                set_checkbox(sa, aid, value)
 
-    # Strategy Logic param ranges — these become Start/End/Increment in the SA
+    # Strategy Logic param ranges: convert spec to Start;End;Step and write to grid.
     for name, range_spec in param_ranges.items():
-        ok = _set_param_range_native(sa, pfx, name, range_spec)
-        status = "OK" if ok else "FAILED"
-        print(f"  Param range {name}: {status}")
+        if isinstance(range_spec, dict):
+            lo   = range_spec["min"]
+            hi   = range_spec["max"]
+            step = range_spec["step"]
+        elif isinstance(range_spec, list):
+            if not range_spec:
+                continue
+            lo   = range_spec[0]
+            hi   = range_spec[-1]
+            step = round(range_spec[1] - range_spec[0], 8) if len(range_spec) > 1 else 1
+        else:
+            # Scalar — keep fixed
+            lo = hi = range_spec
+            step = 1
+        _set_range_in_grid(grid_map, name, lo, hi, step, param_display_names)
 
     _pct(30, "Starting native optimization")
 
