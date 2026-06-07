@@ -591,15 +591,18 @@ def _set_range_in_grid(grid_map: dict, code_name: str, lo, hi, step,
         print(f"  WARNING: no Optimize-mode txtBox found for param '{code_name}'")
         return False
     el = grid_map[display_key]
-    # WPF property grid virtualizes — scroll the element into view before writing
-    # so it's rendered and actionable even if a prior set_edit_text scrolled it away.
     try:
         el.scroll_into_view()
         time.sleep(0.1)
     except Exception:
         pass
-    el.set_edit_text(f"{lo};{hi};{step}")
-    print(f"  Param range '{code_name}' -> '{display_key}' = {lo};{hi};{step}")
+    val = f"{lo};{hi};{step}"
+    # click_input focuses the field; type_keys with ~ (Enter) commits the value.
+    # set_edit_text alone does not trigger NT8's LostFocus commit handler.
+    el.click_input()
+    time.sleep(0.05)
+    el.type_keys(f"^a{val}~", with_spaces=True)
+    print(f"  Param range '{code_name}' -> '{display_key}' = {val}")
     return True
 
 
@@ -728,30 +731,34 @@ def _export_optimization_results(sa, job_id: str, param_names: set) -> list:
     except Exception:
         pass
 
-    # Right-click target: center of SA content area (optimization results grid lives here)
+    # Right-click target: left 30% of SA width (clearly inside results grid, not settings panel)
     sa_rect = sa.rectangle()
-    rc_x = sa_rect.left + (sa_rect.right  - sa_rect.left) // 2
-    rc_y = sa_rect.top  + int((sa_rect.bottom - sa_rect.top) * 0.55)
+    sa_w    = sa_rect.right  - sa_rect.left
+    sa_h    = sa_rect.bottom - sa_rect.top
+    rc_x    = sa_rect.left + int(sa_w * 0.30)
+    rc_y    = sa_rect.top  + int(sa_h * 0.55)
 
-    nt8          = sa.top_level_parent()
+    nt8           = sa.top_level_parent()
     export_coords = None
 
     # Pass 1: open context menu, scan NT8 UIA tree for Export item screen coordinates.
-    # The UIA scan closes the WPF popup (expected) — we capture coords before menu closes.
+    # UIA scan closes the WPF popup — capture coords before menu closes.
     _mouse.right_click(coords=(rc_x, rc_y))
-    time.sleep(0.3)
+    time.sleep(0.5)
+    menu_items_found = []
     for el in nt8.descendants():
         txt = (el.window_text() or "").strip()
         ct  = str(getattr(el.element_info, "control_type", ""))
-        if ct == "MenuItem" and txt.startswith("Export"):
+        if ct == "MenuItem" and txt:
             r = el.rectangle()
-            if r.width() > 5:
+            menu_items_found.append(f"{txt}@{r.width()}x{r.height()}")
+            if txt.startswith("Export") and r.width() > 5 and export_coords is None:
                 export_coords = ((r.left + r.right) // 2, (r.top + r.bottom) // 2)
-                break
 
+    print(f"  [opt-export] Menu items found: {menu_items_found}")
     if export_coords is None:
-        print("  [opt-export] Export menu item not found in NT8 UIA tree")
-        send_keys("{ESCAPE}")
+        print("  [opt-export] Export menu item not found — no export")
+        send_keys("{ESC}")
         return []
 
     # Pass 2: right-click again, immediately click Export at the cached coordinates.
