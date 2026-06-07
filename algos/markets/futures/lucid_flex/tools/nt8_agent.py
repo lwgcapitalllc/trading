@@ -1095,6 +1095,72 @@ def backtest_type_check():
         return jsonify({"error": str(e)})
 
 
+@app.route("/opt-set-ranges-dry-run", methods=["POST"])
+def opt_set_ranges_dry_run():
+    """
+    Diagnostic: switch SA to Optimize mode, select a strategy, then set the
+    provided param ranges using the real _set_range_in_grid / _build_opt_grid_map
+    logic from vps_backtest_runner.  After setting, re-read the txtBox values
+    to confirm what was written.  Does NOT click Run.
+
+    Body JSON:
+        {
+            "strategy": "ORB",
+            "param_ranges": {
+                "ORMinutes":  {"min": 5,   "max": 60,  "step": 5},
+                "TpMultiple": {"min": 0.5, "max": 5.0, "step": 0.5}
+            },
+            "param_display_names": {}   // optional explicit overrides
+        }
+    """
+    body     = request.get_json(force=True, silent=True) or {}
+    strategy = body.get("strategy", "")
+    if not strategy:
+        return jsonify({"error": "Pass 'strategy' in body"}), 400
+    try:
+        import sys
+        sys.path.insert(0, str(SCRIPT_DIR))
+        from vps_backtest_runner import _build_opt_grid_map, _set_range_in_grid, _match_display_name
+        from pywinauto import Desktop
+
+        dt = Desktop(backend="uia")
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        _switch_to_opt_mode_and_select(sa, strategy, dt)
+
+        grid_map    = _build_opt_grid_map(sa)
+        explicit    = body.get("param_display_names", {})
+        param_ranges = body.get("param_ranges", {})
+
+        results = []
+        for name, rspec in param_ranges.items():
+            if isinstance(rspec, dict):
+                lo, hi, step = rspec["min"], rspec["max"], rspec["step"]
+            elif isinstance(rspec, list) and rspec:
+                lo, hi = rspec[0], rspec[-1]
+                step = round(rspec[1] - rspec[0], 8) if len(rspec) > 1 else 1
+            else:
+                lo = hi = rspec; step = 1
+
+            ok = _set_range_in_grid(grid_map, name, lo, hi, step, explicit)
+            # Read back the written value
+            written = None
+            if ok:
+                matched_key = _match_display_name(name, grid_map, explicit)
+                if matched_key:
+                    try:
+                        written = grid_map[matched_key].window_text()
+                    except Exception:
+                        pass
+            results.append({"param": name, "ok": ok, "written": written,
+                            "expected": f"{lo};{hi};{step}"})
+
+        return jsonify({"strategy": strategy, "grid_map_keys": list(grid_map.keys()),
+                        "results": results})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/optimize-mode-dump")
 def optimize_mode_dump():
     """
