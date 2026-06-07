@@ -842,33 +842,28 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     _pct(25, "Configuring parameters")
 
-    # Build the Optimize-mode grid map (Group label → txtBox element).
-    # In Optimize mode, optimizable params lose their ORBPropertyGridEditorPDEX_*
-    # AutomationIds and appear as Group+txtBox(Start;End;Step) pairs instead.
+    # Build the Optimize-mode grid map while Strategy params are still at the top
+    # of the settings panel (just after strategy select + 3s rebuild).
+    # Strategy params section scrolls out of view once we interact with Data Series /
+    # Time frame controls below it, so ALL grid_map writes must happen here, before
+    # any set_instrument / set_edit calls that would scroll the panel down.
     grid_map = _build_opt_grid_map(sa)
     print(f"  Optimize grid map: {list(grid_map.keys())}")
 
-    # Standard controls: instrument, dates, bar value, slippage
-    set_instrument(sa, instr)
-    set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  _nt8_date(spec["start_date"]))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
-    set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
-
-    # Fixed params: strategy Logic params appear in grid_map → set as value;value;1.
-    # Foundational params keep their ORBPropertyGridEditorPDEX_* IDs → set_edit.
-    # Bool params are ComboBoxes in the Misc section — skip, leave at current SA value.
+    # Fixed params: Logic params in grid_map → set as value;value;1.
+    # Foundational params keep ORBPropertyGridEditorPDEX_* IDs → handled after
+    # standard controls below (those use AutomationIds, no scroll dependency).
+    # Bool params are ComboBoxes — skip.
+    foundational_params = {}
     for name, value in fixed_params.items():
         if isinstance(value, bool):
-            continue  # bool params are ComboBoxes; not settable via txtBox grid
+            continue
         if _match_display_name(name, grid_map, param_display_names):
             _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
         else:
-            aid = f"{pfx}_{name}"
-            if not set_edit(sa, aid, value, warn=False):
-                set_checkbox(sa, aid, value)
+            foundational_params[name] = value
 
-    # Strategy Logic param ranges: convert spec to Start;End;Step and write to grid.
+    # Strategy Logic param ranges: write while Strategy params are still visible.
     for name, range_spec in param_ranges.items():
         if isinstance(range_spec, dict):
             lo   = range_spec["min"]
@@ -881,10 +876,23 @@ def run_native_optimize_mode(job_id: str, spec: dict):
             hi   = range_spec[-1]
             step = round(range_spec[1] - range_spec[0], 8) if len(range_spec) > 1 else 1
         else:
-            # Scalar — keep fixed
             lo = hi = range_spec
             step = 1
         _set_range_in_grid(grid_map, name, lo, hi, step, param_display_names)
+
+    # Standard controls: instrument, dates, bar value, slippage.
+    # These use fixed AutomationIds and scroll the panel down — must come AFTER grid_map writes.
+    set_instrument(sa, instr)
+    set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  _nt8_date(spec["start_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
+    set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
+
+    # Foundational fixed params via AutomationId (not in grid_map).
+    for name, value in foundational_params.items():
+        aid = f"{pfx}_{name}"
+        if not set_edit(sa, aid, value, warn=False):
+            set_checkbox(sa, aid, value)
 
     _pct(30, "Starting native optimization")
 
