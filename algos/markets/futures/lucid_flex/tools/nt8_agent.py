@@ -935,9 +935,9 @@ _BACKTEST_TYPE_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestTyp
 
 
 def _switch_to_opt_mode_and_select(sa, strategy: str, dt) -> str:
-    """Switch SA to Optimization mode, select strategy, return observed BacktestType value."""
+    """Switch SA to Optimize mode, select strategy, return observed BacktestType value."""
     bt_combo = sa.child_window(auto_id=_BACKTEST_TYPE_AID, control_type="ComboBox")
-    bt_combo.select("Optimization")
+    bt_combo.select("Optimize")
     time.sleep(0.5)
     val_before_select = bt_combo.selected_text() if hasattr(bt_combo, "selected_text") else bt_combo.window_text()
     _alog(f"[diag] BacktestType after set (before strategy select): {val_before_select!r}")

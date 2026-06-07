@@ -753,7 +753,7 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     # Switch BacktestType to Optimization — full AutomationId from /optimize-mode-dump diagnostic
     _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    if not set_combo(sa, _BT_AID, "Optimization"):
+    if not set_combo(sa, _BT_AID, "Optimize"):
         print(f"  WARNING: BacktestType combo set failed (aid={_BT_AID})")
     time.sleep(1.0)
 
