@@ -1831,8 +1831,8 @@ def insert_run_stress_test_child(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, stress_test_id, walk_forward_window_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, stress_test_id, walk_forward_window_id, runner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
@@ -1840,6 +1840,7 @@ def insert_run_stress_test_child(data: dict) -> None:
             data["commission_per_side"], data["slippage_ticks"],
             data["status"], data["created_at"],
             data["stress_test_id"], data.get("walk_forward_window_id"),
+            data.get("runner", "ninjatrader"),
         ))
 
 

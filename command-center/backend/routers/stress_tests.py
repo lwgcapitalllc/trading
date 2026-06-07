@@ -75,7 +75,7 @@ async def trigger_stress_test(body: StressTestCreate):
             raise HTTPException(404, "Ruleset not found")
 
     if (body.include_walk_forward or body.include_sensitivity) and lab_db.has_any_running_vps_job():
-        raise HTTPException(409, "NT8 Strategy Analyzer is busy — walk-forward and sensitivity require it to be idle")
+        raise HTTPException(409, "A VPS job is already running — walk-forward and sensitivity require the platform to be idle")
 
     st_id = uuid.uuid4().hex[:16]
     lab_db.insert_stress_test({
@@ -99,14 +99,14 @@ async def trigger_stress_test(body: StressTestCreate):
     if body.include_walk_forward:
         wf_min = _estimate_wf_duration_min(body.walk_forward_windows)
         est_min += wf_min
-        notes.append(f"Walk-forward: ~{wf_min} min ({body.walk_forward_windows * 2} NT8 backtests)")
+        notes.append(f"Walk-forward: ~{wf_min} min ({body.walk_forward_windows * 2} backtests)")
     if body.include_sensitivity:
         strategy = lab_db.get_strategy(run.get("strategy_id", ""))
         n_params = len([p for p in (strategy or {}).get("param_schema") or []
                         if p.get("type") in ("int", "float", "double")])
         sens_min = _estimate_sens_duration_min(n_params)
         est_min += sens_min
-        notes.append(f"Sensitivity: ~{sens_min} min ({n_params * 4} NT8 backtests)")
+        notes.append(f"Sensitivity: ~{sens_min} min ({n_params * 4} backtests)")
 
     return {
         "stress_test_id": st_id,

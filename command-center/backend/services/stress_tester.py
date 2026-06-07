@@ -150,11 +150,11 @@ def _estimate_sens_duration_min(n_params: int) -> int:
 
 # ── VPS child-run helper (mirrors sweep_runner._run_one) ──────────────────────
 
-async def _run_child_backtest(run_id: str, job_spec: dict) -> bool:
+async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjatrader") -> bool:
     """Start a VPS backtest and poll to completion. Returns True on success."""
     from services import nt8_agent_client
     try:
-        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, "ninjatrader")
+        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         return False
@@ -342,8 +342,10 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
         lab_db.update_stress_test_status(stress_test_id, "failed_no_strategy")
         return False
 
+    runner = strategy.get("runner", "ninjatrader")
+
     # Native WF path: used when source run has optimization_id (winner from native opt).
-    if source_run.get("optimization_id") and strategy.get("runner", "ninjatrader") == "ninjatrader":
+    if source_run.get("optimization_id") and runner == "ninjatrader":
         return await _run_native_walk_forward(stress_test_id, st, source_run, strategy)
 
     try:
@@ -380,6 +382,7 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
                 "created_at": int(time.time()),
                 "stress_test_id": stress_test_id,
                 "walk_forward_window_id": wf_tag,
+                "runner": runner,
             })
 
             job_spec = {
@@ -394,7 +397,7 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
                 "commission_per_side": source_run["commission_per_side"],
                 "slippage_ticks": source_run["slippage_ticks"],
             }
-            ok = await _run_child_backtest(child_id, job_spec)
+            ok = await _run_child_backtest(child_id, job_spec, runner)
             if not ok:
                 continue  # skip this period if it failed
 
@@ -448,6 +451,7 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
     if not strategy:
         return False
 
+    runner = strategy.get("runner", "ninjatrader")
     base_params: dict = source_run.get("params") or {}
     param_schema: list = strategy.get("param_schema") or []
 
@@ -498,6 +502,7 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
                 "created_at": int(time.time()),
                 "stress_test_id": stress_test_id,
                 "walk_forward_window_id": sens_tag,
+                "runner": runner,
             })
 
             job_spec = {
@@ -512,7 +517,7 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
                 "commission_per_side": source_run["commission_per_side"],
                 "slippage_ticks": source_run["slippage_ticks"],
             }
-            ok = await _run_child_backtest(child_id, job_spec)
+            ok = await _run_child_backtest(child_id, job_spec, runner)
             child = lab_db.get_run(child_id) if ok else None
             child_pnl = child.get("net_pnl") or 0.0 if child else 0.0
             pnl_delta = child_pnl - baseline_pnl

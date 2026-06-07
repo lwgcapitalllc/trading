@@ -1402,7 +1402,7 @@ function RunStressTestModal({ runId, onClose }: { runId: string; onClose: () => 
         <div className="space-y-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={includeWF} onChange={e => setIncludeWF(e.target.checked)} className="accent-accent" />
-            <span className="text-sm text-text-primary">Include walk-forward (runs 10 NT8 backtests, ~50 min)</span>
+            <span className="text-sm text-text-primary">Include walk-forward (runs 10 VPS backtests, ~50 min)</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={includeSens} onChange={e => setIncludeSens(e.target.checked)} className="accent-accent" />
@@ -1412,7 +1412,7 @@ function RunStressTestModal({ runId, onClose }: { runId: string; onClose: () => 
 
         {estMin > 0 && (
           <div className="rounded border border-warn-text/30 bg-warn-muted p-3 text-xs text-warn-text">
-            This will run NT8 backtests sequentially. Estimated time: ~{estMin} min. NT8 must be idle.
+            This will run VPS backtests sequentially. Estimated time: ~{estMin} min. Platform must be idle.
           </div>
         )}
 
@@ -1547,7 +1547,7 @@ export function BacktestDetail() {
                   </button>
                 )}
                 {(run.trade_count ?? 0) > 0 && <OptimizeButton run={run} />}
-                {run?.status === 'complete' && !isMt5 && (run.trade_count ?? 0) > 0 && (
+                {run?.status === 'complete' && (run.trade_count ?? 0) > 0 && (
                   <button
                     onClick={() => setShowStressModal(true)}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
