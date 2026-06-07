@@ -962,6 +962,35 @@ def _switch_to_opt_mode_and_select(sa, strategy: str, dt) -> str:
     return val_after_select
 
 
+@app.route("/combo-items")
+def combo_items():
+    """
+    Diagnostic: list all items in a ComboBox by AutomationId.
+
+    Query params:
+        ?aid=StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType
+    """
+    aid = request.args.get("aid", "")
+    if not aid:
+        return jsonify({"error": "Pass ?aid=AutomationId"}), 400
+    try:
+        from pywinauto import Desktop
+        dt = Desktop(backend="uia")
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        combo = sa.child_window(auto_id=aid, control_type="ComboBox")
+        combo.expand()
+        time.sleep(0.3)
+        items = []
+        for el in combo.descendants(control_type="ListItem"):
+            items.append({"title": el.window_text(), "aid": el.element_info.automation_id})
+        combo.collapse()
+        current = combo.window_text()
+        return jsonify({"aid": aid, "current": current, "items": items})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/backtest-type-check")
 def backtest_type_check():
     """
