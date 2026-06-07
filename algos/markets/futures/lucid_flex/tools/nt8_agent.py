@@ -419,6 +419,60 @@ def native_opt_results(job_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/native-walkforward", methods=["POST"])
+def start_native_walkforward():
+    """
+    Submit a native walk-forward job.
+
+    Body: job_id, strategy_class, instrument, start_date, end_date, params (flat dict),
+    wf_windows (default 5), oos_pct (default 30).
+    All params are run as fixed values — no re-optimization per IS window.
+    """
+    spec   = request.get_json(silent=True) or {}
+    job_id = spec.get("job_id")
+    if not job_id:
+        return jsonify({"error": "job_id required"}), 400
+    required = ["strategy_class", "instrument", "start_date", "end_date"]
+    missing  = [k for k in required if k not in spec]
+    if missing:
+        return jsonify({"error": f"Missing fields: {missing}"}), 400
+    with _lock:
+        if job_id in _jobs and _jobs[job_id]["status"] == "running":
+            return jsonify({"error": "Job already running"}), 409
+        _jobs[job_id] = {
+            "job_id":     job_id,
+            "status":     "running",
+            "pct":        0,
+            "message":    "Starting native walk-forward...",
+            "started_at": time.time(),
+            "updated_at": time.time(),
+            "log":        [],
+            "result":     None,
+            "error":      None,
+        }
+    _alog(f"Native WF job {job_id} submitted: {spec['strategy_class']} on {spec['instrument']}")
+    threading.Thread(target=_run_native_wf_job, args=(job_id, spec), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "running"}), 202
+
+
+@app.route("/jobs/<job_id>/native-wf-results")
+def native_wf_results(job_id):
+    """Return the native walk-forward result (per-window IS/OOS metrics)."""
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    if job["status"] == "running":
+        return jsonify({"error": "Job still running"}), 202
+    results_path = NT8_DOCS / "lab_results" / job_id / "native_wf_result.json"
+    if not results_path.exists():
+        return jsonify({"error": "No native WF result file", "status": job["status"]}), 404
+    try:
+        return jsonify(json.loads(results_path.read_text(encoding="utf-8")))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/backtest", methods=["POST"])
 def start_backtest():
     spec   = request.get_json(silent=True) or {}
@@ -559,6 +613,71 @@ def _run_job(job_id: str, spec: dict):
     if proc.returncode == 0 and results_path.exists():
         _jupdate(job_id, status="complete", pct=100, message="Complete")
         _alog(f"Job {job_id} complete")
+    else:
+        with _lock:
+            log_text = "\n".join(_jobs.get(job_id, {}).get("log", []))
+        _classify_failure(job_id, log_text, proc.returncode)
+
+
+def _run_native_wf_job(job_id: str, spec: dict):
+    """Background runner for /native-walkforward — same pattern as _run_native_opt_job."""
+    runner    = str(SCRIPT_DIR / "vps_backtest_runner.py")
+    spec_dir  = NT8_DOCS / "lab_results" / job_id
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = spec_dir / "job_spec.json"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+
+    cmd = [sys.executable, "-u", runner,
+           "--mode", "native-walkforward",
+           "--job-id", job_id,
+           "--job-spec", str(spec_path)]
+    _jlog(job_id, f"CMD: {' '.join(cmd)}")
+    _jupdate(job_id, pct=5, message="Native walk-forward started")
+
+    stop_hb = threading.Event()
+    def _heartbeat():
+        while not stop_hb.wait(30):
+            with _lock:
+                if _jobs.get(job_id, {}).get("status") == "running":
+                    _jobs[job_id]["updated_at"] = time.time()
+    threading.Thread(target=_heartbeat, daemon=True).start()
+
+    try:
+        si = subprocess.STARTUPINFO()
+        si.lpDesktop = "winsta0\\default"
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+            startupinfo=si,
+        )
+        for line in proc.stdout:
+            line = line.rstrip()
+            _jlog(job_id, line)
+            if line.startswith("PCT:"):
+                try:
+                    parts = line.split(":", 2)
+                    pct   = int(parts[1])
+                    msg   = parts[2] if len(parts) > 2 else ""
+                    _jupdate(job_id, pct=pct, message=msg)
+                except Exception:
+                    pass
+        proc.wait()
+    except Exception as e:
+        stop_hb.set()
+        _jupdate(job_id, status="failed_runtime", error=str(e),
+                 message=f"Runner launch failed: {e}")
+        _alog(f"Native WF job {job_id} launch error: {e}")
+        return
+    finally:
+        stop_hb.set()
+
+    if _jobs.get(job_id, {}).get("status") != "running":
+        return
+
+    results_path = spec_dir / "native_wf_result.json"
+    if proc.returncode == 0 and results_path.exists():
+        _jupdate(job_id, status="complete", pct=100, message="Complete")
+        _alog(f"Native WF job {job_id} complete")
     else:
         with _lock:
             log_text = "\n".join(_jobs.get(job_id, {}).get("log", []))

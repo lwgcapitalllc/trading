@@ -89,6 +89,26 @@ def cancel_job(job_id: str) -> dict:
     return _post(f"/jobs/{job_id}/cancel")
 
 
+def start_native_optimization(opt_spec: dict) -> dict:
+    """POST /native-optimize — run MT5 Strategy Tester in optimization mode."""
+    return _post("/native-optimize", opt_spec, timeout=30)
+
+
+def native_opt_results(job_id: str) -> dict:
+    """GET /backtests/{job_id}/native-opt-results — fetch optimization combos after completion."""
+    return _get(f"/backtests/{job_id}/native-opt-results")
+
+
+def start_native_walkforward(wf_spec: dict) -> dict:
+    """POST /native-walkforward — run MT5 Strategy Tester in forward (IS+OOS) mode."""
+    return _post("/native-walkforward", wf_spec, timeout=30)
+
+
+def native_wf_results(job_id: str) -> dict:
+    """GET /backtests/{job_id}/native-wf-results — fetch IS/OOS forward results after completion."""
+    return _get(f"/backtests/{job_id}/native-wf-results")
+
+
 # ── Historical data ───────────────────────────────────────────────────────────
 
 def get_historical_data(

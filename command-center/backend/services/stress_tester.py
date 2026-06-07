@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from datetime import date, timedelta
@@ -16,6 +17,9 @@ from typing import Optional
 import numpy as np
 
 from services import lab_db
+from services import notify
+
+log = logging.getLogger("stress_tester")
 
 _RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 _POLL_INTERVAL = 5
@@ -205,8 +209,125 @@ async def _run_child_backtest(run_id: str, job_spec: dict) -> bool:
 
 # ── Walk-forward runner ────────────────────────────────────────────────────────
 
+_NATIVE_WF_STALL_SEC = 3600  # 1 hour
+
+
+async def _run_native_walk_forward(
+    stress_test_id: str,
+    st: dict,
+    source_run: dict,
+    strategy: dict,
+) -> bool:
+    """
+    Drive NT8's built-in Walk Forward mode for a strategy with fixed params.
+    One VPS call instead of N orchestrated backtests.
+    """
+    from services import nt8_agent_client
+    import numpy as np
+
+    job_id = f"nwf_{stress_test_id}"
+    wf_windows = st.get("walk_forward_windows", 5)
+
+    spec = {
+        "job_id":             job_id,
+        "strategy_class":     strategy["class_name"],
+        "instrument":         source_run["instrument"],
+        "bar_type":           source_run["bar_type"],
+        "bar_value":          source_run["bar_value"],
+        "start_date":         source_run["start_date"],
+        "end_date":           source_run["end_date"],
+        "commission_per_side": source_run["commission_per_side"],
+        "slippage_ticks":     source_run["slippage_ticks"],
+        "params":             source_run.get("params", {}),
+        "wf_windows":         wf_windows,
+        "oos_pct":            30,
+    }
+
+    try:
+        await asyncio.to_thread(nt8_agent_client.start_native_walkforward, spec)
+    except Exception as exc:
+        log.warning("Native WF submit failed for stress_test %s: %s — falling back to serial", stress_test_id, exc)
+        return False
+
+    started_at = time.time()
+    while True:
+        await asyncio.sleep(_POLL_INTERVAL)
+        try:
+            sd = await asyncio.to_thread(nt8_agent_client.job_status, job_id)
+        except Exception:
+            if time.time() - started_at > _NATIVE_WF_STALL_SEC:
+                log.error("Native WF %s lost VPS contact", job_id)
+                return False
+            continue
+
+        status = sd.get("status", "running")
+        if status == "complete":
+            break
+        if status.startswith("failed"):
+            log.warning("Native WF %s failed: %s — falling back to serial", job_id, status)
+            return False
+        if time.time() - started_at > _NATIVE_WF_STALL_SEC:
+            try:
+                await asyncio.to_thread(nt8_agent_client.cancel_job, job_id)
+            except Exception:
+                pass
+            log.error("Native WF %s timed out", job_id)
+            return False
+
+    try:
+        result = await asyncio.to_thread(nt8_agent_client.native_wf_results, job_id)
+    except Exception as exc:
+        log.warning("Native WF %s results fetch failed: %s", job_id, exc)
+        return False
+
+    windows_raw = result.get("windows", [])
+    if not windows_raw:
+        return False
+
+    # Pair IS and OOS rows by window number and compute Sharpe degradation.
+    by_window: dict[int, dict] = {}
+    for row in windows_raw:
+        w = row.get("window", 0)
+        if w not in by_window:
+            by_window[w] = {}
+        by_window[w][row.get("type", "")] = row
+
+    summary = []
+    degradations = []
+    for w_num in sorted(by_window):
+        pair = by_window[w_num]
+        is_row  = pair.get("is", {})
+        oos_row = pair.get("oos", {})
+        is_pnl  = is_row.get("net_pnl")
+        oos_pnl = oos_row.get("net_pnl")
+        # Derive a simple per-window Sharpe proxy from PF (no trade-level data from native WF).
+        is_pf  = is_row.get("profit_factor") or 0.0
+        oos_pf = oos_row.get("profit_factor") or 0.0
+        # IS→OOS degradation on PF (consistent with how cumulative mode uses Sharpe)
+        if is_pf > 0:
+            degradations.append(max(0.0, 1.0 - oos_pf / is_pf))
+        summary.append({
+            "window":    w_num,
+            "is_pnl":    round(is_pnl, 2) if is_pnl is not None else None,
+            "oos_pnl":   round(oos_pnl, 2) if oos_pnl is not None else None,
+            "is_pf":     round(is_pf, 4),
+            "oos_pf":    round(oos_pf, 4),
+            # Sharpe fields expected by the existing WF summary schema
+            "is_sharpe":  None,
+            "oos_sharpe": None,
+        })
+
+    avg_deg = float(np.mean(degradations)) if degradations else 0.0
+    lab_db.update_stress_test_walk_forward(stress_test_id, summary, avg_deg)
+    return True
+
+
 async def run_walk_forward_task(stress_test_id: str) -> bool:
-    """Run N walk-forward windows sequentially through NT8. Updates DB as each completes."""
+    """
+    Run walk-forward windows. Uses NT8 native WF mode when the source run comes from
+    a native optimization (one data load, all windows); falls back to N orchestrated
+    backtests for standalone single runs.
+    """
     st = lab_db.get_stress_test(stress_test_id)
     if not st:
         return False
@@ -220,6 +341,10 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
     if not strategy:
         lab_db.update_stress_test_status(stress_test_id, "failed_no_strategy")
         return False
+
+    # Native WF path: used when source run has optimization_id (winner from native opt).
+    if source_run.get("optimization_id") and strategy.get("runner", "ninjatrader") == "ninjatrader":
+        return await _run_native_walk_forward(stress_test_id, st, source_run, strategy)
 
     try:
         windows = _split_windows(
@@ -408,6 +533,60 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
     return True
 
 
+# ── Grid sensitivity injection (Step 3A) ──────────────────────────────────────
+
+async def _apply_grid_sensitivity_if_available(st: dict, stress_test_id: str) -> bool:
+    """
+    If the source run came from a native optimization that already has grid sensitivity,
+    populate the stress test's sensitivity fields from that data — no NT8 backtests.
+    Returns True if sensitivity was applied.
+    """
+    run = lab_db.get_run(st["run_id"])
+    if not run:
+        return False
+    opt_id = run.get("optimization_id")
+    if not opt_id:
+        return False
+    opt = lab_db.get_optimization(opt_id)
+    if not opt:
+        return False
+    score = opt.get("grid_sensitivity_score")
+    summary_raw = opt.get("grid_sensitivity_summary")
+    if score is None or summary_raw is None:
+        return False
+
+    try:
+        import json as _json
+        summary = _json.loads(summary_raw) if isinstance(summary_raw, str) else summary_raw
+    except Exception:
+        return False
+
+    lab_db.update_stress_test_sensitivity(stress_test_id, summary, float(score))
+    return True
+
+
+# ── Telegram grade notification ───────────────────────────────────────────────
+
+def _fire_grade_notification(stress_test_id: str, run: dict, st: dict, grade: str, reasons: list[str]) -> None:
+    strategy = lab_db.get_strategy(run.get("strategy_id", ""))
+    strat_name = (strategy.get("name") or strategy.get("class_name") or "Unknown") if strategy else "Unknown"
+    instrument = run.get("instrument", "?")
+    prob_pass  = st.get("prob_pass_eval")
+    p1_dd      = st.get("pct1_max_dd")
+
+    lines = [f"*Lab stress test complete*"]
+    lines.append(f"Strategy: `{strat_name}` | `{instrument}`")
+    lines.append(f"Grade: *{grade}*")
+    if prob_pass is not None:
+        lines.append(f"Pass probability: {round(prob_pass * 100, 1)}%")
+    if p1_dd is not None:
+        lines.append(f"Worst-1% drawdown: ${p1_dd:,.0f}")
+    if reasons:
+        lines.append("Reasons: " + "; ".join(reasons[:3]))
+
+    notify.send_telegram("\n".join(lines))
+
+
 # ── Main stress test background task ──────────────────────────────────────────
 
 async def run_stress_test_task(
@@ -460,12 +639,19 @@ async def run_stress_test_task(
             "distribution_path": str(dist_file),
         })
 
+        # ── Step 3A: inject grid sensitivity if available (no NT8 backtests) ──
+        grid_sens_applied = False
+        if not include_sensitivity:
+            grid_sens_applied = await _apply_grid_sensitivity_if_available(st, stress_test_id)
+
         if not include_walk_forward and not include_sensitivity:
-            # MC-only: compute grade on MC results alone (partial grade)
+            # MC-only (or MC + grid sensitivity): compute grade
             st_updated = lab_db.get_stress_test(stress_test_id)
             if st_updated and ruleset:
-                grade, reasons = compute_grade(st_updated, None, None, ruleset)
+                sens_summary = st_updated.get("sensitivity_summary") if grid_sens_applied else None
+                grade, reasons = compute_grade(st_updated, None, sens_summary, ruleset)
                 lab_db.update_stress_test_grade(stress_test_id, grade, reasons)
+                _fire_grade_notification(stress_test_id, run, st_updated, grade, reasons)
             return
 
         # ── Walk-forward ──
@@ -473,21 +659,23 @@ async def run_stress_test_task(
             lab_db.update_stress_test_status(stress_test_id, "running_wf")
             await run_walk_forward_task(stress_test_id)
 
-        # ── Sensitivity ──
-        if include_sensitivity:
+        # ── Sensitivity (NT8 perturbation backtests) ──
+        if include_sensitivity and not grid_sens_applied:
             lab_db.update_stress_test_status(stress_test_id, "running_sens")
             await run_sensitivity_task(stress_test_id)
 
         # ── Grade ──
         st_updated = lab_db.get_stress_test(stress_test_id)
         if st_updated and ruleset:
+            has_sens = include_sensitivity or grid_sens_applied
             grade, reasons = compute_grade(
                 st_updated,
                 st_updated.get("walk_forward_summary") if include_walk_forward else None,
-                st_updated.get("sensitivity_summary") if include_sensitivity else None,
+                st_updated.get("sensitivity_summary") if has_sens else None,
                 ruleset,
             )
             lab_db.update_stress_test_grade(stress_test_id, grade, reasons)
+            _fire_grade_notification(stress_test_id, run, st_updated, grade, reasons)
         else:
             lab_db.update_stress_test_status(stress_test_id, "complete")
 

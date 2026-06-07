@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-05
+**Last reviewed:** 2026-06-07 (Speed Steps 4–6)
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -32,6 +32,7 @@ backend/
 │   ├── stress_tests.py    lab — stress test CRUD + trigger (GET /stress-tests, GET /:id, POST /run, DELETE /:id)
 │   ├── sweeps.py          lab — instrument sweep (POST /backtests/sweep, GET /backtests/sweeps, GET/DELETE /backtests/sweeps/:id)
 │   ├── optimizations.py   lab — optimizer (POST /optimizations/run, GET /optimizations/*, DELETE /optimizations/:id)
+│   ├── queue.py           job queue (GET /queue, POST /queue/optimization, POST /queue/stress-test, DELETE /queue/:id)
 │   └── settings.py
 ├── services/              business logic, DB access, external clients
 │   ├── lab_db.py          only module that touches lab.db
@@ -46,7 +47,9 @@ backend/
 │   ├── grading.py         compute_grade() → A/B/C/D/F with plain-English reasons
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
 │   ├── nt8_agent_client.py      typed HTTP wrapper over NT8 nt8_agent; runner dispatcher (routes mt5 → mt5_agent_client)
-│   └── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel)
+│   ├── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel)
+│   ├── notify.py            Telegram notifier (urllib, no extra deps); mirrors algos/shared/notify.py token/chat
+│   └── queue_runner.py      asyncio queue loop — dispatches optimization + stress_test jobs one at a time
 ├── data/lab.db            strategies, rulesets, runs, evaluations, optimizations, stress_tests
 └── reports/lab/           run output files — equity curves, logs, progress.json
 ```
@@ -243,6 +246,9 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Lab — Strategy Deploy (Pass 2.5) | ✅ Live | `POST /strategies/{id}/deploy` reads `source_path`, uploads to VPS. `.mq5` → MT5 agent, `.cs` → NT8 agent. |
 | Lab — MT5 runner (M5) | ✅ Live | `mt5_agent.py` port 8766: Strategy Tester driver (ini+set, terminal64, HTML report). `mt5_agent_client.py` typed wrapper. Runner dispatch via `nt8_agent_client`. |
 | Lab — MT5 deployment (Step 9) | ✅ Live | MT5 agent upload/delete `.mq5`. `POST /compile` → MetaEditor. Backend: `POST/GET /strategy-files/compile-mt5`. |
+| Lab — MT5 native optimizer (Speed Step 4) | ✅ Live | `mt5_agent.py` extended with `POST /native-optimize` (Optimization=1 ini, set-file ranges, HTML combo parser) and `POST /native-walkforward` (ForwardMode ini, IS/OOS HTML split). `mt5_agent_client.py` typed wrappers. `nt8_agent_client` dispatcher: `start_native_optimization`, `native_opt_results`, `start_native_walkforward`, `native_wf_results` all accept `runner` param. `optimization_runner.run_native_optimization` reads `runner_str` from strategy and passes through poll loop. **HTML parsing needs VPS validation.** |
+| Lab — Telegram notifications (Speed Step 5) | ✅ Live | `services/notify.py` — urllib Telegram sender (same token as `algos/shared/notify.py`, no extra deps). `stress_tester` fires after grade is written in both MC-only and full WF+sens paths. |
+| Lab — Job queue (Speed Step 6) | ✅ Live | `job_queue` table + CRUD in `lab_db.py`. `queue_runner.py` asyncio loop runs one job at a time (optimization or stress_test). `routers/queue.py`: GET/POST/DELETE. Loop started as asyncio task in `main.py` startup. |
 | Settings | ✅ Live | Config read/write. `nt8_agent_tunnel` and `mt5_agent_tunnel` both present. |
 | Startup — auto-start agents | ✅ Live | Daemon thread on startup (8s delay): `/health` each agent, fires schtask for any that don't respond. |
 

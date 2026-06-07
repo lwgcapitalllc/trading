@@ -1,12 +1,14 @@
+import asyncio
 import threading
 import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import smart_money, bots, backtests, stress_tests, settings, strategies, firms, rulesets, system, sweeps, optimizations, strategy_files
+from routers import smart_money, bots, backtests, stress_tests, settings, strategies, firms, rulesets, system, sweeps, optimizations, strategy_files, queue
 from services import lab_db, nt8_agent_client, mt5_agent_client
 from services.backtest_runner import read_progress, clear_progress
+from services import queue_runner
 
 app = FastAPI(title="LWG Capital Command Center API", version="1.0.0")
 
@@ -30,6 +32,7 @@ app.include_router(rulesets.router)
 app.include_router(firms.router)          # backward-compat redirect — deprecated in M3
 app.include_router(system.router)
 app.include_router(strategy_files.router)
+app.include_router(queue.router)
 
 
 def _auto_start_agents():
@@ -51,13 +54,14 @@ def _auto_start_agents():
 
 
 @app.on_event("startup")
-def startup():
+async def startup():
     lab_db.init_db()
     # Any "running" state left on disk is from a previous process that died.
     # The asyncio task tracking that job no longer exists, so clear the lock.
     if read_progress().get("status") == "running":
         clear_progress()
     threading.Thread(target=_auto_start_agents, daemon=True).start()
+    asyncio.create_task(queue_runner.run_queue_loop())
 
 
 @app.get("/health")

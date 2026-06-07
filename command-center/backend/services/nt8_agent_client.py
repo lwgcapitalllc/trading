@@ -208,19 +208,85 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
     }
 
 
-def start_native_optimization(opt_spec: dict) -> dict:
+def _nt8_opt_to_mt5_opt_spec(opt_spec: dict) -> dict:
     """
-    Submit a native optimizer job to the NT8 agent (POST /native-optimize).
+    Translate an NT8-style native optimization spec to the MT5 agent's format.
 
+    NT8 spec: instrument, param_ranges, fixed_params, start_date, end_date, bar_type/bar_value
+    MT5 spec: symbol, param_ranges (same), inputs (fixed), from_date, to_date, timeframe
+    """
+    base = _nt8_to_mt5_spec({
+        "job_id":             opt_spec.get("job_id"),
+        "strategy_class":     opt_spec["strategy_class"],
+        "instrument":         opt_spec["instrument"],
+        "bar_type":           opt_spec.get("bar_type", "Minute"),
+        "bar_value":          opt_spec.get("bar_value", 60),
+        "start_date":         opt_spec["start_date"],
+        "end_date":           opt_spec["end_date"],
+        "commission_per_side": opt_spec.get("commission_per_side", 0),
+        "slippage_ticks":     opt_spec.get("slippage_ticks", 0),
+        "params":             opt_spec.get("fixed_params", {}),
+    })
+    base["param_ranges"] = opt_spec.get("param_ranges", {})
+    return base
+
+
+def start_native_optimization(opt_spec: dict, runner: str = "ninjatrader") -> dict:
+    """
+    Submit a native optimizer job.
+
+    Routes to NT8 agent (POST /native-optimize) or MT5 agent based on runner.
     opt_spec must include: job_id, strategy_class, instrument, start_date, end_date,
     param_ranges ({name: {min, max, step} | [val, ...]}) and fixed_params ({name: value}).
     """
+    if runner == "mt5":
+        return mt5_agent_client.start_native_optimization(_nt8_opt_to_mt5_opt_spec(opt_spec))
     return _post("/native-optimize", opt_spec, timeout=30)
 
 
-def native_opt_results(job_id: str) -> dict:
+def native_opt_results(job_id: str, runner: str = "ninjatrader") -> dict:
     """Fetch the native optimizer result grid (combos + KPIs) after job completes."""
+    if runner == "mt5":
+        return mt5_agent_client.native_opt_results(job_id)
     return _get(f"/jobs/{job_id}/native-opt-results")
+
+
+def _nt8_wf_to_mt5_wf_spec(wf_spec: dict) -> dict:
+    """Translate NT8-style WF spec to MT5 agent format (single IS/OOS split)."""
+    base = _nt8_to_mt5_spec({
+        "job_id":             wf_spec.get("job_id"),
+        "strategy_class":     wf_spec["strategy_class"],
+        "instrument":         wf_spec["instrument"],
+        "bar_type":           wf_spec.get("bar_type", "Minute"),
+        "bar_value":          wf_spec.get("bar_value", 60),
+        "start_date":         wf_spec["start_date"],
+        "end_date":           wf_spec["end_date"],
+        "commission_per_side": wf_spec.get("commission_per_side", 0),
+        "slippage_ticks":     wf_spec.get("slippage_ticks", 0),
+        "params":             wf_spec.get("params", {}),
+    })
+    base["oos_pct"] = wf_spec.get("oos_pct", 30)
+    return base
+
+
+def start_native_walkforward(wf_spec: dict, runner: str = "ninjatrader") -> dict:
+    """
+    Submit a native walk-forward job.
+
+    Routes to NT8 (POST /native-walkforward) or MT5 (POST /native-walkforward) based on runner.
+    wf_spec must include: job_id, strategy_class, instrument, start_date, end_date,
+    params (flat dict of all fixed param values), and optionally oos_pct (default 30).
+    """
+    if runner == "mt5":
+        return mt5_agent_client.start_native_walkforward(_nt8_wf_to_mt5_wf_spec(wf_spec))
+    return _post("/native-walkforward", wf_spec, timeout=30)
+
+
+def native_wf_results(job_id: str, runner: str = "ninjatrader") -> dict:
+    """Fetch native walk-forward results after job completes."""
+    if runner == "mt5":
+        return mt5_agent_client.native_wf_results(job_id)
+    return _get(f"/jobs/{job_id}/native-wf-results")
 
 
 def start_backtest(job_spec: dict, runner: str = "ninjatrader") -> dict:

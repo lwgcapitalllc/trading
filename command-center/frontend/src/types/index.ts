@@ -709,3 +709,17 @@ export interface CompileJobStatus {
   started_at: number | null
   completed_at: number | null
 }
+
+// ── Job queue (Step 6) ────────────────────────────────────────────────────────
+
+export interface QueueItem {
+  queue_id: string
+  job_type: 'optimization' | 'stress_test'
+  payload: Record<string, unknown>
+  status: 'pending' | 'running' | 'done' | 'failed'
+  position: number
+  created_at: number
+  started_at: number | null
+  finished_at: number | null
+  error: string | null
+}

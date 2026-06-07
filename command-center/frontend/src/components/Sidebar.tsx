@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Radar, Bot, BookOpen, BarChart2,
-  Activity, Settings,
+  Activity, ListOrdered, Settings,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { SystemHealthStrip } from '@/components/SystemHealthStrip'
@@ -15,7 +15,8 @@ const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[
 const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
   { to: '/strategies',   label: 'Strategies',   icon: BookOpen,  live: true  },
   { to: '/backtests',    label: 'Backtests',    icon: BarChart2, live: true  },
-  { to: '/stress-tests', label: 'Stress Tests', icon: Activity,  live: true  },
+  { to: '/stress-tests', label: 'Stress Tests', icon: Activity,      live: true  },
+  { to: '/queue',        label: 'Queue',        icon: ListOrdered,   live: true  },
 ]
 
 function NavItem({ to, label, icon: Icon, live }: { to: string; label: string; icon: LucideIcon; live: boolean }) {

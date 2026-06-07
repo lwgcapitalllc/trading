@@ -304,6 +304,153 @@ async def _run_batch(
     await asyncio.gather(*[_one(rid, spec) for rid, spec in zip(run_ids, job_specs)])
 
 
+# ── Grid sensitivity (Part A) ─────────────────────────────────────────────────
+
+def _compute_grid_sensitivity(combos_all: list[dict], param_ranges: dict) -> tuple[float, dict]:
+    """
+    Measure how isolated the winner is in the full optimizer grid.
+
+    For each ranged param, finds the winner's adjacent neighbors (one step up or
+    down in that param, all others matching) and measures the PF degradation.
+    A flat plateau → score near 0 (robust). A lone spike → score near 1 (overfit).
+
+    Returns (max_degradation_score, per_param_summary_dict).
+    """
+    if not combos_all:
+        return 0.0, {}
+
+    winner = max(combos_all, key=lambda c: c.get("kpis", {}).get("profit_factor") or 0.0)
+    winner_pf = winner.get("kpis", {}).get("profit_factor") or 0.0
+    winner_params = winner.get("params", {})
+
+    if winner_pf <= 0:
+        return 0.0, {}
+
+    # Collect sorted unique values per ranged param for neighbor lookup
+    param_vals: dict[str, list] = {}
+    for pname in param_ranges:
+        raw = sorted({c["params"].get(pname) for c in combos_all if pname in c.get("params", {})})
+        if len(raw) > 1:
+            param_vals[pname] = raw
+
+    summary: dict = {}
+    max_degradation = 0.0
+
+    for pname, vals in param_vals.items():
+        w_val = winner_params.get(pname)
+        if w_val is None:
+            continue
+        # Find winner's position in the sorted value list
+        dists = [abs(v - w_val) for v in vals]
+        idx = dists.index(min(dists))
+
+        neighbors = []
+        if idx > 0:
+            neighbors.append(("down", vals[idx - 1]))
+        if idx < len(vals) - 1:
+            neighbors.append(("up", vals[idx + 1]))
+
+        param_summary = {}
+        for direction, n_val in neighbors:
+            # Find combo matching winner on all params except pname
+            for c in combos_all:
+                cp = c.get("params", {})
+                if abs(cp.get(pname, -999) - n_val) > 1e-6:
+                    continue
+                if all(abs(cp.get(k, -999) - winner_params.get(k, -999)) < 1e-6
+                       for k in winner_params if k != pname):
+                    n_pf = c.get("kpis", {}).get("profit_factor") or 0.0
+                    deg = max(0.0, (winner_pf - n_pf) / winner_pf)
+                    max_degradation = max(max_degradation, deg)
+                    param_summary[direction] = {
+                        "value": n_val,
+                        "profit_factor": round(n_pf, 4),
+                        "degradation": round(deg, 4),
+                    }
+                    break
+
+        if param_summary:
+            summary[pname] = param_summary
+
+    return round(max_degradation, 4), summary
+
+
+# ── Winner single backtest for MC (Part B) ────────────────────────────────────
+
+async def _run_winner_backtest_for_mc(
+    opt: dict,
+    best_run_id: str,
+    strategy: dict,
+    ruleset_ids: list[str],
+) -> None:
+    """
+    Submit a full single backtest for the native-opt winner to get its equity curve.
+    Native combo rows have no equity curve; MC needs trade-level data.
+    On completion, auto-triggers stress test (which picks up grid sensitivity).
+    """
+    best_run = lab_db.get_run(best_run_id)
+    if not best_run:
+        log.warning("Winner backtest: best_run_id %s not found in DB", best_run_id)
+        return
+
+    winner_params = best_run.get("params") or {}
+    new_run_id = uuid.uuid4().hex[:12]
+    now = int(time.time())
+
+    bar_type  = best_run.get("bar_type", "Minute")
+    bar_value = best_run.get("bar_value", 5)
+
+    lab_db.insert_run({
+        "run_id":             new_run_id,
+        "strategy_id":        opt["strategy_id"],
+        "instrument":         opt["instrument"],
+        "params":             winner_params,
+        "bar_type":           bar_type,
+        "bar_value":          bar_value,
+        "start_date":         opt["start_date"],
+        "end_date":           opt["end_date"],
+        "commission_per_side": opt["commission_per_side"],
+        "slippage_ticks":     opt["slippage_ticks"],
+        "status":             "running",
+        "created_at":         now,
+        "evaluate_rulesets":  ruleset_ids,
+        "runner":             strategy.get("runner", "ninjatrader"),
+        "optimization_id":    opt["optimization_id"],
+        "source_run_id":      best_run_id,
+    })
+
+    job_spec = {
+        "job_id":             new_run_id,
+        "strategy_class":     strategy["class_name"],
+        "instrument":         opt["instrument"],
+        "params":             winner_params,
+        "bar_type":           bar_type,
+        "bar_value":          bar_value,
+        "start_date":         opt["start_date"],
+        "end_date":           opt["end_date"],
+        "commission_per_side": opt["commission_per_side"],
+        "slippage_ticks":     opt["slippage_ticks"],
+    }
+
+    runner = strategy.get("runner", "ninjatrader")
+    try:
+        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
+    except Exception as exc:
+        lab_db.update_run_status(new_run_id, "failed_unknown", str(exc))
+        log.error("Winner backtest submit failed for opt %s: %s", opt["optimization_id"], exc)
+        return
+
+    log.info("Winner backtest %s submitted for opt %s", new_run_id, opt["optimization_id"])
+    await _poll_one(new_run_id, new_run_id, ruleset_ids, opt["mode"])
+
+    # Reload the run to check tier, then always auto-trigger stress test for the winner
+    run_after = lab_db.get_run(new_run_id)
+    if run_after and run_after.get("status") == "complete" and ruleset_ids:
+        from services import stress_tester
+        asyncio.create_task(stress_tester.trigger_auto_stress_test(new_run_id, ruleset_ids))
+        log.info("Auto-triggered stress test for winner backtest %s", new_run_id)
+
+
 # ── Native optimizer path ─────────────────────────────────────────────────────
 
 # Max seconds to wait for the native optimizer VPS job (all combos in one run)
@@ -331,6 +478,7 @@ async def run_native_optimization(optimization_id: str) -> None:
         lab_db.fail_optimization(optimization_id, "Strategy not found")
         return
 
+    runner_str = strategy.get("runner", "ninjatrader")
     firm = lab_db.get_ruleset(opt["ruleset_id"]) if opt.get("ruleset_id") else None
 
     # Build fixed_params: foundational config (from ruleset) + strategy defaults not in the grid
@@ -359,7 +507,7 @@ async def run_native_optimization(optimization_id: str) -> None:
     }
 
     try:
-        await asyncio.to_thread(nt8_agent_client.start_native_optimization, spec)
+        await asyncio.to_thread(nt8_agent_client.start_native_optimization, spec, runner_str)
     except Exception as exc:
         lab_db.fail_optimization(optimization_id, f"VPS submit failed: {exc}")
         return
@@ -370,7 +518,7 @@ async def run_native_optimization(optimization_id: str) -> None:
         await asyncio.sleep(_POLL_INTERVAL)
 
         try:
-            status_data = await asyncio.to_thread(nt8_agent_client.job_status, opt_job_id)
+            status_data = await asyncio.to_thread(nt8_agent_client.job_status, opt_job_id, runner_str)
         except Exception:
             if time.time() - started_at > _NATIVE_OPT_STALL_SEC:
                 lab_db.fail_optimization(optimization_id, "Lost VPS contact")
@@ -391,7 +539,7 @@ async def run_native_optimization(optimization_id: str) -> None:
 
         if time.time() - started_at > _NATIVE_OPT_STALL_SEC:
             try:
-                await asyncio.to_thread(nt8_agent_client.cancel_job, opt_job_id)
+                await asyncio.to_thread(nt8_agent_client.cancel_job, opt_job_id, runner_str)
             except Exception:
                 pass
             lab_db.fail_optimization(optimization_id, "Native optimizer timed out")
@@ -399,7 +547,7 @@ async def run_native_optimization(optimization_id: str) -> None:
 
     # Retrieve the full combo grid
     try:
-        result = await asyncio.to_thread(nt8_agent_client.native_opt_results, opt_job_id)
+        result = await asyncio.to_thread(nt8_agent_client.native_opt_results, opt_job_id, runner_str)
     except Exception as exc:
         lab_db.fail_optimization(optimization_id, f"Could not fetch grid: {exc}")
         return
@@ -409,9 +557,36 @@ async def run_native_optimization(optimization_id: str) -> None:
         lab_db.fail_optimization(optimization_id, "Native optimizer returned no combos")
         return
 
+    # Step 3A — grid sensitivity from the FULL combo set (before any cut).
+    # Measures how isolated the winner is; no new NT8 backtests required.
+    try:
+        gs_score, gs_summary = _compute_grid_sensitivity(combos, param_ranges)
+        lab_db.update_optimization_grid_sensitivity(optimization_id, gs_score, gs_summary)
+        log.info("Native opt %s: grid_sensitivity_score=%.4f (%d params in summary)",
+                 optimization_id, gs_score, len(gs_summary))
+    except Exception as exc:
+        log.warning("Grid sensitivity compute failed for opt %s: %s", optimization_id, exc)
+
+    # Step 2 — wide cut: keep top 25% by NT8's native rank (combos arrive sorted best-first).
+    # Avoids storing 75+ clearly-losing combos while still exposing more than the single #1.
+    total_combos = len(combos)
+    cutoff = max(1, total_combos // 4)
+    combos = combos[:cutoff]
+    log.info("Native opt %s: wide cut %d → %d combos", optimization_id, total_combos, cutoff)
+
+    # Step 2 — drawdown substitution for prop firm evaluation.
+    # NT8 "Max. drawdown" is the cumulative peak-to-trough over the full backtest (~months).
+    # Prop firm max_loss_eod is a per-DAY limit.  Comparing them directly marks every combo
+    # as a drawdown breach.  The strategy's own MaxDailyLoss cap IS the correct per-period
+    # comparison: if MaxDailyLoss <= max_loss_eod the strategy never exceeds the daily limit.
+    _max_daily_loss = fixed_params.get("MaxDailyLoss")
+    _effective_dd: Optional[float] = float(_max_daily_loss) if _max_daily_loss is not None and _max_daily_loss >= 0 else None
+
     ruleset_ids = [opt["ruleset_id"]] if opt.get("ruleset_id") else []
     now         = int(time.time())
     run_ids: list[str] = []
+
+    from services import evaluator, worthiness
 
     for combo in combos:
         run_id = uuid.uuid4().hex[:12]
@@ -444,13 +619,17 @@ async def run_native_optimization(optimization_id: str) -> None:
             "daily_pnl":    None,
         })
 
-        # Evaluate against rulesets — equity_curve is empty, drawdown eval uses kpis directly
-        from services import evaluator, worthiness
-        evaluator.evaluate_run(run_id, ruleset_ids, kpis, [], [])
+        # Evaluate against rulesets using effective_dd (MaxDailyLoss) not cumulative max_drawdown.
+        kpis_for_eval = {**kpis}
+        if _effective_dd is not None:
+            kpis_for_eval["max_drawdown"] = _effective_dd
+        evaluator.evaluate_run(run_id, ruleset_ids, kpis_for_eval, [], [])
 
         w = worthiness.score_run_after_evals(
             run_id, ruleset_ids,
-            kpis.get("profit_factor"), kpis.get("max_drawdown"), kpis.get("trade_count"),
+            kpis.get("profit_factor"),
+            kpis_for_eval.get("max_drawdown"),
+            kpis.get("trade_count"),
         )
         if w:
             lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
@@ -464,8 +643,15 @@ async def run_native_optimization(optimization_id: str) -> None:
     ]
     best_run_id = await _pick_best_run(complete_rows, opt, firm)
     lab_db.complete_optimization(optimization_id, best_run_id)
-    # Note: no auto-trigger stress test — native runs have no equity curve per combo.
-    # To stress-test the winner, rerun it as a single backtest from the detail page.
+
+    # Step 3B — auto-submit a full single backtest for the winner to get equity curve for MC.
+    # Native combo rows have no per-trade data; MC and the stress test require the trade list.
+    if best_run_id and ruleset_ids:
+        # Reload opt so it includes the just-stored grid_sensitivity fields.
+        opt_fresh = lab_db.get_optimization(optimization_id) or opt
+        asyncio.create_task(
+            _run_winner_backtest_for_mc(opt_fresh, best_run_id, strategy, ruleset_ids)
+        )
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────

@@ -243,6 +243,27 @@ def set_edit(sa, auto_id, value, warn=True):
         return False
 
 
+
+def set_edit_typed(sa, auto_id, value, warn=True):
+    """
+    Set an Edit field using click_input+type_keys so NT8's WPF commit fires.
+    set_edit_text alone does not trigger NT8's LostFocus/TextChanged handler.
+    """
+    try:
+        ctrl = sa.child_window(auto_id=auto_id, control_type="Edit")
+        if not ctrl.exists(timeout=1.0):
+            return False
+        ctrl.click_input()
+        time.sleep(0.1)
+        ctrl.type_keys(f"^a{str(value)}~", with_spaces=True)
+        time.sleep(0.05)
+        return True
+    except Exception as e:
+        if warn:
+            print(f"  WARNING: set_edit_typed '{auto_id}' failed: {e}")
+        return False
+
+
 def set_checkbox(sa, auto_id, value):
     """Set a CheckBox field by AutomationId. value should be 'True' or 'False'."""
     try:
@@ -606,6 +627,32 @@ def _set_range_in_grid(grid_map: dict, code_name: str, lo, hi, step,
     return True
 
 
+def _set_plain_value_in_grid(grid_map: dict, code_name: str, value,
+                              explicit: dict | None = None) -> bool:
+    """
+    Set a fixed (non-range) param value in NT8 Optimize-mode grid.
+    Uses set_focus() instead of click_input() to avoid panel scroll.
+    """
+    display_key = _match_display_name(code_name, grid_map, explicit)
+    if display_key is None:
+        return False
+    el = grid_map[display_key]
+    try:
+        el.scroll_into_view()
+        time.sleep(0.05)
+    except Exception:
+        pass
+    try:
+        el.set_focus()
+        time.sleep(0.05)
+        el.type_keys(f"^a{value}~", with_spaces=True)
+        print(f"  Fixed param '{code_name}' -> '{display_key}' = {value}")
+        return True
+    except Exception as e:
+        print(f"  WARNING: _set_plain_value_in_grid '{code_name}' failed: {e}")
+        return False
+
+
 def _dismiss_dialog(dt) -> None:
     """Dismiss any lingering Export As or Confirm Save dialog."""
     for title in ["Export As", "Confirm Save As", "Confirm"]:
@@ -626,26 +673,24 @@ def _dismiss_dialog(dt) -> None:
 def _nt8_split_param_names(names_concat: str) -> list:
     """
     Split NT8's concatenated parameter-name string into individual names.
-
-    NT8 writes all param display names back-to-back without a separator.
-    Most names end with ')'; the exceptions (e.g. 'Risk % per Trade',
-    'Opening Range Minutes') are split from the next name at a
-    lowercase->uppercase boundary.
-
-    Returns the ordered list of display names.
+    Returns the ordered list of display names (one per slash-separated value).
     """
-    # First split on )(Capital) — handles all names that end with ')'
     parts = _re.split(r'(?<=\))(?=[A-Z])', names_concat)
     result = []
     for part in parts:
-        if ')' in part:
-            result.append(part)
+        if '(' not in part:
+            sub = _re.split(r'(?<=[a-z%])(?=[A-Z])', part)
+            result.extend(s.strip() for s in sub if s.strip())
         else:
-            # No closing paren: split at lowercase→uppercase boundary
-            sub = _re.split(r'(?<=[a-zA-Z%])(?=[A-Z][a-z])', part)
-            result.extend(sub)
-    return [t.strip() for t in result if t.strip()]
-
+            paren_start = part.index('(')
+            prefix = part[:paren_start]
+            sub = _re.split(r'(?<=[a-z])(?=[A-Z])', prefix)
+            if len(sub) > 1:
+                result.extend(s.strip() for s in sub[:-1] if s.strip())
+                result.append((sub[-1] + part[paren_start:]).strip())
+            else:
+                result.append(part.strip())
+    return [t for t in result if t]
 
 def _parse_optimization_csv(csv_path: str, param_names: set) -> list:
     """
@@ -748,7 +793,11 @@ def _parse_optimization_csv(csv_path: str, param_names: set) -> list:
                                       .replace("$", "").replace(",", "")
                                       .replace("%", ""))
                             if kpi == "win_rate":
-                                v = round(v / 100.0, 4)
+                                # NT8 CSV may express as 32.7 (percentage) or 0.327 (fraction)
+                                if v > 1.0:
+                                    v = round(v / 100.0, 4)
+                                else:
+                                    v = round(v, 4)
                             if kpi == "max_drawdown":
                                 v = abs(v)
                             kpis[kpi] = round(v, 4)
@@ -897,13 +946,12 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     pfx = f"{strategy}PropertyGridEditorPDEX"
 
-    # Switch BacktestType to Optimization — full AutomationId from /optimize-mode-dump diagnostic
+    # Switch to Optimize mode once and stay there.
     _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
     if not set_combo(sa, _BT_AID, "Optimize"):
-        print(f"  WARNING: BacktestType combo set failed (aid={_BT_AID})")
+        print(f"  WARNING: BacktestType Optimize set failed")
     time.sleep(1.0)
 
-    # Select strategy (triggers property grid rebuild — 3s wait)
     if not select_strategy(sa, strategy):
         print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
         sys.exit(1)
@@ -911,28 +959,39 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     _pct(25, "Configuring parameters")
 
-    # Build the Optimize-mode grid map while Strategy params are still at the top
-    # of the settings panel (just after strategy select + 3s rebuild).
-    # Strategy params section scrolls out of view once we interact with Data Series /
-    # Time frame controls below it, so ALL grid_map writes must happen here, before
-    # any set_instrument / set_edit calls that would scroll the panel down.
+    # Instrument, date range, bar value, slippage — same fields as single-run mode.
+    # These must be set explicitly; Optimize mode does not inherit them from the last run.
+    set_instrument(sa, instr)
+    set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  _nt8_date(spec["start_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
+    set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
+
+    # Separate fixed_params by type.
+    # Numeric params use SRWD Custom controls in the Optimize grid (txtBox auto_id).
+    # String params use PDEX Edit controls that exist in both modes.
+    bool_params = {k: v for k, v in fixed_params.items() if isinstance(v, bool)}
+    str_params  = {k: v for k, v in fixed_params.items() if isinstance(v, str)}
+    num_params  = {k: v for k, v in fixed_params.items()
+                   if not isinstance(v, (bool, str))}
+
+    # Set each numeric fixed param via Optimize grid using lo;hi;step format.
+    # NT8 requires min;max;increment even for fixed values (e.g. "2;2;1" not "2").
+    # Rebuild grid_map before each to get fresh element refs after WPF refresh.
+    for name, value in num_params.items():
+        grid_map = _build_opt_grid_map(sa)
+        _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+
+    # String params via PDEX Edit controls (always present, IValueProvider works).
+    for name, value in str_params.items():
+        set_edit(sa, f"{pfx}_{name}", value, warn=False)
+        print(f"  Fixed str param '{name}' = {value}")
+    for name, value in bool_params.items():
+        set_checkbox(sa, f"{pfx}_{name}", value)
+
+    # Set Range params (ORMinutes, TpMultiple) — final grid_map build.
     grid_map = _build_opt_grid_map(sa)
     print(f"  Optimize grid map: {list(grid_map.keys())}")
-
-    # Fixed params: Logic params in grid_map → set as value;value;1.
-    # Foundational params keep ORBPropertyGridEditorPDEX_* IDs → handled after
-    # standard controls below (those use AutomationIds, no scroll dependency).
-    # Bool params are ComboBoxes — skip.
-    foundational_params = {}
-    for name, value in fixed_params.items():
-        if isinstance(value, bool):
-            continue
-        if _match_display_name(name, grid_map, param_display_names):
-            _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
-        else:
-            foundational_params[name] = value
-
-    # Strategy Logic param ranges: write while Strategy params are still visible.
     for name, range_spec in param_ranges.items():
         if isinstance(range_spec, dict):
             lo   = range_spec["min"]
@@ -948,25 +1007,6 @@ def run_native_optimize_mode(job_id: str, spec: dict):
             lo = hi = range_spec
             step = 1
         _set_range_in_grid(grid_map, name, lo, hi, step, param_display_names)
-
-    # Standard controls: instrument, dates, bar value, slippage.
-    # These use fixed AutomationIds and scroll the panel down — must come AFTER grid_map writes.
-    set_instrument(sa, instr)
-    set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  _nt8_date(spec["start_date"]))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
-    set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
-
-    # Foundational fixed params via AutomationId (not in grid_map).
-    for name, value in foundational_params.items():
-        aid = f"{pfx}_{name}"
-        if not set_edit(sa, aid, value, warn=False):
-            set_checkbox(sa, aid, value)
-
-    # Set "Keep best # results" to large number so CSV contains ALL combos.
-    # Default is 10; we want every combination for proper sweep analysis.
-    _KB_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorKeepBestResults"
-    set_edit(sa, _KB_AID, 9999, warn=False)
 
     _pct(30, "Starting native optimization")
 
@@ -1012,6 +1052,275 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     (out_dir / "native_opt_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"  Native opt result written: {len(combos)} combos in {elapsed}s")
     _pct(100, f"Complete — {len(combos)} combos")
+
+
+def _parse_walkforward_csv(csv_path: str) -> list[dict]:
+    """
+    Parse NT8 Walk Forward results CSV.
+
+    NT8 WF export format (right-click → Export on the Walk-Forward Analyzer tab):
+      Columns typically include: Period type, Net profit, Profit factor,
+                                 Max. drawdown, Total # of trades, Percent profitable
+      Row values: "In-Sample 1", "Out-Of-Sample 1", "In-Sample 2", etc.
+
+    Returns list of {"type": "is"|"oos", "window": int, "net_pnl": ..., ...}.
+    """
+    import csv as csv_mod
+    import re
+
+    _KPI_MAP = {
+        "total net profit": "net_pnl",
+        "net profit":       "net_pnl",
+        "profit factor":    "profit_factor",
+        "max. drawdown":    "max_drawdown",
+        "max drawdown":     "max_drawdown",
+        "total # of trades": "trade_count",
+        "# trades":          "trade_count",
+        "percent profitable": "win_rate",
+        "% profitable":       "win_rate",
+    }
+
+    def _coerce(s: str):
+        s = s.strip()
+        try:
+            return float(s.replace(",", "").replace("$", "").replace("%", ""))
+        except ValueError:
+            return s
+
+    windows = []
+    try:
+        with open(csv_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv_mod.DictReader(f)
+            headers_lower = {k.strip().lower(): k for k in (reader.fieldnames or [])}
+            for row in reader:
+                # Identify period column — usually first column
+                period_val = ""
+                for col in (reader.fieldnames or []):
+                    v = row.get(col, "").strip()
+                    if re.search(r"(in.?sample|out.?of.?sample|in-sample|out-sample)", v, re.I):
+                        period_val = v
+                        break
+                if not period_val:
+                    continue
+
+                period_lower = period_val.lower()
+                is_in_sample = "in" in period_lower and "out" not in period_lower
+                m = re.search(r"\d+", period_val)
+                window_num = int(m.group()) if m else 0
+
+                entry: dict = {
+                    "type":   "is" if is_in_sample else "oos",
+                    "window": window_num,
+                }
+                for col_lower, col_orig in headers_lower.items():
+                    kpi = _KPI_MAP.get(col_lower)
+                    if kpi:
+                        v = _coerce(row.get(col_orig, ""))
+                        if isinstance(v, float):
+                            if kpi == "win_rate" and v > 1.0:
+                                v = round(v / 100.0, 4)
+                            if kpi == "max_drawdown":
+                                v = abs(v)
+                            entry[kpi] = round(v, 4)
+                windows.append(entry)
+    except Exception as e:
+        print(f"  [wf-export] CSV parse error: {e}")
+
+    return windows
+
+
+def run_native_walkforward_mode(job_id: str, spec: dict):
+    """
+    Walk Forward mode: run NT8's Strategy Analyzer in Walk Forward mode with fixed params.
+
+    Sets all strategy params as single-value ranges (value;value;1) so NT8 performs
+    no re-optimization — the fixed winner params are tested across each IS/OOS window.
+    One data load, all windows processed natively.
+
+    NOTE: WF-specific auto_ids (OutOfSampleIterations, OutOfSamplePercentage) were derived
+    from NT8 SA naming conventions and MUST be validated on VPS before relying on them.
+    If set_edit returns False for these, NT8 uses its defaults (5 periods, 30% OOS).
+
+    Writes native_wf_result.json to lab_results/<job_id>/ on success.
+    Exits non-zero on failure so nt8_agent.py classifies the run correctly.
+
+    spec fields:
+        strategy_class   str
+        instrument       str
+        bar_type         str
+        bar_value        int
+        start_date       str   YYYY-MM-DD
+        end_date         str   YYYY-MM-DD
+        commission_per_side  float
+        slippage_ticks   int
+        params           dict  {name: value}  — ALL strategy params, fixed
+        wf_windows       int   (default 5)
+        oos_pct          int   (default 30)
+        param_display_names  dict (optional)
+    """
+    strategy           = spec["strategy_class"]
+    instr              = spec["instrument"]
+    all_params         = spec.get("params", {})
+    wf_windows         = int(spec.get("wf_windows", 5))
+    oos_pct            = int(spec.get("oos_pct", 30))
+    param_display_names = spec.get("param_display_names", {})
+
+    print(f"JOB {job_id}: native walk-forward {strategy} on {instr}  windows={wf_windows}  oos={oos_pct}%")
+    _pct(10, "Connecting to NT8")
+
+    app = connect_nt8()
+    sa  = find_strategy_analyzer(app)
+    _pct(20, "Switching SA to Walk Forward mode")
+
+    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+    if not set_combo(sa, _BT_AID, "Walk Forward"):
+        print("  WARNING: BacktestType Walk Forward set failed — check auto_id")
+    time.sleep(1.0)
+
+    if not select_strategy(sa, strategy):
+        print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
+        sys.exit(1)
+    time.sleep(3.0)
+
+    _pct(25, "Configuring walk-forward parameters")
+
+    pfx = f"{strategy}PropertyGridEditorPDEX"
+
+    # Set WF window count and OOS %. These auto_ids follow the SA naming convention but
+    # must be verified on VPS — if they don't resolve, NT8 uses its defaults.
+    _WF_ITERATIONS_AID  = "StrategyAnalyzerTabPropertiesPropertyGridEditorOutOfSampleIterations"
+    _WF_OOS_PCT_AID     = "StrategyAnalyzerTabPropertiesPropertyGridEditorOutOfSamplePercentage"
+    if not set_edit(sa, _WF_ITERATIONS_AID, wf_windows, warn=False):
+        print(f"  WARNING: WF iterations auto_id not found — using NT8 default")
+    if not set_edit(sa, _WF_OOS_PCT_AID, oos_pct, warn=False):
+        print(f"  WARNING: WF OOS % auto_id not found — using NT8 default")
+
+    # Separate params by type (same as optimize mode)
+    bool_params = {k: v for k, v in all_params.items() if isinstance(v, bool)}
+    str_params  = {k: v for k, v in all_params.items() if isinstance(v, str)}
+    num_params  = {k: v for k, v in all_params.items() if not isinstance(v, (bool, str))}
+
+    # All numeric params as single-value ranges (value;value;1) — no re-optimization in IS.
+    for name, value in num_params.items():
+        grid_map = _build_opt_grid_map(sa)
+        _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+
+    for name, value in str_params.items():
+        set_edit(sa, f"{pfx}_{name}", value, warn=False)
+    for name, value in bool_params.items():
+        set_checkbox(sa, f"{pfx}_{name}", value)
+
+    _pct(30, "Starting walk-forward run")
+
+    click_time = time.time()
+    try:
+        run_btn = sa.child_window(auto_id="Run", control_type="Button")
+        run_btn.click_input()
+        print(f"  Walk Forward Run clicked. windows={wf_windows}  oos={oos_pct}%")
+    except Exception as e:
+        print(f"  ERROR clicking Run: {e}")
+        sys.exit(1)
+
+    _pct(35, "Walk forward running")
+
+    finished = wait_for_run_complete(sa, timeout=_OPT_TIMEOUT, use_abort_btn=True)
+    if not finished:
+        print(f"  ERROR: Walk Forward timed out after {_OPT_TIMEOUT}s")
+        sys.exit(1)
+
+    elapsed = round(time.time() - click_time, 1)
+    print(f"  Walk Forward finished in {elapsed}s")
+    _pct(80, "Exporting walk-forward results")
+
+    # Export using the same right-click mechanism as optimize mode.
+    # Exports from the Walk-Forward Analyzer results grid.
+    from pywinauto import mouse as _mouse, Desktop
+    import shutil
+
+    out_dir = NT8_DOCS / "lab_results" / job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    dt = Desktop(backend="uia")
+    _dismiss_dialog(dt)
+    time.sleep(0.1)
+
+    try:
+        sa.restore()
+        time.sleep(0.3)
+    except Exception:
+        pass
+
+    sa_rect = sa.rectangle()
+    sa_w    = sa_rect.right  - sa_rect.left
+    sa_h    = sa_rect.bottom - sa_rect.top
+    rc_x    = sa_rect.left + int(sa_w * 0.25)
+    rc_y    = sa_rect.top  + int(sa_h * 0.05)
+
+    nt8           = sa.top_level_parent()
+    export_coords = None
+
+    _mouse.right_click(coords=(rc_x, rc_y))
+    time.sleep(0.5)
+    menu_items_found = []
+    for el in nt8.descendants():
+        txt = (el.window_text() or "").strip()
+        ct  = str(getattr(el.element_info, "control_type", ""))
+        if ct == "MenuItem" and txt:
+            r = el.rectangle()
+            menu_items_found.append(f"{txt}@{r.width()}x{r.height()}")
+            if txt.startswith("Export") and r.width() > 5 and export_coords is None:
+                export_coords = ((r.left + r.right) // 2, (r.top + r.bottom) // 2)
+
+    print(f"  [wf-export] Menu items found: {menu_items_found}")
+    if export_coords is None:
+        print("  [wf-export] Export menu item not found")
+        send_keys("{ESC}")
+        sys.exit(1)
+
+    _mouse.right_click(coords=(rc_x, rc_y))
+    time.sleep(0.4)
+    _mouse.click(coords=export_coords)
+    time.sleep(0.8)
+    send_keys("{ENTER}")
+    time.sleep(0.3)
+    send_keys("{ENTER}")
+    time.sleep(1.0)
+    _dismiss_dialog(dt)
+
+    docs   = Path.home() / "Documents"
+    cutoff = time.time() - 30
+    csvs   = [p for p in docs.glob("NinjaTrader Grid*.csv") if p.stat().st_mtime >= cutoff]
+    if not csvs:
+        csvs = sorted(docs.glob("NinjaTrader Grid*.csv"),
+                      key=lambda p: p.stat().st_mtime, reverse=True)[:1]
+
+    if not csvs:
+        print("  [wf-export] No CSV found after walk-forward export")
+        sys.exit(1)
+
+    csv_path = max(csvs, key=lambda p: p.stat().st_mtime)
+    dest     = out_dir / "wf_results.csv"
+    shutil.copy(str(csv_path), str(dest))
+    print(f"  [wf-export] CSV saved to {dest.name}")
+
+    windows = _parse_walkforward_csv(str(csv_path))
+    if not windows:
+        print("  ERROR: Could not parse walk-forward results from NT8 CSV")
+        sys.exit(1)
+
+    result = {
+        "job_id":         job_id,
+        "strategy_class": strategy,
+        "instrument":     instr,
+        "wf_windows":     wf_windows,
+        "oos_pct":        oos_pct,
+        "windows":        windows,
+        "elapsed_sec":    elapsed,
+        "completed_at":   datetime.now().isoformat(),
+    }
+    (out_dir / "native_wf_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    print(f"  Native WF result written: {len(windows)} period rows in {elapsed}s")
+    _pct(100, f"Complete — {len(windows)} periods")
 
 
 def configure_from_spec(sa, spec: dict):
@@ -1395,14 +1704,16 @@ def main():
     parser.add_argument("--job-id",   default=None, help="Lab mode: job ID")
     parser.add_argument("--job-spec", default=None, help="Lab mode: path to job_spec.json")
     parser.add_argument("--mode",     default=None,
-                        help="Runner mode: omit for single-run lab mode, 'native-optimize' for native optimizer")
+                        help="Runner mode: omit for single-run, 'native-optimize', 'native-walkforward'")
     args = parser.parse_args()
 
     if args.job_id and args.job_spec:
+        with open(args.job_spec) as f:
+            spec = json.load(f)
         if args.mode == "native-optimize":
-            with open(args.job_spec) as f:
-                spec = json.load(f)
             run_native_optimize_mode(args.job_id, spec)
+        elif args.mode == "native-walkforward":
+            run_native_walkforward_mode(args.job_id, spec)
         else:
             run_job_mode(args.job_id, args.job_spec)
         return

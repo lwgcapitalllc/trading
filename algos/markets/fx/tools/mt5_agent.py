@@ -504,6 +504,41 @@ def _write_set_file(data_dir: Path, job_id: str, inputs: dict) -> str:
     return filename
 
 
+def _write_set_file_with_ranges(
+    data_dir: Path,
+    job_id: str,
+    inputs: dict,
+    param_ranges: dict,
+) -> str:
+    """
+    Write EA input parameters with optimization ranges to a .set file.
+
+    For ranged params, writes MT5's compact optimization format:
+        ParamName=currentValue||1||minValue||step||maxValue
+    Fixed inputs write plain key=value.
+    """
+    dest = data_dir / "MQL5" / "Profiles" / "Tester"
+    dest.mkdir(parents=True, exist_ok=True)
+    filename = f"opt_{job_id[:8]}.set"
+    lines = []
+    for k, v in inputs.items():
+        if k in param_ranges:
+            spec = param_ranges[k]
+            if isinstance(spec, dict):
+                lo, hi, step = spec["min"], spec["max"], spec["step"]
+            elif isinstance(spec, list) and len(spec) > 1:
+                lo, hi = spec[0], spec[-1]
+                step = round(spec[1] - spec[0], 8) if len(spec) > 1 else 1
+            else:
+                lo = hi = (spec[0] if isinstance(spec, list) and spec else spec)
+                step = 1
+            lines.append(f"{k}={v}||1||{lo}||{step}||{hi}")
+        else:
+            lines.append(f"{k}={v}")
+    (dest / filename).write_text("\n".join(lines), encoding="utf-8")
+    return filename
+
+
 def _write_tester_ini(
     ini_path: Path,
     *,
@@ -518,6 +553,8 @@ def _write_tester_ini(
     currency: str,
     leverage: int,
     report_prefix: str,
+    optimization: int = 0,
+    forward_mode: int = 0,
 ) -> None:
     """Write MT5 [Tester] section config file. Dates converted to YYYY.MM.DD."""
     def _dot(d: str) -> str:
@@ -532,7 +569,7 @@ def _write_tester_ini(
         f"Model={model}\n"
         f"FromDate={_dot(from_date)}\n"
         f"ToDate={_dot(to_date)}\n"
-        "ForwardMode=0\n"
+        f"ForwardMode={forward_mode}\n"
         f"Report={report_prefix}\n"
         "ReplaceReport=1\n"
         "ShutdownTerminal=1\n"
@@ -540,7 +577,7 @@ def _write_tester_ini(
         f"Currency={currency}\n"
         f"Leverage=1:{leverage}\n"
         "Visual=0\n"
-        "Optimization=0\n",
+        f"Optimization={optimization}\n",
         encoding="utf-8",
     )
 
@@ -808,6 +845,450 @@ def _read_mt5_journal(data_dir: Path, lines: int = 30) -> str:
         return ""
 
 
+_OPT_TIMEOUT = 7200  # 2 hours for optimization runs
+
+
+def _parse_mt5_optimization_report(html: str, param_names: list[str]) -> list[dict]:
+    """
+    Parse MT5 Strategy Tester optimization HTML report into a list of combos.
+
+    MT5 optimization results table: header row contains standard KPI columns
+    (Profit, Drawdown, Trades, etc.) plus one column per EA input param.
+    Rows are combinations sorted by optimization criterion (best first).
+
+    NOTE: HTML report format varies by MT5 version. Needs VPS validation.
+    Returns empty list if the optimization results table is not found.
+    """
+    tp = _TableParser()
+    tp.feed(html)
+
+    _KPI_COLS = {
+        "profit":           "net_pnl",
+        "drawdown":         "max_drawdown",
+        "profit factor":    "profit_factor",
+        "expected payoff":  "expected_payoff",
+        "trades":           "trade_count",
+        "factor":           "profit_factor",
+    }
+
+    param_names_lower = {p.lower(): p for p in param_names}
+
+    for table in tp.tables:
+        if len(table) < 2:
+            continue
+        hdr = [h.strip() for h in table[0]]
+        hdr_lower = [h.lower() for h in hdr]
+
+        # Identify param and KPI column indices
+        param_col_map: dict[str, int] = {}
+        kpi_col_map:   dict[str, int] = {}
+        for i, h in enumerate(hdr_lower):
+            for plow, porig in param_names_lower.items():
+                if plow == h or plow in h:
+                    param_col_map[porig] = i
+            for kw, kname in _KPI_COLS.items():
+                if kw in h and kname not in kpi_col_map:
+                    kpi_col_map[kname] = i
+
+        if not param_col_map:
+            continue  # not the optimization results table
+
+        combos = []
+        for row in table[1:]:
+            if len(row) < 2:
+                continue
+            params: dict = {}
+            for pname, cidx in param_col_map.items():
+                if cidx < len(row):
+                    try:
+                        v = float(row[cidx].replace(",", "").strip())
+                        params[pname] = int(v) if v == int(v) else v
+                    except (ValueError, OverflowError):
+                        params[pname] = row[cidx]
+
+            kpis: dict = {}
+            for kname, cidx in kpi_col_map.items():
+                if cidx < len(row):
+                    try:
+                        v = float(row[cidx].replace(",", "").replace("%", "").strip())
+                        kpis[kname] = round(abs(v) if kname == "max_drawdown" else v, 4)
+                    except (ValueError, OverflowError):
+                        pass
+
+            if params:
+                combos.append({"params": params, "kpis": kpis})
+
+        if combos:
+            return combos
+
+    return []
+
+
+def _parse_mt5_forward_sections(html: str) -> tuple[dict, dict]:
+    """
+    Parse an MT5 Strategy Tester forward-test HTML report.
+
+    Returns (is_kpis, oos_kpis) — standard KPI dicts for the in-sample and
+    out-of-sample (forward) periods.
+
+    MT5 writes the IS summary first, then a second summary block labeled
+    "Forward" for the OOS period. Both follow the same table structure as a
+    regular single-backtest report. If the forward section is missing, oos_kpis
+    is empty.
+    """
+    tp = _TableParser()
+    tp.feed(html)
+
+    def _extract_kpis(tables: list[list[list[str]]]) -> dict:
+        kpis_raw: dict[str, str] = {}
+        for table in tables:
+            for row in table:
+                for i in range(0, len(row) - 1, 2):
+                    k = row[i].strip().rstrip(":")
+                    v = row[i + 1].strip() if i + 1 < len(row) else ""
+                    if k:
+                        kpis_raw[k] = v
+
+        def _f(key: str) -> float:
+            raw = kpis_raw.get(key, "")
+            val = raw.split("(")[0].strip().replace(" ", "").replace(",", "")
+            try:
+                return float(val.rstrip("%"))
+            except ValueError:
+                return 0.0
+
+        gross_profit = _f("Gross Profit")
+        gross_loss   = abs(_f("Gross Loss"))
+        pf_raw       = _f("Profit Factor")
+        pf           = pf_raw if pf_raw > 0 else (gross_profit / gross_loss if gross_loss else 0.0)
+        total_trades = int(_f("Total Trades"))
+
+        win_trades = 0
+        for key in ("Profit Trades (% of total)", "Win Trades"):
+            val = kpis_raw.get(key, "")
+            m = re.match(r"^(\d+)", val.replace(" ", ""))
+            if m:
+                win_trades = int(m.group(1))
+                break
+
+        return {
+            "net_pnl":       round(_f("Total Net Profit"), 2),
+            "max_drawdown":  round(abs(_f("Equity Drawdown Maximal") or _f("Balance Drawdown Maximal")), 2),
+            "profit_factor": round(pf, 4),
+            "trade_count":   total_trades,
+            "win_rate":      round(win_trades / total_trades, 4) if total_trades > 0 else 0.0,
+            "sharpe":        round(_f("Sharpe Ratio"), 4),
+        }
+
+    # Find the "Forward" section boundary in the table list.
+    # MT5 renders the forward section after a header containing "Forward" text.
+    # Heuristic: scan raw HTML for "forward" keyword positions, then split tables.
+    html_lower = html.lower()
+    fwd_idx = html_lower.find("forward testing")
+    if fwd_idx == -1:
+        fwd_idx = html_lower.find("forward</")
+    if fwd_idx == -1:
+        fwd_idx = html_lower.find(">forward<")
+
+    if fwd_idx == -1:
+        return _extract_kpis(tp.tables), {}
+
+    # Re-parse HTML up to forward boundary (IS section) and from it (OOS section)
+    tp_is  = _TableParser()
+    tp_is.feed(html[:fwd_idx])
+    tp_oos = _TableParser()
+    tp_oos.feed(html[fwd_idx:])
+
+    return _extract_kpis(tp_is.tables), _extract_kpis(tp_oos.tables)
+
+
+def _run_mt5_optimization(job_id: str, spec: dict) -> None:
+    """Worker thread: run MT5 Strategy Tester in optimization mode."""
+
+    def jl(msg: str) -> None:
+        ts = time.strftime("%H:%M:%S")
+        with _lock:
+            _jobs[job_id]["log"].append(f"[{ts}] {msg}")
+        _alog(f"[opt:{job_id[:8]}] {msg}")
+
+    def fail(msg: str) -> None:
+        with _lock:
+            _jobs[job_id].update({"status": "failed", "error": msg, "process": None})
+        jl(f"FAILED: {msg}")
+
+    tester_exe = _get_tester_exe()
+    if tester_exe is None:
+        fail("Cannot locate metatester64.exe / terminal64.exe.")
+        return
+
+    data_dir = _tester_data_dir(tester_exe)
+
+    strategy_class = spec.get("strategy_class", "")
+    symbol         = spec.get("symbol", "")
+    timeframe      = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
+    from_date      = spec.get("from_date", "")
+    to_date        = spec.get("to_date", "")
+    model          = int(spec.get("model", 0))
+    deposit        = float(spec.get("deposit", 100000))
+    currency       = spec.get("currency", "USD")
+    leverage       = int(spec.get("leverage", 100))
+    inputs         = spec.get("inputs", {})           # fixed params
+    param_ranges   = spec.get("param_ranges", {})     # ranged params
+
+    if not all([strategy_class, symbol, from_date, to_date]):
+        fail("Missing required fields: strategy_class, symbol, from_date, to_date")
+        return
+    if not param_ranges:
+        fail("param_ranges cannot be empty for optimization")
+        return
+
+    ex5 = data_dir / "MQL5" / "Experts" / f"{strategy_class}.ex5"
+    if not ex5.is_file():
+        fail(f"EA not found: {ex5}. Deploy and compile first.")
+        return
+
+    jl(f"MT5 optimization: {strategy_class} {symbol} {timeframe} [{from_date} -> {to_date}]")
+    jl(f"Params: {list(param_ranges.keys())}")
+
+    try:
+        set_filename = _write_set_file_with_ranges(data_dir, job_id, inputs, param_ranges)
+        jl(f"Set file: {set_filename}")
+
+        reports_dir  = data_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        report_stem  = f"opt_{job_id[:8]}"
+        report_file  = reports_dir / f"{report_stem}.htm"
+        report_prefix = f"reports\\{report_stem}"
+
+        ini_path = data_dir / f"opt_{job_id[:8]}.ini"
+        _write_tester_ini(
+            ini_path,
+            expert=strategy_class,
+            set_filename=set_filename,
+            symbol=symbol,
+            period=timeframe,
+            from_date=from_date,
+            to_date=to_date,
+            model=model,
+            deposit=deposit,
+            currency=currency,
+            leverage=leverage,
+            report_prefix=report_prefix,
+            optimization=1,
+            forward_mode=0,
+        )
+
+        _kill_by_path(tester_exe)
+        proc = _launch_tester(tester_exe, ini_path)
+    except Exception as exc:
+        fail(f"Setup/launch failed: {exc}")
+        return
+
+    with _lock:
+        _jobs[job_id]["process"] = proc
+    jl(f"Launched {tester_exe.name} (pid={proc.pid}) — optimization mode")
+
+    deadline = time.time() + _OPT_TIMEOUT
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            jl(f"Process exited (returncode={proc.returncode})")
+            time.sleep(2)
+            break
+        time.sleep(_REPORT_POLL_INTERVAL)
+    else:
+        jl(f"Optimization timed out after {_OPT_TIMEOUT}s — force-killing")
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        _kill_by_name("metatester64.exe")
+        fail(f"Optimization timed out after {_OPT_TIMEOUT}s")
+        return
+
+    with _lock:
+        if _jobs[job_id].get("status") == "cancelled":
+            return
+
+    if not report_file.is_file():
+        alts = sorted(reports_dir.glob(f"{report_stem}*.htm"), key=lambda p: p.stat().st_mtime)
+        report_file = alts[-1] if alts else None  # type: ignore[assignment]
+
+    if report_file is None or not report_file.is_file():  # type: ignore[union-attr]
+        journal = _read_mt5_journal(data_dir)
+        detail  = f"\nMT5 journal:\n{journal}" if journal else ""
+        fail(f"Optimization finished but no report file found.{detail}")
+        return
+
+    jl(f"Report: {report_file.name}")  # type: ignore[union-attr]
+
+    try:
+        raw_bytes = report_file.read_bytes()  # type: ignore[union-attr]
+        html_text = raw_bytes.decode("utf-16") if raw_bytes[:2] in (b"\xff\xfe", b"\xfe\xff") else raw_bytes.decode("utf-8", errors="replace")
+        param_names = list(param_ranges.keys())
+        combos = _parse_mt5_optimization_report(html_text, param_names)
+    except Exception as exc:
+        fail(f"Optimization report parsing failed: {exc}")
+        return
+
+    _kill_by_path(tester_exe)
+
+    for p in [ini_path, data_dir / "MQL5" / "Profiles" / "Tester" / set_filename]:
+        try:
+            p.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    jl(f"Complete — {len(combos)} combos parsed")
+
+    with _lock:
+        _jobs[job_id].update({
+            "status": "done",
+            "result": {"combos": combos, "combo_count": len(combos)},
+            "process": None,
+        })
+
+
+def _run_mt5_forward_test(job_id: str, spec: dict) -> None:
+    """Worker thread: run MT5 Strategy Tester in forward (IS+OOS split) mode."""
+
+    def jl(msg: str) -> None:
+        ts = time.strftime("%H:%M:%S")
+        with _lock:
+            _jobs[job_id]["log"].append(f"[{ts}] {msg}")
+        _alog(f"[fwd:{job_id[:8]}] {msg}")
+
+    def fail(msg: str) -> None:
+        with _lock:
+            _jobs[job_id].update({"status": "failed", "error": msg, "process": None})
+        jl(f"FAILED: {msg}")
+
+    tester_exe = _get_tester_exe()
+    if tester_exe is None:
+        fail("Cannot locate tester exe.")
+        return
+
+    data_dir = _tester_data_dir(tester_exe)
+
+    strategy_class = spec.get("strategy_class", "")
+    symbol         = spec.get("symbol", "")
+    timeframe      = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
+    from_date      = spec.get("from_date", "")
+    to_date        = spec.get("to_date", "")
+    model          = int(spec.get("model", 0))
+    deposit        = float(spec.get("deposit", 100000))
+    currency       = spec.get("currency", "USD")
+    leverage       = int(spec.get("leverage", 100))
+    inputs         = spec.get("inputs", {})
+    # ForwardMode: 2=1/2, 3=1/3, 4=1/4 of period is OOS. Default: 3 (33% OOS ≈ 30% target).
+    oos_pct        = int(spec.get("oos_pct", 30))
+    if oos_pct >= 50:
+        forward_mode = 2
+    elif oos_pct >= 33:
+        forward_mode = 3
+    else:
+        forward_mode = 4
+
+    if not all([strategy_class, symbol, from_date, to_date]):
+        fail("Missing required fields")
+        return
+
+    ex5 = data_dir / "MQL5" / "Experts" / f"{strategy_class}.ex5"
+    if not ex5.is_file():
+        fail(f"EA not found: {ex5}")
+        return
+
+    jl(f"MT5 forward test: {strategy_class} {symbol} {timeframe} [{from_date} -> {to_date}]  forward_mode={forward_mode}")
+
+    try:
+        set_filename  = _write_set_file(data_dir, job_id, inputs)
+        reports_dir   = data_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        report_stem   = f"fwd_{job_id[:8]}"
+        report_file   = reports_dir / f"{report_stem}.htm"
+        report_prefix = f"reports\\{report_stem}"
+        ini_path      = data_dir / f"fwd_{job_id[:8]}.ini"
+        _write_tester_ini(
+            ini_path,
+            expert=strategy_class,
+            set_filename=set_filename,
+            symbol=symbol,
+            period=timeframe,
+            from_date=from_date,
+            to_date=to_date,
+            model=model,
+            deposit=deposit,
+            currency=currency,
+            leverage=leverage,
+            report_prefix=report_prefix,
+            optimization=0,
+            forward_mode=forward_mode,
+        )
+        _kill_by_path(tester_exe)
+        proc = _launch_tester(tester_exe, ini_path)
+    except Exception as exc:
+        fail(f"Setup/launch failed: {exc}")
+        return
+
+    with _lock:
+        _jobs[job_id]["process"] = proc
+    jl(f"Launched {tester_exe.name} (pid={proc.pid}) — forward mode={forward_mode}")
+
+    deadline = time.time() + _BACKTEST_TIMEOUT
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            time.sleep(2)
+            break
+        time.sleep(_REPORT_POLL_INTERVAL)
+    else:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        fail(f"Forward test timed out after {_BACKTEST_TIMEOUT}s")
+        return
+
+    with _lock:
+        if _jobs[job_id].get("status") == "cancelled":
+            return
+
+    if not report_file.is_file():
+        alts = sorted(reports_dir.glob(f"{report_stem}*.htm"), key=lambda p: p.stat().st_mtime)
+        report_file = alts[-1] if alts else None  # type: ignore[assignment]
+
+    if report_file is None or not report_file.is_file():  # type: ignore[union-attr]
+        fail("Forward test finished but no report file found.")
+        return
+
+    try:
+        raw_bytes = report_file.read_bytes()  # type: ignore[union-attr]
+        html_text = raw_bytes.decode("utf-16") if raw_bytes[:2] in (b"\xff\xfe", b"\xfe\xff") else raw_bytes.decode("utf-8", errors="replace")
+        is_kpis, oos_kpis = _parse_mt5_forward_sections(html_text)
+    except Exception as exc:
+        fail(f"Forward test report parsing failed: {exc}")
+        return
+
+    _kill_by_path(tester_exe)
+
+    for p in [ini_path, data_dir / "MQL5" / "Profiles" / "Tester" / set_filename]:
+        try:
+            p.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    jl(f"Complete — IS pnl={is_kpis.get('net_pnl')}  OOS pnl={oos_kpis.get('net_pnl')}")
+
+    with _lock:
+        _jobs[job_id].update({
+            "status": "done",
+            "result": {
+                "is_kpis":  is_kpis,
+                "oos_kpis": oos_kpis,
+                "forward_mode": forward_mode,
+            },
+            "process": None,
+        })
+
+
 def _run_backtest(job_id: str, spec: dict) -> None:
     """Worker thread: configure, launch, poll, parse, store result."""
 
@@ -1054,6 +1535,108 @@ def cancel_job(job_id: str):
     _kill_by_name("metatester64.exe")
     _alog(f"Job {job_id[:8]} cancelled")
     return jsonify({"ok": True})
+
+
+# ── MT5 Native Optimizer (Step 4) ────────────────────────────────────────────
+
+@app.route("/native-optimize", methods=["POST"])
+def start_native_optimize():
+    """
+    POST /native-optimize
+    Body: {job_id, strategy_class, symbol, timeframe?, from_date, to_date,
+           model?, deposit?, inputs (fixed params), param_ranges (ranged params)}
+    Runs MT5 Strategy Tester in Optimization mode (Optimization=1 in ini).
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    job_id = body.get("job_id") or str(uuid.uuid4())
+    missing = [f for f in ["strategy_class", "symbol", "from_date", "to_date"] if not body.get(f)]
+    if missing:
+        return jsonify({"error": f"Missing fields: {missing}"}), 400
+    if not body.get("param_ranges"):
+        return jsonify({"error": "param_ranges cannot be empty"}), 400
+
+    with _lock:
+        if job_id in _jobs and _jobs[job_id]["status"] == "running":
+            return jsonify({"error": "Job already running"}), 409
+        _jobs[job_id] = {
+            "job_id":     job_id,
+            "status":     "running",
+            "created_at": int(time.time()),
+            "spec":       body,
+            "log":        [],
+            "process":    None,
+            "error":      None,
+            "result":     None,
+        }
+    _alog(f"MT5 opt job {job_id[:8]} queued: {body.get('strategy_class')} {body.get('symbol')}")
+    threading.Thread(target=_run_mt5_optimization, args=(job_id, body), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "running"}), 202
+
+
+@app.route("/backtests/<job_id>/native-opt-results")
+def native_opt_results(job_id: str):
+    """Return MT5 optimization result combos list after job completes."""
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    status = job.get("status")
+    if status == "running":
+        return jsonify({"error": "Job still running", "status": "running"}), 202
+    if status != "done":
+        return jsonify({"error": job.get("error", "Job failed"), "status": status}), 422
+    with _lock:
+        result = dict(job.get("result") or {})
+    return jsonify({"job_id": job_id, "runner": "mt5", **result})
+
+
+@app.route("/native-walkforward", methods=["POST"])
+def start_native_walkforward():
+    """
+    POST /native-walkforward
+    Body: {job_id, strategy_class, symbol, timeframe?, from_date, to_date,
+           inputs (flat param dict), oos_pct? (default 30)}
+    Runs MT5 Strategy Tester with ForwardMode set based on oos_pct.
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    job_id = body.get("job_id") or str(uuid.uuid4())
+    missing = [f for f in ["strategy_class", "symbol", "from_date", "to_date"] if not body.get(f)]
+    if missing:
+        return jsonify({"error": f"Missing fields: {missing}"}), 400
+
+    with _lock:
+        if job_id in _jobs and _jobs[job_id]["status"] == "running":
+            return jsonify({"error": "Job already running"}), 409
+        _jobs[job_id] = {
+            "job_id":     job_id,
+            "status":     "running",
+            "created_at": int(time.time()),
+            "spec":       body,
+            "log":        [],
+            "process":    None,
+            "error":      None,
+            "result":     None,
+        }
+    _alog(f"MT5 forward job {job_id[:8]} queued: {body.get('strategy_class')} {body.get('symbol')}")
+    threading.Thread(target=_run_mt5_forward_test, args=(job_id, body), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "running"}), 202
+
+
+@app.route("/backtests/<job_id>/native-wf-results")
+def native_wf_results(job_id: str):
+    """Return MT5 forward test IS/OOS results after job completes."""
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    status = job.get("status")
+    if status == "running":
+        return jsonify({"error": "Job still running", "status": "running"}), 202
+    if status != "done":
+        return jsonify({"error": job.get("error", "Job failed"), "status": status}), 422
+    with _lock:
+        result = dict(job.get("result") or {})
+    return jsonify({"job_id": job_id, "runner": "mt5", **result})
 
 
 # ── Step 9: MT5 deployment ────────────────────────────────────────────────────

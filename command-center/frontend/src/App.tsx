@@ -13,6 +13,7 @@ import { SweepDetail } from '@/pages/SweepDetail'
 import { OptimizationDetail } from '@/pages/OptimizationDetail'
 import { StressTests } from '@/pages/StressTests'
 import StressTestDetail from '@/pages/StressTestDetail'
+import { Queue } from '@/pages/Queue'
 import { Settings } from '@/pages/Settings'
 
 export default function App() {
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="/backtests/stress-tests/:stressTestId" element={<StressTestDetail />} />
               <Route path="/stress-tests"                       element={<StressTests />} />
               <Route path="/stress-tests/:stressTestId"         element={<StressTestDetail />} />
+              <Route path="/queue"                              element={<Queue />} />
               <Route path="/settings"                 element={<Settings />} />
             </Routes>
           </main>

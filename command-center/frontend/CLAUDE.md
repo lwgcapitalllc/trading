@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-05
+**Last reviewed:** 2026-06-07 (Speed Step 6 — Queue page)
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -36,7 +36,8 @@ frontend/src/
 │   ├── useLab.ts            strategies, rulesets (useRulesets + useFirms alias), runs, evals, sweeps, optimizations
 │   ├── useBots.ts
 │   ├── useSmartMoney.ts
-│   └── useStressTests.ts    stress tests — useStressTests, useStressTest, useRunStressTest, useDeleteStressTest
+│   ├── useStressTests.ts    stress tests — useStressTests, useStressTest, useRunStressTest, useDeleteStressTest
+│   └── useQueue.ts          job queue — useQueue, useEnqueueOptimization, useEnqueueStressTest, useDeleteQueueItem
 ├── components/              reusable, dumb components
 │   ├── Sidebar.tsx
 │   ├── TopBar.tsx
@@ -79,6 +80,7 @@ frontend/src/
     ├── OptimizationDetail.tsx  optimizer results — heatmap (2D) or top-10 table (3+D), best param callout, CSV export
     ├── StressTests.tsx       stress test list — grade badge, strategy/instrument/status columns, prob breach/pass, created; all left-aligned
     ├── StressTestDetail.tsx  stress test detail — grade column card (coloured strip + name + ruleset chip + reasons), source backtest card (links back to run via useBacktestRun), MetricCard MC stats with pos/neg colouring, InfoTip tooltips, prob bars, fan chart, drawdown dist, walk-forward, sensitivity
+    ├── Queue.tsx             job queue list — position, job label (type + id prefix), status pill, queued/started/finished timestamps, trash-can delete for pending items
     └── Settings.tsx
 ```
 
@@ -351,6 +353,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | MT5 backtest modal | ✅ Live | Branches on `strategy.runner === 'mt5'`: free-text symbol, bar presets [5m–4h], Evaluate/Foundational sections hidden |
 | MT5 backtest detail | ✅ Live | `MT5_RUN_STEPS` (Launch→Testing→Results→Tagging); runner-specific guidance; NT8-only buttons hidden |
 | BacktestDetail polish | ✅ Live | Rerun button; clickable strategy `<h1>`; `StatusPill` shared component; stale progress guard (`job_id` match) |
+| Speed Step 6 — Queue page | ✅ Live | `/queue` route + sidebar nav item (Research section, `ListOrdered` icon). `QueueItem` type. `useQueue` (polls 5s), `useEnqueueOptimization`, `useEnqueueStressTest`, `useDeleteQueueItem` hooks in `useQueue.ts`. `Queue.tsx` table: position, job label (type + short id), `StatusPill` (pending/running/done/failed), timestamps, trash-can for pending items. |
 | Settings | ✅ Live | Config read/write. `nt8_agent_tunnel` and `mt5_agent_tunnel` both present |
 | Sidebar health strip | ✅ Live | 4 dots: API, SSH, NT8 (3-state), MT5 Agent. `SystemHealthStrip.tsx` |
 
