@@ -287,13 +287,43 @@ def set_combo(sa, auto_id, value):
         return False
 
 
-def wait_for_run_complete(sa, timeout=RUN_TIMEOUT):
+def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
     """
-    Wait for the Run button to go disabled (run started) then enabled (run done).
+    Wait for the SA run to finish.
+
+    Backtest mode (use_abort_btn=False): watches Run button disabled -> enabled.
+    Optimize mode (use_abort_btn=True): watches for Abort button to appear then disappear.
+    NT8 replaces the Run button with Abort during optimization, so the Run-button
+    heuristic does not work for that mode.
+
     Returns True on success, False on timeout.
     """
     deadline = time.time() + timeout
-    # Phase 1: wait up to 15s for the button to go disabled (run actually started)
+
+    if use_abort_btn:
+        # Phase 1: wait up to 30s for the Abort button to appear (run started)
+        phase1_deadline = time.time() + 30
+        while time.time() < phase1_deadline:
+            try:
+                abort_btn = sa.child_window(title="Abort", control_type="Button")
+                if abort_btn.exists() and abort_btn.is_visible():
+                    break
+            except Exception:
+                pass
+            time.sleep(0.5)
+        # Phase 2: wait for Abort button to disappear (run complete)
+        while time.time() < deadline:
+            try:
+                abort_btn = sa.child_window(title="Abort", control_type="Button")
+                if not abort_btn.exists() or not abort_btn.is_visible():
+                    return True
+            except Exception:
+                # element gone — run is done
+                return True
+            time.sleep(1)
+        return False
+
+    # Backtest mode: Run button disabled -> enabled
     phase1_deadline = time.time() + 15
     while time.time() < phase1_deadline:
         try:
@@ -303,7 +333,6 @@ def wait_for_run_complete(sa, timeout=RUN_TIMEOUT):
         except Exception:
             pass
         time.sleep(0.5)
-    # Phase 2: wait for the button to become enabled again (run finished)
     while time.time() < deadline:
         try:
             run_btn = sa.child_window(auto_id="Run", control_type="Button")
@@ -870,8 +899,8 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     _pct(35, "Optimization running")
 
-    # wait_for_run_complete uses the same Run-button heuristic and works for optimize mode
-    finished = wait_for_run_complete(sa, timeout=_OPT_TIMEOUT)
+    # Optimize mode: NT8 shows Abort button during run (Run button disappears)
+    finished = wait_for_run_complete(sa, timeout=_OPT_TIMEOUT, use_abort_btn=True)
     if not finished:
         print(f"  ERROR: Optimization timed out after {_OPT_TIMEOUT}s")
         sys.exit(1)
