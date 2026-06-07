@@ -931,12 +931,43 @@ def probe_display():
         return jsonify({"error": str(e)})
 
 
-@app.route("/optimize-mode-dump")
-def optimize_mode_dump():
+_BACKTEST_TYPE_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+
+
+def _switch_to_opt_mode_and_select(sa, strategy: str, dt) -> str:
+    """Switch SA to Optimization mode, select strategy, return observed BacktestType value."""
+    bt_combo = sa.child_window(auto_id=_BACKTEST_TYPE_AID, control_type="ComboBox")
+    bt_combo.select("Optimization")
+    time.sleep(0.5)
+    val_before_select = bt_combo.selected_text() if hasattr(bt_combo, "selected_text") else bt_combo.window_text()
+    _alog(f"[diag] BacktestType after set (before strategy select): {val_before_select!r}")
+
+    selector = sa.child_window(auto_id="NinjaScriptSelector")
+    selector.click_input()
+    time.sleep(1.5)
+    try:
+        item = sa.child_window(title=strategy, control_type="MenuItem", found_index=0)
+        if not item.exists(timeout=0.5):
+            raise Exception("not in SA subtree")
+    except Exception:
+        item = dt.window(title=strategy, control_type="MenuItem", found_index=0)
+    item.click_input()
+    time.sleep(3.0)
+
+    try:
+        val_after_select = bt_combo.selected_text() if hasattr(bt_combo, "selected_text") else bt_combo.window_text()
+    except Exception:
+        val_after_select = "read-failed"
+    _alog(f"[diag] BacktestType after strategy select: {val_after_select!r}")
+    return val_after_select
+
+
+@app.route("/backtest-type-check")
+def backtest_type_check():
     """
-    Diagnostic: switch SA to Optimization mode, select a strategy, and dump all
-    control AutomationIds.  Use to discover the exact IDs for param range fields
-    before running the native optimizer for real.
+    Diagnostic: switch to Optimization mode, select strategy, report BacktestType
+    value before and after strategy selection.  Answers: does strategy selection
+    reset BacktestType back to Backtest?
 
     Query params:
         ?strategy=ORB   (required)
@@ -946,43 +977,59 @@ def optimize_mode_dump():
         return jsonify({"error": "Pass ?strategy=StrategyName"}), 400
     try:
         from pywinauto import Desktop
-        from pywinauto.keyboard import send_keys
         dt = Desktop(backend="uia")
         sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
 
-        # Switch to Optimization mode — full AutomationId discovered via /optimize-mode-dump
-        _BACKTEST_TYPE_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+        bt_combo = sa.child_window(auto_id=_BACKTEST_TYPE_AID, control_type="ComboBox")
         try:
-            bt_combo = sa.child_window(auto_id=_BACKTEST_TYPE_AID, control_type="ComboBox")
-            bt_combo.select("Optimization")
-            _alog("[diag] BacktestType set to Optimization")
-        except Exception as e:
-            _alog(f"[diag] BacktestType set failed: {e}")
-        time.sleep(1.0)
-
-        # Select the strategy
-        selector = sa.child_window(auto_id="NinjaScriptSelector")
-        selector.click_input()
-        time.sleep(1.5)
-        try:
-            item = sa.child_window(title=strategy, control_type="MenuItem", found_index=0)
-            if not item.exists(timeout=0.5):
-                raise Exception("not in SA subtree")
+            initial = bt_combo.selected_text() if hasattr(bt_combo, "selected_text") else bt_combo.window_text()
         except Exception:
-            item = Desktop(backend="uia").window(title=strategy, control_type="MenuItem", found_index=0)
-        item.click_input()
-        time.sleep(3.0)  # let NT8 rebuild property grid
+            initial = "read-failed"
 
-        # Dump all controls
+        final = _switch_to_opt_mode_and_select(sa, strategy, dt)
+        return jsonify({"initial": initial, "after_set": "Optimization", "after_strategy_select": final})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+@app.route("/optimize-mode-dump")
+def optimize_mode_dump():
+    """
+    Diagnostic: switch SA to Optimization mode, select a strategy, and dump all
+    control AutomationIds.  Use to discover the exact IDs for param range fields
+    before running the native optimizer for real.
+
+    Query params:
+        ?strategy=ORB   (required)
+        ?all=1          include controls with no title AND no aid (default: skip them)
+    """
+    strategy = request.args.get("strategy", "")
+    include_all = request.args.get("all", "0") == "1"
+    if not strategy:
+        return jsonify({"error": "Pass ?strategy=StrategyName"}), 400
+    try:
+        from pywinauto import Desktop
+        dt = Desktop(backend="uia")
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+
+        final_bt = _switch_to_opt_mode_and_select(sa, strategy, dt)
+
+        # Dump all controls, preserving order (reflects visual layout)
         controls = []
         for el in sa.descendants():
             title = el.window_text()
             aid   = el.element_info.automation_id
-            ctype = el.element_info.control_type
-            if title or aid:
+            ctype = str(el.element_info.control_type)
+            if include_all or title or aid:
                 controls.append({"title": title, "control_type": ctype, "auto_id": aid})
-        return jsonify({"strategy": strategy, "mode": "Optimization", "controls": controls})
+        return jsonify({
+            "strategy": strategy,
+            "backtest_type_after_select": final_bt,
+            "total": len(controls),
+            "controls": controls,
+        })
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -1009,6 +1056,9 @@ def opt_param_click_dump():
         dt = Desktop(backend="uia")
         sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
+
+        # Must be in Optimization mode before clicking
+        _switch_to_opt_mode_and_select(sa, strategy, dt)
 
         pfx = f"{strategy}PropertyGridEditorPDEX"
         param_aid = f"{pfx}_{param_name}"
