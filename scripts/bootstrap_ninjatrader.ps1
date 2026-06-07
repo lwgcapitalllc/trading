@@ -108,7 +108,7 @@ if (-not $Nt8UserDir) {
 }
 
 # Confirmed agent deps (no requirements.txt in the repo): nt8_agent.py imports
-# flask + pywinauto + comtypes; vps_backtest_runner.py imports pywinauto + comtypes.
+# flask + pywinauto + comtypes; nt8_backtest_runner.py imports pywinauto + comtypes.
 # Everything else is stdlib. pip will pull pywinauto's own deps (incl. pywin32).
 $AgentDepsDefault = @('flask', 'pywinauto', 'comtypes')
 
@@ -254,7 +254,7 @@ function P5 {
                 & $script:Py -m pip install $p --break-system-packages 2>&1 | Out-Null
                 if ($LASTEXITCODE -eq 0) { Write-Ok "$p installed." } else { Write-Warn2 "could not install $p" }
             }
-            Write-Warn2 'Verify these match nt8_agent.py / vps_backtest_runner.py imports.'
+            Write-Warn2 'Verify these match nt8_agent.py / nt8_backtest_runner.py imports.'
         }
     } else { Write-Warn2 'No python — skipped agent deps.' }
 
