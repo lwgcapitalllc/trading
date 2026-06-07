@@ -563,7 +563,7 @@ def _set_range_in_grid(grid_map: dict, code_name: str, lo, hi, step,
         return False
     el = grid_map[display_key]
     el.set_edit_text(f"{lo};{hi};{step}")
-    print(f"  Param range '{code_name}' → '{display_key}' = {lo};{hi};{step}")
+    print(f"  Param range '{code_name}' -> '{display_key}' = {lo};{hi};{step}")
     return True
 
 
