@@ -623,81 +623,141 @@ def _dismiss_dialog(dt) -> None:
             pass
 
 
+def _nt8_split_param_names(names_concat: str) -> list:
+    """
+    Split NT8's concatenated parameter-name string into individual names.
+
+    NT8 writes all param display names back-to-back without a separator.
+    Most names end with ')'; the exceptions (e.g. 'Risk % per Trade',
+    'Opening Range Minutes') are split from the next name at a
+    lowercase->uppercase boundary.
+
+    Returns the ordered list of display names.
+    """
+    # First split on )(Capital) — handles all names that end with ')'
+    parts = _re.split(r'(?<=\))(?=[A-Z])', names_concat)
+    result = []
+    for part in parts:
+        if ')' in part:
+            result.append(part)
+        else:
+            # No closing paren: split at lowercase→uppercase boundary
+            sub = _re.split(r'(?<=[a-zA-Z%])(?=[A-Z][a-z])', part)
+            result.extend(sub)
+    return [t.strip() for t in result if t.strip()]
+
+
 def _parse_optimization_csv(csv_path: str, param_names: set) -> list:
     """
-    Parse NT8 optimization results CSV into list of {params: {...}, kpis: {...}} dicts.
+    Parse NT8 optimization results grid CSV.
 
-    NT8 column names for params match the NinjaScript property names exactly.
-    KPI columns use NT8's display names — we map the most common ones to our
-    internal names (net_pnl, profit_factor, etc.).
+    NT8 grid format (exported via right-click on combo rows):
+      Columns: Instrument, Performance, Parameters, Total net profit, ...
+      'Parameters' cell: "v0/v1/.../vN (DisplayName0DisplayName1...DisplayNameN)"
+      — one row per combo, param values embedded in the Parameters column.
+
+    param_names: set of NinjaScript code names (e.g. {'ORMinutes', 'TpMultiple'}).
+    Matching against display names is case-insensitive substring search.
     """
     import csv as csv_mod
 
-    # NT8 optimization results CSV header → internal KPI name.
-    # Covers NT8 7–8.x column naming variations.
+    # NT8 grid column name → internal KPI name (case-insensitive lookup below)
     _KPI_MAP = {
-        "Net Profit":               "net_pnl",
-        "Total Net Profit":         "net_pnl",
-        "Profit Factor":            "profit_factor",
-        "Max. Drawdown":            "max_drawdown",
-        "Max Drawdown":             "max_drawdown",
-        "% Profitable":             "win_rate",
-        "Percent Profitable":       "win_rate",
-        "# Trades":                 "trade_count",
-        "Total # of Trades":        "trade_count",
-        "Num. Trades":              "trade_count",
-        "Sharpe Ratio":             "sharpe",
-        "Avg. Win Trade":           "avg_win",
-        "Average Win":              "avg_win",
-        "Avg. Losing Trade":        "avg_loss",
-        "Average Loss":             "avg_loss",
-        "Max. Consecutive Winners": "worst_losing_streak",  # repurposed key
-        "Max. Consecutive Losers":  "worst_losing_streak",
+        "total net profit":   "net_pnl",
+        "net profit":         "net_pnl",
+        "profit factor":      "profit_factor",
+        "max. drawdown":      "max_drawdown",
+        "max drawdown":       "max_drawdown",
+        "total # of trades":  "trade_count",
+        "# trades":           "trade_count",
+        "num. trades":        "trade_count",
+        "percent profitable": "win_rate",
+        "% profitable":       "win_rate",
+        "sharpe ratio":       "sharpe",
     }
 
+    def _coerce(val_str: str):
+        s = val_str.strip()
+        if s.lower() in ("true", "false"):
+            return s.lower() == "true"
+        try:
+            f = float(s.replace(",", "").replace("$", "").replace("%", ""))
+            return int(f) if f == int(f) else f
+        except (ValueError, OverflowError):
+            return s
+
     combos = []
+    param_pos: dict | None = None   # {code_name: position_in_slash_split}
+
     try:
         with open(csv_path, newline="", encoding="utf-8-sig") as f:
             reader = csv_mod.DictReader(f)
             for row in reader:
                 params: dict = {}
                 kpis:   dict = {}
-                for col, val in row.items():
-                    col_stripped = (col or "").strip()
-                    val_stripped = (val or "").strip()
 
-                    if col_stripped in param_names:
-                        # Coerce to appropriate type
-                        if val_stripped.lower() in ("true", "false"):
-                            params[col_stripped] = val_stripped.lower() == "true"
-                        else:
-                            try:
-                                f_val = float(val_stripped.replace(",", ""))
-                                params[col_stripped] = int(f_val) if f_val == int(f_val) else f_val
-                            except ValueError:
-                                params[col_stripped] = val_stripped
-                    elif col_stripped in _KPI_MAP:
-                        internal = _KPI_MAP[col_stripped]
+                # --- Parse Parameters column to extract param values ---
+                params_col = (row.get("Parameters") or "").strip()
+                if params_col and "(" in params_col:
+                    paren_idx   = params_col.index(" (")
+                    values_str  = params_col[:paren_idx]
+                    names_raw   = params_col[paren_idx + 2:].rstrip(")")
+                    values_list = values_str.split("/")
+
+                    # Build position mapping once from the first populated row
+                    if param_pos is None:
+                        display_names = _nt8_split_param_names(names_raw)
+                        param_pos = {}
+                        for code in param_names:
+                            # Case-insensitive substring match against display names
+                            code_lower = code.lower()
+                            for i, dn in enumerate(display_names):
+                                if code_lower in dn.lower() or dn.lower() in code_lower:
+                                    param_pos[code] = i
+                                    break
+                            if code not in param_pos:
+                                # Fallback: match by camelCase words
+                                cw = [w.lower() for w in _re.findall(
+                                    r'[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+',
+                                    code) if len(w) >= 4]
+                                best_i, best_s = None, 0.0
+                                for i, dn in enumerate(display_names):
+                                    dw = dn.lower().split()
+                                    matches = sum(1 for c in cw
+                                                  if any(c in d or d.startswith(c)
+                                                         for d in dw))
+                                    sc = matches / len(cw) if cw else 0
+                                    if sc > best_s:
+                                        best_s, best_i = sc, i
+                                if best_s >= 0.60 and best_i is not None:
+                                    param_pos[code] = best_i
+                        print(f"  [opt-export] param_pos: {param_pos}")
+
+                    # Extract each param's value by position
+                    for code, pos in (param_pos or {}).items():
+                        if pos < len(values_list):
+                            params[code] = _coerce(values_list[pos])
+
+                # --- Extract KPIs from standard columns ---
+                for col, val in row.items():
+                    col_key = (col or "").strip().lower()
+                    kpi     = _KPI_MAP.get(col_key)
+                    if kpi:
                         try:
-                            v = float(
-                                val_stripped
-                                .replace("$", "")
-                                .replace(",", "")
-                                .replace("%", "")
-                                .strip()
-                            )
-                            # NT8 reports win_rate as 0–100; we store as 0–1
-                            if internal == "win_rate":
+                            v = float((val or "").strip()
+                                      .replace("$", "").replace(",", "")
+                                      .replace("%", ""))
+                            if kpi == "win_rate":
                                 v = round(v / 100.0, 4)
-                            # NT8 may report max_drawdown as negative
-                            if internal == "max_drawdown":
+                            if kpi == "max_drawdown":
                                 v = abs(v)
-                            kpis[internal] = round(v, 4)
-                        except ValueError:
+                            kpis[kpi] = round(v, 4)
+                        except (ValueError, OverflowError):
                             pass
 
                 if params or kpis:
                     combos.append({"params": params, "kpis": kpis})
+
     except Exception as e:
         print(f"  [opt-export] CSV parse error: {e}")
 
@@ -731,12 +791,14 @@ def _export_optimization_results(sa, job_id: str, param_names: set) -> list:
     except Exception:
         pass
 
-    # Right-click target: left 30% of SA width (clearly inside results grid, not settings panel)
+    # Right-click inside the optimization combo rows (top 5% of SA window).
+    # y=5% lands in the first result rows; y=50%+ lands in the performance
+    # summary tab which exports the wrong format.
     sa_rect = sa.rectangle()
     sa_w    = sa_rect.right  - sa_rect.left
     sa_h    = sa_rect.bottom - sa_rect.top
-    rc_x    = sa_rect.left + int(sa_w * 0.30)
-    rc_y    = sa_rect.top  + int(sa_h * 0.55)
+    rc_x    = sa_rect.left + int(sa_w * 0.25)
+    rc_y    = sa_rect.top  + int(sa_h * 0.05)
 
     nt8           = sa.top_level_parent()
     export_coords = None
@@ -900,6 +962,11 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         aid = f"{pfx}_{name}"
         if not set_edit(sa, aid, value, warn=False):
             set_checkbox(sa, aid, value)
+
+    # Set "Keep best # results" to large number so CSV contains ALL combos.
+    # Default is 10; we want every combination for proper sweep analysis.
+    _KB_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorKeepBestResults"
+    set_edit(sa, _KB_AID, 9999, warn=False)
 
     _pct(30, "Starting native optimization")
 
