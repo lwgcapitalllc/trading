@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, Play } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog } from '@/hooks/useLab'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
@@ -318,13 +318,11 @@ function fmtMoney(val: number | null | undefined): string {
   return `${sign}$${abs.toFixed(0)}`
 }
 
-function ResultsTable({ runs, sweptKeys, navigate, bestRunId, retryRun, jobBlocked }: {
+function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
   runs: BacktestSummary[]
   sweptKeys: string[]
   navigate: ReturnType<typeof useNavigate>
   bestRunId?: string
-  retryRun: ReturnType<typeof useRetryBacktest>
-  jobBlocked: boolean
 }) {
   const sorted = [...runs].sort((a, b) => (b.profit_factor ?? -Infinity) - (a.profit_factor ?? -Infinity))
   return (
@@ -341,7 +339,7 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, retryRun, jobBlock
             <th className="text-right px-3 py-2 text-text-tertiary font-medium">PF</th>
             <th className="text-right px-3 py-2 text-text-tertiary font-medium">Trades</th>
             <th className="text-left px-3 py-2 text-text-tertiary font-medium">Score</th>
-            <th className="px-3 py-2 w-20" />
+            <th className="px-3 py-2 w-16" />
           </tr>
         </thead>
         <tbody className="divide-y divide-border-subtle">
@@ -377,22 +375,8 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, retryRun, jobBlock
                 <td className="px-3 py-[9px]">
                   <WorthinessBadge worthiness={run.worthiness} />
                 </td>
-                <td className="px-3 py-[9px] text-right" onClick={e => e.stopPropagation()}>
-                  <div className="flex items-center justify-end gap-1.5">
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation()
-                        const data = await retryRun.mutateAsync(run.run_id)
-                        navigate(`/backtests/runs/${data.run_id}`)
-                      }}
-                      disabled={retryRun.isPending || jobBlocked}
-                      title={jobBlocked ? 'Another NT8 job is running' : 'Run full backtest on this combo'}
-                      className="p-[5px] rounded border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-40 transition-colors"
-                    >
-                      <Play size={10} className={retryRun.isPending && retryRun.variables === run.run_id ? 'animate-pulse' : ''} />
-                    </button>
-                    <span className="text-[11px] text-accent whitespace-nowrap">View →</span>
-                  </div>
+                <td className="px-3 py-[9px] text-right">
+                  <span className="text-[11px] text-accent whitespace-nowrap">View →</span>
                 </td>
               </tr>
             )
@@ -600,8 +584,6 @@ export function OptimizationDetail() {
                 sweptKeys={sweptKeys}
                 navigate={navigate}
                 bestRunId={opt.best_run_id ?? undefined}
-                retryRun={retryRun}
-                jobBlocked={jobBlocked}
               />
             </div>
           )}

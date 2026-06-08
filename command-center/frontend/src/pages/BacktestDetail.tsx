@@ -1527,12 +1527,12 @@ export function BacktestDetail() {
                     onClick={() => retryBacktest.mutate(run.run_id)}
                     disabled={retryBacktest.isPending || (isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running)}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40"
-                    title={(isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running) ? `${isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry this backtest' : 'Rerun this backtest'}
+                    title={(isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running) ? `${isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry this backtest' : run.optimization_id && !run.equity_curve?.length ? 'Run a full backtest on this parameter set to get charts and trade data' : 'Rerun this backtest'}
                   >
                     {retryBacktest.isPending
                       ? <RefreshCw size={14} className="animate-spin" />
                       : <Play size={14} />}
-                    {run.status.startsWith('failed') ? 'Retry' : 'Rerun'}
+                    {run.status.startsWith('failed') ? 'Retry' : run.optimization_id && !run.equity_curve?.length ? 'Full Backtest' : 'Rerun'}
                   </button>
                 )}
                 {(run.trade_count ?? 0) > 0 && <OptimizeButton run={run} />}
