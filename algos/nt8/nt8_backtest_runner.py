@@ -942,20 +942,22 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     app = connect_nt8()
     sa  = find_strategy_analyzer(app)
-    _pct(20, "Switching SA to Optimization mode")
+    _pct(20, "Selecting strategy")
 
     pfx = f"{strategy}PropertyGridEditorPDEX"
 
-    # Switch to Optimization mode once and stay there.
-    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    if not set_combo(sa, _BT_AID, "Optimization"):
-        print(f"  WARNING: BacktestType Optimization set failed")
-    time.sleep(1.0)
-
+    # Select strategy first — property grid is not live until a strategy is loaded.
     if not select_strategy(sa, strategy):
         print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
         sys.exit(1)
     time.sleep(3.0)
+
+    # Must set Optimization mode after strategy load; abort if it fails.
+    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+    if not set_combo(sa, _BT_AID, "Optimization"):
+        print("  ERROR: Failed to set BacktestType='Optimization' — SA property grid not responding")
+        sys.exit(1)
+    time.sleep(0.5)
 
     _pct(25, "Configuring parameters")
 
@@ -1170,17 +1172,20 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
 
     app = connect_nt8()
     sa  = find_strategy_analyzer(app)
-    _pct(20, "Switching SA to Walk Forward mode")
+    _pct(20, "Selecting strategy")
 
-    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    if not set_combo(sa, _BT_AID, "Walk Forward"):
-        print("  WARNING: BacktestType Walk Forward set failed — check auto_id")
-    time.sleep(1.0)
-
+    # Select strategy first — property grid is not live until a strategy is loaded.
     if not select_strategy(sa, strategy):
         print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
         sys.exit(1)
     time.sleep(3.0)
+
+    # Must set Walk Forward mode after strategy load; abort if it fails.
+    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+    if not set_combo(sa, _BT_AID, "Walk Forward"):
+        print("  ERROR: Failed to set BacktestType='Walk Forward' — SA property grid not responding")
+        sys.exit(1)
+    time.sleep(0.5)
 
     _pct(25, "Configuring walk-forward parameters")
 
@@ -1328,14 +1333,15 @@ def configure_from_spec(sa, spec: dict):
     strategy = spec["strategy_class"]
     pfx      = f"{strategy}PropertyGridEditorPDEX"
 
-    # Ensure we're in Backtest mode — optimizer/walk-forward leave SA in a different mode.
-    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    set_combo(sa, _BT_AID, "Backtest")
-
-    # Strategy switch — NT8 rebuilds the property grid; 2s lets it settle
+    # Strategy switch first — property grid is not live until a strategy is loaded.
     if not select_strategy(sa, strategy):
         raise RuntimeError(f"Strategy '{strategy}' not found in NT8 — is it compiled?")
     time.sleep(2.0)
+
+    # Must set Backtest mode after strategy load; property grid is now live.
+    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+    if not set_combo(sa, _BT_AID, "Backtest"):
+        raise RuntimeError("Failed to set BacktestType='Backtest' — SA property grid not responding")
 
     set_instrument(sa, spec["instrument"])
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
