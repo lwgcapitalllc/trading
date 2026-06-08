@@ -648,15 +648,6 @@ async def run_native_optimization(optimization_id: str) -> None:
     best_run_id = await _pick_best_run(complete_rows, opt, firm)
     lab_db.complete_optimization(optimization_id, best_run_id)
 
-    # Step 3B — auto-submit a full single backtest for the winner to get equity curve for MC.
-    # Native combo rows have no per-trade data; MC and the stress test require the trade list.
-    if best_run_id and ruleset_ids:
-        # Reload opt so it includes the just-stored grid_sensitivity fields.
-        opt_fresh = lab_db.get_optimization(optimization_id) or opt
-        asyncio.create_task(
-            _run_winner_backtest_for_mc(opt_fresh, best_run_id, strategy, ruleset_ids)
-        )
-
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
