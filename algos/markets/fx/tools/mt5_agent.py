@@ -535,6 +535,19 @@ def _write_set_file_with_ranges(
             lines.append(f"{k}={v}||1||{lo}||{step}||{hi}")
         else:
             lines.append(f"{k}={v}")
+    # Write ranged params that were not present in inputs (excluded from fixed_params
+    # by the optimization runner so they don't collide with the range spec).
+    for k, spec in param_ranges.items():
+        if k not in inputs:
+            if isinstance(spec, dict):
+                lo, hi, step = spec["min"], spec["max"], spec["step"]
+            elif isinstance(spec, list) and len(spec) > 1:
+                lo, hi = spec[0], spec[-1]
+                step = round(spec[1] - spec[0], 8) if len(spec) > 1 else 1
+            else:
+                lo = hi = (spec[0] if isinstance(spec, list) and spec else spec)
+                step = 1
+            lines.append(f"{k}={lo}||1||{lo}||{step}||{hi}")
     (dest / filename).write_text("\n".join(lines), encoding="utf-8")
     return filename
 
