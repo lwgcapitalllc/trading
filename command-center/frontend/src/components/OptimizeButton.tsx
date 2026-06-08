@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { Sliders, Plus, Minus, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
 import { useTriggerOptimization, useFirms, useRunningVpsJob } from '@/hooks/useLab'
-import type { BacktestDetail, ParamAxisSpec } from '@/types'
+import { api } from '@/api/client'
+import type { BacktestDetail, ParamAxisSpec, OptimizationSummary } from '@/types'
 
 interface Props {
   run: BacktestDetail
@@ -378,11 +380,36 @@ type ModalState = 'none' | 'tier1-confirm' | 'tier3-warning' | 'optimizer'
 
 export function OptimizeButton({ run }: Props) {
   const [modal, setModal] = useState<ModalState>('none')
+  const navigate = useNavigate()
   const { data: runningJob } = useRunningVpsJob()
+  const { data: optimizations } = useQuery({
+    queryKey: ['lab', 'optimizations', run.strategy_id],
+    queryFn: () => api.get<OptimizationSummary[]>(`/optimizations?strategy_id=${run.strategy_id}`),
+    refetchInterval: 5_000,
+  })
   const isMt5Platform = run.runner === 'mt5'
   const jobBlocked = isMt5Platform ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
 
+  const runningOpt = optimizations?.find(
+    o => o.source_run_id === run.run_id &&
+         o.status !== 'complete' &&
+         !o.status.startsWith('failed') &&
+         o.status !== 'cancelled'
+  )
+
   if (run.status !== 'complete') return null
+
+  if (runningOpt) {
+    return (
+      <button
+        onClick={() => navigate(`/backtests/optimizations/${runningOpt.optimization_id}`)}
+        className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 transition-colors"
+      >
+        <Sliders size={12} className="animate-pulse flex-shrink-0" />
+        Optimization in progress
+      </button>
+    )
+  }
 
   const tier = run.worthiness?.tier
 
