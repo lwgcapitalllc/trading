@@ -1039,8 +1039,9 @@ def list_runs(
         base_clauses.append("r.status = ?")
         params.append(status)
 
-    if base_clauses:
-        sql += " WHERE " + " AND ".join(base_clauses)
+    base_clauses.append("r.stress_test_id IS NULL")
+
+    sql += " WHERE " + " AND ".join(base_clauses)
     sql += " ORDER BY r.created_at DESC"
 
     with _connect() as conn:
@@ -1675,6 +1676,51 @@ def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None)
     return [_parse_json_fields(dict(r), ["walk_forward_summary", "sensitivity_summary", "grade_reasons"]) for r in rows]
 
 
+_GRADE_ORDER = ['A', 'B', 'C', 'D', 'F']
+
+def best_grades_by_strategy() -> dict:
+    """Returns {strategy_id: {grade, stress_test_id}} for the best completed grade per strategy."""
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT r.strategy_id, st.grade, st.stress_test_id
+            FROM stress_tests st
+            JOIN backtest_runs r ON r.run_id = st.run_id
+            WHERE st.grade IS NOT NULL
+            ORDER BY st.created_at DESC
+        """).fetchall()
+    result: dict = {}
+    for row in rows:
+        sid, g, stid = row["strategy_id"], row["grade"], row["stress_test_id"]
+        if sid not in result or _GRADE_ORDER.index(g) < _GRADE_ORDER.index(result[sid]["grade"]):
+            result[sid] = {"grade": g, "stress_test_id": stid}
+    return result
+
+
+def reset_stale_stress_tests() -> int:
+    """Mark any in-progress stress tests and their child runs as failed_crashed.
+    Called on startup to recover from backend restarts mid-run."""
+    now = int(time.time())
+    with _connect() as conn:
+        stale = conn.execute(
+            "SELECT stress_test_id FROM stress_tests WHERE status LIKE 'running%'"
+        ).fetchall()
+        if not stale:
+            return 0
+        ids = [r["stress_test_id"] for r in stale]
+        ph  = ",".join("?" * len(ids))
+        conn.execute(
+            f"UPDATE backtest_runs SET status='failed_timeout', error_message='Backend restarted mid-run' "
+            f"WHERE stress_test_id IN ({ph}) AND status = 'running'",
+            ids,
+        )
+        conn.execute(
+            f"UPDATE stress_tests SET status='failed_crashed', error_message='Backend restarted mid-run', completed_at=? "
+            f"WHERE stress_test_id IN ({ph})",
+            [now] + ids,
+        )
+    return len(ids)
+
+
 def update_stress_test_status(stress_test_id: str, status: str, error_message: Optional[str] = None) -> None:
     now = int(time.time())
     with _connect() as conn:
@@ -1735,6 +1781,26 @@ def update_stress_test_grade(stress_test_id: str, grade: str, reasons: list[str]
             "UPDATE stress_tests SET status='complete', completed_at=?, grade=?, grade_reasons=? WHERE stress_test_id=?",
             (now, grade, json.dumps(reasons), stress_test_id),
         )
+
+
+def running_stress_test_markets() -> dict:
+    """Returns {futures, forex, run_ids} for currently running stress tests."""
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT st.run_id, COALESCE(s.runner, 'ninjatrader') AS runner
+            FROM stress_tests st
+            JOIN backtest_runs r ON r.run_id = st.run_id
+            LEFT JOIN strategies s ON s.id = r.strategy_id
+            WHERE st.status LIKE 'running%'
+        """).fetchall()
+    result: dict = {"futures": False, "forex": False, "run_ids": []}
+    for row in rows:
+        result["run_ids"].append(row["run_id"])
+        if row["runner"] == "mt5":
+            result["forex"] = True
+        else:
+            result["futures"] = True
+    return result
 
 
 def delete_stress_test(stress_test_id: str) -> bool:

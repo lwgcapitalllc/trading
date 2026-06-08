@@ -29,6 +29,16 @@ def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None)
     return lab_db.list_stress_tests(run_id=run_id, grade=grade)
 
 
+@router.get("/running-lock")
+def running_stress_lock():
+    return lab_db.running_stress_test_markets()
+
+
+@router.get("/strategy-grades")
+def strategy_best_grades():
+    return lab_db.best_grades_by_strategy()
+
+
 @router.get("/{stress_test_id}", response_model=StressTestDetail)
 def get_stress_test(stress_test_id: str):
     st = lab_db.get_stress_test(stress_test_id)
@@ -73,6 +83,13 @@ async def trigger_stress_test(body: StressTestCreate):
         rs = lab_db.get_ruleset(body.ruleset_id)
         if not rs:
             raise HTTPException(404, "Ruleset not found")
+
+    strategy = lab_db.get_strategy(run.get("strategy_id", ""))
+    runner   = (strategy or {}).get("runner", "ninjatrader")
+    market   = "forex" if runner == "mt5" else "futures"
+    locks    = lab_db.running_stress_test_markets()
+    if locks[market]:
+        raise HTTPException(409, f"A {market} stress test is already running")
 
     if (body.include_walk_forward or body.include_sensitivity) and lab_db.has_any_running_vps_job():
         raise HTTPException(409, "A VPS job is already running — walk-forward and sensitivity require the platform to be idle")

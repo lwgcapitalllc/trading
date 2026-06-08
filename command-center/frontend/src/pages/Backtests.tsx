@@ -1,11 +1,12 @@
 import { useState, useCallback, useMemo, Fragment } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2 } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2, Activity } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useBacktestRuns, useLabProgress, useDeleteRun, useRetryBacktest, useRunningVpsJob,
   useOptimizations, useDeleteOptimization, useSweeps, useDeleteSweep,
 } from '@/hooks/useLab'
+import { useRunningStressLock } from '@/hooks/useStressTests'
 import { EmptyState } from '@/components/EmptyState'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { StatusPill } from '@/components/StatusPill'
@@ -244,8 +245,10 @@ function RunsTab() {
   const { data: allRuns, isLoading, refetch, isFetching } = useBacktestRuns(
     statusFilter ? { status: statusFilter } : undefined
   )
-  const { data: allOpts }   = useOptimizations()
-  const { data: allSweeps } = useSweeps()
+  const { data: allOpts }    = useOptimizations()
+  const { data: allSweeps }  = useSweeps()
+  const { data: stressLock } = useRunningStressLock()
+  const stressRunIds = useMemo(() => new Set(stressLock?.run_ids ?? []), [stressLock])
 
   const linkedSweepIds = useMemo(() => {
     const set = new Set<string>()
@@ -436,6 +439,7 @@ function RunsTab() {
                       hasChildren={hasChildren}
                       isCollapsed={isCollapsed}
                       onToggleCollapse={() => toggleCollapse(run.run_id)}
+                      hasRunningStress={stressRunIds.has(run.run_id)}
                     />
                     {!isCollapsed && childSweeps.map(sw => (
                       <SweepNestRow
@@ -451,6 +455,7 @@ function RunsTab() {
                         opt={opt}
                         colSpan={12}
                         onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
+                        hasRunningStress={!!opt.best_run_id && stressRunIds.has(opt.best_run_id)}
                       />
                     ))}
                   </Fragment>
@@ -493,11 +498,12 @@ function fmtOptStatus(s: string) {
 }
 
 function OptimizationNestRow({
-  opt, colSpan, onClick,
+  opt, colSpan, onClick, hasRunningStress,
 }: {
   opt: import('@/types').OptimizationSummary
   colSpan: number
   onClick: () => void
+  hasRunningStress?: boolean
 }) {
   const st = fmtOptStatus(opt.status)
   return (
@@ -507,8 +513,14 @@ function OptimizationNestRow({
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
           <span className="text-[11px] font-semibold text-gold-text">Optimization</span>
-          <span className="text-[11px] text-text-tertiary font-mono">{opt.instrument}</span>
-          <span className="text-[10px] text-text-tertiary">· {opt.completed_runs}/{opt.estimated_runs} runs</span>
+          <span className="text-[10px] text-text-tertiary">{opt.completed_runs}/{opt.estimated_runs} runs</span>
+          {hasRunningStress && (
+            <span title="Stress test in progress"
+              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent">
+              <Activity size={8} className="animate-pulse" />
+              STRESS TESTING
+            </span>
+          )}
         </div>
       </td>
       <td className="px-4 py-2">
@@ -567,7 +579,7 @@ function SweepNestRow({
 // ── Run row ───────────────────────────────────────────────────────────────────
 
 function RunRow({
-  run, selected, onSelect, onClick, hasChildren, isCollapsed, onToggleCollapse,
+  run, selected, onSelect, onClick, hasChildren, isCollapsed, onToggleCollapse, hasRunningStress,
 }: {
   run: BacktestSummary
   selected: boolean
@@ -576,6 +588,7 @@ function RunRow({
   hasChildren?: boolean
   isCollapsed?: boolean
   onToggleCollapse?: () => void
+  hasRunningStress?: boolean
 }) {
   const navigate = useNavigate()
   const retry = useRetryBacktest()
@@ -623,6 +636,15 @@ function RunRow({
             >
               <Sliders size={8} />
               OPT
+            </span>
+          )}
+          {hasRunningStress && (
+            <span
+              title="Stress test in progress"
+              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent"
+            >
+              <Activity size={8} className="animate-pulse" />
+              STRESS TESTING
             </span>
           )}
         </div>

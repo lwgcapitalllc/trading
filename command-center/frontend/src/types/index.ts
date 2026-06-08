@@ -544,6 +544,12 @@ export interface StressTestTriggerResponse {
   notes: string[]
 }
 
+export interface StressLock {
+  futures: boolean
+  forex: boolean
+  run_ids: string[]
+}
+
 // ── App Settings ─────────────────────────────────────────────────────────────
 
 export interface AppSettings {

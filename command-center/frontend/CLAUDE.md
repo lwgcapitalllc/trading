@@ -36,7 +36,7 @@ frontend/src/
 │   ├── useLab.ts            strategies, rulesets (useRulesets + useFirms alias), runs, evals, sweeps, optimizations
 │   ├── useBots.ts
 │   ├── useSmartMoney.ts
-│   ├── useStressTests.ts    stress tests — useStressTests, useStressTest, useRunStressTest, useDeleteStressTest
+│   ├── useStressTests.ts    stress tests — useStressTests, useStressTest, useRunStressTest, useDeleteStressTest, useRunningStressLock, useStrategyBestGrades
 │   └── useQueue.ts          job queue — useQueue, useEnqueueOptimization, useEnqueueStressTest, useDeleteQueueItem
 ├── components/              reusable, dumb components
 │   ├── Sidebar.tsx
@@ -351,7 +351,12 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Pass 2 — Strategy Deployment | ✅ Live | "Deployed" sub-tab: drag/drop `.cs`/`.mq5`, file list, trash-can delete, NT8 + MT5 `CompileModal` |
 | Pass 2.5 — Deploy button | ✅ Live | Per-strategy Deploy/Redeploy buttons. `useDeployStrategy()` → `POST /strategies/{id}/deploy`. Filled accent when out of sync |
 | MT5 backtest modal | ✅ Live | Branches on `strategy.runner === 'mt5'`: free-text symbol, bar presets [5m–4h], Evaluate/Foundational sections hidden |
-| MT5 backtest detail | ✅ Live | `MT5_RUN_STEPS` (Launch→Testing→Results→Tagging); runner-specific guidance; NT8-only buttons hidden |
+| MT5 backtest detail | ✅ Live | `MT5_RUN_STEPS` (Launch→Testing→Results→Tagging); runner-specific guidance; "Load chart data from NT8" and "Refresh" hidden for MT5; Stress Test button visible for all completed runs with trades |
+| Run Stress Test modal | ✅ Live | No checkboxes — WF + sensitivity always run together. Ruleset locked to `run.evaluations[0]` — shown as readonly chip. Fixed estimate: ~45 min (native WF) or ~80 min (non-native). Sends `include_walk_forward: true, include_sensitivity: true` always. On success navigates to `/stress-tests/{stress_test_id}`. Stress Test button shows pulsing "In progress" (clickable, navigates to stress test) when a test is already running; shows modal-opener otherwise. |
+| Stress test market lock | ✅ Live | `useRunningStressLock()` polls `GET /stress-tests/running-lock` (5s). Response: `{futures, forex, run_ids}`. `stressBlocked = isMt5 ? lock.forex : lock.futures`. Stress Test button disabled + tooltip when market is blocked. |
+| Running stress test indicators | ✅ Live | **Runs tab:** `RunsTab` builds `stressRunIds = new Set(lock.run_ids)`, passes `hasRunningStress` to `RunRow` (pulsing "STRESS TESTING" chip) and `hasRunningStress={stressRunIds.has(opt.best_run_id)}` to `OptimizationNestRow` (same chip). `OptimizationNestRow` no longer shows instrument. **BacktestDetail:** Stress Test button transforms to pulsing "In progress" (navigates to stress test) when `latestStress` is running; no separate banner. **OptimizationDetail:** `useRunningStressLock` + `useStressTests(bestRunId)` → clickable "Stress test in progress on winner run" banner when best run has a running stress test. |
+| Strategy best grades | ✅ Live | `useStrategyBestGrades()` polls `GET /stress-tests/strategy-grades` (30s) → `Record<strategyId, {grade, stress_test_id}>`. Strategies tab "Best Grade" column: `RobustnessGradeBadge` per row, clickable (stops row click, navigates to that stress test). `—` when no graded test exists. |
+| StressTestDetail fixes | ✅ Live | `useState`/`useEffect` for `nowSec` hoisted above early returns (Rules of Hooks — was causing black screen on open). `nowSec` ticks via `setInterval` while `isRunning` (was frozen at first render, making "Total elapsed" stuck). View Run navigates to `/backtests/runs/${st.run_id}` (was missing `runs/` segment). Delete uses in-app confirm modal, not `window.confirm`. **Pipeline stepper:** `hasSens = hasWF || ...` — Sensitivity step is always visible once WF is active; shows as pending/upcoming during `running_wf` phase instead of being hidden until `running_sens`. |
 | BacktestDetail polish | ✅ Live | Rerun button; clickable strategy `<h1>`; `StatusPill` shared component; stale progress guard (`job_id` match) |
 | Speed Step 6 — Queue page | ✅ Live | `/queue` route + sidebar nav item (Research section, `ListOrdered` icon). `QueueItem` type. `useQueue` (polls 5s), `useEnqueueOptimization`, `useEnqueueStressTest`, `useDeleteQueueItem` hooks in `useQueue.ts`. `Queue.tsx` table: position, job label (type + short id), `StatusPill` (pending/running/done/failed), timestamps, trash-can for pending items. |
 | Settings | ✅ Live | Config read/write. `nt8_agent_tunnel` and `mt5_agent_tunnel` both present |

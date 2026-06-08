@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2 } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob } from '@/hooks/useLab'
+import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -393,6 +394,13 @@ export function OptimizationDetail() {
   const { data: runningJob } = useRunningVpsJob()
   const jobBlocked = !!runningJob?.nt8?.running
 
+  const { data: stressLock } = useRunningStressLock()
+  const stressRunIds = useMemo(() => new Set(stressLock?.run_ids ?? []), [stressLock])
+  const bestRunId = opt?.best_run_id ?? undefined
+  const hasRunningStress = !!bestRunId && stressRunIds.has(bestRunId)
+  const { data: bestRunStressTests } = useStressTests(hasRunningStress ? bestRunId : undefined)
+  const latestStress = bestRunStressTests?.find(s => !s.status.startsWith('failed') && s.status !== 'complete')
+
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const paramKeys = opt ? Object.keys(opt.param_grid) : []
@@ -503,6 +511,19 @@ export function OptimizationDetail() {
             retrying={retryOpt.isPending}
             jobBlocked={jobBlocked}
           />
+
+          {latestStress && (
+            <button
+              onClick={() => navigate(`/stress-tests/${latestStress.stress_test_id}`)}
+              className="w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg border border-accent/20 bg-accent/5 text-left hover:bg-accent/10 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-sm text-accent">
+                <Activity size={14} className="animate-pulse flex-shrink-0" />
+                Stress test in progress on winner run
+              </div>
+              <span className="text-xs text-text-tertiary">View →</span>
+            </button>
+          )}
 
           {/* Results table — shows while running and when complete */}
           {completeRuns.length > 0 && (

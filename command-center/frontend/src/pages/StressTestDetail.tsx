@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Trash2, ArrowLeft, RefreshCw, Info, Check } from 'lucide-react'
 import { useStressTest, useDeleteStressTest } from '@/hooks/useStressTests'
@@ -95,16 +96,22 @@ export default function StressTestDetail() {
   const { data: run } = useBacktestRun(st?.run_id ?? null)
   const deleteTest = useDeleteStressTest()
 
+  const isRunning = st ? !st.status.startsWith('failed') && st.status !== 'complete' : false
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    if (!isRunning) return
+    const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [isRunning])
+
   if (isLoading) return <div className="text-text-secondary text-[13px] pt-8">Loading…</div>
   if (!st) return <div className="text-text-secondary text-[13px] pt-8">Stress test not found</div>
 
   const ruleset = rulesets?.find(r => r.id === st.ruleset_id)
-  const isRunning = !st.status.startsWith('failed') && st.status !== 'complete'
 
   const hasWF   = st.walk_forward_summary != null || st.status === 'running_wf'
-  const hasSens = st.sensitivity_summary  != null || st.status === 'running_sens'
-
-  const nowSec = Math.floor(Date.now() / 1000)
+  const hasSens = hasWF || st.sensitivity_summary  != null || st.status === 'running_sens'
   function fmtDuration(startSec: number | null, endSec: number | null): string | null {
     if (!startSec) return null
     const secs = (endSec ?? nowSec) - startSec
@@ -173,6 +180,7 @@ export default function StressTestDetail() {
   const pnlCls = run?.net_pnl != null && run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
 
   return (
+    <>
     <div className="space-y-8">
 
       {/* ── Back ──────────────────────────────────────────────────────────────── */}
@@ -195,7 +203,7 @@ export default function StressTestDetail() {
             <div className="flex items-start justify-between gap-3">
               <h1 className="text-h1 font-semibold leading-tight">{st.strategy_name || 'Stress Test'}</h1>
               <button
-                onClick={() => { if (confirm('Delete this stress test?')) deleteTest.mutate(st.stress_test_id, { onSuccess: () => navigate(-1) }) }}
+                onClick={() => setConfirmDelete(true)}
                 className="p-2 rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors flex-shrink-0"
               >
                 <Trash2 size={16} />
@@ -296,7 +304,7 @@ export default function StressTestDetail() {
                 </div>
               </div>
               <button
-                onClick={() => navigate(`/backtests/${st.run_id}`)}
+                onClick={() => navigate(`/backtests/runs/${st.run_id}`)}
                 className="flex items-center gap-1.5 px-3 py-[6px] rounded text-[12px] font-medium bg-bg-sunken border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-default transition-colors"
               >
                 View Run <ArrowLeft size={12} className="rotate-180" />
@@ -416,5 +424,32 @@ export default function StressTestDetail() {
       )}
 
     </div>
+
+    {confirmDelete && (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setConfirmDelete(false)}>
+        <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+          <h2 className="text-base font-semibold text-text-primary">Delete stress test?</h2>
+          <p className="text-sm text-text-secondary">
+            This will permanently remove the stress test and all its child runs for <span className="text-text-primary font-medium">{st.strategy_name}</span>. This cannot be undone.
+          </p>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => deleteTest.mutate(st.stress_test_id, { onSuccess: () => navigate(-1) })}
+              disabled={deleteTest.isPending}
+              className="flex-1 py-1.5 text-sm bg-neg-text text-white rounded font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              {deleteTest.isPending ? 'Deleting…' : 'Delete'}
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

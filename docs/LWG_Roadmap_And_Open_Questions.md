@@ -77,6 +77,7 @@ Tradovate, cTrader, or other platforms when need arises. The runner abstraction 
 - **Hidden Markov Model regime classifier** — explicitly rejected. Rules-based classifier is intentional. Transparency over marginal accuracy gains.
 - **Port `bot_smc_trend` and `bot_fft` to MQL5** — only MeanReversion was ported in M5. The other two are deferred until/if they're worth testing through the lab.
 - **`correlation_table.py`** — was added in the M3 stress-test commit as a helper for correlated-instrument notes on StrategyDetail. It was deleted at some point without a corresponding commit and nothing currently imports it. If the correlated instrument feature is wanted, this file needs to be restored or replaced.
+- **`exclude_sensitivity` flag on param_schema** — add `"exclude_sensitivity": true` to individual param definitions to skip those params from sensitivity perturbation runs. Intended for account/risk params (e.g. `f_RiskPerTradePct`, `f_DailyLossCap`) that don't affect trade selection and don't benefit from perturbation. One field in the schema, one `if` check in `stress_tester.run_sensitivity_task()`. Deferred until the full optimize + stress pipeline is validated end-to-end for both NT8 and MT5 per the Speed Game Plan.
 
 ---
 

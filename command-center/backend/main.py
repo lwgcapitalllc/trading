@@ -60,6 +60,10 @@ async def startup():
     # The asyncio task tracking that job no longer exists, so clear the lock.
     if read_progress().get("status") == "running":
         clear_progress()
+    n = lab_db.reset_stale_stress_tests()
+    if n:
+        import logging
+        logging.getLogger(__name__).warning("Reset %d stale stress test(s) from previous run", n)
     threading.Thread(target=_auto_start_agents, daemon=True).start()
     asyncio.create_task(queue_runner.run_queue_loop())
 

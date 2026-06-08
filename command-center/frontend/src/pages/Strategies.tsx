@@ -12,6 +12,8 @@ import {
 } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
+import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
+import { useStrategyBestGrades } from '@/hooks/useStressTests'
 import { RulesetTypeBadge } from '@/components/RulesetTypeBadge'
 import { RunnerBadge } from '@/components/RunnerBadge'
 import { toast } from 'sonner'
@@ -98,6 +100,7 @@ function StrategiesTab() {
   const navigate = useNavigate()
   const { data: strategies, isLoading } = useStrategies()
   const { data: syncStatus, refetch: refetchSync } = useStrategyFileSyncStatus()
+  const { data: strategyGrades } = useStrategyBestGrades()
   useRunningVpsJob()
   const scan = useScanStrategies()
   const deploy = useDeployStrategy()
@@ -197,6 +200,7 @@ function StrategiesTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Params</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runs</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Best Grade</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -208,6 +212,7 @@ function StrategiesTab() {
                   inSync={syncMap[s.id]}
                   isCompiled={compiledMap[s.id]}
                   isDeploying={deployingId === s.id}
+                  bestGrade={strategyGrades?.[s.id]}
                   onView={() => navigate(`/strategies/${s.id}`)}
                   onRun={() => setRunStrategy(s)}
                   onDeploy={() => handleDeploy(s.id)}
@@ -245,17 +250,19 @@ function StrategiesTab() {
 }
 
 function StrategyRow({
-  strategy: s, inSync, isCompiled, isDeploying, onView, onRun, onDeploy, onCompile,
+  strategy: s, inSync, isCompiled, isDeploying, bestGrade, onView, onRun, onDeploy, onCompile,
 }: {
   strategy: Strategy
   inSync?: boolean
   isCompiled?: boolean | null
   isDeploying: boolean
+  bestGrade?: { grade: string; stress_test_id: string }
   onView: () => void
   onRun: () => void
   onDeploy: () => void
   onCompile: () => void
 }) {
+  const navigate = useNavigate()
   return (
     <tr onClick={onView} className="hover:bg-bg-hover cursor-pointer transition-colors">
       <td className="px-4 py-3 font-medium">
@@ -274,6 +281,19 @@ function StrategyRow({
           <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs compile</span>
         ) : (
           <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
+        )}
+      </td>
+      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+        {bestGrade ? (
+          <button
+            onClick={() => navigate(`/stress-tests/${bestGrade.stress_test_id}`)}
+            title="View best stress test result"
+            className="hover:opacity-80 transition-opacity"
+          >
+            <RobustnessGradeBadge grade={bestGrade.grade as any} size="sm" />
+          </button>
+        ) : (
+          <span className="text-[11px] text-text-tertiary">—</span>
         )}
       </td>
       <td className="px-4 py-3">

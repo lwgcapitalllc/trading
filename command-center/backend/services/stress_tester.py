@@ -144,8 +144,10 @@ def _estimate_wf_duration_min(n_windows: int) -> int:
     return n_windows * 2 * 5  # 2 runs per window × ~5 min each
 
 
-def _estimate_sens_duration_min(n_params: int) -> int:
-    return n_params * 4 * 5  # 4 perturbations × ~5 min each
+def _estimate_sens_duration_min(n_params: int, runner: str = "ninjatrader") -> int:
+    shifts = 2 if runner == "mt5" else 4
+    mins_per_job = 1.5 if runner == "mt5" else 5
+    return int(n_params * shifts * mins_per_job)
 
 
 # ── VPS child-run helper (mirrors sweep_runner._run_one) ──────────────────────
@@ -468,7 +470,12 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
     # Baseline metrics
     baseline_pnl = source_run.get("net_pnl") or 0.0
 
-    SHIFTS = [("+10%", 1.10), ("-10%", 0.90), ("+25%", 1.25), ("-25%", 0.75)]
+    # MT5 runs one VPS job at a time — 4 shifts × N params = very long queues.
+    # Use 2 shifts for slow runners; ±10% is sufficient to flag parameter sensitivity.
+    if runner == "mt5":
+        SHIFTS = [("+10%", 1.10), ("-10%", 0.90)]
+    else:
+        SHIFTS = [("+10%", 1.10), ("-10%", 0.90), ("+25%", 1.25), ("-25%", 0.75)]
     sensitivity: dict = {}
     max_degradation = 0.0
 

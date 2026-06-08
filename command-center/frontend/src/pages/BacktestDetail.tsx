@@ -11,8 +11,8 @@ import {
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
 import { toast } from 'sonner'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRulesets, useBackfillRegime, useBackfillStatus, useRunningVpsJob } from '@/hooks/useLab'
-import { useStressTests, useRunStressTest } from '@/hooks/useStressTests'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useBackfillRegime, useBackfillStatus, useRunningVpsJob } from '@/hooks/useLab'
+import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
 import { C } from '@/themes/chart'
 
@@ -1373,61 +1373,48 @@ function BackfillRegimeButton({ run }: { run: Run }) {
 
 // ── Run Stress Test Modal ─────────────────────────────────────────────────────
 
-function RunStressTestModal({ runId, onClose }: { runId: string; onClose: () => void }) {
-  const { data: rulesets } = useRulesets()
+function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () => void; navigate: (path: string) => void }) {
   const runTest = useRunStressTest()
-  const [rulesetId, setRulesetId] = useState<string>('')
-  const [includeWF, setIncludeWF] = useState(false)
-  const [includeSens, setIncludeSens] = useState(false)
 
-  const estMin = (includeWF ? 50 : 0) + (includeSens ? 30 : 0)
+  const primaryEval = run.evaluations?.[0]
+  const rulesetId   = primaryEval?.ruleset_id ?? undefined
+
+  const isNativeWF = !!run.optimization_id && run.runner !== 'mt5'
+  const estMin     = isNativeWF ? 45 : 80
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
         <h2 className="text-base font-semibold text-text-primary">Run Stress Test</h2>
 
-        <div className="space-y-1">
-          <label className="text-xs text-text-secondary">Evaluate against ruleset</label>
-          <select
-            value={rulesetId}
-            onChange={e => setRulesetId(e.target.value)}
-            className="w-full text-sm bg-bg-sunken border border-border-subtle rounded px-3 py-1.5 text-text-primary"
-          >
-            <option value="">None (Monte Carlo only)</option>
-            {rulesets?.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-        </div>
-
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={includeWF} onChange={e => setIncludeWF(e.target.checked)} className="accent-accent" />
-            <span className="text-sm text-text-primary">Include walk-forward (runs 10 VPS backtests, ~50 min)</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={includeSens} onChange={e => setIncludeSens(e.target.checked)} className="accent-accent" />
-            <span className="text-sm text-text-primary">Include sensitivity analysis (~30 min)</span>
-          </label>
-        </div>
-
-        {estMin > 0 && (
-          <div className="rounded border border-warn-text/30 bg-warn-muted p-3 text-xs text-warn-text">
-            This will run VPS backtests sequentially. Estimated time: ~{estMin} min. Platform must be idle.
+        {primaryEval ? (
+          <div className="space-y-1">
+            <p className="text-xs text-text-secondary">Evaluating against</p>
+            <span className="inline-block text-xs font-mono font-semibold px-2 py-0.5 rounded bg-warn-muted border border-warn-text/20 text-warn-text">
+              {primaryEval.ruleset_name}
+            </span>
           </div>
+        ) : (
+          <p className="text-xs text-text-tertiary">No ruleset — Monte Carlo only.</p>
         )}
+
+        <p className="text-xs text-text-secondary">
+          Runs Monte Carlo, walk-forward, and sensitivity analysis.
+          Estimated ~{estMin} min. Platform must be idle.
+        </p>
 
         <div className="flex gap-2 pt-2">
           <button
             onClick={() => {
               runTest.mutate({
-                run_id: runId,
-                ruleset_id: rulesetId || undefined,
-                include_walk_forward: includeWF,
-                include_sensitivity: includeSens,
+                run_id: run.run_id,
+                ruleset_id: rulesetId,
+                include_walk_forward: true,
+                include_sensitivity: true,
                 num_simulations: 10_000,
                 num_bootstrap: 1_000,
                 walk_forward_windows: 5,
-              }, { onSuccess: () => onClose() })
+              }, { onSuccess: (data) => { onClose(); navigate(`/stress-tests/${data.stress_test_id}`) } })
             }}
             disabled={runTest.isPending}
             className="flex-1 py-1.5 text-sm bg-accent text-bg-base rounded font-medium hover:opacity-90 disabled:opacity-50"
@@ -1453,6 +1440,7 @@ export function BacktestDetail() {
   const retryBacktest            = useRetryBacktest()
   const { data: runningJob }     = useRunningVpsJob()
   const { data: stressTests }    = useStressTests(run?.run_id)
+  const { data: stressLock }     = useRunningStressLock()
   const latestStress             = stressTests?.[0]
   const [showStressModal, setShowStressModal] = useState(false)
   const [overlayOn, setOverlayOn] = useState(getOverlayPref)
@@ -1477,8 +1465,9 @@ export function BacktestDetail() {
 
   const isRunning  = run?.status === 'running'
   const isFailed   = run?.status.startsWith('failed') ?? false
-  const isComplete = run?.status === 'complete'
-  const isMt5      = run?.runner === 'mt5'
+  const isComplete    = run?.status === 'complete'
+  const isMt5         = run?.runner === 'mt5'
+  const stressBlocked = isMt5 ? (stressLock?.forex ?? false) : (stressLock?.futures ?? false)
 
   const progressMatches = progress?.job_id === run?.run_id
   const runPct       = isRunning ? (progressMatches ? (progress?.pct ?? 0) : 0) : 0
@@ -1547,26 +1536,39 @@ export function BacktestDetail() {
                   </button>
                 )}
                 {(run.trade_count ?? 0) > 0 && <OptimizeButton run={run} />}
-                {run?.status === 'complete' && (run.trade_count ?? 0) > 0 && (
-                  <button
-                    onClick={() => setShowStressModal(true)}
-                    className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-                  >
-                    <Activity size={14} />
-                    Stress Test
-                    {latestStress?.grade && <RobustnessGradeBadge grade={latestStress.grade} size="sm" />}
-                  </button>
-                )}
+                {run?.status === 'complete' && (run.trade_count ?? 0) > 0 && (() => {
+                  const stressRunning = latestStress && latestStress.status !== 'complete' && !latestStress.status.startsWith('failed')
+                  if (stressRunning) return (
+                    <button
+                      onClick={() => navigate(`/stress-tests/${latestStress.stress_test_id}`)}
+                      className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-accent/30 bg-accent/5 text-accent hover:bg-accent/10 transition-colors"
+                    >
+                      <Activity size={14} className="animate-pulse flex-shrink-0" />
+                      In progress
+                    </button>
+                  )
+                  return (
+                    <button
+                      onClick={() => !stressBlocked && setShowStressModal(true)}
+                      disabled={stressBlocked}
+                      title={stressBlocked ? `A ${isMt5 ? 'forex' : 'futures'} stress test is already running` : undefined}
+                      className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Activity size={14} />
+                      Stress Test
+                      {latestStress?.grade && <RobustnessGradeBadge grade={latestStress.grade} size="sm" />}
+                    </button>
+                  )
+                })()}
                 {isRunning && <StatusPill status={run.status} size="md" />}
               </div>
-              {showStressModal && run && <RunStressTestModal runId={run.run_id} onClose={() => setShowStressModal(false)} />}
+              {showStressModal && run && <RunStressTestModal run={run} onClose={() => setShowStressModal(false)} navigate={navigate} />}
             </div>
           </div>
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
           {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={isMt5 ? MT5_RUN_STEPS : NT8_RUN_STEPS} />}
           {isFailed && <FailureBanner run={run} />}
-
           {/* ── Evaluations + Performance (side by side) ──────────────────── */}
           {isComplete && (
             <div className={run.evaluations.length > 0

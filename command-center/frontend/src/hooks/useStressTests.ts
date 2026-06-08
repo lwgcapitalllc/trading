@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
-import type { StressTest, StressTestDetail, StressTestCreate, StressTestTriggerResponse } from '@/types'
+import type { StressTest, StressTestDetail, StressTestCreate, StressTestTriggerResponse, StressLock } from '@/types'
 
 export function useStressTests(runId?: string, grade?: string) {
   const params = new URLSearchParams()
@@ -39,6 +39,22 @@ export function useRunStressTest() {
       qc.invalidateQueries({ queryKey: ['stress-tests'] })
     },
     onError: () => toast.error('Failed to start stress test'),
+  })
+}
+
+export function useRunningStressLock() {
+  return useQuery({
+    queryKey: ['stress-tests', 'running-lock'],
+    queryFn: () => api.get<StressLock>('/stress-tests/running-lock'),
+    refetchInterval: 5_000,
+  })
+}
+
+export function useStrategyBestGrades() {
+  return useQuery({
+    queryKey: ['stress-tests', 'strategy-grades'],
+    queryFn: () => api.get<Record<string, { grade: string; stress_test_id: string }>>('/stress-tests/strategy-grades'),
+    refetchInterval: 30_000,
   })
 }
 
