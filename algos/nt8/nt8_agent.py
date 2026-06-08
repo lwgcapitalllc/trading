@@ -1110,6 +1110,134 @@ def combo_items():
         return jsonify({"error": str(e)})
 
 
+@app.route("/test-bt-switch")
+def test_bt_switch():
+    """
+    Diagnostic: try every method to switch BacktestType, return a log of what worked.
+
+    Query params:
+        ?value=Optimize   (default: Optimize)
+    """
+    BT_AID   = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+    BT_ORDER = ["Backtest", "Optimize", "WalkForward", "WalkForwardAnchored", "MultiObjective", "AiGenerate"]
+    target   = request.args.get("value", "Optimize")
+    log      = []
+
+    def L(msg):
+        _alog(f"[test-bt-switch] {msg}")
+        log.append(msg)
+
+    try:
+        dt   = Desktop(backend="uia")
+        sa   = dt.window(title_re=".*Strategy Analyzer.*")
+        sa.wait("visible", timeout=10)
+        ctrl = sa.child_window(auto_id=BT_AID, control_type="ComboBox")
+        if not ctrl.exists(timeout=2.0):
+            return jsonify({"error": "BacktestType combo not found", "log": log})
+
+        L(f"combo exists; window_text={ctrl.window_text()!r}")
+
+        # Attempt 1: select()
+        try:
+            ctrl.select(target)
+            L(f"A1 select('{target}') SUCCESS")
+            return jsonify({"winner": "select()", "log": log})
+        except Exception as e:
+            L(f"A1 select() FAIL: {e}")
+
+        # Attempt 2: expand + ctrl.descendants
+        try:
+            ctrl.expand()
+            time.sleep(0.4)
+            items = ctrl.descendants(control_type="ListItem")
+            L(f"A2 expand+descendants: {[i.window_text() for i in items]}")
+            for item in items:
+                if item.window_text() == target:
+                    item.click_input()
+                    L(f"A2 click_input SUCCESS")
+                    return jsonify({"winner": "expand+descendants", "log": log})
+            try:
+                ctrl.collapse()
+            except Exception:
+                ctrl.type_keys('{ESC}')
+            L("A2 item not found in descendants")
+        except Exception as e:
+            L(f"A2 FAIL: {e}")
+
+        # Attempt 3: expand + search all windows
+        try:
+            ctrl.expand()
+            time.sleep(0.4)
+            wins = dt.windows()
+            L(f"A3 searching {len(wins)} windows")
+            found = False
+            for win in wins:
+                try:
+                    items = win.descendants(control_type="ListItem")
+                    if items:
+                        labels = [i.window_text() for i in items]
+                        L(f"  win={win.window_text()!r} items={labels}")
+                        for item in items:
+                            if item.window_text() == target:
+                                item.click_input()
+                                L("A3 click_input SUCCESS")
+                                found = True
+                                break
+                except Exception:
+                    pass
+                if found:
+                    return jsonify({"winner": "expand+all-windows", "log": log})
+            try:
+                ctrl.type_keys('{ESC}')
+            except Exception:
+                pass
+            L("A3 item not found in any window")
+        except Exception as e:
+            L(f"A3 FAIL: {e}")
+
+        # Attempt 4: keyboard via ctrl.type_keys
+        try:
+            idx = BT_ORDER.index(target)
+            ctrl.click_input()
+            time.sleep(0.2)
+            ctrl.type_keys('{F4}')
+            time.sleep(0.4)
+            ctrl.type_keys('{HOME}')
+            time.sleep(0.1)
+            for _ in range(idx):
+                ctrl.type_keys('{DOWN}')
+                time.sleep(0.08)
+            ctrl.type_keys('{ENTER}')
+            time.sleep(0.3)
+            L(f"A4 keyboard HOME+{idx}xDOWN+ENTER sent")
+            return jsonify({"winner": "keyboard-ctrl", "log": log, "note": "check SA visually"})
+        except Exception as e:
+            L(f"A4 FAIL: {e}")
+
+        # Attempt 5: send_keys system-wide
+        try:
+            idx = BT_ORDER.index(target)
+            ctrl.set_focus()
+            time.sleep(0.2)
+            send_keys('{F4}')
+            time.sleep(0.4)
+            send_keys('{HOME}')
+            time.sleep(0.1)
+            for _ in range(idx):
+                send_keys('{DOWN}')
+                time.sleep(0.08)
+            send_keys('{ENTER}')
+            time.sleep(0.3)
+            L(f"A5 send_keys HOME+{idx}xDOWN+ENTER sent")
+            return jsonify({"winner": "send_keys", "log": log, "note": "check SA visually"})
+        except Exception as e:
+            L(f"A5 FAIL: {e}")
+
+        return jsonify({"winner": None, "log": log})
+    except Exception as e:
+        return jsonify({"error": str(e), "log": log})
+
+
 @app.route("/opt-param-groups")
 def opt_param_groups():
     """
