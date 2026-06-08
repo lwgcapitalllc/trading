@@ -40,7 +40,7 @@ backend/
 │   ├── evaluator.py       per-firm pass/fail logic
 │   ├── backtest_runner.py background VPS polling task (single run)
 │   ├── sweep_runner.py    runs N backtests sequentially (semaphore = 1) for a sweep
-│   ├── optimization_runner.py  multi-call brute-force optimizer (see note below)
+│   ├── optimization_runner.py  native NT8/MT5 optimizer (one VPS job, all CPU cores)
 │   ├── worthiness.py      Tier 1/2/3 scoring
 │   ├── objectives.py      optimizer objective functions
 │   ├── stress_tester.py   Monte Carlo + walk-forward + sensitivity + auto-trigger
@@ -238,7 +238,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Lab — Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 13 seeded rows. |
 | Lab — Backtests | ✅ Live | NT8/MT5 runs via agent. Equity curve, daily P&L, per-ruleset verdicts, Worthiness tier (1/2/3). |
 | Lab — Sweeps | ✅ Live | N sequential backtests across instruments (`_MAX_CONCURRENT = 1`). Cancel, retry-all, per-run retry. |
-| Lab — Optimizations | ✅ Live | Brute-force + genetic optimizer. Scores by objective. `best_run_id` tracked. Source run nesting. Per-run retry. |
+| Lab — Optimizations | ✅ Live | Native NT8/MT5 optimizer (one VPS job, full grid, all CPU cores). Scores by objective. `best_run_id` tracked. Source run nesting. Per-run retry. |
 | Lab — System | ✅ Live | Health (SSH, NT8, MT5 agents). Log proxies. `POST /system/{nt8,mt5}-agent/start` fires schtasks. |
 | Lab — Stress Tests | ✅ Live | MC (10k reshuffles + 1k bootstrap), walk-forward (IS/OOS NT8 windows), sensitivity (±10%/±25%). A–F grade. |
 | Lab — Regime Tags (M4) | ✅ Live | `daily_pnl` entries tagged with regime label. Auto-tagged at pipeline time. Optimizer `regime_filter`. |
@@ -320,13 +320,9 @@ Merges both pools (~11,000 paths) and computes: median/P95/P99 drawdown, prob of
 
 ## Key architectural decisions
 
-**Optimizer implementation:** Two paths, selected by `search_method` on the optimization row:
+**Optimizer implementation:** All optimizations use `search_method = "native"`. The brute-force batch path still exists in `optimization_runner.py` for retrying the two legacy runs in the DB but is not reachable from the UI for new jobs.
 
-- **`"brute"` / `"genetic"` / `"auto"`** (legacy) — generates all param combos on the backend and fires them as individual backtest calls via `nt8_agent_client.start_backtest`. `_MAX_CONCURRENT = 1` — the SA window is single-threaded. "genetic" samples up to 200 combos for 3+D grids.
-
-- **`"native"`** (Step 1 fast path, NT8 only) — sends ONE `POST /native-optimize` to the VPS agent. `nt8_backtest_runner.run_native_optimize_mode` switches the SA to Optimization mode, sets Start/End/Increment ranges for each Strategy Logic param, fires a single Run that uses all CPU cores, then exports the results grid to CSV. The backend creates run rows for every combo after the grid is returned. No per-combo equity curve — auto-trigger stress test is skipped; winner must be stress-tested via a manual single rerun. `estimated_runs` is always the full grid size (no sampling in native mode).
-
-**Parity check:** before trusting the native path, run one combo through it and compare to the existing single-run path. Optimize mode under pywinauto differs from Run mode — the parity check catches setup bugs.
+- **`"native"`** — sends ONE `POST /native-optimize` to the VPS agent. `nt8_backtest_runner.run_native_optimize_mode` switches the SA to Optimization mode, sets Start/End/Increment ranges for each Strategy Logic param, fires a single Run that uses all CPU cores, then exports the results grid to CSV. MT5 path uses `mt5_agent.py` with `Optimization=1` ini + set-file ranges + HTML combo parser. The backend creates run rows for every combo after the grid is returned. No per-combo equity curve — auto-trigger stress test is skipped; winner must be stress-tested via a manual single rerun. `estimated_runs` is always the full grid size.
 
 **NT8 SA global lock:** All three job types (single backtest, sweep, optimization) share the same physical SA window. `lab_db.has_any_running_vps_job()` checks for any `backtest_runs` or `optimizations` row with `status = 'running'`. All three trigger endpoints call it and return 409 if true. This prevents cross-job conflicts (e.g. a sweep starting while an optimization is in progress). Walk-forward and sensitivity stress tests also check this lock before triggering.
 

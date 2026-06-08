@@ -12,11 +12,12 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import PlainTextResponse
 
 from models import (
     OptimizationRequest, OptimizationSummary, OptimizationDetail,
 )
-from services import lab_db
+from services import lab_db, nt8_agent_client
 from services.optimization_runner import expand_grid, pick_search_method, sample_combinations, run_optimization, retry_failed_runs
 from routers.backtests import _row_to_summary
 
@@ -39,8 +40,6 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         raise HTTPException(400, "param_grid cannot be empty")
 
     runner = strategy.get("runner", "ninjatrader")
-    if req.search_method == "native" and runner != "ninjatrader":
-        raise HTTPException(400, "Native optimizer is only supported for NT8 (ninjatrader) strategies")
 
     if runner == "mt5":
         if lab_db.has_running_mt5_job():
@@ -161,6 +160,15 @@ async def retry_optimization_failed(optimization_id: str) -> dict:
         raise HTTPException(400, "No failed runs to retry")
     asyncio.create_task(retry_failed_runs(optimization_id))
     return {"optimization_id": optimization_id, "retrying": len(failed), "status": "running"}
+
+
+@router.get("/{optimization_id}/log", response_class=PlainTextResponse)
+def get_optimization_log(optimization_id: str, lines: int = 300) -> str:
+    opt = lab_db.get_optimization(optimization_id)
+    if not opt:
+        raise HTTPException(404, "Optimization not found")
+    job_id = f"nopt_{optimization_id}"
+    return nt8_agent_client.job_log(job_id, lines=lines)
 
 
 def _row_to_opt_summary(row: dict) -> OptimizationSummary:

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob } from '@/hooks/useLab'
+import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog } from '@/hooks/useLab'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 
@@ -37,9 +37,9 @@ function firmChipCls(firmId: string): string {
 }
 
 function fmtSearchMethod(m: string) {
-  if (m === 'brute')   return 'Brute Force'
-  if (m === 'genetic') return 'Genetic'
-  return 'Auto'
+  if (m === 'native') return 'Native'
+  if (m === 'brute')  return 'Brute Force (legacy)'
+  return m
 }
 
 // ── Live elapsed timer ────────────────────────────────────────────────────────
@@ -185,7 +185,7 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
 
           {!failingBadly && isRunning && (
             <p className="text-[11px] text-text-tertiary mt-3 pt-3 border-t border-border-subtle">
-              Each combination runs as a separate backtest on the VPS (up to 4 at a time). Safe to close — results are saved as each run completes.
+              NT8 is running all combinations in one job using its native optimizer. Results appear here when the full grid completes.
             </p>
           )}
         </div>
@@ -381,6 +381,32 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
   )
 }
 
+// ── Log terminal ─────────────────────────────────────────────────────────────
+
+function OptLogTerminal({ optimizationId, live }: { optimizationId: string; live: boolean }) {
+  const { data: log } = useOptimizationLog(optimizationId, 300, live)
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (live) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [log, live])
+
+  if (!log) return null
+
+  return (
+    <div>
+      <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
+        VPS Log {live && <span className="text-accent animate-pulse ml-1">· live</span>}
+      </h2>
+      <div className="bg-bg-sunken border border-border-subtle rounded-xl p-4 font-mono text-[11px] text-text-secondary leading-relaxed max-h-[340px] overflow-y-auto whitespace-pre-wrap break-all">
+        {log || <span className="text-text-tertiary italic">No log output yet…</span>}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  )
+}
+
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function OptimizationDetail() {
@@ -511,6 +537,11 @@ export function OptimizationDetail() {
             retrying={retryOpt.isPending}
             jobBlocked={jobBlocked}
           />
+
+          {/* Live log — visible while optimization is running */}
+          {isRunning && optimizationId && (
+            <OptLogTerminal optimizationId={optimizationId} live={true} />
+          )}
 
           {latestStress && (
             <button

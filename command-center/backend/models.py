@@ -621,7 +621,7 @@ class OptimizationRequest(BaseModel):
     slippage_ticks: int = 1
     ruleset_id: Optional[str] = None    # null for MT5 / "raw" mode
     mode: str = "eval"                  # "eval" | "funded" | "raw"
-    search_method: str = "auto"         # "auto" | "brute" | "genetic"
+    search_method: str = "native"
     param_grid: dict                    # {param: {min, max, step} | [val, ...]}
     source_run_id: Optional[str] = None
     regime_filter: Optional[str] = None  # TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY

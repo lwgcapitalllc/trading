@@ -425,10 +425,11 @@ function RunsTab() {
             </thead>
             <tbody className="divide-y divide-border-subtle">
               {runs.map(run => {
-                const childSweeps = sweepsBySourceRun.get(run.run_id) ?? []
-                const childOpts   = optsBySourceRun.get(run.run_id) ?? []
-                const hasChildren = childSweeps.length > 0 || childOpts.length > 0
-                const isCollapsed = collapsedRuns.has(run.run_id)
+                const childSweeps  = sweepsBySourceRun.get(run.run_id) ?? []
+                const childOpts    = optsBySourceRun.get(run.run_id) ?? []
+                const hasChildren  = childSweeps.length > 0 || childOpts.length > 0
+                const isCollapsed  = collapsedRuns.has(run.run_id)
+                const hasRunningOpt = childOpts.some(o => o.status === 'running')
                 return (
                   <Fragment key={run.run_id}>
                     <RunRow
@@ -440,6 +441,7 @@ function RunsTab() {
                       isCollapsed={isCollapsed}
                       onToggleCollapse={() => toggleCollapse(run.run_id)}
                       hasRunningStress={stressRunIds.has(run.run_id)}
+                      hasRunningOpt={hasRunningOpt}
                     />
                     {!isCollapsed && childSweeps.map(sw => (
                       <SweepNestRow
@@ -579,7 +581,7 @@ function SweepNestRow({
 // ── Run row ───────────────────────────────────────────────────────────────────
 
 function RunRow({
-  run, selected, onSelect, onClick, hasChildren, isCollapsed, onToggleCollapse, hasRunningStress,
+  run, selected, onSelect, onClick, hasChildren, isCollapsed, onToggleCollapse, hasRunningStress, hasRunningOpt,
 }: {
   run: BacktestSummary
   selected: boolean
@@ -589,6 +591,7 @@ function RunRow({
   isCollapsed?: boolean
   onToggleCollapse?: () => void
   hasRunningStress?: boolean
+  hasRunningOpt?: boolean
 }) {
   const navigate = useNavigate()
   const retry = useRetryBacktest()
@@ -645,6 +648,15 @@ function RunRow({
             >
               <Activity size={8} className="animate-pulse" />
               STRESS TESTING
+            </span>
+          )}
+          {hasRunningOpt && (
+            <span
+              title="Optimization in progress"
+              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-gold-muted text-gold-text border border-gold-text/20"
+            >
+              <Sliders size={8} className="animate-pulse" />
+              OPTIMIZING
             </span>
           )}
         </div>
@@ -822,7 +834,7 @@ function OptimizationsTab() {
       {isLoading ? (
         <RunsTableSkeleton />
       ) : !opts?.length ? (
-        <EmptyState icon={<Sliders size={20} />} title="No optimizations yet" description='Click "Optimize from this run" on a completed backtest to start a parameter sweep.' />
+        <EmptyState icon={<Sliders size={20} />} title="No optimizations yet" description='Click "Optimize" on a completed backtest to start a native optimization run.' />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           <table className="w-full text-[13px]">

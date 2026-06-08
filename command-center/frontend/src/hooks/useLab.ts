@@ -160,6 +160,15 @@ export function useRunLog(runId: string | null, lines = 200, live = false) {
   })
 }
 
+export function useOptimizationLog(optimizationId: string | null, lines = 300, live = false) {
+  return useQuery({
+    queryKey: ['lab', 'optimization', optimizationId, 'log', lines],
+    queryFn: () => api.getText(`/optimizations/${optimizationId}/log?lines=${lines}`),
+    enabled: !!optimizationId,
+    refetchInterval: live ? 2_000 : false,
+  })
+}
+
 // Module-level timestamp: keeps progress polling fast for 60s after a trigger
 // so the UI reflects state changes while the NT8 agent starts the job.
 let _lastTriggerMs = 0
@@ -460,6 +469,10 @@ export function useOptimizations(strategyId?: string) {
   return useQuery({
     queryKey: ['lab', 'optimizations', strategyId ?? 'all'],
     queryFn: () => api.get<OptimizationSummary[]>(`/optimizations${qs}`),
+    refetchInterval: (query) => {
+      const data = query.state.data as OptimizationSummary[] | undefined
+      return data?.some(o => o.status === 'running') ? 3_000 : 15_000
+    },
   })
 }
 

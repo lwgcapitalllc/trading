@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import { Sliders, Plus, Minus, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
-import { useTriggerOptimization, useFirms, useRunningVpsJob } from '@/hooks/useLab'
-import { api } from '@/api/client'
-import type { BacktestDetail, ParamAxisSpec, OptimizationSummary } from '@/types'
+import { useTriggerOptimization, useFirms, useRunningVpsJob, useOptimizations } from '@/hooks/useLab'
+import type { BacktestDetail, ParamAxisSpec } from '@/types'
 
 interface Props {
   run: BacktestDetail
@@ -60,7 +58,9 @@ function OptimizerModal({
   const evalFirm = run.evaluations[0]
   const [firmId, setFirmId]         = useState(evalFirm?.ruleset_id ?? '')
   const [mode, setMode]             = useState<'eval' | 'funded'>('eval')
-  const [searchMethod, setMethod]   = useState<'auto' | 'brute' | 'genetic'>('auto')
+
+  const selectedFirm = firms?.find(f => f.id === firmId)
+  const isPropFirm = selectedFirm?.ruleset_type === 'prop_eval' || selectedFirm?.ruleset_type === 'prop_funded'
   const [regimeFilter, setRegimeFilter] = useState<string>('')
 
   // Foundational params are injected from the ruleset — never exposed in the optimizer grid.
@@ -129,8 +129,8 @@ function OptimizerModal({
       commission_per_side: run.commission_per_side,
       slippage_ticks:     run.slippage_ticks,
       ruleset_id:         isMt5 ? null : firmId,
-      mode:               isMt5 ? 'raw' : mode,
-      search_method:      searchMethod,
+      mode:               isMt5 ? 'raw' : isPropFirm ? mode : 'raw',
+      search_method:      'native',
       param_grid,
       regime_filter:      isMt5 ? null : (regimeFilter || null),
       source_run_id:      run.run_id,
@@ -170,11 +170,11 @@ function OptimizerModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* Config — NT8 shows ruleset/mode/regime; MT5 shows only search method */}
+          {/* Config — NT8 shows ruleset/mode/regime; MT5 shows nothing above the param grid */}
           <div className="grid grid-cols-3 gap-3">
             {!isMt5 && (
               <>
-                <div>
+                <div className={isPropFirm ? '' : 'col-span-3'}>
                   <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Ruleset</label>
                   <select
                     value={firmId}
@@ -185,31 +185,21 @@ function OptimizerModal({
                     {firms?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Mode</label>
-                  <select
-                    value={mode}
-                    onChange={e => setMode(e.target.value as 'eval' | 'funded')}
-                    className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
-                  >
-                    <option value="eval">Eval</option>
-                    <option value="funded">Funded</option>
-                  </select>
-                </div>
+                {isPropFirm && (
+                  <div>
+                    <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Mode</label>
+                    <select
+                      value={mode}
+                      onChange={e => setMode(e.target.value as 'eval' | 'funded')}
+                      className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
+                    >
+                      <option value="eval">Eval</option>
+                      <option value="funded">Funded</option>
+                    </select>
+                  </div>
+                )}
               </>
             )}
-            <div className={isMt5 ? 'col-span-3' : ''}>
-              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Search</label>
-              <select
-                value={searchMethod}
-                onChange={e => setMethod(e.target.value as 'auto' | 'brute' | 'genetic')}
-                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
-              >
-                <option value="auto">Auto</option>
-                <option value="brute">Brute Force</option>
-                <option value="genetic">Genetic</option>
-              </select>
-            </div>
             {!isMt5 && (
               <div className="col-span-3">
                 <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">
@@ -293,10 +283,7 @@ function OptimizerModal({
 
           {rangeParamCount > 0 && (
             <p className="text-[11px] text-text-tertiary">
-              {rangeParamCount} parameter{rangeParamCount !== 1 ? 's' : ''} will be swept.
-              {searchMethod === 'auto' && (
-                <> Auto will use {rangeParamCount <= 2 ? 'brute force' : 'genetic sampling'}.</>
-              )}
+              {rangeParamCount} parameter{rangeParamCount !== 1 ? 's' : ''} will be swept using the native optimizer.
             </p>
           )}
         </div>
@@ -382,11 +369,7 @@ export function OptimizeButton({ run }: Props) {
   const [modal, setModal] = useState<ModalState>('none')
   const navigate = useNavigate()
   const { data: runningJob } = useRunningVpsJob()
-  const { data: optimizations } = useQuery({
-    queryKey: ['lab', 'optimizations', run.strategy_id],
-    queryFn: () => api.get<OptimizationSummary[]>(`/optimizations?strategy_id=${run.strategy_id}`),
-    refetchInterval: 5_000,
-  })
+  const { data: optimizations } = useOptimizations(run.strategy_id)
   const isMt5Platform = run.runner === 'mt5'
   const jobBlocked = isMt5Platform ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
 
@@ -433,7 +416,7 @@ export function OptimizeButton({ run }: Props) {
         className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <Sliders size={12} />
-        Optimize from this run
+        Optimize
       </button>
 
       {modal === 'tier1-confirm' && (

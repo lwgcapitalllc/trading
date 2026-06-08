@@ -1045,12 +1045,19 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     num_params  = {k: v for k, v in fixed_params.items()
                    if not isinstance(v, (bool, str))}
 
-    # Set each numeric fixed param via Optimize grid using lo;hi;step format.
+    # Set each numeric fixed param via Optimize grid (lo;hi;step format).
     # NT8 requires min;max;increment even for fixed values (e.g. "2;2;1" not "2").
     # Rebuild grid_map before each to get fresh element refs after WPF refresh.
+    # FALLBACK: if a param is not found in the Optimize grid (e.g. "Foundational"
+    # category is collapsed and its txtBox controls are absent from the UIA tree),
+    # set it via the PDEX Edit control instead.  NT8 uses the PDEX value as the
+    # fixed default for any param that does not have a range in the Optimize grid.
     for name, value in num_params.items():
         grid_map = _build_opt_grid_map(sa)
-        _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+        ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+        if not ok:
+            set_edit(sa, f"{pfx}_{name}", value, warn=False)
+            print(f"  Fixed param '{name}' not in Optimize grid — set via PDEX = {value}")
 
     # String params via PDEX Edit controls (always present, IValueProvider works).
     for name, value in str_params.items():
@@ -1279,9 +1286,13 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
     num_params  = {k: v for k, v in all_params.items() if not isinstance(v, (bool, str))}
 
     # All numeric params as single-value ranges (value;value;1) — no re-optimization in IS.
+    # PDEX fallback: same as optimize mode — collapsed categories may hide txtBox controls.
     for name, value in num_params.items():
         grid_map = _build_opt_grid_map(sa)
-        _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+        ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+        if not ok:
+            set_edit(sa, f"{pfx}_{name}", value, warn=False)
+            print(f"  Param '{name}' not in WF grid — set via PDEX = {value}")
 
     for name, value in str_params.items():
         set_edit(sa, f"{pfx}_{name}", value, warn=False)

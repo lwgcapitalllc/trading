@@ -1,13 +1,14 @@
 """
-Optimization runner — multi-call brute force implementation.
+Optimization runner — native NT8/MT5 optimizer.
 
-Decision (per M2 spec §5): NT Optimizer GUI automation (pywinauto) was not
-attempted. Instead we generate all param combinations here and drive them as
-individual backtest calls through the existing VPS agent pipeline. This is
-slower but reliable and reuses all M1 infrastructure.
+All new optimizations use the platform's built-in optimizer (NT8 Strategy
+Analyzer Optimization mode / MT5 Strategy Tester Optimization=1).  One VPS
+job loads data once and runs the full param grid across all CPU cores.
 
-For "auto" search method, brute force is used for ≤2D grids and a simple
-random-subset genetic-style sample is used for 3+D grids.
+The brute-force batch path (_run_batch, expand_grid, sample_combinations,
+pick_search_method) is retained only to support retry of the two legacy
+opt runs already in the DB.  It is not reachable from the UI or API for
+new optimization requests.
 """
 
 from __future__ import annotations
@@ -481,14 +482,16 @@ async def run_native_optimization(optimization_id: str) -> None:
     runner_str = strategy.get("runner", "ninjatrader")
     firm = lab_db.get_ruleset(opt["ruleset_id"]) if opt.get("ruleset_id") else None
 
-    # Build fixed_params: foundational config (from ruleset) + strategy defaults not in the grid
+    # Build fixed_params: strategy defaults as baseline, foundational config on top.
+    # Foundational must come last so ruleset values (AccountSize, RiskPerTradePct, etc.)
+    # override strategy sentinel defaults (-1) — not the other way around.
     param_ranges = opt["param_grid"]
     fixed_params: dict = {}
-    if firm:
-        fixed_params.update(nt8_agent_client.build_foundational_params(firm))
     for k, v in (strategy.get("default_params") or {}).items():
         if k not in param_ranges:
             fixed_params[k] = v
+    if firm:
+        fixed_params.update(nt8_agent_client.build_foundational_params(firm))
 
     opt_job_id = f"nopt_{optimization_id}"
 
