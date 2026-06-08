@@ -1328,6 +1328,10 @@ def configure_from_spec(sa, spec: dict):
     strategy = spec["strategy_class"]
     pfx      = f"{strategy}PropertyGridEditorPDEX"
 
+    # Ensure we're in Backtest mode — optimizer/walk-forward leave SA in a different mode.
+    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+    set_combo(sa, _BT_AID, "Backtest")
+
     # Strategy switch — NT8 rebuilds the property grid; 2s lets it settle
     if not select_strategy(sa, strategy):
         raise RuntimeError(f"Strategy '{strategy}' not found in NT8 — is it compiled?")
