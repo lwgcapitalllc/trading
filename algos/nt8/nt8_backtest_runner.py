@@ -314,20 +314,43 @@ def set_combo(sa, auto_id, value):
     return False
 
 
-def _read_combo(sa, auto_id) -> str:
-    """Return the current selected text of a ComboBox, or '' if not found."""
-    ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
-    if not ctrl.exists(timeout=1.0):
-        return ""
-    # NT8 WPF combos: window_text() can return "" — try selected_item() first
-    for method in ("selected_item", "window_text", "get_value"):
+_BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+
+
+def _set_backtest_type(sa, value: str):
+    """
+    Set NT8 SA BacktestType dropdown. Hard-fails (RuntimeError/sys.exit) on failure.
+    Uses only the two methods confirmed to work on NT8 WPF combos:
+      1. ctrl.select(value)           — direct UIA SelectionItemPattern
+      2. expand + top_level_parent click — for when (1) throws
+    Does NOT call the generic set_combo() which hangs searching sa subtree for ListItems.
+    """
+    ctrl = sa.child_window(auto_id=_BT_AID, control_type="ComboBox")
+    if not ctrl.exists(timeout=2.0):
+        raise RuntimeError(f"BacktestType combo not found — SA property grid not loaded")
+
+    # Attempt 1: direct UIA select (fastest, confirmed working in agent diagnostic)
+    try:
+        ctrl.select(value)
+        time.sleep(0.2)
+        return
+    except Exception as e1:
+        pass
+
+    # Attempt 2: click to open dropdown, find ListItem in top-level NT8 window
+    try:
+        ctrl.click_input()
+        time.sleep(0.4)
+        item = sa.top_level_parent().child_window(title=value, control_type="ListItem")
+        item.click_input()
+        time.sleep(0.2)
+        return
+    except Exception as e2:
         try:
-            val = getattr(ctrl, method)()
-            if val:
-                return str(val)
+            ctrl.type_keys('{ESC}')
         except Exception:
             pass
-    return ""
+        raise RuntimeError(f"Failed to set BacktestType='{value}' (select={e1}, click={e2})")
 
 
 def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
@@ -974,15 +997,12 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         sys.exit(1)
     time.sleep(3.0)
 
-    # Must set Optimize mode after strategy load; verify the value actually changed.
-    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    set_combo(sa, _BT_AID, "Optimize")
-    time.sleep(0.3)
-    actual = _read_combo(sa, _BT_AID)
-    if actual != "Optimize":
-        print(f"  ERROR: BacktestType is '{actual}', expected 'Optimize' — aborting")
+    # Must set Optimize mode after strategy load; hard-fails if it can't be set.
+    try:
+        _set_backtest_type(sa, "Optimize")
+    except RuntimeError as e:
+        print(f"  ERROR: {e}")
         sys.exit(1)
-    time.sleep(0.2)
 
     _pct(25, "Configuring parameters")
 
@@ -1205,15 +1225,12 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
         sys.exit(1)
     time.sleep(3.0)
 
-    # Must set WalkForward mode after strategy load; verify the value actually changed.
-    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    set_combo(sa, _BT_AID, "WalkForward")
-    time.sleep(0.3)
-    actual = _read_combo(sa, _BT_AID)
-    if actual != "WalkForward":
-        print(f"  ERROR: BacktestType is '{actual}', expected 'WalkForward' — aborting")
+    # Must set WalkForward mode after strategy load; hard-fails if it can't be set.
+    try:
+        _set_backtest_type(sa, "WalkForward")
+    except RuntimeError as e:
+        print(f"  ERROR: {e}")
         sys.exit(1)
-    time.sleep(0.2)
 
     _pct(25, "Configuring walk-forward parameters")
 
@@ -1366,13 +1383,8 @@ def configure_from_spec(sa, spec: dict):
         raise RuntimeError(f"Strategy '{strategy}' not found in NT8 — is it compiled?")
     time.sleep(2.0)
 
-    # Must set Backtest mode after strategy load; verify the value actually changed.
-    _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    set_combo(sa, _BT_AID, "Backtest")
-    time.sleep(0.3)
-    actual = _read_combo(sa, _BT_AID)
-    if actual != "Backtest":
-        raise RuntimeError(f"BacktestType is '{actual}', expected 'Backtest' — aborting")
+    # Must set Backtest mode after strategy load; hard-fails if it can't be set.
+    _set_backtest_type(sa, "Backtest")
 
     set_instrument(sa, spec["instrument"])
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
