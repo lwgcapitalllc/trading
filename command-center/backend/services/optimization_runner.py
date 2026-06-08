@@ -28,7 +28,7 @@ import statistics
 
 from services import lab_db, evaluator, nt8_agent_client, worthiness
 from services.objectives import choose_objective
-from services.backtest_runner import build_date_regime_map, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
+from services.backtest_runner import build_date_regime_map, write_job_progress, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
 
 log = logging.getLogger("optimization_runner")
 
@@ -207,7 +207,7 @@ def sample_combinations(combos: list[dict], method: str) -> list[dict]:
 
 # ── Single run poller ─────────────────────────────────────────────────────────
 
-async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str) -> None:
+async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str, write_progress: bool = False) -> None:
     started_at = time.time()
 
     while True:
@@ -220,6 +220,14 @@ async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: 
                 lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
                 return
             continue
+
+        if write_progress:
+            write_job_progress(
+                job_id=job_id,
+                pct=int(status_data.get("pct") or 0),
+                message=str(status_data.get("message") or ""),
+                started_at=started_at,
+            )
 
         status = status_data.get("status", "running")
 
@@ -277,12 +285,13 @@ async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str],
 # ── Semaphore-limited batch runner ────────────────────────────────────────────
 
 async def _run_batch(
-    run_ids:      list[str],
-    job_specs:    list[dict],
-    ruleset_ids:  list[str],
-    opt_mode:     str,
-    runner:       str,
-    opt_id:       str,
+    run_ids:       list[str],
+    job_specs:     list[dict],
+    ruleset_ids:   list[str],
+    opt_mode:      str,
+    runner:        str,
+    opt_id:        str,
+    write_progress: bool = False,
 ) -> None:
     sem = asyncio.Semaphore(_MAX_CONCURRENT)
 
@@ -299,7 +308,7 @@ async def _run_batch(
                 lab_db.update_run_status(run_id, "failed_unknown", str(exc))
                 lab_db.increment_optimization_completed(opt_id)
                 return
-            await _poll_one(run_id, job_spec["job_id"], ruleset_ids, opt_mode)
+            await _poll_one(run_id, job_spec["job_id"], ruleset_ids, opt_mode, write_progress=write_progress)
             lab_db.increment_optimization_completed(opt_id)
 
     await asyncio.gather(*[_one(rid, spec) for rid, spec in zip(run_ids, job_specs)])
@@ -749,7 +758,10 @@ async def retry_single_optimization_run(run_id: str) -> None:
     firm = lab_db.get_ruleset(opt["ruleset_id"]) if opt.get("ruleset_id") else None
     ruleset_ids = [opt["ruleset_id"]] if opt.get("ruleset_id") else []
 
-    lab_db.decrement_optimization_completed(opt_id, 1)
+    # Keep the optimization's own status as-is (complete/failed) — this is a
+    # single-combo full backtest, not a re-run of the grid. Only the child run
+    # should show as running.
+    lab_db.decrement_optimization_completed(opt_id, 1, set_running=False)
 
     job_spec = {
         "job_id":             run_id,
@@ -769,6 +781,7 @@ async def retry_single_optimization_run(run_id: str) -> None:
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
         opt_id=opt_id,
+        write_progress=True,
     )
 
     # Re-score best run across all complete runs

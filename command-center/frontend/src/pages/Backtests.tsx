@@ -258,7 +258,8 @@ function RunsTab() {
 
   const runs = useMemo(
     () => allRuns
-      ?.filter(r => !r.optimization_id && !(r.sweep_id && linkedSweepIds.has(r.sweep_id)))
+      // Show opt-combo runs only when they're actively running (user triggered "Full Backtest")
+      ?.filter(r => (!r.optimization_id || r.status === 'running') && !(r.sweep_id && linkedSweepIds.has(r.sweep_id)))
       ?.filter(r => marketFilter === 'all' || (isForexInstrument(r.instrument) ? 'forex' : 'futures') === marketFilter),
     [allRuns, linkedSweepIds, marketFilter]
   )
@@ -912,10 +913,10 @@ export function Backtests() {
   const { data: allRuns }   = useBacktestRuns()
   const { data: allOpts }   = useOptimizations()
   const { data: allSweeps } = useSweeps()
-  const runsCount    = allRuns?.filter(r => !r.optimization_id && !r.sweep_id).length
+  const runsCount    = allRuns?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id).length
   const optsCount    = allOpts?.length
   const sweepsCount  = allSweeps?.length
-  const runsActive   = allRuns?.some(r => !r.optimization_id && !r.sweep_id && r.status === 'running')
+  const runsActive   = allRuns?.some(r => !r.sweep_id && r.status === 'running')
   const sweepsActive = allSweeps?.some(s => s.status === 'running')
   const optsActive   = allOpts?.some(o => o.status === 'running')
 

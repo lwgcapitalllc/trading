@@ -121,6 +121,17 @@ def clear_progress() -> None:
     _write_progress({"status": "idle", "pct": 0, "message": ""})
 
 
+def write_job_progress(job_id: str, pct: int, message: str, started_at: float) -> None:
+    _write_progress({
+        "job_id": job_id,
+        "status": "running",
+        "pct": pct,
+        "message": message,
+        "started_at": str(started_at),
+        "updated_at": str(time.time()),
+    })
+
+
 # ── Failure path ───────────────────────────────────────────────────────────────
 
 def _fail(run_id: str, job_id: str, status: str, error_msg: str) -> None:

@@ -1564,13 +1564,13 @@ def reset_run_for_retry(run_id: str) -> None:
         )
 
 
-def decrement_optimization_completed(optimization_id: str, count: int) -> None:
+def decrement_optimization_completed(optimization_id: str, count: int, set_running: bool = True) -> None:
+    if set_running:
+        sql = "UPDATE optimizations SET completed_runs = MAX(0, completed_runs - ?), status='running', completed_at=NULL WHERE optimization_id=?"
+    else:
+        sql = "UPDATE optimizations SET completed_runs = MAX(0, completed_runs - ?) WHERE optimization_id=?"
     with _connect() as conn:
-        conn.execute(
-            "UPDATE optimizations SET completed_runs = MAX(0, completed_runs - ?), status='running', completed_at=NULL "
-            "WHERE optimization_id=?",
-            (count, optimization_id),
-        )
+        conn.execute(sql, (count, optimization_id))
 
 
 def list_optimization_failed_runs(optimization_id: str) -> list[dict]:
