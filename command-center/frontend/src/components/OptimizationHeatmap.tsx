@@ -5,6 +5,7 @@ interface Props {
   runs: BacktestSummary[]
   paramX: string
   paramY: string
+  bestRunId?: string
 }
 
 function lerp(t: number, lo: number, hi: number) {
@@ -20,7 +21,7 @@ function scoreColor(score: number, min: number, max: number): string {
   return `rgb(${r},${g},${b})`
 }
 
-export function OptimizationHeatmap({ runs, paramX, paramY }: Props) {
+export function OptimizationHeatmap({ runs, paramX, paramY, bestRunId }: Props) {
   const navigate = useNavigate()
 
   const complete = runs.filter(r => r.status === 'complete' && r.params)
@@ -142,11 +143,13 @@ export function OptimizationHeatmap({ runs, paramX, paramY }: Props) {
                   rx={3}
                   fill={fill}
                   fillOpacity={pf != null ? 0.88 : 0.18}
+                  stroke={run?.run_id === bestRunId ? '#f59e0b' : 'none'}
+                  strokeWidth={run?.run_id === bestRunId ? 2 : 0}
                   className={run ? 'cursor-pointer' : ''}
                   onClick={() => run && navigate(`/backtests/runs/${run.run_id}`)}
                 >
                   {run && (
-                    <title>{`${paramX}=${x}, ${paramY}=${y}\nPF: ${pf?.toFixed(2) ?? '—'}\nP&L: ${run.net_pnl != null ? `$${run.net_pnl.toFixed(0)}` : '—'}`}</title>
+                    <title>{`${paramX}=${x}, ${paramY}=${y}\nPF: ${pf?.toFixed(2) ?? '—'}\nP&L: ${run.net_pnl != null ? `$${run.net_pnl.toFixed(0)}` : '—'}${run.run_id === bestRunId ? '\n★ Best combo' : ''}`}</title>
                   )}
                 </rect>
                 {pf != null && (
@@ -160,6 +163,18 @@ export function OptimizationHeatmap({ runs, paramX, paramY }: Props) {
                     pointerEvents="none"
                   >
                     {pf.toFixed(2)}
+                  </text>
+                )}
+                {run?.run_id === bestRunId && (
+                  <text
+                    x={cx + CELL_W - 5}
+                    y={cy + 11}
+                    textAnchor="end"
+                    fontSize={10}
+                    fill="#f59e0b"
+                    pointerEvents="none"
+                  >
+                    ★
                   </text>
                 )}
                 {pf == null && (

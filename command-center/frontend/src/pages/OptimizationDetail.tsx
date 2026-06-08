@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
+import { OptimizationHeatmap } from '@/components/OptimizationHeatmap'
 import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog } from '@/hooks/useLab'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
@@ -387,6 +388,106 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
   )
 }
 
+// ── Ranked bar chart ──────────────────────────────────────────────────────────
+
+function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
+  runs: BacktestSummary[]
+  sweptKeys: string[]
+  navigate: ReturnType<typeof useNavigate>
+  bestRunId?: string
+}) {
+  const sorted = [...runs].sort((a, b) => (b.profit_factor ?? -Infinity) - (a.profit_factor ?? -Infinity))
+  const maxPf = Math.max(...sorted.map(r => r.profit_factor ?? 0), 1)
+
+  function tierColor(run: BacktestSummary): string {
+    const tier = run.worthiness?.tier
+    if (tier === 'TIER_1_STRESS_TEST') return '#22c55e'
+    if (tier === 'TIER_2_OPTIMIZE')    return '#06b6d4'
+    return '#ef4444'
+  }
+
+  const BAR_H    = 34
+  const LABEL_W  = 160
+  const PF_W     = 44
+  const BAR_AREA = 320
+  const PAD_Y    = 4
+
+  const svgH = sorted.length * (BAR_H + PAD_Y) + PAD_Y
+  const svgW = LABEL_W + BAR_AREA + PF_W + 8
+
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 overflow-x-auto">
+      <svg width={svgW} height={svgH} className="font-mono">
+        {sorted.map((run, i) => {
+          const pf    = run.profit_factor ?? 0
+          const isBest = bestRunId ? run.run_id === bestRunId : i === 0
+          const barW  = Math.max(4, (pf / maxPf) * BAR_AREA)
+          const cy    = PAD_Y + i * (BAR_H + PAD_Y)
+          const label = sweptKeys.map(k => run.params?.[k] ?? '?').join(' / ')
+          const color = tierColor(run)
+
+          return (
+            <g
+              key={run.run_id}
+              className="cursor-pointer"
+              onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
+            >
+              {/* Hover bg */}
+              <rect x={0} y={cy} width={svgW} height={BAR_H} fill="transparent"
+                className="hover:fill-white/[0.03]" rx={4} />
+
+              {/* Label */}
+              <text
+                x={LABEL_W - 8}
+                y={cy + BAR_H / 2 + 4}
+                textAnchor="end"
+                fontSize={11}
+                fill={isBest ? '#f59e0b' : '#9ca3af'}
+                fontWeight={isBest ? '600' : '400'}
+              >
+                {isBest ? '★ ' : ''}{label}
+              </text>
+
+              {/* Bar track */}
+              <rect x={LABEL_W} y={cy + 9} width={BAR_AREA} height={16} rx={3} fill="#1f2937" />
+
+              {/* Bar fill */}
+              <rect
+                x={LABEL_W} y={cy + 9}
+                width={barW} height={16}
+                rx={3}
+                fill={color}
+                fillOpacity={isBest ? 0.9 : 0.55}
+              />
+
+              {/* Gold border for winner */}
+              {isBest && (
+                <rect x={LABEL_W} y={cy + 9} width={barW} height={16} rx={3}
+                  fill="none" stroke="#f59e0b" strokeWidth={1.5} />
+              )}
+
+              {/* PF value */}
+              <text
+                x={LABEL_W + BAR_AREA + 8}
+                y={cy + BAR_H / 2 + 4}
+                textAnchor="start"
+                fontSize={11}
+                fill={isBest ? '#f59e0b' : '#e5e7eb'}
+                fontWeight={isBest ? '700' : '400'}
+              >
+                {pf.toFixed(2)}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+      <p className="text-[11px] text-text-tertiary mt-2">
+        Sorted by profit factor. Bar color: <span className="text-pos-text">green</span> = Tier 1, <span className="text-accent">cyan</span> = Tier 2, <span className="text-neg-text">red</span> = Tier 3.
+      </p>
+    </div>
+  )
+}
+
 // ── Log terminal ─────────────────────────────────────────────────────────────
 
 function OptLogTerminal({ optimizationId, live }: { optimizationId: string; live: boolean }) {
@@ -434,6 +535,7 @@ export function OptimizationDetail() {
   const latestStress = bestRunStressTests?.find(s => !s.status.startsWith('failed') && s.status !== 'complete')
 
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [viewMode, setViewMode]           = useState<'table' | 'bars' | 'heatmap'>('table')
 
   const paramKeys = opt ? Object.keys(opt.param_grid) : []
   const sweptKeys = paramKeys.filter(k => {
@@ -562,7 +664,7 @@ export function OptimizationDetail() {
             </button>
           )}
 
-          {/* Results table — shows while running and when complete */}
+          {/* Results */}
           {completeRuns.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -571,20 +673,65 @@ export function OptimizationDetail() {
                     ? `Results so far — ${completeRuns.length} of ${opt.estimated_runs} complete`
                     : `Results — ${completeRuns.length} of ${opt.estimated_runs} combinations`}
                 </h2>
-                <button
-                  onClick={() => exportCsv(opt.runs, paramKeys)}
-                  className="flex items-center gap-2 px-3 py-[5px] rounded-md text-[11px] text-text-secondary hover:text-text-primary bg-bg-surface border border-border-subtle hover:border-border-default transition-colors"
-                >
-                  <Download size={12} />
-                  Export CSV
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* View toggle */}
+                  <div className="flex rounded-md border border-border-subtle overflow-hidden text-[11px]">
+                    {(['table', 'bars', 'heatmap'] as const).map(v => (
+                      <button
+                        key={v}
+                        onClick={() => setViewMode(v)}
+                        className={`px-3 py-[5px] transition-colors ${
+                          viewMode === v
+                            ? 'bg-accent/10 text-accent border-r border-border-subtle last:border-r-0'
+                            : 'text-text-tertiary hover:text-text-secondary bg-bg-surface border-r border-border-subtle last:border-r-0'
+                        }`}
+                      >
+                        {v === 'table' ? 'Table' : v === 'bars' ? 'Bar Chart' : 'Heatmap'}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => exportCsv(opt.runs, paramKeys)}
+                    className="flex items-center gap-2 px-3 py-[5px] rounded-md text-[11px] text-text-secondary hover:text-text-primary bg-bg-surface border border-border-subtle hover:border-border-default transition-colors"
+                  >
+                    <Download size={12} />
+                    Export CSV
+                  </button>
+                </div>
               </div>
-              <ResultsTable
-                runs={completeRuns}
-                sweptKeys={sweptKeys}
-                navigate={navigate}
-                bestRunId={opt.best_run_id ?? undefined}
-              />
+
+              {viewMode === 'table' && (
+                <ResultsTable
+                  runs={completeRuns}
+                  sweptKeys={sweptKeys}
+                  navigate={navigate}
+                  bestRunId={opt.best_run_id ?? undefined}
+                />
+              )}
+              {viewMode === 'bars' && (
+                <RankedBars
+                  runs={completeRuns}
+                  sweptKeys={sweptKeys}
+                  navigate={navigate}
+                  bestRunId={opt.best_run_id ?? undefined}
+                />
+              )}
+              {viewMode === 'heatmap' && (
+                sweptKeys.length === 2 ? (
+                  <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
+                    <OptimizationHeatmap
+                      runs={completeRuns}
+                      paramX={sweptKeys[0]}
+                      paramY={sweptKeys[1]}
+                      bestRunId={opt.best_run_id ?? undefined}
+                    />
+                  </div>
+                ) : (
+                  <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 text-[13px] text-text-tertiary text-center py-8">
+                    Heatmap requires exactly 2 swept parameters. This optimization has {sweptKeys.length}.
+                  </div>
+                )
+              )}
             </div>
           )}
 
