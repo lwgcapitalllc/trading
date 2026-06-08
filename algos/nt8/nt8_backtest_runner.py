@@ -342,28 +342,31 @@ def _set_backtest_type(sa, value: str):
     # Tier 1: select() — works from Backtest state
     try:
         ctrl.select(value)
+        print(f"  BacktestType set to '{value}' via select()")
         return
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  BacktestType select('{value}') failed ({e}) — trying send_keys")
 
     # Tier 2: send_keys — works from Optimize state where ctrl.* fails
-    # set_focus() via UIA still works even when other patterns are unavailable.
     idx = _BT_ORDER.index(value)
+    focus_ok = False
     try:
         ctrl.set_focus()
-    except Exception:
-        pass
+        focus_ok = True
+    except Exception as e:
+        print(f"  BacktestType set_focus() failed ({e}) — send_keys may hit wrong control")
+    print(f"  BacktestType send_keys: focus_ok={focus_ok}  idx={idx}  value='{value}'")
     time.sleep(0.2)
-    send_keys('{F4}')   # open dropdown
+    send_keys('{F4}')
     time.sleep(0.3)
-    send_keys('{HOME}') # jump to first item (Backtest)
+    send_keys('{HOME}')
     time.sleep(0.1)
     for _ in range(idx):
         send_keys('{DOWN}')
         time.sleep(0.08)
     send_keys('{ENTER}')
     time.sleep(0.3)
-    print(f"  BacktestType set via send_keys → '{value}'")
+    print(f"  BacktestType send_keys done — verify SA visually")
 
 
 def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
