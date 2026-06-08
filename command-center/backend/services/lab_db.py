@@ -1500,6 +1500,14 @@ def increment_optimization_completed(optimization_id: str) -> None:
         )
 
 
+def update_optimization_estimated_runs(optimization_id: str, n: int) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE optimizations SET estimated_runs = ? WHERE optimization_id = ?",
+            (n, optimization_id),
+        )
+
+
 def update_optimization_grid_sensitivity(optimization_id: str, score: float, summary: dict) -> None:
     with _connect() as conn:
         conn.execute(

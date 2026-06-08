@@ -310,6 +310,14 @@ function FailedRunsTable({ runs, sweptKeys, navigate, retryRun, jobBlocked }: {
 
 // ── Results table ─────────────────────────────────────────────────────────────
 
+function fmtMoney(val: number | null | undefined): string {
+  if (val == null) return '—'
+  const abs = Math.abs(val)
+  const sign = val >= 0 ? '+' : '-'
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(1)}k`
+  return `${sign}$${abs.toFixed(0)}`
+}
+
 function ResultsTable({ runs, sweptKeys, navigate, bestRunId, retryRun, jobBlocked }: {
   runs: BacktestSummary[]
   sweptKeys: string[]
@@ -324,55 +332,53 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, retryRun, jobBlock
       <table className="w-full text-[12px]">
         <thead>
           <tr className="border-b border-border-subtle bg-bg-sunken">
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium w-10">#</th>
+            <th className="px-3 py-2 w-6" />
             {sweptKeys.map(k => (
               <th key={k} className="text-left px-3 py-2 text-text-tertiary font-medium font-mono">{k}</th>
             ))}
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium">P&L</th>
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Max DD</th>
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium">PF</th>
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Trades</th>
+            <th className="text-right px-3 py-2 text-text-tertiary font-medium">P&L</th>
+            <th className="text-right px-3 py-2 text-text-tertiary font-medium">Max DD</th>
+            <th className="text-right px-3 py-2 text-text-tertiary font-medium">PF</th>
+            <th className="text-right px-3 py-2 text-text-tertiary font-medium">Trades</th>
             <th className="text-left px-3 py-2 text-text-tertiary font-medium">Score</th>
-            <th className="px-3 py-2 w-32" />
+            <th className="px-3 py-2 w-20" />
           </tr>
         </thead>
         <tbody className="divide-y divide-border-subtle">
           {sorted.map((run, i) => {
-            const isBest  = bestRunId ? run.run_id === bestRunId : i === 0
-            const pnlCls  = (run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'
+            const isBest = bestRunId ? run.run_id === bestRunId : i === 0
+            const pnlCls = (run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'
             return (
               <tr
                 key={run.run_id}
                 onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
                 className={`hover:bg-bg-hover cursor-pointer transition-colors ${isBest ? 'border-l-2 border-l-gold-text bg-gold-muted/10' : ''}`}
               >
-                <td className="px-3 py-[9px] tabular-nums">
-                  {isBest
-                    ? <span className="text-gold-text font-bold">★</span>
-                    : <span className="text-text-tertiary">{i + 1}</span>}
+                <td className="px-3 py-[9px] w-6">
+                  {isBest && <span className="text-gold-text font-bold">★</span>}
                 </td>
                 {sweptKeys.map(k => (
                   <td key={k} className={`px-3 py-[9px] font-mono font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}>
                     {String(run.params?.[k] ?? '—')}
                   </td>
                 ))}
-                <td className={`px-3 py-[9px] font-mono tabular-nums ${pnlCls}`}>
-                  {run.net_pnl != null ? `${run.net_pnl >= 0 ? '+' : ''}$${Math.abs(run.net_pnl).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
+                <td className={`px-3 py-[9px] font-mono tabular-nums text-right ${pnlCls}`}>
+                  {fmtMoney(run.net_pnl)}
                 </td>
-                <td className="px-3 py-[9px] font-mono tabular-nums text-neg-text">
-                  {run.max_drawdown != null ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
+                <td className="px-3 py-[9px] font-mono tabular-nums text-right text-neg-text">
+                  {run.max_drawdown != null ? `$${(run.max_drawdown / 1000).toFixed(1)}k` : '—'}
                 </td>
-                <td className="px-3 py-[9px] font-mono tabular-nums">
+                <td className="px-3 py-[9px] font-mono tabular-nums text-right">
                   {run.profit_factor?.toFixed(2) ?? '—'}
                 </td>
-                <td className="px-3 py-[9px] tabular-nums text-text-secondary">
+                <td className="px-3 py-[9px] tabular-nums text-right text-text-secondary">
                   {run.trade_count ?? '—'}
                 </td>
                 <td className="px-3 py-[9px]">
                   <WorthinessBadge worthiness={run.worthiness} />
                 </td>
-                <td className="px-3 py-[9px] text-right">
-                  <div className="flex items-center justify-end gap-2">
+                <td className="px-3 py-[9px] text-right" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-1.5">
                     <button
                       onClick={async (e) => {
                         e.stopPropagation()
@@ -380,13 +386,12 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, retryRun, jobBlock
                         navigate(`/backtests/runs/${data.run_id}`)
                       }}
                       disabled={retryRun.isPending || jobBlocked}
-                      title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : 'Run a full backtest on this combo'}
-                      className="flex items-center gap-[4px] px-2 py-[3px] rounded text-[11px] font-medium border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-40 transition-colors"
+                      title={jobBlocked ? 'Another NT8 job is running' : 'Run full backtest on this combo'}
+                      className="p-[5px] rounded border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-40 transition-colors"
                     >
-                      <Play size={9} className={retryRun.isPending && retryRun.variables === run.run_id ? 'animate-pulse' : ''} />
-                      {retryRun.isPending && retryRun.variables === run.run_id ? '…' : 'Backtest'}
+                      <Play size={10} className={retryRun.isPending && retryRun.variables === run.run_id ? 'animate-pulse' : ''} />
                     </button>
-                    <span className="text-[11px] text-accent">View →</span>
+                    <span className="text-[11px] text-accent whitespace-nowrap">View →</span>
                   </div>
                 </td>
               </tr>

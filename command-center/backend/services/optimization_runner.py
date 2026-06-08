@@ -560,6 +560,10 @@ async def run_native_optimization(optimization_id: str) -> None:
         lab_db.fail_optimization(optimization_id, "Native optimizer returned no combos")
         return
 
+    # NT8 drops zero-trade combos from its CSV. Update estimated_runs to the actual
+    # count so the progress bar reaches 100% instead of sitting at grid_size% complete.
+    lab_db.update_optimization_estimated_runs(optimization_id, len(combos))
+
     # Step 3A — grid sensitivity from the FULL combo set (before any cut).
     # Measures how isolated the winner is; no new NT8 backtests required.
     try:
