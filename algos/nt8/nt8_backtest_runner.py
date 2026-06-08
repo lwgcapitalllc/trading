@@ -1047,14 +1047,23 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     # Set each numeric fixed param via Optimize grid (lo;hi;step format).
     # NT8 requires min;max;increment even for fixed values (e.g. "2;2;1" not "2").
-    # Rebuild grid_map before each to get fresh element refs after WPF refresh.
+    # Build grid_map ONCE. Foundational params live in a collapsed category and
+    # are almost never in the grid — they fall through to the PDEX path immediately.
+    # Rebuilding per-param was O(N × full-UIA-scan) and the primary cause of the
+    # 5-10 minute config phase. If a WPF refresh invalidates an element ref we catch
+    # the exception and rebuild once for that param only.
     # FALLBACK: if a param is not found in the Optimize grid (e.g. "Foundational"
     # category is collapsed and its txtBox controls are absent from the UIA tree),
     # set it via the PDEX Edit control instead.  NT8 uses the PDEX value as the
     # fixed default for any param that does not have a range in the Optimize grid.
+    grid_map = _build_opt_grid_map(sa)
     for name, value in num_params.items():
-        grid_map = _build_opt_grid_map(sa)
-        ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+        try:
+            ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+        except Exception:
+            # Element ref went stale after a WPF refresh — rebuild once and retry.
+            grid_map = _build_opt_grid_map(sa)
+            ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
         if not ok:
             set_edit(sa, f"{pfx}_{name}", value, warn=False)
             print(f"  Fixed param '{name}' not in Optimize grid — set via PDEX = {value}")
