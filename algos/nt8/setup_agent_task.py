@@ -24,8 +24,9 @@ import json
 import os
 
 CFG_PATH = os.path.join(os.path.dirname(__file__), "backtest_config.json")
-AGENT_WIN = r"C:\trading\algos\nt8\nt8_agent.py"
-TASK_NAME = "LucidFlexAgent"
+AGENT_WIN  = r"C:\trading\algos\nt8\nt8_agent.py"
+PYTHON_WIN = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe"
+TASK_NAME  = "LucidFlexAgent"
 
 
 def ssh(host, cmd, check=True):
@@ -62,7 +63,7 @@ def main():
     print(f"\nRegistering Task Scheduler task '{TASK_NAME}'...")
     task_cmd = (
         f"schtasks /create /tn {TASK_NAME} "
-        f"/tr \"python {AGENT_WIN}\" "
+        f"/tr \"\\\"{PYTHON_WIN}\\\" {AGENT_WIN}\" "
         f"/sc onlogon /rl HIGHEST /f"
     )
     out = ssh(host, task_cmd, check=False)
