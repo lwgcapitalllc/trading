@@ -316,58 +316,77 @@ def set_combo(sa, auto_id, value):
 
 _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
 
-
-def _find_bt_item(sa, value: str, timeout=2.0):
-    """Poll for a BacktestType ListItem after the dropdown is expanded.
-
-    WPF popup items appear under top_level_parent(), not under the ComboBox itself.
-    Same pattern as _find_strategy_item.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            item = sa.top_level_parent().child_window(title=value, control_type="ListItem", found_index=0)
-            if item.exists(timeout=0):
-                return item
-        except Exception:
-            pass
-        try:
-            item = Desktop(backend="uia").window(title=value, control_type="ListItem", found_index=0)
-            if item.exists(timeout=0):
-                return item
-        except Exception:
-            pass
-        time.sleep(0.1)
-    return None
+# Known NT8 BacktestType order (verified via /combo-items diagnostic).
+_BT_ORDER = ["Backtest", "Optimize", "WalkForward", "WalkForwardAnchored", "MultiObjective", "AiGenerate"]
 
 
 def _set_backtest_type(sa, value: str):
     """Set NT8 SA BacktestType dropdown. Hard-fails (RuntimeError) on failure.
 
-    WPF popup items appear under top_level_parent(), not under the ComboBox subtree.
-    expand() opens the popup, then _find_bt_item() locates the item.
+    MUST be called BEFORE select_strategy(). NT8 rebuilds the property grid when
+    a strategy is selected, which removes items from the UIA tree. select() works
+    reliably when called before that rebuild.
+
+    Three-tier fallback:
+      1. ctrl.select()       — works when items are pre-loaded (before strategy switch)
+      2. expand + all-window search — searches every top-level window's descendants
+      3. keyboard F4+HOME+DOWN+ENTER — bypasses UIA popup traversal entirely
     """
+    if value not in _BT_ORDER:
+        raise RuntimeError(f"BacktestType '{value}' not in known order {_BT_ORDER}")
+
     ctrl = sa.child_window(auto_id=_BT_AID, control_type="ComboBox")
     if not ctrl.exists(timeout=2.0):
         raise RuntimeError("BacktestType combo not found — SA property grid not loaded")
 
+    # Tier 1: select() — works when items are pre-loaded in the UIA tree
+    try:
+        ctrl.select(value)
+        return
+    except Exception:
+        pass
+
+    # Tier 2: expand then search all top-level windows' descendants
     try:
         ctrl.expand()
     except Exception:
         ctrl.click_input()
-    time.sleep(0.4)
+    time.sleep(0.5)
 
-    item = _find_bt_item(sa, value)
-    if item is not None:
-        item.click_input()
-        time.sleep(0.2)
-        return
+    for win in Desktop(backend="uia").windows():
+        try:
+            for item in win.descendants(control_type="ListItem"):
+                try:
+                    if item.window_text() == value:
+                        item.click_input()
+                        time.sleep(0.2)
+                        return
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
+    # Close dropdown before keyboard attempt
     try:
         ctrl.type_keys('{ESC}')
     except Exception:
         pass
-    raise RuntimeError(f"BacktestType item '{value}' not found — popup opened but item not in UIA tree")
+    time.sleep(0.2)
+
+    # Tier 3: keyboard — F4 opens, HOME resets to first item, DOWN navigates, ENTER confirms
+    idx = _BT_ORDER.index(value)
+    ctrl.click_input()
+    time.sleep(0.2)
+    ctrl.type_keys('{F4}')
+    time.sleep(0.3)
+    ctrl.type_keys('{HOME}')
+    time.sleep(0.1)
+    for _ in range(idx):
+        ctrl.type_keys('{DOWN}')
+        time.sleep(0.05)
+    ctrl.type_keys('{ENTER}')
+    time.sleep(0.2)
+    print(f"  BacktestType set via keyboard navigation → '{value}'")
 
 
 def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
@@ -1008,18 +1027,17 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     pfx = f"{strategy}PropertyGridEditorPDEX"
 
-    # Select strategy first — property grid is not live until a strategy is loaded.
-    if not select_strategy(sa, strategy):
-        print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
-        sys.exit(1)
-    time.sleep(3.0)
-
-    # Must set Optimize mode after strategy load; hard-fails if it can't be set.
+    # Set BacktestType BEFORE select_strategy — same reasoning as configure_from_spec.
     try:
         _set_backtest_type(sa, "Optimize")
     except RuntimeError as e:
         print(f"  ERROR: {e}")
         sys.exit(1)
+
+    if not select_strategy(sa, strategy):
+        print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
+        sys.exit(1)
+    time.sleep(3.0)
 
     _pct(25, "Configuring parameters")
 
@@ -1236,18 +1254,17 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
     sa  = find_strategy_analyzer(app)
     _pct(20, "Selecting strategy")
 
-    # Select strategy first — property grid is not live until a strategy is loaded.
-    if not select_strategy(sa, strategy):
-        print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
-        sys.exit(1)
-    time.sleep(3.0)
-
-    # Must set WalkForward mode after strategy load; hard-fails if it can't be set.
+    # Set BacktestType BEFORE select_strategy — same reasoning as configure_from_spec.
     try:
         _set_backtest_type(sa, "WalkForward")
     except RuntimeError as e:
         print(f"  ERROR: {e}")
         sys.exit(1)
+
+    if not select_strategy(sa, strategy):
+        print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
+        sys.exit(1)
+    time.sleep(3.0)
 
     _pct(25, "Configuring walk-forward parameters")
 
@@ -1395,13 +1412,15 @@ def configure_from_spec(sa, spec: dict):
     strategy = spec["strategy_class"]
     pfx      = f"{strategy}PropertyGridEditorPDEX"
 
-    # Strategy switch first — property grid is not live until a strategy is loaded.
+    # Set BacktestType BEFORE select_strategy. NT8 rebuilds the property grid on
+    # strategy switch, which removes items from the UIA tree. select() only works
+    # reliably before that rebuild. NT8 preserves the BacktestType through strategy
+    # switches, so setting it first is safe.
+    _set_backtest_type(sa, "Backtest")
+
     if not select_strategy(sa, strategy):
         raise RuntimeError(f"Strategy '{strategy}' not found in NT8 — is it compiled?")
     time.sleep(2.0)
-
-    # Must set Backtest mode after strategy load; hard-fails if it can't be set.
-    _set_backtest_type(sa, "Backtest")
 
     set_instrument(sa, spec["instrument"])
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
