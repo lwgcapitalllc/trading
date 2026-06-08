@@ -1004,7 +1004,9 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     pfx = f"{strategy}PropertyGridEditorPDEX"
 
-    # Set BacktestType BEFORE select_strategy — same reasoning as configure_from_spec.
+    # Set BEFORE strategy selection (select() path works here).
+    # NT8 resets BacktestType to Backtest on every strategy switch, so we also
+    # set it AFTER the 3s grid-rebuild sleep (send_keys path handles that state).
     try:
         _set_backtest_type(sa, "Optimize")
     except RuntimeError as e:
@@ -1015,6 +1017,12 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
         sys.exit(1)
     time.sleep(3.0)
+
+    try:
+        _set_backtest_type(sa, "Optimize")
+    except RuntimeError as e:
+        print(f"  ERROR: {e}")
+        sys.exit(1)
 
     _pct(25, "Configuring parameters")
 
@@ -1231,7 +1239,7 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
     sa  = find_strategy_analyzer(app)
     _pct(20, "Selecting strategy")
 
-    # Set BacktestType BEFORE select_strategy — same reasoning as configure_from_spec.
+    # Set BEFORE and AFTER strategy selection — NT8 resets BacktestType on strategy switch.
     try:
         _set_backtest_type(sa, "WalkForward")
     except RuntimeError as e:
@@ -1242,6 +1250,12 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
         print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
         sys.exit(1)
     time.sleep(3.0)
+
+    try:
+        _set_backtest_type(sa, "WalkForward")
+    except RuntimeError as e:
+        print(f"  ERROR: {e}")
+        sys.exit(1)
 
     _pct(25, "Configuring walk-forward parameters")
 
