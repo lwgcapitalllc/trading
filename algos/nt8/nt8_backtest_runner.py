@@ -324,13 +324,13 @@ def _set_backtest_type(sa, value: str):
     """Set NT8 SA BacktestType dropdown. Hard-fails (RuntimeError) on failure.
 
     MUST be called BEFORE select_strategy(). NT8 rebuilds the property grid when
-    a strategy is selected, which removes items from the UIA tree. select() works
-    reliably when called before that rebuild.
+    a strategy is selected, removing items from the UIA tree.
 
-    Three-tier fallback:
-      1. ctrl.select()       — works when items are pre-loaded (before strategy switch)
-      2. expand + all-window search — searches every top-level window's descendants
-      3. keyboard F4+HOME+DOWN+ENTER — bypasses UIA popup traversal entirely
+    Two-tier approach (confirmed via /test-bt-switch diagnostic):
+      Tier 1  ctrl.select()    — works when transitioning from Backtest → Optimize.
+      Tier 2  send_keys        — works when transitioning from Optimize → Backtest.
+                                 All ctrl.* methods fail with COM -2147220992 once NT8
+                                 is in Optimize mode; send_keys bypasses UIA entirely.
     """
     if value not in _BT_ORDER:
         raise RuntimeError(f"BacktestType '{value}' not in known order {_BT_ORDER}")
@@ -339,54 +339,31 @@ def _set_backtest_type(sa, value: str):
     if not ctrl.exists(timeout=2.0):
         raise RuntimeError("BacktestType combo not found — SA property grid not loaded")
 
-    # Tier 1: select() — works when items are pre-loaded in the UIA tree
+    # Tier 1: select() — works from Backtest state
     try:
         ctrl.select(value)
         return
     except Exception:
         pass
 
-    # Tier 2: expand then search all top-level windows' descendants
+    # Tier 2: send_keys — works from Optimize state where ctrl.* fails
+    # set_focus() via UIA still works even when other patterns are unavailable.
+    idx = _BT_ORDER.index(value)
     try:
-        ctrl.expand()
-    except Exception:
-        ctrl.click_input()
-    time.sleep(0.5)
-
-    for win in Desktop(backend="uia").windows():
-        try:
-            for item in win.descendants(control_type="ListItem"):
-                try:
-                    if item.window_text() == value:
-                        item.click_input()
-                        time.sleep(0.2)
-                        return
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    # Close dropdown before keyboard attempt
-    try:
-        ctrl.type_keys('{ESC}')
+        ctrl.set_focus()
     except Exception:
         pass
     time.sleep(0.2)
-
-    # Tier 3: keyboard — F4 opens, HOME resets to first item, DOWN navigates, ENTER confirms
-    idx = _BT_ORDER.index(value)
-    ctrl.click_input()
-    time.sleep(0.2)
-    ctrl.type_keys('{F4}')
+    send_keys('{F4}')   # open dropdown
     time.sleep(0.3)
-    ctrl.type_keys('{HOME}')
+    send_keys('{HOME}') # jump to first item (Backtest)
     time.sleep(0.1)
     for _ in range(idx):
-        ctrl.type_keys('{DOWN}')
-        time.sleep(0.05)
-    ctrl.type_keys('{ENTER}')
-    time.sleep(0.2)
-    print(f"  BacktestType set via keyboard navigation → '{value}'")
+        send_keys('{DOWN}')
+        time.sleep(0.08)
+    send_keys('{ENTER}')
+    time.sleep(0.3)
+    print(f"  BacktestType set via send_keys → '{value}'")
 
 
 def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
