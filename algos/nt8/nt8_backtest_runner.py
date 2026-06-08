@@ -911,7 +911,7 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     """
     Native optimizer mode: run NT8's Strategy Analyzer in Optimize mode.
 
-    Switches the SA BacktestType to "Optimize", sets per-param Start;End;Step
+    Switches the SA BacktestType to "Optimization", sets per-param Start;End;Step
     ranges for Strategy Logic params, keeps Foundational params as fixed values,
     fires Run, waits for all combos to complete, then exports the results grid to CSV.
 
@@ -946,10 +946,10 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     pfx = f"{strategy}PropertyGridEditorPDEX"
 
-    # Switch to Optimize mode once and stay there.
+    # Switch to Optimization mode once and stay there.
     _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    if not set_combo(sa, _BT_AID, "Optimize"):
-        print(f"  WARNING: BacktestType Optimize set failed")
+    if not set_combo(sa, _BT_AID, "Optimization"):
+        print(f"  WARNING: BacktestType Optimization set failed")
     time.sleep(1.0)
 
     if not select_strategy(sa, strategy):
