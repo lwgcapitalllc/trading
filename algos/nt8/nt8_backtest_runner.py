@@ -297,15 +297,21 @@ def set_combo(sa, auto_id, value):
     except Exception:
         pass
     try:
-        # NT8 WPF ComboBoxes: click to open, find ListItem in the whole tree
+        # NT8 WPF ComboBoxes: dropdown popup is a child of the top-level NT8 window,
+        # not of the SA panel — must search top_level_parent(), not sa.
         ctrl.click_input()
         time.sleep(0.3)
-        item = sa.child_window(title=str(value), control_type="ListItem")
+        item = sa.top_level_parent().child_window(title=str(value), control_type="ListItem")
         item.click_input()
         return True
-    except Exception as e:
-        print(f"  WARNING: set_combo '{auto_id}' failed: {e}")
-        return False
+    except Exception:
+        pass
+    try:
+        ctrl.type_keys('{ESC}')  # close any open dropdown
+    except Exception:
+        pass
+    print(f"  WARNING: set_combo '{auto_id}' = '{value}' failed all attempts")
+    return False
 
 
 def _read_combo(sa, auto_id) -> str:
@@ -313,10 +319,15 @@ def _read_combo(sa, auto_id) -> str:
     ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
     if not ctrl.exists(timeout=1.0):
         return ""
-    try:
-        return ctrl.window_text()
-    except Exception:
-        return ""
+    # NT8 WPF combos: window_text() can return "" — try selected_item() first
+    for method in ("selected_item", "window_text", "get_value"):
+        try:
+            val = getattr(ctrl, method)()
+            if val:
+                return str(val)
+        except Exception:
+            pass
+    return ""
 
 
 def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
@@ -922,7 +933,7 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     """
     Native optimizer mode: run NT8's Strategy Analyzer in Optimize mode.
 
-    Switches the SA BacktestType to "Optimization", sets per-param Start;End;Step
+    Switches the SA BacktestType to "Optimize", sets per-param Start;End;Step
     ranges for Strategy Logic params, keeps Foundational params as fixed values,
     fires Run, waits for all combos to complete, then exports the results grid to CSV.
 
@@ -963,13 +974,13 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         sys.exit(1)
     time.sleep(3.0)
 
-    # Must set Optimization mode after strategy load; verify the value actually changed.
+    # Must set Optimize mode after strategy load; verify the value actually changed.
     _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    set_combo(sa, _BT_AID, "Optimization")
+    set_combo(sa, _BT_AID, "Optimize")
     time.sleep(0.3)
     actual = _read_combo(sa, _BT_AID)
-    if actual != "Optimization":
-        print(f"  ERROR: BacktestType is '{actual}', expected 'Optimization' — aborting")
+    if actual != "Optimize":
+        print(f"  ERROR: BacktestType is '{actual}', expected 'Optimize' — aborting")
         sys.exit(1)
     time.sleep(0.2)
 
@@ -1194,13 +1205,13 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
         sys.exit(1)
     time.sleep(3.0)
 
-    # Must set Walk Forward mode after strategy load; verify the value actually changed.
+    # Must set WalkForward mode after strategy load; verify the value actually changed.
     _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    set_combo(sa, _BT_AID, "Walk Forward")
+    set_combo(sa, _BT_AID, "WalkForward")
     time.sleep(0.3)
     actual = _read_combo(sa, _BT_AID)
-    if actual != "Walk Forward":
-        print(f"  ERROR: BacktestType is '{actual}', expected 'Walk Forward' — aborting")
+    if actual != "WalkForward":
+        print(f"  ERROR: BacktestType is '{actual}', expected 'WalkForward' — aborting")
         sys.exit(1)
     time.sleep(0.2)
 
