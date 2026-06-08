@@ -317,48 +317,57 @@ def set_combo(sa, auto_id, value):
 _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
 
 
-def _set_backtest_type(sa, value: str):
-    """
-    Set NT8 SA BacktestType dropdown. Hard-fails (RuntimeError) on failure.
+def _find_bt_item(sa, value: str, timeout=2.0):
+    """Poll for a BacktestType ListItem after the dropdown is expanded.
 
-    NT8 WPF combo items only appear in the UIA tree after the dropdown is expanded.
-    ctrl.select() fails because it searches items without expanding first.
-    The confirmed working method (from /combo-items agent diagnostic):
-      ctrl.expand() → ctrl.descendants(control_type="ListItem") → item.click_input()
+    WPF popup items appear under top_level_parent(), not under the ComboBox itself.
+    Same pattern as _find_strategy_item.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            item = sa.top_level_parent().child_window(title=value, control_type="ListItem", found_index=0)
+            if item.exists(timeout=0):
+                return item
+        except Exception:
+            pass
+        try:
+            item = Desktop(backend="uia").window(title=value, control_type="ListItem", found_index=0)
+            if item.exists(timeout=0):
+                return item
+        except Exception:
+            pass
+        time.sleep(0.1)
+    return None
+
+
+def _set_backtest_type(sa, value: str):
+    """Set NT8 SA BacktestType dropdown. Hard-fails (RuntimeError) on failure.
+
+    WPF popup items appear under top_level_parent(), not under the ComboBox subtree.
+    expand() opens the popup, then _find_bt_item() locates the item.
     """
     ctrl = sa.child_window(auto_id=_BT_AID, control_type="ComboBox")
     if not ctrl.exists(timeout=2.0):
-        raise RuntimeError(f"BacktestType combo not found — SA property grid not loaded")
+        raise RuntimeError("BacktestType combo not found — SA property grid not loaded")
 
     try:
         ctrl.expand()
-        time.sleep(0.4)
-        for item in ctrl.descendants(control_type="ListItem"):
-            if item.window_text() == value:
-                item.click_input()
-                time.sleep(0.2)
-                try:
-                    ctrl.collapse()
-                except Exception:
-                    pass
-                return
-        # Item not found in descendants — close and fail
-        try:
-            ctrl.collapse()
-        except Exception:
-            ctrl.type_keys('{ESC}')
-        raise RuntimeError(
-            f"BacktestType item '{value}' not found in dropdown — "
-            f"available: {[i.window_text() for i in ctrl.descendants(control_type='ListItem')]}"
-        )
-    except RuntimeError:
-        raise
-    except Exception as e:
-        try:
-            ctrl.type_keys('{ESC}')
-        except Exception:
-            pass
-        raise RuntimeError(f"Failed to set BacktestType='{value}': {e}")
+    except Exception:
+        ctrl.click_input()
+    time.sleep(0.4)
+
+    item = _find_bt_item(sa, value)
+    if item is not None:
+        item.click_input()
+        time.sleep(0.2)
+        return
+
+    try:
+        ctrl.type_keys('{ESC}')
+    except Exception:
+        pass
+    raise RuntimeError(f"BacktestType item '{value}' not found — popup opened but item not in UIA tree")
 
 
 def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
