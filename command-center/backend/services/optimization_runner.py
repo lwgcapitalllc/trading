@@ -570,14 +570,7 @@ async def run_native_optimization(optimization_id: str) -> None:
     except Exception as exc:
         log.warning("Grid sensitivity compute failed for opt %s: %s", optimization_id, exc)
 
-    # Step 2 — wide cut: keep top 25% by NT8's native rank (combos arrive sorted best-first).
-    # Avoids storing 75+ clearly-losing combos while still exposing more than the single #1.
-    total_combos = len(combos)
-    cutoff = max(1, total_combos // 4)
-    combos = combos[:cutoff]
-    log.info("Native opt %s: wide cut %d → %d combos", optimization_id, total_combos, cutoff)
-
-    # Step 2 — drawdown substitution for prop firm evaluation.
+    # Drawdown substitution for prop firm evaluation.
     # NT8 "Max. drawdown" is the cumulative peak-to-trough over the full backtest (~months).
     # Prop firm max_loss_eod is a per-DAY limit.  Comparing them directly marks every combo
     # as a drawdown breach.  The strategy's own MaxDailyLoss cap IS the correct per-period
