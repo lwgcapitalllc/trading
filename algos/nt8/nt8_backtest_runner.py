@@ -319,38 +319,46 @@ _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
 
 def _set_backtest_type(sa, value: str):
     """
-    Set NT8 SA BacktestType dropdown. Hard-fails (RuntimeError/sys.exit) on failure.
-    Uses only the two methods confirmed to work on NT8 WPF combos:
-      1. ctrl.select(value)           — direct UIA SelectionItemPattern
-      2. expand + top_level_parent click — for when (1) throws
-    Does NOT call the generic set_combo() which hangs searching sa subtree for ListItems.
+    Set NT8 SA BacktestType dropdown. Hard-fails (RuntimeError) on failure.
+
+    NT8 WPF combo items only appear in the UIA tree after the dropdown is expanded.
+    ctrl.select() fails because it searches items without expanding first.
+    The confirmed working method (from /combo-items agent diagnostic):
+      ctrl.expand() → ctrl.descendants(control_type="ListItem") → item.click_input()
     """
     ctrl = sa.child_window(auto_id=_BT_AID, control_type="ComboBox")
     if not ctrl.exists(timeout=2.0):
         raise RuntimeError(f"BacktestType combo not found — SA property grid not loaded")
 
-    # Attempt 1: direct UIA select (fastest, confirmed working in agent diagnostic)
     try:
-        ctrl.select(value)
-        time.sleep(0.2)
-        return
-    except Exception as e1:
-        pass
-
-    # Attempt 2: click to open dropdown, find ListItem in top-level NT8 window
-    try:
-        ctrl.click_input()
+        ctrl.expand()
         time.sleep(0.4)
-        item = sa.top_level_parent().child_window(title=value, control_type="ListItem")
-        item.click_input()
-        time.sleep(0.2)
-        return
-    except Exception as e2:
+        for item in ctrl.descendants(control_type="ListItem"):
+            if item.window_text() == value:
+                item.click_input()
+                time.sleep(0.2)
+                try:
+                    ctrl.collapse()
+                except Exception:
+                    pass
+                return
+        # Item not found in descendants — close and fail
+        try:
+            ctrl.collapse()
+        except Exception:
+            ctrl.type_keys('{ESC}')
+        raise RuntimeError(
+            f"BacktestType item '{value}' not found in dropdown — "
+            f"available: {[i.window_text() for i in ctrl.descendants(control_type='ListItem')]}"
+        )
+    except RuntimeError:
+        raise
+    except Exception as e:
         try:
             ctrl.type_keys('{ESC}')
         except Exception:
             pass
-        raise RuntimeError(f"Failed to set BacktestType='{value}' (select={e1}, click={e2})")
+        raise RuntimeError(f"Failed to set BacktestType='{value}': {e}")
 
 
 def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
