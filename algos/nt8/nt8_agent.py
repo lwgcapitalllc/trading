@@ -1128,6 +1128,8 @@ def test_bt_switch():
         log.append(msg)
 
     try:
+        from pywinauto import Desktop
+        from pywinauto.keyboard import send_keys
         dt   = Desktop(backend="uia")
         sa   = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
