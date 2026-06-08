@@ -77,7 +77,7 @@ frontend/src/
     ├── BacktestDetail.tsx    full run detail — charts, KPIs, per-firm eval cards, verdict, worthiness badge, OptimizeButton
     ├── StrategyDetail.tsx    strategy metadata + all runs + runner badge
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
-    ├── OptimizationDetail.tsx  optimizer results — heatmap (2D) or top-10 table (3+D), best param callout, CSV export
+    ├── OptimizationDetail.tsx  optimizer results — 3-view toggle (Table / Bar Chart / Heatmap); `RankedBars` inline component; best param callout, CSV export
     ├── StressTests.tsx       stress test list — grade badge, strategy/instrument/status columns, prob breach/pass, created; all left-aligned
     ├── StressTestDetail.tsx  stress test detail — grade column card (coloured strip + name + ruleset chip + reasons), source backtest card (links back to run via useBacktestRun), MetricCard MC stats with pos/neg colouring, InfoTip tooltips, prob bars, fan chart, drawdown dist, walk-forward, sensitivity
     ├── Queue.tsx             job queue list — position, job label (type + id prefix), status pill, queued/started/finished timestamps, trash-can delete for pending items
@@ -339,7 +339,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Backtests lab | ✅ Live | Strategies, Runs, Rulesets, Sweeps, Optimizations tabs; run modal; BacktestDetail with charts + per-ruleset eval cards |
 | Worthiness Badges | ✅ Live | Tier 1/2/3 pill on every completed run in Runs table and BacktestDetail |
 | Sweep Detail | ✅ Live | ProgressCard (segmented bar, elapsed timer), ResultsTable, FailedRunsTable, cancel + retry-all + per-row retry |
-| Optimization Detail | ✅ Live | Heatmap (2D) or top-10 table (3+D), best param callout, CSV export, per-row retry |
+| Optimization Detail | ✅ Live | 3-view toggle (Table / Bar Chart / Heatmap). Table: ranked table, always available. Bar Chart: sorted by PF desc, colored by tier, winner ★. Heatmap: 2-param only, message otherwise. Best param callout, CSV export. "Full Backtest" button on BacktestDetail (not inline in table). |
 | Optimize Button | ✅ Live | Tier-aware: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning modal with instrument routing |
 | Tier 3 Warning Modal | ✅ Live | Past results per instrument; sweep of untested instruments; `withContractMonth()` stamps contract month; passes `source_run_id` |
 | Runner Badge | ✅ Live | `RunnerBadge` on Strategies tab, StrategyDetail, Runs tab — NT8 (cyan) or MT5 (purple) |
@@ -367,6 +367,8 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 ## Key UI decisions
 
 **Platform-based job lock** — `GET /backtests/running-job` returns `{ nt8: RunningJobInfo, mt5: RunningJobInfo }` (polled at 5s via `useRunningVpsJob()`). NT8 and MT5 lock independently. `jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running`. Lock surfaces: `RunBacktestModal`, `OptimizeButton`, `Tier3WarningModal`, `RunRow` retry, `BacktestDetail` retry/rerun. `Strategies.tsx` calls `useRunningVpsJob()` at page level (result unused) to keep the cache warm — without this, the first modal render sees `runningJob = undefined` and treats the lock as clear. All six job-lifecycle mutations invalidate `['lab', 'running-job']` on success. `BacktestSummary.runner` must be mapped in `_row_to_summary` or `run.runner` is undefined on the frontend.
+
+**Tab-specific active dots** — each Backtests tab has its own pulsing dot logic (not "any job running"): `runsActive = allRuns?.some(r => !r.sweep_id && r.status === 'running')` (includes opt-combo full backtests while running). `sweepsActive = allSweeps?.some(s => s.status === 'running')`. `optsActive = allOpts?.some(o => o.status === 'running')` — only fires when an actual optimization grid is running, NOT during a single-combo full backtest (`retry_single_optimization_run` uses `set_running=False` so the optimization stays `complete`). Running opt-combo full backtests appear in the Runs tab filter (`!r.optimization_id || r.status === 'running'`) with their OPT chip visible, then disappear once complete.
 
 **Runs table columns** — "Score" = WorthinessBadge (Tier 1/2/3, the quality verdict). "Challenge" = firm name chip(s) showing which challenges the run was evaluated against. These are intentionally separated: score = how good, challenge = under what rules. Per-firm PASS/WARN/DISCARD detail lives only on BacktestDetail.
 
