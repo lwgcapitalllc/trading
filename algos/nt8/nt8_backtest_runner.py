@@ -308,6 +308,17 @@ def set_combo(sa, auto_id, value):
         return False
 
 
+def _read_combo(sa, auto_id) -> str:
+    """Return the current selected text of a ComboBox, or '' if not found."""
+    ctrl = sa.child_window(auto_id=auto_id, control_type="ComboBox")
+    if not ctrl.exists(timeout=1.0):
+        return ""
+    try:
+        return ctrl.window_text()
+    except Exception:
+        return ""
+
+
 def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
     """
     Wait for the SA run to finish.
@@ -952,12 +963,15 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         sys.exit(1)
     time.sleep(3.0)
 
-    # Must set Optimization mode after strategy load; abort if it fails.
+    # Must set Optimization mode after strategy load; verify the value actually changed.
     _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    if not set_combo(sa, _BT_AID, "Optimization"):
-        print("  ERROR: Failed to set BacktestType='Optimization' — SA property grid not responding")
+    set_combo(sa, _BT_AID, "Optimization")
+    time.sleep(0.3)
+    actual = _read_combo(sa, _BT_AID)
+    if actual != "Optimization":
+        print(f"  ERROR: BacktestType is '{actual}', expected 'Optimization' — aborting")
         sys.exit(1)
-    time.sleep(0.5)
+    time.sleep(0.2)
 
     _pct(25, "Configuring parameters")
 
@@ -1180,12 +1194,15 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
         sys.exit(1)
     time.sleep(3.0)
 
-    # Must set Walk Forward mode after strategy load; abort if it fails.
+    # Must set Walk Forward mode after strategy load; verify the value actually changed.
     _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    if not set_combo(sa, _BT_AID, "Walk Forward"):
-        print("  ERROR: Failed to set BacktestType='Walk Forward' — SA property grid not responding")
+    set_combo(sa, _BT_AID, "Walk Forward")
+    time.sleep(0.3)
+    actual = _read_combo(sa, _BT_AID)
+    if actual != "Walk Forward":
+        print(f"  ERROR: BacktestType is '{actual}', expected 'Walk Forward' — aborting")
         sys.exit(1)
-    time.sleep(0.5)
+    time.sleep(0.2)
 
     _pct(25, "Configuring walk-forward parameters")
 
@@ -1338,10 +1355,13 @@ def configure_from_spec(sa, spec: dict):
         raise RuntimeError(f"Strategy '{strategy}' not found in NT8 — is it compiled?")
     time.sleep(2.0)
 
-    # Must set Backtest mode after strategy load; property grid is now live.
+    # Must set Backtest mode after strategy load; verify the value actually changed.
     _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    if not set_combo(sa, _BT_AID, "Backtest"):
-        raise RuntimeError("Failed to set BacktestType='Backtest' — SA property grid not responding")
+    set_combo(sa, _BT_AID, "Backtest")
+    time.sleep(0.3)
+    actual = _read_combo(sa, _BT_AID)
+    if actual != "Backtest":
+        raise RuntimeError(f"BacktestType is '{actual}', expected 'Backtest' — aborting")
 
     set_instrument(sa, spec["instrument"])
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
