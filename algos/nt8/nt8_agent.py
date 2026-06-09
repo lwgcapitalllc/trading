@@ -21,7 +21,7 @@ Legacy endpoints (kept for backward compat):
     GET  /results                   -- reads nt8_results.csv
     POST /run-backtests             -- returns 410 Gone
 
-Startup — agent is managed automatically via the \NT8Agent scheduled task:
+Startup — agent is managed automatically via the NT8Agent scheduled task:
     ssh forexvps "schtasks /run /tn NT8Agent"   # start/restart from Mac
 
 The task runs in the active RDP session (interactive desktop), which is required
