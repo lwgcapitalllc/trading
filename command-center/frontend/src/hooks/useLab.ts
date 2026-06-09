@@ -30,6 +30,15 @@ export function useStrategy(strategyId: string | null) {
   })
 }
 
+export function useParamTypes(strategyId: string | null) {
+  return useQuery({
+    queryKey: ['lab', 'strategies', strategyId, 'param-types'],
+    queryFn: () => api.get<Record<string, 'int' | 'double'>>(`/strategies/${strategyId}/param-types`),
+    enabled: !!strategyId,
+    staleTime: Infinity,
+  })
+}
+
 export function useUpdateStrategyDescription() {
   const qc = useQueryClient()
   return useMutation({

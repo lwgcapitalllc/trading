@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Sliders, Plus, Minus, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
-import { useTriggerOptimization, useFirms, useRunningVpsJob, useOptimizations } from '@/hooks/useLab'
+import { useTriggerOptimization, useFirms, useRunningVpsJob, useOptimizations, useParamTypes } from '@/hooks/useLab'
 import type { BacktestDetail, ParamAxisSpec } from '@/types'
 
 interface Props {
@@ -52,6 +52,7 @@ function OptimizerModal({
   const { data: firms } = useFirms()
   const triggerOpt    = useTriggerOptimization()
   const { data: runningJob } = useRunningVpsJob()
+  const { data: paramTypes } = useParamTypes(run.strategy_id)
   const isMt5 = run.runner === 'mt5'
   const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
 
@@ -81,6 +82,15 @@ function OptimizerModal({
   const [axes, setAxes] = useState<Record<string, AxisEdit>>(initialAxes)
 
   const rangeParamCount = Object.values(axes).filter(a => a.mode === 'range').length
+
+  const intErrors: Record<string, string> = {}
+  for (const [name, ax] of Object.entries(axes)) {
+    if (ax.mode !== 'range' || paramTypes?.[name] !== 'int') continue
+    const lo = parseFloat(ax.min), hi = parseFloat(ax.max), st = parseFloat(ax.step)
+    if (isNaN(lo) || isNaN(hi) || isNaN(st) || st <= 0) continue
+    const hasDecimal = [lo, hi, st].some(v => !Number.isInteger(v))
+    if (hasDecimal) intErrors[name] = 'Must be whole numbers — this param is an integer in the strategy'
+  }
 
   const toggleAxis = (name: string) => {
     const cur = axes[name]
@@ -116,6 +126,10 @@ function OptimizerModal({
 
     if (!Object.keys(param_grid).length) {
       toast.error('Expand at least one parameter into a range')
+      return
+    }
+    if (Object.keys(intErrors).length) {
+      toast.error('Fix whole-number errors before running')
       return
     }
 
@@ -253,24 +267,27 @@ function OptimizerModal({
                             value={ax.min}
                             onChange={e => updateAxis(name, 'min', e.target.value)}
                             placeholder="min"
-                            className="w-20 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                            className={`w-20 bg-bg-base border rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent ${intErrors[name] ? 'border-neg-text/60' : 'border-border-subtle'}`}
                           />
                           <span className="text-text-tertiary text-[11px]">to</span>
                           <input
                             value={ax.max}
                             onChange={e => updateAxis(name, 'max', e.target.value)}
                             placeholder="max"
-                            className="w-20 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                            className={`w-20 bg-bg-base border rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent ${intErrors[name] ? 'border-neg-text/60' : 'border-border-subtle'}`}
                           />
                           <span className="text-text-tertiary text-[11px]">every</span>
                           <input
                             value={ax.step}
                             onChange={e => updateAxis(name, 'step', e.target.value)}
                             placeholder="step"
-                            className="w-16 bg-bg-base border border-border-subtle rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                            className={`w-16 bg-bg-base border rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent ${intErrors[name] ? 'border-neg-text/60' : 'border-border-subtle'}`}
                           />
                         </div>
-                        <RangePreview min={ax.min} max={ax.max} step={ax.step} />
+                        {intErrors[name]
+                          ? <span className="text-[11px] text-neg-text">{intErrors[name]}</span>
+                          : <RangePreview min={ax.min} max={ax.max} step={ax.step} />
+                        }
                       </div>
                     ) : (
                       <span className="text-[12px] font-mono text-text-primary flex-1">{String(val)}</span>
@@ -298,7 +315,7 @@ function OptimizerModal({
           </button>
           <button
             onClick={handleGo}
-            disabled={triggerOpt.isPending || rangeParamCount === 0 || jobBlocked}
+            disabled={triggerOpt.isPending || rangeParamCount === 0 || jobBlocked || Object.keys(intErrors).length > 0}
             className="px-5 py-[7px] rounded-md text-[13px] font-semibold bg-accent text-bg-base hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             {triggerOpt.isPending ? 'Starting…' : 'Go'}

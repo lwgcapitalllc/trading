@@ -32,6 +32,32 @@ def scan_strategies():
     return strategy_scanner.scan_strategies()
 
 
+@router.get("/{strategy_id}/param-types")
+def get_param_types(strategy_id: str):
+    """Return {paramName: 'int'|'double'} parsed from the strategy source file."""
+    import re
+    row = lab_db.get_strategy(strategy_id)
+    if not row:
+        raise HTTPException(404, f"Strategy '{strategy_id}' not found")
+    source_path = (row.get("source_path") or "") if isinstance(row, dict) else (getattr(row, "source_path", "") or "")
+    if not source_path:
+        return {}
+    full_path = Path(cfg.MONOREPO_ROOT) / source_path
+    if not full_path.exists():
+        return {}
+    content = full_path.read_text(encoding="utf-8", errors="ignore")
+    # Match: public int|double|float PropertyName { get; set; }
+    pattern = re.compile(r'\bpublic\s+(int|double|float)\s+(\w+)\s*\{')
+    # Also match MQL5 style: input int|double Name
+    pattern_mql = re.compile(r'\binput\s+(int|double|float)\s+(\w+)')
+    result = {}
+    for m in pattern.finditer(content):
+        result[m.group(2)] = "int" if m.group(1) == "int" else "double"
+    for m in pattern_mql.finditer(content):
+        result[m.group(2)] = "int" if m.group(1) == "int" else "double"
+    return result
+
+
 @router.get("/{strategy_id}", response_model=Strategy)
 def get_strategy(strategy_id: str):
     row = lab_db.get_strategy(strategy_id)
