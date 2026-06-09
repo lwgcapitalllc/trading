@@ -316,11 +316,13 @@ def _normalize_mt5_status(raw: dict) -> dict:
     pct = 100 if status == "complete" else max(5, min(99, raw.get("pct") or 5))
     message = raw.get("message") or (raw.get("error") or "") or ("MT5 optimization running…" if running else "")
     return {
-        "status":     status,
-        "pct":        pct,
-        "message":    message,
-        "updated_at": str(time.time()),
-        "error":      raw.get("error"),
+        "status":          status,
+        "pct":             pct,
+        "message":         message,
+        "completed_count": raw.get("completed_count"),
+        "total_count":     raw.get("total_count"),
+        "updated_at":      str(time.time()),
+        "error":           raw.get("error"),
     }
 
 

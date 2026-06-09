@@ -539,7 +539,8 @@ async def run_native_optimization(optimization_id: str) -> None:
         return
 
     # Poll the single VPS job until it completes or stalls
-    started_at = time.time()
+    started_at   = time.time()
+    last_written = -1  # track last completed_count written to DB to avoid redundant writes
     while True:
         await asyncio.sleep(_POLL_INTERVAL)
 
@@ -552,6 +553,12 @@ async def run_native_optimization(optimization_id: str) -> None:
             continue
 
         status = status_data.get("status", "running")
+
+        # Live completed_runs update for sequential runners (MT5).
+        completed_count = status_data.get("completed_count")
+        if completed_count is not None and completed_count != last_written:
+            lab_db.set_optimization_completed_runs(optimization_id, completed_count)
+            last_written = completed_count
 
         if status == "complete":
             break

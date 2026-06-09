@@ -1243,8 +1243,10 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
         (tester_dir / set_filename).unlink(missing_ok=True)
 
         with _lock:
-            _jobs[job_id]["pct"]     = int((i + 1) / len(combos) * 100)
-            _jobs[job_id]["message"] = f"Combo {i+1}/{len(combos)}"
+            _jobs[job_id]["pct"]             = int((i + 1) / len(combos) * 100)
+            _jobs[job_id]["message"]         = f"Combo {i+1}/{len(combos)}"
+            _jobs[job_id]["completed_count"] = i + 1
+            _jobs[job_id]["total_count"]     = len(combos)
 
     _kill_by_path(tester_exe)
 

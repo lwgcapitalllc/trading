@@ -430,7 +430,6 @@ function RunsTab() {
                 const childOpts    = optsBySourceRun.get(run.run_id) ?? []
                 const hasChildren  = childSweeps.length > 0 || childOpts.length > 0
                 const isCollapsed  = collapsedRuns.has(run.run_id)
-                const hasRunningOpt = childOpts.some(o => o.status === 'running')
                 return (
                   <Fragment key={run.run_id}>
                     <RunRow
@@ -442,7 +441,6 @@ function RunsTab() {
                       isCollapsed={isCollapsed}
                       onToggleCollapse={() => toggleCollapse(run.run_id)}
                       hasRunningStress={stressRunIds.has(run.run_id)}
-                      hasRunningOpt={hasRunningOpt}
                     />
                     {!isCollapsed && childSweeps.map(sw => (
                       <SweepNestRow
@@ -517,6 +515,9 @@ function OptimizationNestRow({
           <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
           <span className="text-[11px] font-semibold text-gold-text">Optimization</span>
           <span className="text-[10px] text-text-tertiary">{opt.completed_runs}/{opt.estimated_runs} runs</span>
+          {opt.status === 'running' && (
+            <span className="w-[6px] h-[6px] rounded-full bg-gold-text animate-pulse flex-shrink-0" title="Optimization in progress" />
+          )}
           {hasRunningStress && (
             <span title="Stress test in progress"
               className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent">
@@ -582,7 +583,7 @@ function SweepNestRow({
 // ── Run row ───────────────────────────────────────────────────────────────────
 
 function RunRow({
-  run, selected, onSelect, onClick, hasChildren, isCollapsed, onToggleCollapse, hasRunningStress, hasRunningOpt,
+  run, selected, onSelect, onClick, hasChildren, isCollapsed, onToggleCollapse, hasRunningStress,
 }: {
   run: BacktestSummary
   selected: boolean
@@ -592,7 +593,6 @@ function RunRow({
   isCollapsed?: boolean
   onToggleCollapse?: () => void
   hasRunningStress?: boolean
-  hasRunningOpt?: boolean
 }) {
   const navigate = useNavigate()
   const retry = useRetryBacktest()
@@ -649,15 +649,6 @@ function RunRow({
             >
               <Activity size={8} className="animate-pulse" />
               STRESS TESTING
-            </span>
-          )}
-          {hasRunningOpt && (
-            <span
-              title="Optimization in progress"
-              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-gold-muted text-gold-text border border-gold-text/20"
-            >
-              <Sliders size={8} className="animate-pulse" />
-              OPTIMIZING
             </span>
           )}
         </div>

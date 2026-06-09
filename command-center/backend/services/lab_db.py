@@ -1508,6 +1508,14 @@ def update_optimization_estimated_runs(optimization_id: str, n: int) -> None:
         )
 
 
+def set_optimization_completed_runs(optimization_id: str, completed: int) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE optimizations SET completed_runs = ? WHERE optimization_id = ?",
+            (completed, optimization_id),
+        )
+
+
 def update_optimization_grid_sensitivity(optimization_id: str, score: float, summary: dict) -> None:
     with _connect() as conn:
         conn.execute(
