@@ -1993,24 +1993,26 @@ def test_opt_pass():
     set_path.unlink(missing_ok=True)
     ini_path.unlink(missing_ok=True)
 
-    if output_csv.exists():
-        content = output_csv.read_text(encoding="utf-8", errors="replace")
-        rows = [l for l in content.splitlines() if l.strip()]
-        _alog(f"test/opt-pass: SUCCESS — {len(rows)-1} data rows in CSV")
-        return jsonify({
-            "result": "success",
-            "csv_found": True,
-            "exit_code": proc.returncode,
-            "rows": len(rows) - 1,
-            "content": content,
-        }), 200
-    else:
-        _alog(f"test/opt-pass: FAIL — CSV not created, exit_code={proc.returncode}")
-        return jsonify({
-            "result": "fail",
-            "csv_found": False,
-            "exit_code": proc.returncode,
-        }), 200
+    files_dir = data_dir / "MQL5" / "Files"
+    direct_csv = files_dir / "opt_test_direct.csv"
+    frames_csv = files_dir / "opt_test_frames.csv"
+
+    def _read(p: Path) -> tuple[bool, int, str]:
+        if not p.exists():
+            return False, 0, ""
+        c = p.read_text(encoding="utf-8", errors="replace")
+        rows = [l for l in c.splitlines() if l.strip()]
+        return True, max(0, len(rows) - 1), c
+
+    d_found, d_rows, d_content = _read(direct_csv)
+    f_found, f_rows, f_content = _read(frames_csv)
+
+    _alog(f"test/opt-pass: direct={d_found}/{d_rows}rows frames={f_found}/{f_rows}rows exit={proc.returncode}")
+    return jsonify({
+        "exit_code": proc.returncode,
+        "direct": {"found": d_found, "rows": d_rows, "content": d_content},
+        "frames": {"found": f_found, "rows": f_rows, "content": f_content},
+    }), 200
 
 
 # ── Startup ────────────────────────────────────────────────────────────────────
