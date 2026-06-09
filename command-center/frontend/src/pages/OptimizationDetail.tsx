@@ -139,37 +139,53 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
             {isRunning && <span className="text-[11px] text-text-tertiary">· auto-refreshing</span>}
           </div>
 
-          {/* Segmented progress bar */}
-          <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2 flex">
-            <div
-              className="h-full bg-accent transition-all duration-700"
-              style={{ width: `${completePct}%` }}
-            />
-            <div
-              className="h-full bg-neg-text/70 transition-all duration-700"
-              style={{ width: `${failedPct}%` }}
-            />
-          </div>
+          {/* Progress bar — pulsing for native while running (results arrive all at once) */}
+          {isRunning && overallPct === 0 ? (
+            <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2">
+              <div className="h-full w-1/3 bg-accent/60 rounded-full animate-pulse" />
+            </div>
+          ) : (
+            <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2 flex">
+              <div
+                className="h-full bg-accent transition-all duration-700"
+                style={{ width: `${completePct}%` }}
+              />
+              <div
+                className="h-full bg-neg-text/70 transition-all duration-700"
+                style={{ width: `${failedPct}%` }}
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4 text-[12px]">
-              <span className="text-text-secondary">
-                <span className="font-mono font-semibold text-accent">{completeCount}</span>
-                <span className="text-text-tertiary"> passed</span>
-              </span>
-              {failedCount > 0 && (
-                <span className="text-text-secondary">
-                  <span className="font-mono font-semibold text-neg-text">{failedCount}</span>
-                  <span className="text-text-tertiary"> failed</span>
+              {isRunning && overallPct === 0 ? (
+                <span className="text-text-tertiary">
+                  Running {total} combination{total !== 1 ? 's' : ''}…
                 </span>
+              ) : (
+                <>
+                  <span className="text-text-secondary">
+                    <span className="font-mono font-semibold text-accent">{completeCount}</span>
+                    <span className="text-text-tertiary"> passed</span>
+                  </span>
+                  {failedCount > 0 && (
+                    <span className="text-text-secondary">
+                      <span className="font-mono font-semibold text-neg-text">{failedCount}</span>
+                      <span className="text-text-tertiary"> failed</span>
+                    </span>
+                  )}
+                  <span className="text-text-tertiary">
+                    of {total} combinations
+                  </span>
+                </>
               )}
-              <span className="text-text-tertiary">
-                of {total} combinations
-              </span>
             </div>
-            <span className="text-[12px] font-mono font-semibold tabular-nums text-text-secondary">
-              {overallPct}%
-            </span>
+            {!(isRunning && overallPct === 0) && (
+              <span className="text-[12px] font-mono font-semibold tabular-nums text-text-secondary">
+                {overallPct}%
+              </span>
+            )}
           </div>
 
           {/* Inline failure warning while running */}
@@ -178,15 +194,19 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
               <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
               <p className="text-[12px] text-warn-text">
                 {failedCount} run{failedCount !== 1 ? 's are' : ' is'} failing.
-                Check that NT8 is open with the Strategy Analyzer window active on the VPS.
-                You can cancel now and retry once NT8 is ready.
+                {opt.runner === 'mt5'
+                  ? ' Check that the MT5 agent is running and the MT5_Lab terminal is available on the VPS.'
+                  : ' Check that NT8 is open with the Strategy Analyzer window active on the VPS.'}
+                {' '}You can cancel now and retry once the platform is ready.
               </p>
             </div>
           )}
 
           {!failingBadly && isRunning && (
             <p className="text-[11px] text-text-tertiary mt-3 pt-3 border-t border-border-subtle">
-              NT8 is running all combinations in one job using its native optimizer. Results appear here when the full grid completes.
+              {opt.runner === 'mt5'
+                ? 'MT5 Strategy Tester is running all combinations. Results appear here when the full grid completes.'
+                : 'NT8 is running all combinations in one job using its native optimizer. Results appear here when the full grid completes.'}
             </p>
           )}
         </div>

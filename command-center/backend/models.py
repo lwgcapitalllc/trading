@@ -662,6 +662,7 @@ class OptimizationDetail(BaseModel):
     completed_runs: int
     best_run_id: Optional[str] = None
     regime_filter: Optional[str] = None
+    runner: str = "ninjatrader"
     created_at: datetime
     completed_at: Optional[datetime] = None
     runs: list[BacktestSummary] = []

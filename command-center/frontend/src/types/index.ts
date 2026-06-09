@@ -659,6 +659,7 @@ export interface OptimizationSummary {
 export interface OptimizationDetail extends OptimizationSummary {
   strategy_name: string
   param_grid: Record<string, ParamAxisSpec>
+  runner: string
   runs: BacktestSummary[]
 }
 

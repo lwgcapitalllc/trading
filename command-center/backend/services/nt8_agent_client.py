@@ -203,7 +203,7 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
         "timeframe":      timeframe,
         "from_date":      spec["start_date"],
         "to_date":        spec["end_date"],
-        "model":          0,
+        "model":          1,  # OHLC on M1 — same results as Model=0 for bar-close strategies, ~10x faster
         "deposit":        deposit,
         "currency":       "USD",
         "leverage":       100,

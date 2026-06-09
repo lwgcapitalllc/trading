@@ -116,6 +116,7 @@ def get_optimization(optimization_id: str) -> OptimizationDetail:
         completed_runs=opt["completed_runs"],
         best_run_id=opt.get("best_run_id"),
         regime_filter=opt.get("regime_filter"),
+        runner=(strategy or {}).get("runner", "ninjatrader"),
         created_at=opt["created_at"],
         completed_at=opt.get("completed_at"),
         runs=summaries,
@@ -167,8 +168,10 @@ def get_optimization_log(optimization_id: str, lines: int = 300) -> str:
     opt = lab_db.get_optimization(optimization_id)
     if not opt:
         raise HTTPException(404, "Optimization not found")
+    strategy = lab_db.get_strategy(opt["strategy_id"])
+    runner = (strategy or {}).get("runner", "ninjatrader")
     job_id = f"nopt_{optimization_id}"
-    return nt8_agent_client.job_log(job_id, lines=lines)
+    return nt8_agent_client.job_log(job_id, lines=lines, runner=runner)
 
 
 def _row_to_opt_summary(row: dict) -> OptimizationSummary:
