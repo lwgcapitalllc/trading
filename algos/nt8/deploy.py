@@ -12,7 +12,7 @@ import os
 import time
 
 CFG_PATH = os.path.join(os.path.dirname(__file__), "backtest_config.json")
-STRATEGY_FILES = ["ORB_LucidFlex.cs", "VWAP_MR_LucidFlex.cs", "Momentum_LucidFlex.cs"]
+STRATEGY_FILES = ["ORB.cs", "VWAP_MR.cs", "Momentum.cs"]
 
 
 def load_config():
@@ -114,7 +114,7 @@ def clear_results(cfg):
     user    = cfg["vps_user"]
     path    = f"/c/Users/{user}/{cfg['results_remote_path']}"
     print("Clearing previous results file on VPS (if any)...")
-    ssh(cfg, f'del /f /q "C:\\Users\\{user}\\Documents\\NinjaTrader 8\\lucid_flex_results.csv"',
+    ssh(cfg, f'del /f /q "C:\\Users\\{user}\\Documents\\NinjaTrader 8\\nt8_results.csv"',
         check=False)
     print("  Done.")
 

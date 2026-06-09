@@ -15,7 +15,7 @@ Two modes:
 
   Legacy mode (config-driven, all combos):
     python nt8_backtest_runner.py [--config path/to/backtest_config.json] [--combo ID]
-    Writes lucid_flex_results.csv to the NT8 Documents folder.
+    Writes nt8_results.csv to the NT8 Documents folder.
 
 NOTE: NT8 must already be open. The Strategy Analyzer is opened automatically if not visible.
 """
@@ -46,7 +46,7 @@ RUN_TIMEOUT = 600
 
 NT8_DOCS    = Path.home() / "Documents" / "NinjaTrader 8"
 SA_LOG_DIR  = NT8_DOCS / "strategyanalyzerlogs"
-RESULTS_CSV = NT8_DOCS / "lucid_flex_results.csv"
+RESULTS_CSV = NT8_DOCS / "nt8_results.csv"
 
 CSV_FIELDS  = ["id", "strategy", "instrument",
                "net_pnl", "max_drawdown", "profit_factor", "win_pct", "trades"]

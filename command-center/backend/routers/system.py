@@ -198,7 +198,7 @@ def start_nt8_agent():
     """Restart SSH tunnel (ports 8765 + 8766) and fire the NT8 agent scheduled task."""
     global _health_cache
     _restart_tunnel()
-    out = _schtasks_run("LucidFlexAgent")
+    out = _schtasks_run("NT8Agent")
     _health_cache = None
     return out
 

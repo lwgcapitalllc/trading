@@ -67,14 +67,14 @@ def _poll_run(run_id: str, timeout: int = RUN_TIMEOUT) -> dict:
 
 def test_full_backtest_run_complete():
     """
-    §11 Case 4: trigger ORB_LucidFlex on MNQ 06-26, 2024 full year,
+    §11 Case 4: trigger ORB on MNQ 06-26, 2024 full year,
     all 4 firms. Verify it completes with correct evaluation structure.
     """
     # Ensure strategies are scanned
     httpx.post(f"{BASE}/strategies/scan", timeout=TIMEOUT)
     strategies = httpx.get(f"{BASE}/strategies", timeout=TIMEOUT).json()
     orb = next((s for s in strategies if "ORB" in s["class_name"]), None)
-    assert orb is not None, "ORB_LucidFlex strategy not found after scan"
+    assert orb is not None, "ORB strategy not found after scan"
 
     r = httpx.post(f"{BASE}/backtests/run", json={
         "strategy_id": orb["id"],
@@ -125,7 +125,7 @@ def test_full_backtest_run_complete():
 
 def test_compile_failure_marks_run_failed():
     """
-    §11 Case 5: corrupt ORB_LucidFlex.cs in NT8's Strategies directory,
+    §11 Case 5: corrupt ORB.cs in NT8's Strategies directory,
     verify /system/health shows last_compile_ok=False with error details,
     trigger a backtest and verify it fails, then restore the file.
 
@@ -134,7 +134,7 @@ def test_compile_failure_marks_run_failed():
     """
     CS_PATH = (
         r"C:/Users/Administrator/Documents/NinjaTrader 8"
-        r"/bin/Custom/Strategies/ORB_LucidFlex.cs"
+        r"/bin/Custom/Strategies/ORB.cs"
     )
 
     # ── Read original via Python stdin pipe ───────────────────────────────────

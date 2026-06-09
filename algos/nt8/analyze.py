@@ -1,9 +1,9 @@
 """
-Parse lucid_flex_results.csv and print a formatted pass/fail evaluation table.
+Parse nt8_results.csv and print a formatted pass/fail evaluation table.
 
 Usage:
-    python analyze.py [--results path/to/lucid_flex_results.csv]
-    python analyze.py --results lucid_flex_results.csv
+    python analyze.py [--results path/to/nt8_results.csv]
+    python analyze.py --results nt8_results.csv
 """
 
 import csv
@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
-DEFAULT_CSV = SCRIPT_DIR / "lucid_flex_results.csv"
+DEFAULT_CSV = SCRIPT_DIR / "nt8_results.csv"
 DEFAULT_CFG = SCRIPT_DIR / "backtest_config.json"
 
 # ANSI colours
@@ -85,7 +85,7 @@ def print_table(rows, thresh):
     ) + "|"
 
     print()
-    print(f"{BOLD}LucidFlex Backtest Results{RESET}")
+    print(f"{BOLD}NT8 Backtest Results{RESET}")
     print(sep)
     print(f"{BOLD}{header_row}{RESET}")
     print(sep)
@@ -124,7 +124,7 @@ def consistency_check(rows):
     total = sum(n for _, n in nets)
     if total <= 0:
         return
-    print(f"{BOLD}LucidFlex 50% Consistency Check{RESET}")
+    print(f"{BOLD}NT8 50% Consistency Check{RESET}")
     for name, n in sorted(nets, key=lambda x: -x[1]):
         pct = n / total * 100
         flag = f" {YELLOW}<-- >50% of total profit, watch consistency rule{RESET}" if pct > 50 else ""

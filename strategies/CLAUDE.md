@@ -33,7 +33,7 @@ strategies/
 
 **Never do**
 - Hardcode firm-specific values (account size, max daily loss, commission) as defaults in strategy files
-- Name a strategy file with a firm name in it (`ORB_LucidFlex.cs` is wrong — `ORB.cs` is right)
+- Name a strategy file with a firm name in it (`ORB_PropFirm.cs` is wrong — `ORB.cs` is right)
 - Mix strategy trading logic with risk-management mechanics that belong in foundational config
 
 ---

@@ -80,7 +80,7 @@ algos/
     │       ├── nt8_agent.py           ← HTTP agent running on VPS (NT8 control)
     │       ├── nt8_backtest_runner.py ← pywinauto NT8 Strategy Analyzer automation
     │       ├── nt8_compile_runner.py  ← pywinauto NinjaScript Editor compile subprocess
-    │       ├── setup_agent_task.py    ← Registers LucidFlexAgent Task Scheduler entry
+    │       ├── setup_agent_task.py    ← Registers NT8Agent Task Scheduler entry
     │       ├── deploy.py              ← Deploys .cs strategies to NT8 user folder
     │       ├── run_all.py             ← Batch backtest runner
     │       ├── analyze.py             ← Backtest result analyzer

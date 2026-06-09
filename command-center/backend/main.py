@@ -39,7 +39,7 @@ def _auto_start_agents():
     """Wait for the SSH tunnel then start any agents that aren't responding."""
     time.sleep(8)  # give start.sh tunnel time to establish
     for client, task in [
-        (nt8_agent_client, "LucidFlexAgent"),
+        (nt8_agent_client, "NT8Agent"),
         (mt5_agent_client, "MT5AgentRDP"),
     ]:
         try:

@@ -4,8 +4,8 @@
   "nt8_exe": "C:\\Program Files\\NinjaTrader 8\\bin\\NinjaTrader.exe",
   "strategies_src_dir": "../",
   "strategies_dst_dir": "Documents/NinjaTrader 8/bin/Custom/Strategies",
-  "results_remote_path": "Documents/NinjaTrader 8/lucid_flex_results.csv",
-  "results_local_path": "lucid_flex_results.csv",
+  "results_remote_path": "Documents/NinjaTrader 8/nt8_results.csv",
+  "results_local_path": "nt8_results.csv",
 
   "global_params": {
     "account_size": "50000",
@@ -24,7 +24,7 @@
   "combos": [
     {
       "id": "ORB_MNQ",
-      "strategy": "ORB_LucidFlex",
+      "strategy": "ORB",
       "instrument": "MNQ 06-26",
       "params": {
         "ORMinutes": "15",
@@ -34,7 +34,7 @@
     },
     {
       "id": "ORB_MES",
-      "strategy": "ORB_LucidFlex",
+      "strategy": "ORB",
       "instrument": "MES 06-26",
       "params": {
         "ORMinutes": "15",
@@ -44,7 +44,7 @@
     },
     {
       "id": "VWAP_MES",
-      "strategy": "VWAP_MR_LucidFlex",
+      "strategy": "VWAP_MR",
       "instrument": "MES 06-26",
       "params": {
         "EntryStd": "2.0",
@@ -55,7 +55,7 @@
     },
     {
       "id": "VWAP_MGC",
-      "strategy": "VWAP_MR_LucidFlex",
+      "strategy": "VWAP_MR",
       "instrument": "MGC 06-26",
       "params": {
         "EntryStd": "2.0",
@@ -66,7 +66,7 @@
     },
     {
       "id": "MOM_MGC",
-      "strategy": "Momentum_LucidFlex",
+      "strategy": "Momentum",
       "instrument": "MGC 06-26",
       "params": {
         "MaPeriod": "20",
@@ -75,7 +75,7 @@
     },
     {
       "id": "MOM_MCL",
-      "strategy": "Momentum_LucidFlex",
+      "strategy": "Momentum",
       "instrument": "MCL 06-26",
       "params": {
         "MaPeriod": "20",

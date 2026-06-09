@@ -10,7 +10,7 @@ WHY
 
 WHAT THIS BACKS UP (small, recovery-critical, git-friendly)
     bin\\Custom               all custom NinjaScript SOURCE (indicators / addons /
-                              strategies). The 3 lucid_flex strategy .cs are in the
+                              strategies). The 3 strategy .cs files are in the
                               repo already, but anything else under Custom lives
                               only here. Generated build output (obj/, bin/) is
                               excluded — NT8 recompiles on launch.

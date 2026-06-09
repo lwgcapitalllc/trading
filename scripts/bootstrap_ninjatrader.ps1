@@ -8,7 +8,7 @@
     HONEST SCOPE NOTE: your uploaded docs include a full runbook for the MT5
     suite (SETUP.md) but NO equivalent for NinjaTrader. What the docs DO tell us
     is the integration shape: NT8 on the VPS, a nt8_agent.py on :8765 started by
-    a scheduled task named `LucidFlexAgent`, health = NT8 process + Strategy
+    a scheduled task named `NT8Agent`, health = NT8 process + Strategy
     Analyzer open + clean NinjaScript compile. Everything keyed off those facts
     is grounded; the rest uses standard NinjaTrader-on-VPS layout and is exposed
     as parameters so you can correct it.
@@ -49,10 +49,10 @@
 
 .PARAMETER AgentTaskXml
     Optional. Path to the scheduled-task XML for the agent. If given (and you're
-    elevated), the LucidFlexAgent task is (re)created from it.
+    elevated), the NT8Agent task is (re)created from it.
 
 .PARAMETER AgentTaskName
-    Scheduled task that runs the agent. Default: LucidFlexAgent
+    Scheduled task that runs the agent. Default: NT8Agent
 
 .PARAMETER AgentPort
     TCP port the agent listens on. Default: 8765
@@ -67,7 +67,7 @@
     # Fresh box, restore NT8 data from a backup share, deploy strategies from repo:
     .\bootstrap_ninjatrader.ps1 -RestoreUserData -UserDataBackup '\\nas\backups\NinjaTrader 8' `
         -StrategySourceDir 'C:\trading\command-center\strategies' `
-        -AgentScript 'C:\trading\nt8_agent.py' -AgentTaskXml 'C:\trading\scheduler\lucidflex_agent_task.xml'
+        -AgentScript 'C:\trading\nt8_agent.py' -AgentTaskXml 'C:\trading\scheduler\nt8_agent_task.xml'
 
 .NOTES
     Run as the `trader` user where possible (so the NT8 user folder + agent task
@@ -87,7 +87,7 @@ param(
     [string] $AgentScript  = 'C:\trading\algos\nt8\nt8_agent.py',
     [string] $AgentReq,
     [string] $AgentTaskXml,
-    [string] $AgentTaskName = 'LucidFlexAgent',
+    [string] $AgentTaskName = 'NT8Agent',
     [int]    $AgentPort     = 8765,
     [string] $TraderUser    = 'trader',   # everything runs as trader (admin login)
     [string] $PythonExe

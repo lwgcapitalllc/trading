@@ -35,7 +35,7 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
    to finish startup once secrets are in place.
 
 3. **Register the nt8_agent task (from your Mac, one time)**
-   The `LucidFlexAgent` task has no XML in the repo — it's created from the Mac:
+   The `NT8Agent` task has no XML in the repo — it's created from the Mac:
    ```bash
    python3 algos/nt8/setup_agent_task.py
    ```

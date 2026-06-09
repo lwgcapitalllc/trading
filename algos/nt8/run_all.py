@@ -1,5 +1,5 @@
 """
-Master orchestrator for the LucidFlex backtest pipeline.
+Master orchestrator for the NT8 backtest pipeline.
 
 Modes:
   Full pipeline (deploy + wait for manual runs + fetch + analyze):
@@ -205,7 +205,7 @@ def wait_for_manual_run():
     print()
     print("  On the VPS, run all 6 combos in the Strategy Analyzer.")
     print("  Settings per combo are in backtest_config.json.")
-    print("  Each run will auto-export to: Documents\\NinjaTrader 8\\lucid_flex_results.csv")
+    print("  Each run will auto-export to: Documents\\NinjaTrader 8\\nt8_results.csv")
     print()
     print("  Combos to run:")
     cfg = load_config()

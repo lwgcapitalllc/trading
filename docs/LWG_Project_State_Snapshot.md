@@ -28,7 +28,7 @@ LWG Capital is a personal algorithmic trading operation. The near-term goal is t
 - `nt8_agent.py` (port 8765 via SSH tunnel) — Flask HTTP bridge; pywinauto drives the NT8 UI
 - `mt5_agent.py` (port 8766 via SSH tunnel) — Flask HTTP bridge; drives MT5 Strategy Tester
 - Four live MT5 trading bots (`algos/`) — demo phase on PU Prime accounts
-- Windows Task Scheduler — `LucidFlexAgent` (NT8 agent), `MT5AgentRDP` (MT5 agent), `SYS_STARTUP` (bots)
+- Windows Task Scheduler — `NT8Agent` (NT8 agent), `MT5AgentRDP` (MT5 agent), `SYS_STARTUP` (bots)
 
 **SSH tunnel:** `start.sh` opens a persistent `ssh -N forexvps` background process. `LocalForward 8765` (NT8 agent) and `LocalForward 8766` (MT5 agent) use `127.0.0.1` as remote target — not `localhost` — because the VPS resolves `localhost` to IPv6 but Flask agents bind IPv4 only.
 

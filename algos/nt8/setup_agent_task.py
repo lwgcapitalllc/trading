@@ -1,5 +1,5 @@
 """
-Register the LucidFlex Agent as a Windows Task Scheduler logon task on the VPS.
+Register the NT8 Agent as a Windows Task Scheduler logon task on the VPS.
 
 Run once from Mac after deploying nt8_agent.py:
     python3 algos/nt8/setup_agent_task.py
@@ -11,7 +11,7 @@ What it does:
 
 After setup, the agent will start automatically on each RDP login.
 You can also start it manually on the VPS with:
-    schtasks /run /tn "LucidFlexAgent"
+    schtasks /run /tn "NT8Agent"
 
 To use from Mac:
     ssh -N -L 8765:localhost:8765 forexvps &
@@ -26,7 +26,7 @@ import os
 CFG_PATH = os.path.join(os.path.dirname(__file__), "backtest_config.json")
 AGENT_WIN  = r"C:\trading\algos\nt8\nt8_agent.py"
 PYTHON_WIN = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe"
-TASK_NAME  = "LucidFlexAgent"
+TASK_NAME  = "NT8Agent"
 
 
 def ssh(host, cmd, check=True):

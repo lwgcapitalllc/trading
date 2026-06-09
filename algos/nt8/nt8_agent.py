@@ -18,11 +18,11 @@ New endpoints (job-keyed):
 Legacy endpoints (kept for backward compat):
     GET  /health                    -- ping (now includes running_jobs count)
     GET  /status                    -- old running flag + agent log
-    GET  /results                   -- reads lucid_flex_results.csv
+    GET  /results                   -- reads nt8_results.csv
     POST /run-backtests             -- returns 410 Gone
 
-Startup — agent is managed automatically via the \LucidFlexAgent scheduled task:
-    ssh forexvps "schtasks /run /tn LucidFlexAgent"   # start/restart from Mac
+Startup — agent is managed automatically via the \NT8Agent scheduled task:
+    ssh forexvps "schtasks /run /tn NT8Agent"   # start/restart from Mac
 
 The task runs in the active RDP session (interactive desktop), which is required
 for pywinauto UI automation. NT8 + Strategy Analyzer must already be open.
@@ -805,7 +805,7 @@ def legacy_run_backtests():
 
 @app.route("/results")
 def legacy_results():
-    path = NT8_DOCS / "lucid_flex_results.csv"
+    path = NT8_DOCS / "nt8_results.csv"
     if not path.exists():
         return jsonify({"error": "No results file yet", "rows": []}), 404
     with open(path, newline="") as f:
@@ -1604,7 +1604,7 @@ def export_grid_test():
 
 @app.route("/clear-results", methods=["POST"])
 def clear_results():
-    path = NT8_DOCS / "lucid_flex_results.csv"
+    path = NT8_DOCS / "nt8_results.csv"
     try:
         path.unlink(missing_ok=True)
         _alog("Results cleared.")

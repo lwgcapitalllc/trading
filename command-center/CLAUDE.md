@@ -48,7 +48,7 @@ cd command-center
 
 **SSH tunnel** — `start.sh` opens a persistent `ssh -N forexvps` background process on launch. This keeps two LocalForwards alive: `8765` (NT8 nt8_agent_tunnel) and `8766` (MT5 mt5_agent_tunnel). Without the tunnel, both nt8_agent_client and mt5_agent_client calls fail even though SSH itself appears healthy. The tunnel is killed automatically on Ctrl-C. **Important:** the `-L` flags must use `127.0.0.1` (not `localhost`) as the remote target — the VPS resolves `localhost` to `::1` (IPv6) but Flask agents bind only `127.0.0.1` (IPv4). Both `start.sh` and `_restart_tunnel()` in `system.py` use `127.0.0.1` explicitly.
 
-**Auto-start agents** — `main.py` spawns a daemon thread on startup (8s delay to let the tunnel establish) that calls `/health` on each agent and fires the schtask for any that don't respond. NT8 agent: `LucidFlexAgent`. MT5 agent: `MT5AgentRDP`. If SSH is not yet up the thread silently skips — red dots remain clickable.
+**Auto-start agents** — `main.py` spawns a daemon thread on startup (8s delay to let the tunnel establish) that calls `/health` on each agent and fires the schtask for any that don't respond. NT8 agent: `NT8Agent`. MT5 agent: `MT5AgentRDP`. If SSH is not yet up the thread silently skips — red dots remain clickable.
 
 **Backtesting prerequisites** — before submitting a run, the SSH tunnel and NT8 agent must be up. See Sidebar health indicators below.
 
@@ -139,7 +139,7 @@ Four dots in the left sidebar, sourced from `GET /system/health` (30 s TTL cache
 |---|---|---|---|---|
 | **API** | Local FastAPI on `:8000` | Backend healthy | — | Unreachable — restart backend |
 | **SSH** | SSH tunnel to ForexVPS | Connected | — | Unreachable — check ForexVPS or `~/.ssh/config` |
-| **NT8** | Agent HTTP + NT8 running + Strategy Analyzer open | All three up | Agent up, NT8 not running or SA closed | Agent down — click to start (`LucidFlexAgent` schtask) |
+| **NT8** | Agent HTTP + NT8 running + Strategy Analyzer open | All three up | Agent up, NT8 not running or SA closed | Agent down — click to start (`NT8Agent` schtask) |
 | **MT5 Agent** | `mt5_agent.py` HTTP on `:8766` | Responding | — | Down — click to start (`MT5AgentRDP` schtask) |
 
 NT8 and NinjaTrader were merged into one dot. Red = agent down (clickable); yellow = agent up but NT8 not running or Strategy Analyzer not open (needs RDP intervention).

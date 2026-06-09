@@ -13,7 +13,7 @@ import textwrap
 import time
 import pytest
 
-EXPECTED_CLASS_NAMES = {"ORB_LucidFlex", "VWAP_MR_LucidFlex", "Momentum_LucidFlex"}
+EXPECTED_CLASS_NAMES = {"ORB", "VWAP_MR", "Momentum"}
 
 SYNTHETIC_CS = textwrap.dedent("""\
     public class SyntheticStrat : Strategy
