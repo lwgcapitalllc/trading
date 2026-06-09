@@ -539,6 +539,18 @@ export function useRetryOptimization() {
   })
 }
 
+export function useRerunOptimization() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (optimizationId: string) =>
+      api.post<{ optimization_id: string; status: string; estimated_runs: number }>(`/optimizations/${optimizationId}/rerun`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+    },
+    onError: () => toast.error('Failed to re-run optimization'),
+  })
+}
+
 // ── Instrument Summary ─────────────────────────────────────────────────────────
 
 export function useInstrumentSummary(

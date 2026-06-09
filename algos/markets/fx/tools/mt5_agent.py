@@ -1076,7 +1076,13 @@ def _extract_input_params(html: str, param_names: list[str]) -> dict:
 
 
 def _run_mt5_optimization(job_id: str, spec: dict) -> None:
-    """Worker thread: run MT5 Strategy Tester in optimization mode."""
+    """Sequential optimization: run one MT5 single-backtest per param combo.
+
+    MT5 command-line Optimization=1 mode does not write a parseable results
+    file — it only populates the Strategy Tester GUI. We expand the grid
+    ourselves and run each combo as a regular single backtest, reusing the
+    existing Report= mechanism that we know works.
+    """
 
     def jl(msg: str) -> None:
         ts = time.strftime("%H:%M:%S")
@@ -1091,7 +1097,7 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
 
     tester_exe = _get_tester_exe()
     if tester_exe is None:
-        fail("Cannot locate metatester64.exe / terminal64.exe.")
+        fail("Cannot locate terminal64.exe.")
         return
 
     data_dir = _tester_data_dir(tester_exe)
@@ -1105,8 +1111,8 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
     deposit        = float(spec.get("deposit", 100000))
     currency       = spec.get("currency", "USD")
     leverage       = int(spec.get("leverage", 100))
-    inputs         = spec.get("inputs", {})           # fixed params
-    param_ranges   = spec.get("param_ranges", {})     # ranged params
+    inputs         = spec.get("inputs", {})
+    param_ranges   = spec.get("param_ranges", {})
 
     if not all([strategy_class, symbol, from_date, to_date]):
         fail("Missing required fields: strategy_class, symbol, from_date, to_date")
@@ -1120,29 +1126,55 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
         fail(f"EA not found: {ex5}. Deploy and compile first.")
         return
 
+    # Expand param grid
+    param_names = sorted(param_ranges.keys())
+    all_vals: list[list] = []
+    for p in param_names:
+        rng = param_ranges[p]
+        if isinstance(rng, dict):
+            lo, hi, step = float(rng["min"]), float(rng["max"]), float(rng["step"])
+        elif isinstance(rng, list) and len(rng) > 1:
+            lo = float(rng[0]); hi = float(rng[-1])
+            step = round(float(rng[1]) - float(rng[0]), 8)
+        else:
+            lo = hi = float(rng[0] if isinstance(rng, list) and rng else rng); step = 1.0
+        vals: list = []
+        v = lo
+        while v <= hi + 1e-9:
+            vals.append(int(v) if v == int(v) else round(v, 8))
+            v = round(v + step, 8)
+        all_vals.append(vals or [int(lo) if lo == int(lo) else lo])
+
+    combos: list[list] = [[]]
+    for pool in all_vals:
+        combos = [x + [y] for x in combos for y in pool]
+
     jl(f"MT5 optimization: {strategy_class} {symbol} {timeframe} [{from_date} -> {to_date}]")
-    jl(f"Params: {list(param_ranges.keys())}")
+    jl(f"Params: {param_names} → {len(combos)} combos (sequential single-backtests)")
 
-    try:
-        set_filename = _write_set_file_with_ranges(data_dir, job_id, inputs, param_ranges)
-        jl(f"Set file: {set_filename}")
+    reports_dir = data_dir / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    tester_dir  = data_dir / "MQL5" / "Profiles" / "Tester"
+    tester_dir.mkdir(parents=True, exist_ok=True)
 
-        # Log ranged-param lines so we can verify the format on VPS
-        set_path = data_dir / "MQL5" / "Profiles" / "Tester" / set_filename
-        try:
-            set_lines = set_path.read_text(encoding="utf-8").splitlines()
-            ranged = [l for l in set_lines if "||Y" in l]
-            jl(f"Ranged params ({len(ranged)}): {ranged}")
-        except Exception as _e:
-            jl(f"Could not read set file for logging: {_e}")
+    results: list[dict] = []
+    for i, vals in enumerate(combos):
+        with _lock:
+            if _jobs[job_id].get("status") == "cancelled":
+                return
 
-        reports_dir  = data_dir / "reports"
-        reports_dir.mkdir(parents=True, exist_ok=True)
-        pre_existing = {p.name for p in reports_dir.glob("bt_*.htm")}
-        report_stem  = f"opt_{job_id[:8]}"
-        report_prefix = f"reports\\{report_stem}"
+        combo_params = dict(zip(param_names, vals))
+        combo_inputs = {**inputs, **combo_params}
 
-        ini_path = data_dir / f"opt_{job_id[:8]}.ini"
+        stem         = f"o{job_id[:6]}_{i}"
+        set_filename = f"{stem}.set"
+        ini_path     = data_dir / f"{stem}.ini"
+        rpt_path     = reports_dir / f"{stem}.htm"
+
+        (tester_dir / set_filename).write_text(
+            "\n".join(f"{k}={v}" for k, v in combo_inputs.items()),
+            encoding="utf-8",
+        )
         _write_tester_ini(
             ini_path,
             expert=strategy_class,
@@ -1155,107 +1187,72 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
             deposit=deposit,
             currency=currency,
             leverage=leverage,
-            report_prefix=report_prefix,
-            optimization=1,
+            report_prefix=f"reports\\{stem}",
+            optimization=0,
             forward_mode=0,
         )
 
         _kill_by_path(tester_exe)
-        proc = _launch_tester(tester_exe, ini_path)
-    except Exception as exc:
-        fail(f"Setup/launch failed: {exc}")
-        return
-
-    with _lock:
-        _jobs[job_id]["process"] = proc
-    jl(f"Launched {tester_exe.name} (pid={proc.pid}) — optimization mode")
-
-    deadline = time.time() + _OPT_TIMEOUT
-    _last_progress = ""
-    _next_heartbeat = time.time() + 30
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            jl(f"Process exited (returncode={proc.returncode})")
-            time.sleep(2)
-            break
-        time.sleep(_REPORT_POLL_INTERVAL)
-        if time.time() >= _next_heartbeat:
-            _next_heartbeat = time.time() + 30
-            prog = _read_opt_progress(data_dir)
-            if prog and prog != _last_progress:
-                jl(f"MT5: {prog}")
-                _last_progress = prog
-            elif not prog:
-                elapsed = int(time.time() - (deadline - _OPT_TIMEOUT))
-                jl(f"Still running… ({elapsed}s elapsed)")
-    else:
-        jl(f"Optimization timed out after {_OPT_TIMEOUT}s — force-killing")
         try:
-            proc.kill()
-        except Exception:
-            pass
-        _kill_by_name("metatester64.exe")
-        fail(f"Optimization timed out after {_OPT_TIMEOUT}s")
-        return
-
-    with _lock:
-        if _jobs[job_id].get("status") == "cancelled":
-            return
-
-    # MT5 optimization writes one bt_XXXXXXXX.htm per pass — there is no combined
-    # results report in command-line mode. Find the files created during this run.
-    new_reports = sorted(
-        [p for p in reports_dir.glob("bt_*.htm") if p.name not in pre_existing],
-        key=lambda p: p.stat().st_mtime,
-    )
-    jl(f"New pass reports: {len(new_reports)}")
-
-    if not new_reports:
-        journal = _read_mt5_journal(data_dir)
-        detail  = f"\nMT5 journal:\n{journal}" if journal else ""
-        fail(f"Optimization finished but no bt_*.htm pass reports were created.{detail}")
-        return
-
-    param_names = list(param_ranges.keys())
-    combos: list[dict] = []
-    for rpt_path in new_reports:
-        try:
-            raw_bytes = rpt_path.read_bytes()
-            html_text = raw_bytes.decode("utf-16") if raw_bytes[:2] in (b"\xff\xfe", b"\xfe\xff") else raw_bytes.decode("utf-8", errors="replace")
-            metrics      = _parse_mt5_report(html_text)
-            input_params = _extract_input_params(html_text, param_names)
-            combos.append({
-                "params": input_params,
-                "kpis": {
-                    "net_pnl":       metrics["net_pnl"],
-                    "profit_factor": metrics["profit_factor"],
-                    "max_drawdown":  metrics["max_drawdown"],
-                    "trade_count":   metrics["trade_count"],
-                    "win_rate":      metrics["win_rate"],
-                    "sharpe":        metrics["sharpe"],
-                },
-            })
+            proc = _launch_tester(tester_exe, ini_path)
         except Exception as exc:
-            jl(f"Warning: could not parse {rpt_path.name}: {exc}")
+            jl(f"Combo {i+1}/{len(combos)}: launch failed: {exc}")
+            ini_path.unlink(missing_ok=True)
+            (tester_dir / set_filename).unlink(missing_ok=True)
+            continue
 
-    if not combos:
-        fail("Optimization: all pass reports failed to parse.")
-        return
+        with _lock:
+            _jobs[job_id]["process"] = proc
+
+        jl(f"Combo {i+1}/{len(combos)}: {combo_params}")
+
+        t0 = time.time()
+        while time.time() - t0 < 600:
+            if proc.poll() is not None:
+                break
+            time.sleep(2)
+        else:
+            proc.kill()
+            jl(f"Warning: combo {i+1} timed out — skipping")
+            ini_path.unlink(missing_ok=True)
+            (tester_dir / set_filename).unlink(missing_ok=True)
+            continue
+
+        if not rpt_path.is_file():
+            jl(f"Warning: combo {i+1} — no report written")
+        else:
+            try:
+                raw  = rpt_path.read_bytes()
+                html = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8", errors="replace")
+                m    = _parse_mt5_report(html)
+                results.append({
+                    "params": combo_params,
+                    "kpis": {
+                        "net_pnl":       m["net_pnl"],
+                        "profit_factor": m["profit_factor"],
+                        "max_drawdown":  m["max_drawdown"],
+                        "trade_count":   m["trade_count"],
+                        "win_rate":      m["win_rate"],
+                        "sharpe":        m["sharpe"],
+                    },
+                })
+            except Exception as exc:
+                jl(f"Warning: combo {i+1} parse error: {exc}")
+
+        ini_path.unlink(missing_ok=True)
+        (tester_dir / set_filename).unlink(missing_ok=True)
 
     _kill_by_path(tester_exe)
 
-    for p in [ini_path, data_dir / "MQL5" / "Profiles" / "Tester" / set_filename]:
-        try:
-            p.unlink(missing_ok=True)
-        except Exception:
-            pass
+    if not results:
+        fail("All combos failed to produce results.")
+        return
 
-    jl(f"Complete — {len(combos)} combos parsed")
-
+    jl(f"Complete — {len(results)}/{len(combos)} combos")
     with _lock:
         _jobs[job_id].update({
             "status": "done",
-            "result": {"combos": combos, "combo_count": len(combos)},
+            "result": {"combos": results, "combo_count": len(results)},
             "process": None,
         })
 

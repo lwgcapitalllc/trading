@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown, Copy, Check } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { OptimizationHeatmap } from '@/components/OptimizationHeatmap'
-import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog } from '@/hooks/useLab'
+import { useOptimization, useCancelOptimization, useRetryOptimization, useRerunOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog } from '@/hooks/useLab'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 
@@ -50,8 +50,8 @@ function useElapsed(startIso: string | null, endIso: string | null, running: boo
   useEffect(() => {
     if (!startIso) return
     const start = new Date(startIso).getTime()
-    if (!running && endIso) {
-      setElapsed(Math.round((new Date(endIso).getTime() - start) / 1000))
+    if (!running) {
+      setElapsed(Math.round(((endIso ? new Date(endIso).getTime() : Date.now()) - start) / 1000))
       return
     }
     const tick = () => setElapsed(Math.round((Date.now() - start) / 1000))
@@ -607,6 +607,7 @@ export function OptimizationDetail() {
   const { data: opt, isLoading } = useOptimization(optimizationId ?? null)
   const cancelOpt  = useCancelOptimization()
   const retryOpt   = useRetryOptimization()
+  const rerunOpt   = useRerunOptimization()
   const deleteOpt  = useDeleteOptimization()
   const retryRun   = useRetryBacktest()
   const { data: runningJob } = useRunningVpsJob()
@@ -642,13 +643,27 @@ export function OptimizationDetail() {
           <ArrowLeft size={14} /> Optimizations
         </button>
         {opt && !isRunning && (
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors"
-          >
-            <Trash2 size={12} />
-            Delete
-          </button>
+          <div className="flex items-center gap-2">
+            {opt.status.startsWith('failed') && (
+              <button
+                onClick={() => rerunOpt.mutate(optimizationId!, {
+                  onSuccess: (data) => navigate(`/backtests/optimizations/${data.optimization_id}`)
+                })}
+                disabled={rerunOpt.isPending}
+                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-accent hover:bg-accent/10 border border-accent/30 hover:border-accent/50 disabled:opacity-50 transition-colors"
+              >
+                <RotateCcw size={12} />
+                {rerunOpt.isPending ? 'Starting…' : 'Re-run'}
+              </button>
+            )}
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors"
+            >
+              <Trash2 size={12} />
+              Delete
+            </button>
+          </div>
         )}
       </div>
 
