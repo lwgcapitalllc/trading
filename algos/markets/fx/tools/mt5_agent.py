@@ -1097,6 +1097,15 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
         set_filename = _write_set_file_with_ranges(data_dir, job_id, inputs, param_ranges)
         jl(f"Set file: {set_filename}")
 
+        # Log ranged-param lines so we can verify the format on VPS
+        set_path = data_dir / "MQL5" / "Profiles" / "Tester" / set_filename
+        try:
+            set_lines = set_path.read_text(encoding="utf-8").splitlines()
+            ranged = [l for l in set_lines if "||Y" in l]
+            jl(f"Ranged params ({len(ranged)}): {ranged}")
+        except Exception as _e:
+            jl(f"Could not read set file for logging: {_e}")
+
         reports_dir  = data_dir / "reports"
         reports_dir.mkdir(parents=True, exist_ok=True)
         report_stem  = f"opt_{job_id[:8]}"
@@ -1162,6 +1171,20 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
     with _lock:
         if _jobs[job_id].get("status") == "cancelled":
             return
+
+    # Diagnostic: log what .htm files exist anywhere in reports_dir (and parent)
+    try:
+        found_htms = list(reports_dir.glob("*.htm")) + list(reports_dir.glob("**/*.htm"))
+        if found_htms:
+            jl(f"HTM files in reports_dir: {[p.name for p in found_htms]}")
+        else:
+            jl(f"No .htm files found under {reports_dir}")
+            # Broader search one level up
+            parent_htms = list(data_dir.glob("*.htm")) + list(data_dir.glob("reports/*.htm"))
+            if parent_htms:
+                jl(f"HTM files in data_dir root: {[p.name for p in parent_htms]}")
+    except Exception as _e:
+        jl(f"HTM scan error: {_e}")
 
     if not report_file.is_file():
         alts = sorted(reports_dir.glob(f"{report_stem}*.htm"), key=lambda p: p.stat().st_mtime)
