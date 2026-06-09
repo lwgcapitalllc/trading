@@ -369,7 +369,31 @@ def _set_backtest_type(sa, value: str):
     print(f"  BacktestType send_keys done — verify SA visually")
 
 
-def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
+def _read_opt_combo_progress(sa) -> tuple[int, int] | None:
+    """
+    Try to read how many combos NT8 has completed from the SA window.
+
+    Returns (n_done, n_total) if found, None otherwise.
+    Scans only Text-type descendants — much narrower than a full descendants call.
+    """
+    try:
+        for el in sa.descendants(control_type="Text"):
+            txt = (el.window_text() or "").strip()
+            # NT8 shows something like "3 of 9" or "3/9" in the SA status
+            import re as _re2
+            m = _re2.search(r'(\d+)\s*(?:of|/)\s*(\d+)', txt, _re2.IGNORECASE)
+            if m:
+                n_done  = int(m.group(1))
+                n_total = int(m.group(2))
+                if 0 < n_total <= 10000 and n_done <= n_total:
+                    return (n_done, n_total)
+    except Exception:
+        pass
+    return None
+
+
+def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False,
+                          progress_fn=None):
     """
     Wait for the SA run to finish.
 
@@ -377,6 +401,8 @@ def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
     Optimize mode (use_abort_btn=True): watches for Abort button to appear then disappear.
     NT8 replaces the Run button with Abort during optimization, so the Run-button
     heuristic does not work for that mode.
+
+    progress_fn: optional callable(elapsed_sec) called every 5s during optimize wait.
 
     Returns True on success, False on timeout.
     """
@@ -394,6 +420,7 @@ def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
                 pass
             time.sleep(0.5)
         # Phase 2: wait for Abort button to disappear (run complete)
+        last_progress_t = time.time()
         while time.time() < deadline:
             try:
                 abort_btn = sa.child_window(title="Abort", control_type="Button")
@@ -402,6 +429,13 @@ def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False):
             except Exception:
                 # element gone — run is done
                 return True
+            now = time.time()
+            if progress_fn and now - last_progress_t >= 5:
+                try:
+                    progress_fn(now)
+                except Exception:
+                    pass
+                last_progress_t = now
             time.sleep(1)
         return False
 
@@ -1071,25 +1105,31 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     num_params  = {k: v for k, v in fixed_params.items()
                    if not isinstance(v, (bool, str))}
 
-    # Set all numeric fixed params via PDEX Edit controls (no grid scan needed).
-    # NT8 uses the PDEX value as the fixed default for any param that has no
-    # range set in the Optimize grid.  Foundational params are always in a
-    # collapsed category so they were never in the grid anyway — this just
-    # skips the full-SA scan that was previously wasted confirming that fact.
-    for name, value in num_params.items():
-        set_edit(sa, f"{pfx}_{name}", value, warn=False)
-        print(f"  Fixed param '{name}' = {value} (PDEX)")
+    # Build grid_map ONCE for both fixed and range params.
+    # Using the txtBox grid path is ~0.1s per field; PDEX fallback is 4-19s per field
+    # (NT8 WPF is slow to locate PDEX controls in Optimize mode).  Build once here,
+    # reuse for range params below — only rebuild on a stale-element exception.
+    grid_map = _build_opt_grid_map(sa)
+    print(f"  Optimize grid map: {list(grid_map.keys())}")
 
-    # String params via PDEX Edit controls (always present, IValueProvider works).
+    for name, value in num_params.items():
+        try:
+            ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+        except Exception:
+            grid_map = _build_opt_grid_map(sa)
+            ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
+        if not ok:
+            set_edit(sa, f"{pfx}_{name}", value, warn=False)
+            print(f"  Fixed param '{name}' not in grid → PDEX = {value}")
+
+    # String and bool params have no txtBox equivalent — PDEX only.
     for name, value in str_params.items():
         set_edit(sa, f"{pfx}_{name}", value, warn=False)
         print(f"  Fixed str param '{name}' = {value}")
     for name, value in bool_params.items():
         set_checkbox(sa, f"{pfx}_{name}", value)
 
-    # Set Range params (ORMinutes, TpMultiple) — final grid_map build.
-    grid_map = _build_opt_grid_map(sa)
-    print(f"  Optimize grid map: {list(grid_map.keys())}")
+    # Set range params using the same grid_map (already built above).
     for name, range_spec in param_ranges.items():
         if isinstance(range_spec, dict):
             lo   = range_spec["min"]
@@ -1104,7 +1144,22 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         else:
             lo = hi = range_spec
             step = 1
-        _set_range_in_grid(grid_map, name, lo, hi, step, param_display_names)
+        try:
+            _set_range_in_grid(grid_map, name, lo, hi, step, param_display_names)
+        except Exception:
+            # Element ref went stale (WPF re-render after prior edit) — rebuild and retry.
+            grid_map = _build_opt_grid_map(sa)
+            _set_range_in_grid(grid_map, name, lo, hi, step, param_display_names)
+
+    # Compute total combo count so we can estimate time-based progress.
+    total_combos = 1
+    for _rs in param_ranges.values():
+        if isinstance(_rs, dict):
+            total_combos *= max(1, int(round((_rs["max"] - _rs["min"]) / _rs["step"])) + 1)
+        elif isinstance(_rs, list):
+            total_combos *= max(1, len(_rs))
+    # Observed: ~30s per combo on this VPS setup (conservative).
+    _SECS_PER_COMBO = 30
 
     _pct(30, "Starting native optimization")
 
@@ -1117,10 +1172,26 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         print(f"  ERROR clicking Run: {e}")
         sys.exit(1)
 
-    _pct(35, "Optimization running")
+    _pct(35, f"Optimizing {total_combos} combinations...")
+
+    def _emit_progress(now):
+        elapsed = now - click_time
+        # Try to read real combo count from SA window first.
+        result = _read_opt_combo_progress(sa)
+        if result:
+            n_done, n_total = result
+            pct = int(35 + (n_done / n_total) * 44) if n_total > 0 else 35
+            _pct(pct, f"Optimizing: {n_done}/{n_total} combinations")
+        else:
+            # Fall back to time-based estimate (capped at 79%).
+            estimated_sec = max(total_combos * _SECS_PER_COMBO, 60)
+            frac = min(elapsed / estimated_sec, 0.95)
+            pct = int(35 + frac * 44)
+            _pct(pct, f"Optimizing {total_combos} combinations... {int(elapsed)}s")
 
     # Optimize mode: NT8 shows Abort button during run (Run button disappears)
-    finished = wait_for_run_complete(sa, timeout=_OPT_TIMEOUT, use_abort_btn=True)
+    finished = wait_for_run_complete(sa, timeout=_OPT_TIMEOUT, use_abort_btn=True,
+                                     progress_fn=_emit_progress)
     if not finished:
         print(f"  ERROR: Optimization timed out after {_OPT_TIMEOUT}s")
         sys.exit(1)

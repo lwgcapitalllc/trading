@@ -139,10 +139,17 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
             {isRunning && <span className="text-[11px] text-text-tertiary">· auto-refreshing</span>}
           </div>
 
-          {/* Progress bar — pulsing for native while running (results arrive all at once) */}
+          {/* Progress bar */}
           {isRunning && overallPct === 0 ? (
             <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2">
-              <div className="h-full w-1/3 bg-accent/60 rounded-full animate-pulse" />
+              {opt.live_pct && opt.live_pct > 0 ? (
+                <div
+                  className="h-full bg-accent/80 rounded-full transition-all duration-700"
+                  style={{ width: `${opt.live_pct}%` }}
+                />
+              ) : (
+                <div className="h-full w-1/3 bg-accent/60 rounded-full animate-pulse" />
+              )}
             </div>
           ) : (
             <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2 flex">
@@ -161,7 +168,7 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
             <div className="flex items-center gap-4 text-[12px]">
               {isRunning && overallPct === 0 ? (
                 <span className="text-text-tertiary">
-                  Running {total} combination{total !== 1 ? 's' : ''}…
+                  {opt.live_message ?? `Running ${total} combination${total !== 1 ? 's' : ''}…`}
                 </span>
               ) : (
                 <>
@@ -181,11 +188,11 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
                 </>
               )}
             </div>
-            {!(isRunning && overallPct === 0) && (
-              <span className="text-[12px] font-mono font-semibold tabular-nums text-text-secondary">
-                {overallPct}%
-              </span>
-            )}
+            <span className="text-[12px] font-mono font-semibold tabular-nums text-text-secondary">
+              {isRunning && overallPct === 0
+                ? (opt.live_pct ? `${opt.live_pct}%` : '')
+                : `${overallPct}%`}
+            </span>
           </div>
 
           {/* Inline failure warning while running */}

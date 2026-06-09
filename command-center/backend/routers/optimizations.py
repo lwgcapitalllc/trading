@@ -100,6 +100,17 @@ def get_optimization(optimization_id: str) -> OptimizationDetail:
     run_rows  = lab_db.list_optimization_runs(optimization_id)
     summaries = [_row_to_summary(r) for r in run_rows]
 
+    live_pct     = None
+    live_message = None
+    if opt["status"] == "running":
+        try:
+            runner_str  = (strategy or {}).get("runner", "ninjatrader")
+            status_data = nt8_agent_client.job_status(f"nopt_{optimization_id}", runner_str)
+            live_pct     = int(status_data.get("pct") or 0) or None
+            live_message = status_data.get("message") or None
+        except Exception:
+            pass
+
     return OptimizationDetail(
         optimization_id=opt["optimization_id"],
         strategy_id=opt["strategy_id"],
@@ -120,6 +131,8 @@ def get_optimization(optimization_id: str) -> OptimizationDetail:
         created_at=opt["created_at"],
         completed_at=opt.get("completed_at"),
         runs=summaries,
+        live_pct=live_pct,
+        live_message=live_message,
     )
 
 

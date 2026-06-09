@@ -661,6 +661,8 @@ export interface OptimizationDetail extends OptimizationSummary {
   param_grid: Record<string, ParamAxisSpec>
   runner: string
   runs: BacktestSummary[]
+  live_pct: number | null
+  live_message: string | null
 }
 
 // ── Lab — Instrument Summary ──────────────────────────────────────────────────

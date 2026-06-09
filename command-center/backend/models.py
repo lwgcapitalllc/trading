@@ -666,6 +666,8 @@ class OptimizationDetail(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     runs: list[BacktestSummary] = []
+    live_pct: Optional[int] = None
+    live_message: Optional[str] = None
 
 
 # ── Lab — instrument summary (for Tier 3 modal) ───────────────────────────────
