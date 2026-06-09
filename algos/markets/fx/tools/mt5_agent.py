@@ -1936,8 +1936,8 @@ def test_opt_pass():
     if not tester_exe:
         return jsonify({"error": "Cannot locate terminal64.exe"}), 503
 
-    # Use the MT5_Lab installation dir directly — isolated from the live terminal.
-    lab_dir = tester_exe.parent  # e.g. C:\MT5_Lab
+    # Use the actual data dir (AppData/927F...) — this is where MT5 reads set/ini and writes Files.
+    lab_dir = _tester_data_dir(tester_exe)
 
     ex5 = lab_dir / "MQL5" / "Experts" / "TestOptPass.ex5"
     if not ex5.is_file():
