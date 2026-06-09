@@ -747,7 +747,7 @@ double OnTester()
     data[20] = TesterStatistics(STAT_PROFIT_FACTOR);
     data[21] = TesterStatistics(STAT_EQUITY_DD);
     data[22] = TesterStatistics(STAT_TRADES);
-    data[23] = TesterStatistics(STAT_WIN_TRADES);
+    data[23] = TesterStatistics(STAT_PROFIT_TRADES);
     data[24] = TesterStatistics(STAT_SHARPE_RATIO);
     data[25] = TesterStatistics(STAT_GROSS_PROFIT);
     data[26] = TesterStatistics(STAT_GROSS_LOSS);
