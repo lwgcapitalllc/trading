@@ -659,6 +659,11 @@ def _run_native_wf_job(job_id: str, spec: dict):
                     pct   = int(parts[1])
                     msg   = parts[2] if len(parts) > 2 else ""
                     _jupdate(job_id, pct=pct, message=msg)
+                    if pct == 100:
+                        wf_results_path_early = spec_dir / "native_wf_result.json"
+                        if wf_results_path_early.exists():
+                            _jupdate(job_id, status="complete", pct=100, message="Complete")
+                            _alog(f"Native WF job {job_id} complete (PCT:100)")
                 except Exception:
                     pass
         proc.wait()
@@ -724,6 +729,15 @@ def _run_native_opt_job(job_id: str, spec: dict):
                     pct   = int(parts[1])
                     msg   = parts[2] if len(parts) > 2 else ""
                     _jupdate(job_id, pct=pct, message=msg)
+                    # Mark complete immediately when PCT:100 arrives and results
+                    # file exists — don't wait for subprocess exit.  On Windows,
+                    # inherited pipe handles can keep the write-end open after
+                    # os._exit(0), so the for-loop may never see EOF.
+                    if pct == 100:
+                        results_path_early = spec_dir / "native_opt_result.json"
+                        if results_path_early.exists():
+                            _jupdate(job_id, status="complete", pct=100, message="Complete")
+                            _alog(f"Native opt job {job_id} complete (PCT:100)")
                 except Exception:
                     pass
         proc.wait()

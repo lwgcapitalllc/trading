@@ -637,7 +637,7 @@ def _build_opt_grid_map(sa) -> dict:
     # individual level does not abort the whole walk.
     scope = sa
     try:
-        probe = sa.child_window(auto_id="txtBox", control_type="Edit")
+        probe = sa.child_window(auto_id="txtBox", control_type="Edit", found_index=0)
         if probe.exists(timeout=2):
             try:
                 node = probe.wrapper_object()
