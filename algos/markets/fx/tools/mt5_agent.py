@@ -1045,6 +1045,36 @@ def _parse_mt5_forward_sections(html: str) -> tuple[dict, dict]:
     return _extract_kpis(tp_is.tables), _extract_kpis(tp_oos.tables)
 
 
+def _extract_input_params(html: str, param_names: list[str]) -> dict:
+    """Extract EA input parameter values from a single bt_*.htm pass report.
+
+    MT5 optimization writes one bt_XXXXXXXX.htm per pass. Each file is a full
+    single-backtest report that contains the EA inputs as name/value pairs in a
+    table. This function scans all tables for those pairs and returns the values
+    for the params we care about.
+    """
+    tp = _TableParser()
+    tp.feed(html)
+    kv: dict[str, str] = {}
+    for table in tp.tables:
+        for row in table:
+            for i in range(0, len(row) - 1, 2):
+                k = row[i].strip().rstrip(":")
+                v = row[i + 1].strip() if i + 1 < len(row) else ""
+                if k:
+                    kv[k] = v
+    params: dict = {}
+    for pname in param_names:
+        if pname in kv:
+            raw = kv[pname].replace(",", "").strip()
+            try:
+                v = float(raw)
+                params[pname] = int(v) if v == int(v) else v
+            except ValueError:
+                params[pname] = raw
+    return params
+
+
 def _run_mt5_optimization(job_id: str, spec: dict) -> None:
     """Worker thread: run MT5 Strategy Tester in optimization mode."""
 
@@ -1108,8 +1138,8 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
 
         reports_dir  = data_dir / "reports"
         reports_dir.mkdir(parents=True, exist_ok=True)
+        pre_existing = {p.name for p in reports_dir.glob("bt_*.htm")}
         report_stem  = f"opt_{job_id[:8]}"
-        report_file  = reports_dir / f"{report_stem}.htm"
         report_prefix = f"reports\\{report_stem}"
 
         ini_path = data_dir / f"opt_{job_id[:8]}.ini"
@@ -1172,39 +1202,44 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
         if _jobs[job_id].get("status") == "cancelled":
             return
 
-    # Diagnostic: log what .htm files exist anywhere in reports_dir (and parent)
-    try:
-        found_htms = list(reports_dir.glob("*.htm")) + list(reports_dir.glob("**/*.htm"))
-        if found_htms:
-            jl(f"HTM files in reports_dir: {[p.name for p in found_htms]}")
-        else:
-            jl(f"No .htm files found under {reports_dir}")
-            # Broader search one level up
-            parent_htms = list(data_dir.glob("*.htm")) + list(data_dir.glob("reports/*.htm"))
-            if parent_htms:
-                jl(f"HTM files in data_dir root: {[p.name for p in parent_htms]}")
-    except Exception as _e:
-        jl(f"HTM scan error: {_e}")
+    # MT5 optimization writes one bt_XXXXXXXX.htm per pass — there is no combined
+    # results report in command-line mode. Find the files created during this run.
+    new_reports = sorted(
+        [p for p in reports_dir.glob("bt_*.htm") if p.name not in pre_existing],
+        key=lambda p: p.stat().st_mtime,
+    )
+    jl(f"New pass reports: {len(new_reports)}")
 
-    if not report_file.is_file():
-        alts = sorted(reports_dir.glob(f"{report_stem}*.htm"), key=lambda p: p.stat().st_mtime)
-        report_file = alts[-1] if alts else None  # type: ignore[assignment]
-
-    if report_file is None or not report_file.is_file():  # type: ignore[union-attr]
+    if not new_reports:
         journal = _read_mt5_journal(data_dir)
         detail  = f"\nMT5 journal:\n{journal}" if journal else ""
-        fail(f"Optimization finished but no report file found.{detail}")
+        fail(f"Optimization finished but no bt_*.htm pass reports were created.{detail}")
         return
 
-    jl(f"Report: {report_file.name}")  # type: ignore[union-attr]
+    param_names = list(param_ranges.keys())
+    combos: list[dict] = []
+    for rpt_path in new_reports:
+        try:
+            raw_bytes = rpt_path.read_bytes()
+            html_text = raw_bytes.decode("utf-16") if raw_bytes[:2] in (b"\xff\xfe", b"\xfe\xff") else raw_bytes.decode("utf-8", errors="replace")
+            metrics      = _parse_mt5_report(html_text)
+            input_params = _extract_input_params(html_text, param_names)
+            combos.append({
+                "params": input_params,
+                "kpis": {
+                    "net_pnl":       metrics["net_pnl"],
+                    "profit_factor": metrics["profit_factor"],
+                    "max_drawdown":  metrics["max_drawdown"],
+                    "trade_count":   metrics["trade_count"],
+                    "win_rate":      metrics["win_rate"],
+                    "sharpe":        metrics["sharpe"],
+                },
+            })
+        except Exception as exc:
+            jl(f"Warning: could not parse {rpt_path.name}: {exc}")
 
-    try:
-        raw_bytes = report_file.read_bytes()  # type: ignore[union-attr]
-        html_text = raw_bytes.decode("utf-16") if raw_bytes[:2] in (b"\xff\xfe", b"\xfe\xff") else raw_bytes.decode("utf-8", errors="replace")
-        param_names = list(param_ranges.keys())
-        combos = _parse_mt5_optimization_report(html_text, param_names)
-    except Exception as exc:
-        fail(f"Optimization report parsing failed: {exc}")
+    if not combos:
+        fail("Optimization: all pass reports failed to parse.")
         return
 
     _kill_by_path(tester_exe)

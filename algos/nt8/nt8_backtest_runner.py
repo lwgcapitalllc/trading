@@ -593,11 +593,39 @@ def _build_opt_grid_map(sa) -> dict:
     Each optimizable param row consists of a Group (label) followed immediately
     by an Edit with auto_id='txtBox' (the Start;End;Step range field).  They are
     siblings in the UIA tree — not parent/child.
+
+    Fast path: locate any txtBox via UIA FindFirst (instant), walk up the tree
+    to find the grid container panel, then scan only that subtree.  Falls back
+    to a full sa.descendants() scan if the narrowing fails.
     """
+    # Narrow scope to the panel that actually contains the optimize grid rows.
+    # Uses UIA FindFirst (returns on first hit) to locate any txtBox, then walks
+    # up the tree until a node with multiple row-children is found.
+    scope = sa
+    try:
+        probe = sa.child_window(auto_id="txtBox", control_type="Edit")
+        if probe.exists(timeout=2):
+            node = probe.wrapper_object()
+            for _ in range(6):
+                p = node.parent()
+                if p is None:
+                    break
+                # The rows container has multiple children (one per param row).
+                # Individual rows have only 2 (Group + Edit), so >= 3 means container.
+                try:
+                    if len(p.children()) >= 3:
+                        scope = p
+                        break
+                except Exception:
+                    pass
+                node = p
+            print(f"  [grid-map] scope narrowed: {scope.element_info.control_type}")
+    except Exception:
+        print("  [grid-map] narrow failed — using full SA scan")
+
     result          = {}
     last_group_text = None
-
-    for el in sa.descendants():
+    for el in scope.descendants():
         ct  = str(el.element_info.control_type)
         aid = el.element_info.automation_id or ""
 
@@ -1037,36 +1065,20 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
     set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
 
-    # Separate fixed_params by type.
-    # Numeric params use SRWD Custom controls in the Optimize grid (txtBox auto_id).
-    # String params use PDEX Edit controls that exist in both modes.
+    # Separate fixed_params by type: numeric → PDEX, string → PDEX, bool → CheckBox.
     bool_params = {k: v for k, v in fixed_params.items() if isinstance(v, bool)}
     str_params  = {k: v for k, v in fixed_params.items() if isinstance(v, str)}
     num_params  = {k: v for k, v in fixed_params.items()
                    if not isinstance(v, (bool, str))}
 
-    # Set each numeric fixed param via Optimize grid (lo;hi;step format).
-    # NT8 requires min;max;increment even for fixed values (e.g. "2;2;1" not "2").
-    # Build grid_map ONCE. Foundational params live in a collapsed category and
-    # are almost never in the grid — they fall through to the PDEX path immediately.
-    # Rebuilding per-param was O(N × full-UIA-scan) and the primary cause of the
-    # 5-10 minute config phase. If a WPF refresh invalidates an element ref we catch
-    # the exception and rebuild once for that param only.
-    # FALLBACK: if a param is not found in the Optimize grid (e.g. "Foundational"
-    # category is collapsed and its txtBox controls are absent from the UIA tree),
-    # set it via the PDEX Edit control instead.  NT8 uses the PDEX value as the
-    # fixed default for any param that does not have a range in the Optimize grid.
-    grid_map = _build_opt_grid_map(sa)
+    # Set all numeric fixed params via PDEX Edit controls (no grid scan needed).
+    # NT8 uses the PDEX value as the fixed default for any param that has no
+    # range set in the Optimize grid.  Foundational params are always in a
+    # collapsed category so they were never in the grid anyway — this just
+    # skips the full-SA scan that was previously wasted confirming that fact.
     for name, value in num_params.items():
-        try:
-            ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
-        except Exception:
-            # Element ref went stale after a WPF refresh — rebuild once and retry.
-            grid_map = _build_opt_grid_map(sa)
-            ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
-        if not ok:
-            set_edit(sa, f"{pfx}_{name}", value, warn=False)
-            print(f"  Fixed param '{name}' not in Optimize grid — set via PDEX = {value}")
+        set_edit(sa, f"{pfx}_{name}", value, warn=False)
+        print(f"  Fixed param '{name}' = {value} (PDEX)")
 
     # String params via PDEX Edit controls (always present, IValueProvider works).
     for name, value in str_params.items():
