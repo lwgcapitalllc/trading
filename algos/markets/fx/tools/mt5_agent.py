@@ -865,6 +865,32 @@ def _read_mt5_journal(data_dir: Path, lines: int = 30) -> str:
 _OPT_TIMEOUT = 7200  # 2 hours for optimization runs
 
 
+def _read_opt_progress(data_dir: Path) -> str:
+    """Return the latest 'processing X %' or 'AutoTesting' line from the terminal log, or ''."""
+    logs_dir = data_dir / "logs"
+    if not logs_dir.is_dir():
+        return ""
+    today = datetime.date.today().strftime("%Y%m%d")
+    log_file = logs_dir / f"{today}.log"
+    if not log_file.is_file():
+        candidates = sorted(logs_dir.glob("*.log"), key=lambda p: p.stat().st_mtime)
+        if not candidates:
+            return ""
+        log_file = candidates[-1]
+    try:
+        raw = log_file.read_bytes()
+        text = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8", errors="replace")
+        for line in reversed(text.splitlines()):
+            lo = line.lower()
+            if "processing" in lo or "autotesting" in lo or "optimization" in lo:
+                # strip the leading log-line prefix (e.g. "KR\t0\t01:09:36\tAutoTesting\t")
+                parts = line.split("\t", 4)
+                return parts[-1].strip() if len(parts) >= 5 else line.strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _parse_mt5_optimization_report(html: str, param_names: list[str]) -> list[dict]:
     """
     Parse MT5 Strategy Tester optimization HTML report into a list of combos.
@@ -1106,12 +1132,23 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
     jl(f"Launched {tester_exe.name} (pid={proc.pid}) — optimization mode")
 
     deadline = time.time() + _OPT_TIMEOUT
+    _last_progress = ""
+    _next_heartbeat = time.time() + 30
     while time.time() < deadline:
         if proc.poll() is not None:
             jl(f"Process exited (returncode={proc.returncode})")
             time.sleep(2)
             break
         time.sleep(_REPORT_POLL_INTERVAL)
+        if time.time() >= _next_heartbeat:
+            _next_heartbeat = time.time() + 30
+            prog = _read_opt_progress(data_dir)
+            if prog and prog != _last_progress:
+                jl(f"MT5: {prog}")
+                _last_progress = prog
+            elif not prog:
+                elapsed = int(time.time() - (deadline - _OPT_TIMEOUT))
+                jl(f"Still running… ({elapsed}s elapsed)")
     else:
         jl(f"Optimization timed out after {_OPT_TIMEOUT}s — force-killing")
         try:
