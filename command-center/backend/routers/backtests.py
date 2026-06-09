@@ -294,8 +294,15 @@ async def retry_backtest_run(run_id: str) -> dict:
 
     # Optimization run — reset in place and re-fire via optimization runner
     if row.get("optimization_id"):
-        if lab_db.has_running_nt8_job():
-            raise HTTPException(409, "An NT8 job is already running — wait for it to finish before retrying")
+        # runner is not set on combo child rows — derive it from the strategy
+        _opt_strategy = lab_db.get_strategy(row["strategy_id"])
+        _opt_runner = row.get("runner") or (_opt_strategy or {}).get("runner", "ninjatrader")
+        if _opt_runner == "mt5":
+            if lab_db.has_running_mt5_job():
+                raise HTTPException(409, "An MT5 job is already running — wait for it to finish before retrying")
+        else:
+            if lab_db.has_running_nt8_job():
+                raise HTTPException(409, "An NT8 job is already running — wait for it to finish before retrying")
         lab_db.reset_run_for_retry(run_id)
         asyncio.create_task(retry_single_optimization_run(run_id))
         return {"run_id": run_id, "status": "running"}
