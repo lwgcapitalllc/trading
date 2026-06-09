@@ -312,10 +312,13 @@ def _normalize_mt5_status(raw: dict) -> dict:
         status = "complete"
     elif status == "cancelled":
         status = "failed_cancelled"
+    running = status not in ("complete", "failed_cancelled")
+    pct = 100 if status == "complete" else max(5, min(99, raw.get("pct") or 5))
+    message = raw.get("message") or (raw.get("error") or "") or ("MT5 optimization running…" if running else "")
     return {
         "status":     status,
-        "pct":        100 if status == "complete" else 30,
-        "message":    raw.get("error", "") or ("MT5 Strategy Tester running…" if status not in ("complete", "failed_cancelled") else ""),
+        "pct":        pct,
+        "message":    message,
         "updated_at": str(time.time()),
         "error":      raw.get("error"),
     }

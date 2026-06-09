@@ -1242,6 +1242,10 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
         ini_path.unlink(missing_ok=True)
         (tester_dir / set_filename).unlink(missing_ok=True)
 
+        with _lock:
+            _jobs[job_id]["pct"]     = int((i + 1) / len(combos) * 100)
+            _jobs[job_id]["message"] = f"Combo {i+1}/{len(combos)}"
+
     _kill_by_path(tester_exe)
 
     if not results:
@@ -1670,6 +1674,8 @@ def start_native_optimize():
         _jobs[job_id] = {
             "job_id":     job_id,
             "status":     "running",
+            "pct":        0,
+            "message":    "Starting MT5 optimization",
             "created_at": int(time.time()),
             "spec":       body,
             "log":        [],
