@@ -1978,7 +1978,7 @@ def test_opt_pass():
     proc = _launch_tester(tester_exe, ini_path)
     _alog(f"test/opt-pass: launched PID {proc.pid}")
 
-    deadline = time.time() + 180
+    deadline = time.time() + 600
     while time.time() < deadline:
         if proc.poll() is not None:
             break
