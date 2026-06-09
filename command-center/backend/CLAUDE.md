@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-08
+**Last reviewed:** 2026-06-09
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -24,7 +24,7 @@ backend/
 │   ├── smart_money.py
 │   ├── bots.py
 │   ├── backtests.py       lab — backtest runs
-│   ├── strategies.py      lab — strategy registry + deploy endpoint + GET /:id/instrument_summary
+│   ├── strategies.py      lab — strategy registry + deploy endpoint + GET /:id/instrument_summary + GET /:id/param-types
 │   ├── rulesets.py        lab — ruleset CRUD (/rulesets)
 │   ├── firms.py           backward-compat redirect /firms → /rulesets (deprecated, keep until all callers confirmed updated)
 │   ├── system.py          lab — health + log proxies
@@ -141,6 +141,14 @@ Hard-won rules for pywinauto + NT8 WPF — violating these causes silent wrong-s
 - Strategy dropdown items are `control_type="MenuItem"`, not `ListItem`.
 - **WPF popup location changes after first run**: On a fresh SA the dropdown popup is a child of the SA window in the UIA tree. After a backtest completes, subsequent clicks on the selector render the popup as a top-level Desktop element. `select_strategy` uses `_find_strategy_item` which tries both: `sa.child_window(...)` first, then `Desktop(backend="uia").window(...)`. Never search only within SA.
 
+**Optimization results export**
+- Right-click CSV export from the SA results grid is the **only** way to get optimization results. Native optimize writes `.cs` files per combo — no `.xml`. Never look for an output file; always export via the context menu.
+- `_export_optimization_results` uses a two-pass right-click: Pass 1 opens the context menu and scans the UIA tree to find Export coordinates (the scan causes WPF to close the popup), Pass 2 right-clicks again and immediately clicks Export at the recorded coordinates.
+- Sleep **1.0 s** (not 0.3 s) after `sa.restore()` before right-clicking — the SA needs time to finish restoring before WM_RBUTTONDOWN lands on the right element.
+- Right-click at `y = sa_rect.top + int(sa_h * 0.20)` — 20% skips the Display dropdown and column headers. y=5% lands in the header row (no Export option). y=50%+ lands in the performance summary tab (wrong export format). The print log shows `[opt-export] Right-click at (x, y)  sa=WxH` for debugging.
+- **0-trade combos kill Export**: when all optimization combos produce 0 trades, NT8 shows no results in the grid and the Export context menu item does not appear. Root cause: NinjaScript `int` parameters (e.g. `MaPeriod`) silently truncate decimal values — a step of 2.5 generates values like 22.5 → cast to 22, but NT8 skips the combo because the effective value doesn't match. The `param-types` endpoint + frontend validation (see frontend CLAUDE.md) prevents users from entering non-integer steps on `int` params.
+- When the same 3 persistent items (`Momentum`, `Select`, `Trades ($)`) appear in the UIA scan, the right-click is NOT opening a context menu — it landed on a different element. These are persistent WPF dropdown elements, not context menu items.
+
 **Timing**
 - After `select_strategy`, sleep 2–3 s — NT8 fully rebuilds the property grid and the UIA tree is temporarily invalid.
 - After clicking a WPF ComboBox to open it, sleep ≥ 0.7 s before searching for items — the popup renders asynchronously.
@@ -248,6 +256,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Lab — Regime Tags (M4) | ✅ Live | `daily_pnl` entries tagged with regime label. Auto-tagged at pipeline time. Optimizer `regime_filter`. |
 | Lab — Strategy Files (Pass 2) | ✅ Live | Upload/delete/compile `.cs` (NT8 F5) and `.mq5` (MetaEditor) files. Sync-status badges. |
 | Lab — Strategy Deploy (Pass 2.5) | ✅ Live | `POST /strategies/{id}/deploy` reads `source_path`, uploads to VPS. `.mq5` → MT5 agent, `.cs` → NT8 agent. |
+| Lab — Param types endpoint | ✅ Live | `GET /strategies/{id}/param-types` — parses `.cs` (`public int|double PropertyName {`) and `.mq5` (`input int|double Name`) source files. Returns `{paramName: "int"\|"double"}`. Used by optimizer modal to block decimal steps on integer params. |
 | Lab — MT5 runner (M5) | ✅ Live | `mt5_agent.py` port 8766: Strategy Tester driver (ini+set, terminal64, HTML report). `mt5_agent_client.py` typed wrapper. Runner dispatch via `nt8_agent_client`. |
 | Lab — MT5 deployment (Step 9) | ✅ Live | MT5 agent upload/delete `.mq5`. `POST /compile` → MetaEditor. Backend: `POST/GET /strategy-files/compile-mt5`. |
 | Lab — MT5 native optimizer (Speed Step 4) | ✅ Live | `mt5_agent.py` extended with `POST /native-optimize` (Optimization=1 ini, set-file ranges, HTML combo parser) and `POST /native-walkforward` (ForwardMode ini, IS/OOS HTML split). `mt5_agent_client.py` typed wrappers. `nt8_agent_client` dispatcher: `start_native_optimization`, `native_opt_results`, `start_native_walkforward`, `native_wf_results` all accept `runner` param. `optimization_runner.run_native_optimization` reads `runner_str` from strategy and passes through poll loop. MT5 optimizer runs combos sequentially; each combo updates `pct`, `message`, `completed_count`, `total_count` on the job dict. `_normalize_mt5_status` passes these through (no longer hardcodes `pct=30`). Poll loop writes `completed_runs` to DB mid-run via `set_optimization_completed_runs()`. |
@@ -332,7 +341,9 @@ Merges both pools (~11,000 paths) and computes: median/P95/P99 drawdown, prob of
 
 **Per-platform job lock — must join strategies:** `has_running_nt8_job()`, `has_running_mt5_job()`, and `get_running_job()` all query the `optimizations` table. Optimizations don't carry a `runner` column — you must `LEFT JOIN strategies s ON s.id = o.strategy_id` and filter on `COALESCE(s.runner, 'ninjatrader')`. Without this join, a running MT5 optimization appears as an NT8 job, which blocks the Optimize button on futures backtests. `get_running_job()` has a dedicated MT5 optimization block that routes MT5 optimizations to `result["mt5"]`.
 
-**Stress test architecture:** `services/stress_tester.py` runs three phases: (1) Monte Carlo — pure numpy, vectorised, ~5s even for 700+ trades. (2) Walk-forward — N windows × 2 VPS backtests (IS + OOS), sequential. (3) Sensitivity — N params × SHIFTS VPS backtests, sequential; SHIFTS = 2 for MT5, 4 for NT8. Auto-trigger (Tier 1 backtests + optimizer winners) runs MC only — no VPS needed. Manual trigger always runs all three phases.
+**Stress test architecture:** `services/stress_tester.py` runs three phases: (1) Monte Carlo — pure numpy, vectorised, ~5s even for 700+ trades. (2) Walk-forward — N windows × 2 VPS backtests (IS + OOS), sequential. (3) Sensitivity — N params × SHIFTS VPS backtests, sequential; SHIFTS = 2 for MT5, 4 for NT8. Auto-trigger runs MC only — no VPS needed. Manual trigger always runs all three phases.
+
+**Auto-trigger gate — Tier 1 only:** Both paths that auto-trigger MC must check `worthiness_tier == "TIER_1_STRESS_TEST"` before firing. Single-run path (`backtest_runner.py`) already does this. Optimization winner path (`optimization_runner.py`, `_run_winner_backtest`) must also check — without the gate it fires on every winner regardless of how bad the result is, producing unexpected F grades the user never asked for.
 
 **Strategy best grades:** `lab_db.best_grades_by_strategy()` queries all graded stress tests, returns `{strategy_id: {grade, stress_test_id}}` keeping the best grade per strategy (A–F ordered). `GET /stress-tests/strategy-grades` exposes this. Route must be defined before `GET /{stress_test_id}` to avoid FastAPI matching "strategy-grades" as a stress test ID.
 

@@ -1489,6 +1489,8 @@ export function BacktestDetail() {
   const isFailed   = run?.status.startsWith('failed') ?? false
   const isComplete    = run?.status === 'complete'
   const isMt5         = run?.runner === 'mt5'
+  // Optimization combo run: exists in the grid export but has never been fully backtested
+  const isOptCombo    = !!run?.optimization_id && !run?.equity_curve?.length && isComplete
   const stressBlocked = isMt5 ? (stressLock?.forex ?? false) : (stressLock?.futures ?? false)
 
   const progressMatches = progress?.job_id === run?.run_id
@@ -1593,12 +1595,12 @@ export function BacktestDetail() {
           {isFailed && <FailureBanner run={run} />}
           {/* ── Evaluations + Performance (side by side) ──────────────────── */}
           {isComplete && (
-            <div className={run.evaluations.length > 0
+            <div className={run.evaluations.length > 0 && !isOptCombo
               ? 'grid gap-6 lg:grid-cols-[minmax(260px,380px)_1fr]'
               : ''}>
 
-              {/* Left: firm evaluation cards — stretches to match KPI height */}
-              {run.evaluations.length > 0 && (
+              {/* Left: firm evaluation cards — hidden for opt combo runs (no full backtest data) */}
+              {run.evaluations.length > 0 && !isOptCombo && (
                 <div className="flex flex-col">
                   <SectionLabel>Evaluation</SectionLabel>
                   <div className="flex flex-col gap-3 flex-1">
@@ -1607,10 +1609,10 @@ export function BacktestDetail() {
                 </div>
               )}
 
-              {/* Right: KPIs — flex-col so grid can stretch to match eval card */}
-              <div className={run.evaluations.length > 0 ? 'flex flex-col' : ''}>
+              {/* Right: KPIs */}
+              <div className={run.evaluations.length > 0 && !isOptCombo ? 'flex flex-col' : ''}>
                 <SectionLabel>Performance</SectionLabel>
-                {run.evaluations.length > 0 ? (
+                {run.evaluations.length > 0 && !isOptCombo ? (
                   <div className="flex-1">
                     <KpiGrid run={run} fallback={fallback} equity={run.equity_curve} stretch />
                   </div>
@@ -1622,7 +1624,7 @@ export function BacktestDetail() {
           )}
 
           {/* ── Charts ────────────────────────────────────────────────────── */}
-          {isComplete && (() => {
+          {isComplete && !isOptCombo && (() => {
             const hasCharts = run.equity_curve.length > 0
 
             const seenLimits = new Set<number>()
@@ -1730,7 +1732,7 @@ export function BacktestDetail() {
           })()}
 
           {/* ── Logs ─────────────────────────────────────────────────────── */}
-          {runId && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} isComplete={isComplete} isFailed={isFailed} />}
+          {runId && !isOptCombo && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} isComplete={isComplete} isFailed={isFailed} />}
         </div>
       )}
     </div>

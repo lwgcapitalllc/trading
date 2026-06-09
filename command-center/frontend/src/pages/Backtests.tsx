@@ -256,12 +256,40 @@ function RunsTab() {
     return set
   }, [allSweeps])
 
+  const optById = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof allOpts>[0]>()
+    allOpts?.forEach(o => map.set(o.optimization_id, o))
+    return map
+  }, [allOpts])
+
+  // Running full backtests of optimization winners — nest under the parent run instead of top-level
+  const fullBtRunsByParent = useMemo(() => {
+    const map = new Map<string, import('@/types').BacktestSummary[]>()
+    if (!allRuns) return map
+    for (const r of allRuns) {
+      if (!r.optimization_id || r.status !== 'running') continue
+      const parentId = optById.get(r.optimization_id)?.source_run_id
+      if (!parentId) continue
+      const existing = map.get(parentId) ?? []
+      existing.push(r)
+      map.set(parentId, existing)
+    }
+    return map
+  }, [allRuns, optById])
+
+  const fullBtNestIds = useMemo(() => {
+    const set = new Set<string>()
+    for (const runs of fullBtRunsByParent.values())
+      for (const r of runs) set.add(r.run_id)
+    return set
+  }, [fullBtRunsByParent])
+
   const runs = useMemo(
     () => allRuns
-      // Show opt-combo runs only when they're actively running (user triggered "Full Backtest")
       ?.filter(r => (!r.optimization_id || r.status === 'running') && !(r.sweep_id && linkedSweepIds.has(r.sweep_id)))
+      ?.filter(r => !fullBtNestIds.has(r.run_id))
       ?.filter(r => marketFilter === 'all' || (isForexInstrument(r.instrument) ? 'forex' : 'futures') === marketFilter),
-    [allRuns, linkedSweepIds, marketFilter]
+    [allRuns, linkedSweepIds, fullBtNestIds, marketFilter]
   )
 
   const optsBySourceRun = useMemo(() => {
@@ -428,7 +456,8 @@ function RunsTab() {
               {runs.map(run => {
                 const childSweeps  = sweepsBySourceRun.get(run.run_id) ?? []
                 const childOpts    = optsBySourceRun.get(run.run_id) ?? []
-                const hasChildren  = childSweeps.length > 0 || childOpts.length > 0
+                const childFullBts = fullBtRunsByParent.get(run.run_id) ?? []
+                const hasChildren  = childSweeps.length > 0 || childOpts.length > 0 || childFullBts.length > 0
                 const isCollapsed  = collapsedRuns.has(run.run_id)
                 return (
                   <Fragment key={run.run_id}>
@@ -457,6 +486,13 @@ function RunsTab() {
                         colSpan={12}
                         onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
                         hasRunningStress={!!opt.best_run_id && stressRunIds.has(opt.best_run_id)}
+                      />
+                    ))}
+                    {!isCollapsed && childFullBts.map(r => (
+                      <FullBacktestNestRow
+                        key={r.run_id}
+                        colSpan={12}
+                        onClick={() => navigate(`/backtests/runs/${r.run_id}`)}
                       />
                     ))}
                   </Fragment>
@@ -529,6 +565,35 @@ function OptimizationNestRow({
       </td>
       <td className="px-4 py-2">
         <span className={`inline-flex px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>{st.label}</span>
+      </td>
+      <td colSpan={colSpan - 5} className="px-4 py-2 text-right">
+        <span className="text-[11px] text-accent">View →</span>
+      </td>
+    </tr>
+  )
+}
+
+// ── Nested full-backtest row (winner run from an optimization) ────────────────
+
+function FullBacktestNestRow({ colSpan, onClick }: {
+  colSpan: number
+  onClick: () => void
+}) {
+  return (
+    <tr onClick={onClick} className="hover:bg-bg-hover cursor-pointer transition-colors bg-gold-muted/5 border-l-2 border-l-gold-text/35">
+      <td className="px-3 py-2" />
+      <td className="px-4 py-2" colSpan={3}>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
+          <span className="text-[11px] font-semibold text-gold-text">Full Backtest</span>
+          <span className="w-[6px] h-[6px] rounded-full bg-gold-text animate-pulse flex-shrink-0" title="Running" />
+        </div>
+      </td>
+      <td className="px-4 py-2">
+        <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] bg-accent/10 text-accent">
+          <span className="w-[4px] h-[4px] rounded-full bg-accent animate-pulse" />
+          Running
+        </span>
       </td>
       <td colSpan={colSpan - 5} className="px-4 py-2 text-right">
         <span className="text-[11px] text-accent">View →</span>

@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
-**Last reviewed:** 2026-06-08
+**Last reviewed:** 2026-06-09
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -340,7 +340,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Worthiness Badges | ✅ Live | Tier 1/2/3 pill on every completed run in Runs table and BacktestDetail |
 | Sweep Detail | ✅ Live | ProgressCard (segmented bar, elapsed timer), ResultsTable, FailedRunsTable, cancel + retry-all + per-row retry |
 | Optimization Detail | ✅ Live | 3-view toggle (Table / Bar Chart / Heatmap). Table: ranked table, always available. Bar Chart: sorted by PF desc, colored by tier, winner ★. Heatmap: 2-param only, message otherwise. Best param callout, CSV export. "Full Backtest" button on BacktestDetail (not inline in table). |
-| Optimize Button | ✅ Live | Tier-aware: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning modal with instrument routing |
+| Optimize Button | ✅ Live | Tier-aware: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning modal with instrument routing. Integer param validation: `useParamTypes` fetches `int`/`double` types for each param; if any range axis on an `int` param has a decimal min/max/step, `intErrors` map is populated → red border on the offending inputs, error message replaces `RangePreview`, Go button disabled. `handleGo` also guards against `intErrors` before submitting. |
 | Tier 3 Warning Modal | ✅ Live | Past results per instrument; sweep of untested instruments; `withContractMonth()` stamps contract month; passes `source_run_id` |
 | Runner Badge | ✅ Live | `RunnerBadge` on Strategies tab, StrategyDetail, Runs tab — NT8 (cyan) or MT5 (purple) |
 | Market Filter | ✅ Live | `MarketFilterBar` on Strategies and Runs tabs. All / Futures / Forex. `runner=mt5` → Forex, others → Futures. `useState` (not URL) |
@@ -400,6 +400,8 @@ Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBac
 **`FilesTab`** ("Deployed" sub-tab): drag/drop zone (`.cs`/`.mq5`), file list sorted by platform then filename, trash-can delete, overwrite/delete confirmation modals. "Compile NT8" → `useTriggerCompile()` → NT8 `CompileModal`. "Compile MT5" (purple, only when MT5 files present) → `useTriggerCompileMt5()` → MT5 `CompileModal`. `CompileModal` is generic: `title` + `usePollHook` props.
 
 **New hooks in `useLab.ts`:** `useStrategyFiles`, `useStrategyFileSyncStatus`, `useUploadStrategyFile` (native `fetch()` + `FormData` — not `api.post`), `useDeleteStrategyFile`, `useTriggerCompile`, `useCompileStatus`, `useTriggerCompileMt5`, `useCompileStatusMt5`, `useDeployStrategy`.
+
+**`useParamTypes(strategyId)`** in `useLab.ts` — calls `GET /strategies/{id}/param-types`, returns `Record<string, 'int' | 'double'>`. `staleTime: Infinity` (param types only change if the source file changes, so no background refetching). Used by `OptimizerModal` to validate that range inputs for `int` params are whole numbers. If `strategyId` is null the query is disabled.
 
 **New types:** `StrategyFile` (+ `platform`), `StrategyFileSyncStatus`, `CompileJobStatus`, `DeployJobStatus`. `ScanResult` gains `warnings: string[]`.
 

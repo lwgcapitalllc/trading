@@ -453,12 +453,13 @@ async def _run_winner_backtest_for_mc(
     log.info("Winner backtest %s submitted for opt %s", new_run_id, opt["optimization_id"])
     await _poll_one(new_run_id, new_run_id, ruleset_ids, opt["mode"])
 
-    # Reload the run to check tier, then always auto-trigger stress test for the winner
+    # Auto-trigger MC stress test only if the winner is Tier 1 (same gate as single-run path)
     run_after = lab_db.get_run(new_run_id)
-    if run_after and run_after.get("status") == "complete" and ruleset_ids:
+    if (run_after and run_after.get("status") == "complete" and ruleset_ids
+            and run_after.get("worthiness_tier") == "TIER_1_STRESS_TEST"):
         from services import stress_tester
         asyncio.create_task(stress_tester.trigger_auto_stress_test(new_run_id, ruleset_ids))
-        log.info("Auto-triggered stress test for winner backtest %s", new_run_id)
+        log.info("Auto-triggered stress test for Tier 1 winner backtest %s", new_run_id)
 
 
 # ── Native optimizer path ─────────────────────────────────────────────────────
