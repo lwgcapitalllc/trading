@@ -1925,7 +1925,10 @@ def compile_status(compile_job_id: str):
 def test_opt_pass():
     """
     Temporary test endpoint: run TestOptPass.mq5 with Optimization=1 (3x3=9 combos)
-    and check if OnTesterDeinit() writes MQL5/Files/opt_test_results.csv.
+    and check if OnTesterInit/OnTester/OnTesterPass write CSV results.
+
+    Uses the isolated C:\\MT5_Lab directory (not AppData) to avoid conflicts with
+    the live trading terminal that holds the AppData profile exclusively.
 
     Remove once OnTesterDeinit() approach is validated or abandoned.
     """
@@ -1933,12 +1936,14 @@ def test_opt_pass():
     if not tester_exe:
         return jsonify({"error": "Cannot locate terminal64.exe"}), 503
 
-    data_dir = _tester_data_dir(tester_exe)
-    ex5 = data_dir / "MQL5" / "Experts" / "TestOptPass.ex5"
-    if not ex5.is_file():
-        return jsonify({"error": f"TestOptPass.ex5 not found at {ex5} — compile first"}), 404
+    # Use the MT5_Lab installation dir directly — isolated from the live terminal.
+    lab_dir = tester_exe.parent  # e.g. C:\MT5_Lab
 
-    tester_dir = data_dir / "MQL5" / "Profiles" / "Tester"
+    ex5 = lab_dir / "MQL5" / "Experts" / "TestOptPass.ex5"
+    if not ex5.is_file():
+        return jsonify({"error": f"TestOptPass.ex5 not found at {ex5} — copy and compile to MT5_Lab/MQL5/Experts first"}), 404
+
+    tester_dir = lab_dir / "MQL5" / "Profiles" / "Tester"
     tester_dir.mkdir(parents=True, exist_ok=True)
     set_path = tester_dir / "testoptpass.set"
     set_path.write_text(
@@ -1947,9 +1952,9 @@ def test_opt_pass():
         encoding="utf-8",
     )
 
-    reports_dir = data_dir / "reports"
+    reports_dir = lab_dir / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
-    ini_path = data_dir / "testoptpass.ini"
+    ini_path = lab_dir / "testoptpass.ini"
     ini_path.write_text(
         "[Tester]\n"
         "Expert=TestOptPass\n"
@@ -1971,9 +1976,12 @@ def test_opt_pass():
         encoding="utf-8",
     )
 
-    output_csv = data_dir / "MQL5" / "Files" / "opt_test_results.csv"
-    if output_csv.exists():
-        output_csv.unlink()
+    files_dir_lab = lab_dir / "MQL5" / "Files"
+    files_dir_lab.mkdir(parents=True, exist_ok=True)
+    for fname in ("opt_test_direct.csv", "opt_test_frames.csv", "opt_test_results.csv"):
+        p = files_dir_lab / fname
+        if p.exists():
+            p.unlink()
 
     proc = _launch_tester(tester_exe, ini_path)
     _alog(f"test/opt-pass: launched PID {proc.pid}")
@@ -1993,9 +2001,8 @@ def test_opt_pass():
     set_path.unlink(missing_ok=True)
     ini_path.unlink(missing_ok=True)
 
-    files_dir = data_dir / "MQL5" / "Files"
-    direct_csv = files_dir / "opt_test_direct.csv"
-    frames_csv = files_dir / "opt_test_frames.csv"
+    direct_csv = files_dir_lab / "opt_test_direct.csv"
+    frames_csv = files_dir_lab / "opt_test_frames.csv"
 
     def _read(p: Path) -> tuple[bool, int, str]:
         if not p.exists():
