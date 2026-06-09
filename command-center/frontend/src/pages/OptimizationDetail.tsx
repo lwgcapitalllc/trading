@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { OptimizationHeatmap } from '@/components/OptimizationHeatmap'
 import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog } from '@/hooks/useLab'
@@ -508,34 +508,64 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
   )
 }
 
-// ── Log terminal ─────────────────────────────────────────────────────────────
+// ── Log section ───────────────────────────────────────────────────────────────
 
-function OptLogTerminal({ optimizationId, live }: { optimizationId: string; live: boolean }) {
-  const { data: log, refetch } = useOptimizationLog(optimizationId, 300, live)
-  const bottomRef  = useRef<HTMLDivElement>(null)
-  const prevLiveRef = useRef(live)
+function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
+  optimizationId: string
+  isRunning: boolean
+  isComplete: boolean
+  isFailed: boolean
+}) {
+  const [open, setOpen] = useState(isRunning || isFailed)
+  const { data: log, isFetching, refetch } = useOptimizationLog(open ? optimizationId : null, 300, isRunning)
+  const prevLiveRef = useRef(isRunning)
 
-  // When the optimization completes, do one final fetch to get the saved log
   useEffect(() => {
-    if (prevLiveRef.current && !live) refetch()
-    prevLiveRef.current = live
-  }, [live, refetch])
-
-  useEffect(() => {
-    if (live) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [log, live])
-
-  if (!log) return null
+    if (prevLiveRef.current && !isRunning) refetch()
+    prevLiveRef.current = isRunning
+  }, [isRunning, refetch])
 
   return (
-    <div>
-      <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
-        VPS Log {live && <span className="text-accent animate-pulse ml-1">· live</span>}
-      </h2>
-      <div className="bg-bg-sunken border border-border-subtle rounded-xl p-4 font-mono text-[11px] text-text-secondary leading-relaxed max-h-[340px] overflow-y-auto whitespace-pre-wrap break-all">
-        {log || <span className="text-text-tertiary italic">No log output yet…</span>}
-        <div ref={bottomRef} />
-      </div>
+    <div className="bg-bg-sunken border border-border-subtle rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-[10px] border-b border-border-subtle hover:bg-bg-hover/40 transition-colors"
+      >
+        <div className="flex items-center gap-[10px]">
+          {isRunning ? (
+            <span className="relative flex h-[8px] w-[8px] flex-shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
+              <span className="relative inline-flex rounded-full h-[8px] w-[8px] bg-accent" />
+            </span>
+          ) : isComplete ? (
+            <span className="w-[8px] h-[8px] rounded-full bg-accent flex-shrink-0" />
+          ) : isFailed ? (
+            <span className="w-[8px] h-[8px] rounded-full bg-neg-text flex-shrink-0" />
+          ) : (
+            <span className="w-[8px] h-[8px] rounded-full bg-text-tertiary/30 flex-shrink-0" />
+          )}
+          <span className="text-small font-semibold font-mono tracking-wide uppercase text-text-secondary">
+            VPS Log
+          </span>
+          {isRunning && <span className="text-micro text-text-tertiary font-mono">· live</span>}
+          {isComplete && !isRunning && <span className="text-micro text-accent font-mono">· complete</span>}
+          {isFailed && !isRunning && <span className="text-micro text-neg-text font-mono">· failed</span>}
+        </div>
+        {open ? <ChevronUp size={14} className="text-text-tertiary" /> : <ChevronDown size={14} className="text-text-tertiary" />}
+      </button>
+      {open && (
+        <div>
+          {isFetching && !log ? (
+            <div className="px-4 py-3 text-[12px] text-text-tertiary font-mono">Loading…</div>
+          ) : log ? (
+            <pre className="px-4 py-3 text-[11px] font-mono text-text-secondary leading-[1.6] overflow-x-auto whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+              {log}
+            </pre>
+          ) : (
+            <div className="px-4 py-3 text-[12px] text-text-tertiary font-mono">No log output.</div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -673,11 +703,6 @@ export function OptimizationDetail() {
             jobBlocked={jobBlocked}
           />
 
-          {/* VPS log — live while running, persisted when complete/failed */}
-          {optimizationId && (
-            <OptLogTerminal optimizationId={optimizationId} live={isRunning} />
-          )}
-
           {latestStress && (
             <button
               onClick={() => navigate(`/stress-tests/${latestStress.stress_test_id}`)}
@@ -764,6 +789,16 @@ export function OptimizationDetail() {
 
           {/* Failed runs — debugging info, always below results */}
           <FailedRunsTable runs={failedRuns} sweptKeys={sweptKeys} navigate={navigate} retryRun={retryRun} jobBlocked={jobBlocked} />
+
+          {/* VPS log — collapsible, preserved after completion */}
+          {optimizationId && (
+            <OptLogSection
+              optimizationId={optimizationId}
+              isRunning={isRunning}
+              isComplete={opt.status === 'complete'}
+              isFailed={opt.status.startsWith('failed')}
+            />
+          )}
         </div>
       )}
     </div>
