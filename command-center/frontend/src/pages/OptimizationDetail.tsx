@@ -511,8 +511,15 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
 // ── Log terminal ─────────────────────────────────────────────────────────────
 
 function OptLogTerminal({ optimizationId, live }: { optimizationId: string; live: boolean }) {
-  const { data: log } = useOptimizationLog(optimizationId, 300, live)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const { data: log, refetch } = useOptimizationLog(optimizationId, 300, live)
+  const bottomRef  = useRef<HTMLDivElement>(null)
+  const prevLiveRef = useRef(live)
+
+  // When the optimization completes, do one final fetch to get the saved log
+  useEffect(() => {
+    if (prevLiveRef.current && !live) refetch()
+    prevLiveRef.current = live
+  }, [live, refetch])
 
   useEffect(() => {
     if (live) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -666,9 +673,9 @@ export function OptimizationDetail() {
             jobBlocked={jobBlocked}
           />
 
-          {/* Live log — visible while optimization is running */}
-          {isRunning && optimizationId && (
-            <OptLogTerminal optimizationId={optimizationId} live={true} />
+          {/* VPS log — live while running, persisted when complete/failed */}
+          {optimizationId && (
+            <OptLogTerminal optimizationId={optimizationId} live={isRunning} />
           )}
 
           {latestStress && (

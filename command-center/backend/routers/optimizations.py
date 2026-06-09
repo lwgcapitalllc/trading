@@ -171,7 +171,17 @@ def get_optimization_log(optimization_id: str, lines: int = 300) -> str:
     strategy = lab_db.get_strategy(opt["strategy_id"])
     runner = (strategy or {}).get("runner", "ninjatrader")
     job_id = f"nopt_{optimization_id}"
-    return nt8_agent_client.job_log(job_id, lines=lines, runner=runner)
+
+    live = nt8_agent_client.job_log(job_id, lines=lines, runner=runner)
+    if live:
+        return live
+
+    # Agent has no record (restarted) — serve the saved log file if it exists
+    saved = _LAB_RESULTS_DIR / optimization_id / "opt_log.txt"
+    if saved.is_file():
+        text = saved.read_text(encoding="utf-8", errors="replace")
+        return "\n".join(text.splitlines()[-lines:])
+    return ""
 
 
 def _row_to_opt_summary(row: dict) -> OptimizationSummary:

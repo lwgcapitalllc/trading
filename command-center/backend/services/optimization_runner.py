@@ -504,6 +504,19 @@ async def run_native_optimization(optimization_id: str) -> None:
 
     opt_job_id = f"nopt_{optimization_id}"
 
+    async def _persist_log() -> None:
+        """Fetch the final VPS agent log and save it so it survives agent restarts."""
+        try:
+            txt = await asyncio.to_thread(
+                lambda: nt8_agent_client.job_log(opt_job_id, lines=500, runner=runner_str)
+            )
+            if txt:
+                log_dir = _LAB_RESULTS_DIR / optimization_id
+                log_dir.mkdir(parents=True, exist_ok=True)
+                (log_dir / "opt_log.txt").write_text(txt, encoding="utf-8")
+        except Exception as _exc:
+            log.warning("Could not persist opt log for %s: %s", optimization_id, _exc)
+
     spec = {
         "job_id":             opt_job_id,
         "strategy_class":     strategy["class_name"],
@@ -522,6 +535,7 @@ async def run_native_optimization(optimization_id: str) -> None:
         await asyncio.to_thread(nt8_agent_client.start_native_optimization, spec, runner_str)
     except Exception as exc:
         lab_db.fail_optimization(optimization_id, f"VPS submit failed: {exc}")
+        await _persist_log()
         return
 
     # Poll the single VPS job until it completes or stalls
@@ -547,6 +561,7 @@ async def run_native_optimization(optimization_id: str) -> None:
                 optimization_id,
                 status_data.get("error") or status,
             )
+            await _persist_log()
             return
 
         if time.time() - started_at > _NATIVE_OPT_STALL_SEC:
@@ -555,6 +570,7 @@ async def run_native_optimization(optimization_id: str) -> None:
             except Exception:
                 pass
             lab_db.fail_optimization(optimization_id, "Native optimizer timed out")
+            await _persist_log()
             return
 
     # Retrieve the full combo grid
@@ -562,11 +578,13 @@ async def run_native_optimization(optimization_id: str) -> None:
         result = await asyncio.to_thread(nt8_agent_client.native_opt_results, opt_job_id, runner_str)
     except Exception as exc:
         lab_db.fail_optimization(optimization_id, f"Could not fetch grid: {exc}")
+        await _persist_log()
         return
 
     combos = result.get("combos", [])
     if not combos:
         lab_db.fail_optimization(optimization_id, "Native optimizer returned no combos")
+        await _persist_log()
         return
 
     # NT8 drops zero-trade combos from its CSV. Update estimated_runs to the actual
@@ -653,6 +671,7 @@ async def run_native_optimization(optimization_id: str) -> None:
     ]
     best_run_id = await _pick_best_run(complete_rows, opt, firm)
     lab_db.complete_optimization(optimization_id, best_run_id)
+    await _persist_log()
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
