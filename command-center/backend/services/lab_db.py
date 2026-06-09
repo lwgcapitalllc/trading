@@ -1350,19 +1350,26 @@ def has_running_nt8_job() -> bool:
         run_count = conn.execute(
             "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running' AND COALESCE(runner, 'ninjatrader') != 'mt5'",
         ).fetchone()[0]
-        opt_count = conn.execute(
-            "SELECT COUNT(*) FROM optimizations WHERE status = 'running'",
-        ).fetchone()[0]
+        opt_count = conn.execute("""
+            SELECT COUNT(*) FROM optimizations o
+            LEFT JOIN strategies s ON s.id = o.strategy_id
+            WHERE o.status = 'running' AND COALESCE(s.runner, 'ninjatrader') != 'mt5'
+        """).fetchone()[0]
     return (run_count + opt_count) > 0
 
 
 def has_running_mt5_job() -> bool:
-    """True if any MT5 backtest is currently running."""
+    """True if any MT5 job (backtest or optimization) is currently running."""
     with _connect() as conn:
-        count = conn.execute(
+        run_count = conn.execute(
             "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running' AND runner = 'mt5'",
         ).fetchone()[0]
-    return count > 0
+        opt_count = conn.execute("""
+            SELECT COUNT(*) FROM optimizations o
+            LEFT JOIN strategies s ON s.id = o.strategy_id
+            WHERE o.status = 'running' AND s.runner = 'mt5'
+        """).fetchone()[0]
+    return (run_count + opt_count) > 0
 
 
 def delete_run_evaluations(run_id: str) -> None:
@@ -1420,11 +1427,25 @@ def get_running_job() -> dict:
                        || ' (' || o.completed_runs || '/' || o.estimated_runs || ')' AS description
                 FROM optimizations o
                 LEFT JOIN strategies s ON s.id = o.strategy_id
-                WHERE o.status = 'running'
+                WHERE o.status = 'running' AND COALESCE(s.runner, 'ninjatrader') != 'mt5'
                 LIMIT 1
             """).fetchone()
             if row:
                 result["nt8"] = {"running": True, **dict(row)}
+
+        # MT5 optimization
+        if not result["mt5"]["running"]:
+            row = conn.execute("""
+                SELECT 'optimization' AS job_type, o.optimization_id AS job_id,
+                       COALESCE(s.name, o.strategy_id) || ' optimization on ' || o.instrument
+                       || ' (' || o.completed_runs || '/' || o.estimated_runs || ')' AS description
+                FROM optimizations o
+                LEFT JOIN strategies s ON s.id = o.strategy_id
+                WHERE o.status = 'running' AND s.runner = 'mt5'
+                LIMIT 1
+            """).fetchone()
+            if row:
+                result["mt5"] = {"running": True, **dict(row)}
 
     return result
 

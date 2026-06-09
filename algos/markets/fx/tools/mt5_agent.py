@@ -1921,6 +1921,98 @@ def compile_status(compile_job_id: str):
     return jsonify(job)
 
 
+@app.route("/test/opt-pass", methods=["POST"])
+def test_opt_pass():
+    """
+    Temporary test endpoint: run TestOptPass.mq5 with Optimization=1 (3x3=9 combos)
+    and check if OnTesterDeinit() writes MQL5/Files/opt_test_results.csv.
+
+    Remove once OnTesterDeinit() approach is validated or abandoned.
+    """
+    tester_exe = _get_tester_exe()
+    if not tester_exe:
+        return jsonify({"error": "Cannot locate terminal64.exe"}), 503
+
+    data_dir = _tester_data_dir(tester_exe)
+    ex5 = data_dir / "MQL5" / "Experts" / "TestOptPass.ex5"
+    if not ex5.is_file():
+        return jsonify({"error": f"TestOptPass.ex5 not found at {ex5} — compile first"}), 404
+
+    tester_dir = data_dir / "MQL5" / "Profiles" / "Tester"
+    tester_dir.mkdir(parents=True, exist_ok=True)
+    set_path = tester_dir / "testoptpass.set"
+    set_path.write_text(
+        "FastPeriod=5||5||5||15||Y\n"
+        "SlowPeriod=20||20||5||30||Y\n",
+        encoding="utf-8",
+    )
+
+    reports_dir = data_dir / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    ini_path = data_dir / "testoptpass.ini"
+    ini_path.write_text(
+        "[Tester]\n"
+        "Expert=TestOptPass\n"
+        "ExpertParameters=testoptpass.set\n"
+        "Symbol=EURUSD\n"
+        "Period=H1\n"
+        "Model=2\n"
+        "FromDate=2025.01.06\n"
+        "ToDate=2025.01.10\n"
+        "ForwardMode=0\n"
+        "Report=reports\\testoptpass\n"
+        "ReplaceReport=1\n"
+        "ShutdownTerminal=1\n"
+        "Deposit=10000.0\n"
+        "Currency=USD\n"
+        "Leverage=1:100\n"
+        "Visual=0\n"
+        "Optimization=1\n",
+        encoding="utf-8",
+    )
+
+    output_csv = data_dir / "MQL5" / "Files" / "opt_test_results.csv"
+    if output_csv.exists():
+        output_csv.unlink()
+
+    proc = _launch_tester(tester_exe, ini_path)
+    _alog(f"test/opt-pass: launched PID {proc.pid}")
+
+    deadline = time.time() + 180
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            break
+        time.sleep(3)
+    else:
+        proc.terminate()
+        set_path.unlink(missing_ok=True)
+        ini_path.unlink(missing_ok=True)
+        return jsonify({"result": "timeout", "csv_found": False}), 200
+
+    time.sleep(2)
+    set_path.unlink(missing_ok=True)
+    ini_path.unlink(missing_ok=True)
+
+    if output_csv.exists():
+        content = output_csv.read_text(encoding="utf-8", errors="replace")
+        rows = [l for l in content.splitlines() if l.strip()]
+        _alog(f"test/opt-pass: SUCCESS — {len(rows)-1} data rows in CSV")
+        return jsonify({
+            "result": "success",
+            "csv_found": True,
+            "exit_code": proc.returncode,
+            "rows": len(rows) - 1,
+            "content": content,
+        }), 200
+    else:
+        _alog(f"test/opt-pass: FAIL — CSV not created, exit_code={proc.returncode}")
+        return jsonify({
+            "result": "fail",
+            "csv_found": False,
+            "exit_code": proc.returncode,
+        }), 200
+
+
 # ── Startup ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

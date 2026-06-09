@@ -2,7 +2,7 @@
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
-**Last reviewed:** 2026-06-07 (Speed Steps 4–6)
+**Last reviewed:** 2026-06-08
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -120,7 +120,11 @@ Never make a synchronous SSH call from a request handler that could take > 2s. B
 
 Hard-won rules for pywinauto + NT8 WPF — violating these causes silent wrong-strategy runs or broken SA state:
 
+**PCT:100 hung fix**: In `nt8_agent.py`, the `for line in proc.stdout:` loop never sees EOF on Windows when the subprocess calls `os._exit(0)`. This is because `subprocess.Popen` with `stdout=PIPE` sets `close_fds=False` on Windows — the agent process inherits the write-end of the pipe, keeping it open after the child exits. Fix: mark the job `status="complete"` *inside* the stdout loop the moment `PCT:100` arrives AND the results file exists — never wait for loop exit. Same pattern applies to walk-forward jobs.
+
 **SA auto-open**: `find_strategy_analyzer` opens SA automatically via NT8's New → Strategy Analyzer menu if not already visible. This handles the case where NT8 crashes and restarts without restoring the SA window. Retries once after opening.
+
+**Narrow scan `txtBox` probe**: `_build_opt_grid_map` uses a narrow scan to avoid the ~22s full `sa.descendants()` call. The probe must use `found_index=0` — `sa.child_window(auto_id="txtBox", control_type="Edit", found_index=0)` — because multiple elements match and `child_window()` without `found_index` throws "N elements match." Each `node.parent()` call in the walk must be in its own `try/except` so a COM error on one level doesn't abort the entire walk.
 
 **Strategy compile delays**: After NT8 restart, strategies are compiled lazily. `select_strategy` retries with increasing waits (1.5s → 5s → 10s) to allow NT8 time to compile before giving up.
 
@@ -246,7 +250,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Lab — Strategy Deploy (Pass 2.5) | ✅ Live | `POST /strategies/{id}/deploy` reads `source_path`, uploads to VPS. `.mq5` → MT5 agent, `.cs` → NT8 agent. |
 | Lab — MT5 runner (M5) | ✅ Live | `mt5_agent.py` port 8766: Strategy Tester driver (ini+set, terminal64, HTML report). `mt5_agent_client.py` typed wrapper. Runner dispatch via `nt8_agent_client`. |
 | Lab — MT5 deployment (Step 9) | ✅ Live | MT5 agent upload/delete `.mq5`. `POST /compile` → MetaEditor. Backend: `POST/GET /strategy-files/compile-mt5`. |
-| Lab — MT5 native optimizer (Speed Step 4) | ✅ Live | `mt5_agent.py` extended with `POST /native-optimize` (Optimization=1 ini, set-file ranges, HTML combo parser) and `POST /native-walkforward` (ForwardMode ini, IS/OOS HTML split). `mt5_agent_client.py` typed wrappers. `nt8_agent_client` dispatcher: `start_native_optimization`, `native_opt_results`, `start_native_walkforward`, `native_wf_results` all accept `runner` param. `optimization_runner.run_native_optimization` reads `runner_str` from strategy and passes through poll loop. **HTML parsing needs VPS validation.** |
+| Lab — MT5 native optimizer (Speed Step 4) | ✅ Live | `mt5_agent.py` extended with `POST /native-optimize` (Optimization=1 ini, set-file ranges, HTML combo parser) and `POST /native-walkforward` (ForwardMode ini, IS/OOS HTML split). `mt5_agent_client.py` typed wrappers. `nt8_agent_client` dispatcher: `start_native_optimization`, `native_opt_results`, `start_native_walkforward`, `native_wf_results` all accept `runner` param. `optimization_runner.run_native_optimization` reads `runner_str` from strategy and passes through poll loop. MT5 optimizer runs combos sequentially; each combo updates `pct`, `message`, `completed_count`, `total_count` on the job dict. `_normalize_mt5_status` passes these through (no longer hardcodes `pct=30`). Poll loop writes `completed_runs` to DB mid-run via `set_optimization_completed_runs()`. |
 | Lab — Telegram notifications (Speed Step 5) | ✅ Live | `services/notify.py` — urllib Telegram sender (same token as `algos/shared/notify.py`, no extra deps). `stress_tester` fires after grade is written in both MC-only and full WF+sens paths. |
 | Lab — Job queue (Speed Step 6) | ✅ Live | `job_queue` table + CRUD in `lab_db.py`. `queue_runner.py` asyncio loop runs one job at a time (optimization or stress_test). `routers/queue.py`: GET/POST/DELETE. Loop started as asyncio task in `main.py` startup. |
 | Settings | ✅ Live | Config read/write. `nt8_agent_tunnel` and `mt5_agent_tunnel` both present. |
@@ -326,6 +330,8 @@ Merges both pools (~11,000 paths) and computes: median/P95/P99 drawdown, prob of
 
 **NT8 SA global lock:** All three job types (single backtest, sweep, optimization) share the same physical SA window. `lab_db.has_any_running_vps_job()` checks for any `backtest_runs` or `optimizations` row with `status = 'running'`. All three trigger endpoints call it and return 409 if true. This prevents cross-job conflicts (e.g. a sweep starting while an optimization is in progress). Walk-forward and sensitivity stress tests also check this lock before triggering.
 
+**Per-platform job lock — must join strategies:** `has_running_nt8_job()`, `has_running_mt5_job()`, and `get_running_job()` all query the `optimizations` table. Optimizations don't carry a `runner` column — you must `LEFT JOIN strategies s ON s.id = o.strategy_id` and filter on `COALESCE(s.runner, 'ninjatrader')`. Without this join, a running MT5 optimization appears as an NT8 job, which blocks the Optimize button on futures backtests. `get_running_job()` has a dedicated MT5 optimization block that routes MT5 optimizations to `result["mt5"]`.
+
 **Stress test architecture:** `services/stress_tester.py` runs three phases: (1) Monte Carlo — pure numpy, vectorised, ~5s even for 700+ trades. (2) Walk-forward — N windows × 2 VPS backtests (IS + OOS), sequential. (3) Sensitivity — N params × SHIFTS VPS backtests, sequential; SHIFTS = 2 for MT5, 4 for NT8. Auto-trigger (Tier 1 backtests + optimizer winners) runs MC only — no VPS needed. Manual trigger always runs all three phases.
 
 **Strategy best grades:** `lab_db.best_grades_by_strategy()` queries all graded stress tests, returns `{strategy_id: {grade, stress_test_id}}` keeping the best grade per strategy (A–F ordered). `GET /stress-tests/strategy-grades` exposes this. Route must be defined before `GET /{stress_test_id}` to avoid FastAPI matching "strategy-grades" as a stress test ID.
@@ -359,7 +365,7 @@ Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long
 
 **Sweep serialisation:** `sweep_runner.py` uses `asyncio.Semaphore(1)` — same constraint as the optimizer. Instruments run one at a time through the SA window.
 
-**Runner dispatcher:** `nt8_agent_client.start_backtest(job_spec, runner)` routes to the appropriate backend. Both `"ninjatrader"` (NT8 Strategy Analyzer) and `"mt5"` (MT5 Strategy Tester via `mt5_agent_client`) are wired. `nt8_agent_client._nt8_to_mt5_spec()` translates the NT8-style job_spec to the MT5 agent's format — critically, it passes `job_id` through so the MT5 agent stores the job under our `run_id`; without this every status poll returns 404 and the run times out. Timeframe mapping in `_nt8_to_mt5_spec`: M1/M5/M15/M30/H1/H4/D1 (Minute bar_value thresholds: ≥240→H4, ≥60→H1, ≥30→M30, ≥15→M15, ≥5→M5, else M1). `_normalize_mt5_status/results()` translates the MT5 agent's response shape back to the NT8 shape so all callers remain runner-agnostic. `_normalize_mt5_status` returns `pct=30` + "MT5 Strategy Tester running…" while running (no granular progress from the blocking Strategy Tester process). `runner` field added to `BacktestDetail` model and `_row_to_detail`. File upload/delete also dispatch by extension: `.mq5` files go to `mt5_agent_client`, `.cs` files go to the NT8 nt8_agent.
+**Runner dispatcher:** `nt8_agent_client.start_backtest(job_spec, runner)` routes to the appropriate backend. Both `"ninjatrader"` (NT8 Strategy Analyzer) and `"mt5"` (MT5 Strategy Tester via `mt5_agent_client`) are wired. `nt8_agent_client._nt8_to_mt5_spec()` translates the NT8-style job_spec to the MT5 agent's format — critically, it passes `job_id` through so the MT5 agent stores the job under our `run_id`; without this every status poll returns 404 and the run times out. Timeframe mapping in `_nt8_to_mt5_spec`: M1/M5/M15/M30/H1/H4/D1 (Minute bar_value thresholds: ≥240→H4, ≥60→H1, ≥30→M30, ≥15→M15, ≥5→M5, else M1). `_normalize_mt5_status/results()` translates the MT5 agent's response shape back to the NT8 shape so all callers remain runner-agnostic. `_normalize_mt5_status` passes through actual `pct`, `completed_count`, and `total_count` from the MT5 agent job dict (single backtests have no granular progress so they stay at a low floor; optimizations emit per-combo updates). `runner` field added to `BacktestDetail` model and `_row_to_detail`. File upload/delete also dispatch by extension: `.mq5` files go to `mt5_agent_client`, `.cs` files go to the NT8 nt8_agent.
 
 **Sweep vs. progress lock:** Sweep and optimization runs do NOT use `lab_progress.json`. That file is exclusively for the single-run flow. Sweep/optimization state is tracked only in the DB.
 
