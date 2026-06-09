@@ -639,7 +639,7 @@ void EnterTrade(const int direction) {
 //=============================================================================
 
 int OnInit() {
-   if(!ValidateFoundationalParams()) {
+   if(!MQLInfoInteger(MQL_OPTIMIZATION) && !ValidateFoundationalParams()) {
       Print("INIT FAILED: one or more foundational parameters are at placeholder values. "
             "Ensure the lab dispatcher has injected all f_ parameters before running.");
       return INIT_FAILED;
@@ -694,6 +694,100 @@ void OnDeinit(const int reason) {
    if(g_rsiHandle != INVALID_HANDLE) IndicatorRelease(g_rsiHandle);
    if(g_atrHandle != INVALID_HANDLE) IndicatorRelease(g_atrHandle);
 }
+
+//=============================================================================
+// OPTIMIZATION CALLBACKS
+// OnTesterInit / OnTester / OnTesterPass / OnTesterDeinit are only invoked
+// when the terminal runs with Optimization=1.  OnTick/OnInit still run in
+// each worker process as normal; these four callbacks run in the collecting
+// terminal (Init/Pass/Deinit) and in each worker (OnTester).
+//=============================================================================
+
+#define OPT_CSV       "opt_results.csv"
+#define OPT_DATA_SIZE 27   // 19 numeric params + 8 KPI stats
+
+void OnTesterInit()
+{
+    int fh = FileOpen(OPT_CSV, FILE_WRITE|FILE_CSV|FILE_ANSI, ',');
+    if(fh == INVALID_HANDLE) { Print("OnTesterInit: cannot create ", OPT_CSV); return; }
+    FileWrite(fh,
+        "BBPeriod","BBStdEntry","RSIPeriod",
+        "RSIOversold","RSIOverbought","RSIExtremeOversold","RSIExtremeOverbought",
+        "RSINeutralLow","RSINeutralHigh","VWAPPeriod","VWAPStdDev",
+        "MinConfluenceScore","BreakevenAtR","FullCloseAtR","TrailAtrMultiplier",
+        "AtrPeriod","AtrSlMultiplier","MinimumRR","SessionBonusPoints",
+        "net_pnl","profit_factor","max_drawdown","trade_count",
+        "win_trades","sharpe","gross_profit","gross_loss");
+    FileClose(fh);
+}
+
+double OnTester()
+{
+    double data[OPT_DATA_SIZE];
+    data[0]  = (double)BBPeriod;
+    data[1]  = BBStdEntry;
+    data[2]  = (double)RSIPeriod;
+    data[3]  = (double)RSIOversold;
+    data[4]  = (double)RSIOverbought;
+    data[5]  = (double)RSIExtremeOversold;
+    data[6]  = (double)RSIExtremeOverbought;
+    data[7]  = (double)RSINeutralLow;
+    data[8]  = (double)RSINeutralHigh;
+    data[9]  = (double)VWAPPeriod;
+    data[10] = VWAPStdDev;
+    data[11] = (double)MinConfluenceScore;
+    data[12] = BreakevenAtR;
+    data[13] = FullCloseAtR;
+    data[14] = TrailAtrMultiplier;
+    data[15] = (double)AtrPeriod;
+    data[16] = AtrSlMultiplier;
+    data[17] = MinimumRR;
+    data[18] = (double)SessionBonusPoints;
+    data[19] = TesterStatistics(STAT_PROFIT);
+    data[20] = TesterStatistics(STAT_PROFIT_FACTOR);
+    data[21] = TesterStatistics(STAT_EQUITY_DD);
+    data[22] = TesterStatistics(STAT_TRADES);
+    data[23] = TesterStatistics(STAT_WIN_TRADES);
+    data[24] = TesterStatistics(STAT_SHARPE_RATIO);
+    data[25] = TesterStatistics(STAT_GROSS_PROFIT);
+    data[26] = TesterStatistics(STAT_GROSS_LOSS);
+    FrameAdd("r", 0, data[20], data);
+    return data[20];
+}
+
+void OnTesterPass()
+{
+    ulong  pass = 0;
+    string name;
+    long   id;
+    double value;
+    double data[];
+    while(FrameNext(pass, name, id, value, data))
+    {
+        if(name != "r" || ArraySize(data) < OPT_DATA_SIZE) continue;
+        int fh = FileOpen(OPT_CSV, FILE_WRITE|FILE_READ|FILE_CSV|FILE_ANSI, ',');
+        if(fh == INVALID_HANDLE) continue;
+        FileSeek(fh, 0, SEEK_END);
+        FileWrite(fh,
+            (int)data[0],  data[1],       (int)data[2],
+            (int)data[3],  (int)data[4],  (int)data[5],  (int)data[6],
+            (int)data[7],  (int)data[8],  (int)data[9],  data[10],
+            (int)data[11], data[12],      data[13],      data[14],
+            (int)data[15], data[16],      data[17],      (int)data[18],
+            data[19], data[20], data[21], (int)data[22],
+            (int)data[23], data[24],      data[25],      data[26]);
+        FileClose(fh);
+    }
+}
+
+void OnTesterDeinit()
+{
+    Print("MeanReversion: optimization complete.");
+}
+
+//=============================================================================
+// LIVE / BACKTEST TICK HANDLER
+//=============================================================================
 
 void OnTick() {
    // Force flat is time-critical — check every tick, not just bar close

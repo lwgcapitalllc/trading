@@ -1075,13 +1075,71 @@ def _extract_input_params(html: str, param_names: list[str]) -> dict:
     return params
 
 
-def _run_mt5_optimization(job_id: str, spec: dict) -> None:
-    """Sequential optimization: run one MT5 single-backtest per param combo.
+_F_PARAM_DEFAULTS: dict = {
+    "f_AccountSize":          10000.0,
+    "f_RiskPerTradePct":      1.0,
+    "f_DailyLossCap":         500.0,
+    "f_DailyHaltFraction":    0.5,
+    "f_MaxConsecutiveLosses": 0,
+    "f_DailyProfitTarget":    0.0,
+    "f_DailyProfitLockPct":   0.0,
+}
 
-    MT5 command-line Optimization=1 mode does not write a parseable results
-    file — it only populates the Strategy Tester GUI. We expand the grid
-    ourselves and run each combo as a regular single backtest, reusing the
-    existing Report= mechanism that we know works.
+_OPT_KPI_COLS = frozenset({
+    "net_pnl", "profit_factor", "max_drawdown",
+    "trade_count", "win_trades", "sharpe", "gross_profit", "gross_loss",
+})
+
+
+def _parse_opt_csv(csv_path: Path, param_ranges: dict) -> list[dict]:
+    """Parse opt_results.csv written by OnTesterPass into combos list."""
+    import csv as csv_mod
+    results: list[dict] = []
+    try:
+        text = csv_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return results
+    reader = csv_mod.DictReader(text.splitlines())
+    for row in reader:
+        params: dict = {}
+        kpis: dict   = {}
+        for col, val in row.items():
+            col = col.strip()
+            try:
+                fval = float(val)
+            except (ValueError, TypeError):
+                continue
+            if col in _OPT_KPI_COLS:
+                kpis[col] = fval
+            else:
+                # Preserve int type for params that are integer-valued
+                params[col] = int(fval) if fval == int(fval) else fval
+
+        # Only keep ranged params in the combo params dict (matches how sequential worked)
+        combo_params = {k: params[k] for k in param_ranges if k in params}
+        trade_count = int(kpis.get("trade_count", 0))
+        win_trades  = int(kpis.get("win_trades",  0))
+        results.append({
+            "params": combo_params,
+            "kpis": {
+                "net_pnl":       kpis.get("net_pnl",       0.0),
+                "profit_factor": kpis.get("profit_factor",  0.0),
+                "max_drawdown":  kpis.get("max_drawdown",   0.0),
+                "trade_count":   trade_count,
+                "win_rate":      win_trades / trade_count if trade_count > 0 else 0.0,
+                "sharpe":        kpis.get("sharpe",         0.0),
+            },
+        })
+    return results
+
+
+def _run_mt5_optimization(job_id: str, spec: dict) -> None:
+    """Native MT5 optimization using Optimization=1 + MQL5 frame callbacks.
+
+    Launches a single terminal with Optimization=1 — MT5 runs all combos
+    across multiple CPU cores.  The EA's OnTester() sends each combo's params
+    and KPIs as a frame; OnTesterPass() in the collecting terminal appends rows
+    to opt_results.csv in MQL5/Files.  We read that CSV when the terminal exits.
     """
 
     def jl(msg: str) -> None:
@@ -1111,7 +1169,7 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
     deposit        = float(spec.get("deposit", 100000))
     currency       = spec.get("currency", "USD")
     leverage       = int(spec.get("leverage", 100))
-    inputs         = spec.get("inputs", {})
+    inputs         = dict(spec.get("inputs", {}))
     param_ranges   = spec.get("param_ranges", {})
 
     if not all([strategy_class, symbol, from_date, to_date]):
@@ -1126,140 +1184,121 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
         fail(f"EA not found: {ex5}. Deploy and compile first.")
         return
 
-    # Expand param grid
-    param_names = sorted(param_ranges.keys())
-    all_vals: list[list] = []
-    for p in param_names:
-        rng = param_ranges[p]
+    # Inject fallback foundational defaults so workers produce real trade results
+    # even when no ruleset is attached (raw-mode optimization).
+    for k, default in _F_PARAM_DEFAULTS.items():
+        if k in inputs and (inputs[k] is None or float(inputs[k]) < 0):
+            inputs[k] = default
+
+    # Estimate combo count for progress reporting
+    total = 1
+    for rng in param_ranges.values():
         if isinstance(rng, dict):
             lo, hi, step = float(rng["min"]), float(rng["max"]), float(rng["step"])
-        elif isinstance(rng, list) and len(rng) > 1:
-            lo = float(rng[0]); hi = float(rng[-1])
-            step = round(float(rng[1]) - float(rng[0]), 8)
+            n = max(1, round((hi - lo) / step) + 1)
+        elif isinstance(rng, list):
+            n = len(rng)
         else:
-            lo = hi = float(rng[0] if isinstance(rng, list) and rng else rng); step = 1.0
-        vals: list = []
-        v = lo
-        while v <= hi + 1e-9:
-            vals.append(int(v) if v == int(v) else round(v, 8))
-            v = round(v + step, 8)
-        all_vals.append(vals or [int(lo) if lo == int(lo) else lo])
+            n = 1
+        total *= n
 
-    combos: list[list] = [[]]
-    for pool in all_vals:
-        combos = [x + [y] for x in combos for y in pool]
+    jl(f"MT5 native optimization: {strategy_class} {symbol} {timeframe} [{from_date} -> {to_date}]")
+    jl(f"Param ranges: {list(param_ranges.keys())} → ~{total} combos (Optimization=1)")
 
-    jl(f"MT5 optimization: {strategy_class} {symbol} {timeframe} [{from_date} -> {to_date}]")
-    jl(f"Params: {param_names} → {len(combos)} combos (sequential single-backtests)")
-
-    reports_dir = data_dir / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
     tester_dir  = data_dir / "MQL5" / "Profiles" / "Tester"
+    reports_dir = data_dir / "reports"
     tester_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
 
-    results: list[dict] = []
-    for i, vals in enumerate(combos):
-        with _lock:
-            if _jobs[job_id].get("status") == "cancelled":
-                return
+    set_filename = _write_set_file_with_ranges(data_dir, job_id, inputs, param_ranges)
+    stem         = f"nopt_{job_id[:8]}"
+    ini_path     = data_dir / f"{stem}.ini"
+    csv_out      = data_dir / "MQL5" / "Files" / "opt_results.csv"
 
-        combo_params = dict(zip(param_names, vals))
-        combo_inputs = {**inputs, **combo_params}
+    csv_out.unlink(missing_ok=True)
 
-        stem         = f"o{job_id[:6]}_{i}"
-        set_filename = f"{stem}.set"
-        ini_path     = data_dir / f"{stem}.ini"
-        rpt_path     = reports_dir / f"{stem}.htm"
-
-        (tester_dir / set_filename).write_text(
-            "\n".join(f"{k}={v}" for k, v in combo_inputs.items()),
-            encoding="utf-8",
-        )
-        _write_tester_ini(
-            ini_path,
-            expert=strategy_class,
-            set_filename=set_filename,
-            symbol=symbol,
-            period=timeframe,
-            from_date=from_date,
-            to_date=to_date,
-            model=model,
-            deposit=deposit,
-            currency=currency,
-            leverage=leverage,
-            report_prefix=f"reports\\{stem}",
-            optimization=0,
-            forward_mode=0,
-        )
-
-        _kill_by_path(tester_exe)
-        try:
-            proc = _launch_tester(tester_exe, ini_path)
-        except Exception as exc:
-            jl(f"Combo {i+1}/{len(combos)}: launch failed: {exc}")
-            ini_path.unlink(missing_ok=True)
-            (tester_dir / set_filename).unlink(missing_ok=True)
-            continue
-
-        with _lock:
-            _jobs[job_id]["process"] = proc
-
-        jl(f"Combo {i+1}/{len(combos)}: {combo_params}")
-
-        t0 = time.time()
-        while time.time() - t0 < 600:
-            if proc.poll() is not None:
-                break
-            time.sleep(2)
-        else:
-            proc.kill()
-            jl(f"Warning: combo {i+1} timed out — skipping")
-            ini_path.unlink(missing_ok=True)
-            (tester_dir / set_filename).unlink(missing_ok=True)
-            continue
-
-        if not rpt_path.is_file():
-            jl(f"Warning: combo {i+1} — no report written")
-        else:
-            try:
-                raw  = rpt_path.read_bytes()
-                html = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8", errors="replace")
-                m    = _parse_mt5_report(html)
-                results.append({
-                    "params": combo_params,
-                    "kpis": {
-                        "net_pnl":       m["net_pnl"],
-                        "profit_factor": m["profit_factor"],
-                        "max_drawdown":  m["max_drawdown"],
-                        "trade_count":   m["trade_count"],
-                        "win_rate":      m["win_rate"],
-                        "sharpe":        m["sharpe"],
-                    },
-                })
-            except Exception as exc:
-                jl(f"Warning: combo {i+1} parse error: {exc}")
-
-        ini_path.unlink(missing_ok=True)
-        (tester_dir / set_filename).unlink(missing_ok=True)
-
-        with _lock:
-            _jobs[job_id]["pct"]             = int((i + 1) / len(combos) * 100)
-            _jobs[job_id]["message"]         = f"Combo {i+1}/{len(combos)}"
-            _jobs[job_id]["completed_count"] = i + 1
-            _jobs[job_id]["total_count"]     = len(combos)
+    _write_tester_ini(
+        ini_path,
+        expert=strategy_class,
+        set_filename=set_filename,
+        symbol=symbol,
+        period=timeframe,
+        from_date=from_date,
+        to_date=to_date,
+        model=model,
+        deposit=deposit,
+        currency=currency,
+        leverage=leverage,
+        report_prefix=f"reports\\{stem}",
+        optimization=1,
+        forward_mode=0,
+    )
 
     _kill_by_path(tester_exe)
+    time.sleep(2)
 
-    if not results:
-        fail("All combos failed to produce results.")
+    try:
+        proc = _launch_tester(tester_exe, ini_path)
+    except Exception as exc:
+        ini_path.unlink(missing_ok=True)
+        fail(f"Launch failed: {exc}")
         return
 
-    jl(f"Complete — {len(results)}/{len(combos)} combos")
+    with _lock:
+        _jobs[job_id].update({"process": proc, "total_count": total})
+
+    jl(f"Launched PID {proc.pid} — waiting up to 7200s for {total} combos …")
+
+    deadline = time.time() + 7200
+    while time.time() < deadline:
+        with _lock:
+            if _jobs[job_id].get("status") == "cancelled":
+                proc.terminate()
+                ini_path.unlink(missing_ok=True)
+                return
+        if proc.poll() is not None:
+            break
+        # Report live row count so the frontend progress bar moves
+        if csv_out.exists():
+            try:
+                rows = sum(1 for _ in csv_out.read_text(encoding="utf-8", errors="replace").splitlines()) - 1
+                rows = max(0, rows)
+            except Exception:
+                rows = 0
+            pct = min(99, int(rows / total * 100)) if total > 0 else 0
+            with _lock:
+                _jobs[job_id]["pct"]             = pct
+                _jobs[job_id]["message"]         = f"{rows}/{total} combos"
+                _jobs[job_id]["completed_count"] = rows
+        time.sleep(3)
+    else:
+        proc.terminate()
+        ini_path.unlink(missing_ok=True)
+        fail("Optimization timed out after 7200s")
+        return
+
+    ini_path.unlink(missing_ok=True)
+    time.sleep(2)
+
+    if not csv_out.exists():
+        fail("opt_results.csv not written — OnTesterPass may not have fired. "
+             "Ensure MeanReversion.ex5 is compiled from the latest source.")
+        return
+
+    results = _parse_opt_csv(csv_out, param_ranges)
+    jl(f"Complete — {len(results)}/{total} combos parsed from opt_results.csv")
+
+    if not results:
+        fail("opt_results.csv exists but contained no parseable rows.")
+        return
+
     with _lock:
         _jobs[job_id].update({
-            "status": "done",
-            "result": {"combos": results, "combo_count": len(results)},
-            "process": None,
+            "status":          "done",
+            "pct":             100,
+            "completed_count": len(results),
+            "result":          {"combos": results, "combo_count": len(results)},
+            "process":         None,
         })
 
 
