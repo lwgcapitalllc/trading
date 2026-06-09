@@ -45,9 +45,9 @@ void OnTesterDeinit()
 
     FileWrite(fh, "pass", "FastPeriod", "SlowPeriod", "profit", "dd_relative");
 
-    ulong  pass;
+    ulong  pass = 0;
     string name;
-    ulong  id;
+    long   id;
     double value;
     double data[];
 
