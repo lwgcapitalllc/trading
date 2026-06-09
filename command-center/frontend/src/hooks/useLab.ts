@@ -544,7 +544,8 @@ export function useRerunOptimization() {
   return useMutation({
     mutationFn: (optimizationId: string) =>
       api.post<{ optimization_id: string; status: string; estimated_runs: number }>(`/optimizations/${optimizationId}/rerun`),
-    onSuccess: () => {
+    onSuccess: (_data, optimizationId) => {
+      qc.invalidateQueries({ queryKey: ['lab', 'optimization', optimizationId] })
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
     },
     onError: () => toast.error('Failed to re-run optimization'),

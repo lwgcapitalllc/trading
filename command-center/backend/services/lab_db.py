@@ -1542,6 +1542,23 @@ def cancel_sweep_runs(sweep_id: str) -> None:
         )
 
 
+def reset_optimization_for_rerun(optimization_id: str) -> list[str]:
+    """Delete all child runs and reset the optimization row to running. Returns deleted run_ids."""
+    with _connect() as conn:
+        run_ids = [r["run_id"] for r in conn.execute(
+            "SELECT run_id FROM backtest_runs WHERE optimization_id=?",
+            (optimization_id,),
+        ).fetchall()]
+        conn.execute("DELETE FROM backtest_runs WHERE optimization_id=?", (optimization_id,))
+        conn.execute(
+            """UPDATE optimizations
+               SET status='running', completed_runs=0, completed_at=NULL, best_run_id=NULL
+               WHERE optimization_id=?""",
+            (optimization_id,),
+        )
+    return run_ids
+
+
 def cancel_optimization(optimization_id: str) -> None:
     now = int(time.time())
     with _connect() as conn:

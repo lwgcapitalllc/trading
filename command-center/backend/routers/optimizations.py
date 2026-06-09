@@ -171,32 +171,15 @@ async def rerun_optimization(optimization_id: str) -> dict:
         if lab_db.has_running_nt8_job():
             raise HTTPException(409, "An NT8 job is already running — wait for it to finish")
 
-    all_combos = expand_grid(opt["param_grid"])
-    sampled    = sample_combinations(all_combos, opt["search_method"])
-    new_opt_id = "opt_" + uuid.uuid4().hex[:10]
+    # Reset the existing optimization in-place: clear child runs and set status=running
+    deleted_run_ids = lab_db.reset_optimization_for_rerun(optimization_id)
+    for run_id in deleted_run_ids:
+        run_dir = _LAB_RESULTS_DIR / run_id
+        if run_dir.exists():
+            shutil.rmtree(run_dir)
 
-    lab_db.insert_optimization({
-        "optimization_id":    new_opt_id,
-        "strategy_id":        opt["strategy_id"],
-        "instrument":         opt["instrument"],
-        "start_date":         opt["start_date"],
-        "end_date":           opt["end_date"],
-        "commission_per_side": opt.get("commission_per_side", 0),
-        "slippage_ticks":     opt.get("slippage_ticks", 0),
-        "ruleset_id":         opt.get("ruleset_id"),
-        "mode":               opt.get("mode", "raw"),
-        "search_method":      opt["search_method"],
-        "param_grid":         opt["param_grid"],
-        "status":             "running",
-        "estimated_runs":     len(sampled),
-        "source_run_id":      opt.get("source_run_id"),
-        "regime_filter":      opt.get("regime_filter"),
-        "bar_type":           opt.get("bar_type"),
-        "bar_value":          opt.get("bar_value"),
-    })
-
-    asyncio.create_task(run_optimization(new_opt_id))
-    return {"optimization_id": new_opt_id, "status": "started", "estimated_runs": len(sampled)}
+    asyncio.create_task(run_optimization(optimization_id))
+    return {"optimization_id": optimization_id, "status": "started", "estimated_runs": opt["estimated_runs"]}
 
 
 @router.post("/{optimization_id}/cancel", status_code=200)

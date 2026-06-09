@@ -37,12 +37,6 @@ function firmChipCls(firmId: string): string {
   return 'bg-bg-surface border border-border-subtle text-text-tertiary'
 }
 
-function fmtSearchMethod(m: string) {
-  if (m === 'native') return 'Native'
-  if (m === 'brute')  return 'Brute Force (legacy)'
-  return m
-}
-
 // ── Live elapsed timer ────────────────────────────────────────────────────────
 
 function useElapsed(startIso: string | null, endIso: string | null, running: boolean) {
@@ -646,9 +640,7 @@ export function OptimizationDetail() {
           <div className="flex items-center gap-2">
             {opt.status.startsWith('failed') && (
               <button
-                onClick={() => rerunOpt.mutate(optimizationId!, {
-                  onSuccess: (data) => navigate(`/backtests/optimizations/${data.optimization_id}`)
-                })}
+                onClick={() => rerunOpt.mutate(optimizationId!)}
                 disabled={rerunOpt.isPending}
                 className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-accent hover:bg-accent/10 border border-accent/30 hover:border-accent/50 disabled:opacity-50 transition-colors"
               >
@@ -716,16 +708,13 @@ export function OptimizationDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
                 {fmtDate(opt.start_date)} → {fmtDate(opt.end_date)}
               </span>
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
-                {opt.mode} · {fmtSearchMethod(opt.search_method)}
-              </span>
               {opt.ruleset_id ? (
                 <span className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(opt.ruleset_id)}`}>
                   {firmShortName(opt.ruleset_id)}
                 </span>
               ) : (
                 <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary">
-                  Raw PF
+                  No ruleset
                 </span>
               )}
               {opt.regime_filter && (
