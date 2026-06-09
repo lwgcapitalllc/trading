@@ -633,29 +633,39 @@ def _build_opt_grid_map(sa) -> dict:
     to a full sa.descendants() scan if the narrowing fails.
     """
     # Narrow scope to the panel that actually contains the optimize grid rows.
-    # Uses UIA FindFirst (returns on first hit) to locate any txtBox, then walks
-    # up the tree until a node with multiple row-children is found.
+    # Walk up from any txtBox Edit; each step is guarded so a COM error on any
+    # individual level does not abort the whole walk.
     scope = sa
     try:
         probe = sa.child_window(auto_id="txtBox", control_type="Edit")
         if probe.exists(timeout=2):
-            node = probe.wrapper_object()
-            for _ in range(6):
-                p = node.parent()
-                if p is None:
-                    break
-                # The rows container has multiple children (one per param row).
-                # Individual rows have only 2 (Group + Edit), so >= 3 means container.
-                try:
-                    if len(p.children()) >= 3:
-                        scope = p
+            try:
+                node = probe.wrapper_object()
+            except Exception:
+                node = None
+            if node is not None:
+                for _ in range(10):
+                    try:
+                        p = node.parent()
+                    except Exception:
                         break
-                except Exception:
-                    pass
-                node = p
+                    if p is None:
+                        break
+                    # The rows container has multiple children (one per param row).
+                    # Individual rows have only 2 (Group + Edit), so >= 3 means container.
+                    try:
+                        if len(p.children()) >= 3:
+                            scope = p
+                            break
+                    except Exception:
+                        pass
+                    node = p
+        if scope is not sa:
             print(f"  [grid-map] scope narrowed: {scope.element_info.control_type}")
-    except Exception:
-        print("  [grid-map] narrow failed — using full SA scan")
+        else:
+            print("  [grid-map] using full SA scan")
+    except Exception as _e:
+        print(f"  [grid-map] narrow failed ({_e}) — using full SA scan")
 
     result          = {}
     last_group_text = None
@@ -1116,6 +1126,7 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         try:
             ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
         except Exception:
+            time.sleep(0.3)  # Let NT8 finish re-rendering before rescanning
             grid_map = _build_opt_grid_map(sa)
             ok = _set_range_in_grid(grid_map, name, value, value, 1, param_display_names)
         if not ok:
@@ -1147,7 +1158,7 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         try:
             _set_range_in_grid(grid_map, name, lo, hi, step, param_display_names)
         except Exception:
-            # Element ref went stale (WPF re-render after prior edit) — rebuild and retry.
+            time.sleep(0.3)
             grid_map = _build_opt_grid_map(sa)
             _set_range_in_grid(grid_map, name, lo, hi, step, param_display_names)
 
@@ -1221,6 +1232,9 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     (out_dir / "native_opt_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"  Native opt result written: {len(combos)} combos in {elapsed}s")
     _pct(100, f"Complete — {len(combos)} combos")
+    # Force immediate exit — pywinauto COM cleanup can hang indefinitely,
+    # preventing the agent from detecting job completion.
+    os._exit(0)
 
 
 def _parse_walkforward_csv(csv_path: str) -> list[dict]:
@@ -1502,6 +1516,7 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
     (out_dir / "native_wf_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"  Native WF result written: {len(windows)} period rows in {elapsed}s")
     _pct(100, f"Complete — {len(windows)} periods")
+    os._exit(0)
 
 
 def configure_from_spec(sa, spec: dict):
