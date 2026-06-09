@@ -969,18 +969,19 @@ def _export_optimization_results(sa, job_id: str, param_names: set) -> list:
     # Restore SA if minimized — minimized windows have invalid screen rect
     try:
         sa.restore()
-        time.sleep(0.3)
+        time.sleep(1.0)
     except Exception:
         pass
 
-    # Right-click inside the optimization combo rows (top 5% of SA window).
-    # y=5% lands in the first result rows; y=50%+ lands in the performance
-    # summary tab which exports the wrong format.
+    # Right-click inside the optimization combo rows (20% from top of SA window).
+    # y=20% skips the Display dropdown and column headers; y=50%+ lands in the
+    # performance summary tab which exports the wrong format.
     sa_rect = sa.rectangle()
     sa_w    = sa_rect.right  - sa_rect.left
     sa_h    = sa_rect.bottom - sa_rect.top
     rc_x    = sa_rect.left + int(sa_w * 0.25)
-    rc_y    = sa_rect.top  + int(sa_h * 0.05)
+    rc_y    = sa_rect.top  + int(sa_h * 0.20)
+    print(f"  [opt-export] Right-click at ({rc_x}, {rc_y})  sa={sa_w}x{sa_h}")
 
     nt8           = sa.top_level_parent()
     export_coords = None
