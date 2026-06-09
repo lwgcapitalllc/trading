@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown, Copy, Check } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { OptimizationHeatmap } from '@/components/OptimizationHeatmap'
 import { useOptimization, useCancelOptimization, useRetryOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog } from '@/hooks/useLab'
@@ -517,6 +517,7 @@ function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
   isFailed: boolean
 }) {
   const [open, setOpen] = useState(isRunning || isFailed)
+  const [copied, setCopied] = useState(false)
   const { data: log, isFetching, refetch } = useOptimizationLog(open ? optimizationId : null, 300, isRunning)
   const prevLiveRef = useRef(isRunning)
 
@@ -524,6 +525,14 @@ function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
     if (prevLiveRef.current && !isRunning) refetch()
     prevLiveRef.current = isRunning
   }, [isRunning, refetch])
+
+  function copyLog(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!log) return
+    navigator.clipboard.writeText(log)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
 
   return (
     <div className="bg-bg-sunken border border-border-subtle rounded-lg overflow-hidden">
@@ -551,7 +560,19 @@ function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
           {isComplete && !isRunning && <span className="text-micro text-accent font-mono">· complete</span>}
           {isFailed && !isRunning && <span className="text-micro text-neg-text font-mono">· failed</span>}
         </div>
-        {open ? <ChevronUp size={14} className="text-text-tertiary" /> : <ChevronDown size={14} className="text-text-tertiary" />}
+        <div className="flex items-center gap-2">
+          {log && (
+            <span
+              role="button"
+              onClick={copyLog}
+              title="Copy log"
+              className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
+            >
+              {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
+            </span>
+          )}
+          {open ? <ChevronUp size={14} className="text-text-tertiary" /> : <ChevronDown size={14} className="text-text-tertiary" />}
+        </div>
       </button>
       {open && (
         <div>

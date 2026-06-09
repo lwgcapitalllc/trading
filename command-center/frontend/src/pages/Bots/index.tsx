@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight } from 'lucide-react'
+import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   useBotSnapshot, useBotLog,
@@ -95,12 +95,26 @@ function JobDot({ status }: { status: string }) {
 
 function LogModal({ botName, onClose }: { botName: string; onClose: () => void }) {
   const { data: log, isLoading, error } = useBotLog(botName)
+  const [copied, setCopied] = useState(false)
+  function copyLog() {
+    if (!log) return
+    navigator.clipboard.writeText(log)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6" onClick={onClose}>
       <div className="bg-bg-surface border border-border-default rounded-lg w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
           <span className="text-[13px] font-semibold">{botName} — stdout log</span>
-          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary text-[18px] leading-none">×</button>
+          <div className="flex items-center gap-2">
+            {log && (
+              <button onClick={copyLog} title="Copy log" className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors">
+                {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
+              </button>
+            )}
+            <button onClick={onClose} className="text-text-tertiary hover:text-text-primary text-[18px] leading-none">×</button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] text-text-secondary bg-bg-sunken">
           {isLoading && <span className="text-text-tertiary">Loading…</span>}

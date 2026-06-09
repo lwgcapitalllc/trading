@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
   CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Tag, Layers, Play,
+  Copy, Check,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Label,
@@ -1135,7 +1136,16 @@ function LogsSection({ runId, autoExpand, isRunning, isComplete, isFailed }: {
   isFailed?: boolean
 }) {
   const [open, setOpen] = useState(autoExpand)
+  const [copied, setCopied] = useState(false)
   const { data: log, isFetching } = useRunLog(open ? runId : null, 200, isRunning)
+
+  function copyLog(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!log) return
+    navigator.clipboard.writeText(log)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
 
   return (
     <div className="bg-bg-sunken border border-border-subtle rounded-lg overflow-hidden">
@@ -1169,7 +1179,19 @@ function LogsSection({ runId, autoExpand, isRunning, isComplete, isFailed }: {
             <span className="text-micro text-neg-text font-mono">· failed</span>
           )}
         </div>
-        {open ? <ChevronUp size={14} className="text-text-tertiary" /> : <ChevronDown size={14} className="text-text-tertiary" />}
+        <div className="flex items-center gap-2">
+          {log && (
+            <span
+              role="button"
+              onClick={copyLog}
+              title="Copy log"
+              className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors"
+            >
+              {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
+            </span>
+          )}
+          {open ? <ChevronUp size={14} className="text-text-tertiary" /> : <ChevronDown size={14} className="text-text-tertiary" />}
+        </div>
       </button>
       {open && (
         <div>
