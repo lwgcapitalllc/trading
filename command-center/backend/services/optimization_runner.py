@@ -28,7 +28,7 @@ import statistics
 
 from services import lab_db, evaluator, nt8_agent_client, worthiness
 from services.objectives import choose_objective
-from services.backtest_runner import build_date_regime_map, write_job_progress, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
+from services.backtest_runner import build_date_regime_map, write_job_progress, _tag_daily_pnl_with_regime, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
 
 log = logging.getLogger("optimization_runner")
 
@@ -265,6 +265,19 @@ async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str],
     dpnl_path = run_dir / "daily_pnl.json"
     eq_path.write_text(json.dumps(equity_curve, default=str))
     dpnl_path.write_text(json.dumps(daily_pnl, default=str))
+
+    if daily_pnl:
+        run_row = lab_db.get_run(run_id)
+        tagged_pnl = await asyncio.to_thread(
+            _tag_daily_pnl_with_regime,
+            (run_row or {}).get("instrument", ""),
+            (run_row or {}).get("start_date", ""),
+            (run_row or {}).get("end_date", ""),
+            daily_pnl,
+            (run_row or {}).get("runner", "ninjatrader"),
+        )
+        dpnl_path.write_text(json.dumps(tagged_pnl, default=str))
+        daily_pnl = tagged_pnl
 
     lab_db.update_run_complete(run_id, kpis, {
         "equity_curve": str(eq_path),

@@ -949,7 +949,7 @@ const MT5_MILESTONE_PATTERNS: Array<{
   format: (m: RegExpMatchArray, line: string) => { text: string; accent: boolean }
 }> = [
   {
-    re: /terminal64\.exe|Launching MT5/i,
+    re: /Launched terminal64\.exe|Launching MT5/i,
     format: () => ({ text: 'MT5 terminal launched', accent: true }),
   },
   {

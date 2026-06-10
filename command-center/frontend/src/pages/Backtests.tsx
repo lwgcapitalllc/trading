@@ -256,26 +256,18 @@ function RunsTab() {
     return set
   }, [allSweeps])
 
-  const optById = useMemo(() => {
-    const map = new Map<string, NonNullable<typeof allOpts>[0]>()
-    allOpts?.forEach(o => map.set(o.optimization_id, o))
-    return map
-  }, [allOpts])
-
-  // Running full backtests of optimization winners — nest under the parent run instead of top-level
+  // Running full backtests of optimization winners — keyed by optimization_id so they nest under the specific opt row
   const fullBtRunsByParent = useMemo(() => {
     const map = new Map<string, import('@/types').BacktestSummary[]>()
     if (!allRuns) return map
     for (const r of allRuns) {
       if (!r.optimization_id || r.status !== 'running') continue
-      const parentId = optById.get(r.optimization_id)?.source_run_id
-      if (!parentId) continue
-      const existing = map.get(parentId) ?? []
+      const existing = map.get(r.optimization_id) ?? []
       existing.push(r)
-      map.set(parentId, existing)
+      map.set(r.optimization_id, existing)
     }
     return map
-  }, [allRuns, optById])
+  }, [allRuns])
 
   const fullBtNestIds = useMemo(() => {
     const set = new Set<string>()
@@ -456,8 +448,7 @@ function RunsTab() {
               {runs.map(run => {
                 const childSweeps  = sweepsBySourceRun.get(run.run_id) ?? []
                 const childOpts    = optsBySourceRun.get(run.run_id) ?? []
-                const childFullBts = fullBtRunsByParent.get(run.run_id) ?? []
-                const hasChildren  = childSweeps.length > 0 || childOpts.length > 0 || childFullBts.length > 0
+                const hasChildren  = childSweeps.length > 0 || childOpts.length > 0 || childOpts.some(o => fullBtRunsByParent.has(o.optimization_id))
                 const isCollapsed  = collapsedRuns.has(run.run_id)
                 return (
                   <Fragment key={run.run_id}>
@@ -480,20 +471,21 @@ function RunsTab() {
                       />
                     ))}
                     {!isCollapsed && childOpts.map(opt => (
-                      <OptimizationNestRow
-                        key={opt.optimization_id}
-                        opt={opt}
-                        colSpan={12}
-                        onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
-                        hasRunningStress={!!opt.best_run_id && stressRunIds.has(opt.best_run_id)}
-                      />
-                    ))}
-                    {!isCollapsed && childFullBts.map(r => (
-                      <FullBacktestNestRow
-                        key={r.run_id}
-                        colSpan={12}
-                        onClick={() => navigate(`/backtests/runs/${r.run_id}`)}
-                      />
+                      <Fragment key={opt.optimization_id}>
+                        <OptimizationNestRow
+                          opt={opt}
+                          colSpan={12}
+                          onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
+                          hasRunningStress={!!opt.best_run_id && stressRunIds.has(opt.best_run_id)}
+                        />
+                        {(fullBtRunsByParent.get(opt.optimization_id) ?? []).map(r => (
+                          <FullBacktestNestRow
+                            key={r.run_id}
+                            colSpan={12}
+                            onClick={() => navigate(`/backtests/runs/${r.run_id}`)}
+                          />
+                        ))}
+                      </Fragment>
                     ))}
                   </Fragment>
                 )
@@ -582,7 +574,7 @@ function FullBacktestNestRow({ colSpan, onClick }: {
   return (
     <tr onClick={onClick} className="hover:bg-bg-hover cursor-pointer transition-colors bg-gold-muted/5 border-l-2 border-l-gold-text/35">
       <td className="px-3 py-2" />
-      <td className="px-4 py-2" colSpan={3}>
+      <td className="pl-10 pr-4 py-2" colSpan={3}>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
           <span className="text-[11px] font-semibold text-gold-text">Full Backtest</span>
