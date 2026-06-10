@@ -3,16 +3,16 @@ launcher.py — Universal launcher for all bots.
 Used by Windows Task Scheduler. Accepts bot name and config path.
 
 Usage:
-    python bots/launcher.py --bot bot1 --config instances/gold_main/config.json
-    python bots/launcher.py --bot bot2 --config instances/gold_main/config.json
-    python bots/launcher.py --bot bot3 --config instances/gold_scalper/config.json
-    python bots/launcher.py --bot bot4 --config instances/futures_account1/config.json
+    python bots/launcher.py --bot bot_smc_trend      --config markets/fx/instances/gold_main/config.json
+    python bots/launcher.py --bot bot_mean_reversion --config markets/fx/instances/gold_main/config.json
+    python bots/launcher.py --bot bot_scalper        --config markets/fx/instances/gold_scalper/config.json
+    python bots/launcher.py --bot bot_fft            --config markets/fx/instances/gold_fft/config.json
 
 Bot map:
-    bot1 = bot_smc_trend.py       (FX, MT5)
-    bot2 = bot_mean_reversion.py  (FX, MT5)
-    bot3 = bot_scalper.py         (FX, MT5)
-    bot4 = bot_futures.py       (Futures, Tradovate)
+    bot_smc_trend      = bot_smc_trend.py       (FX, MT5)
+    bot_mean_reversion = bot_mean_reversion.py  (FX, MT5)
+    bot_scalper        = bot_scalper.py         (FX, MT5)
+    bot_fft            = bot_fft.py             (FX, MT5)
 
 One launcher handles all bots and all instances.
 To add a new bot: add its script name to BOT_SCRIPTS below.
@@ -27,7 +27,6 @@ BOT_SCRIPTS = {
     "bot_smc_trend":      "bot_smc_trend.py",
     "bot_mean_reversion": "bot_mean_reversion.py",
     "bot_scalper":        "bot_scalper.py",
-    "bot_futures":        "bot_futures.py",
     "bot_fft":            "bot_fft.py",
 }
 

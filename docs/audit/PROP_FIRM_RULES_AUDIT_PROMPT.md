@@ -1,12 +1,13 @@
-Audit my prop firm database against the firms' actual support documentation.
+Audit my prop firm rulesets against the firms' actual support documentation.
 Plain English replies only. This is a READ-ONLY audit — do NOT modify the
 database, the seed file, or any row. Produce a report only; I'll decide what to fix.
 
 SCOPE: all firms.  (To scope to one, replace with e.g. "SCOPE: Tradeify only".)
 
 STEP 1 — Load current DB state.
-Run `curl -s localhost:8000/api/firms | jq` and use that as the source of truth
-for what's CURRENTLY stored. List the ids you're about to audit.
+Run `curl -s localhost:8000/rulesets | jq` (filter to `ruleset_type` of `prop_eval` /
+`prop_funded`) and use that as the source of truth for what's CURRENTLY stored. List
+the ids you're about to audit.
 
 STEP 2 — For each row, fetch its docs_url and verify the rule fields.
 - Fetch the row's docs_url. If the page blocks automated access or fails to load,

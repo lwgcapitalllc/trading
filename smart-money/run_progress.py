@@ -78,11 +78,6 @@ class ProgressWriter:
         data["status"] = "complete"
         self._write(data)
 
-    def error(self, message: str):
-        data = self._payload(0, "error", message)
-        data["status"] = "error"
-        self._write(data)
-
     # ── internal ──────────────────────────────────────────────────────────────
 
     def _payload(

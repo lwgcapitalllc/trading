@@ -1,8 +1,11 @@
 # CLAUDE.md — Command Center Frontend
 
-Auto-loaded by Claude Code when editing any file inside `frontend/`.
+**Purpose:** React + Vite + TypeScript app (`:5173`) — the UI for the command center; all server state via TanStack Query against the FastAPI backend.
+**Scope:** This covers frontend hook/component/page conventions, the theme system, and routing. It does NOT cover the backend (see `../backend/CLAUDE.md`) or `algos/`/`smart-money/`.
+**Status:** Live — all pages shipped (Overview, Smart Money, Bots, Backtests lab, Stress Tests, Queue, Settings).
+**Last reviewed:** 2026-06-10
 
-**Last reviewed:** 2026-06-09
+Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
 React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backend on `:8000` via the Vite proxy at `/api`. Dark indigo-black UI, electric cyan accent, gold secondary.
 
@@ -42,7 +45,6 @@ frontend/src/
 │   ├── Sidebar.tsx
 │   ├── TopBar.tsx
 │   ├── StatCard.tsx
-│   ├── ScaffoldBanner.tsx
 │   ├── EmptyState.tsx
 │   ├── SystemHealthStrip.tsx
 │   ├── RunBacktestModal.tsx
@@ -167,7 +169,6 @@ Pages own data fetching. Components own rendering. No business logic in componen
 |---|---|
 | `StatCard` | All stat tiles. Supports `value="—"` loading, `onClick`, `disabled` |
 | `EmptyState` | Empty data screens — icon + title + description |
-| `ScaffoldBanner` | Stub pages only. Delete when the page goes live |
 
 Extend an existing component with a new prop before forking a near-duplicate.
 
@@ -250,33 +251,9 @@ Regime visualization uses a `REGIME_COLORS` constant defined inline in `Backtest
 
 Companion constants in `BacktestDetail.tsx`: `REGIME_LABEL` (full display strings), `REGIME_LABEL_SHORT` (abbreviated for narrow zones, e.g. `Trans.`, `Hi Vol.`).
 
-## Pass 1 — Foundational Config (frontend changes)
+## Foundational config
 
-### Param filtering in Run Backtest Modal and Optimizer Modal
-
-`ParamSchemaEntry` now has a `category?: 'strategy_logic' | 'foundational'` field served by the backend scanner. Both modals filter on it:
-
-**RunBacktestModal:**
-- `params` state initializes only from entries where `category !== 'foundational'`
-- `paramGroups` skips foundational entries entirely — they're never shown as editable inputs
-- A readonly "Foundational Config" section appears below the Evaluate section once a firm is selected. It shows 10 values (Account Size, Risk/Trade, Max Daily Loss, Halt Fraction, Max Consecutive Losses, Force Flat, Entry Hours, Days Allowed, Daily Target, Lock-In At) pulled from the primary ruleset (first selected firm)
-- Commission and slippage inputs pre-fill from the primary ruleset's `default_commission_per_side` / `default_slippage_ticks` when a firm is first selected (user can still override)
-
-**OptimizerModal (OptimizeButton.tsx):**
-- `FOUNDATIONAL_PARAMS` set filters `run.params` so axes state only includes strategy-logic keys
-- `paramEntries` filtered to same set — foundational params never appear in the optimizer grid
-
-### Ruleset foundational config edit
-
-`FoundationalEditModal` component in `Backtests.tsx` — appears when the pencil icon is clicked on any ruleset row. Four sections:
-- **Capital & Risk**: Risk % per Trade, Daily Halt Fraction (0–1), Max Consecutive Losses
-- **Trading Hours & Days**: Earliest/Latest Entry ET (HH:MM), Days Allowed (comma-separated)
-- **Daily Goals**: Daily Profit Target ($), Lock-In At (% of target → stored as 0–1)
-- **Execution Defaults**: Commission/Side ($), Slippage (ticks)
-
-Validation: lock_pct 0–100, times match `HH:MM` regex, days subset of valid day names. Calls `useUpdateRuleset` on save. The modal passes the full ruleset through `...ruleset` so existing non-foundational fields aren't overwritten.
-
-The `Ruleset` type in `types/index.ts` now carries all 10 new foundational fields (`risk_per_trade_pct`, `max_consecutive_losses`, `earliest_entry_time_et`, `latest_entry_time_et`, `days_of_week_allowed`, `daily_profit_target`, `daily_profit_lock_pct`, `default_commission_per_side`, `default_slippage_ticks`, `daily_halt_fraction`).
+`ParamSchemaEntry` carries `category?: 'strategy_logic' | 'foundational'`. Foundational params are never shown as editable inputs in `RunBacktestModal` or the optimizer grid — both filter them out. Instead, `RunBacktestModal` shows a readonly "Foundational Config" section (10 values pulled from the primary ruleset) once a firm is selected, and pre-fills commission/slippage from that ruleset's defaults. Foundational values are edited via `FoundationalEditModal` (pencil icon on a ruleset row): Capital & Risk, Trading Hours & Days, Daily Goals, Execution Defaults. Validation: lock_pct 0–100, times match `HH:MM`, days subset of valid day names. Saves via `useUpdateRuleset`, spreading `...ruleset` so non-foundational fields survive. The `Ruleset` type holds all 10 foundational fields (`risk_per_trade_pct`, `max_consecutive_losses`, `earliest_entry_time_et`, `latest_entry_time_et`, `days_of_week_allowed`, `daily_profit_target`, `daily_profit_lock_pct`, `default_commission_per_side`, `default_slippage_ticks`, `daily_halt_fraction`).
 
 ---
 
@@ -302,7 +279,7 @@ The `Ruleset` type in `types/index.ts` now carries all 10 new foundational field
 3. Add `NavItem` in `Sidebar.tsx` (WORKSPACE or RESEARCH)
 4. If it needs data, create `src/hooks/useThing.ts`
 5. Add types to `src/types/index.ts`
-6. If it's a stub, use `ScaffoldBanner` + `EmptyState` — delete both when it goes live
+6. If it's a stub, use `EmptyState` for the placeholder — replace when it goes live
 
 ---
 
@@ -335,32 +312,30 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 |---|---|---|
 | Overview | ✅ Live | Stat row + cards for each domain |
 | Smart Money | ✅ Live | Scan, terminal, rankings, profiles, disqualified, config, cache |
-| Bots | ✅ Live | Monitor, control (global + per-bot), configure (risk caps + deploy), users (Telegram) |
-| Backtests lab | ✅ Live | Strategies, Runs, Rulesets, Sweeps, Optimizations tabs; run modal; BacktestDetail with charts + per-ruleset eval cards |
-| Worthiness Badges | ✅ Live | Tier 1/2/3 pill on every completed run in Runs table and BacktestDetail |
-| Sweep Detail | ✅ Live | ProgressCard (segmented bar, elapsed timer), ResultsTable, FailedRunsTable, cancel + retry-all + per-row retry |
-| Optimization Detail | ✅ Live | 3-view toggle (Table / Bar Chart / Heatmap). Table: ranked table, always available. Bar Chart: sorted by PF desc, colored by tier, winner ★. Heatmap: 2-param only, message otherwise. Best param callout, CSV export. "Full Backtest" button on BacktestDetail (not inline in table). |
-| Optimize Button | ✅ Live | Tier-aware: Tier 1 = soft confirm, Tier 2 = direct modal, Tier 3 = warning modal with instrument routing. Integer param validation: `useParamTypes` fetches `int`/`double` types for each param; if any range axis on an `int` param has a decimal min/max/step, `intErrors` map is populated → red border on the offending inputs, error message replaces `RangePreview`, Go button disabled. `handleGo` also guards against `intErrors` before submitting. |
-| Tier 3 Warning Modal | ✅ Live | Past results per instrument; sweep of untested instruments; `withContractMonth()` stamps contract month; passes `source_run_id` |
-| Runner Badge | ✅ Live | `RunnerBadge` on Strategies tab, StrategyDetail, Runs tab — NT8 (cyan) or MT5 (purple) |
-| Market Filter | ✅ Live | `MarketFilterBar` on Strategies and Runs tabs. All / Futures / Forex. `runner=mt5` → Forex, others → Futures. `useState` (not URL) |
-| Stress Tests | ✅ Live | `/stress-tests` page. Grade column card, source backtest card, MC fan + drawdown dist + walk-forward + sensitivity charts. Pipeline stepper while running |
-| Backtests M4 — Regime tagging | ✅ Live | `RegimeBadge` + `PerformanceByRegimeTable` on BacktestDetail. Auto-tagged at pipeline time (Tagging step visible) |
-| Backtests M4 — Equity overlay | ✅ Live | `RegimeOverlayToggle`; per-segment colored `Area` lines; `RegimeLegend` (dash swatches). Persists to `localStorage` |
-| Backtests M4 — Optimizer regime filter | ✅ Live | "Regime Filter" select in `OptimizerModal`; chip in `OptimizationDetail` when set |
-| Pass 2 — Strategy Deployment | ✅ Live | "Deployed" sub-tab: drag/drop `.cs`/`.mq5`, file list, trash-can delete, NT8 + MT5 `CompileModal` |
-| Pass 2.5 — Deploy button | ✅ Live | Per-strategy Deploy/Redeploy buttons. `useDeployStrategy()` → `POST /strategies/{id}/deploy`. Filled accent when out of sync |
-| MT5 backtest modal | ✅ Live | Branches on `strategy.runner === 'mt5'`: free-text symbol, bar presets [5m–4h], Evaluate/Foundational sections hidden |
-| MT5 backtest detail | ✅ Live | `MT5_RUN_STEPS` (Launch→Testing→Results→Tagging); runner-specific guidance; "Load chart data from NT8" and "Refresh" hidden for MT5; Stress Test button visible for all completed runs with trades |
-| Run Stress Test modal | ✅ Live | No checkboxes — WF + sensitivity always run together. Ruleset locked to `run.evaluations[0]` — shown as readonly chip. Fixed estimate: ~45 min (native WF) or ~80 min (non-native). Sends `include_walk_forward: true, include_sensitivity: true` always. On success navigates to `/stress-tests/{stress_test_id}`. Stress Test button shows pulsing "In progress" (clickable, navigates to stress test) when a test is already running; shows modal-opener otherwise. |
-| Stress test market lock | ✅ Live | `useRunningStressLock()` polls `GET /stress-tests/running-lock` (5s). Response: `{futures, forex, run_ids}`. `stressBlocked = isMt5 ? lock.forex : lock.futures`. Stress Test button disabled + tooltip when market is blocked. |
-| Running stress test indicators | ✅ Live | **Runs tab:** `RunsTab` builds `stressRunIds = new Set(lock.run_ids)`, passes `hasRunningStress` to `RunRow` (pulsing "STRESS TESTING" chip) and `hasRunningStress={stressRunIds.has(opt.best_run_id)}` to `OptimizationNestRow` (same chip). `OptimizationNestRow` no longer shows instrument. **BacktestDetail:** Stress Test button transforms to pulsing "In progress" (navigates to stress test) when `latestStress` is running; no separate banner. **OptimizationDetail:** `useRunningStressLock` + `useStressTests(bestRunId)` → clickable "Stress test in progress on winner run" banner when best run has a running stress test. |
-| Strategy best grades | ✅ Live | `useStrategyBestGrades()` polls `GET /stress-tests/strategy-grades` (30s) → `Record<strategyId, {grade, stress_test_id}>`. Strategies tab "Best Grade" column: `RobustnessGradeBadge` per row, clickable (stops row click, navigates to that stress test). `—` when no graded test exists. |
-| StressTestDetail fixes | ✅ Live | `useState`/`useEffect` for `nowSec` hoisted above early returns (Rules of Hooks — was causing black screen on open). `nowSec` ticks via `setInterval` while `isRunning` (was frozen at first render, making "Total elapsed" stuck). View Run navigates to `/backtests/runs/${st.run_id}` (was missing `runs/` segment). Delete uses in-app confirm modal, not `window.confirm`. **Pipeline stepper:** `hasSens = hasWF || ...` — Sensitivity step is always visible once WF is active; shows as pending/upcoming during `running_wf` phase instead of being hidden until `running_sens`. |
-| BacktestDetail polish | ✅ Live | Rerun button; clickable strategy `<h1>`; `StatusPill` shared component; stale progress guard (`job_id` match) |
-| Speed Step 6 — Queue page | ✅ Live | `/queue` route + sidebar nav item (Research section, `ListOrdered` icon). `QueueItem` type. `useQueue` (polls 5s), `useEnqueueOptimization`, `useEnqueueStressTest`, `useDeleteQueueItem` hooks in `useQueue.ts`. `Queue.tsx` table: position, job label (type + short id), `StatusPill` (pending/running/done/failed), timestamps, trash-can for pending items. |
-| Settings | ✅ Live | Config read/write. `nt8_agent_tunnel` and `mt5_agent_tunnel` both present |
-| Sidebar health strip | ✅ Live | 4 dots: API, SSH, NT8 (3-state), MT5 Agent. `SystemHealthStrip.tsx` |
+| Bots | ✅ Live | Monitor, control, configure (risk caps + deploy), users |
+| Backtests lab | ✅ Live | Strategies / Runs / Rulesets / Sweeps / Optimizations tabs; run modal; BacktestDetail |
+| Worthiness Badges | ✅ Live | Tier 1/2/3 pill on every completed run |
+| Sweep Detail | ✅ Live | ProgressCard, ResultsTable, FailedRunsTable, cancel + retry |
+| Optimization Detail | ✅ Live | Table / Bar Chart / Heatmap toggle; best param callout; CSV export |
+| Optimize Button | ✅ Live | Tier-aware modals; int-param range validation blocks decimals |
+| Tier 3 Warning Modal | ✅ Live | Per-instrument past results; sweep untested; stamps contract month |
+| Runner Badge | ✅ Live | NT8 (cyan) / MT5 (purple) on Strategies, StrategyDetail, Runs |
+| Market Filter | ✅ Live | All / Futures / Forex on Strategies and Runs tabs |
+| Stress Tests | ✅ Live | Grade card, source card, MC fan + drawdown + walk-forward + sensitivity charts |
+| Regime tagging (M4) | ✅ Live | RegimeBadge + Performance by Regime table on BacktestDetail |
+| Regime equity overlay (M4) | ✅ Live | RegimeOverlayToggle; per-segment colored lines; persists to localStorage |
+| Optimizer regime filter (M4) | ✅ Live | Regime Filter select in OptimizerModal; chip in OptimizationDetail |
+| Strategy deployment (Pass 2) | ✅ Live | Deployed sub-tab: drag/drop `.cs`/`.mq5`, delete, NT8 + MT5 compile |
+| Deploy button (Pass 2.5) | ✅ Live | Per-strategy Deploy/Redeploy; filled accent when out of sync |
+| MT5 backtest modal | ✅ Live | Free-text symbol, bar presets, Evaluate/Foundational hidden |
+| MT5 backtest detail | ✅ Live | MT5_RUN_STEPS; NT8-only buttons hidden; Stress Test button shown |
+| Run Stress Test modal | ✅ Live | WF + sensitivity always run together; ruleset locked to first eval |
+| Stress test market lock | ✅ Live | One futures + one forex test at a time; button disabled when blocked |
+| Running stress indicators | ✅ Live | Pulsing chips/banners on Runs, BacktestDetail, OptimizationDetail |
+| Strategy best grades | ✅ Live | Best Grade column on Strategies tab; links to the grading test |
+| Queue page (Speed Step 6) | ✅ Live | `/queue` route + sidebar item; position, label, status, timestamps, delete |
+| Settings | ✅ Live | Config read/write; `nt8_agent_tunnel` + `mt5_agent_tunnel` |
+| Sidebar health strip | ✅ Live | 4 dots: API, SSH, NT8 (3-state), MT5 Agent |
 
 ---
 
@@ -395,19 +370,9 @@ Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBac
 
 ---
 
-## Pass 2 — Strategy Deployment Manager (frontend)
+## Strategy deployment manager
 
-**`FilesTab`** ("Deployed" sub-tab): drag/drop zone (`.cs`/`.mq5`), file list sorted by platform then filename, trash-can delete, overwrite/delete confirmation modals. "Compile NT8" → `useTriggerCompile()` → NT8 `CompileModal`. "Compile MT5" (purple, only when MT5 files present) → `useTriggerCompileMt5()` → MT5 `CompileModal`. `CompileModal` is generic: `title` + `usePollHook` props.
+The "Deployed" sub-tab (`FilesTab`) has a drag/drop zone (`.cs`/`.mq5`), a file list sorted by platform then filename, trash-can delete, and overwrite/delete confirm modals. "Compile NT8" (`useTriggerCompile`) and "Compile MT5" (purple, only when MT5 files present; `useTriggerCompileMt5`) both open the generic `CompileModal` (props: `title` + `usePollHook`). Strategy-file hooks live in `useLab.ts`: `useStrategyFiles`, `useStrategyFileSyncStatus`, `useUploadStrategyFile` (native `fetch()` + `FormData`, not `api.post`), `useDeleteStrategyFile`, `useTriggerCompile`, `useCompileStatus`, `useTriggerCompileMt5`, `useCompileStatusMt5`, `useDeployStrategy`. `useParamTypes(strategyId)` calls `GET /strategies/{id}/param-types` → `Record<string, 'int' | 'double'>` with `staleTime: Infinity`; used by `OptimizerModal` to validate int-param ranges; disabled when `strategyId` is null. Types: `StrategyFile` (+ `platform`), `StrategyFileSyncStatus`, `CompileJobStatus`, `DeployJobStatus`; `ScanResult` carries `warnings: string[]`.
 
-**New hooks in `useLab.ts`:** `useStrategyFiles`, `useStrategyFileSyncStatus`, `useUploadStrategyFile` (native `fetch()` + `FormData` — not `api.post`), `useDeleteStrategyFile`, `useTriggerCompile`, `useCompileStatus`, `useTriggerCompileMt5`, `useCompileStatusMt5`, `useDeployStrategy`.
-
-**`useParamTypes(strategyId)`** in `useLab.ts` — calls `GET /strategies/{id}/param-types`, returns `Record<string, 'int' | 'double'>`. `staleTime: Infinity` (param types only change if the source file changes, so no background refetching). Used by `OptimizerModal` to validate that range inputs for `int` params are whole numbers. If `strategyId` is null the query is disabled.
-
-**New types:** `StrategyFile` (+ `platform`), `StrategyFileSyncStatus`, `CompileJobStatus`, `DeployJobStatus`. `ScanResult` gains `warnings: string[]`.
-
----
-
-## Pass 2.5 — Strategy Location Cleanup (frontend)
-
-Deploy/Redeploy buttons per row in `StrategiesTab`. `handleDeploy(strategyId)` calls `deploy.mutateAsync()` and tracks `deployingId` state. On success: toast + `sync-status` invalidation. Out of sync: filled accent + `CloudUpload` "Deploy". In sync: outlined + `RotateCcw` "Redeploy". "Needs deploy" badge is display-only — the button is the action.
+Each row in `StrategiesTab` has a Deploy/Redeploy button. `handleDeploy(strategyId)` calls `deploy.mutateAsync()`, tracks `deployingId`, and on success toasts + invalidates `sync-status`. Out of sync: filled accent `CloudUpload` "Deploy". In sync: outlined `RotateCcw` "Redeploy". The "Needs deploy" badge is display-only — the button is the action.
 

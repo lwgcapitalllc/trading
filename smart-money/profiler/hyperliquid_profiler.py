@@ -13,9 +13,7 @@ Fills with no matching open (queue empty) are treated as orphaned and skipped.
 
 from __future__ import annotations
 
-import time
 from collections import defaultdict, deque
-from typing import Any
 
 from run_logger import StageLogger
 

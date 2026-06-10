@@ -55,14 +55,14 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
 
 5. **Launch NinjaTrader (manual)**
    Open NT8, confirm NinjaScript compiled with no errors (Editor → F5), open Strategy
-   Analyzer. The command-center NinjaTrader health dot needs SA open.
+   Analyzer. The command-center NT8 health dot needs SA open.
 
 6. **Verify**
    ```bash
    algo            # control panel — all 4 MT5 bots RUNNING
    ```
    Telegram: `/status` (4 bots green), `/balance` (correct balances).
-   Command-center sidebar: API / SSH / NT8 agent / NinjaTrader / NT8-compile dots green.
+   Command-center sidebar: API / SSH / NT8 / MT5 Agent dots green.
 
 ---
 

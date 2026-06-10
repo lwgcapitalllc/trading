@@ -379,22 +379,6 @@ class RulesetCreate(BaseModel):
     drawdown_unit: str = "usd"
 
 
-class InstrumentMetadata(BaseModel):
-    symbol: str
-    market: str                             # "futures" | "forex"
-    display_name: str
-    tick_size: Optional[float] = None
-    point_value_usd: Optional[float] = None
-    broker_suffix: Optional[str] = None
-    default_session: Optional[str] = None  # "london" | "newyork" | "24h"
-    notes: Optional[str] = None
-
-
-# Backward-compat aliases — used in M3 only; removed in M4
-Firm = Ruleset
-FirmCreate = RulesetCreate
-
-
 # ── Lab — worthiness scoring ──────────────────────────────────────────────────
 
 class WorthinessScore(BaseModel):

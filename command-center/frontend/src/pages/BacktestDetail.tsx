@@ -1,9 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
-  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Tag, Layers, Play,
+  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Layers, Play,
   Copy, Check,
 } from 'lucide-react'
 import {
@@ -11,8 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import { toast } from 'sonner'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useBackfillRegime, useBackfillStatus, useRunningVpsJob } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
 import { C } from '@/themes/chart'
@@ -1346,50 +1344,6 @@ function PerformanceByRegimeTable({ run }: { run: Run }) {
         </table>
       </div>
     </div>
-  )
-}
-
-// ── Backfill regime button ────────────────────────────────────────────────────
-
-function BackfillRegimeButton({ run }: { run: Run }) {
-  const queryClient = useQueryClient()
-  const backfill    = useBackfillRegime()
-  const hasRealTags = run.daily_pnl.some(d => d.regime_tag && d.regime_tag !== 'UNKNOWN')
-  const [polling, setPolling] = useState(false)
-  const { data: status } = useBackfillStatus(run.run_id, polling)
-
-  useEffect(() => {
-    if (status?.status === 'complete') {
-      setPolling(false)
-      queryClient.invalidateQueries({ queryKey: ['lab', 'run', run.run_id] })
-      if ((status.tagged ?? 0) > 0) {
-        toast.success(`${status.tagged}/${status.total} days tagged`)
-      } else {
-        toast.warning('Tagging finished but no regime data — OHLC unavailable for this symbol')
-      }
-    } else if (status?.status === 'failed') {
-      setPolling(false)
-      toast.error('Backfill failed')
-    }
-  }, [status?.status, run.run_id, queryClient])
-
-  if (hasRealTags || run.status !== 'complete') return null
-
-  const isRunning = status?.status === 'running' || polling
-  return (
-    <button
-      onClick={() => backfill.mutate(run.run_id, {
-        onSuccess: () => setPolling(true),
-        onError:   (e: unknown) => toast.error(`Tag failed: ${(e as { detail?: string })?.detail ?? 'Unknown error'}`),
-      })}
-      disabled={isRunning || backfill.isPending}
-      className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <Tag size={14} />
-      {isRunning
-        ? (status?.total ? `Tagging ${status.tagged}/${status.total}…` : 'Tagging…')
-        : 'Tag Regimes'}
-    </button>
   )
 }
 

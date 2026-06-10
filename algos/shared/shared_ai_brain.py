@@ -164,31 +164,6 @@ class DailyLogger:
     def get_recent(self, n=30) -> list:
         return self.records[-n:]
 
-    def get_avg_drawdown(self, n=10) -> float:
-        recent = self.get_recent(n)
-        if not recent: return 0.0
-        return sum(r.get("max_drawdown_pct", 0) for r in recent) / len(recent)
-
-    def get_bad_day_patterns(self) -> dict:
-        """Return conditions that correlate with bad days."""
-        if len(self.records) < 5:
-            return {}
-        bad  = [r for r in self.records if r.get("final_pnl_pct", 0) < -2]
-        good = [r for r in self.records if r.get("final_pnl_pct", 0) > 1]
-        if not bad or not good:
-            return {}
-        patterns = {
-            "bad_days_avg_trades":      sum(r.get("total_trades", 0) for r in bad) / len(bad),
-            "good_days_avg_trades":     sum(r.get("total_trades", 0) for r in good) / len(good),
-            "bad_days_avg_max_open":    sum(r.get("max_simultaneous_open", 0) for r in bad) / len(bad),
-            "good_days_avg_max_open":   sum(r.get("max_simultaneous_open", 0) for r in good) / len(good),
-        }
-        log.info(f"Bad day pattern: avg {patterns['bad_days_avg_trades']:.1f} trades, "
-                 f"{patterns['bad_days_avg_max_open']:.1f} max open")
-        log.info(f"Good day pattern: avg {patterns['good_days_avg_trades']:.1f} trades, "
-                 f"{patterns['good_days_avg_max_open']:.1f} max open")
-        return patterns
-
 
 # =============================================================================
 # TRADE LOGGER
@@ -309,11 +284,6 @@ class TradeLogger:
     def get_last_outcome(self) -> float:
         closed = self.get_closed()
         return 1.0 if closed and closed[-1]["outcome"] == "win" else 0.0
-
-    def was_last_trade_breakeven(self) -> bool:
-        """Used to detect re-entry opportunity."""
-        closed = self.get_closed()
-        return bool(closed and closed[-1]["outcome"] == "breakeven")
 
 
 # =============================================================================

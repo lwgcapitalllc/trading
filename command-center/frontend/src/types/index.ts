@@ -393,12 +393,6 @@ export interface DailyPnlPoint {
   regime_tag?: string
 }
 
-export interface BackfillRegimeStatus {
-  status: 'idle' | 'running' | 'complete' | 'failed'
-  tagged: number
-  total: number
-}
-
 export interface BacktestDetail {
   run_id: string
   strategy_id: string
@@ -631,7 +625,7 @@ export interface OptimizationRequest {
   slippage_ticks?: number
   ruleset_id: string | null
   mode: 'eval' | 'funded' | 'raw'
-  search_method: 'auto' | 'brute' | 'genetic'
+  search_method: 'native'
   param_grid: Record<string, ParamAxisSpec>
   source_run_id?: string | null
   regime_filter?: string | null

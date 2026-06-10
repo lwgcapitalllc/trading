@@ -856,11 +856,6 @@ def get_ruleset(ruleset_id: str) -> Optional[dict]:
     return _parse_json_fields(dict(row), _RULESET_JSON_FIELDS)
 
 
-# Keep old name as alias for any callers not yet updated (will remove post-M3)
-def get_firm(firm_id: str) -> Optional[dict]:
-    return get_ruleset(firm_id)
-
-
 def insert_ruleset(data: dict) -> None:
     now = int(time.time())
     with _connect() as conn:
@@ -965,44 +960,12 @@ def delete_ruleset(ruleset_id: str) -> bool:
 
 # ── Instrument metadata ───────────────────────────────────────────────────────
 
-def list_instrument_metadata() -> list[dict]:
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM instrument_metadata ORDER BY market, symbol"
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
 def get_instrument_metadata(symbol: str) -> Optional[dict]:
     with _connect() as conn:
         row = conn.execute(
             "SELECT * FROM instrument_metadata WHERE symbol = ?", (symbol.upper(),)
         ).fetchone()
     return dict(row) if row else None
-
-
-def upsert_instrument_metadata(data: dict) -> None:
-    with _connect() as conn:
-        conn.execute(
-            """INSERT INTO instrument_metadata
-               (symbol, market, display_name, tick_size, point_value_usd,
-                broker_suffix, default_session, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(symbol) DO UPDATE SET
-                   market=excluded.market,
-                   display_name=excluded.display_name,
-                   tick_size=excluded.tick_size,
-                   point_value_usd=excluded.point_value_usd,
-                   broker_suffix=excluded.broker_suffix,
-                   default_session=excluded.default_session,
-                   notes=excluded.notes""",
-            (
-                data["symbol"].upper(), data["market"], data["display_name"],
-                data.get("tick_size"), data.get("point_value_usd"),
-                data.get("broker_suffix", ""), data.get("default_session"),
-                data.get("notes"),
-            ),
-        )
 
 
 # ── Backtest runs ─────────────────────────────────────────────────────────────
@@ -1305,15 +1268,6 @@ def list_sweeps(strategy_id: Optional[str] = None) -> list[dict]:
         d['ruleset_ids'] = [f for f in (d.pop('ruleset_ids_csv') or '').split(',') if f]
         result.append(d)
     return result
-
-
-def has_running_sweep(strategy_id: str) -> bool:
-    with _connect() as conn:
-        count = conn.execute(
-            "SELECT COUNT(*) FROM backtest_runs WHERE sweep_id IS NOT NULL AND strategy_id = ? AND status = 'running'",
-            (strategy_id,),
-        ).fetchone()[0]
-    return count > 0
 
 
 def delete_sweep(sweep_id: str) -> tuple[bool, list[str]]:
@@ -1693,17 +1647,6 @@ def get_stress_test(stress_test_id: str) -> Optional[dict]:
     with _connect() as conn:
         row = conn.execute(
             "SELECT * FROM stress_tests WHERE stress_test_id = ?", (stress_test_id,)
-        ).fetchone()
-    if not row:
-        return None
-    return _parse_json_fields(dict(row), ["walk_forward_summary", "sensitivity_summary", "grade_reasons"])
-
-
-def get_latest_stress_test_for_run(run_id: str) -> Optional[dict]:
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM stress_tests WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
-            (run_id,),
         ).fetchone()
     if not row:
         return None

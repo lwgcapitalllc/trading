@@ -22,6 +22,7 @@ trading/
 ├── command-center/  ← Local operations platform (React + FastAPI)
 ├── regime/          ← Shared market regime classifier (bots + backtest lab)
 ├── strategies/      ← Generic trading strategy source files, organized by runner platform
+├── scripts/         ← Cross-subsystem VPS recovery and bootstrap scripts
 └── docs/            ← Cross-subsystem reference docs and audit tools
 ```
 
@@ -32,7 +33,7 @@ trading/
 ## System Summaries
 
 ### algos/
-Live automated trading on PU Prime demo accounts. Three bot instances: gold_main, gold_scalper, gold_fft. Runs on Windows VPS (ForexVPS) via Windows Task Scheduler. Full rules in `algos/CLAUDE.md`.
+Live automated trading on PU Prime demo accounts. Four bots across three account instances (gold_main, gold_scalper, gold_fft). Runs on Windows VPS (ForexVPS) via Windows Task Scheduler. Full rules in `algos/CLAUDE.md`.
 
 ### smart-money/
 Scans and profiles consistent crypto/forex traders for copy trading candidate pool construction. Runs locally on Mac. Stages 1–2 and 5 live; Stages 3–4 need API keys. Full rules in `smart-money/CLAUDE.md`.

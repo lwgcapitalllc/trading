@@ -32,7 +32,7 @@ Read these in order for full context:
 |---|---|---|---|
 | `algos/` | Live algo trading — 4 bots on Windows VPS | Demo trading | `algos/CLAUDE.md` |
 | `smart-money/` | Trader scanner for copy-trading candidates | Stages 1–2, 5 live | `smart-money/CLAUDE.md` |
-| `command-center/` | React + FastAPI ops platform | Live (Stress Tests stub) | `command-center/CLAUDE.md` |
+| `command-center/` | React + FastAPI ops platform | Live | `command-center/CLAUDE.md` |
 | `regime/` | Shared regime classifier for live bots and backtest lab | Production | `regime/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8, MT5 placeholder) | Production | `strategies/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |
@@ -49,7 +49,7 @@ Read these in order for full context:
 
 Cross-subsystem reference documents:
 - `docs/BOT_DEVELOPMENT_METHOD.md` — S.Y.S.T.E.M. six-step process for building and validating any trading bot
-- `docs/Command_Center_Backtest_Engine_Design.md` — Original design doc for the backtests lab (historical reference)
+- `docs/archive/Command_Center_Backtest_Engine_Design.md` — Original design doc for the backtests lab (historical reference)
 - `docs/LWG_Project_State_Snapshot.md` — Current platform state; hand to new Claude.ai chats
 - `docs/LWG_Roadmap_And_Open_Questions.md` — Forward plan and open questions; hand to new Claude.ai chats
 - `docs/audit/` — Audit and snapshot prompt templates

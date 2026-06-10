@@ -50,18 +50,14 @@
   "output": {
     "top_n_profiles": 20,
     "top_n_shortlist": 5,
-    "reports_dir": "reports",
-    "raw_data_dir": "data/raw",
-    "processed_data_dir": "data/processed"
+    "reports_dir": "reports"
   },
 
   "hyperliquid": {
-    "base_url": "https://api.hyperliquid.xyz",
     "requests_per_second": 2,
     "concurrent_workers": 5,
     "max_retries": 5,
     "retry_backoff_factor": 2.0,
-    "leaderboard_window": "allTime",
     "timeout_seconds": 30,
     "max_leaderboard_candidates": 3000,
     "fills_cache_hours": 24,

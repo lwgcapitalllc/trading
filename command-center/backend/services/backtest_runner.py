@@ -326,48 +326,6 @@ def build_date_regime_map(
     return result
 
 
-# ── Backfill tracker ─────────────────────────────────────────────────────────
-
-_backfill_jobs: dict[str, dict] = {}
-
-
-def get_backfill_status(run_id: str) -> dict:
-    return _backfill_jobs.get(run_id, {"status": "idle", "tagged": 0, "total": 0})
-
-
-async def run_backfill(
-    run_id: str,
-    instrument: str,
-    start_date: str,
-    end_date: str,
-    daily_pnl_path: Path,
-) -> None:
-    _backfill_jobs[run_id] = {"status": "running", "tagged": 0, "total": 0}
-    try:
-        raw: list[dict] = json.loads(daily_pnl_path.read_text())
-    except Exception as exc:
-        log.warning("Backfill: could not read daily_pnl for %s: %s", run_id, exc)
-        _backfill_jobs[run_id] = {"status": "failed", "tagged": 0, "total": 0}
-        return
-
-    run_row = lab_db.get_run(run_id)
-    backfill_runner = run_row.get("runner", "ninjatrader") if run_row else "ninjatrader"
-
-    _backfill_jobs[run_id]["total"] = len(raw)
-    tagged = await asyncio.to_thread(
-        _tag_daily_pnl_with_regime,
-        instrument,
-        start_date,
-        end_date,
-        raw,
-        backfill_runner,
-    )
-    daily_pnl_path.write_text(json.dumps(tagged, default=str))
-    n_tagged = sum(1 for r in tagged if r.get("regime_tag") != "UNKNOWN")
-    _backfill_jobs[run_id] = {"status": "complete", "tagged": n_tagged, "total": len(tagged)}
-    log.info("Backfill complete for %s: %d/%d days tagged", run_id, n_tagged, len(tagged))
-
-
 # ── Completion path ────────────────────────────────────────────────────────────
 
 async def _handle_complete(

@@ -28,7 +28,7 @@ def eval_pass_probability(run: dict, firm: dict) -> float:
     0.0 if drawdown breached.
     """
     evals = run.get("_evaluations", [])
-    target_eval = next((e for e in evals if e["firm_id"] == firm["id"]), None)
+    target_eval = next((e for e in evals if e["ruleset_id"] == firm["id"]), None)
 
     if target_eval is None:
         # Fall back to KPI-only heuristic when eval record not loaded

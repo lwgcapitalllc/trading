@@ -9,7 +9,6 @@ import type {
   SweepRequest, SweepResponse, SweepDetail,
   OptimizationRequest, OptimizationSummary, OptimizationDetail,
   InstrumentSummary, RunningJobStatus,
-  BackfillRegimeStatus,
   StrategyFile, StrategyFileSyncStatus, CompileJobStatus,
 } from '@/types'
 
@@ -267,19 +266,6 @@ export function useRetryBacktest() {
       const msg = (e as { detail?: string })?.detail
       toast.error(msg ?? 'Failed to start rerun')
     },
-  })
-}
-
-export function useReevaluate() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ runId, firmIds }: { runId: string; firmIds: string[] }) =>
-      api.post<BacktestDetail>(`/backtests/runs/${runId}/reevaluate`, { firm_ids: firmIds }),
-    onSuccess: (_data, vars) => {
-      toast.success('Re-evaluated')
-      qc.invalidateQueries({ queryKey: ['lab', 'run', vars.runId] })
-    },
-    onError: () => toast.error('Re-evaluate failed'),
   })
 }
 
@@ -589,28 +575,6 @@ export function useRunningVpsJob() {
     queryKey: ['lab', 'running-job'],
     queryFn: () => api.get<RunningJobStatus>('/backtests/running-job'),
     refetchInterval: 5_000,
-  })
-}
-
-// ── Regime Backfill ────────────────────────────────────────────────────────────
-
-export function useBackfillRegime() {
-  return useMutation({
-    mutationFn: (runId: string) =>
-      api.post<{ run_id: string; status: string }>(`/backtests/runs/${runId}/backfill_regime`),
-    onError: () => toast.error('Failed to start regime backfill'),
-  })
-}
-
-export function useBackfillStatus(runId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: ['lab', 'backfill-status', runId],
-    queryFn: () => api.get<BackfillRegimeStatus>(`/backtests/runs/${runId}/backfill_status`),
-    enabled: !!runId && enabled,
-    refetchInterval: (query) => {
-      const data = query.state.data as BackfillRegimeStatus | undefined
-      return data?.status === 'running' ? 1_000 : false
-    },
   })
 }
 

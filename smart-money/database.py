@@ -360,22 +360,3 @@ def cache_fills(address: str, fills: list) -> None:
                 fills_json = excluded.fills_json,
                 fetched_at = excluded.fetched_at
         """, (address, json.dumps(fills), int(time.time())))
-
-
-def fills_cache_stats() -> dict:
-    """Return row count and oldest/newest fetch timestamps for monitoring."""
-    with get_conn() as conn:
-        row = conn.execute("""
-            SELECT COUNT(*) as n,
-                   MIN(fetched_at) as oldest,
-                   MAX(fetched_at) as newest
-            FROM fills_cache
-        """).fetchone()
-    return dict(row) if row else {"n": 0, "oldest": None, "newest": None}
-
-
-def clear_fills_cache() -> int:
-    """Delete all entries from the fills cache. Returns number of rows deleted."""
-    with get_conn() as conn:
-        n = conn.execute("DELETE FROM fills_cache").rowcount
-    return n

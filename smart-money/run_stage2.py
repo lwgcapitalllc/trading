@@ -11,7 +11,7 @@ Usage:
   python run_stage2.py --check-pool  # check pool size and recommend threshold adjustments
 
 Output:
-  Console report + reports/stage2_validation_*.txt
+  Console report only (no files written).
 """
 
 import argparse
@@ -26,8 +26,6 @@ import database as db
 from run_logger import StageLogger
 
 CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
-REPORTS_DIR = Path(__file__).parent / "reports"
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def validate_pool_size(config: dict, logger: StageLogger):

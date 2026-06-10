@@ -1,8 +1,11 @@
 # CLAUDE.md — Command Center Backend
 
-Auto-loaded by Claude Code when editing any file inside `backend/`.
+**Purpose:** FastAPI backend (`:8000`) — owns all SQLite state, talks to the VPS via SSH + HTTP agents, runs the smart-money pipeline via subprocess, and drives NT8/MT5 backtests.
+**Scope:** This covers backend conventions, routers, services, DB, and VPS interaction. It does NOT cover the frontend (see `../frontend/CLAUDE.md`) or `algos/`/`smart-money/` source.
+**Status:** Live — lab (strategies, rulesets, backtests, sweeps, optimizations, stress tests, queue, MT5 runner) all shipped.
+**Last reviewed:** 2026-06-10
 
-**Last reviewed:** 2026-06-09
+Auto-loaded by Claude Code when editing any file inside `backend/`.
 
 FastAPI backend served on `:8000`. Talks to the VPS via SSH and HTTP, runs smart-money pipeline via subprocess, and owns all SQLite state. The frontend never touches the filesystem or the VPS directly.
 
@@ -211,7 +214,7 @@ Lab backtests use the same pattern but the "worker" is the NT8 agent over HTTP.
 
 ## Ruleset abstraction (M3)
 
-The `firms` table was renamed to `rulesets` in M3. All references updated. `/firms/*` routes redirect to `/rulesets/*` via `routers/firms.py` (deprecated backward-compat shim; keep until all callers are confirmed updated).
+The `firms` table is now `rulesets`; `firm_id` is `ruleset_id` everywhere (evaluations, optimizations). `/firms/*` routes redirect to `/rulesets/*` via `routers/firms.py` (deprecated shim; keep until all callers confirmed updated). `BacktestRunRequest.evaluate_rulesets` replaces `evaluate_firms` (backward-compat alias still accepted). Full migration story in the M3 archive spec.
 
 **`ruleset_type` values and evaluation logic:**
 
@@ -224,27 +227,21 @@ The `firms` table was renamed to `rulesets` in M3. All references updated. `/fir
 
 `account_tier` is still present on rows (eval/funded/live) — useful for prop rulesets. `ruleset_type` is the broader category.
 
-New columns on `rulesets` (M3): `ruleset_type`, `daily_loss_cap`, `weekly_loss_cap`, `daily_profit_goal`, `description`.
+Columns on `rulesets`: `ruleset_type`, `daily_loss_cap`, `weekly_loss_cap`, `daily_profit_goal`, `description`.
 
-Seeded rulesets (13 rows): 4 LucidFlex × (eval/funded) + 4 Tradeify × (eval/funded) + 4 FundedNext × (eval/funded) + 1 personal example (`personal_futures_10k_example`).
-
-**Evaluations table:** `firm_id` column renamed to `ruleset_id`. `optimizations` table: `firm_id` → `ruleset_id` too.
-
-`BacktestRunRequest.evaluate_rulesets` — replaces `evaluate_firms` (backward-compat alias still accepted).
+Seeded rulesets (15 rows): 3 prop firms (LucidFlex, Tradeify, FundedNext) × 2 account sizes (50k, 100k) × 2 types (eval/funded) = 12 prop rows + 2 personal (`personal_forex_main`, `personal_futures_10k_example`) + 1 demo (`personal_forex_demo`).
 
 ---
 
-## Pass 1 — Foundational Config
+## Foundational config (Pass 1)
 
-Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss limit, entry hours ET, days allowed, daily profit target, profit lock-in %, commission/side, slippage ticks). Injected into strategy params at run creation by `nt8_agent_client.inject_foundational()`.
+Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss limit, entry hours ET, days allowed, daily profit target, profit lock-in %, commission/side, slippage ticks), injected into strategy params at run creation by `nt8_agent_client.inject_foundational()`. Detail in the Pass1 archive spec.
 
-**Category tagging:** every `[NinjaScriptProperty]` in a strategy file carries `[Category("Strategy Logic")]` (tunable, optimizer-visible) or `[Category("Foundational")]` (injected from ruleset, hidden in UI). Legacy files with `[Display(GroupName = "Prop Firm")]` fall back to `"foundational"` via GroupName heuristic.
-
-**Dispatcher injection:** happens at three creation points — `trigger_backtest()`, `trigger_sweep()`, and `run_optimization()` — using the primary ruleset (first in `evaluate_rulesets`). Merged params stored in DB at creation so all retry paths pick them up without re-injection.
-
-**Primary ruleset rule:** only the first ruleset in the list injects foundational config. Others evaluate only. To test two rulesets' configs simultaneously, run two separate backtests.
-
-**Sentinel guard:** strategies refuse to trade (print warning + return) if foundational params are still at placeholder values (-1 or empty string). This catches dispatcher failures early.
+**Standing rules:**
+- **Category tagging:** every `[NinjaScriptProperty]` carries `[Category("Strategy Logic")]` (tunable, optimizer-visible) or `[Category("Foundational")]` (injected, hidden in UI). Legacy `[Display(GroupName = "Prop Firm")]` falls back to `"foundational"` via GroupName heuristic.
+- **Dispatcher injection** happens at three creation points — `trigger_backtest()`, `trigger_sweep()`, `run_optimization()` — using the primary ruleset (first in `evaluate_rulesets`). Merged params stored in DB at creation so all retry paths pick them up without re-injection.
+- **Primary ruleset rule:** only the first ruleset injects foundational config; others evaluate only. To test two rulesets' configs, run two separate backtests.
+- **Sentinel guard:** strategies refuse to trade (warn + return) if foundational params are still at placeholders (-1 or empty string), catching dispatcher failures early.
 
 ---
 
@@ -254,22 +251,22 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 |---|---|---|
 | Smart Money | ✅ Live | Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
 | Bots | ✅ Live | SSH monitor for gold_main/gold_scalper/gold_fft. Global + per-bot risk controls, cap deploy, Telegram users tab. |
-| Lab — Strategies | ✅ Live | Registry scanned from `strategies/`. Param schema from `[NinjaScriptProperty]`. `runner` field per strategy. |
-| Lab — Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 13 seeded rows. |
-| Lab — Backtests | ✅ Live | NT8/MT5 runs via agent. Equity curve, daily P&L, per-ruleset verdicts, Worthiness tier (1/2/3). |
-| Lab — Sweeps | ✅ Live | N sequential backtests across instruments (`_MAX_CONCURRENT = 1`). Cancel, retry-all, per-run retry. |
-| Lab — Optimizations | ✅ Live | Native NT8/MT5 optimizer (one VPS job, full grid, all CPU cores). Scores by objective. `best_run_id` tracked. Source run nesting. Per-run retry. |
-| Lab — System | ✅ Live | Health (SSH, NT8, MT5 agents). Log proxies. `POST /system/{nt8,mt5}-agent/start` fires schtasks. |
-| Lab — Stress Tests | ✅ Live | MC (10k reshuffles + 1k bootstrap), walk-forward (IS/OOS NT8 windows), sensitivity (±10%/±25%). A–F grade. |
-| Lab — Regime Tags (M4) | ✅ Live | `daily_pnl` entries tagged with regime label. Auto-tagged at pipeline time. Optimizer `regime_filter`. |
-| Lab — Strategy Files (Pass 2) | ✅ Live | Upload/delete/compile `.cs` (NT8 F5) and `.mq5` (MetaEditor) files. Sync-status badges. |
-| Lab — Strategy Deploy (Pass 2.5) | ✅ Live | `POST /strategies/{id}/deploy` reads `source_path`, uploads to VPS. `.mq5` → MT5 agent, `.cs` → NT8 agent. |
-| Lab — Param types endpoint | ✅ Live | `GET /strategies/{id}/param-types` — parses `.cs` (`public int|double PropertyName {`) and `.mq5` (`input int|double Name`) source files. Returns `{paramName: "int"\|"double"}`. Used by optimizer modal to block decimal steps on integer params. |
-| Lab — MT5 runner (M5) | ✅ Live | `mt5_agent.py` port 8766: Strategy Tester driver (ini+set, terminal64, HTML report). `mt5_agent_client.py` typed wrapper. Runner dispatch via `nt8_agent_client`. |
-| Lab — MT5 deployment (Step 9) | ✅ Live | MT5 agent upload/delete `.mq5`. `POST /compile` → MetaEditor. Backend: `POST/GET /strategy-files/compile-mt5`. |
-| Lab — MT5 native optimizer (Speed Step 4) | ✅ Live | `mt5_agent.py` extended with `POST /native-optimize` (Optimization=1 ini, set-file ranges, HTML combo parser) and `POST /native-walkforward` (ForwardMode ini, IS/OOS HTML split). `mt5_agent_client.py` typed wrappers. `nt8_agent_client` dispatcher: `start_native_optimization`, `native_opt_results`, `start_native_walkforward`, `native_wf_results` all accept `runner` param. `optimization_runner.run_native_optimization` reads `runner_str` from strategy and passes through poll loop. MT5 optimizer runs combos sequentially; each combo updates `pct`, `message`, `completed_count`, `total_count` on the job dict. `_normalize_mt5_status` passes these through (no longer hardcodes `pct=30`). Poll loop writes `completed_runs` to DB mid-run via `set_optimization_completed_runs()`. After all combo rows are inserted, `run_native_optimization` calls `set_optimization_completed_runs(optimization_id, len(run_ids))` once to set the final count — never use `increment_optimization_completed` per combo in this path, that double-counts (poll loop already wrote the correct total). |
-| Lab — Telegram notifications (Speed Step 5) | ✅ Live | `services/notify.py` — urllib Telegram sender (same token as `algos/shared/notify.py`, no extra deps). `stress_tester` fires after grade is written in both MC-only and full WF+sens paths. |
-| Lab — Job queue (Speed Step 6) | ✅ Live | `job_queue` table + CRUD in `lab_db.py`. `queue_runner.py` asyncio loop runs one job at a time (optimization or stress_test). `routers/queue.py`: GET/POST/DELETE. Loop started as asyncio task in `main.py` startup. |
+| Strategies | ✅ Live | Registry scanned from `strategies/`. Param schema from `[NinjaScriptProperty]`. `runner` field per strategy. |
+| Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 15 seeded rows. |
+| Backtests | ✅ Live | NT8/MT5 runs via agent. Equity curve, daily P&L, per-ruleset verdicts, Worthiness tier (1/2/3). |
+| Sweeps | ✅ Live | N sequential backtests across instruments (`_MAX_CONCURRENT = 1`). Cancel, retry-all, per-run retry. |
+| Optimizations | ✅ Live | Native NT8/MT5 optimizer (one VPS job, full grid, all CPU cores). Scores by objective. `best_run_id` tracked. Source run nesting. Per-run retry. |
+| System | ✅ Live | Health (SSH, NT8, MT5 agents). Log proxies. `POST /system/{nt8,mt5}-agent/start` fires schtasks. |
+| Stress Tests | ✅ Live | MC (10k reshuffles + 1k bootstrap), walk-forward (IS/OOS NT8 windows), sensitivity (±10%/±25%). A–F grade. |
+| Regime Tags | ✅ Live | `daily_pnl` entries tagged with regime label. Auto-tagged at pipeline time. Optimizer `regime_filter`. |
+| Strategy Files | ✅ Live | Upload/delete/compile `.cs` (NT8 F5) and `.mq5` (MetaEditor) files. Sync-status badges. |
+| Strategy Deploy | ✅ Live | `POST /strategies/{id}/deploy` reads `source_path`, uploads to VPS. `.mq5` → MT5 agent, `.cs` → NT8 agent. |
+| Param types | ✅ Live | `GET /strategies/{id}/param-types` parses `.cs`/`.mq5` source → `{paramName: "int"\|"double"}`. Used by optimizer modal to block decimal steps on integer params. |
+| MT5 runner | ✅ Live | `mt5_agent.py` port 8766: Strategy Tester driver (ini+set, terminal64, HTML report). `mt5_agent_client.py` typed wrapper. Runner dispatch via `nt8_agent_client`. |
+| MT5 deployment | ✅ Live | MT5 agent upload/delete `.mq5`. `POST /compile` → MetaEditor. Backend: `POST/GET /strategy-files/compile-mt5`. |
+| MT5 native optimizer | ✅ Live | `mt5_agent.py` `POST /native-optimize` + `POST /native-walkforward`; `mt5_agent_client.py` typed wrappers. `nt8_agent_client` dispatcher + `optimization_runner.run_native_optimization` route by `runner`. Combos run sequentially with per-combo progress. |
+| Telegram notifications | ✅ Live | `services/notify.py` — urllib Telegram sender (same token as `algos/shared/notify.py`, no extra deps). `stress_tester` fires after grade is written. |
+| Job queue | ✅ Live | `job_queue` table + CRUD in `lab_db.py`. `queue_runner.py` asyncio loop runs one job at a time (optimization or stress_test). `routers/queue.py`: GET/POST/DELETE. Started in `main.py` startup. |
 | Settings | ✅ Live | Config read/write. `nt8_agent_tunnel` and `mt5_agent_tunnel` both present. |
 | Startup — auto-start agents | ✅ Live | Daemon thread on startup (8s delay): `/health` each agent, fires schtask for any that don't respond. |
 
@@ -298,22 +295,22 @@ Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_
 
 ---
 
-## DB schema — notable columns added via migration
+## DB schema — notable columns
 
-`backtest_runs` additions (not in original CREATE TABLE):
+`backtest_runs`:
 - `worthiness_tier`, `worthiness_reason`, `worthiness_computed_against_firm` — see Worthiness scoring above
-- `sweep_id` — set on all child runs of an instrument sweep
-- `optimization_id` — set on all child runs of an optimizer job
-- `source_run_id` — set when a sweep or optimization is triggered from a BacktestDetail page; links children back to the originating run
-- `stress_test_id` — set on walk-forward and sensitivity child runs; links them back to the parent stress test
+- `sweep_id` — child runs of an instrument sweep
+- `optimization_id` — child runs of an optimizer job
+- `source_run_id` — set when a sweep/optimization is triggered from a BacktestDetail page; links children back to the originating run
+- `stress_test_id` — walk-forward and sensitivity child runs; links them back to the parent stress test
 - `walk_forward_window_id` — identifies the window and period (e.g. `wf_2_oos`, `sens_EntryOffset_+10%`)
 
-`optimizations` table key fields: `optimization_id`, `strategy_id`, `instrument`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `ruleset_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`, `regime_filter` (M4 — one of the 5 regime labels or NULL), `created_at`, `completed_at`.
+`optimizations` key fields: `optimization_id`, `strategy_id`, `instrument`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `ruleset_id`, `mode`, `search_method`, `param_grid` (JSON), `status`, `estimated_runs`, `completed_runs`, `best_run_id`, `source_run_id`, `regime_filter` (one of the 5 regime labels or NULL), `created_at`, `completed_at`.
 
-`instrument_daily_ohlc` table (M4): caches OHLC by (instrument, date). Source can be `"yfinance"` or `"nt8"`. Cache freshness: dates > 5 days old are fetched once and never refetched. Recent dates always refetched.
+`instrument_daily_ohlc`: caches OHLC by (instrument, date). Source `"yfinance"` or `"nt8"`. Cache freshness: dates > 5 days old fetched once and never refetched; recent dates always refetched.
 
-`stress_tests` additions (added via migration, not in original CREATE TABLE):
-- `mc_completed_at` — unix timestamp when Monte Carlo phase finished; used by frontend pipeline stepper to show per-phase elapsed time
+`stress_tests`:
+- `mc_completed_at` — unix timestamp when Monte Carlo phase finished; frontend pipeline stepper shows per-phase elapsed time
 - `wf_completed_at` — unix timestamp when walk-forward phase finished; same purpose
 
 ---
@@ -392,22 +389,18 @@ Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long
 
 ---
 
-## Pass 2 — Strategy Deployment Manager
+## Strategy file deployment (Pass 2)
 
-NT8 agent endpoints: `GET/POST/DELETE /files/strategies/<filename>`, `POST/GET /compile`. NT8 strategy folder: `C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\`.
+Live behavior. NT8 agent endpoints: `GET/POST/DELETE /files/strategies/<filename>`, `POST/GET /compile`. NT8 strategy folder: `C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\`. Detail in the Pass2 archive spec.
 
-**Compile:** `nt8_compile_runner.py` uses pywinauto F5 via NinjaScript Editor (`NCompile.exe` does not exist on this install). Success detected by polling `NinjaTrader.Custom.dll` mtime — NT8 rewrites it on every successful compile (90s timeout).
-
-**Upload limit:** 256 KB enforced on both agent and backend router.
-
-**Lock detection:** NT8 agent tries `r+b` open before upload/delete. `IOError` → HTTP 423.
-
-**Sync-status:** `GET /strategy-files/sync-status` — in sync when expected `.cs` file exists on VPS. File presence = in sync (no hash comparison yet).
+**Gotchas:**
+- **Compile:** `nt8_compile_runner.py` uses pywinauto F5 via NinjaScript Editor (`NCompile.exe` does not exist on this install). Success detected by polling `NinjaTrader.Custom.dll` mtime — NT8 rewrites it on every successful compile (90s timeout).
+- **Upload limit:** 256 KB, enforced on both agent and backend router.
+- **Lock detection:** agent tries `r+b` open before upload/delete; `IOError` → HTTP 423.
+- **Sync-status:** `GET /strategy-files/sync-status` — in sync when expected `.cs` file exists on VPS (presence only, no hash comparison yet).
 
 ---
 
-## Pass 2.5 — Strategy Location Cleanup
+## Strategy location + deploy (Pass 2.5)
 
-Scanner reads from `strategies/` via `rglob("*.cs")` and `rglob("*.mq5")`. `source_path` stored relative to monorepo root (e.g. `strategies/ninjatrader/ORB.cs`). Missing `source_path` emits a warning, never auto-deletes.
-
-`POST /strategies/{id}/deploy` reads `source_path`, uploads via `nt8_agent_client` (dispatches `.mq5` → MT5 agent, `.cs` → NT8 agent). Returns 202 + `deploy_job_id`. Edge cases: `source_path` null → 400, file missing → 404, VPS locked → 423.
+Live behavior. Scanner reads from `strategies/` via `rglob("*.cs")`/`rglob("*.mq5")`; `source_path` stored relative to monorepo root (e.g. `strategies/ninjatrader/ORB.cs`); missing `source_path` warns, never auto-deletes. `POST /strategies/{id}/deploy` reads `source_path` and uploads via `nt8_agent_client` (`.mq5` → MT5 agent, `.cs` → NT8 agent), returns 202 + `deploy_job_id`. Edge cases: `source_path` null → 400, file missing → 404, VPS locked → 423. Detail in the Pass2.5 archive spec.

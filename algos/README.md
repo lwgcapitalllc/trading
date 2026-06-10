@@ -61,31 +61,36 @@ algos/
 ├── scheduler/
 │   ├── *_task.xml                   ← Task Scheduler definitions
 │   └── SCHEDULER_GUIDE.md
+├── nt8/                            ← NT8 backtest toolchain (top-level)
+│   ├── nt8_agent.py                ← HTTP agent running on VPS (NT8 control)
+│   ├── nt8_backtest_runner.py      ← pywinauto NT8 Strategy Analyzer automation
+│   ├── nt8_compile_runner.py       ← pywinauto NinjaScript Editor compile subprocess
+│   ├── deploy.py                   ← Deploys .cs strategies to NT8 user folder
+│   ├── run_all.py                  ← Batch backtest runner
+│   ├── analyze.py                  ← Backtest result analyzer
+│   ├── setup_agent_task.py         ← Registers NT8Agent Task Scheduler entry
+│   ├── debug_sa_display.py         ← Manual SA display diagnostic
+│   ├── test_bt_switch.py           ← Manual backtest-mode-switch diagnostic
+│   └── backtest_config.json        ← Default backtest parameters
 └── markets/
-    ├── fx/instances/
-    │   ├── gold_main/
-    │   │   ├── config.json
-    │   │   ├── bot_state.json       ← Live state (balance, P&L, status)
-    │   │   ├── smc_trend_trades.json
-    │   │   └── mean_reversion_trades.json
-    │   ├── gold_scalper/
-    │   │   ├── config.json
-    │   │   ├── bot_state.json
-    │   │   └── scalper_trades.json
-    │   └── gold_fft/
-    │       ├── config.json
-    │       ├── bot_state.json
-    │       └── fft_trades.json
-    ├── nt8/
-    │       ├── nt8_agent.py           ← HTTP agent running on VPS (NT8 control)
-    │       ├── nt8_backtest_runner.py ← pywinauto NT8 Strategy Analyzer automation
-    │       ├── nt8_compile_runner.py  ← pywinauto NinjaScript Editor compile subprocess
-    │       ├── setup_agent_task.py    ← Registers NT8Agent Task Scheduler entry
-    │       ├── deploy.py              ← Deploys .cs strategies to NT8 user folder
-    │       ├── run_all.py             ← Batch backtest runner
-    │       ├── analyze.py             ← Backtest result analyzer
-    │       └── backtest_config.json   ← Default backtest parameters
-    └── crypto/instances/            ← Reserved (empty)
+    ├── fx/
+    │   ├── tools/
+    │   │   └── mt5_agent.py        ← MT5 HTTP agent (VPS, port 8766)
+    │   └── instances/
+    │       ├── gold_main/
+    │       │   ├── config.json
+    │       │   ├── bot_state.json  ← Live state (balance, P&L, status)
+    │       │   ├── smc_trend_trades.json
+    │       │   └── mean_reversion_trades.json
+    │       ├── gold_scalper/
+    │       │   ├── config.json
+    │       │   ├── bot_state.json
+    │       │   └── scalper_trades.json
+    │       └── gold_fft/
+    │           ├── config.json
+    │           ├── bot_state.json
+    │           └── fft_trades.json
+    └── crypto/instances/           ← Reserved (empty)
 ```
 
 ---

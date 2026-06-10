@@ -331,15 +331,6 @@ def _uptime_seconds(state: dict) -> int | None:
         return None
 
 
-@router.get("/ping")
-def vps_ping():
-    try:
-        out = _ssh("echo ok")
-        return {"status": "ok" if "ok" in out else "error"}
-    except (subprocess.TimeoutExpired, Exception):
-        return {"status": "error"}
-
-
 _USERS_FILE_VPS = r"C:\trading\algos\users.json"
 
 
