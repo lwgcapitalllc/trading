@@ -149,12 +149,13 @@ Hard-won rules for pywinauto + NT8 WPF — violating these causes silent wrong-s
 - **0-trade combos kill Export**: when all optimization combos produce 0 trades, NT8 shows no results in the grid and the Export context menu item does not appear. Root cause: NinjaScript `int` parameters (e.g. `MaPeriod`) silently truncate decimal values — a step of 2.5 generates values like 22.5 → cast to 22, but NT8 skips the combo because the effective value doesn't match. The `param-types` endpoint + frontend validation (see frontend CLAUDE.md) prevents users from entering non-integer steps on `int` params.
 - When the same 3 persistent items (`Momentum`, `Select`, `Trades ($)`) appear in the UIA scan, the right-click is NOT opening a context menu — it landed on a different element. These are persistent WPF dropdown elements, not context menu items.
 
-**Fixed params must be set in Backtest mode before switching to Optimize/WalkForward**
-- NT8 resets BacktestType to Backtest after every `select_strategy` call. This window is the only safe place to set fixed strategy params.
-- Setting numeric fixed params (e.g. AccountSize) via `_set_range_in_grid` in Optimize mode fires NT8's property-change event, which triggers a full UIA re-render. The re-render wipes the first param back to its NinjaScript default (sentinel -1 for AccountSize). All subsequent params succeed because they run against a freshly rebuilt grid, but the first param is lost.
-- Root cause confirmed: all combos showing 0 trades / PF=1.00 with AccountSize=-1 in the SA screenshot.
-- Fix in `run_native_optimize_mode` and `run_native_walkforward_mode`: ALL fixed params (numerics via `set_edit_typed`, strings via `set_edit_typed`, bools via `set_checkbox`) are set while still in Backtest mode, immediately after `select_strategy` + 3 s sleep. NT8 carries these values into Optimize/WalkForward mode. The txtBox grid (`_build_opt_grid_map` + `_set_range_in_grid`) is now used ONLY for the actual range params being swept (e.g. MaPeriod=20;35;5).
-- String params in Optimize mode: `set_edit_text` does not trigger NT8's WPF LostFocus commit handler. Use `set_edit_typed` (click_input + type_keys with ~) for all strategy PDEX fields.
+**Param setting in Optimize mode — confirmed behavior**
+- NT8 does NOT automatically reset BacktestType after `select_strategy`. It stays in whatever mode was active. Always call `_set_backtest_type("Backtest")` explicitly after `select_strategy` + 3s sleep to get a clean state.
+- String and bool params: set via PDEX `set_edit_typed`/`set_checkbox` in Backtest mode. These persist through Backtest→Optimize switch (no Optimize-grid entry for them).
+- Numeric params: DO NOT persist through Backtest→Optimize switch. NT8 resets all Optimize-grid params to their NinjaScript defaults on the mode switch. Must be set via the Optimize grid (`_set_range_in_grid` with lo=hi=value, step=1) AFTER switching to Optimize mode.
+- One-time re-render: the first write to ANY txtBox in the Optimize grid triggers NT8's WPF property-change event, rebuilding the entire grid (stale elements). Set RANGE params first — they absorb the re-render. Then rebuild `grid_map` (0.5s sleep) and set fixed numeric params. They will stick because the re-render has already fired.
+- Confirmed flow in `run_native_optimize_mode`: select_strategy → 3s → `_set_backtest_type("Backtest")` → 1.5s → set str/bool via PDEX → `_set_backtest_type("Optimize")` → set instrument/dates → build grid_map → set range params → 0.5s → rebuild grid_map → set fixed numeric params (lo=hi=value, step=1).
+- `set_edit_text` does not trigger NT8's WPF LostFocus commit handler. Always use `set_edit_typed` (click_input + type_keys with `~`) for strategy PDEX fields.
 
 **Timing**
 - After `select_strategy`, sleep 2–3 s — NT8 fully rebuilds the property grid and the UIA tree is temporarily invalid.

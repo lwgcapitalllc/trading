@@ -1080,36 +1080,26 @@ def run_native_optimize_mode(job_id: str, spec: dict):
 
     pfx = f"{strategy}PropertyGridEditorPDEX"
 
-    # Compute param groups early — str_params must be set while still in Backtest mode.
     bool_params = {k: v for k, v in fixed_params.items() if isinstance(v, bool)}
     str_params  = {k: v for k, v in fixed_params.items() if isinstance(v, str)}
     num_params  = {k: v for k, v in fixed_params.items() if not isinstance(v, (bool, str))}
-
-    # Set BEFORE strategy selection (select() path works here).
-    # NT8 resets BacktestType to Backtest on every strategy switch, so we also
-    # set it AFTER the 3s grid-rebuild sleep (send_keys path handles that state).
-    try:
-        _set_backtest_type(sa, "Optimize")
-    except RuntimeError as e:
-        print(f"  ERROR: {e}")
-        sys.exit(1)
 
     if not select_strategy(sa, strategy):
         print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
         sys.exit(1)
     time.sleep(3.0)
 
-    # NT8 resets BacktestType to Backtest on strategy switch. While still in Backtest
-    # mode, set ALL fixed params via PDEX. Numeric params set here instead of via the
-    # Optimize-mode grid because setting them in Optimize mode triggers a UI re-render
-    # that wipes the first param (AccountSize) back to its sentinel default (-1).
-    # String and bool params also require Backtest mode (no PDEX range controls in Optimize).
-    for name, value in num_params.items():
-        ok = set_edit_typed(sa, f"{pfx}_{name}", value)
-        if ok:
-            print(f"  Fixed num param '{name}' = {value}")
-        else:
-            print(f"  WARNING: num param '{name}' PDEX not found in Backtest mode — strategy default will be used")
+    # NT8 stays in whatever mode was active after select_strategy — it does NOT reset to
+    # Backtest automatically. Force Backtest so PDEX shows single-value Edit controls for
+    # str/bool params. Numeric params are NOT set here: they get wiped when switching
+    # Backtest->Optimize because NT8 resets Optimize-grid params to NinjaScript defaults.
+    try:
+        _set_backtest_type(sa, "Backtest")
+    except RuntimeError as e:
+        print(f"  ERROR: {e}")
+        sys.exit(1)
+    time.sleep(1.5)
+
     for name, value in str_params.items():
         ok = set_edit_typed(sa, f"{pfx}_{name}", value)
         if ok:
@@ -1135,11 +1125,11 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
     set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
 
-    # Build grid_map for range params only — fixed params were already set in Backtest mode.
     grid_map = _build_opt_grid_map(sa)
     print(f"  Optimize grid map: {list(grid_map.keys())}")
 
-    # Set range params using the same grid_map (already built above).
+    # Set range params first. The first grid write triggers NT8's one-time UIA re-render;
+    # the retry catches the stale-element exception and re-sets the value after it settles.
     for name, range_spec in param_ranges.items():
         if isinstance(range_spec, dict):
             lo   = range_spec["min"]
@@ -1160,6 +1150,22 @@ def run_native_optimize_mode(job_id: str, spec: dict):
             time.sleep(0.3)
             grid_map = _build_opt_grid_map(sa)
             _set_range_in_grid(grid_map, name, lo, hi, step, param_display_names)
+
+    # After range params absorbed the re-render, rebuild grid_map and set all fixed
+    # numeric params as lo=hi=value, step=1. They persist because the re-render is done.
+    if num_params:
+        time.sleep(0.5)
+        grid_map = _build_opt_grid_map(sa)
+        for _fpname, _fpval in num_params.items():
+            try:
+                _set_range_in_grid(grid_map, _fpname, _fpval, _fpval, 1, param_display_names)
+            except Exception:
+                time.sleep(0.3)
+                grid_map = _build_opt_grid_map(sa)
+                try:
+                    _set_range_in_grid(grid_map, _fpname, _fpval, _fpval, 1, param_display_names)
+                except Exception as _e:
+                    print(f"  WARNING: fixed param '{_fpname}' grid set failed: {_e}")
 
     # Compute total combo count so we can estimate time-based progress.
     total_combos = 1
@@ -1356,33 +1362,31 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
 
     pfx = f"{strategy}PropertyGridEditorPDEX"
 
-    # Compute param groups early — str_params must be set while still in Backtest mode.
     bool_params = {k: v for k, v in all_params.items() if isinstance(v, bool)}
     str_params  = {k: v for k, v in all_params.items() if isinstance(v, str)}
     num_params  = {k: v for k, v in all_params.items() if not isinstance(v, (bool, str))}
-
-    # Set BEFORE and AFTER strategy selection — NT8 resets BacktestType on strategy switch.
-    try:
-        _set_backtest_type(sa, "WalkForward")
-    except RuntimeError as e:
-        print(f"  ERROR: {e}")
-        sys.exit(1)
 
     if not select_strategy(sa, strategy):
         print(f"  ERROR: Strategy '{strategy}' not found in NT8 — is it compiled?")
         sys.exit(1)
     time.sleep(3.0)
 
-    # NT8 resets BacktestType to Backtest on strategy switch. While still in Backtest
-    # mode, set ALL fixed params via PDEX — same reasoning as optimize mode: setting
-    # numeric params via the WalkForward grid triggers a re-render that wipes the first
-    # param (AccountSize) back to its sentinel default.
+    # Force Backtest to get stable single-value PDEX Edit controls for all params.
+    # WalkForward mode (unlike Optimize) uses single-value fields, so values set here
+    # persist through the Backtest->WalkForward switch.
+    try:
+        _set_backtest_type(sa, "Backtest")
+    except RuntimeError as e:
+        print(f"  ERROR: {e}")
+        sys.exit(1)
+    time.sleep(1.5)
+
     for name, value in num_params.items():
         ok = set_edit_typed(sa, f"{pfx}_{name}", value)
         if ok:
             print(f"  Fixed num param '{name}' = {value}")
         else:
-            print(f"  WARNING: num param '{name}' PDEX not found in Backtest mode — strategy default will be used")
+            print(f"  WARNING: num param '{name}' PDEX not found — strategy default will be used")
     for name, value in str_params.items():
         ok = set_edit_typed(sa, f"{pfx}_{name}", value)
         if ok:
