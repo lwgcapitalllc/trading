@@ -670,7 +670,7 @@ async def run_native_optimization(optimization_id: str) -> None:
         if w:
             lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
 
-        lab_db.increment_optimization_completed(optimization_id)
+    lab_db.set_optimization_completed_runs(optimization_id, len(run_ids))
 
     # Score all completed runs and pick the winner
     complete_rows = [

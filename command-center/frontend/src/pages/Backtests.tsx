@@ -550,7 +550,7 @@ function OptimizationNestRow({
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
           <span className="text-[11px] font-semibold text-gold-text">Optimization</span>
-          <span className="text-[10px] text-text-tertiary">{opt.completed_runs}/{opt.estimated_runs} runs</span>
+          <span className="text-[10px] text-text-tertiary">{opt.completed_runs}/{opt.estimated_runs} combos</span>
           {opt.status === 'running' && (
             <span className="w-[6px] h-[6px] rounded-full bg-gold-text animate-pulse flex-shrink-0" title="Optimization in progress" />
           )}
