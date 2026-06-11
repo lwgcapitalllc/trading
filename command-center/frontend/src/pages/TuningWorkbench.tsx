@@ -4,7 +4,7 @@ import { useQueries } from '@tanstack/react-query'
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceArea,
 } from 'recharts'
-import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2 } from 'lucide-react'
+import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useBacktestRun, useStrategy, useBacktestRuns, useTriggerBacktest, useRunningVpsJob, useLabProgress } from '@/hooks/useLab'
 import { api } from '@/api/client'
 import { C } from '@/themes/chart'
@@ -117,6 +117,14 @@ export function TuningWorkbench() {
 
   const [edited, setEdited] = useState<Record<string, string>>({})
   const [showRegime, setShowRegime] = useState(true)
+  const [panelCollapsed, setPanelCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('tune_params_panel') === 'collapsed' } catch { return false }
+  })
+  const togglePanel = () => setPanelCollapsed(c => {
+    const next = !c
+    try { localStorage.setItem('tune_params_panel', next ? 'collapsed' : 'open') } catch { /* quota */ }
+    return next
+  })
 
   const schemaByName = useMemo(() => {
     const m = new Map<string, ParamSchemaEntry>()
@@ -295,22 +303,41 @@ export function TuningWorkbench() {
         )}
       </div>
 
-      <div className="grid grid-cols-[340px_1fr] gap-[14px] items-start">
+      <div className={`grid gap-[14px] items-stretch min-h-[calc(100vh-110px)] ${panelCollapsed ? 'grid-cols-[40px_1fr]' : 'grid-cols-[340px_1fr]'}`}>
 
-        {/* ── Param editor ─────────────────────────────────────── */}
-        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-          <div className="px-[15px] py-[10px] border-b border-border-subtle flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Parameters</span>
+        {/* ── Param editor — full-height column; inner is sticky so it stays usable ── */}
+        {panelCollapsed ? (
+          <div className="bg-bg-surface border border-border-subtle rounded-lg">
             <button
-              onClick={resetParams}
-              disabled={!isDirty}
-              className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              onClick={togglePanel}
+              title="Show parameters"
+              className="sticky top-0 flex flex-col items-center gap-2 py-4 w-full hover:bg-bg-hover transition-colors rounded-lg"
             >
-              <RotateCcw size={11} /> Reset
+              <ChevronRight size={14} className="text-text-tertiary" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary [writing-mode:vertical-rl]">Parameters</span>
+              {dirtyKeys.length > 0 && <span className="w-[6px] h-[6px] rounded-full bg-accent" title={`${dirtyKeys.length} changed`} />}
             </button>
           </div>
+        ) : (
+        <div className="bg-bg-surface border border-border-subtle rounded-lg">
+          <div className="sticky top-0 max-h-[calc(100vh-110px)] flex flex-col rounded-lg overflow-hidden">
+          <div className="px-[15px] py-[10px] border-b border-border-subtle flex items-center justify-between flex-shrink-0">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Parameters</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={resetParams}
+                disabled={!isDirty}
+                className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <RotateCcw size={11} /> Reset
+              </button>
+              <button onClick={togglePanel} title="Collapse" className="text-text-tertiary hover:text-text-secondary">
+                <ChevronLeft size={14} />
+              </button>
+            </div>
+          </div>
 
-          <div className="px-[15px] py-[12px] space-y-[8px] max-h-[460px] overflow-y-auto">
+          <div className="px-[15px] py-[12px] space-y-[8px] flex-1 overflow-y-auto">
             {tunable.map(p => {
               const val = edited[p.name] ?? p.baseVal
               const changed = val !== p.baseVal
@@ -355,7 +382,7 @@ export function TuningWorkbench() {
             )}
           </div>
 
-          <div className="px-[15px] py-[12px] border-t border-border-subtle">
+          <div className="px-[15px] py-[12px] border-t border-border-subtle flex-shrink-0">
             {jobBlocked && (
               <div className="flex items-start gap-2 mb-2 px-2.5 py-2 rounded-md bg-warn-muted/40 border border-warn-text/20">
                 <AlertTriangle size={12} className="text-warn-text flex-shrink-0 mt-[1px]" />
@@ -371,7 +398,9 @@ export function TuningWorkbench() {
               {trigger.isPending ? 'Starting…' : isDirty ? `Run with ${dirtyKeys.length} change${dirtyKeys.length !== 1 ? 's' : ''}` : 'Change a param to run'}
             </button>
           </div>
+          </div>
         </div>
+        )}
 
         {/* ── Results ──────────────────────────────────────────── */}
         <div className="space-y-[14px]">
