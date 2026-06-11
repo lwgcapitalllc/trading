@@ -21,6 +21,7 @@ from services import lab_db, nt8_agent_client, worthiness
 from services.evaluator import evaluate_run
 from services.sweep_runner import run_sweep, retry_failed_sweep_runs
 from routers.backtests import _row_to_summary
+from routers._locks import ensure_platform_idle
 
 
 def _load_json(path: Optional[str]) -> list:
@@ -57,12 +58,7 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
         raise HTTPException(400, "instruments list cannot be empty")
 
     runner = strategy.get("runner", "ninjatrader")
-    if runner == "mt5":
-        if lab_db.has_running_mt5_job():
-            raise HTTPException(409, "An MT5 backtest is already running — wait for it to finish")
-    else:
-        if lab_db.has_running_nt8_job():
-            raise HTTPException(409, "An NT8 job is already running — wait for it to finish before starting a new sweep")
+    ensure_platform_idle(runner)
 
     sweep_id = "sw_" + uuid.uuid4().hex[:10]
     now      = int(time.time())
@@ -93,6 +89,7 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
             "created_at":         now,
             "sweep_id":           sweep_id,
             "source_run_id":      req.source_run_id,
+            "runner":             runner,
         })
 
         run_specs.append({
@@ -140,8 +137,8 @@ async def retry_sweep_failed(sweep_id: str) -> dict:
         raise HTTPException(404, f"Sweep '{sweep_id}' not found")
     if any(r["status"] == "running" for r in rows):
         raise HTTPException(409, "Sweep is still running — wait for it to finish before retrying")
-    if lab_db.has_running_nt8_job():
-        raise HTTPException(409, "An NT8 job is already running — wait for it to finish before retrying")
+    runner = (lab_db.get_strategy(rows[0]["strategy_id"]) or {}).get("runner", "ninjatrader")
+    ensure_platform_idle(runner)
     failed = lab_db.list_sweep_failed_runs(sweep_id)
     if not failed:
         raise HTTPException(400, "No failed runs to retry")

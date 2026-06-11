@@ -27,6 +27,7 @@ from services.backtest_runner import (
 from services.evaluator import evaluate_run
 from services.sweep_runner import retry_single_sweep_run
 from services.optimization_runner import retry_single_optimization_run
+from routers._locks import ensure_platform_idle
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
 
@@ -70,6 +71,7 @@ def _row_to_summary(row: dict) -> BacktestSummary:
         worthiness=_worthiness_from_row(row),
         sweep_id=row.get("sweep_id"),
         optimization_id=row.get("optimization_id"),
+        source_run_id=row.get("source_run_id"),
         sharpe=row.get("sharpe"),
         params=row.get("params") or {},
         error_message=row.get("error_message"),
@@ -140,6 +142,7 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         worthiness=_worthiness_from_row(row),
         sweep_id=row.get("sweep_id"),
         optimization_id=row.get("optimization_id"),
+        source_run_id=row.get("source_run_id"),
         runner=row.get("runner", "ninjatrader"),
     )
 
@@ -194,14 +197,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
             raise HTTPException(404, f"Ruleset '{rid}' not found")
 
     runner = strategy.get("runner", "ninjatrader")
-    if runner == "mt5":
-        if lab_db.has_running_mt5_job():
-            raise HTTPException(409, "An MT5 backtest is already running — wait for it to finish")
-    else:
-        if read_progress().get("status") == "running":
-            raise HTTPException(409, "An NT8 backtest is already running")
-        if lab_db.has_running_nt8_job():
-            raise HTTPException(409, "An NT8 job is already running — wait for it to finish")
+    ensure_platform_idle(runner)
 
     run_id = uuid.uuid4().hex[:12]
     job_id = run_id
@@ -226,6 +222,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "created_at":         int(time.time()),
         "evaluate_rulesets":  ruleset_ids,
         "runner":             runner,
+        "source_run_id":      req.source_run_id,
     })
 
     job_spec = {
@@ -283,43 +280,29 @@ async def retry_backtest_run(run_id: str) -> dict:
     if row["status"] == "running":
         raise HTTPException(409, "Run is still in progress")
 
+    # runner is not set on some legacy child rows — derive from the strategy
+    strategy = lab_db.get_strategy(row["strategy_id"])
+    runner = row.get("runner") or (strategy or {}).get("runner", "ninjatrader")
+
     # Sweep run — reset in place and re-fire via sweep runner
     if row.get("sweep_id"):
-        if lab_db.has_running_nt8_job():
-            raise HTTPException(409, "An NT8 job is already running — wait for it to finish before retrying")
+        ensure_platform_idle(runner)
         lab_db.reset_run_for_retry(run_id)
         asyncio.create_task(retry_single_sweep_run(run_id))
         return {"run_id": run_id, "status": "running"}
 
     # Optimization run — reset in place and re-fire via optimization runner
     if row.get("optimization_id"):
-        # runner is not set on combo child rows — derive it from the strategy
-        _opt_strategy = lab_db.get_strategy(row["strategy_id"])
-        _opt_runner = row.get("runner") or (_opt_strategy or {}).get("runner", "ninjatrader")
-        if _opt_runner == "mt5":
-            if lab_db.has_running_mt5_job():
-                raise HTTPException(409, "An MT5 job is already running — wait for it to finish before retrying")
-        else:
-            if lab_db.has_running_nt8_job():
-                raise HTTPException(409, "An NT8 job is already running — wait for it to finish before retrying")
+        ensure_platform_idle(runner)
         lab_db.reset_run_for_retry(run_id)
         asyncio.create_task(retry_single_optimization_run(run_id))
         return {"run_id": run_id, "status": "running"}
 
     # Standalone run — reset the existing record in place and re-fire
-    strategy = lab_db.get_strategy(row["strategy_id"])
     if not strategy:
         raise HTTPException(404, f"Strategy '{row['strategy_id']}' not found")
 
-    runner = row.get("runner") or strategy.get("runner", "ninjatrader")
-    if runner == "mt5":
-        if lab_db.has_running_mt5_job():
-            raise HTTPException(409, "An MT5 backtest is already running — wait for it to finish")
-    else:
-        if read_progress().get("status") == "running":
-            raise HTTPException(409, "An NT8 backtest is already running")
-        if lab_db.has_running_nt8_job():
-            raise HTTPException(409, "An NT8 job is already running — wait for it to finish")
+    ensure_platform_idle(runner)
 
     evaluate_rulesets = row.get("evaluate_firms") or []
 

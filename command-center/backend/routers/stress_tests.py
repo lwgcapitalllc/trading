@@ -91,8 +91,8 @@ async def trigger_stress_test(body: StressTestCreate):
     if locks[market]:
         raise HTTPException(409, f"A {market} stress test is already running")
 
-    if (body.include_walk_forward or body.include_sensitivity) and lab_db.has_any_running_vps_job():
-        raise HTTPException(409, "A VPS job is already running — walk-forward and sensitivity require the platform to be idle")
+    if (body.include_walk_forward or body.include_sensitivity) and lab_db.has_running_job(runner):
+        raise HTTPException(409, f"An {'MT5' if runner == 'mt5' else 'NT8'} job is already running — walk-forward and sensitivity require the platform to be idle")
 
     st_id = uuid.uuid4().hex[:16]
     lab_db.insert_stress_test({

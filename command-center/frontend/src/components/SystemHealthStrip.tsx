@@ -127,7 +127,7 @@ function DotRow({ def, onRedClick, loading }: { def: DotDef; onRedClick: () => v
 
 // ── Strip ─────────────────────────────────────────────────────────────────────
 
-export function SystemHealthStrip() {
+export function SystemHealthStrip({ collapsed }: { collapsed?: boolean }) {
   const navigate = useNavigate()
   const { data: health } = useSystemHealth()
   const startNt8Agent = useStartNt8Agent()
@@ -142,6 +142,23 @@ export function SystemHealthStrip() {
     } else {
       navigate('/settings')
     }
+  }
+
+  // Collapsed sidebar — dots only, centered, label/status in the tooltip.
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-[7px] pb-2">
+        {dots.map(def => (
+          <span
+            key={def.key}
+            title={`${def.label}: ${STATUS_TEXT[def.state]}`}
+            className={`w-[7px] h-[7px] rounded-full transition-colors duration-300 ${DOT_CLS[def.state]} ${def.state === 'red' ? 'cursor-pointer' : ''}`}
+            style={DOT_GLOW[def.state] ? { boxShadow: DOT_GLOW[def.state] } : undefined}
+            onClick={def.state === 'red' ? () => handleRedClick(def.key) : undefined}
+          />
+        ))}
+      </div>
+    )
   }
 
   return (

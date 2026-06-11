@@ -49,7 +49,6 @@ frontend/src/
 │   ├── SystemHealthStrip.tsx
 │   ├── RunBacktestModal.tsx
 │   ├── WorthinessBadge.tsx  Tier 1/2/3 pill badge (green/cyan/yellow)
-│   ├── OptimizationHeatmap.tsx  SVG 2D heatmap for 2-param optimizer grids
 │   ├── Tier3WarningModal.tsx    smart-routing modal for Tier 3 → sweep or optimize anyway
 │   ├── OptimizeButton.tsx   tier-aware optimize trigger (Tier1 soft confirm, Tier2 direct, Tier3 warning)
 │   ├── RulesetTypeBadge.tsx PROP EVAL / PROP FUNDED / PERSONAL / DEMO type badge for ruleset rows
@@ -75,11 +74,13 @@ frontend/src/
     │   ├── index.tsx         monitor tab + live snapshot
     │   ├── ConfigureTab.tsx  risk caps + deploy
     │   └── UsersTab.tsx      Telegram users
-    ├── Backtests.tsx         lab landing — Strategies / Runs / Rulesets / Sweeps / Optimizations tabs (URL-based)
-    ├── BacktestDetail.tsx    full run detail — charts, KPIs, per-firm eval cards, verdict, worthiness badge, OptimizeButton
+    ├── Backtests.tsx         lab landing — Runs / Sweeps tabs (URL-based). Exports shared ConfirmDeleteModal, RunsTableSkeleton, fmtOptStatus
+    ├── BacktestDetail.tsx    full run detail — full-bleed page (`-m-[22px]` cancels main's padding) laid out as a column: (1) a FULL-WIDTH header row (back link, title, chips, action buttons Rerun/Tune/Optimize/Stress Test) spanning the entire width; (2) below it a flex row that shares the remaining space between the collapsible left ParamsSidePanel (full-height bg-surface column flush against the nav sidebar, border-r divider; inner block sticky top-0 so params stay visible while scrolling; strategy-logic params + collapsible foundational; marks params changed vs baseline with strikethrough old→new for tune iterations; collapse persists in localStorage 'bt_params_panel'; collapses to a thin vertical rail) and the detail content (flex-1, re-adds px/pb-[22px], reflows when the panel toggles): banners, charts, KPIs, per-firm eval cards, verdict, worthiness badge
     ├── StrategyDetail.tsx    strategy metadata + all runs + runner badge
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
-    ├── OptimizationDetail.tsx  optimizer results — 3-view toggle (Table / Bar Chart / Heatmap); `RankedBars` inline component; best param callout, CSV export
+    ├── Optimizations.tsx     OWN top-level RESEARCH page (route /optimizations) — optimization list table. Decoupled from the Backtests tab
+    ├── OptimizationDetail.tsx  optimizer results (route /optimizations/:id) — 2-view toggle (Table / Bar Chart); `RankedBars` inline; CSV export; "Tune winner" button → workbench
+    ├── TuningWorkbench.tsx   route /backtests/runs/:runId/tune — param editor seeded from a baseline run, runs tweak iterations (source_run_id=baseline), leaderboard with deltas, regime-aware cumulative-P&L overlay, net-P&L-by-regime table. Live progress for the running iteration via useLabProgress (watch in-place; no need to leave). Cross-linking: tune iterations are NEVER top-level Runs rows — they nest under their baseline (TuneNestRow) when it's a visible row, otherwise (e.g. tuned from an optimization winner) they live only in the workbench. In-progress indicators (presence only, never a count, shown on ONE row not both): in the Runs tab the pulsing "TUNING" chip lives on the OptimizationNestRow whose winner has a running tune (driven by `runningTuneSourceRuns`) — NOT also on the parent RunRow; a direct tune of a standalone run shows via its TuneNestRow "Running" status. On OptimizationDetail the indicator is a "TUNING WINNER" chip in the Results header (kept out of the table so it doesn't widen columns) + the "Tune winner" button becomes "Tuning…" with a spinner. Reached via: those rows, the "Tune winner" button, and BacktestDetail's "Tuning iteration → workbench/optimization" breadcrumb (runs with source_run_id). The Runs-tab single-run progress banner is suppressed when the running job is a tune (no orphan indicator).
     ├── StressTests.tsx       stress test list — grade badge, strategy/instrument/status columns, prob breach/pass, created; all left-aligned
     ├── StressTestDetail.tsx  stress test detail — grade column card (coloured strip + name + ruleset chip + reasons), source backtest card (links back to run via useBacktestRun), MetricCard MC stats with pos/neg colouring, InfoTip tooltips, prob bars, fan chart, drawdown dist, walk-forward, sensitivity
     ├── Queue.tsx             job queue list — position, job label (type + id prefix), status pill, queued/started/finished timestamps, trash-can delete for pending items
@@ -238,7 +239,7 @@ toast.error('Failed: ...')
 
 ## Regime color constants
 
-Regime visualization uses a `REGIME_COLORS` constant defined inline in `BacktestDetail.tsx`. Applied via inline style since these data-driven colors aren't in the Tailwind theme.
+Regime visualization uses `REGIME_COLORS` / `REGIME_LABEL` / `REGIME_ORDER` from `src/lib/regime.ts` (single source of truth — imported by `BacktestDetail.tsx` and `TuningWorkbench.tsx`). Applied via inline style since these data-driven colors aren't in the Tailwind theme.
 
 | Regime | Hex | Notes |
 |---|---|---|
@@ -313,10 +314,12 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Overview | ✅ Live | Stat row + cards for each domain |
 | Smart Money | ✅ Live | Scan, terminal, rankings, profiles, disqualified, config, cache |
 | Bots | ✅ Live | Monitor, control, configure (risk caps + deploy), users |
-| Backtests lab | ✅ Live | Strategies / Runs / Rulesets / Sweeps / Optimizations tabs; run modal; BacktestDetail |
+| Backtests lab | ✅ Live | Runs / Sweeps tabs; run modal; BacktestDetail |
+| Optimizations | ✅ Live | Own RESEARCH page (`/optimizations`); detail at `/optimizations/:id`; "Tune winner" → workbench |
+| Tuning workbench | ✅ Live | `/backtests/runs/:runId/tune` — edit params, run iterations, leaderboard + regime-aware equity overlay + net-P&L-by-regime |
 | Worthiness Badges | ✅ Live | Tier 1/2/3 pill on every completed run |
 | Sweep Detail | ✅ Live | ProgressCard, ResultsTable, FailedRunsTable, cancel + retry |
-| Optimization Detail | ✅ Live | Table / Bar Chart / Heatmap toggle; best param callout; CSV export |
+| Optimization Detail | ✅ Live | Table / Bar Chart toggle; best param callout; CSV export |
 | Optimize Button | ✅ Live | Tier-aware modals; int-param range validation blocks decimals |
 | Tier 3 Warning Modal | ✅ Live | Per-instrument past results; sweep untested; stamps contract month |
 | Runner Badge | ✅ Live | NT8 (cyan) / MT5 (purple) on Strategies, StrategyDetail, Runs |

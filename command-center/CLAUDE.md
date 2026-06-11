@@ -79,7 +79,10 @@ cd command-center
 | Overview | ✅ Live | Stat row plus Bots, Smart Money, and Backtests summary cards |
 | Smart Money | ✅ Live | Full pipeline UI: scan, terminal, rankings, profiles, config, cache |
 | Bots | ✅ Live | Monitor, control, configure risk caps and deploy, manage Telegram users |
-| Backtests lab | ✅ Live | Runs, Sweeps, and Optimizations tabs; native NT8/MT5 optimizer; ranked results |
+| Backtests lab | ✅ Live | Runs and Sweeps tabs; BacktestDetail with collapsible params side panel |
+| Optimizations | ✅ Live | Own top-level RESEARCH page (`/optimizations`); native NT8/MT5 optimizer; ranked results; "Tune winner" |
+| Tuning workbench | ✅ Live | `/backtests/runs/:id/tune` — edit a winner's params, run iterations, leaderboard + deltas + regime-aware equity overlay |
+| Per-platform job lock | ✅ Live | One job per platform (NT8/MT5), platforms independent; DB is the single lock source (`has_running_job`) |
 | Worthiness badges | ✅ Live | Tier 1/2/3 worthiness badge auto-assigned on every completed run |
 | Stress Tests | ✅ Live | Monte Carlo, walk-forward, sensitivity, A–F grade with Telegram notification |
 | Regime tagging (M4) | ✅ Live | Each run's daily PnL auto-tagged with a regime label; regime overlays and filters |

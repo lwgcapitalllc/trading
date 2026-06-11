@@ -28,7 +28,7 @@ import statistics
 
 from services import lab_db, evaluator, nt8_agent_client, worthiness
 from services.objectives import choose_objective
-from services.backtest_runner import build_date_regime_map, write_job_progress, _tag_daily_pnl_with_regime, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
+from services.backtest_runner import build_date_regime_map, write_job_progress, clear_progress, _tag_daily_pnl_with_regime, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
 
 log = logging.getLogger("optimization_runner")
 
@@ -210,42 +210,49 @@ def sample_combinations(combos: list[dict], method: str) -> list[dict]:
 async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str, write_progress: bool = False) -> None:
     started_at = time.time()
 
-    while True:
-        await asyncio.sleep(_POLL_INTERVAL)
+    # When write_progress is set, this poller writes the shared single-run progress
+    # file. It MUST release that lock on every terminal path, or the stale "running"
+    # status blocks all future NT8 single backtests (409). try/finally guarantees it.
+    try:
+        while True:
+            await asyncio.sleep(_POLL_INTERVAL)
 
-        try:
-            status_data = await asyncio.to_thread(nt8_agent_client.job_status, job_id)
-        except Exception:
-            if time.time() - started_at > _STALL_KILL_SEC:
-                lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
-                return
-            continue
-
-        if write_progress:
-            write_job_progress(
-                job_id=job_id,
-                pct=int(status_data.get("pct") or 0),
-                message=str(status_data.get("message") or ""),
-                started_at=started_at,
-            )
-
-        status = status_data.get("status", "running")
-
-        if status == "complete":
-            await _handle_opt_complete(run_id, job_id, ruleset_ids, opt_mode)
-            return
-
-        if status.startswith("failed"):
-            lab_db.update_run_status(run_id, status, status_data.get("error") or "")
-            return
-
-        if time.time() - started_at > _STALL_KILL_SEC:
             try:
-                await asyncio.to_thread(nt8_agent_client.cancel_job, job_id)
+                status_data = await asyncio.to_thread(nt8_agent_client.job_status, job_id)
             except Exception:
-                pass
-            lab_db.update_run_status(run_id, "failed_timeout", "No heartbeat — cancelled")
-            return
+                if time.time() - started_at > _STALL_KILL_SEC:
+                    lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
+                    return
+                continue
+
+            if write_progress:
+                write_job_progress(
+                    job_id=job_id,
+                    pct=int(status_data.get("pct") or 0),
+                    message=str(status_data.get("message") or ""),
+                    started_at=started_at,
+                )
+
+            status = status_data.get("status", "running")
+
+            if status == "complete":
+                await _handle_opt_complete(run_id, job_id, ruleset_ids, opt_mode)
+                return
+
+            if status.startswith("failed"):
+                lab_db.update_run_status(run_id, status, status_data.get("error") or "")
+                return
+
+            if time.time() - started_at > _STALL_KILL_SEC:
+                try:
+                    await asyncio.to_thread(nt8_agent_client.cancel_job, job_id)
+                except Exception:
+                    pass
+                lab_db.update_run_status(run_id, "failed_timeout", "No heartbeat — cancelled")
+                return
+    finally:
+        if write_progress:
+            clear_progress()
 
 
 async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str) -> None:

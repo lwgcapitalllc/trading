@@ -4,7 +4,7 @@ import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2, Ac
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useBacktestRuns, useLabProgress, useDeleteRun, useRetryBacktest, useRunningVpsJob,
-  useOptimizations, useDeleteOptimization, useSweeps, useDeleteSweep,
+  useOptimizations, useSweeps, useDeleteSweep,
 } from '@/hooks/useLab'
 import { useRunningStressLock } from '@/hooks/useStressTests'
 import { EmptyState } from '@/components/EmptyState'
@@ -124,7 +124,7 @@ function ChallengePills({ verdicts }: { verdicts: VerdictSummary[] }) {
 
 // ── Delete confirmation modal ─────────────────────────────────────────────────
 
-function ConfirmDeleteModal({
+export function ConfirmDeleteModal({
   count, onConfirm, onCancel, isPending, customMessage, confirmLabel,
 }: {
   count: number
@@ -170,25 +170,22 @@ function ConfirmDeleteModal({
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-type Tab = 'runs' | 'sweeps' | 'optimizations'
+type Tab = 'runs' | 'sweeps'
 
 function TabBar({
-  active, onChange, runsCount, sweepsCount, optsCount,
-  runsActive, sweepsActive, optsActive,
+  active, onChange, runsCount, sweepsCount,
+  runsActive, sweepsActive,
 }: {
   active: Tab
   onChange: (t: Tab) => void
   runsCount?: number
   sweepsCount?: number
-  optsCount?: number
   runsActive?: boolean
   sweepsActive?: boolean
-  optsActive?: boolean
 }) {
   const tabs: Array<{ id: Tab; label: string; count?: number; active?: boolean }> = [
     { id: 'runs',          label: 'Runs',          count: runsCount,   active: runsActive },
     { id: 'sweeps',        label: 'Sweeps',        count: sweepsCount, active: sweepsActive },
-    { id: 'optimizations', label: 'Optimizations', count: optsCount,   active: optsActive },
   ]
   return (
     <div className="flex gap-0 border-b border-border-subtle mb-6">
@@ -276,13 +273,41 @@ function RunsTab() {
     return set
   }, [fullBtRunsByParent])
 
-  const runs = useMemo(
-    () => allRuns
+  // Tuning iterations: standalone runs derived from a baseline (source_run_id set,
+  // not a sweep/optimization child). They nest under their baseline when it's visible.
+  const tuneRunsBySourceRun = useMemo(() => {
+    const map = new Map<string, BacktestSummary[]>()
+    if (!allRuns) return map
+    for (const r of allRuns) {
+      if (!r.source_run_id || r.sweep_id || r.optimization_id) continue
+      const arr = map.get(r.source_run_id) ?? []
+      arr.push(r)
+      map.set(r.source_run_id, arr)
+    }
+    return map
+  }, [allRuns])
+
+  // Baseline run_ids that currently have a tune iteration running — used to flag
+  // "TUNING" on the run / optimization-nest row a tune is being conducted from.
+  const runningTuneSourceRuns = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of allRuns ?? []) {
+      if (r.status === 'running' && r.source_run_id && !r.sweep_id && !r.optimization_id) set.add(r.source_run_id)
+    }
+    return set
+  }, [allRuns])
+
+  const runs = useMemo(() => {
+    const base = allRuns
       ?.filter(r => (!r.optimization_id || r.status === 'running') && !(r.sweep_id && linkedSweepIds.has(r.sweep_id)))
       ?.filter(r => !fullBtNestIds.has(r.run_id))
-      ?.filter(r => marketFilter === 'all' || (isForexInstrument(r.instrument) ? 'forex' : 'futures') === marketFilter),
-    [allRuns, linkedSweepIds, fullBtNestIds, marketFilter]
-  )
+      ?.filter(r => marketFilter === 'all' || (isForexInstrument(r.instrument) ? 'forex' : 'futures') === marketFilter)
+    if (!base) return base
+    // Tune iterations are never top-level rows. They nest under their baseline when it's
+    // visible; otherwise (e.g. tuned from an optimization winner) they live only in the
+    // workbench — reachable via the optimization banner and the run-detail breadcrumb.
+    return base.filter(r => !(r.source_run_id && !r.sweep_id && !r.optimization_id))
+  }, [allRuns, linkedSweepIds, fullBtNestIds, marketFilter])
 
   const optsBySourceRun = useMemo(() => {
     const map = new Map<string, typeof allOpts>()
@@ -311,14 +336,21 @@ function RunsTab() {
   const cascadeMessage = useCallback((runId: string) => {
     const opts   = optsBySourceRun.get(runId) ?? []
     const sweeps = sweepsBySourceRun.get(runId) ?? []
+    const tunes  = tuneRunsBySourceRun.get(runId) ?? []
     const parts: string[] = []
     if (opts.length)   parts.push(`${opts.length} optimization${opts.length !== 1 ? 's' : ''}`)
     if (sweeps.length) parts.push(`${sweeps.length} sweep${sweeps.length !== 1 ? 's' : ''}`)
+    if (tunes.length)  parts.push(`${tunes.length} tuning iteration${tunes.length !== 1 ? 's' : ''}`)
     if (!parts.length) return undefined
     return `This run has ${parts.join(' and ')} attached — they and all their results will also be permanently deleted.`
-  }, [optsBySourceRun, sweepsBySourceRun])
+  }, [optsBySourceRun, sweepsBySourceRun, tuneRunsBySourceRun])
 
-  const isRunning = progress.data?.status === 'running'
+  // Don't surface the single-run progress banner here when the running job is a tune
+  // iteration — it isn't shown in this list (it lives in the workbench), so a banner
+  // with no matching row would just be a confusing orphan indicator.
+  const runningIsTune = progress.data?.status === 'running'
+    && allRuns?.some(r => r.run_id === progress.data?.job_id && !!r.source_run_id && !r.sweep_id && !r.optimization_id)
+  const isRunning = progress.data?.status === 'running' && !runningIsTune
 
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => {
@@ -369,8 +401,12 @@ function RunsTab() {
 
   const allChecked = runs != null && runs.length > 0 && selectedIds.size === runs.length
 
+  const hasFilters  = statusFilter !== '' || marketFilter !== 'all'
+  const showControls = (runs?.length ?? 0) > 0 || hasFilters || isRunning
+
   return (
     <div>
+      {showControls && (
       <div className="flex items-center justify-between mb-4 gap-3">
         <div className="flex items-center gap-3">
           <span className="text-[13px] text-text-secondary">
@@ -414,6 +450,7 @@ function RunsTab() {
           </button>
         </div>
       </div>
+      )}
 
       {isLoading ? (
         <RunsTableSkeleton />
@@ -421,7 +458,16 @@ function RunsTab() {
         <EmptyState
           icon={<Play size={20} />}
           title="No backtest runs yet"
-          description="Go to Strategies, pick a strategy, and click Run Backtest."
+          description="Head to Strategies, pick one, and click Run Backtest to get started."
+          action={
+            <button
+              onClick={() => navigate('/strategies')}
+              className="flex items-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] px-3.5 py-2 rounded-md hover:opacity-90 transition-opacity"
+            >
+              Browse Strategies
+              <ChevronRight size={14} />
+            </button>
+          }
         />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -448,7 +494,8 @@ function RunsTab() {
               {runs.map(run => {
                 const childSweeps  = sweepsBySourceRun.get(run.run_id) ?? []
                 const childOpts    = optsBySourceRun.get(run.run_id) ?? []
-                const hasChildren  = childSweeps.length > 0 || childOpts.length > 0 || childOpts.some(o => fullBtRunsByParent.has(o.optimization_id))
+                const childTunes   = tuneRunsBySourceRun.get(run.run_id) ?? []
+                const hasChildren  = childSweeps.length > 0 || childOpts.length > 0 || childTunes.length > 0 || childOpts.some(o => fullBtRunsByParent.has(o.optimization_id))
                 const isCollapsed  = collapsedRuns.has(run.run_id)
                 return (
                   <Fragment key={run.run_id}>
@@ -462,6 +509,14 @@ function RunsTab() {
                       onToggleCollapse={() => toggleCollapse(run.run_id)}
                       hasRunningStress={stressRunIds.has(run.run_id)}
                     />
+                    {!isCollapsed && childTunes.map(t => (
+                      <TuneNestRow
+                        key={t.run_id}
+                        run={t}
+                        colSpan={12}
+                        onClick={() => navigate(`/backtests/runs/${t.run_id}`)}
+                      />
+                    ))}
                     {!isCollapsed && childSweeps.map(sw => (
                       <SweepNestRow
                         key={sw.sweep_id}
@@ -475,8 +530,9 @@ function RunsTab() {
                         <OptimizationNestRow
                           opt={opt}
                           colSpan={12}
-                          onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
+                          onClick={() => navigate(`/optimizations/${opt.optimization_id}`)}
                           hasRunningStress={!!opt.best_run_id && stressRunIds.has(opt.best_run_id)}
+                          hasRunningTune={!!opt.best_run_id && runningTuneSourceRuns.has(opt.best_run_id)}
                         />
                         {(fullBtRunsByParent.get(opt.optimization_id) ?? []).map(r => (
                           <FullBacktestNestRow
@@ -519,7 +575,7 @@ function RunsTab() {
 
 // ── Nested optimization row ───────────────────────────────────────────────────
 
-function fmtOptStatus(s: string) {
+export function fmtOptStatus(s: string) {
   if (s === 'complete')       return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
   if (s === 'running')        return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
   if (s.startsWith('failed')) return { label: 'Failed',   cls: 'bg-neg-muted text-neg-text' }
@@ -527,12 +583,13 @@ function fmtOptStatus(s: string) {
 }
 
 function OptimizationNestRow({
-  opt, colSpan, onClick, hasRunningStress,
+  opt, colSpan, onClick, hasRunningStress, hasRunningTune,
 }: {
   opt: import('@/types').OptimizationSummary
   colSpan: number
   onClick: () => void
   hasRunningStress?: boolean
+  hasRunningTune?: boolean
 }) {
   const st = fmtOptStatus(opt.status)
   return (
@@ -551,6 +608,13 @@ function OptimizationNestRow({
               className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent">
               <Activity size={8} className="animate-pulse" />
               STRESS TESTING
+            </span>
+          )}
+          {hasRunningTune && (
+            <span title="A tuning iteration is running on the winner"
+              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent">
+              <Sliders size={8} className="animate-pulse" />
+              TUNING
             </span>
           )}
         </div>
@@ -637,6 +701,45 @@ function SweepNestRow({
   )
 }
 
+// ── Nested tuning-iteration row ───────────────────────────────────────────────
+
+function TuneNestRow({ run, colSpan, onClick }: {
+  run: BacktestSummary
+  colSpan: number
+  onClick: () => void
+}) {
+  const isRunning = run.status === 'running'
+  const isFailed  = run.status.startsWith('failed')
+  const st = isRunning ? { label: 'Running', cls: 'bg-accent/10 text-accent' }
+    : isFailed ? { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
+    : { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+  return (
+    <tr onClick={onClick} className="hover:bg-bg-hover cursor-pointer transition-colors bg-accent/[0.03] border-l-2 border-l-accent/30">
+      <td className="px-3 py-2" />
+      <td className="px-4 py-2" colSpan={3}>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-accent/50 font-mono">↳</span>
+          <Sliders size={9} className="text-accent/80" />
+          <span className="text-[11px] font-semibold text-accent/80">Tune</span>
+          <span className="text-[10px] text-text-tertiary font-mono">{run.run_id.slice(0, 6)}</span>
+          {run.status === 'complete' && run.profit_factor != null && (
+            <span className="text-[10px] text-text-tertiary">PF {run.profit_factor.toFixed(2)}</span>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-2">
+        <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>
+          {isRunning && <span className="w-[4px] h-[4px] rounded-full bg-accent animate-pulse" />}
+          {st.label}
+        </span>
+      </td>
+      <td colSpan={colSpan - 5} className="px-4 py-2 text-right">
+        <span className="text-[11px] text-accent">View →</span>
+      </td>
+    </tr>
+  )
+}
+
 // ── Run row ───────────────────────────────────────────────────────────────────
 
 function RunRow({
@@ -691,7 +794,7 @@ function RunRow({
           )}
           {run.optimization_id && (
             <span
-              onClick={e => { e.stopPropagation(); navigate(`/backtests/optimizations/${run.optimization_id}`) }}
+              onClick={e => { e.stopPropagation(); navigate(`/optimizations/${run.optimization_id}`) }}
               title={`Optimization: ${run.optimization_id}`}
               className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-gold-muted text-gold-text cursor-pointer hover:opacity-80 transition-opacity"
             >
@@ -740,7 +843,7 @@ function RunRow({
   )
 }
 
-function RunsTableSkeleton() {
+export function RunsTableSkeleton() {
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden animate-pulse">
       {[0, 1, 2].map(i => (
@@ -761,6 +864,8 @@ function SweepsTab() {
   const navigate    = useNavigate()
   const deleteSweep = useDeleteSweep()
   const { data: sweeps, isLoading } = useSweeps()
+  const { data: allRuns } = useBacktestRuns()
+  const hasRuns = (allRuns?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id).length ?? 0) > 0
   const [deleteSweepId, setDeleteSweepId] = useState<string | null>(null)
 
   function fmtSweepStatus(s: string) {
@@ -773,16 +878,33 @@ function SweepsTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-[13px] text-text-secondary">
-          {sweeps ? `${sweeps.length} sweep${sweeps.length !== 1 ? 's' : ''}` : ''}
-        </span>
-      </div>
+      {sweeps && sweeps.length > 0 && (
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-[13px] text-text-secondary">
+            {`${sweeps.length} sweep${sweeps.length !== 1 ? 's' : ''}`}
+          </span>
+        </div>
+      )}
 
       {isLoading ? (
         <RunsTableSkeleton />
       ) : !sweeps?.length ? (
-        <EmptyState icon={<Layers size={20} />} title="No sweeps yet" description="Run a strategy across multiple instruments from a backtest detail page." />
+        <EmptyState
+          icon={<Layers size={20} />}
+          title="No sweeps yet"
+          description={hasRuns
+            ? "Open a completed run's detail page to sweep that strategy across multiple instruments."
+            : "Run a backtest first, then open its detail page to sweep that strategy across multiple instruments."}
+          action={
+            <button
+              onClick={() => navigate(hasRuns ? '/backtests?tab=runs' : '/strategies')}
+              className="flex items-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] px-3.5 py-2 rounded-md hover:opacity-90 transition-opacity"
+            >
+              {hasRuns ? 'View Runs' : 'Browse Strategies'}
+              <ChevronRight size={14} />
+            </button>
+          }
+        />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           <table className="w-full text-[13px]">
@@ -864,93 +986,6 @@ function SweepsTab() {
   )
 }
 
-// ── Optimizations tab ─────────────────────────────────────────────────────────
-
-function OptimizationsTab() {
-  const navigate  = useNavigate()
-  const deleteOpt = useDeleteOptimization()
-  const { data: opts, isLoading } = useOptimizations()
-  const [deleteOptId, setDeleteOptId] = useState<string | null>(null)
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-[13px] text-text-secondary">
-          {opts ? `${opts.length} optimization${opts.length !== 1 ? 's' : ''}` : ''}
-        </span>
-      </div>
-
-      {isLoading ? (
-        <RunsTableSkeleton />
-      ) : !opts?.length ? (
-        <EmptyState icon={<Sliders size={20} />} title="No optimizations yet" description='Click "Optimize" on a completed backtest to start a native optimization run.' />
-      ) : (
-        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="border-b border-border-subtle">
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Firm</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Mode</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Method</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
-                <th className="px-3 py-3 w-20" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {opts.map(opt => {
-                const st = fmtOptStatus(opt.status)
-                return (
-                  <tr
-                    key={opt.optimization_id}
-                    onClick={() => navigate(`/backtests/optimizations/${opt.optimization_id}`)}
-                    className="hover:bg-bg-hover cursor-pointer transition-colors"
-                  >
-                    <td className="px-4 py-3 font-medium">{opt.strategy_id}</td>
-                    <td className="px-4 py-3 font-mono text-text-secondary">{opt.instrument}</td>
-                    <td className="px-4 py-3 text-text-secondary text-[12px]">{opt.ruleset_id ?? '—'}</td>
-                    <td className="px-4 py-3 capitalize text-text-secondary">{opt.mode}</td>
-                    <td className="px-4 py-3 capitalize text-text-secondary">{opt.search_method}</td>
-                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{opt.completed_runs}/{opt.estimated_runs}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>{st.label}</span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-1 justify-end">
-                        <button
-                          onClick={e => { e.stopPropagation(); setDeleteOptId(opt.optimization_id) }}
-                          disabled={opt.status === 'running'}
-                          className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={opt.status === 'running' ? 'Cancel first, then delete' : 'Delete optimization'}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                        <ChevronRight size={14} className="text-text-tertiary" />
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {deleteOptId && (
-        <ConfirmDeleteModal
-          count={1}
-          onConfirm={() => deleteOpt.mutate(deleteOptId, { onSuccess: () => setDeleteOptId(null), onSettled: () => setDeleteOptId(null) })}
-          onCancel={() => setDeleteOptId(null)}
-          isPending={deleteOpt.isPending}
-          customMessage="This will permanently delete the optimization and all its child runs, evaluations, and result files."
-        />
-      )}
-    </div>
-  )
-}
-
 // ── Page shell ────────────────────────────────────────────────────────────────
 
 export function Backtests() {
@@ -959,14 +994,13 @@ export function Backtests() {
   const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
 
   const { data: allRuns }   = useBacktestRuns()
-  const { data: allOpts }   = useOptimizations()
   const { data: allSweeps } = useSweeps()
-  const runsCount    = allRuns?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id).length
-  const optsCount    = allOpts?.length
+  // A tune iteration is a standalone run with source_run_id; it lives in the workbench, not the Runs list.
+  const isTuneRun = (r: BacktestSummary) => !!r.source_run_id && !r.sweep_id && !r.optimization_id
+  const runsCount    = allRuns?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id && !isTuneRun(r)).length
   const sweepsCount  = allSweeps?.length
-  const runsActive   = allRuns?.some(r => !r.sweep_id && r.status === 'running')
+  const runsActive   = allRuns?.some(r => !r.sweep_id && !isTuneRun(r) && r.status === 'running')
   const sweepsActive = allSweeps?.some(s => s.status === 'running')
-  const optsActive   = allOpts?.some(o => o.status === 'running')
 
   return (
     <div>
@@ -976,13 +1010,12 @@ export function Backtests() {
 
       <TabBar
         active={tab} onChange={setTab}
-        runsCount={runsCount} sweepsCount={sweepsCount} optsCount={optsCount}
-        runsActive={runsActive} sweepsActive={sweepsActive} optsActive={optsActive}
+        runsCount={runsCount} sweepsCount={sweepsCount}
+        runsActive={runsActive} sweepsActive={sweepsActive}
       />
 
-      {tab === 'runs'          && <RunsTab />}
-      {tab === 'sweeps'        && <SweepsTab />}
-      {tab === 'optimizations' && <OptimizationsTab />}
+      {tab === 'runs'   && <RunsTab />}
+      {tab === 'sweeps' && <SweepsTab />}
     </div>
   )
 }

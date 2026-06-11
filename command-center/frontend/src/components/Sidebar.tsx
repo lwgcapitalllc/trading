@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Radar, Bot, BookOpen, BarChart2,
-  Activity, ListOrdered, Settings,
+  LayoutDashboard, Radar, Bot, BookOpen, BarChart2, Sliders,
+  Activity, ListOrdered, Settings, ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { SystemHealthStrip } from '@/components/SystemHealthStrip'
@@ -13,19 +14,24 @@ const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[
 ]
 
 const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
-  { to: '/strategies',   label: 'Strategies',   icon: BookOpen,  live: true  },
-  { to: '/backtests',    label: 'Backtests',    icon: BarChart2, live: true  },
-  { to: '/stress-tests', label: 'Stress Tests', icon: Activity,      live: true  },
-  { to: '/queue',        label: 'Queue',        icon: ListOrdered,   live: true  },
+  { to: '/strategies',    label: 'Strategies',    icon: BookOpen,    live: true  },
+  { to: '/backtests',     label: 'Backtests',     icon: BarChart2,   live: true  },
+  { to: '/optimizations', label: 'Optimizations', icon: Sliders,     live: true  },
+  { to: '/stress-tests',  label: 'Stress Tests',  icon: Activity,    live: true  },
+  { to: '/queue',         label: 'Queue',         icon: ListOrdered, live: true  },
 ]
 
-function NavItem({ to, label, icon: Icon, live }: { to: string; label: string; icon: LucideIcon; live: boolean }) {
+function NavItem({ to, label, icon: Icon, live, collapsed }: {
+  to: string; label: string; icon: LucideIcon; live: boolean; collapsed: boolean
+}) {
   return (
     <NavLink
       to={to}
       end={to === '/'}
+      title={collapsed ? label : undefined}
       className={({ isActive }) =>
         'flex items-center gap-[10px] px-[9px] py-2 rounded-md text-[13px] cursor-pointer select-none relative transition-colors duration-[120ms] ' +
+        (collapsed ? 'justify-center ' : '') +
         (isActive
           ? 'bg-accent-muted text-text-primary'
           : live
@@ -46,8 +52,8 @@ function NavItem({ to, label, icon: Icon, live }: { to: string; label: string; i
                 : 'opacity-85'
             }`}
           />
-          {label}
-          {!live && (
+          {!collapsed && label}
+          {!collapsed && !live && (
             <span className="ml-auto text-[9px] font-semibold px-[6px] py-[1px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary">
               Soon
             </span>
@@ -59,16 +65,25 @@ function NavItem({ to, label, icon: Icon, live }: { to: string; label: string; i
 }
 
 export function Sidebar() {
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('sidebar_collapsed') === '1' } catch { return false }
+  })
+  const toggle = () => setCollapsed(c => {
+    const next = !c
+    try { localStorage.setItem('sidebar_collapsed', next ? '1' : '0') } catch { /* quota */ }
+    return next
+  })
+
   return (
-    <aside className="w-[212px] flex-shrink-0 bg-bg-sunken border-r border-border-subtle flex flex-col">
+    <aside className={`flex-shrink-0 bg-bg-sunken border-r border-border-subtle flex flex-col transition-[width] duration-200 ${collapsed ? 'w-[64px]' : 'w-[212px]'}`}>
 
       {/* ── Logo ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-center px-4 py-5 border-b border-border-subtle">
+      <div className={`flex items-center justify-center py-5 border-b border-border-subtle ${collapsed ? 'px-2' : 'px-4'}`}>
         <NavLink to="/">
           <img
             src="/logo.png"
             alt="LWG Capital"
-            className="w-full max-w-[148px] h-auto select-none cursor-pointer"
+            className={`h-auto select-none cursor-pointer ${collapsed ? 'w-[40px]' : 'w-full max-w-[148px]'}`}
             draggable={false}
           />
         </NavLink>
@@ -78,23 +93,29 @@ export function Sidebar() {
       <div className="flex flex-col flex-1 py-[14px] px-3">
 
       {/* ── Workspace items (no section label) ───────────────────── */}
-      {WORKSPACE.map(item => <NavItem key={item.to} {...item} />)}
+      {WORKSPACE.map(item => <NavItem key={item.to} {...item} collapsed={collapsed} />)}
 
       {/* ── Research section ──────────────────────────────────────── */}
-      <div className="text-[10px] uppercase tracking-[1px] text-text-tertiary px-2 pt-[14px] pb-[6px] font-semibold">
-        Research
-      </div>
-      {RESEARCH.map(item => <NavItem key={item.to} {...item} />)}
+      {collapsed ? (
+        <div className="my-[12px] mx-1 border-t border-border-subtle/60" />
+      ) : (
+        <div className="text-[10px] uppercase tracking-[1px] text-text-tertiary px-2 pt-[14px] pb-[6px] font-semibold">
+          Research
+        </div>
+      )}
+      {RESEARCH.map(item => <NavItem key={item.to} {...item} collapsed={collapsed} />)}
 
       {/* ── Footer ────────────────────────────────────────────────── */}
       <div className="mt-auto pt-[10px] border-t border-border-subtle">
-        <SystemHealthStrip />
+        <SystemHealthStrip collapsed={collapsed} />
 
-        {/* Settings — last item */}
+        {/* Settings — last nav item */}
         <NavLink
           to="/settings"
+          title={collapsed ? 'Settings' : undefined}
           className={({ isActive }) =>
             'flex items-center gap-[10px] px-[9px] py-[7px] mt-[8px] rounded-md text-[13px] cursor-pointer select-none relative transition-colors duration-[120ms] ' +
+            (collapsed ? 'justify-center ' : '') +
             (isActive
               ? 'bg-accent-muted text-text-primary'
               : 'text-text-tertiary hover:bg-bg-hover hover:text-text-secondary')
@@ -106,10 +127,21 @@ export function Sidebar() {
                 <span className="absolute left-[-12px] top-[6px] bottom-[6px] w-[3px] bg-accent rounded-r-[3px]" />
               )}
               <Settings size={16} className="flex-shrink-0 opacity-85" />
-              Settings
+              {!collapsed && 'Settings'}
             </>
           )}
         </NavLink>
+
+        {/* Collapse / expand toggle — discrete icon tucked in the corner */}
+        <div className={`mt-[6px] flex ${collapsed ? 'justify-center' : 'justify-end'}`}>
+          <button
+            onClick={toggle}
+            title={collapsed ? 'Expand menu' : 'Collapse menu'}
+            className="p-1.5 rounded text-text-tertiary/50 hover:text-text-secondary hover:bg-bg-hover transition-colors duration-[120ms]"
+          >
+            {collapsed ? <ChevronsRight size={15} /> : <ChevronsLeft size={15} />}
+          </button>
+        </div>
       </div>
       </div>
     </aside>

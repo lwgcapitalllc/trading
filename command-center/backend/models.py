@@ -401,6 +401,7 @@ class BacktestRunRequest(BaseModel):
     slippage_ticks: int = 1
     evaluate_rulesets: list[str] = []   # ruleset_ids to evaluate against
     evaluate_firms: list[str] = []      # backward-compat alias; prefer evaluate_rulesets
+    source_run_id: Optional[str] = None # run this was derived from (e.g. a tuning iteration)
 
     @property
     def ruleset_ids(self) -> list[str]:
@@ -426,6 +427,7 @@ class BacktestSummary(BaseModel):
     worthiness: Optional[WorthinessScore] = None
     sweep_id: Optional[str] = None
     optimization_id: Optional[str] = None
+    source_run_id: Optional[str] = None
     error_message: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -488,6 +490,7 @@ class BacktestDetail(BaseModel):
     worthiness: Optional[WorthinessScore] = None
     sweep_id: Optional[str] = None
     optimization_id: Optional[str] = None
+    source_run_id: Optional[str] = None
     runner: str = "ninjatrader"
 
 

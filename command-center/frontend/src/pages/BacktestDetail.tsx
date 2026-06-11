@@ -1,19 +1,20 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, ChevronDown, ChevronUp, AlertTriangle,
+  ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
   CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Layers, Play,
-  Copy, Check,
+  Copy, Check, SlidersHorizontal,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Label,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
-import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint } from '@/types'
+import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry } from '@/types'
 import { C } from '@/themes/chart'
+import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
 
 import { OptimizeButton } from '@/components/OptimizeButton'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
@@ -350,20 +351,6 @@ function KpiGrid({ run, fallback, equity = [], stretch = false }: {
 }
 
 // ── Regime overlay — colored line design ──────────────────────────────────────
-
-const REGIME_COLORS: Record<string, string> = {
-  TRENDING:        '#06b6d4',
-  TRANSITIONING:   '#8b5cf6',
-  RANGING:         '#f59e0b',
-  HIGH_VOLATILITY: '#ef4444',
-  LOW_VOLATILITY:  '#64748b',
-  UNKNOWN:         '#6b7280',
-}
-
-const REGIME_LABEL: Record<string, string> = {
-  TRENDING: 'Trending', RANGING: 'Ranging', HIGH_VOLATILITY: 'High Volatility',
-  LOW_VOLATILITY: 'Low Volatility', TRANSITIONING: 'Transitioning', UNKNOWN: 'Unknown',
-}
 
 const _OVERLAY_KEY = 'regime_overlay_enabled'
 function getOverlayPref(): boolean {
@@ -1404,12 +1391,113 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
   )
 }
 
+// ── Parameters side panel ─────────────────────────────────────────────────────
+
+function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle }: {
+  run: Run
+  paramSchema?: ParamSchemaEntry[]
+  baselineParams?: Record<string, unknown>
+  collapsed: boolean
+  onToggle: () => void
+}) {
+  const schemaByName = new Map((paramSchema ?? []).map(s => [s.name, s]))
+  const isFoundational = (k: string) => schemaByName.get(k)?.category === 'foundational'
+  const entries = Object.entries(run.params || {})
+  if (!entries.length) return null
+  const tunable      = entries.filter(([k]) => !isFoundational(k))
+  const foundational = entries.filter(([k]) => isFoundational(k))
+  const changedCount = baselineParams
+    ? tunable.filter(([k, v]) => String(v) !== String(baselineParams[k])).length
+    : 0
+
+  // The outer column is the full page-height surface (flush against the nav sidebar,
+  // divided from the content by border-r). The inner block is sticky so the params
+  // stay visible at the top while the page scrolls.
+  if (collapsed) {
+    return (
+      <div className="flex-shrink-0 bg-bg-surface border-r border-border-subtle">
+        <button
+          onClick={onToggle}
+          title="Show parameters"
+          className="sticky top-0 flex flex-col items-center gap-2 py-4 px-2 w-full hover:bg-bg-hover transition-colors"
+        >
+          <ChevronRight size={14} className="text-text-tertiary" />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary [writing-mode:vertical-rl]">Parameters</span>
+          {changedCount > 0 && <span className="w-[6px] h-[6px] rounded-full bg-accent" title={`${changedCount} changed vs baseline`} />}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-shrink-0 w-[248px] bg-bg-surface border-r border-border-subtle">
+      <div className="sticky top-0 max-h-[calc(100vh-56px)] flex flex-col">
+        <div className="px-3 py-[10px] border-b border-border-subtle flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Parameters</span>
+            {baselineParams && changedCount > 0 && (
+              <span className="text-[10px] text-accent whitespace-nowrap">{changedCount} changed</span>
+            )}
+          </div>
+          <button onClick={onToggle} title="Collapse" className="text-text-tertiary hover:text-text-secondary flex-shrink-0">
+            <ChevronLeft size={14} />
+          </button>
+        </div>
+        <div className="overflow-y-auto px-2.5 py-2 space-y-[4px]">
+          {tunable.map(([k, v]) => {
+            const changed = baselineParams != null && String(v) !== String(baselineParams[k])
+            return (
+              <div
+                key={k}
+                className={`flex items-center justify-between gap-2 px-2 py-[5px] rounded ${changed ? 'bg-accent/5 border border-accent/30' : ''}`}
+                title={schemaByName.get(k)?.description}
+              >
+                <span className="text-[11px] font-mono text-text-tertiary truncate">{k}</span>
+                <span className="text-[12px] font-mono font-semibold text-text-primary flex-shrink-0 text-right">
+                  {changed && <span className="text-[10px] text-text-tertiary line-through mr-1">{String(baselineParams![k])}</span>}
+                  {String(v)}
+                </span>
+              </div>
+            )
+          })}
+          {foundational.length > 0 && (
+            <details className="pt-2 mt-1 border-t border-border-subtle/40">
+              <summary className="text-[10px] text-text-tertiary cursor-pointer select-none px-2">Foundational · {foundational.length}</summary>
+              <div className="mt-1.5 space-y-[3px]">
+                {foundational.map(([k, v]) => (
+                  <div key={k} className="flex items-center justify-between gap-2 px-2">
+                    <span className="text-[10px] font-mono text-text-tertiary truncate" title={k}>{k}</span>
+                    <span className="text-[10px] font-mono text-text-secondary flex-shrink-0">{String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function BacktestDetail() {
   const { runId } = useParams<{ runId: string }>()
   const navigate     = useNavigate()
   const { data: run, isLoading } = useBacktestRun(runId ?? null)
+  // A tuning iteration is a standalone run derived from a baseline (source_run_id set,
+  // not a sweep/optimization child). Fetch its baseline to wire up breadcrumbs.
+  const isTuneIteration = !!run?.source_run_id && !run?.optimization_id && !run?.sweep_id
+  const { data: tuneBaseline } = useBacktestRun(isTuneIteration ? run!.source_run_id : null)
+  const { data: strategy } = useStrategy(run?.strategy_id ?? null)
+  const [paramsCollapsed, setParamsCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('bt_params_panel') === 'collapsed' } catch { return false }
+  })
+  const toggleParams = () => setParamsCollapsed(c => {
+    const next = !c
+    try { localStorage.setItem('bt_params_panel', next ? 'collapsed' : 'open') } catch { /* quota */ }
+    return next
+  })
   const { data: progress }       = useLabProgress()
   const stopBacktest             = useStopBacktest()
   const reloadCharts             = useReloadCharts()
@@ -1452,27 +1540,31 @@ export function BacktestDetail() {
   const runMessage   = isRunning ? (progressMatches ? (progress?.message ?? 'Starting…') : 'Starting…') : ''
   const runStartedAt = isRunning ? (progressMatches ? (progress?.started_at ?? null) : null) : null
 
-  const backLabel = run?.optimization_id ? 'Optimization'
+  const backLabel = isTuneIteration ? 'Tuning workbench'
+    : run?.optimization_id ? 'Optimization'
     : run?.sweep_id ? 'Sweep'
     : 'Backtests'
-  const backPath  = run?.optimization_id ? `/backtests/optimizations/${run.optimization_id}`
+  const backPath  = isTuneIteration ? `/backtests/runs/${run!.source_run_id}/tune`
+    : run?.optimization_id ? `/optimizations/${run.optimization_id}`
     : run?.sweep_id ? `/backtests/sweeps/${run.sweep_id}`
     : '/backtests'
 
   return (
-    <div>
-      <button
-        onClick={() => navigate(backPath)}
-        className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
-      >
-        <ArrowLeft size={14} /> {backLabel}
-      </button>
+    // Full-bleed page (cancel main's p-[22px]): a full-width header row on top, then a
+    // flex row that shares the space below it between the params panel and the content.
+    <div className="-m-[22px] flex flex-col min-h-[calc(100vh-56px)]">
+      {/* ── Full-width header ─────────────────────────────────────────────── */}
+      <div className="px-[22px] pt-[22px] pb-8">
+        <button
+          onClick={() => navigate(backPath)}
+          className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
+        >
+          <ArrowLeft size={14} /> {backLabel}
+        </button>
 
-      {isLoading && <Skeleton />}
+        {isLoading && <Skeleton />}
 
-      {run && (
-        <div className="space-y-8">
-          {/* ── Header ───────────────────────────────────────────────────── */}
+        {run && (
           <div>
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -1497,6 +1589,23 @@ export function BacktestDetail() {
                       {run.evaluations.map(e => e.ruleset_id).join(', ')}
                     </span>
                   )}
+                  {isTuneIteration && (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20">
+                      <SlidersHorizontal size={11} />
+                      Tuning iteration
+                      <button onClick={() => navigate(`/backtests/runs/${run.source_run_id}/tune`)} className="underline decoration-dotted underline-offset-2 hover:opacity-80">
+                        open workbench
+                      </button>
+                      {tuneBaseline?.optimization_id && (
+                        <>
+                          <span className="text-accent/40">·</span>
+                          <button onClick={() => navigate(`/optimizations/${tuneBaseline.optimization_id}`)} className="underline decoration-dotted underline-offset-2 hover:opacity-80">
+                            optimization
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -1511,6 +1620,15 @@ export function BacktestDetail() {
                       ? <RefreshCw size={14} className="animate-spin" />
                       : <Play size={14} />}
                     {run.status.startsWith('failed') ? 'Retry' : run.optimization_id && !run.equity_curve?.length ? 'Full Backtest' : 'Rerun'}
+                  </button>
+                )}
+                {run.status === 'complete' && (run.trade_count ?? 0) > 0 && (
+                  <button
+                    onClick={() => navigate(`/backtests/runs/${run.run_id}/tune`)}
+                    className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                    title="Tweak parameters and compare iterations"
+                  >
+                    <SlidersHorizontal size={14} /> Tune
                   </button>
                 )}
                 {(run.trade_count ?? 0) > 0 && <OptimizeButton run={run} />}
@@ -1543,6 +1661,20 @@ export function BacktestDetail() {
               {showStressModal && run && <RunStressTestModal run={run} onClose={() => setShowStressModal(false)} navigate={navigate} />}
             </div>
           </div>
+        )}
+      </div>
+
+      {/* ── Body: params panel (left) shares the space below the header with the content (right) ── */}
+      {run && (
+        <div className="flex items-stretch flex-1 min-h-0">
+          <ParamsSidePanel
+            run={run}
+            paramSchema={strategy?.param_schema}
+            baselineParams={isTuneIteration ? tuneBaseline?.params : undefined}
+            collapsed={paramsCollapsed}
+            onToggle={toggleParams}
+          />
+          <div className="flex-1 min-w-0 px-[22px] pb-[22px] space-y-8">
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
           {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={isMt5 ? MT5_RUN_STEPS : NT8_RUN_STEPS} />}
@@ -1687,6 +1819,7 @@ export function BacktestDetail() {
 
           {/* ── Logs ─────────────────────────────────────────────────────── */}
           {runId && !isOptCombo && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} isComplete={isComplete} isFailed={isFailed} />}
+          </div>
         </div>
       )}
     </div>

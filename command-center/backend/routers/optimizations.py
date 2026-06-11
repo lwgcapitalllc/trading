@@ -20,6 +20,7 @@ from models import (
 from services import lab_db, nt8_agent_client
 from services.optimization_runner import expand_grid, pick_search_method, sample_combinations, run_optimization, retry_failed_runs
 from routers.backtests import _row_to_summary
+from routers._locks import ensure_platform_idle
 
 router = APIRouter(prefix="/optimizations", tags=["optimizations"])
 
@@ -40,13 +41,7 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         raise HTTPException(400, "param_grid cannot be empty")
 
     runner = strategy.get("runner", "ninjatrader")
-
-    if runner == "mt5":
-        if lab_db.has_running_mt5_job():
-            raise HTTPException(409, "An MT5 job is already running — wait for it to finish")
-    else:
-        if lab_db.has_running_nt8_job():
-            raise HTTPException(409, "An NT8 job is already running — wait for it to finish before starting a new optimization")
+    ensure_platform_idle(runner)
 
     method = pick_search_method(req.param_grid, req.search_method)
     all_combos = expand_grid(req.param_grid)
@@ -163,13 +158,7 @@ async def rerun_optimization(optimization_id: str) -> dict:
 
     strategy = lab_db.get_strategy(opt["strategy_id"])
     runner = (strategy or {}).get("runner", "ninjatrader")
-
-    if runner == "mt5":
-        if lab_db.has_running_mt5_job():
-            raise HTTPException(409, "An MT5 job is already running — wait for it to finish")
-    else:
-        if lab_db.has_running_nt8_job():
-            raise HTTPException(409, "An NT8 job is already running — wait for it to finish")
+    ensure_platform_idle(runner)
 
     # Reset the existing optimization in-place: clear child runs and set status=running
     deleted_run_ids = lab_db.reset_optimization_for_rerun(optimization_id)
@@ -198,6 +187,8 @@ async def retry_optimization_failed(optimization_id: str) -> dict:
     opt = lab_db.get_optimization(optimization_id)
     if not opt:
         raise HTTPException(404, "Optimization not found")
+    runner = (lab_db.get_strategy(opt["strategy_id"]) or {}).get("runner", "ninjatrader")
+    ensure_platform_idle(runner)
     failed = lab_db.list_optimization_failed_runs(optimization_id)
     if not failed:
         raise HTTPException(400, "No failed runs to retry")

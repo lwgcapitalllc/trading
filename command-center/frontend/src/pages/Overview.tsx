@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
-import { Bot, Radar, BarChart2, ChevronRight, Loader2 } from 'lucide-react'
+import { Bot, Radar, FlaskConical, BookOpen, BarChart2, Sliders, Activity, ChevronRight, Loader2 } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import { useBacktestRuns, useStrategies, useOptimizations } from '@/hooks/useLab'
@@ -92,6 +93,32 @@ function BacktestStatusPill({ status }: { status: string }) {
     <span className={`inline-flex px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${cls}`}>
       {label}
     </span>
+  )
+}
+
+// A clickable metric row that navigates to its own destination. Used in the
+// Research card so Strategies / Runs / Optimizations / Stress Tests each go to
+// their real page or tab instead of all landing on /backtests.
+function NavStatRow({ icon, label, onClick, children }: {
+  icon: ReactNode
+  label: string
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center justify-between py-[8px] px-[8px] -mx-[8px] rounded-md hover:bg-bg-hover transition-colors duration-[120ms] group"
+    >
+      <div className="flex items-center gap-[8px]">
+        <span className="text-text-tertiary group-hover:text-accent transition-colors">{icon}</span>
+        <span className="text-[12px] text-text-secondary group-hover:text-text-primary transition-colors">{label}</span>
+      </div>
+      <div className="flex items-center gap-[8px]">
+        {children}
+        <ChevronRight size={12} className="text-text-tertiary/60 group-hover:text-text-secondary transition-colors" />
+      </div>
+    </button>
   )
 }
 
@@ -349,30 +376,30 @@ export function Overview() {
           </div>
         </div>
 
-        {/* ── Backtests ─────────────────────────────────────── */}
+        {/* ── Research ──────────────────────────────────────── */}
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
 
           <button
-            onClick={() => navigate('/backtests')}
+            onClick={() => navigate('/backtests?tab=runs')}
             className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
           >
             <div className="flex items-center gap-[8px]">
-              <BarChart2 size={14} className="text-accent" style={{ opacity: 0.85 }} />
+              <FlaskConical size={14} className="text-accent" style={{ opacity: 0.85 }} />
               <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
-                Backtests
+                Research
               </span>
             </div>
             <div className="flex items-center gap-[6px] text-[11px] text-text-tertiary group-hover:text-text-secondary transition-colors">
-              <span>View lab</span>
+              <span>Open runs</span>
               <ChevronRight size={12} />
             </div>
           </button>
 
-          <div className="px-[15px] py-[12px] space-y-[9px]">
+          <div className="px-[15px] py-[10px]">
 
             {/* Running stress test banner */}
             {runningStressTest && (
-              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-warn-muted border border-warn-text/20 text-[12px] text-warn-text mb-[4px]">
+              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-warn-muted border border-warn-text/20 text-[12px] text-warn-text mb-[8px]">
                 <Loader2 size={12} className="animate-spin flex-shrink-0" />
                 <span>Stress test running…</span>
               </div>
@@ -380,7 +407,7 @@ export function Overview() {
 
             {/* Running optimization banner */}
             {runningOpt && (
-              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent mb-[4px]">
+              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent mb-[8px]">
                 <Loader2 size={12} className="animate-spin flex-shrink-0" />
                 <span>
                   Optimization running — {runningOpt.completed_runs}/{runningOpt.estimated_runs} runs
@@ -388,62 +415,55 @@ export function Overview() {
               </div>
             )}
 
-            <div className="flex items-baseline justify-between">
-              <span className="text-[12px] text-text-tertiary">Strategies</span>
+            <NavStatRow icon={<BookOpen size={13} />} label="Strategies" onClick={() => navigate('/strategies')}>
               <span className="text-[13px] font-mono text-text-primary">{totalStrategies > 0 ? totalStrategies : '—'}</span>
-            </div>
+            </NavStatRow>
 
-            <div className="flex items-baseline justify-between">
-              <span className="text-[12px] text-text-tertiary">Runs</span>
-              <span className="text-[13px] font-mono text-text-primary">{totalStandaloneRuns > 0 ? totalStandaloneRuns : '—'}</span>
-            </div>
-
-            <div className="flex items-baseline justify-between">
-              <span className="text-[12px] text-text-tertiary">Optimizations</span>
-              <span className="text-[13px] font-mono text-text-primary">{totalOptimizations > 0 ? totalOptimizations : '—'}</span>
-            </div>
-
-            {completedTests.length > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] text-text-tertiary">Stress tests</span>
-                <div className="flex items-center gap-2">
-                  {robustCount > 0 && (
-                    <span className="text-[11px] text-pos-text font-mono">{robustCount} robust</span>
-                  )}
-                  {bestGrade && <RobustnessGradeBadge grade={bestGrade} size="sm" />}
-                </div>
-              </div>
-            )}
-
-            {tier1Count > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] text-text-tertiary">Tier 1 passes</span>
-                <span className="text-[13px] font-mono font-semibold text-pos-text">{tier1Count}</span>
-              </div>
-            )}
-
-            {bestRun ? (
-              <div
-                className="pt-[8px] mt-[4px] border-t border-border-subtle/40 flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => navigate(`/backtests/runs/${bestRun.run_id}`)}
-              >
-                <span className="text-[12px] text-text-tertiary">Best result</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[12px] font-mono font-semibold text-text-primary">
-                    PF {bestRun.profit_factor?.toFixed(2)}
-                  </span>
-                  <WorthinessBadge worthiness={bestRun.worthiness} size="sm" />
-                </div>
-              </div>
-            ) : latestBacktest ? (
-              <div className="flex items-center justify-between pt-[8px] border-t border-border-subtle/40">
-                <span className="text-[12px] text-text-tertiary">Latest run</span>
+            <NavStatRow icon={<BarChart2 size={13} />} label="Runs" onClick={() => navigate('/backtests?tab=runs')}>
+              {bestRun ? (
+                <span className="text-[11px] font-mono text-text-tertiary">
+                  {totalStandaloneRuns} · best PF {bestRun.profit_factor?.toFixed(2)}
+                </span>
+              ) : latestBacktest ? (
                 <BacktestStatusPill status={latestBacktest.status} />
+              ) : (
+                <span className="text-[13px] font-mono text-text-primary">{totalStandaloneRuns > 0 ? totalStandaloneRuns : '—'}</span>
+              )}
+            </NavStatRow>
+
+            <NavStatRow icon={<Sliders size={13} />} label="Optimizations" onClick={() => navigate('/optimizations')}>
+              {runningOpt && <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />}
+              <span className="text-[13px] font-mono text-text-primary">{totalOptimizations > 0 ? totalOptimizations : '—'}</span>
+            </NavStatRow>
+
+            <NavStatRow icon={<Activity size={13} />} label="Stress Tests" onClick={() => navigate('/stress-tests')}>
+              {runningStressTest && <span className="w-[6px] h-[6px] rounded-full bg-warn-text animate-pulse" />}
+              {robustCount > 0 && <span className="text-[11px] text-pos-text font-mono">{robustCount} robust</span>}
+              {bestGrade ? <RobustnessGradeBadge grade={bestGrade} size="sm" /> : <span className="text-[13px] font-mono text-text-primary">—</span>}
+            </NavStatRow>
+
+            {(tier1Count > 0 || bestRun) && (
+              <div className="mt-[8px] pt-[8px] border-t border-border-subtle/40 space-y-[8px]">
+                {tier1Count > 0 && (
+                  <div className="flex items-center justify-between px-[1px]">
+                    <span className="text-[12px] text-text-tertiary">Tier 1 passes</span>
+                    <span className="text-[13px] font-mono font-semibold text-pos-text">{tier1Count}</span>
+                  </div>
+                )}
+                {bestRun && (
+                  <button
+                    onClick={() => navigate(`/backtests/runs/${bestRun.run_id}`)}
+                    className="w-full flex items-center justify-between py-[6px] px-[8px] -mx-[8px] rounded-md hover:bg-bg-hover transition-colors group"
+                  >
+                    <span className="text-[12px] text-text-tertiary group-hover:text-text-primary transition-colors">Best result</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-mono font-semibold text-text-primary">PF {bestRun.profit_factor?.toFixed(2)}</span>
+                      <WorthinessBadge worthiness={bestRun.worthiness} size="sm" />
+                      <ChevronRight size={12} className="text-text-tertiary/60 group-hover:text-text-secondary transition-colors" />
+                    </div>
+                  </button>
+                )}
               </div>
-            ) : (
-              <p className="text-[11px] text-text-tertiary/60 pt-[4px]">
-                Go to Backtests to run your first experiment
-              </p>
             )}
           </div>
         </div>

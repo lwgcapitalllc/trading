@@ -64,6 +64,12 @@ async def startup():
     if n:
         import logging
         logging.getLogger(__name__).warning("Reset %d stale stress test(s) from previous run", n)
+    # Orphaned 'running' backtest/optimization rows from a crashed run would otherwise
+    # hold the per-platform job lock forever — the DB is now the sole lock source.
+    m = lab_db.reset_stale_runs()
+    if m:
+        import logging
+        logging.getLogger(__name__).warning("Reset %d stale backtest/optimization run(s) from previous run", m)
     threading.Thread(target=_auto_start_agents, daemon=True).start()
     asyncio.create_task(queue_runner.run_queue_loop())
 

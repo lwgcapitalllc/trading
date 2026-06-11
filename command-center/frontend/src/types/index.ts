@@ -331,6 +331,7 @@ export interface BacktestRunRequest {
   commission_per_side?: number
   slippage_ticks?: number
   evaluate_rulesets: string[]
+  source_run_id?: string | null
 }
 
 export interface VerdictSummary {
@@ -364,6 +365,7 @@ export interface BacktestSummary {
   worthiness: WorthinessScore | null
   sweep_id: string | null
   optimization_id: string | null
+  source_run_id: string | null
   error_message: string | null
   start_date: string | null
   end_date: string | null
@@ -429,6 +431,7 @@ export interface BacktestDetail {
   worthiness: WorthinessScore | null
   sweep_id: string | null
   optimization_id: string | null
+  source_run_id: string | null
   runner: string
 }
 

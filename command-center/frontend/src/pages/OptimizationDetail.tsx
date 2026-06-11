@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown, Copy, Check } from 'lucide-react'
-import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { OptimizationHeatmap } from '@/components/OptimizationHeatmap'
-import { useOptimization, useCancelOptimization, useRetryOptimization, useRerunOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog } from '@/hooks/useLab'
+import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown, Copy, Check, SlidersHorizontal } from 'lucide-react'
+import { useOptimization, useCancelOptimization, useRetryOptimization, useRerunOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog, useBacktestRuns } from '@/hooks/useLab'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 
@@ -334,10 +332,8 @@ function FailedRunsTable({ runs, sweptKeys, navigate, retryRun, jobBlocked }: {
 
 function fmtMoney(val: number | null | undefined): string {
   if (val == null) return '—'
-  const abs = Math.abs(val)
   const sign = val >= 0 ? '+' : '-'
-  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(1)}k`
-  return `${sign}$${abs.toFixed(0)}`
+  return `${sign}$${Math.round(Math.abs(val)).toLocaleString('en-US')}`
 }
 
 function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
@@ -356,10 +352,9 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
             {sweptKeys.map(k => (
               <th key={k} className="text-left px-3 py-2 text-text-tertiary font-medium font-mono">{k}</th>
             ))}
-            <th className="text-right px-3 py-2 text-text-tertiary font-medium">P&L</th>
-            <th className="text-right px-3 py-2 text-text-tertiary font-medium">Max DD</th>
-            <th className="text-right px-3 py-2 text-text-tertiary font-medium">PF</th>
-            <th className="text-right px-3 py-2 text-text-tertiary font-medium">Trades</th>
+            <th className="text-left px-3 py-2 text-text-tertiary font-medium">P&L</th>
+            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Max DD</th>
+            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Trades</th>
             <th className="text-left px-3 py-2 text-text-tertiary font-medium">Score</th>
             <th className="px-3 py-2 w-16" />
           </tr>
@@ -378,26 +373,23 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
                   {isBest && <span className="text-gold-text font-bold">★</span>}
                 </td>
                 {sweptKeys.map(k => (
-                  <td key={k} className={`px-3 py-[9px] font-mono font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}>
+                  <td key={k} className={`px-3 py-[9px] text-left font-mono font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}>
                     {String(run.params?.[k] ?? '—')}
                   </td>
                 ))}
-                <td className={`px-3 py-[9px] font-mono tabular-nums text-right ${pnlCls}`}>
+                <td className={`px-3 py-[9px] text-left font-mono tabular-nums ${pnlCls}`}>
                   {fmtMoney(run.net_pnl)}
                 </td>
-                <td className="px-3 py-[9px] font-mono tabular-nums text-right text-neg-text">
-                  {run.max_drawdown != null ? `$${(run.max_drawdown / 1000).toFixed(1)}k` : '—'}
+                <td className="px-3 py-[9px] text-left font-mono tabular-nums text-neg-text">
+                  {run.max_drawdown != null ? `$${Math.round(run.max_drawdown).toLocaleString('en-US')}` : '—'}
                 </td>
-                <td className="px-3 py-[9px] font-mono tabular-nums text-right">
-                  {run.profit_factor?.toFixed(2) ?? '—'}
-                </td>
-                <td className="px-3 py-[9px] tabular-nums text-right text-text-secondary">
+                <td className="px-3 py-[9px] text-left tabular-nums text-text-secondary">
                   {run.trade_count ?? '—'}
                 </td>
-                <td className="px-3 py-[9px]">
-                  <WorthinessBadge worthiness={run.worthiness} />
+                <td className={`px-3 py-[9px] text-left font-mono tabular-nums font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}>
+                  {run.profit_factor?.toFixed(2) ?? '—'}
                 </td>
-                <td className="px-3 py-[9px] text-right">
+                <td className="px-3 py-[9px] text-left">
                   <span className="text-[11px] text-accent whitespace-nowrap">View →</span>
                 </td>
               </tr>
@@ -610,12 +602,19 @@ export function OptimizationDetail() {
   const { data: stressLock } = useRunningStressLock()
   const stressRunIds = useMemo(() => new Set(stressLock?.run_ids ?? []), [stressLock])
   const bestRunId = opt?.best_run_id ?? undefined
+  // Tuning iterations spawned from the winner run (standalone runs with source_run_id = winner).
+  const { data: allRunsForTune } = useBacktestRuns()
+  const tuneIterations = useMemo(
+    () => (allRunsForTune ?? []).filter(r => bestRunId && r.source_run_id === bestRunId && !r.sweep_id && !r.optimization_id),
+    [allRunsForTune, bestRunId],
+  )
+  const tuneRunning = tuneIterations.filter(r => r.status === 'running').length
   const hasRunningStress = !!bestRunId && stressRunIds.has(bestRunId)
   const { data: bestRunStressTests } = useStressTests(hasRunningStress ? bestRunId : undefined)
   const latestStress = bestRunStressTests?.find(s => !s.status.startsWith('failed') && s.status !== 'complete')
 
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [viewMode, setViewMode]           = useState<'table' | 'bars' | 'heatmap'>('table')
+  const [viewMode, setViewMode]           = useState<'table' | 'bars'>('table')
 
   const paramKeys = opt ? Object.keys(opt.param_grid) : []
   const sweptKeys = paramKeys.filter(k => {
@@ -631,7 +630,7 @@ export function OptimizationDetail() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <button
-          onClick={() => navigate('/backtests?tab=optimizations')}
+          onClick={() => navigate('/optimizations')}
           className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors"
         >
           <ArrowLeft size={14} /> Optimizations
@@ -675,7 +674,7 @@ export function OptimizationDetail() {
                 Cancel
               </button>
               <button
-                onClick={() => deleteOpt.mutate(optimizationId!, { onSuccess: () => navigate('/backtests?tab=optimizations') })}
+                onClick={() => deleteOpt.mutate(optimizationId!, { onSuccess: () => navigate('/optimizations') })}
                 disabled={deleteOpt.isPending}
                 className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/15 disabled:opacity-50 transition-colors"
               >
@@ -748,19 +747,29 @@ export function OptimizationDetail() {
             </button>
           )}
 
+
           {/* Results */}
           {completeRuns.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
-                  {isRunning
-                    ? `Results so far — ${completeRuns.length} of ${opt.estimated_runs} complete`
-                    : `Results — ${completeRuns.length} of ${opt.estimated_runs} combinations`}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
+                    {isRunning
+                      ? `Results so far — ${completeRuns.length} of ${opt.estimated_runs} complete`
+                      : `Results — ${completeRuns.length} of ${opt.estimated_runs} combinations`}
+                  </h2>
+                  {tuneRunning > 0 && (
+                    <span title="A tuning iteration is running on the winner (★)"
+                      className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent">
+                      <SlidersHorizontal size={9} className="animate-pulse" />
+                      TUNING WINNER
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   {/* View toggle */}
                   <div className="flex rounded-md border border-border-subtle overflow-hidden text-[11px]">
-                    {(['table', 'bars', 'heatmap'] as const).map(v => (
+                    {(['table', 'bars'] as const).map(v => (
                       <button
                         key={v}
                         onClick={() => setViewMode(v)}
@@ -770,10 +779,22 @@ export function OptimizationDetail() {
                             : 'text-text-tertiary hover:text-text-secondary bg-bg-surface border-r border-border-subtle last:border-r-0'
                         }`}
                       >
-                        {v === 'table' ? 'Table' : v === 'bars' ? 'Bar Chart' : 'Heatmap'}
+                        {v === 'table' ? 'Table' : 'Bar Chart'}
                       </button>
                     ))}
                   </div>
+                  {opt.best_run_id && (
+                    <button
+                      onClick={() => navigate(`/backtests/runs/${opt.best_run_id}/tune`)}
+                      className="flex items-center gap-2 px-3 py-[5px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/15 transition-colors"
+                      title={tuneRunning > 0 ? 'A tuning iteration is running — open the workbench to watch' : 'Take the winning parameter set into the tuning workbench'}
+                    >
+                      {tuneRunning > 0
+                        ? <Loader2 size={12} className="animate-spin" />
+                        : <SlidersHorizontal size={12} />}
+                      {tuneRunning > 0 ? 'Tuning…' : 'Tune winner'}
+                    </button>
+                  )}
                   <button
                     onClick={() => exportCsv(opt.runs, paramKeys)}
                     className="flex items-center gap-2 px-3 py-[5px] rounded-md text-[11px] text-text-secondary hover:text-text-primary bg-bg-surface border border-border-subtle hover:border-border-default transition-colors"
@@ -799,22 +820,6 @@ export function OptimizationDetail() {
                   navigate={navigate}
                   bestRunId={opt.best_run_id ?? undefined}
                 />
-              )}
-              {viewMode === 'heatmap' && (
-                sweptKeys.length === 2 ? (
-                  <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
-                    <OptimizationHeatmap
-                      runs={completeRuns}
-                      paramX={sweptKeys[0]}
-                      paramY={sweptKeys[1]}
-                      bestRunId={opt.best_run_id ?? undefined}
-                    />
-                  </div>
-                ) : (
-                  <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 text-[13px] text-text-tertiary text-center py-8">
-                    Heatmap requires exactly 2 swept parameters. This optimization has {sweptKeys.length}.
-                  </div>
-                )
               )}
             </div>
           )}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sliders, Plus, Minus, AlertTriangle } from 'lucide-react'
+import { Sliders, Plus, Minus, AlertTriangle, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
 import { useTriggerOptimization, useFirms, useRunningVpsJob, useOptimizations, useParamTypes } from '@/hooks/useLab'
@@ -13,6 +13,18 @@ interface Props {
 type AxisEdit =
   | { mode: 'range'; min: string; max: string; step: string }
   | { mode: 'fixed'; value: string }
+
+// ── Range value counting ───────────────────────────────────────────────────────
+
+// Number of values a range produces — matches RangePreview's inclusive loop.
+// Returns null when the range is incomplete or invalid.
+function rangeValueCount(min: string, max: string, step: string): number | null {
+  const lo   = parseFloat(min)
+  const hi   = parseFloat(max)
+  const incr = parseFloat(step)
+  if (isNaN(lo) || isNaN(hi) || isNaN(incr) || incr <= 0 || lo > hi) return null
+  return Math.floor((hi - lo) / incr + 1e-9) + 1
+}
 
 // ── Range preview ─────────────────────────────────────────────────────────────
 
@@ -73,15 +85,47 @@ function OptimizerModal({
   ])
 
   // Build initial axis state from strategy_logic params only
-  const initialAxes: Record<string, AxisEdit> = {}
-  for (const [k, v] of Object.entries(run.params)) {
-    if (!FOUNDATIONAL_PARAMS.has(k)) {
-      initialAxes[k] = { mode: 'fixed', value: String(v) }
+  const buildInitialAxes = (): Record<string, AxisEdit> => {
+    const init: Record<string, AxisEdit> = {}
+    for (const [k, v] of Object.entries(run.params)) {
+      if (!FOUNDATIONAL_PARAMS.has(k)) {
+        init[k] = { mode: 'fixed', value: String(v) }
+      }
     }
+    return init
   }
-  const [axes, setAxes] = useState<Record<string, AxisEdit>>(initialAxes)
+  const [axes, setAxes] = useState<Record<string, AxisEdit>>(buildInitialAxes)
+
+  const handleReset = () => {
+    setAxes(buildInitialAxes())
+    setFirmId(evalFirm?.ruleset_id ?? '')
+    setMode('eval')
+    setRegimeFilter('')
+  }
+  // True once the user has changed anything from the opened-run defaults.
+  const isDirty =
+    Object.values(axes).some(a => a.mode === 'range') ||
+    firmId !== (evalFirm?.ruleset_id ?? '') ||
+    mode !== 'eval' ||
+    regimeFilter !== ''
 
   const rangeParamCount = Object.values(axes).filter(a => a.mode === 'range').length
+
+  // Total backtests = cartesian product of every swept range's value count.
+  // `incomplete` flags ranges still being typed (min/max/step not yet valid).
+  let comboCount = 1
+  let comboIncomplete = false
+  for (const ax of Object.values(axes)) {
+    if (ax.mode !== 'range') continue
+    const c = rangeValueCount(ax.min, ax.max, ax.step)
+    if (c == null) { comboIncomplete = true; continue }
+    comboCount *= c
+  }
+  // Color thresholds — each combo is a full backtest, so nudge the user to taper.
+  const comboTone =
+    comboCount > 1000 ? { text: 'text-neg-text',  bg: 'bg-neg-muted',  border: 'border-neg-text/20'  }
+    : comboCount > 250 ? { text: 'text-warn-text', bg: 'bg-warn-muted', border: 'border-warn-text/20' }
+    : { text: 'text-accent', bg: 'bg-accent/10', border: 'border-accent/20' }
 
   const intErrors: Record<string, string> = {}
   for (const [name, ax] of Object.entries(axes)) {
@@ -151,7 +195,7 @@ function OptimizerModal({
     }, {
       onSuccess: (data) => {
         onClose()
-        navigate(`/backtests/optimizations/${data.optimization_id}`)
+        navigate(`/optimizations/${data.optimization_id}`)
       },
     })
   }
@@ -301,12 +345,36 @@ function OptimizerModal({
           {rangeParamCount > 0 && (
             <p className="text-[11px] text-text-tertiary">
               {rangeParamCount} parameter{rangeParamCount !== 1 ? 's' : ''} will be swept using the native optimizer.
+              {comboCount > 1000 && !comboIncomplete && ' That is a lot of combinations — consider widening the step or trimming a range.'}
             </p>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-border-subtle flex-shrink-0 flex items-center justify-end gap-3">
+        <div className="px-5 py-4 border-t border-border-subtle flex-shrink-0 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {rangeParamCount > 0 && (
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-[5px] rounded-md text-[12px] font-mono tabular-nums border ${comboTone.text} ${comboTone.bg} ${comboTone.border}`}
+                title="Total backtests the optimizer will run — the product of every swept range"
+              >
+                <Sliders size={11} />
+                {comboIncomplete
+                  ? '— combos'
+                  : `${comboCount.toLocaleString('en-US')} combo${comboCount !== 1 ? 's' : ''}`}
+              </span>
+            )}
+            <button
+              onClick={handleReset}
+              disabled={!isDirty}
+              className="flex items-center gap-1 text-[12px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Restore parameters and options to the values from this run"
+            >
+              <RotateCcw size={12} />
+              Reset
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
           <button
             onClick={onClose}
             className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
@@ -320,6 +388,7 @@ function OptimizerModal({
           >
             {triggerOpt.isPending ? 'Starting…' : 'Go'}
           </button>
+          </div>
         </div>
       </div>
     </div>
@@ -402,7 +471,7 @@ export function OptimizeButton({ run }: Props) {
   if (runningOpt) {
     return (
       <button
-        onClick={() => navigate(`/backtests/optimizations/${runningOpt.optimization_id}`)}
+        onClick={() => navigate(`/optimizations/${runningOpt.optimization_id}`)}
         className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 transition-colors"
       >
         <Sliders size={12} className="animate-pulse flex-shrink-0" />

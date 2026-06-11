@@ -1286,16 +1286,14 @@ def delete_sweep(sweep_id: str) -> tuple[bool, list[str]]:
     return len(child_ids) > 0, child_ids
 
 
-def has_any_running_vps_job() -> bool:
-    """True if any sweep run, optimization run, or standalone backtest is currently running."""
-    with _connect() as conn:
-        run_count = conn.execute(
-            "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running'",
-        ).fetchone()[0]
-        opt_count = conn.execute(
-            "SELECT COUNT(*) FROM optimizations WHERE status = 'running'",
-        ).fetchone()[0]
-    return (run_count + opt_count) > 0
+def has_running_job(runner: str) -> bool:
+    """Canonical platform-scoped lock check. One physical terminal per platform
+    (one NT8 Strategy Analyzer, one MT5 Strategy Tester), so a platform runs at most
+    one job — backtest, sweep, or optimization — at a time. The two platforms are
+    fully independent: an MT5 job never blocks an NT8 job and vice versa.
+
+    `runner` is 'mt5' or anything else (treated as NT8 / 'ninjatrader')."""
+    return has_running_mt5_job() if runner == "mt5" else has_running_nt8_job()
 
 
 def has_running_nt8_job() -> bool:
@@ -1360,7 +1358,7 @@ def get_running_job() -> dict:
         if row:
             result["mt5"] = {"running": True, **dict(row)}
 
-        # NT8 sweep (sweeps are NT8-only for now)
+        # NT8 sweep
         if not result["nt8"]["running"]:
             row = conn.execute("""
                 SELECT 'sweep' AS job_type, r.sweep_id AS job_id,
@@ -1368,10 +1366,25 @@ def get_running_job() -> dict:
                 FROM backtest_runs r
                 LEFT JOIN strategies s ON s.id = r.strategy_id
                 WHERE r.status = 'running' AND r.sweep_id IS NOT NULL
+                  AND COALESCE(r.runner, 'ninjatrader') != 'mt5'
                 LIMIT 1
             """).fetchone()
             if row:
                 result["nt8"] = {"running": True, **dict(row)}
+
+        # MT5 sweep
+        if not result["mt5"]["running"]:
+            row = conn.execute("""
+                SELECT 'sweep' AS job_type, r.sweep_id AS job_id,
+                       COALESCE(s.name, r.strategy_id) || ' sweep' AS description
+                FROM backtest_runs r
+                LEFT JOIN strategies s ON s.id = r.strategy_id
+                WHERE r.status = 'running' AND r.sweep_id IS NOT NULL
+                  AND r.runner = 'mt5'
+                LIMIT 1
+            """).fetchone()
+            if row:
+                result["mt5"] = {"running": True, **dict(row)}
 
         # NT8 optimization
         if not result["nt8"]["running"]:
@@ -1410,15 +1423,15 @@ def insert_run_sweep(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, sweep_id, source_run_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, sweep_id, source_run_id, runner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
             data["status"], data["created_at"], data["sweep_id"],
-            data.get("source_run_id"),
+            data.get("source_run_id"), data.get("runner", "ninjatrader"),
         ))
 
 
@@ -1716,6 +1729,28 @@ def reset_stale_stress_tests() -> int:
             [now] + ids,
         )
     return len(ids)
+
+
+def reset_stale_runs() -> int:
+    """Mark any orphaned 'running' backtest runs and optimizations as failed.
+
+    The asyncio task that polls a VPS job dies with the backend process, so any row
+    still 'running' after a restart can never complete on its own — and now that the
+    per-platform job lock reads these rows as the single source of truth, a stale
+    'running' row would block the platform forever. Called on startup, after
+    reset_stale_stress_tests() (which handles stress-test child runs)."""
+    now = int(time.time())
+    with _connect() as conn:
+        runs = conn.execute(
+            "UPDATE backtest_runs SET status='failed_crashed', error_message='Backend restarted mid-run' "
+            "WHERE status='running'"
+        ).rowcount
+        opts = conn.execute(
+            "UPDATE optimizations SET status='failed_crashed', completed_at=? "
+            "WHERE status='running'",
+            (now,),
+        ).rowcount
+    return runs + opts
 
 
 def update_stress_test_status(stress_test_id: str, status: str, error_message: Optional[str] = None) -> None:
