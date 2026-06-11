@@ -40,7 +40,9 @@ backend/
 ├── services/              business logic, DB access, external clients
 │   ├── lab_db.py          only module that touches lab.db
 │   ├── strategy_scanner.py  reads from strategies/ (not algos/); emits warnings for stale source_paths
-│   ├── evaluator.py       per-firm pass/fail logic
+│   ├── evaluator.py       per-ruleset verdict; also exports compute_contract_cap_status()
+│   ├── trailing_drawdown.py  compute_trailing_mll() — EOD trailing max-loss engine (the drawdown check)
+│   ├── metrics.py         shared metric helpers: daily_sharpe / apply_canonical_sharpe / profit_concentration_pct
 │   ├── backtest_runner.py background VPS polling task (single run)
 │   ├── sweep_runner.py    runs N backtests sequentially (semaphore = 1) for a sweep
 │   ├── optimization_runner.py  native NT8/MT5 optimizer (one VPS job, all CPU cores)
@@ -48,6 +50,7 @@ backend/
 │   ├── objectives.py      optimizer objective functions
 │   ├── stress_tester.py   Monte Carlo + walk-forward + sensitivity + auto-trigger
 │   ├── grading.py         compute_grade() → A/B/C/D/F with plain-English reasons
+│   ├── scripts/backfill_metrics.py  one-time, idempotent backfill of file-derivable metrics on old runs
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
 │   ├── nt8_agent_client.py      typed HTTP wrapper over NT8 nt8_agent; runner dispatcher (routes mt5 → mt5_agent_client)
 │   ├── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel)
@@ -235,6 +238,20 @@ Seeded rulesets (17 rows): 4 prop firms = 14 prop rows — LucidFlex, FundedNext
 
 ---
 
+## Lens metrics (the per-run scoring layer)
+
+**Drawdown = EOD trailing max-loss** (`services/trailing_drawdown.compute_trailing_mll`), not whole-test max DD. Floor trails the highest EOD balance, capped at `mll_lock_balance` when set; a breach (balance falls through the floor) is the only thing that fails `drawdown_pass`. Detail columns on `evaluations`: `mll_final_floor`, `mll_highest_eod_balance`, `mll_breach_day`, `mll_min_floor_distance`.
+
+**Canonical Sharpe — one definition everywhere.** `metrics.apply_canonical_sharpe(kpis, daily_pnl)` writes the daily-√252 Sharpe into `sharpe`, moves the platform's value to `platform_sharpe`, and sets `sharpe_low_sample` (<10 trading days). It's called at every run-completion path that has `daily_pnl` — single run, sweep child, stress child, optimizer winner — but NOT the native-combo path (no daily_pnl). **Idempotency guard:** only runs when `platform_sharpe` is null, so a second pass can't overwrite the platform value. Walk-forward window Sharpe (`stress_tester._compute_sharpe`) and the optimizer both go through `daily_sharpe_from_values`.
+
+**Contract cap** (`evaluator.compute_contract_cap_status`, informational — never moves the verdict): scaling ladder → `not_applicable`; MT5 (lots) → `not_applicable`; NT8 without per-trade size → `not_evaluable`; NT8 fixed cap + size → real largest-single-trade vs cap. Per-trade `size` is captured from NT8's Quantity column / MT5 volume.
+
+**Profit concentration** persisted as `profit_concentration_pct` (largest calendar quarter's share of gross profit) for later grading use. **Backfill:** `scripts/backfill_metrics.py` recomputes the file-derivable columns (Sharpe trio, profit concentration, contract status) on old runs — idempotent, only touches what's derivable from stored result files.
+
+**Capital-based scores stay client-side** (BacktestDetail). Calmar / Max-DD-% need an account balance (the ruleset's `account_size` or the what-if slider); they're computed in the browser by rebasing the equity, never persisted, and never feed the verdict.
+
+---
+
 ## Foundational config (Pass 1)
 
 Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss limit, entry hours ET, days allowed, daily profit target, profit lock-in %, commission/side, slippage ticks), injected into strategy params at run creation by `nt8_agent_client.inject_foundational()`. Detail in the Pass1 archive spec.
@@ -322,7 +339,7 @@ Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_
 **Monte Carlo** — pure Python (numpy), no NT8 involved. Takes the trade P&L list from a completed backtest and runs two simulations:
 - 10,000 reshuffles: same trades, random order. Probes whether the sequence of wins/losses was lucky. Sum is invariant, so final PnL doesn't vary across reshuffles — only drawdown does.
 - 1,000 bootstrap resamples: samples trades with replacement. Both total PnL and drawdown vary.
-Merges both pools (~11,000 paths) and computes: median/P95/P99 drawdown, prob of breaching the firm's loss limit, prob of passing the eval. Runs in ~5s even for 700+ trades.
+- **Drawdown** stats (median/P95/P99, prob-breach) use BOTH pools (order genuinely varies drawdown). **Final-PnL** stats — the median/p5/p1 percentiles, the PnL histogram, AND the "probability of passing the eval" — use the **BOOTSTRAP pool only**: reshuffle final PnLs are all the net total (order-invariant), so including them collapses those onto one degenerate value. Don't reintroduce `all_pnls` into a final-PnL stat.
 
 **Walk-forward** — sends real backtests to NT8. Splits the original date range into N equal windows. Each window is split 70% in-sample / 30% out-of-sample — two separate NT8 backtests per window. Measures how much Sharpe drops from in-sample to out-of-sample. Large drop = strategy may be overfit to the training period.
 

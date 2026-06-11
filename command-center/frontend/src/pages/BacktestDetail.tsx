@@ -168,20 +168,9 @@ function computeRecoveryFactor(
   return (netPnl * (365 / days)) / absDd
 }
 
-function recoveryFactorCls(c: number | null): string {
-  if (c == null) return 'text-text-tertiary'
-  if (c >= 3.0) return 'text-pos-text'
-  if (c >= 1.0) return 'text-warn-text'
-  return 'text-neg-text'
-}
-
-function recoveryFactorLabel(c: number | null): string {
-  if (c == null) return 'annlzd net P&L ÷ max drawdown'
-  if (c >= 3.0) return 'excellent'
-  if (c >= 1.5) return 'good'
-  if (c >= 1.0) return 'marginal'
-  return 'poor — drawdown outpaces return'
-}
+// computeRecoveryFactor's value is folded into the Calmar tooltip (Recovery Factor was
+// removed as a redundant card — it's the dollar twin of Calmar). The cls/label helpers it
+// used as a card are gone with it.
 
 // ── Equity rebasing (platform-agnostic) ──────────────────────────────────────
 // Rebase an equity curve so it starts at `balance` and moves with the trades:
@@ -372,67 +361,11 @@ function InfoTip({ text }: { text: string }) {
   )
 }
 
-// ── MetricCard ────────────────────────────────────────────────────────────────
-
-function MetricCard({ label, value, valueCls = '', sub, subCls = 'text-text-tertiary', tooltip }: {
-  label: string
-  value: React.ReactNode
-  valueCls?: string
-  sub?: React.ReactNode
-  subCls?: string
-  tooltip?: string
-}) {
-  return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg px-[15px] py-[14px] h-full flex flex-col justify-center">
-      <div className="flex items-center text-[10px] text-text-secondary uppercase tracking-[0.6px]">
-        {label}
-        {tooltip && <InfoTip text={tooltip} />}
-      </div>
-      <div className={`text-[24px] font-semibold mt-[6px] tracking-[-0.5px] font-mono ${valueCls}`}>{value}</div>
-      {sub && <div className={`text-[11px] mt-[3px] leading-snug ${subCls}`}>{sub}</div>}
-    </div>
-  )
-}
-
-// ── Account-balance what-if slider ────────────────────────────────────────────
-// View-time only: rebases the capital-based scores (Calmar, Max DD %) off the chosen
-// balance. Recomputes instantly client-side — never re-runs or mutates the stored run.
-function BalanceSlider({ balance, defaultBalance, onChange }: {
-  balance: number; defaultBalance: number | null; onChange: (v: number | null) => void
-}) {
-  const MIN = 5_000, MAX = 250_000, STEP = 5_000
-  const isDefault = defaultBalance != null && balance === defaultBalance
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-[10px] text-text-secondary uppercase tracking-[0.6px]">Account balance</span>
-      <input
-        type="range"
-        min={MIN} max={MAX} step={STEP}
-        value={Math.min(MAX, Math.max(MIN, balance))}
-        onChange={e => onChange(Number(e.target.value))}
-        className="w-[120px] accent-accent cursor-pointer"
-      />
-      <span className="text-[12px] font-mono tabular-nums text-text-primary w-[52px]">
-        ${(balance / 1000).toFixed(0)}k
-      </span>
-      {!isDefault && defaultBalance != null && (
-        <button
-          onClick={() => onChange(null)}
-          className="text-[10px] text-accent hover:underline"
-          title={`Reset to ruleset default ($${(defaultBalance / 1000).toFixed(0)}k)`}
-        >
-          reset
-        </button>
-      )}
-      {isDefault && <span className="text-[10px] text-text-tertiary">ruleset default</span>}
-    </div>
-  )
-}
-
 // ── KPI grid ──────────────────────────────────────────────────────────────────
 
-function KpiGrid({ run, fallback, equity = [], balance = null, stretch = false }: {
-  run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null; stretch?: boolean
+function KpiGrid({ run, fallback, equity = [], balance = null, defaultBalance = null, onBalanceChange, stretch = false }: {
+  run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
+  defaultBalance?: number | null; onBalanceChange?: (v: number | null) => void; stretch?: boolean
 }) {
   const pnlCls = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
 
@@ -472,124 +405,104 @@ function KpiGrid({ run, fallback, equity = [], balance = null, stretch = false }
   const maxDdPct = (balance != null && balance > 0 && tradeDd != null)
     ? (tradeDd / balance) * 100
     : null
+  // Dollar drawdown for the merged Max-DD card (trade-derived; falls back to the run's value).
+  const ddDollar = tradeDd ?? (run.max_drawdown != null ? Math.abs(run.max_drawdown) : null)
+  // Reward:risk for Expectancy's sub-line (Avg Win / Avg Loss folded in here).
+  const rr = (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
+    ? (run.avg_win / Math.abs(run.avg_loss)).toFixed(2) : null
+
+  // ── Grouped KPI layout (five columns) ────────────────────────────────────────
+  // Five group panels, all sharing ONE accent for border + header (a single colour, not per-
+  // group — red/amber/violet/cyan each carry meaning elsewhere: value colours, warnings, the
+  // regime palette). Cards inside are a uniform height so rows line up across columns. Every
+  // group is its own column, including Activity (trade count + avg duration) — no meta strip.
+  const calmarTip = `Annualized return (CAGR) ÷ max drawdown, both as a % of capital — so it cancels out: Calmar is capital-independent BY DESIGN and does NOT move with the Account balance slider. It reduces to ≈ annualized net P&L ÷ drawdown${recoveryFactor != null ? ` (= ${recoveryFactor.toFixed(2)} — the old Recovery Factor)` : ''}. The definitive risk-adjusted metric for funded traders; trade-derived, so NT8 and MT5 agree.`
+  const expectancySub = (run.avg_win != null && run.avg_loss != null)
+    ? `avg +$${run.avg_win.toFixed(0)} / -$${Math.abs(run.avg_loss).toFixed(0)}${rr ? ` · ${rr}:1 R:R` : ''}`
+    : 'per trade'
+
+  type KMetric = { key: string; label: string; value: React.ReactNode; valueCls?: string; sub?: React.ReactNode; tooltip?: string }
+  const groups: { key: string; label: string; hint: string; metrics: KMetric[] }[] = [
+    { key: 'outcome', label: 'Outcome', hint: 'did it work', metrics: [
+      { key: 'netpnl', label: 'Net P&L', value: dollar(run.net_pnl, true), valueCls: pnlCls,
+        tooltip: "Total profit or loss after commissions. The bottom line." },
+      { key: 'maxdd', label: 'Max DD % of Capital',
+        value: maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—',
+        valueCls: maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary',
+        sub: ddDollar != null ? `$${Math.round(ddDollar).toLocaleString()} peak-to-trough${maxDdPct == null ? ' · set a balance for %' : ''}` : 'set an account balance',
+        tooltip: "Max drawdown — the largest peak-to-trough drop, shown both in dollars (sub-line) and as a % of the account balance (the value; ruleset's account_size, adjustable via the Account balance slider). Prop firms cap this hard. The dollar drawdown is trade-derived, identical across NT8 and MT5. Lower is better." },
+      { key: 'profconc', label: 'Profit Concentration',
+        value: profitConc != null ? `${profitConc.toFixed(0)}%` : '—',
+        valueCls: concentrationCls(profitConc), sub: concentrationLabel(profitConc),
+        tooltip: "Share of total gross profit (sum of positive daily P&L) earned in the single most profitable calendar quarter of the test span (split into 4 equal date slices). High means the edge is clustered in one period — a classic sign of curve-fitting to a recent regime. ≥60% is a red flag." },
+    ]},
+    { key: 'quality', label: 'Risk-Adjusted Quality', hint: 'is the edge real', metrics: [
+      { key: 'sharpe', label: 'Sharpe (annlzd)', value: sharpe != null ? sharpe.toFixed(2) : '—', valueCls: sharpeCls(sharpe), sub: sharpeSub,
+        tooltip: "Return per unit of risk, annualized (daily P&L × √252) — the canonical definition shared with the optimizer and walk-forward. 'platform' shows NT8/MT5's own reported Sharpe for reference. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing. 'low sample' flags fewer than 10 trading days, where the value is statistically noisy." },
+      { key: 'calmar', label: 'Calmar Ratio', value: calmar != null ? calmar.toFixed(2) : '—', valueCls: calmarCls(calmar), sub: calmarLabel(calmar), tooltip: calmarTip },
+      { key: 'pf', label: 'Profit Factor', value: run.profit_factor != null ? run.profit_factor.toFixed(2) : '—', valueCls: pfCls(run.profit_factor), sub: pfLabel(run.profit_factor),
+        tooltip: "Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0." },
+    ]},
+    { key: 'behavior', label: 'Trade Behavior', hint: 'how it behaves', metrics: [
+      { key: 'winrate', label: 'Win Rate', value: pct(run.win_rate), valueCls: winRateCls(run.win_rate), sub: winRateLabel(run.win_rate),
+        tooltip: "% of trades that closed in profit. Good ≥60%, fair ≥50%, weak <50%. High win rate alone doesn't guarantee profitability — size of wins vs losses matters too." },
+      { key: 'expectancy', label: 'Expectancy', value: expectancyUsd != null ? `$${expectancyUsd.toFixed(2)}` : '—',
+        valueCls: expectancyUsd != null ? (expectancyUsd >= 0 ? 'text-pos-text' : 'text-neg-text') : '', sub: expectancySub,
+        tooltip: "Average net P&L per trade (net P&L ÷ trade count) — your edge per position. Sub-line shows avg win / avg loss and the win:loss (reward:risk) ratio. R-multiple expectancy needs per-trade risk, which stored trades don't carry (profit only), so it's omitted rather than guessed." },
+      { key: 'zscore', label: 'Z-Score', value: zScore != null ? zScore.toFixed(2) : '—', valueCls: zScoreCls(zScore), sub: zScoreLabel(zScore),
+        tooltip: "Wald–Wolfowitz runs test over the win/loss sequence. Measures whether wins and losses streak more than random chance. Within ±1.5 is healthy; beyond ±2 signals non-random streaking (positive = fewer runs / longer streaks, negative = alternating more than chance)." },
+    ]},
+    { key: 'activity', label: 'Activity', hint: 'volume & timing', metrics: [
+      { key: 'count', label: 'Trade Count', value: run.trade_count ?? '—', tooltip: "Total completed trades. More trades = more statistically reliable results." },
+      { key: 'avgtrade', label: 'Avg Trade', value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—', sub: 'duration / trade', tooltip: "Average time in a position per trade." },
+    ]},
+    { key: 'tail', label: 'Tail Risk', hint: 'how bad it gets', metrics: [
+      { key: 'worstday', label: 'Worst Day', value: dollar(worstDay), valueCls: worstDay != null && worstDay < 0 ? 'text-neg-text' : '', sub: 'single worst trading day',
+        tooltip: "Largest single-day loss. Compare this to your prop firm's daily loss limit — exceeding it would have failed the challenge that day." },
+      { key: 'worststreak', label: 'Worst Streak', value: worstStreak != null ? `${worstStreak} L` : '—', valueCls: worstStreakCls(worstStreak), sub: 'consecutive losing days',
+        tooltip: "Longest consecutive run of losing days. Tests whether you'd stay disciplined under sustained drawdown. ≥6 days is a red flag." },
+    ]},
+  ]
 
   return (
-    <div className={`grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 ${stretch ? 'h-full auto-rows-fr' : ''}`}>
-      <MetricCard
-        label="Net P&L"
-        value={dollar(run.net_pnl, true)}
-        valueCls={pnlCls}
-        tooltip="Total profit or loss after commissions. The bottom line."
-      />
-      <MetricCard
-        label="Max Drawdown"
-        value={dollar(run.max_drawdown)}
-        valueCls="text-neg-text"
-        sub="largest peak-to-trough drop"
-        tooltip="Biggest balance drop from peak to trough before recovery. e.g. $120k → $75k = $45k drawdown. Prop firms cap this hard — breaching it fails the challenge. Lower is better."
-      />
-      <MetricCard
-        label="Win Rate"
-        value={pct(run.win_rate)}
-        valueCls={winRateCls(run.win_rate)}
-        sub={winRateLabel(run.win_rate)}
-        tooltip="% of trades that closed in profit. Good ≥60%, fair ≥50%, weak <50%. High win rate alone doesn't guarantee profitability — size of wins vs losses matters too."
-      />
-      <MetricCard
-        label="Profit Factor"
-        value={run.profit_factor != null ? run.profit_factor.toFixed(2) : '—'}
-        valueCls={pfCls(run.profit_factor)}
-        sub={pfLabel(run.profit_factor)}
-        tooltip="Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0."
-      />
-      <MetricCard
-        label="Trade Count"
-        value={run.trade_count ?? '—'}
-        sub={
-          run.avg_trade_duration_min != null
-            ? `avg ${run.avg_trade_duration_min.toFixed(0)} min / trade`
-            : undefined
-        }
-        tooltip="Total completed trades. More trades = more statistically reliable results."
-      />
-      <MetricCard
-        label="Sharpe (annlzd)"
-        value={sharpe != null ? sharpe.toFixed(2) : '—'}
-        valueCls={sharpeCls(sharpe)}
-        sub={sharpeSub}
-        tooltip="Return per unit of risk, annualized (daily P&L × √252) — the canonical definition shared with the optimizer and walk-forward. 'platform' shows NT8/MT5's own reported Sharpe for reference. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing. 'low sample' flags fewer than 10 trading days, where the value is statistically noisy."
-      />
-      <MetricCard
-        label="Worst Day"
-        value={dollar(worstDay)}
-        valueCls={worstDay != null && worstDay < 0 ? 'text-neg-text' : ''}
-        sub="single worst trading day"
-        tooltip="Largest single-day loss. Compare this to your prop firm's daily loss limit — exceeding it would have failed the challenge that day."
-      />
-      <MetricCard
-        label="Worst Streak"
-        value={worstStreak != null ? `${worstStreak} L` : '—'}
-        valueCls={worstStreakCls(worstStreak)}
-        sub="consecutive losing days"
-        tooltip="Longest consecutive run of losing days. Tests whether you'd stay disciplined under sustained drawdown. ≥6 days is a red flag."
-      />
-      <MetricCard
-        label="Avg Win"
-        value={run.avg_win != null ? `$${run.avg_win.toFixed(0)}` : '—'}
-        valueCls="text-pos-text"
-        tooltip="Average profit per winning trade."
-      />
-      <MetricCard
-        label="Avg Loss"
-        value={run.avg_loss != null ? `-$${Math.abs(run.avg_loss).toFixed(0)}` : '—'}
-        valueCls="text-neg-text"
-        sub={run.avg_win != null && run.avg_loss != null
-          ? `R:R ${(run.avg_win / Math.abs(run.avg_loss)).toFixed(2)}:1`
-          : undefined}
-        tooltip="Average loss per losing trade. Sub-line shows the win:loss ratio (reward:risk). Above 1.0 means wins are larger than losses."
-      />
-      <MetricCard
-        label="Recovery Factor"
-        value={recoveryFactor != null ? recoveryFactor.toFixed(2) : '—'}
-        valueCls={recoveryFactorCls(recoveryFactor)}
-        sub={recoveryFactorLabel(recoveryFactor)}
-        tooltip="Annualized net P&L ÷ max drawdown (both in dollars). How many times over the strategy earns back its worst drawdown per year. Higher is better — ≥3.0 strong, <1.0 means drawdown outpaces return."
-      />
-      <MetricCard
-        label="Calmar Ratio"
-        value={calmar != null ? calmar.toFixed(2) : '—'}
-        valueCls={calmarCls(calmar)}
-        sub={calmarLabel(calmar)}
-        tooltip="Annualized return (CAGR) ÷ max drawdown, both as a % of the account balance (the ruleset's account_size, adjustable via the Account balance slider). The definitive risk-adjusted metric for funded traders. Computed off the equity rebased to that balance — trade-derived, so NT8 and MT5 give the same number for the same trades. Recovery Factor is the capital-free dollar version."
-      />
-      <MetricCard
-        label="Expectancy"
-        value={expectancyUsd != null ? `$${expectancyUsd.toFixed(2)}` : '—'}
-        valueCls={expectancyUsd != null ? (expectancyUsd >= 0 ? 'text-pos-text' : 'text-neg-text') : ''}
-        sub="per trade · R n/a (risk not recorded)"
-        tooltip="Average net P&L per trade (net P&L ÷ trade count) — your edge per position. R-multiple expectancy needs per-trade risk, which stored trades don't carry (profit only), so it's omitted rather than guessed."
-      />
-      <MetricCard
-        label="Z-Score"
-        value={zScore != null ? zScore.toFixed(2) : '—'}
-        valueCls={zScoreCls(zScore)}
-        sub={zScoreLabel(zScore)}
-        tooltip="Wald–Wolfowitz runs test over the win/loss sequence. Measures whether wins and losses streak more than random chance. Within ±1.5 is healthy; beyond ±2 signals non-random streaking (positive = fewer runs / longer streaks, negative = alternating more than chance)."
-      />
-      <MetricCard
-        label="Profit Concentration"
-        value={profitConc != null ? `${profitConc.toFixed(0)}%` : '—'}
-        valueCls={concentrationCls(profitConc)}
-        sub={concentrationLabel(profitConc)}
-        tooltip="Share of total gross profit (sum of positive daily P&L) earned in the single most profitable calendar quarter of the test span (split into 4 equal date slices). High means the edge is clustered in one period — a classic sign of curve-fitting to a recent regime. ≥60% is a red flag."
-      />
-      <MetricCard
-        label="Max DD % of Capital"
-        value={maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—'}
-        valueCls={maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary'}
-        sub={maxDdPct != null ? 'max drawdown ÷ account balance' : 'set an account balance'}
-        tooltip="Max drawdown as a percentage of the account balance (the ruleset's account_size, adjustable via the Account balance slider). The dollar drawdown is trade-derived, so it's identical across NT8 and MT5 for the same trades."
-      />
+    <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 items-stretch ${stretch ? 'h-full' : ''}`}>
+      {groups.map(g => (
+        <div key={g.key} className="flex flex-col gap-2.5 rounded-xl p-3 bg-accent/[0.04] border border-accent/25 border-t-[3px] border-t-accent">
+          <div className="flex items-baseline gap-1.5 pb-1.5 border-b border-border-subtle">
+            <span className="text-[10px] font-bold uppercase tracking-[0.7px] text-accent">{g.label}</span>
+            <span className="text-[10px] text-text-tertiary">· {g.hint}</span>
+          </div>
+          {g.metrics.map(m => (
+            <div key={m.key} className="bg-bg-surface border border-border-subtle rounded-lg px-[14px] py-3 min-h-[86px] flex flex-col justify-center">
+              <div className="flex items-center text-[10px] uppercase tracking-[0.5px] text-text-secondary">
+                {m.label}{m.tooltip && <InfoTip text={m.tooltip} />}
+              </div>
+              <div className={`text-[22px] font-semibold tracking-[-0.5px] font-mono mt-[5px] ${m.valueCls ?? ''}`}>{m.value}</div>
+              {m.sub && <div className="text-[11px] text-text-tertiary mt-[3px] leading-snug">{m.sub}</div>}
+              {/* Account-balance what-if lives on the card it drives — rebases this % only. */}
+              {m.key === 'maxdd' && onBalanceChange && defaultBalance != null && balance != null && (
+                <div className="mt-2.5 pt-2 border-t border-border-subtle">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range" min={5000} max={250000} step={5000}
+                      value={Math.min(250000, Math.max(5000, balance))}
+                      onChange={e => onBalanceChange(Number(e.target.value))}
+                      className="flex-1 accent-accent cursor-pointer"
+                    />
+                    <span className="text-[11px] font-mono font-semibold tabular-nums text-text-primary whitespace-nowrap">${(balance / 1000).toFixed(0)}k</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[9px] uppercase tracking-[0.5px] text-text-tertiary">account balance</span>
+                    {balance === defaultBalance
+                      ? <span className="text-[9px] text-text-tertiary">default</span>
+                      : <button onClick={() => onBalanceChange(null)} className="text-[9px] text-accent hover:underline">reset to ${(defaultBalance / 1000).toFixed(0)}k</button>}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }
@@ -1952,22 +1865,15 @@ export function BacktestDetail() {
 
               {/* Right: KPIs */}
               <div className={run.evaluations.length > 0 && !isOptCombo ? 'flex flex-col' : ''}>
-                <div className="flex items-center justify-between gap-3">
-                  <SectionLabel>Performance</SectionLabel>
-                  {balance != null && (
-                    <BalanceSlider
-                      balance={balance}
-                      defaultBalance={rulesetBalance}
-                      onChange={setBalanceOverride}
-                    />
-                  )}
-                </div>
+                <SectionLabel>Performance</SectionLabel>
                 {run.evaluations.length > 0 && !isOptCombo ? (
                   <div className="flex-1">
-                    <KpiGrid run={run} fallback={fallback} equity={run.equity_curve} balance={balance} stretch />
+                    <KpiGrid run={run} fallback={fallback} equity={run.equity_curve}
+                      balance={balance} defaultBalance={rulesetBalance} onBalanceChange={setBalanceOverride} stretch />
                   </div>
                 ) : (
-                  <KpiGrid run={run} fallback={fallback} equity={run.equity_curve} balance={balance} />
+                  <KpiGrid run={run} fallback={fallback} equity={run.equity_curve}
+                    balance={balance} defaultBalance={rulesetBalance} onBalanceChange={setBalanceOverride} />
                 )}
               </div>
             </div>

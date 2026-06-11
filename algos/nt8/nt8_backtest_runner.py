@@ -1636,6 +1636,11 @@ def _parse_trades_csv(csv_path: str) -> tuple:
             name_col = next((c for c in NAME_COLS if c in fields), None)
             qty_col  = next((c for c in QTY_COLS  if c in fields), None)
 
+            # One-shot visibility: log the actual export headers + which size column matched,
+            # so the inferred Quantity/Qty/Contracts header can be confirmed against live data.
+            print(f"  [trades] export headers: {fields}")
+            print(f"  [trades] size column matched: {qty_col or 'NONE — size will be null'}")
+
             if cum_col is None and pnl_col is None:
                 print(f"  [trades] No P&L column found. Available: {fields}")
                 return [], []

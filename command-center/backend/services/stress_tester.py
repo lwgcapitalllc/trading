@@ -84,7 +84,11 @@ def run_monte_carlo(
         if max_loss > 0:
             prob_breach = float(np.mean(all_dds > max_loss))
         if rtype in ("prop_eval", "personal") and profit_target > 0 and max_loss > 0:
-            prob_pass_eval = float(np.mean((all_pnls >= profit_target) & (all_dds <= max_loss)))
+            # Pass = hit target AND never breach drawdown, per path. Use the BOOTSTRAP pool only:
+            # reshuffle final PnLs are all the net total (order-invariant), so pairing all_pnls
+            # with the target collapses the PnL test to a single value and skews the probability.
+            # Bootstrap resamples vary both PnL and drawdown, so the pass rate is real.
+            prob_pass_eval = float(np.mean((final_pnl_bs >= profit_target) & (max_dd_bs <= max_loss)))
         elif rtype in ("prop_funded", "demo") and max_loss > 0:
             prob_pass_eval = 1.0 - prob_breach
 

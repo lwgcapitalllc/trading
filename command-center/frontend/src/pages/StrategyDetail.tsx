@@ -70,6 +70,7 @@ const VERDICT_PILL_STYLE: Record<string, string> = {
   PASS:    'bg-pos-muted text-pos-text',
   WARN:    'bg-warn-muted text-warn-text',
   DISCARD: 'bg-neg-muted text-neg-text',
+  INFO:    'bg-bg-sunken text-text-tertiary',   // personal/demo — neutral, no judgment
 }
 
 function VerdictPills({ verdicts }: { verdicts: VerdictSummary[] }) {

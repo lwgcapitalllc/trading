@@ -17,6 +17,38 @@ def _simulated_eval_days(daily_pnl: list[dict]) -> int:
     return len([d for d in daily_pnl if d.get("pnl", 0.0) != 0.0])
 
 
+def compute_contract_cap_status(max_contracts, runner, instrument, trade_sizes):
+    """
+    Largest-single-trade contract-cap check. Returns (status, note). INFORMATIONAL ONLY —
+    this never feeds the PASS/WARN/DISCARD verdict.
+
+    scaling ladder    → not_applicable (cap varies with profit; can't model statically)
+    MT5 (lots)        → not_applicable (volume is lots, not futures contracts)
+    NT8, no size data → not_evaluable
+    NT8, fixed cap    → real largest-single-trade vs cap (micro for M-prefixed instruments,
+                        else mini — a CME-naming heuristic)
+    No max_contracts  → (None, None)
+    """
+    mc = max_contracts or {}
+    if not mc:
+        return None, None
+    if mc.get("scaling"):
+        return "not_applicable", "Contract cap not applicable (scaling ladder — cap varies with profit)"
+    if runner == "mt5":
+        return "not_applicable", "Contract cap not applicable (forex/lots — no futures-contract cap)"
+    if not trade_sizes:
+        return "not_evaluable", "Contract cap not evaluable — position size not recorded"
+    largest = max(trade_sizes)
+    is_micro = (instrument or "").upper().startswith("M")
+    cap = mc.get("micro_max") if is_micro else mc.get("mini_max")
+    unit = "micro" if is_micro else "mini"
+    if cap is None:
+        return "not_evaluable", "Contract cap not evaluable — no cap for this contract type"
+    if largest <= cap:
+        return "pass", f"Largest trade {largest:g} {unit} contracts (≤ {cap} cap)"
+    return "fail", f"Largest trade {largest:g} {unit} contracts EXCEEDS {cap} cap"
+
+
 def _notes_prop(
     ruleset: dict,
     drawdown_pass: bool,
@@ -120,40 +152,9 @@ def evaluate_run(
         adjusted_profit_target = None  # set only when a consistency breach raises the target
 
         # ── Contract-cap check — informational only, never moves the verdict ──
-        # NT8 runs with per-trade size: real LARGEST-SINGLE-TRADE contracts vs cap (not peak
-        # simultaneous exposure). MT5 = not_applicable (volume is lots, not futures contracts).
-        # NT8 without size data = not_evaluable. Cap picked by contract class: CME micros are
-        # M-prefixed (MES, MNQ, MYM…) → micro_max; everything else → mini_max (a heuristic).
-        mc = ruleset.get("max_contracts") or {}
-        contract_cap_status = None
-        contract_cap_note = None
-        if mc:
-            if mc.get("scaling"):
-                # Scaling ladder (e.g. Tradeify funded): the cap rises with EOD profit, so a
-                # single static number isn't the limit. We can't model a time-varying cap
-                # without intraday equity — honestly skip rather than false-fail against the start.
-                contract_cap_status = "not_applicable"
-                contract_cap_note = "Contract cap not applicable (scaling ladder — cap varies with profit)"
-            elif runner == "mt5":
-                contract_cap_status = "not_applicable"
-                contract_cap_note = "Contract cap not applicable (forex/lots — no futures-contract cap)"
-            elif not trade_sizes:
-                contract_cap_status = "not_evaluable"
-                contract_cap_note = "Contract cap not evaluable — position size not recorded"
-            else:
-                largest = max(trade_sizes)
-                is_micro = instrument.upper().startswith("M")
-                cap = mc.get("micro_max") if is_micro else mc.get("mini_max")
-                unit = "micro" if is_micro else "mini"
-                if cap is None:
-                    contract_cap_status = "not_evaluable"
-                    contract_cap_note = "Contract cap not evaluable — no cap for this contract type"
-                elif largest <= cap:
-                    contract_cap_status = "pass"
-                    contract_cap_note = f"Largest trade {largest:g} {unit} contracts (≤ {cap} cap)"
-                else:
-                    contract_cap_status = "fail"
-                    contract_cap_note = f"Largest trade {largest:g} {unit} contracts EXCEEDS {cap} cap"
+        contract_cap_status, contract_cap_note = compute_contract_cap_status(
+            ruleset.get("max_contracts"), runner, instrument, trade_sizes
+        )
 
         # ── Branch on ruleset_type ─────────────────────────────────────────
         if rtype == "prop_funded":
