@@ -438,13 +438,20 @@ class EvaluationDetail(BaseModel):
     eval_id: str
     ruleset_id: str
     ruleset_name: str
-    verdict: str                    # 'PASS' | 'WARN' | 'DISCARD'
+    verdict: str                    # prop: 'PASS' | 'WARN' | 'DISCARD'; personal/demo: 'INFO'
     drawdown_pass: bool
     target_pass: bool
     consistency_pass: Optional[bool] = None
     simulated_eval_days: Optional[int] = None
     breach_count: int
     largest_day_share_pct: Optional[float] = None
+    adjusted_profit_target: Optional[float] = None
+    contract_cap_status: Optional[str] = None   # 'not_evaluable' | (future: 'pass' | 'fail')
+    # Trailing-MLL detail
+    mll_final_floor: Optional[float] = None
+    mll_highest_eod_balance: Optional[float] = None
+    mll_breach_day: Optional[int] = None
+    mll_min_floor_distance: Optional[float] = None
     firm_max_loss_eod: int
     firm_profit_target: int
     firm_consistency_pct: Optional[float] = None
@@ -474,7 +481,10 @@ class BacktestDetail(BaseModel):
     win_rate: Optional[float] = None
     win_count: Optional[int] = None
     trade_count: Optional[int] = None
-    sharpe: Optional[float] = None
+    sharpe: Optional[float] = None              # canonical daily-√252 Sharpe
+    platform_sharpe: Optional[float] = None     # NT8/MT5's own reported Sharpe (reference)
+    sharpe_low_sample: bool = False             # < 10 trading days — daily Sharpe is noisy
+    profit_concentration_pct: Optional[float] = None  # largest quarter's share of gross profit
     sortino: Optional[float] = None
     cagr: Optional[float] = None
     avg_win: Optional[float] = None

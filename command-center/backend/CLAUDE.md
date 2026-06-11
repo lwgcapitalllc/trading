@@ -220,16 +220,18 @@ The `firms` table is now `rulesets`; `firm_id` is `ruleset_id` everywhere (evalu
 
 | ruleset_type | Who uses it | Evaluator behavior |
 |---|---|---|
-| `prop_eval` | Prop firm eval challenges | drawdown + profit target + consistency |
-| `prop_funded` | Prop firm funded accounts | drawdown only; PASS if under limit |
-| `personal` | Personal trading accounts | daily_loss_cap + weekly_loss_cap; WARN if weekly breached |
-| `demo` | Paper/demo accounts | always PASS/WARN based on net P&L; never DISCARD |
+| `prop_eval` | Prop firm eval challenges | EOD trailing max-loss (DISCARD on breach) → profit target (WARN if missed; target is raised when a `raise_target` firm's consistency is breached) → consistency (WARN). PASS if all clear. |
+| `prop_funded` | Prop firm funded accounts | EOD trailing max-loss only — PASS if not breached, else DISCARD. No WARN. |
+| `personal` | Personal trading accounts | **INFO** — performance metrics only, no pass/fail verdict; no trailing reference line. |
+| `demo` | Paper/demo accounts | **INFO** — performance metrics only, no pass/fail verdict. |
+
+The verdict reads `max_loss_eod` (the trailing-MLL amount) and `mll_lock_balance` for drawdown; it never reads `daily_loss_cap` (a soft/informational field for firms like Apex).
 
 `account_tier` is still present on rows (eval/funded/live) — useful for prop rulesets. `ruleset_type` is the broader category.
 
 Columns on `rulesets`: `ruleset_type`, `daily_loss_cap`, `weekly_loss_cap`, `daily_profit_goal`, `description`.
 
-Seeded rulesets (15 rows): 3 prop firms (LucidFlex, Tradeify, FundedNext) × 2 account sizes (50k, 100k) × 2 types (eval/funded) = 12 prop rows + 2 personal (`personal_forex_main`, `personal_futures_10k_example`) + 1 demo (`personal_forex_demo`).
+Seeded rulesets (17 rows): 4 prop firms = 14 prop rows — LucidFlex, FundedNext, Tradeify each at 50k/100k × eval/funded (12 rows), plus Apex EOD eval-only at 50k/100k (2 rows; funded/PA not yet seeded) — plus 2 personal (`personal_forex_main`, `personal_futures_10k_example`) + 1 demo (`personal_forex_demo`). All seeded via the per-id idempotent pattern (`_PROP_SEED_ROWS` + `_seed_apex_eod_eval`).
 
 ---
 
@@ -252,7 +254,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Smart Money | ✅ Live | Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
 | Bots | ✅ Live | SSH monitor for gold_main/gold_scalper/gold_fft. Global + per-bot risk controls, cap deploy, Telegram users tab. |
 | Strategies | ✅ Live | Registry scanned from `strategies/`. Param schema from `[NinjaScriptProperty]`. `runner` field per strategy. |
-| Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 15 seeded rows. |
+| Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 17 seeded rows (4 prop firms + personal/demo). |
 | Backtests | ✅ Live | NT8/MT5 runs via agent. Equity curve, daily P&L, per-ruleset verdicts, Worthiness tier (1/2/3). |
 | Sweeps | ✅ Live | N sequential backtests across instruments (`_MAX_CONCURRENT = 1`). Cancel, retry-all, per-run retry. |
 | Optimizations | ✅ Live | Native NT8/MT5 optimizer (one VPS job, full grid, all CPU cores). Scores by objective. `best_run_id` tracked. Source run nesting. Per-run retry. |

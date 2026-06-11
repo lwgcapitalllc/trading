@@ -27,6 +27,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from regime import classify_regime
 from services.ohlc_fetcher import get_ohlc
+from services.metrics import apply_canonical_sharpe, profit_concentration_pct
 
 log = logging.getLogger("backtest_runner")
 
@@ -65,6 +66,15 @@ def parse_trades_csv(csv_text: str) -> tuple[list[dict], list[dict]]:
         direction = (row.get("Market pos.", "") or "").strip()
         exit_name = (row.get("Exit name", "") or "").strip()
 
+        # Per-trade size (contracts) — tolerant of header naming; null if not exported.
+        size: Optional[int] = None
+        qty_raw = next((row.get(c) for c in ("Quantity", "Qty", "Contracts") if row.get(c)), None)
+        if qty_raw:
+            try:
+                size = int(float(str(qty_raw).replace(",", "").strip()))
+            except (ValueError, TypeError):
+                size = None
+
         exit_date: Optional[str] = None
         for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S"):
             try:
@@ -82,6 +92,7 @@ def parse_trades_csv(csv_text: str) -> tuple[list[dict], list[dict]]:
             "direction": direction or None,
             "profit":    round(profit, 2),
             "exit_name": exit_name or None,
+            "size":      size,
         })
 
         if exit_date:
@@ -380,6 +391,12 @@ async def _handle_complete(
             (run_row or {}).get("runner", "ninjatrader"),
         )
         daily_pnl_path.write_text(json.dumps(tagged_pnl, default=str))
+
+    # Canonical Sharpe — shared daily-√252 value (consistent across every run path),
+    # preserving the platform's own value as platform_sharpe and flagging low sample.
+    apply_canonical_sharpe(kpis, daily_pnl)
+    # Profit concentration (overfit detector) — null on runs with no positive profit.
+    kpis["profit_concentration_pct"] = profit_concentration_pct(daily_pnl)
 
     lab_db.update_run_complete(run_id, kpis, {
         "equity_curve": str(equity_path),

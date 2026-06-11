@@ -5,61 +5,16 @@ Branches on ruleset_type: prop_eval, prop_funded, personal, demo.
 
 from __future__ import annotations
 
+import math
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from services import lab_db
-
-
-def _count_drawdown_breaches_equity(equity_curve: list[dict], max_loss: float) -> int:
-    if not equity_curve:
-        return 0
-    peak = equity_curve[0]["equity"]
-    breaches = 0
-    for pt in equity_curve:
-        eq = pt["equity"]
-        if eq > peak:
-            peak = eq
-        if (peak - eq) > max_loss:
-            breaches += 1
-    return breaches
-
-
-def _count_drawdown_breaches_daily(daily_pnl: list[dict], max_loss: float) -> int:
-    if not daily_pnl:
-        return 0
-    cumsum = 0.0
-    peak = 0.0
-    breaches = 0
-    for day in daily_pnl:
-        cumsum += day.get("pnl", 0.0)
-        if cumsum > peak:
-            peak = cumsum
-        if (peak - cumsum) > max_loss:
-            breaches += 1
-    return breaches
+from services.trailing_drawdown import compute_trailing_mll
 
 
 def _simulated_eval_days(daily_pnl: list[dict]) -> int:
     return len([d for d in daily_pnl if d.get("pnl", 0.0) != 0.0])
-
-
-def _check_weekly_cap(daily_pnl: list[dict], weekly_loss_cap: float) -> bool:
-    """True if no calendar week's net P&L is a loss exceeding weekly_loss_cap."""
-    weekly: dict[str, float] = {}
-    for day in daily_pnl:
-        date_str = day.get("date", "")
-        pnl = day.get("pnl", 0.0)
-        if not date_str:
-            continue
-        try:
-            d = datetime.strptime(date_str, "%Y-%m-%d")
-            week_key = f"{d.isocalendar()[0]}-W{d.isocalendar()[1]:02d}"
-        except ValueError:
-            continue
-        weekly[week_key] = weekly.get(week_key, 0.0) + pnl
-    return all(v >= -weekly_loss_cap for v in weekly.values())
 
 
 def _notes_prop(
@@ -68,33 +23,51 @@ def _notes_prop(
     target_pass: bool,
     consistency_pass: Optional[bool],
     largest_day_share: Optional[float],
-    max_drawdown: float,
+    mll: Optional[dict],
     net_pnl: float,
+    adjusted_profit_target: Optional[float] = None,
 ) -> str:
     parts = []
-    dd_limit = ruleset["max_loss_eod"]
-    if drawdown_pass:
-        parts.append(f"Drawdown peaked at ${max_drawdown:,.0f} (under ${dd_limit:,} limit)")
+    if mll is None:
+        parts.append("Drawdown rule not applicable")
+    elif drawdown_pass:
+        parts.append(
+            f"Trailing MLL ok — closest within ${mll['min_floor_distance']:,.0f} of floor "
+            f"(final floor ${mll['final_floor']:,.0f})"
+        )
     else:
-        parts.append(f"Drawdown ${max_drawdown:,.0f} BREACHED ${dd_limit:,} limit")
+        parts.append(
+            f"Trailing MLL BREACHED on day {mll['breach_day']} "
+            f"(floor ${mll['final_floor']:,.0f})"
+        )
 
     if ruleset["ruleset_type"] == "prop_funded":
         return "; ".join(parts)
 
     pt = ruleset["profit_target"]
-    if pt > 0:
+    raised = adjusted_profit_target is not None
+    effective_pt = max(pt, adjusted_profit_target) if raised else pt
+    if effective_pt > 0:
+        label = f"raised ${effective_pt:,.0f}" if raised else f"${pt:,}"
         if target_pass:
-            parts.append(f"Hit ${pt:,} profit target (net ${net_pnl:,.0f})")
+            parts.append(f"Hit {label} profit target (net ${net_pnl:,.0f})")
         else:
-            parts.append(f"Did not reach ${pt:,} profit target (net ${net_pnl:,.0f})")
+            parts.append(f"Did not reach {label} target (net ${net_pnl:,.0f})")
 
     if consistency_pass is not None and largest_day_share is not None:
         limit = ruleset["consistency_pct"]
-        tag = "under" if consistency_pass else "EXCEEDS"
-        parts.append(
-            f"Largest single day was {largest_day_share:.1f}% of total profit "
-            f"({tag} {limit:.0f}% limit)"
-        )
+        if adjusted_profit_target is not None:
+            # Consistency breached but firm raises the target instead of failing.
+            parts.append(
+                f"Largest single day was {largest_day_share:.1f}% of total profit "
+                f"(EXCEEDS {limit:.0f}% limit) — profit target raised to ${adjusted_profit_target:,.0f}"
+            )
+        else:
+            tag = "under" if consistency_pass else "EXCEEDS"
+            parts.append(
+                f"Largest single day was {largest_day_share:.1f}% of total profit "
+                f"({tag} {limit:.0f}% limit)"
+            )
     return "; ".join(parts)
 
 
@@ -113,7 +86,12 @@ def evaluate_run(
     results = []
 
     net_pnl = kpis.get("net_pnl") or 0.0
-    max_drawdown = abs(kpis.get("max_drawdown") or 0.0)
+
+    # Run-level facts for the contract-cap check (per-trade size lives on equity_curve).
+    run_row = lab_db.get_run(run_id) or {}
+    runner = run_row.get("runner") or "ninjatrader"
+    instrument = run_row.get("instrument") or ""
+    trade_sizes = [t.get("size") for t in equity_curve if t.get("size") is not None]
 
     for rid in ruleset_ids:
         ruleset = lab_db.get_ruleset(rid)
@@ -121,15 +99,61 @@ def evaluate_run(
             continue
 
         rtype = ruleset.get("ruleset_type", "prop_eval")
-        dd_limit = ruleset.get("daily_loss_cap") or ruleset["max_loss_eod"]
 
-        # ── Drawdown check (all types) ─────────────────────────────────────
-        drawdown_pass = max_drawdown <= dd_limit
+        # ── Drawdown check — end-of-day trailing max-loss (all types) ──────
+        # Floor trails the highest EOD balance, capped at mll_lock_balance when set.
+        # See services/trailing_drawdown.compute_trailing_mll.
+        # No drawdown rule (max_loss_eod / account_size null) → not applicable:
+        # mll stays None, drawdown_pass stays True so it neither fails nor false-passes.
+        account_size = ruleset.get("account_size")
+        mll_amount = ruleset.get("max_loss_eod")
+        lock_balance = ruleset.get("mll_lock_balance")
 
-        if equity_curve:
-            breach_count = _count_drawdown_breaches_equity(equity_curve, dd_limit)
-        else:
-            breach_count = _count_drawdown_breaches_daily(daily_pnl, dd_limit)
+        # Personal/demo accounts get no verdict, so no trailing reference line is drawn.
+        skip_drawdown = rtype in ("personal", "demo")
+        mll = None
+        if not skip_drawdown and mll_amount is not None and account_size is not None:
+            mll = compute_trailing_mll(daily_pnl, account_size, mll_amount, lock_balance)
+
+        drawdown_pass = (not mll["breached"]) if mll is not None else True
+        breach_count = (1 if mll["breached"] else 0) if mll is not None else 0
+        adjusted_profit_target = None  # set only when a consistency breach raises the target
+
+        # ── Contract-cap check — informational only, never moves the verdict ──
+        # NT8 runs with per-trade size: real LARGEST-SINGLE-TRADE contracts vs cap (not peak
+        # simultaneous exposure). MT5 = not_applicable (volume is lots, not futures contracts).
+        # NT8 without size data = not_evaluable. Cap picked by contract class: CME micros are
+        # M-prefixed (MES, MNQ, MYM…) → micro_max; everything else → mini_max (a heuristic).
+        mc = ruleset.get("max_contracts") or {}
+        contract_cap_status = None
+        contract_cap_note = None
+        if mc:
+            if mc.get("scaling"):
+                # Scaling ladder (e.g. Tradeify funded): the cap rises with EOD profit, so a
+                # single static number isn't the limit. We can't model a time-varying cap
+                # without intraday equity — honestly skip rather than false-fail against the start.
+                contract_cap_status = "not_applicable"
+                contract_cap_note = "Contract cap not applicable (scaling ladder — cap varies with profit)"
+            elif runner == "mt5":
+                contract_cap_status = "not_applicable"
+                contract_cap_note = "Contract cap not applicable (forex/lots — no futures-contract cap)"
+            elif not trade_sizes:
+                contract_cap_status = "not_evaluable"
+                contract_cap_note = "Contract cap not evaluable — position size not recorded"
+            else:
+                largest = max(trade_sizes)
+                is_micro = instrument.upper().startswith("M")
+                cap = mc.get("micro_max") if is_micro else mc.get("mini_max")
+                unit = "micro" if is_micro else "mini"
+                if cap is None:
+                    contract_cap_status = "not_evaluable"
+                    contract_cap_note = "Contract cap not evaluable — no cap for this contract type"
+                elif largest <= cap:
+                    contract_cap_status = "pass"
+                    contract_cap_note = f"Largest trade {largest:g} {unit} contracts (≤ {cap} cap)"
+                else:
+                    contract_cap_status = "fail"
+                    contract_cap_note = f"Largest trade {largest:g} {unit} contracts EXCEEDS {cap} cap"
 
         # ── Branch on ruleset_type ─────────────────────────────────────────
         if rtype == "prop_funded":
@@ -137,14 +161,10 @@ def evaluate_run(
             consistency_pass = None
             largest_day_share = None
             verdict = "PASS" if drawdown_pass else "DISCARD"
-            notes = _notes_prop(ruleset, drawdown_pass, True, None, None, max_drawdown, net_pnl)
+            notes = _notes_prop(ruleset, drawdown_pass, True, None, None, mll, net_pnl)
 
         elif rtype == "prop_eval":
-            if ruleset["profit_target"] == 0:
-                target_pass = True
-            else:
-                target_pass = net_pnl >= ruleset["profit_target"]
-
+            # Consistency first — it may raise the profit target the target check uses.
             consistency_pass = None
             largest_day_share = None
             if (
@@ -154,7 +174,28 @@ def evaluate_run(
                 pos_days = [d.get("pnl", 0.0) for d in daily_pnl if d.get("pnl", 0.0) > 0]
                 biggest_day = max(pos_days, default=0.0)
                 largest_day_share = biggest_day / net_pnl * 100
-                consistency_pass = largest_day_share <= ruleset["consistency_pct"]
+                raw_breach = largest_day_share > ruleset["consistency_pct"]
+                # consistency_breach_action: null/'fail' fails the account; 'raise_target'
+                # passes-with-adjustment and raises the target the run must clear instead.
+                breach_action = ruleset.get("consistency_breach_action") or "fail"
+                if raw_breach and breach_action == "raise_target":
+                    consistency_pass = True  # passed-with-adjustment
+                    # Target needed for this day to satisfy the limit: biggest_day / (pct/100).
+                    # No obvious firm increment, so use the raw figure rounded up to the dollar.
+                    adjusted_profit_target = float(
+                        math.ceil(biggest_day / (ruleset["consistency_pct"] / 100))
+                    )
+                else:
+                    consistency_pass = not raw_breach
+
+            # Profit target — compare net P&L against the effective (possibly raised) target.
+            effective_target = ruleset["profit_target"]
+            if adjusted_profit_target is not None:
+                effective_target = max(ruleset["profit_target"], adjusted_profit_target)
+            if effective_target == 0:
+                target_pass = True
+            else:
+                target_pass = net_pnl >= effective_target
 
             if not drawdown_pass:
                 verdict = "DISCARD"
@@ -166,40 +207,23 @@ def evaluate_run(
                 verdict = "PASS"
 
             notes = _notes_prop(ruleset, drawdown_pass, target_pass, consistency_pass,
-                                largest_day_share, max_drawdown, net_pnl)
+                                largest_day_share, mll, net_pnl, adjusted_profit_target)
 
-        elif rtype == "personal":
+        elif rtype in ("personal", "demo"):
+            # Personal/demo accounts get performance metrics only — no pass/fail verdict.
+            # mll is still computed above (reference line) but never produces a breach verdict,
+            # and no drawdown/target/consistency check fails the strategy.
             target_pass = True
             consistency_pass = None
             largest_day_share = None
-            weekly_ok = True
-            if ruleset.get("weekly_loss_cap") is not None:
-                weekly_ok = _check_weekly_cap(daily_pnl, ruleset["weekly_loss_cap"])
-
-            if not drawdown_pass:
-                verdict = "DISCARD"
-            elif not weekly_ok:
-                verdict = "WARN"
-            else:
-                verdict = "PASS"
-
-            wcap = ruleset.get("weekly_loss_cap")
-            notes_parts = []
-            if drawdown_pass:
-                notes_parts.append(f"Daily cap ${dd_limit:,} maintained")
-            else:
-                notes_parts.append(f"Daily cap ${dd_limit:,} BREACHED (${max_drawdown:,.0f})")
-            if wcap is not None:
-                tag = "maintained" if weekly_ok else "BREACHED"
-                notes_parts.append(f"Weekly cap ${wcap:,} {tag}")
+            verdict = "INFO"
+            notes_parts = [f"{rtype.capitalize()} account (no pass/fail) — net P&L ${net_pnl:,.0f}"]
+            if mll is not None:
+                notes_parts.append(
+                    f"reference floor ${mll['final_floor']:,.0f} "
+                    f"(closest ${mll['min_floor_distance']:,.0f})"
+                )
             notes = "; ".join(notes_parts)
-
-        elif rtype == "demo":
-            target_pass = True
-            consistency_pass = None
-            largest_day_share = None
-            verdict = "PASS" if net_pnl > 0 else "WARN"
-            notes = f"Demo — net P&L ${net_pnl:,.0f} ({'positive' if net_pnl > 0 else 'negative'})"
 
         else:
             # Unknown type — fall back to prop_eval logic
@@ -210,6 +234,9 @@ def evaluate_run(
             notes = f"Unknown ruleset_type '{rtype}'"
 
         sim_days = _simulated_eval_days(daily_pnl) if target_pass else None
+
+        if contract_cap_note:
+            notes = f"{notes}; {contract_cap_note}" if notes else contract_cap_note
 
         eval_data = {
             "eval_id": uuid.uuid4().hex[:12],
@@ -222,6 +249,13 @@ def evaluate_run(
             "simulated_eval_days": sim_days,
             "breach_count": breach_count,
             "largest_day_share_pct": largest_day_share,
+            "adjusted_profit_target": adjusted_profit_target,
+            "contract_cap_status": contract_cap_status,
+            # Trailing-MLL detail (for the UI; None when the rule is not applicable)
+            "mll_final_floor": mll["final_floor"] if mll is not None else None,
+            "mll_highest_eod_balance": mll["highest_eod_balance"] if mll is not None else None,
+            "mll_breach_day": mll["breach_day"] if mll is not None else None,
+            "mll_min_floor_distance": mll["min_floor_distance"] if mll is not None else None,
             "notes": notes,
         }
         lab_db.insert_evaluation(eval_data)

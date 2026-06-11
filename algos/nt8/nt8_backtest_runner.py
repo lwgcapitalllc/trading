@@ -1620,6 +1620,7 @@ def _parse_trades_csv(csv_path: str) -> tuple:
     DATE_COLS = ["Exit time", "Exit Time", "ExitTime", "Close Time", "Exit Date"]
     DIR_COLS  = ["Market pos.", "Market Pos", "Direction", "Side"]
     NAME_COLS = ["Exit name", "Exit Name", "ExitName"]
+    QTY_COLS  = ["Quantity", "Qty", "Contracts"]   # per-trade size (contracts); null if absent
 
     equity_curve: list = []
     daily_map: dict    = {}
@@ -1633,6 +1634,7 @@ def _parse_trades_csv(csv_path: str) -> tuple:
             date_col = next((c for c in DATE_COLS if c in fields), None)
             dir_col  = next((c for c in DIR_COLS  if c in fields), None)
             name_col = next((c for c in NAME_COLS if c in fields), None)
+            qty_col  = next((c for c in QTY_COLS  if c in fields), None)
 
             if cum_col is None and pnl_col is None:
                 print(f"  [trades] No P&L column found. Available: {fields}")
@@ -1651,6 +1653,16 @@ def _parse_trades_csv(csv_path: str) -> tuple:
                 exit_name = (row.get(name_col, "") or "").strip() if name_col else None
                 date_str  = _parse_nt8_date(row.get(date_col, "") if date_col else "")
 
+                # Per-trade size (contracts) — tolerant of header naming; null if not exported.
+                size = None
+                if qty_col:
+                    qty_raw = (row.get(qty_col, "") or "").replace(",", "").strip()
+                    if qty_raw:
+                        try:
+                            size = int(float(qty_raw))
+                        except ValueError:
+                            size = None
+
                 equity_curve.append({
                     "index":     trade_num,
                     "equity":    equity,
@@ -1658,6 +1670,7 @@ def _parse_trades_csv(csv_path: str) -> tuple:
                     "direction": direction or None,
                     "profit":    round(pnl, 2),
                     "exit_name": exit_name or None,
+                    "size":      size,
                 })
 
                 if date_str:

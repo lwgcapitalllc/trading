@@ -336,7 +336,7 @@ export interface BacktestRunRequest {
 
 export interface VerdictSummary {
   ruleset_id: string
-  verdict: 'PASS' | 'WARN' | 'DISCARD'
+  verdict: 'PASS' | 'WARN' | 'DISCARD' | 'INFO'
   notes: string | null
 }
 
@@ -376,7 +376,7 @@ export interface EvaluationDetail {
   eval_id: string
   ruleset_id: string
   ruleset_name: string
-  verdict: 'PASS' | 'WARN' | 'DISCARD'
+  verdict: 'PASS' | 'WARN' | 'DISCARD' | 'INFO'
   drawdown_pass: boolean
   target_pass: boolean
   consistency_pass: boolean | null
@@ -417,7 +417,10 @@ export interface BacktestDetail {
   win_rate: number | null
   win_count: number | null
   trade_count: number | null
-  sharpe: number | null
+  sharpe: number | null               // canonical daily-√252 Sharpe
+  platform_sharpe: number | null      // NT8/MT5's own reported Sharpe (reference)
+  sharpe_low_sample: boolean          // < 10 trading days — daily Sharpe is noisy
+  profit_concentration_pct: number | null  // backend-persisted; frontend prefers it when present
   sortino: number | null
   cagr: number | null
   avg_win: number | null

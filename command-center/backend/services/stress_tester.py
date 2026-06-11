@@ -18,6 +18,7 @@ import numpy as np
 
 from services import lab_db
 from services import notify
+from services.metrics import daily_sharpe_from_values, apply_canonical_sharpe
 
 log = logging.getLogger("stress_tester")
 
@@ -62,9 +63,14 @@ def run_monte_carlo(
     all_pnls = np.concatenate([final_pnl_rs, final_pnl_bs])
     all_dds = np.concatenate([max_dd_rs, max_dd_bs])
 
-    median_final_pnl = float(np.percentile(all_pnls, 50))
-    pct5_final_pnl   = float(np.percentile(all_pnls, 5))   # worst 5% outcome by PnL
-    pct1_final_pnl   = float(np.percentile(all_pnls, 1))   # worst 1% outcome by PnL
+    # Final-PnL percentiles come from the BOOTSTRAP pool only. Reshuffles keep the same
+    # trades, so their sum (final PnL) is order-invariant — every reshuffle ends at the net
+    # total, which would collapse median/p5/p1 onto one number. Bootstrap resamples with
+    # replacement, so its final PnL genuinely varies. (Drawdown still uses both pools below —
+    # order DOES change drawdown, so reshuffles are valid there.)
+    median_final_pnl = float(np.percentile(final_pnl_bs, 50))
+    pct5_final_pnl   = float(np.percentile(final_pnl_bs, 5))   # worst 5% outcome by PnL
+    pct1_final_pnl   = float(np.percentile(final_pnl_bs, 1))   # worst 1% outcome by PnL
     median_max_dd    = float(np.percentile(all_dds, 50))
     pct5_max_dd      = float(np.percentile(all_dds, 95))   # 95th pct = worst-5% drawdown
     pct1_max_dd      = float(np.percentile(all_dds, 99))   # 99th pct = worst-1% drawdown
@@ -85,7 +91,9 @@ def run_monte_carlo(
     sampled_paths = equity_rs[:num_path_samples].tolist()
 
     dd_hist, dd_edges = np.histogram(all_dds, bins=50)
-    pnl_hist, pnl_edges = np.histogram(all_pnls, bins=50)
+    # Final-PnL histogram uses the bootstrap pool to match the corrected percentiles —
+    # reshuffles are order-invariant in sum and would spike the histogram at the net total.
+    pnl_hist, pnl_edges = np.histogram(final_pnl_bs, bins=50)
     distribution = {
         "max_dd": {"counts": dd_hist.tolist(), "edges": dd_edges.tolist()},
         "final_pnl": {"counts": pnl_hist.tolist(), "edges": pnl_edges.tolist()},
@@ -130,14 +138,16 @@ def _split_windows(start_date: str, end_date: str, n_windows: int) -> list[dict]
 
 
 def _compute_sharpe(equity_curve_data: list[dict]) -> float:
-    """Daily returns Sharpe from equity curve points."""
-    if len(equity_curve_data) < 2:
-        return 0.0
-    profits = [t.get("profit", 0.0) or 0.0 for t in equity_curve_data]
-    arr = np.array(profits, dtype=np.float64)
-    if arr.std() == 0:
-        return 0.0
-    return float((arr.mean() / arr.std()) * np.sqrt(252))
+    """Daily-returns Sharpe from an equity curve's per-trade rows (aggregated by date)."""
+    # Aggregate per-trade profit into daily P&L first — Sharpe is a DAILY-returns metric.
+    # (Previously this annualized per-trade mean/std as if each trade were a day.)
+    daily: dict[str, float] = {}
+    for t in equity_curve_data:
+        d = t.get("date") or ""
+        if not d:
+            continue
+        daily[d] = daily.get(d, 0.0) + (t.get("profit", 0.0) or 0.0)
+    return daily_sharpe_from_values(list(daily.values()))
 
 
 def _estimate_wf_duration_min(n_windows: int) -> int:
@@ -185,6 +195,7 @@ async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjat
                 dp_path = run_dir / "daily_pnl.json"
                 eq_path.write_text(json.dumps(equity_curve, default=str))
                 dp_path.write_text(json.dumps(daily_pnl, default=str))
+                apply_canonical_sharpe(kpis, daily_pnl)  # consistent daily-√252 Sharpe
                 lab_db.update_run_complete(run_id, kpis, {
                     "equity_curve": str(eq_path),
                     "trades": None,

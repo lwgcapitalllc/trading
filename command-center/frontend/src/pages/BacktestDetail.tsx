@@ -10,7 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry } from '@/types'
 import { C } from '@/themes/chart'
@@ -147,9 +147,11 @@ function worstStreakCls(n: number | null): string {
   return 'text-text-primary'
 }
 
-// ── Calmar ratio ─────────────────────────────────────────────────────────────
+// ── Recovery factor ──────────────────────────────────────────────────────────
+// Annualized net P&L ÷ max drawdown — both in dollars, so it needs no starting
+// capital. (Previously mislabelled "Calmar"; real Calmar lives below.)
 
-function computeCalmar(
+function computeRecoveryFactor(
   netPnl: number | null,
   maxDrawdown: number | null,
   equity: EquityPoint[],
@@ -166,6 +168,76 @@ function computeCalmar(
   return (netPnl * (365 / days)) / absDd
 }
 
+function recoveryFactorCls(c: number | null): string {
+  if (c == null) return 'text-text-tertiary'
+  if (c >= 3.0) return 'text-pos-text'
+  if (c >= 1.0) return 'text-warn-text'
+  return 'text-neg-text'
+}
+
+function recoveryFactorLabel(c: number | null): string {
+  if (c == null) return 'annlzd net P&L ÷ max drawdown'
+  if (c >= 3.0) return 'excellent'
+  if (c >= 1.5) return 'good'
+  if (c >= 1.0) return 'marginal'
+  return 'poor — drawdown outpaces return'
+}
+
+// ── Equity rebasing (platform-agnostic) ──────────────────────────────────────
+// Rebase an equity curve so it starts at `balance` and moves with the trades:
+//   rebased[i] = balance + Σ profit[0..i]
+// Cumulative P&L is derived from each point's `profit` field — which BOTH NT8 and MT5
+// points carry — so the original base is irrelevant: NT8 curves start at 0 and MT5 curves
+// start at a deposit, but summing per-trade profit normalizes both to the same P&L series.
+// That makes a 50k NT8 run and a 50k MT5 run with identical trades produce identical scores.
+function rebaseEquity(equity: EquityPoint[], balance: number): number[] {
+  const out: number[] = []
+  let cum = 0
+  for (const e of equity) {
+    cum += e.profit ?? 0
+    out.push(balance + cum)
+  }
+  return out
+}
+
+// Max peak-to-trough drawdown (in dollars) of a value series. Translation-invariant, so the
+// dollar drawdown is the same regardless of `balance` — but it's derived from the trades, not
+// a platform-reported field, so identical trades give an identical number across NT8 and MT5.
+function maxDrawdownOf(series: number[]): number {
+  let peak = -Infinity
+  let maxDd = 0
+  for (const v of series) {
+    if (v > peak) peak = v
+    const dd = peak - v
+    if (dd > maxDd) maxDd = dd
+  }
+  return maxDd
+}
+
+// ── Calmar ratio ─────────────────────────────────────────────────────────────
+// Real Calmar = CAGR ÷ max-drawdown-as-fraction (same shape as
+// algos/shared/shared_calmar.py). Both inputs are fractions of starting capital,
+// and the compounding in CAGR means starting capital does NOT cancel out — it is
+// genuinely required. With a balance supplied (from the ruleset's account_size or the
+// what-if slider), the equity curve is rebased to that balance and the score computes.
+
+function computeCalmar(equity: EquityPoint[], balance: number | null): number | null {
+  if (balance == null || balance <= 0 || equity.length < 2) return null
+  const firstDate = equity[0].date?.slice(0, 10)
+  const lastDate  = equity[equity.length - 1].date?.slice(0, 10)
+  if (!firstDate || !lastDate) return null
+  const days = (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / 86_400_000
+  if (days < 1) return null
+  // Derive net P&L and max drawdown from the rebased curve (trade-derived → platform-agnostic).
+  const rebased = rebaseEquity(equity, balance)
+  const netPnl  = rebased[rebased.length - 1] - balance
+  const dd      = maxDrawdownOf(rebased)
+  if (dd === 0) return null
+  const years   = days / 365
+  const cagr    = Math.pow(1 + netPnl / balance, 1 / Math.max(years, 0.1)) - 1
+  return cagr / (dd / balance)
+}
+
 function calmarCls(c: number | null): string {
   if (c == null) return 'text-text-tertiary'
   if (c >= 3.0) return 'text-pos-text'
@@ -174,11 +246,82 @@ function calmarCls(c: number | null): string {
 }
 
 function calmarLabel(c: number | null): string {
-  if (c == null) return 'annlzd return ÷ max drawdown'
+  if (c == null) return 'set an account balance'
   if (c >= 3.0) return 'excellent'
   if (c >= 1.5) return 'good'
   if (c >= 1.0) return 'marginal'
   return 'poor — drawdown outpaces return'
+}
+
+// ── Z-score (Wald–Wolfowitz runs test) ───────────────────────────────────────
+// Tests whether the win/loss sequence streaks more (or less) than chance.
+// Scratch trades (profit === 0) are excluded so the sequence is cleanly binary.
+function computeZScore(equity: EquityPoint[]): number | null {
+  const seq = equity
+    .map(e => e.profit)
+    .filter((p): p is number => p != null && p !== 0)
+    .map(p => p > 0)
+  const n = seq.length
+  if (n < 2) return null
+  const n1 = seq.filter(Boolean).length   // wins
+  const n2 = n - n1                        // losses
+  if (n1 === 0 || n2 === 0) return null
+  let runs = 1
+  for (let i = 1; i < n; i++) if (seq[i] !== seq[i - 1]) runs++
+  const mu = (2 * n1 * n2) / n + 1
+  const variance = (2 * n1 * n2 * (2 * n1 * n2 - n)) / (n * n * (n - 1))
+  if (variance <= 0) return null
+  return (runs - mu) / Math.sqrt(variance)
+}
+
+function zScoreCls(z: number | null): string {
+  if (z == null) return 'text-text-tertiary'
+  return Math.abs(z) > 2 ? 'text-warn-text' : 'text-text-primary'
+}
+
+function zScoreLabel(z: number | null): string {
+  if (z == null) return 'runs test — needs wins & losses'
+  const a = Math.abs(z)
+  if (a <= 1.5) return 'streaks look random'
+  if (a <= 2)   return 'mild streaking'
+  return 'non-random streaking'
+}
+
+// ── Profit concentration over time ───────────────────────────────────────────
+// Share of total gross profit (sum of positive daily P&L) earned in the single most
+// profitable calendar quarter of the test span. The span (first→last date) is split into
+// 4 equal slices. High = the edge is clustered in one period — a classic curve-fit signal.
+function computeProfitConcentration(daily: DailyPnlPoint[]): number | null {
+  const dated = daily.filter(d => d.date)
+  if (dated.length < 2) return null
+  const t0 = new Date(dated[0].date.slice(0, 10)).getTime()
+  const t1 = new Date(dated[dated.length - 1].date.slice(0, 10)).getTime()
+  const span = t1 - t0
+  if (!(span > 0)) return null
+  const q = [0, 0, 0, 0]
+  let gross = 0
+  for (const d of dated) {
+    if (d.pnl <= 0) continue
+    gross += d.pnl
+    let idx = Math.floor(((new Date(d.date.slice(0, 10)).getTime() - t0) / span) * 4)
+    if (idx > 3) idx = 3
+    if (idx < 0) idx = 0
+    q[idx] += d.pnl
+  }
+  if (!(gross > 0)) return null
+  return (Math.max(...q) / gross) * 100
+}
+
+function concentrationCls(c: number | null): string {
+  if (c == null) return 'text-text-tertiary'
+  return c >= 60 ? 'text-warn-text' : 'text-text-primary'
+}
+
+function concentrationLabel(c: number | null): string {
+  if (c == null) return 'top quarter ÷ gross profit'
+  if (c >= 60) return 'edge clustered — overfit risk'
+  if (c >= 40) return 'somewhat concentrated'
+  return 'spread across the test'
 }
 
 // ── Fallback KPI computation ──────────────────────────────────────────────────
@@ -251,10 +394,45 @@ function MetricCard({ label, value, valueCls = '', sub, subCls = 'text-text-tert
   )
 }
 
+// ── Account-balance what-if slider ────────────────────────────────────────────
+// View-time only: rebases the capital-based scores (Calmar, Max DD %) off the chosen
+// balance. Recomputes instantly client-side — never re-runs or mutates the stored run.
+function BalanceSlider({ balance, defaultBalance, onChange }: {
+  balance: number; defaultBalance: number | null; onChange: (v: number | null) => void
+}) {
+  const MIN = 5_000, MAX = 250_000, STEP = 5_000
+  const isDefault = defaultBalance != null && balance === defaultBalance
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-text-secondary uppercase tracking-[0.6px]">Account balance</span>
+      <input
+        type="range"
+        min={MIN} max={MAX} step={STEP}
+        value={Math.min(MAX, Math.max(MIN, balance))}
+        onChange={e => onChange(Number(e.target.value))}
+        className="w-[120px] accent-accent cursor-pointer"
+      />
+      <span className="text-[12px] font-mono tabular-nums text-text-primary w-[52px]">
+        ${(balance / 1000).toFixed(0)}k
+      </span>
+      {!isDefault && defaultBalance != null && (
+        <button
+          onClick={() => onChange(null)}
+          className="text-[10px] text-accent hover:underline"
+          title={`Reset to ruleset default ($${(defaultBalance / 1000).toFixed(0)}k)`}
+        >
+          reset
+        </button>
+      )}
+      {isDefault && <span className="text-[10px] text-text-tertiary">ruleset default</span>}
+    </div>
+  )
+}
+
 // ── KPI grid ──────────────────────────────────────────────────────────────────
 
-function KpiGrid({ run, fallback, equity = [], stretch = false }: {
-  run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; stretch?: boolean
+function KpiGrid({ run, fallback, equity = [], balance = null, stretch = false }: {
+  run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null; stretch?: boolean
 }) {
   const pnlCls = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
 
@@ -262,7 +440,38 @@ function KpiGrid({ run, fallback, equity = [], stretch = false }: {
   const worstDay    = run.worst_day_pnl      ?? fallback.worstDay
   const worstStreak = run.worst_losing_streak ?? fallback.worstStreak
   const sharpeEst   = run.sharpe == null && fallback.sharpe != null
-  const calmar      = computeCalmar(run.net_pnl, run.max_drawdown, equity)
+  // Canonical daily-√252 Sharpe shown as the value; platform's own value + low-sample as sub.
+  const sharpeSub   = (
+    <span>
+      {sharpeLabel(sharpe, sharpeEst)}
+      {run.platform_sharpe != null && (
+        <span className="text-text-tertiary"> · platform: {run.platform_sharpe.toFixed(2)}</span>
+      )}
+      {run.sharpe_low_sample && <span className="text-warn-text"> · low sample &lt;10d</span>}
+    </span>
+  )
+  const recoveryFactor = computeRecoveryFactor(run.net_pnl, run.max_drawdown, equity)
+  // Capital-based scores rebase the equity to `balance` (the ruleset's account_size, or the
+  // what-if slider). Both compute off the same stored run — no re-run, no backend.
+  const calmar      = computeCalmar(equity, balance)
+
+  // 7a — expectancy. $/trade is always available; R needs per-trade risk, which stored
+  // trades don't carry (profit only), so expectancy_r is not computable — left out honestly.
+  const expectancyUsd = (run.net_pnl != null && run.trade_count)
+    ? run.net_pnl / run.trade_count
+    : null
+  // 7b — Wald–Wolfowitz z-score over the win/loss sequence.
+  const zScore = computeZScore(equity)
+  // 7c — profit concentration: largest quarter's share of gross profit. Prefer the
+  // backend-persisted value (authoritative, feeds grading); fall back to the client calc
+  // for older runs predating the column. Both use the identical formula, so they agree.
+  const profitConc = run.profit_concentration_pct ?? computeProfitConcentration(run.daily_pnl ?? [])
+  // 7d — max drawdown as % of capital. Uses the trade-derived drawdown (platform-agnostic)
+  // over the chosen balance. Null only when no balance is available (no ruleset / no trades).
+  const tradeDd  = equity.length >= 2 ? maxDrawdownOf(rebaseEquity(equity, 0)) : null
+  const maxDdPct = (balance != null && balance > 0 && tradeDd != null)
+    ? (tradeDd / balance) * 100
+    : null
 
   return (
     <div className={`grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 ${stretch ? 'h-full auto-rows-fr' : ''}`}>
@@ -307,8 +516,8 @@ function KpiGrid({ run, fallback, equity = [], stretch = false }: {
         label="Sharpe (annlzd)"
         value={sharpe != null ? sharpe.toFixed(2) : '—'}
         valueCls={sharpeCls(sharpe)}
-        sub={sharpeLabel(sharpe, sharpeEst)}
-        tooltip="Return per unit of risk, annualized. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing."
+        sub={sharpeSub}
+        tooltip="Return per unit of risk, annualized (daily P&L × √252) — the canonical definition shared with the optimizer and walk-forward. 'platform' shows NT8/MT5's own reported Sharpe for reference. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing. 'low sample' flags fewer than 10 trading days, where the value is statistically noisy."
       />
       <MetricCard
         label="Worst Day"
@@ -340,11 +549,46 @@ function KpiGrid({ run, fallback, equity = [], stretch = false }: {
         tooltip="Average loss per losing trade. Sub-line shows the win:loss ratio (reward:risk). Above 1.0 means wins are larger than losses."
       />
       <MetricCard
+        label="Recovery Factor"
+        value={recoveryFactor != null ? recoveryFactor.toFixed(2) : '—'}
+        valueCls={recoveryFactorCls(recoveryFactor)}
+        sub={recoveryFactorLabel(recoveryFactor)}
+        tooltip="Annualized net P&L ÷ max drawdown (both in dollars). How many times over the strategy earns back its worst drawdown per year. Higher is better — ≥3.0 strong, <1.0 means drawdown outpaces return."
+      />
+      <MetricCard
         label="Calmar Ratio"
         value={calmar != null ? calmar.toFixed(2) : '—'}
         valueCls={calmarCls(calmar)}
         sub={calmarLabel(calmar)}
-        tooltip="Annualized return divided by max drawdown. The definitive risk-adjusted metric for funded traders — it penalizes large drawdowns directly. ≥3.0 is excellent, ≥1.0 is decent, <1.0 means your drawdown is larger than your annualized gains."
+        tooltip="Annualized return (CAGR) ÷ max drawdown, both as a % of the account balance (the ruleset's account_size, adjustable via the Account balance slider). The definitive risk-adjusted metric for funded traders. Computed off the equity rebased to that balance — trade-derived, so NT8 and MT5 give the same number for the same trades. Recovery Factor is the capital-free dollar version."
+      />
+      <MetricCard
+        label="Expectancy"
+        value={expectancyUsd != null ? `$${expectancyUsd.toFixed(2)}` : '—'}
+        valueCls={expectancyUsd != null ? (expectancyUsd >= 0 ? 'text-pos-text' : 'text-neg-text') : ''}
+        sub="per trade · R n/a (risk not recorded)"
+        tooltip="Average net P&L per trade (net P&L ÷ trade count) — your edge per position. R-multiple expectancy needs per-trade risk, which stored trades don't carry (profit only), so it's omitted rather than guessed."
+      />
+      <MetricCard
+        label="Z-Score"
+        value={zScore != null ? zScore.toFixed(2) : '—'}
+        valueCls={zScoreCls(zScore)}
+        sub={zScoreLabel(zScore)}
+        tooltip="Wald–Wolfowitz runs test over the win/loss sequence. Measures whether wins and losses streak more than random chance. Within ±1.5 is healthy; beyond ±2 signals non-random streaking (positive = fewer runs / longer streaks, negative = alternating more than chance)."
+      />
+      <MetricCard
+        label="Profit Concentration"
+        value={profitConc != null ? `${profitConc.toFixed(0)}%` : '—'}
+        valueCls={concentrationCls(profitConc)}
+        sub={concentrationLabel(profitConc)}
+        tooltip="Share of total gross profit (sum of positive daily P&L) earned in the single most profitable calendar quarter of the test span (split into 4 equal date slices). High means the edge is clustered in one period — a classic sign of curve-fitting to a recent regime. ≥60% is a red flag."
+      />
+      <MetricCard
+        label="Max DD % of Capital"
+        value={maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—'}
+        valueCls={maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary'}
+        sub={maxDdPct != null ? 'max drawdown ÷ account balance' : 'set an account balance'}
+        tooltip="Max drawdown as a percentage of the account balance (the ruleset's account_size, adjustable via the Account balance slider). The dollar drawdown is trade-derived, so it's identical across NT8 and MT5 for the same trades."
       />
     </div>
   )
@@ -774,6 +1018,7 @@ const VERDICT_CONFIG = {
   PASS:    { label: 'PASS',    bg: 'bg-pos-muted',  text: 'text-pos-text',  border: 'border-l-pos-text/50',  Icon: CheckCircle },
   WARN:    { label: 'WARN',    bg: 'bg-warn-muted', text: 'text-warn-text', border: 'border-l-warn-text/50', Icon: Minus       },
   DISCARD: { label: 'DISCARD', bg: 'bg-neg-muted',  text: 'text-neg-text',  border: 'border-l-neg-text/50',  Icon: XCircle     },
+  INFO:    { label: 'INFO',    bg: 'bg-bg-sunken',  text: 'text-text-tertiary', border: 'border-l-border-default', Icon: Info   },
 } as const
 
 function EvalCard({ ev, netPnl }: { ev: EvaluationDetail; netPnl?: number | null }) {
@@ -799,31 +1044,33 @@ function EvalCard({ ev, netPnl }: { ev: EvaluationDetail; netPnl?: number | null
 
       <div className="mx-4 border-t border-border-subtle" />
 
-      {/* Rule checks */}
-      <div className="px-4 py-3 space-y-[10px]">
-        <EvalRow
-          label="Daily drawdown"
-          pass={ev.drawdown_pass}
-          value={`≤ $${ev.firm_max_loss_eod.toLocaleString()} loss / day`}
-        />
-        {ev.firm_profit_target > 0 && (
+      {/* Rule checks — prop verdicts only; INFO rows show performance, no judgment */}
+      {ev.verdict !== 'INFO' && (
+        <div className="px-4 py-3 space-y-[10px]">
           <EvalRow
-            label="Profit target"
-            pass={ev.target_pass}
-            value={`$${ev.firm_profit_target.toLocaleString()} required`}
+            label="Daily drawdown"
+            pass={ev.drawdown_pass}
+            value={`≤ $${ev.firm_max_loss_eod.toLocaleString()} loss / day`}
           />
-        )}
-        {ev.consistency_pass != null && ev.firm_consistency_pct != null && (
-          <EvalRow
-            label="Consistency"
-            pass={ev.consistency_pass}
-            value={`No day > ${ev.firm_consistency_pct}% of total P&L`}
-            extra={ev.largest_day_share_pct != null
-              ? `actual: ${ev.largest_day_share_pct.toFixed(1)}%`
-              : undefined}
-          />
-        )}
-      </div>
+          {ev.firm_profit_target > 0 && (
+            <EvalRow
+              label="Profit target"
+              pass={ev.target_pass}
+              value={`$${ev.firm_profit_target.toLocaleString()} required`}
+            />
+          )}
+          {ev.consistency_pass != null && ev.firm_consistency_pct != null && (
+            <EvalRow
+              label="Consistency"
+              pass={ev.consistency_pass}
+              value={`No day > ${ev.firm_consistency_pct}% of total P&L`}
+              extra={ev.largest_day_share_pct != null
+                ? `actual: ${ev.largest_day_share_pct.toFixed(1)}%`
+                : undefined}
+            />
+          )}
+        </div>
+      )}
 
       {/* Footer */}
       {(ev.simulated_eval_days != null || ev.notes) && (
@@ -1510,6 +1757,14 @@ export function BacktestDetail() {
   const [overlayOn, setOverlayOn] = useState(getOverlayPref)
   const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
 
+  // Capital-based scores (Calmar, Max DD %) rebase the run to an account balance. Default to the
+  // primary evaluated ruleset's account_size; the slider is a view-time what-if override only.
+  const { data: rulesets } = useRulesets()
+  const rulesetBalance = rulesets?.find(r => r.id === run?.evaluations?.[0]?.ruleset_id)?.account_size ?? null
+  const [balanceOverride, setBalanceOverride] = useState<number | null>(null)
+  useEffect(() => { setBalanceOverride(null) }, [run?.run_id])
+  const balance = balanceOverride ?? rulesetBalance
+
   const fallback = useMemo(
     () => computeFallbacks(run?.daily_pnl ?? []),
     [run?.daily_pnl],
@@ -1697,13 +1952,22 @@ export function BacktestDetail() {
 
               {/* Right: KPIs */}
               <div className={run.evaluations.length > 0 && !isOptCombo ? 'flex flex-col' : ''}>
-                <SectionLabel>Performance</SectionLabel>
+                <div className="flex items-center justify-between gap-3">
+                  <SectionLabel>Performance</SectionLabel>
+                  {balance != null && (
+                    <BalanceSlider
+                      balance={balance}
+                      defaultBalance={rulesetBalance}
+                      onChange={setBalanceOverride}
+                    />
+                  )}
+                </div>
                 {run.evaluations.length > 0 && !isOptCombo ? (
                   <div className="flex-1">
-                    <KpiGrid run={run} fallback={fallback} equity={run.equity_curve} stretch />
+                    <KpiGrid run={run} fallback={fallback} equity={run.equity_curve} balance={balance} stretch />
                   </div>
                 ) : (
-                  <KpiGrid run={run} fallback={fallback} equity={run.equity_curve} />
+                  <KpiGrid run={run} fallback={fallback} equity={run.equity_curve} balance={balance} />
                 )}
               </div>
             </div>

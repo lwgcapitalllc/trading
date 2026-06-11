@@ -3,14 +3,10 @@ Backtest endpoint tests covering:
 - GET /backtests/runs (list + filters)
 - GET /backtests/runs/:id (detail)
 - POST /backtests/run (trigger — VPS mocked)
-- POST /backtests/runs/:id/reevaluate (§11 Case 8)
 - DELETE /backtests/runs/:id
 
-The reevaluate test exercises §11 Case 8:
-  1. Start with a completed run (seeded_run: net_pnl=4000, max_dd=1500)
-  2. Verify initial evaluation → PASS (4000 > 3000 target, 1500 < 2000 DD limit)
-  3. Update firm profit_target to 5000 (above run's net_pnl)
-  4. Reevaluate → WARN (target miss) — no new run triggered
+(The per-run /reevaluate endpoint was removed in the rulesets migration; reevaluation now
+lives only at the sweep level. Those tests were dropped.)
 """
 
 
@@ -106,88 +102,3 @@ def test_delete_run(client, seeded_run):
 
 def test_delete_run_404_unknown(client):
     assert client.delete("/backtests/runs/doesnotexist").status_code == 404
-
-
-# ── §11 Case 8: reevaluate ────────────────────────────────────────────────────
-
-def test_reevaluate_initial_verdict_is_pass(client, seeded_run):
-    """
-    seeded_run: net_pnl=4000, max_dd=1500
-    lucidflex_50k_eval: profit_target=3000, max_loss_eod=2000
-    4000 > 3000, 1500 < 2000 → PASS
-    """
-    r = client.post(f"/backtests/runs/{seeded_run}/reevaluate",
-                    json={"firm_ids": ["lucidflex_50k_eval"]})
-    assert r.status_code == 200
-    evals = r.json()["evaluations"]
-    assert len(evals) == 1
-    assert evals[0]["verdict"] == "PASS"
-    assert evals[0]["drawdown_pass"] is True
-    assert evals[0]["target_pass"] is True
-
-
-def test_reevaluate_after_firm_target_change_gives_warn(client, seeded_run):
-    """
-    §11 Case 8: edit firm profit_target → reevaluate → verdict changes.
-    No new backtest is triggered — same run_id, same KPIs.
-    """
-    # Raise profit_target above the run's net_pnl (4000)
-    firm = client.get("/firms/lucidflex_50k_eval").json()
-    original_target = firm["profit_target"]
-    firm["profit_target"] = 5000
-    assert client.put("/firms/lucidflex_50k_eval", json=firm).status_code == 200
-
-    r = client.post(f"/backtests/runs/{seeded_run}/reevaluate",
-                    json={"firm_ids": ["lucidflex_50k_eval"]})
-    assert r.status_code == 200
-    evals = r.json()["evaluations"]
-    assert evals[0]["verdict"] == "WARN"
-    assert evals[0]["target_pass"] is False
-
-    # Restore (keeps DB clean for other assertions if tests share client)
-    firm["profit_target"] = original_target
-    client.put("/firms/lucidflex_50k_eval", json=firm)
-
-
-def test_reevaluate_funded_never_checks_consistency(client, seeded_run):
-    r = client.post(f"/backtests/runs/{seeded_run}/reevaluate",
-                    json={"firm_ids": ["lucidflex_50k_funded"]})
-    assert r.status_code == 200
-    eval_row = r.json()["evaluations"][0]
-    assert eval_row["consistency_pass"] is None
-
-
-def test_reevaluate_all_four_firms(client, seeded_run):
-    r = client.post(f"/backtests/runs/{seeded_run}/reevaluate", json={
-        "firm_ids": [
-            "lucidflex_50k_eval",
-            "lucidflex_50k_funded",
-            "lucidflex_100k_eval",
-            "lucidflex_100k_funded",
-        ]
-    })
-    assert r.status_code == 200
-    evals = r.json()["evaluations"]
-    assert len(evals) == 4
-
-
-def test_reevaluate_400_on_running_run(client):
-    """Reevaluate requires status=complete — running run should 400."""
-    from services import lab_db
-    from tests.conftest import _insert_strategy
-    import time
-
-    _insert_strategy(lab_db)
-    lab_db.insert_run({
-        "run_id": "runningrun01",
-        "strategy_id": "test_strategy",
-        "instrument": "MNQ 06-26",
-        "params": {}, "bar_type": "Minute", "bar_value": 5,
-        "start_date": "2024-01-01", "end_date": "2024-12-31",
-        "commission_per_side": 0.5, "slippage_ticks": 1,
-        "status": "running", "created_at": int(time.time()),
-    })
-
-    r = client.post("/backtests/runs/runningrun01/reevaluate",
-                    json={"firm_ids": ["lucidflex_50k_eval"]})
-    assert r.status_code == 400

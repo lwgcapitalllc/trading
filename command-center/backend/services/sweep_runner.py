@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from services import lab_db, evaluator, nt8_agent_client, worthiness
+from services.metrics import apply_canonical_sharpe
 
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
@@ -42,6 +43,8 @@ async def _handle_complete(run_id: str, job_id: str, ruleset_ids: list[str]) -> 
     dpnl_path = run_dir / "daily_pnl.json"
     eq_path.write_text(json.dumps(equity_curve, default=str))
     dpnl_path.write_text(json.dumps(daily_pnl, default=str))
+
+    apply_canonical_sharpe(kpis, daily_pnl)  # consistent daily-√252 Sharpe across run paths
 
     lab_db.update_run_complete(run_id, kpis, {
         "equity_curve": str(eq_path),

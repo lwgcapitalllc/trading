@@ -93,7 +93,10 @@ def init_db() -> None:
                 daily_profit_lock_pct       REAL,
                 default_commission_per_side REAL,
                 default_slippage_ticks      INTEGER,
-                daily_halt_fraction         REAL
+                daily_halt_fraction         REAL,
+                mll_lock_balance            REAL,
+                consistency_breach_action   TEXT,
+                reference_urls              TEXT
             );
 
             CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -120,6 +123,9 @@ def init_db() -> None:
                 sharpe              REAL,
                 sortino             REAL,
                 cagr                REAL,
+                platform_sharpe     REAL,
+                sharpe_low_sample   INTEGER,
+                profit_concentration_pct REAL,
                 avg_win             REAL,
                 avg_loss            REAL,
                 avg_trade_duration_min REAL,
@@ -146,6 +152,12 @@ def init_db() -> None:
                 simulated_eval_days   INTEGER,
                 breach_count          INTEGER NOT NULL,
                 largest_day_share_pct REAL,
+                adjusted_profit_target   REAL,
+                contract_cap_status      TEXT,
+                mll_final_floor          REAL,
+                mll_highest_eod_balance  REAL,
+                mll_breach_day           INTEGER,
+                mll_min_floor_distance   REAL,
                 notes                 TEXT,
                 created_at            INTEGER NOT NULL,
                 UNIQUE(run_id, ruleset_id)
@@ -283,6 +295,59 @@ def init_db() -> None:
             # NOT NULL DEFAULT means existing rows get the default automatically in SQLite.
             "ALTER TABLE rulesets ADD COLUMN market TEXT NOT NULL DEFAULT 'futures'",
             "ALTER TABLE rulesets ADD COLUMN drawdown_unit TEXT NOT NULL DEFAULT 'usd'",
+            # Prop-firm rule corrections — trailing max-loss lock, consistency action, extra links
+            "ALTER TABLE rulesets ADD COLUMN mll_lock_balance REAL",
+            "ALTER TABLE rulesets ADD COLUMN consistency_breach_action TEXT",
+            "ALTER TABLE rulesets ADD COLUMN reference_urls TEXT",
+            # Backfill verified prop-firm rule data on the six prop EVAL rows (funded/personal untouched).
+            # None of these firms has a daily loss limit — clear the phantom cap that fed a false grading rule.
+            "UPDATE rulesets SET daily_loss_cap = NULL "
+            "WHERE id IN ('lucidflex_50k_eval','lucidflex_100k_eval',"
+            "'fundednext_flex_50k_eval','fundednext_flex_100k_eval',"
+            "'tradeify_50k_eval','tradeify_100k_eval')",
+            # Trailing max-loss lock balances — LucidFlex and FundedNext lock; Tradeify does not lock in eval.
+            "UPDATE rulesets SET mll_lock_balance = 50100 WHERE id = 'lucidflex_50k_eval'",
+            "UPDATE rulesets SET mll_lock_balance = 100100 WHERE id = 'lucidflex_100k_eval'",
+            "UPDATE rulesets SET mll_lock_balance = 50100 WHERE id = 'fundednext_flex_50k_eval'",
+            "UPDATE rulesets SET mll_lock_balance = 100100 WHERE id = 'fundednext_flex_100k_eval'",
+            # Consistency breach action — FundedNext raises the target instead of failing; null = fail elsewhere.
+            "UPDATE rulesets SET consistency_breach_action = 'raise_target' "
+            "WHERE id IN ('fundednext_flex_50k_eval','fundednext_flex_100k_eval')",
+            # Extra rule links (JSON arrays, parsed like the other JSON columns).
+            "UPDATE rulesets SET reference_urls = "
+            "'[\"https://support.lucidtrading.com/en/articles/12945815-lucidflex-drawdown\","
+            "\"https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan\"]' "
+            "WHERE id IN ('lucidflex_50k_eval','lucidflex_100k_eval')",
+            "UPDATE rulesets SET reference_urls = "
+            "'[\"https://helpfutures.fundednext.com/en/articles/14878830-how-do-i-pass-fundednext-futures-flex-challenge\"]' "
+            "WHERE id IN ('fundednext_flex_50k_eval','fundednext_flex_100k_eval')",
+            # LucidFlex publishes no 5-day minimum — clear the phantom min_trading_days on both eval rows.
+            "UPDATE rulesets SET min_trading_days = NULL "
+            "WHERE id IN ('lucidflex_50k_eval','lucidflex_100k_eval')",
+            # Trailing-MLL detail columns on evaluations (for the UI).
+            "ALTER TABLE evaluations ADD COLUMN mll_final_floor REAL",
+            "ALTER TABLE evaluations ADD COLUMN mll_highest_eod_balance REAL",
+            "ALTER TABLE evaluations ADD COLUMN mll_breach_day INTEGER",
+            "ALTER TABLE evaluations ADD COLUMN mll_min_floor_distance REAL",
+            # Consistency breach action — raised profit target when a breach doesn't fail.
+            "ALTER TABLE evaluations ADD COLUMN adjusted_profit_target REAL",
+            # Contract-cap check status — 'not_evaluable' until per-trade size is captured.
+            "ALTER TABLE evaluations ADD COLUMN contract_cap_status TEXT",
+            # Canonical daily-√252 Sharpe on single runs; platform's own value kept separately.
+            "ALTER TABLE backtest_runs ADD COLUMN platform_sharpe REAL",
+            "ALTER TABLE backtest_runs ADD COLUMN sharpe_low_sample INTEGER",
+            # Profit concentration (overfit detector) persisted for later grading use.
+            "ALTER TABLE backtest_runs ADD COLUMN profit_concentration_pct REAL",
+            # Personal/demo accounts get no verdict (INFO), so their placeholder loss caps were
+            # inert. Null the nullable ones; max_loss_eod is NOT NULL so it stays, but the
+            # evaluator skips the trailing reference line for personal/demo types regardless.
+            "UPDATE rulesets SET daily_loss_cap = NULL, weekly_loss_cap = NULL "
+            "WHERE id IN ('personal_forex_main','personal_forex_demo','personal_futures_10k_example')",
+            # Tradeify corrections — current $50k target is $3,000 (old accounts grandfathered at
+            # $2,500); and the $50k/$100k eval trailing MLL locks at start+$100.
+            "UPDATE rulesets SET profit_target = 3000 WHERE id = 'tradeify_50k_eval'",
+            "UPDATE rulesets SET mll_lock_balance = 50100 WHERE id = 'tradeify_50k_eval'",
+            "UPDATE rulesets SET mll_lock_balance = 100100 WHERE id = 'tradeify_100k_eval'",
             # Speed Step 3 — grid sensitivity stored on the optimization row
             "ALTER TABLE optimizations ADD COLUMN grid_sensitivity_score REAL",
             "ALTER TABLE optimizations ADD COLUMN grid_sensitivity_summary TEXT",
@@ -294,6 +359,11 @@ def init_db() -> None:
                 conn.execute(migration_sql)
             except Exception:
                 pass
+
+        # NOTE: Apex EOD rows are seeded in _seed_rulesets (per-id, runs every init_db so it
+        # covers both live and fresh DBs). Do NOT insert them here in the migration section —
+        # that runs before _seed_rulesets and would make the table non-empty, tripping the
+        # legacy `COUNT(*) == 0` guard on the LucidFlex seed block and dropping LucidFlex.
 
         # Backfill runner on backtest_runs for rows created before the runner column existed.
         # The column defaulted to 'ninjatrader', so MT5 strategy runs got the wrong value.
@@ -499,114 +569,84 @@ def _migrate_strategy_renames() -> None:
         raw.close()
 
 
+# Apex EOD eval rows (Rithmic). Verified 2026-06-11. Defined once so the live-DB migration and
+# the fresh-build seed insert identical data. daily_loss_cap is a SOFT pause (informational),
+# never a verdict input — the ladder uses trailing-MLL + target + consistency only.
+_APEX_EOD_NOTES = (
+    "Apex EOD eval, Rithmic/Wealthcharts (NinjaTrader). EOD trailing drawdown, locks at "
+    "start+profit_target (53k/106k) once highest EOD closes above start+target+drawdown. "
+    "Tradovate variant trails forever -- not seeded. DLL is a SOFT rule: hitting it pauses "
+    "trading for the day, does NOT fail -- informational only in backtest (needs intraday data "
+    "to enforce). No consistency, no min days in eval. 30-day access period to pass (time limit, "
+    "not modeled). Contract limit is total contracts mapped to mini/micro. Verified from "
+    "docs_url 2026-06-11."
+)
+_APEX_INSTRUMENTS = '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]'
+_APEX_DOCS = "https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-evaluations/"
+_APEX_REF = '["https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-drawdown-explained/"]'
+_APEX_DAYS = '["mon","tue","wed","thu","fri"]'
+
+_APEX_EOD_EVAL_ROWS = [
+    {
+        "id": "apex_eod_50k_eval", "name": "Apex EOD $50k Evaluation",
+        "account_size": 50000, "profit_target": 3000, "max_loss_eod": 2000,
+        "max_loss_intraday": None, "drawdown_type": "trailing_eod",
+        "consistency_pct": None, "min_trading_days": None, "force_flat_time_et": None,
+        "allowed_instruments": _APEX_INSTRUMENTS,
+        "max_contracts": '{"mini_max": 6, "micro_max": 60, "scaling": null}',
+        "platform_support": '["NinjaTrader", "Rithmic"]', "account_tier": "eval",
+        "docs_url": _APEX_DOCS, "notes": _APEX_EOD_NOTES,
+        "eval_cost_usd": None, "activation_fee_usd": None, "profit_split_pct": None,
+        "ruleset_type": "prop_eval", "daily_loss_cap": 1000, "weekly_loss_cap": None,
+        "daily_profit_goal": None, "description": None,
+        "risk_per_trade_pct": 0.5, "max_consecutive_losses": 3,
+        "earliest_entry_time_et": "09:30", "latest_entry_time_et": "15:00",
+        "days_of_week_allowed": _APEX_DAYS, "daily_profit_target": 1500,
+        "daily_profit_lock_pct": 0.8, "default_commission_per_side": 2.25,
+        "default_slippage_ticks": 1, "daily_halt_fraction": 0.6,
+        "market": "futures", "drawdown_unit": "usd",
+        "mll_lock_balance": 53000, "consistency_breach_action": None, "reference_urls": _APEX_REF,
+    },
+    {
+        "id": "apex_eod_100k_eval", "name": "Apex EOD $100k Evaluation",
+        "account_size": 100000, "profit_target": 6000, "max_loss_eod": 3000,
+        "max_loss_intraday": None, "drawdown_type": "trailing_eod",
+        "consistency_pct": None, "min_trading_days": None, "force_flat_time_et": None,
+        "allowed_instruments": _APEX_INSTRUMENTS,
+        "max_contracts": '{"mini_max": 8, "micro_max": 80, "scaling": null}',
+        "platform_support": '["NinjaTrader", "Rithmic"]', "account_tier": "eval",
+        "docs_url": _APEX_DOCS, "notes": _APEX_EOD_NOTES,
+        "eval_cost_usd": None, "activation_fee_usd": None, "profit_split_pct": None,
+        "ruleset_type": "prop_eval", "daily_loss_cap": 1500, "weekly_loss_cap": None,
+        "daily_profit_goal": None, "description": None,
+        "risk_per_trade_pct": 0.5, "max_consecutive_losses": 3,
+        "earliest_entry_time_et": "09:30", "latest_entry_time_et": "15:00",
+        "days_of_week_allowed": _APEX_DAYS, "daily_profit_target": 1500,
+        "daily_profit_lock_pct": 0.8, "default_commission_per_side": 2.25,
+        "default_slippage_ticks": 1, "daily_halt_fraction": 0.6,
+        "market": "futures", "drawdown_unit": "usd",
+        "mll_lock_balance": 106000, "consistency_breach_action": None, "reference_urls": _APEX_REF,
+    },
+]
+
+
+def _seed_apex_eod_eval(conn: sqlite3.Connection, now: int) -> None:
+    """Idempotent per-id insert of the Apex EOD eval rows. Never overwrites edited rows."""
+    cols = list(_APEX_EOD_EVAL_ROWS[0].keys())
+    sql = (
+        "INSERT INTO rulesets (" + ", ".join(cols) + ", created_at, updated_at) "
+        "VALUES (" + ", ".join(["?"] * len(cols)) + ", ?, ?)"
+    )
+    for row in _APEX_EOD_EVAL_ROWS:
+        if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", (row["id"],)).fetchone():
+            conn.execute(sql, tuple(row[c] for c in cols) + (now, now))
+
+
 def _seed_rulesets(conn: sqlite3.Connection) -> None:
     now = int(time.time())
-    _INSTRUMENTS = ["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]
-    _PLATFORMS = ["NinjaTrader", "Tradovate"]
-
-    # Seed initial LucidFlex rows only on a fresh DB
-    if conn.execute("SELECT COUNT(*) FROM rulesets").fetchone()[0] == 0:
-        seeds = [
-            {
-                "id": "lucidflex_50k_eval",
-                "name": "LucidFlex $50k Eval",
-                "account_size": 50000,
-                "profit_target": 3000,
-                "max_loss_eod": 2000,
-                "max_loss_intraday": None,
-                "drawdown_type": "eod",
-                "consistency_pct": 50.0,
-                "min_trading_days": 5,
-                "force_flat_time_et": "15:30",
-                "allowed_instruments": _INSTRUMENTS,
-                "max_contracts": {"mini_max": 4, "micro_max": 40},
-                "platform_support": _PLATFORMS,
-                "account_tier": "eval",
-                "ruleset_type": "prop_eval",
-                "daily_loss_cap": 2000,
-                "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
-                "notes": "Verified from docs_url on 2026-05-29",
-            },
-            {
-                "id": "lucidflex_50k_funded",
-                "name": "LucidFlex $50k Funded",
-                "account_size": 50000,
-                "profit_target": 0,
-                "max_loss_eod": 2000,
-                "max_loss_intraday": None,
-                "drawdown_type": "eod",
-                "consistency_pct": None,
-                "min_trading_days": None,
-                "force_flat_time_et": "15:30",
-                "allowed_instruments": _INSTRUMENTS,
-                "max_contracts": {"mini_max": 4, "micro_max": 40},
-                "platform_support": _PLATFORMS,
-                "account_tier": "funded",
-                "ruleset_type": "prop_funded",
-                "daily_loss_cap": 2000,
-                "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
-                "notes": "Verified from docs_url on 2026-05-29",
-            },
-            {
-                "id": "lucidflex_100k_eval",
-                "name": "LucidFlex $100k Eval",
-                "account_size": 100000,
-                "profit_target": 6000,
-                "max_loss_eod": 3000,
-                "max_loss_intraday": None,
-                "drawdown_type": "eod",
-                "consistency_pct": 50.0,
-                "min_trading_days": 5,
-                "force_flat_time_et": "15:30",
-                "allowed_instruments": _INSTRUMENTS,
-                "max_contracts": {"mini_max": 6, "micro_max": 60},
-                "platform_support": _PLATFORMS,
-                "account_tier": "eval",
-                "ruleset_type": "prop_eval",
-                "daily_loss_cap": 3000,
-                "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
-                "notes": "Verified from docs_url on 2026-05-29",
-            },
-            {
-                "id": "lucidflex_100k_funded",
-                "name": "LucidFlex $100k Funded",
-                "account_size": 100000,
-                "profit_target": 0,
-                "max_loss_eod": 3000,
-                "max_loss_intraday": None,
-                "drawdown_type": "eod",
-                "consistency_pct": None,
-                "min_trading_days": None,
-                "force_flat_time_et": "15:30",
-                "allowed_instruments": _INSTRUMENTS,
-                "max_contracts": {"mini_max": 6, "micro_max": 60},
-                "platform_support": _PLATFORMS,
-                "account_tier": "funded",
-                "ruleset_type": "prop_funded",
-                "daily_loss_cap": 3000,
-                "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
-                "notes": "Verified from docs_url on 2026-05-29",
-            },
-        ]
-        for f in seeds:
-            conn.execute(
-                """INSERT INTO rulesets
-                   (id, name, account_size, profit_target, max_loss_eod, max_loss_intraday,
-                    drawdown_type, consistency_pct, min_trading_days, force_flat_time_et,
-                    allowed_instruments, max_contracts, platform_support,
-                    account_tier, ruleset_type, daily_loss_cap, docs_url, notes, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    f["id"], f["name"], f["account_size"], f["profit_target"],
-                    f["max_loss_eod"], f.get("max_loss_intraday"), f["drawdown_type"],
-                    f.get("consistency_pct"), f.get("min_trading_days"), f.get("force_flat_time_et"),
-                    json.dumps(f["allowed_instruments"]), json.dumps(f["max_contracts"]),
-                    json.dumps(f["platform_support"]),
-                    f["account_tier"], f.get("ruleset_type", "prop_eval"),
-                    f.get("daily_loss_cap"), f.get("docs_url"), f.get("notes"),
-                    now, now,
-                ),
-            )
+    # LucidFlex prop rows are seeded via the per-id _PROP_SEED_ROWS block below (same
+    # idempotent pattern as FundedNext/Tradeify) — the legacy COUNT(*)==0 all-or-nothing
+    # guard was removed so they reproduce on a fresh build with the corrected values.
 
     # Always ensure the personal futures example exists (idempotent)
     if not conn.execute(
@@ -694,6 +734,37 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             "Forex demo/paper account. No real capital at risk.",
             now, now,
         ))
+
+    # ── FundedNext + Tradeify prop rows (cleanup) ────────────────────────────────
+    # Seeded from the corrected live-DB values so a from-scratch rebuild reproduces all
+    # three firms (LucidFlex seeded above). Full column set, so the rows are correct
+    # regardless of backfill ordering. Per-id existence check → idempotent; never
+    # overwrites edited rows (same pattern as the personal rows).
+    _PROP_SEED_COLS = ['id', 'name', 'account_size', 'profit_target', 'max_loss_eod', 'max_loss_intraday', 'drawdown_type', 'consistency_pct', 'min_trading_days', 'force_flat_time_et', 'allowed_instruments', 'max_contracts', 'platform_support', 'account_tier', 'docs_url', 'notes', 'eval_cost_usd', 'activation_fee_usd', 'profit_split_pct', 'ruleset_type', 'daily_loss_cap', 'weekly_loss_cap', 'daily_profit_goal', 'description', 'risk_per_trade_pct', 'max_consecutive_losses', 'earliest_entry_time_et', 'latest_entry_time_et', 'days_of_week_allowed', 'daily_profit_target', 'daily_profit_lock_pct', 'default_commission_per_side', 'default_slippage_ticks', 'daily_halt_fraction', 'market', 'drawdown_unit', 'mll_lock_balance', 'consistency_breach_action', 'reference_urls']
+    _PROP_SEED_ROWS = [
+        {'id': 'lucidflex_50k_eval', 'name': 'LucidFlex $50k Eval', 'account_size': 50000, 'profit_target': 3000, 'max_loss_eod': 2000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 50.0, 'min_trading_days': None, 'force_flat_time_et': '16:45', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]', 'max_contracts': '{"mini_max": 4, "micro_max": 40, "scaling": null}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'eval', 'docs_url': 'https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account', 'notes': "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.", 'eval_cost_usd': None, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 50100.0, 'consistency_breach_action': None, 'reference_urls': '["https://support.lucidtrading.com/en/articles/12945815-lucidflex-drawdown","https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan"]'},
+        {'id': 'lucidflex_100k_eval', 'name': 'LucidFlex $100k Eval', 'account_size': 100000, 'profit_target': 6000, 'max_loss_eod': 3000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 50.0, 'min_trading_days': None, 'force_flat_time_et': '16:45', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]', 'max_contracts': '{"mini_max": 6, "micro_max": 60, "scaling": null}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'eval', 'docs_url': 'https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account', 'notes': "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.", 'eval_cost_usd': None, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 100100.0, 'consistency_breach_action': None, 'reference_urls': '["https://support.lucidtrading.com/en/articles/12945815-lucidflex-drawdown","https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan"]'},
+        {'id': 'lucidflex_50k_funded', 'name': 'LucidFlex $50k Funded', 'account_size': 50000, 'profit_target': 0, 'max_loss_eod': 2000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:45', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]', 'max_contracts': '{"mini_max": 2, "micro_max": 20, "scaling": {"mode": "bidirectional_band", "trigger_basis": "eod_simulated_profit", "bands": [{"profit_min": 0, "profit_max": 999, "mini": 2, "micro": 20}, {"profit_min": 1000, "profit_max": 1999, "mini": 3, "micro": 30}, {"profit_min": 2000, "profit_max": null, "mini": 4, "micro": 40}], "ceiling": {"mini": 4, "micro": 40}}}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'funded', 'docs_url': 'https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account', 'notes': "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.", 'eval_cost_usd': None, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 2000, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
+        {'id': 'lucidflex_100k_funded', 'name': 'LucidFlex $100k Funded', 'account_size': 100000, 'profit_target': 0, 'max_loss_eod': 3000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:45', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]', 'max_contracts': '{"mini_max": 3, "micro_max": 30, "scaling": {"mode": "bidirectional_band", "trigger_basis": "eod_simulated_profit", "bands": [{"profit_min": 0, "profit_max": 999, "mini": 3, "micro": 30}, {"profit_min": 1000, "profit_max": 1999, "mini": 4, "micro": 40}, {"profit_min": 2000, "profit_max": 2999, "mini": 5, "micro": 50}, {"profit_min": 3000, "profit_max": null, "mini": 6, "micro": 60}], "ceiling": {"mini": 6, "micro": 60}}}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'funded', 'docs_url': 'https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account', 'notes': "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.", 'eval_cost_usd': None, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 3000, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
+        {'id': 'fundednext_flex_50k_eval', 'name': 'FundedNext Futures Flex $50k Challenge', 'account_size': 50000, 'profit_target': 2500, 'max_loss_eod': 1500, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 40.0, 'min_trading_days': None, 'force_flat_time_et': '16:10', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 3, "micro_max": 30, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'eval', 'docs_url': 'https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge', 'notes': 'One-time fee (base ~$134; promo code FLEX ~$69.99; reset ~$78). No activation fee to funded. DRAWDOWN: EOD trailing $1,500, locks permanently at $50,100 ($100 above start), then stops trailing. NO daily loss limit (MLL only). CONSISTENCY 40% CHALLENGE-PHASE ONLY -- UNUSUAL MECHANIC: breaching it does NOT fail the account; it RAISES the profit target instead. 40% rule mathematically forces >=3 winning days (no separate min-days rule found). CONTRACTS fixed (no scaling), 3 mini / 30 micro, mixable at 1:10; exceeding = excess-contract profit voided (penalty, not breach). Intraday only: flat by 3:10pm CT (16:10 ET, DST-adjusted), no overnight/weekend, auto-closed if left open. News trading allowed. Automated/EA/bots allowed (no latency abuse / order flooding). PROHIBITED: tight-bracket/no-slippage exploitation, grid, hedging, correlated-instrument hedging, trading within 2% of CME price limit. Platforms NinjaTrader + Tradovate. allowed_instruments = standard CME set we trade; verify exact FundedNext product list. Verified from docs_url on 2026-05-31.', 'eval_cost_usd': 134, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 50100.0, 'consistency_breach_action': 'raise_target', 'reference_urls': '["https://helpfutures.fundednext.com/en/articles/14878830-how-do-i-pass-fundednext-futures-flex-challenge"]'},
+        {'id': 'fundednext_flex_100k_eval', 'name': 'FundedNext Futures Flex $100k Challenge', 'account_size': 100000, 'profit_target': 5000, 'max_loss_eod': 2500, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 40.0, 'min_trading_days': None, 'force_flat_time_et': '16:10', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 5, "micro_max": 50, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'eval', 'docs_url': 'https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge', 'notes': 'One-time fee (base ~$250; promo ~$129.99; reset ~$145). No activation fee. DRAWDOWN: EOD trailing $2,500, locks at $100,100 ($100 above start). NO daily loss limit. CONSISTENCY 40% CHALLENGE-ONLY; breaching RAISES the target (not a fail); forces >=3 winning days. CONTRACTS fixed 5 mini / 50 micro, mixable 1:10; excess = profit-void penalty. Intraday only, flat 3:10pm CT (16:10 ET), no overnight. News allowed. Automated/EA OK (no latency abuse). PROHIBITED: tight-bracket exploitation, grid, hedging, within 2% of CME price limit. Platforms NinjaTrader + Tradovate. allowed_instruments = standard CME set; verify exact list. Verified from docs_url on 2026-05-31.', 'eval_cost_usd': 250, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 100100.0, 'consistency_breach_action': 'raise_target', 'reference_urls': '["https://helpfutures.fundednext.com/en/articles/14878830-how-do-i-pass-fundednext-futures-flex-challenge"]'},
+        {'id': 'fundednext_flex_50k_funded', 'name': 'FundedNext Futures Flex $50k Funded', 'account_size': 50000, 'profit_target': 0, 'max_loss_eod': 1500, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:10', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 3, "micro_max": 30, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'funded', 'docs_url': 'https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge', 'notes': 'FundedNext (funded) stage. NO consistency rule, NO daily loss limit. Reward split base 80%; 90% available only if the 90% add-on was bought at challenge purchase. DRAWDOWN: EOD trailing $1,500, locks at $50,100; first withdrawal also sets/locks the MLL. Payout requires 5 Benchmark (winning) days; withdrawal caps apply (50%-of-growth style, capped by size -- VERIFY exact amounts). Intraday only, flat 3:10pm CT (16:10 ET). Automated/EA OK (no HFT). Contracts fixed 3/30, mixable 1:10, excess = profit-void penalty. VERIFY: contract-limit policy says limits can differ by STAGE; funded-stage limit assumed same as challenge (3/30) -- confirm against the contract-limit policy doc. Verified from docs_url on 2026-05-31.', 'eval_cost_usd': None, 'activation_fee_usd': 0, 'profit_split_pct': 80.0, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 1500, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
+        {'id': 'fundednext_flex_100k_funded', 'name': 'FundedNext Futures Flex $100k Funded', 'account_size': 100000, 'profit_target': 0, 'max_loss_eod': 2500, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:10', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 5, "micro_max": 50, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'funded', 'docs_url': 'https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge', 'notes': 'FundedNext (funded) stage. NO consistency rule, NO daily loss limit. Split base 80% (90% only with add-on bought at purchase). DRAWDOWN: EOD trailing $2,500, locks at $100,100; first withdrawal also locks MLL. Payout: 5 Benchmark days; withdrawal caps apply -- VERIFY amounts. Intraday only, flat 3:10pm CT (16:10 ET). Automated/EA OK (no HFT). Contracts fixed 5/50, mixable 1:10, excess = profit-void penalty. VERIFY: funded-stage contract limit assumed same as challenge (5/50) -- policy says limits can differ by stage; confirm. Verified from docs_url on 2026-05-31.', 'eval_cost_usd': None, 'activation_fee_usd': 0, 'profit_split_pct': 80.0, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 2500, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
+        {'id': 'tradeify_50k_eval', 'name': 'Tradeify Select $50k Evaluation', 'account_size': 50000, 'profit_target': 3000, 'max_loss_eod': 2000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 40.0, 'min_trading_days': 3, 'force_flat_time_et': '16:59', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 4, "micro_max": 40, "scaling": null}', 'platform_support': '["Tradovate", "Rithmic"]', 'account_tier': 'eval', 'docs_url': 'https://help.tradeify.co/en/articles/12853921-select-evaluation-accounts', 'notes': 'One-time purchase (Tradeify 3.0). Price ~$165 / reset ~$95 UNVERIFIED (confirm at checkout). CONTRACTS: eval full day one, no scaling = 4/40. Cannot hold minis+micros at once (hedging); can switch between sessions. DRAWDOWN: EOD trailing $2,000, trails up never down, real-time enforced, NO lock during eval. No DLL during eval. 40% consistency => min 3 days. Activity rule: >50% of trades AND >50% of profit from trades held >10s. No overnight; flat 4:59pm ET (12:59 holidays). News allowed. Bots/algos OK (sole owner, no HFT). Tradovate+Rithmic day one; native NinjaTrader Elite-only. Verified 2026-05-31.', 'eval_cost_usd': 165, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 50100.0, 'consistency_breach_action': None, 'reference_urls': None},
+        {'id': 'tradeify_100k_eval', 'name': 'Tradeify Select $100k Evaluation', 'account_size': 100000, 'profit_target': 6000, 'max_loss_eod': 3000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 40.0, 'min_trading_days': 3, 'force_flat_time_et': '16:59', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 8, "micro_max": 80, "scaling": null}', 'platform_support': '["Tradovate", "Rithmic"]', 'account_tier': 'eval', 'docs_url': 'https://help.tradeify.co/en/articles/12853921-select-evaluation-accounts', 'notes': 'One-time purchase. Price ~$265 / reset ~$169 UNVERIFIED. CONTRACTS: eval full day one = 8/80, no scaling. Cannot hold minis+micros at once. DRAWDOWN: EOD trailing $3,000, trails up never down, NO lock during eval. No DLL during eval. 40% consistency, min 3 days. >10-sec activity rule. No overnight; flat 4:59pm ET. News allowed. Bots/algos OK (no HFT). Tradovate+Rithmic day one; native NinjaTrader Elite-only. Note: Select 100k drawdown ($3,000) TIGHTER than Growth 100k ($3,500). Verified 2026-05-31.', 'eval_cost_usd': 265, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 100100.0, 'consistency_breach_action': None, 'reference_urls': None},
+        {'id': 'tradeify_50k_funded', 'name': 'Tradeify Select $50k Funded (Flex)', 'account_size': 50000, 'profit_target': 0, 'max_loss_eod': 2000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:59', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 2, "micro_max": 20, "scaling": {"mode": "cumulative_ratchet", "trigger_basis": "eod_profit_above_start", "start": {"mini": 2, "micro": 20}, "tiers": [{"profit_trigger": 1500, "mini": 3, "micro": 30}, {"profit_trigger": 2000, "mini": 4, "micro": 40}], "ceiling": {"mini": 4, "micro": 40}}}', 'platform_support': '["Tradovate", "Rithmic"]', 'account_tier': 'funded', 'docs_url': 'https://help.tradeify.co/en/articles/12853966-select-flex-and-select-daily-payout-policies', 'notes': 'Select FLEX funded. No consistency rule, no DLL. 90/10. CONTRACTS scale CUMULATIVELY (retained once reached): start 2/20; +$1,500 -> 3/30; +$2,000 -> 4/40 (max). Tiers from Tradeify support assistant; re-confirm vs funded payout doc. Cannot hold minis+micros at once. DRAWDOWN: EOD trailing $2,000, LOCKS at $100 above start ($50,100) once EOD clears $52,100 or first payout. Payout: 5 winning days; Flex cap up to 50% of profit, max $3,000/payout. >10-sec activity rule. No overnight; flat 4:59pm ET. Verified 2026-05-31.', 'eval_cost_usd': None, 'activation_fee_usd': 0, 'profit_split_pct': 90.0, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 2000, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
+        {'id': 'tradeify_100k_funded', 'name': 'Tradeify Select $100k Funded (Flex)', 'account_size': 100000, 'profit_target': 0, 'max_loss_eod': 3000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:59', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 3, "micro_max": 30, "scaling": {"mode": "cumulative_ratchet", "trigger_basis": "eod_profit_above_start", "start": {"mini": 3, "micro": 30}, "tiers": [{"profit_trigger": 1500, "mini": 4, "micro": 40}, {"profit_trigger": 2000, "mini": 5, "micro": 50}, {"profit_trigger": 3000, "mini": 8, "micro": 80}], "ceiling": {"mini": 8, "micro": 80}}}', 'platform_support': '["Tradovate", "Rithmic"]', 'account_tier': 'funded', 'docs_url': 'https://help.tradeify.co/en/articles/12853966-select-flex-and-select-daily-payout-policies', 'notes': 'Select FLEX funded. No consistency rule, no DLL. 90/10. CONTRACTS scale CUMULATIVELY: start 3/30; +$1,500 -> 4/40; +$2,000 -> 5/50; +$3,000 -> 8/80 (max). Tiers from Tradeify support assistant; re-confirm vs funded payout doc. Cannot hold minis+micros at once. DRAWDOWN: EOD trailing $3,000, LOCKS at $100 above start ($100,100) once EOD clears $103,100 or first payout. Payout: 5 winning days; Flex cap up to 50% of profit, max $4,000/payout. >10-sec activity rule. No overnight; flat 4:59pm ET. Verified 2026-05-31.', 'eval_cost_usd': None, 'activation_fee_usd': 0, 'profit_split_pct': 90.0, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 3000, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
+    ]
+    _prop_seed_sql = (
+        "INSERT INTO rulesets (" + ", ".join(_PROP_SEED_COLS) + ", created_at, updated_at) "
+        "VALUES (" + ", ".join(["?"] * len(_PROP_SEED_COLS)) + ", ?, ?)"
+    )
+    for _prow in _PROP_SEED_ROWS:
+        if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", (_prow["id"],)).fetchone():
+            conn.execute(_prop_seed_sql, tuple(_prow[_c] for _c in _PROP_SEED_COLS) + (now, now))
+
+    # Apex EOD eval rows (same idempotent helper the live-DB migration uses).
+    _seed_apex_eod_eval(conn, now)
 
     _seed_instrument_metadata(conn)
 
@@ -839,7 +910,7 @@ def delete_strategy(strategy_id: str) -> bool:
 
 # ── Rulesets ──────────────────────────────────────────────────────────────────
 
-_RULESET_JSON_FIELDS = ["allowed_instruments", "max_contracts", "platform_support", "days_of_week_allowed"]
+_RULESET_JSON_FIELDS = ["allowed_instruments", "max_contracts", "platform_support", "days_of_week_allowed", "reference_urls"]
 
 
 def list_rulesets() -> list[dict]:
@@ -1079,6 +1150,7 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
                 win_count=?, trade_count=?, sharpe=?, sortino=?, cagr=?,
                 avg_win=?, avg_loss=?, avg_trade_duration_min=?,
                 worst_day_pnl=?, worst_losing_streak=?,
+                platform_sharpe=?, sharpe_low_sample=?, profit_concentration_pct=?,
                 equity_curve_path=?, trades_path=?, daily_pnl_path=?
             WHERE run_id=?
         """, (
@@ -1088,6 +1160,9 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
             kpis.get("sharpe"), kpis.get("sortino"), kpis.get("cagr"),
             kpis.get("avg_win"), kpis.get("avg_loss"), kpis.get("avg_trade_duration_min"),
             kpis.get("worst_day_pnl"), kpis.get("worst_losing_streak"),
+            kpis.get("platform_sharpe"),
+            int(kpis["sharpe_low_sample"]) if kpis.get("sharpe_low_sample") is not None else None,
+            kpis.get("profit_concentration_pct"),
             file_paths.get("equity_curve"), file_paths.get("trades"),
             file_paths.get("daily_pnl"), run_id,
         ))
@@ -1179,15 +1254,21 @@ def insert_evaluation(data: dict) -> None:
             INSERT OR REPLACE INTO evaluations
                 (eval_id, run_id, ruleset_id, verdict, drawdown_pass, target_pass,
                  consistency_pass, simulated_eval_days, breach_count,
-                 largest_day_share_pct, notes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 largest_day_share_pct, adjusted_profit_target, contract_cap_status,
+                 mll_final_floor, mll_highest_eod_balance,
+                 mll_breach_day, mll_min_floor_distance, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["eval_id"], data["run_id"], data["ruleset_id"],
             data["verdict"],
             int(data["drawdown_pass"]), int(data["target_pass"]),
             int(data["consistency_pass"]) if data.get("consistency_pass") is not None else None,
             data.get("simulated_eval_days"), data["breach_count"],
-            data.get("largest_day_share_pct"), data.get("notes"),
+            data.get("largest_day_share_pct"), data.get("adjusted_profit_target"),
+            data.get("contract_cap_status"),
+            data.get("mll_final_floor"), data.get("mll_highest_eod_balance"),
+            data.get("mll_breach_day"), data.get("mll_min_floor_distance"),
+            data.get("notes"),
             now,
         ))
 

@@ -363,6 +363,9 @@ def _normalize_mt5_results(raw: dict) -> dict:
         if td:
             ep["direction"] = _DIR.get(td["direction"].lower(), td["direction"].capitalize())
             ep["profit"]    = td.get("profit")
+            # Per-trade size = MT5 volume (lots). Stored, but NOT a futures-contract count —
+            # the contract-cap check treats MT5 as not_applicable.
+            ep["size"]      = td.get("volume")
         equity_curve.append(ep)
 
     return {

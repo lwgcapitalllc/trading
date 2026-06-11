@@ -24,9 +24,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 import logging
-import statistics
 
 from services import lab_db, evaluator, nt8_agent_client, worthiness
+from services.metrics import daily_sharpe_from_values, apply_canonical_sharpe
 from services.objectives import choose_objective
 from services.backtest_runner import build_date_regime_map, write_job_progress, clear_progress, _tag_daily_pnl_with_regime, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
 
@@ -86,13 +86,7 @@ def _regime_filtered_score(
     for t in regime_trades:
         d = t.get("date") or ""
         daily[d] = daily.get(d, 0.0) + (t.get("profit") or 0.0)
-    daily_vals = list(daily.values())
-    if len(daily_vals) >= 2:
-        mean = statistics.mean(daily_vals)
-        std  = statistics.stdev(daily_vals)
-        sharpe = (mean / std) * (252 ** 0.5) if std > 0 else 0.0
-    else:
-        sharpe = 0.0
+    sharpe = daily_sharpe_from_values(list(daily.values()))
 
     filtered_kpis = {
         "net_pnl":       net_pnl,
@@ -285,6 +279,8 @@ async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str],
         )
         dpnl_path.write_text(json.dumps(tagged_pnl, default=str))
         daily_pnl = tagged_pnl
+
+    apply_canonical_sharpe(kpis, daily_pnl)  # consistent daily-√252 Sharpe (winner rerun)
 
     lab_db.update_run_complete(run_id, kpis, {
         "equity_curve": str(eq_path),
