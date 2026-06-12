@@ -1,7 +1,7 @@
 # LWG Capital — Strategy Framework
 
 **Purpose:** the standing reference for how strategies are designed, layered, built, and graded.
-Read alongside `Strategy_Conventions.md` (file/naming/parameter rules) and the
+Read alongside `strategies/CLAUDE.md` (file/naming/parameter rules) and the
 command-center lab (the grading engine this framework feeds into).
 
 ---

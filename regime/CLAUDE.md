@@ -3,7 +3,7 @@
 **Purpose:** Canonical market regime classifier shared by live forex bots and the command-center backtest lab.
 **Scope:** Regime classification logic only. No trading decisions, no MT5 operations, no UI.
 **Status:** Production — live bots depend on this via `algos/shared/shared_regime.py`.
-**Last reviewed:** 2026-06-02 (simplified from two modes to one; all callers now use 5-label output directly)
+**Last reviewed:** 2026-06-12
 
 ---
 

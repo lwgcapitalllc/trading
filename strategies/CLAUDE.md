@@ -1,9 +1,9 @@
 # CLAUDE.md — Strategies
 
 **Purpose:** Generic trading strategy implementations, organized by runner platform.
-**Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5 when added). Does NOT cover backtest infrastructure (see `command-center/`), live bot runtime logic (see `algos/`), or regime classification (see `regime/`).
+**Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5). Does NOT cover backtest infrastructure (see `command-center/`), live bot runtime logic (see `algos/`), or regime classification (see `regime/`).
 **Status:** Production. NinjaTrader strategies are live and deployed via the command center. MT5 has one strategy (MeanReversion.mq5, smoke-tested). Tradovate is a placeholder.
-**Last reviewed:** 2026-06-04 (Step 9 — MT5 deploy/compile wired; MeanReversion.mq5 deployable via Deploy button)
+**Last reviewed:** 2026-06-12
 
 ---
 

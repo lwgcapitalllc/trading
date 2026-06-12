@@ -8,8 +8,8 @@
 
 **Purpose:** Standing instructions for Claude Code across all subsystems.
 **Scope:** This covers repo-wide rules, VPS workflow, and branch conventions. It does NOT cover subsystem internals — each subsystem has its own CLAUDE.md.
-**Status:** Active — five subsystems in various stages of production.
-**Last reviewed:** 2026-06-04 (Pass 2.5 — added strategies/ subsystem)
+**Status:** Active — six subsystems in various stages of production.
+**Last reviewed:** 2026-06-12
 
 ---
 
@@ -39,7 +39,7 @@ Live automated trading on PU Prime demo accounts. Four bots across three account
 Scans and profiles consistent crypto/forex traders for copy trading candidate pool construction. Runs locally on Mac. Stages 1–2 and 5 live; Stages 3–4 need API keys. Full rules in `smart-money/CLAUDE.md`.
 
 ### command-center/
-React + FastAPI local operations platform. Monitors bots via SSH, surfaces Smart Money pipeline output, runs and evaluates NinjaTrader backtests. Full rules in `command-center/CLAUDE.md`.
+React + FastAPI local operations platform. Monitors bots via SSH, surfaces Smart Money pipeline output, runs and evaluates NinjaTrader and MT5 backtests. Full rules in `command-center/CLAUDE.md`.
 
 ### regime/
 Shared market regime classifier. Imported by the live bots (via `algos/shared/shared_regime.py` thin shim) and by the command-center backtest lab. Single output set: 5 labels (TRENDING, TRANSITIONING, RANGING, HIGH_VOLATILITY, LOW_VOLATILITY). Each bot owns its own `REGIME_RISK_TABLE` mapping labels to trade decisions. Full rules in `regime/CLAUDE.md`. Algorithm documented in `regime/REGIME_CLASSIFIER.md`.

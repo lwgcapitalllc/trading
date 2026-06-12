@@ -2,7 +2,7 @@
 
 **Purpose:** React + Vite + TypeScript app (`:5173`) — the UI for the command center; all server state via TanStack Query against the FastAPI backend.
 **Scope:** This covers frontend hook/component/page conventions, the theme system, and routing. It does NOT cover the backend (see `../backend/CLAUDE.md`) or `algos/`/`smart-money/`.
-**Status:** Live — all pages shipped (Overview, Smart Money, Bots, Backtests lab, Stress Tests, Queue, Settings).
+**Status:** Live — all pages shipped (Overview, Smart Money, Bots, Strategies, Rulesets, Backtests lab, Optimizations, Tuning workbench, Stress Tests, Queue, Settings).
 **Last reviewed:** 2026-06-12
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.

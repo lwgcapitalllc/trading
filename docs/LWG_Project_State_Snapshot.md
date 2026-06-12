@@ -1,6 +1,6 @@
 # LWG Capital — Project State Snapshot
-**Last updated:** 2026-06-10
-**Source:** live repo state — verified against filesystem, DB, and CLAUDE.md files
+**Last updated:** 2026-06-12
+**Source:** live repo state — verified against filesystem, `lab.db`, git log, and CLAUDE.md files
 
 > Hand this document to any new Claude.ai chat as the first message, along with
 > `LWG_Roadmap_And_Open_Questions.md`. Together they replace the need to re-explain
@@ -10,7 +10,9 @@
 
 ## What this project is
 
-LWG Capital is a personal algorithmic trading operation. The near-term goal is to pass LucidFlex (and similar) prop firm evaluation challenges. The long-term goal is to run 30–50 funded prop accounts. The working method is S.Y.S.T.E.M. — a six-step process for building any strategy: Specify, Yield (gather data), Simulate (backtest), Test (stress test), Execute (live demo), Manage (monitor funded). Today the focus is futures trading via NinjaTrader 8 backtesting and prop evals, with MT5 forex as a parallel research track. The core platform (command center) is feature-complete; the remaining work is running strategies through the full evaluation pipeline until one earns a funded account.
+LWG Capital is a personal algorithmic trading operation. The near-term goal is to pass prop firm evaluation challenges (LucidFlex and similar). The long-term goal is to run 30–50 funded prop accounts. Prop firms are the capital engine, not the destination — the plan is to use prop payouts to fund personal demo forex/futures accounts where the rules are looser and the real growth happens. The working method is S.Y.S.T.E.M. — a six-step process for building any strategy: Specify, Yield (gather data), Simulate (backtest), Test (stress test), Execute (live demo), Manage (monitor funded). Today the focus is futures trading via NinjaTrader 8 backtesting and prop evals, with MT5 forex as a parallel research track (and, per the build order, the faster platform to prototype on). The core platform (command center) is feature-complete; the remaining work is running strategies through the full evaluation pipeline until one earns a funded account.
+
+Two standing rules shape every strategy: intraday only (flat by session end, never hold overnight), and every account has a ruleset — personal/demo accounts get relaxed rules and a real PASS/DISCARD verdict, not a free pass. The full design philosophy — layer architecture, edge buckets, build order, KPI floor — lives in `docs/LWG_Strategy_Framework.md` (the standing strategy reference, 2026-06-12).
 
 ---
 
@@ -32,6 +34,8 @@ LWG Capital is a personal algorithmic trading operation. The near-term goal is t
 - Windows Task Scheduler — `NT8Agent` (NT8 agent), `MT5AgentRDP` (MT5 agent), `SYS_STARTUP` (bots).
 
 **SSH tunnel:** `start.sh` opens a persistent `ssh -N forexvps` background process. `LocalForward 8765` (NT8 agent) and `LocalForward 8766` (MT5 agent) use `127.0.0.1` as the remote target — not `localhost` — because the VPS resolves `localhost` to IPv6 but the Flask agents bind IPv4 only.
+
+**Runner dispatch:** `services/runner_dispatch.py` (renamed from `nt8_agent_client.py`) is the single dispatcher — it routes jobs to the NT8 agent or the MT5 agent based on the strategy's `runner` field and normalizes both response shapes so callers stay runner-agnostic.
 
 ---
 
@@ -73,7 +77,7 @@ Sweep cancel endpoint, retry-all and per-run retry on sweeps and optimizations, 
 Monte Carlo (10k reshuffles + 1k bootstrap of the trade list, pure Python, ~5s). Walk-forward (N windows of in-sample/out-of-sample NT8 backtests measuring Sharpe degradation). Sensitivity (each numeric param shifted, one VPS backtest per shift — 4 shifts for NT8, 2 for MT5). A–F robustness grade with plain-English reasons. Auto-trigger runs Monte Carlo only on Tier 1 wins; manual trigger runs all three phases. A Telegram notification fires after the grade is written.
 
 ### Speed Steps 1–3 — Native optimizer, rescoring, grid sensitivity, native walk-forward ✅
-Native NT8 optimizer became the only search path (brute/genetic removed). Rescoring uses `MaxDailyLoss` from fixed params as the effective per-period drawdown (NT8's cumulative drawdown is not comparable to a prop firm's daily limit) plus a win-rate CSV format fix. Grid sensitivity is computed from optimizer neighbor combos with no extra VPS runs. Native walk-forward mode (`BacktestType = Walk Forward`) added to `nt8_backtest_runner.py`.
+Native NT8 optimizer became the only search path (brute/genetic removed). Rescoring uses `MaxDailyLoss` from fixed params as the effective per-period drawdown plus a win-rate CSV format fix. Grid sensitivity is computed from optimizer neighbor combos with no extra VPS runs. Native walk-forward mode (`BacktestType = Walk Forward`) added to `nt8_backtest_runner.py`.
 
 ### Pass 1 — Foundational Config injection ✅
 Rulesets carry 10 foundational fields (risk %, halt fraction, max consecutive losses, entry hours ET, days allowed, daily profit target, lock-in %, commission per side, slippage ticks). They are injected into strategy params at run creation. Every parameter is categorized as `Strategy Logic` (tunable, optimizer-visible) or `Foundational` (injected, hidden in the UI). Strategies hold sentinel default values and refuse to trade if injection fails.
@@ -85,50 +89,61 @@ Upload, delete, and compile NT8 `.cs` strategy files from the UI without RDP. Th
 The groundwork pass that established generic, firm-agnostic strategies and the Strategy Logic / Foundational categorization convention across all strategy files, so the same source runs against any ruleset.
 
 ### Pass 2.5 — Strategies subsystem + Deploy button ✅
-Created `strategies/` as a top-level subsystem and moved the strategy files out of `algos/`. The scanner reads from `strategies/`. A one-click Deploy button per strategy uploads the file to the VPS (`.cs` to the NT8 agent, `.mq5` to the MT5 agent). `source_path` is stored relative to the monorepo root. The Strategies / Rulesets / Deployed pages were split out from Backtests.
+Created `strategies/` as a top-level subsystem and moved the strategy files out of `algos/`. The scanner reads from `strategies/`. A one-click Deploy button per strategy uploads the file to the VPS (`.cs` to the NT8 agent, `.mq5` to the MT5 agent). `source_path` is stored relative to the monorepo root.
 
 ### Speed Steps 4–6 — MT5 native optimizer, Telegram, job queue ✅
-MT5 native optimizer runs combos as sequential single backtests (MT5's `Optimization=1` CLI mode writes no parseable file — it only populates the GUI tab). MT5 native walk-forward uses `ForwardMode` in the ini. `services/notify.py` sends Telegram grade notifications (same token/chat as `algos/shared/notify.py`). A `job_queue` SQLite table plus an asyncio queue runner dispatches one optimization or stress test at a time, surfaced in a Queue page.
+MT5 native optimizer (`POST /native-optimize` on the MT5 agent) drives the Strategy Tester via `Optimization=1` ini + set-file ranges, with per-combo progress reported back. MT5 native walk-forward uses `ForwardMode` in the ini. `services/notify.py` sends Telegram grade notifications (same token/chat as `algos/shared/notify.py`). A `job_queue` SQLite table plus an asyncio queue runner dispatches one optimization or stress test at a time, surfaced in a Queue page.
 
 ### M4 — Regime tagging + equity overlay + optimizer regime filter + platform lock ✅
-Every backtest's daily P&L entries are tagged with a regime label using `regime/classifier.py`, run as a visible Tagging pipeline step. A Performance by Regime table appears on BacktestDetail, plus an equity-curve regime overlay and an optimizer regime filter that re-scores combos using only matching-regime trades. Platform-based job lock: NT8 and MT5 lock independently. Cascade delete on runs. Sweeps and optimizations nest under their source run in the Runs tab. Tab-specific active dots.
+Every backtest's daily P&L entries are tagged with a regime label using `regime/classifier.py`, run as a visible Tagging pipeline step. A Performance by Regime table appears on BacktestDetail, plus an equity-curve regime overlay and an optimizer regime filter that re-scores combos using only matching-regime trades. Platform-based job lock: NT8 and MT5 lock independently. Cascade delete on runs. Sweeps and optimizations nest under their source run in the Runs tab.
 
 ### M5 / Steps 1–9 — MT5 runner + deployment ✅
-`mt5_agent.py` on VPS port 8766: health, Strategy Tester driver (ini + set file, `terminal64.exe`, HTML report parser). `mt5_agent_client.py` typed wrapper on the backend. The dispatcher routes to the MT5 agent when `strategy.runner == "mt5"`. MT5-aware backtest modal (free-text symbol, bar presets, no ruleset/foundational sections) and MT5-aware detail page (MT5 pipeline steps, UTF-16 HTML parsing, KPI injection from the trades list). Runner badges (NT8/MT5), a market filter bar (Futures/Forex), and MT5 deployment (upload/delete `.mq5`, compile via MetaEditor64).
+`mt5_agent.py` on VPS port 8766: health, Strategy Tester driver (ini + set file, `terminal64.exe`, HTML report parser). `mt5_agent_client.py` typed wrapper on the backend. The dispatcher routes to the MT5 agent when `strategy.runner == "mt5"`. MT5-aware backtest modal and detail page, runner badges (NT8/MT5), a market filter bar (Futures/Forex), and MT5 deployment (upload/delete `.mq5`, compile via MetaEditor64).
 
 ### BacktestDetail polish and platform improvements (2026-06-06 – 2026-06-09) ✅
-Rerun button on the detail header. Stale-progress guard (trusts progress only when `job_id` matches). Milestone-dot progress bar. Equity-curve gradient based on start versus end equity. Shared `StatusPill` component. OptimizationDetail 3-view toggle (Table / Bar Chart / Heatmap). Full backtest on an optimizer combo (progress bar wired, visible in the Runs tab while active, tab-pulse and regime-tag fixes). NT8 opt-config speedup (grid map built once instead of per-param). Optimization log persistence to `opt_log.txt`. Copy buttons on all log terminals. Optimization re-run button that resets the existing record in place. Timer freeze fix on failed optimizations. Integer-param validation in the optimizer modal (blocks decimal min/max/step on `int` NinjaScript params, sourced via `GET /strategies/{id}/param-types`).
+Rerun button on the detail header. Stale-progress guard. Milestone-dot progress bar. Shared `StatusPill`. OptimizationDetail view toggle. Full backtest on an optimizer combo. NT8 opt-config speedup. Optimization log persistence. Re-run button that resets the record in place. Integer-param validation in the optimizer modal (blocks decimal min/max/step on `int` NinjaScript params via `GET /strategies/{id}/param-types` — decimal steps on int params silently produce 0-trade combos in NT8).
+
+### Tuning Workbench + decoupled Optimizations + per-platform lock refinement (2026-06-10 – 06-11) ✅
+`/backtests/runs/:id/tune` — a param editor seeded from a baseline run; tweak iterations run as real backtests linked by `source_run_id`; leaderboard with deltas against the baseline; regime-aware cumulative-P&L overlay and net-P&L-by-regime table. Reached from any run or from an optimization's "Tune winner" button. Optimizations got their own top-level RESEARCH page (`/optimizations`), decoupled from the Backtests tab. The per-platform job lock was refined: the DB is the single lock source (`has_running_job(runner)` counting running rows in `backtest_runs` + `optimizations`), NT8 and MT5 fully independent, stale rows cleaned on boot.
+
+### Grouped KPI grid + metrics layer (2026-06-11) ✅
+BacktestDetail's KPI section became a data-driven grid of 13 metric cards in 5 labelled groups (Outcome / Risk-Adjusted Quality / Trade Behavior / Activity / Tail Risk). One canonical Sharpe everywhere — daily √252, computed in `services/metrics.py` (`apply_canonical_sharpe`), with the platform's own value preserved as `platform_sharpe`. Profit concentration persisted per run. `scripts/backfill_metrics.py` backfilled file-derivable metrics onto old runs (idempotent). Account-balance what-if slider docked on the Max DD % card.
+
+### Trailing drawdown engine (2026-06-11) ✅
+`services/trailing_drawdown.py` — `compute_trailing_mll()` implements the real prop-firm EOD trailing max-loss: the floor trails the highest EOD balance, locks at `mll_lock_balance` when set, and a breach is the only thing that fails `drawdown_pass`. This replaced whole-test max-drawdown as the lens drawdown check and made prop verdicts match how firms actually evaluate.
+
+### Rulesets — own page, personal demo rulesets, firm branding (2026-06-11 – 06-12) ✅
+Rulesets moved to their own top-level page (`/rulesets`): prop rows grouped by firm (Lucid / Tradeify / FundedNext / Apex) with a page-level filter, a Contracts column (`ContractsCell` with SCALES and MIX pills — FundedNext's shared mini/micro cap), and firm branding. Two personal demo rulesets (`personal_forex_demo`, `personal_futures_demo`) now get real PASS/DISCARD verdicts from the evaluator (`_evaluate_personal`: drawdown-from-peak and consecutive-capped-loss-days fails; daily caps are halts, not fails). Personal rules are editable via `PersonalRulesEditModal` (`PATCH /rulesets/{id}`, 5-field allowlist); prop rows are locked server-side — PATCH and PUT both return 403. Apex EOD eval rulesets (50k/100k) were seeded. `nt8_agent_client` was renamed to `runner_dispatch.py`, and a read-only MT5 data-quality audit script was added.
 
 ---
 
 ## Current state of strategies
 
-Four strategies are registered. Three are NinjaTrader `.cs` files, one is an MT5 `.mq5` file.
+Four strategies are registered. Three are NinjaTrader `.cs` files, one is an MT5 `.mq5` file. No strategy has reached a clean Tier 1 run yet, and the only graded strategy is Momentum (all F).
 
 | Strategy | File | Runner | Category | Grade / perf facts |
 |---|---|---|---|---|
-| ORB | `strategies/ninjatrader/ORB.cs` | ninjatrader | breakout | No graded runs yet. Opening Range Breakout — entry on ORB high/low break. Optimizer parity confirmed with single-run path on ORMinutes=50 / TpMultiple=5. |
-| VWAP_MR | `strategies/ninjatrader/VWAP_MR.cs` | ninjatrader | mean_reversion | No graded runs yet. Fades extended moves back to VWAP. |
-| Momentum | `strategies/ninjatrader/Momentum.cs` | ninjatrader | momentum | Recent runs on MCL 06-26 graded TIER_3_DISCARD; best stress test grade so far is F. EMA crossover trend-follower. `MaPeriod` is `int` — decimal optimizer steps produced 0 trades, now blocked in the UI. |
-| MeanReversion | `strategies/mt5/MeanReversion.mq5` | mt5 | mean_reversion | Smoke-tested on EURUSD H1 and GBPJPY. MT5 runs without ruleset evaluation, so no worthiness tier. Ported from `algos/bots/bot_mean_reversion.py` — BB + RSI + intraday VWAP confluence. |
+| ORB | `strategies/ninjatrader/ORB.cs` | ninjatrader | breakout | No graded runs. 3 runs in the DB, none Tier 1. Opening Range Breakout — entry on ORB high/low break. |
+| VWAP_MR | `strategies/ninjatrader/VWAP_MR.cs` | ninjatrader | mean_reversion | No runs in the DB yet. Fades extended moves back to VWAP. |
+| Momentum | `strategies/ninjatrader/Momentum.cs` | ninjatrader | momentum | 6 stress tests, all grade F (MCL runs; median MC simulation loses money, 100% breach probability). TIER_3_DISCARD on its runs. EMA crossover trend-follower. |
+| MeanReversion | `strategies/mt5/MeanReversion.mq5` | mt5 | mean_reversion | 10 runs (EURUSD/GBPJPY smoke tests, recent USDCAD batch), no worthiness tier assigned yet. Ported from `algos/bots/bot_mean_reversion.py` — BB + RSI + intraday VWAP confluence. |
 
 `strategies/tradovate/` is an empty placeholder (no source files yet).
 
-The M4 regime breakdown is computed per run, not per strategy — there is no documented strategy-level regime profile yet because no NT8 strategy has reached a clean Tier 1 run.
+The Strategy Framework build order says: MT5 first (faster optimization), mean reversion → trend → volatility breakout, intraday bar-close logic at M5/M15 on a tight-spread major (EURUSD/GBPUSD), 2–3 candidates per bucket. Data fidelity note: both testers are trustworthy for bar-close logic at M5 and above, not for sub-minute scalping (tick-mode levers exist but are not enabled).
 
 ---
 
 ## Current state of rulesets
 
-15 rulesets in `lab.db` as of 2026-06-10:
-- `prop_eval`: 6 rows
-- `prop_funded`: 6 rows
-- `personal`: 2 rows
-- `demo`: 1 row
+16 rulesets in `lab.db` as of 2026-06-12 (verified by direct query):
+- `prop_eval`: 8 rows — Apex EOD 50k/100k (new), FundedNext Futures Flex 50k/100k, LucidFlex 50k/100k, Tradeify Select 50k/100k
+- `prop_funded`: 6 rows — FundedNext, LucidFlex, Tradeify at 50k/100k each (Apex has no funded rows yet)
+- `personal`: 2 rows — `personal_forex_demo`, `personal_futures_demo` ($10k balance, $500 daily loss cap, $1,000 daily target, fail at 15% drawdown-from-peak or 3 consecutive capped-loss days)
 
-Evaluator behavior by type: `prop_eval` checks drawdown + profit target + consistency; `prop_funded` checks drawdown only (PASS if under limit); `personal` checks daily and weekly loss caps (WARN if weekly breached); `demo` always PASS/WARN on net P&L, never DISCARD.
+There are zero rows typed `demo` — the old demo-typed row is gone; both demo accounts are now `ruleset_type = personal` (with `account_tier = demo`). Evaluator behavior by type: `prop_eval` checks EOD trailing max-loss (DISCARD on breach), profit target (WARN), and consistency (WARN); `prop_funded` checks trailing max-loss only; `personal` gets a real PASS/DISCARD verdict against the relaxed rules. For personal rows `max_loss_eod = 0` is a sentinel meaning "no trailing EOD rule" — it must never render or feed a verdict.
 
-Prop-firm seeding track: the eval/funded rows come in firm pairs (LucidFlex, Tradeify, FundedNext were the original seed set, each with an eval and a funded ruleset). Adding a prop firm means adding both its eval and funded rulesets with the firm's `docs_url` filled in so the rules can be verified later.
+Firm naming: the firm name lives in the UI group header (Lucid / Tradeify / FundedNext / Apex); the row `name` carries the program ("LucidFlex $50k Evaluation", "Select $50k Evaluation", "Futures Flex $50k Challenge", "EOD $50k Evaluation"). LucidFlex is Lucid's program name, not the firm. Adding a prop firm means adding its eval and funded rulesets with `docs_url` filled in so the rules can be re-verified.
 
 ---
 
@@ -140,19 +155,23 @@ Prop-firm seeding track: the eval/funded rows come in firm pairs (LucidFlex, Tra
 
 3. **Categorized parameters.** `Strategy Logic` = tunable and optimizer-visible. `Foundational` = injected from the ruleset and hidden in the UI.
 
-4. **One shared regime classifier.** `regime/classifier.py` is canonical. Never duplicate it; all consumers import from there.
+4. **Every account has a ruleset.** Personal/demo accounts get relaxed rules and a real verdict — there is no "no-verdict" account type. Prop rulesets are locked (server-side 403 on edit); personal rules are editable.
 
-5. **NT8 is both the backtest and the execution engine for futures; MT5 is the parallel forex track.** The same command center dispatcher routes to both via runner-aware clients.
+5. **One shared regime classifier.** `regime/classifier.py` is canonical. Never duplicate it; all consumers import from there.
 
-6. **Observability is mandatory.** Every run writes progress, logs, and output files. Optimization runs persist their VPS logs. Progress bars are wired to real agent output, not faked.
+6. **NT8 is both the backtest and the execution engine for futures; MT5 is the parallel forex track.** The same command center dispatcher (`runner_dispatch.py`) routes to both via runner-aware clients.
 
-7. **CLAUDE.md updates in the same session as approved changes.** Not as a follow-up. Every session that ships a feature ends with the relevant CLAUDE.md files updated.
+7. **Drawdown means EOD trailing max-loss.** `compute_trailing_mll()` is the lens drawdown check for prop rulesets — not whole-test peak-to-trough. One canonical Sharpe (daily √252) everywhere via `services/metrics.py`.
 
-8. **Strict build order with stop-and-report checkpoints.** Each step is confirmed working before the next begins.
+8. **Observability is mandatory.** Every run writes progress, logs, and output files. Optimization runs persist their VPS logs. Progress bars are wired to real agent output, not faked.
 
-9. **Per-platform job lock.** Only one job (backtest/sweep/optimization/stress test) runs per platform at a time; NT8 and MT5 lock independently. Stress tests additionally lock by market (one futures and one forex stress test at most).
+9. **CLAUDE.md updates in the same session as approved changes.** Not as a follow-up. Every session that ships a feature ends with the relevant CLAUDE.md files updated.
 
-10. **No ORM, no task queues, no extra frameworks.** Raw `sqlite3`, asyncio for the queue loop, `subprocess` for SSH. New dependencies require explicit discussion first. Heavy data (equity curves, trade lists) lives in JSON files on disk, not in SQLite.
+10. **Strict build order with stop-and-report checkpoints.** Each step is confirmed working before the next begins.
+
+11. **Per-platform job lock, DB as the single lock source.** One job per platform at a time; NT8 and MT5 lock independently; stale `running` rows are reset on boot. Stress tests additionally lock by market (one futures + one forex at most).
+
+12. **No ORM, no task queues, no extra frameworks.** Raw `sqlite3`, asyncio for the queue loop, `subprocess` for SSH. New dependencies require explicit discussion first. Heavy data (equity curves, trade lists) lives in JSON files on disk, not in SQLite.
 
 ---
 
