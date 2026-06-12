@@ -19,7 +19,7 @@ Endpoints:
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from models import StrategyFile, StrategyFileSyncStatus, CompileJobStatus
-from services import nt8_agent_client, lab_db, mt5_agent_client
+from services import runner_dispatch, lab_db, mt5_agent_client
 
 router = APIRouter(prefix="/strategy-files", tags=["strategy-files"])
 
@@ -30,7 +30,7 @@ _MAX_UPLOAD_BYTES = 256 * 1024  # 256 KB — matches VPS agent limit
 def list_strategy_files():
     files: list[dict] = []
     try:
-        for f in nt8_agent_client.list_strategy_files():
+        for f in runner_dispatch.list_strategy_files():
             f["platform"] = "NT8"
             files.append(f)
     except Exception as exc:
@@ -61,7 +61,7 @@ async def upload_strategy_file(
         )
 
     try:
-        result = nt8_agent_client.upload_strategy_file(filename, content, overwrite)
+        result = runner_dispatch.upload_strategy_file(filename, content, overwrite)
     except RuntimeError as exc:
         msg = str(exc)
         if "HTTP 409" in msg:
@@ -80,7 +80,7 @@ def delete_strategy_file(filename: str):
     if not (filename.endswith(".cs") or filename.endswith((".mq5", ".ex5"))):
         raise HTTPException(status_code=400, detail="Only .cs, .mq5, or .ex5 files are allowed")
     try:
-        return nt8_agent_client.delete_strategy_file(filename)
+        return runner_dispatch.delete_strategy_file(filename)
     except RuntimeError as exc:
         msg = str(exc)
         if "HTTP 404" in msg:
@@ -93,7 +93,7 @@ def delete_strategy_file(filename: str):
 @router.post("/compile", status_code=202)
 def trigger_compile():
     try:
-        return nt8_agent_client.trigger_compile()
+        return runner_dispatch.trigger_compile()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -101,7 +101,7 @@ def trigger_compile():
 @router.get("/compile/{compile_job_id}", response_model=CompileJobStatus)
 def get_compile_status(compile_job_id: str):
     try:
-        result = nt8_agent_client.get_compile_status(compile_job_id)
+        result = runner_dispatch.get_compile_status(compile_job_id)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     if result.get("status") == "success":
@@ -136,7 +136,7 @@ def sync_status():
     are checked against the MT5 agent.
     """
     try:
-        nt8_files = {f["filename"]: f for f in nt8_agent_client.list_strategy_files()}
+        nt8_files = {f["filename"]: f for f in runner_dispatch.list_strategy_files()}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not reach VPS agent: {exc}")
 

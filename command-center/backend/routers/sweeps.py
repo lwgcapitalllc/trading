@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from models import SweepRequest, SweepResponse, SweepDetail, SweepSummary, BacktestSummary, WorthinessScore
-from services import lab_db, nt8_agent_client, worthiness
+from services import lab_db, runner_dispatch, worthiness
 from services.evaluator import evaluate_run
 from services.sweep_runner import run_sweep, retry_failed_sweep_runs
 from routers.backtests import _row_to_summary
@@ -68,7 +68,7 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
 
     # Inject foundational config from primary ruleset once for all sweep instruments.
     primary_ruleset = lab_db.get_ruleset(ruleset_ids[0]) if ruleset_ids else None
-    merged_params = nt8_agent_client.inject_foundational(req.params, primary_ruleset)
+    merged_params = runner_dispatch.inject_foundational(req.params, primary_ruleset)
 
     for instrument in req.instruments:
         run_id = uuid.uuid4().hex[:12]

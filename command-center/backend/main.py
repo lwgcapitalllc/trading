@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import smart_money, bots, backtests, stress_tests, settings, strategies, firms, rulesets, system, sweeps, optimizations, strategy_files, queue
-from services import lab_db, nt8_agent_client, mt5_agent_client
+from services import lab_db, runner_dispatch, mt5_agent_client
 from services.backtest_runner import read_progress, clear_progress
 from services import queue_runner
 
@@ -39,7 +39,7 @@ def _auto_start_agents():
     """Wait for the SSH tunnel then start any agents that aren't responding."""
     time.sleep(8)  # give start.sh tunnel time to establish
     for client, task in [
-        (nt8_agent_client, "NT8Agent"),
+        (runner_dispatch, "NT8Agent"),
         (mt5_agent_client, "MT5AgentRDP"),
     ]:
         try:

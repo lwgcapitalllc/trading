@@ -25,7 +25,7 @@ from typing import Any, Optional
 
 import logging
 
-from services import lab_db, evaluator, nt8_agent_client, worthiness
+from services import lab_db, evaluator, runner_dispatch, worthiness
 from services.metrics import daily_sharpe_from_values, apply_canonical_sharpe
 from services.objectives import choose_objective
 from services.backtest_runner import build_date_regime_map, write_job_progress, clear_progress, _tag_daily_pnl_with_regime, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
@@ -212,7 +212,7 @@ async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: 
             await asyncio.sleep(_POLL_INTERVAL)
 
             try:
-                status_data = await asyncio.to_thread(nt8_agent_client.job_status, job_id)
+                status_data = await asyncio.to_thread(runner_dispatch.job_status, job_id)
             except Exception:
                 if time.time() - started_at > _STALL_KILL_SEC:
                     lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
@@ -239,7 +239,7 @@ async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: 
 
             if time.time() - started_at > _STALL_KILL_SEC:
                 try:
-                    await asyncio.to_thread(nt8_agent_client.cancel_job, job_id)
+                    await asyncio.to_thread(runner_dispatch.cancel_job, job_id)
                 except Exception:
                     pass
                 lab_db.update_run_status(run_id, "failed_timeout", "No heartbeat — cancelled")
@@ -251,7 +251,7 @@ async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: 
 
 async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str) -> None:
     try:
-        result = await asyncio.to_thread(nt8_agent_client.job_results, job_id)
+        result = await asyncio.to_thread(runner_dispatch.job_results, job_id)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         return
@@ -319,7 +319,7 @@ async def _run_batch(
                 lab_db.update_run_status(run_id, "failed_cancelled", "Optimization cancelled")
                 return
             try:
-                await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
+                await asyncio.to_thread(runner_dispatch.start_backtest, job_spec, runner)
             except Exception as exc:
                 lab_db.update_run_status(run_id, "failed_unknown", str(exc))
                 lab_db.increment_optimization_completed(opt_id)
@@ -439,7 +439,7 @@ async def run_native_optimization(optimization_id: str) -> None:
         if k not in param_ranges:
             fixed_params[k] = v
     if firm:
-        fixed_params.update(nt8_agent_client.build_foundational_params(firm))
+        fixed_params.update(runner_dispatch.build_foundational_params(firm))
 
     opt_job_id = f"nopt_{optimization_id}"
 
@@ -447,7 +447,7 @@ async def run_native_optimization(optimization_id: str) -> None:
         """Fetch the final VPS agent log and save it so it survives agent restarts."""
         try:
             txt = await asyncio.to_thread(
-                lambda: nt8_agent_client.job_log(opt_job_id, lines=500, runner=runner_str)
+                lambda: runner_dispatch.job_log(opt_job_id, lines=500, runner=runner_str)
             )
             if txt:
                 log_dir = _LAB_RESULTS_DIR / optimization_id
@@ -471,7 +471,7 @@ async def run_native_optimization(optimization_id: str) -> None:
     }
 
     try:
-        await asyncio.to_thread(nt8_agent_client.start_native_optimization, spec, runner_str)
+        await asyncio.to_thread(runner_dispatch.start_native_optimization, spec, runner_str)
     except Exception as exc:
         lab_db.fail_optimization(optimization_id, f"VPS submit failed: {exc}")
         await _persist_log()
@@ -484,7 +484,7 @@ async def run_native_optimization(optimization_id: str) -> None:
         await asyncio.sleep(_POLL_INTERVAL)
 
         try:
-            status_data = await asyncio.to_thread(nt8_agent_client.job_status, opt_job_id, runner_str)
+            status_data = await asyncio.to_thread(runner_dispatch.job_status, opt_job_id, runner_str)
         except Exception:
             if time.time() - started_at > _NATIVE_OPT_STALL_SEC:
                 lab_db.fail_optimization(optimization_id, "Lost VPS contact")
@@ -512,7 +512,7 @@ async def run_native_optimization(optimization_id: str) -> None:
 
         if time.time() - started_at > _NATIVE_OPT_STALL_SEC:
             try:
-                await asyncio.to_thread(nt8_agent_client.cancel_job, opt_job_id, runner_str)
+                await asyncio.to_thread(runner_dispatch.cancel_job, opt_job_id, runner_str)
             except Exception:
                 pass
             lab_db.fail_optimization(optimization_id, "Native optimizer timed out")
@@ -521,7 +521,7 @@ async def run_native_optimization(optimization_id: str) -> None:
 
     # Retrieve the full combo grid
     try:
-        result = await asyncio.to_thread(nt8_agent_client.native_opt_results, opt_job_id, runner_str)
+        result = await asyncio.to_thread(runner_dispatch.native_opt_results, opt_job_id, runner_str)
     except Exception as exc:
         lab_db.fail_optimization(optimization_id, f"Could not fetch grid: {exc}")
         await _persist_log()
@@ -652,7 +652,7 @@ async def run_optimization(optimization_id: str) -> None:
 
         base_params = {**strategy.get("default_params", {}), **combo}
         merged_params = (
-            nt8_agent_client.inject_foundational(base_params, firm) if firm else base_params
+            runner_dispatch.inject_foundational(base_params, firm) if firm else base_params
         )
         lab_db.insert_run_optimization({
             "run_id":             run_id,

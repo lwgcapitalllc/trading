@@ -14,7 +14,7 @@ from models import Strategy, ScanResult, InstrumentSummary, InstrumentResult, De
 
 class StrategyPatch(BaseModel):
     description: Optional[str] = None
-from services import lab_db, strategy_scanner, nt8_agent_client
+from services import lab_db, strategy_scanner, runner_dispatch
 import config as cfg
 
 _deploy_jobs: dict[str, dict] = {}
@@ -109,7 +109,7 @@ def deploy_strategy(strategy_id: str):
     }
 
     try:
-        result = nt8_agent_client.upload_strategy_file(filename, content, overwrite=True)
+        result = runner_dispatch.upload_strategy_file(filename, content, overwrite=True)
         _deploy_jobs[job_id].update({
             "status": "complete",
             "uploaded_size_bytes": result.get("size_bytes"),

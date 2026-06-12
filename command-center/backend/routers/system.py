@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from models import SystemHealth, LabProgress
-from services import nt8_agent_client, mt5_agent_client
+from services import runner_dispatch, mt5_agent_client
 from services.backtest_runner import read_progress, clear_progress
 
 import config as cfg
@@ -69,7 +69,7 @@ def _build_health() -> dict:
     last_compile_errors: list[str] = []
 
     try:
-        h = nt8_agent_client.health()
+        h = runner_dispatch.health()
         vps_ok = h.get("status") == "ok"
     except Exception:
         pass
@@ -82,14 +82,14 @@ def _build_health() -> dict:
 
     if vps_ok:
         try:
-            nth = nt8_agent_client.nt_health()
+            nth = runner_dispatch.nt_health()
             nt8_running    = bool(nth.get("nt8_running") or nth.get("nt_running"))
             nt8_sa_visible = bool(nth.get("sa_visible"))
         except Exception:
             pass
 
         try:
-            cs = nt8_agent_client.nt_compile_status()
+            cs = runner_dispatch.nt_compile_status()
             ok = cs.get("ok")
             last_compile_ok = bool(ok) if ok is not None else False
             last_compile_at = cs.get("at") or cs.get("checked_at")
@@ -152,7 +152,7 @@ def lab_stop() -> dict:
     if raw.get("status") == "running":
         if job_id:
             try:
-                nt8_agent_client.cancel_job(job_id)
+                runner_dispatch.cancel_job(job_id)
                 stopped = True
             except Exception:
                 pass
@@ -216,7 +216,7 @@ def start_mt5_agent():
 @router.get("/nt8/agent/log", response_class=PlainTextResponse)
 def nt8_agent_log(lines: int = 200) -> str:
     try:
-        return nt8_agent_client.agent_log(lines=lines)
+        return runner_dispatch.agent_log(lines=lines)
     except Exception as exc:
         raise HTTPException(502, f"NT8 agent unreachable: {exc}")
 
@@ -224,6 +224,6 @@ def nt8_agent_log(lines: int = 200) -> str:
 @router.get("/nt8/nt/log", response_class=PlainTextResponse)
 def nt8_nt_log(lines: int = 200) -> str:
     try:
-        return nt8_agent_client.nt_log(lines=lines)
+        return runner_dispatch.nt_log(lines=lines)
     except Exception as exc:
         raise HTTPException(502, f"NT8 agent unreachable: {exc}")

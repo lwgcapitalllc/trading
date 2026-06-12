@@ -17,7 +17,7 @@ from fastapi.responses import PlainTextResponse
 from models import (
     OptimizationRequest, OptimizationSummary, OptimizationDetail,
 )
-from services import lab_db, nt8_agent_client
+from services import lab_db, runner_dispatch
 from services.optimization_runner import expand_grid, pick_search_method, sample_combinations, run_optimization, retry_failed_runs
 from routers.backtests import _row_to_summary
 from routers._locks import ensure_platform_idle
@@ -100,7 +100,7 @@ def get_optimization(optimization_id: str) -> OptimizationDetail:
     if opt["status"] == "running":
         try:
             runner_str  = (strategy or {}).get("runner", "ninjatrader")
-            status_data = nt8_agent_client.job_status(f"nopt_{optimization_id}", runner_str)
+            status_data = runner_dispatch.job_status(f"nopt_{optimization_id}", runner_str)
             live_pct     = int(status_data.get("pct") or 0) or None
             live_message = status_data.get("message") or None
         except Exception:
@@ -205,7 +205,7 @@ def get_optimization_log(optimization_id: str, lines: int = 300) -> str:
     runner = (strategy or {}).get("runner", "ninjatrader")
     job_id = f"nopt_{optimization_id}"
 
-    live = nt8_agent_client.job_log(job_id, lines=lines, runner=runner)
+    live = runner_dispatch.job_log(job_id, lines=lines, runner=runner)
     if live:
         return live
 

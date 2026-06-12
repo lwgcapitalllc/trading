@@ -1,14 +1,14 @@
 """
 Typed HTTP wrapper over the MT5 agent (http://localhost:8766 via SSH tunnel).
 
-Symmetric to the NT8-agent calls in nt8_agent_client.py. All outbound calls to the
-MT5 agent go through this module. nt8_agent_client._resolve_runner() picks this
+Symmetric to the NT8-agent calls in runner_dispatch.py. All outbound calls to the
+MT5 agent go through this module. runner_dispatch._resolve_runner() picks this
 client vs the NT8 path based on strategy.runner.
 
 MT5 agent URL shape differs from NT8 agent:
     NT8:  POST /backtest        GET /jobs/{id}/status    GET /jobs/{id}/results
     MT5:  POST /backtests       GET /backtests/{id}      GET /backtests/{id}/results
-This module abstracts that difference — callers in nt8_agent_client see identical signatures.
+This module abstracts that difference — callers in runner_dispatch see identical signatures.
 """
 
 from __future__ import annotations

@@ -168,9 +168,9 @@ def _estimate_sens_duration_min(n_params: int, runner: str = "ninjatrader") -> i
 
 async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjatrader") -> bool:
     """Start a VPS backtest and poll to completion. Returns True on success."""
-    from services import nt8_agent_client
+    from services import runner_dispatch
     try:
-        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
+        await asyncio.to_thread(runner_dispatch.start_backtest, job_spec, runner)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         return False
@@ -179,7 +179,7 @@ async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjat
     while True:
         await asyncio.sleep(_POLL_INTERVAL)
         try:
-            sd = await asyncio.to_thread(nt8_agent_client.job_status, run_id)
+            sd = await asyncio.to_thread(runner_dispatch.job_status, run_id)
         except Exception:
             if time.time() - started_at > _STALL_KILL_SEC:
                 lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
@@ -189,7 +189,7 @@ async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjat
         status = sd.get("status", "running")
         if status == "complete":
             try:
-                result = await asyncio.to_thread(nt8_agent_client.job_results, run_id)
+                result = await asyncio.to_thread(runner_dispatch.job_results, run_id)
                 kpis = result.get("kpis", {})
                 equity_curve = result.get("equity_curve", [])
                 daily_pnl    = result.get("daily_pnl", [])
@@ -215,7 +215,7 @@ async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjat
             return False
 
         if time.time() - started_at > _STALL_KILL_SEC:
-            from services import nt8_agent_client as vc
+            from services import runner_dispatch as vc
             try:
                 await asyncio.to_thread(vc.cancel_job, run_id)
             except Exception:
@@ -239,7 +239,7 @@ async def _run_native_walk_forward(
     Drive NT8's built-in Walk Forward mode for a strategy with fixed params.
     One VPS call instead of N orchestrated backtests.
     """
-    from services import nt8_agent_client
+    from services import runner_dispatch
     import numpy as np
 
     job_id = f"nwf_{stress_test_id}"
@@ -261,7 +261,7 @@ async def _run_native_walk_forward(
     }
 
     try:
-        await asyncio.to_thread(nt8_agent_client.start_native_walkforward, spec)
+        await asyncio.to_thread(runner_dispatch.start_native_walkforward, spec)
     except Exception as exc:
         log.warning("Native WF submit failed for stress_test %s: %s — falling back to serial", stress_test_id, exc)
         return False
@@ -270,7 +270,7 @@ async def _run_native_walk_forward(
     while True:
         await asyncio.sleep(_POLL_INTERVAL)
         try:
-            sd = await asyncio.to_thread(nt8_agent_client.job_status, job_id)
+            sd = await asyncio.to_thread(runner_dispatch.job_status, job_id)
         except Exception:
             if time.time() - started_at > _NATIVE_WF_STALL_SEC:
                 log.error("Native WF %s lost VPS contact", job_id)
@@ -285,14 +285,14 @@ async def _run_native_walk_forward(
             return False
         if time.time() - started_at > _NATIVE_WF_STALL_SEC:
             try:
-                await asyncio.to_thread(nt8_agent_client.cancel_job, job_id)
+                await asyncio.to_thread(runner_dispatch.cancel_job, job_id)
             except Exception:
                 pass
             log.error("Native WF %s timed out", job_id)
             return False
 
     try:
-        result = await asyncio.to_thread(nt8_agent_client.native_wf_results, job_id)
+        result = await asyncio.to_thread(runner_dispatch.native_wf_results, job_id)
     except Exception as exc:
         log.warning("Native WF %s results fetch failed: %s", job_id, exc)
         return False

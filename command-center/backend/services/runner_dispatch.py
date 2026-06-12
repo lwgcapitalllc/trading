@@ -9,7 +9,7 @@ This module serves two roles:
      and cancel_job route to either this module (ninjatrader) or
      mt5_agent_client (mt5) based on the strategy's runner field.
 
-All callers import `nt8_agent_client` and call the same functions regardless of
+All callers import `runner_dispatch` and call the same functions regardless of
 runner. The dispatcher is transparent to every call site.
 """
 

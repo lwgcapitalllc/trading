@@ -14,7 +14,7 @@ import json
 import time
 from pathlib import Path
 
-from services import lab_db, evaluator, nt8_agent_client, worthiness
+from services import lab_db, evaluator, runner_dispatch, worthiness
 from services.metrics import apply_canonical_sharpe
 
 
@@ -28,7 +28,7 @@ _MAX_CONCURRENT  = 1
 
 async def _handle_complete(run_id: str, job_id: str, ruleset_ids: list[str]) -> None:
     try:
-        result = await asyncio.to_thread(nt8_agent_client.job_results, job_id)
+        result = await asyncio.to_thread(runner_dispatch.job_results, job_id)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", f"Could not fetch results: {exc}")
         return
@@ -65,7 +65,7 @@ async def _handle_complete(run_id: str, job_id: str, ruleset_ids: list[str]) -> 
 async def _run_one(run_id: str, job_id: str, job_spec: dict, ruleset_ids: list[str], runner: str) -> None:
     """Start a VPS job and poll it to completion. Called while holding the SA semaphore."""
     try:
-        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
+        await asyncio.to_thread(runner_dispatch.start_backtest, job_spec, runner)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         return
@@ -76,7 +76,7 @@ async def _run_one(run_id: str, job_id: str, job_spec: dict, ruleset_ids: list[s
         await asyncio.sleep(_POLL_INTERVAL)
 
         try:
-            status_data = await asyncio.to_thread(nt8_agent_client.job_status, job_id)
+            status_data = await asyncio.to_thread(runner_dispatch.job_status, job_id)
         except Exception:
             if time.time() - started_at > _STALL_KILL_SEC:
                 lab_db.update_run_status(run_id, "failed_timeout", "Lost VPS contact")
@@ -95,7 +95,7 @@ async def _run_one(run_id: str, job_id: str, job_spec: dict, ruleset_ids: list[s
 
         if time.time() - started_at > _STALL_KILL_SEC:
             try:
-                await asyncio.to_thread(nt8_agent_client.cancel_job, job_id)
+                await asyncio.to_thread(runner_dispatch.cancel_job, job_id)
             except Exception:
                 pass
             lab_db.update_run_status(run_id, "failed_timeout", "No heartbeat — cancelled")

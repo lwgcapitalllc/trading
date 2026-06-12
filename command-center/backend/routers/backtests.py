@@ -20,7 +20,7 @@ from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
     WorthinessScore, RunningJobStatus, RunningJobInfo,
 )
-from services import lab_db, nt8_agent_client
+from services import lab_db, runner_dispatch
 from services.backtest_runner import (
     run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv,
 )
@@ -191,7 +191,7 @@ def get_backtest_run(run_id: str) -> BacktestDetail:
 def get_run_log(run_id: str, lines: int = 200) -> str:
     if not lab_db.get_run(run_id):
         raise HTTPException(404, "Run not found")
-    return nt8_agent_client.job_log(run_id, lines=lines)
+    return runner_dispatch.job_log(run_id, lines=lines)
 
 
 @router.post("/run", status_code=202)
@@ -214,7 +214,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     # Inject foundational config from primary ruleset (first in evaluate list).
     # Merged params are stored in the DB so retries pick them up without re-injection.
     primary_ruleset = lab_db.get_ruleset(ruleset_ids[0]) if ruleset_ids else None
-    merged_params = nt8_agent_client.inject_foundational(req.params, primary_ruleset)
+    merged_params = runner_dispatch.inject_foundational(req.params, primary_ruleset)
 
     lab_db.insert_run({
         "run_id":             run_id,
@@ -248,7 +248,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     }
 
     try:
-        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
+        await asyncio.to_thread(runner_dispatch.start_backtest, job_spec, runner)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         raise HTTPException(502, f"VPS agent unreachable: {exc}")
@@ -272,7 +272,7 @@ async def stop_backtest_run(run_id: str) -> dict:
     job_id   = progress.get("job_id") or run_id
 
     try:
-        await asyncio.to_thread(nt8_agent_client.cancel_job, job_id)
+        await asyncio.to_thread(runner_dispatch.cancel_job, job_id)
     except Exception:
         pass  # best-effort — still mark cancelled locally
 
@@ -340,7 +340,7 @@ async def retry_backtest_run(run_id: str) -> dict:
     }
 
     try:
-        await asyncio.to_thread(nt8_agent_client.start_backtest, job_spec, runner)
+        await asyncio.to_thread(runner_dispatch.start_backtest, job_spec, runner)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         raise HTTPException(502, f"VPS agent unreachable: {exc}")
@@ -372,7 +372,7 @@ async def reload_charts(run_id: str) -> dict:
         raise HTTPException(409, f"Run status is '{row['status']}' — can only reload charts for completed runs")
 
     try:
-        export = await asyncio.to_thread(nt8_agent_client.export_trades)
+        export = await asyncio.to_thread(runner_dispatch.export_trades)
     except Exception as exc:
         raise HTTPException(502, f"VPS agent error: {exc}")
 
