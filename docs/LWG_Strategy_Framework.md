@@ -297,8 +297,7 @@ works."
 | Metric | Floor | Notes |
 |---|---|---|
 | Sharpe (daily, √252) | ≥ 1.0 | 1.5+ preferred; >3 on small sample is suspect |
-| Calmar | ≥ 1.0 | 2.0+ good; capital-independent by design |
-| Recovery factor | ≥ 3.0 | below 3 can't survive its own bad days |
+| Calmar | ≥ 1.0 | 2.0+ good; capital-independent. Carries the recovery-factor signal (return ÷ drawdown) — shown on the dashboard with recovery factor in its tooltip |
 | Max drawdown % of capital | judged vs the account it runs on | — |
 | Profit concentration | < ~60% in one quarter | the overfit detector |
 | Z-score (runs test) | within ±2 | beyond = non-random streaking |

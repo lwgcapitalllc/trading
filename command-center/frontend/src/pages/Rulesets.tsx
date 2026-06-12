@@ -6,8 +6,10 @@ import { RulesetTypeBadge } from '@/components/RulesetTypeBadge'
 import { toast } from 'sonner'
 import type { Ruleset } from '@/types'
 
+// Firm names for the group headers. The id prefix "lucidflex" is the program name —
+// the FIRM is Lucid (Lucid Trading); LucidFlex stays in the row names instead.
 const FIRM_BRAND_NAMES: Record<string, string> = {
-  lucidflex:  'LucidFlex',
+  lucidflex:  'Lucid',
   tradeify:   'Tradeify',
   fundednext: 'FundedNext',
   apex:       'Apex',
@@ -53,6 +55,19 @@ function ladderLines(s: ScalingLadder): string[] {
   return []
 }
 
+function MixPill({ ratio }: { ratio: number }) {
+  return (
+    <div className="relative group inline-block">
+      <span className="text-[10px] font-bold px-1 py-[1px] rounded bg-accent/10 text-accent border border-accent/20 cursor-default">MIX</span>
+      <div className="absolute right-0 top-full mt-1 z-20 hidden group-hover:block bg-bg-sunken border border-border-default rounded-md px-3 py-2 shadow-xl whitespace-nowrap">
+        <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-1">Minis + micros share one cap</div>
+        <div className="text-[11px] font-mono text-text-secondary">1 mini = {ratio} micros against the limit</div>
+        <div className="text-[11px] text-text-tertiary mt-0.5">profit on excess contracts is voided, not a breach</div>
+      </div>
+    </div>
+  )
+}
+
 function ContractsCell({ maxContracts }: { maxContracts: Record<string, unknown> | null }) {
   if (!maxContracts) return <span className="text-text-tertiary">—</span>
   const mc = maxContracts as MaxContracts
@@ -63,22 +78,23 @@ function ContractsCell({ maxContracts }: { maxContracts: Record<string, unknown>
   if (!fixedLabel) return <span className="text-text-tertiary">—</span>
   if (!mc.scaling) {
     return (
-      <span className="font-mono tabular-nums text-text-secondary">
-        {fixedLabel}
-        {mc.mix_allowed && <span className="text-text-tertiary" title={`Minis and micros mixable at 1:${mc.mix_ratio_micro_per_mini ?? 10}`}> ·mix</span>}
+      <span className="flex items-center gap-1.5">
+        <span className="font-mono tabular-nums text-text-secondary">{fixedLabel}</span>
+        {mc.mix_allowed && <MixPill ratio={mc.mix_ratio_micro_per_mini ?? 10} />}
       </span>
     )
   }
   const lines = ladderLines(mc.scaling)
   const ratchet = mc.scaling.mode === 'cumulative_ratchet'
   return (
-    <div className="relative group inline-block">
+    <div className="relative group/scale inline-block">
       <span className="flex items-center gap-1.5">
         <span className="font-mono tabular-nums text-text-secondary">{fixedLabel}</span>
         <span className="text-[10px] font-bold px-1 py-[1px] rounded bg-gold-muted text-gold-text border border-gold-text/20 cursor-default">SCALES</span>
+        {mc.mix_allowed && <MixPill ratio={mc.mix_ratio_micro_per_mini ?? 10} />}
       </span>
       {lines.length > 0 && (
-        <div className="absolute left-0 top-full mt-1 z-20 hidden group-hover:block bg-bg-sunken border border-border-default rounded-md px-3 py-2 shadow-xl whitespace-nowrap">
+        <div className="absolute right-0 top-full mt-1 z-20 hidden group-hover/scale:block bg-bg-sunken border border-border-default rounded-md px-3 py-2 shadow-xl whitespace-nowrap">
           <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-1">
             {ratchet ? 'Scaling ladder — retained once reached' : 'Scaling bands — can move both ways'}
           </div>
