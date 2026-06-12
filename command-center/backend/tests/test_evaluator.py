@@ -132,21 +132,61 @@ def test_fundednext_raise_target_binds(seeded_run):
     assert r["verdict"] == "WARN"
 
 
-# ── personal / demo → INFO ────────────────────────────────────────────────────
+# ── personal / demo → real verdict against the relaxed personal rules ─────────
+# Rules on the $10k demos: $500 daily cap, $1,000 daily profit target (halt, info
+# only), DISCARD on 3 consecutive capped days or 15% drawdown from peak.
 
-def test_personal_is_info_no_judgment(seeded_run):
-    """Personal accounts get INFO — no drawdown/target/consistency fail, no reference floor."""
-    daily = [{"date": "2024-01-02", "pnl": -9999}]  # would breach any real floor
-    r = _eval(seeded_run, "personal_forex_main", net_pnl=-9999, daily_pnl=daily)
-    assert r["verdict"] == "INFO"
-    assert r["drawdown_pass"] is True               # neutral, not a fail
+def test_personal_passes_with_small_losses(seeded_run):
+    daily = [{"date": "2024-01-02", "pnl": -200}, {"date": "2024-01-03", "pnl": 300}]
+    r = _eval(seeded_run, "personal_forex_demo", net_pnl=100, daily_pnl=daily)
+    assert r["verdict"] == "PASS"
+    assert r["drawdown_pass"] is True
+    assert r["mll_final_floor"] is None             # still no trailing MLL for personal
+
+
+def test_personal_discards_on_drawdown_from_peak(seeded_run):
+    """One -$9,999 day = ~100% drawdown from peak — breaches the 15% limit."""
+    daily = [{"date": "2024-01-02", "pnl": -9999}]
+    r = _eval(seeded_run, "personal_forex_demo", net_pnl=-9999, daily_pnl=daily)
+    assert r["verdict"] == "DISCARD"
+    assert r["drawdown_pass"] is False
+    assert "drew down" in r["notes"]
     assert r["mll_final_floor"] is None             # no reference line for personal
 
 
-def test_demo_is_info(seeded_run):
-    daily = [{"date": "2024-01-02", "pnl": 250}]
-    r = _eval(seeded_run, "personal_forex_demo", net_pnl=250, daily_pnl=daily)
-    assert r["verdict"] == "INFO"
+def test_personal_discards_on_consecutive_capped_days(seeded_run):
+    """3 capped days in a row fails — peak raised first so only the streak fires."""
+    daily = [
+        {"date": "2024-01-02", "pnl": 2000},   # peak 12,000 → 3×500 is 12.5% < 15%
+        {"date": "2024-01-03", "pnl": -500},
+        {"date": "2024-01-04", "pnl": -500},
+        {"date": "2024-01-05", "pnl": -500},
+    ]
+    r = _eval(seeded_run, "personal_futures_demo", net_pnl=500, daily_pnl=daily)
+    assert r["verdict"] == "DISCARD"
+    assert r["drawdown_pass"] is True               # drawdown rule did NOT fire
+    assert "consecutive days hit the $500 daily cap" in r["notes"]
+
+
+def test_personal_streak_resets_on_non_capped_day(seeded_run):
+    """3 capped days NOT in a row pass — the streak resets between them."""
+    daily = [
+        {"date": "2024-01-02", "pnl": -500},
+        {"date": "2024-01-03", "pnl": 400},
+        {"date": "2024-01-04", "pnl": -500},
+        {"date": "2024-01-05", "pnl": 400},
+        {"date": "2024-01-06", "pnl": -500},
+    ]
+    r = _eval(seeded_run, "personal_forex_demo", net_pnl=-700, daily_pnl=daily)
+    assert r["verdict"] == "PASS"
+    assert "3 day(s) hit the $500 daily cap" in r["notes"]
+
+
+def test_personal_profit_halt_is_informational(seeded_run):
+    daily = [{"date": "2024-01-02", "pnl": 1200}]
+    r = _eval(seeded_run, "personal_futures_demo", net_pnl=1200, daily_pnl=daily)
+    assert r["verdict"] == "PASS"
+    assert "daily profit target" in r["notes"]
 
 
 # ── Multiple rulesets in one call ─────────────────────────────────────────────
@@ -156,7 +196,7 @@ def test_evaluate_multiple_rulesets(seeded_run):
     daily = [{"date": "2024-01-02", "pnl": 4000}]
     results = evaluate_run(
         run_id=seeded_run,
-        ruleset_ids=["lucidflex_50k_eval", "lucidflex_50k_funded", "personal_forex_main"],
+        ruleset_ids=["lucidflex_50k_eval", "lucidflex_50k_funded", "personal_forex_demo"],
         kpis={"net_pnl": 4000},
         equity_curve=[],
         daily_pnl=daily,
@@ -165,7 +205,7 @@ def test_evaluate_multiple_rulesets(seeded_run):
     by_id = {r["ruleset_id"]: r for r in results}
     assert by_id["lucidflex_50k_funded"]["consistency_pass"] is None
     assert by_id["lucidflex_50k_eval"]["consistency_pass"] is not None
-    assert by_id["personal_forex_main"]["verdict"] == "INFO"
+    assert by_id["personal_forex_demo"]["verdict"] == "PASS"  # +4000, no losses
 
 
 # ── Contract-cap status (informational, never moves the verdict) ──────────────

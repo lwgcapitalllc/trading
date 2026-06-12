@@ -6,6 +6,8 @@ compute_grade() is called after Monte Carlo (and optionally walk-forward + sensi
 from __future__ import annotations
 from typing import Optional
 
+from services.metrics import effective_dd_limit_usd
+
 
 def compute_grade(
     st: dict,
@@ -21,7 +23,9 @@ def compute_grade(
     but still shown as A-F. Walk-forward and sensitivity tighten the grade when available.
     """
     reasons: list[str] = []
-    max_loss = ruleset.get("max_loss_eod") or ruleset.get("daily_loss_cap") or 0
+    # Personal/demo: max_loss_eod = 0 is a sentinel (no trailing EOD rule); the helper
+    # translates their drawdown-from-peak rule into the dollar limit MC drawdown uses.
+    max_loss = effective_dd_limit_usd(ruleset)
 
     pct1_max_dd = st.get("pct1_max_dd") or float("inf")
     pct5_max_dd = st.get("pct5_max_dd") or float("inf")

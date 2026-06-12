@@ -14,6 +14,28 @@ TRADING_DAYS_PER_YEAR = 252
 SHARPE_LOW_SAMPLE_DAYS = 10
 
 
+def effective_dd_limit_usd(ruleset: Optional[dict]) -> float:
+    """
+    Dollar drawdown limit a Monte Carlo / objective check should compare against.
+    Returns 0.0 when the ruleset has no usable limit — callers must skip the check.
+
+    Personal/demo rulesets have NO trailing EOD rule (max_loss_eod = 0 is a sentinel,
+    never a $0 limit). Their drawdown rule is max_drawdown_from_peak_pct of
+    account_size — which is exactly what MC max-drawdown measures, so it translates
+    directly to dollars. The guard keys on ruleset_type, not the sentinel value, so
+    it holds even if the sentinel ever changes.
+    """
+    if not ruleset:
+        return 0.0
+    if ruleset.get("ruleset_type") in ("personal", "demo"):
+        pct = ruleset.get("max_drawdown_from_peak_pct")
+        size = ruleset.get("account_size")
+        if pct and size:
+            return float(size) * float(pct) / 100.0
+        return 0.0
+    return float(ruleset.get("max_loss_eod") or ruleset.get("daily_loss_cap") or 0)
+
+
 def daily_sharpe_from_values(daily_values: list[float]) -> float:
     """
     Annualized Sharpe from a list of per-day P&L values.

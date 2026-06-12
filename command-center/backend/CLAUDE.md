@@ -3,7 +3,7 @@
 **Purpose:** FastAPI backend (`:8000`) — owns all SQLite state, talks to the VPS via SSH + HTTP agents, runs the smart-money pipeline via subprocess, and drives NT8/MT5 backtests.
 **Scope:** This covers backend conventions, routers, services, DB, and VPS interaction. It does NOT cover the frontend (see `../frontend/CLAUDE.md`) or `algos/`/`smart-money/` source.
 **Status:** Live — lab (strategies, rulesets, backtests, sweeps, optimizations, stress tests, queue, MT5 runner) all shipped.
-**Last reviewed:** 2026-06-10
+**Last reviewed:** 2026-06-12
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
@@ -28,7 +28,7 @@ backend/
 │   ├── bots.py
 │   ├── backtests.py       lab — backtest runs
 │   ├── strategies.py      lab — strategy registry + deploy endpoint + GET /:id/instrument_summary + GET /:id/param-types
-│   ├── rulesets.py        lab — ruleset CRUD (/rulesets)
+│   ├── rulesets.py        lab — ruleset CRUD (/rulesets); PATCH = guarded personal-rules edit (prop rows locked 403; PUT also 403 on prop)
 │   ├── firms.py           backward-compat redirect /firms → /rulesets (deprecated, keep until all callers confirmed updated)
 │   ├── system.py          lab — health + log proxies
 │   ├── strategy_files.py  lab — strategy file deployment (list, upload, delete, compile, sync-status)
@@ -225,16 +225,16 @@ The `firms` table is now `rulesets`; `firm_id` is `ruleset_id` everywhere (evalu
 |---|---|---|
 | `prop_eval` | Prop firm eval challenges | EOD trailing max-loss (DISCARD on breach) → profit target (WARN if missed; target is raised when a `raise_target` firm's consistency is breached) → consistency (WARN). PASS if all clear. |
 | `prop_funded` | Prop firm funded accounts | EOD trailing max-loss only — PASS if not breached, else DISCARD. No WARN. |
-| `personal` | Personal trading accounts | **INFO** — performance metrics only, no pass/fail verdict; no trailing reference line. |
-| `demo` | Paper/demo accounts | **INFO** — performance metrics only, no pass/fail verdict. |
+| `personal` | Personal trading accounts | Real PASS/DISCARD verdict against the relaxed personal rules (`_evaluate_personal`): DISCARD on `max_consecutive_loss_days` consecutive days whose loss hit `daily_loss_cap`, or on EOD equity dropping `max_drawdown_from_peak_pct` from its running peak; otherwise PASS. `daily_profit_target` is an informational halt note, never a fail. No trailing MLL (max_loss_eod = 0 sentinel), no profit-target requirement, no consistency rule, no reference line. |
+| `demo` | Paper/demo accounts | Same as `personal`. |
 
-The verdict reads `max_loss_eod` (the trailing-MLL amount) and `mll_lock_balance` for drawdown; it never reads `daily_loss_cap` (a soft/informational field for firms like Apex).
+For prop types the verdict reads `max_loss_eod` (the trailing-MLL amount) and `mll_lock_balance` for drawdown; it never reads `daily_loss_cap` (a soft/informational field for firms like Apex). For personal/demo types `daily_loss_cap` IS a rule input (the capped-day trigger) and `max_loss_eod` is never read (0 sentinel = no trailing EOD rule). `metrics.effective_dd_limit_usd()` is the one place that turns a ruleset into a dollar MC/objective drawdown limit — personal/demo rows translate to `account_size × max_drawdown_from_peak_pct`; worthiness and the stress-test primary pick exclude personal/demo rows from their strictest-ruleset comparisons.
 
 `account_tier` is still present on rows (eval/funded/live) — useful for prop rulesets. `ruleset_type` is the broader category.
 
 Columns on `rulesets`: `ruleset_type`, `daily_loss_cap`, `weekly_loss_cap`, `daily_profit_goal`, `description`.
 
-Seeded rulesets (17 rows): 4 prop firms = 14 prop rows — LucidFlex, FundedNext, Tradeify each at 50k/100k × eval/funded (12 rows), plus Apex EOD eval-only at 50k/100k (2 rows; funded/PA not yet seeded) — plus 2 personal (`personal_forex_main`, `personal_futures_10k_example`) + 1 demo (`personal_forex_demo`). All seeded via the per-id idempotent pattern (`_PROP_SEED_ROWS` + `_seed_apex_eod_eval`).
+Seeded rulesets (16 rows): 4 prop firms = 14 prop rows — LucidFlex, FundedNext, Tradeify each at 50k/100k × eval/funded (12 rows), plus Apex EOD eval-only at 50k/100k (2 rows; funded/PA not yet seeded) — plus 2 personal demo rows (`personal_forex_demo`, `personal_futures_demo`; ruleset_type `personal`, account_tier `demo`). Personal demo rules on a $10k balance: $500 daily loss cap, $1,000 daily profit target, fail at 15% drawdown from peak (`max_drawdown_from_peak_pct`) or 3 consecutive capped-loss days (`max_consecutive_loss_days`) — stored now, enforced in a later evaluator pass. `max_loss_eod = 0` is the sentinel for "no trailing EOD rule" on personal rows (the column is NOT NULL); the evaluator must treat it as rule-absent. All seeded via the per-id idempotent pattern (`_PROP_SEED_ROWS` + `_seed_apex_eod_eval`).
 
 ---
 
@@ -271,7 +271,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Smart Money | ✅ Live | Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
 | Bots | ✅ Live | SSH monitor for gold_main/gold_scalper/gold_fft. Global + per-bot risk controls, cap deploy, Telegram users tab. |
 | Strategies | ✅ Live | Registry scanned from `strategies/`. Param schema from `[NinjaScriptProperty]`. `runner` field per strategy. |
-| Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 17 seeded rows (4 prop firms + personal/demo). |
+| Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 16 seeded rows (4 prop firms + 2 personal demo). Prop rows locked server-side (PATCH/PUT 403); `PATCH` edits the 5 personal rule fields only (`PersonalRulesetPatch` extra=forbid + SQL allowlist). |
 | Backtests | ✅ Live | NT8/MT5 runs via agent. Equity curve, daily P&L, per-ruleset verdicts, Worthiness tier (1/2/3). |
 | Sweeps | ✅ Live | N sequential backtests across instruments (`_MAX_CONCURRENT = 1`). Cancel, retry-all, per-run retry. |
 | Optimizations | ✅ Live | Native NT8/MT5 optimizer (one VPS job, full grid, all CPU cores). Scores by objective. `best_run_id` tracked. Source run nesting. Per-run retry. |

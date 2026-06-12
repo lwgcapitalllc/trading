@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
   Strategy, ScanResult, DeployJobStatus,
-  Ruleset, RulesetCreate,
+  Ruleset, RulesetCreate, PersonalRulesetPatch,
   BacktestRunRequest, BacktestSummary, BacktestDetail,
   LabProgress, SystemHealth,
   SweepRequest, SweepResponse, SweepDetail,
@@ -110,6 +110,19 @@ export function useUpdateRuleset() {
       api.put<Ruleset>(`/rulesets/${rulesetId}`, body),
     onSuccess: () => {
       toast.success('Ruleset updated')
+      qc.invalidateQueries({ queryKey: ['lab', 'rulesets'] })
+    },
+    onError: () => toast.error('Failed to update ruleset'),
+  })
+}
+
+export function usePatchPersonalRuleset() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ rulesetId, body }: { rulesetId: string; body: PersonalRulesetPatch }) =>
+      api.patch<Ruleset>(`/rulesets/${rulesetId}`, body),
+    onSuccess: () => {
+      toast.success('Personal rules updated')
       qc.invalidateQueries({ queryKey: ['lab', 'rulesets'] })
     },
     onError: () => toast.error('Failed to update ruleset'),

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from services.metrics import effective_dd_limit_usd
+
 
 OBJECTIVES = {}
 
@@ -35,7 +37,10 @@ def eval_pass_probability(run: dict, firm: dict) -> float:
         dd = abs(run.get("max_drawdown") or 0.0)
         pf = run.get("profit_factor") or 0.0
         net = run.get("net_pnl") or 0.0
-        if dd > firm["max_loss_eod"]:
+        # Personal/demo: max_loss_eod = 0 is a sentinel, not a $0 limit. The helper
+        # returns their drawdown-from-peak rule in dollars; 0 = no limit, skip the gate.
+        dd_limit = effective_dd_limit_usd(firm)
+        if dd_limit > 0 and dd > dd_limit:
             return 0.0
         if net >= firm.get("profit_target", 0):
             return 1.0
@@ -61,7 +66,9 @@ def funded_sharpe_under_drawdown(run: dict, firm: dict) -> float:
     For funded mode. Sharpe ratio if drawdown is within limit, -inf if breached.
     """
     dd = abs(run.get("max_drawdown") or 0.0)
-    if dd > firm["max_loss_eod"]:
+    # Personal/demo sentinel handling — see eval_pass_probability above.
+    dd_limit = effective_dd_limit_usd(firm)
+    if dd_limit > 0 and dd > dd_limit:
         return float("-inf")
     return run.get("sharpe") or 0.0
 

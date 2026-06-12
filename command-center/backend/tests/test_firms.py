@@ -2,7 +2,7 @@
 Ruleset seeding + CRUD (firms → rulesets, M3 rename).
 
 init_db() seeds 14 prop-firm rows across 4 firms (LucidFlex, FundedNext, Tradeify, Apex)
-plus 3 personal/demo rows = 17 total. The /firms routes are a deprecated 308 redirect to
+plus 2 personal demo rows = 16 total. The /firms routes are a deprecated 308 redirect to
 /rulesets; these tests hit the canonical /rulesets endpoint.
 """
 
@@ -21,7 +21,7 @@ def test_cold_start_seeds_all_four_firms(client):
     r = client.get("/rulesets")
     assert r.status_code == 200
     rulesets = r.json()
-    assert len(rulesets) == 17
+    assert len(rulesets) == 16
     firms = {r["id"].split("_")[0] for r in _prop_rows(rulesets)}
     assert firms == set(PROP_FIRM_PREFIXES)
     assert LUCIDFLEX_IDS.issubset({r["id"] for r in rulesets})
@@ -76,16 +76,57 @@ def test_corrected_firm_values(fresh_db):
     assert g("apex_eod_50k_eval")["daily_loss_cap"] == 1000
 
 
-def test_update_ruleset_profit_target(client):
-    """PUT /rulesets/:id updates the field and returns the updated row."""
+def test_put_prop_ruleset_locked(client):
+    """Prop rows are locked server-side — PUT returns 403 and changes nothing."""
     rs = client.get("/rulesets/lucidflex_50k_eval").json()
-    original = rs["profit_target"]
     rs["profit_target"] = 9999
     r = client.put("/rulesets/lucidflex_50k_eval", json=rs)
+    assert r.status_code == 403
+    assert client.get("/rulesets/lucidflex_50k_eval").json()["profit_target"] != 9999
+
+
+def test_put_personal_ruleset_allowed(client):
+    """PUT still works for personal rows (full-row admin edit)."""
+    rs = client.get("/rulesets/personal_forex_demo").json()
+    rs["description"] = "edited via PUT"
+    r = client.put("/rulesets/personal_forex_demo", json=rs)
     assert r.status_code == 200
-    assert r.json()["profit_target"] == 9999
-    rs["profit_target"] = original
-    client.put("/rulesets/lucidflex_50k_eval", json=rs)
+    assert r.json()["description"] == "edited via PUT"
+
+
+# ── PATCH /rulesets/:id — the personal-rules edit endpoint ────────────────────
+
+def test_patch_personal_allowed_fields(client):
+    """PATCH updates the allowed personal rule fields and persists them."""
+    r = client.patch("/rulesets/personal_forex_demo", json={
+        "daily_loss_cap": 750, "max_drawdown_from_peak_pct": 20.0,
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["daily_loss_cap"] == 750
+    assert body["max_drawdown_from_peak_pct"] == 20.0
+    # untouched fields survive
+    assert body["daily_profit_target"] == 1000
+    assert body["max_consecutive_loss_days"] == 3
+
+
+def test_patch_prop_ruleset_rejected(client):
+    """PATCH on a prop row is rejected 403 — the lock is server-side."""
+    r = client.patch("/rulesets/lucidflex_50k_eval", json={"daily_loss_cap": 750})
+    assert r.status_code == 403
+    assert "not editable" in r.json()["detail"]
+
+
+def test_patch_disallowed_field_rejected(client):
+    """Non-allowlisted fields are rejected 422 even on a personal row."""
+    for payload in ({"ruleset_type": "prop_eval"}, {"max_loss_eod": 5000}, {"name": "sneaky"}):
+        r = client.patch("/rulesets/personal_forex_demo", json=payload)
+        assert r.status_code == 422, f"{payload} should be rejected"
+
+
+def test_patch_empty_body_rejected(client):
+    r = client.patch("/rulesets/personal_forex_demo", json={})
+    assert r.status_code == 400
 
 
 def test_seeding_is_idempotent(fresh_db):
@@ -94,4 +135,4 @@ def test_seeding_is_idempotent(fresh_db):
     before = len(lab_db.list_rulesets())
     lab_db.init_db()
     after = len(lab_db.list_rulesets())
-    assert before == after == 17
+    assert before == after == 16

@@ -18,7 +18,7 @@ import numpy as np
 
 from services import lab_db
 from services import notify
-from services.metrics import daily_sharpe_from_values, apply_canonical_sharpe
+from services.metrics import daily_sharpe_from_values, apply_canonical_sharpe, effective_dd_limit_usd
 
 log = logging.getLogger("stress_tester")
 
@@ -78,7 +78,11 @@ def run_monte_carlo(
     prob_breach = 0.0
     prob_pass_eval = 0.0
     if ruleset:
-        max_loss = ruleset.get("max_loss_eod") or ruleset.get("daily_loss_cap") or 0
+        # Personal/demo: max_loss_eod = 0 is a sentinel (no trailing EOD rule), and the
+        # old `or daily_loss_cap` fallback would wrongly use the per-day cap as a
+        # whole-run limit. The helper translates their real drawdown rule
+        # (max_drawdown_from_peak_pct of account_size) into the dollar limit MC measures.
+        max_loss = effective_dd_limit_usd(ruleset)
         profit_target = ruleset.get("profit_target") or 0
         rtype = ruleset.get("ruleset_type", "prop_eval")
         if max_loss > 0:
@@ -719,7 +723,12 @@ async def trigger_auto_stress_test(run_id: str, ruleset_ids: list[str]) -> None:
         candidates = [lab_db.get_ruleset(rid) for rid in ruleset_ids]
         candidates = [r for r in candidates if r]
         if candidates:
-            primary = min(candidates, key=lambda r: r.get("max_loss_eod") or float("inf"))
+            # Personal/demo rows carry max_loss_eod = 0 (sentinel) and must not win the
+            # strictest pick. Prefer prop rows; fall back to personal only when the run
+            # was evaluated against personal rulesets alone.
+            prop = [r for r in candidates if r.get("ruleset_type") not in ("personal", "demo")]
+            pool = prop or candidates
+            primary = min(pool, key=lambda r: r.get("max_loss_eod") or float("inf"))
             primary_ruleset_id = primary["id"]
 
     st_id = uuid.uuid4().hex[:16]

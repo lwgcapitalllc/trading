@@ -1,9 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Pencil, X, Upload, Trash2, ExternalLink, CloudUpload } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, Upload, Trash2, CloudUpload } from 'lucide-react'
 import {
-  useStrategies, useFirms,
-  useScanStrategies, useUpdateRuleset,
+  useStrategies,
+  useScanStrategies,
   useStrategyFiles, useStrategyFileSyncStatus,
   useUploadStrategyFile, useDeleteStrategyFile,
   useTriggerCompile, useCompileStatus,
@@ -14,14 +14,13 @@ import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { useStrategyBestGrades } from '@/hooks/useStressTests'
-import { RulesetTypeBadge } from '@/components/RulesetTypeBadge'
 import { RunnerBadge } from '@/components/RunnerBadge'
 import { toast } from 'sonner'
-import type { Strategy, Ruleset, StrategyFile } from '@/types'
+import type { Strategy, StrategyFile } from '@/types'
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-type Tab = 'strategies' | 'rulesets' | 'deployed'
+type Tab = 'strategies' | 'deployed'
 
 function TabBar({ active, onChange, counts }: {
   active: Tab
@@ -30,7 +29,6 @@ function TabBar({ active, onChange, counts }: {
 }) {
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: 'strategies', label: 'Strategies' },
-    { id: 'rulesets',   label: 'Rulesets' },
     { id: 'deployed',   label: 'Deployed' },
   ]
   return (
@@ -346,280 +344,7 @@ function StrategiesSkeleton() {
   )
 }
 
-// ── Rulesets tab ──────────────────────────────────────────────────────────────
-
-const FIRM_BRAND_NAMES: Record<string, string> = {
-  lucidflex:  'LucidFlex',
-  tradeify:   'Tradeify',
-  fundednext: 'FundedNext',
-  apex:       'Apex',
-}
-
-function firmBrand(firmId: string): string {
-  const prefix = firmId.split('_')[0]
-  return FIRM_BRAND_NAMES[prefix] ?? (prefix.charAt(0).toUpperCase() + prefix.slice(1))
-}
-
-// ── Foundational config edit modal ────────────────────────────────────────────
-
-function FoundationalEditModal({ ruleset, onClose }: { ruleset: Ruleset; onClose: () => void }) {
-  const update = useUpdateRuleset()
-  const inputCls = 'bg-bg-sunken border border-border-subtle rounded px-2.5 py-[5px] text-[12px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
-  const labelCls = 'text-[11px] text-text-secondary block mb-1'
-
-  const [form, setForm] = useState({
-    risk_per_trade_pct:          String(ruleset.risk_per_trade_pct ?? ''),
-    max_consecutive_losses:      String(ruleset.max_consecutive_losses ?? ''),
-    daily_halt_fraction:         String(ruleset.daily_halt_fraction ?? ''),
-    earliest_entry_time_et:      ruleset.earliest_entry_time_et ?? '',
-    latest_entry_time_et:        ruleset.latest_entry_time_et ?? '',
-    days_of_week_allowed:        (ruleset.days_of_week_allowed ?? []).join(','),
-    daily_profit_target:         String(ruleset.daily_profit_target ?? ''),
-    daily_profit_lock_pct:       String(ruleset.daily_profit_lock_pct != null ? ruleset.daily_profit_lock_pct * 100 : ''),
-    default_commission_per_side: String(ruleset.default_commission_per_side ?? ''),
-    default_slippage_ticks:      String(ruleset.default_slippage_ticks ?? ''),
-  })
-
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm(prev => ({ ...prev, [k]: e.target.value }))
-
-  function handleSave() {
-    const pct = parseFloat(form.daily_profit_lock_pct)
-    if (form.daily_profit_lock_pct !== '' && (pct < 0 || pct > 100)) {
-      toast.error('Lock-in % must be between 0 and 100'); return
-    }
-    const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/
-    for (const [field, val] of [['Earliest entry', form.earliest_entry_time_et], ['Latest entry', form.latest_entry_time_et]] as const) {
-      if (val && !timeRe.test(val)) { toast.error(`${field} time must be HH:MM`); return }
-    }
-    const validDays = new Set(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
-    const days = form.days_of_week_allowed.split(',').map(d => d.trim().toLowerCase()).filter(Boolean)
-    if (days.some(d => !validDays.has(d))) {
-      toast.error('Days must be comma-separated: mon,tue,wed,thu,fri'); return
-    }
-    const lock = form.daily_profit_lock_pct !== '' ? parseFloat(form.daily_profit_lock_pct) / 100 : null
-    update.mutate({
-      rulesetId: ruleset.id,
-      body: {
-        ...ruleset,
-        risk_per_trade_pct:          form.risk_per_trade_pct !== '' ? parseFloat(form.risk_per_trade_pct) : null,
-        max_consecutive_losses:      form.max_consecutive_losses !== '' ? parseInt(form.max_consecutive_losses, 10) : null,
-        daily_halt_fraction:         form.daily_halt_fraction !== '' ? parseFloat(form.daily_halt_fraction) : null,
-        earliest_entry_time_et:      form.earliest_entry_time_et || null,
-        latest_entry_time_et:        form.latest_entry_time_et || null,
-        days_of_week_allowed:        days,
-        daily_profit_target:         form.daily_profit_target !== '' ? parseInt(form.daily_profit_target, 10) : null,
-        daily_profit_lock_pct:       lock,
-        default_commission_per_side: form.default_commission_per_side !== '' ? parseFloat(form.default_commission_per_side) : null,
-        default_slippage_ticks:      form.default_slippage_ticks !== '' ? parseInt(form.default_slippage_ticks, 10) : null,
-      },
-    }, { onSuccess: onClose })
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[520px] max-h-[85vh] flex flex-col shadow-2xl">
-        <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between flex-shrink-0">
-          <div>
-            <div className="text-[14px] font-semibold">Edit Foundational Config</div>
-            <div className="text-[11px] text-text-tertiary font-mono mt-0.5">{ruleset.id}</div>
-          </div>
-          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary transition-colors"><X size={16} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          <div>
-            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-2">Capital &amp; Risk</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className={labelCls}>Risk % per Trade</label><input type="number" step="0.1" min="0" max="5" className={inputCls} value={form.risk_per_trade_pct} onChange={set('risk_per_trade_pct')} placeholder="0.5" /></div>
-              <div><label className={labelCls}>Daily Halt Fraction (0–1)</label><input type="number" step="0.05" min="0" max="1" className={inputCls} value={form.daily_halt_fraction} onChange={set('daily_halt_fraction')} placeholder="0.6" /></div>
-              <div><label className={labelCls}>Max Consecutive Losses</label><input type="number" step="1" min="0" className={inputCls} value={form.max_consecutive_losses} onChange={set('max_consecutive_losses')} placeholder="3" /></div>
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-2">Trading Hours &amp; Days</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className={labelCls}>Earliest Entry ET (HH:MM)</label><input type="text" className={inputCls} value={form.earliest_entry_time_et} onChange={set('earliest_entry_time_et')} placeholder="09:30" /></div>
-              <div><label className={labelCls}>Latest Entry ET (HH:MM)</label><input type="text" className={inputCls} value={form.latest_entry_time_et} onChange={set('latest_entry_time_et')} placeholder="15:00" /></div>
-              <div className="col-span-2"><label className={labelCls}>Days Allowed (comma-separated: mon,tue,wed,thu,fri)</label><input type="text" className={inputCls} value={form.days_of_week_allowed} onChange={set('days_of_week_allowed')} placeholder="mon,tue,wed,thu,fri" /></div>
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-2">Daily Goals</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className={labelCls}>Daily Profit Target ($)</label><input type="number" step="50" min="0" className={inputCls} value={form.daily_profit_target} onChange={set('daily_profit_target')} placeholder="1500" /></div>
-              <div><label className={labelCls}>Lock-In At (% of target)</label><input type="number" step="5" min="0" max="100" className={inputCls} value={form.daily_profit_lock_pct} onChange={set('daily_profit_lock_pct')} placeholder="80" /></div>
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wide mb-2">Execution Defaults</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className={labelCls}>Commission / Side ($)</label><input type="number" step="0.25" min="0" className={inputCls} value={form.default_commission_per_side} onChange={set('default_commission_per_side')} placeholder="2.25" /></div>
-              <div><label className={labelCls}>Slippage (ticks)</label><input type="number" step="1" min="0" className={inputCls} value={form.default_slippage_ticks} onChange={set('default_slippage_ticks')} placeholder="1" /></div>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle flex-shrink-0">
-          <button onClick={onClose} className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors">Cancel</button>
-          <button onClick={handleSave} disabled={update.isPending} className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-accent text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed">
-            {update.isPending ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function RulesetsTab() {
-  const { data: rulesets, isLoading } = useFirms()
-  const [brandFilter, setBrandFilter] = useState<string | null>(null)
-
-  if (isLoading) return <FirmsSkeleton />
-  if (!rulesets?.length) return (
-    <EmptyState
-      icon={<Play size={20} />}
-      title="No rulesets configured"
-      description="Rulesets are seeded automatically on backend startup."
-    />
-  )
-
-  const propRulesets = rulesets.filter(r => r.ruleset_type === 'prop_eval' || r.ruleset_type === 'prop_funded')
-  const otherRulesets = rulesets.filter(r => r.ruleset_type !== 'prop_eval' && r.ruleset_type !== 'prop_funded')
-  const brands = [...new Set(propRulesets.map(r => firmBrand(r.id)))]
-  const visible = brandFilter ? [brandFilter] : brands
-
-  return (
-    <div className="space-y-6">
-      {propRulesets.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wide">Prop Firm Challenges</span>
-            {brands.length > 1 && (
-              <div className="flex items-center gap-1">
-                <button onClick={() => setBrandFilter(null)} className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${brandFilter === null ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'}`}>All</button>
-                {brands.map(b => (
-                  <button key={b} onClick={() => setBrandFilter(brandFilter === b ? null : b)} className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${brandFilter === b ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'}`}>{b}</button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-border-subtle">
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Ruleset</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Type</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD (EOD)</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((brand, bi) => (
-                  <>
-                    <tr key={`hdr-${brand}`} className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-accent/5 border-l-2 border-l-accent`}>
-                      <td colSpan={6} className="px-4 py-2">
-                        <span className="text-[12px] font-semibold text-accent uppercase tracking-[0.4px]">{brand}</span>
-                      </td>
-                    </tr>
-                    {propRulesets.filter(r => firmBrand(r.id) === brand).map(r => (
-                      <RulesetRow key={r.id} ruleset={r} />
-                    ))}
-                  </>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {otherRulesets.length > 0 && (
-        <div>
-          <div className="mb-3">
-            <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wide">Personal &amp; Demo Accounts</span>
-          </div>
-          <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-border-subtle">
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Ruleset</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Type</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Account Size</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Daily Cap</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Weekly Cap</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Daily Goal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {otherRulesets.map(r => (
-                  <RulesetRow key={r.id} ruleset={r} personal />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?: boolean }) {
-  const [editing, setEditing] = useState(false)
-  return (
-    <>
-      {editing && <FoundationalEditModal ruleset={ruleset} onClose={() => setEditing(false)} />}
-      <tr className="hover:bg-bg-hover transition-colors">
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-1.5">
-            <span className="font-medium">{ruleset.name}</span>
-            {ruleset.market === 'forex' && (
-              <span className="text-[10px] font-bold px-1 py-[1px] rounded bg-blue-500/12 text-blue-400 border border-blue-500/20">FX</span>
-            )}
-            {ruleset.docs_url && (
-              <a href={ruleset.docs_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} title="View rules documentation" className="text-text-tertiary hover:text-accent transition-colors">
-                <ExternalLink size={11} />
-              </a>
-            )}
-            <button onClick={e => { e.stopPropagation(); setEditing(true) }} title="Edit foundational config" className="text-text-tertiary hover:text-accent transition-colors ml-0.5">
-              <Pencil size={10} />
-            </button>
-          </div>
-          <div className="text-[11px] text-text-tertiary font-mono">{ruleset.id}</div>
-        </td>
-        <td className="px-4 py-3"><RulesetTypeBadge ruleset_type={ruleset.ruleset_type} size="sm" /></td>
-        <td className="px-4 py-3 font-mono tabular-nums">${ruleset.account_size.toLocaleString()}</td>
-        {!personal ? (
-          <>
-            <td className="px-4 py-3 font-mono tabular-nums text-pos-text">{ruleset.profit_target > 0 ? `$${ruleset.profit_target.toLocaleString()}` : <span className="text-text-tertiary">—</span>}</td>
-            <td className="px-4 py-3 font-mono tabular-nums text-neg-text">${ruleset.max_loss_eod.toLocaleString()}</td>
-            <td className="px-4 py-3 text-text-secondary">{ruleset.consistency_pct != null ? `≤ ${ruleset.consistency_pct}%` : <span className="text-text-tertiary">—</span>}</td>
-          </>
-        ) : (
-          <>
-            <td className="px-4 py-3 font-mono tabular-nums text-neg-text">{ruleset.daily_loss_cap != null ? `$${ruleset.daily_loss_cap.toLocaleString()}` : <span className="text-text-tertiary">—</span>}</td>
-            <td className="px-4 py-3 font-mono tabular-nums text-neg-text">{ruleset.weekly_loss_cap != null ? `$${ruleset.weekly_loss_cap.toLocaleString()}` : <span className="text-text-tertiary">—</span>}</td>
-            <td className="px-4 py-3 font-mono tabular-nums text-pos-text">{ruleset.daily_profit_goal != null ? `$${ruleset.daily_profit_goal.toLocaleString()}` : <span className="text-text-tertiary">—</span>}</td>
-          </>
-        )}
-      </tr>
-    </>
-  )
-}
-
-function FirmsSkeleton() {
-  return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden animate-pulse">
-      {[0, 1, 2, 3].map(i => (
-        <div key={i} className="flex gap-4 px-4 py-3 border-b border-border-subtle last:border-0">
-          <div className="h-4 w-36 bg-bg-hover rounded" />
-          <div className="h-4 w-16 bg-bg-hover rounded" />
-          <div className="h-4 w-24 bg-bg-hover rounded" />
-          <div className="h-4 w-24 bg-bg-hover rounded" />
-        </div>
-      ))}
-    </div>
-  )
-}
+// ── (Rulesets moved to pages/Rulesets.tsx — own top-level nav item) ──────────
 
 // ── Files tab ─────────────────────────────────────────────────────────────────
 
@@ -919,12 +644,18 @@ function FilesTab() {
 // ── Page shell ────────────────────────────────────────────────────────────────
 
 export function Strategies() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = (searchParams.get('tab') ?? 'strategies') as Tab
+  const rawTab = searchParams.get('tab')
+  const tab = (rawTab === 'deployed' ? 'deployed' : 'strategies') as Tab
   const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
 
+  // Rulesets moved to their own top-level page — redirect old deep links.
+  useEffect(() => {
+    if (rawTab === 'rulesets') navigate('/rulesets', { replace: true })
+  }, [rawTab, navigate])
+
   const { data: strategies } = useStrategies()
-  const { data: rulesets } = useFirms()
   const { data: files } = useStrategyFiles()
   const { data: syncStatus } = useStrategyFileSyncStatus()
 
@@ -936,7 +667,6 @@ export function Strategies() {
 
   const counts: Partial<Record<Tab, number>> = {
     strategies: strategies?.length,
-    rulesets:   rulesets?.length,
     deployed:   deployedCount,
   }
 
@@ -947,7 +677,6 @@ export function Strategies() {
       </div>
       <TabBar active={tab} onChange={setTab} counts={counts} />
       {tab === 'strategies' && <StrategiesTab />}
-      {tab === 'rulesets'   && <RulesetsTab />}
       {tab === 'deployed'   && <FilesTab />}
     </div>
   )

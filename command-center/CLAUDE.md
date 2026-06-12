@@ -3,7 +3,7 @@
 **Purpose:** Local operations platform for LWG Capital — a React frontend + FastAPI backend that monitors the live bots, surfaces the Smart Money pipeline, and runs/evaluates NinjaTrader + MT5 backtests.
 **Scope:** This covers the command-center app (backend + frontend). Sub-directory CLAUDE.md files cover backend and frontend internals. It does NOT cover `algos/` or `smart-money/` source — those are read-only outputs to this app.
 **Status:** Live — all modules shipped (Smart Money, Bots, Backtests lab, Sweeps, Optimizations, Stress Tests, Queue, MT5 runner).
-**Last reviewed:** 2026-06-10
+**Last reviewed:** 2026-06-12
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
@@ -79,6 +79,7 @@ cd command-center
 | Overview | ✅ Live | Stat row plus Bots, Smart Money, and Backtests summary cards |
 | Smart Money | ✅ Live | Full pipeline UI: scan, terminal, rankings, profiles, config, cache |
 | Bots | ✅ Live | Monitor, control, configure risk caps and deploy, manage Telegram users |
+| Rulesets | ✅ Live | Own top-level page: firm-grouped tables, contract scaling column, editable personal rules (server-side lock on prop rows) |
 | Backtests lab | ✅ Live | Runs and Sweeps tabs; BacktestDetail with collapsible params side panel |
 | Optimizations | ✅ Live | Own top-level RESEARCH page (`/optimizations`); native NT8/MT5 optimizer; ranked results; "Tune winner" |
 | Tuning workbench | ✅ Live | `/backtests/runs/:id/tune` — edit a winner's params, run iterations, leaderboard + deltas + regime-aware equity overlay |

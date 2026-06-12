@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Radar, Bot, BookOpen, BarChart2, Sliders,
+  LayoutDashboard, Radar, Bot, BookOpen, ClipboardList, BarChart2, Sliders,
   Activity, ListOrdered, Settings, ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -14,8 +14,9 @@ const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[
 ]
 
 const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
-  { to: '/strategies',    label: 'Strategies',    icon: BookOpen,    live: true  },
-  { to: '/backtests',     label: 'Backtests',     icon: BarChart2,   live: true  },
+  { to: '/strategies',    label: 'Strategies',    icon: BookOpen,      live: true  },
+  { to: '/rulesets',      label: 'Rulesets',      icon: ClipboardList, live: true  },
+  { to: '/backtests',     label: 'Backtests',     icon: BarChart2,     live: true  },
   { to: '/optimizations', label: 'Optimizations', icon: Sliders,     live: true  },
   { to: '/stress-tests',  label: 'Stress Tests',  icon: Activity,    live: true  },
   { to: '/queue',         label: 'Queue',         icon: ListOrdered, live: true  },

@@ -284,7 +284,7 @@ export interface Ruleset {
   min_trading_days: number | null
   force_flat_time_et: string | null
   allowed_instruments: string[]
-  max_contracts: Record<string, unknown>
+  max_contracts: Record<string, unknown> | null
   platform_support: string[]
   account_tier: string
   ruleset_type: 'prop_eval' | 'prop_funded' | 'personal' | 'demo'
@@ -310,9 +310,21 @@ export interface Ruleset {
   daily_halt_fraction: number | null
   market: string    // "futures" | "forex"
   drawdown_unit: string
+  // Personal fail conditions (personal/demo rows; null on prop rows)
+  max_drawdown_from_peak_pct: number | null
+  max_consecutive_loss_days: number | null
 }
 
 export type RulesetCreate = Ruleset
+
+// PATCH /rulesets/{id} — personal/demo rows only; backend rejects anything else
+export interface PersonalRulesetPatch {
+  account_size?: number
+  daily_loss_cap?: number
+  daily_profit_target?: number
+  max_drawdown_from_peak_pct?: number
+  max_consecutive_loss_days?: number
+}
 
 // Backward-compat aliases — M3 only
 export type Firm = Ruleset
@@ -386,6 +398,11 @@ export interface EvaluationDetail {
   firm_max_loss_eod: number
   firm_profit_target: number
   firm_consistency_pct: number | null
+  // Ruleset context — personal/demo cards render personal chips, never the $0 sentinel
+  ruleset_type: 'prop_eval' | 'prop_funded' | 'personal' | 'demo'
+  personal_daily_loss_cap: number | null
+  personal_max_drawdown_from_peak_pct: number | null
+  personal_max_consecutive_loss_days: number | null
   notes: string | null
 }
 

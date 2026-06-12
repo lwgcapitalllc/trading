@@ -107,6 +107,10 @@ def _row_to_detail(row: dict) -> BacktestDetail:
             firm_max_loss_eod=e["firm_max_loss_eod"],
             firm_profit_target=e["firm_profit_target"],
             firm_consistency_pct=e.get("firm_consistency_pct"),
+            ruleset_type=e.get("ruleset_type") or "prop_eval",
+            personal_daily_loss_cap=e.get("personal_daily_loss_cap"),
+            personal_max_drawdown_from_peak_pct=e.get("personal_max_drawdown_from_peak_pct"),
+            personal_max_consecutive_loss_days=e.get("personal_max_consecutive_loss_days"),
             notes=e.get("notes"),
         )
         for e in lab_db.get_evaluations(row["run_id"])

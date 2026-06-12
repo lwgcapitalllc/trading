@@ -927,6 +927,16 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
 
 // ── Evaluation card ───────────────────────────────────────────────────────────
 
+function isPersonal(ev: EvaluationDetail): boolean {
+  return ev.ruleset_type === 'personal' || ev.ruleset_type === 'demo'
+}
+
+// breach_count counts fired personal DISCARD conditions (0–2); drawdown_pass says
+// whether the drawdown condition was one of them — the remainder is the streak.
+function personalStreakPass(ev: EvaluationDetail): boolean {
+  return ev.breach_count - (ev.drawdown_pass ? 0 : 1) <= 0
+}
+
 const VERDICT_CONFIG = {
   PASS:    { label: 'PASS',    bg: 'bg-pos-muted',  text: 'text-pos-text',  border: 'border-l-pos-text/50',  Icon: CheckCircle },
   WARN:    { label: 'WARN',    bg: 'bg-warn-muted', text: 'text-warn-text', border: 'border-l-warn-text/50', Icon: Minus       },
@@ -957,8 +967,28 @@ function EvalCard({ ev, netPnl }: { ev: EvaluationDetail; netPnl?: number | null
 
       <div className="mx-4 border-t border-border-subtle" />
 
-      {/* Rule checks — prop verdicts only; INFO rows show performance, no judgment */}
-      {ev.verdict !== 'INFO' && (
+      {/* Rule checks. Personal/demo cards show the personal rules — never the prop
+          chips: firm_max_loss_eod is 0 there (sentinel = no trailing EOD rule), and
+          trailing MLL / consistency / contract cap don't apply. Old INFO rows
+          (pre-verdict evaluations) still show no chips. */}
+      {ev.verdict !== 'INFO' && (isPersonal(ev) ? (
+        <div className="px-4 py-3 space-y-[10px]">
+          {ev.personal_max_drawdown_from_peak_pct != null && (
+            <EvalRow
+              label="Drawdown from peak"
+              pass={ev.drawdown_pass}
+              value={`≤ ${ev.personal_max_drawdown_from_peak_pct}% from equity peak`}
+            />
+          )}
+          {ev.personal_daily_loss_cap != null && ev.personal_max_consecutive_loss_days != null && (
+            <EvalRow
+              label="Consecutive capped days"
+              pass={personalStreakPass(ev)}
+              value={`< ${ev.personal_max_consecutive_loss_days} days in a row at −$${ev.personal_daily_loss_cap.toLocaleString()}`}
+            />
+          )}
+        </div>
+      ) : (
         <div className="px-4 py-3 space-y-[10px]">
           <EvalRow
             label="Daily drawdown"
@@ -983,7 +1013,7 @@ function EvalCard({ ev, netPnl }: { ev: EvaluationDetail; netPnl?: number | null
             />
           )}
         </div>
-      )}
+      ))}
 
       {/* Footer */}
       {(ev.simulated_eval_days != null || ev.notes) && (
@@ -1886,9 +1916,12 @@ export function BacktestDetail() {
             const seenLimits = new Set<number>()
             const evalLimits: Array<{ limit: number; label: string; pass: boolean }> = []
             for (const e of run.evaluations) {
+              // Personal/demo have no trailing EOD rule — firm_max_loss_eod is the 0
+              // sentinel and must never render as a "$0 limit" reference line.
+              if (isPersonal(e)) continue
               if (!seenLimits.has(e.firm_max_loss_eod)) {
                 seenLimits.add(e.firm_max_loss_eod)
-                const same = run.evaluations.filter(x => x.firm_max_loss_eod === e.firm_max_loss_eod)
+                const same = run.evaluations.filter(x => x.firm_max_loss_eod === e.firm_max_loss_eod && !isPersonal(x))
                 evalLimits.push({ limit: e.firm_max_loss_eod, label: e.ruleset_name, pass: same.every(x => x.drawdown_pass) })
               }
             }

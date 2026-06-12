@@ -6,7 +6,7 @@ These shapes are authoritative. Pipeline outputs conform to this; not the revers
 from __future__ import annotations
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ── Shared ────────────────────────────────────────────────────────────────────
@@ -309,9 +309,9 @@ class Ruleset(BaseModel):
     min_trading_days: Optional[int] = None
     force_flat_time_et: Optional[str] = None
     allowed_instruments: list[str] = []
-    max_contracts: dict = {}
+    max_contracts: Optional[dict] = None  # null = no contract cap (personal/demo)
     platform_support: list[str] = []
-    account_tier: str = "eval"          # "eval" | "funded" | "live"
+    account_tier: str = "eval"          # "eval" | "funded" | "live" | "demo"
     ruleset_type: str = "prop_eval"     # "prop_eval" | "prop_funded" | "personal" | "demo"
     daily_loss_cap: Optional[int] = None
     weekly_loss_cap: Optional[int] = None
@@ -336,6 +336,9 @@ class Ruleset(BaseModel):
     # M5 — market and drawdown unit
     market: str = "futures"       # "futures" | "forex" | "mixed"
     drawdown_unit: str = "usd"    # "usd" | "percent"
+    # Personal fail conditions (personal/demo rows; NULL on prop rows)
+    max_drawdown_from_peak_pct: Optional[float] = None
+    max_consecutive_loss_days: Optional[int] = None
 
 
 class RulesetCreate(BaseModel):
@@ -350,9 +353,9 @@ class RulesetCreate(BaseModel):
     min_trading_days: Optional[int] = None
     force_flat_time_et: Optional[str] = None
     allowed_instruments: list[str] = []
-    max_contracts: dict = {}
+    max_contracts: Optional[dict] = None  # null = no contract cap (personal/demo)
     platform_support: list[str] = []
-    account_tier: str = "eval"          # "eval" | "funded" | "live"
+    account_tier: str = "eval"          # "eval" | "funded" | "live" | "demo"
     ruleset_type: str = "prop_eval"     # "prop_eval" | "prop_funded" | "personal" | "demo"
     daily_loss_cap: Optional[int] = None
     weekly_loss_cap: Optional[int] = None
@@ -377,6 +380,25 @@ class RulesetCreate(BaseModel):
     # M5 — market and drawdown unit
     market: str = "futures"
     drawdown_unit: str = "usd"
+    # Personal fail conditions (personal/demo rows; NULL on prop rows)
+    max_drawdown_from_peak_pct: Optional[float] = None
+    max_consecutive_loss_days: Optional[int] = None
+
+
+class PersonalRulesetPatch(BaseModel):
+    """
+    PATCH /rulesets/{id} body — personal/demo rows only, personal rule fields only.
+    extra="forbid" makes any other field a 422 at the validation layer, so the
+    prop-rule lock cannot be bypassed by sneaking fields into this endpoint.
+    Explicit nulls are ignored (rules are cleared via PUT, not PATCH).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    account_size: Optional[int] = Field(None, gt=0)
+    daily_loss_cap: Optional[int] = Field(None, gt=0)
+    daily_profit_target: Optional[int] = Field(None, gt=0)
+    max_drawdown_from_peak_pct: Optional[float] = Field(None, gt=0, le=100)
+    max_consecutive_loss_days: Optional[int] = Field(None, ge=1)
 
 
 # ── Lab — worthiness scoring ──────────────────────────────────────────────────
@@ -455,6 +477,12 @@ class EvaluationDetail(BaseModel):
     firm_max_loss_eod: int
     firm_profit_target: int
     firm_consistency_pct: Optional[float] = None
+    # Ruleset context for rendering — personal/demo cards show the personal rule
+    # chips and must not render firm_max_loss_eod (0 = sentinel, not a $0 limit).
+    ruleset_type: str = "prop_eval"
+    personal_daily_loss_cap: Optional[int] = None
+    personal_max_drawdown_from_peak_pct: Optional[float] = None
+    personal_max_consecutive_loss_days: Optional[int] = None
     notes: Optional[str] = None
 
 

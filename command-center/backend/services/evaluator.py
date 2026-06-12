@@ -103,6 +103,112 @@ def _notes_prop(
     return "; ".join(parts)
 
 
+def _evaluate_personal(
+    ruleset: dict,
+    daily_pnl: list[dict],
+    net_pnl: float,
+) -> tuple[str, bool, str, int]:
+    """
+    Personal/demo verdict — relaxed but real rules (no trailing MLL, no consistency,
+    no profit-target requirement). Two DISCARD conditions; either one fails the run:
+
+      1. Consecutive capped days — max_consecutive_loss_days days IN A ROW whose loss
+         hit daily_loss_cap. The streak resets on any non-capped day.
+      2. Drawdown from peak — EOD equity dropping max_drawdown_from_peak_pct or more
+         from its running peak at any point in the run.
+
+    daily_profit_target is a halt, not a rule: a day reaching it would have stopped
+    trading for that day — noted, never failed.
+
+    Honesty limits: backtest daily P&L can't distinguish a day halted AT the cap from
+    one that simply lost that much, so "day's loss >= daily_loss_cap" is the capped-day
+    trigger. Granularity is end-of-day (same convention as the trailing-MLL engine):
+    an intraday dip through the drawdown limit that recovers by the close is invisible.
+
+    Returns (verdict, drawdown_pass, notes, breach_count) where breach_count is the
+    number of DISCARD conditions that fired (0-2).
+    """
+    account_size = ruleset.get("account_size")
+    daily_cap = ruleset.get("daily_loss_cap")
+    streak_limit = ruleset.get("max_consecutive_loss_days")
+    dd_limit_pct = ruleset.get("max_drawdown_from_peak_pct")
+    profit_halt = ruleset.get("daily_profit_target")
+
+    failures: list[str] = []
+    info: list[str] = []
+
+    # ── 1. Consecutive capped-loss days ────────────────────────────────────
+    if daily_cap and streak_limit:
+        streak = 0
+        worst_streak = 0
+        capped_days = 0
+        breach_date = None
+        for d in daily_pnl:
+            if (d.get("pnl") or 0.0) <= -daily_cap:
+                capped_days += 1
+                streak += 1
+                if streak > worst_streak:
+                    worst_streak = streak
+                if streak >= streak_limit and breach_date is None:
+                    breach_date = d.get("date")
+            else:
+                streak = 0
+        if worst_streak >= streak_limit:
+            failures.append(
+                f"{worst_streak} consecutive days hit the ${daily_cap:,.0f} daily cap"
+                + (f" (streak completed {breach_date})" if breach_date else "")
+            )
+        elif capped_days:
+            info.append(
+                f"{capped_days} day(s) hit the ${daily_cap:,.0f} daily cap "
+                f"(worst streak {worst_streak} of {streak_limit} allowed)"
+            )
+
+    # ── 2. Drawdown from peak (EOD equity) ─────────────────────────────────
+    drawdown_pass = True
+    if account_size and dd_limit_pct:
+        balance = float(account_size)
+        peak = balance
+        worst_dd_pct = 0.0
+        breach = None  # (dd_pct, date) at first crossing
+        for d in daily_pnl:
+            balance += d.get("pnl") or 0.0
+            if balance > peak:
+                peak = balance
+            dd_pct = (peak - balance) / peak * 100 if peak > 0 else 0.0
+            if dd_pct > worst_dd_pct:
+                worst_dd_pct = dd_pct
+            if dd_pct >= dd_limit_pct and breach is None:
+                breach = (dd_pct, d.get("date"))
+        if breach is not None:
+            drawdown_pass = False
+            failures.append(
+                f"drew down {breach[0]:.1f}% from peak on {breach[1]} "
+                f"(limit {dd_limit_pct:.0f}%)"
+            )
+        else:
+            info.append(
+                f"max drawdown from peak {worst_dd_pct:.1f}% "
+                f"(limit {dd_limit_pct:.0f}%)"
+            )
+
+    # ── 3. Daily profit-target halts — informational only ──────────────────
+    if profit_halt:
+        halt_days = sum(1 for d in daily_pnl if (d.get("pnl") or 0.0) >= profit_halt)
+        if halt_days:
+            info.append(
+                f"{halt_days} day(s) reached the ${profit_halt:,.0f} daily profit "
+                f"target (would halt the day — informational)"
+            )
+
+    if not daily_cap and not dd_limit_pct:
+        info.append("no personal fail conditions configured on this ruleset")
+
+    verdict = "DISCARD" if failures else "PASS"
+    parts = [f"net P&L ${net_pnl:,.0f}"] + failures + info
+    return verdict, drawdown_pass, "; ".join(parts), len(failures)
+
+
 def evaluate_run(
     run_id: str,
     ruleset_ids: list[str],
@@ -211,20 +317,16 @@ def evaluate_run(
                                 largest_day_share, mll, net_pnl, adjusted_profit_target)
 
         elif rtype in ("personal", "demo"):
-            # Personal/demo accounts get performance metrics only — no pass/fail verdict.
-            # mll is still computed above (reference line) but never produces a breach verdict,
-            # and no drawdown/target/consistency check fails the strategy.
+            # Personal/demo verdict — two DISCARD conditions (consecutive capped-loss
+            # days, drawdown from peak) evaluated against the relaxed personal rules.
+            # No trailing MLL (max_loss_eod = 0 sentinel, skipped above), no profit
+            # target requirement, no consistency rule. See _evaluate_personal.
             target_pass = True
             consistency_pass = None
             largest_day_share = None
-            verdict = "INFO"
-            notes_parts = [f"{rtype.capitalize()} account (no pass/fail) — net P&L ${net_pnl:,.0f}"]
-            if mll is not None:
-                notes_parts.append(
-                    f"reference floor ${mll['final_floor']:,.0f} "
-                    f"(closest ${mll['min_floor_distance']:,.0f})"
-                )
-            notes = "; ".join(notes_parts)
+            verdict, drawdown_pass, notes, breach_count = _evaluate_personal(
+                ruleset, daily_pnl, net_pnl
+            )
 
         else:
             # Unknown type — fall back to prop_eval logic

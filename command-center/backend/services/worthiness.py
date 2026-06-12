@@ -68,6 +68,11 @@ def score_run_after_evals(
         ruleset = lab_db.get_ruleset(rid)
         if ruleset is None:
             continue
+        # Personal/demo rows carry max_loss_eod = 0 (sentinel: no trailing EOD rule) and
+        # must never win the strictest pick — worthiness is scored against prop limits
+        # only. A personal-only run gets no tier (strictest stays None below).
+        if ruleset.get("ruleset_type") in ("personal", "demo"):
+            continue
         if strictest is None or ruleset["max_loss_eod"] < strictest["max_loss_eod"]:
             strictest = ruleset
 

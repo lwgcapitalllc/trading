@@ -96,7 +96,9 @@ def init_db() -> None:
                 daily_halt_fraction         REAL,
                 mll_lock_balance            REAL,
                 consistency_breach_action   TEXT,
-                reference_urls              TEXT
+                reference_urls              TEXT,
+                max_drawdown_from_peak_pct  REAL,
+                max_consecutive_loss_days   INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -338,11 +340,6 @@ def init_db() -> None:
             "ALTER TABLE backtest_runs ADD COLUMN sharpe_low_sample INTEGER",
             # Profit concentration (overfit detector) persisted for later grading use.
             "ALTER TABLE backtest_runs ADD COLUMN profit_concentration_pct REAL",
-            # Personal/demo accounts get no verdict (INFO), so their placeholder loss caps were
-            # inert. Null the nullable ones; max_loss_eod is NOT NULL so it stays, but the
-            # evaluator skips the trailing reference line for personal/demo types regardless.
-            "UPDATE rulesets SET daily_loss_cap = NULL, weekly_loss_cap = NULL "
-            "WHERE id IN ('personal_forex_main','personal_forex_demo','personal_futures_10k_example')",
             # Tradeify corrections — current $50k target is $3,000 (old accounts grandfathered at
             # $2,500); and the $50k/$100k eval trailing MLL locks at start+$100.
             "UPDATE rulesets SET profit_target = 3000 WHERE id = 'tradeify_50k_eval'",
@@ -354,6 +351,33 @@ def init_db() -> None:
             # bar_type/bar_value were missing from optimizations table
             "ALTER TABLE optimizations ADD COLUMN bar_type TEXT NOT NULL DEFAULT 'Minute'",
             "ALTER TABLE optimizations ADD COLUMN bar_value INTEGER NOT NULL DEFAULT 5",
+            # Personal demo rulesets — fail-condition columns the evaluator reads in a
+            # later pass: % drawdown from peak balance, and consecutive capped-loss days.
+            "ALTER TABLE rulesets ADD COLUMN max_drawdown_from_peak_pct REAL",
+            "ALTER TABLE rulesets ADD COLUMN max_consecutive_loss_days INTEGER",
+            # Consolidate the three placeholder personal/demo rows into two clean demo
+            # rows (one forex, one futures). The futures id rename
+            # (personal_futures_10k_example → personal_futures_demo) lives in
+            # _migrate_personal_demo_rename() — it has stress_tests FK references, so
+            # the rename needs FK off, which can't be toggled inside this transaction.
+            "DELETE FROM rulesets WHERE id = 'personal_forex_main'",
+            # Verified personal demo rules on a $10k balance: $500 (5%) daily loss cap,
+            # $1,000 (10%) daily profit target, fail at 15% drawdown from peak or 3
+            # consecutive capped-loss days. max_loss_eod is NOT NULL in the schema, so
+            # 0 is the sentinel for "no trailing EOD rule" — the evaluator pass MUST
+            # treat personal max_loss_eod = 0 as rule-absent (today personal/demo types
+            # skip the trailing check entirely, so the sentinel is inert).
+            # account_tier 'demo' so nothing downstream treats these as live accounts.
+            # Guarded one-shot: only fires while the new columns are still NULL, so
+            # later manual edits survive restarts.
+            "UPDATE rulesets SET ruleset_type = 'personal', account_tier = 'demo', "
+            "max_loss_eod = 0, daily_loss_cap = 500, weekly_loss_cap = NULL, "
+            "daily_profit_target = 1000, max_drawdown_from_peak_pct = 15.0, "
+            "max_consecutive_loss_days = 3, consistency_pct = NULL, "
+            "min_trading_days = NULL, mll_lock_balance = NULL, max_contracts = NULL, "
+            "daily_profit_goal = NULL "
+            "WHERE id IN ('personal_forex_demo','personal_futures_demo') "
+            "AND max_drawdown_from_peak_pct IS NULL",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -379,14 +403,14 @@ def init_db() -> None:
         # blanket update (which only touches NULL rows) doesn't overwrite them.
         _DAYS_JSON = '["mon","tue","wed","thu","fri"]'
         for sql in [
-            # personal example: 1.0% risk (higher — smaller account), 0.5 halt fraction
+            # personal futures demo: 1.0% risk (higher — smaller account), 0.5 halt fraction
             "UPDATE rulesets SET risk_per_trade_pct = 1.0 "
-            "WHERE id = 'personal_futures_10k_example' AND risk_per_trade_pct IS NULL",
+            "WHERE id = 'personal_futures_demo' AND risk_per_trade_pct IS NULL",
             "UPDATE rulesets SET daily_halt_fraction = 0.5 "
-            "WHERE id = 'personal_futures_10k_example' AND daily_halt_fraction IS NULL",
-            # personal example: $150 daily target with 80% lock-in
-            "UPDATE rulesets SET daily_profit_target = 150, daily_profit_lock_pct = 0.80 "
-            "WHERE id = 'personal_futures_10k_example' AND daily_profit_target IS NULL",
+            "WHERE id = 'personal_futures_demo' AND daily_halt_fraction IS NULL",
+            # personal futures demo: 80% lock-in on the daily target
+            "UPDATE rulesets SET daily_profit_lock_pct = 0.80 "
+            "WHERE id = 'personal_futures_demo' AND daily_profit_lock_pct IS NULL",
             # prop_eval rows: $1500 daily target with 80% lock-in, 0.6 halt fraction
             "UPDATE rulesets SET daily_profit_target = 1500, daily_profit_lock_pct = 0.80 "
             "WHERE daily_profit_target IS NULL AND ruleset_type = 'prop_eval'",
@@ -466,6 +490,7 @@ def init_db() -> None:
     # Run outside the main context manager — needs FK enforcement off, which
     # can't be toggled inside an active transaction in SQLite.
     _migrate_strategy_renames()
+    _migrate_personal_demo_rename()
     _migrate_optimizations_nullable_ruleset()
 
 
@@ -569,6 +594,47 @@ def _migrate_strategy_renames() -> None:
         raw.close()
 
 
+def _migrate_personal_demo_rename() -> None:
+    """
+    Rename ruleset personal_futures_10k_example → personal_futures_demo.
+    Same FK-off pattern as _migrate_strategy_renames: the old id has stress_tests
+    references, so children are repointed first, then the PK row is renamed — or,
+    if the seed already created the new id, the stale old row is dropped.
+    """
+    old_id, new_id = "personal_futures_10k_example", "personal_futures_demo"
+    raw = sqlite3.connect(DB_PATH)
+    raw.execute("PRAGMA journal_mode=WAL")
+    # FK off is only safe here because we immediately update all referencing rows
+    # before committing, leaving no dangling references in the final state.
+    raw.execute("PRAGMA foreign_keys=OFF")
+    try:
+        if raw.execute("SELECT 1 FROM rulesets WHERE id=?", (old_id,)).fetchone():
+            for tbl in ("evaluations", "optimizations", "stress_tests"):
+                raw.execute(
+                    f"UPDATE {tbl} SET ruleset_id=? WHERE ruleset_id=?", (new_id, old_id)
+                )
+            if raw.execute("SELECT 1 FROM rulesets WHERE id=?", (new_id,)).fetchone():
+                # new id already seeded with the verified demo values — drop the stale row
+                raw.execute("DELETE FROM rulesets WHERE id=?", (old_id,))
+            else:
+                raw.execute(
+                    "UPDATE rulesets SET id=?, name=?, description=? WHERE id=?",
+                    (
+                        new_id,
+                        "Personal Futures Demo Account",
+                        "Futures demo/paper account. No real capital at risk.",
+                        old_id,
+                    ),
+                )
+        raw.commit()
+    except Exception:
+        raw.rollback()
+        raise
+    finally:
+        raw.execute("PRAGMA foreign_keys=ON")
+        raw.close()
+
+
 # Apex EOD eval rows (Rithmic). Verified 2026-06-11. Defined once so the live-DB migration and
 # the fresh-build seed insert identical data. daily_loss_cap is a SOFT pause (informational),
 # never a verdict input — the ladder uses trailing-MLL + target + consistency only.
@@ -648,42 +714,21 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
     # idempotent pattern as FundedNext/Tradeify) — the legacy COUNT(*)==0 all-or-nothing
     # guard was removed so they reproduce on a fresh build with the corrected values.
 
-    # Always ensure the personal futures example exists (idempotent)
-    if not conn.execute(
-        "SELECT 1 FROM rulesets WHERE id=?", ("personal_futures_10k_example",)
-    ).fetchone():
-        conn.execute(
-            """INSERT INTO rulesets
-               (id, name, account_size, profit_target, max_loss_eod, max_loss_intraday,
-                drawdown_type, consistency_pct, min_trading_days, force_flat_time_et,
-                allowed_instruments, max_contracts, platform_support,
-                account_tier, ruleset_type, daily_loss_cap, weekly_loss_cap,
-                daily_profit_goal, description, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                "personal_futures_10k_example",
-                "Personal $10k Futures (Example)",
-                10000, 0, 200, None,
-                "static", None, None, "15:50",
-                json.dumps(["MES", "MNQ", "MGC", "MCL"]),
-                json.dumps({"any": 2}),
-                json.dumps(["NinjaTrader", "Tradovate"]),
-                "live", "personal",
-                200, 700, 150,
-                "Example template — adjust limits to match your real capital and risk tolerance.",
-                "Seed example for the personal ruleset type. Edit or delete as needed.",
-                now, now,
-            ),
-        )
-
-    # M5 — personal forex rulesets (idempotent)
+    # Personal demo rulesets (idempotent, per-id) — exactly two: one forex, one futures.
+    # Relaxed but real, gradeable rules on a $10k balance: $500 (5%) daily loss cap,
+    # $1,000 (10%) daily profit target; fail at 15% drawdown from peak balance or 3
+    # consecutive capped-loss days (enforcement lands in a later evaluator pass).
+    # max_loss_eod is NOT NULL in the schema, so 0 is the sentinel for "no trailing
+    # EOD rule on personal accounts" — the evaluator must treat it as rule-absent.
+    # account_tier 'demo' so nothing downstream treats these as live accounts.
     _FX_INSTRUMENTS = json.dumps([
         "XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "GBPJPY",
         "USDJPY", "AUDUSD", "USDCAD", "EURGBP", "NAS100",
     ])
     _FX_DAYS = json.dumps(["sun", "mon", "tue", "wed", "thu"])
+    _FUT_DAYS = json.dumps(["mon", "tue", "wed", "thu", "fri"])
 
-    _FX_RULESET_SQL = """
+    _PERSONAL_DEMO_SQL = """
         INSERT INTO rulesets
             (id, name, account_size, profit_target, max_loss_eod, max_loss_intraday,
              drawdown_type, consistency_pct, min_trading_days, force_flat_time_et,
@@ -692,46 +737,49 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
              daily_loss_cap, weekly_loss_cap, daily_profit_target,
              daily_profit_lock_pct, risk_per_trade_pct, max_consecutive_losses,
              earliest_entry_time_et, latest_entry_time_et, days_of_week_allowed,
-             default_commission_per_side, default_slippage_ticks, description,
+             default_commission_per_side, default_slippage_ticks, daily_halt_fraction,
+             max_drawdown_from_peak_pct, max_consecutive_loss_days, description,
              created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
-    if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_forex_main",)).fetchone():
-        conn.execute(_FX_RULESET_SQL, (
-            "personal_forex_main",
-            "Personal Forex Main Account",
-            10000, 0, 200, None,
-            "static", None, None, None,        # force_flat_time_et null — MT5 strategies manage sessions
+    if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_forex_demo",)).fetchone():
+        conn.execute(_PERSONAL_DEMO_SQL, (
+            "personal_forex_demo",
+            "Personal Forex Demo Account",
+            10000, 0, 0, None,                  # max_loss_eod 0 = sentinel, no trailing EOD rule
+            "static", None, None, None,         # force_flat_time_et null — MT5 strategies manage sessions
             _FX_INSTRUMENTS,
-            json.dumps({"any": 5}),
+            None,                               # max_contracts null — no scaling on personal
             json.dumps(["MT5"]),
-            "live", "personal", "forex", "usd",
-            200, 700, 150,
+            "demo", "personal", "forex", "usd",
+            500, None, 1000,
             0.80, 1.0, 3,
             None, None,                         # entry hours null — FX runs 24h
             _FX_DAYS,
-            0.0, 1,
-            "Personal forex trading account. Edit with real numbers.",
+            0.0, 1, None,
+            15.0, 3,
+            "Forex demo/paper account. No real capital at risk.",
             now, now,
         ))
 
-    if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_forex_demo",)).fetchone():
-        conn.execute(_FX_RULESET_SQL, (
-            "personal_forex_demo",
-            "Personal Forex Demo Account",
-            10000, 0, 200, None,
-            "static", None, None, None,
-            _FX_INSTRUMENTS,
-            json.dumps({"any": 5}),
-            json.dumps(["MT5"]),
-            "live", "demo", "forex", "usd",
-            200, 700, 150,
+    if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_futures_demo",)).fetchone():
+        conn.execute(_PERSONAL_DEMO_SQL, (
+            "personal_futures_demo",
+            "Personal Futures Demo Account",
+            10000, 0, 0, None,                  # max_loss_eod 0 = sentinel, no trailing EOD rule
+            "static", None, None, "15:50",
+            json.dumps(["MES", "MNQ", "MGC", "MCL"]),
+            None,                               # max_contracts null — no scaling on personal
+            json.dumps(["NinjaTrader", "Tradovate"]),
+            "demo", "personal", "futures", "usd",
+            500, None, 1000,
             0.80, 1.0, 3,
-            None, None,
-            _FX_DAYS,
-            0.0, 1,
-            "Forex demo/paper account. No real capital at risk.",
+            "09:30", "15:00",
+            _FUT_DAYS,
+            2.25, 1, 0.5,
+            15.0, 3,
+            "Futures demo/paper account. No real capital at risk.",
             now, now,
         ))
 
@@ -1023,6 +1071,33 @@ def update_ruleset(ruleset_id: str, data: dict) -> bool:
     return cur.rowcount > 0
 
 
+# Fields PATCH /rulesets/{id} may touch — the personal rule set. Defense in depth:
+# the router validates the body shape (PersonalRulesetPatch, extra=forbid) and the
+# personal-row guard; this allowlist makes the SQL layer refuse anything else even
+# if a future caller bypasses the router.
+_PERSONAL_PATCH_FIELDS = frozenset({
+    "account_size", "daily_loss_cap", "daily_profit_target",
+    "max_drawdown_from_peak_pct", "max_consecutive_loss_days",
+})
+
+
+def update_ruleset_fields(ruleset_id: str, fields: dict) -> bool:
+    """Surgical UPDATE of allowlisted personal rule fields only."""
+    bad = set(fields) - _PERSONAL_PATCH_FIELDS
+    if bad:
+        raise ValueError(f"Fields not editable via PATCH: {sorted(bad)}")
+    if not fields:
+        return False
+    # Column names come from the frozen allowlist above, never from user input.
+    set_clause = ", ".join(f"{col} = ?" for col in fields)
+    with _connect() as conn:
+        cur = conn.execute(
+            f"UPDATE rulesets SET {set_clause}, updated_at = ? WHERE id = ?",
+            (*fields.values(), int(time.time()), ruleset_id),
+        )
+    return cur.rowcount > 0
+
+
 def delete_ruleset(ruleset_id: str) -> bool:
     with _connect() as conn:
         cur = conn.execute("DELETE FROM rulesets WHERE id = ?", (ruleset_id,))
@@ -1237,9 +1312,13 @@ def get_evaluations(run_id: str) -> list[dict]:
         rows = conn.execute("""
             SELECT e.*,
                    rs.name            AS ruleset_name,
+                   rs.ruleset_type    AS ruleset_type,
                    rs.max_loss_eod    AS firm_max_loss_eod,
                    rs.profit_target   AS firm_profit_target,
-                   rs.consistency_pct AS firm_consistency_pct
+                   rs.consistency_pct AS firm_consistency_pct,
+                   rs.daily_loss_cap              AS personal_daily_loss_cap,
+                   rs.max_drawdown_from_peak_pct  AS personal_max_drawdown_from_peak_pct,
+                   rs.max_consecutive_loss_days   AS personal_max_consecutive_loss_days
             FROM evaluations e
             JOIN rulesets rs ON rs.id = e.ruleset_id
             WHERE e.run_id = ?
