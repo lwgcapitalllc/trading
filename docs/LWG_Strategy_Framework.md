@@ -1,8 +1,11 @@
 # LWG Capital — Strategy Framework
 
 **Purpose:** the standing reference for how strategies are designed, layered, built, and graded.
-Read alongside `strategies/CLAUDE.md` (file/naming/parameter rules) and the
-command-center lab (the grading engine this framework feeds into).
+This is the "what and why" of strategy design. For the "how" at the code level —
+file naming, the MQL5 `f_` prefix and NT8 `[Category("Foundational")]` conventions,
+parameter schema, file placement — match the existing strategy files in `strategies/`
+(the lab reads those conventions directly). This framework feeds into the
+command-center lab (the grading engine).
 
 ---
 
