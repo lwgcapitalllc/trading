@@ -365,7 +365,11 @@ async def _run_native_walk_forward(
             "oos_sharpe": None,
         })
 
-    avg_deg = float(np.mean(degradations)) if degradations else 0.0
+    # No window had IS PF > 0, so IS→OOS degradation isn't assessable. Store None (not 0.0) —
+    # matching the serial path's fix-#4 convention. 0.0 would read as "0% degradation = solid
+    # robustness" for a strategy that was unprofitable in every in-sample window; None lets
+    # grading treat it as not-run (neither credit nor penalty) and the UI show "n/a".
+    avg_deg = float(np.mean(degradations)) if degradations else None
     lab_db.update_stress_test_walk_forward(stress_test_id, summary, avg_deg)
     return True
 

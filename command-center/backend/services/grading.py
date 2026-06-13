@@ -40,9 +40,10 @@ def compute_grade(
     wf_degradation = st.get("walk_forward_degradation")
     wf_solid = wf_degradation is not None and wf_degradation < 0.20
     wf_ok    = wf_degradation is not None and wf_degradation < 0.30
-    # WF ran but degradation is None = not assessable (all IS Sharpe ≤ 0, so 1 - OOS/IS is a
-    # meaningless signed ratio). Treat it like not-run: don't read the absent number as "solid"
-    # and don't penalise on it either.
+    # WF ran but degradation is None = not assessable (1 - OOS/IS is a meaningless signed ratio
+    # when the in-sample metric is ≤ 0). Treat it like not-run: don't read the absent number as
+    # "solid" and don't penalise on it either. The metric depends on the WF path: the serial path
+    # degrades on Sharpe, the native (optimization-derived) path on profit factor.
     wf_not_assessable = walk_forward is not None and wf_degradation is None
     # If walk-forward wasn't run (or couldn't be assessed), don't penalise on it
     wf_not_run = walk_forward is None or wf_not_assessable
@@ -53,7 +54,12 @@ def compute_grade(
     sens_not_run = sensitivity is None
 
     if wf_not_assessable:
-        reasons.append("Walk-forward ran but IS→OOS degradation is not assessable (IS Sharpe ≤ 0)")
+        # Name the metric the path actually used: native WF rows carry per-window profit factor
+        # (is_pf), the serial path carries Sharpe. Detect by the summary shape so the reason
+        # doesn't claim "Sharpe" on a PF-based native run.
+        pf_based = bool(walk_forward) and any("is_pf" in w for w in walk_forward)
+        metric = "IS profit factor ≤ 0" if pf_based else "IS Sharpe ≤ 0"
+        reasons.append(f"Walk-forward ran but IS→OOS degradation is not assessable ({metric})")
 
     # ── A: worst-1% passes, WF solid (or not run), sensitivity solid (or not run)
     if pct1_passes and (wf_solid or wf_not_run) and (sens_solid or sens_not_run):
