@@ -115,18 +115,25 @@ BacktestDetail's KPI section became a data-driven grid of 13 metric cards in 5 l
 ### Rulesets — own page, personal demo rulesets, firm branding (2026-06-11 – 06-12) ✅
 Rulesets moved to their own top-level page (`/rulesets`): prop rows grouped by firm (Lucid / Tradeify / FundedNext / Apex) with a page-level filter, a Contracts column (`ContractsCell` with SCALES and MIX pills — FundedNext's shared mini/micro cap), and firm branding. Two personal demo rulesets (`personal_forex_demo`, `personal_futures_demo`) now get real PASS/DISCARD verdicts from the evaluator (`_evaluate_personal`: drawdown-from-peak and consecutive-capped-loss-days fails; daily caps are halts, not fails). Personal rules are editable via `PersonalRulesEditModal` (`PATCH /rulesets/{id}`, 5-field allowlist); prop rows are locked server-side — PATCH and PUT both return 403. Apex EOD eval rulesets (50k/100k) were seeded. `nt8_agent_client` was renamed to `runner_dispatch.py`, and a read-only MT5 data-quality audit script was added.
 
+### Stress-test trustworthiness + observability polish (2026-06-12) ✅
+A correctness and clarity pass over the stress-test pipeline and lab navigation:
+- **Trustworthy personal/MT5 stress pipeline (audit remediation).** Monte Carlo pass-probability for `personal` rulesets now stays in the `1 − prob_breach` branch with `demo` (it had fallen through both branches with `profit_target = 0` and silently reported 0% pass for any good personal strategy). Sensitivity perturbs only Strategy-Logic params — foundational params are excluded (perturbing injected `-1` sentinels is meaningless) — and the shift count is runner-aware (2 for MT5, 4 for NT8) read from shared helpers so the UI estimate, the note's backtest count, and the run loop can't drift.
+- **Native NT8 walk-forward honesty.** When no in-sample window has profit factor > 0, IS→OOS degradation is stored as `None` (not `0.0`, which would read as "0% = solid robustness" for a strategy unprofitable in every in-sample window) and grading treats it as not-assessable. This matches the serial/MT5 path's existing IS-Sharpe-≤0 rule; both paths now treat unassessable degradation identically.
+- **Stress-test page regrouped.** The detail page's charts are grouped into three labelled analysis sections (Monte Carlo / Walk-Forward / Sensitivity), each with a one-line "what this answers"; the MC group makes clear its stats, probabilities, fan, and drawdown distribution are one simulation viewed four ways. Chart clarity: axis labels, named series (In-Sample / Out-of-Sample), data-driven axis domains so the worst-case bar never clips.
+- **Lab observability.** The Overview Research card gained Rulesets and Queue quick links. The sidebar shows a pulsing activity dot on Backtests / Optimizations / Stress Tests when a job is running under each, anchored to the icon corner so it's identical expanded or collapsed.
+
 ---
 
 ## Current state of strategies
 
-Four strategies are registered. Three are NinjaTrader `.cs` files, one is an MT5 `.mq5` file. No strategy has reached a clean Tier 1 run yet, and the only graded strategy is Momentum (all F).
+Four strategies are registered. Three are NinjaTrader `.cs` files, one is an MT5 `.mq5` file. No strategy has reached a clean Tier 1 run yet. Two strategies have been stress-graded and both came back F — Momentum and MeanReversion. The DB holds 7 grade-F stress tests in total; 5 are orphaned (their source runs were deleted — earlier Momentum-on-MCL tests), and 2 link to current runs (one Momentum on MYM 06-26, one MeanReversion on USDCAD.s).
 
 | Strategy | File | Runner | Category | Grade / perf facts |
 |---|---|---|---|---|
-| ORB | `strategies/ninjatrader/ORB.cs` | ninjatrader | breakout | No graded runs. 3 runs in the DB, none Tier 1. Opening Range Breakout — entry on ORB high/low break. |
+| ORB | `strategies/ninjatrader/ORB.cs` | ninjatrader | breakout | 3 runs, all on MNQ 06-26, all TIER_3_DISCARD. No stress tests. Opening Range Breakout — entry on ORB high/low break. |
 | VWAP_MR | `strategies/ninjatrader/VWAP_MR.cs` | ninjatrader | mean_reversion | No runs in the DB yet. Fades extended moves back to VWAP. |
-| Momentum | `strategies/ninjatrader/Momentum.cs` | ninjatrader | momentum | 6 stress tests, all grade F (MCL runs; median MC simulation loses money, 100% breach probability). TIER_3_DISCARD on its runs. EMA crossover trend-follower. |
-| MeanReversion | `strategies/mt5/MeanReversion.mq5` | mt5 | mean_reversion | 10 runs (EURUSD/GBPJPY smoke tests, recent USDCAD batch), no worthiness tier assigned yet. Ported from `algos/bots/bot_mean_reversion.py` — BB + RSI + intraday VWAP confluence. |
+| Momentum | `strategies/ninjatrader/Momentum.cs` | ninjatrader | momentum | 6 runs on MYM 06-26 (2 TIER_2_OPTIMIZE, 4 TIER_3_DISCARD). 1 linked stress test grade F (median MC simulation loses money, 100% breach probability), plus orphaned F tests from earlier deleted MCL runs. EMA crossover trend-follower. |
+| MeanReversion | `strategies/mt5/MeanReversion.mq5` | mt5 | mean_reversion | 10 runs, all now on USDCAD.s, no worthiness tier assigned. 1 stress test, grade F. Ported from `algos/bots/bot_mean_reversion.py` — BB + RSI + intraday VWAP confluence. |
 
 `strategies/tradovate/` is an empty placeholder (no source files yet).
 

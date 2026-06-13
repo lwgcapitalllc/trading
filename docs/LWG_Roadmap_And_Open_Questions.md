@@ -7,9 +7,9 @@
 
 ## Immediate next work (priority order)
 
-1. **Take MeanReversion.mq5 through the framework pipeline on a tight-spread major.** (strategy task) The Strategy Framework build order is MT5-first, mean reversion first, EURUSD/GBPUSD at M5/M15. MeanReversion has 10 runs (EURUSD/GBPJPY smoke tests, a USDCAD batch) but no clean optimized result. Run the full loop: simple baseline → trade management on → coarse sweep to find the parameter plateau → pick from the middle of the good region → stress test. MT5 is also the faster backtest platform.
+1. **Take MeanReversion.mq5 through the framework pipeline on a tight-spread major.** (strategy task) The Strategy Framework build order is MT5-first, mean reversion first, EURUSD/GBPUSD at M5/M15. MeanReversion has 10 runs (all now on USDCAD.s) and one grade-F stress test, but no clean optimized result — and USDCAD is not the tight-spread major the build order calls for. Run the full loop on EURUSD/GBPUSD: simple baseline → trade management on → coarse sweep to find the parameter plateau → pick from the middle of the good region → stress test. MT5 is also the faster backtest platform.
 
-2. **Get an NT8 strategy to Tier 1 on a futures instrument.** (strategy task) Momentum graded F across all 6 stress tests on MCL — stop spending time on it. Run a proper optimization on ORB or VWAP_MR across MES / MNQ / MGC (integer-only parameter steps; the UI now blocks decimal steps on `int` params). The Tuning Workbench exists specifically to iterate a winner's params against a baseline.
+2. **Get an NT8 strategy to Tier 1 on a futures instrument.** (strategy task) Momentum keeps grading F (its current MYM 06-26 run and earlier deleted MCL runs all came back F) — stop spending time on it. ORB has 3 runs on MNQ, all Tier 3; VWAP_MR has no runs yet. Run a proper optimization on ORB or VWAP_MR across MES / MNQ / MGC (integer-only parameter steps; the UI now blocks decimal steps on `int` params). The Tuning Workbench exists specifically to iterate a winner's params against a baseline.
 
 3. **Stress-test the first viable parameter set to a B grade.** (strategy task) Once item 1 or 2 yields a Tier 1 combo, run the full manual stress test (Monte Carlo + walk-forward + sensitivity). Grade B or better is the gate to purchasing an eval challenge (the deployment-gate convention: A = funded, B = eval purchase, C = demo).
 
