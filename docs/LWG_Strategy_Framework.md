@@ -41,6 +41,13 @@ LucidFlex 50k, an Apex 100k, or a personal demo account — only the layers chan
 
 **One idea per strategy. Generic logic. Injected config.**
 
+### Instrument-agnostic by default
+No instrument is privileged. Prove an edge on one instrument first, then test
+whether it generalizes — but gold, majors, and crosses all qualify equally if the
+edge survives spread. The build order names tight-spread majors first only because
+they are the cleanest place to *test* a raw idea, not because they are the goal.
+**Profit is profit.**
+
 ---
 
 ## 2. The layer architecture
@@ -354,6 +361,7 @@ different questions.
 - Entry gets you in; trade management makes the KPIs. Build both.
 - Risk per trade is derived from the daily loss limit, not chosen freely.
 - A layer can only shrink or veto a trade, never expand it.
+- No instrument is privileged; prove an edge on one, then test if it generalizes. Profit is profit.
 - Collect uncorrelated edges, not more of the same edge.
 - Optimization tunes a real edge; it cannot create one.
 - A real edge is a plateau of working parameters, not a single spike.
