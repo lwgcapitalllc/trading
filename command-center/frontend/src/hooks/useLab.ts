@@ -157,6 +157,12 @@ export function useBacktestRuns(filters?: {
   return useQuery({
     queryKey: ['lab', 'runs', filters ?? {}],
     queryFn: () => api.get<BacktestSummary[]>(`/backtests/runs${qs ? `?${qs}` : ''}`),
+    // Poll faster while a run is in progress so live indicators (e.g. the sidebar activity
+    // dot and the Runs-tab status) stay current; back off when everything is settled.
+    refetchInterval: (query) => {
+      const data = query.state.data as BacktestSummary[] | undefined
+      return data?.some(r => r.status === 'running') ? 3_000 : 15_000
+    },
   })
 }
 

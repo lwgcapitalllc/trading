@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { SystemHealthStrip } from '@/components/SystemHealthStrip'
+import { useBacktestRuns, useOptimizations } from '@/hooks/useLab'
+import { useStressTests } from '@/hooks/useStressTests'
 
 const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
   { to: '/',            label: 'Overview',    icon: LayoutDashboard, live: true  },
@@ -22,14 +24,25 @@ const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[]
   { to: '/queue',         label: 'Queue',         icon: ListOrdered, live: true  },
 ]
 
-function NavItem({ to, label, icon: Icon, live, collapsed }: {
-  to: string; label: string; icon: LucideIcon; live: boolean; collapsed: boolean
+// Pulsing dot meaning "a job is running under this item". Anchored to the icon's top-right
+// corner so it reads identically whether the sidebar is expanded or collapsed.
+function ActivityDot() {
+  return (
+    <span className="absolute -top-[3px] -right-[3px] flex h-[7px] w-[7px]" aria-label="active">
+      <span className="absolute inline-flex h-full w-full rounded-full bg-accent opacity-60 animate-ping" />
+      <span className="relative inline-flex h-[7px] w-[7px] rounded-full bg-accent" />
+    </span>
+  )
+}
+
+function NavItem({ to, label, icon: Icon, live, collapsed, active = false }: {
+  to: string; label: string; icon: LucideIcon; live: boolean; collapsed: boolean; active?: boolean
 }) {
   return (
     <NavLink
       to={to}
       end={to === '/'}
-      title={collapsed ? label : undefined}
+      title={collapsed ? (active ? `${label} — running` : label) : undefined}
       className={({ isActive }) =>
         'flex items-center gap-[10px] px-[9px] py-2 rounded-md text-[13px] cursor-pointer select-none relative transition-colors duration-[120ms] ' +
         (collapsed ? 'justify-center ' : '') +
@@ -45,15 +58,23 @@ function NavItem({ to, label, icon: Icon, live, collapsed }: {
           {isActive && (
             <span className="absolute left-[-12px] top-2 bottom-2 w-[3px] bg-accent rounded-r-[3px]" />
           )}
-          <Icon
-            size={16}
-            className={`flex-shrink-0 transition-all duration-[120ms] ${
-              isActive
-                ? 'text-accent drop-shadow-glow-accent'
-                : 'opacity-85'
-            }`}
-          />
+          <span className="relative flex-shrink-0">
+            <Icon
+              size={16}
+              className={`transition-all duration-[120ms] ${
+                isActive
+                  ? 'text-accent drop-shadow-glow-accent'
+                  : 'opacity-85'
+              }`}
+            />
+            {active && <ActivityDot />}
+          </span>
           {!collapsed && label}
+          {!collapsed && active && (
+            <span className="ml-auto text-[9px] font-semibold px-[6px] py-[1px] rounded-pill uppercase tracking-[0.4px] bg-accent-muted text-accent">
+              Running
+            </span>
+          )}
           {!collapsed && !live && (
             <span className="ml-auto text-[9px] font-semibold px-[6px] py-[1px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary">
               Soon
@@ -69,6 +90,18 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem('sidebar_collapsed') === '1' } catch { return false }
   })
+
+  // Running-job indicators, mapped per nav route. Each mirrors the "active" logic of its page:
+  // a backtest/sweep run in progress (excluding optimization combos, which belong to Optimizations),
+  // an optimization grid running, or any stress-test phase running. Hooks already poll on their own.
+  const { data: runs } = useBacktestRuns()
+  const { data: optimizations } = useOptimizations()
+  const { data: stressTests } = useStressTests()
+  const activeByRoute: Record<string, boolean> = {
+    '/backtests':     runs?.some(r => r.status === 'running' && !r.optimization_id) ?? false,
+    '/optimizations': optimizations?.some(o => o.status === 'running') ?? false,
+    '/stress-tests':  stressTests?.some(s => s.status.startsWith('running')) ?? false,
+  }
   const toggle = () => setCollapsed(c => {
     const next = !c
     try { localStorage.setItem('sidebar_collapsed', next ? '1' : '0') } catch { /* quota */ }
@@ -104,7 +137,7 @@ export function Sidebar() {
           Research
         </div>
       )}
-      {RESEARCH.map(item => <NavItem key={item.to} {...item} collapsed={collapsed} />)}
+      {RESEARCH.map(item => <NavItem key={item.to} {...item} collapsed={collapsed} active={activeByRoute[item.to]} />)}
 
       {/* ── Footer ────────────────────────────────────────────────── */}
       <div className="mt-auto pt-[10px] border-t border-border-subtle">
