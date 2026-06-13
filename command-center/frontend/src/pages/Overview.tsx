@@ -1,10 +1,11 @@
 import { useNavigate } from 'react-router-dom'
-import { Bot, Radar, FlaskConical, BookOpen, BarChart2, Sliders, Activity, ChevronRight, Loader2 } from 'lucide-react'
+import { Bot, Radar, FlaskConical, BookOpen, ClipboardList, BarChart2, Sliders, Activity, ListOrdered, ChevronRight, Loader2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
-import { useBacktestRuns, useStrategies, useOptimizations } from '@/hooks/useLab'
+import { useBacktestRuns, useStrategies, useOptimizations, useRulesets } from '@/hooks/useLab'
 import { useStressTests } from '@/hooks/useStressTests'
+import { useQueue } from '@/hooks/useQueue'
 import { StatCard } from '@/components/StatCard'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
@@ -154,11 +155,21 @@ export function Overview() {
   const { data: progress } = useRunProgress()
   const { data: backtestRuns } = useBacktestRuns()
   const { data: strategies } = useStrategies()
+  const { data: rulesets } = useRulesets()
   const { data: optimizations } = useOptimizations()
   const { data: stressTests } = useStressTests()
+  const { data: queue } = useQueue()
 
   const latestRun = runs?.[0] ?? null
   const totalStrategies = strategies?.length ?? 0
+
+  // Rulesets — split prop vs personal/demo, the meaningful distinction (the grading lens)
+  const personalRulesets = rulesets?.filter(r => r.ruleset_type === 'personal' || r.ruleset_type === 'demo').length ?? 0
+  const propRulesets = (rulesets?.length ?? 0) - personalRulesets
+
+  // Queue — pending + running job counts (one job runs at a time across opt + stress)
+  const queuePending = queue?.filter(q => q.status === 'pending').length ?? 0
+  const queueRunning = queue?.some(q => q.status === 'running') ?? false
 
   // Standalone runs only (exclude optimization children)
   const standaloneRuns = backtestRuns?.filter(r => !r.optimization_id) ?? []
@@ -419,6 +430,14 @@ export function Overview() {
               <span className="text-[13px] font-mono text-text-primary">{totalStrategies > 0 ? totalStrategies : '—'}</span>
             </NavStatRow>
 
+            <NavStatRow icon={<ClipboardList size={13} />} label="Rulesets" onClick={() => navigate('/rulesets')}>
+              {rulesets && rulesets.length > 0 ? (
+                <span className="text-[11px] font-mono text-text-tertiary">{propRulesets} prop · {personalRulesets} personal</span>
+              ) : (
+                <span className="text-[13px] font-mono text-text-primary">—</span>
+              )}
+            </NavStatRow>
+
             <NavStatRow icon={<BarChart2 size={13} />} label="Runs" onClick={() => navigate('/backtests?tab=runs')}>
               {bestRun ? (
                 <span className="text-[11px] font-mono text-text-tertiary">
@@ -440,6 +459,15 @@ export function Overview() {
               {runningStressTest && <span className="w-[6px] h-[6px] rounded-full bg-warn-text animate-pulse" />}
               {robustCount > 0 && <span className="text-[11px] text-pos-text font-mono">{robustCount} robust</span>}
               {bestGrade ? <RobustnessGradeBadge grade={bestGrade} size="sm" /> : <span className="text-[13px] font-mono text-text-primary">—</span>}
+            </NavStatRow>
+
+            <NavStatRow icon={<ListOrdered size={13} />} label="Queue" onClick={() => navigate('/queue')}>
+              {queueRunning && <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />}
+              {queuePending > 0 || queueRunning ? (
+                <span className="text-[11px] font-mono text-text-tertiary">{queuePending > 0 ? `${queuePending} queued` : 'running'}</span>
+              ) : (
+                <span className="text-[13px] font-mono text-text-primary">—</span>
+              )}
             </NavStatRow>
 
             {(tier1Count > 0 || bestRun) && (
