@@ -19,6 +19,8 @@ from services.stress_tester import (
     run_stress_test_task,
     _estimate_wf_duration_min,
     _estimate_sens_duration_min,
+    sensitivity_param_count,
+    sensitivity_shift_count,
 )
 
 router = APIRouter(prefix="/stress-tests", tags=["stress-tests"])
@@ -119,11 +121,14 @@ async def trigger_stress_test(body: StressTestCreate):
         notes.append(f"Walk-forward: ~{wf_min} min ({body.walk_forward_windows * 2} backtests)")
     if body.include_sensitivity:
         strategy = lab_db.get_strategy(run.get("strategy_id", ""))
-        n_params = len([p for p in (strategy or {}).get("param_schema") or []
-                        if p.get("type") in ("int", "float", "double")])
-        sens_min = _estimate_sens_duration_min(n_params)
+        # Count only the params sensitivity actually perturbs (numeric, non-foundational) and
+        # use the runner's real shift count (MT5 = 2, NT8 = 4) — both via the shared helpers,
+        # so the estimate can't drift from the run loop.
+        n_params = sensitivity_param_count(strategy, run.get("params") or {})
+        n_backtests = n_params * sensitivity_shift_count(runner)
+        sens_min = _estimate_sens_duration_min(n_params, runner)
         est_min += sens_min
-        notes.append(f"Sensitivity: ~{sens_min} min ({n_params * 4} backtests)")
+        notes.append(f"Sensitivity: ~{sens_min} min ({n_backtests} backtests)")
 
     return {
         "stress_test_id": st_id,

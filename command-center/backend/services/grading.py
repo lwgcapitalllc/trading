@@ -40,13 +40,20 @@ def compute_grade(
     wf_degradation = st.get("walk_forward_degradation")
     wf_solid = wf_degradation is not None and wf_degradation < 0.20
     wf_ok    = wf_degradation is not None and wf_degradation < 0.30
-    # If walk-forward wasn't run, don't penalise on it
-    wf_not_run = walk_forward is None
+    # WF ran but degradation is None = not assessable (all IS Sharpe ≤ 0, so 1 - OOS/IS is a
+    # meaningless signed ratio). Treat it like not-run: don't read the absent number as "solid"
+    # and don't penalise on it either.
+    wf_not_assessable = walk_forward is not None and wf_degradation is None
+    # If walk-forward wasn't run (or couldn't be assessed), don't penalise on it
+    wf_not_run = walk_forward is None or wf_not_assessable
 
     sens_degradation = st.get("sensitivity_max_degradation")
     sens_solid = sens_degradation is not None and sens_degradation < 0.25
     sens_ok    = sens_degradation is not None and sens_degradation < 0.40
     sens_not_run = sensitivity is None
+
+    if wf_not_assessable:
+        reasons.append("Walk-forward ran but IS→OOS degradation is not assessable (IS Sharpe ≤ 0)")
 
     # ── A: worst-1% passes, WF solid (or not run), sensitivity solid (or not run)
     if pct1_passes and (wf_solid or wf_not_run) and (sens_solid or sens_not_run):
@@ -55,7 +62,7 @@ def compute_grade(
             reasons.append(f"Walk-forward IS→OOS degradation only {wf_degradation*100:.0f}%")
         if not sens_not_run:
             reasons.append(f"Parameter sensitivity worst case {sens_degradation*100:.0f}% drop")
-        if wf_not_run or sens_not_run:
+        if walk_forward is None or sens_not_run:
             reasons.append("Walk-forward / sensitivity not run — grade may improve with full analysis")
         return ("A", reasons)
 
@@ -66,7 +73,7 @@ def compute_grade(
             reasons.append(f"Walk-forward degradation {wf_degradation*100:.0f}%")
         if not sens_not_run:
             reasons.append(f"Parameter sensitivity worst case {sens_degradation*100:.0f}% drop")
-        if wf_not_run or sens_not_run:
+        if walk_forward is None or sens_not_run:
             reasons.append("Walk-forward / sensitivity not run — grade may improve with full analysis")
         return ("B", reasons)
 

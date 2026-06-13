@@ -56,7 +56,7 @@ frontend/src/
 │   ├── MonteCarloFan.tsx    equity path fan chart (100 paths, percentile bands)
 │   ├── DrawdownDistribution.tsx  drawdown histogram with ruleset limit line
 │   ├── WalkForwardChart.tsx IS vs OOS Sharpe grouped bar chart
-│   ├── SensitivityRadar.tsx param sensitivity horizontal bar chart (PnL delta %)
+│   ├── SensitivityRadar.tsx param sensitivity horizontal bar chart — reads BOTH shapes: perturbation (signed `pnl_delta_pct`) and grid-injected (`degradation` → negative magnitude). X-axis domain is data-driven (`[lo-pad, hi+pad]`, always includes 0) so the worst-case bar never clips
 │   └── PreDeploymentChecklist.tsx  5-item checklist on StrategyDetail — first checkbox locked if strategy's best stress test grade is below B
 │                            NOTE: EvaluationCard, EquityCurveChart, DrawdownChart,
 │                            DailyPnlChart, DirectionBreakdown are all inline
@@ -83,7 +83,7 @@ frontend/src/
     ├── OptimizationDetail.tsx  optimizer results (route /optimizations/:id) — 2-view toggle (Table / Bar Chart); `RankedBars` inline; CSV export; "Tune winner" button → workbench
     ├── TuningWorkbench.tsx   route /backtests/runs/:runId/tune — param editor seeded from a baseline run, runs tweak iterations (source_run_id=baseline), leaderboard with deltas, regime-aware cumulative-P&L overlay, net-P&L-by-regime table. Live progress for the running iteration via useLabProgress (watch in-place; no need to leave). Cross-linking: tune iterations are NEVER top-level Runs rows — they nest under their baseline (TuneNestRow) when it's a visible row, otherwise (e.g. tuned from an optimization winner) they live only in the workbench. In-progress indicators (presence only, never a count, shown on ONE row not both): in the Runs tab the pulsing "TUNING" chip lives on the OptimizationNestRow whose winner has a running tune (driven by `runningTuneSourceRuns`) — NOT also on the parent RunRow; a direct tune of a standalone run shows via its TuneNestRow "Running" status. On OptimizationDetail the indicator is a "TUNING WINNER" chip in the Results header (kept out of the table so it doesn't widen columns) + the "Tune winner" button becomes "Tuning…" with a spinner. Reached via: those rows, the "Tune winner" button, and BacktestDetail's "Tuning iteration → workbench/optimization" breadcrumb (runs with source_run_id). The Runs-tab single-run progress banner is suppressed when the running job is a tune (no orphan indicator).
     ├── StressTests.tsx       stress test list — grade badge, strategy/instrument/status columns, prob breach/pass, created; all left-aligned
-    ├── StressTestDetail.tsx  stress test detail — grade column card (coloured strip + name + ruleset chip + reasons), source backtest card (links back to run via useBacktestRun), MetricCard MC stats with pos/neg colouring, InfoTip tooltips, prob bars, fan chart, drawdown dist, walk-forward, sensitivity
+    ├── StressTestDetail.tsx  stress test detail — grade column card (coloured strip + name + ruleset chip + reasons), source backtest card (links back to run via useBacktestRun), MetricCard MC stats with pos/neg colouring, InfoTip tooltips, prob bars, fan chart, drawdown dist, walk-forward (degradation header shows "n/a (IS Sharpe ≤ 0)" when not assessable), sensitivity
     ├── Queue.tsx             job queue list — position, job label (type + id prefix), status pill, queued/started/finished timestamps, trash-can delete for pending items
     └── Settings.tsx
 ```

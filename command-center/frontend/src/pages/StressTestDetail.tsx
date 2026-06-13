@@ -395,7 +395,7 @@ export default function StressTestDetail() {
             label="Walk-Forward Analysis"
             right={st.walk_forward_degradation != null
               ? `IS→OOS degradation: ${(st.walk_forward_degradation * 100).toFixed(0)}%`
-              : undefined}
+              : 'IS→OOS degradation: n/a (IS Sharpe ≤ 0)'}
             tooltip="Splits your backtest into windows. For each window, the strategy is 'trained' on In-Sample data and tested on Out-of-Sample data it never saw. Similar IS and OOS Sharpe = robust. Large gap = the strategy may be overfit to historical data."
           />
           <WalkForwardChart windows={st.walk_forward_summary} />

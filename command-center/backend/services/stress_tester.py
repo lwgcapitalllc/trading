@@ -87,13 +87,17 @@ def run_monte_carlo(
         rtype = ruleset.get("ruleset_type", "prop_eval")
         if max_loss > 0:
             prob_breach = float(np.mean(all_dds > max_loss))
-        if rtype in ("prop_eval", "personal") and profit_target > 0 and max_loss > 0:
+        if rtype == "prop_eval" and profit_target > 0 and max_loss > 0:
             # Pass = hit target AND never breach drawdown, per path. Use the BOOTSTRAP pool only:
             # reshuffle final PnLs are all the net total (order-invariant), so pairing all_pnls
             # with the target collapses the PnL test to a single value and skews the probability.
             # Bootstrap resamples vary both PnL and drawdown, so the pass rate is real.
             prob_pass_eval = float(np.mean((final_pnl_bs >= profit_target) & (max_dd_bs <= max_loss)))
-        elif rtype in ("prop_funded", "demo") and max_loss > 0:
+        elif rtype in ("prop_funded", "demo", "personal") and max_loss > 0:
+            # personal/demo have no profit-target requirement (profit_target = 0 sentinel) — per
+            # spec they behave identically. "Pass" = never breached the drawdown rule. Without
+            # personal here it fell through both branches and defaulted to 0.0, so a good personal
+            # strategy would have reported 0% pass regardless of quality.
             prob_pass_eval = 1.0 - prob_breach
 
     sampled_paths = equity_rs[:num_path_samples].tolist()
@@ -158,14 +162,37 @@ def _compute_sharpe(equity_curve_data: list[dict]) -> float:
     return daily_sharpe_from_values(list(daily.values()))
 
 
+def _is_foundational(p: dict) -> bool:
+    """Foundational params are injected config, not tunable strategy logic — excluded from
+    sensitivity perturbation (and its time estimate). Keyed on the scanner category, with the
+    MQL5 'f_' prefix as a defensive fallback for schemas missing the category field."""
+    return p.get("category") == "foundational" or (p.get("name") or "").startswith("f_")
+
+
+def sensitivity_param_count(strategy: Optional[dict], base_params: dict) -> int:
+    """Number of params sensitivity will actually perturb — numeric, in base_params, non-foundational.
+    Single source of truth for both the run loop and the UI time estimate."""
+    schema = (strategy or {}).get("param_schema") or []
+    return len([
+        p for p in schema
+        if p.get("type") in ("int", "float", "double")
+        and p.get("name") in base_params
+        and not _is_foundational(p)
+    ])
+
+
+def sensitivity_shift_count(runner: str) -> int:
+    """Shifts per param: MT5 runs ±10% (2), NT8 runs ±10%/±25% (4). Matches SHIFTS below."""
+    return 2 if runner == "mt5" else 4
+
+
 def _estimate_wf_duration_min(n_windows: int) -> int:
     return n_windows * 2 * 5  # 2 runs per window × ~5 min each
 
 
 def _estimate_sens_duration_min(n_params: int, runner: str = "ninjatrader") -> int:
-    shifts = 2 if runner == "mt5" else 4
     mins_per_job = 1.5 if runner == "mt5" else 5
-    return int(n_params * shifts * mins_per_job)
+    return int(n_params * sensitivity_shift_count(runner) * mins_per_job)
 
 
 # ── VPS child-run helper (mirrors sweep_runner._run_one) ──────────────────────
@@ -444,13 +471,17 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
 
         summary.append(window_data)
 
-    # Compute avg IS→OOS degradation
-    degradations = []
-    for w in summary:
-        if w.get("is_sharpe") and w["is_sharpe"] != 0:
-            deg = 1.0 - (w.get("oos_sharpe") or 0) / w["is_sharpe"]
-            degradations.append(deg)
-    avg_deg = float(np.mean(degradations)) if degradations else 0.0
+    # Compute avg IS→OOS Sharpe degradation, but ONLY over windows with positive IS Sharpe.
+    # 1 - OOS/IS is only interpretable as "degradation" when IS Sharpe > 0; with a negative IS
+    # Sharpe the signed ratio flips sign and the number is meaningless (a worse OOS can read as
+    # an *improvement*). If no window has positive IS Sharpe, degradation is not assessable →
+    # store None so the UI shows "n/a" and grading treats it as not-run rather than as "solid".
+    degradations = [
+        1.0 - (w.get("oos_sharpe") or 0) / w["is_sharpe"]
+        for w in summary
+        if w.get("is_sharpe") and w["is_sharpe"] > 0
+    ]
+    avg_deg = float(np.mean(degradations)) if degradations else None
 
     lab_db.update_stress_test_walk_forward(stress_test_id, summary, avg_deg)
     return True
@@ -480,10 +511,15 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
         lab_db.update_stress_test_sensitivity(stress_test_id, {}, 0.0)
         return True
 
-    # Only perturb numeric params
+    # Only perturb numeric STRATEGY-LOGIC params — the same set the optimizer tunes.
+    # Foundational params (injected config: account size, risk %, commission, etc.) are not
+    # tunable; many sit at the -1 sentinel, so perturbing them is wasteful and meaningless.
+    # _is_foundational (module level) excludes by category, with the 'f_' prefix as a fallback.
     numeric_params = [
         p for p in param_schema
-        if p.get("type") in ("int", "float", "double") and p.get("name") in base_params
+        if p.get("type") in ("int", "float", "double")
+        and p.get("name") in base_params
+        and not _is_foundational(p)
     ]
 
     # Baseline metrics

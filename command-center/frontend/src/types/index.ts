@@ -496,10 +496,15 @@ export interface WalkForwardWindow {
 }
 
 export interface SensitivityShift {
-  run_id: string
-  new_value: number
-  pnl_delta: number
-  pnl_delta_pct: number
+  // Perturbation sensitivity (run_sensitivity_task) — signed PnL delta vs baseline.
+  run_id?: string
+  new_value?: number
+  pnl_delta?: number
+  pnl_delta_pct?: number
+  // Grid sensitivity (auto-injected from an optimization) — PF degradation (0..1, always ≥ 0).
+  value?: number
+  profit_factor?: number
+  degradation?: number
 }
 
 export interface StressTest {
