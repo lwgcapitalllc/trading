@@ -16,10 +16,21 @@ export default function DrawdownDistribution({ distribution, maxLoss }: Props) {
   }))
 
   return (
-    <ResponsiveContainer width="100%" height={240}>
-      <BarChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-        <XAxis dataKey="dd" tickFormatter={v => `$${v}`} tick={{ fill: C.axisTick, fontSize: 10 }} tickLine={false} />
-        <YAxis tick={{ fill: C.axisTick, fontSize: 10 }} tickLine={false} axisLine={false} />
+    <ResponsiveContainer width="100%" height={252}>
+      <BarChart data={data} margin={{ top: 8, right: 16, bottom: 22, left: 12 }}>
+        <XAxis
+          dataKey="dd"
+          tickFormatter={v => `$${(v / 1000).toFixed(1)}k`}
+          tick={{ fill: C.axisTick, fontSize: 10 }}
+          tickLine={false}
+          label={{ value: 'Max drawdown reached', position: 'insideBottom', offset: -12, fill: C.axisTick, fontSize: 10 }}
+        />
+        <YAxis
+          tick={{ fill: C.axisTick, fontSize: 10 }}
+          tickLine={false}
+          axisLine={false}
+          label={{ value: '# simulations', angle: -90, position: 'insideLeft', fill: C.axisTick, fontSize: 10, style: { textAnchor: 'middle' } }}
+        />
         <Tooltip
           contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
           labelStyle={{ color: C.axisTick }}

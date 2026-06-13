@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Trash2, ArrowLeft, RefreshCw, Info, Check } from 'lucide-react'
+import { Trash2, ArrowLeft, RefreshCw, Info, Check, Shuffle, CalendarRange, Sliders } from 'lucide-react'
 import { useStressTest, useDeleteStressTest } from '@/hooks/useStressTests'
 import { useRulesets, useBacktestRun } from '@/hooks/useLab'
 import MonteCarloFan from '@/components/MonteCarloFan'
@@ -76,6 +76,45 @@ function SectionHeader({ label, right, tooltip }: { label: string; right?: React
       {right && <span className="text-[11px] text-text-tertiary">{right}</span>}
     </div>
   )
+}
+
+// ── AnalysisSection ───────────────────────────────────────────────────────────
+// Groups the page into its three distinct analyses so a reader knows that the Monte
+// Carlo block (stats + probabilities + fan + drawdown) is ONE simulation viewed four
+// ways, while Walk-Forward and Sensitivity are separate tests. Each carries a one-line
+// "what this answers" so the trader doesn't have to infer it.
+
+function AnalysisSection({ icon, title, desc, children }: {
+  icon: React.ReactNode
+  title: string
+  desc: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-start gap-[10px]">
+        <span className="flex-shrink-0 mt-[2px] text-accent">{icon}</span>
+        <div className="min-w-0">
+          <h2 className="text-[14px] font-semibold text-text-primary leading-tight">{title}</h2>
+          <p className="text-[12px] text-text-tertiary mt-[2px] leading-snug">{desc}</p>
+        </div>
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  )
+}
+
+// ── Header-metric verdicts ──────────────────────────────────────────────────────
+// Turn a raw degradation ratio into "{n}% · word" coloured by the grading thresholds,
+// so the trader sees good-vs-bad at a glance instead of an unanchored number.
+
+function gradedRight(value: number | null | undefined, solidBelow: number, okBelow: number, prefix: string, naText: string) {
+  if (value == null) return <span className="text-text-tertiary">{naText}</span>
+  const pct = (value * 100).toFixed(0)
+  const [word, cls] = value < solidBelow ? ['robust', 'text-pos-text']
+    : value < okBelow ? ['acceptable', 'text-warn-text']
+    : ['fragile', 'text-neg-text']
+  return <span className={cls}>{prefix}{pct}% · {word}</span>
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -167,7 +206,20 @@ export default function StressTestDetail() {
 
   const medianCls  = st.median_final_pnl == null ? '' : st.median_final_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
   const pct5Cls    = st.pct5_final_pnl   == null ? '' : st.pct5_final_pnl   >= 0 ? 'text-pos-text' : 'text-neg-text'
-  const ddOverLimit = ruleset && st.pct5_max_dd != null && st.pct5_max_dd > (ruleset.max_loss_eod ?? Infinity)
+
+  // The dollar drawdown limit the charts and cards compare against. Mirrors the backend's
+  // effective_dd_limit_usd: personal/demo translate their %-from-peak rule to dollars, prop
+  // uses max_loss_eod. Critically, personal rows carry max_loss_eod = 0 (sentinel), so passing
+  // it raw would draw a "$0 limit" and mark every bar over-limit.
+  const isPersonal = ruleset?.ruleset_type === 'personal' || ruleset?.ruleset_type === 'demo'
+  const ddLimit: number | null = !ruleset ? null
+    : isPersonal
+      ? (ruleset.max_drawdown_from_peak_pct && ruleset.account_size
+          ? ruleset.account_size * ruleset.max_drawdown_from_peak_pct / 100 : null)
+      : (ruleset.max_loss_eod || null)
+  const ddOverLimit  = ddLimit != null && st.pct5_max_dd != null && st.pct5_max_dd > ddLimit
+  const dd1OverLimit = ddLimit != null && st.pct1_max_dd != null && st.pct1_max_dd > ddLimit
+  const passLabel = isPersonal ? 'Probability of staying under drawdown limit' : 'Probability of passing eval'
 
   function fmtDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
@@ -314,106 +366,124 @@ export default function StressTestDetail() {
         </div>
       )}
 
-      {/* ── MC stats grid ─────────────────────────────────────────────────────── */}
-      {st.status === 'complete' && st.median_final_pnl != null && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-[10px]">
-          <MetricCard
-            label="Median PnL"
-            value={fmt$(st.median_final_pnl)}
-            valueCls={medianCls}
-            tooltip="The middle outcome across all 10,000 simulations — half ended better, half worse. Positive = strategy is profitable in a typical scenario."
-          />
-          <MetricCard
-            label="Worst 5% PnL"
-            value={fmt$(st.pct5_final_pnl)}
-            valueCls={pct5Cls}
-            tooltip="The 5th percentile final P&L — only 5% of simulations did worse than this. Shows the tail risk of a bad but realistic trade sequence."
-          />
-          <MetricCard
-            label="Worst 5% Drawdown"
-            value={fmt$(st.pct5_max_dd)}
-            sub={ruleset ? `limit ${fmt$(ruleset.max_loss_eod)}` : undefined}
-            subCls={ddOverLimit ? 'text-neg-text' : 'text-pos-text'}
-            tooltip="The 5th-percentile maximum drawdown — only 5% of simulations hit a larger drawdown than this. Compare to the ruleset's max loss limit; if this exceeds it, you'd breach the limit in bad-luck scenarios."
-          />
-          <MetricCard
-            label="Worst 1% Drawdown"
-            value={fmt$(st.pct1_max_dd)}
-            subCls="text-text-tertiary"
-            tooltip="The 1st-percentile maximum drawdown — the extreme tail. Only 1% of simulations were worse. Useful for stress-testing black-swan sequences."
-          />
-        </div>
+      {/* ══ Monte Carlo ═══════════════════════════════════════════════════════════ */}
+      {(st.prob_breach != null || (st.status === 'complete' && st.median_final_pnl != null) || (st.equity_paths?.length ?? 0) > 0 || st.distribution) && (
+        <AnalysisSection
+          icon={<Shuffle size={16} />}
+          title="Monte Carlo"
+          desc="Replays your trades 10,000 times in different orders to map the range of outcomes and how often you'd breach the limit. The stats, probabilities, and both charts below are all this one simulation."
+        >
+          {/* Stats grid */}
+          {st.status === 'complete' && st.median_final_pnl != null && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-[10px]">
+              <MetricCard
+                label="Median PnL"
+                value={fmt$(st.median_final_pnl)}
+                valueCls={medianCls}
+                tooltip="The middle outcome across all 10,000 simulations — half ended better, half worse. Positive = strategy is profitable in a typical scenario."
+              />
+              <MetricCard
+                label="Worst 5% PnL"
+                value={fmt$(st.pct5_final_pnl)}
+                valueCls={pct5Cls}
+                tooltip="The 5th percentile final P&L — only 5% of simulations did worse than this. Shows the tail risk of a bad but realistic trade sequence."
+              />
+              <MetricCard
+                label="Worst 5% Drawdown"
+                value={fmt$(st.pct5_max_dd)}
+                sub={ddLimit != null ? `limit ${fmt$(ddLimit)}` : undefined}
+                subCls={ddOverLimit ? 'text-neg-text' : 'text-pos-text'}
+                tooltip="The 5th-percentile maximum drawdown — only 5% of simulations hit a larger drawdown than this. Compare to the ruleset's drawdown limit; if this exceeds it, you'd breach in bad-luck scenarios."
+              />
+              <MetricCard
+                label="Worst 1% Drawdown"
+                value={fmt$(st.pct1_max_dd)}
+                sub={ddLimit != null ? `limit ${fmt$(ddLimit)}` : undefined}
+                subCls={dd1OverLimit ? 'text-neg-text' : 'text-pos-text'}
+                tooltip="The 1st-percentile maximum drawdown — the extreme tail. Only 1% of simulations were worse. Useful for stress-testing black-swan sequences."
+              />
+            </div>
+          )}
+
+          {/* Probability bars — the fastest read on the page */}
+          {st.prob_breach != null && (
+            <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-4">
+              <SectionHeader
+                label="Probability Metrics"
+                tooltip="Across all 10,000 simulations: how often the strategy breaches the drawdown limit, and how often it passes (prop: hits the target without breaching; personal: simply never breaches)."
+              />
+              <ProbBar prob={st.prob_breach}        label="Probability of breaching ruleset limit" variant="breach" />
+              <ProbBar prob={st.prob_pass_eval ?? 0} label={passLabel}                              variant="pass"   />
+            </div>
+          )}
+
+          {/* Equity path fan */}
+          {st.equity_paths && st.equity_paths.length > 0 && (
+            <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+              <SectionHeader
+                label="Equity Path Fan"
+                right="100 simulations · p10–p90"
+                tooltip="100 of the simulated runs drawn as cumulative-P&L curves (starting at $0). Green = luckier orderings, cyan = median, red = unluckier. Dashed lines mark the drawdown limit and profit target. Want the bands trending up and staying above the limit line."
+              />
+              <MonteCarloFan
+                paths={st.equity_paths}
+                ruleset={{ max_loss_eod: ddLimit ?? undefined, profit_target: ruleset?.profit_target }}
+                tradeCount={st.equity_paths[0]?.length ?? 0}
+              />
+            </div>
+          )}
+
+          {/* Drawdown distribution */}
+          {st.distribution && (
+            <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+              <SectionHeader
+                label="Max Drawdown Distribution"
+                right={ddLimit != null ? 'Red = over limit' : undefined}
+                tooltip="How many of the 10,000 simulations ended with each size of worst drawdown. Bars further right = deeper drawdowns. Red bars exceeded the limit — you want the pile sitting LEFT of the limit line."
+              />
+              <DrawdownDistribution
+                distribution={st.distribution.max_dd}
+                maxLoss={ddLimit}
+              />
+            </div>
+          )}
+        </AnalysisSection>
       )}
 
-      {/* ── Probability bars ──────────────────────────────────────────────────── */}
-      {st.prob_breach != null && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-4">
-          <SectionHeader
-            label="Probability Metrics"
-            tooltip="Across all 10,000 simulations: how often does the strategy breach the firm's loss limit, and how often does it pass the evaluation target?"
-          />
-          <ProbBar prob={st.prob_breach}        label="Probability of breaching ruleset limit" variant="breach" />
-          <ProbBar prob={st.prob_pass_eval ?? 0} label="Probability of passing eval"           variant="pass"   />
-        </div>
-      )}
-
-      {/* ── Monte Carlo fan ───────────────────────────────────────────────────── */}
-      {st.equity_paths && st.equity_paths.length > 0 && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
-          <SectionHeader
-            label="Equity Path Fan"
-            right="100 simulations · p10/p25/p50/p75/p90"
-            tooltip="100 random reshufflings of your actual trades plotted as equity curves. Green lines = lucky orderings (top 25-10%), cyan = median, red = unlucky (bottom 25-10%). Shows whether profitability depends on a lucky trade sequence or holds across many orderings."
-          />
-          <MonteCarloFan
-            paths={st.equity_paths}
-            ruleset={ruleset}
-            tradeCount={st.equity_paths[0]?.length ?? 0}
-          />
-        </div>
-      )}
-
-      {/* ── Drawdown distribution ─────────────────────────────────────────────── */}
-      {st.distribution && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
-          <SectionHeader
-            label="Max Drawdown Distribution"
-            right={ruleset ? 'Red = over limit' : undefined}
-            tooltip="Histogram of the maximum drawdown hit across all 10,000 simulations. Bars further right = larger drawdowns. Red bars exceeded the ruleset's max loss limit — if most bars are red, you'd breach the limit in the majority of real-world trade sequences."
-          />
-          <DrawdownDistribution
-            distribution={st.distribution.max_dd}
-            maxLoss={ruleset?.max_loss_eod}
-          />
-        </div>
-      )}
-
-      {/* ── Walk-forward ──────────────────────────────────────────────────────── */}
+      {/* ══ Walk-Forward ══════════════════════════════════════════════════════════ */}
       {st.walk_forward_summary && st.walk_forward_summary.length > 0 && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
-          <SectionHeader
-            label="Walk-Forward Analysis"
-            right={st.walk_forward_degradation != null
-              ? `IS→OOS degradation: ${(st.walk_forward_degradation * 100).toFixed(0)}%`
-              : 'IS→OOS degradation: n/a (IS Sharpe ≤ 0)'}
-            tooltip="Splits your backtest into windows. For each window, the strategy is 'trained' on In-Sample data and tested on Out-of-Sample data it never saw. Similar IS and OOS Sharpe = robust. Large gap = the strategy may be overfit to historical data."
-          />
-          <WalkForwardChart windows={st.walk_forward_summary} />
-        </div>
+        <AnalysisSection
+          icon={<CalendarRange size={16} />}
+          title="Walk-Forward"
+          desc="Splits the period into windows and tests each on data the strategy wasn't tuned on. Out-of-sample Sharpe near in-sample = holds up. A big drop = overfit to history."
+        >
+          <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+            <SectionHeader
+              label="In-Sample vs Out-of-Sample Sharpe"
+              right={gradedRight(st.walk_forward_degradation, 0.20, 0.30, 'degradation ', 'n/a · IS Sharpe ≤ 0')}
+              tooltip="Each window is trained on its first 70% (In-Sample) and tested on the unseen last 30% (Out-of-Sample). Similar bars = robust; out-of-sample collapsing = overfit. Only meaningful when in-sample Sharpe is positive."
+            />
+            <WalkForwardChart windows={st.walk_forward_summary} />
+          </div>
+        </AnalysisSection>
       )}
 
-      {/* ── Sensitivity ───────────────────────────────────────────────────────── */}
+      {/* ══ Sensitivity ═══════════════════════════════════════════════════════════ */}
       {st.sensitivity_summary && Object.keys(st.sensitivity_summary).length > 0 && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
-          <SectionHeader
-            label="Parameter Sensitivity"
-            right={st.sensitivity_max_degradation != null
-              ? `Worst case: ${(st.sensitivity_max_degradation * 100).toFixed(0)}%`
-              : undefined}
-            tooltip="Shifts each strategy parameter ±10% and ±25% and measures the PnL impact. Bars near zero = parameter is robust; large bars = small changes cause big performance swings, suggesting the strategy may be fragile."
-          />
-          <SensitivityRadar sensitivity={st.sensitivity_summary} />
-        </div>
+        <AnalysisSection
+          icon={<Sliders size={16} />}
+          title="Parameter Sensitivity"
+          desc="Nudges each strategy parameter and re-runs to see how fragile the result is. Small bars = sturdy across settings; large bars = the edge depends on one exact value."
+        >
+          <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+            <SectionHeader
+              label="Performance change per parameter"
+              right={gradedRight(st.sensitivity_max_degradation, 0.25, 0.40, 'worst case ', 'n/a')}
+              tooltip="Each parameter is shifted and the strategy re-run; the bar shows how much performance moved versus baseline (negative/red = worse). Bars near zero = robust. Grid-sourced tests show one direction per parameter."
+            />
+            <SensitivityRadar sensitivity={st.sensitivity_summary} />
+          </div>
+        </AnalysisSection>
       )}
 
       {/* ── Error ─────────────────────────────────────────────────────────────── */}

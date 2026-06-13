@@ -28,29 +28,63 @@ export default function MonteCarloFan({ paths, ruleset, tradeCount }: Props) {
     }
   })
 
+  // One source of truth for each band's colour/opacity — shared by the lines, the tooltip,
+  // and the legend below so the key always matches what's drawn. Ordered luckier → unluckier.
+  const BANDS = [
+    { key: 'p90', label: '90th pct', stroke: C.pos,    width: 1,   opacity: 0.5 },
+    { key: 'p75', label: '75th pct', stroke: C.pos,    width: 1.5, opacity: 0.7 },
+    { key: 'p50', label: 'Median',   stroke: C.accent, width: 2,   opacity: 1   },
+    { key: 'p25', label: '25th pct', stroke: C.neg,    width: 1.5, opacity: 0.7 },
+    { key: 'p10', label: '10th pct', stroke: C.neg,    width: 1,   opacity: 0.5 },
+  ]
+  const labelByKey: Record<string, string> = Object.fromEntries(BANDS.map(b => [b.key, b.label]))
+
   return (
-    <ResponsiveContainer width="100%" height={300}>
-      <LineChart data={transposed} margin={{ top: 8, right: 16, bottom: 8, left: 16 }}>
-        <XAxis dataKey="index" tick={{ fill: C.axisTick, fontSize: 11 }} tickLine={false} />
-        <YAxis tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fill: C.axisTick, fontSize: 11 }} tickLine={false} axisLine={false} />
-        <Tooltip
-          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
-          labelStyle={{ color: C.axisTick }}
-          itemStyle={{ color: '#e5e7eb' }}
-          formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, '']}
-        />
-        {ruleset?.max_loss_eod && (
-          <ReferenceLine y={-ruleset.max_loss_eod} stroke={C.neg} strokeDasharray="4 2" label={{ value: 'Limit', fill: C.neg, fontSize: 10 }} />
-        )}
-        {ruleset?.profit_target != null && ruleset.profit_target > 0 && (
-          <ReferenceLine y={ruleset.profit_target} stroke={C.pos} strokeDasharray="4 2" label={{ value: 'Target', fill: C.pos, fontSize: 10 }} />
-        )}
-        <Line dataKey="p90" stroke={C.pos} strokeWidth={1} dot={false} opacity={0.5} name="90th %ile" />
-        <Line dataKey="p75" stroke={C.pos} strokeWidth={1.5} dot={false} opacity={0.7} name="75th %ile" />
-        <Line dataKey="p50" stroke={C.accent} strokeWidth={2} dot={false} name="Median" />
-        <Line dataKey="p25" stroke={C.neg} strokeWidth={1.5} dot={false} opacity={0.7} name="25th %ile" />
-        <Line dataKey="p10" stroke={C.neg} strokeWidth={1} dot={false} opacity={0.5} name="10th %ile" />
-      </LineChart>
-    </ResponsiveContainer>
+    <div>
+      <ResponsiveContainer width="100%" height={276}>
+        <LineChart data={transposed} margin={{ top: 8, right: 16, bottom: 20, left: 16 }}>
+          <XAxis
+            dataKey="index"
+            tick={{ fill: C.axisTick, fontSize: 11 }}
+            tickLine={false}
+            label={{ value: 'Trade #', position: 'insideBottom', offset: -10, fill: C.axisTick, fontSize: 10 }}
+          />
+          <YAxis
+            tickFormatter={v => `$${(v / 1000).toFixed(0)}k`}
+            tick={{ fill: C.axisTick, fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            label={{ value: 'Cumulative P&L (from $0)', angle: -90, position: 'insideLeft', fill: C.axisTick, fontSize: 10, style: { textAnchor: 'middle' } }}
+          />
+          <Tooltip
+            contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+            labelStyle={{ color: C.axisTick }}
+            itemStyle={{ color: '#e5e7eb' }}
+            formatter={(v: number, name: string) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, labelByKey[name] ?? name]}
+          />
+          {ruleset?.max_loss_eod && (
+            <ReferenceLine y={-ruleset.max_loss_eod} stroke={C.neg} strokeDasharray="4 2" label={{ value: 'Limit', fill: C.neg, fontSize: 10 }} />
+          )}
+          {ruleset?.profit_target != null && ruleset.profit_target > 0 && (
+            <ReferenceLine y={ruleset.profit_target} stroke={C.pos} strokeDasharray="4 2" label={{ value: 'Target', fill: C.pos, fontSize: 10 }} />
+          )}
+          {BANDS.map(b => (
+            <Line key={b.key} dataKey={b.key} stroke={b.stroke} strokeWidth={b.width} dot={false} opacity={b.opacity} name={b.key} />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+
+      {/* Key — maps each colour to its percentile, ordered best-case to worst-case */}
+      <div className="flex items-center justify-center gap-x-[14px] gap-y-[6px] flex-wrap mt-[6px] px-2">
+        <span className="text-[10px] uppercase tracking-[0.6px] text-text-tertiary">Luckier</span>
+        {BANDS.map(b => (
+          <span key={b.key} className="flex items-center gap-[6px]">
+            <span className="inline-block w-[16px] rounded-full" style={{ height: Math.max(2, b.width), backgroundColor: b.stroke, opacity: b.opacity }} />
+            <span className="text-[11px] text-text-secondary">{b.label}</span>
+          </span>
+        ))}
+        <span className="text-[10px] uppercase tracking-[0.6px] text-text-tertiary">Unluckier</span>
+      </div>
+    </div>
   )
 }
