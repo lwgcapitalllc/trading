@@ -16,7 +16,8 @@ strategies/
 │   ├── VWAP_MR.cs
 │   └── Momentum.cs
 ├── mt5/            ← MT5 expert advisors (.mq5, MQL5)
-│   └── MeanReversion.mq5
+│   ├── MeanReversion.mq5
+│   └── LondonBreakout.mq5
 └── tradovate/      ← placeholder for future Tradovate strategies
 ```
 
@@ -67,6 +68,42 @@ strategies/
 | `VWAP_MR.cs` | VWAP_MR | ninjatrader | VWAP mean reversion — fades extended moves back to VWAP |
 | `Momentum.cs` | Momentum | ninjatrader | EMA-based momentum — trend-following with MA crossover |
 | `MeanReversion.mq5` | MeanReversion | mt5 | BB + RSI + intraday VWAP confluence — ported from `algos/bots/bot_mean_reversion.py` |
+| `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London bar-close breakout, ATR-scaled, 1:1 stop/target, flat 11:00 GMT. Instrument-agnostic v1. |
+
+### LondonBreakout — design notes (v1)
+
+Fully instrument-agnostic by construction — no symbol, no pip value, no per-pair
+number in the source. Everything per-instrument is read from the broker
+(`SymbolInfo`, points) or expressed as a multiple of the instrument's own daily
+ATR, so the same file runs on AUDJPY, CADJPY, USDJPY, or XAUUSD with nothing
+changed but the injected layers. The word "pip" never appears in the logic.
+
+- **Layer A (tunable, no prefix):** GMT session windows (`AsianStartGMT`,
+  `AsianEndGMT`, `LondonOpenGMT`, `EntryCutoffGMT`, `ForceFlatGMT`) plus the
+  ATR-scaled knobs `AtrPeriod` (daily ATR), `RangeMinAtr`/`RangeMaxAtr` (range
+  filter, default 0.5/1.3 — the pair-agnostic replacement for a fixed pip
+  filter), `BufferAtr` (breakout buffer, default 0.1), and `TargetRR` (1:1).
+- **Foundational (`f_` prefix, injected):** sizing + risk caps + costs from the
+  active ruleset; sentinel `-1` defaults hard-fail at init if injection didn't
+  happen. `f_BrokerToGmtOffsetHours = 99` auto-detects the broker→GMT offset
+  from server time (`TimeTradeServer()-TimeGMT()`) — the offset is never
+  hardcoded, matching the codebase's existing handling.
+- **Both-sided-bar diagnostic:** independent of trading, counts M15 bars in the
+  entry window whose high reached the buy level AND low reached the sell level —
+  the case the bar model can't resolve. Written to
+  `Common\Files\LondonBreakout_diag_<symbol>.csv` (FILE_COMMON) and printed in
+  the journal; quantifies how much the bar model is silently guessing.
+
+**v1 honest run — AUDJPY.s, M15, 2008-01-01 → 2026-05-06 (full available
+history), `personal_forex_demo` costs (commission 0; PU Prime forex is
+spread-only), real spread:** net −$965.87, win rate 45.4%, 430 trades, PF 0.84,
+max DD ~$1,023, Sharpe −2.83. Both-sided bars: **2 of 2,065 qualifying days
+(0.10%)** — the bar model is essentially never guessing, so the negative edge is
+real, not an artifact. No edge on AUDJPY at defaults; AUDJPY's Asian session is
+itself active (AUD+JPY are Asian-hours currencies), which undercuts the
+"quiet Asian range → London expansion" premise. Not yet registered in `lab.db`
+(run via the MT5 agent directly; run **Scan Strategies** when the command
+center is next up to register it).
 
 ---
 

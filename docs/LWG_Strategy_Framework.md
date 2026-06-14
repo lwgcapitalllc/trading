@@ -41,13 +41,6 @@ LucidFlex 50k, an Apex 100k, or a personal demo account — only the layers chan
 
 **One idea per strategy. Generic logic. Injected config.**
 
-### Instrument-agnostic by default
-No instrument is privileged. Prove an edge on one instrument first, then test
-whether it generalizes — but gold, majors, and crosses all qualify equally if the
-edge survives spread. The build order names tight-spread majors first only because
-they are the cleanest place to *test* a raw idea, not because they are the goal.
-**Profit is profit.**
-
 ---
 
 ## 2. The layer architecture
@@ -115,35 +108,77 @@ but still derived from the (relaxed) daily loss limit, not picked arbitrarily.
 
 ---
 
-## 3. Trade management (the layer that makes strategies effective)
+## 3. The full strategy anatomy (where the edge actually lives)
 
-A good entry with poor exits is a mediocre strategy. Two strategies with the
-*identical* entry can have wildly different KPIs based purely on how they manage
-the trade. This is where good Sharpe, low drawdown, and survivability actually
-come from — and it is intraday-critical, because "flat by session end" plus "get
-to breakeven fast" is how a prop drawdown is protected.
+A static entry with a fixed stop and target is only the *skeleton* of a strategy —
+it tests whether the entry has a pulse, nothing more. The real strategy is three
+layers stacked on top of the instrument's physics (gold's spread/volatility):
 
-Trade management has three concerns, all generic, all tunable (Layer A):
+```
+            ┌─────────────────────────────────────────┐
+            │  3. TRADE MANAGEMENT  (after you're in)   │  ← maximizes good trades
+            ├─────────────────────────────────────────┤
+            │  2. FILTERS  (whether to take the trade)  │  ← removes bad trades
+            ├─────────────────────────────────────────┤
+            │  1. ENTRY SIGNAL  (the raw setup)         │  ← finds candidate trades
+            └─────────────────────────────────────────┘
+                 on top of: instrument physics (Layer B)
+```
 
-### Stop management
-- **Initial stop** — where the trade is wrong.
-- **Breakeven move** — pull the stop to entry after the trade moves +X (e.g. +1R),
-  so a winner can't turn into a loser. Getting to breakeven *fast* is the priority.
-- **Trailing stop** — follow price to lock in open profit as the move extends.
+The two upper layers improve KPIs through **different mechanisms**, so tune them
+separately: filters raise win rate and dodge landmines (fewer bad trades taken);
+trade management raises expectancy (better outcome per trade taken). Confusing
+them muddies what's actually helping.
 
-### Profit taking
-- **Full target** — exit the whole position at a fixed R:R.
-- **Scale-out** — take partial profit at one level, let a runner continue.
-- **Trail a runner** — once partial is banked, trail the rest for a larger move.
+### Layer 1 — Entry signal
+The raw setup (e.g. the ORB break). On its own, with a static stop/target, it is a
+*diagnostic* — see Section 6: it answers "does this entry have any edge at all,"
+and that's all a static test should be asked to do.
 
-### Regime-exit
-- **Bail on regime flip** — if the market regime changes against the open trade
-  mid-position, exit rather than wait for the stop. Captures "the reason I'm in
-  this trade just disappeared."
+### Layer 2 — Filters (decide WHETHER to enter, before the trade)
+Gates that say "don't take this one." They remove bad trades before they happen:
+- **News filter** — block entries around high-impact events.
+- **Regime filter** — only take trades in the regime the edge works in.
+- **Session / time-of-day filter** — only trade the right hours (for gold, session
+  matters enormously — London/NY behaves nothing like 3am). One of gold's
+  highest-value filters; build it early.
+- **Spread filter** — skip when spread is too wide to leave an edge (critical on
+  gold).
 
-The point: an edge that *captures profit fast and gets to breakeven fast* survives
-quick regime changes and produces the smooth equity curve that passes evals.
-Build the exit with the same care as the entry.
+### Layer 3 — Trade management (decide what to do AFTER you're in)
+Where good Sharpe, low drawdown, and survivability come from — intraday-critical,
+because "flat by session end" + "get to breakeven fast" is how a prop drawdown is
+protected.
+- **Stop management** — initial stop; fast **breakeven move** (pull stop to entry
+  after +X so a winner can't become a loser); **trailing stop** to lock open profit.
+- **Profit taking** — full target, or **scale-out** (bank partial, run the rest),
+  or trail a runner for a larger move.
+- **Regime-exit** — bail when the regime flips against an *open* trade (note: this
+  is management; "don't enter in a bad regime" is a *filter* — same concept, two
+  jobs).
+- **Time-based adjustment** — tighten stop / take profit faster during specific
+  volatile windows (e.g. the open).
+- **Capped re-entry** — re-enter if stopped at breakeven and the setup is still
+  valid. See the overfit warning below — this is powerful but dangerous.
+
+### Two overfitting landmines — prove these, never assume them
+Two trade-layer features are the easiest ways to fool yourself in backtest. Both
+are legitimate, both must be proven with the stress test / walk-forward on data
+they were never tuned on, never just switched on because they raise the backtest.
+
+- **Re-entry.** "Re-enter while the signal is valid" quietly becomes "keep
+  re-entering until variance hands me a winner" — manufacturing fake profit by
+  repeating the same move until one works. Defense: hard-cap re-entries (1–2 per
+  setup), and test re-entry as its own toggle — does it actually raise expectancy,
+  or just inflate the curve?
+- **Time rules.** With enough data, *some* random hour always looks profitable by
+  chance. A time rule is an edge only if it has a *reason* (the London open is
+  volatile because liquidity shifts — not because the backtest liked that hour)
+  and survives walk-forward. A time filter found by searching is noise.
+
+The common thread: both can make a backtest look great by accident. The defense is
+the same for both — the rule must make sense *before* you add it, and survive data
+it wasn't tuned on. The stress gate exists to catch exactly these.
 
 ---
 
@@ -260,14 +295,24 @@ at all," then tune gently. Optimization tunes a real edge; it cannot manufacture
 one. A weak strategy is just weak.
 
 1. **Idea first, not parameters.** One clear hypothesis, one instrument, intraday,
-   bar-close logic. (e.g. "the first 15-min range break on EURUSD continues in the
-   break direction, flat by session end.")
-2. **Build it simple — entry AND a basic exit — run once.** Before any
-   optimization. If the raw idea is wildly negative with sensible defaults, the
-   idea is weak; move on, don't rescue it with tuning.
-3. **Add proper trade management, run again.** Breakeven move, trail, scale-out.
-   This is often what turns a flat idea into a real edge — test with it, not
-   without.
+   bar-close logic. (e.g. "the first 30-min range break after the gold session open
+   continues in the break direction, target sized to beat spread, flat by session
+   end.")
+2. **Static smoke test — entry + fixed stop/target, run ONCE. This is a diagnostic,
+   not the strategy.** A static version exists to answer one question: does the
+   entry have *any* pulse? It is *supposed* to look unimpressive — a fixed stop and
+   target throw away most of the edge. If a setup can't show even a weak positive
+   signal after spread with a basic stop/target, no amount of trade management will
+   save it (management *amplifies* an edge, it can't *create* one) — move on, don't
+   tune to rescue a coin flip. If it shows a pulse, proceed. Keep this step to a
+   quick checkpoint; it is the smoke test, never the destination.
+3. **Build the real strategy: add filters, then trade management.** This is where
+   the strategy actually gets made and where the KPIs go from mid to good — Section
+   3's three layers. Add filters (regime, session, spread, news) to remove bad
+   trades; add trade management (fast breakeven, trailing, scale-out, regime-exit)
+   to maximize the good ones. Test each addition as its own toggle so you know what
+   helped. Treat re-entry and time rules with extra suspicion (Section 3's two
+   landmines).
 4. **Coarse sweep to see the shape, not pick a winner.** Wide steps. You're
    looking for a broad *region* of decent parameters. A real edge is a plateau;
    noise is a single spike.
@@ -358,10 +403,17 @@ different questions.
 - Intraday only — flat by session end, always.
 - Every account has a ruleset; personal is relaxed, not rule-free.
 - Strategies are signal generators; config is layered and injected.
-- Entry gets you in; trade management makes the KPIs. Build both.
+- A strategy is three layers: entry signal, filters (whether to enter), trade
+  management (what to do once in). Filters raise win rate; management raises
+  expectancy. Tune them separately.
+- A static stop/target run is a diagnostic — it only tells you if the entry has a
+  pulse. The real strategy is built in the filter and management layers.
+- Trade management amplifies a real edge; it cannot create one. Confirm the pulse
+  before building on top.
+- Re-entry and time-of-day rules are the two easiest ways to fool yourself — cap
+  re-entries, require a real reason for time rules, prove both on untuned data.
 - Risk per trade is derived from the daily loss limit, not chosen freely.
 - A layer can only shrink or veto a trade, never expand it.
-- No instrument is privileged; prove an edge on one, then test if it generalizes. Profit is profit.
 - Collect uncorrelated edges, not more of the same edge.
 - Optimization tunes a real edge; it cannot create one.
 - A real edge is a plateau of working parameters, not a single spike.
