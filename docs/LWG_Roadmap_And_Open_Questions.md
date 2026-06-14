@@ -1,5 +1,5 @@
 # LWG Capital — Roadmap and Open Questions
-**Last updated:** 2026-06-12
+**Last updated:** 2026-06-14
 
 > Companion to the Project State Snapshot. Hand both to any new Claude.ai chat.
 
@@ -26,6 +26,18 @@ Resolved since the last roadmap: the optimization-delete 500 bug no longer repro
 ### Funded account management
 Once a strategy earns a stress test grade of B or better, the next step is purchasing an eval and, after passing, going funded. The platform needs a way to track live funded accounts: current equity, daily loss remaining (the trailing-MLL engine already computes the floor), profit target progress, halt status. A new "Accounts" tab pulling from MT5 or NT8 live data. **Prerequisite:** at least one strategy with a B+ grade.
 
+### Live-bot version tracking (running-commit → v1/v2/v3)
+At go-live you must know exactly what code each bot is running, and be able to confirm a bug fix is actually *live* — not just pulled. **A `git pull` on the VPS updates the files but does not change a running bot; it keeps trading the old code until it is restarted.** So "the repo is on the fixed commit" ≠ "the bot is running the fix." This feature closes that gap.
+
+**Design (agreed 2026-06-14, not yet built):**
+- Each bot records the commit it **started on** (`git rev-parse HEAD` on the VPS, captured once at startup — not in the trade loop) and reports it in its status.
+- The command-center keeps a tiny **per-bot ledger** that auto-assigns v1, v2, v3… the first time it observes a bot running a commit it hasn't seen before, storing `(bot, version, commit, first-seen)`. **Zero manual mapping** — the number is a friendly label; the commit SHA is the source of truth.
+- The Bots monitor shows e.g. `gold_main — v3 (4c58350), running 6h · latest v4 (1ca8c0c) — restart to apply`. The ledger doubles as a free per-bot deploy-history audit trail.
+
+**Touches:** `algos/` bot startup (one `git rev-parse`) + command-center Bots monitor + a small ledger table. Activation requires one bot restart (bots need the new startup code). **Prerequisite:** none technical; most valuable at go-live (demo now), though the bot-side capture is harmless to add earlier.
+
+**Explicitly out of scope (decided 2026-06-14):** lab *strategy* provenance — choosing/running an arbitrary past version, per-version source storage, and release-doc/changelog automation. That is enterprise audit machinery mismatched to a solo research lab that runs the latest. The lab's actual need (knowing a strategy was edited and so needs redeploy/recompile) was met this session by content-aware sync detection + a content-addressed `strategy_versions` registry — see the resolved item below and `command-center/backend/CLAUDE.md`.
+
 ### Strategy stacking layer
 The Strategy Framework's end-state is a stack of uncorrelated edge buckets (mean reversion + trend + volatility breakout) so something works in every regime and the combined curve is smooth enough to pass evals. Once 2–3 graded candidates per bucket exist, the platform needs a way to evaluate combined equity curves against a ruleset. **Prerequisite:** multiple graded strategies across at least two buckets.
 
@@ -51,7 +63,7 @@ Both testers currently run on minute bars (MT5 `Model=1`, NT8 standard fills) �
 
 - **Foundational-values edit UI on personal rulesets:** the `PUT` endpoint can still edit foundational fields on personal rows, but there is no UI affordance since `FoundationalEditModal` was removed with the prop lock. Add one only if foundational tweaking on personal rows becomes a real workflow.
 
-- **Strategy file sync-status hash comparison:** sync-status currently checks file presence on the VPS only, no content hash. Fine until a stale-deploy bug actually bites.
+- **Resolved (2026-06-14) — Strategy file sync-status hash comparison.** sync-status is now content-aware: it hashes the local source live and compares to the recorded deployed/compiled hashes (`needs_deploy` / `needs_compile`), so an edited-but-not-redeployed strategy no longer falsely reads "in sync." A content-addressed `strategy_versions` registry assigns a monotonic v1/v2/v3 per strategy (same hash → same version, reverts reuse), surfaced as a version chip + accurate status on the Strategies and Deployed tabs. The Run Backtest modal also had a bug fixed where string strategy-logic params (e.g. GMT session windows) rendered blank. Details in `command-center/backend/CLAUDE.md` and `command-center/frontend/CLAUDE.md`.
 
 - **Smart Money stages 3–4:** blocked externally on API keys. No code work needed until keys are available.
 
