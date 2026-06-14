@@ -32,6 +32,13 @@
 //   Foundational (f_ prefix) — sizing, risk caps, and costs injected from the
 //     active ruleset by the lab dispatcher. Sentinel defaults (-1) force a
 //     hard fail at init if injection did not happen.
+//
+// Timezone is fully automatic — there is NO manual offset and nothing to set.
+//   Session windows are defined in GMT; the broker->GMT offset is derived live
+//   from the broker itself (TimeTradeServer vs TimeGMT) and recomputed on every
+//   bar, so a daylight-savings shift on either the broker side or the GMT side
+//   is tracked automatically. It follows whatever broker the EA runs on and
+//   never depends on the machine's local clock. Human error is designed out.
 //+------------------------------------------------------------------+
 #property copyright "LWG Capital LLC"
 #property version   "1.00"
@@ -65,7 +72,6 @@ input double f_DailyProfitTarget     = -1;   // USD daily target (0 = disabled)
 input double f_DailyProfitLockPct    = -1;   // fraction of target where risk halves (0 = disabled)
 input double f_CommissionPerSide     = 0;    // commission per side (informational; spread is the live cost)
 input int    f_SlippageTicks         = 0;    // deviation tolerance in points
-input int    f_BrokerToGmtOffsetHours = 99;  // override broker-to-GMT offset hours (99 = auto-detect)
 
 //--- Globals ---
 CTrade trade;
@@ -73,11 +79,6 @@ CTrade trade;
 int g_atrHandle = INVALID_HANDLE;
 
 datetime g_lastBarTime = 0;
-
-// Broker server time minus GMT, in seconds. Bars and tick time are in broker
-// server time; subtract this to get GMT. Auto-detected in OnInit using the
-// codebase's existing TimeTradeServer()-TimeGMT() handling (never hardcoded).
-int g_brokerToGmtSec = 0;
 
 // Session window minutes-of-day (GMT), parsed once in OnInit.
 int g_asianStartMin  = 0;
@@ -129,9 +130,19 @@ bool ParseHHMM(const string s, int &minutes) {
    return true;
 }
 
-// Convert a broker-server time to GMT.
+// Broker server time minus GMT, derived live from the broker each call and
+// snapped to the nearest minute. Recomputing per call (rather than caching one
+// value at init) means a daylight-savings shift on EITHER the broker side or
+// the GMT side is tracked automatically — there is no stored offset to go
+// stale and nothing for a human to set. Works on any broker, forex or futures.
+int BrokerToGmtSec() {
+   long raw = (long)TimeTradeServer() - (long)TimeGMT();
+   return (int)((long)MathRound((double)raw / 60.0) * 60);
+}
+
+// Convert a broker-server time to GMT using the live broker offset.
 datetime ToGmt(const datetime brokerTime) {
-   return (datetime)((long)brokerTime - (long)g_brokerToGmtSec);
+   return (datetime)((long)brokerTime - (long)BrokerToGmtSec());
 }
 
 int GmtMinuteOfDay(const datetime brokerTime) {
@@ -452,16 +463,14 @@ int OnInit() {
       return INIT_FAILED;
    }
 
-   // Broker-to-GMT offset: auto-detect from server time unless overridden.
-   // Uses the same TimeTradeServer()-TimeGMT() handling already in the codebase.
-   if(f_BrokerToGmtOffsetHours != 99) {
-      g_brokerToGmtSec = f_BrokerToGmtOffsetHours * 3600;
-      PrintFormat("Broker-to-GMT offset: %d h (manual override).", f_BrokerToGmtOffsetHours);
-   } else {
-      int hours = (int)MathRound((double)(TimeTradeServer() - TimeGMT()) / 3600.0);
-      g_brokerToGmtSec = hours * 3600;
-      PrintFormat("Broker-to-GMT offset: %d h (auto-detected from server time).", hours);
-   }
+   // Timezone is automatic: session windows are GMT and the broker->GMT offset
+   // is derived live from the broker every bar (see BrokerToGmtSec), DST-aware,
+   // with nothing to configure. Log it once at init purely for verification.
+   PrintFormat("Broker->GMT offset at init: %d min (server=%s, gmt=%s). "
+               "Auto-derived & DST-aware; recomputed each bar — no manual setting.",
+               BrokerToGmtSec() / 60,
+               TimeToString(TimeTradeServer(), TIME_DATE | TIME_MINUTES),
+               TimeToString(TimeGMT(), TIME_DATE | TIME_MINUTES));
 
    g_atrHandle = iATR(Symbol(), PERIOD_D1, AtrPeriod);
    if(g_atrHandle == INVALID_HANDLE) {

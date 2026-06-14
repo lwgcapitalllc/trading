@@ -85,9 +85,19 @@ changed but the injected layers. The word "pip" never appears in the logic.
   filter), `BufferAtr` (breakout buffer, default 0.1), and `TargetRR` (1:1).
 - **Foundational (`f_` prefix, injected):** sizing + risk caps + costs from the
   active ruleset; sentinel `-1` defaults hard-fail at init if injection didn't
-  happen. `f_BrokerToGmtOffsetHours = 99` auto-detects the broker→GMT offset
-  from server time (`TimeTradeServer()-TimeGMT()`) — the offset is never
-  hardcoded, matching the codebase's existing handling.
+  happen.
+- **Timezone is fully automatic — no knob.** Session windows are GMT; the
+  broker→GMT offset is derived live from the broker (`TimeTradeServer()` −
+  `TimeGMT()`, snapped to the minute) and recomputed on **every bar** by
+  `BrokerToGmtSec()`, so a DST shift on either the broker side or the GMT side
+  is tracked automatically. There is no manual offset param and no dependency on
+  the machine's local clock — it follows whatever broker the EA runs on. (The
+  earlier single-sample-at-init approach was replaced: caching one offset would
+  miss a broker's seasonal DST shift.) On PU Prime the offset is constant across
+  2008–2026, so this changed no results there; its value is correctness on any
+  broker that does observe DST. The same broker-derived principle applies when
+  porting session logic to NT8 (use the instrument's exchange time zone, never a
+  hardcoded offset).
 - **Both-sided-bar diagnostic:** independent of trading, counts M15 bars in the
   entry window whose high reached the buy level AND low reached the sell level —
   the case the bar model can't resolve. Written to
