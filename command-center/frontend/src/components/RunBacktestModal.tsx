@@ -160,6 +160,23 @@ function ParamInput({
     )
   }
 
+  if (t === 'string') {
+    return (
+      <div>
+        <div className="flex items-center mb-1">
+          <label className="text-[11px] text-text-secondary">{entry.display_name}</label>
+          <InfoTooltip content={tooltip} side={tooltipSide} />
+        </div>
+        <input
+          type="text"
+          value={(value as string) ?? ''}
+          onChange={e => onChange(e.target.value)}
+          className={inputCls}
+        />
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1">
