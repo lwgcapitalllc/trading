@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from models import Strategy, ScanResult, InstrumentSummary, InstrumentResult, DeployJobStatus
+from models import Strategy, ScanResult, InstrumentSummary, InstrumentResult, DeployJobStatus, StrategyVersion
 
 
 class StrategyPatch(BaseModel):
@@ -110,6 +110,13 @@ def deploy_strategy(strategy_id: str):
 
     try:
         result = runner_dispatch.upload_strategy_file(filename, content, overwrite=True)
+        # Record exactly what content is now on the VPS: register its version and
+        # stamp the deployed hash so sync-status can detect future local edits and
+        # flag the strategy as needing redeploy (and, after deploy, recompile).
+        src_hash = strategy_scanner.source_hash(content.decode("utf-8", errors="replace"))
+        class_name = strategy.get("class_name") or strategy_id
+        lab_db.ensure_strategy_version(strategy_id, src_hash, len(content))
+        lab_db.set_strategy_deployed(class_name, src_hash)
         _deploy_jobs[job_id].update({
             "status": "complete",
             "uploaded_size_bytes": result.get("size_bytes"),
@@ -130,6 +137,15 @@ def get_deploy_status(strategy_id: str, deploy_job_id: str):
     if not job:
         raise HTTPException(404, "Deploy job not found")
     return job
+
+
+@router.get("/{strategy_id}/versions", response_model=list[StrategyVersion])
+def list_versions(strategy_id: str):
+    """Version history for a strategy — newest first. Each row is a distinct
+    content hash with its monotonic version number."""
+    if not lab_db.get_strategy(strategy_id):
+        raise HTTPException(404, f"Strategy '{strategy_id}' not found")
+    return lab_db.list_strategy_versions(strategy_id)
 
 
 @router.get("/{strategy_id}/instrument_summary", response_model=InstrumentSummary)

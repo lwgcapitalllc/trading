@@ -730,6 +730,23 @@ export interface StrategyFileSyncStatus {
   file_modified_at: string | null
   in_sync: boolean
   is_compiled: boolean | null
+  // Version tracking — which content version is local vs deployed vs compiled
+  current_version: number | null
+  current_source_hash: string | null
+  deployed_version: number | null
+  deployed_at: number | null
+  compiled_version: number | null
+  compiled_at: number | null
+  needs_deploy: boolean
+  needs_compile: boolean
+}
+
+export interface StrategyVersion {
+  strategy_id: string
+  version: number
+  source_hash: string
+  size_bytes: number | null
+  created_at: number
 }
 
 export interface CompileJobStatus {

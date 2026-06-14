@@ -16,7 +16,7 @@ import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { useStrategyBestGrades } from '@/hooks/useStressTests'
 import { RunnerBadge } from '@/components/RunnerBadge'
 import { toast } from 'sonner'
-import type { Strategy, StrategyFile } from '@/types'
+import type { Strategy, StrategyFile, StrategyFileSyncStatus } from '@/types'
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
@@ -110,15 +110,9 @@ function StrategiesTab() {
   const [deployingId, setDeployingId] = useState<string | null>(null)
   const [marketFilter, setMarketFilter] = useState<MarketFilter>('all')
 
-  const syncMap = useMemo(() => {
-    const m: Record<string, boolean> = {}
-    syncStatus?.forEach(s => { m[s.strategy_id] = s.in_sync })
-    return m
-  }, [syncStatus])
-
-  const compiledMap = useMemo(() => {
-    const m: Record<string, boolean | null> = {}
-    syncStatus?.forEach(s => { m[s.strategy_id] = s.is_compiled })
+  const syncByStrategy = useMemo(() => {
+    const m: Record<string, StrategyFileSyncStatus> = {}
+    syncStatus?.forEach(s => { m[s.strategy_id] = s })
     return m
   }, [syncStatus])
 
@@ -207,8 +201,7 @@ function StrategiesTab() {
                 <StrategyRow
                   key={s.id}
                   strategy={s}
-                  inSync={syncMap[s.id]}
-                  isCompiled={compiledMap[s.id]}
+                  sync={syncByStrategy[s.id]}
                   isDeploying={deployingId === s.id}
                   bestGrade={strategyGrades?.[s.id]}
                   onView={() => navigate(`/strategies/${s.id}`)}
@@ -248,11 +241,10 @@ function StrategiesTab() {
 }
 
 function StrategyRow({
-  strategy: s, inSync, isCompiled, isDeploying, bestGrade, onView, onRun, onDeploy, onCompile,
+  strategy: s, sync, isDeploying, bestGrade, onView, onRun, onDeploy, onCompile,
 }: {
   strategy: Strategy
-  inSync?: boolean
-  isCompiled?: boolean | null
+  sync?: StrategyFileSyncStatus
   isDeploying: boolean
   bestGrade?: { grade: string; stress_test_id: string }
   onView: () => void
@@ -261,6 +253,12 @@ function StrategyRow({
   onCompile: () => void
 }) {
   const navigate = useNavigate()
+  const needsDeploy  = sync?.needs_deploy
+  const needsCompile = sync?.needs_compile
+  const curVer = sync?.current_version
+  const depVer = sync?.deployed_version
+  // What's live on the VPS: the compiled version if compiled, else the deployed one.
+  const liveVer = needsCompile ? sync?.deployed_version : sync?.compiled_version ?? depVer
   return (
     <tr onClick={onView} className="hover:bg-bg-hover cursor-pointer transition-colors">
       <td className="px-4 py-3 font-medium">
@@ -273,12 +271,23 @@ function StrategyRow({
       <td className="px-4 py-3 text-text-secondary">{s.param_schema.length}</td>
       <td className="px-4 py-3 tabular-nums">{s.run_count}</td>
       <td className="px-4 py-3">
-        {inSync === undefined ? null : !inSync ? (
-          <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs deploy</span>
-        ) : isCompiled === false ? (
-          <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs compile</span>
-        ) : (
-          <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
+        {sync === undefined ? null : (
+          <div className="flex items-center gap-1.5">
+            {curVer != null && (
+              <span
+                title={`Local v${curVer}${liveVer != null ? ` · running v${liveVer}` : ' · not deployed'}`}
+                className="text-[11px] font-mono tabular-nums px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-secondary border border-border-subtle"
+              >v{curVer}</span>
+            )}
+            {needsDeploy ? (
+              <span title={depVer != null ? `Deployed v${depVer}, local is v${curVer}` : 'Never deployed'}
+                className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs deploy</span>
+            ) : needsCompile ? (
+              <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs compile</span>
+            ) : (
+              <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
+            )}
+          </div>
         )}
       </td>
       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
@@ -296,7 +305,7 @@ function StrategyRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-          {!inSync && (
+          {needsDeploy && (
             <button
               onClick={onDeploy}
               disabled={isDeploying}
@@ -306,7 +315,7 @@ function StrategyRow({
               Deploy
             </button>
           )}
-          {inSync && isCompiled === false && (
+          {!needsDeploy && needsCompile && (
             <button
               onClick={onCompile}
               className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-warn-muted text-warn-text border border-warn-text/30 hover:opacity-80 transition-opacity"
@@ -315,7 +324,7 @@ function StrategyRow({
               Compile
             </button>
           )}
-          {inSync && isCompiled !== false && (
+          {!needsDeploy && !needsCompile && (
             <button
               onClick={onRun}
               className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors"
@@ -355,10 +364,22 @@ function fmtBytes(n: number): string {
 }
 
 
-function FileStatusBadge({ filename, vpsFiles }: { filename: string; vpsFiles: StrategyFile[] }) {
+function FileStatusBadge({ filename, vpsFiles, sync }: {
+  filename: string; vpsFiles: StrategyFile[]; sync?: StrategyFileSyncStatus
+}) {
   const vpsFile = vpsFiles.find(f => f.filename === filename)
   if (!vpsFile) return <span className="text-[11px] px-2 py-[2px] rounded-full bg-neg-muted text-neg-text border border-neg-text/20">● Missing</span>
-  return <span className="text-[11px] px-2 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
+  const ver = sync?.current_version
+  const chip = ver != null
+    ? <span className="text-[11px] font-mono tabular-nums px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-secondary border border-border-subtle">v{ver}</span>
+    : null
+  // Content-aware, matching the Strategies tab — presence alone is not "in sync".
+  const pill = sync?.needs_deploy
+    ? <span className="text-[11px] px-2 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs deploy</span>
+    : sync?.needs_compile
+    ? <span className="text-[11px] px-2 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs compile</span>
+    : <span className="text-[11px] px-2 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
+  return <div className="flex items-center gap-1.5">{chip}{pill}</div>
 }
 
 function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', usePollHook }: {
@@ -427,6 +448,11 @@ function FilesTab() {
     () => new Set(syncStatus?.map(s => s.expected_filename) ?? []),
     [syncStatus]
   )
+  const syncByFilename = useMemo(() => {
+    const m: Record<string, StrategyFileSyncStatus> = {}
+    syncStatus?.forEach(s => { m[s.expected_filename] = s })
+    return m
+  }, [syncStatus])
   const ourFiles = useMemo(
     () => (files ?? []).filter(f => ourFilenames.has(f.filename)),
     [files, ourFilenames]
@@ -567,7 +593,7 @@ function FilesTab() {
                   <td className="px-4 py-3"><RunnerBadge runner={f.platform} /></td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{fmtBytes(f.size_bytes)}</td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{new Date(f.modified_at).toLocaleString()}</td>
-                  <td className="px-4 py-3"><FileStatusBadge filename={f.filename} vpsFiles={files ?? []} /></td>
+                  <td className="px-4 py-3"><FileStatusBadge filename={f.filename} vpsFiles={files ?? []} sync={syncByFilename[f.filename]} /></td>
                   <td className="px-4 py-3">
                     {!f.filename.startsWith('@') && (
                       <button

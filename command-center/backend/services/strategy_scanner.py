@@ -31,6 +31,13 @@ def _md5_text(text: str) -> str:
     return hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
 
 
+def source_hash(text: str) -> str:
+    """Public content hash for strategy source — the version registry's identity.
+    Callers that hold raw bytes should decode utf-8 (errors='replace') first so the
+    hash matches what the scanner computes."""
+    return _md5_text(text)
+
+
 def _infer_category(class_name: str) -> Optional[str]:
     lower = class_name.lower()
     for key, cat in _CATEGORY_MAP.items():
@@ -399,6 +406,7 @@ def scan_strategies() -> dict:
         class_name  = class_m.group(1)
         strategy_id = class_name.lower()
         current_hash = _md5_text(source)
+        lab_db.ensure_strategy_version(strategy_id, current_hash, len(source.encode("utf-8", errors="replace")))
 
         if lab_db.get_strategy_hash(strategy_id) == current_hash:
             skipped += 1
@@ -427,6 +435,7 @@ def scan_strategies() -> dict:
             continue  # no input declarations — skip silently
 
         strategy_count += 1
+        lab_db.ensure_strategy_version(strategy_id, current_hash, len(source.encode("utf-8", errors="replace")))
 
         if lab_db.get_strategy_hash(strategy_id) == current_hash:
             skipped += 1

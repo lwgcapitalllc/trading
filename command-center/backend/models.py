@@ -778,6 +778,14 @@ class StrategyFile(BaseModel):
     platform: str = "NT8"
 
 
+class StrategyVersion(BaseModel):
+    strategy_id: str
+    version: int
+    source_hash: str
+    size_bytes: Optional[int] = None
+    created_at: int  # unix seconds
+
+
 class StrategyFileSyncStatus(BaseModel):
     strategy_id: str
     expected_filename: str
@@ -786,6 +794,15 @@ class StrategyFileSyncStatus(BaseModel):
     file_modified_at: Optional[str] = None
     in_sync: bool
     is_compiled: Optional[bool] = None  # MT5 only: True if .ex5 exists alongside .mq5
+    # Version tracking — which content version is local vs deployed vs compiled.
+    current_version: Optional[int] = None     # version of the current local source
+    current_source_hash: Optional[str] = None
+    deployed_version: Optional[int] = None    # version last deployed to the lab VPS
+    deployed_at: Optional[int] = None         # unix seconds
+    compiled_version: Optional[int] = None    # version last compiled on the lab VPS
+    compiled_at: Optional[int] = None         # unix seconds
+    needs_deploy: bool = False                # local source differs from deployed
+    needs_compile: bool = False               # deployed source not yet compiled
 
 
 class CompileJobStatus(BaseModel):

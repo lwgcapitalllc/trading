@@ -205,6 +205,24 @@ def init_db() -> None:
             "ALTER TABLE strategies ADD COLUMN description TEXT",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
+            # Strategy version registry — content-addressed (source_hash → monotonic version).
+            # The single source of truth for "what versions of this strategy exist."
+            # Target-agnostic: lab-VPS deploy/compile state lives on `strategies`;
+            # future bot deploys record (strategy_id, target, version) in their own table.
+            """CREATE TABLE IF NOT EXISTS strategy_versions (
+                strategy_id  TEXT    NOT NULL,
+                version      INTEGER NOT NULL,
+                source_hash  TEXT    NOT NULL,
+                size_bytes   INTEGER,
+                created_at   INTEGER NOT NULL,
+                PRIMARY KEY (strategy_id, version)
+            )""",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_strategy_versions_hash ON strategy_versions(strategy_id, source_hash)",
+            # Lab-VPS deploy/compile content tracking — which version is on the VPS and compiled
+            "ALTER TABLE strategies ADD COLUMN deployed_source_hash TEXT",
+            "ALTER TABLE strategies ADD COLUMN deployed_at INTEGER",
+            "ALTER TABLE strategies ADD COLUMN compiled_source_hash TEXT",
+            "ALTER TABLE strategies ADD COLUMN compiled_at INTEGER",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -969,10 +987,83 @@ def mark_strategy_needs_compile(class_name: str) -> None:
 
 
 def mark_runner_compiled(runner: str) -> None:
-    """Called after a successful compile — marks all strategies for that runner as compiled."""
+    """Called after a successful compile — marks all strategies for that runner as compiled
+    and stamps the compiled content hash to whatever is currently deployed (a compile builds
+    the deployed source), so `needs_compile` can be judged by content, not a coarse boolean."""
     with _connect() as conn:
         conn.execute(
-            "UPDATE strategies SET is_compiled = 1 WHERE runner = ?", (runner,)
+            "UPDATE strategies SET is_compiled = 1, "
+            "compiled_source_hash = deployed_source_hash, compiled_at = ? "
+            "WHERE runner = ?",
+            (int(time.time()), runner),
+        )
+
+
+# ── Strategy version registry ───────────────────────────────────────────────
+# Versions are content-addressed: a given source_hash always maps to the same
+# monotonic version per strategy, so reverting to earlier content reuses its
+# original version number. This is the source of truth for "what version is X".
+
+def ensure_strategy_version(strategy_id: str, source_hash: str,
+                            size_bytes: Optional[int] = None) -> int:
+    """Return the version for this (strategy, content hash), creating it if new."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT version FROM strategy_versions WHERE strategy_id = ? AND source_hash = ?",
+            (strategy_id, source_hash),
+        ).fetchone()
+        if row:
+            return row["version"]
+        nxt = conn.execute(
+            "SELECT COALESCE(MAX(version), 0) + 1 AS v FROM strategy_versions WHERE strategy_id = ?",
+            (strategy_id,),
+        ).fetchone()["v"]
+        try:
+            conn.execute(
+                "INSERT INTO strategy_versions (strategy_id, version, source_hash, size_bytes, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (strategy_id, nxt, source_hash, size_bytes, int(time.time())),
+            )
+            return nxt
+        except sqlite3.IntegrityError:
+            # Concurrent writer registered it first — re-read.
+            row = conn.execute(
+                "SELECT version FROM strategy_versions WHERE strategy_id = ? AND source_hash = ?",
+                (strategy_id, source_hash),
+            ).fetchone()
+            return row["version"] if row else nxt
+
+
+def version_for_hash(strategy_id: str, source_hash: Optional[str]) -> Optional[int]:
+    """Resolve a stored content hash to its version number, or None if unknown."""
+    if not source_hash:
+        return None
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT version FROM strategy_versions WHERE strategy_id = ? AND source_hash = ?",
+            (strategy_id, source_hash),
+        ).fetchone()
+    return row["version"] if row else None
+
+
+def list_strategy_versions(strategy_id: str) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT strategy_id, version, source_hash, size_bytes, created_at "
+            "FROM strategy_versions WHERE strategy_id = ? ORDER BY version DESC",
+            (strategy_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_strategy_deployed(class_name: str, source_hash: str) -> None:
+    """Stamp the content hash + time deployed to the lab VPS, and flag needs-compile.
+    A deploy always invalidates the compiled artifact until a fresh compile runs."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE strategies SET deployed_source_hash = ?, deployed_at = ?, is_compiled = 0 "
+            "WHERE class_name = ?",
+            (source_hash, int(time.time()), class_name),
         )
 
 

@@ -17,9 +17,12 @@ Endpoints:
     GET    /strategy-files/sync-status      per-strategy file presence on VPS
 """
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from models import StrategyFile, StrategyFileSyncStatus, CompileJobStatus
-from services import runner_dispatch, lab_db, mt5_agent_client
+from services import runner_dispatch, lab_db, mt5_agent_client, strategy_scanner
+import config as cfg
 
 router = APIRouter(prefix="/strategy-files", tags=["strategy-files"])
 
@@ -69,9 +72,13 @@ async def upload_strategy_file(
         if "HTTP 423" in msg:
             raise HTTPException(status_code=423, detail=msg)
         raise HTTPException(status_code=502, detail=msg)
-    # File uploaded — strategy needs a fresh compile before it can be run
+    # File uploaded — record the deployed content so sync-status is content-aware
+    # (set_strategy_deployed also flags needs-compile). class_name → strategy_id by
+    # the scanner's convention (lower-cased), matching .cs and .mq5 registration.
     class_name = filename.rsplit(".", 1)[0]
-    lab_db.mark_strategy_needs_compile(class_name)
+    src_hash = strategy_scanner.source_hash(content.decode("utf-8", errors="replace"))
+    lab_db.ensure_strategy_version(class_name.lower(), src_hash, len(content))
+    lab_db.set_strategy_deployed(class_name, src_hash)
     return result
 
 
@@ -147,9 +154,11 @@ def sync_status():
         pass  # MT5 agent unreachable — degrade gracefully, MT5 strategies show not-in-sync
 
     strategies = lab_db.list_strategies()
+    monorepo_root = Path(cfg.MONOREPO_ROOT)
     result = []
     for s in strategies:
         class_name = s.get("class_name") or s.get("id", "")
+        strategy_id = s["id"]
         is_mt5 = s.get("runner") == "mt5"
         expected = f"{class_name}.mq5" if is_mt5 else f"{class_name}.cs"
         vps_file = (mt5_files if is_mt5 else nt8_files).get(expected)
@@ -157,13 +166,42 @@ def sync_status():
             is_compiled = mt5_files.get(f"{class_name}.ex5") is not None
         else:
             is_compiled = bool(s.get("is_compiled", 1))
+
+        # Current content hash, read LIVE from disk so a local edit is detected
+        # immediately — no re-scan needed. Register the version so it always resolves.
+        current_hash = None
+        source_path = s.get("source_path")
+        if source_path:
+            fp = monorepo_root / source_path
+            if fp.exists():
+                current_hash = strategy_scanner.source_hash(
+                    fp.read_text(encoding="utf-8", errors="replace"))
+                lab_db.ensure_strategy_version(strategy_id, current_hash, fp.stat().st_size)
+
+        deployed_hash = s.get("deployed_source_hash")
+        compiled_hash = s.get("compiled_source_hash")
+
+        # Content-based staleness — the whole point of this endpoint.
+        # needs_deploy: local source differs from what's on the VPS (or never deployed).
+        # needs_compile: deployed source hasn't been compiled (only meaningful once deployed).
+        needs_deploy = (current_hash is not None) and (current_hash != deployed_hash)
+        needs_compile = (deployed_hash is not None) and (deployed_hash != compiled_hash)
+
         result.append(StrategyFileSyncStatus(
-            strategy_id=s["id"],
+            strategy_id=strategy_id,
             expected_filename=expected,
             file_exists_on_vps=vps_file is not None,
             file_size_bytes=vps_file["size_bytes"] if vps_file else None,
             file_modified_at=vps_file["modified_at"] if vps_file else None,
-            in_sync=vps_file is not None,
+            in_sync=(vps_file is not None) and not needs_deploy,
             is_compiled=is_compiled,
+            current_version=lab_db.version_for_hash(strategy_id, current_hash),
+            current_source_hash=current_hash,
+            deployed_version=lab_db.version_for_hash(strategy_id, deployed_hash),
+            deployed_at=s.get("deployed_at"),
+            compiled_version=lab_db.version_for_hash(strategy_id, compiled_hash),
+            compiled_at=s.get("compiled_at"),
+            needs_deploy=needs_deploy,
+            needs_compile=needs_compile,
         ))
     return result
