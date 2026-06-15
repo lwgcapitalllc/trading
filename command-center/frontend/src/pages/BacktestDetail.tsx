@@ -508,7 +508,7 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
   const card = (m: KMetric, fixedCard = false, valSize = 'text-[28px] lg:text-[32px]') => (
     <div
       key={m.key}
-      className={`flex flex-col justify-center bg-bg-surface border border-border-subtle border-l-[3px] ${KPI_TONE_BORDER[m.tone ?? kpiTone(m.valueCls)]} rounded-xl px-4 py-3 overflow-hidden transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${fixedCard ? 'h-full min-h-0' : 'min-h-[100px]'}`}
+      className={`flex flex-col justify-center bg-bg-surface border border-border-subtle border-l-[3px] ${KPI_TONE_BORDER[m.tone ?? kpiTone(m.valueCls)]} rounded-xl px-4 py-3 overflow-hidden transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${fixedCard ? 'h-full min-h-[100px]' : 'min-h-[100px]'}`}
     >
       <div className="flex items-center text-[9px] font-bold uppercase tracking-[0.8px] text-text-tertiary">
         {m.label}{m.tooltip && <InfoTip text={m.tooltip} />}
@@ -518,10 +518,9 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
     </div>
   )
 
-  // On lg the whole block is pinned to the eval card's measured height (fixedHeight) and CLIPS — so
-  // nothing can ever spill below it. Two row-grids with explicit heights: collapsed → core row = full
-  // height, "more" row = 0 (clipped, invisible); expanded → both rows half height (summing, with the
-  // gap, to the exact same total). Heights animate. Off lg → normal flow.
+  // On lg the grid is pinned to the eval card's measured pixel height (fixedHeight). Two row-grids
+  // with explicit heights: collapsed → core row = full height; expanded → both rows at half height
+  // summing (with the gap) to exactly the same total. Heights animate. Off lg → normal flow.
   const fh = fixedHeight
   if (fh != null) {
     const gap = 12
@@ -983,7 +982,7 @@ function EvalCard({ ev, netPnl, tradeCount, showName = true }: { ev: EvaluationD
   return (
     <div className={`bg-bg-surface border border-border-subtle border-l-[3px] ${colorCfg.border} rounded-lg overflow-hidden h-full flex flex-col`}>
       {/* Header */}
-      <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
+      <div className="px-4 pt-3.5 pb-2.5 flex items-start justify-between gap-3">
         {showName && (
           <div className="text-[13px] font-semibold text-text-primary leading-tight">{ev.ruleset_name}</div>
         )}
@@ -1000,7 +999,7 @@ function EvalCard({ ev, netPnl, tradeCount, showName = true }: { ev: EvaluationD
           trailing MLL / consistency / contract cap don't apply. Old INFO rows
           (pre-verdict evaluations) still show no chips. */}
       {ev.verdict !== 'INFO' && (isPersonal(ev) ? (
-        <div className="px-4 py-3 space-y-[10px]">
+        <div className="px-4 py-2.5 space-y-2">
           {ev.personal_max_drawdown_from_peak_pct != null && (
             <EvalRow
               label="Drawdown from peak"
@@ -1017,7 +1016,7 @@ function EvalCard({ ev, netPnl, tradeCount, showName = true }: { ev: EvaluationD
           )}
         </div>
       ) : (
-        <div className="px-4 py-3 space-y-[10px]">
+        <div className="px-4 py-2.5 space-y-2">
           <EvalRow
             label="Daily drawdown"
             pass={ev.drawdown_pass}
@@ -1045,7 +1044,7 @@ function EvalCard({ ev, netPnl, tradeCount, showName = true }: { ev: EvaluationD
 
       {/* Footer — standout trade count (replaces the redundant net-P&L / drawdown notes) */}
       {tradeCount != null && (
-        <div className="mt-auto flex items-baseline gap-2.5 px-4 py-4 bg-accent/5 border-t border-accent/20">
+        <div className="mt-auto flex items-baseline gap-2.5 px-4 py-3 bg-accent/5 border-t border-accent/20">
           <span className="text-[40px] font-extrabold font-mono leading-none text-accent tabular-nums">{tradeCount}</span>
           <span className="text-[12px] font-bold uppercase tracking-[0.8px] text-text-secondary">Trades</span>
         </div>
@@ -1512,8 +1511,10 @@ function ChartModal({ title, onClose, render }: { title: string; onClose: () => 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+  // Solid background (not backdrop-blur): blurring the whole viewport is recomputed every frame of
+  // the equity draw animation, which makes the line render choppy fullscreen.
   return createPortal(
-    <div className="fixed inset-0 z-[90] bg-bg-base/95 backdrop-blur-sm flex flex-col" onClick={onClose}>
+    <div className="fixed inset-0 z-[90] bg-bg-base flex flex-col" onClick={onClose}>
       <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0" onClick={e => e.stopPropagation()}>
         <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">{title}</span>
         <button onClick={onClose} title="Close (Esc)" className="text-text-tertiary hover:text-text-primary"><X size={18} /></button>
@@ -1843,9 +1844,9 @@ export function BacktestDetail() {
   const isOptCombo    = !!run?.optimization_id && !run?.equity_curve?.length && isComplete
   const stressBlocked = isMt5 ? (stressLock?.forex ?? false) : (stressLock?.futures ?? false)
 
-  // Match the KPI grid's height to the evaluation card so the 6 collapsed cards (one row) and the
-  // 12 expanded cards (two rows) both add up to exactly the eval card's height. Measured in JS —
-  // a pure-CSS flex/grid percentage chain didn't resolve the height reliably. lg-only.
+  // Match the KPI grid height to the eval card (lg only). The eval card's height is measured in JS
+  // and passed as fixedHeight so both rows (collapsed: one tall, expanded: two half-height) sum to
+  // the same total. Pure-CSS stretch caused a grow-then-shrink reflow on toggle.
   const [evalH, setEvalH] = useState<number | null>(null)
   const [isLg, setIsLg] = useState(() => window.matchMedia('(min-width: 1024px)').matches)
   useEffect(() => {
@@ -2022,15 +2023,14 @@ export function BacktestDetail() {
             run.evaluations.length > 0 && !isOptCombo ? (
               <div className="space-y-3">
                 <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
-                  {/* Left: firm evaluation cards (the trade-count standout lives inside the card).
-                      Its height is measured and applied to the KPI grid on the right. */}
+                  {/* Left: firm evaluation cards — height measured so the KPI grid can match it. */}
                   <div className="flex flex-col">
                     <SectionLabel>Evaluation</SectionLabel>
                     <div className="flex flex-col gap-3" ref={measureEvalRef}>
                       {run.evaluations.map(ev => <EvalCard key={ev.eval_id} ev={ev} netPnl={run.net_pnl} tradeCount={run.trade_count} showName={run.evaluations.length > 1} />)}
                     </div>
                   </div>
-                  {/* Right: flat core KPIs — pinned to the eval card's measured height */}
+                  {/* Right: flat KPIs pinned to the eval card's measured pixel height. */}
                   <div className="flex flex-col min-w-0">
                     <SectionLabel>Performance</SectionLabel>
                     <KpiGrid run={run} fallback={fallback} equity={run.equity_curve}
