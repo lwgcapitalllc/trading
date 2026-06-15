@@ -1,4 +1,5 @@
-import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
@@ -8,7 +9,7 @@ import {
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Label,
   XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, ReferenceLine,
+  ResponsiveContainer, Cell, ReferenceLine, ReferenceArea,
 } from 'recharts'
 import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
@@ -358,22 +359,58 @@ function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
 
 // ── InfoTip ───────────────────────────────────────────────────────────────────
 
+// Tooltip is portalled to <body> with fixed positioning so the KPI card's overflow-hidden
+// (needed for the collapse/height clipping) can't crop it.
 function InfoTip({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [tip, setTip] = useState<{ top: number; left: number } | null>(null)
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect()
+    if (r) setTip({ top: r.top - 8, left: r.left })
+  }
   return (
-    <span className="relative group/tip inline-flex items-center ml-[5px] cursor-help flex-shrink-0">
-      <Info size={9} className="text-text-tertiary/50 group-hover/tip:text-accent transition-colors" />
-      <span className="absolute bottom-[calc(100%+8px)] left-0 z-50 hidden group-hover/tip:block w-48 rounded-lg bg-bg-base border border-border-default px-3 py-2.5 text-[11px] text-text-secondary shadow-2xl pointer-events-none leading-relaxed normal-case tracking-normal font-normal">
-        {text}
-      </span>
+    <span
+      ref={ref}
+      onMouseEnter={show}
+      onMouseLeave={() => setTip(null)}
+      className="relative inline-flex items-center ml-[5px] cursor-help flex-shrink-0"
+    >
+      <Info size={9} className="text-text-tertiary/50 hover:text-accent transition-colors" />
+      {tip && createPortal(
+        <span
+          style={{ position: 'fixed', top: tip.top, left: tip.left, transform: 'translateY(-100%)' }}
+          className="z-[100] w-48 rounded-lg bg-bg-base border border-border-default px-3 py-2.5 text-[11px] text-text-secondary shadow-2xl pointer-events-none leading-relaxed normal-case tracking-normal font-normal"
+        >
+          {text}
+        </span>,
+        document.body,
+      )}
     </span>
   )
 }
 
 // ── KPI grid ──────────────────────────────────────────────────────────────────
 
-function KpiGrid({ run, fallback, equity = [], balance = null, defaultBalance = null, onBalanceChange, stretch = false }: {
+type KpiTone = 'good' | 'bad' | 'warn' | 'neutral'
+const KPI_TONE_BORDER: Record<KpiTone, string> = {
+  good:    'border-l-pos-text/60',
+  bad:     'border-l-neg-text/60',
+  warn:    'border-l-warn-text/60',
+  neutral: 'border-l-border-default',
+}
+// Left-accent tone derived from the value's text-colour class, so the accent always agrees with
+// the number's colour — one source of sentiment.
+function kpiTone(valueCls?: string): KpiTone {
+  if (!valueCls) return 'neutral'
+  if (valueCls.includes('pos'))  return 'good'
+  if (valueCls.includes('neg'))  return 'bad'
+  if (valueCls.includes('warn')) return 'warn'
+  return 'neutral'
+}
+
+function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false, fixedHeight = null }: {
   run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
-  defaultBalance?: number | null; onBalanceChange?: (v: number | null) => void; stretch?: boolean
+  showMore?: boolean; fixedHeight?: number | null
 }) {
   const pnlCls = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
 
@@ -419,98 +456,118 @@ function KpiGrid({ run, fallback, equity = [], balance = null, defaultBalance = 
   const rr = (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
     ? (run.avg_win / Math.abs(run.avg_loss)).toFixed(2) : null
 
-  // ── Grouped KPI layout (five columns) ────────────────────────────────────────
-  // Five group panels, all sharing ONE accent for border + header (a single colour, not per-
-  // group — red/amber/violet/cyan each carry meaning elsewhere: value colours, warnings, the
-  // regime palette). Cards inside are a uniform height so rows line up across columns. Every
-  // group is its own column, including Activity (trade count + avg duration) — no meta strip.
+  // ── Flat KPI layout: 6 core cards always shown, 6 "more" revealed in the same 6-col grid ──
+  // Big-number cards with a sentiment-coloured left accent (matches the eval cards). Trade Count
+  // moves out to the standout beside the verdict, not here.
   const calmarTip = `Annualized return (CAGR) ÷ max drawdown, both as a % of capital — so it cancels out: Calmar is capital-independent BY DESIGN and does NOT move with the Account balance slider. It reduces to ≈ annualized net P&L ÷ drawdown${recoveryFactor != null ? ` (= ${recoveryFactor.toFixed(2)} — the old Recovery Factor)` : ''}. The definitive risk-adjusted metric for funded traders; trade-derived, so NT8 and MT5 agree.`
   const expectancySub = (run.avg_win != null && run.avg_loss != null)
     ? `avg +$${run.avg_win.toFixed(0)} / -$${Math.abs(run.avg_loss).toFixed(0)}${rr ? ` · ${rr}:1 R:R` : ''}`
     : 'per trade'
 
-  type KMetric = { key: string; label: string; value: React.ReactNode; valueCls?: string; sub?: React.ReactNode; tooltip?: string }
-  const groups: { key: string; label: string; hint: string; metrics: KMetric[] }[] = [
-    { key: 'outcome', label: 'Outcome', hint: 'did it work', metrics: [
-      { key: 'netpnl', label: 'Net P&L', value: dollar(run.net_pnl, true), valueCls: pnlCls,
-        tooltip: "Total profit or loss after commissions. The bottom line." },
-      { key: 'maxdd', label: 'Max DD % of Capital',
-        value: maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—',
-        valueCls: maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary',
-        sub: ddDollar != null ? `$${Math.round(ddDollar).toLocaleString()} peak-to-trough${maxDdPct == null ? ' · set a balance for %' : ''}` : 'set an account balance',
-        tooltip: "Max drawdown — the largest peak-to-trough drop, shown both in dollars (sub-line) and as a % of the account balance (the value; ruleset's account_size, adjustable via the Account balance slider). Prop firms cap this hard. The dollar drawdown is trade-derived, identical across NT8 and MT5. Lower is better." },
-      { key: 'profconc', label: 'Profit Concentration',
-        value: profitConc != null ? `${profitConc.toFixed(0)}%` : '—',
-        valueCls: concentrationCls(profitConc), sub: concentrationLabel(profitConc),
-        tooltip: "Share of total gross profit (sum of positive daily P&L) earned in the single most profitable calendar quarter of the test span (split into 4 equal date slices). High means the edge is clustered in one period — a classic sign of curve-fitting to a recent regime. ≥60% is a red flag." },
-    ]},
-    { key: 'quality', label: 'Risk-Adjusted Quality', hint: 'is the edge real', metrics: [
-      { key: 'sharpe', label: 'Sharpe (annlzd)', value: sharpe != null ? sharpe.toFixed(2) : '—', valueCls: sharpeCls(sharpe), sub: sharpeSub,
-        tooltip: "Return per unit of risk, annualized (daily P&L × √252) — the canonical definition shared with the optimizer and walk-forward. 'platform' shows NT8/MT5's own reported Sharpe for reference. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing. 'low sample' flags fewer than 10 trading days, where the value is statistically noisy." },
-      { key: 'calmar', label: 'Calmar Ratio', value: calmar != null ? calmar.toFixed(2) : '—', valueCls: calmarCls(calmar), sub: calmarLabel(calmar), tooltip: calmarTip },
-      { key: 'pf', label: 'Profit Factor', value: run.profit_factor != null ? run.profit_factor.toFixed(2) : '—', valueCls: pfCls(run.profit_factor), sub: pfLabel(run.profit_factor),
-        tooltip: "Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0." },
-    ]},
-    { key: 'behavior', label: 'Trade Behavior', hint: 'how it behaves', metrics: [
-      { key: 'winrate', label: 'Win Rate', value: pct(run.win_rate), valueCls: winRateCls(run.win_rate), sub: winRateLabel(run.win_rate),
-        tooltip: "% of trades that closed in profit. Good ≥60%, fair ≥50%, weak <50%. High win rate alone doesn't guarantee profitability — size of wins vs losses matters too." },
-      { key: 'expectancy', label: 'Expectancy', value: expectancyUsd != null ? `$${expectancyUsd.toFixed(2)}` : '—',
-        valueCls: expectancyUsd != null ? (expectancyUsd >= 0 ? 'text-pos-text' : 'text-neg-text') : '', sub: expectancySub,
-        tooltip: "Average net P&L per trade (net P&L ÷ trade count) — your edge per position. Sub-line shows avg win / avg loss and the win:loss (reward:risk) ratio. R-multiple expectancy needs per-trade risk, which stored trades don't carry (profit only), so it's omitted rather than guessed." },
-      { key: 'zscore', label: 'Z-Score', value: zScore != null ? zScore.toFixed(2) : '—', valueCls: zScoreCls(zScore), sub: zScoreLabel(zScore),
-        tooltip: "Wald–Wolfowitz runs test over the win/loss sequence. Measures whether wins and losses streak more than random chance. Within ±1.5 is healthy; beyond ±2 signals non-random streaking (positive = fewer runs / longer streaks, negative = alternating more than chance)." },
-    ]},
-    { key: 'activity', label: 'Activity', hint: 'volume & timing', metrics: [
-      { key: 'count', label: 'Trade Count', value: run.trade_count ?? '—', tooltip: "Total completed trades. More trades = more statistically reliable results." },
-      { key: 'avgtrade', label: 'Avg Trade', value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—', sub: 'duration / trade', tooltip: "Average time in a position per trade." },
-    ]},
-    { key: 'tail', label: 'Tail Risk', hint: 'how bad it gets', metrics: [
-      { key: 'worstday', label: 'Worst Day', value: dollar(worstDay), valueCls: worstDay != null && worstDay < 0 ? 'text-neg-text' : '', sub: 'single worst trading day',
-        tooltip: "Largest single-day loss. Compare this to your prop firm's daily loss limit — exceeding it would have failed the challenge that day." },
-      { key: 'worststreak', label: 'Worst Streak', value: worstStreak != null ? `${worstStreak} L` : '—', valueCls: worstStreakCls(worstStreak), sub: 'consecutive losing days',
-        tooltip: "Longest consecutive run of losing days. Tests whether you'd stay disciplined under sustained drawdown. ≥6 days is a red flag." },
-    ]},
+  type KMetric = { key: string; label: string; value: React.ReactNode; valueCls?: string; tone?: KpiTone; sub?: React.ReactNode; tooltip?: string }
+
+  // Core — always shown.
+  const core: KMetric[] = [
+    { key: 'netpnl', label: 'Net P&L', value: dollar(run.net_pnl, true), valueCls: pnlCls,
+      tooltip: "Total profit or loss after commissions. The bottom line." },
+    { key: 'sharpe', label: 'Sharpe (annlzd)', value: sharpe != null ? sharpe.toFixed(2) : '—', valueCls: sharpeCls(sharpe), sub: sharpeSub,
+      tooltip: "Return per unit of risk, annualized (daily P&L × √252) — the canonical definition shared with the optimizer and walk-forward. 'platform' shows NT8/MT5's own reported Sharpe for reference. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing. 'low sample' flags fewer than 10 trading days, where the value is statistically noisy." },
+    { key: 'winrate', label: 'Win Rate', value: pct(run.win_rate), valueCls: winRateCls(run.win_rate), sub: winRateLabel(run.win_rate),
+      tooltip: "% of trades that closed in profit. Good ≥60%, fair ≥50%, weak <50%. High win rate alone doesn't guarantee profitability — size of wins vs losses matters too." },
+    { key: 'maxdd', label: 'Max DD % of Capital',
+      value: maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—',
+      valueCls: maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary', tone: 'neutral',
+      sub: ddDollar != null ? `$${Math.round(ddDollar).toLocaleString()} peak-to-trough${maxDdPct == null ? ' · set a balance for %' : ''}` : 'set an account balance',
+      tooltip: "Max drawdown — the largest peak-to-trough drop, shown both in dollars (sub-line) and as a % of the account balance (the value; ruleset's account_size, adjustable via the Account balance slider). Prop firms cap this hard. The dollar drawdown is trade-derived, identical across NT8 and MT5. Lower is better." },
+    { key: 'pf', label: 'Profit Factor', value: run.profit_factor != null ? run.profit_factor.toFixed(2) : '—', valueCls: pfCls(run.profit_factor), sub: pfLabel(run.profit_factor),
+      tooltip: "Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0." },
+    { key: 'calmar', label: 'Calmar Ratio', value: calmar != null ? calmar.toFixed(2) : '—', valueCls: calmarCls(calmar), sub: calmarLabel(calmar), tooltip: calmarTip },
   ]
 
-  return (
-    <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 items-stretch ${stretch ? 'h-full' : ''}`}>
-      {groups.map(g => (
-        <div key={g.key} className="flex flex-col gap-2.5 rounded-xl p-3 bg-accent/[0.04] border border-accent/25 border-t-[3px] border-t-accent">
-          <div className="flex items-baseline gap-1.5 pb-1.5 border-b border-border-subtle">
-            <span className="text-[10px] font-bold uppercase tracking-[0.7px] text-accent">{g.label}</span>
-            <span className="text-[10px] text-text-tertiary">· {g.hint}</span>
-          </div>
-          {g.metrics.map(m => (
-            <div key={m.key} className="bg-bg-surface border border-border-subtle rounded-lg px-[14px] py-3 min-h-[86px] flex flex-col justify-center">
-              <div className="flex items-center text-[10px] uppercase tracking-[0.5px] text-text-secondary">
-                {m.label}{m.tooltip && <InfoTip text={m.tooltip} />}
-              </div>
-              <div className={`text-[22px] font-semibold tracking-[-0.5px] font-mono mt-[5px] ${m.valueCls ?? ''}`}>{m.value}</div>
-              {m.sub && <div className="text-[11px] text-text-tertiary mt-[3px] leading-snug">{m.sub}</div>}
-              {/* Account-balance what-if lives on the card it drives — rebases this % only. */}
-              {m.key === 'maxdd' && onBalanceChange && defaultBalance != null && balance != null && (
-                <div className="mt-2.5 pt-2 border-t border-border-subtle">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range" min={5000} max={250000} step={5000}
-                      value={Math.min(250000, Math.max(5000, balance))}
-                      onChange={e => onBalanceChange(Number(e.target.value))}
-                      className="flex-1 accent-accent cursor-pointer"
-                    />
-                    <span className="text-[11px] font-mono font-semibold tabular-nums text-text-primary whitespace-nowrap">${(balance / 1000).toFixed(0)}k</span>
-                  </div>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-[9px] uppercase tracking-[0.5px] text-text-tertiary">account balance</span>
-                    {balance === defaultBalance
-                      ? <span className="text-[9px] text-text-tertiary">default</span>
-                      : <button onClick={() => onBalanceChange(null)} className="text-[9px] text-accent hover:underline">reset to ${(defaultBalance / 1000).toFixed(0)}k</button>}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+  // More — revealed in the same grid, directly beneath the core row.
+  const more: KMetric[] = [
+    { key: 'profconc', label: 'Profit Concentration',
+      value: profitConc != null ? `${profitConc.toFixed(0)}%` : '—',
+      valueCls: concentrationCls(profitConc), sub: concentrationLabel(profitConc),
+      tooltip: "Share of total gross profit (sum of positive daily P&L) earned in the single most profitable calendar quarter of the test span (split into 4 equal date slices). High means the edge is clustered in one period — a classic sign of curve-fitting to a recent regime. ≥60% is a red flag." },
+    { key: 'expectancy', label: 'Expectancy', value: expectancyUsd != null ? `$${expectancyUsd.toFixed(2)}` : '—',
+      valueCls: expectancyUsd != null ? (expectancyUsd >= 0 ? 'text-pos-text' : 'text-neg-text') : '', sub: expectancySub,
+      tooltip: "Average net P&L per trade (net P&L ÷ trade count) — your edge per position. Sub-line shows avg win / avg loss and the win:loss (reward:risk) ratio. R-multiple expectancy needs per-trade risk, which stored trades don't carry (profit only), so it's omitted rather than guessed." },
+    { key: 'zscore', label: 'Z-Score', value: zScore != null ? zScore.toFixed(2) : '—', valueCls: zScoreCls(zScore), sub: zScoreLabel(zScore),
+      tooltip: "Wald–Wolfowitz runs test over the win/loss sequence. Measures whether wins and losses streak more than random chance. Within ±1.5 is healthy; beyond ±2 signals non-random streaking (positive = fewer runs / longer streaks, negative = alternating more than chance)." },
+    { key: 'avgtrade', label: 'Avg Trade', value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—', sub: 'duration / trade', tooltip: "Average time in a position per trade." },
+    { key: 'worstday', label: 'Worst Day', value: dollar(worstDay), valueCls: worstDay != null && worstDay < 0 ? 'text-neg-text' : '', sub: 'single worst trading day',
+      tooltip: "Largest single-day loss. Compare this to your prop firm's daily loss limit — exceeding it would have failed the challenge that day." },
+    { key: 'worststreak', label: 'Worst Streak', value: worstStreak != null ? `${worstStreak} L` : '—', valueCls: worstStreakCls(worstStreak), sub: 'consecutive losing days',
+      tooltip: "Longest consecutive run of losing days. Tests whether you'd stay disciplined under sustained drawdown. ≥6 days is a red flag." },
+  ]
+
+  const card = (m: KMetric, fixedCard = false, valSize = 'text-[28px] lg:text-[32px]') => (
+    <div
+      key={m.key}
+      className={`flex flex-col justify-center bg-bg-surface border border-border-subtle border-l-[3px] ${KPI_TONE_BORDER[m.tone ?? kpiTone(m.valueCls)]} rounded-xl px-4 py-3 overflow-hidden transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${fixedCard ? 'h-full min-h-0' : 'min-h-[100px]'}`}
+    >
+      <div className="flex items-center text-[9px] font-bold uppercase tracking-[0.8px] text-text-tertiary">
+        {m.label}{m.tooltip && <InfoTip text={m.tooltip} />}
+      </div>
+      <div className={`${valSize} font-bold tracking-[-0.6px] font-mono leading-none mt-2 transition-[font-size] duration-300 ${m.valueCls ?? ''}`}>{m.value}</div>
+      {m.sub && <div className="text-[10px] text-text-tertiary mt-1.5 leading-snug">{m.sub}</div>}
+    </div>
+  )
+
+  // On lg the whole block is pinned to the eval card's measured height (fixedHeight) and CLIPS — so
+  // nothing can ever spill below it. Two row-grids with explicit heights: collapsed → core row = full
+  // height, "more" row = 0 (clipped, invisible); expanded → both rows half height (summing, with the
+  // gap, to the exact same total). Heights animate. Off lg → normal flow.
+  const fh = fixedHeight
+  if (fh != null) {
+    const gap = 12
+    const half = Math.max(0, (fh - gap) / 2)
+    return (
+      <div className="flex flex-col" style={{ height: fh, overflow: 'hidden' }}>
+        <div
+          className="grid grid-cols-6 gap-x-3 shrink-0"
+          style={{ height: showMore ? half : fh, gridTemplateRows: '1fr', transition: 'height 0.3s ease' }}
+        >
+          {core.map(m => card(m, true, showMore ? 'text-[28px]' : 'text-[44px]'))}
         </div>
-      ))}
+        <div
+          className="grid grid-cols-6 gap-x-3 shrink-0 overflow-hidden"
+          style={{ height: showMore ? half : 0, marginTop: showMore ? gap : 0, gridTemplateRows: '1fr', transition: 'height 0.3s ease, margin-top 0.3s ease' }}
+        >
+          {more.map(m => card(m, true, 'text-[28px]'))}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      {core.map(m => card(m))}
+      {showMore && more.map(m => card(m))}
+    </div>
+  )
+}
+
+// Lives in the Performance header (not below the grid) so the KPI grid can fill the column and
+// stay the same height as the eval card.
+function MoreMetricsToggle({ open, onToggle, count }: { open: boolean; onToggle: () => void; count: number }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="inline-flex items-center gap-1.5 text-[12px] text-text-secondary hover:text-text-primary"
+    >
+      <ChevronRight size={13} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+      {open ? 'Fewer metrics' : `More metrics (${count})`}
+    </button>
+  )
+}
+
+// Standout trade count — used in the no-evaluation fallback (the eval card carries it otherwise).
+function TradeCountStandout({ count }: { count: number }) {
+  return (
+    <div className="bg-bg-surface border border-border-subtle border-l-[3px] border-l-accent rounded-lg px-4 py-3 flex items-center gap-3">
+      <div className="text-[30px] font-bold font-mono leading-none text-accent tabular-nums">{count}</div>
+      <div className="text-[11px] font-bold uppercase tracking-[0.6px] text-text-secondary">Trades</div>
     </div>
   )
 }
@@ -542,6 +599,8 @@ function computeRegimeBands(equity: EquityPoint[], dailyPnl: DailyPnlPoint[]): R
       cur.x2 = trade.index
     }
   }
+  // Tile the bands so they're contiguous (no gaps between regimes) — matches the tune page.
+  for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
   return bands
 }
 
@@ -554,23 +613,7 @@ function fmtChartDate(d?: string): string {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` '${yr}`
 }
 
-type AugPoint = EquityPoint & { [k: string]: unknown }
-
-function EquityCurveChart({ data, bands = [] }: { data: EquityPoint[]; bands?: RegimeBand[] }) {
-  // Build per-segment data keys for the colored line approach.
-  // Each segment extends one point into the next band so adjacent segments connect seamlessly.
-  const augData: AugPoint[] = useMemo(() => {
-    if (!bands.length) return data as AugPoint[]
-    return data.map(pt => {
-      const extra: Record<string, number | null> = {}
-      for (let i = 0; i < bands.length; i++) {
-        const hi = i < bands.length - 1 ? bands[i + 1].x1 : bands[i].x2
-        extra[`_s${i}`] = (pt.index >= bands[i].x1 && pt.index <= hi) ? pt.equity : null
-      }
-      return { ...pt, ...extra }
-    })
-  }, [data, bands])
-
+function EquityCurveChart({ data, bands = [], height = 300 }: { data: EquityPoint[]; bands?: RegimeBand[]; height?: number }) {
   if (!data.length) return null
 
   const startEq    = data[0]?.equity ?? 0
@@ -585,11 +628,10 @@ function EquityCurveChart({ data, bands = [] }: { data: EquityPoint[]; bands?: R
 
   const curveColor = profitable ? C.pos : C.neg
   const eqTicks    = calIndexTicks(data)
-  const hasBands   = bands.length > 0
 
   return (
-    <ResponsiveContainer key={hasBands ? 'regime' : 'base'} width="100%" height={300}>
-      <AreaChart data={augData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+    <ResponsiveContainer key={bands.length ? 'regime' : 'base'} width="100%" height={height}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           <linearGradient id="eqPos" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%"  stopColor={C.pos} stopOpacity={0.22} />
@@ -601,6 +643,10 @@ function EquityCurveChart({ data, bands = [] }: { data: EquityPoint[]; bands?: R
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
+        {/* Regime context as faint background bands — same treatment as the tune page. */}
+        {bands.map((b, i) => (
+          <ReferenceArea key={i} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
+        ))}
         <XAxis
           dataKey="index"
           ticks={eqTicks}
@@ -643,45 +689,16 @@ function EquityCurveChart({ data, bands = [] }: { data: EquityPoint[]; bands?: R
         />
         <ReferenceLine y={startEq} stroke={C.refLine} strokeDasharray="4 4" />
         {startEq !== 0 && <ReferenceLine y={0} stroke={C.refLineDim} />}
-        {/* Without overlay: normal single-color area + fill */}
-        {!hasBands && (
-          <Area
-            type="monotone"
-            dataKey="equity"
-            stroke={curveColor}
-            strokeWidth={1.5}
-            fill={endEq >= startEq ? 'url(#eqPos)' : 'url(#eqNeg)'}
-            dot={false}
-            activeDot={{ r: 4, fill: curveColor, stroke: 'transparent' }}
-            baseValue={startEq}
-          />
-        )}
-        {/* With overlay: base Area keeps the gradient fill; per-segment Areas draw colored lines on top */}
-        {hasBands && (
-          <>
-            <Area
-              type="monotone" dataKey="equity"
-              stroke="none" fill={endEq >= startEq ? 'url(#eqPos)' : 'url(#eqNeg)'}
-              dot={false} activeDot={false} baseValue={startEq}
-            />
-            {bands.map((band, i) => {
-              const color = REGIME_COLORS[band.regime] ?? REGIME_COLORS.UNKNOWN
-              return (
-                <Area
-                  key={i}
-                  type="monotone"
-                  dataKey={`_s${i}`}
-                  stroke={color}
-                  strokeWidth={2}
-                  fill="transparent"
-                  dot={false}
-                  activeDot={{ r: 4, fill: color, stroke: 'transparent' }}
-                  connectNulls={false}
-                />
-              )
-            })}
-          </>
-        )}
+        <Area
+          type="monotone"
+          dataKey="equity"
+          stroke={curveColor}
+          strokeWidth={1.5}
+          fill={profitable ? 'url(#eqPos)' : 'url(#eqNeg)'}
+          dot={false}
+          activeDot={{ r: 4, fill: curveColor, stroke: 'transparent' }}
+          baseValue={startEq}
+        />
       </AreaChart>
     </ResponsiveContainer>
   )
@@ -689,9 +706,10 @@ function EquityCurveChart({ data, bands = [] }: { data: EquityPoint[]; bands?: R
 
 // ── Drawdown chart ────────────────────────────────────────────────────────────
 
-function DrawdownChart({ equity, limitLines }: {
+function DrawdownChart({ equity, limitLines, height = 140 }: {
   equity: EquityPoint[]
   limitLines?: Array<{ limit: number; label: string; pass: boolean }>
+  height?: number
 }) {
   if (!equity.length) return null
 
@@ -706,7 +724,7 @@ function DrawdownChart({ equity, limitLines }: {
   const ddTicks = calIndexTicks(ddData)
 
   return (
-    <ResponsiveContainer width="100%" height={140}>
+    <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={ddData} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
         <defs>
           <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
@@ -784,7 +802,7 @@ function RegimeLegend({ bands }: { bands: RegimeBand[] }) {
     <div className="flex flex-wrap gap-x-4 gap-y-1 px-2 mt-2 mb-1">
       {regimes.map(regime => (
         <div key={regime} className="flex items-center gap-1.5">
-          <div style={{ width: 20, height: 2, background: REGIME_COLORS[regime] ?? REGIME_COLORS.UNKNOWN, borderRadius: 1 }} />
+          <div style={{ width: 12, height: 12, background: REGIME_COLORS[regime] ?? REGIME_COLORS.UNKNOWN, borderRadius: 3 }} />
           <span className="text-[10px] text-text-tertiary">{REGIME_LABEL[regime] ?? regime}</span>
         </div>
       ))}
@@ -837,13 +855,13 @@ function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
         return (
           <div key={s.dir} className="flex flex-col items-center gap-1">
             <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px]">{s.dir}</div>
-            <div className={`text-[18px] font-semibold font-mono tabular-nums ${pnlCls}`}>{dollar(s.totalPnl, true)}</div>
-            <ResponsiveContainer width="100%" height={160}>
+            <div className={`text-[15px] font-semibold font-mono tabular-nums ${pnlCls}`}>{dollar(s.totalPnl, true)}</div>
+            <ResponsiveContainer width="100%" height={118}>
               <PieChart>
                 <Pie
                   data={data}
                   cx="50%" cy="50%"
-                  innerRadius={50} outerRadius={70}
+                  innerRadius={36} outerRadius={52}
                   startAngle={90} endAngle={-270}
                   paddingAngle={2}
                   dataKey="value"
@@ -855,7 +873,7 @@ function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
                 >
                   <Cell fill={C.neg} fillOpacity={0.75} />
                   <Cell fill={C.pos} fillOpacity={0.85} />
-                  <Label value={`${winPct}%`} position="center" fill="#e6edf3" fontSize={20} fontWeight={700} />
+                  <Label value={`${winPct}%`} position="center" fill="#e6edf3" fontSize={16} fontWeight={700} />
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
@@ -873,7 +891,7 @@ function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
 
 // ── Daily P&L chart ───────────────────────────────────────────────────────────
 
-function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number | null }) {
+function DailyPnlChart({ data, netPnl, height = 260 }: { data: DailyPnlPoint[]; netPnl: number | null; height?: number }) {
   if (!data.length) {
     return (
       <div className="h-[160px] flex flex-col items-center justify-center gap-2 text-center px-6">
@@ -887,7 +905,7 @@ function DailyPnlChart({ data, netPnl }: { data: DailyPnlPoint[]; netPnl: number
   const pnlTicks  = calDateTicks(data)
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }} barCategoryGap="20%">
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} vertical={false} />
         <XAxis
@@ -952,7 +970,7 @@ const VERDICT_CONFIG = {
   INFO:    { label: 'INFO',    bg: 'bg-bg-sunken',  text: 'text-text-tertiary', border: 'border-l-border-default', Icon: Info   },
 } as const
 
-function EvalCard({ ev, netPnl }: { ev: EvaluationDetail; netPnl?: number | null }) {
+function EvalCard({ ev, netPnl, tradeCount, showName = true }: { ev: EvaluationDetail; netPnl?: number | null; tradeCount?: number | null; showName?: boolean }) {
   const cfg = VERDICT_CONFIG[ev.verdict as keyof typeof VERDICT_CONFIG] ?? VERDICT_CONFIG.DISCARD
   // Profitable runs that fail a firm rule get amber styling (not red) — keep the DISCARD label.
   const isWarnColor = cfg === VERDICT_CONFIG.DISCARD && (netPnl ?? 0) > 0
@@ -963,10 +981,9 @@ function EvalCard({ ev, netPnl }: { ev: EvaluationDetail; netPnl?: number | null
     <div className={`bg-bg-surface border border-border-subtle border-l-[3px] ${colorCfg.border} rounded-lg overflow-hidden h-full flex flex-col`}>
       {/* Header */}
       <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
-        <div>
+        {showName && (
           <div className="text-[13px] font-semibold text-text-primary leading-tight">{ev.ruleset_name}</div>
-          <div className="text-[11px] text-text-tertiary font-mono mt-1">{ev.ruleset_id}</div>
-        </div>
+        )}
         <span className={`inline-flex items-center gap-[5px] px-3 py-[5px] rounded-full text-[11px] font-bold uppercase tracking-[0.4px] flex-shrink-0 ${colorCfg.bg} ${colorCfg.text}`}>
           <Icon size={11} />
           {cfg.label}
@@ -1023,15 +1040,11 @@ function EvalCard({ ev, netPnl }: { ev: EvaluationDetail; netPnl?: number | null
         </div>
       ))}
 
-      {/* Footer */}
-      {(ev.simulated_eval_days != null || ev.notes) && (
-        <div className="px-4 pb-4 space-y-1">
-          {ev.simulated_eval_days != null && (
-            <div className="text-[11px] text-text-tertiary">{ev.simulated_eval_days} simulated eval days</div>
-          )}
-          {ev.notes && (
-            <p className="text-[11px] text-text-tertiary leading-relaxed">{ev.notes}</p>
-          )}
+      {/* Footer — standout trade count (replaces the redundant net-P&L / drawdown notes) */}
+      {tradeCount != null && (
+        <div className="mt-auto flex items-baseline gap-2.5 px-4 py-4 bg-accent/5 border-t border-accent/20">
+          <span className="text-[40px] font-extrabold font-mono leading-none text-accent tabular-nums">{tradeCount}</span>
+          <span className="text-[12px] font-bold uppercase tracking-[0.8px] text-text-secondary">Trades</span>
         </div>
       )}
     </div>
@@ -1403,48 +1416,32 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-// Lazy-mounted candlestick panel (klinecharts). Collapsed by default so the chart library
-// and the run's ChartSpec (a heavy candle fetch) load only when the user opens this section.
-function PriceChartSection({ runId }: { runId: string }) {
-  const [open, setOpen] = useState(false)
-  const { data: spec, isLoading, isError } = useChartSpec(open ? runId : null)
-  const loadingBox = (msg: string) => (
-    <div className="h-[460px] flex items-center justify-center text-text-tertiary text-[12px]">{msg}</div>
+// Candlestick panel body (klinecharts). Lazy: the chart library and the run's ChartSpec (a heavy
+// candle fetch) load only when `active` — i.e. when the Price tab in the primary chart is selected.
+function PriceChartPanel({ runId, active }: { runId: string; active: boolean }) {
+  const { data: spec, isLoading, isError } = useChartSpec(active ? runId : null)
+  const box = (msg: string, cls = 'text-text-tertiary') => (
+    <div className={`h-[520px] flex items-center justify-center text-[12px] ${cls}`}>{msg}</div>
   )
-  return (
-    <div className="space-y-3">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 text-text-secondary hover:text-text-primary transition-colors"
-      >
-        <ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.7px]">Price chart</span>
-      </button>
-      {open && (
-        <div className="bg-bg-surface border border-border-subtle rounded-lg p-3">
-          {isLoading && loadingBox('Loading chart data…')}
-          {isError && (
-            <div className="h-[460px] flex items-center justify-center text-neg-text text-[12px]">
-              Couldn't load chart data for this run.
-            </div>
-          )}
-          {spec && spec.candles.length === 0 && loadingBox('No price data available for this run.')}
-          {spec && spec.candles.length > 0 && (
-            <>
-              {spec.baseTimeframe === 'D1' && (
-                <div className="mb-2 text-[11px] text-warn-text">
-                  Showing daily candles — intraday history wasn't available from the data agent for this run.
-                </div>
-              )}
-              <Suspense fallback={loadingBox('Loading chart…')}>
-                <ChartPanel spec={spec} />
-              </Suspense>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
+  if (!active) return null
+  if (isLoading) return box('Loading chart data…')
+  if (isError) return box("Couldn't load chart data for this run.", 'text-neg-text')
+  if (spec && spec.candles.length === 0) return box('No price data available for this run.')
+  if (spec && spec.candles.length > 0) {
+    return (
+      <>
+        {spec.baseTimeframe === 'D1' && (
+          <div className="mb-2 text-[11px] text-warn-text">
+            Showing daily candles — intraday history wasn't available from the data agent for this run.
+          </div>
+        )}
+        <Suspense fallback={box('Loading chart…')}>
+          <ChartPanel spec={spec} />
+        </Suspense>
+      </>
+    )
+  }
+  return box('Loading chart data…')
 }
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
@@ -1469,57 +1466,9 @@ function Skeleton() {
 
 // ── Performance by Regime ────────────────────────────────────────────────────
 
-interface RegimeRow {
-  regime: string; days: number; trades: number; netPnl: number
-  winRate: number | null; profitFactor: number | null; worstDay: number | null
-}
-
-function computeRegimeBreakdown(run: Run): RegimeRow[] {
-  const { equity_curve, daily_pnl } = run
-  if (!equity_curve.length || !daily_pnl.length) return []
-
-  const dateToRegime  = new Map<string, string>()
-  const regimeDays    = new Map<string, Set<string>>()
-  const regimeDailyPnl = new Map<string, number[]>()
-
-  for (const d of daily_pnl) {
-    const regime = d.regime_tag ?? 'UNKNOWN'
-    dateToRegime.set(d.date, regime)
-    if (!regimeDays.has(regime)) regimeDays.set(regime, new Set())
-    regimeDays.get(regime)!.add(d.date)
-    if (!regimeDailyPnl.has(regime)) regimeDailyPnl.set(regime, [])
-    regimeDailyPnl.get(regime)!.push(d.pnl)
-  }
-
-  const stats = new Map<string, { netPnl: number; wins: number; grossWins: number; grossLosses: number; trades: number }>()
-  for (let i = 0; i < equity_curve.length; i++) {
-    const trade  = equity_curve[i]
-    const regime = trade.date ? (dateToRegime.get(trade.date) ?? 'UNKNOWN') : 'UNKNOWN'
-    const pnl    = i === 0 ? trade.equity : trade.equity - equity_curve[i - 1].equity
-    if (!stats.has(regime)) stats.set(regime, { netPnl: 0, wins: 0, grossWins: 0, grossLosses: 0, trades: 0 })
-    const s = stats.get(regime)!
-    s.netPnl += pnl; s.trades++
-    if (pnl > 0) { s.wins++; s.grossWins += pnl } else if (pnl < 0) { s.grossLosses += Math.abs(pnl) }
-  }
-
-  const rows: RegimeRow[] = []
-  for (const [regime, s] of stats) {
-    const dp = regimeDailyPnl.get(regime) ?? []
-    rows.push({
-      regime, days: regimeDays.get(regime)?.size ?? 0, trades: s.trades, netPnl: s.netPnl,
-      winRate: s.trades > 0 ? s.wins / s.trades : null,
-      profitFactor: s.grossLosses > 0 ? s.grossWins / s.grossLosses : null,
-      worstDay: dp.length ? Math.min(...dp) : null,
-    })
-  }
-  rows.sort((a, b) => b.days - a.days)
-  const ui = rows.findIndex(r => r.regime === 'UNKNOWN')
-  if (ui > 0) rows.push(rows.splice(ui, 1)[0])
-  return rows
-}
-
 function PerformanceByRegimeTable({ run }: { run: Run }) {
-  const rows = useMemo(() => computeRegimeBreakdown(run), [run])
+  // Built server-side by metrics.compute_regime_breakdown — the single source of truth.
+  const rows = run.regime_breakdown
   if (!rows.length) return null
   const worstOverall = run.daily_pnl.length ? Math.min(...run.daily_pnl.map(d => d.pnl)) : null
 
@@ -1530,11 +1479,11 @@ function PerformanceByRegimeTable({ run }: { run: Run }) {
         <div className="text-[10px] text-text-tertiary mt-[2px]">How the strategy performs in each market condition.</div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-[12px]">
+        <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-border-subtle">
               {['Regime','Days','Trades','Net P&L','Win Rate','Prof. Factor','Worst Day'].map(h => (
-                <th key={h} className={`text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] px-4 py-2 ${h === 'Regime' ? 'text-left' : 'text-right'}`}>{h}</th>
+                <th key={h} className={`text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] px-5 py-3 ${h === 'Regime' ? 'text-left' : 'text-right'}`}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -1543,31 +1492,31 @@ function PerformanceByRegimeTable({ run }: { run: Run }) {
               const color = REGIME_COLORS[row.regime] ?? REGIME_COLORS.UNKNOWN
               return (
                 <tr key={i} className={i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''}>
-                  <td className="px-4 py-2.5">
+                  <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 16, height: 2, background: color, borderRadius: 1, flexShrink: 0 }} />
+                      <div style={{ width: 11, height: 11, background: color, borderRadius: 3, flexShrink: 0 }} />
                       <span className="text-text-secondary">{REGIME_LABEL[row.regime] ?? row.regime}</span>
                     </div>
                   </td>
-                  <td className="text-right px-4 py-2.5 text-text-secondary tabular-nums">{row.days}</td>
-                  <td className="text-right px-4 py-2.5 text-text-secondary tabular-nums">{row.trades}</td>
-                  <td className={`text-right px-4 py-2.5 tabular-nums font-medium ${row.netPnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(row.netPnl, true)}</td>
-                  <td className={`text-right px-4 py-2.5 tabular-nums ${winRateCls(row.winRate)}`}>{row.winRate != null ? `${(row.winRate * 100).toFixed(1)}%` : '—'}</td>
-                  <td className={`text-right px-4 py-2.5 tabular-nums ${pfCls(row.profitFactor)}`}>{row.profitFactor != null ? row.profitFactor.toFixed(2) : '—'}</td>
-                  <td className={`text-right px-4 py-2.5 tabular-nums ${row.worstDay != null && row.worstDay < 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{row.worstDay != null ? dollar(row.worstDay) : '—'}</td>
+                  <td className="text-right px-5 py-3.5 text-text-secondary tabular-nums">{row.days}</td>
+                  <td className="text-right px-5 py-3.5 text-text-secondary tabular-nums">{row.trades}</td>
+                  <td className={`text-right px-5 py-3.5 tabular-nums font-medium ${row.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(row.net_pnl, true)}</td>
+                  <td className={`text-right px-5 py-3.5 tabular-nums ${winRateCls(row.win_rate)}`}>{row.win_rate != null ? `${(row.win_rate * 100).toFixed(1)}%` : '—'}</td>
+                  <td className={`text-right px-5 py-3.5 tabular-nums ${pfCls(row.profit_factor)}`}>{row.profit_factor != null ? row.profit_factor.toFixed(2) : '—'}</td>
+                  <td className={`text-right px-5 py-3.5 tabular-nums ${row.worst_day != null && row.worst_day < 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{row.worst_day != null ? dollar(row.worst_day) : '—'}</td>
                 </tr>
               )
             })}
           </tbody>
           <tfoot>
             <tr className="border-t border-border-subtle bg-bg-elevated/30">
-              <td className="px-4 py-2.5 text-[11px] font-semibold text-text-secondary">Overall</td>
-              <td className="text-right px-4 py-2.5 text-[11px] font-medium text-text-secondary tabular-nums">{run.daily_pnl.length}</td>
-              <td className="text-right px-4 py-2.5 text-[11px] font-medium text-text-secondary tabular-nums">{run.trade_count ?? run.equity_curve.length}</td>
-              <td className={`text-right px-4 py-2.5 text-[11px] font-semibold tabular-nums ${(run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(run.net_pnl, true)}</td>
-              <td className={`text-right px-4 py-2.5 text-[11px] font-medium tabular-nums ${winRateCls(run.win_rate)}`}>{run.win_rate != null ? `${(run.win_rate * 100).toFixed(1)}%` : '—'}</td>
-              <td className={`text-right px-4 py-2.5 text-[11px] font-medium tabular-nums ${pfCls(run.profit_factor)}`}>{run.profit_factor != null ? run.profit_factor.toFixed(2) : '—'}</td>
-              <td className={`text-right px-4 py-2.5 text-[11px] font-medium tabular-nums ${worstOverall != null && worstOverall < 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{worstOverall != null ? dollar(worstOverall) : '—'}</td>
+              <td className="px-5 py-3.5 text-[11px] font-semibold text-text-secondary">Overall</td>
+              <td className="text-right px-5 py-3.5 text-[11px] font-medium text-text-secondary tabular-nums">{run.daily_pnl.length}</td>
+              <td className="text-right px-5 py-3.5 text-[11px] font-medium text-text-secondary tabular-nums">{run.trade_count ?? run.equity_curve.length}</td>
+              <td className={`text-right px-5 py-3.5 text-[11px] font-semibold tabular-nums ${(run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(run.net_pnl, true)}</td>
+              <td className={`text-right px-5 py-3.5 text-[11px] font-medium tabular-nums ${winRateCls(run.win_rate)}`}>{run.win_rate != null ? `${(run.win_rate * 100).toFixed(1)}%` : '—'}</td>
+              <td className={`text-right px-5 py-3.5 text-[11px] font-medium tabular-nums ${pfCls(run.profit_factor)}`}>{run.profit_factor != null ? run.profit_factor.toFixed(2) : '—'}</td>
+              <td className={`text-right px-5 py-3.5 text-[11px] font-medium tabular-nums ${worstOverall != null && worstOverall < 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{worstOverall != null ? dollar(worstOverall) : '—'}</td>
             </tr>
           </tfoot>
         </table>
@@ -1635,12 +1584,15 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
 
 // ── Parameters side panel ─────────────────────────────────────────────────────
 
-function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle }: {
+function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle, balance, defaultBalance, onBalanceChange }: {
   run: Run
   paramSchema?: ParamSchemaEntry[]
   baselineParams?: Record<string, unknown>
   collapsed: boolean
   onToggle: () => void
+  balance?: number | null
+  defaultBalance?: number | null
+  onBalanceChange?: (v: number | null) => void
 }) {
   const schemaByName = new Map((paramSchema ?? []).map(s => [s.name, s]))
   const isFoundational = (k: string) => schemaByName.get(k)?.category === 'foundational'
@@ -1716,6 +1668,26 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
             </details>
           )}
         </div>
+        {/* Account-balance what-if — rebases the Max DD % KPI (moved here from that card). */}
+        {onBalanceChange && defaultBalance != null && balance != null && (
+          <div className="px-3 py-3 border-t border-border-subtle flex-shrink-0">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary mb-2">Account balance · rebases Max DD %</div>
+            <div className="flex items-center gap-2">
+              <input
+                type="range" min={5000} max={250000} step={5000}
+                value={Math.min(250000, Math.max(5000, balance))}
+                onChange={e => onBalanceChange(Number(e.target.value))}
+                className="flex-1 accent-accent cursor-pointer"
+              />
+              <span className="text-[11px] font-mono font-semibold tabular-nums text-text-primary whitespace-nowrap">${(balance / 1000).toFixed(0)}k</span>
+            </div>
+            <div className="mt-1 text-right">
+              {balance === defaultBalance
+                ? <span className="text-[9px] text-text-tertiary">default</span>
+                : <button onClick={() => onBalanceChange(null)} className="text-[9px] text-accent hover:underline">reset to ${(defaultBalance / 1000).toFixed(0)}k</button>}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1751,6 +1723,9 @@ export function BacktestDetail() {
   const [showStressModal, setShowStressModal] = useState(false)
   const [overlayOn, setOverlayOn] = useState(getOverlayPref)
   const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
+  // Primary chart tab — one big chart at a time (Equity / Price / Drawdown). Price lazy-loads.
+  const [primaryTab, setPrimaryTab] = useState<'equity' | 'price' | 'drawdown'>('equity')
+  const [showMoreKpis, setShowMoreKpis] = useState(false)
 
   // Capital-based scores (Calmar, Max DD %) rebase the run to an account balance. Default to the
   // primary evaluated ruleset's account_size; the slider is a view-time what-if override only.
@@ -1784,6 +1759,27 @@ export function BacktestDetail() {
   // Optimization combo run: exists in the grid export but has never been fully backtested
   const isOptCombo    = !!run?.optimization_id && !run?.equity_curve?.length && isComplete
   const stressBlocked = isMt5 ? (stressLock?.forex ?? false) : (stressLock?.futures ?? false)
+
+  // Match the KPI grid's height to the evaluation card so the 6 collapsed cards (one row) and the
+  // 12 expanded cards (two rows) both add up to exactly the eval card's height. Measured in JS —
+  // a pure-CSS flex/grid percentage chain didn't resolve the height reliably. lg-only.
+  const [evalH, setEvalH] = useState<number | null>(null)
+  const [isLg, setIsLg] = useState(() => window.matchMedia('(min-width: 1024px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const on = () => setIsLg(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  const evalRoRef = useRef<ResizeObserver | null>(null)
+  const measureEvalRef = useCallback((el: HTMLDivElement | null) => {
+    evalRoRef.current?.disconnect()
+    if (!el) { setEvalH(null); return }
+    setEvalH(el.offsetHeight)
+    const ro = new ResizeObserver(() => setEvalH(el.offsetHeight))
+    ro.observe(el)
+    evalRoRef.current = ro
+  }, [])
 
   const progressMatches = progress?.job_id === run?.run_id
   const runPct       = isRunning ? (progressMatches ? (progress?.pct ?? 0) : 0) : 0
@@ -1929,6 +1925,9 @@ export function BacktestDetail() {
             baselineParams={isTuneIteration ? tuneBaseline?.params : undefined}
             collapsed={paramsCollapsed}
             onToggle={toggleParams}
+            balance={balance}
+            defaultBalance={rulesetBalance}
+            onBalanceChange={setBalanceOverride}
           />
           <div className="flex-1 min-w-0 px-[22px] pb-[22px] space-y-8">
 
@@ -1937,34 +1936,39 @@ export function BacktestDetail() {
           {isFailed && <FailureBanner run={run} />}
           {/* ── Evaluations + Performance (side by side) ──────────────────── */}
           {isComplete && (
-            <div className={run.evaluations.length > 0 && !isOptCombo
-              ? 'grid gap-6 lg:grid-cols-[minmax(260px,380px)_1fr]'
-              : ''}>
-
-              {/* Left: firm evaluation cards — hidden for opt combo runs (no full backtest data) */}
-              {run.evaluations.length > 0 && !isOptCombo && (
-                <div className="flex flex-col">
-                  <SectionLabel>Evaluation</SectionLabel>
-                  <div className="flex flex-col gap-3 flex-1">
-                    {run.evaluations.map(ev => <EvalCard key={ev.eval_id} ev={ev} netPnl={run.net_pnl} />)}
+            run.evaluations.length > 0 && !isOptCombo ? (
+              <div className="space-y-3">
+                <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
+                  {/* Left: firm evaluation cards (the trade-count standout lives inside the card).
+                      Its height is measured and applied to the KPI grid on the right. */}
+                  <div className="flex flex-col">
+                    <SectionLabel>Evaluation</SectionLabel>
+                    <div className="flex flex-col gap-3" ref={measureEvalRef}>
+                      {run.evaluations.map(ev => <EvalCard key={ev.eval_id} ev={ev} netPnl={run.net_pnl} tradeCount={run.trade_count} showName={run.evaluations.length > 1} />)}
+                    </div>
+                  </div>
+                  {/* Right: flat core KPIs — pinned to the eval card's measured height */}
+                  <div className="flex flex-col min-w-0">
+                    <SectionLabel>Performance</SectionLabel>
+                    <KpiGrid run={run} fallback={fallback} equity={run.equity_curve}
+                      balance={balance} showMore={showMoreKpis} fixedHeight={isLg ? evalH : null} />
                   </div>
                 </div>
-              )}
-
-              {/* Right: KPIs */}
-              <div className={run.evaluations.length > 0 && !isOptCombo ? 'flex flex-col' : ''}>
-                <SectionLabel>Performance</SectionLabel>
-                {run.evaluations.length > 0 && !isOptCombo ? (
-                  <div className="flex-1">
-                    <KpiGrid run={run} fallback={fallback} equity={run.equity_curve}
-                      balance={balance} defaultBalance={rulesetBalance} onBalanceChange={setBalanceOverride} stretch />
-                  </div>
-                ) : (
-                  <KpiGrid run={run} fallback={fallback} equity={run.equity_curve}
-                    balance={balance} defaultBalance={rulesetBalance} onBalanceChange={setBalanceOverride} />
-                )}
+                {/* "More metrics" below the cards (left-aligned) — outside the grid so it doesn't
+                    eat into the height that's matched to the eval card. */}
+                <MoreMetricsToggle open={showMoreKpis} onToggle={() => setShowMoreKpis(s => !s)} count={6} />
               </div>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <SectionLabel>Performance</SectionLabel>
+                  {run.trade_count != null && <div className="mb-3"><TradeCountStandout count={run.trade_count} /></div>}
+                  <KpiGrid run={run} fallback={fallback} equity={run.equity_curve}
+                    balance={balance} showMore={showMoreKpis} />
+                </div>
+                <MoreMetricsToggle open={showMoreKpis} onToggle={() => setShowMoreKpis(s => !s)} count={6} />
+              </div>
+            )
           )}
 
           {/* ── Charts ────────────────────────────────────────────────────── */}
@@ -1984,12 +1988,18 @@ export function BacktestDetail() {
               }
             }
 
+            const tabs = [['equity', 'Equity'], ['price', 'Price'], ['drawdown', 'Drawdown']] as const
+            const tabSub: Record<typeof primaryTab, string> = {
+              equity: 'Steadily rising = good. Big peak then long decline = giving back gains.',
+              price: 'Candlesticks with trade context.',
+              drawdown: "Shallow and short = good. Dips exceeding the firm's drawdown limit = instant fail.",
+            }
+            const hasDirection = run.equity_curve.some(p => p.direction)
+
             return (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-start justify-between">
-                  <div>
-                    <SectionLabel>Charts</SectionLabel>
-                  </div>
+                  <SectionLabel>Charts</SectionLabel>
                   {!hasCharts && !isMt5 && (
                     <button
                       onClick={() => runId && reloadCharts.mutate(runId)}
@@ -1999,23 +2009,6 @@ export function BacktestDetail() {
                       <RefreshCw size={12} className={reloadCharts.isPending ? 'animate-spin' : ''} />
                       {reloadCharts.isPending ? 'Exporting from NT8…' : 'Load chart data from NT8'}
                     </button>
-                  )}
-                  {hasCharts && (
-                    <div className="flex items-center gap-2">
-                      {hasRealRegimeTags && (
-                        <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
-                      )}
-                      {!isMt5 && (
-                        <button
-                          onClick={() => runId && reloadCharts.mutate(runId)}
-                          disabled={reloadCharts.isPending}
-                          className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
-                        >
-                          <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
-                          Refresh
-                        </button>
-                      )}
-                    </div>
                   )}
                 </div>
 
@@ -2030,56 +2023,79 @@ export function BacktestDetail() {
                   </div>
                 ) : (
                   <>
-                    {/* Equity curve */}
-                    <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
-                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1">Equity curve</div>
-                      <div className="text-[10px] text-text-tertiary px-1 mt-[3px] mb-2">Steadily rising = good. Big peak then long decline = giving back gains.</div>
-                      <EquityCurveChart data={run.equity_curve} bands={regimeBands} />
-                      {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
-                    </div>
-
-                    {/* Performance by Regime — immediately below equity curve when overlay is on */}
-                    {hasRealRegimeTags && (
-                      <div style={{
-                        maxHeight: overlayOn ? '1000px' : '0',
-                        opacity: overlayOn ? 1 : 0,
-                        overflow: 'hidden',
-                        transition: 'max-height 0.35s ease, opacity 0.25s ease',
-                      }}>
-                        <PerformanceByRegimeTable run={run} />
+                    {/* Primary chart — one big view at a time (Equity / Price / Drawdown) */}
+                    <div className="bg-bg-surface border border-border-subtle rounded-lg px-4 pt-3 pb-3">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="inline-flex gap-0.5 p-0.5 rounded-lg bg-bg-sunken border border-border-subtle">
+                          {tabs.map(([key, label]) => (
+                            <button
+                              key={key}
+                              onClick={() => setPrimaryTab(key)}
+                              className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
+                                primaryTab === key
+                                  ? 'bg-accent/10 text-accent ring-1 ring-inset ring-accent/30'
+                                  : 'text-text-tertiary hover:text-text-secondary'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {primaryTab === 'equity' && hasRealRegimeTags && (
+                            <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
+                          )}
+                          {!isMt5 && (
+                            <button
+                              onClick={() => runId && reloadCharts.mutate(runId)}
+                              disabled={reloadCharts.isPending}
+                              className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
+                            >
+                              <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
+                              Refresh
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    )}
+                      <div className="text-[10px] text-text-tertiary mt-2 mb-2 px-0.5">{tabSub[primaryTab]}</div>
 
-                    {/* Drawdown */}
-                    <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
-                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1">Drawdown from peak</div>
-                      <div className="text-[10px] text-text-tertiary px-1 mt-[3px] mb-1">Shallow and short = good. Dips exceeding the firm's drawdown limit = instant fail.</div>
-                      <DrawdownChart equity={run.equity_curve} limitLines={evalLimits} />
+                      {primaryTab === 'equity' && (
+                        <>
+                          <EquityCurveChart data={run.equity_curve} bands={regimeBands} height={520} />
+                          {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
+                        </>
+                      )}
+                      {primaryTab === 'drawdown' && (
+                        <DrawdownChart equity={run.equity_curve} limitLines={evalLimits} height={520} />
+                      )}
+                      {primaryTab === 'price' && runId && (
+                        <PriceChartPanel runId={runId} active={primaryTab === 'price'} />
+                      )}
                     </div>
 
-                    {/* Daily P&L — full width */}
-                    <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
-                      <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1">Daily P&amp;L</div>
-                      <div className="text-[10px] text-text-tertiary px-1 mt-[3px] mb-2">Consistent moderate bars = good. Giant single bars = high daily-limit risk.</div>
-                      <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} />
-                    </div>
-
-                    {/* Long vs Short — below daily P&L */}
-                    {run.equity_curve.some(p => p.direction) && (
-                      <div className="bg-bg-surface border border-border-subtle rounded-lg px-5 pt-4 pb-5">
-                        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">Long vs Short</div>
-                        <div className="text-[10px] text-text-tertiary mt-[3px] mb-4">Both profitable = robust. One side losing = fragile, market-dependent edge.</div>
-                        <DirectionBreakdown equity={run.equity_curve} />
+                    {/* Secondary rail — Daily P&L + Long vs Short */}
+                    <div className={hasDirection ? 'grid gap-4 lg:grid-cols-2' : ''}>
+                      <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
+                        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1">Daily P&amp;L</div>
+                        <div className="text-[10px] text-text-tertiary px-1 mt-[3px] mb-2">Consistent moderate bars = good. Giant single bars = high daily-limit risk.</div>
+                        <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} height={180} />
                       </div>
-                    )}
+                      {hasDirection && (
+                        <div className="bg-bg-surface border border-border-subtle rounded-lg px-5 pt-4 pb-5">
+                          <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">Long vs Short</div>
+                          <div className="text-[10px] text-text-tertiary mt-[3px] mb-4">Both profitable = robust. One side losing = fragile, market-dependent edge.</div>
+                          <DirectionBreakdown equity={run.equity_curve} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Performance by Regime — permanent panel */}
+                    {hasRealRegimeTags && <PerformanceByRegimeTable run={run} />}
                   </>
                 )}
               </div>
             )
           })()}
-
-          {/* ── Price chart (lazy candlestick panel) ─────────────────────── */}
-          {isComplete && !isOptCombo && runId && <PriceChartSection runId={runId} />}
 
           {/* ── Logs ─────────────────────────────────────────────────────── */}
           {runId && !isOptCombo && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} isComplete={isComplete} isFailed={isFailed} />}

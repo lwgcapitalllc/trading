@@ -18,7 +18,7 @@ import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
 import theme from '@/themes/electric-indigo'
 
-const CHART_HEIGHT = 460
+const CHART_HEIGHT = 520
 const DAY_MS = 24 * 60 * 60 * 1000
 const TRADE_COLOR = theme.series[3] // blue, for trade arrows / lines / exit dots
 const DEFAULT_OVERLAY_COLOR = theme.textTertiary // fallback when a spec overlay omits a color
