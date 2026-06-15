@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
   CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Layers, Play,
-  Copy, Check, SlidersHorizontal,
+  Copy, Check, SlidersHorizontal, Maximize2, X,
 } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Label,
@@ -469,6 +469,7 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
   // Core — always shown.
   const core: KMetric[] = [
     { key: 'netpnl', label: 'Net P&L', value: dollar(run.net_pnl, true), valueCls: pnlCls,
+      sub: (balance != null && balance > 0 && run.net_pnl != null) ? `${(run.net_pnl / balance * 100).toFixed(1)}% return` : 'net of commissions',
       tooltip: "Total profit or loss after commissions. The bottom line." },
     { key: 'sharpe', label: 'Sharpe (annlzd)', value: sharpe != null ? sharpe.toFixed(2) : '—', valueCls: sharpeCls(sharpe), sub: sharpeSub,
       tooltip: "Return per unit of risk, annualized (daily P&L × √252) — the canonical definition shared with the optimizer and walk-forward. 'platform' shows NT8/MT5's own reported Sharpe for reference. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing. 'low sample' flags fewer than 10 trading days, where the value is statistically noisy." },
@@ -495,7 +496,9 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
       tooltip: "Average net P&L per trade (net P&L ÷ trade count) — your edge per position. Sub-line shows avg win / avg loss and the win:loss (reward:risk) ratio. R-multiple expectancy needs per-trade risk, which stored trades don't carry (profit only), so it's omitted rather than guessed." },
     { key: 'zscore', label: 'Z-Score', value: zScore != null ? zScore.toFixed(2) : '—', valueCls: zScoreCls(zScore), sub: zScoreLabel(zScore),
       tooltip: "Wald–Wolfowitz runs test over the win/loss sequence. Measures whether wins and losses streak more than random chance. Within ±1.5 is healthy; beyond ±2 signals non-random streaking (positive = fewer runs / longer streaks, negative = alternating more than chance)." },
-    { key: 'avgtrade', label: 'Avg Trade', value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—', sub: 'duration / trade', tooltip: "Average time in a position per trade." },
+    { key: 'avgtrade', label: 'Avg Trade', value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—',
+      sub: run.avg_trade_duration_min != null ? 'avg duration / trade' : 'duration unavailable',
+      tooltip: "Average time in a position per trade. The MT5 Strategy Tester report includes only trade-close times (no entry time), so duration can't be computed for MT5 runs — it shows as “—”." },
     { key: 'worstday', label: 'Worst Day', value: dollar(worstDay), valueCls: worstDay != null && worstDay < 0 ? 'text-neg-text' : '', sub: 'single worst trading day',
       tooltip: "Largest single-day loss. Compare this to your prop firm's daily loss limit — exceeding it would have failed the challenge that day." },
     { key: 'worststreak', label: 'Worst Streak', value: worstStreak != null ? `${worstStreak} L` : '—', valueCls: worstStreakCls(worstStreak), sub: 'consecutive losing days',
@@ -511,7 +514,7 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
         {m.label}{m.tooltip && <InfoTip text={m.tooltip} />}
       </div>
       <div className={`${valSize} font-bold tracking-[-0.6px] font-mono leading-none mt-2 transition-[font-size] duration-300 ${m.valueCls ?? ''}`}>{m.value}</div>
-      {m.sub && <div className="text-[10px] text-text-tertiary mt-1.5 leading-snug">{m.sub}</div>}
+      <div className="text-[10px] text-text-tertiary mt-1.5 leading-snug min-h-[14px]">{m.sub}</div>
     </div>
   )
 
@@ -1418,10 +1421,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // Candlestick panel body (klinecharts). Lazy: the chart library and the run's ChartSpec (a heavy
 // candle fetch) load only when `active` — i.e. when the Price tab in the primary chart is selected.
-function PriceChartPanel({ runId, active }: { runId: string; active: boolean }) {
+function PriceChartPanel({ runId, active, height = 520 }: { runId: string; active: boolean; height?: number }) {
   const { data: spec, isLoading, isError } = useChartSpec(active ? runId : null)
   const box = (msg: string, cls = 'text-text-tertiary') => (
-    <div className={`h-[520px] flex items-center justify-center text-[12px] ${cls}`}>{msg}</div>
+    <div style={{ height }} className={`flex items-center justify-center text-[12px] ${cls}`}>{msg}</div>
   )
   if (!active) return null
   if (isLoading) return box('Loading chart data…')
@@ -1436,12 +1439,91 @@ function PriceChartPanel({ runId, active }: { runId: string; active: boolean }) 
           </div>
         )}
         <Suspense fallback={box('Loading chart…')}>
-          <ChartPanel spec={spec} />
+          <ChartPanel spec={spec} height={height} />
         </Suspense>
       </>
     )
   }
   return box('Loading chart data…')
+}
+
+// ── Tabbed chart panel + fullscreen modal ────────────────────────────────────
+
+// Shared chart panel: a segmented tab control, optional right-side controls, an Expand button,
+// and the active chart rendered at `height`. `render(key, h)` draws the chart for a tab key.
+function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, render, right }: {
+  tabs: readonly (readonly [string, string])[]
+  active: string
+  onActive: (k: string) => void
+  sub?: string
+  height: number
+  onExpand: () => void
+  render: (key: string, h: number) => React.ReactNode
+  right?: React.ReactNode
+}) {
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-lg px-4 pt-3 pb-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="inline-flex gap-0.5 p-0.5 rounded-lg bg-bg-sunken border border-border-subtle">
+          {tabs.map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => onActive(key)}
+              className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
+                active === key ? 'bg-accent/10 text-accent ring-1 ring-inset ring-accent/30' : 'text-text-tertiary hover:text-text-secondary'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          {right}
+          <button
+            onClick={onExpand}
+            title="Expand to full screen"
+            className="flex items-center justify-center w-7 h-7 rounded text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+          >
+            <Maximize2 size={14} />
+          </button>
+        </div>
+      </div>
+      {sub && <div className="text-[10px] text-text-tertiary mt-4 mb-4 px-0.5">{sub}</div>}
+      {render(active, height)}
+    </div>
+  )
+}
+
+// Full-screen overlay (portalled) that renders a chart at the measured body height. Esc / backdrop / X close it.
+function ChartModal({ title, onClose, render }: { title: string; onClose: () => void; render: (h: number) => React.ReactNode }) {
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [h, setH] = useState(0)
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    const update = () => setH(el.clientHeight)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
+    <div className="fixed inset-0 z-[90] bg-bg-base/95 backdrop-blur-sm flex flex-col" onClick={onClose}>
+      <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0" onClick={e => e.stopPropagation()}>
+        <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">{title}</span>
+        <button onClick={onClose} title="Close (Esc)" className="text-text-tertiary hover:text-text-primary"><X size={18} /></button>
+      </div>
+      <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto px-5 py-4" onClick={e => e.stopPropagation()}>
+        {h > 0 && render(Math.max(200, h - 8))}
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
@@ -1723,8 +1805,9 @@ export function BacktestDetail() {
   const [showStressModal, setShowStressModal] = useState(false)
   const [overlayOn, setOverlayOn] = useState(getOverlayPref)
   const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
-  // Primary chart tab — one big chart at a time (Equity / Price / Drawdown). Price lazy-loads.
-  const [primaryTab, setPrimaryTab] = useState<'equity' | 'price' | 'drawdown'>('equity')
+  // Primary chart tab (the big charts) + secondary tab (supporting charts). Price lazy-loads.
+  const [primaryTab, setPrimaryTab] = useState<'equity' | 'price' | 'breakdown'>('equity')
+  const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
   const [showMoreKpis, setShowMoreKpis] = useState(false)
 
   // Capital-based scores (Calmar, Max DD %) rebase the run to an account balance. Default to the
@@ -1988,13 +2071,59 @@ export function BacktestDetail() {
               }
             }
 
-            const tabs = [['equity', 'Equity'], ['price', 'Price'], ['drawdown', 'Drawdown']] as const
-            const tabSub: Record<typeof primaryTab, string> = {
+            const SUBS: Record<string, string> = {
               equity: 'Steadily rising = good. Big peak then long decline = giving back gains.',
               price: 'Candlesticks with trade context.',
-              drawdown: "Shallow and short = good. Dips exceeding the firm's drawdown limit = instant fail.",
+              breakdown: 'Drawdown, daily P&L, and long vs short — the supporting detail.',
+            }
+            const TITLES: Record<string, string> = {
+              equity: 'Equity curve', price: 'Price', breakdown: 'Breakdown',
             }
             const hasDirection = run.equity_curve.some(p => p.direction)
+            const primaryTabs: ReadonlyArray<readonly [string, string]> = [['equity', 'Equity'], ['price', 'Price'], ['breakdown', 'Breakdown']]
+            const subLabel = (t: string) => <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-secondary mb-1.5">{t}</div>
+
+            const renderChart = (key: string, h: number): React.ReactNode => {
+              switch (key) {
+                case 'equity':
+                  return (
+                    <>
+                      <EquityCurveChart data={run.equity_curve} bands={regimeBands} height={h} />
+                      {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
+                    </>
+                  )
+                case 'price':
+                  return runId ? <PriceChartPanel runId={runId} active height={h} /> : null
+                case 'breakdown': {
+                  // All three supporting charts share the tab's height: drawdown full-width on top,
+                  // then daily P&L + long vs short side by side. Scales up when the tab is expanded.
+                  const hDraw = Math.max(140, Math.round((h - 56) * 0.45))
+                  const hRow = Math.max(160, Math.round((h - 56) * 0.55))
+                  return (
+                    <div className="space-y-8">
+                      <div>
+                        {subLabel('Drawdown from peak')}
+                        <DrawdownChart equity={run.equity_curve} limitLines={evalLimits} height={hDraw} />
+                      </div>
+                      <div className={hasDirection ? 'grid gap-6 lg:grid-cols-2' : ''}>
+                        <div>
+                          {subLabel('Daily P&L')}
+                          <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} height={hRow} />
+                        </div>
+                        {hasDirection && (
+                          <div>
+                            {subLabel('Long vs Short')}
+                            <DirectionBreakdown equity={run.equity_curve} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                }
+                default:
+                  return null
+              }
+            }
 
             return (
               <div className="space-y-4">
@@ -2023,74 +2152,42 @@ export function BacktestDetail() {
                   </div>
                 ) : (
                   <>
-                    {/* Primary chart — one big view at a time (Equity / Price / Drawdown) */}
-                    <div className="bg-bg-surface border border-border-subtle rounded-lg px-4 pt-3 pb-3">
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div className="inline-flex gap-0.5 p-0.5 rounded-lg bg-bg-sunken border border-border-subtle">
-                          {tabs.map(([key, label]) => (
-                            <button
-                              key={key}
-                              onClick={() => setPrimaryTab(key)}
-                              className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
-                                primaryTab === key
-                                  ? 'bg-accent/10 text-accent ring-1 ring-inset ring-accent/30'
-                                  : 'text-text-tertiary hover:text-text-secondary'
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {primaryTab === 'equity' && hasRealRegimeTags && (
-                            <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
-                          )}
-                          {!isMt5 && (
-                            <button
-                              onClick={() => runId && reloadCharts.mutate(runId)}
-                              disabled={reloadCharts.isPending}
-                              className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
-                            >
-                              <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
-                              Refresh
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-[10px] text-text-tertiary mt-2 mb-2 px-0.5">{tabSub[primaryTab]}</div>
-
-                      {primaryTab === 'equity' && (
-                        <>
-                          <EquityCurveChart data={run.equity_curve} bands={regimeBands} height={520} />
-                          {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
-                        </>
-                      )}
-                      {primaryTab === 'drawdown' && (
-                        <DrawdownChart equity={run.equity_curve} limitLines={evalLimits} height={520} />
-                      )}
-                      {primaryTab === 'price' && runId && (
-                        <PriceChartPanel runId={runId} active={primaryTab === 'price'} />
-                      )}
-                    </div>
-
-                    {/* Secondary rail — Daily P&L + Long vs Short */}
-                    <div className={hasDirection ? 'grid gap-4 lg:grid-cols-2' : ''}>
-                      <div className="bg-bg-surface border border-border-subtle rounded-lg px-3 pt-4 pb-2">
-                        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px] px-1">Daily P&amp;L</div>
-                        <div className="text-[10px] text-text-tertiary px-1 mt-[3px] mb-2">Consistent moderate bars = good. Giant single bars = high daily-limit risk.</div>
-                        <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} height={180} />
-                      </div>
-                      {hasDirection && (
-                        <div className="bg-bg-surface border border-border-subtle rounded-lg px-5 pt-4 pb-5">
-                          <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">Long vs Short</div>
-                          <div className="text-[10px] text-text-tertiary mt-[3px] mb-4">Both profitable = robust. One side losing = fragile, market-dependent edge.</div>
-                          <DirectionBreakdown equity={run.equity_curve} />
-                        </div>
-                      )}
-                    </div>
+                    {/* One tabbed panel: Equity / Price / Breakdown (the 3 supporting charts together) */}
+                    <ChartTabPanel
+                      tabs={primaryTabs}
+                      active={primaryTab}
+                      onActive={k => setPrimaryTab(k as 'equity' | 'price' | 'breakdown')}
+                      sub={SUBS[primaryTab]}
+                      height={520}
+                      onExpand={() => setFullscreenChart(primaryTab)}
+                      render={renderChart}
+                      right={<>
+                        {primaryTab === 'equity' && hasRealRegimeTags && (
+                          <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
+                        )}
+                        {!isMt5 && (
+                          <button
+                            onClick={() => runId && reloadCharts.mutate(runId)}
+                            disabled={reloadCharts.isPending}
+                            className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
+                          >
+                            <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
+                            Refresh
+                          </button>
+                        )}
+                      </>}
+                    />
 
                     {/* Performance by Regime — permanent panel */}
                     {hasRealRegimeTags && <PerformanceByRegimeTable run={run} />}
+
+                    {fullscreenChart && (
+                      <ChartModal
+                        title={TITLES[fullscreenChart] ?? 'Chart'}
+                        onClose={() => setFullscreenChart(null)}
+                        render={h => renderChart(fullscreenChart, h)}
+                      />
+                    )}
                   </>
                 )}
               </div>

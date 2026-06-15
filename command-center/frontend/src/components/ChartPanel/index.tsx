@@ -96,7 +96,7 @@ function ToggleChip({ label, color, on, onClick }: { label: string; color: strin
   )
 }
 
-export default function ChartPanel({ spec = AUDJPY_FIXTURE }: { spec?: ChartSpec }) {
+export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGHT }: { spec?: ChartSpec; height?: number }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<Chart | null>(null)
 
@@ -396,7 +396,7 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE }: { spec?: ChartSpec
           ))}
         </div>
       </div>
-      <div ref={containerRef} className="w-full" style={{ height: CHART_HEIGHT }} />
+      <div ref={containerRef} className="w-full" style={{ height }} />
     </div>
   )
 }
