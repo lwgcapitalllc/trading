@@ -2,7 +2,7 @@
 
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
-**Status:** Building in numbered steps (see seed `docs/LWG_chart_panel_seed.md`). **Steps 1–6 done; Step 7a (real-spec emitter) done.** Step 7b (strategy structure: overlays + indicators) remains.
+**Status:** Building in numbered steps (see seed `docs/LWG_chart_panel_seed.md`). **Steps 1–6 done; Step 7a (real-spec emitter, real M15 candles) done.** Step 7b (strategy structure: overlays + indicators) remains.
 
 ---
 
@@ -119,16 +119,17 @@ here**, so the chart shows exactly what the strategy saw.
   sub-pane (ATR) from shipped series, each toggleable; values mapped by timestamp (verified base +
   M15 resample). Daily session breaks as `DAY_BREAK` vlines (verified one interior break in 2-day
   fixture). Fixture extended to 2 days. `tsc`/`build` green.
-- **Step 7a — Real-spec emitter (done).** Backend `services/chart_spec.py` builds a real
-  `ChartSpec` per run (`GET /backtests/runs/{id}/chart-spec`, cached to the run dir). `useChartSpec`
-  fetches it; `PriceChartSection` opens lazily, fetches, and renders the real spec (loading / error /
-  empty / daily-fallback states). Verified end-to-end on run `7030bcffd856` (USDJPY londonbreakout):
-  257 candles + 18 trades + 3 sessions. **candles + sessions + trades only** — overlays/indicators
-  empty.
-  - **Known limitation:** the MT5 agent (`algos/.../mt5_agent.py`) `/historical_data` can't serve
-    this run's intraday bars — it has no M15 in its timeframe map (400) and doesn't `symbol_select`
-    before `copy_rates_range` (404 "no data"). So the emitter falls back to **daily** candles
-    (yfinance); the panel shows a note. Real intraday needs a small agent fix (add M5/M15/M30 +
-    `symbol_select`) — that file is in `algos/`, so it needs separate authorization + a VPS redeploy.
+- **Step 7a — Real-spec emitter (done, real intraday).** Backend `services/chart_spec.py` builds a
+  real `ChartSpec` per run (`GET /backtests/runs/{id}/chart-spec`, cached to the run dir).
+  `useChartSpec` fetches it; `PriceChartSection` opens lazily and renders the real spec (loading /
+  error / empty / daily-fallback states). Verified end-to-end on run `7030bcffd856` (USDJPY
+  londonbreakout): **24,785 real M15 candles + 18 trades (real entry/exit prices) + 3 sessions**.
+  **candles + sessions + trades only** — overlays/indicators empty.
+  - **MT5 agent fix (deployed).** Getting intraday required two fixes: (1) `algos/.../mt5_agent.py`
+    `/historical_data` now maps M5/M15/M30 and calls `symbol_select()` before `copy_rates_range`
+    (was 400/404); (2) `chart_spec` fetches with the **canonical/root symbol** (`USDJPY`, not
+    `USDJPY.s`) — `ohlc_fetcher`'s resolver re-adds the broker suffix from metadata, so passing the
+    already-suffixed run symbol found nothing on the agent's plain-named terminal. The daily-fallback
+    path remains for runs with no intraday history (e.g. NT8 futures).
 - **Step 7b — Strategy structure (overlays + indicators). _pending._** Not captured by any run today;
   needs strategy-side logging or backend recompute (see the run's `params`: Asian range + ATR levels).
