@@ -20,7 +20,7 @@ from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
     WorthinessScore, RunningJobStatus, RunningJobInfo,
 )
-from services import lab_db, runner_dispatch
+from services import lab_db, runner_dispatch, chart_spec
 from services.backtest_runner import (
     run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv,
 )
@@ -406,3 +406,16 @@ async def reload_charts(run_id: str) -> dict:
     })
 
     return {"equity_points": len(equity_curve), "daily_bars": len(daily_pnl)}
+
+
+@router.get("/runs/{run_id}/chart-spec")
+async def get_chart_spec(run_id: str, refresh: bool = False) -> dict:
+    """ChartSpec for the price-chart panel — candles + sessions + trades (Phase 7a).
+
+    Returns the camelCase contract the frontend ChartPanel reads (the one place the backend
+    emits camelCase, since the shape is defined by the chart, not a DB model). Built lazily and
+    cached to the run dir; `refresh=true` rebuilds. Candle fetch is backgrounded (network I/O)."""
+    spec = await asyncio.to_thread(chart_spec.build_chart_spec, run_id, refresh)
+    if spec is None:
+        raise HTTPException(404, "Run not found")
+    return spec

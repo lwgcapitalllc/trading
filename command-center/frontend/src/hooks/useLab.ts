@@ -11,6 +11,7 @@ import type {
   InstrumentSummary, RunningJobStatus,
   StrategyFile, StrategyFileSyncStatus, CompileJobStatus,
 } from '@/types'
+import type { ChartSpec } from '@/components/ChartPanel/types'
 
 // ── Strategies ─────────────────────────────────────────────────────────────────
 
@@ -175,6 +176,17 @@ export function useBacktestRun(runId: string | null) {
       const status = (query.state.data as BacktestDetail | undefined)?.status
       return status === 'running' ? 1_500 : false
     },
+  })
+}
+
+// ChartSpec for the price-chart panel. A run's spec is static, so cache it indefinitely.
+// Pass `null` to keep it unfetched until the panel section is opened (candle fetch is heavy).
+export function useChartSpec(runId: string | null) {
+  return useQuery({
+    queryKey: ['lab', 'chart-spec', runId],
+    queryFn: () => api.get<ChartSpec>(`/backtests/runs/${runId}/chart-spec`),
+    enabled: !!runId,
+    staleTime: Infinity,
   })
 }
 

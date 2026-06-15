@@ -1,0 +1,60 @@
+/**
+ * klinecharts style object, derived entirely from the app theme — no hardcoded hex.
+ * This is the chart-component equivalent of `@/themes/chart`: klinecharts paints to a
+ * canvas, so (like Recharts) it can't use Tailwind classes and must read raw theme values.
+ *
+ * Grid is OFF by design (the surrounding card supplies the surface). Swapping the app
+ * theme automatically restyles the chart — nothing here is theme-specific.
+ */
+import type { DeepPartial, Styles } from 'klinecharts'
+import t from '@/themes/electric-indigo'
+
+export const chartStyles: DeepPartial<Styles> = {
+  grid: { show: false },
+  candle: {
+    bar: {
+      upColor: t.pos,
+      downColor: t.neg,
+      noChangeColor: t.neutral,
+      upBorderColor: t.pos,
+      downBorderColor: t.neg,
+      noChangeBorderColor: t.neutral,
+      upWickColor: t.pos,
+      downWickColor: t.neg,
+      noChangeWickColor: t.neutral,
+    },
+    priceMark: {
+      last: {
+        // Last-price line + label both read upColor/downColor (the line style omits `color`).
+        upColor: t.accent,
+        downColor: t.accent,
+        text: { color: t.textInverse },
+      },
+      high: { color: t.textTertiary },
+      low: { color: t.textTertiary },
+    },
+    tooltip: {
+      text: { color: t.textSecondary },
+    },
+  },
+  xAxis: {
+    axisLine: { color: t.borderDefault },
+    tickLine: { color: t.borderDefault },
+    tickText: { color: t.textTertiary },
+  },
+  yAxis: {
+    axisLine: { color: t.borderDefault },
+    tickLine: { color: t.borderDefault },
+    tickText: { color: t.textTertiary },
+  },
+  crosshair: {
+    horizontal: {
+      line: { color: t.textTertiary },
+      text: { color: t.textPrimary, backgroundColor: t.bgSurface2, borderColor: t.borderStrong },
+    },
+    vertical: {
+      line: { color: t.textTertiary },
+      text: { color: t.textPrimary, backgroundColor: t.bgSurface2, borderColor: t.borderStrong },
+    },
+  },
+}

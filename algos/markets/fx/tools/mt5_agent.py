@@ -10,7 +10,7 @@ Port: 8766  (NT8 agent uses 8765)
 Endpoints — Step 1 (this build):
     GET  /health                         → ping; running_jobs count
     GET  /status                         → MT5 connection + account info
-    GET  /historical_data                → H1/H4/daily OHLC bars
+    GET  /historical_data                → M1–M30/H1/H4/daily OHLC bars
     GET  /files/strategies               → list .mq5/.ex5 in MT5 Experts folder
     GET  /agent-log                      → agent log tail
 
@@ -112,6 +112,9 @@ def _tf_const(name: str) -> Optional[int]:
         return None
     _map = {
         "M1":    mt5.TIMEFRAME_M1,
+        "M5":    mt5.TIMEFRAME_M5,
+        "M15":   mt5.TIMEFRAME_M15,
+        "M30":   mt5.TIMEFRAME_M30,
         "H1":    mt5.TIMEFRAME_H1,
         "H4":    mt5.TIMEFRAME_H4,
         "D1":    mt5.TIMEFRAME_D1,
@@ -317,7 +320,7 @@ def historical_data():
 
     Query params:
         symbol      — e.g. EURUSD, XAUUSD
-        timeframe   — H1 | H4 | D1 | daily | M1
+        timeframe   — M1 | M5 | M15 | M30 | H1 | H4 | D1 | daily
         start_date  — YYYY-MM-DD
         end_date    — YYYY-MM-DD (inclusive)
 
@@ -337,7 +340,7 @@ def historical_data():
 
     tf = _tf_const(timeframe)
     if tf is None:
-        return jsonify({"error": f"Unknown timeframe: {timeframe!r}. Use H1, H4, D1, daily, M1"}), 400
+        return jsonify({"error": f"Unknown timeframe: {timeframe!r}. Use M1, M5, M15, M30, H1, H4, D1, daily"}), 400
 
     ok, err = _ensure_mt5()
     if not ok:
@@ -351,6 +354,9 @@ def historical_data():
         return jsonify({"error": f"Invalid date: {exc}"}), 400
 
     with _mt5_lock:
+        # copy_rates_range returns None for symbols not in Market Watch. Selecting the symbol
+        # is benign (data-only; no trading effect) and is what makes intraday history available.
+        mt5.symbol_select(symbol, True)
         rates = mt5.copy_rates_range(symbol, tf, dt_from, dt_to)
 
     if rates is None:

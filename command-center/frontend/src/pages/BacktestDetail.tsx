@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
@@ -10,7 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry } from '@/types'
 import { C } from '@/themes/chart'
@@ -19,6 +19,9 @@ import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
 import { OptimizeButton } from '@/components/OptimizeButton'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { StatusPill } from '@/components/StatusPill'
+
+// Lazy so klinecharts + the chart fixture only load when the Price chart section opens.
+const ChartPanel = lazy(() => import('@/components/ChartPanel'))
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -1395,6 +1398,50 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+// Lazy-mounted candlestick panel (klinecharts). Collapsed by default so the chart library
+// and the run's ChartSpec (a heavy candle fetch) load only when the user opens this section.
+function PriceChartSection({ runId }: { runId: string }) {
+  const [open, setOpen] = useState(false)
+  const { data: spec, isLoading, isError } = useChartSpec(open ? runId : null)
+  const loadingBox = (msg: string) => (
+    <div className="h-[460px] flex items-center justify-center text-text-tertiary text-[12px]">{msg}</div>
+  )
+  return (
+    <div className="space-y-3">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 text-text-secondary hover:text-text-primary transition-colors"
+      >
+        <ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.7px]">Price chart</span>
+      </button>
+      {open && (
+        <div className="bg-bg-surface border border-border-subtle rounded-lg p-3">
+          {isLoading && loadingBox('Loading chart data…')}
+          {isError && (
+            <div className="h-[460px] flex items-center justify-center text-neg-text text-[12px]">
+              Couldn't load chart data for this run.
+            </div>
+          )}
+          {spec && spec.candles.length === 0 && loadingBox('No price data available for this run.')}
+          {spec && spec.candles.length > 0 && (
+            <>
+              {spec.baseTimeframe === 'D1' && (
+                <div className="mb-2 text-[11px] text-warn-text">
+                  Showing daily candles — intraday history wasn't available from the data agent for this run.
+                </div>
+              )}
+              <Suspense fallback={loadingBox('Loading chart…')}>
+                <ChartPanel spec={spec} />
+              </Suspense>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
 function Skeleton() {
@@ -2019,6 +2066,9 @@ export function BacktestDetail() {
               </div>
             )
           })()}
+
+          {/* ── Price chart (lazy candlestick panel) ─────────────────────── */}
+          {isComplete && !isOptCombo && runId && <PriceChartSection runId={runId} />}
 
           {/* ── Logs ─────────────────────────────────────────────────────── */}
           {runId && !isOptCombo && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} isComplete={isComplete} isFailed={isFailed} />}
