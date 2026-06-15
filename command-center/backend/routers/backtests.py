@@ -155,7 +155,7 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         worst_losing_streak=row.get("worst_losing_streak"),
         equity_curve=equity_curve,
         daily_pnl=daily_pnl,
-        regime_breakdown=compute_regime_breakdown(equity_curve, daily_pnl),
+        regime_breakdown=compute_regime_breakdown(equity_curve, daily_pnl, row.get("trade_count")),
         evaluations=evals,
         worthiness=_worthiness_from_row(row),
         sweep_id=row.get("sweep_id"),

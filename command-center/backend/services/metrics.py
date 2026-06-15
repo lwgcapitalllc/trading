@@ -124,21 +124,25 @@ _REGIME_UNKNOWN = "UNKNOWN"
 def compute_regime_breakdown(
     equity_curve: list[dict],
     daily_pnl: list[dict],
+    trade_count: Optional[int] = None,
 ) -> list[dict]:
     """
     Per-regime performance breakdown — the canonical, runner-independent implementation.
 
     Day-level columns (days, net_pnl, worst_day) come from the regime-tagged daily series,
     which is the source of truth: every day carries a 'regime_tag', so summing per regime
-    reproduces the run totals exactly — no inflation. Trade-level columns (trades, win_rate,
-    profit_factor) are attributed from each trade's own realized 'profit', joined to the
-    regime of its day — the same method the optimizer uses (optimization_runner
-    ._regime_filtered_score).
+    reproduces the run totals exactly — no inflation.
 
-    Per-trade P&L is NEVER derived from equity differences: that double-counts the starting
-    balance into the first "trade" and dumps everything into UNKNOWN on a date-format
-    mismatch (the original frontend bug). Dates are normalized to YYYY-MM-DD so a timestamped
-    equity point still joins to a daily date.
+    Trade-level columns (trades, win_rate, profit_factor) are attributed from each trade's own
+    realized 'profit', joined to the regime of its day. Two MT5 wrinkles handled here:
+      * MT5 emits TWO deal-rows per trade — an entry (profit 0.0) and an exit (the realized
+        P&L), both carrying a direction. So the raw direction-bearing point count is ~2x the
+        real trade count. We rescale each regime's count to the authoritative `trade_count`
+        (points-per-trade is uniform per runner — 2 for MT5, 1 for NT8 — so the scaling is
+        exact). win_rate then divides real wins (entries are profit 0, never a win) by the
+        rescaled count. profit_factor is unaffected (entries contribute 0 to gross win/loss).
+      * Per-trade P&L is NEVER derived from equity differences (the original frontend bug).
+    Dates are normalized to YYYY-MM-DD so a timestamped equity point still joins to a daily date.
 
     Each row: {regime, days, trades, net_pnl, win_rate, profit_factor, worst_day}. Sorted by
     days desc (then trades), UNKNOWN pushed last. Empty when there's no daily data.
@@ -161,9 +165,9 @@ def compute_regime_breakdown(
 
     trade_agg: dict[str, dict] = {}
     for pt in equity_curve:
-        # A real trade carries a direction (Long/Short). The MT5 equity_curve also includes
-        # non-trade equity snapshots (no direction) — skip those so the per-regime trade counts
-        # sum to trade_count, not the snapshot count. Mirrors the frontend DirectionBreakdown.
+        # A trade carries a direction (Long/Short); balance/equity-only rows (no direction) are
+        # skipped. MT5 entry deals are kept here (they have a direction + profit 0.0) and the
+        # raw count is rescaled to trade_count below.
         if not pt.get("direction"):
             continue
         profit = pt.get("profit")
@@ -183,11 +187,17 @@ def compute_regime_breakdown(
         elif profit < 0:
             t["gross_loss"] += abs(profit)
 
+    # Rescale raw direction-bearing point counts to the real trade count (MT5 doubles via
+    # entry+exit deals). Exact when points-per-trade is uniform; 1.0 (no-op) for NT8 or when
+    # trade_count is unknown.
+    total_pts = sum(t["trades"] for t in trade_agg.values())
+    scale = (trade_count / total_pts) if (trade_count and total_pts) else 1.0
+
     rows: list[dict] = []
     for regime in set(day_agg) | set(trade_agg):
         day = day_agg.get(regime)
         t = trade_agg.get(regime)
-        trades = t["trades"] if t else 0
+        trades = round(t["trades"] * scale) if t else 0
         # Prefer the regime-intrinsic daily sum; fall back to the trade sum for a
         # trade-only bucket (a trade whose day never made it into daily_pnl).
         net_pnl = day["net_pnl"] if day else (t["net_pnl"] if t else 0.0)
@@ -196,6 +206,7 @@ def compute_regime_breakdown(
             "days": day["days"] if day else 0,
             "trades": trades,
             "net_pnl": round(net_pnl, 2),
+            # win_rate = real wins (entries are profit 0, never counted) over the rescaled count.
             "win_rate": (t["wins"] / trades) if (t and trades) else None,
             "profit_factor": (t["gross_win"] / t["gross_loss"]) if (t and t["gross_loss"] > 0) else None,
             "worst_day": round(day["worst_day"], 2) if (day and day["worst_day"] is not None) else None,
