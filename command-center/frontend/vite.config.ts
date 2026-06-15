@@ -4,6 +4,12 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  // klinecharts is only reached through the lazy-loaded ChartPanel; pre-bundle it at dev
+  // startup so opening the price-chart panel doesn't trigger a mid-session dep re-optimize
+  // (which blanks the chart until a manual reload).
+  optimizeDeps: {
+    include: ['klinecharts'],
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
