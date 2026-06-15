@@ -190,6 +190,17 @@ export function useChartSpec(runId: string | null) {
   })
 }
 
+export function useRefreshChartSpec() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (runId: string) =>
+      api.get<ChartSpec>(`/backtests/runs/${runId}/chart-spec?refresh=true`),
+    onSuccess: (data, runId) => {
+      qc.setQueryData(['lab', 'chart-spec', runId], data)
+    },
+  })
+}
+
 export function useRunLog(runId: string | null, lines = 200, live = false) {
   return useQuery({
     queryKey: ['lab', 'run', runId, 'log', lines],

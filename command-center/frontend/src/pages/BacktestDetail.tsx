@@ -11,7 +11,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine, ReferenceArea,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry } from '@/types'
 import { C } from '@/themes/chart'
@@ -1798,6 +1798,7 @@ export function BacktestDetail() {
   const { data: progress }       = useLabProgress()
   const stopBacktest             = useStopBacktest()
   const reloadCharts             = useReloadCharts()
+  const refreshChartSpec         = useRefreshChartSpec()
   const retryBacktest            = useRetryBacktest()
   const { data: runningJob }     = useRunningVpsJob()
   const { data: stressTests }    = useStressTests(run?.run_id)
@@ -2083,7 +2084,10 @@ export function BacktestDetail() {
             const primaryTabs: ReadonlyArray<readonly [string, string]> = [['equity', 'Equity'], ['price', 'Price'], ['breakdown', 'Breakdown']]
             const subLabel = (t: string) => <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-secondary mb-1.5">{t}</div>
 
-            const renderChart = (key: string, h: number): React.ReactNode => {
+            // isModal=true means this render call is from inside the fullscreen ChartModal.
+            // For the price chart only ONE klinecharts instance can render correctly at a time:
+            // when the modal is open we deactivate the main-tab instance to avoid a duplicate.
+            const renderChart = (key: string, h: number, isModal = false): React.ReactNode => {
               switch (key) {
                 case 'equity':
                   return (
@@ -2092,8 +2096,10 @@ export function BacktestDetail() {
                       {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
                     </>
                   )
-                case 'price':
-                  return runId ? <PriceChartPanel runId={runId} active height={h} /> : null
+                case 'price': {
+                  const priceActive = isModal || fullscreenChart !== 'price'
+                  return runId ? <PriceChartPanel runId={runId} active={priceActive} height={h} /> : null
+                }
                 case 'breakdown': {
                   // All three supporting charts share the tab's height: drawdown full-width on top,
                   // then daily P&L + long vs short side by side. Scales up when the tab is expanded.
@@ -2175,6 +2181,17 @@ export function BacktestDetail() {
                             Refresh
                           </button>
                         )}
+                        {isMt5 && primaryTab === 'price' && (
+                          <button
+                            onClick={() => runId && refreshChartSpec.mutate(runId)}
+                            disabled={refreshChartSpec.isPending}
+                            title="Rebuild chart data (re-fetches candles + recomputes structure)"
+                            className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
+                          >
+                            <RefreshCw size={11} className={refreshChartSpec.isPending ? 'animate-spin' : ''} />
+                            Rebuild chart
+                          </button>
+                        )}
                       </>}
                     />
 
@@ -2185,7 +2202,7 @@ export function BacktestDetail() {
                       <ChartModal
                         title={TITLES[fullscreenChart] ?? 'Chart'}
                         onClose={() => setFullscreenChart(null)}
-                        render={h => renderChart(fullscreenChart, h)}
+                        render={h => renderChart(fullscreenChart, h, true)}
                       />
                     )}
                   </>

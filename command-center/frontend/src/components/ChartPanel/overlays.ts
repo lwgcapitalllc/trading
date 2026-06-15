@@ -72,20 +72,11 @@ export function registerChartOverlays(): void {
             color: withAlpha(color, 0.08),
             borderColor: withAlpha(color, 0.5),
             borderSize: 1,
-            borderStyle: 'dashed',
-            borderDashedValue: [2, 2],
+            borderStyle: 'solid',
           },
           ignoreEvent: true,
         },
       ]
-      if (data.label) {
-        figures.push({
-          type: 'text',
-          attrs: { x: x + 4, y: y + 3, text: data.label, baseline: 'top' },
-          styles: { color: withAlpha(color, 0.9), size: 10, weight: 'bold' },
-          ignoreEvent: true,
-        })
-      }
       return figures
     },
   })

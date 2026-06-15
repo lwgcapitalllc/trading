@@ -30,14 +30,14 @@ export function mapSeriesToCandles(
   if (series.length === 0) return dataList.map(() => ({}))
   const out: SeriesResult[] = []
   let si = 0
+  let lastVal: number | undefined  // carry forward so D1 values fill every sub-day bar
   for (let i = 0; i < dataList.length; i++) {
     const nextT = i + 1 < dataList.length ? dataList[i + 1].timestamp : Infinity
-    let val: number | undefined
     while (si < series.length && series[si].time < nextT) {
-      val = series[si].value
+      lastVal = series[si].value
       si++
     }
-    out.push(val === undefined ? {} : { value: val })
+    out.push(lastVal === undefined ? {} : { value: lastVal })
   }
   return out
 }

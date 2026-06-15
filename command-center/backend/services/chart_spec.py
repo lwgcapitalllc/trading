@@ -226,19 +226,19 @@ def _build_structure(
         hi = max(c["high"] for c in window)
         low = min(c["low"] for c in window)
         overlays.append({
-            "type": "box", "group": "Asian range", "t0": a0, "t1": a1,
+            "type": "box", "group": "ORB Range", "t0": a0, "t1": a1,
             "top": hi, "bottom": low, "style": {"color": "#e6bd6a"},
         })
         atr = atr_before(day)
         if atr:
             overlays.append({
-                "type": "hline", "group": "Breakout levels", "t0": a1, "t1": t_flat,
-                "price": round(hi + buffer_atr * atr, 5), "label": "Buy",
+                "type": "hline", "group": "ORB Range", "t0": a1, "t1": t_flat,
+                "price": round(hi + buffer_atr * atr, 5),
                 "style": {"color": "#33ff99", "lineStyle": "dashed"},
             })
             overlays.append({
-                "type": "hline", "group": "Breakout levels", "t0": a1, "t1": t_flat,
-                "price": round(low - buffer_atr * atr, 5), "label": "Sell",
+                "type": "hline", "group": "ORB Range", "t0": a1, "t1": t_flat,
+                "price": round(low - buffer_atr * atr, 5),
                 "style": {"color": "#ff6680", "lineStyle": "dashed"},
             })
 

@@ -20,7 +20,8 @@ import theme from '@/themes/electric-indigo'
 
 const CHART_HEIGHT = 520
 const DAY_MS = 24 * 60 * 60 * 1000
-const TRADE_COLOR = theme.series[3] // blue, for trade arrows / lines / exit dots
+const TRADE_LONG_COLOR = theme.series[3]  // blue for buy arrows
+const TRADE_SHORT_COLOR = theme.neg        // red for sell arrows
 const DEFAULT_OVERLAY_COLOR = theme.textTertiary // fallback when a spec overlay omits a color
 const DAY_BREAK_COLOR = theme.textTertiary // muted vertical line for daily session breaks
 const INDICATOR_PALETTE = [theme.gold, theme.series[4], theme.accent, theme.series[1]] // line colors
@@ -128,16 +129,14 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
   }, [spec.trades])
 
   // Session boxes are derived from the BASE candles (high/low envelope is TF-invariant) and
-  // anchored by timestamp, so they stay put across timeframe switches.
+  // anchored by timestamp, so they stay put across timeframe switches. Show on ALL candle days.
   const sessionBoxes = useMemo(
-    () => spec.sessions.map(s => {
-      const all = sessionWindows(spec.candles, s, spec.brokerGmtOffsetHours)
-      const windows = tradeDays.size > 0
-        ? all.filter(w => tradeDays.has(Math.floor(w.t0 / DAY_MS) * DAY_MS))
-        : all.slice(-MAX_PERDAY_LAYERS)
-      return { name: s.name, color: s.color, windows }
-    }),
-    [spec.candles, spec.sessions, spec.brokerGmtOffsetHours, tradeDays],
+    () => spec.sessions.map(s => ({
+      name: s.name,
+      color: s.color,
+      windows: sessionWindows(spec.candles, s, spec.brokerGmtOffsetHours),
+    })),
+    [spec.candles, spec.sessions, spec.brokerGmtOffsetHours],
   )
 
   // Per-session visibility (component-local UI state). Defaults all on; resets with the spec.
@@ -238,11 +237,11 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
             { timestamp: w.t0, value: w.top },
             { timestamp: w.t1, value: w.bottom },
           ],
-          extendData: { color: s.color, label: s.name },
+          extendData: { color: s.color },
         })
       }
     }
-  }, [sessionBoxes, sessionsOn, displayCandles])
+  }, [sessionBoxes, sessionsOn, displayCandles])  // sessionBoxes already covers all days
 
   // Rebuild trade overlays after data changes or a toggle (same anchoring rationale as sessions).
   useEffect(() => {
@@ -258,7 +257,7 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
           { timestamp: tr.entryTime, value: tr.entryPrice },
           { timestamp: tr.exitTime, value: tr.exitPrice },
         ],
-        extendData: { dir: tr.dir, color: TRADE_COLOR },
+        extendData: { dir: tr.dir, color: tr.dir === 'long' ? TRADE_LONG_COLOR : TRADE_SHORT_COLOR },
       })
     }
   }, [spec.trades, tradesOn, displayCandles])
@@ -362,7 +361,7 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
             <ToggleChip key={`s-${s.name}`} label={s.name} color={s.color} on={sessionsOn[s.name]} onClick={() => toggleSession(s.name)} />
           ))}
           {spec.trades.length > 0 && (
-            <ToggleChip label="Trades" color={TRADE_COLOR} on={tradesOn} onClick={() => setTradesOn(o => !o)} />
+            <ToggleChip label="Trades" color={TRADE_LONG_COLOR} on={tradesOn} onClick={() => setTradesOn(o => !o)} />
           )}
           {overlayGroups.map(g => (
             <ToggleChip key={`g-${g.name}`} label={g.name} color={g.color} on={groupsOn[g.name]} onClick={() => toggleGroup(g.name)} />
