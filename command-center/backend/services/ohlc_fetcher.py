@@ -74,11 +74,19 @@ def _yfinance_ticker(instrument: str) -> Optional[str]:
 
 
 def _resolve_mt5_symbol(instrument: str) -> str:
-    """Append broker_suffix from instrument_metadata if set; otherwise pass through."""
-    meta = lab_db.get_instrument_metadata(instrument)
+    """Resolve a run instrument to the MT5 terminal's symbol name.
+
+    Callers may pass a broker-suffixed name ("USDJPY.s") or a canonical one ("USDJPY"). We
+    normalize to the canonical/root symbol first, then re-add a broker suffix from
+    instrument_metadata if one is configured. Crucially, the agent's terminal uses plain names,
+    so an unstripped suffixed symbol returns NO data (copy_rates_range fails) — passing the
+    already-suffixed run instrument here is what silently broke MT5 regime tagging. No instrument
+    has a broker_suffix today, so the root symbol is what actually returns data."""
+    root = _root_symbol(instrument)
+    meta = lab_db.get_instrument_metadata(root)
     if meta and meta.get("broker_suffix"):
-        return instrument + meta["broker_suffix"]
-    return instrument
+        return root + meta["broker_suffix"]
+    return root
 
 
 def _fetch_yfinance(ticker: str, start: str, end: str) -> pd.DataFrame:

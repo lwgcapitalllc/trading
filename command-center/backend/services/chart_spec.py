@@ -78,12 +78,10 @@ def _iso_to_epoch_ms(s: str) -> Optional[int]:
 
 
 def _build_candles(instrument: str, start_date: str, end_date: str, base_tf: str, runner: str) -> list[dict]:
-    # ohlc_fetcher expects the CANONICAL (root) symbol — its resolver re-adds the broker suffix
-    # from instrument_metadata when one is configured. Passing the already-suffixed run symbol
-    # (e.g. "USDJPY.s") double-handles it and the MT5 agent's terminal (plain names) finds nothing.
-    symbol = ohlc_fetcher._root_symbol(instrument) if runner == "mt5" else instrument
+    # ohlc_fetcher normalizes the symbol (strips the broker suffix, re-adds a configured one), so
+    # we can pass the run instrument as-is — the MT5 agent's terminal uses plain names.
     try:
-        df = ohlc_fetcher.get_ohlc(symbol, start_date, end_date, timeframe=base_tf, runner=runner)
+        df = ohlc_fetcher.get_ohlc(instrument, start_date, end_date, timeframe=base_tf, runner=runner)
     except Exception as exc:  # noqa: BLE001 — fetch is best-effort; empty candles degrade gracefully
         log.warning("chart_spec: candle fetch failed for %s %s: %s", instrument, base_tf, exc)
         return []
