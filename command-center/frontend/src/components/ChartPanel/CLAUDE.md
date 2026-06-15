@@ -125,12 +125,16 @@ here**, so the chart shows exactly what the strategy saw.
   error / empty / daily-fallback states). Verified end-to-end on run `7030bcffd856` (USDJPY
   londonbreakout): **24,785 real M15 candles + 18 trades (real entry/exit prices) + 3 sessions**.
   **candles + sessions + trades only** — overlays/indicators empty.
-  - **MT5 agent fix (deployed).** Getting intraday required two fixes: (1) `algos/.../mt5_agent.py`
-    `/historical_data` now maps M5/M15/M30 and calls `symbol_select()` before `copy_rates_range`
-    (was 400/404); (2) `chart_spec` fetches with the **canonical/root symbol** (`USDJPY`, not
-    `USDJPY.s`) — `ohlc_fetcher`'s resolver re-adds the broker suffix from metadata, so passing the
-    already-suffixed run symbol found nothing on the agent's plain-named terminal. The daily-fallback
-    path remains for runs with no intraday history (e.g. NT8 futures).
+  - **MT5 agent / symbol handling (deployed).** Getting intraday working took: (1) `algos/.../mt5_agent.py`
+    `/historical_data` maps M5/M15/M30 and `symbol_select()`s before `copy_rates_range`; (2) it
+    **preserves symbol case** (`.s` ≠ `.S`) and tries the symbol **as given THEN its root** — broker
+    terminals vary (GBPJPY exists only as `GBPJPY.s`, USDJPY both ways), so always-uppercasing or
+    always-stripping breaks one or the other. `ohlc_fetcher._resolve_mt5_symbol` passes the run's
+    broker symbol through and lets the agent do that fallback. Symbols the terminal genuinely lacks
+    fall back to **daily** (yfinance); the panel shows a note.
+  - **Candle volume cap** (`chart_spec._fit_timeframe`, `_CANDLE_CAP = 35k`): long spans step the base
+    TF up so the payload stays sane — ~1yr stays M15, a 5yr run becomes H1 (~31k bars, not ~125k M15).
+    Verified on `74e32710449c` (GBPJPY 5yr): 31,133 H1 candles + 64 trades + structure + ATR.
 - **Step 7b — Strategy structure (done, backend recompute).** `chart_spec.py` recomputes the
   London-breakout structure from the M15 candles + daily ATR, matching `strategies/mt5/LondonBreakout.mq5`:
   per trade-day **Asian range box** (00:00–06:00 GMT high/low) + ATR-buffered **Buy/Sell level** lines
