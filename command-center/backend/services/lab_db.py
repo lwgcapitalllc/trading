@@ -767,7 +767,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
     # account_tier 'demo' so nothing downstream treats these as live accounts.
     _FX_INSTRUMENTS = json.dumps([
         "XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "GBPJPY",
-        "USDJPY", "AUDUSD", "USDCAD", "EURGBP", "NAS100",
+        "USDJPY", "AUDJPY", "CADJPY", "AUDUSD", "USDCAD", "EURGBP", "NAS100",
     ])
     _FX_DAYS = json.dumps(["sun", "mon", "tue", "wed", "thu"])
     _FUT_DAYS = json.dumps(["mon", "tue", "wed", "thu", "fri"])

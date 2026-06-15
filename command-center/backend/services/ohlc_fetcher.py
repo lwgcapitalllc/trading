@@ -58,6 +58,8 @@ INSTRUMENT_YFINANCE_MAP: dict[str, str] = {
     "EURGBP":  "EURGBP=X",
     "USDJPY":  "JPY=X",
     "GBPJPY":  "GBPJPY=X",
+    "AUDJPY":  "AUDJPY=X",
+    "CADJPY":  "CADJPY=X",
     "XAGUSD":  "SI=F",
     "NAS100":  "^NDX",
 }
