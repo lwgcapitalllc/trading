@@ -42,7 +42,7 @@ backend/
 │   ├── strategy_scanner.py  reads from strategies/ (not algos/); emits warnings for stale source_paths
 │   ├── evaluator.py       per-ruleset verdict; also exports compute_contract_cap_status()
 │   ├── trailing_drawdown.py  compute_trailing_mll() — EOD trailing max-loss engine (the drawdown check)
-│   ├── metrics.py         shared metric helpers: daily_sharpe / apply_canonical_sharpe / profit_concentration_pct / compute_regime_breakdown (per-regime P&L table → BacktestDetail.regime_breakdown)
+│   ├── metrics.py         shared metric helpers: daily_sharpe / apply_canonical_sharpe / profit_concentration_pct / compute_regime_breakdown (per-regime P&L table → BacktestDetail.regime_breakdown; trade counts + win-rate use direction-bearing equity points only, so MT5 equity snapshots don't double-count)
 │   ├── backtest_runner.py background VPS polling task (single run)
 │   ├── sweep_runner.py    runs N backtests sequentially (semaphore = 1) for a sweep
 │   ├── optimization_runner.py  native NT8/MT5 optimizer (one VPS job, all CPU cores)

@@ -161,9 +161,14 @@ def compute_regime_breakdown(
 
     trade_agg: dict[str, dict] = {}
     for pt in equity_curve:
+        # A real trade carries a direction (Long/Short). The MT5 equity_curve also includes
+        # non-trade equity snapshots (no direction) — skip those so the per-regime trade counts
+        # sum to trade_count, not the snapshot count. Mirrors the frontend DirectionBreakdown.
+        if not pt.get("direction"):
+            continue
         profit = pt.get("profit")
         if profit is None:
-            continue  # only real trades carry a realized profit
+            continue
         profit = float(profit)
         day = str(pt.get("date") or "")[:10]
         regime = date_to_regime.get(day, _REGIME_UNKNOWN) if day else _REGIME_UNKNOWN
