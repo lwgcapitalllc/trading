@@ -6,7 +6,9 @@ Tier 2 (OPTIMIZE):   PF in [0.8, 1.3], or DD in danger zone [0.7x, 1.0x], trade_
 Tier 3 (DISCARD):    PF < 0.8, DD > limit, or trade_count < 30
 
 When multiple firm evals exist, score is computed against the strictest firm
-(smallest max_loss_eod).
+(smallest max_loss_eod). When the run was evaluated against personal/demo rulesets
+only (e.g. a forex run — no prop firm covers forex), score against the personal
+drawdown limit instead (account_size × max_drawdown_from_peak_pct).
 """
 
 from __future__ import annotations
@@ -56,28 +58,37 @@ def score_run_after_evals(
 ) -> Optional[tuple[str, Optional[str], str]]:
     """
     Find the strictest evaluated ruleset, compute tier, return (tier, reason, ruleset_id).
-    Returns None if no rulesets available.
+    Returns None if no ruleset yields a usable dollar drawdown limit.
+
+    Prop rulesets win the strictest pick (smallest trailing max-loss) and take precedence.
+    Personal/demo rows carry max_loss_eod = 0 (sentinel: no trailing EOD rule), so they're
+    scored against their drawdown-from-peak limit instead (account_size × pct, via
+    metrics.effective_dd_limit_usd). This is the only limit a forex run has — no prop firm
+    covers forex — so without it forex runs would never get a worthiness tier.
     """
     from services import lab_db
+    from services.metrics import effective_dd_limit_usd
 
-    if not ruleset_ids:
-        return None
-
-    strictest = None
+    prop_strictest = None             # smallest max_loss_eod among prop rulesets
+    personal_strictest = None         # (limit_usd, ruleset) among personal/demo rulesets
     for rid in ruleset_ids:
         ruleset = lab_db.get_ruleset(rid)
         if ruleset is None:
             continue
-        # Personal/demo rows carry max_loss_eod = 0 (sentinel: no trailing EOD rule) and
-        # must never win the strictest pick — worthiness is scored against prop limits
-        # only. A personal-only run gets no tier (strictest stays None below).
         if ruleset.get("ruleset_type") in ("personal", "demo"):
-            continue
-        if strictest is None or ruleset["max_loss_eod"] < strictest["max_loss_eod"]:
-            strictest = ruleset
+            limit = effective_dd_limit_usd(ruleset)
+            if limit > 0 and (personal_strictest is None or limit < personal_strictest[0]):
+                personal_strictest = (limit, ruleset)
+        elif prop_strictest is None or ruleset["max_loss_eod"] < prop_strictest["max_loss_eod"]:
+            prop_strictest = ruleset
 
-    if strictest is None:
+    # Prop limits are the binding constraint when present; fall back to personal otherwise.
+    if prop_strictest is not None:
+        limit_usd, ruleset_id = prop_strictest["max_loss_eod"], prop_strictest["id"]
+    elif personal_strictest is not None:
+        limit_usd, ruleset_id = personal_strictest[0], personal_strictest[1]["id"]
+    else:
         return None
 
-    tier, reason = compute_worthiness(profit_factor, max_drawdown, trade_count, strictest["max_loss_eod"])
-    return tier, reason, strictest["id"]
+    tier, reason = compute_worthiness(profit_factor, max_drawdown, trade_count, limit_usd)
+    return tier, reason, ruleset_id

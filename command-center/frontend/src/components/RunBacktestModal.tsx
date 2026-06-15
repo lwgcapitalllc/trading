@@ -263,6 +263,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // ── Instrument ───────────────────────────────────────────────────────────────
   const frontMonth = useMemo(() => currentFrontMonth(), [])
   const futuresFirms = useMemo(() => firms.filter(f => f.market !== 'forex'), [firms])
+  const forexFirms   = useMemo(() => firms.filter(f => f.market === 'forex'), [firms])
   const allowedSymbols = useMemo(() => getAllowedSymbols(futuresFirms), [futuresFirms])
 
   const parsed = useMemo(
@@ -408,10 +409,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
   // ── Validation ───────────────────────────────────────────────────────────────
   const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
+  // Forex runs evaluate against the personal forex ruleset(s); futures against prop
+  // challenges. Both require ≥1 selection, but never block when none exist for the platform.
+  const evalRequiredMet = isMt5
+    ? (selectedFirms.size > 0 || forexFirms.length === 0)
+    : selectedFirms.size > 0
   const canSubmit =
     instrumentSymbol !== '' &&
     startDate !== '' && endDate !== '' && startDate < endDate &&
-    (isMt5 || selectedFirms.size > 0) &&
+    evalRequiredMet &&
     !trigger.isPending &&
     !jobBlocked
 
@@ -430,7 +436,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         end_date:            endDate,
         commission_per_side: commPerSide,
         slippage_ticks:      slippageTicks,
-        evaluate_rulesets:   isMt5 ? [] : Array.from(selectedFirms),
+        evaluate_rulesets:   Array.from(selectedFirms),
       },
       {
         onSuccess: (data) => {
@@ -627,10 +633,38 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
           <Divider />
 
-          {/* Evaluate Against — NT8 only (prop firm challenges are futures-specific) */}
-          {!isMt5 && <div>
+          {/* Evaluate Against — prop firm challenges for futures, personal ruleset(s) for forex */}
+          <div>
             <SectionHead label="Evaluate Against" />
-            {firmsLoading ? (
+            {isMt5 ? (
+              firmsLoading ? (
+                <div className="text-[12px] text-text-tertiary">Loading rulesets…</div>
+              ) : forexFirms.length === 0 ? (
+                <div className="text-[12px] text-text-tertiary">No forex rulesets configured.</div>
+              ) : (
+                <div className="space-y-2">
+                  {forexFirms.map(f => (
+                    <label key={f.id} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedFirms.has(f.id)}
+                        onChange={() => toggleFirm(f.id)}
+                        className="w-4 h-4 rounded accent-accent flex-shrink-0"
+                      />
+                      <span className="text-[13px] text-text-primary flex-1">{f.name}</span>
+                      <span className={`text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 ${
+                        f.account_tier === 'funded' ? 'bg-pos-muted text-pos-text' : 'bg-warn-muted text-warn-text'
+                      }`}>
+                        {f.account_tier}
+                      </span>
+                    </label>
+                  ))}
+                  {selectedFirms.size === 0 && (
+                    <p className="text-[11px] text-neg-text mt-2">Select at least one ruleset.</p>
+                  )}
+                </div>
+              )
+            ) : firmsLoading ? (
               <div className="text-[12px] text-text-tertiary">Loading rulesets…</div>
             ) : futuresFirms.length === 0 ? (
               <div className="text-[12px] text-text-tertiary">No prop firm challenges configured.</div>
@@ -695,10 +729,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 </div>
               </div>
             )}
-            {!firmsLoading && selectedFirms.size === 0 && (
+            {!isMt5 && !firmsLoading && selectedFirms.size === 0 && (
               <p className="text-[11px] text-neg-text mt-2">Select at least one challenge.</p>
             )}
-          </div>}
+          </div>
 
           {/* Strategy parameters */}
           {strategy.param_schema.length > 0 && (

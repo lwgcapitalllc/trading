@@ -217,7 +217,14 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
 
     # Inject foundational config from primary ruleset (first in evaluate list).
     # Merged params are stored in the DB so retries pick them up without re-injection.
-    primary_ruleset = lab_db.get_ruleset(ruleset_ids[0]) if ruleset_ids else None
+    # NinjaScript-only: foundational params map to [Category("Foundational")] properties
+    # that MT5/MQL5 strategies don't have, so never inject for the mt5 runner — a forex run
+    # now carries a (personal) ruleset for evaluation, but its config must not be injected.
+    primary_ruleset = (
+        lab_db.get_ruleset(ruleset_ids[0])
+        if ruleset_ids and runner != "mt5"
+        else None
+    )
     merged_params = runner_dispatch.inject_foundational(req.params, primary_ruleset)
 
     lab_db.insert_run({

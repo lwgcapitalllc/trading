@@ -340,7 +340,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Optimizer regime filter (M4) | ✅ Live | Regime Filter select in OptimizerModal; chip in OptimizationDetail |
 | Strategy deployment (Pass 2) | ✅ Live | Deployed sub-tab: drag/drop `.cs`/`.mq5`, delete, NT8 + MT5 compile |
 | Deploy button (Pass 2.5) | ✅ Live | Per-strategy Deploy/Redeploy; filled accent when out of sync |
-| MT5 backtest modal | ✅ Live | Free-text symbol, bar presets, Evaluate/Foundational hidden |
+| MT5 backtest modal | ✅ Live | Free-text symbol, bar presets; Evaluate Against lists forex rulesets (personal forex demo) and is required like futures; Foundational hidden (NinjaScript-only) |
 | MT5 backtest detail | ✅ Live | MT5_RUN_STEPS; NT8-only buttons hidden; Stress Test button shown |
 | Run Stress Test modal | ✅ Live | WF + sensitivity always run together; ruleset locked to first eval |
 | Stress test market lock | ✅ Live | One futures + one forex test at a time; button disabled when blocked |
