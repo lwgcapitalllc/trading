@@ -24,6 +24,7 @@ const TRADE_COLOR = theme.series[3] // blue, for trade arrows / lines / exit dot
 const DEFAULT_OVERLAY_COLOR = theme.textTertiary // fallback when a spec overlay omits a color
 const DAY_BREAK_COLOR = theme.textTertiary // muted vertical line for daily session breaks
 const INDICATOR_PALETTE = [theme.gold, theme.series[4], theme.accent, theme.series[1]] // line colors
+const MAX_PERDAY_LAYERS = 90 // cap on per-day overlays (sessions/breaks) when there are no trades to anchor on
 
 // Display-timeframe ladder for the segmented control. Filtered per spec.baseTimeframe so we
 // never offer a TF finer than the strategy's own bars.
@@ -117,15 +118,26 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE }: { spec?: ChartSpec
     [spec.candles, selectedMin, baseMin],
   )
 
+  // Days that had a trade (epoch ms, floored to UTC midnight). Per-day layers (sessions, day
+  // breaks) are scoped to these so a long run doesn't create thousands of overlays — on a
+  // backtest you care about the days with activity. Falls back to a capped recent window.
+  const tradeDays = useMemo(() => {
+    const s = new Set<number>()
+    for (const t of spec.trades) s.add(Math.floor(t.entryTime / DAY_MS) * DAY_MS)
+    return s
+  }, [spec.trades])
+
   // Session boxes are derived from the BASE candles (high/low envelope is TF-invariant) and
   // anchored by timestamp, so they stay put across timeframe switches.
   const sessionBoxes = useMemo(
-    () => spec.sessions.map(s => ({
-      name: s.name,
-      color: s.color,
-      windows: sessionWindows(spec.candles, s, spec.brokerGmtOffsetHours),
-    })),
-    [spec.candles, spec.sessions, spec.brokerGmtOffsetHours],
+    () => spec.sessions.map(s => {
+      const all = sessionWindows(spec.candles, s, spec.brokerGmtOffsetHours)
+      const windows = tradeDays.size > 0
+        ? all.filter(w => tradeDays.has(Math.floor(w.t0 / DAY_MS) * DAY_MS))
+        : all.slice(-MAX_PERDAY_LAYERS)
+      return { name: s.name, color: s.color, windows }
+    }),
+    [spec.candles, spec.sessions, spec.brokerGmtOffsetHours, tradeDays],
   )
 
   // Per-session visibility (component-local UI state). Defaults all on; resets with the spec.
@@ -162,14 +174,17 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE }: { spec?: ChartSpec
   // are broker wall-clock, so day boundaries fall on DAY_MS multiples). Left edge is skipped.
   const dailyBreaks = useMemo(() => {
     if (spec.candles.length === 0) return []
+    // With trades, mark the start of each trade day (scoped, like sessions). Otherwise fall back
+    // to interior day boundaries across the range, capped so a long run stays light.
+    if (tradeDays.size > 0) return Array.from(tradeDays).sort((a, b) => a - b)
     const tMin = spec.candles[0].time
     const tMax = spec.candles[spec.candles.length - 1].time
     const out: number[] = []
     let b = Math.ceil(tMin / DAY_MS) * DAY_MS
     if (b === tMin) b += DAY_MS // skip the boundary sitting on the very first bar
     for (; b <= tMax; b += DAY_MS) out.push(b)
-    return out
-  }, [spec.candles])
+    return out.slice(-MAX_PERDAY_LAYERS)
+  }, [spec.candles, tradeDays])
   const [dayBreaksOn, setDayBreaksOn] = useState(true)
 
   // Indicators (shipped series). One on/off per indicator; sub-pane ids tracked for removal.

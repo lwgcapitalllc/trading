@@ -1,8 +1,10 @@
 """
 chart_spec.py — emit a ChartSpec for the backtest chart panel (frontend ChartPanel).
 
-Phase 7a: candles + sessions + trades from a finished run. Overlays (strategy structure)
-and indicators are left empty — they aren't captured by any run today (Phase 7b).
+Phase 7a: candles + sessions + trades from a finished run.
+Phase 7b: strategy-structure overlays + indicators, recomputed server-side from the run's
+params + candles (the strategy doesn't log them). Currently wired for the London-breakout
+family (detected by the `AsianStartGMT` param); other strategies get empty structure.
 
 The spec is the contract the panel reads (see
 command-center/frontend/src/components/ChartPanel/types.ts). Times are epoch MILLISECONDS,
@@ -15,6 +17,10 @@ Data sources:
              of deal points (entry: profit 0, exit: realized profit); we pair them to recover
              entry/exit time + direction, and read prices off the candles at those times.
   - sessions: generic FX market sessions (config, not strategy logic).
+  - overlays/indicators (7b): recomputed from M15 candles + the daily ATR, matching
+    strategies/mt5/LondonBreakout.mq5 (Asian range box, ATR-buffered buy/sell levels, ATR pane).
+    This is a RECONSTRUCTION from the same inputs the strategy used — not a strategy-logged
+    artifact. It is server-side, so the chart itself still computes no strategy structure.
 
 Broker offset: the MT5 deal/bar timestamps are GMT (the force-flat at 11:00 lands at 11:00),
 so brokerGmtOffsetHours is 0 and both axes are UTC.
@@ -25,7 +31,7 @@ from __future__ import annotations
 import bisect
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -135,6 +141,95 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
     return trades
 
 
+# ── Strategy structure (Phase 7b) — London-breakout family ─────────────────────────
+_DAY_MS = 24 * 60 * 60 * 1000
+
+
+def _hhmm_to_ms(s: str, default_min: int) -> int:
+    try:
+        h, m = s.split(":")
+        return (int(h) * 60 + int(m)) * 60_000
+    except (ValueError, AttributeError):
+        return default_min * 60_000
+
+
+def _wilder_atr(daily: list[dict], period: int) -> dict[int, float]:
+    """Wilder ATR(period) over daily bars → {day_time_ms: atr}. Matches MT5 iATR."""
+    if len(daily) < period + 1:
+        return {}
+    trs = []
+    for i in range(1, len(daily)):
+        h, lo, pc = daily[i]["high"], daily[i]["low"], daily[i - 1]["close"]
+        trs.append(max(h - lo, abs(h - pc), abs(lo - pc)))
+    out: dict[int, float] = {}
+    atr = sum(trs[:period]) / period            # seed = SMA of first `period` TRs
+    out[daily[period]["time"]] = atr            # trs[i] belongs to daily[i+1]
+    for i in range(period, len(trs)):
+        atr = (atr * (period - 1) + trs[i]) / period
+        out[daily[i + 1]["time"]] = atr
+    return out
+
+
+def _build_structure(
+    m15: list[dict], trades: list[dict], daily: list[dict], params: dict,
+) -> tuple[list[dict], list[dict]]:
+    """Recompute the London-breakout structure (Asian range box + ATR-buffered buy/sell levels)
+    for each day a trade occurred, plus the daily ATR series as a sub-pane indicator."""
+    period = int(params.get("AtrPeriod", 14) or 14)
+    buffer_atr = float(params.get("BufferAtr", 0.1) or 0.1)
+    a_start = _hhmm_to_ms(params.get("AsianStartGMT", "00:00"), 0)
+    a_end = _hhmm_to_ms(params.get("AsianEndGMT", "06:00"), 360)
+    flat = _hhmm_to_ms(params.get("ForceFlatGMT", "11:00"), 660)
+
+    atr_by_time = _wilder_atr(daily, period)
+    daily_times = sorted(atr_by_time)
+    atr_series = [{"time": t, "value": round(atr_by_time[t], 5)} for t in daily_times]
+
+    def atr_before(day_ms: int) -> Optional[float]:
+        # The strategy uses the last COMPLETED daily ATR (shift 1) → bar strictly before today.
+        i = bisect.bisect_left(daily_times, day_ms) - 1
+        return atr_by_time[daily_times[i]] if i >= 0 else None
+
+    m15_times = [c["time"] for c in m15]
+    overlays: list[dict] = []
+    seen: set[int] = set()
+    for tr in trades:
+        day = (tr["entryTime"] // _DAY_MS) * _DAY_MS
+        if day in seen:
+            continue
+        seen.add(day)
+        a0, a1, t_flat = day + a_start, day + a_end, day + flat
+        lo_i = bisect.bisect_left(m15_times, a0)
+        hi_i = bisect.bisect_left(m15_times, a1)
+        window = m15[lo_i:hi_i]
+        if not window:
+            continue
+        hi = max(c["high"] for c in window)
+        low = min(c["low"] for c in window)
+        overlays.append({
+            "type": "box", "group": "Asian range", "t0": a0, "t1": a1,
+            "top": hi, "bottom": low, "style": {"color": "#e6bd6a"},
+        })
+        atr = atr_before(day)
+        if atr:
+            overlays.append({
+                "type": "hline", "group": "Breakout levels", "t0": a1, "t1": t_flat,
+                "price": round(hi + buffer_atr * atr, 5), "label": "Buy",
+                "style": {"color": "#33ff99", "lineStyle": "dashed"},
+            })
+            overlays.append({
+                "type": "hline", "group": "Breakout levels", "t0": a1, "t1": t_flat,
+                "price": round(low - buffer_atr * atr, 5), "label": "Sell",
+                "style": {"color": "#ff6680", "lineStyle": "dashed"},
+            })
+
+    indicators = [{
+        "name": f"ATR({period}) D1", "params": {"period": period},
+        "pane": "sub", "series": atr_series,
+    }] if atr_series else []
+    return overlays, indicators
+
+
 def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     """Build (and cache) the ChartSpec for a completed run. Returns None if the run is unknown.
     Cached to reports/lab/<run_id>/chart_spec.json; pass refresh=True to rebuild."""
@@ -173,6 +268,16 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
             equity_curve = []
     trades = _build_trades(equity_curve, candles)
 
+    # Strategy structure (7b): recompute when we have intraday candles and the run is a
+    # London-breakout (detected by its params). Needs daily bars (with warmup) for the ATR.
+    overlays: list[dict] = []
+    indicators: list[dict] = []
+    params = row.get("params") or {}
+    if base_tf != "D1" and "AsianStartGMT" in params:
+        warmup_start = (date.fromisoformat(row["start_date"]) - timedelta(days=40)).isoformat()
+        daily = _build_candles(instrument, warmup_start, row["end_date"], "D1", runner)
+        overlays, indicators = _build_structure(candles, trades, daily, params)
+
     spec = {
         "instrument": instrument,
         "baseTimeframe": base_tf,
@@ -180,12 +285,12 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
         "candles": candles,
         "sessions": [dict(s) for s in _FX_SESSIONS],
         "trades": trades,
-        "overlays": [],
-        "indicators": [],
+        "overlays": overlays,
+        "indicators": indicators,
     }
 
     run_dir.mkdir(parents=True, exist_ok=True)
     spec_path.write_text(json.dumps(spec))
-    log.info("chart_spec: built for %s — %d candles, %d trades (%s)",
-             run_id, len(candles), len(trades), base_tf)
+    log.info("chart_spec: built for %s — %d candles, %d trades, %d overlays, %d indicators (%s)",
+             run_id, len(candles), len(trades), len(overlays), len(indicators), base_tf)
     return spec

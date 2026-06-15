@@ -2,7 +2,7 @@
 
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
-**Status:** Building in numbered steps (see seed `docs/LWG_chart_panel_seed.md`). **Steps 1–6 done; Step 7a (real-spec emitter, real M15 candles) done.** Step 7b (strategy structure: overlays + indicators) remains.
+**Status:** Building in numbered steps (see seed `docs/LWG_chart_panel_seed.md`). **All steps done (1–6, 7a, 7b).** The panel renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, and the ATR indicator.
 
 ---
 
@@ -131,5 +131,12 @@ here**, so the chart shows exactly what the strategy saw.
     `USDJPY.s`) — `ohlc_fetcher`'s resolver re-adds the broker suffix from metadata, so passing the
     already-suffixed run symbol found nothing on the agent's plain-named terminal. The daily-fallback
     path remains for runs with no intraday history (e.g. NT8 futures).
-- **Step 7b — Strategy structure (overlays + indicators). _pending._** Not captured by any run today;
-  needs strategy-side logging or backend recompute (see the run's `params`: Asian range + ATR levels).
+- **Step 7b — Strategy structure (done, backend recompute).** `chart_spec.py` recomputes the
+  London-breakout structure from the M15 candles + daily ATR, matching `strategies/mt5/LondonBreakout.mq5`:
+  per trade-day **Asian range box** (00:00–06:00 GMT high/low) + ATR-buffered **Buy/Sell level** lines
+  (06:00→11:00), plus a daily **ATR(14)** sub-pane indicator. Detected by the `AsianStartGMT` param;
+  other strategies get empty structure until their own emitter logic is added. It's a server-side
+  reconstruction (the chart still computes no strategy structure). Verified on `7030bcffd856`: 18 range
+  boxes + 36 level lines + ATR(14). **Perf:** per-day layers (sessions, day breaks) are scoped to the
+  trade days (`tradeDays`) so a 1-year run doesn't create thousands of overlays; capped fallback when a
+  spec has no trades.

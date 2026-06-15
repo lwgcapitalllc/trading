@@ -21,7 +21,8 @@ React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backen
 - sonner — toasts
 - TailwindCSS — custom theme in `tailwind.config.js`
 - Lucide React — icons (no other icon libraries)
-- Recharts — charts (no D3, no other chart libraries)
+- Recharts — analytics charts (equity, drawdown, P&L, etc.) — no D3, no other charting libs here
+- klinecharts (v9) — the candlestick **price-chart panel only** (`src/components/ChartPanel/`). Lazy-loaded; do not import it elsewhere. All other charts stay on Recharts.
 
 Do not add UI libraries (MUI, Radix, Headless UI, etc.) without raising it first.
 
@@ -36,7 +37,7 @@ frontend/src/
 ├── api/client.ts            ONLY place fetch() lives
 ├── types/index.ts           mirrors all backend Pydantic models exactly
 ├── hooks/                   one file per backend domain
-│   ├── useLab.ts            strategies, rulesets (useRulesets + useFirms alias), runs, evals, sweeps, optimizations
+│   ├── useLab.ts            strategies, rulesets (useRulesets + useFirms alias), runs, evals, sweeps, optimizations, useChartSpec (price-chart panel)
 │   ├── useBots.ts
 │   ├── useSmartMoney.ts
 │   ├── useStressTests.ts    stress tests — useStressTests, useStressTest, useRunStressTest, useDeleteStressTest, useRunningStressLock, useStrategyBestGrades
@@ -57,7 +58,10 @@ frontend/src/
 │   ├── DrawdownDistribution.tsx  drawdown histogram with limit line; axes labelled (# simulations / max drawdown reached)
 │   ├── WalkForwardChart.tsx IS vs OOS Sharpe grouped bar chart with zero baseline + "Sharpe" axis label; series named In-Sample (tuned on) / Out-of-Sample (unseen)
 │   ├── SensitivityRadar.tsx param sensitivity horizontal bar chart — reads BOTH shapes: perturbation (signed `pnl_delta_pct`) and grid-injected (`degradation` → negative magnitude). X-axis domain is data-driven (`[lo-pad, hi+pad]`, always includes 0) so the worst-case bar never clips
-│   └── PreDeploymentChecklist.tsx  5-item checklist on StrategyDetail — first checkbox locked if strategy's best stress test grade is below B
+│   ├── PreDeploymentChecklist.tsx  5-item checklist on StrategyDetail — first checkbox locked if strategy's best stress test grade is below B
+│   └── ChartPanel/         strategy-agnostic klinecharts price-chart panel — HAS ITS OWN CLAUDE.md.
+│                            Lazy-mounted on BacktestDetail; reads a ChartSpec (candles, sessions,
+│                            trades, generic overlays, indicators). Zero strategy-specific logic.
 │                            NOTE: EvaluationCard, EquityCurveChart, DrawdownChart,
 │                            DailyPnlChart, DirectionBreakdown are all inline
 │                            components inside BacktestDetail.tsx — not separate files.
@@ -314,6 +318,7 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 - Long vs Short section uses donut pie charts (Recharts `PieChart`/`Pie`/`Label`): won (green) vs lost (red) slices, win rate % as center label. Won label on right (matches green arc), lost label on left.
 - All chart tooltips: `contentStyle={{ background: C.tooltipBg, border: '1px solid ${C.tooltipBorder}', borderRadius: 8, fontSize: 13, padding: '8px 12px' }}`, `labelStyle={{ color: C.axisTick }}`, `itemStyle={{ color: '#e5e7eb' }}`. Never use `C.tooltipBorder` as text color — it's a dark border hex, not readable text.
 - Equity curve custom tooltip: uses `content` prop (not `formatter`/`labelFormatter`) to filter out `_s0..N` segment keys from the payload — only the `equity` entry is shown.
+- **Price chart** (separate from the Recharts analytics above): a lazy-mounted `<PriceChartSection>` renders the klinecharts candlestick panel (`components/ChartPanel/`). It is collapsed by default and only fetches the run's ChartSpec (`useChartSpec`, served by `GET /backtests/runs/{id}/chart-spec`) when opened — the candle fetch is heavy. Falls back to a daily-candle note when intraday history is unavailable. See `components/ChartPanel/CLAUDE.md`.
 
 ---
 
@@ -342,13 +347,14 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 | Deploy button (Pass 2.5) | ✅ Live | Per-strategy Deploy/Redeploy; filled accent when out of sync |
 | MT5 backtest modal | ✅ Live | Free-text symbol, bar presets; Evaluate Against lists forex rulesets (personal forex demo) and is required like futures; Foundational hidden (NinjaScript-only) |
 | MT5 backtest detail | ✅ Live | MT5_RUN_STEPS; NT8-only buttons hidden; Stress Test button shown |
-| Run Stress Test modal | ✅ Live | WF + sensitivity always run together; ruleset locked to first eval |
+| Run Stress Test modal | ✅ Live | WF + sensitivity run together; ruleset locked to first eval. Sample-size gate (mirror backend `MIN_TRADES_FOR_STRESS = 100`): Stress Test button disabled below 100 trades with an explicit tooltip — the whole test is blocked, not just a phase |
 | Stress test market lock | ✅ Live | One futures + one forex test at a time; button disabled when blocked |
 | Running stress indicators | ✅ Live | Pulsing chips/banners on Runs, BacktestDetail, OptimizationDetail |
 | Strategy best grades | ✅ Live | Best Grade column on Strategies tab; links to the grading test |
 | Queue page (Speed Step 6) | ✅ Live | `/queue` route + sidebar item; position, label, status, timestamps, delete |
 | Settings | ✅ Live | Config read/write; `nt8_agent_tunnel` + `mt5_agent_tunnel` |
 | Sidebar health strip | ✅ Live | 4 dots: API, SSH, NT8 (3-state), MT5 Agent |
+| Price-chart panel | ✅ Live | Lazy klinecharts candlestick panel on BacktestDetail (`components/ChartPanel/`, own CLAUDE.md): TF switch, sessions, trades, generic overlays, indicators, day breaks. Real spec via `useChartSpec`; overlays/indicators (strategy structure) still pending (Step 7b) |
 
 ---
 
