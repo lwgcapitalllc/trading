@@ -59,6 +59,27 @@ def _base_timeframe(bar_type: Optional[str], bar_value: Optional[int]) -> str:
     return f"M{v}"
 
 
+_TF_MIN = {"M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
+_TF_LADDER = ["M5", "M15", "M30", "H1", "H4", "D1"]
+_CANDLE_CAP = 35_000  # keeps ~1yr at M15; a 5yr run steps up to H1 instead of ~125k M15 candles
+
+
+def _fit_timeframe(base_tf: str, start_date: str, end_date: str) -> str:
+    """Step the base TF up to a coarser one when a full intraday fetch over the span would be too
+    many candles to ship/render. Returns base_tf unchanged when it already fits under the cap."""
+    if base_tf not in _TF_LADDER:
+        return base_tf
+    try:
+        span_days = max(1, (date.fromisoformat(end_date) - date.fromisoformat(start_date)).days)
+    except ValueError:
+        return base_tf
+    for tf in _TF_LADDER[_TF_LADDER.index(base_tf):]:
+        bars = (1440 / _TF_MIN[tf]) * (5 / 7) * span_days  # ~forex: 5 trading days/week, 24h
+        if bars <= _CANDLE_CAP:
+            return tf
+    return "D1"
+
+
 def _ts_to_epoch_ms(ts) -> int:
     """pandas Timestamp / datetime → epoch ms (UTC). Naive values are treated as UTC."""
     dt = ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts
@@ -245,8 +266,11 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
 
     runner = row.get("runner") or "ninjatrader"
     instrument = row["instrument"]
-    # NT8 only has daily bars today; MT5 ideally has intraday from the agent.
+    # NT8 only has daily bars today; MT5 ideally has intraday from the agent. Cap the candle
+    # volume by stepping the TF up for long spans (a 5yr run → H1, not ~125k M15 candles).
     base_tf = _base_timeframe(row.get("bar_type"), row.get("bar_value")) if runner == "mt5" else "D1"
+    if runner == "mt5":
+        base_tf = _fit_timeframe(base_tf, row["start_date"], row["end_date"])
 
     candles = _build_candles(instrument, row["start_date"], row["end_date"], base_tf, runner)
     # Fallback: the MT5 agent can't always serve intraday history (symbol not selected, or the

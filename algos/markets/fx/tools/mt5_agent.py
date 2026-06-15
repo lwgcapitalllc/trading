@@ -328,7 +328,7 @@ def historical_data():
         {"bars": [{"time": "ISO", "open": f, "high": f, "low": f, "close": f}, ...],
          "symbol": "EURUSD", "timeframe": "H1", "count": N}
     """
-    symbol     = request.args.get("symbol", "").upper()
+    symbol     = request.args.get("symbol", "").strip()   # preserve case — broker symbols are case-sensitive (e.g. "GBPJPY.s")
     timeframe  = request.args.get("timeframe", "H1")
     start_date = request.args.get("start_date", "")
     end_date   = request.args.get("end_date", "")
@@ -353,13 +353,25 @@ def historical_data():
     except ValueError as exc:
         return jsonify({"error": f"Invalid date: {exc}"}), 400
 
-    with _mt5_lock:
-        # copy_rates_range returns None for symbols not in Market Watch. Selecting the symbol
-        # is benign (data-only; no trading effect) and is what makes intraday history available.
-        mt5.symbol_select(symbol, True)
-        rates = mt5.copy_rates_range(symbol, tf, dt_from, dt_to)
+    # Try the symbol as given, then its root (suffix stripped). Broker terminals vary: some carry
+    # "GBPJPY.s", others plain "GBPJPY" — always-uppercasing or always-stripping breaks one or the
+    # other. symbol_select is benign (data-only) and is what makes a not-yet-watched symbol readable.
+    candidates = [symbol]
+    root = symbol.split(".")[0]
+    if root and root != symbol:
+        candidates.append(root)
 
-    if rates is None:
+    rates = None
+    used  = symbol
+    with _mt5_lock:
+        for cand in candidates:
+            mt5.symbol_select(cand, True)
+            r = mt5.copy_rates_range(cand, tf, dt_from, dt_to)
+            if r is not None and len(r) > 0:
+                rates, used = r, cand
+                break
+
+    if rates is None or len(rates) == 0:
         err_info = mt5.last_error() if MT5_AVAILABLE else ("", "")
         return jsonify({
             "error": f"MT5 returned no data for {symbol} {timeframe}",
@@ -367,8 +379,8 @@ def historical_data():
         }), 404
 
     bars = _rates_to_bars(rates)
-    _alog(f"historical_data: {symbol} {timeframe} [{start_date}, {end_date}] -> {len(bars)} bars")
-    return jsonify({"bars": bars, "symbol": symbol, "timeframe": timeframe, "count": len(bars)})
+    _alog(f"historical_data: {used} {timeframe} [{start_date}, {end_date}] -> {len(bars)} bars")
+    return jsonify({"bars": bars, "symbol": used, "timeframe": timeframe, "count": len(bars)})
 
 
 def _rates_to_bars(rates) -> list[dict]:
