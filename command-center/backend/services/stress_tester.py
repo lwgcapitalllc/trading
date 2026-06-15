@@ -26,6 +26,17 @@ _RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 _POLL_INTERVAL = 5
 _STALL_KILL_SEC = 600
 
+# Walk-forward IS→OOS degradation guards. `1 - OOS/IS` is unstable when the in-sample Sharpe is
+# near zero (a flat in-sample window blows the ratio up), so windows below the floor are excluded
+# as not-assessable and each surviving window is clamped to a sane band before averaging.
+_WF_IS_SHARPE_FLOOR = 0.1          # below this the in-sample window had no real edge to degrade from
+_WF_DEG_CLAMP = (-1.0, 2.0)        # per-window degradation bounded to [-100%, +200%]
+
+
+def _clamp_wf_degradation(deg: float) -> float:
+    lo, hi = _WF_DEG_CLAMP
+    return max(lo, min(hi, deg))
+
 
 # ── Monte Carlo ────────────────────────────────────────────────────────────────
 
@@ -475,15 +486,22 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
 
         summary.append(window_data)
 
-    # Compute avg IS→OOS Sharpe degradation, but ONLY over windows with positive IS Sharpe.
-    # 1 - OOS/IS is only interpretable as "degradation" when IS Sharpe > 0; with a negative IS
-    # Sharpe the signed ratio flips sign and the number is meaningless (a worse OOS can read as
-    # an *improvement*). If no window has positive IS Sharpe, degradation is not assessable →
-    # store None so the UI shows "n/a" and grading treats it as not-run rather than as "solid".
+    # Compute avg IS→OOS Sharpe degradation, but ONLY over windows with a MEANINGFUL positive
+    # IS Sharpe. 1 - OOS/IS is interpretable as "degradation" only when the in-sample window had
+    # a real edge to degrade from:
+    #   - IS Sharpe <= 0          → no in-sample edge; a negative denominator flips the sign (a
+    #                               worse OOS reads as an *improvement*).
+    #   - 0 < IS Sharpe < floor   → a near-zero denominator explodes the ratio. A window that
+    #                               broke even in-sample (Sharpe ~0.002) once produced a 539,229%
+    #                               per-window value and a 134,540% average. Require a floor so a
+    #                               flat window is excluded as not-assessable, not amplified.
+    # Each surviving window is also clamped to a sane band so one noisy small-sample window (a
+    # couple of trades) can't blow up the mean. If no window qualifies, degradation is not
+    # assessable → store None (UI shows "n/a", grading treats as not-run, never "solid").
     degradations = [
-        1.0 - (w.get("oos_sharpe") or 0) / w["is_sharpe"]
+        _clamp_wf_degradation(1.0 - (w.get("oos_sharpe") or 0) / w["is_sharpe"])
         for w in summary
-        if w.get("is_sharpe") and w["is_sharpe"] > 0
+        if w.get("is_sharpe") and w["is_sharpe"] >= _WF_IS_SHARPE_FLOOR
     ]
     avg_deg = float(np.mean(degradations)) if degradations else None
 
