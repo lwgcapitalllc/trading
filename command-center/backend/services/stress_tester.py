@@ -26,6 +26,19 @@ _RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 _POLL_INTERVAL = 5
 _STALL_KILL_SEC = 600
 
+# Minimum trade counts for a stress test to mean anything. The phases have very different
+# data appetites, so there are two gates:
+#   - MIN_TRADES_FOR_STRESS: below this, NOTHING is meaningful — Monte Carlo's tail (the P99
+#     drawdown that drives the grade) is decided by one or two trades. Matches the worthiness
+#     "insufficient signal" floor (Tier 3 < 30). The whole stress test is blocked below it.
+#   - MIN_TRADES_FOR_WALK_FORWARD: walk-forward splits trades into windows, then 70/30 IS/OOS.
+#     With 5 windows, 100 trades gives ~6 OOS trades per window — the floor to not be a coin
+#     flip. Below it, walk-forward is skipped (Monte Carlo + sensitivity still run). A single
+#     30-trade gate does NOT catch this: a 35-trade run clears 30 but its WF OOS slices are
+#     1-2 trades, which is exactly what produced the 134,540% degradation.
+MIN_TRADES_FOR_STRESS = 30
+MIN_TRADES_FOR_WALK_FORWARD = 100
+
 # Walk-forward IS→OOS degradation guards. `1 - OOS/IS` is unstable when the in-sample Sharpe is
 # near zero (a flat in-sample window blows the ratio up), so windows below the floor are excluded
 # as not-assessable and each surviving window is clamped to a sane band before averaging.
@@ -776,6 +789,14 @@ async def run_stress_test_task(
 
 async def trigger_auto_stress_test(run_id: str, ruleset_ids: list[str]) -> None:
     """MC-only auto-trigger after Tier 1 backtest or optimizer winner."""
+    # Sample-size floor — Tier 1 already requires >= 50 trades, but guard the auto path too so
+    # it can never fire Monte Carlo on a sample too small to be meaningful.
+    run = lab_db.get_run(run_id) or {}
+    if (run.get("trade_count") or 0) < MIN_TRADES_FOR_STRESS:
+        log.info("Auto stress test skipped for %s: only %s trades (< %d)",
+                 run_id, run.get("trade_count"), MIN_TRADES_FOR_STRESS)
+        return
+
     primary_ruleset_id = None
     if ruleset_ids:
         candidates = [lab_db.get_ruleset(rid) for rid in ruleset_ids]
