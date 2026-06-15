@@ -115,3 +115,89 @@ def profit_concentration_pct(daily_pnl: list[dict]) -> Optional[float]:
     if gross <= 0:
         return None
     return round((max(quarters) / gross) * 100, 2)
+
+
+# Bucket for a day or trade that can't be attributed to a classified regime.
+_REGIME_UNKNOWN = "UNKNOWN"
+
+
+def compute_regime_breakdown(
+    equity_curve: list[dict],
+    daily_pnl: list[dict],
+) -> list[dict]:
+    """
+    Per-regime performance breakdown — the canonical, runner-independent implementation.
+
+    Day-level columns (days, net_pnl, worst_day) come from the regime-tagged daily series,
+    which is the source of truth: every day carries a 'regime_tag', so summing per regime
+    reproduces the run totals exactly — no inflation. Trade-level columns (trades, win_rate,
+    profit_factor) are attributed from each trade's own realized 'profit', joined to the
+    regime of its day — the same method the optimizer uses (optimization_runner
+    ._regime_filtered_score).
+
+    Per-trade P&L is NEVER derived from equity differences: that double-counts the starting
+    balance into the first "trade" and dumps everything into UNKNOWN on a date-format
+    mismatch (the original frontend bug). Dates are normalized to YYYY-MM-DD so a timestamped
+    equity point still joins to a daily date.
+
+    Each row: {regime, days, trades, net_pnl, win_rate, profit_factor, worst_day}. Sorted by
+    days desc (then trades), UNKNOWN pushed last. Empty when there's no daily data.
+    """
+    if not daily_pnl:
+        return []
+
+    date_to_regime: dict[str, str] = {}
+    day_agg: dict[str, dict] = {}
+    for d in daily_pnl:
+        regime = d.get("regime_tag") or _REGIME_UNKNOWN
+        day = str(d.get("date") or "")[:10]
+        if day:
+            date_to_regime[day] = regime
+        pnl = float(d.get("pnl", 0.0) or 0.0)
+        a = day_agg.setdefault(regime, {"days": 0, "net_pnl": 0.0, "worst_day": None})
+        a["days"] += 1
+        a["net_pnl"] += pnl
+        a["worst_day"] = pnl if a["worst_day"] is None else min(a["worst_day"], pnl)
+
+    trade_agg: dict[str, dict] = {}
+    for pt in equity_curve:
+        profit = pt.get("profit")
+        if profit is None:
+            continue  # only real trades carry a realized profit
+        profit = float(profit)
+        day = str(pt.get("date") or "")[:10]
+        regime = date_to_regime.get(day, _REGIME_UNKNOWN) if day else _REGIME_UNKNOWN
+        t = trade_agg.setdefault(
+            regime, {"trades": 0, "net_pnl": 0.0, "wins": 0, "gross_win": 0.0, "gross_loss": 0.0}
+        )
+        t["trades"] += 1
+        t["net_pnl"] += profit
+        if profit > 0:
+            t["wins"] += 1
+            t["gross_win"] += profit
+        elif profit < 0:
+            t["gross_loss"] += abs(profit)
+
+    rows: list[dict] = []
+    for regime in set(day_agg) | set(trade_agg):
+        day = day_agg.get(regime)
+        t = trade_agg.get(regime)
+        trades = t["trades"] if t else 0
+        # Prefer the regime-intrinsic daily sum; fall back to the trade sum for a
+        # trade-only bucket (a trade whose day never made it into daily_pnl).
+        net_pnl = day["net_pnl"] if day else (t["net_pnl"] if t else 0.0)
+        rows.append({
+            "regime": regime,
+            "days": day["days"] if day else 0,
+            "trades": trades,
+            "net_pnl": round(net_pnl, 2),
+            "win_rate": (t["wins"] / trades) if (t and trades) else None,
+            "profit_factor": (t["gross_win"] / t["gross_loss"]) if (t and t["gross_loss"] > 0) else None,
+            "worst_day": round(day["worst_day"], 2) if (day and day["worst_day"] is not None) else None,
+        })
+
+    rows.sort(key=lambda r: (-r["days"], -r["trades"]))
+    unknown_idx = next((i for i, r in enumerate(rows) if r["regime"] == _REGIME_UNKNOWN), None)
+    if unknown_idx is not None and unknown_idx != len(rows) - 1:
+        rows.append(rows.pop(unknown_idx))
+    return rows

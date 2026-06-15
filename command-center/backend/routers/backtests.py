@@ -25,6 +25,7 @@ from services.backtest_runner import (
     run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv,
 )
 from services.evaluator import evaluate_run
+from services.metrics import compute_regime_breakdown
 from services.sweep_runner import retry_single_sweep_run
 from services.optimization_runner import retry_single_optimization_run
 from routers._locks import ensure_platform_idle
@@ -116,6 +117,9 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         for e in lab_db.get_evaluations(row["run_id"])
     ]
 
+    equity_curve = _load_json(row.get("equity_curve_path"))
+    daily_pnl = _load_json(row.get("daily_pnl_path"))
+
     return BacktestDetail(
         run_id=row["run_id"],
         strategy_id=row["strategy_id"],
@@ -149,8 +153,9 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         avg_trade_duration_min=row.get("avg_trade_duration_min"),
         worst_day_pnl=row.get("worst_day_pnl"),
         worst_losing_streak=row.get("worst_losing_streak"),
-        equity_curve=_load_json(row.get("equity_curve_path")),
-        daily_pnl=_load_json(row.get("daily_pnl_path")),
+        equity_curve=equity_curve,
+        daily_pnl=daily_pnl,
+        regime_breakdown=compute_regime_breakdown(equity_curve, daily_pnl),
         evaluations=evals,
         worthiness=_worthiness_from_row(row),
         sweep_id=row.get("sweep_id"),

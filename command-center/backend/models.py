@@ -31,6 +31,18 @@ class EquityPoint(BaseModel):
     exit_name: Optional[str] = None
 
 
+class RegimeBreakdownRow(BaseModel):
+    """One market-regime's slice of a run's performance. Built server-side by
+    metrics.compute_regime_breakdown — the single source of truth for the table."""
+    regime: str
+    days: int
+    trades: int
+    net_pnl: float
+    win_rate: Optional[float] = None
+    profit_factor: Optional[float] = None
+    worst_day: Optional[float] = None
+
+
 class JobStatus(BaseModel):
     name: str
     schedule: str
@@ -523,6 +535,8 @@ class BacktestDetail(BaseModel):
     # Heavy data (loaded from JSON files on disk)
     equity_curve: list[EquityPoint] = []
     daily_pnl: list[dict] = []     # [{date: 'YYYY-MM-DD', pnl: float}]
+    # Per-regime performance, computed server-side from equity_curve + tagged daily_pnl
+    regime_breakdown: list[RegimeBreakdownRow] = []
     # Per-firm verdicts
     evaluations: list[EvaluationDetail] = []
     worthiness: Optional[WorthinessScore] = None

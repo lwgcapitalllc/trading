@@ -412,6 +412,16 @@ export interface DailyPnlPoint {
   regime_tag?: string
 }
 
+export interface RegimeBreakdownRow {
+  regime: string
+  days: number
+  trades: number
+  net_pnl: number
+  win_rate: number | null
+  profit_factor: number | null
+  worst_day: number | null
+}
+
 export interface BacktestDetail {
   run_id: string
   strategy_id: string
@@ -447,6 +457,7 @@ export interface BacktestDetail {
   worst_losing_streak: number | null
   equity_curve: EquityPoint[]
   daily_pnl: DailyPnlPoint[]
+  regime_breakdown: RegimeBreakdownRow[]
   evaluations: EvaluationDetail[]
   worthiness: WorthinessScore | null
   sweep_id: string | null
