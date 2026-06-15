@@ -22,7 +22,6 @@ from services.stress_tester import (
     sensitivity_param_count,
     sensitivity_shift_count,
     MIN_TRADES_FOR_STRESS,
-    MIN_TRADES_FOR_WALK_FORWARD,
 )
 
 router = APIRouter(prefix="/stress-tests", tags=["stress-tests"])
@@ -83,19 +82,19 @@ async def trigger_stress_test(body: StressTestCreate):
     if not run.get("equity_curve_path"):
         raise HTTPException(400, "Run has no equity curve data")
 
-    # Sample-size gate. Below MIN_TRADES_FOR_STRESS nothing is statistically meaningful, so
-    # block the whole test. Walk-forward needs far more (it splits trades into IS/OOS windows),
-    # so below MIN_TRADES_FOR_WALK_FORWARD it's skipped while Monte Carlo + sensitivity still run.
+    # Sample-size gate — one flat floor. Below MIN_TRADES_FOR_STRESS the whole test is blocked:
+    # the A-F grade leans on Monte Carlo tail percentiles (worst-1%/worst-5% drawdown) that small
+    # samples can't estimate, and walk-forward's IS/OOS windows would be a coin flip. Get more
+    # DATA to clear it (longer period, more instruments, smaller timeframe) — not looser params,
+    # which just curve-fits the trade count up.
     trade_count = run.get("trade_count") or 0
     if trade_count < MIN_TRADES_FOR_STRESS:
         raise HTTPException(
             422,
             f"Stress test needs at least {MIN_TRADES_FOR_STRESS} trades to be meaningful — "
-            f"this run has {trade_count}. Get more trades (longer period, more instruments, "
-            f"or a looser entry filter) before stress testing.",
+            f"this run has {trade_count}. Get more trades from more data (longer period, more "
+            f"instruments, or a smaller timeframe) before stress testing.",
         )
-    do_walk_forward = body.include_walk_forward and trade_count >= MIN_TRADES_FOR_WALK_FORWARD
-    wf_skipped_for_trades = body.include_walk_forward and not do_walk_forward
 
     if body.ruleset_id:
         rs = lab_db.get_ruleset(body.ruleset_id)
@@ -109,7 +108,7 @@ async def trigger_stress_test(body: StressTestCreate):
     if locks[market]:
         raise HTTPException(409, f"A {market} stress test is already running")
 
-    if (do_walk_forward or body.include_sensitivity) and lab_db.has_running_job(runner):
+    if (body.include_walk_forward or body.include_sensitivity) and lab_db.has_running_job(runner):
         raise HTTPException(409, f"An {'MT5' if runner == 'mt5' else 'NT8'} job is already running — walk-forward and sensitivity require the platform to be idle")
 
     st_id = uuid.uuid4().hex[:16]
@@ -125,18 +124,13 @@ async def trigger_stress_test(body: StressTestCreate):
     })
 
     asyncio.create_task(
-        run_stress_test_task(st_id, do_walk_forward, body.include_sensitivity)
+        run_stress_test_task(st_id, body.include_walk_forward, body.include_sensitivity)
     )
 
     # Build time estimate message for the UI
     est_min = 0
     notes = []
-    if wf_skipped_for_trades:
-        notes.append(
-            f"Walk-forward skipped: needs ≥{MIN_TRADES_FOR_WALK_FORWARD} trades "
-            f"(this run has {trade_count}) — its out-of-sample windows would be too small to trust."
-        )
-    if do_walk_forward:
+    if body.include_walk_forward:
         wf_min = _estimate_wf_duration_min(body.walk_forward_windows)
         est_min += wf_min
         notes.append(f"Walk-forward: ~{wf_min} min ({body.walk_forward_windows * 2} backtests)")

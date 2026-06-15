@@ -23,12 +23,10 @@ import { StatusPill } from '@/components/StatusPill'
 // Lazy so klinecharts + the chart fixture only load when the Price chart section opens.
 const ChartPanel = lazy(() => import('@/components/ChartPanel'))
 
-// Stress-test sample-size gates — mirror backend services/stress_tester.py. Below
-// MIN_TRADES_FOR_STRESS the whole test is blocked; below MIN_TRADES_FOR_WALK_FORWARD only
-// Monte Carlo + sensitivity run (walk-forward's IS/OOS windows would be too small to trust).
-// The backend enforces both (422 / skip); these drive the UI affordances so it's explicit.
-const MIN_TRADES_FOR_STRESS = 30
-const MIN_TRADES_FOR_WALK_FORWARD = 100
+// Stress-test sample-size gate — mirror backend services/stress_tester.py. Below this the whole
+// test is blocked (the A-F grade leans on Monte Carlo tail percentiles that small samples can't
+// estimate). Backend enforces it (422); this drives the disabled button so it's explicit.
+const MIN_TRADES_FOR_STRESS = 100
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -1587,11 +1585,7 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
   const rulesetId   = primaryEval?.ruleset_id ?? undefined
 
   const isNativeWF = !!run.optimization_id && run.runner !== 'mt5'
-  // Walk-forward is skipped below the trade floor (its IS/OOS windows would be too small).
-  // The bulk of the runtime is walk-forward, so the estimate drops sharply when it's skipped.
-  const tc         = run.trade_count ?? 0
-  const wfEligible = tc >= MIN_TRADES_FOR_WALK_FORWARD
-  const estMin     = !wfEligible ? 15 : isNativeWF ? 45 : 80
+  const estMin     = isNativeWF ? 45 : 80
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
@@ -1610,18 +1604,9 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
         )}
 
         <p className="text-xs text-text-secondary">
-          {wfEligible
-            ? 'Runs Monte Carlo, walk-forward, and sensitivity analysis.'
-            : 'Runs Monte Carlo and sensitivity analysis.'}
-          {' '}Estimated ~{estMin} min. Platform must be idle.
+          Runs Monte Carlo, walk-forward, and sensitivity analysis.
+          Estimated ~{estMin} min. Platform must be idle.
         </p>
-
-        {!wfEligible && (
-          <p className="text-xs text-warn-text bg-warn-muted/40 border border-warn-text/20 rounded px-2.5 py-2 leading-relaxed">
-            Walk-forward skipped: needs ≥{MIN_TRADES_FOR_WALK_FORWARD} trades (this run has {tc}).
-            Its out-of-sample windows would be 1–2 trades each — not enough to trust.
-          </p>
-        )}
 
         <div className="flex gap-2 pt-2">
           <button
@@ -1629,7 +1614,7 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
               runTest.mutate({
                 run_id: run.run_id,
                 ruleset_id: rulesetId,
-                include_walk_forward: wfEligible,
+                include_walk_forward: true,
                 include_sensitivity: true,
                 num_simulations: 10_000,
                 num_bootstrap: 1_000,
@@ -1916,7 +1901,7 @@ export function BacktestDetail() {
                       disabled={stressBlocked || tooFewForStress}
                       title={
                         tooFewForStress
-                          ? `Needs ≥${MIN_TRADES_FOR_STRESS} trades to stress test — this run has ${tc}. Get more trades first (longer period, more instruments, or a looser filter).`
+                          ? `Needs ≥${MIN_TRADES_FOR_STRESS} trades to stress test — this run has ${tc}. Get more trades from more data first (longer period, more instruments, or a smaller timeframe).`
                           : stressBlocked ? `A ${isMt5 ? 'forex' : 'futures'} stress test is already running` : undefined
                       }
                       className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
