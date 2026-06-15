@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Backtest detail — Layout 2 (Primary + mini rail)</title>
+<link rel="stylesheet" href="proto-shared.css" />
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="b1">TRADING</span> <span class="b2">Operations</span></div>
+  <div class="spacer"></div>
+  <div class="proto-flag">Backtest detail — <b>refined layout</b></div>
+</div>
+
+<div class="page">
+  <div class="crumb">← Backtests</div>
+
+  <div class="head-row">
+    <div>
+      <h1 class="title">London session breakout</h1>
+      <div class="chips">
+        <span class="chip accent">GBPJPY · d</span>
+        <span class="chip">Jun 14, 2021 → Jun 14, 2026</span>
+        <span class="chip">personal_forex_demo</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn">▷ Rerun</button>
+      <button class="btn">Tune</button>
+      <button class="btn accent">Optimize</button>
+      <button class="btn">Stress Test</button>
+    </div>
+  </div>
+
+  <!-- ===== TOP: verdict + one uniform KPI grid; "more" cards reveal under the core ones ===== -->
+  <div class="topgrid" id="topgrid">
+    <div class="verdict">
+      <div class="v-top">
+        <div>
+          <div class="v-acct">Personal Forex Demo Account</div>
+          <div class="v-sub">personal_forex_demo</div>
+        </div>
+        <span class="badge-pass">● PASS</span>
+      </div>
+      <div class="rule"><span class="ok">✓</span><span>Drawdown from peak → 15% from equity peak</span></div>
+      <div class="rule"><span class="ok">✓</span><span>Consecutive capped days → ≤ 3 days in a row at −$500</span></div>
+      <div class="v-foot v-trades">
+        <div class="vt-num">64</div>
+        <div class="vt-meta"><b>Trades</b></div>
+      </div>
+    </div>
+
+    <!-- core KPIs (row 1, always visible) -->
+    <div class="kpi good"><div class="k-label">Net P&amp;L</div><div class="k-val">+$628</div><div class="k-note">5-year sim</div></div>
+    <div class="kpi good"><div class="k-label">Sharpe (ann.)</div><div class="k-val">3.33</div><div class="k-note">excellent</div></div>
+    <div class="kpi good"><div class="k-label">Win Rate</div><div class="k-val">60.9%</div><div class="k-note">strong</div></div>
+    <div class="kpi"><div class="k-label">Max DD</div><div class="k-val">1.1%</div><div class="k-note">$74 peak-to-trough</div></div>
+    <div class="kpi warn"><div class="k-label">Profit Factor</div><div class="k-val">1.74</div><div class="k-note">good</div></div>
+    <div class="kpi warn"><div class="k-label">Calmar Ratio</div><div class="k-val">1.11</div><div class="k-note">marginal</div></div>
+
+    <!-- more metrics (row 2, revealed under the core ones — same card style) -->
+    <div class="kpi more-card"><div class="k-label">Profit Concentration</div><div class="k-val">29%</div><div class="k-note">spread across test</div></div>
+    <div class="kpi more-card good"><div class="k-label">Expectancy</div><div class="k-val">$9.69</div><div class="k-note">per trade</div></div>
+    <div class="kpi more-card"><div class="k-label">Z-Score</div><div class="k-val">1.99</div><div class="k-note">mild streaking</div></div>
+    <div class="kpi more-card"><div class="k-label">Avg Trade</div><div class="k-val">12m</div><div class="k-note">avg duration</div></div>
+    <div class="kpi more-card bad"><div class="k-label">Worst Day</div><div class="k-val">−$99</div><div class="k-note">single worst day</div></div>
+    <div class="kpi more-card warn"><div class="k-label">Worst Streak</div><div class="k-val">3 L</div><div class="k-note">consecutive losers</div></div>
+  </div>
+
+  <button class="more-btn" id="moreBtn"><span class="caret">▶</span> More metrics (6)</button>
+
+  <!-- ===== CHARTS: one big primary + a compact secondary rail ===== -->
+  <div class="sec-label">Charts <span class="hint">— one primary view, supporting charts below</span></div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="seg" id="primaryToggle">
+        <button data-prim="equity" class="active">Equity</button>
+        <button data-prim="price">Price</button>
+        <button data-prim="drawdown">Drawdown</button>
+      </div>
+      <span class="p-sub" id="primSub">steady rising = good · big peak-then-decline = giving back gains</span>
+      <div class="p-right">
+        <span class="toggle" id="regimeToggle"><span class="dot"></span> Regimes</span>
+      </div>
+    </div>
+    <div class="tabpanel active" data-prim-panel="equity">
+      <div class="chart-lg" style="height:520px"><canvas class="chart" data-chart="equity" data-regime="0"></canvas></div>
+    </div>
+    <div class="tabpanel" data-prim-panel="price">
+      <div class="legend" style="margin-bottom:8px">
+        <span><i style="background:#34d399"></i> up</span>
+        <span><i style="background:#f87171"></i> down</span>
+        <span><i style="background:#2dd4bf"></i> breakout level</span>
+      </div>
+      <div class="chart-lg" style="height:520px"><canvas class="chart" data-chart="candles"></canvas></div>
+    </div>
+    <div class="tabpanel" data-prim-panel="drawdown">
+      <div class="chart-lg" style="height:520px"><canvas class="chart" data-chart="drawdown"></canvas></div>
+    </div>
+  </div>
+
+  <!-- secondary rail -->
+  <div class="rail">
+    <div class="panel" style="margin-top:0">
+      <div class="panel-head"><span class="p-title">Daily P&amp;L</span><span class="p-sub">per day</span></div>
+      <div class="chart-sm" style="height:170px"><canvas class="chart" data-chart="daily"></canvas></div>
+    </div>
+    <div class="panel" style="margin-top:0">
+      <div class="panel-head"><span class="p-title">Long vs Short</span><span class="p-sub">direction edge</span></div>
+      <div class="dir-wrap" style="height:170px">
+        <div class="dir-col">
+          <div class="d-side">Long</div>
+          <div class="d-pnl pos">+$118</div>
+          <div class="donut-box sm"><canvas class="chart" data-chart="donut" data-win="25"></canvas></div>
+        </div>
+        <div class="dir-col">
+          <div class="d-side">Short</div>
+          <div class="d-pnl pos">+$502</div>
+          <div class="donut-box sm"><canvas class="chart" data-chart="donut" data-win="36"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- performance by regime -->
+  <div class="panel">
+    <div class="panel-head"><span class="p-title">Performance by Regime</span><span class="p-sub">even spread = robust · all profit from one regime = fragile, regime-dependent edge</span></div>
+    <div class="rg-table" id="regimeTable"></div>
+  </div>
+</div>
+
+<script src="proto-shared.js"></script>
+<script>
+  // expander — reveals the "more" KPI cards as a second row in the same grid
+  const mb = document.getElementById('moreBtn'), topgrid = document.getElementById('topgrid');
+  mb.addEventListener('click', () => {
+    const open = topgrid.classList.toggle('show-more');
+    mb.classList.toggle('open', open);
+    mb.lastChild.textContent = open ? ' Fewer metrics' : ' More metrics (6)';
+  });
+
+  // primary chart toggle (equity / price)
+  const subs = { equity: 'steady rising = good · big peak-then-decline = giving back gains',
+                 price: 'GBPJPY · daily candles with trade context',
+                 drawdown: 'shallow and short = good · deep dips approaching the firm limit = danger' };
+  const tg = document.getElementById('primaryToggle');
+  tg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    tg.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('[data-prim-panel]').forEach(p =>
+      p.classList.toggle('active', p.dataset.primPanel === b.dataset.prim));
+    document.getElementById('primSub').textContent = subs[b.dataset.prim];
+    document.getElementById('regimeToggle').style.visibility = b.dataset.prim === 'equity' ? 'visible' : 'hidden';
+    Proto.drawAll();
+  });
+
+  // regime overlay toggle
+  const rt = document.getElementById('regimeToggle');
+  rt.addEventListener('click', () => {
+    rt.classList.toggle('on');
+    const eq = document.querySelector('[data-chart="equity"]');
+    eq.dataset.regime = rt.classList.contains('on') ? '1' : '0';
+    Proto.draw(eq);
+  });
+
+  Proto.attachHover(document.querySelector('[data-chart="equity"]'));
+  Proto.attachHover(document.querySelector('[data-chart="candles"]'));
+
+  Proto.renderRegime(document.getElementById('regimeTable'));
+  Proto.drawAll();
+</script>
+</body>
+</html>
