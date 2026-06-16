@@ -3,6 +3,8 @@
 - Plain English only. Short sentences.
 - Never use bullet points to explain a simple thing.
 - No preamble. No "Great question." No "Sure, I can help with that."
+- Spawn subagents for routine tasks. Work sequentially unless the task explicitly requires parallel execution.
+
 
 # CLAUDE.md — LWG Capital Monorepo
 

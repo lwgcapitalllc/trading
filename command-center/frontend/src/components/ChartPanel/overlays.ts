@@ -69,8 +69,8 @@ export function registerChartOverlays(): void {
           attrs: { x, y, width, height },
           styles: {
             style: 'stroke_fill',
-            color: withAlpha(color, 0.08),
-            borderColor: withAlpha(color, 0.5),
+            color: withAlpha(color, 0.10),
+            borderColor: withAlpha(color, 0.45),
             borderSize: 1,
             borderStyle: 'solid',
           },
@@ -96,8 +96,8 @@ export function registerChartOverlays(): void {
       const isLong = data.dir !== 'short'
 
       // Long: up-arrow below the entry, pointing up. Short: down-arrow above, pointing down.
-      const HALF = 6
-      const HEIGHT = 9
+      const HALF = 8
+      const HEIGHT = 12
       const GAP = 5
       const apexY = isLong ? entry.y + GAP : entry.y - GAP
       const baseY = isLong ? entry.y + GAP + HEIGHT : entry.y - GAP - HEIGHT
@@ -125,7 +125,7 @@ export function registerChartOverlays(): void {
         // Exit dot.
         {
           type: 'circle',
-          attrs: { x: exit.x, y: exit.y, r: 3 },
+          attrs: { x: exit.x, y: exit.y, r: 4 },
           styles: { style: 'fill', color },
           ignoreEvent: true,
         },
@@ -157,8 +157,8 @@ export function registerChartOverlays(): void {
           attrs: { x, y, width, height },
           styles: {
             style: 'stroke_fill',
-            color: d.fillColor ?? withAlpha(color, 0.06),
-            borderColor: color,
+            color: d.fillColor ?? withAlpha(color, 0.12),
+            borderColor: withAlpha(color, 0.50),
             borderSize: d.lineWidth ?? 1,
             borderStyle: d.lineStyle === 'dashed' ? 'dashed' : 'solid',
             borderDashedValue: [4, 4],

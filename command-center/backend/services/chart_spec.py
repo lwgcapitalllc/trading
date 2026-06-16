@@ -42,9 +42,9 @@ log = logging.getLogger("CHARTSPEC")
 
 # Generic FX market sessions — data, not strategy logic. Times are local to each `tz`.
 _FX_SESSIONS = [
-    {"name": "Tokyo",    "tz": "Asia/Tokyo",        "start": "09:00", "end": "15:00", "color": "#8b5cf6"},
-    {"name": "London",   "tz": "Europe/London",     "start": "08:00", "end": "16:30", "color": "#00e5ff"},
-    {"name": "New York", "tz": "America/New_York",  "start": "08:00", "end": "17:00", "color": "#e6bd6a"},
+    {"name": "Tokyo",    "tz": "Asia/Tokyo",        "start": "09:00", "end": "15:00", "color": "#f472b6"},
+    {"name": "London",   "tz": "Europe/London",     "start": "08:00", "end": "16:30", "color": "#60a5fa"},
+    {"name": "New York", "tz": "America/New_York",  "start": "08:00", "end": "17:00", "color": "#fb923c"},
 ]
 
 
@@ -211,12 +211,8 @@ def _build_structure(
 
     m15_times = [c["time"] for c in m15]
     overlays: list[dict] = []
-    seen: set[int] = set()
-    for tr in trades:
-        day = (tr["entryTime"] // _DAY_MS) * _DAY_MS
-        if day in seen:
-            continue
-        seen.add(day)
+    all_days = sorted({(c["time"] // _DAY_MS) * _DAY_MS for c in m15})
+    for day in all_days:
         a0, a1, t_flat = day + a_start, day + a_end, day + flat
         lo_i = bisect.bisect_left(m15_times, a0)
         hi_i = bisect.bisect_left(m15_times, a1)
@@ -227,7 +223,7 @@ def _build_structure(
         low = min(c["low"] for c in window)
         overlays.append({
             "type": "box", "group": "ORB Range", "t0": a0, "t1": a1,
-            "top": hi, "bottom": low, "style": {"color": "#e6bd6a"},
+            "top": hi, "bottom": low, "style": {"color": "#2dd4bf", "fillColor": "rgba(45,212,191,0.20)", "lineStyle": "dashed"},
         })
         atr = atr_before(day)
         if atr:

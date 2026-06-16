@@ -1418,32 +1418,106 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+function ChartLoadingSkeleton({ height }: { height: number }) {
+  const bars = [42, 61, 38, 74, 55, 88, 49, 72, 64, 91, 46, 68, 81, 53, 77, 59, 84, 44, 70, 57, 86, 51]
+  const barsH = Math.round(height * 0.68)
+  return (
+    <div style={{ height }} className="relative overflow-hidden">
+      {[25, 50, 75].map(p => (
+        <div key={p} className="absolute left-0 right-0 h-px bg-border-subtle/25" style={{ top: `${p}%` }} />
+      ))}
+      <div className="absolute bottom-8 left-2 right-2 flex items-end gap-[3px]" style={{ height: barsH }}>
+        {bars.map((h, i) => (
+          <div
+            key={i}
+            className="flex-1 min-w-0 rounded-sm bg-white/[0.07] animate-pulse"
+            style={{ height: `${h}%`, animationDelay: `${(i * 75) % 700}ms` }}
+          />
+        ))}
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-[12px] text-text-tertiary">Loading chart…</span>
+      </div>
+    </div>
+  )
+}
+
 // Candlestick panel body (klinecharts). Lazy: the chart library and the run's ChartSpec (a heavy
 // candle fetch) load only when `active` — i.e. when the Price tab in the primary chart is selected.
-function PriceChartPanel({ runId, active, height = 520 }: { runId: string; active: boolean; height?: number }) {
-  const { data: spec, isLoading, isError } = useChartSpec(active ? runId : null)
+function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscreenClose }: {
+  runId: string
+  height?: number
+  isFullscreen?: boolean
+  onFullscreenClose?: () => void
+}) {
+  const { data: spec, isLoading, isError } = useChartSpec(runId)
+  const fsBodyRef = useRef<HTMLDivElement>(null)
+  const [fsBodyH, setFsBodyH] = useState(0)
+
+  // Measure the fullscreen body height once the overlay is open.
+  useEffect(() => {
+    if (!isFullscreen) return
+    const el = fsBodyRef.current
+    if (!el) return
+    const update = () => setFsBodyH(el.clientHeight)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [isFullscreen])
+
+  // Escape key to close fullscreen.
+  useEffect(() => {
+    if (!isFullscreen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onFullscreenClose?.() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isFullscreen, onFullscreenClose])
+
+  // When fullscreen: body clientHeight minus py-4 padding (32px), the ChartPanel
+  // header row (~36px including mb-2), and a small buffer. Without subtracting the
+  // header the chart overflows and overflow-hidden clips the klinecharts x-axis.
+  const effectiveH = isFullscreen
+    ? (fsBodyH > 0 ? Math.max(200, fsBodyH - 80) : Math.max(200, window.innerHeight - 140))
+    : height
+
   const box = (msg: string, cls = 'text-text-tertiary') => (
-    <div style={{ height }} className={`flex items-center justify-center text-[12px] ${cls}`}>{msg}</div>
+    <div style={{ height: effectiveH }} className={`flex items-center justify-center text-[12px] ${cls}`}>{msg}</div>
   )
-  if (!active) return null
-  if (isLoading) return box('Loading chart data…')
-  if (isError) return box("Couldn't load chart data for this run.", 'text-neg-text')
-  if (spec && spec.candles.length === 0) return box('No price data available for this run.')
-  if (spec && spec.candles.length > 0) {
-    return (
+
+  // chartBody is always at the same tree position inside the body div so the klinecharts
+  // instance (ChartPanel) is never unmounted when toggling between inline and fullscreen.
+  const chartBody = isLoading ? <ChartLoadingSkeleton height={effectiveH} />
+    : isError ? box("Couldn't load chart data for this run.", 'text-neg-text')
+    : !spec || spec.candles.length === 0 ? box('No price data available for this run.')
+    : (
       <>
-        {spec.baseTimeframe === 'D1' && (
+        {spec.baseTimeframe === 'D1' && !isFullscreen && (
           <div className="mb-2 text-[11px] text-warn-text">
             Showing daily candles — intraday history wasn't available from the data agent for this run.
           </div>
         )}
-        <Suspense fallback={box('Loading chart…')}>
-          <ChartPanel spec={spec} height={height} />
+        <Suspense fallback={<ChartLoadingSkeleton height={effectiveH} />}>
+          <ChartPanel spec={spec} height={effectiveH} />
         </Suspense>
       </>
     )
-  }
-  return box('Loading chart data…')
+
+  return (
+    <div className={isFullscreen ? 'fixed inset-0 z-[90] bg-bg-base flex flex-col' : ''}>
+      {isFullscreen && (
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0">
+          <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Price</span>
+          <button onClick={onFullscreenClose} title="Close (Esc)" className="text-text-tertiary hover:text-text-primary">
+            <X size={18} />
+          </button>
+        </div>
+      )}
+      <div ref={fsBodyRef} className={isFullscreen ? 'flex-1 min-h-0 overflow-hidden px-5 py-4' : ''}>
+        {chartBody}
+      </div>
+    </div>
+  )
 }
 
 // ── Tabbed chart panel + fullscreen modal ────────────────────────────────────
@@ -1519,8 +1593,8 @@ function ChartModal({ title, onClose, render }: { title: string; onClose: () => 
         <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">{title}</span>
         <button onClick={onClose} title="Close (Esc)" className="text-text-tertiary hover:text-text-primary"><X size={18} /></button>
       </div>
-      <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto px-5 py-4" onClick={e => e.stopPropagation()}>
-        {h > 0 && render(Math.max(200, h - 8))}
+      <div ref={bodyRef} className="flex-1 min-h-0 overflow-hidden px-5 py-4" onClick={e => e.stopPropagation()}>
+        {h > 0 && render(Math.max(200, h - 40))}
       </div>
     </div>,
     document.body,
@@ -2084,9 +2158,9 @@ export function BacktestDetail() {
             const primaryTabs: ReadonlyArray<readonly [string, string]> = [['equity', 'Equity'], ['price', 'Price'], ['breakdown', 'Breakdown']]
             const subLabel = (t: string) => <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-secondary mb-1.5">{t}</div>
 
-            // isModal=true means this render call is from inside the fullscreen ChartModal.
-            // For the price chart only ONE klinecharts instance can render correctly at a time:
-            // when the modal is open we deactivate the main-tab instance to avoid a duplicate.
+            // isModal=true means this render call is from inside ChartModal (equity/breakdown only).
+            // Price chart manages its own fullscreen internally via position:fixed so the single
+            // klinecharts instance is never disposed/re-inited during the fullscreen toggle.
             const renderChart = (key: string, h: number, isModal = false): React.ReactNode => {
               switch (key) {
                 case 'equity':
@@ -2097,8 +2171,18 @@ export function BacktestDetail() {
                     </>
                   )
                 case 'price': {
-                  const priceActive = isModal || fullscreenChart !== 'price'
-                  return runId ? <PriceChartPanel runId={runId} active={priceActive} height={h} /> : null
+                  // Price chart manages its own fullscreen via position:fixed — never rendered
+                  // inside ChartModal. isModal=true means we're in a modal (equity/breakdown):
+                  // skip the price chart entirely there.
+                  if (isModal) return null
+                  return runId ? (
+                    <PriceChartPanel
+                      runId={runId}
+                      height={h}
+                      isFullscreen={fullscreenChart === 'price'}
+                      onFullscreenClose={() => setFullscreenChart(null)}
+                    />
+                  ) : null
                 }
                 case 'breakdown': {
                   // All three supporting charts share the tab's height: drawdown full-width on top,
@@ -2198,7 +2282,7 @@ export function BacktestDetail() {
                     {/* Performance by Regime — permanent panel */}
                     {hasRealRegimeTags && <PerformanceByRegimeTable run={run} />}
 
-                    {fullscreenChart && (
+                    {fullscreenChart && fullscreenChart !== 'price' && (
                       <ChartModal
                         title={TITLES[fullscreenChart] ?? 'Chart'}
                         onClose={() => setFullscreenChart(null)}

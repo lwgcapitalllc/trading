@@ -9,6 +9,7 @@
  * only load once the panel's section is opened (page performance).
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Ruler } from 'lucide-react'
 import { IndicatorSeries, dispose, init, type Chart, type KLineData } from 'klinecharts'
 import type { ChartCandle, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
@@ -17,6 +18,27 @@ import { BOX, DAY_BREAK, HLINE, SESSION_BOX, TRADE, VLINE, registerChartOverlays
 import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
 import theme from '@/themes/electric-indigo'
+
+interface MeasureBox {
+  x: number; y: number; w: number; h: number
+  startTs: number; endTs: number
+  startVal: number; endVal: number
+}
+
+function fmtDuration(ms: number): string {
+  const m = Math.round(ms / 60_000)
+  const d = Math.floor(m / 1440)
+  const h = Math.floor((m % 1440) / 60)
+  const min = m % 60
+  if (d > 0) return h > 0 ? `${d}d ${h}h` : `${d}d`
+  if (h > 0) return min > 0 ? `${h}h ${min}m` : `${h}h`
+  return `${min}m`
+}
+
+function fmtDiff(v: number): string {
+  const a = Math.abs(v)
+  return a >= 100 ? a.toFixed(2) : a >= 1 ? a.toFixed(4) : a.toFixed(5)
+}
 
 const CHART_HEIGHT = 520
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -196,6 +218,72 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
   const toggleIndicator = (name: string) => setIndicatorsOn(v => ({ ...v, [name]: !v[name] }))
   const indicatorPanesRef = useRef<Map<string, string>>(new Map()) // indicator name → pane id
 
+  // Measurement tool state — click-click: first click anchors, move previews, second click locks.
+  const [measureMode, setMeasureMode] = useState(false)
+  const [measureBox, setMeasureBox] = useState<MeasureBox | null>(null)
+  const [measureAnchor, setMeasureAnchor] = useState<{ x: number; y: number; ts: number; val: number } | null>(null)
+
+  // Exit measure mode on Escape
+  useEffect(() => {
+    if (!measureMode) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setMeasureMode(false); setMeasureBox(null); setMeasureAnchor(null) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [measureMode])
+
+  const pixelToChart = (clientX: number, clientY: number) => {
+    const el = containerRef.current
+    if (!el || !chartRef.current) return null
+    const rect = el.getBoundingClientRect()
+    const x = clientX - rect.left
+    const y = clientY - rect.top
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = (chartRef.current as any)?.convertFromPixel?.([{ x, y }], { paneId: 'candle_pane' })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = (Array.isArray(res) ? res[0] : res) as any
+    if (!raw) return null
+    // timestamp is null when x maps to a data index outside the loaded range (e.g. y-axis area).
+    // Fall back to the nearest candle's timestamp using the raw dataIndex klinecharts always sets.
+    let ts: number | undefined = raw.timestamp
+    if (!ts && typeof raw.dataIndex === 'number' && raw.dataIndex >= 0) {
+      const idx = Math.min(raw.dataIndex, displayCandles.length - 1)
+      ts = displayCandles[idx]?.time
+    }
+    if (!ts || raw.value == null) return null
+    return { x, y, ts, val: raw.value as number }
+  }
+
+  const handleMeasureClick = (e: React.MouseEvent) => {
+    const pt = pixelToChart(e.clientX, e.clientY)
+    if (!pt) return
+    if (!measureAnchor) {
+      setMeasureAnchor(pt)
+      setMeasureBox(null)
+    } else {
+      setMeasureBox({
+        x: Math.min(measureAnchor.x, pt.x), y: Math.min(measureAnchor.y, pt.y),
+        w: Math.abs(pt.x - measureAnchor.x), h: Math.abs(pt.y - measureAnchor.y),
+        startTs: measureAnchor.ts, endTs: pt.ts,
+        startVal: measureAnchor.val, endVal: pt.val,
+      })
+      setMeasureAnchor(null)
+    }
+  }
+
+  const handleMeasureMove = (e: React.MouseEvent) => {
+    if (!measureAnchor) return
+    const pt = pixelToChart(e.clientX, e.clientY)
+    if (!pt) return
+    setMeasureBox({
+      x: Math.min(measureAnchor.x, pt.x), y: Math.min(measureAnchor.y, pt.y),
+      w: Math.abs(pt.x - measureAnchor.x), h: Math.abs(pt.y - measureAnchor.y),
+      startTs: measureAnchor.ts, endTs: pt.ts,
+      startVal: measureAnchor.val, endVal: pt.val,
+    })
+  }
+
   // Init once on mount; dispose on unmount. Data is applied by the effect below.
   useEffect(() => {
     const el = containerRef.current
@@ -218,7 +306,8 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
 
   // (Re)feed candles whenever the displayed timeframe (or spec) changes — no re-init.
   useEffect(() => {
-    chartRef.current?.applyNewData(candlesToKLine(displayCandles))
+    if (!chartRef.current) return
+    chartRef.current.applyNewData(candlesToKLine(displayCandles))
   }, [displayCandles])
 
   // Rebuild session overlays after data changes (applyNewData can clear them) or a toggle.
@@ -352,6 +441,21 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
     })
   }, [spec.indicators, indicatorsOn])
 
+  // Compute measurement stats — runs on every render when measureBox changes (fast)
+  let measureInfo: { priceDiff: number; pctChange: number; bars: number; durMs: number; up: boolean } | null = null
+  if (measureBox && measureBox.w > 5) {
+    const priceDiff = measureBox.endVal - measureBox.startVal
+    const lo = Math.min(measureBox.startTs, measureBox.endTs)
+    const hi = Math.max(measureBox.startTs, measureBox.endTs)
+    measureInfo = {
+      priceDiff,
+      pctChange: (priceDiff / measureBox.startVal) * 100,
+      bars: displayCandles.filter(c => c.time >= lo && c.time <= hi).length,
+      durMs: Math.abs(measureBox.endTs - measureBox.startTs),
+      up: priceDiff > 0,
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
@@ -380,22 +484,92 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
           )}
         </div>
 
-        {/* Timeframe segmented control (right) */}
-        <div className="inline-flex items-center gap-0.5 rounded-md border border-border-subtle bg-bg-sunken p-0.5">
-          {options.map(tf => (
-            <button
-              key={tf.label}
-              onClick={() => setSelectedMin(tf.min)}
-              className={`px-2.5 py-1 rounded text-[11px] font-mono font-medium transition-colors ${
-                tf.min === selectedMin ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary'
-              }`}
-            >
-              {tf.label}
-            </button>
-          ))}
+        {/* Right side: measure tool + timeframe control */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setMeasureMode(m => !m); setMeasureBox(null); setMeasureAnchor(null) }}
+            title="Click and drag on the chart to measure price range and time"
+            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium border transition-colors ${
+              measureMode
+                ? 'border-accent/60 text-accent bg-accent/10'
+                : 'border-border-subtle text-text-tertiary hover:text-text-secondary'
+            }`}
+          >
+            <Ruler className="w-3 h-3" />
+            Measure
+          </button>
+          <div className="inline-flex items-center gap-0.5 rounded-md border border-border-subtle bg-bg-sunken p-0.5">
+            {options.map(tf => (
+              <button
+                key={tf.label}
+                onClick={() => setSelectedMin(tf.min)}
+                className={`px-2.5 py-1 rounded text-[11px] font-mono font-medium transition-colors ${
+                  tf.min === selectedMin ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary'
+                }`}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-      <div ref={containerRef} className="w-full" style={{ height }} />
+      <div style={{ position: 'relative' }}>
+        <div ref={containerRef} className="w-full" style={{ height }} />
+        {/* Measurement overlay — absorbs pointer events only when measure mode is active */}
+        <div
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            pointerEvents: measureMode ? 'auto' : 'none',
+            cursor: measureMode ? 'crosshair' : 'default',
+          }}
+          onClick={handleMeasureClick}
+          onMouseMove={handleMeasureMove}
+        >
+          {/* Crosshair at anchor position — shows immediately after first click */}
+          {measureAnchor && !measureBox && (
+            <>
+              <div style={{ position: 'absolute', left: measureAnchor.x, top: 0, bottom: 0, width: 1, background: 'rgba(96, 165, 250, 0.55)', pointerEvents: 'none' }} />
+              <div style={{ position: 'absolute', top: measureAnchor.y, left: 0, right: 0, height: 1, background: 'rgba(96, 165, 250, 0.55)', pointerEvents: 'none' }} />
+            </>
+          )}
+          {/* Selection rectangle — always visible when box exists */}
+          {measureBox && (
+            <div style={{
+              position: 'absolute',
+              left: measureBox.x, top: measureBox.y,
+              width: Math.max(measureBox.w, 1), height: Math.max(measureBox.h, 1),
+              background: 'rgba(96, 165, 250, 0.08)',
+              border: '1px solid rgba(96, 165, 250, 0.45)',
+              pointerEvents: 'none',
+            }} />
+          )}
+          {/* Measurement tooltip — only when box is wide enough for meaningful stats */}
+          {measureBox && measureInfo && (
+            <div style={{
+              position: 'absolute',
+              left: measureBox.x + measureBox.w + 6,
+              top: measureBox.y,
+              background: 'rgba(10, 12, 24, 0.92)',
+              border: '1px solid rgba(96, 165, 250, 0.30)',
+              borderRadius: 5,
+              padding: '5px 9px',
+              fontSize: 11,
+              fontFamily: 'ui-monospace, monospace',
+              lineHeight: 1.65,
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              color: '#e2e8f0',
+            }}>
+              <div style={{ color: measureInfo.up ? '#4ade80' : '#f87171' }}>
+                {measureInfo.up ? '↑' : '↓'} {fmtDiff(measureInfo.priceDiff)} pts ({measureInfo.up ? '+' : '−'}{Math.abs(measureInfo.pctChange).toFixed(2)}%)
+              </div>
+              <div style={{ color: '#94a3b8' }}>
+                {measureInfo.bars} bar{measureInfo.bars !== 1 ? 's' : ''} · {fmtDuration(measureInfo.durMs)}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
