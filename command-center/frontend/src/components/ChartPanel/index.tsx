@@ -8,7 +8,7 @@
  * Lazy-mounted: imported via React.lazy from the backtest page so klinecharts + the fixture
  * only load once the panel's section is opened (page performance).
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Ruler } from 'lucide-react'
 import { IndicatorSeries, dispose, init, type Chart, type KLineData } from 'klinecharts'
 import type { ChartCandle, ChartSpec } from './types'
@@ -19,11 +19,12 @@ import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
 import theme from '@/themes/electric-indigo'
 
-interface MeasureBox {
+interface MeasureRect {
   x: number; y: number; w: number; h: number
   startTs: number; endTs: number
   startVal: number; endVal: number
 }
+interface LockedMeasurement extends MeasureRect { id: string }
 
 function fmtDuration(ms: number): string {
   const m = Math.round(ms / 60_000)
@@ -218,16 +219,19 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
   const toggleIndicator = (name: string) => setIndicatorsOn(v => ({ ...v, [name]: !v[name] }))
   const indicatorPanesRef = useRef<Map<string, string>>(new Map()) // indicator name → pane id
 
-  // Measurement tool state — click-click: first click anchors, move previews, second click locks.
+  // Measurement tool: click to anchor, move to preview, click to lock. One at a time.
+  // Clicking a locked measurement clears it. Events bubble from the canvas so klinecharts
+  // crosshair still draws — no capture layer needed.
   const [measureMode, setMeasureMode] = useState(false)
-  const [measureBox, setMeasureBox] = useState<MeasureBox | null>(null)
-  const [measureAnchor, setMeasureAnchor] = useState<{ x: number; y: number; ts: number; val: number } | null>(null)
+  const [measurement, setMeasurement] = useState<LockedMeasurement | null>(null)
+  const [anchor, setAnchor] = useState<{ x: number; y: number; ts: number; val: number } | null>(null)
+  const [liveDrag, setLiveDrag] = useState<MeasureRect | null>(null)
 
-  // Exit measure mode on Escape
+  // Escape: cancel anchor / clear measurement and exit measure mode
   useEffect(() => {
     if (!measureMode) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setMeasureMode(false); setMeasureBox(null); setMeasureAnchor(null) }
+      if (e.key === 'Escape') { setMeasureMode(false); setAnchor(null); setLiveDrag(null); setMeasurement(null) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -255,33 +259,39 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
     return { x, y, ts, val: raw.value as number }
   }
 
-  const handleMeasureClick = (e: React.MouseEvent) => {
+  const makeMeasureRect = (
+    a: { x: number; y: number; ts: number; val: number },
+    b: { x: number; y: number; ts: number; val: number },
+  ): MeasureRect => ({
+    x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+    w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y),
+    startTs: a.ts, endTs: b.ts,
+    startVal: a.val, endVal: b.val,
+  })
+
+  // Click inside the chart wrapper: clear locked measurement → anchor → lock.
+  const handleChartClick = (e: React.MouseEvent) => {
+    if (!measureMode) return
+    if (!anchor && measurement) { setMeasurement(null); return }
     const pt = pixelToChart(e.clientX, e.clientY)
     if (!pt) return
-    if (!measureAnchor) {
-      setMeasureAnchor(pt)
-      setMeasureBox(null)
+    if (!anchor) {
+      setAnchor(pt)
+      setLiveDrag(null)
     } else {
-      setMeasureBox({
-        x: Math.min(measureAnchor.x, pt.x), y: Math.min(measureAnchor.y, pt.y),
-        w: Math.abs(pt.x - measureAnchor.x), h: Math.abs(pt.y - measureAnchor.y),
-        startTs: measureAnchor.ts, endTs: pt.ts,
-        startVal: measureAnchor.val, endVal: pt.val,
-      })
-      setMeasureAnchor(null)
+      const r = makeMeasureRect(anchor, pt)
+      if (r.w >= 5) setMeasurement({ id: crypto.randomUUID(), ...r })
+      setAnchor(null)
+      setLiveDrag(null)
     }
   }
 
-  const handleMeasureMove = (e: React.MouseEvent) => {
-    if (!measureAnchor) return
+  // Move inside the chart wrapper: update live preview while anchor is set.
+  const handleChartMove = (e: React.MouseEvent) => {
+    if (!measureMode || !anchor) return
     const pt = pixelToChart(e.clientX, e.clientY)
     if (!pt) return
-    setMeasureBox({
-      x: Math.min(measureAnchor.x, pt.x), y: Math.min(measureAnchor.y, pt.y),
-      w: Math.abs(pt.x - measureAnchor.x), h: Math.abs(pt.y - measureAnchor.y),
-      startTs: measureAnchor.ts, endTs: pt.ts,
-      startVal: measureAnchor.val, endVal: pt.val,
-    })
+    setLiveDrag(makeMeasureRect(anchor, pt))
   }
 
   // Init once on mount; dispose on unmount. Data is applied by the effect below.
@@ -441,19 +451,40 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
     })
   }, [spec.indicators, indicatorsOn])
 
-  // Compute measurement stats — runs on every render when measureBox changes (fast)
-  let measureInfo: { priceDiff: number; pctChange: number; bars: number; durMs: number; up: boolean } | null = null
-  if (measureBox && measureBox.w > 5) {
-    const priceDiff = measureBox.endVal - measureBox.startVal
-    const lo = Math.min(measureBox.startTs, measureBox.endTs)
-    const hi = Math.max(measureBox.startTs, measureBox.endTs)
-    measureInfo = {
+  const measureStats = (rect: MeasureRect) => {
+    if (rect.w < 5) return null
+    const priceDiff = rect.endVal - rect.startVal
+    const lo = Math.min(rect.startTs, rect.endTs)
+    const hi = Math.max(rect.startTs, rect.endTs)
+    return {
       priceDiff,
-      pctChange: (priceDiff / measureBox.startVal) * 100,
+      pctChange: (priceDiff / rect.startVal) * 100,
       bars: displayCandles.filter(c => c.time >= lo && c.time <= hi).length,
-      durMs: Math.abs(measureBox.endTs - measureBox.startTs),
-      up: priceDiff > 0,
+      durMs: Math.abs(rect.endTs - rect.startTs),
+      up: priceDiff >= 0,
     }
+  }
+
+  const renderMeasRect = (rect: MeasureRect, key: string, strokeOpacity: number) => {
+    const up = rect.endVal >= rect.startVal
+    const fill = up ? 'rgba(38,166,154,0.2)' : 'rgba(239,83,80,0.2)'
+    const stroke = up ? `rgba(38,166,154,${strokeOpacity})` : `rgba(239,83,80,${strokeOpacity})`
+    const textColor = up ? '#26a69a' : '#ef5350'
+    const stats = measureStats(rect)
+    const labelW = 160
+    const containerW = containerRef.current?.clientWidth ?? 9999
+    const labelLeft = rect.x + rect.w + 8 + labelW > containerW ? rect.x - labelW - 8 : rect.x + rect.w + 8
+    return (
+      <Fragment key={key}>
+        <div style={{ position: 'absolute', left: rect.x, top: rect.y, width: Math.max(rect.w, 1), height: Math.max(rect.h, 1), background: fill, border: `1px solid ${stroke}` }} />
+        {stats && (
+          <div style={{ position: 'absolute', left: labelLeft, top: rect.y, width: labelW, background: '#1e222d', border: `1px solid ${stroke}`, borderRadius: 5, padding: '5px 9px', fontSize: 11, fontFamily: 'ui-monospace, monospace', lineHeight: 1.7, whiteSpace: 'nowrap', color: '#e2e8f0' }}>
+            <div style={{ color: textColor }}>{up ? '↑' : '↓'} {up ? '+' : '−'}{fmtDiff(stats.priceDiff)} ({up ? '+' : '−'}{Math.abs(stats.pctChange).toFixed(2)}%)</div>
+            <div style={{ color: '#94a3b8' }}>{stats.bars} bar{stats.bars !== 1 ? 's' : ''} · {fmtDuration(stats.durMs)}</div>
+          </div>
+        )}
+      </Fragment>
+    )
   }
 
   return (
@@ -487,8 +518,8 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
         {/* Right side: measure tool + timeframe control */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { setMeasureMode(m => !m); setMeasureBox(null); setMeasureAnchor(null) }}
-            title="Click and drag on the chart to measure price range and time"
+            onClick={() => { setMeasureMode(m => !m); setAnchor(null); setLiveDrag(null); setMeasurement(null) }}
+            title="Click to anchor, move, click to lock. Click measurement to clear."
             className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium border transition-colors ${
               measureMode
                 ? 'border-accent/60 text-accent bg-accent/10'
@@ -513,61 +544,14 @@ export default function ChartPanel({ spec = AUDJPY_FIXTURE, height = CHART_HEIGH
           </div>
         </div>
       </div>
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative' }} onClick={handleChartClick} onMouseMove={handleChartMove}>
         <div ref={containerRef} className="w-full" style={{ height }} />
-        {/* Measurement overlay — absorbs pointer events only when measure mode is active */}
-        <div
-          style={{
-            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-            pointerEvents: measureMode ? 'auto' : 'none',
-            cursor: measureMode ? 'crosshair' : 'default',
-          }}
-          onClick={handleMeasureClick}
-          onMouseMove={handleMeasureMove}
-        >
-          {/* Crosshair at anchor position — shows immediately after first click */}
-          {measureAnchor && !measureBox && (
-            <>
-              <div style={{ position: 'absolute', left: measureAnchor.x, top: 0, bottom: 0, width: 1, background: 'rgba(96, 165, 250, 0.55)', pointerEvents: 'none' }} />
-              <div style={{ position: 'absolute', top: measureAnchor.y, left: 0, right: 0, height: 1, background: 'rgba(96, 165, 250, 0.55)', pointerEvents: 'none' }} />
-            </>
-          )}
-          {/* Selection rectangle — always visible when box exists */}
-          {measureBox && (
-            <div style={{
-              position: 'absolute',
-              left: measureBox.x, top: measureBox.y,
-              width: Math.max(measureBox.w, 1), height: Math.max(measureBox.h, 1),
-              background: 'rgba(96, 165, 250, 0.08)',
-              border: '1px solid rgba(96, 165, 250, 0.45)',
-              pointerEvents: 'none',
-            }} />
-          )}
-          {/* Measurement tooltip — only when box is wide enough for meaningful stats */}
-          {measureBox && measureInfo && (
-            <div style={{
-              position: 'absolute',
-              left: measureBox.x + measureBox.w + 6,
-              top: measureBox.y,
-              background: 'rgba(10, 12, 24, 0.92)',
-              border: '1px solid rgba(96, 165, 250, 0.30)',
-              borderRadius: 5,
-              padding: '5px 9px',
-              fontSize: 11,
-              fontFamily: 'ui-monospace, monospace',
-              lineHeight: 1.65,
-              whiteSpace: 'nowrap',
-              pointerEvents: 'none',
-              color: '#e2e8f0',
-            }}>
-              <div style={{ color: measureInfo.up ? '#4ade80' : '#f87171' }}>
-                {measureInfo.up ? '↑' : '↓'} {fmtDiff(measureInfo.priceDiff)} pts ({measureInfo.up ? '+' : '−'}{Math.abs(measureInfo.pctChange).toFixed(2)}%)
-              </div>
-              <div style={{ color: '#94a3b8' }}>
-                {measureInfo.bars} bar{measureInfo.bars !== 1 ? 's' : ''} · {fmtDuration(measureInfo.durMs)}
-              </div>
-            </div>
-          )}
+
+        {/* Measurement display layer — pointer-events:none so klinecharts canvas gets all events
+            (crosshair, scrolling, etc.) and our onClick/onMouseMove handlers fire via bubbling */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', zIndex: 1 }}>
+          {measurement && renderMeasRect(measurement, measurement.id, 1)}
+          {liveDrag && renderMeasRect(liveDrag, 'live', 0.85)}
         </div>
       </div>
     </div>

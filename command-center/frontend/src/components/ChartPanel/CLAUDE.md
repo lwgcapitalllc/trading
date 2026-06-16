@@ -86,6 +86,7 @@ here**, so the chart shows exactly what the strategy saw.
   epochs are broker wall-clock, so boundaries fall on `DAY_MS` multiples; the left edge is
   skipped). Separate overlay name from `VLINE` so the two toggle independently. Own toggle.
 - **All layer toggles** use one `ToggleChip` component (colored dot + label).
+- **Measurement tool** (`measureMode` state in `index.tsx`): TradingView-style click-to-anchor → move-to-preview → click-to-lock interaction. One measurement at a time (`measurement: LockedMeasurement | null`). The overlay div uses `pointerEvents: none` so klinecharts canvas receives all mouse events (crosshair stays live); click/mousemove handlers attach to the outer wrapper div and fire via bubbling. Label shows 2 rows: price change in points + percent (direction-colored) and bar count + duration (muted). Clicking anywhere while a measurement is locked clears it. Escape exits measure mode and clears all state.
 - **Decision (2026-06-14):** no per-trade trade table exists on the backtest page yet (trades
   are collapsed into `equity_curve` points — no per-trade entry/exit). Per Aaron, the clickable
   trade list + row→zoom is **deferred to Step 7**, when the real spec emitter provides per-trade
@@ -144,3 +145,4 @@ here**, so the chart shows exactly what the strategy saw.
   boxes + 36 level lines + ATR(14). **Perf:** per-day layers (sessions, day breaks) are scoped to the
   trade days (`tradeDays`) so a 1-year run doesn't create thousands of overlays; capped fallback when a
   spec has no trades.
+- **Step 8 — Measurement tool (done, 2026-06-16).** TradingView-style price/time measurement overlaid on the klinecharts canvas. Click to anchor, move to preview the rectangle, click to lock. One measurement at a time; clicking anywhere while locked clears it; Escape clears and exits measure mode. Crosshair preserved by making the overlay div `pointerEvents: none` — events reach the canvas first then bubble to React handlers. Direction-colored rectangle + 2-row label (points/pips + percent on row 1, bars + duration on row 2). `tsc` clean.
