@@ -397,7 +397,6 @@ async def _handle_complete(
     apply_canonical_sharpe(kpis, daily_pnl)
     # Profit concentration (overfit detector) — null on runs with no positive profit.
     kpis["profit_concentration_pct"] = profit_concentration_pct(daily_pnl)
-
     lab_db.update_run_complete(run_id, kpis, {
         "equity_curve": str(equity_path),
         "trades":       None,

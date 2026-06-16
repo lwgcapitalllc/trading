@@ -347,21 +347,32 @@ def _normalize_mt5_results(raw: dict) -> dict:
     if losses:
         kpis["avg_loss"] = round(sum(losses) / len(losses), 2)
 
-    # Build a timestamp → {direction, profit} map so equity curve points at trade-close
-    # timestamps get direction/profit fields (used by the Long vs Short pie charts).
+    # MT5 emits 2 deal-rows per trade: an entry deal (profit=0, direction=position direction)
+    # and an exit deal (profit=realized P&L, direction=opposite of position direction).
+    # We want equity curve points only at trade CLOSE, labelled with POSITION direction.
+    # Strategy: walk deals in time order, treating profit=0 as entry and profit≠0 as exit;
+    # carry the entry's direction as the position direction to the exit timestamp.
     _DIR = {"buy": "Long", "sell": "Short"}
-    trade_by_ts: dict[str, dict] = {}
-    for t in trades:
-        ts = t.get("time", "")
-        if ts and t.get("direction"):
-            trade_by_ts[ts] = t
+    close_by_ts: dict[str, dict] = {}
+    pending_entry: dict | None = None
+    for t in sorted(trades, key=lambda x: x.get("time", "")):
+        profit = t.get("profit") or 0.0
+        if profit == 0.0:
+            pending_entry = t
+        else:
+            ts = t.get("time", "")
+            if ts:
+                entry_dir = ((pending_entry or {}).get("direction") or t.get("direction") or "").lower()
+                pos_dir   = _DIR.get(entry_dir, entry_dir.capitalize())
+                close_by_ts[ts] = {**t, "direction": pos_dir}
+            pending_entry = None
 
     equity_curve = []
     for i, pt in enumerate(raw.get("equity_curve", [])):
         ep: dict = {"index": i, **pt}
-        td = trade_by_ts.get(pt.get("date", ""))
+        td = close_by_ts.get(pt.get("date", ""))
         if td:
-            ep["direction"] = _DIR.get(td["direction"].lower(), td["direction"].capitalize())
+            ep["direction"] = td["direction"]
             ep["profit"]    = td.get("profit")
             # Per-trade size = MT5 volume (lots). Stored, but NOT a futures-contract count —
             # the contract-cap check treats MT5 as not_applicable.
