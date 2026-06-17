@@ -2,9 +2,9 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLin
 import { C } from '@/themes/chart'
 import type { StressTest } from '@/types'
 
-interface Props { sensitivity: StressTest['sensitivity_summary'] }
+interface Props { sensitivity: StressTest['sensitivity_summary']; height?: number }
 
-export default function SensitivityRadar({ sensitivity }: Props) {
+export default function SensitivityRadar({ sensitivity, height = 252 }: Props) {
   if (!sensitivity || Object.keys(sensitivity).length === 0) return null
 
   // Grid sensitivity (auto-injected from an optimization) carries `degradation` (a PF drop)
@@ -35,7 +35,7 @@ export default function SensitivityRadar({ sensitivity }: Props) {
   const pad = ((hi - lo) || 1) * 0.1
 
   return (
-    <ResponsiveContainer width="100%" height={252}>
+    <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 16, bottom: 26, left: 16 }} layout="vertical">
         <XAxis
           type="number"

@@ -5,9 +5,10 @@ interface Props {
   paths: number[][]
   ruleset?: { max_loss_eod?: number; profit_target?: number } | null
   tradeCount: number
+  height?: number
 }
 
-export default function MonteCarloFan({ paths, ruleset, tradeCount }: Props) {
+export default function MonteCarloFan({ paths, ruleset, tradeCount, height = 276 }: Props) {
   if (!paths || paths.length === 0) return null
 
   // Downsample paths to every Nth trade for readability
@@ -41,7 +42,7 @@ export default function MonteCarloFan({ paths, ruleset, tradeCount }: Props) {
 
   return (
     <div>
-      <ResponsiveContainer width="100%" height={276}>
+      <ResponsiveContainer width="100%" height={height}>
         <LineChart data={transposed} margin={{ top: 8, right: 16, bottom: 20, left: 16 }}>
           <XAxis
             dataKey="index"

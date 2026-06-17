@@ -2,9 +2,9 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Refe
 import { C } from '@/themes/chart'
 import type { WalkForwardWindow } from '@/types'
 
-interface Props { windows: WalkForwardWindow[] }
+interface Props { windows: WalkForwardWindow[]; height?: number }
 
-export default function WalkForwardChart({ windows }: Props) {
+export default function WalkForwardChart({ windows, height = 248 }: Props) {
   if (!windows || windows.length === 0) return null
 
   const data = windows.map(w => ({
@@ -14,7 +14,7 @@ export default function WalkForwardChart({ windows }: Props) {
   }))
 
   return (
-    <ResponsiveContainer width="100%" height={248}>
+    <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 12 }}>
         <XAxis dataKey="window" tick={{ fill: C.axisTick, fontSize: 12 }} tickLine={false} />
         <YAxis

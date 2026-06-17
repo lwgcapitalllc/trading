@@ -1,18 +1,80 @@
-import { Activity } from 'lucide-react'
+import { useState } from 'react'
+import { Activity, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { api } from '@/api/client'
 import { useStressTests } from '@/hooks/useStressTests'
 import { EmptyState } from '@/components/EmptyState'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
+import GradeLegend from '@/components/GradeLegend'
+import { ConfirmDeleteModal } from '@/pages/Backtests'
 
 export function StressTests() {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const { data: tests, isLoading } = useStressTests()
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  const toggleSelectAll = () => {
+    if (!tests) return
+    if (selectedIds.size === tests.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(tests.map(t => t.stress_test_id)))
+  }
+  const allChecked = tests != null && tests.length > 0 && selectedIds.size === tests.length
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true)
+    const ids = Array.from(selectedIds)
+    try {
+      const results = await Promise.allSettled(ids.map(id => api.delete<void>(`/stress-tests/${id}`)))
+      const failed = results.filter(r => r.status === 'rejected').length
+      qc.invalidateQueries({ queryKey: ['stress-tests'] })
+      if (failed === 0) toast.success(`${ids.length} stress test${ids.length !== 1 ? 's' : ''} deleted`)
+      else toast.error(`${ids.length - failed} deleted, ${failed} failed`)
+      setSelectedIds(new Set())
+      setShowBulkConfirm(false)
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
 
   return (
     <div>
-      <div className="flex items-end gap-3 mb-[18px]">
+      <div className="flex items-end justify-between gap-3 mb-[18px]">
         <h1 className="text-h1 font-semibold">Stress Tests</h1>
+        <div className="flex items-center gap-3">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setShowBulkConfirm(true)}
+              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[12px] font-medium bg-neg-muted text-neg-text border border-neg-text/20 hover:bg-neg-text/20 transition-colors"
+            >
+              <Trash2 size={11} />
+              Delete {selectedIds.size}
+            </button>
+          )}
+          {tests && tests.length > 0 && (
+            <span className="text-[13px] text-text-secondary">
+              {`${tests.length} stress test${tests.length !== 1 ? 's' : ''}`}
+            </span>
+          )}
+        </div>
       </div>
+
+      {!isLoading && !!tests?.length && (
+        <div className="mb-4">
+          <GradeLegend />
+        </div>
+      )}
 
       {isLoading && (
         <div className="p-6 text-text-secondary text-sm">Loading…</div>
@@ -31,7 +93,10 @@ export function StressTests() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border-subtle text-left">
-                <th className="pb-2 pt-3 px-4 text-text-tertiary font-medium">Grade</th>
+                <th className="pb-2 pt-3 px-4 w-8">
+                  <input type="checkbox" checked={allChecked} onChange={toggleSelectAll} className="w-3.5 h-3.5 rounded accent-accent cursor-pointer" />
+                </th>
+                <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Grade</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Strategy</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Instrument</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Status</th>
@@ -47,7 +112,15 @@ export function StressTests() {
                   className="border-b border-border-subtle/50 hover:bg-bg-hover cursor-pointer"
                   onClick={() => navigate(`/stress-tests/${t.stress_test_id}`)}
                 >
-                  <td className="py-2 px-4">
+                  <td className="py-2 px-4" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(t.stress_test_id)}
+                      onChange={() => toggleSelect(t.stress_test_id)}
+                      className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+                    />
+                  </td>
+                  <td className="py-2 pr-4">
                     {t.grade
                       ? <RobustnessGradeBadge grade={t.grade} />
                       : <span className="text-text-tertiary text-xs">—</span>
@@ -90,6 +163,16 @@ export function StressTests() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {showBulkConfirm && (
+        <ConfirmDeleteModal
+          count={selectedIds.size}
+          onConfirm={handleBulkDelete}
+          onCancel={() => setShowBulkConfirm(false)}
+          isPending={bulkDeleting}
+          customMessage="This will permanently delete the selected stress tests and all their child runs."
+        />
       )}
     </div>
   )

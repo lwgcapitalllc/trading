@@ -4,9 +4,10 @@ import { C } from '@/themes/chart'
 interface Props {
   distribution: { counts: number[]; edges: number[] }
   maxLoss?: number | null
+  height?: number
 }
 
-export default function DrawdownDistribution({ distribution, maxLoss }: Props) {
+export default function DrawdownDistribution({ distribution, maxLoss, height = 252 }: Props) {
   if (!distribution?.counts) return null
 
   const data = distribution.counts.map((count, i) => ({
@@ -16,7 +17,7 @@ export default function DrawdownDistribution({ distribution, maxLoss }: Props) {
   }))
 
   return (
-    <ResponsiveContainer width="100%" height={252}>
+    <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 16, bottom: 22, left: 12 }}>
         <XAxis
           dataKey="dd"
