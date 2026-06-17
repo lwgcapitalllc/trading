@@ -2,7 +2,17 @@
 //|                                             LondonBreakout.mq5    |
 //|                                                LWG Capital LLC    |
 //+------------------------------------------------------------------+
-// London session breakout — first honest version (v1).
+// London session breakout — spec-faithful build (v2).
+//
+// v1 was bar-close market entry, an ATR range band, and a 1:1 target. v2 keeps
+//   every one of those as the default-OFF behaviour and layers three INDEPENDENT
+//   toggles that each move one piece toward the NexGenAlgo source spec:
+//     PendingEntry    — pending stop OCO entry with a fixed pip buffer
+//     PipRangeFilter  — fixed 15-40 pip range band (vs the ATR band)
+//     BreakEvenMove   — pull the stop to entry at +1R
+//   Each toggle is off by default and orthogonal, so step-4 can measure the
+//   delta of one change at a time. With all three OFF and TargetRR=1.0 the EA
+//   reproduces v1 exactly.
 //
 // Idea: the Asian session (00:00-06:00 GMT) sets a quiet reference range.
 //   At the London open, price often breaks that range and continues in the
@@ -17,8 +27,10 @@
 //   USDJPY, or XAUUSD with nothing changed but the injected layers.
 //   The word "pip" never appears in the logic — distances are points.
 //
-// Entry is BAR-CLOSE, not intrabar pending orders, to stay inside the
-//   trustworthy MT5 data band (Model=1, M5/M15 bar-close).
+// Default entry is BAR-CLOSE market orders, to stay inside the trustworthy MT5
+//   data band (Model=1, M5/M15 bar-close). The PendingEntry toggle switches to
+//   intrabar pending stop orders; the both-sided diagnostic below justified that
+//   on AUDJPY (1 ambiguous day in 1,307 qualifying days — 0.08%).
 //
 // Diagnostic (the point of this run): independent of any trade, count how
 //   often a single M15 bar touches BOTH breakout levels. That is the case a
@@ -46,6 +58,8 @@
 
 #include <Trade\Trade.mqh>
 
+#define MAGIC_NUMBER 20240003
+
 //--- Strategy logic parameters (Layer A — tunable by optimizer) ---
 // Session windows are in GMT. They define the strategy, not the instrument,
 // so they are the same for every pair. Times are "HH:MM".
@@ -60,7 +74,32 @@ input int    AtrPeriod       = 14;        // ATR lookback, on the DAILY timefram
 input double RangeMinAtr     = 0.5;       // skip day if Asian range < this x ATR
 input double RangeMaxAtr     = 1.3;       // skip day if Asian range > this x ATR
 input double BufferAtr       = 0.1;       // breakout buffer = this x ATR beyond the range
-input double TargetRR        = 1.0;       // target as a multiple of the stop distance (1:1)
+input double TargetRR        = 2.0;       // target as a multiple of the stop distance (spec 2:1; v1 used 1.0)
+
+//--- Spec-faithful toggles (each INDEPENDENT, default OFF — measure deltas one at a time) ---
+// All pip distances below are derived from the broker's point size via PipSize();
+// the word "pip" never appears as a hardcoded number in the logic.
+
+// 1. Entry model. OFF = current bar-close market entry using the ATR buffer.
+//    ON  = pending stop orders at the breakout levels (OCO: first fill cancels the
+//          other; both cancelled if neither fills by EntryCutoffGMT). The buffer
+//          switches to a fixed pip distance (BufferPips).
+input bool   PendingEntry    = false;     // false = bar-close market; true = pending stop OCO
+input double BufferPips       = 5.0;      // breakout buffer in pips, used only when PendingEntry=true
+
+// 2. Range filter. OFF = current ATR band (RangeMin/MaxAtr).
+//    ON  = fixed pip band [RangeMinPips, RangeMaxPips]; days inside the
+//          [SweetMinPips, SweetMaxPips] sweet spot are tallied separately (log only).
+input bool   PipRangeFilter  = false;     // false = ATR band; true = fixed pip band
+input double RangeMinPips      = 15.0;    // reject day if Asian range < this (pips)
+input double RangeMaxPips      = 40.0;    // reject day if Asian range > this (pips)
+input double SweetMinPips      = 20.0;    // sweet-spot lower bound (logged, not a gate)
+input double SweetMaxPips      = 35.0;    // sweet-spot upper bound (logged, not a gate)
+
+// 3. Stop management. OFF = fixed stop held until SL/TP/force-flat.
+//    ON  = pull the stop to break-even (entry) once price reaches +1R.
+//          Trailing is intentionally excluded — a separate later test.
+input bool   BreakEvenMove   = false;     // false = no break-even; true = move stop to entry at +1R
 
 //--- Foundational parameters (injected from ruleset — do not modify defaults) ---
 input double f_AccountSize           = -1;   // USD account size for position sizing
@@ -111,10 +150,21 @@ double g_riskAtEntry  = 0;       // USD risk at open; used to classify win/loss 
 double g_balanceAtEntry = 0;
 bool   g_inTrade      = false;
 
+// Pending-order state (PendingEntry mode). 0 = no live order on that side.
+ulong  g_buyStopTicket  = 0;
+ulong  g_sellStopTicket = 0;
+bool   g_pendingPlaced  = false;
+
+// Break-even state (BreakEvenMove mode).
+double g_entryPrice    = 0;       // fill price of the open trade
+double g_initialSlDist = 0;       // price distance entry->stop at open = 1R
+bool   g_beApplied     = false;   // stop already pulled to break-even this trade
+
 // Diagnostic counters (the point of this run).
 int      g_qualifyingDays = 0;   // days the range filter passed (levels live)
 int      g_bothSidedDays  = 0;   // qualifying days with >= 1 both-sided bar
 int      g_bothSidedBars  = 0;   // total both-sided bars across all qualifying days
+int      g_sweetSpotDays  = 0;   // qualifying days whose range fell in the pip sweet spot
 string   g_bothSidedDates[];     // one entry per both-sided day, "YYYY-MM-DD"
 
 //=============================================================================
@@ -172,6 +222,12 @@ double DailyAtr() {
    return atr[0];
 }
 
+// One pip in price terms, derived from the broker — 10 points on 3/5-digit
+// quotes (JPY crosses, 5-digit majors), 1 point otherwise. No hardcoded pip.
+double PipSize() {
+   return ((_Digits == 3 || _Digits == 5) ? 10.0 : 1.0) * _Point;
+}
+
 //=============================================================================
 // FOUNDATIONAL CHECKS
 //=============================================================================
@@ -200,6 +256,12 @@ void ResetForNewDay(const int ymd) {
    g_sellLevel    = 0;
    g_tradedToday  = false;
    g_dayHasBoth   = false;
+
+   CancelPendingOrders();   // safety: drop any pending order left from the prior day
+   g_pendingPlaced = false;
+   g_entryPrice    = 0;
+   g_initialSlDist = 0;
+   g_beApplied     = false;
 
    g_dayStartBalance   = AccountInfoDouble(ACCOUNT_BALANCE);
    g_consecutiveLosses = 0;
@@ -295,6 +357,9 @@ void EnterTrade(const int direction, const double closePrice) {
       g_tradedToday   = true;
       g_balanceAtEntry = AccountInfoDouble(ACCOUNT_BALANCE);
       g_riskAtEntry   = f_AccountSize * (f_RiskPerTradePct / 100.0) * g_riskMultiplier;
+      g_entryPrice    = PositionGetDouble(POSITION_PRICE_OPEN);
+      g_initialSlDist = MathAbs(g_entryPrice - sl);
+      g_beApplied     = false;
       PrintFormat("ENTRY | %s | lots=%.2f | entry=%.5f | SL=%.5f | TP=%.5f | "
                   "stop=%.1f pts | barClose=%.5f",
                   direction == 1 ? "BUY" : "SELL", lots,
@@ -303,6 +368,119 @@ void EnterTrade(const int direction, const double closePrice) {
       g_tradedToday = true;   // do not retry the same break
       PrintFormat("Order failed: retcode=%d %s",
                   trade.ResultRetcode(), trade.ResultRetcodeDescription());
+   }
+}
+
+//=============================================================================
+// PENDING-ORDER ENTRY (PendingEntry mode) + BREAK-EVEN
+//=============================================================================
+
+// Arm both breakout stop orders for a qualifying day. Buy stop at the upper
+// level, sell stop at the lower; first to fill is the trade, the other is
+// cancelled in ManagePending (OCO). Both are cancelled if neither fills by the
+// entry cutoff. Risk-based sizing per side, same as the market path.
+void PlacePendingOrders() {
+   if(!CanEnter()) { Print("Pending: entry gates closed, skipping day."); return; }
+
+   double point    = _Point;
+   double buyPx    = NormalizeDouble(g_buyLevel,  _Digits);
+   double sellPx   = NormalizeDouble(g_sellLevel, _Digits);
+   double buySl    = NormalizeDouble(g_asianLow,  _Digits);
+   double sellSl   = NormalizeDouble(g_asianHigh, _Digits);
+   double buyDist  = buyPx - buySl;
+   double sellDist = sellSl - sellPx;
+   if(buyDist <= 0 || sellDist <= 0) { Print("Pending: invalid stop distance, skipping day."); return; }
+
+   double minStop = (double)SymbolInfoInteger(Symbol(), SYMBOL_TRADE_STOPS_LEVEL) * point;
+   if(buyDist < minStop || sellDist < minStop) {
+      PrintFormat("Pending: stop distance below broker min %.1f pts, skipping day.", minStop / point);
+      return;
+   }
+
+   double buyTp    = NormalizeDouble(buyPx  + buyDist  * TargetRR, _Digits);
+   double sellTp   = NormalizeDouble(sellPx - sellDist * TargetRR, _Digits);
+   double buyLots  = CalcLots(buyDist);
+   double sellLots = CalcLots(sellDist);
+   if(buyLots <= 0 || sellLots <= 0) { Print("Pending: lot size invalid, skipping day."); return; }
+
+   if(trade.BuyStop(buyLots, buyPx, Symbol(), buySl, buyTp, ORDER_TIME_GTC, 0, "LondonBreakout"))
+      g_buyStopTicket = trade.ResultOrder();
+   else
+      PrintFormat("BuyStop failed: retcode=%d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
+
+   if(trade.SellStop(sellLots, sellPx, Symbol(), sellSl, sellTp, ORDER_TIME_GTC, 0, "LondonBreakout"))
+      g_sellStopTicket = trade.ResultOrder();
+   else
+      PrintFormat("SellStop failed: retcode=%d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
+
+   g_pendingPlaced = true;
+   PrintFormat("Pending armed | buyStop=%.5f (sl=%.5f tp=%.5f) | sellStop=%.5f (sl=%.5f tp=%.5f)",
+               buyPx, buySl, buyTp, sellPx, sellSl, sellTp);
+}
+
+// Cancel whichever stop orders are still pending. Safe to call when none exist.
+void CancelPendingOrders() {
+   if(g_buyStopTicket != 0) {
+      if(OrderSelect(g_buyStopTicket)) trade.OrderDelete(g_buyStopTicket);
+      g_buyStopTicket = 0;
+   }
+   if(g_sellStopTicket != 0) {
+      if(OrderSelect(g_sellStopTicket)) trade.OrderDelete(g_sellStopTicket);
+      g_sellStopTicket = 0;
+   }
+}
+
+// Record the position created when a stop order fills, then mark the day traded.
+void RegisterPendingFill() {
+   g_ticket         = PositionGetInteger(POSITION_TICKET);
+   g_inTrade        = true;
+   g_tradedToday    = true;
+   g_balanceAtEntry = AccountInfoDouble(ACCOUNT_BALANCE);
+   g_riskAtEntry    = f_AccountSize * (f_RiskPerTradePct / 100.0) * g_riskMultiplier;
+   g_entryPrice     = PositionGetDouble(POSITION_PRICE_OPEN);
+   g_initialSlDist  = MathAbs(g_entryPrice - PositionGetDouble(POSITION_SL));
+   g_beApplied      = false;
+   PrintFormat("Pending FILL | ticket=%s | entry=%.5f | stop=%.1f pts",
+               IntegerToString(g_ticket), g_entryPrice, g_initialSlDist / _Point);
+}
+
+// Per-tick lifecycle for the pending orders: detect a fill (then OCO-cancel the
+// other side) or cancel both once the entry cutoff passes with no fill.
+void ManagePending() {
+   if(!PendingEntry || g_tradedToday || !g_pendingPlaced) return;
+
+   if(PositionSelect(Symbol()) && PositionGetInteger(POSITION_MAGIC) == MAGIC_NUMBER) {
+      RegisterPendingFill();      // one side filled
+      CancelPendingOrders();      // OCO — drop the other side
+      return;
+   }
+
+   if(GmtMinuteOfDay(TimeCurrent()) >= g_entryCutoffMin) {
+      CancelPendingOrders();      // neither triggered in the window
+      g_pendingPlaced = false;    // done for the day
+   }
+}
+
+// Move the stop to break-even (entry) once price reaches +1R. One-shot per trade.
+void CheckBreakEven() {
+   if(!BreakEvenMove || !g_inTrade || g_beApplied || g_initialSlDist <= 0) return;
+   if(!PositionSelectByTicket(g_ticket)) return;
+
+   long   type = PositionGetInteger(POSITION_TYPE);
+   double open = PositionGetDouble(POSITION_PRICE_OPEN);
+   double tp   = PositionGetDouble(POSITION_TP);
+   double be   = NormalizeDouble(open, _Digits);
+
+   bool reached = (type == POSITION_TYPE_BUY)
+      ? (SymbolInfoDouble(Symbol(), SYMBOL_BID) >= open + g_initialSlDist)
+      : (SymbolInfoDouble(Symbol(), SYMBOL_ASK) <= open - g_initialSlDist);
+   if(!reached) return;
+
+   if(trade.PositionModify(g_ticket, be, tp)) {
+      g_beApplied = true;
+      Print("Break-even: stop pulled to entry at +1R.");
+   } else {
+      PrintFormat("Break-even modify failed: retcode=%d", trade.ResultRetcode());
    }
 }
 
@@ -348,9 +526,9 @@ void WriteDiagnostic() {
    double pct = (g_qualifyingDays > 0)
                 ? 100.0 * (double)g_bothSidedDays / (double)g_qualifyingDays : 0.0;
 
-   PrintFormat("BOTHSIDED_DIAG | symbol=%s | qualifying_days=%d | both_sided_days=%d | "
-               "both_sided_bars=%d | pct_days=%.2f",
-               Symbol(), g_qualifyingDays, g_bothSidedDays, g_bothSidedBars, pct);
+   PrintFormat("BOTHSIDED_DIAG | symbol=%s | qualifying_days=%d | sweet_spot_days=%d | "
+               "both_sided_days=%d | both_sided_bars=%d | pct_days=%.2f",
+               Symbol(), g_qualifyingDays, g_sweetSpotDays, g_bothSidedDays, g_bothSidedBars, pct);
 
    // Persist to the Common\Files folder so the result is retrievable after the
    // tester exits (mirrors how the optimizer surfaces opt_results.csv).
@@ -360,6 +538,7 @@ void WriteDiagnostic() {
    FileWrite(fh, "metric", "value");
    FileWrite(fh, "symbol", Symbol());
    FileWrite(fh, "qualifying_days", g_qualifyingDays);
+   FileWrite(fh, "sweet_spot_days", g_sweetSpotDays);
    FileWrite(fh, "both_sided_days", g_bothSidedDays);
    FileWrite(fh, "both_sided_bars", g_bothSidedBars);
    FileWrite(fh, "pct_days", DoubleToString(pct, 2));
@@ -399,20 +578,55 @@ void OnClosedBar() {
    // --- 2. At the London open, decide the day (range filter) and set levels ---
    if(!g_dayDecided && minute >= g_londonOpenMin && g_asianSeen) {
       g_dayDecided = true;
-      double atr = DailyAtr();
+      double atr   = DailyAtr();
       double range = g_asianHigh - g_asianLow;
-      if(atr <= 0) {
+      double pip   = PipSize();
+
+      // ATR is needed for the ATR band (PipRangeFilter=OFF) and the ATR buffer
+      // (PendingEntry=OFF). When both toggles are ON it is unused.
+      bool needAtr = (!PipRangeFilter) || (!PendingEntry);
+
+      if(needAtr && atr <= 0) {
          Print("Range filter: ATR unavailable, skipping day.");
-      } else if(range < RangeMinAtr * atr || range > RangeMaxAtr * atr) {
-         PrintFormat("Range filter: skip %s | range=%.1f pts | atr=%.1f pts | band=[%.2f,%.2f]xATR",
-                     GmtDateString(bt), range / _Point, atr / _Point, RangeMinAtr, RangeMaxAtr);
       } else {
-         g_dayQualifies = true;
-         g_buyLevel  = g_asianHigh + BufferAtr * atr;
-         g_sellLevel = g_asianLow  - BufferAtr * atr;
-         g_qualifyingDays++;
-         PrintFormat("Levels %s | buy=%.5f | sell=%.5f | range=%.1f pts | atr=%.1f pts",
-                     GmtDateString(bt), g_buyLevel, g_sellLevel, range / _Point, atr / _Point);
+         bool qualifies;
+         if(PipRangeFilter) {
+            double rpips = range / pip;
+            qualifies = (rpips >= RangeMinPips && rpips <= RangeMaxPips);
+            if(!qualifies)
+               PrintFormat("Range filter: skip %s | range=%.1f pips | band=[%.1f,%.1f] pips",
+                           GmtDateString(bt), rpips, RangeMinPips, RangeMaxPips);
+         } else {
+            qualifies = (range >= RangeMinAtr * atr && range <= RangeMaxAtr * atr);
+            if(!qualifies)
+               PrintFormat("Range filter: skip %s | range=%.1f pts | atr=%.1f pts | band=[%.2f,%.2f]xATR",
+                           GmtDateString(bt), range / _Point, atr / _Point, RangeMinAtr, RangeMaxAtr);
+         }
+
+         if(qualifies) {
+            g_dayQualifies = true;
+            double buf  = PendingEntry ? (BufferPips * pip) : (BufferAtr * atr);
+            g_buyLevel  = g_asianHigh + buf;
+            g_sellLevel = g_asianLow  - buf;
+            g_qualifyingDays++;
+
+            // Sweet-spot tally (pip filter only) — logged, never gates the day.
+            if(PipRangeFilter) {
+               double rpips = range / pip;
+               if(rpips >= SweetMinPips && rpips <= SweetMaxPips) {
+                  g_sweetSpotDays++;
+                  PrintFormat("SWEETSPOT %s | range=%.1f pips", GmtDateString(bt), rpips);
+               }
+            }
+
+            PrintFormat("Levels %s | buy=%.5f | sell=%.5f | range=%.1f pts | buffer=%s",
+                        GmtDateString(bt), g_buyLevel, g_sellLevel, range / _Point,
+                        PendingEntry ? "pips" : "atr");
+
+            // Pending-order entry: arm both stop orders now; OCO + cutoff cancel
+            // run per tick in ManagePending().
+            if(PendingEntry) PlacePendingOrders();
+         }
       }
    }
 
@@ -431,8 +645,9 @@ void OnClosedBar() {
          }
       }
 
-      // Entry — bar close past a level, one trade per day, foundational gates pass.
-      if(!g_tradedToday && !g_inTrade && CanEnter()) {
+      // Entry (PendingEntry=OFF) — bar close past a level, one trade per day, gates pass.
+      // With PendingEntry=ON the stop orders own entry, so skip the market path here.
+      if(!PendingEntry && !g_tradedToday && !g_inTrade && CanEnter()) {
          if(cl > g_buyLevel)       EnterTrade(1, cl);
          else if(cl < g_sellLevel) EnterTrade(-1, cl);
       }
@@ -478,15 +693,20 @@ int OnInit() {
       return INIT_FAILED;
    }
 
-   trade.SetExpertMagicNumber(20240003);
+   trade.SetExpertMagicNumber(MAGIC_NUMBER);
    trade.SetDeviationInPoints(f_SlippageTicks);
 
    g_lastBarTime     = 0;
    g_curDayYmd       = 0;
    g_inTrade         = false;
    g_qualifyingDays  = 0;
+   g_sweetSpotDays   = 0;
    g_bothSidedDays   = 0;
    g_bothSidedBars   = 0;
+   g_buyStopTicket   = 0;
+   g_sellStopTicket  = 0;
+   g_pendingPlaced   = false;
+   g_beApplied       = false;
    ArrayResize(g_bothSidedDates, 0);
 
    PrintFormat("LondonBreakout init | symbol=%s | TF=%s | account=%.2f | risk=%.2f%% | "
@@ -502,6 +722,8 @@ void OnDeinit(const int reason) {
 
 void OnTick() {
    CheckForceFlat();                         // time-critical, every tick
+   CheckBreakEven();                         // price-critical; no-op unless BreakEvenMove
+   ManagePending();                          // OCO + cutoff cancel; no-op unless PendingEntry
 
    datetime barTime = iTime(Symbol(), PERIOD_CURRENT, 0);
    if(barTime == g_lastBarTime) return;      // act only on a new completed bar

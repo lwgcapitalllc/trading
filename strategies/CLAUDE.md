@@ -68,7 +68,7 @@ strategies/
 | `VWAP_MR.cs` | VWAP_MR | ninjatrader | VWAP mean reversion — fades extended moves back to VWAP |
 | `Momentum.cs` | Momentum | ninjatrader | EMA-based momentum — trend-following with MA crossover |
 | `MeanReversion.mq5` | MeanReversion | mt5 | BB + RSI + intraday VWAP confluence — ported from `algos/bots/bot_mean_reversion.py` |
-| `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London bar-close breakout, ATR-scaled, 1:1 stop/target, flat 11:00 GMT. Instrument-agnostic v1. Design notes + v1 backtest record: `mt5/LONDON_BREAKOUT.md`. |
+| `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London breakout, instrument-agnostic. v2 layers three default-OFF spec-faithful toggles (PendingEntry OCO, PipRangeFilter, BreakEvenMove) over the v1 bar-close/ATR/1:1 baseline; TargetRR default 2.0. AUDJPY survivor config + per-toggle deltas in `mt5/LONDON_BREAKOUT.md`. |
 
 ---
 
