@@ -88,7 +88,7 @@ function lookupInstrumentName(sym: string): string {
   return ''
 }
 
-const MT5_SYMBOLS = ['EURUSD.s', 'GBPUSD.s', 'USDJPY.s', 'XAUUSD.s', 'GBPJPY.s', 'AUDUSD.s', 'USDCAD.s', 'EURGBP.s']
+const MT5_SYMBOLS = ['EURUSD.s', 'GBPUSD.s', 'USDJPY.s', 'XAUUSD.s', 'GBPJPY.s', 'AUDUSD.s', 'USDCAD.s', 'EURGBP.s', 'AUDJPY.s', 'CADJPY.s']
 
 function getAllowedSymbols(firms: Firm[]): string[] {
   const set = new Set<string>()
