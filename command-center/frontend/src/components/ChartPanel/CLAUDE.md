@@ -2,7 +2,8 @@
 
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
-**Status:** Building in numbered steps (see seed `docs/LWG_chart_panel_seed.md`). **All steps done (1–6, 7a, 7b).** The panel renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, and the ATR indicator.
+**Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
+**Last reviewed:** 2026-06-16
 
 ---
 
@@ -97,52 +98,9 @@ here**, so the chart shows exactly what the strategy saw.
 
 ---
 
-## Step log
+## Status
 
-- **Step 1 — Scaffold (done).** Lazy "Price chart" section on `BacktestDetail`; klinecharts loads
-  candles from `AUDJPY_FIXTURE`; themed from app tokens; grid off. `tsc` clean, `vite build` green,
-  klinecharts confirmed in its own lazy chunk.
-- **Step 2 — Timeframe switch (done).** M5/M15/M30/H1 segmented control resamples base bars up
-  for display (`resample`, epoch-aligned). Verified 288 M5 → 96 M15 / 48 M30 / 24 H1 with correct
-  OHLCV aggregation. Re-applies data without re-init so overlays stay anchored. `tsc`/`build` green.
-- **Step 3 — Sessions (done).** Generic `sessionBox` overlay (`overlays.ts`) hugging the candles
-  in each session window; placement via `sessions.ts` (tz + broker offset, DST-aware — verified
-  London BST↔GMT, Tokyo fixed). Per-session toggles. Overlays rebuilt after data/TF changes.
-  `tsc`/`build` green.
-- **Step 4 — Trades (done, partial by decision).** `TRADE` overlay (entry arrow + dashed line +
-  exit dot) and an all-trades on/off toggle. Trade prices in the fixture derive from candle
-  closes so they sit on the price. Row-click select/zoom + trade list **deferred to Step 7** (no
-  trade table exists yet). `tsc`/`build` green.
-- **Step 5 — Generic overlays (done).** `BOX`/`HLINE`/`VLINE` templates render `spec.overlays`
-  grouped by `group`, each group toggleable. Fixture carries a Range box + Buy/Sell levels +
-  Breakout marker (all derived from candles). `tsc`/`build` green.
-- **Step 6 — Indicators + breaks (done).** `spec.indicators` render as main-pane overlay (EMA) or
-  sub-pane (ATR) from shipped series, each toggleable; values mapped by timestamp (verified base +
-  M15 resample). Daily session breaks as `DAY_BREAK` vlines (verified one interior break in 2-day
-  fixture). Fixture extended to 2 days. `tsc`/`build` green.
-- **Step 7a — Real-spec emitter (done, real intraday).** Backend `services/chart_spec.py` builds a
-  real `ChartSpec` per run (`GET /backtests/runs/{id}/chart-spec`, cached to the run dir).
-  `useChartSpec` fetches it; `PriceChartSection` opens lazily and renders the real spec (loading /
-  error / empty / daily-fallback states). Verified end-to-end on run `7030bcffd856` (USDJPY
-  londonbreakout): **24,785 real M15 candles + 18 trades (real entry/exit prices) + 3 sessions**.
-  **candles + sessions + trades only** — overlays/indicators empty.
-  - **MT5 agent / symbol handling (deployed).** Getting intraday working took: (1) `algos/.../mt5_agent.py`
-    `/historical_data` maps M5/M15/M30 and `symbol_select()`s before `copy_rates_range`; (2) it
-    **preserves symbol case** (`.s` ≠ `.S`) and tries the symbol **as given THEN its root** — broker
-    terminals vary (GBPJPY exists only as `GBPJPY.s`, USDJPY both ways), so always-uppercasing or
-    always-stripping breaks one or the other. `ohlc_fetcher._resolve_mt5_symbol` passes the run's
-    broker symbol through and lets the agent do that fallback. Symbols the terminal genuinely lacks
-    fall back to **daily** (yfinance); the panel shows a note.
-  - **Candle volume cap** (`chart_spec._fit_timeframe`, `_CANDLE_CAP = 35k`): long spans step the base
-    TF up so the payload stays sane — ~1yr stays M15, a 5yr run becomes H1 (~31k bars, not ~125k M15).
-    Verified on `74e32710449c` (GBPJPY 5yr): 31,133 H1 candles + 64 trades + structure + ATR.
-- **Step 7b — Strategy structure (done, backend recompute).** `chart_spec.py` recomputes the
-  London-breakout structure from the M15 candles + daily ATR, matching `strategies/mt5/LondonBreakout.mq5`:
-  per trade-day **Asian range box** (00:00–06:00 GMT high/low) + ATR-buffered **Buy/Sell level** lines
-  (06:00→11:00), plus a daily **ATR(14)** sub-pane indicator. Detected by the `AsianStartGMT` param;
-  other strategies get empty structure until their own emitter logic is added. It's a server-side
-  reconstruction (the chart still computes no strategy structure). Verified on `7030bcffd856`: 18 range
-  boxes + 36 level lines + ATR(14). **Perf:** per-day layers (sessions, day breaks) are scoped to the
-  trade days (`tradeDays`) so a 1-year run doesn't create thousands of overlays; capped fallback when a
-  spec has no trades.
-- **Step 8 — Measurement tool (done, 2026-06-16).** TradingView-style price/time measurement overlaid on the klinecharts canvas. Click to anchor, move to preview the rectangle, click to lock. One measurement at a time; clicking anywhere while locked clears it; Escape clears and exits measure mode. Crosshair preserved by making the overlay div `pointerEvents: none` — events reach the canvas first then bubble to React handlers. Direction-colored rectangle + 2-row label (points/pips + percent on row 1, bars + duration on row 2). `tsc` clean.
+All build steps complete (1–6, 7a, 7b, 8). The panel renders real per-run specs end-to-end:
+candles, timeframe switch, sessions, trades, generic structure overlays (box/hline/vline),
+shipped indicators (EMA main-pane / ATR sub-pane), daily breaks, and the TradingView-style
+measurement tool. Backend emitter is `services/chart_spec.py`. Build history is in git.

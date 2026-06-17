@@ -68,52 +68,7 @@ strategies/
 | `VWAP_MR.cs` | VWAP_MR | ninjatrader | VWAP mean reversion — fades extended moves back to VWAP |
 | `Momentum.cs` | Momentum | ninjatrader | EMA-based momentum — trend-following with MA crossover |
 | `MeanReversion.mq5` | MeanReversion | mt5 | BB + RSI + intraday VWAP confluence — ported from `algos/bots/bot_mean_reversion.py` |
-| `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London bar-close breakout, ATR-scaled, 1:1 stop/target, flat 11:00 GMT. Instrument-agnostic v1. |
-
-### LondonBreakout — design notes (v1)
-
-Fully instrument-agnostic by construction — no symbol, no pip value, no per-pair
-number in the source. Everything per-instrument is read from the broker
-(`SymbolInfo`, points) or expressed as a multiple of the instrument's own daily
-ATR, so the same file runs on AUDJPY, CADJPY, USDJPY, or XAUUSD with nothing
-changed but the injected layers. The word "pip" never appears in the logic.
-
-- **Layer A (tunable, no prefix):** GMT session windows (`AsianStartGMT`,
-  `AsianEndGMT`, `LondonOpenGMT`, `EntryCutoffGMT`, `ForceFlatGMT`) plus the
-  ATR-scaled knobs `AtrPeriod` (daily ATR), `RangeMinAtr`/`RangeMaxAtr` (range
-  filter, default 0.5/1.3 — the pair-agnostic replacement for a fixed pip
-  filter), `BufferAtr` (breakout buffer, default 0.1), and `TargetRR` (1:1).
-- **Foundational (`f_` prefix, injected):** sizing + risk caps + costs from the
-  active ruleset; sentinel `-1` defaults hard-fail at init if injection didn't
-  happen.
-- **Timezone is fully automatic — no knob.** Session windows are GMT; the
-  broker→GMT offset is derived live from the broker (`TimeTradeServer()` −
-  `TimeGMT()`, snapped to the minute) and recomputed on **every bar** by
-  `BrokerToGmtSec()`, so a DST shift on either the broker side or the GMT side
-  is tracked automatically. There is no manual offset param and no dependency on
-  the machine's local clock — it follows whatever broker the EA runs on. (The
-  earlier single-sample-at-init approach was replaced: caching one offset would
-  miss a broker's seasonal DST shift.) On PU Prime the offset is constant across
-  2008–2026, so this changed no results there; its value is correctness on any
-  broker that does observe DST. The same broker-derived principle applies when
-  porting session logic to NT8 (use the instrument's exchange time zone, never a
-  hardcoded offset).
-- **Both-sided-bar diagnostic:** independent of trading, counts M15 bars in the
-  entry window whose high reached the buy level AND low reached the sell level —
-  the case the bar model can't resolve. Written to
-  `Common\Files\LondonBreakout_diag_<symbol>.csv` (FILE_COMMON) and printed in
-  the journal; quantifies how much the bar model is silently guessing.
-
-**v1 honest run — AUDJPY.s, M15, 2008-01-01 → 2026-05-06 (full available
-history), `personal_forex_demo` costs (commission 0; PU Prime forex is
-spread-only), real spread:** net −$965.87, win rate 45.4%, 430 trades, PF 0.84,
-max DD ~$1,023, Sharpe −2.83. Both-sided bars: **2 of 2,065 qualifying days
-(0.10%)** — the bar model is essentially never guessing, so the negative edge is
-real, not an artifact. No edge on AUDJPY at defaults; AUDJPY's Asian session is
-itself active (AUD+JPY are Asian-hours currencies), which undercuts the
-"quiet Asian range → London expansion" premise. Not yet registered in `lab.db`
-(run via the MT5 agent directly; run **Scan Strategies** when the command
-center is next up to register it).
+| `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London bar-close breakout, ATR-scaled, 1:1 stop/target, flat 11:00 GMT. Instrument-agnostic v1. Design notes + v1 backtest record: `mt5/LONDON_BREAKOUT.md`. |
 
 ---
 
@@ -129,10 +84,8 @@ To fix: add a Windows scheduled task (trigger: At startup, run whether user is l
 
 ## References
 
-- Pass 1 spec — foundational config rules and parameter categorization
-- Pass 2 spec — VPS deployment manager (upload, compile, sync-status) for NT8
-- Pass 2.5 spec — this directory's creation; moved from `algos/markets/futures/lucid_flex/`
-- Step 9 — MT5 deployment manager (upload/delete `.mq5`, MetaEditor compile)
+- `mt5/LONDON_BREAKOUT.md` — LondonBreakout design notes + v1 backtest record
+- Build history (foundational config rules, NT8/MT5 deployment manager, this directory's creation) is in git history.
 - `command-center/backend/CLAUDE.md` — scanner, deploy endpoint, sync-status logic, MT5 agent client
 - `command-center/frontend/CLAUDE.md` — Strategies page, Deployed tab, Deploy button, MT5 compile button
 - `algos/markets/fx/tools/mt5_agent.py` — MT5 agent on VPS (port 8766); owns the Experts folder write path

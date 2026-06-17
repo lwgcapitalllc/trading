@@ -50,8 +50,7 @@ Read these in order for full context:
 Cross-subsystem reference documents:
 - `docs/BOT_DEVELOPMENT_METHOD.md` — S.Y.S.T.E.M. six-step process for building and validating any trading bot
 - `docs/LWG_Strategy_Framework.md` — Standing reference for how strategies are designed, layered, built, and graded
-- `docs/archive/Command_Center_Backtest_Engine_Design.md` — Original design doc for the backtests lab (historical reference)
+- `docs/market_structure_engine_spec.md` — Spec for the BOS/SOS market-structure detection engine
 - `docs/LWG_Project_State_Snapshot.md` — Current platform state; hand to new Claude.ai chats
 - `docs/LWG_Roadmap_And_Open_Questions.md` — Forward plan and open questions; hand to new Claude.ai chats
 - `docs/audit/` — Audit and snapshot prompt templates
-- `docs/archive/` — Shipped build specs (historical record)

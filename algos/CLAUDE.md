@@ -41,17 +41,22 @@ Scalper is isolated on its own account (higher volatility). FFT is lowest risk (
 
 ### Shared Components
 
-| File | Role |
-|------|------|
-| `shared_ai_brain.py` | AI engine (Claude API), trade logger, daily performance logger |
-| `shared_calmar.py` | Calmar ratio tracker, morning report |
-| `shared_regime.py` | Market regime classifier shim: 5 labels (TRENDING / TRANSITIONING / RANGING / HIGH_VOLATILITY / LOW_VOLATILITY). Each bot owns its own REGIME_RISK_TABLE. |
-| `shared_scanner.py` | Multi-instrument watchlist scanner — `InstrumentScanner`, `SetupCandidate`, `LearningPhaseGate` |
-| `shared_risk.py` | Dynamic risk / capacity engine — `RiskEngine` tracks portfolio-level risk budget per bot |
-| `mt5_ops.py` | All MT5 operations — symbol-parameterized, single shared instance per bot |
-| `bot_utils.py` | Config loader, logging, path resolver |
-| `launcher.py` | Universal Task Scheduler launcher |
-| `startup_coordinator.py` | Orchestrates bot startup sequence |
+Shared logic lives in `shared/`; the launcher, coordinator, and config loader live in `bots/`.
+
+| File | Location | Role |
+|------|----------|------|
+| `shared_ai_brain.py` | `shared/` | AI engine (Claude API), trade logger, daily performance logger |
+| `shared_calmar.py` | `shared/` | Calmar ratio tracker, morning report |
+| `shared_regime.py` | `shared/` | Market regime classifier shim: 5 labels (TRENDING / TRANSITIONING / RANGING / HIGH_VOLATILITY / LOW_VOLATILITY). Each bot owns its own REGIME_RISK_TABLE. |
+| `shared_scanner.py` | `shared/` | Multi-instrument watchlist scanner — `InstrumentScanner`, `SetupCandidate`, `LearningPhaseGate` |
+| `shared_risk.py` | `shared/` | Dynamic risk / capacity engine — `RiskEngine` tracks portfolio-level risk budget per bot |
+| `mt5_ops.py` | `shared/` | All MT5 operations — symbol-parameterized, single shared instance per bot |
+| `bot_state.py` | `shared/` | Single source of truth read/write for each instance's `bot_state.json` |
+| `notify.py` | `shared/` | Telegram notification helpers (token source of truth) |
+| `structure_engine.py` | `shared/` | BOS/SOS/retracement event detection (used by FFT) |
+| `bot_utils.py` | `bots/` | Config loader, logging, path resolver |
+| `launcher.py` | `bots/` | Universal Task Scheduler launcher |
+| `startup_coordinator.py` | `bots/` | Orchestrates bot startup sequence |
 
 Multi-instrument architecture (Phases 1–5) explained in `docs/ARCHITECTURE.md`.
 
