@@ -55,7 +55,7 @@ strategies/
 2. The strategy's class name must match the filename (MetaEditor requirement)
 3. From the command center, click "Scan Strategies" to register it in the database (scanner picks up `.mq5` via `strategies/mt5/` rglob)
 4. Click "Deploy" next to the strategy on the Strategies tab — routes to the MT5 agent (port 8766) automatically based on `.mq5` extension
-5. Click "Compile MT5" on the Deployed tab — runs `metaeditor64.exe /compile:<experts_dir>`; the button only appears when MT5 files are present
+5. Click "Compile MT5" on the Deployed tab — compiles each `.mq5` explicitly (`metaeditor64.exe /compile:<file> /log`) and verifies success by the produced `.ex5` mtime advancing (MetaEditor's exit code is unreliable; the directory form `/compile:<dir>` could silently no-op and report a stale binary as success). A file whose `.ex5` mtime does not move is a hard failure with the compiler log surfaced — same mtime-polling check the NT8 agent uses on `NinjaTrader.Custom.dll`. The button only appears when MT5 files are present
 6. Run a backtest to verify (requires MT5 terminal running on VPS; strategy Tester ini+set approach)
 
 ---

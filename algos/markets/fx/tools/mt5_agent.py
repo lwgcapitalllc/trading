@@ -1830,7 +1830,36 @@ def _find_metaeditor() -> Optional[Path]:
     return None
 
 
+def _read_compile_log(log_path: Path) -> list[str]:
+    """Read a MetaEditor compile log into stripped non-empty lines.
+
+    MetaEditor writes the log as UTF-16 (with BOM); fall back to UTF-8.
+    Returns [] if the file is missing or unreadable.
+    """
+    if not log_path.is_file():
+        return []
+    try:
+        raw = log_path.read_bytes()
+    except Exception:
+        return []
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        text = raw.decode("utf-16", errors="replace")
+    else:
+        text = raw.decode("utf-8", errors="replace")
+    return [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+
 def _run_compile(job_id: str, experts_dir: Path) -> None:
+    """Compile every .mq5 in the Experts folder and verify each produced a new binary.
+
+    MetaEditor's exit code is unreliable and the directory form (/compile:<dir>)
+    can silently no-op, reporting success while leaving a stale .ex5 in place.
+    So we compile each explicit .mq5 file path (/compile:<file> /log), then confirm
+    the matching .ex5 actually exists and its mtime advanced past the value recorded
+    before the compile. A file whose .ex5 mtime did not move is a hard failure with
+    its compiler log lines surfaced — never reported as success. This mirrors the NT8
+    agent, which confirms its compile by NinjaTrader.Custom.dll mtime.
+    """
     with _lock:
         _compile_jobs[job_id]["started_at"] = time.time()
 
@@ -1844,54 +1873,69 @@ def _run_compile(job_id: str, experts_dir: Path) -> None:
             })
         return
 
-    log_path = experts_dir / f"_compile_{job_id[:8]}.log"
+    sources = sorted(experts_dir.glob("*.mq5"))
+    if not sources:
+        with _lock:
+            _compile_jobs[job_id].update({
+                "status": "failed",
+                "errors": [f"No .mq5 files found in {experts_dir}"],
+                "completed_at": time.time(),
+            })
+        return
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    compiled: list[str] = []
     try:
-        subprocess.run(
-            [str(meta), f"/compile:{experts_dir}", f"/log:{log_path}"],
-            timeout=120,
-            capture_output=True,
-        )
-        errors: list[str] = []
-        warnings: list[str] = []
-        n_errors = 0
-        if log_path.exists():
-            text = log_path.read_text(encoding="utf-8", errors="replace")
-            for line in text.splitlines():
-                ln = line.strip()
-                if not ln:
-                    continue
-                low = ln.lower()
-                m = re.search(r"(\d+)\s+error\(s\)", low)
-                if m:
-                    n_errors += int(m.group(1))
-                mw = re.search(r"(\d+)\s+warning\(s\)", low)
-                if mw and int(mw.group(1)) > 0:
-                    warnings.append(ln)
-                if ": error:" in low:
-                    errors.append(ln)
-        status = "success" if n_errors == 0 else "failed"
+        for src in sources:
+            ex5      = src.with_suffix(".ex5")
+            log_path = src.with_suffix(".log")
+            # Record the binary's mtime BEFORE — this is the authoritative
+            # success signal, not MetaEditor's exit code.
+            pre_mtime = ex5.stat().st_mtime if ex5.exists() else 0.0
+            log_path.unlink(missing_ok=True)
+
+            subprocess.run(
+                [str(meta), f"/compile:{src}", "/log"],
+                timeout=120,
+                capture_output=True,
+            )
+
+            log_lines = _read_compile_log(log_path)
+            post_mtime = ex5.stat().st_mtime if ex5.exists() else 0.0
+
+            if ex5.exists() and post_mtime > pre_mtime:
+                compiled.append(src.name)
+                for ln in log_lines:
+                    if "warning" in ln.lower():
+                        warnings.append(f"{src.name}: {ln}")
+            else:
+                # mtime did not advance → no new binary was produced (silent no-op
+                # or a compile error). Surface the compiler log so the failure is loud.
+                errors.append(f"{src.name}: .ex5 not updated — no new binary produced")
+                err_lines = [ln for ln in log_lines if ": error" in ln.lower() or "error(s)" in ln.lower()]
+                errors.extend(f"{src.name}: {ln}" for ln in (err_lines or log_lines[-10:]))
+
+            log_path.unlink(missing_ok=True)
+
+        status = "success" if not errors else "failed"
         with _lock:
             _compile_jobs[job_id].update({
                 "status": status, "errors": errors,
-                "warnings": warnings, "completed_at": time.time(),
+                "warnings": warnings, "compiled": compiled,
+                "completed_at": time.time(),
             })
-        _alog(f"Compile {job_id[:8]}: {status} — {n_errors} error(s), {len(warnings)} warning(s)")
+        _alog(f"Compile {job_id[:8]}: {status} — {len(compiled)} binary(ies) updated, {len(errors)} error line(s)")
     except subprocess.TimeoutExpired:
         with _lock:
             _compile_jobs[job_id].update({
                 "status": "failed",
-                "errors": ["MetaEditor compile timed out (120 s)"],
+                "errors": errors + ["MetaEditor compile timed out (120 s)"],
                 "completed_at": time.time(),
             })
     except Exception as exc:
         with _lock:
-            _compile_jobs[job_id].update({"status": "failed", "errors": [str(exc)], "completed_at": time.time()})
-    finally:
-        try:
-            if log_path.exists():
-                log_path.unlink()
-        except Exception:
-            pass
+            _compile_jobs[job_id].update({"status": "failed", "errors": errors + [str(exc)], "completed_at": time.time()})
 
 
 @app.route("/files/strategies/<filename>", methods=["POST"])
