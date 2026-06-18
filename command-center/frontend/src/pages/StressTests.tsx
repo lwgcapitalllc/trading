@@ -51,7 +51,14 @@ export function StressTests() {
   return (
     <div>
       <div className="flex items-end justify-between gap-3 mb-[18px]">
-        <h1 className="text-h1 font-semibold">Stress Tests</h1>
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-h1 font-semibold">Stress Tests</h1>
+          {tests && tests.length > 0 && (
+            <span className="text-[12px] font-semibold font-mono tabular-nums px-2 py-[2px] rounded-full bg-accent/15 text-accent">
+              {tests.length}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           {selectedIds.size > 0 && (
             <button
@@ -61,11 +68,6 @@ export function StressTests() {
               <Trash2 size={11} />
               Delete {selectedIds.size}
             </button>
-          )}
-          {tests && tests.length > 0 && (
-            <span className="text-[13px] text-text-secondary">
-              {`${tests.length} stress test${tests.length !== 1 ? 's' : ''}`}
-            </span>
           )}
         </div>
       </div>

@@ -365,6 +365,7 @@ export interface BacktestSummary {
   instrument: string
   status: string
   created_at: string
+  started_at: string | null
   completed_at: string | null
   net_pnl: number | null
   max_drawdown: number | null
@@ -437,6 +438,7 @@ export interface BacktestDetail {
   status: string
   error_message: string | null
   created_at: string
+  started_at: string | null
   completed_at: string | null
   net_pnl: number | null
   max_drawdown: number | null

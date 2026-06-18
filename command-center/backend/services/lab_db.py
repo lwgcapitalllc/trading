@@ -114,6 +114,7 @@ def init_db() -> None:
                 slippage_ticks      INTEGER NOT NULL,
                 status              TEXT NOT NULL,
                 created_at          INTEGER NOT NULL,
+                started_at          INTEGER,
                 completed_at        INTEGER,
                 error_message       TEXT,
                 net_pnl             REAL,
@@ -183,6 +184,10 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_runs_optimization ON backtest_runs(optimization_id)",
             "ALTER TABLE backtest_runs ADD COLUMN source_run_id TEXT",
             "CREATE INDEX IF NOT EXISTS idx_runs_source ON backtest_runs(source_run_id)",
+            # started_at = actual start of the latest attempt (reset on retry), so Duration
+            # measures only the run that produced the result — not back to the first kickoff.
+            "ALTER TABLE backtest_runs ADD COLUMN started_at INTEGER",
+            "UPDATE backtest_runs SET started_at = created_at WHERE started_at IS NULL",
             # rulesets new columns (existing DBs had them as firms)
             "ALTER TABLE rulesets ADD COLUMN eval_cost_usd INTEGER",
             "ALTER TABLE rulesets ADD COLUMN activation_fee_usd INTEGER",
@@ -913,7 +918,8 @@ def list_strategies() -> list[dict]:
         rows = conn.execute("""
             SELECT s.*, COUNT(r.run_id) AS run_count
             FROM strategies s
-            LEFT JOIN backtest_runs r ON r.strategy_id = s.id
+            LEFT JOIN backtest_runs r
+              ON r.strategy_id = s.id AND r.stress_test_id IS NULL
             GROUP BY s.id
             ORDER BY s.name
         """).fetchall()
@@ -925,7 +931,8 @@ def get_strategy(strategy_id: str) -> Optional[dict]:
         row = conn.execute("""
             SELECT s.*, COUNT(r.run_id) AS run_count
             FROM strategies s
-            LEFT JOIN backtest_runs r ON r.strategy_id = s.id
+            LEFT JOIN backtest_runs r
+              ON r.strategy_id = s.id AND r.stress_test_id IS NULL
             WHERE s.id = ?
             GROUP BY s.id
         """, (strategy_id,)).fetchone()
@@ -1294,14 +1301,14 @@ def insert_run(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, evaluate_firms, runner, optimization_id, source_run_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, started_at, evaluate_firms, runner, optimization_id, source_run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
-            data["status"], data["created_at"],
+            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
             json.dumps(data.get("evaluate_rulesets") or data.get("evaluate_firms") or []),
             data.get("runner", "ninjatrader"),
             data.get("optimization_id"),
@@ -1750,14 +1757,15 @@ def insert_run_sweep(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, sweep_id, source_run_id, runner)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, started_at, sweep_id, source_run_id, runner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
-            data["status"], data["created_at"], data["sweep_id"],
+            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
+            data["sweep_id"],
             data.get("source_run_id"), data.get("runner", "ninjatrader"),
         ))
 
@@ -1897,10 +1905,13 @@ def cancel_optimization(optimization_id: str) -> None:
 
 
 def reset_run_for_retry(run_id: str) -> None:
+    # started_at moves to now so Duration counts only this fresh attempt, not back to the
+    # original kickoff (created_at stays put — it still anchors list order + "first created").
+    now = int(time.time())
     with _connect() as conn:
         conn.execute(
-            "UPDATE backtest_runs SET status='running', error_message=NULL, completed_at=NULL WHERE run_id=?",
-            (run_id,),
+            "UPDATE backtest_runs SET status='running', error_message=NULL, completed_at=NULL, started_at=? WHERE run_id=?",
+            (now, run_id),
         )
 
 
@@ -1941,14 +1952,15 @@ def insert_run_optimization(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, optimization_id, runner)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, started_at, optimization_id, runner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
-            data["status"], data["created_at"], data["optimization_id"],
+            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
+            data["optimization_id"],
             data.get("runner", "ninjatrader"),
         ))
 
@@ -2256,14 +2268,14 @@ def insert_run_stress_test_child(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, stress_test_id, walk_forward_window_id, runner)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, started_at, stress_test_id, walk_forward_window_id, runner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
             data["start_date"], data["end_date"],
             data["commission_per_side"], data["slippage_ticks"],
-            data["status"], data["created_at"],
+            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
             data["stress_test_id"], data.get("walk_forward_window_id"),
             data.get("runner", "ninjatrader"),
         ))

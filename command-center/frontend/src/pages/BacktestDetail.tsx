@@ -44,6 +44,43 @@ function pct(n: number | null | undefined): string {
   return `${(n * 100).toFixed(1)}%`
 }
 
+function dollarShort(n: number | null | undefined, signed = false): string {
+  if (n == null) return '—'
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '-' : signed ? '+' : ''
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(1)}k`
+  return `${sign}$${abs.toFixed(0)}`
+}
+
+// Renders a dollar amount at full precision when it fits its cell, abbreviating to $3.2k only when
+// the full string would overflow (the big KPI numbers crop in a narrow card). A hidden full-width
+// copy is measured against the cell, so it switches back to full whenever space returns — e.g. when
+// the grid expands and the value font shrinks. Observes both the cell and the copy to catch either.
+function FitMoney({ n, signed = false }: { n: number | null | undefined; signed?: boolean }) {
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const fullRef = useRef<HTMLSpanElement>(null)
+  const [short, setShort] = useState(false)
+  const full = dollar(n, signed)
+  const abbr = dollarShort(n, signed)
+  useEffect(() => {
+    const wrap = wrapRef.current, fullEl = fullRef.current
+    if (!wrap || !fullEl) return
+    const measure = () => setShort(fullEl.offsetWidth > wrap.offsetWidth + 1)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(wrap)
+    ro.observe(fullEl)
+    return () => ro.disconnect()
+  }, [full])
+  if (n == null) return <span>—</span>
+  return (
+    <span ref={wrapRef} className="block relative whitespace-nowrap">
+      <span ref={fullRef} aria-hidden className="invisible absolute left-0 top-0 whitespace-nowrap pointer-events-none">{full}</span>
+      <span title={short ? full : undefined}>{short ? abbr : full}</span>
+    </span>
+  )
+}
+
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric',
@@ -469,7 +506,7 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
 
   // Core — always shown.
   const core: KMetric[] = [
-    { key: 'netpnl', label: 'Net P&L', value: dollar(run.net_pnl, true), valueCls: pnlCls,
+    { key: 'netpnl', label: 'Net P&L', value: <FitMoney n={run.net_pnl} signed />, valueCls: pnlCls,
       sub: (balance != null && balance > 0 && run.net_pnl != null) ? `${(run.net_pnl / balance * 100).toFixed(1)}% return` : 'net of commissions',
       tooltip: "Total profit or loss after commissions. The bottom line." },
     { key: 'sharpe', label: 'Sharpe (annlzd)', value: sharpe != null ? sharpe.toFixed(2) : '—', valueCls: sharpeCls(sharpe), sub: sharpeSub,
@@ -500,13 +537,13 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
     { key: 'avgtrade', label: 'Avg Trade', value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—',
       sub: run.avg_trade_duration_min != null ? 'avg duration / trade' : 'duration unavailable',
       tooltip: "Average time in a position per trade. The MT5 Strategy Tester report includes only trade-close times (no entry time), so duration can't be computed for MT5 runs — it shows as “—”." },
-    { key: 'worstday', label: 'Worst Day', value: dollar(worstDay), valueCls: worstDay != null && worstDay < 0 ? 'text-neg-text' : '', sub: 'single worst trading day',
+    { key: 'worstday', label: 'Worst Day', value: <FitMoney n={worstDay} />, valueCls: worstDay != null && worstDay < 0 ? 'text-neg-text' : '', sub: 'single worst trading day',
       tooltip: "Largest single-day loss. Compare this to your prop firm's daily loss limit — exceeding it would have failed the challenge that day." },
     { key: 'worststreak', label: 'Worst Streak', value: worstStreak != null ? `${worstStreak} L` : '—', valueCls: worstStreakCls(worstStreak), sub: 'consecutive losing days',
       tooltip: "Longest consecutive run of losing days. Tests whether you'd stay disciplined under sustained drawdown. ≥6 days is a red flag." },
   ]
 
-  const card = (m: KMetric, fixedCard = false, valSize = 'text-[28px] lg:text-[32px]') => (
+  const card = (m: KMetric, fixedCard = false, valSize = 'text-[26px] lg:text-[30px]') => (
     <div
       key={m.key}
       className={`flex flex-col justify-center bg-bg-surface border border-border-subtle border-l-[3px] ${KPI_TONE_BORDER[m.tone ?? kpiTone(m.valueCls)]} rounded-xl px-4 py-3 overflow-hidden transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${fixedCard ? 'h-full min-h-[100px]' : 'min-h-[100px]'}`}
@@ -532,13 +569,13 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
           className="grid grid-cols-6 gap-x-3 shrink-0"
           style={{ height: showMore ? half : fh, gridTemplateRows: '1fr', transition: 'height 0.3s ease' }}
         >
-          {core.map(m => card(m, true, showMore ? 'text-[28px]' : 'text-[44px]'))}
+          {core.map(m => card(m, true, showMore ? 'text-[26px]' : 'text-[38px]'))}
         </div>
         <div
           className="grid grid-cols-6 gap-x-3 shrink-0 overflow-hidden"
           style={{ height: showMore ? half : 0, marginTop: showMore ? gap : 0, gridTemplateRows: '1fr', transition: 'height 0.3s ease, margin-top 0.3s ease' }}
         >
-          {more.map(m => card(m, true, 'text-[28px]'))}
+          {more.map(m => card(m, true, 'text-[26px]'))}
         </div>
       </div>
     )

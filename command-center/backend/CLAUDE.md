@@ -271,7 +271,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 |---|---|---|
 | Smart Money | ✅ Live | Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
 | Bots | ✅ Live | SSH monitor for gold_main/gold_scalper/gold_fft. Global + per-bot risk controls, cap deploy, Telegram users tab. |
-| Strategies | ✅ Live | Registry scanned from `strategies/`. Param schema from `[NinjaScriptProperty]`. `runner` field per strategy. |
+| Strategies | ✅ Live | Registry scanned from `strategies/`. Param schema from `[NinjaScriptProperty]`. `runner` field per strategy. `run_count` (shown in the Strategies-tab Runs column) joins `backtest_runs` with `r.stress_test_id IS NULL` — same "real run" filter as `list_runs`, so hidden stress-test child runs don't inflate the count. |
 | Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 16 seeded rows (4 prop firms + 2 personal demo). Prop rows locked server-side (PATCH/PUT 403); `PATCH` edits the 5 personal rule fields only (`PersonalRulesetPatch` extra=forbid + SQL allowlist). |
 | Backtests | ✅ Live | NT8/MT5 runs via agent. Equity curve, daily P&L, per-ruleset verdicts, Worthiness tier (1/2/3). |
 | Sweeps | ✅ Live | N sequential backtests across instruments (`_MAX_CONCURRENT = 1`). Cancel, retry-all, per-run retry. |
@@ -318,6 +318,7 @@ Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_
 ## DB schema — notable columns
 
 `backtest_runs`:
+- `started_at` — actual start of the LATEST attempt. Set = `created_at` at insert; `reset_run_for_retry` moves it to `now` (while `created_at` stays put to anchor list order). Duration on the Runs page is `completed_at − started_at`, so a retried run measures only the attempt that produced the result, not back to the first kickoff. The live progress-bar timer already reads `progress.json`'s per-attempt `started_at`, so it was never affected.
 - `worthiness_tier`, `worthiness_reason`, `worthiness_computed_against_firm` — see Worthiness scoring above
 - `sweep_id` — child runs of an instrument sweep
 - `optimization_id` — child runs of an optimizer job

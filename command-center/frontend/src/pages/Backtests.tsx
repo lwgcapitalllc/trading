@@ -1,7 +1,7 @@
-import { useState, useCallback, useMemo, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, Fragment, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2, Activity } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
+import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2, Activity, X } from 'lucide-react'
+import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import {
   useBacktestRuns, useLabProgress, useDeleteRun, useRetryBacktest, useRunningVpsJob,
   useOptimizations, useSweeps, useDeleteSweep,
@@ -9,7 +9,7 @@ import {
 import { useRunningStressLock } from '@/hooks/useStressTests'
 import { EmptyState } from '@/components/EmptyState'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { StatusPill } from '@/components/StatusPill'
+import WorthinessLegend from '@/components/WorthinessLegend'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
 import type { BacktestSummary, VerdictSummary, WorthinessScore } from '@/types'
@@ -18,9 +18,11 @@ import type { BacktestSummary, VerdictSummary, WorthinessScore } from '@/types'
 
 type MarketFilter = 'all' | 'futures' | 'forex'
 
-function isForexInstrument(instrument: string): boolean {
-  // Forex pairs are exactly 6 uppercase letters (EURUSD, XAUUSD, etc.)
-  return /^[A-Z]{6}$/.test(instrument.split(' ')[0])
+// Market is derived from the runner, not the instrument name: MT5 = forex, NinjaTrader = futures.
+// Name-matching broke on broker suffixes (e.g. "GBPJPY.s" isn't 6 bare uppercase letters) and on
+// futures contract months ("MYM 06-26"), so forex runs were silently bucketed as futures.
+function runMarket(runner: string | undefined): 'futures' | 'forex' {
+  return runner === 'mt5' ? 'forex' : 'futures'
 }
 
 function MarketFilterBar({ value, onChange }: { value: MarketFilter; onChange: (v: MarketFilter) => void }) {
@@ -174,7 +176,7 @@ type Tab = 'runs' | 'sweeps'
 
 function TabBar({
   active, onChange, runsCount, sweepsCount,
-  runsActive, sweepsActive,
+  runsActive, sweepsActive, right,
 }: {
   active: Tab
   onChange: (t: Tab) => void
@@ -182,13 +184,15 @@ function TabBar({
   sweepsCount?: number
   runsActive?: boolean
   sweepsActive?: boolean
+  right?: ReactNode
 }) {
   const tabs: Array<{ id: Tab; label: string; count?: number; active?: boolean }> = [
     { id: 'runs',          label: 'Runs',          count: runsCount,   active: runsActive },
     { id: 'sweeps',        label: 'Sweeps',        count: sweepsCount, active: sweepsActive },
   ]
   return (
-    <div className="flex gap-0 border-b border-border-subtle mb-6">
+    <div className="flex items-center justify-between border-b border-border-subtle mb-6">
+      <div className="flex gap-0">
       {tabs.map(t => (
         <button
           key={t.id}
@@ -212,25 +216,29 @@ function TabBar({
           )}
         </button>
       ))}
+      </div>
+      {right && <div className="flex items-center gap-2">{right}</div>}
     </div>
   )
 }
 
 // ── Runs tab ──────────────────────────────────────────────────────────────────
 
-function RunsTab() {
+function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketFilter: MarketFilter }) {
   const navigate  = useNavigate()
   const qc        = useQueryClient()
   const progress  = useLabProgress()
   const deleteRun = useDeleteRun()
 
-  const [statusFilter, setStatusFilter]       = useState('')
-  const [marketFilter, setMarketFilter]       = useState<MarketFilter>('all')
   const [selectedIds, setSelectedIds]         = useState<Set<string>>(new Set())
   const [deleteRunId, setDeleteRunId]         = useState<string | null>(null)
   const [bulkDeleting, setBulkDeleting]       = useState(false)
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [collapsedRuns, setCollapsedRuns]     = useState<Set<string>>(new Set())
+
+  // Filters live in the page shell (rendered on the tab row); clear any selection when they change
+  // so the bulk-delete set never references rows that the new filter has hidden.
+  useEffect(() => { setSelectedIds(new Set()) }, [statusFilter, marketFilter])
 
   const toggleCollapse = (id: string) =>
     setCollapsedRuns(prev => {
@@ -239,7 +247,7 @@ function RunsTab() {
       return next
     })
 
-  const { data: allRuns, isLoading, refetch, isFetching } = useBacktestRuns(
+  const { data: allRuns, isLoading } = useBacktestRuns(
     statusFilter ? { status: statusFilter } : undefined
   )
   const { data: allOpts }    = useOptimizations()
@@ -301,7 +309,7 @@ function RunsTab() {
     const base = allRuns
       ?.filter(r => (!r.optimization_id || r.status === 'running') && !(r.sweep_id && linkedSweepIds.has(r.sweep_id)))
       ?.filter(r => !fullBtNestIds.has(r.run_id))
-      ?.filter(r => marketFilter === 'all' || (isForexInstrument(r.instrument) ? 'forex' : 'futures') === marketFilter)
+      ?.filter(r => marketFilter === 'all' || runMarket(r.runner) === marketFilter)
     if (!base) return base
     // Tune iterations are never top-level rows. They nest under their baseline when it's
     // visible; otherwise (e.g. tuned from an optimization winner) they live only in the
@@ -401,54 +409,27 @@ function RunsTab() {
 
   const allChecked = runs != null && runs.length > 0 && selectedIds.size === runs.length
 
-  const hasFilters  = statusFilter !== '' || marketFilter !== 'all'
-  const showControls = (runs?.length ?? 0) > 0 || hasFilters || isRunning
+  const showControls = isRunning || selectedIds.size > 0
 
   return (
     <div>
       {showControls && (
-      <div className="flex items-center justify-between mb-4 gap-3">
-        <div className="flex items-center gap-3">
-          <span className="text-[13px] text-text-secondary">
-            {runs ? `${runs.length} run${runs.length !== 1 ? 's' : ''}` : ''}
+      <div className="flex items-center mb-4 gap-3">
+        {isRunning && (
+          <span className="flex items-center gap-1 text-[12px] text-accent">
+            <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />
+            {progress.data?.pct}% — {progress.data?.strategy_id} {progress.data?.instrument}
           </span>
-          {isRunning && (
-            <span className="flex items-center gap-1 text-[12px] text-accent">
-              <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />
-              {progress.data?.pct}% — {progress.data?.strategy_id} {progress.data?.instrument}
-            </span>
-          )}
-          {selectedIds.size > 0 && (
-            <button
-              onClick={() => setShowBulkConfirm(true)}
-              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[12px] font-medium bg-neg-muted text-neg-text border border-neg-text/20 hover:bg-neg-text/20 transition-colors"
-            >
-              <Trash2 size={11} />
-              Delete {selectedIds.size}
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <MarketFilterBar value={marketFilter} onChange={v => { setMarketFilter(v); setSelectedIds(new Set()) }} />
-          <select
-            value={statusFilter}
-            onChange={e => { setStatusFilter(e.target.value); setSelectedIds(new Set()) }}
-            className="bg-bg-sunken border border-border-subtle rounded-md px-2 py-[5px] text-[12px] text-text-secondary focus:outline-none focus:border-accent transition-colors"
-          >
-            <option value="">All statuses</option>
-            <option value="complete">Complete</option>
-            <option value="running">Running</option>
-            <option value="failed">Failed</option>
-          </select>
+        )}
+        {selectedIds.size > 0 && (
           <button
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-1 text-[12px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-40"
+            onClick={() => setShowBulkConfirm(true)}
+            className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[12px] font-medium bg-neg-muted text-neg-text border border-neg-text/20 hover:bg-neg-text/20 transition-colors"
           >
-            <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} />
-            Refresh
+            <Trash2 size={11} />
+            Delete {selectedIds.size}
           </button>
-        </div>
+        )}
       </div>
       )}
 
@@ -470,6 +451,8 @@ function RunsTab() {
           }
         />
       ) : (
+        <>
+        <div className="mb-4"><WorthinessLegend /></div>
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           <table className="w-full text-[13px]">
             <thead>
@@ -480,13 +463,13 @@ function RunsTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Duration</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Trades</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Win%</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Challenge</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Duration</th>
                 <th className="px-3 py-3 w-16" />
               </tr>
             </thead>
@@ -549,6 +532,7 @@ function RunsTab() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {deleteRunId && (
@@ -740,6 +724,20 @@ function TuneNestRow({ run, colSpan, onClick }: {
   )
 }
 
+// ── Run status indicator ──────────────────────────────────────────────────────
+// Replaces the Status column — a small glyph after the strategy name. A complete run is implied by
+// its metrics being populated, so it only needs a quiet dot; running pulses; failed shows a red ✕.
+
+function RunStatusIcon({ status }: { status: string }) {
+  if (status === 'running')
+    return <span title="Running" className="w-[7px] h-[7px] rounded-full bg-accent animate-pulse flex-shrink-0" />
+  if (status.startsWith('failed'))
+    return <X size={12} className="text-neg-text flex-shrink-0" aria-label="Failed" />
+  if (status === 'complete')
+    return <span title="Complete" className="w-[7px] h-[7px] rounded-full bg-pos-text flex-shrink-0" />
+  return null
+}
+
 // ── Run row ───────────────────────────────────────────────────────────────────
 
 function RunRow({
@@ -782,6 +780,7 @@ function RunRow({
             </button>
           )}
           <span>{run.strategy_name || run.strategy_id}</span>
+          <RunStatusIcon status={run.status} />
           {run.sweep_id && (
             <span
               onClick={e => { e.stopPropagation(); navigate(`/backtests/sweeps/${run.sweep_id}`) }}
@@ -817,15 +816,15 @@ function RunRow({
       <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">
         {run.start_date && run.end_date ? fmtDateRange(run.start_date, run.end_date) : '—'}
       </td>
-      <td className="px-4 py-3"><StatusPill status={run.status} /></td>
       <td className="px-4 py-3"><WorthinessBadge worthiness={run.worthiness} /></td>
-      <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{fmtDuration(run.created_at, run.completed_at)}</td>
+      <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{run.trade_count != null ? run.trade_count.toLocaleString() : '—'}</td>
       <td className={`px-4 py-3 font-mono tabular-nums ${pnlClass}`}>{fmtMoney(run.net_pnl)}</td>
       <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
         {run.max_drawdown != null ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
       </td>
       <td className="px-4 py-3 font-mono tabular-nums">{fmtPct(run.win_rate)}</td>
       <td className="px-4 py-3"><ChallengePills verdicts={run.verdicts} /></td>
+      <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{fmtDuration(run.started_at ?? run.created_at, run.completed_at)}</td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-1 justify-end">
           <button
@@ -878,14 +877,6 @@ function SweepsTab() {
 
   return (
     <div>
-      {sweeps && sweeps.length > 0 && (
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-[13px] text-text-secondary">
-            {`${sweeps.length} sweep${sweeps.length !== 1 ? 's' : ''}`}
-          </span>
-        </div>
-      )}
-
       {isLoading ? (
         <RunsTableSkeleton />
       ) : !sweeps?.length ? (
@@ -993,6 +984,12 @@ export function Backtests() {
   const tab = (searchParams.get('tab') ?? 'runs') as Tab
   const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
 
+  // Runs filters live here so they can sit on the tab row, right-aligned, next to the tabs.
+  const [statusFilter, setStatusFilter] = useState('')
+  const [marketFilter, setMarketFilter] = useState<MarketFilter>('all')
+  const qc = useQueryClient()
+  const runsFetching = useIsFetching({ queryKey: ['lab', 'runs'] }) > 0
+
   const { data: allRuns }   = useBacktestRuns()
   const { data: allSweeps } = useSweeps()
   // A tune iteration is a standalone run with source_run_id; it lives in the workbench, not the Runs list.
@@ -1001,6 +998,31 @@ export function Backtests() {
   const sweepsCount  = allSweeps?.length
   const runsActive   = allRuns?.some(r => !r.sweep_id && !isTuneRun(r) && r.status === 'running')
   const sweepsActive = allSweeps?.some(s => s.status === 'running')
+
+  const runsControls = (
+    <>
+      <MarketFilterBar value={marketFilter} onChange={setMarketFilter} />
+      <select
+        value={statusFilter}
+        onChange={e => setStatusFilter(e.target.value)}
+        className="bg-bg-sunken border border-border-subtle rounded-md px-2 py-[5px] text-[12px] text-text-secondary focus:outline-none focus:border-accent transition-colors"
+      >
+        <option value="">All statuses</option>
+        <option value="complete">Complete</option>
+        <option value="running">Running</option>
+        <option value="failed">Failed</option>
+      </select>
+      <button
+        onClick={() => qc.invalidateQueries({ queryKey: ['lab', 'runs'] })}
+        disabled={runsFetching}
+        title="Re-fetch the runs list from the backend (the list also auto-refreshes on its own)"
+        className="flex items-center gap-1 text-[12px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-40"
+      >
+        <RefreshCw size={13} className={runsFetching ? 'animate-spin' : ''} />
+        Refresh
+      </button>
+    </>
+  )
 
   return (
     <div>
@@ -1012,9 +1034,10 @@ export function Backtests() {
         active={tab} onChange={setTab}
         runsCount={runsCount} sweepsCount={sweepsCount}
         runsActive={runsActive} sweepsActive={sweepsActive}
+        right={tab === 'runs' ? runsControls : undefined}
       />
 
-      {tab === 'runs'   && <RunsTab />}
+      {tab === 'runs'   && <RunsTab statusFilter={statusFilter} marketFilter={marketFilter} />}
       {tab === 'sweeps' && <SweepsTab />}
     </div>
   )

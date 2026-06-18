@@ -240,6 +240,7 @@ function RulesetsView() {
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Profit Target</th>
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD (EOD)</th>
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Consistency</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Min Days</th>
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Contracts</th>
                 </tr>
               </thead>
@@ -247,7 +248,7 @@ function RulesetsView() {
                 {visible.map((brand, bi) => (
                   <>
                     <tr key={`hdr-${brand}`} className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-accent/5 border-l-2 border-l-accent`}>
-                      <td colSpan={7} className="px-4 py-2">
+                      <td colSpan={8} className="px-4 py-2">
                         <span className="text-[12px] font-semibold text-accent uppercase tracking-[0.4px]">{brand}</span>
                       </td>
                     </tr>
@@ -331,6 +332,11 @@ function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?
             <td className="px-4 py-3 font-mono tabular-nums text-pos-text">{ruleset.profit_target > 0 ? `$${ruleset.profit_target.toLocaleString()}` : <span className="text-text-tertiary">—</span>}</td>
             <td className="px-4 py-3 font-mono tabular-nums text-neg-text">${ruleset.max_loss_eod.toLocaleString()}</td>
             <td className="px-4 py-3 text-text-secondary">{ruleset.consistency_pct != null ? `≤ ${ruleset.consistency_pct}%` : <span className="text-text-tertiary">—</span>}</td>
+            <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
+              {ruleset.min_trading_days != null
+                ? <span title="Minimum trading days to pass the evaluation">{ruleset.min_trading_days}</span>
+                : <span className="text-text-tertiary" title="No minimum trading days published for this challenge">—</span>}
+            </td>
           </>
         ) : (
           <>
