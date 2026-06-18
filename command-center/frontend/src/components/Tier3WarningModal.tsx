@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Layers } from 'lucide-react'
+import { AlertTriangle, Layers, ChevronDown, ChevronRight } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { useInstrumentSummary, useTriggerSweep, useRunningVpsJob } from '@/hooks/useLab'
 import type { BacktestDetail, SweepRequest } from '@/types'
@@ -32,6 +33,8 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
   const triggerSweep = useTriggerSweep()
   const { data: runningJob } = useRunningVpsJob()
   const jobBlocked = !!runningJob?.nt8?.running
+  // Untested instruments are the long tail — collapsed by default so tested results stay the focus.
+  const [showUntested, setShowUntested] = useState(false)
 
   const handleSweepUntested = () => {
     if (!summary?.untested_instruments.length) return
@@ -90,36 +93,40 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[560px] shadow-2xl">
+      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[560px] shadow-2xl flex flex-col max-h-[88vh] overflow-hidden">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-border-subtle flex items-center gap-2">
+        <div className="flex-shrink-0 px-5 py-4 border-b border-border-subtle flex items-center gap-2">
           <AlertTriangle size={16} className="text-warn-text" />
           <div className="text-[15px] font-semibold">Optimize Tier 3 Strategy</div>
         </div>
 
-        {/* Body */}
-        <div className="px-5 py-4 space-y-4">
-          <p className="text-[13px] text-text-secondary">
-            This strategy scored{' '}
-            <WorthinessBadge worthiness={run.worthiness} />{' '}
-            on <span className="font-mono text-text-primary">{run.instrument}</span>.{' '}
-            Reason: <span className="text-warn-text">{reason}</span>.
-          </p>
-          <p className="text-[13px] text-text-secondary">
-            Optimizing a Tier 3 strategy rarely changes the outcome. Before optimizing,
-            consider testing other instruments.
-          </p>
+        {/* Body — scrolls within the bounded modal; only the instrument rows scroll, the intro,
+            sub-header, and sweep CTA stay pinned so header + footer never clip. */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-5 py-4 gap-4">
+          <div className="flex-shrink-0 space-y-4">
+            <p className="text-[13px] text-text-secondary">
+              This strategy scored{' '}
+              <WorthinessBadge worthiness={run.worthiness} />{' '}
+              on <span className="font-mono text-text-primary">{run.instrument}</span>.{' '}
+              Reason: <span className="text-warn-text">{reason}</span>.
+            </p>
+            <p className="text-[13px] text-text-secondary">
+              Optimizing a Tier 3 strategy rarely changes the outcome. Before optimizing,
+              consider testing other instruments.
+            </p>
+          </div>
 
           {/* Instrument results table */}
           {isLoading ? (
-            <div className="h-24 bg-bg-hover animate-pulse rounded-md" />
+            <div className="h-24 bg-bg-hover animate-pulse rounded-md flex-shrink-0" />
           ) : summary && (summary.instrument_results.length > 0 || summary.untested_instruments.length > 0) ? (
-            <div className="border border-border-subtle rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-bg-sunken border-b border-border-subtle text-[11px] font-semibold text-text-tertiary uppercase tracking-wide">
+            <div className="flex-1 min-h-0 flex flex-col border border-border-subtle rounded-lg overflow-hidden">
+              <div className="flex-shrink-0 px-3 py-2 bg-bg-sunken border-b border-border-subtle text-[11px] font-semibold text-text-tertiary uppercase tracking-wide">
                 Past results across instruments
               </div>
+              <div className="flex-1 min-h-0 overflow-y-auto">
               <table className="w-full text-[12px]">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-bg-surface">
                   <tr className="border-b border-border-subtle">
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Instrument</th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Worthiness</th>
@@ -154,7 +161,20 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
                       </td>
                     </tr>
                   ))}
-                  {summary.untested_instruments.map(inst => (
+                  {summary.untested_instruments.length > 0 && (
+                    <tr>
+                      <td colSpan={4} className="p-0">
+                        <button
+                          onClick={() => setShowUntested(s => !s)}
+                          className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+                        >
+                          {showUntested ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                          {showUntested ? 'Hide' : 'Show'} {summary.untested_instruments.length} untested instrument{summary.untested_instruments.length !== 1 ? 's' : ''}
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {showUntested && summary.untested_instruments.map(inst => (
                     <tr key={inst} className="hover:bg-bg-hover">
                       <td className="px-3 py-2 font-mono">{inst}</td>
                       <td className="px-3 py-2 text-text-tertiary text-[11px]">not tested</td>
@@ -164,10 +184,11 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
                   ))}
                 </tbody>
               </table>
+              </div>
 
-              {/* Sweep untested button */}
+              {/* Sweep untested button — pinned below the scroll area so it's always reachable */}
               {summary.untested_instruments.length > 0 && (
-                <div className="px-3 py-3 border-t border-border-subtle">
+                <div className="flex-shrink-0 px-3 py-3 border-t border-border-subtle">
                   <button
                     onClick={handleSweepUntested}
                     disabled={triggerSweep.isPending || jobBlocked}
@@ -180,7 +201,7 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
               )}
             </div>
           ) : (
-            <div className="bg-bg-sunken border border-border-subtle rounded-lg px-4 py-3 text-[13px] text-text-secondary">
+            <div className="flex-shrink-0 bg-bg-sunken border border-border-subtle rounded-lg px-4 py-3 text-[13px] text-text-secondary">
               This strategy has only been tested on {run.instrument}. Consider running it on
               other instruments before optimizing.
               <button
@@ -196,7 +217,7 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-border-subtle">
+        <div className="flex-shrink-0 px-5 py-4 border-t border-border-subtle">
           {jobBlocked && (
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20 mb-3">
               <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
