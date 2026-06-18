@@ -53,10 +53,11 @@ strategies/
 
 1. Create `<StrategyName>.mq5` in `strategies/mt5/`
 2. The strategy's class name must match the filename (MetaEditor requirement)
-3. From the command center, click "Scan Strategies" to register it in the database (scanner picks up `.mq5` via `strategies/mt5/` rglob)
-4. Click "Deploy" next to the strategy on the Strategies tab — routes to the MT5 agent (port 8766) automatically based on `.mq5` extension
-5. Click "Compile MT5" on the Deployed tab — compiles each `.mq5` explicitly (`metaeditor64.exe /compile:<file> /log`) and verifies success by the produced `.ex5` mtime advancing (MetaEditor's exit code is unreliable; the directory form `/compile:<dir>` could silently no-op and report a stale binary as success). A file whose `.ex5` mtime does not move is a hard failure with the compiler log surfaced — same mtime-polling check the NT8 agent uses on `NinjaTrader.Custom.dll`. The button only appears when MT5 files are present
-6. Run a backtest to verify (requires MT5 terminal running on VPS; strategy Tester ini+set approach)
+3. **Add the optimizer frame callbacks** (`OnTesterInit`/`OnTester`/`OnTesterPass`/`OnTesterDeinit`) if the strategy should be usable with the native MT5 optimizer. Without them single backtests and walk-forward work, but optimization runs every pass and harvests nothing — `opt_results.csv` is never written and the job fails with "OnTesterPass may not have fired". Copy the block from `MeanReversion.mq5` / `LondonBreakout.mq5`: `OnTesterInit` writes the header, `OnTester` `FrameAdd`s each combo's params + KPIs, `OnTesterPass` `FrameNext`s them into `opt_results.csv`. Column names must match the backend parser — KPI columns `net_pnl/profit_factor/max_drawdown/trade_count/win_trades/sharpe` (`gross_profit/gross_loss` optional) and param columns equal to the optimization grid keys.
+4. From the command center, click "Scan Strategies" to register it in the database (scanner picks up `.mq5` via `strategies/mt5/` rglob)
+5. Click "Deploy" next to the strategy on the Strategies tab — routes to the MT5 agent (port 8766) automatically based on `.mq5` extension
+6. Click "Compile MT5" on the Deployed tab — compiles each `.mq5` explicitly (`metaeditor64.exe /compile:<file> /log`) and verifies success by the produced `.ex5` mtime advancing (MetaEditor's exit code is unreliable; the directory form `/compile:<dir>` could silently no-op and report a stale binary as success). A file whose `.ex5` mtime does not move is a hard failure with the compiler log surfaced — same mtime-polling check the NT8 agent uses on `NinjaTrader.Custom.dll`. The button only appears when MT5 files are present. **The VPS MT5 agent must be running the post-`509d16c` `mt5_agent.py` for this check to apply** — older deployed agents reported compile success without rebuilding; redeploy (`git pull` + agent restart) if `compiled_version` won't advance.
+7. Run a backtest to verify (requires MT5 terminal running on VPS; strategy Tester ini+set approach)
 
 ---
 
@@ -68,7 +69,7 @@ strategies/
 | `VWAP_MR.cs` | VWAP_MR | ninjatrader | VWAP mean reversion — fades extended moves back to VWAP |
 | `Momentum.cs` | Momentum | ninjatrader | EMA-based momentum — trend-following with MA crossover |
 | `MeanReversion.mq5` | MeanReversion | mt5 | BB + RSI + intraday VWAP confluence — ported from `algos/bots/bot_mean_reversion.py` |
-| `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London breakout, instrument-agnostic. v2 layers three default-OFF spec-faithful toggles (PendingEntry OCO, PipRangeFilter, BreakEvenMove) over the v1 bar-close/ATR/1:1 baseline; TargetRR default 2.0. AUDJPY survivor config + per-toggle deltas in `mt5/LONDON_BREAKOUT.md`. |
+| `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London breakout, instrument-agnostic. v2 layers three default-OFF spec-faithful toggles (PendingEntry OCO, PipRangeFilter, BreakEvenMove) over the v1 bar-close/ATR/1:1 baseline; TargetRR default 2.0. Carries the `OnTester*` optimizer callbacks (writes the 5 strategy-logic params + 8 KPI columns to `opt_results.csv`). AUDJPY survivor config + per-toggle deltas in `mt5/LONDON_BREAKOUT.md`. |
 
 ---
 

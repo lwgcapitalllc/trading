@@ -191,6 +191,15 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
         "f_CommissionPerSide":     float(spec.get("commission_per_side") or 0),
         "f_SlippageTicks":         int(spec.get("slippage_ticks") or 0),
     }
+    # Only fill standalone defaults for foundational params THIS strategy declares.
+    # `params` carries the strategy's scanned inputs, so an f_ key absent here is one
+    # the EA doesn't have. Injecting it anyway (e.g. MeanReversion's
+    # f_BrokerToEtOffsetHours into LondonBreakout) writes an unknown input into the
+    # .set file. MT5 tolerates a lone unknown, but a set file polluted with several is
+    # treated as mismatched and the optimizer silently degrades to a single backtest
+    # (no opt_results.csv). Strategies always pass their declared f_ params (at the -1
+    # sentinel before injection), so a missing key genuinely means "not an EA input".
+    foundational_defaults = {k: v for k, v in foundational_defaults.items() if k in params}
     # Drop -1 sentinel f_ values so foundational_defaults fill in instead
     safe_params = {k: v for k, v in params.items()
                    if not (k.startswith("f_") and isinstance(v, (int, float)) and v < 0)}
