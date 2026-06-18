@@ -720,6 +720,76 @@ void OnDeinit(const int reason) {
    WriteDiagnostic();
 }
 
+//=============================================================================
+// OPTIMIZATION CALLBACKS
+// OnTesterInit / OnTester / OnTesterPass / OnTesterDeinit are only invoked when
+// the terminal runs with Optimization=1. OnTick/OnInit still run in each worker;
+// these run in the collecting terminal (Init/Pass/Deinit) and in each worker
+// (OnTester). The command-center MT5 agent reads opt_results.csv after the run;
+// KPI column names must match its parser (_parse_opt_csv / _OPT_KPI_COLS) and
+// the param column names must match the optimization grid keys.
+//=============================================================================
+
+#define OPT_CSV       "opt_results.csv"
+#define OPT_DATA_SIZE 13   // 5 numeric params + 8 KPI stats
+
+void OnTesterInit()
+{
+    int fh = FileOpen(OPT_CSV, FILE_WRITE|FILE_CSV|FILE_ANSI, ',');
+    if(fh == INVALID_HANDLE) { Print("OnTesterInit: cannot create ", OPT_CSV); return; }
+    FileWrite(fh,
+        "AtrPeriod","RangeMinAtr","RangeMaxAtr","BufferAtr","TargetRR",
+        "net_pnl","profit_factor","max_drawdown","trade_count",
+        "win_trades","sharpe","gross_profit","gross_loss");
+    FileClose(fh);
+}
+
+double OnTester()
+{
+    double data[OPT_DATA_SIZE];
+    data[0]  = (double)AtrPeriod;
+    data[1]  = RangeMinAtr;
+    data[2]  = RangeMaxAtr;
+    data[3]  = BufferAtr;
+    data[4]  = TargetRR;
+    data[5]  = TesterStatistics(STAT_PROFIT);
+    data[6]  = TesterStatistics(STAT_PROFIT_FACTOR);
+    data[7]  = TesterStatistics(STAT_EQUITY_DD);
+    data[8]  = TesterStatistics(STAT_TRADES);
+    data[9]  = TesterStatistics(STAT_PROFIT_TRADES);
+    data[10] = TesterStatistics(STAT_SHARPE_RATIO);
+    data[11] = TesterStatistics(STAT_GROSS_PROFIT);
+    data[12] = TesterStatistics(STAT_GROSS_LOSS);
+    FrameAdd("r", 0, data[6], data);
+    return data[6];
+}
+
+void OnTesterPass()
+{
+    ulong  pass = 0;
+    string name;
+    long   id;
+    double value;
+    double data[];
+    while(FrameNext(pass, name, id, value, data))
+    {
+        if(name != "r" || ArraySize(data) < OPT_DATA_SIZE) continue;
+        int fh = FileOpen(OPT_CSV, FILE_WRITE|FILE_READ|FILE_CSV|FILE_ANSI, ',');
+        if(fh == INVALID_HANDLE) continue;
+        FileSeek(fh, 0, SEEK_END);
+        FileWrite(fh,
+            (int)data[0],  data[1],       data[2],       data[3],       data[4],
+            data[5],       data[6],       data[7],       (int)data[8],
+            (int)data[9],  data[10],      data[11],      data[12]);
+        FileClose(fh);
+    }
+}
+
+void OnTesterDeinit()
+{
+    Print("LondonBreakout: optimization complete.");
+}
+
 void OnTick() {
    CheckForceFlat();                         // time-critical, every tick
    CheckBreakEven();                         // price-critical; no-op unless BreakEvenMove
