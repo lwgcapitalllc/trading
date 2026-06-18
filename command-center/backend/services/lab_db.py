@@ -1360,6 +1360,35 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
         ))
 
 
+def _purge_stress_tests_for_runs(conn, run_ids: list[str]) -> None:
+    """Delete any stress tests attached to the given runs, plus each test's child runs/evals.
+
+    stress_tests.run_id is a FOREIGN KEY into backtest_runs, so a run that has a stress test
+    cannot be deleted until that test (and its walk-forward/sensitivity child runs) is gone —
+    otherwise the DELETE raises IntegrityError. A stress test's child runs never carry their own
+    stress test (auto-trigger is parent-only), so a single level of cascade is sufficient.
+    """
+    if not run_ids:
+        return
+    ph = ",".join("?" * len(run_ids))
+    st_ids = [
+        r["stress_test_id"] for r in conn.execute(
+            f"SELECT stress_test_id FROM stress_tests WHERE run_id IN ({ph})", run_ids
+        ).fetchall()
+    ]
+    for st_id in st_ids:
+        child_ids = [
+            r["run_id"] for r in conn.execute(
+                "SELECT run_id FROM backtest_runs WHERE stress_test_id = ?", (st_id,)
+            ).fetchall()
+        ]
+        if child_ids:
+            cph = ",".join("?" * len(child_ids))
+            conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({cph})", child_ids)
+            conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({cph})", child_ids)
+        conn.execute("DELETE FROM stress_tests WHERE stress_test_id = ?", (st_id,))
+
+
 def delete_run(run_id: str) -> bool:
     with _connect() as conn:
         # Cascade: delete associated optimizations (and their child runs/evals)
@@ -1375,6 +1404,8 @@ def delete_run(run_id: str) -> bool:
                 ).fetchall()
             ]
             if child_ids:
+                # A winner backtest among these can carry its own stress test — purge first.
+                _purge_stress_tests_for_runs(conn, child_ids)
                 ph = ",".join("?" * len(child_ids))
                 conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({ph})", child_ids)
                 conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({ph})", child_ids)
@@ -1387,11 +1418,13 @@ def delete_run(run_id: str) -> bool:
             ).fetchall()
         ]
         if sweep_child_ids:
+            _purge_stress_tests_for_runs(conn, sweep_child_ids)
             ph = ",".join("?" * len(sweep_child_ids))
             conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({ph})", sweep_child_ids)
             conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({ph})", sweep_child_ids)
 
-        # Delete the run itself
+        # Delete the run itself (and any stress test attached to it)
+        _purge_stress_tests_for_runs(conn, [run_id])
         conn.execute("DELETE FROM evaluations WHERE run_id = ?", (run_id,))
         cur = conn.execute("DELETE FROM backtest_runs WHERE run_id = ?", (run_id,))
     return cur.rowcount > 0

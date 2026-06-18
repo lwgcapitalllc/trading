@@ -349,35 +349,47 @@ def _normalize_mt5_results(raw: dict) -> dict:
 
     # MT5 emits 2 deal-rows per trade: an entry deal (profit=0, direction=position direction)
     # and an exit deal (profit=realized P&L, direction=opposite of position direction).
-    # We want equity curve points only at trade CLOSE, labelled with POSITION direction.
-    # Strategy: walk deals in time order, treating profit=0 as entry and profit≠0 as exit;
-    # carry the entry's direction as the position direction to the exit timestamp.
+    # Build ONE equity point per CLOSED trade by accumulating realized P&L, rather than
+    # overlaying direction onto the agent's raw balance curve by timestamp. Timestamp-matching
+    # was lossy: MT5 timestamps are minute-resolution, so two trades closing in the same minute
+    # collapsed onto one point and the breakdown undercounted (long+short < trade_count).
+    # Walk deals in time order, treating profit==0 as an entry (carries the position direction)
+    # and profit!=0 as the exit that closes it. One directional point per exit ⇒ long+short
+    # always equals trade_count. Pending entries are held in a FIFO queue so overlapping
+    # positions (two opened before either closes) pair first-opened-first-closed instead of
+    # the later entry clobbering the earlier; for one-at-a-time strategies the queue never
+    # exceeds depth 1, so this matches simple alternating entry/exit exactly.
     _DIR = {"buy": "Long", "sell": "Short"}
-    close_by_ts: dict[str, dict] = {}
-    pending_entry: dict | None = None
+    _OPP = {"buy": "sell", "sell": "buy"}
+    raw_curve = raw.get("equity_curve", [])
+    opening   = raw_curve[0].get("equity", 0.0) if raw_curve else 0.0
+    start_ts  = raw_curve[0].get("date", "")    if raw_curve else ""
+
+    equity_curve: list[dict] = [{"index": 0, "date": start_ts, "equity": opening}]
+    balance = opening
+    pending_entries: list[dict] = []
     for t in sorted(trades, key=lambda x: x.get("time", "")):
         profit = t.get("profit") or 0.0
         if profit == 0.0:
-            pending_entry = t
-        else:
-            ts = t.get("time", "")
-            if ts:
-                entry_dir = ((pending_entry or {}).get("direction") or t.get("direction") or "").lower()
-                pos_dir   = _DIR.get(entry_dir, entry_dir.capitalize())
-                close_by_ts[ts] = {**t, "direction": pos_dir}
-            pending_entry = None
-
-    equity_curve = []
-    for i, pt in enumerate(raw.get("equity_curve", [])):
-        ep: dict = {"index": i, **pt}
-        td = close_by_ts.get(pt.get("date", ""))
-        if td:
-            ep["direction"] = td["direction"]
-            ep["profit"]    = td.get("profit")
+            pending_entries.append(t)
+            continue
+        # Position direction comes from the entry deal; if no entry is pending, the exit deal's
+        # direction is the opposite of the position direction, so invert it as a fallback.
+        entry = pending_entries.pop(0) if pending_entries else None
+        entry_dir = (entry or {}).get("direction", "").lower()
+        if not entry_dir:
+            entry_dir = _OPP.get((t.get("direction") or "").lower(), (t.get("direction") or "").lower())
+        balance = round(balance + profit, 2)
+        equity_curve.append({
+            "index":     len(equity_curve),
+            "date":      t.get("time", ""),
+            "equity":    balance,
+            "direction": _DIR.get(entry_dir, entry_dir.capitalize()),
+            "profit":    profit,
             # Per-trade size = MT5 volume (lots). Stored, but NOT a futures-contract count —
             # the contract-cap check treats MT5 as not_applicable.
-            ep["size"]      = td.get("volume")
-        equity_curve.append(ep)
+            "size":      t.get("volume"),
+        })
 
     return {
         "kpis":         kpis,
