@@ -438,7 +438,13 @@ async def run_native_optimization(optimization_id: str) -> None:
     for k, v in (strategy.get("default_params") or {}).items():
         if k not in param_ranges:
             fixed_params[k] = v
-    if firm:
+    # Foundational injection is NinjaScript-only — MQL5 strategies have no
+    # [Category("Foundational")] inputs, so injecting NT8 params (AccountSize,
+    # EarliestEntryTimeET, DaysOfWeekAllowed, ...) pollutes the MT5 .set file with
+    # parameters the EA doesn't declare. MT5 then treats the set file as mismatched
+    # and silently runs a single backtest instead of the optimization (no
+    # opt_results.csv). Mirror trigger_backtest, which forces no injection for mt5.
+    if firm and runner_str != "mt5":
         fixed_params.update(runner_dispatch.build_foundational_params(firm))
 
     opt_job_id = f"nopt_{optimization_id}"
