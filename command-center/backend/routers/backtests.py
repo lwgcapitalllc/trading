@@ -370,11 +370,15 @@ async def retry_backtest_run(run_id: str) -> dict:
 
 @router.delete("/runs/{run_id}", status_code=204)
 def delete_backtest_run(run_id: str) -> Response:
-    if not lab_db.delete_run(run_id):
+    deleted_ids = lab_db.delete_run(run_id)
+    if not deleted_ids:
         raise HTTPException(404, "Run not found")
-    run_dir = LAB_RESULTS_DIR / run_id
-    if run_dir.exists():
-        shutil.rmtree(run_dir)
+    # Remove the on-disk report dir for the run AND every child run that cascaded
+    # (optimization/sweep/stress-test children) so no orphan folders are left behind.
+    for rid in deleted_ids:
+        run_dir = LAB_RESULTS_DIR / rid
+        if run_dir.exists():
+            shutil.rmtree(run_dir)
     return Response(status_code=204)
 
 

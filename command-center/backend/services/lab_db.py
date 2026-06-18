@@ -1360,22 +1360,26 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
         ))
 
 
-def _purge_stress_tests_for_runs(conn, run_ids: list[str]) -> None:
+def _purge_stress_tests_for_runs(conn, run_ids: list[str]) -> list[str]:
     """Delete any stress tests attached to the given runs, plus each test's child runs/evals.
 
     stress_tests.run_id is a FOREIGN KEY into backtest_runs, so a run that has a stress test
     cannot be deleted until that test (and its walk-forward/sensitivity child runs) is gone —
     otherwise the DELETE raises IntegrityError. A stress test's child runs never carry their own
     stress test (auto-trigger is parent-only), so a single level of cascade is sufficient.
+
+    Returns the run_ids of the deleted stress-test child runs so the caller can clean up their
+    on-disk report directories.
     """
     if not run_ids:
-        return
+        return []
     ph = ",".join("?" * len(run_ids))
     st_ids = [
         r["stress_test_id"] for r in conn.execute(
             f"SELECT stress_test_id FROM stress_tests WHERE run_id IN ({ph})", run_ids
         ).fetchall()
     ]
+    deleted_child_ids: list[str] = []
     for st_id in st_ids:
         child_ids = [
             r["run_id"] for r in conn.execute(
@@ -1386,10 +1390,19 @@ def _purge_stress_tests_for_runs(conn, run_ids: list[str]) -> None:
             cph = ",".join("?" * len(child_ids))
             conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({cph})", child_ids)
             conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({cph})", child_ids)
+            deleted_child_ids.extend(child_ids)
         conn.execute("DELETE FROM stress_tests WHERE stress_test_id = ?", (st_id,))
+    return deleted_child_ids
 
 
-def delete_run(run_id: str) -> bool:
+def delete_run(run_id: str) -> list[str]:
+    """Delete a run and everything that cascades from it.
+
+    Returns the run_ids of every backtest_run actually deleted (the target plus any
+    optimization/sweep/stress-test child runs), so the caller can remove their on-disk report
+    directories. An empty list means the run did not exist (nothing was deleted).
+    """
+    deleted: list[str] = []
     with _connect() as conn:
         # Cascade: delete associated optimizations (and their child runs/evals)
         opt_ids = [
@@ -1405,10 +1418,11 @@ def delete_run(run_id: str) -> bool:
             ]
             if child_ids:
                 # A winner backtest among these can carry its own stress test — purge first.
-                _purge_stress_tests_for_runs(conn, child_ids)
+                deleted.extend(_purge_stress_tests_for_runs(conn, child_ids))
                 ph = ",".join("?" * len(child_ids))
                 conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({ph})", child_ids)
                 conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({ph})", child_ids)
+                deleted.extend(child_ids)
             conn.execute("DELETE FROM optimizations WHERE optimization_id = ?", (oid,))
 
         # Cascade: delete associated sweeps (runs where source_run_id = this run)
@@ -1418,16 +1432,19 @@ def delete_run(run_id: str) -> bool:
             ).fetchall()
         ]
         if sweep_child_ids:
-            _purge_stress_tests_for_runs(conn, sweep_child_ids)
+            deleted.extend(_purge_stress_tests_for_runs(conn, sweep_child_ids))
             ph = ",".join("?" * len(sweep_child_ids))
             conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({ph})", sweep_child_ids)
             conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({ph})", sweep_child_ids)
+            deleted.extend(sweep_child_ids)
 
         # Delete the run itself (and any stress test attached to it)
-        _purge_stress_tests_for_runs(conn, [run_id])
+        deleted.extend(_purge_stress_tests_for_runs(conn, [run_id]))
         conn.execute("DELETE FROM evaluations WHERE run_id = ?", (run_id,))
         cur = conn.execute("DELETE FROM backtest_runs WHERE run_id = ?", (run_id,))
-    return cur.rowcount > 0
+        if cur.rowcount > 0:
+            deleted.append(run_id)
+    return deleted
 
 
 def delete_optimization(optimization_id: str) -> bool:
