@@ -255,12 +255,6 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
   const { data: stressLock } = useRunningStressLock()
   const stressRunIds = useMemo(() => new Set(stressLock?.run_ids ?? []), [stressLock])
 
-  const linkedSweepIds = useMemo(() => {
-    const set = new Set<string>()
-    allSweeps?.forEach(sw => { if (sw.source_run_id) set.add(sw.sweep_id) })
-    return set
-  }, [allSweeps])
-
   // Running full backtests of optimization winners — keyed by optimization_id so they nest under the specific opt row
   const fullBtRunsByParent = useMemo(() => {
     const map = new Map<string, import('@/types').BacktestSummary[]>()
@@ -306,8 +300,11 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
   }, [allRuns])
 
   const runs = useMemo(() => {
+    // Sweep children never appear as flat top-level rows — like optimization combos, they belong to
+    // their container. A UI-created sweep nests under its origin run (SweepNestRow); a standalone
+    // (legacy, no source_run_id) sweep lives only in the Sweeps tab. Either way it's filtered here.
     const base = allRuns
-      ?.filter(r => (!r.optimization_id || r.status === 'running') && !(r.sweep_id && linkedSweepIds.has(r.sweep_id)))
+      ?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id)
       ?.filter(r => !fullBtNestIds.has(r.run_id))
       ?.filter(r => marketFilter === 'all' || runMarket(r.runner) === marketFilter)
     if (!base) return base
@@ -315,7 +312,7 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
     // visible; otherwise (e.g. tuned from an optimization winner) they live only in the
     // workbench — reachable via the optimization banner and the run-detail breadcrumb.
     return base.filter(r => !(r.source_run_id && !r.sweep_id && !r.optimization_id))
-  }, [allRuns, linkedSweepIds, fullBtNestIds, marketFilter])
+  }, [allRuns, fullBtNestIds, marketFilter])
 
   const optsBySourceRun = useMemo(() => {
     const map = new Map<string, typeof allOpts>()

@@ -418,7 +418,9 @@ Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long
 
 **Sweep vs. progress lock:** Sweep and optimization runs do NOT use `lab_progress.json`. That file is exclusively for the single-run flow. Sweep/optimization state is tracked only in the DB.
 
-**source_run_id:** `optimizations` stores the `run_id` of the backtest that spawned it. Sweep child runs store the `run_id` of the run that triggered the sweep. The Runs tab uses this to nest linked jobs under their source run. Rows without `source_run_id` (created before this was added) appear flat — no backfill is possible.
+**source_run_id:** `optimizations` stores the `run_id` of the backtest that spawned it. Sweep child runs store the `run_id` of the run that triggered the sweep. The Runs tab uses this to nest linked jobs under their source run. Rows without `source_run_id` (created before this was added) appear only in their own tab — no backfill is possible.
+
+**Optimizer-combo full backtest scoring (inherit, else prompt):** combo runs (`insert_run_optimization`) don't store an eval selection, so `POST /runs/{id}/retry` resolves one before re-firing: explicit `RetryRunRequest.evaluate_rulesets` (the UI's choice) > the optimization's own `ruleset_id` > the spawning run's `evaluate_firms` (forex/`raw` optimizations have no `ruleset_id` but are usually launched from an evaluated parent) — see `optimization_runner.resolve_opt_eval_rulesets`. When nothing is inheritable and no explicit choice was sent, the endpoint returns `{status: "needs_ruleset"}` WITHOUT starting a run; the frontend prompts (`FullBacktestEvalModal`) and re-fires with the choice. `retry_single_optimization_run(run_id, evaluate_rulesets=...)` then scores via `_handle_opt_complete` → `evaluator.evaluate_run`. Without this a combo full backtest completed unscored (empty `ruleset_ids` → zero evaluation rows → no PASS/DISCARD).
 
 ---
 

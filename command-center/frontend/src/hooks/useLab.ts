@@ -289,12 +289,23 @@ export function useStopBacktest() {
   })
 }
 
+type RetryVars = { runId: string; evaluateRulesets?: string[] }
+
 export function useRetryBacktest() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (runId: string) =>
-      api.post<{ run_id: string; status: string }>(`/backtests/runs/${runId}/retry`),
+    // Accepts a plain run_id (most callers) or { runId, evaluateRulesets } when re-firing an
+    // optimizer combo with an explicit scoring choice. `evaluateRulesets: undefined` sends no body,
+    // letting the backend inherit-or-prompt.
+    mutationFn: (vars: string | RetryVars) => {
+      const { runId, evaluateRulesets } = typeof vars === 'string' ? { runId: vars, evaluateRulesets: undefined } : vars
+      const bodyData = evaluateRulesets !== undefined ? { evaluate_rulesets: evaluateRulesets } : undefined
+      return api.post<{ run_id: string; status: string }>(`/backtests/runs/${runId}/retry`, bodyData)
+    },
     onSuccess: (data) => {
+      // The backend wants a ruleset choice before it can score this combo — the caller opens a
+      // picker. Don't toast "Rerun started" since nothing started.
+      if (data.status === 'needs_ruleset') return
       toast.success('Rerun started')
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
       qc.invalidateQueries({ queryKey: ['lab', 'run', data.run_id] })

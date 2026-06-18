@@ -1091,6 +1091,51 @@ function EvalCard({ ev, netPnl, tradeCount, showName = true }: { ev: EvaluationD
   )
 }
 
+// Placeholder for the Evaluation column when the run is an optimizer parameter set that has never
+// been fully backtested (no equity curve / trade-level data / firm verdicts yet). Keeps the same
+// two-column layout as a full backtest, but instead of a verdict it prompts a full backtest. Mirrors
+// EvalCard's shell (header + body + trade-count footer) so it matches height and feel.
+function UnscoredEvalCard({ tradeCount, onRunFullBacktest, busy }: { tradeCount?: number | null; onRunFullBacktest: () => void; busy?: boolean }) {
+  return (
+    <div className="bg-bg-surface border border-border-subtle border-l-[3px] border-l-border-default rounded-lg overflow-hidden h-full flex flex-col">
+      {/* Header */}
+      <div className="px-4 pt-3.5 pb-2.5 flex items-start justify-between gap-3">
+        <div className="text-[13px] font-semibold text-text-primary leading-tight">Not yet scored</div>
+        <span className="inline-flex items-center gap-[5px] px-3 py-[5px] rounded-full text-[11px] font-bold uppercase tracking-[0.4px] flex-shrink-0 bg-bg-sunken text-text-tertiary">
+          <Info size={11} />
+          UNSCORED
+        </span>
+      </div>
+
+      <div className="mx-4 border-t border-border-subtle" />
+
+      {/* Body — explain why it's unscored + CTA */}
+      <div className="px-4 py-3 space-y-3">
+        <p className="text-[12px] text-text-secondary leading-relaxed">
+          This is an optimizer parameter set. Run a full backtest to get the equity curve, trade-level
+          data, and firm evaluations.
+        </p>
+        <button
+          onClick={onRunFullBacktest}
+          disabled={busy}
+          className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded border border-accent/30 bg-accent/5 text-accent hover:bg-accent/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {busy ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />}
+          Run Full Backtest
+        </button>
+      </div>
+
+      {/* Footer — same trade-count standout as EvalCard */}
+      {tradeCount != null && (
+        <div className="mt-auto flex items-baseline gap-2.5 px-4 py-3 bg-accent/5 border-t border-accent/20">
+          <span className="text-[40px] font-extrabold font-mono leading-none text-accent tabular-nums">{tradeCount}</span>
+          <span className="text-[12px] font-bold uppercase tracking-[0.8px] text-text-secondary">Trades</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EvalRow({
   label, pass, value, extra,
 }: { label: string; pass: boolean; value: string; extra?: string }) {
@@ -1700,6 +1745,76 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
   )
 }
 
+// Shown when running a full backtest on an optimizer combo that has no ruleset to score against
+// (the backend couldn't inherit one). The user picks the market-appropriate ruleset(s); the run is
+// then re-fired and scored. Mirrors the Run Backtest modal's "evaluate against" choice.
+function FullBacktestEvalModal({ run, busy, onConfirm, onClose }: {
+  run: Run
+  busy: boolean
+  onConfirm: (rulesetIds: string[]) => void
+  onClose: () => void
+}) {
+  const { data: rulesets = [] } = useRulesets()
+  const isMt5 = run.runner === 'mt5'
+  // Forex (MT5) runs evaluate against forex rulesets; futures (NT8) against the prop/futures rows.
+  const options = useMemo(
+    () => rulesets.filter(r => (isMt5 ? r.market === 'forex' : r.market !== 'forex')),
+    [rulesets, isMt5],
+  )
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const toggle = (id: string) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+        <div>
+          <h2 className="text-base font-semibold text-text-primary">Run Full Backtest</h2>
+          <p className="text-xs text-text-secondary mt-1">
+            This optimizer parameter set has no ruleset attached. Pick which {isMt5 ? 'forex' : 'futures'} ruleset(s)
+            to score it against.
+          </p>
+        </div>
+
+        {options.length === 0 ? (
+          <p className="text-xs text-text-tertiary">No {isMt5 ? 'forex' : 'futures'} rulesets available.</p>
+        ) : (
+          <div className="space-y-1.5 max-h-[40vh] overflow-y-auto">
+            {options.map(r => (
+              <label
+                key={r.id}
+                className="flex items-center gap-2.5 px-3 py-2 rounded border border-border-subtle hover:bg-bg-hover cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(r.id)}
+                  onChange={() => toggle(r.id)}
+                  className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+                />
+                <span className="text-[13px] text-text-primary">{r.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={() => onConfirm(Array.from(selected))}
+            disabled={busy || selected.size === 0}
+            className="flex-1 py-1.5 text-sm bg-accent text-bg-base rounded font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy ? 'Starting…' : 'Run Full Backtest'}
+          </button>
+          <button onClick={onClose} className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover">Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Parameters side panel ─────────────────────────────────────────────────────
 
 function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle, balance, defaultBalance, onBalanceChange }: {
@@ -1840,6 +1955,7 @@ export function BacktestDetail() {
   const { data: stressLock }     = useRunningStressLock()
   const latestStress             = stressTests?.[0]
   const [showStressModal, setShowStressModal] = useState(false)
+  const [showEvalPicker, setShowEvalPicker] = useState(false)
   const [overlayOn, setOverlayOn] = useState(getOverlayPref)
   const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
   // Primary chart tab (the big charts) + secondary tab (supporting charts). Price lazy-loads.
@@ -1879,6 +1995,24 @@ export function BacktestDetail() {
   // Optimization combo run: exists in the grid export but has never been fully backtested
   const isOptCombo    = !!run?.optimization_id && !run?.equity_curve?.length && isComplete
   const stressBlocked = isMt5 ? (stressLock?.forex ?? false) : (stressLock?.futures ?? false)
+  const jobBusy       = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
+
+  // Rerun / full-backtest. For an optimizer combo with no inheritable ruleset the backend replies
+  // status="needs_ruleset" instead of starting — we then open a picker and re-fire with the choice.
+  const runFullBacktest = useCallback(() => {
+    if (!run) return
+    retryBacktest.mutate(run.run_id, {
+      onSuccess: (data) => { if (data.status === 'needs_ruleset') setShowEvalPicker(true) },
+    })
+  }, [run, retryBacktest])
+
+  const confirmFullBacktest = useCallback((rulesetIds: string[]) => {
+    if (!run) return
+    retryBacktest.mutate(
+      { runId: run.run_id, evaluateRulesets: rulesetIds },
+      { onSuccess: () => setShowEvalPicker(false) },
+    )
+  }, [run, retryBacktest])
 
   // Match the KPI grid height to the eval card (lg only). The eval card's height is measured in JS
   // and passed as fixedHeight so both rows (collapsed: one tall, expanded: two half-height) sum to
@@ -1977,8 +2111,8 @@ export function BacktestDetail() {
               <div className="flex items-center gap-2 flex-shrink-0">
                 {!isRunning && (
                   <button
-                    onClick={() => retryBacktest.mutate(run.run_id)}
-                    disabled={retryBacktest.isPending || (isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running)}
+                    onClick={runFullBacktest}
+                    disabled={retryBacktest.isPending || jobBusy}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40"
                     title={(isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running) ? `${isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry this backtest' : run.optimization_id && !run.equity_curve?.length ? 'Run a full backtest on this parameter set to get charts and trade data' : 'Rerun this backtest'}
                   >
@@ -2031,6 +2165,14 @@ export function BacktestDetail() {
                 {isRunning && <StatusPill status={run.status} size="md" />}
               </div>
               {showStressModal && run && <RunStressTestModal run={run} onClose={() => setShowStressModal(false)} navigate={navigate} />}
+              {showEvalPicker && run && (
+                <FullBacktestEvalModal
+                  run={run}
+                  busy={retryBacktest.isPending}
+                  onConfirm={confirmFullBacktest}
+                  onClose={() => setShowEvalPicker(false)}
+                />
+              )}
             </div>
           </div>
         )}
@@ -2056,14 +2198,24 @@ export function BacktestDetail() {
           {isFailed && <FailureBanner run={run} />}
           {/* ── Evaluations + Performance (side by side) ──────────────────── */}
           {isComplete && (
-            run.evaluations.length > 0 && !isOptCombo ? (
+            // Two-column Evaluation + Performance for real backtests AND optimizer combos. A combo
+            // has no firm verdicts yet, so its Evaluation column is an UnscoredEvalCard prompting a
+            // full backtest — same layout, just unscored. Only a plain run with no evaluations and
+            // no combo origin falls through to the full-width Performance-only layout.
+            run.evaluations.length > 0 || isOptCombo ? (
               <div className="space-y-3">
                 <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
                   {/* Left: firm evaluation cards — height measured so the KPI grid can match it. */}
                   <div className="flex flex-col">
                     <SectionLabel>Evaluation</SectionLabel>
                     <div className="flex flex-col gap-3" ref={measureEvalRef}>
-                      {run.evaluations.map(ev => <EvalCard key={ev.eval_id} ev={ev} netPnl={run.net_pnl} tradeCount={run.trade_count} showName={run.evaluations.length > 1} />)}
+                      {isOptCombo
+                        ? <UnscoredEvalCard
+                            tradeCount={run.trade_count}
+                            onRunFullBacktest={runFullBacktest}
+                            busy={retryBacktest.isPending || jobBusy}
+                          />
+                        : run.evaluations.map(ev => <EvalCard key={ev.eval_id} ev={ev} netPnl={run.net_pnl} tradeCount={run.trade_count} showName={run.evaluations.length > 1} />)}
                     </div>
                   </div>
                   {/* Right: flat KPIs pinned to the eval card's measured pixel height. */}

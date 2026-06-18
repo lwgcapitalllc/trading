@@ -713,8 +713,32 @@ async def run_optimization(optimization_id: str) -> None:
         ))
 
 
-async def retry_single_optimization_run(run_id: str) -> None:
-    """Re-fire a single optimization run. Caller must have already called reset_run_for_retry."""
+def resolve_opt_eval_rulesets(opt: dict) -> list[str]:
+    """Which rulesets a combo's full backtest should be scored against.
+
+    Optimizer combos don't store an eval selection. Prefer the optimization's own
+    ruleset (set for prop/futures `eval`/`funded` modes); otherwise inherit the
+    selection from the run that spawned the optimization (the forex/`raw` case has
+    no ruleset_id but is usually launched from an evaluated parent run). Returns []
+    when nothing is inheritable — the caller then prompts the user to choose.
+    """
+    if opt.get("ruleset_id"):
+        return [opt["ruleset_id"]]
+    src_id = opt.get("source_run_id")
+    if src_id:
+        src = lab_db.get_run(src_id)
+        if src and src.get("evaluate_firms"):
+            try:
+                return list(json.loads(src["evaluate_firms"]))
+            except (json.JSONDecodeError, TypeError):
+                return []
+    return []
+
+
+async def retry_single_optimization_run(run_id: str, evaluate_rulesets: Optional[list[str]] = None) -> None:
+    """Re-fire a single optimization run as a full backtest. Caller must have already
+    called reset_run_for_retry. `evaluate_rulesets` is the explicit scoring selection
+    (e.g. chosen in the UI prompt); when None, it's resolved from the optimization."""
     row = lab_db.get_run(run_id)
     if not row:
         return
@@ -726,8 +750,8 @@ async def retry_single_optimization_run(run_id: str) -> None:
     if not strategy:
         lab_db.update_run_status(run_id, "failed_unknown", "Strategy not found")
         return
-    firm = lab_db.get_ruleset(opt["ruleset_id"]) if opt.get("ruleset_id") else None
-    ruleset_ids = [opt["ruleset_id"]] if opt.get("ruleset_id") else []
+    ruleset_ids = evaluate_rulesets if evaluate_rulesets is not None else resolve_opt_eval_rulesets(opt)
+    firm = lab_db.get_ruleset(ruleset_ids[0]) if ruleset_ids else None
 
     # Keep the optimization's own status as-is (complete/failed) — this is a
     # single-combo full backtest, not a re-run of the grid. Only the child run

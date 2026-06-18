@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
-    WorthinessScore, RunningJobStatus, RunningJobInfo,
+    WorthinessScore, RunningJobStatus, RunningJobInfo, RetryRunRequest,
 )
 from services import lab_db, runner_dispatch, chart_spec
 from services.backtest_runner import (
@@ -27,7 +27,7 @@ from services.backtest_runner import (
 from services.evaluator import evaluate_run
 from services.metrics import compute_regime_breakdown
 from services.sweep_runner import retry_single_sweep_run
-from services.optimization_runner import retry_single_optimization_run
+from services.optimization_runner import retry_single_optimization_run, resolve_opt_eval_rulesets
 from routers._locks import ensure_platform_idle
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
@@ -300,7 +300,7 @@ async def stop_backtest_run(run_id: str) -> dict:
 
 
 @router.post("/runs/{run_id}/retry", status_code=202)
-async def retry_backtest_run(run_id: str) -> dict:
+async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None) -> dict:
     row = lab_db.get_run(run_id)
     if not row:
         raise HTTPException(404, "Run not found")
@@ -318,11 +318,24 @@ async def retry_backtest_run(run_id: str) -> dict:
         asyncio.create_task(retry_single_sweep_run(run_id))
         return {"run_id": run_id, "status": "running"}
 
-    # Optimization run — reset in place and re-fire via optimization runner
+    # Optimization combo — re-fire as a full backtest. It needs a ruleset to be scored
+    # against: prefer the user's explicit choice, else inherit from the optimization, else
+    # ask the UI to prompt (status="needs_ruleset", no run started).
     if row.get("optimization_id"):
+        explicit = body.evaluate_rulesets if body else None
+        if explicit is not None:
+            rulesets = explicit
+        else:
+            opt = lab_db.get_optimization(row["optimization_id"])
+            rulesets = resolve_opt_eval_rulesets(opt) if opt else []
+            if not rulesets:
+                # Nothing inheritable and no explicit choice — the UI prompts, then re-fires
+                # with body.evaluate_rulesets. Returned as 202; the caller keys off this status.
+                return {"run_id": run_id, "status": "needs_ruleset"}
         ensure_platform_idle(runner)
         lab_db.reset_run_for_retry(run_id)
-        asyncio.create_task(retry_single_optimization_run(run_id))
+        lab_db.delete_run_evaluations(run_id)
+        asyncio.create_task(retry_single_optimization_run(run_id, evaluate_rulesets=rulesets))
         return {"run_id": run_id, "status": "running"}
 
     # Standalone run — reset the existing record in place and re-fire

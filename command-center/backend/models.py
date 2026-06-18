@@ -442,6 +442,13 @@ class BacktestRunRequest(BaseModel):
         return self.evaluate_rulesets or self.evaluate_firms
 
 
+class RetryRunRequest(BaseModel):
+    # Optional rulesets to score against when re-firing an optimizer combo as a full
+    # backtest. None = let the backend inherit from the optimization (and prompt the
+    # user if nothing is inheritable); a list (even empty) = the user's explicit choice.
+    evaluate_rulesets: Optional[list[str]] = None
+
+
 class BacktestSummary(BaseModel):
     run_id: str
     strategy_id: str
