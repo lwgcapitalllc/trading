@@ -115,7 +115,7 @@ export function TuningWorkbench() {
     try { localStorage.setItem('tune_params_panel', next ? 'collapsed' : 'open') } catch { /* quota */ }
     return next
   })
-  const { ref: headerRef, scrolled, height: headerH } = useStickyBanner()
+  const { ref: headerRef, scrolled, height: headerH, collapse } = useStickyBanner()
 
   const schemaByName = useMemo(() => {
     const m = new Map<string, ParamSchemaEntry>()
@@ -622,6 +622,10 @@ export function TuningWorkbench() {
           )}
         </div>
       </div>
+
+      {/* Holds total scroll height constant while the banner is condensed (see useStickyBanner) so
+          scrollTop is never clamped — that clamp is what made the condense flicker on this page. */}
+      <div aria-hidden className="flex-shrink-0" style={{ height: collapse }} />
 
       {/* Fullscreen cumulative-P&L overlay */}
       {chartFs && (

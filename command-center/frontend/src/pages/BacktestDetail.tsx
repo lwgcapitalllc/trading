@@ -1948,7 +1948,7 @@ export function BacktestDetail() {
     try { localStorage.setItem('bt_params_panel', next ? 'collapsed' : 'open') } catch { /* quota */ }
     return next
   })
-  const { ref: headerRef, scrolled, height: headerH } = useStickyBanner()
+  const { ref: headerRef, scrolled, height: headerH, collapse } = useStickyBanner()
   const { data: progress }       = useLabProgress()
   const stopBacktest             = useStopBacktest()
   const reloadCharts             = useReloadCharts()
@@ -2449,6 +2449,10 @@ export function BacktestDetail() {
           </div>
         </div>
       )}
+
+      {/* Holds total scroll height constant while the banner is condensed (see useStickyBanner) so
+          scrollTop is never clamped — prevents the condense flicker on short pages. */}
+      <div aria-hidden className="flex-shrink-0" style={{ height: collapse }} />
     </div>
   )
 }
