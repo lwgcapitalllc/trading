@@ -237,6 +237,7 @@ def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dic
             p["default"] = defaults[p["name"]]
 
     rel_path = str(cs_path.relative_to(monorepo_root)).replace("\\", "/")
+    overview = _read_strategy_overview(meta_path_for(cs_path))
 
     return {
         "id": class_name.lower(),
@@ -250,6 +251,8 @@ def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dic
         "scanned_at": int(time.time()),
         "source_hash": _md5_text(source),
         "runner": "ninjatrader",
+        "edge": overview.get("edge"),
+        "steps": overview.get("steps", []),
     }
 
 
@@ -378,6 +381,32 @@ def meta_path_for(source_path: Path) -> Path:
     return source_path.with_name(source_path.stem + ".meta.json")
 
 
+def _read_strategy_overview(meta_path: Path) -> dict:
+    """Strategy-level narrative from a companion meta.json — UI only.
+
+    Returns {edge?: str, steps?: [{label, title, detail}]}. Absent or malformed
+    file is a no-op ({}); the detail page degrades to the editable description alone.
+    """
+    if not meta_path.exists():
+        return {}
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8", errors="replace"))
+    except (ValueError, OSError):
+        return {}
+    if not isinstance(meta, dict):
+        return {}
+    out: dict = {}
+    edge = meta.get("edge")
+    if isinstance(edge, str) and edge.strip():
+        out["edge"] = edge.strip()
+    steps = meta.get("steps")
+    if isinstance(steps, list):
+        clean = [s for s in steps if isinstance(s, dict) and s.get("title")]
+        if clean:
+            out["steps"] = clean
+    return out
+
+
 def _apply_param_meta(params: list[dict], meta_path: Path) -> list[dict]:
     """Overlay editor metadata from a companion meta.json onto scanned params.
 
@@ -427,7 +456,9 @@ def _parse_mql5_file(mq5_path: Path, monorepo_root: Path, source: str) -> Option
     params = _parse_mql5_params(source)
     if not params:
         return None
-    params = _apply_param_meta(params, meta_path_for(mq5_path))
+    meta_path   = meta_path_for(mq5_path)
+    params      = _apply_param_meta(params, meta_path)
+    overview    = _read_strategy_overview(meta_path)
 
     stem        = mq5_path.stem          # "MeanReversion"
     strategy_id = stem.lower()           # "meanreversion"
@@ -446,6 +477,8 @@ def _parse_mql5_file(mq5_path: Path, monorepo_root: Path, source: str) -> Option
         "scanned_at":           int(time.time()),
         "source_hash":          _md5_text(source),
         "runner":               "mt5",
+        "edge":                 overview.get("edge"),
+        "steps":                overview.get("steps", []),
     }
 
 

@@ -291,6 +291,15 @@ class Strategy(BaseModel):
     scanned_at: datetime
     run_count: int = 0
     runner: str = "ninjatrader"
+    # Strategy-level narrative overlaid from <Strategy>.meta.json (UI only).
+    edge: Optional[str] = None
+    steps: list[dict] = []   # flow: [{label, title, detail}]
+
+    @field_validator("steps", mode="before")
+    @classmethod
+    def _steps_default(cls, v):
+        # DB rows predating the column store NULL → coerce to [] so list validation passes.
+        return v or []
 
 
 class ScanResult(BaseModel):

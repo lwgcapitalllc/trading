@@ -1,0 +1,280 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Option 3 — Spec Sheet (collapsible)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_theme.css">
+<style>
+.wrap{max-width:1180px}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:22px}
+.head h1{font-size:21px;font-weight:700;margin:0 0 10px}
+.chips{display:flex;gap:8px}
+
+.cols{display:grid;grid-template-columns:290px 1fr;gap:26px;align-items:start}
+.aside{position:sticky;top:64px;display:flex;flex-direction:column;gap:16px}
+.card{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:16px 18px}
+.card h3{font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;margin:0 0 10px}
+.about{font-size:12.5px;line-height:1.6;color:var(--text-secondary)}.about b{color:var(--text-primary)}
+.edgebox{background:linear-gradient(180deg,rgba(0,229,255,.05),var(--bg-surface));border-color:rgba(0,229,255,.22)}
+.edgebox .e{font-size:12.5px;line-height:1.6;color:var(--text-secondary)}.edgebox .e b{color:var(--accent-text)}
+.runsmini .row{display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-top:1px solid var(--border-subtle)}
+.runsmini .row:first-of-type{border-top:0}.runsmini .row .v{font-weight:600}.runsmini .row .v.pos{color:var(--pos-text)}
+.runsmini a{display:block;text-align:center;margin-top:12px;padding:8px;border:1px solid var(--border-default);border-radius:7px;font-size:12px;color:var(--text-secondary)}
+.runsmini a:hover{border-color:var(--accent);color:var(--accent)}
+/* jump nav */
+.jump h3{margin-bottom:8px}
+.jump a{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-secondary);padding:6px 8px;border-radius:6px}
+.jump a:hover{background:var(--bg-hover);color:var(--text-primary)}
+.jump a .c{font-size:10px;color:var(--text-tertiary)}
+.jump a .star{color:var(--accent);font-size:10px;margin-left:5px}
+
+/* toolbar */
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.toolbar .lbl{font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.7px;margin-right:auto}
+.toolbar .lbl .star{color:var(--accent)}
+.tb{font-size:11.5px;color:var(--text-secondary);border:1px solid var(--border-subtle);background:var(--bg-surface);border-radius:6px;padding:5px 10px;cursor:pointer}
+.tb:hover{border-color:var(--accent);color:var(--accent)}
+.tb.on{background:var(--accent-muted);border-color:rgba(0,229,255,.4);color:var(--accent-text)}
+
+/* group accordion */
+.group{border:1px solid var(--border-subtle);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg-surface)}
+.group>summary{list-style:none;cursor:pointer;padding:13px 16px;display:flex;align-items:center;gap:12px}
+.group>summary::-webkit-details-marker{display:none}
+.group .chev{transition:transform .18s;color:var(--text-tertiary);flex-shrink:0}
+.group[open] .chev{transform:rotate(90deg)}
+.group .gt{font-size:13.5px;font-weight:600}
+.group .gd{font-size:11.5px;color:var(--text-tertiary)}
+.group .gcount{margin-left:auto;font-size:11px;color:var(--text-tertiary);display:flex;gap:8px;align-items:center}
+.group .gcount .ess{color:var(--accent-text);background:var(--accent-muted);border:1px solid rgba(0,229,255,.25);border-radius:20px;padding:1px 8px;font-weight:600}
+.group[open]>summary{border-bottom:1px solid var(--border-subtle)}
+/* collapsed preview chips */
+.preview{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 13px;margin-top:-2px}
+.group[open] .preview{display:none}
+.preview .pchip{font-size:10.5px;color:var(--text-secondary);background:var(--bg-sunken);border:1px solid var(--border-subtle);border-radius:6px;padding:3px 8px}
+.preview .pchip .v{color:var(--accent-text);font-weight:600;margin-left:5px}
+.preview .pchip .star{color:var(--accent);margin-right:4px}
+
+.body{padding:6px 16px 8px}
+.p{display:grid;grid-template-columns:1fr 150px;gap:18px;padding:14px 0;border-bottom:1px solid var(--border-subtle)}
+.p:last-child{border-bottom:0}
+.p .lbl{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.p .lbl .star{color:var(--accent);font-size:11px}
+.p .code{font-size:10px;color:var(--text-tertiary);margin:1px 0 0}
+.p .desc{font-size:12.5px;color:var(--text-secondary);line-height:1.55;margin:7px 0 0;max-width:540px}
+.p .cond{display:inline-block;font-size:10px;color:var(--gold-text);background:var(--gold-muted);border:1px solid rgba(230,189,106,.25);border-radius:4px;padding:1px 6px}
+.p .right{text-align:right}
+.p .default{font-size:19px;font-weight:700;color:var(--accent-text);line-height:1}
+.p .default .u{display:block;font-size:11px;color:var(--text-tertiary);font-weight:500;margin-top:3px}
+.p .tune{margin-top:10px;font-size:10.5px;color:var(--text-tertiary);text-align:right;line-height:1.5}
+.p .tune .lo{color:var(--accent-text);display:block}.p .tune .hi{color:var(--gold-text);display:block}
+.p .states{margin-top:2px;display:flex;flex-direction:column;gap:5px}
+.p .states .s{font-size:10.5px;border:1px solid var(--border-subtle);border-radius:6px;padding:4px 7px;text-align:left}
+.p .states .s b{color:var(--text-secondary)}
+.p .states .s.on{border-color:rgba(0,229,255,.3);background:var(--accent-muted);color:var(--accent-text)}
+.p.dim{display:none}
+.group.allhidden{display:none}
+
+.ready{margin-top:34px;border:1px solid var(--border-subtle);border-radius:12px;background:var(--bg-surface);overflow:hidden}
+.ready .h{padding:14px 18px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center}
+.ready .h .t{font-size:13.5px;font-weight:600}.ready .h .g{font-size:11.5px;color:var(--text-tertiary)}
+.ready .pill{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--neg-muted);color:var(--neg-text)}
+.ready .row{display:flex;gap:10px;align-items:center;padding:11px 18px;border-top:1px solid var(--border-subtle);font-size:12.5px}
+.ready .box{width:15px;height:15px;border-radius:4px;border:1.5px solid var(--border-default)}
+.ready .row.lk{opacity:.7}.ready .box.lk{border-color:var(--neg-text);background:var(--neg-muted)}.ready .why{color:var(--neg-text);font-size:11px}
+@media(max-width:920px){.cols{grid-template-columns:1fr}.aside{position:static}.p{grid-template-columns:1fr}.p .right{text-align:left}.p .tune{text-align:left}.p .tune .lo,.p .tune .hi{display:inline}}
+</style></head><body>
+
+<div class="proto-nav"><b>STRATEGY DETAIL PROTOTYPES</b>
+  <a href="option-1-field-guide.html">1 · Field Guide</a>
+  <a href="option-2-grouped-table.html">2 · Grouped Table</a>
+  <a class="active" href="option-3-spec-sheet.html">3 · Spec Sheet (collapsible)</a>
+</div>
+
+<div class="wrap">
+  <a class="backlink" href="#">← Strategies</a>
+  <div class="head">
+    <div>
+      <h1>London session breakout</h1>
+      <div class="chips"><span class="badge cat">breakout</span><span class="badge runner">MetaTrader 5 · forex</span></div>
+    </div>
+    <button class="btn primary">▶ Run Backtest</button>
+  </div>
+
+  <div class="cols">
+    <!-- LEFT -->
+    <aside class="aside">
+      <div class="card"><h3>What it does</h3>
+        <div class="about">Measures the day's reference range during the quiet <b>Asian session</b>, then trades the breakout when <b>London opens</b> — targeting a multiple of risk and force-flatting before the session ends.</div></div>
+      <div class="card edgebox"><h3>Where the edge is</h3>
+        <div class="e">Only trade days whose overnight range is <b>neither dead nor already-spent</b>, and let London's volatility expansion carry the move. The <b>Range filter</b> and <b>Profit target</b> are where most tuning lives.</div></div>
+      <div class="card jump"><h3>Jump to group</h3>
+        <a href="#g-range"><span>Range filter <span class="star">★</span></span><span class="c">6</span></a>
+        <a href="#g-breakout"><span>Breakout &amp; target <span class="star">★</span></span><span class="c">3</span></a>
+        <a href="#g-entry"><span>Entry model <span class="star">★</span></span><span class="c">2</span></a>
+        <a href="#g-stop"><span>Stop management</span><span class="c">1</span></a>
+        <a href="#g-session"><span>Session windows</span><span class="c">5</span></a>
+      </div>
+      <div class="card runsmini"><h3>Backtest runs</h3>
+        <div class="row"><span>Total runs</span><span class="v">20</span></div>
+        <div class="row"><span>Best net P&amp;L</span><span class="v pos">+$253</span></div>
+        <div class="row"><span>Instruments</span><span class="v">8</span></div>
+        <a href="#">View all forex runs →</a></div>
+    </aside>
+
+    <!-- RIGHT -->
+    <div class="main">
+      <div class="toolbar">
+        <span class="lbl">Parameters · <span class="star">★ essentials</span></span>
+        <button class="tb" id="essOnly">★ Essentials only</button>
+        <button class="tb" id="expandAll">Expand all</button>
+        <button class="tb" id="collapseAll">Collapse all</button>
+      </div>
+
+      <!-- RANGE FILTER -->
+      <details class="group" id="g-range" open>
+        <summary>
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          <div><div class="gt">Range filter</div><div class="gd">which days qualify to trade</div></div>
+          <div class="gcount"><span class="ess">2 ★</span><span>6 params</span></div>
+        </summary>
+        <div class="preview">
+          <span class="pchip"><span class="star">★</span>Filter mode<span class="v">ATR band</span></span>
+          <span class="pchip"><span class="star">★</span>Min range<span class="v">0.5×ATR</span></span>
+          <span class="pchip">Max range<span class="v">1.3×ATR</span></span>
+          <span class="pchip">+3 more</span>
+        </div>
+        <div class="body">
+          <div class="p ess"><div><div class="lbl">Filter mode <span class="star">★</span></div><div class="code mono">PipRangeFilter</div>
+            <div class="desc">Judges tradable days by the size of the Asian range. ATR band scales the limits to each pair's volatility; fixed pips uses hard bounds that don't adapt.</div></div>
+            <div class="right"><div class="states"><div class="s on"><b>Off</b> · ATR band</div><div class="s"><b>On</b> · Fixed pips</div></div></div></div>
+          <div class="p ess"><div><div class="lbl">Min range <span class="star">★</span></div><div class="code mono">RangeMinAtr</div>
+            <div class="desc">Skip the day if the Asian range is smaller than this × daily ATR. Too low lets choppy days through.</div></div>
+            <div class="right"><div class="default">0.5<span class="u">× ATR</span></div><div class="tune"><span class="lo">↓ fewer, cleaner trades</span><span class="hi">↑ more, lower quality</span></div></div></div>
+          <div class="p"><div><div class="lbl">Max range</div><div class="code mono">RangeMaxAtr</div>
+            <div class="desc">Skip the day if the Asian range is larger than this × daily ATR — the move may already be spent.</div></div>
+            <div class="right"><div class="default">1.3<span class="u">× ATR</span></div><div class="tune"><span class="lo">↓ rejects wild days</span><span class="hi">↑ lets big ranges through</span></div></div></div>
+          <div class="p"><div><div class="lbl">Min / Max range <span class="cond">Fixed-pips mode only</span></div><div class="code mono">RangeMinPips · RangeMaxPips</div>
+            <div class="desc">Reject the day if the Asian range is below 15 or above 40 pips — the hard-bound version of the band above.</div></div>
+            <div class="right"><div class="default">15–40<span class="u">pips</span></div></div></div>
+          <div class="p"><div><div class="lbl">Sweet spot <span class="cond">logged, never a gate</span></div><div class="code mono">SweetMinPips · SweetMaxPips</div>
+            <div class="desc">Diagnostic band tracking how many qualifying days landed in the sweet spot. Never blocks a trade.</div></div>
+            <div class="right"><div class="default">20–35<span class="u">pips</span></div></div></div>
+        </div>
+      </details>
+
+      <!-- BREAKOUT & TARGET -->
+      <details class="group" id="g-breakout" open>
+        <summary>
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          <div><div class="gt">Breakout &amp; target</div><div class="gd">how a trade triggers and exits</div></div>
+          <div class="gcount"><span class="ess">1 ★</span><span>3 params</span></div>
+        </summary>
+        <div class="preview">
+          <span class="pchip"><span class="star">★</span>Profit target<span class="v">2.0 R</span></span>
+          <span class="pchip">Breakout buffer<span class="v">0.1×ATR</span></span>
+          <span class="pchip">ATR lookback<span class="v">14 days</span></span>
+        </div>
+        <div class="body">
+          <div class="p ess"><div><div class="lbl">Profit target <span class="star">★</span></div><div class="code mono">TargetRR</div>
+            <div class="desc">Take-profit as a multiple of stop distance. 1.0 = reward equals risk; 2.0 aims for twice the risk per winner.</div></div>
+            <div class="right"><div class="default">2.0<span class="u">R</span></div><div class="tune"><span class="lo">↓ banks sooner</span><span class="hi">↑ more per trade, may not fill</span></div></div></div>
+          <div class="p"><div><div class="lbl">Breakout buffer</div><div class="code mono">BufferAtr</div>
+            <div class="desc">How far beyond the range price must travel to trigger an entry.</div></div>
+            <div class="right"><div class="default">0.1<span class="u">× ATR</span></div><div class="tune"><span class="lo">↓ smaller breaks trigger</span><span class="hi">↑ needs a bigger break</span></div></div></div>
+          <div class="p"><div><div class="lbl">ATR lookback</div><div class="code mono">AtrPeriod</div>
+            <div class="desc">Daily ATR window used to scale the range band and the breakout buffer.</div></div>
+            <div class="right"><div class="default">14<span class="u">days</span></div><div class="tune"><span class="lo">↓ reacts faster</span><span class="hi">↑ smoother, slower</span></div></div></div>
+        </div>
+      </details>
+
+      <!-- ENTRY MODEL -->
+      <details class="group" id="g-entry">
+        <summary>
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          <div><div class="gt">Entry model</div><div class="gd">order placement</div></div>
+          <div class="gcount"><span class="ess">1 ★</span><span>2 params</span></div>
+        </summary>
+        <div class="preview">
+          <span class="pchip"><span class="star">★</span>Entry style<span class="v">Market on close</span></span>
+          <span class="pchip">Pending buffer<span class="v">5 pips</span></span>
+        </div>
+        <div class="body">
+          <div class="p ess"><div><div class="lbl">Entry style <span class="star">★</span></div><div class="code mono">PendingEntry</div>
+            <div class="desc">How the trade is placed. Market enters at the close of the breaking bar; pending places stop orders at the levels and fills on touch.</div></div>
+            <div class="right"><div class="states"><div class="s on"><b>Off</b> · Market on close</div><div class="s"><b>On</b> · Pending stop</div></div></div></div>
+          <div class="p"><div><div class="lbl">Pending buffer <span class="cond">Pending-stop only</span></div><div class="code mono">BufferPips</div>
+            <div class="desc">How far beyond the range the pending stop order sits.</div></div>
+            <div class="right"><div class="default">5<span class="u">pips</span></div></div></div>
+        </div>
+      </details>
+
+      <!-- STOP MANAGEMENT -->
+      <details class="group" id="g-stop">
+        <summary>
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          <div><div class="gt">Stop management</div><div class="gd">risk control</div></div>
+          <div class="gcount"><span>1 param</span></div>
+        </summary>
+        <div class="preview"><span class="pchip">Break-even stop<span class="v">Off</span></span></div>
+        <div class="body">
+          <div class="p"><div><div class="lbl">Break-even stop</div><div class="code mono">BreakEvenMove</div>
+            <div class="desc">Move the stop to entry once the trade reaches +1R, taking risk off the table.</div></div>
+            <div class="right"><div class="states"><div class="s on"><b>Off</b> · default</div><div class="s"><b>On</b> · protects earlier</div></div></div></div>
+        </div>
+      </details>
+
+      <!-- SESSION WINDOWS -->
+      <details class="group" id="g-session">
+        <summary>
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+          <div><div class="gt">Session windows</div><div class="gd">GMT, auto DST-adjusted</div></div>
+          <div class="gcount"><span>5 params</span></div>
+        </summary>
+        <div class="preview">
+          <span class="pchip">Asian range<span class="v">00:00–06:00</span></span>
+          <span class="pchip">London watch · cutoff · flat<span class="v">07 · 11 · 16</span></span>
+        </div>
+        <div class="body">
+          <div class="p"><div><div class="lbl">Asian range</div><div class="code mono">AsianStartGMT · AsianEndGMT</div>
+            <div class="desc">The quiet window that sets the day's reference range.</div></div>
+            <div class="right"><div class="default" style="font-size:16px">00:00–06:00</div></div></div>
+          <div class="p"><div><div class="lbl">London watch · cutoff · flat</div><div class="code mono">LondonOpenGMT · EntryCutoffGMT · ForceFlatGMT</div>
+            <div class="desc">When watching starts, the last bar an entry is allowed, and when any open trade is force-closed.</div></div>
+            <div class="right"><div class="default" style="font-size:16px">07 · 11 · 16</div><div class="tune">GMT hours</div></div></div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div class="ready">
+    <div class="h"><div><div class="t">Readiness to buy a live evaluation</div><div class="g">Gates the “mark ready for a funded-account purchase” action. All five must be true.</div></div><span class="pill">Not ready</span></div>
+    <div class="row lk"><span class="box lk"></span><span>Graded A or B by the robustness test</span><span class="why">— best grade is none, run a stress test first</span></div>
+    <div class="row"><span class="box"></span><span>Clear stop-loss and target rules (not fixed-only)</span></div>
+    <div class="row"><span class="box"></span><span>At least one daily/weekly circuit breaker</span></div>
+    <div class="row"><span class="box"></span><span>Backtested on at least 1 year of data</span></div>
+    <div class="row"><span class="box"></span><span>I've read the strategy file and understand the logic</span></div>
+  </div>
+</div>
+
+<script>
+  const groups = [...document.querySelectorAll('.group')];
+  document.getElementById('expandAll').onclick = () => groups.forEach(g => g.open = true);
+  document.getElementById('collapseAll').onclick = () => groups.forEach(g => g.open = false);
+  const essBtn = document.getElementById('essOnly');
+  essBtn.onclick = () => {
+    const on = essBtn.classList.toggle('on');
+    document.querySelectorAll('.p').forEach(p => p.classList.toggle('dim', on && !p.classList.contains('ess')));
+    groups.forEach(g => {
+      const hasEss = g.querySelector('.p.ess');
+      g.classList.toggle('allhidden', on && !hasEss);
+      if (on && hasEss) g.open = true;
+    });
+  };
+  // smooth-scroll the jump nav and open the target group
+  document.querySelectorAll('.jump a').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    const t = document.querySelector(a.getAttribute('href'));
+    t.open = true; t.scrollIntoView({behavior:'smooth', block:'start'});
+  }));
+</script>
+</body></html>

@@ -1,31 +1,23 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Play, Trash2, RefreshCw, ChevronRight, Pencil, Check, X } from 'lucide-react'
-import { useStrategy, useBacktestRuns, useDeleteRun, useUpdateStrategyDescription } from '@/hooks/useLab'
-import { useStressTests } from '@/hooks/useStressTests'
+import { ArrowLeft, Play, Pencil, Check, X, ArrowRight, ChevronRight } from 'lucide-react'
+import { useStrategy, useBacktestRuns, useUpdateStrategyDescription } from '@/hooks/useLab'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { EmptyState } from '@/components/EmptyState'
-import PreDeploymentChecklist from '@/components/PreDeploymentChecklist'
-import type { BacktestSummary, VerdictSummary } from '@/types'
-
-const GRADE_ORDER = ['A', 'B', 'C', 'D', 'F']
+import type { ParamSchemaEntry, StrategyStep } from '@/types'
 
 const CORRELATED_PAIRS: [string, string][] = [
   ['MES', 'MNQ'], ['ES', 'NQ'], ['GC', 'MGC'], ['CL', 'MCL'], ['MYM', 'M2K'],
   ['ES', 'MES'], ['NQ', 'MNQ'],
 ]
 
+const CATEGORY_LABEL: Record<string, string> = {
+  mean_reversion: 'Mean reversion',
+  breakout: 'Breakout',
+  momentum: 'Momentum',
+}
+
 // ── Formatters ────────────────────────────────────────────────────────────────
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function fmtPeriod(start: string, end: string): string {
-  const s = new Date(start).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-  const e = new Date(end).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-  return `${s} – ${e}`
-}
 
 function fmtMoney(n: number | null): string {
   if (n == null) return '—'
@@ -35,277 +27,159 @@ function fmtMoney(n: number | null): string {
   return `${prefix}$${abs.toFixed(0)}`
 }
 
-// ── Status pill ───────────────────────────────────────────────────────────────
-
-const STATUS_STYLE: Record<string, string> = {
-  complete:       'bg-pos-muted text-pos-text',
-  running:        'bg-accent-muted text-accent',
-  failed_timeout: 'bg-neg-muted text-neg-text',
-  failed_unknown: 'bg-neg-muted text-neg-text',
+function slug(s: string): string {
+  return 'grp-' + s.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
 }
 
-function StatusPill({ status }: { status: string }) {
-  const cls = STATUS_STYLE[status] ?? 'bg-warn-muted text-warn-text'
+// ── Param helpers (all driven by the meta.json overlay) ───────────────────────
+
+function paramLabel(p: ParamSchemaEntry): string { return p.label ?? p.display_name }
+function paramDesc(p: ParamSchemaEntry): string | undefined { return p.desc ?? p.description }
+function isBoolLike(p: ParamSchemaEntry): boolean {
+  return p.type === 'bool' || p.widget === 'toggle' || p.widget === 'switch'
+}
+function boolDefault(p: ParamSchemaEntry): boolean { return p.default === true || p.default === 'true' }
+function boolStates(p: ParamSchemaEntry): { off: string; on: string } {
+  return p.options ?? { off: 'Off', on: 'On' }
+}
+
+/** The headline default value, as a string (state label for booleans). */
+function defaultValue(p: ParamSchemaEntry): string {
+  if (isBoolLike(p)) { const s = boolStates(p); return boolDefault(p) ? s.on : s.off }
+  return String(p.default ?? '—')
+}
+
+/** "only when X = Y" text for a param's show_if condition. */
+function conditionText(p: ParamSchemaEntry, byName: Map<string, ParamSchemaEntry>): string | null {
+  if (!p.show_if) return null
+  const parts = Object.entries(p.show_if).map(([name, val]) => {
+    const ref = byName.get(name)
+    const lbl = ref ? paramLabel(ref) : name
+    if (ref && isBoolLike(ref)) {
+      const s = boolStates(ref)
+      return `${lbl} = ${val === true || val === 'true' ? s.on : s.off}`
+    }
+    return `${lbl} = ${String(val)}`
+  })
+  return `only when ${parts.join(' · ')}`
+}
+
+// ── Grouping ──────────────────────────────────────────────────────────────────
+
+interface Group { name: string; params: ParamSchemaEntry[]; coreCount: number }
+
+function groupParams(schema: ParamSchemaEntry[]): Group[] {
+  const order: string[] = []
+  const map = new Map<string, ParamSchemaEntry[]>()
+  for (const p of schema) {
+    if (p.category === 'foundational') continue
+    const g = p.group || 'Parameters'
+    if (!map.has(g)) { map.set(g, []); order.push(g) }
+    map.get(g)!.push(p)
+  }
+  return order.map(name => ({
+    name,
+    params: map.get(name)!,
+    coreCount: map.get(name)!.filter(p => p.core).length,
+  }))
+}
+
+// ── Param table row ───────────────────────────────────────────────────────────
+
+function ParamRow({ p, byName }: { p: ParamSchemaEntry; byName: Map<string, ParamSchemaEntry> }) {
+  const cond = conditionText(p, byName)
+  const desc = paramDesc(p)
+  const states = boolStates(p)
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${cls}`}>
-      {status === 'running' && <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />}
-      {status.startsWith('failed') ? 'failed' : status}
-    </span>
-  )
-}
-
-// ── Verdict pills ─────────────────────────────────────────────────────────────
-
-function firmShortName(firmId: string): string {
-  const parts = firmId.split('_')
-  if (parts.length < 3) return firmId
-  const brandMap: Record<string, string> = { lucidflex: 'LF', apex: 'Apex', tradeify: 'TF' }
-  const brand = brandMap[parts[0]] ?? parts[0].slice(0, 2).toUpperCase()
-  const size  = (parts[1] ?? '').replace('k', '').replace('K', '')
-  const tier  = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
-  return `${brand}${size} ${tier}`
-}
-
-const VERDICT_PILL_STYLE: Record<string, string> = {
-  PASS:    'bg-pos-muted text-pos-text',
-  WARN:    'bg-warn-muted text-warn-text',
-  DISCARD: 'bg-neg-muted text-neg-text',
-  INFO:    'bg-bg-sunken text-text-tertiary',   // personal/demo — neutral, no judgment
-}
-
-function VerdictPills({ verdicts }: { verdicts: VerdictSummary[] }) {
-  if (!verdicts.length) return <span className="text-text-tertiary text-[11px]">—</span>
-  const visible  = verdicts.slice(0, 3)
-  const overflow = verdicts.length - visible.length
-  return (
-    <div className="flex gap-[4px] items-center flex-wrap">
-      {visible.map(v => (
-        <span
-          key={v.ruleset_id}
-          title={v.notes ?? `${firmShortName(v.ruleset_id)}: ${v.verdict}`}
-          className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold ${VERDICT_PILL_STYLE[v.verdict] ?? 'bg-bg-hover text-text-tertiary'}`}
-        >
-          {firmShortName(v.ruleset_id)}: {v.verdict}
+    <tr className="border-t border-border-subtle first:border-t-0 hover:bg-bg-hover transition-colors">
+      <td className="px-4 py-3 align-top w-[24%]">
+        <div className="text-[13px] font-semibold flex items-center gap-1.5">
+          {paramLabel(p)}
+          {p.core && <span className="text-accent text-[11px]" title="Essential — changes behaviour most">★</span>}
+        </div>
+        <div className="text-[10px] text-text-tertiary font-mono mt-0.5">{p.name}</div>
+        {cond && <div className="inline-block text-[9.5px] text-gold-text bg-gold-muted border border-gold-text/25 rounded px-1.5 py-px mt-1">{cond}</div>}
+      </td>
+      <td className="px-4 py-3 align-top text-[12px] text-text-secondary leading-[1.5] max-w-[400px]">{desc ?? '—'}</td>
+      <td className="px-4 py-3 align-top whitespace-nowrap">
+        <span className="text-[13px] font-semibold text-accent-text">
+          {isBoolLike(p) ? defaultValue(p) : <>{String(p.default ?? '—')}{p.unit && <span className="text-text-tertiary font-medium text-[11px]"> {p.unit}</span>}</>}
         </span>
-      ))}
-      {overflow > 0 && <span className="text-[10px] text-text-tertiary">+{overflow} more</span>}
-    </div>
-  )
-}
-
-// ── Delete modal ──────────────────────────────────────────────────────────────
-
-function ConfirmDeleteModal({
-  onConfirm, onCancel, isPending,
-}: {
-  onConfirm: () => void
-  onCancel: () => void
-  isPending: boolean
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
-    >
-      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[380px] shadow-2xl">
-        <div className="px-5 py-4 border-b border-border-subtle">
-          <div className="text-[15px] font-semibold">Delete this run?</div>
-        </div>
-        <div className="px-5 py-4">
-          <p className="text-[13px] text-text-secondary">
-            Its evaluations and result files will also be removed. This cannot be undone.
-          </p>
-        </div>
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle">
-          <button onClick={onCancel} className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors">
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm} disabled={isPending}
-            className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-neg-text text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-          >
-            {isPending ? 'Deleting…' : 'Delete run'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Param schema display ──────────────────────────────────────────────────────
-
-function ParamSchemaTable({ schema }: { schema: Array<{ name: string; type: string; min?: number; max?: number; default: unknown; display_name: string }> }) {
-  if (!schema.length) return null
-  return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-      <table className="w-full text-[12px]">
-        <thead>
-          <tr className="border-b border-border-subtle">
-            <th className="text-left px-4 py-2 text-text-tertiary font-medium">Parameter</th>
-            <th className="text-left px-4 py-2 text-text-tertiary font-medium">Type</th>
-            <th className="text-left px-4 py-2 text-text-tertiary font-medium">Default</th>
-            <th className="text-left px-4 py-2 text-text-tertiary font-medium">Range</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border-subtle">
-          {schema.map(p => (
-            <tr key={p.name} className="hover:bg-bg-hover transition-colors">
-              <td className="px-4 py-2">
-                <div className="font-medium text-text-primary">{p.display_name}</div>
-                <div className="text-[10px] text-text-tertiary font-mono">{p.name}</div>
-              </td>
-              <td className="px-4 py-2 text-text-secondary font-mono">{p.type}</td>
-              <td className="px-4 py-2 text-text-secondary font-mono tabular-nums">
-                {String(p.default)}
-              </td>
-              <td className="px-4 py-2 text-text-tertiary">
-                {p.min != null && p.max != null ? `${p.min}–${p.max}` : p.min != null ? `≥ ${p.min}` : p.max != null ? `≤ ${p.max}` : '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-// ── Runs table (strategy-filtered) ───────────────────────────────────────────
-
-function StrategyRunsTable({
-  strategyId,
-}: {
-  strategyId: string
-}) {
-  const navigate  = useNavigate()
-  const deleteRun = useDeleteRun()
-  const { data: runs, isLoading, refetch, isFetching } = useBacktestRuns({ strategy_id: strategyId })
-  const [deleteRunId, setDeleteRunId] = useState<string | null>(null)
-
-  const handleDelete = () => {
-    if (!deleteRunId) return
-    deleteRun.mutate(deleteRunId, { onSuccess: () => setDeleteRunId(null) })
-  }
-
-  if (isLoading) {
-    return (
-      <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden animate-pulse">
-        {[0,1,2].map(i => (
-          <div key={i} className="flex gap-4 px-4 py-3 border-b border-border-subtle last:border-0">
-            <div className="h-4 w-24 bg-bg-hover rounded" />
-            <div className="h-4 w-32 bg-bg-hover rounded" />
-            <div className="h-4 w-20 bg-bg-hover rounded" />
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  if (!runs?.length) {
-    return (
-      <EmptyState
-        icon={<Play size={20} />}
-        title="No runs yet for this strategy"
-        description='Click "Run Backtest" above to start your first experiment.'
-      />
-    )
-  }
-
-  return (
-    <>
-      <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle">
-          <span className="text-[12px] text-text-tertiary">{runs.length} run{runs.length !== 1 ? 's' : ''}</span>
-          <button
-            onClick={() => refetch()} disabled={isFetching}
-            className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-40"
-          >
-            <RefreshCw size={11} className={isFetching ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-        </div>
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="border-b border-border-subtle">
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Period</th>
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD</th>
-              <th className="text-left px-4 py-3 text-text-tertiary font-medium">Verdicts</th>
-              <th className="px-3 py-3 w-16" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-subtle">
-            {runs.map(run => (
-              <StrategyRunRow
-                key={run.run_id}
-                run={run}
-                onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
-                onDelete={e => { e.stopPropagation(); setDeleteRunId(run.run_id) }}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {deleteRunId && (
-        <ConfirmDeleteModal
-          onConfirm={handleDelete}
-          onCancel={() => setDeleteRunId(null)}
-          isPending={deleteRun.isPending}
-        />
-      )}
-    </>
-  )
-}
-
-function StrategyRunRow({
-  run, onClick, onDelete,
-}: {
-  run: BacktestSummary
-  onClick: () => void
-  onDelete: (e: React.MouseEvent) => void
-}) {
-  const pnlClass = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
-  return (
-    <tr onClick={onClick} className="hover:bg-bg-hover cursor-pointer transition-colors">
-      <td className="px-4 py-3 font-mono text-text-secondary">{run.instrument}</td>
-      <td className="px-4 py-3 text-text-secondary">
-        {run.status !== 'running' && run.completed_at
-          ? fmtPeriod(run.created_at, run.completed_at)
-          : fmtDate(run.created_at)}
       </td>
-      <td className="px-4 py-3"><StatusPill status={run.status} /></td>
-      <td className={`px-4 py-3 font-mono tabular-nums ${pnlClass}`}>{fmtMoney(run.net_pnl)}</td>
-      <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
-        {run.max_drawdown != null ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
-      </td>
-      <td className="px-4 py-3"><VerdictPills verdicts={run.verdicts} /></td>
-      <td className="px-3 py-3">
-        <div className="flex items-center gap-1 justify-end">
-          <button
-            onClick={onDelete}
-            className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors"
-            title="Delete run"
-          >
-            <Trash2 size={13} />
-          </button>
-          <ChevronRight size={14} className="text-text-tertiary" />
-        </div>
+      <td className="px-4 py-3 align-top text-[11px] text-text-tertiary leading-[1.45] max-w-[230px]">
+        {isBoolLike(p) ? (
+          <span><b className="text-text-secondary">Off</b> {states.off} · <b className="text-text-secondary">On</b> {states.on}</span>
+        ) : p.guide ? (
+          <>
+            <span className="text-accent-text block">↓ {p.guide[0]}</span>
+            <span className="text-gold-text block">↑ {p.guide[1]}</span>
+          </>
+        ) : '—'}
       </td>
     </tr>
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Collapsible group of params ───────────────────────────────────────────────
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function GroupTable({
+  group, byName, open, essOnly, onToggle,
+}: {
+  group: Group; byName: Map<string, ParamSchemaEntry>; open: boolean; essOnly: boolean; onToggle: () => void
+}) {
+  const rows = essOnly ? group.params.filter(p => p.core) : group.params
+  const isOpen = essOnly ? true : open
   return (
-    <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
-      {children}
-    </h2>
+    <div id={slug(group.name)} className="border border-border-subtle rounded-xl bg-bg-surface overflow-hidden mb-2.5 scroll-mt-16">
+      <button
+        onClick={onToggle}
+        className={`w-full flex items-center gap-3 px-4 py-3 bg-bg-sunken hover:bg-bg-surface2 text-left transition-colors ${isOpen ? 'border-b border-border-default' : ''}`}
+      >
+        <ChevronRight size={15} className={`text-text-secondary transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+        <span className="text-[13.5px] font-semibold text-text-primary">{group.name}</span>
+        <span className="ml-auto flex items-center gap-2 text-[11px] text-text-tertiary">
+          {group.coreCount > 0 && (
+            <span className="text-accent-text bg-accent-muted border border-accent/25 rounded-pill px-2 py-px font-semibold">{group.coreCount} ★</span>
+          )}
+          <span>{group.params.length} param{group.params.length !== 1 ? 's' : ''}</span>
+        </span>
+      </button>
+      {isOpen && (
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th className="text-left px-4 py-2 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] border-b border-border-subtle">Parameter</th>
+              <th className="text-left px-4 py-2 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] border-b border-border-subtle">What it does</th>
+              <th className="text-left px-4 py-2 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] border-b border-border-subtle">Default</th>
+              <th className="text-left px-4 py-2 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] border-b border-border-subtle">Tuning effect</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(p => <ParamRow key={p.name} p={p} byName={byName} />)}
+          </tbody>
+        </table>
+      )}
+    </div>
   )
 }
+
+// ── Aside cards ───────────────────────────────────────────────────────────────
+
+function AsideCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+      <h3 className="text-[10.5px] font-bold text-text-secondary uppercase tracking-[0.7px] px-3.5 py-2.5 bg-bg-sunken border-b border-border-subtle">{title}</h3>
+      <div className="px-3.5 py-1.5">{children}</div>
+    </div>
+  )
+}
+
+function ColHead({ children }: { children: React.ReactNode }) {
+  // Fixed height so the side panel and the param column start on exactly the same line.
+  return <div className="h-[30px] flex items-center justify-between mb-3">{children}</div>
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 function Skeleton() {
   return (
@@ -323,51 +197,39 @@ export function StrategyDetail() {
   const [showModal, setShowModal] = useState(false)
   const [editingDesc, setEditingDesc] = useState(false)
   const [descDraft, setDescDraft] = useState('')
-  const descInputRef = useRef<HTMLInputElement>(null)
+  const [essOnly, setEssOnly] = useState(false)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  const descInputRef = useRef<HTMLTextAreaElement>(null)
   const updateDesc = useUpdateStrategyDescription()
 
   const { data: strategy, isLoading } = useStrategy(strategyId ?? null)
   const { data: runs } = useBacktestRuns(strategyId ? { strategy_id: strategyId } : undefined)
-  const { data: allStressTests } = useStressTests()
 
+  const groups = useMemo(() => strategy ? groupParams(strategy.param_schema) : [], [strategy])
+  const byName = useMemo(() => new Map((strategy?.param_schema ?? []).map(p => [p.name, p])), [strategy])
+
+  // Default open state: groups that hold an essential param. Set once per strategy.
   useEffect(() => {
-    if (editingDesc) descInputRef.current?.focus()
-  }, [editingDesc])
+    if (!strategy) return
+    setOpenGroups(Object.fromEntries(groupParams(strategy.param_schema).map(g => [g.name, g.coreCount > 0])))
+  }, [strategy?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const runIds = new Set((runs ?? []).map(r => r.run_id))
-  const strategyGrades = (allStressTests ?? [])
-    .filter(st => runIds.has(st.run_id) && st.grade)
-    .map(st => st.grade as string)
-  const bestGrade = strategyGrades.sort((a, b) => GRADE_ORDER.indexOf(a) - GRADE_ORDER.indexOf(b))[0] ?? null
-
-  const completedInstruments = [...new Set(
-    (runs?.filter(r => r.status === 'complete') ?? []).map(r => r.instrument)
-  )]
-  const correlatedPairs = CORRELATED_PAIRS.filter(
-    ([a, b]) => completedInstruments.includes(a) && completedInstruments.includes(b)
-  )
+  useEffect(() => { if (editingDesc) descInputRef.current?.focus() }, [editingDesc])
 
   if (isLoading) {
     return (
       <div>
-        <button
-          onClick={() => navigate('/strategies')}
-          className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
-        >
+        <button onClick={() => navigate('/strategies')} className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors">
           <ArrowLeft size={14} /> Strategies
         </button>
         <Skeleton />
       </div>
     )
   }
-
   if (!strategy) {
     return (
       <div>
-        <button
-          onClick={() => navigate('/strategies')}
-          className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
-        >
+        <button onClick={() => navigate('/strategies')} className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors">
           <ArrowLeft size={14} /> Strategies
         </button>
         <EmptyState icon={<Play size={20} />} title="Strategy not found" description="This strategy may have been removed." />
@@ -375,134 +237,227 @@ export function StrategyDetail() {
     )
   }
 
+  const isMt5 = strategy.runner === 'mt5'
+  const market: 'forex' | 'futures' = isMt5 ? 'forex' : 'futures'
+  const visibleParams = strategy.param_schema.filter(p => p.category !== 'foundational')
+  const essentialCount = visibleParams.filter(p => p.core).length
+  const essentials = visibleParams.filter(p => p.core)
+  const categoryLabel = strategy.category ? (CATEGORY_LABEL[strategy.category] ?? strategy.category.replace(/_/g, ' ')) : null
+  const steps: StrategyStep[] = strategy.steps ?? []
+
+  const completedInstruments = [...new Set((runs?.filter(r => r.status === 'complete') ?? []).map(r => r.instrument))]
+  const correlatedPairs = CORRELATED_PAIRS.filter(([a, b]) => completedInstruments.includes(a) && completedInstruments.includes(b))
+
+  const total = runs?.length ?? 0
+  const completed = runs?.filter(r => r.status === 'complete' && r.net_pnl != null) ?? []
+  const bestPnl = completed.length ? Math.max(...completed.map(r => r.net_pnl as number)) : null
+  const instrumentCount = new Set((runs ?? []).map(r => r.instrument)).size
+
+  const saveDesc = () => { updateDesc.mutate({ strategyId: strategy.id, description: descDraft }); setEditingDesc(false) }
+  const setAll = (v: boolean) => setOpenGroups(Object.fromEntries(groups.map(g => [g.name, v])))
+  const jumpTo = (name: string) => {
+    setOpenGroups(prev => ({ ...prev, [name]: true }))
+    document.getElementById(slug(name))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
     <div>
-      {/* Back nav */}
-      <button
-        onClick={() => navigate('/strategies')}
-        className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
-      >
+      <button onClick={() => navigate('/strategies')} className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors">
         <ArrowLeft size={14} /> Strategies
       </button>
 
-      <div className="space-y-8">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-h1 font-semibold leading-tight">{strategy.name}</h1>
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              {strategy.category && (() => {
-                const label = strategy.category.replace(/_/g, ' ')
-                const cls =
-                  strategy.category === 'mean_reversion' ? 'bg-accent/10 text-accent border-accent/25' :
-                  strategy.category === 'breakout'       ? 'bg-warn-muted text-warn-text border-warn-text/30' :
-                  strategy.category === 'momentum'       ? 'bg-pos-muted text-pos-text border-pos-text/30' :
-                  'bg-bg-hover text-text-secondary border-border-subtle'
-                return (
-                  <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold border capitalize tracking-wide ${cls}`}>
-                    {label}
-                  </span>
-                )
-              })()}
-              {strategy.runner && (
-                <img
-                  src={strategy.runner === 'mt5' ? '/mt5-icon.png' : '/nt8-icon.png'}
-                  alt={strategy.runner === 'mt5' ? 'MetaTrader 5' : 'NinjaTrader 8'}
-                  title={strategy.runner === 'mt5' ? 'MetaTrader 5' : 'NinjaTrader 8'}
-                  className="w-7 h-7 rounded-md object-cover"
-                />
-              )}
-            </div>
-
-            {/* Description */}
-            <div className="mt-3">
-              {editingDesc ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={descInputRef}
-                    value={descDraft}
-                    onChange={e => setDescDraft(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        updateDesc.mutate({ strategyId: strategy.id, description: descDraft })
-                        setEditingDesc(false)
-                      }
-                      if (e.key === 'Escape') setEditingDesc(false)
-                    }}
-                    placeholder="Add a one-line description…"
-                    className="flex-1 bg-bg-sunken border border-border-default rounded-md px-3 py-[6px] text-[13px] text-text-primary placeholder-text-tertiary focus:outline-none focus:border-accent transition-colors"
-                  />
-                  <button
-                    onClick={() => { updateDesc.mutate({ strategyId: strategy.id, description: descDraft }); setEditingDesc(false) }}
-                    className="p-[6px] rounded text-pos-text hover:bg-pos-muted transition-colors"
-                  >
-                    <Check size={14} />
-                  </button>
-                  <button onClick={() => setEditingDesc(false)} className="p-[6px] rounded text-text-tertiary hover:bg-bg-hover transition-colors">
-                    <X size={14} />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => { setDescDraft(strategy.description ?? ''); setEditingDesc(true) }}
-                  className="group flex items-center gap-2 text-[13px] text-text-secondary hover:text-text-primary transition-colors"
-                >
-                  {strategy.description
-                    ? <span>{strategy.description}</span>
-                    : <span className="text-text-tertiary italic">Add a description…</span>
-                  }
-                  <Pencil size={11} className="opacity-0 group-hover:opacity-50 transition-opacity flex-shrink-0" />
-                </button>
-              )}
-            </div>
-          </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-[6px] px-4 py-[8px] rounded-md text-[13px] font-medium bg-accent text-bg-base hover:opacity-90 transition-opacity flex-shrink-0"
-          >
-            <Play size={13} />
-            Run Backtest
-          </button>
-        </div>
-
-        {/* Param schema */}
-        {strategy.param_schema.length > 0 && (
-          <div>
-            <SectionLabel>Parameters</SectionLabel>
-            <ParamSchemaTable schema={strategy.param_schema as Array<{ name: string; type: string; min?: number; max?: number; default: unknown; display_name: string }>} />
-          </div>
-        )}
-
-        {/* Runs for this strategy */}
-        <div>
-          <SectionLabel>Runs for this strategy</SectionLabel>
-          {strategyId && <StrategyRunsTable strategyId={strategyId} />}
-        </div>
-
-        {/* Correlated instrument note */}
-        {correlatedPairs.length > 0 && (
-          <div className="rounded-lg border border-warn-text/30 bg-warn-muted p-4">
-            <p className="text-sm text-warn-text font-medium mb-1">Correlated instrument note</p>
-            {correlatedPairs.map(([a, b], i) => (
-              <p key={i} className="text-xs text-warn-text/80">
-                {a} and {b} are highly correlated. For independent confirmation, test on an uncorrelated instrument.
-              </p>
-            ))}
-          </div>
-        )}
-
-        {/* Pre-Deployment Checklist */}
-        <PreDeploymentChecklist bestGrade={bestGrade} />
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4 mb-3.5">
+        <h1 className="text-[22px] font-bold leading-tight">{strategy.name}</h1>
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-md text-[13px] font-semibold bg-accent text-bg-base hover:opacity-90 transition-opacity flex-shrink-0"
+        >
+          <Play size={13} /> Run Backtest
+        </button>
       </div>
+
+      {/* Labeled chips — no ambiguity about what each value means */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        {categoryLabel && (
+          <span className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface rounded-md px-2.5 py-1 text-[12px]">
+            <span className="text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">Type</span>
+            <span className="font-semibold text-warn-text">{categoryLabel}</span>
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface rounded-md px-2.5 py-1 text-[12px]">
+          <span className="text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">Runs on</span>
+          <img src={isMt5 ? '/mt5-icon.png' : '/nt8-icon.png'} alt="" className="w-[15px] h-[15px] rounded object-cover" />
+          <span className="font-semibold">{isMt5 ? 'MetaTrader 5' : 'NinjaTrader 8'}</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface rounded-md px-2.5 py-1 text-[12px]">
+          <span className="text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">Market</span>
+          <span className="font-semibold capitalize">{market}</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface rounded-md px-2.5 py-1 text-[12px]">
+          <span className="text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">Parameters</span>
+          <span className="font-semibold">{visibleParams.length}{essentialCount ? ` · ${essentialCount} essential` : ''}</span>
+        </span>
+      </div>
+
+      {/* Overview */}
+      <div className="border border-border-subtle rounded-2xl bg-gradient-to-b from-bg-surface to-bg-sunken mb-7 overflow-hidden">
+        <div className="px-[22px] py-5">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-text-tertiary mb-2">What it does</p>
+          {editingDesc ? (
+            <div>
+              <textarea
+                ref={descInputRef}
+                value={descDraft}
+                onChange={e => setDescDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveDesc()
+                  if (e.key === 'Escape') setEditingDesc(false)
+                }}
+                rows={3}
+                placeholder="Describe what this strategy does…"
+                className="w-full bg-bg-sunken border border-border-default rounded-md px-3 py-2 text-[14px] text-text-primary placeholder-text-tertiary focus:outline-none focus:border-accent transition-colors resize-none leading-[1.6] max-w-[820px]"
+              />
+              <div className="flex items-center gap-2 mt-2">
+                <button onClick={saveDesc} className="p-1.5 rounded text-pos-text hover:bg-pos-muted transition-colors"><Check size={14} /></button>
+                <button onClick={() => setEditingDesc(false)} className="p-1.5 rounded text-text-tertiary hover:bg-bg-hover transition-colors"><X size={14} /></button>
+                <span className="text-[11px] text-text-tertiary">⌘+Enter to save</span>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setDescDraft(strategy.description ?? ''); setEditingDesc(true) }}
+              className="group flex items-start gap-2 text-left"
+            >
+              {strategy.description
+                ? <span className="text-[14px] text-text-secondary leading-[1.65] max-w-[820px]">{strategy.description}</span>
+                : <span className="text-[14px] text-text-tertiary italic">Add a description of what this strategy does…</span>}
+              <Pencil size={12} className="opacity-0 group-hover:opacity-50 transition-opacity flex-shrink-0 mt-1.5" />
+            </button>
+          )}
+
+          {steps.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-4">
+              {steps.map((s, i) => (
+                <div key={i} className="contents">
+                  <div className="flex-1 min-w-[150px] bg-bg-base border border-border-subtle rounded-[10px] px-3.5 py-3">
+                    {s.label && <div className="text-[10px] font-bold text-accent tracking-[0.5px] uppercase">{s.label}</div>}
+                    <div className="text-[12.5px] font-semibold mt-0.5">{s.title}</div>
+                    {s.detail && <div className="text-[11.5px] text-text-tertiary leading-[1.45] mt-0.5">{s.detail}</div>}
+                  </div>
+                  {i < steps.length - 1 && <div className="flex items-center text-text-tertiary text-base">→</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {strategy.edge && (
+          <div className="border-t border-border-subtle bg-gradient-to-b from-accent/[0.05] to-transparent px-[22px] py-4">
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-accent-text mb-1.5">The edge</p>
+            <p className="text-[13px] text-text-secondary leading-[1.6] max-w-[820px]">{strategy.edge}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Two-column: side panel + grouped params */}
+      <div className="grid lg:grid-cols-[288px_1fr] gap-6 items-start">
+
+        {/* Left side panel */}
+        <aside className="lg:sticky lg:top-2">
+          <ColHead><span className="hidden lg:block text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">Quick reference</span></ColHead>
+
+          <div className="flex flex-col gap-3.5">
+          <AsideCard title="Jump to group">
+            {groups.map(g => (
+              <button key={g.name} onClick={() => jumpTo(g.name)} className="w-full flex justify-between items-center text-[12.5px] text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded-md px-2 py-1.5 -mx-1.5 transition-colors">
+                <span>{g.name}</span>
+                <span className="text-[10.5px] text-text-tertiary flex items-center gap-1.5">
+                  {g.coreCount > 0 && <span className="text-accent-text">★{g.coreCount}</span>}
+                  {g.params.length}
+                </span>
+              </button>
+            ))}
+          </AsideCard>
+
+          {essentials.length > 0 && (
+            <AsideCard title="★ Essentials at a glance">
+              {essentials.map(p => (
+                <div key={p.name} className="flex justify-between items-baseline gap-2.5 text-[12px] py-1.5 border-t border-border-subtle first:border-t-0">
+                  <span className="text-text-secondary">{paramLabel(p)}</span>
+                  <span className="font-semibold text-accent-text text-[11.5px] whitespace-nowrap">
+                    {defaultValue(p)}{!isBoolLike(p) && p.unit ? ` ${p.unit}` : ''}
+                  </span>
+                </div>
+              ))}
+            </AsideCard>
+          )}
+
+          <AsideCard title="Backtest runs">
+            {total === 0 ? (
+              <p className="text-[12.5px] text-text-tertiary py-1">No runs yet. Click <span className="text-text-secondary">Run Backtest</span> to start.</p>
+            ) : (
+              <>
+                <div className="flex justify-between text-[12.5px] py-1.5 border-t border-border-subtle first:border-t-0"><span>Total runs</span><span className="font-semibold">{total}</span></div>
+                <div className="flex justify-between text-[12.5px] py-1.5 border-t border-border-subtle"><span>Best net P&L</span><span className={`font-semibold ${bestPnl != null && bestPnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{fmtMoney(bestPnl)}</span></div>
+                <div className="flex justify-between text-[12.5px] py-1.5 border-t border-border-subtle"><span>Instruments</span><span className="font-semibold">{instrumentCount}</span></div>
+              </>
+            )}
+            <button
+              onClick={() => navigate(`/backtests?tab=runs&market=${market}`)}
+              className="flex items-center justify-center gap-1.5 w-full mt-2.5 mb-1 px-3 py-2 rounded-md text-[12px] text-text-secondary border border-border-default hover:border-accent hover:text-accent transition-colors"
+            >
+              View all {market} runs <ArrowRight size={13} />
+            </button>
+          </AsideCard>
+          </div>
+        </aside>
+
+        {/* Right: grouped param tables */}
+        <div>
+          <ColHead>
+            <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">Parameters · <span className="text-accent">★ essentials</span></span>
+            <div className="flex gap-1.5">
+              <button onClick={() => setEssOnly(v => !v)} className={`text-[11px] rounded-md px-2.5 py-1.5 border transition-colors ${essOnly ? 'bg-accent-muted border-accent/40 text-accent-text' : 'border-border-subtle bg-bg-surface text-text-secondary hover:border-accent hover:text-accent'}`}>★ Essentials only</button>
+              <button onClick={() => setAll(true)} disabled={essOnly} className="text-[11px] rounded-md px-2.5 py-1.5 border border-border-subtle bg-bg-surface text-text-secondary hover:border-accent hover:text-accent transition-colors disabled:opacity-40">Expand all</button>
+              <button onClick={() => setAll(false)} disabled={essOnly} className="text-[11px] rounded-md px-2.5 py-1.5 border border-border-subtle bg-bg-surface text-text-secondary hover:border-accent hover:text-accent transition-colors disabled:opacity-40">Collapse all</button>
+            </div>
+          </ColHead>
+
+          {visibleParams.length > 0 ? (
+            groups.map(g => (
+              <GroupTable
+                key={g.name}
+                group={g}
+                byName={byName}
+                essOnly={essOnly}
+                open={openGroups[g.name] ?? false}
+                onToggle={() => setOpenGroups(prev => ({ ...prev, [g.name]: !prev[g.name] }))}
+              />
+            ))
+          ) : (
+            <p className="text-[13px] text-text-tertiary">This strategy exposes no tunable parameters.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Correlated instrument note */}
+      {correlatedPairs.length > 0 && (
+        <div className="rounded-lg border border-warn-text/30 bg-warn-muted p-4 mt-8">
+          <p className="text-sm text-warn-text font-medium mb-1">Correlated instrument note</p>
+          {correlatedPairs.map(([a, b], i) => (
+            <p key={i} className="text-xs text-warn-text/80">
+              {a} and {b} are highly correlated. For independent confirmation, test on an uncorrelated instrument.
+            </p>
+          ))}
+        </div>
+      )}
 
       {showModal && (
         <RunBacktestModal
           strategy={strategy}
           onClose={() => setShowModal(false)}
-          onSuccess={runId => {
-            setShowModal(false)
-            navigate(`/backtests/runs/${runId}`)
-          }}
+          onSuccess={runId => { setShowModal(false); navigate(`/backtests/runs/${runId}`) }}
         />
       )}
     </div>

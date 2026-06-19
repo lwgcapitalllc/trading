@@ -261,6 +261,15 @@ export interface Strategy {
   scanned_at: string
   run_count: number
   runner: string
+  // Strategy-level narrative overlaid from <Strategy>.meta.json (optional).
+  edge?: string | null
+  steps?: StrategyStep[]
+}
+
+export interface StrategyStep {
+  label?: string    // e.g. "01 · Asian"
+  title: string     // e.g. "Measure the range"
+  detail?: string   // one-line explanation
 }
 
 export interface ScanResult {

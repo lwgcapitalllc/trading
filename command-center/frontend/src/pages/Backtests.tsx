@@ -983,7 +983,12 @@ export function Backtests() {
 
   // Runs filters live here so they can sit on the tab row, right-aligned, next to the tabs.
   const [statusFilter, setStatusFilter] = useState('')
-  const [marketFilter, setMarketFilter] = useState<MarketFilter>('all')
+  // Seed from the URL so StrategyDetail can deep-link straight to its market (?tab=runs&market=forex).
+  const [marketFilter, setMarketFilter] = useState<MarketFilter>(
+    (['all', 'futures', 'forex'] as const).includes(searchParams.get('market') as MarketFilter)
+      ? (searchParams.get('market') as MarketFilter)
+      : 'all'
+  )
   const qc = useQueryClient()
   const runsFetching = useIsFetching({ queryKey: ['lab', 'runs'] }) > 0
 

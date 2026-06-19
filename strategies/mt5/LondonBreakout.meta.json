@@ -1,5 +1,11 @@
 {
-  "_comment": "Editor UI metadata for LondonBreakout — labels, groups, descriptions, the 'essentials' (core) flag, conditional visibility (show_if), and toggle option labels. Consumed by the command-center scanner and overlaid onto the scanned param schema. Affects the lab UI only; never the compiled .ex5 or the source hash. Param order here is the canonical UI order.",
+  "_comment": "Editor UI metadata for LondonBreakout — labels, groups, descriptions, the 'essentials' (core) flag, conditional visibility (show_if), and toggle option labels. Consumed by the command-center scanner and overlaid onto the scanned param schema. Affects the lab UI only; never the compiled .ex5 or the source hash. Param order here is the canonical UI order. Top-level 'edge' and 'steps' drive the strategy-detail overview.",
+  "edge": "Only trade days where the overnight range is neither too dead nor too wild, and let London's volatility expansion do the work. The Range filter decides which days qualify and the Profit target sets how hard each winner is pushed — that's where most of the tuning lives.",
+  "steps": [
+    { "label": "01 · Asian", "title": "Measure the range", "detail": "The 00:00–06:00 GMT high-low sets the day's reference band." },
+    { "label": "02 · Filter", "title": "Is the day tradable?", "detail": "Skip days whose range is too small (no fuel) or too large (already moved)." },
+    { "label": "03 · London", "title": "Trade the break", "detail": "Enter on the breakout, target a multiple of risk, force-flat before close." }
+  ],
   "params": [
     {
       "name": "PendingEntry",

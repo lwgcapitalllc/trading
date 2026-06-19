@@ -208,6 +208,13 @@ def init_db() -> None:
             "ALTER TABLE strategies ADD COLUMN is_compiled INTEGER NOT NULL DEFAULT 1",
             # User-editable description
             "ALTER TABLE strategies ADD COLUMN description TEXT",
+            # Strategy-level narrative overlaid from <Strategy>.meta.json (UI only):
+            # edge = one-paragraph "where the edge is", steps = JSON flow [{label,title,detail}]
+            "ALTER TABLE strategies ADD COLUMN edge TEXT",
+            "ALTER TABLE strategies ADD COLUMN steps TEXT",
+            # Backfill: rows that predate the column (or skipped re-scan) carry NULL,
+            # which fails the Strategy.steps list[dict] validation on GET /strategies.
+            "UPDATE strategies SET steps = '[]' WHERE steps IS NULL",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
             # Strategy version registry — content-addressed (source_hash → monotonic version).
@@ -923,7 +930,7 @@ def list_strategies() -> list[dict]:
             GROUP BY s.id
             ORDER BY s.name
         """).fetchall()
-    return [_parse_json_fields(dict(r), ["default_params", "param_schema"]) for r in rows]
+    return [_parse_json_fields(dict(r), ["default_params", "param_schema", "steps"]) for r in rows]
 
 
 def get_strategy(strategy_id: str) -> Optional[dict]:
@@ -938,7 +945,7 @@ def get_strategy(strategy_id: str) -> Optional[dict]:
         """, (strategy_id,)).fetchone()
     if not row:
         return None
-    return _parse_json_fields(dict(row), ["default_params", "param_schema"])
+    return _parse_json_fields(dict(row), ["default_params", "param_schema", "steps"])
 
 
 def get_strategy_hash(strategy_id: str) -> Optional[str]:
@@ -962,8 +969,8 @@ def upsert_strategy(data: dict) -> None:
         conn.execute("""
             INSERT INTO strategies
                 (id, name, class_name, source_path, category, suggested_instrument,
-                 default_params, param_schema, scanned_at, source_hash, runner)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 default_params, param_schema, scanned_at, source_hash, runner, edge, steps)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -974,7 +981,9 @@ def upsert_strategy(data: dict) -> None:
                 param_schema=excluded.param_schema,
                 scanned_at=excluded.scanned_at,
                 source_hash=excluded.source_hash,
-                runner=excluded.runner
+                runner=excluded.runner,
+                edge=excluded.edge,
+                steps=excluded.steps
         """, (
             data["id"], data["name"], data["class_name"], data["source_path"],
             data.get("category"), data.get("suggested_instrument"),
@@ -982,6 +991,8 @@ def upsert_strategy(data: dict) -> None:
             json.dumps(data.get("param_schema", [])),
             data["scanned_at"], data.get("source_hash"),
             data.get("runner", "ninjatrader"),
+            data.get("edge"),
+            json.dumps(data.get("steps", [])),
         ))
 
 
