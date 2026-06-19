@@ -1,37 +1,18 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceArea,
 } from 'recharts'
-import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, ChevronRight, Maximize2, X } from 'lucide-react'
 import { useBacktestRun, useStrategy, useBacktestRuns, useTriggerBacktest, useRunningVpsJob, useLabProgress } from '@/hooks/useLab'
+import { ParamEditor, ParamCoach, type ParamValue } from '@/components/ParamEditor'
 import { api } from '@/api/client'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL, REGIME_ORDER } from '@/lib/regime'
 import type { BacktestDetail, BacktestSummary, DailyPnlPoint, ParamSchemaEntry } from '@/types'
 
 // ── Param helpers ───────────────────────────────────────────────────────────────
-
-type ParamKind = 'int' | 'double' | 'bool' | 'string'
-
-function paramKind(schemaType: string | undefined, value: unknown): ParamKind {
-  const t = (schemaType ?? '').toLowerCase()
-  if (t.includes('bool')) return 'bool'
-  if (t.includes('int')) return 'int'
-  if (t.includes('double') || t.includes('float') || t.includes('real') || t.includes('decimal')) return 'double'
-  if (t === 'string') return 'string'
-  if (typeof value === 'boolean') return 'bool'
-  if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'double'
-  return 'string'
-}
-
-function coerce(kind: ParamKind, raw: string): unknown {
-  if (kind === 'bool') return raw === 'true'
-  if (kind === 'int') { const n = parseInt(raw, 10); return Number.isNaN(n) ? raw : n }
-  if (kind === 'double') { const n = parseFloat(raw); return Number.isNaN(n) ? raw : n }
-  return raw
-}
 
 function isFoundational(schema: ParamSchemaEntry | undefined): boolean {
   return schema?.category === 'foundational'
@@ -115,8 +96,16 @@ export function TuningWorkbench() {
   const { data: progress } = useLabProgress()
   const trigger = useTriggerBacktest()
 
-  const [edited, setEdited] = useState<Record<string, string>>({})
+  const [edits, setEdits] = useState<Record<string, ParamValue>>({})
+  const [coachParam, setCoachParam] = useState<string | null>(null)
   const [showRegime, setShowRegime] = useState(true)
+  const [chartFs, setChartFs] = useState(false)
+  useEffect(() => {
+    if (!chartFs) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setChartFs(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [chartFs])
   const [panelCollapsed, setPanelCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem('tune_params_panel') === 'collapsed' } catch { return false }
   })
@@ -132,21 +121,11 @@ export function TuningWorkbench() {
     return m
   }, [strategy])
 
-  // Editable (strategy-logic) params, seeded from the baseline run.
-  const tunable = useMemo(() => {
-    if (!baseline) return [] as { name: string; kind: ParamKind; display: string; baseVal: string }[]
-    return Object.entries(baseline.params)
-      .filter(([k]) => !isFoundational(schemaByName.get(k)))
-      .map(([k, v]) => {
-        const sch = schemaByName.get(k)
-        return {
-          name: k,
-          kind: paramKind(sch?.type, v),
-          display: sch?.display_name || k,
-          baseVal: String(v),
-        }
-      })
-  }, [baseline, schemaByName])
+  // Current editable values = baseline overlaid with the user's edits (typed).
+  const values = useMemo(
+    () => ({ ...(baseline?.params ?? {}), ...edits }) as Record<string, ParamValue>,
+    [baseline, edits],
+  )
 
   const foundational = useMemo(() => {
     if (!baseline) return [] as [string, unknown][]
@@ -247,18 +226,15 @@ export function TuningWorkbench() {
   const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
   const rulesetIds = baseline.evaluations.map(e => e.ruleset_id)
 
-  const dirtyKeys = tunable.filter(p => (edited[p.name] ?? p.baseVal) !== p.baseVal).map(p => p.name)
+  const baseParams = baseline.params as Record<string, unknown>
+  const dirtyKeys = Object.keys(edits).filter(k => String(edits[k]) !== String(baseParams[k]))
   const isDirty = dirtyKeys.length > 0
 
-  const setParam = (name: string, value: string) => setEdited(prev => ({ ...prev, [name]: value }))
-  const resetParams = () => setEdited({})
+  const onChangeParam = (name: string, value: ParamValue) => setEdits(prev => ({ ...prev, [name]: value }))
+  const resetParams = () => setEdits({})
 
   const runIteration = () => {
-    const params: Record<string, unknown> = { ...baseline.params }
-    for (const p of tunable) {
-      const raw = edited[p.name] ?? p.baseVal
-      params[p.name] = coerce(p.kind, raw)
-    }
+    const params: Record<string, unknown> = { ...baseline.params, ...edits }
     trigger.mutate({
       strategy_id:         baseline.strategy_id,
       instrument:          baseline.instrument,
@@ -272,14 +248,47 @@ export function TuningWorkbench() {
       evaluate_rulesets:   rulesetIds,
       source_run_id:       baseline.run_id,
     }, {
-      onSuccess: () => setEdited({}),
+      onSuccess: () => setEdits({}),
     })
   }
 
   const baseMetric = (k: 'net_pnl' | 'profit_factor' | 'max_drawdown') => baselineSummary?.[k] ?? null
 
+  // Cumulative-P&L overlay chart, rendered at a given height (reused inline + fullscreen).
+  const renderOverlay = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={overlayData} margin={{ top: 6, right: 12, bottom: 0, left: 4 }}>
+        <CartesianGrid stroke={C.grid} vertical={false} />
+        {showRegime && bands.map((b, i) => (
+          <ReferenceArea key={i} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
+        ))}
+        <XAxis
+          dataKey="t" type="number" domain={['dataMin', 'dataMax']} scale="time"
+          tickFormatter={t => new Date(t).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
+          tick={{ fill: C.axisTick, fontSize: 10 }} stroke={C.grid}
+        />
+        <YAxis tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fill: C.axisTick, fontSize: 10 }} stroke={C.grid} width={48} />
+        <Tooltip
+          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 12, padding: '8px 12px' }}
+          labelStyle={{ color: C.axisTick }}
+          itemStyle={{ color: '#e5e7eb' }}
+          labelFormatter={t => new Date(t as number).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          formatter={(v: number, name: string) => [money(v), labelFor(name)]}
+        />
+        {completeIds.map(id => (
+          <Line
+            key={id} type="monotone" dataKey={id} stroke={colorFor.get(id)}
+            strokeWidth={id === baseline.run_id ? 2.5 : 1.5} dot={false} connectNulls
+            strokeDasharray={id === baseline.run_id ? undefined : '4 2'}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  )
+
   return (
-    <div>
+    <div className="-m-[22px] flex flex-col min-h-[calc(100vh-56px)]">
+      <div className="px-[22px] pt-[22px]">
       {/* Header */}
       <button
         onClick={() => navigate(`/backtests/runs/${baseline.run_id}`)}
@@ -302,108 +311,94 @@ export function TuningWorkbench() {
           <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary px-2 py-[2px] rounded">No ruleset</span>
         )}
       </div>
+      </div>
 
-      <div className={`grid gap-[14px] items-stretch min-h-[calc(100vh-110px)] ${panelCollapsed ? 'grid-cols-[40px_1fr]' : 'grid-cols-[340px_1fr]'}`}>
+      <div className="flex items-stretch flex-1 min-h-0">
 
-        {/* ── Param editor — full-height column; inner is sticky so it stays usable ── */}
-        {panelCollapsed ? (
-          <div className="bg-bg-surface border border-border-subtle rounded-lg">
-            <button
-              onClick={togglePanel}
-              title="Show parameters"
-              className="sticky top-0 flex flex-col items-center gap-2 py-4 w-full hover:bg-bg-hover transition-colors rounded-lg"
-            >
-              <ChevronRight size={14} className="text-text-tertiary" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary [writing-mode:vertical-rl]">Parameters</span>
-              {dirtyKeys.length > 0 && <span className="w-[6px] h-[6px] rounded-full bg-accent" title={`${dirtyKeys.length} changed`} />}
-            </button>
-          </div>
-        ) : (
-        <div className="bg-bg-surface border border-border-subtle rounded-lg">
-          <div className="sticky top-0 max-h-[calc(100vh-110px)] flex flex-col rounded-lg overflow-hidden">
-          <div className="px-[15px] py-[10px] border-b border-border-subtle flex items-center justify-between flex-shrink-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Parameters</span>
-            <div className="flex items-center gap-2">
+        {/* ── Param editor — full-height dockable side column (mirrors BacktestDetail) ── */}
+        <div className={`flex-shrink-0 bg-bg-surface border-r border-border-subtle transition-[width] duration-200 ${panelCollapsed ? 'w-[44px]' : 'w-[440px]'}`}>
+          <div className="sticky top-0 max-h-[calc(100vh-56px)] flex flex-col">
+            {panelCollapsed ? (
               <button
-                onClick={resetParams}
-                disabled={!isDirty}
-                className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                onClick={togglePanel}
+                title="Show parameters"
+                className="w-full flex flex-col items-center gap-2.5 py-4 hover:bg-bg-hover transition-colors"
               >
-                <RotateCcw size={11} /> Reset
+                <ChevronRight size={14} className="text-text-tertiary" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary [writing-mode:vertical-rl]">Parameters</span>
+                {dirtyKeys.length > 0 && <span className="w-[6px] h-[6px] rounded-full bg-accent" title={`${dirtyKeys.length} changed`} />}
               </button>
-              <button onClick={togglePanel} title="Collapse" className="text-text-tertiary hover:text-text-secondary">
-                <ChevronLeft size={14} />
-              </button>
-            </div>
-          </div>
-
-          <div className="px-[15px] py-[12px] space-y-[8px] flex-1 overflow-y-auto">
-            {tunable.map(p => {
-              const val = edited[p.name] ?? p.baseVal
-              const changed = val !== p.baseVal
-              return (
-                <div key={p.name} className="flex items-center gap-2">
-                  <span className={`flex-1 text-[12px] font-mono truncate ${changed ? 'text-accent' : 'text-text-secondary'}`} title={p.name}>
-                    {p.name}
+            ) : (
+              <>
+                <div className="px-[13px] py-[10px] border-b border-border-subtle flex items-center justify-between flex-shrink-0">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary flex items-center gap-2">
+                    Parameters
+                    {dirtyKeys.length > 0 && <span className="text-accent normal-case tracking-normal font-medium">· {dirtyKeys.length} changed</span>}
                   </span>
-                  {p.kind === 'bool' ? (
-                    <select
-                      value={val}
-                      onChange={e => setParam(p.name, e.target.value)}
-                      className={`w-[110px] bg-bg-base border rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent ${changed ? 'border-accent/50' : 'border-border-subtle'}`}
-                    >
-                      <option value="true">true</option>
-                      <option value="false">false</option>
-                    </select>
-                  ) : (
-                    <input
-                      type={p.kind === 'string' ? 'text' : 'number'}
-                      value={val}
-                      onChange={e => setParam(p.name, e.target.value)}
-                      className={`w-[110px] bg-bg-base border rounded px-2 py-[3px] text-[12px] font-mono text-right focus:outline-none focus:border-accent ${changed ? 'border-accent/50' : 'border-border-subtle'}`}
-                    />
+                  <div className="flex items-center gap-3">
+                    <button onClick={resetParams} disabled={!isDirty}
+                      className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                      <RotateCcw size={11} /> Reset
+                    </button>
+                    <button onClick={togglePanel} title="Collapse" className="text-text-tertiary hover:text-text-secondary">
+                      <ChevronLeft size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-1.5 py-2">
+                  <ParamEditor
+                    schema={strategy?.param_schema ?? []}
+                    mode="tune"
+                    explainer="coach"
+                    values={values}
+                    onChange={onChangeParam}
+                    onFocusChange={setCoachParam}
+                    baseline={baseParams}
+                  />
+                  {foundational.length > 0 && (
+                    <details className="mt-2.5 px-2.5">
+                      <summary className="text-[11px] text-text-tertiary cursor-pointer select-none">Foundational config (read-only) · {foundational.length}</summary>
+                      <div className="mt-2 space-y-[5px]">
+                        {foundational.map(([k, v]) => (
+                          <div key={k} className="flex items-center justify-between text-[11px]">
+                            <span className="font-mono text-text-tertiary truncate" title={k}>{k}</span>
+                            <span className="font-mono text-text-secondary">{String(v)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
                   )}
                 </div>
-              )
-            })}
 
-            {foundational.length > 0 && (
-              <details className="pt-2 mt-1 border-t border-border-subtle/40">
-                <summary className="text-[11px] text-text-tertiary cursor-pointer select-none">Foundational config (read-only) · {foundational.length}</summary>
-                <div className="mt-2 space-y-[5px]">
-                  {foundational.map(([k, v]) => (
-                    <div key={k} className="flex items-center justify-between text-[11px]">
-                      <span className="font-mono text-text-tertiary truncate" title={k}>{k}</span>
-                      <span className="font-mono text-text-secondary">{String(v)}</span>
-                    </div>
-                  ))}
+                {/* Pinned coach — always-on guidance for the focused param; rows above never shift */}
+                <div className="px-[13px] py-[11px] border-t border-border-subtle flex-shrink-0 bg-gradient-to-b from-accent/[0.04] to-transparent">
+                  <ParamCoach schema={strategy?.param_schema ?? []} values={values} focusName={coachParam} />
                 </div>
-              </details>
-            )}
-          </div>
 
-          <div className="px-[15px] py-[12px] border-t border-border-subtle flex-shrink-0">
-            {jobBlocked && (
-              <div className="flex items-start gap-2 mb-2 px-2.5 py-2 rounded-md bg-warn-muted/40 border border-warn-text/20">
-                <AlertTriangle size={12} className="text-warn-text flex-shrink-0 mt-[1px]" />
-                <p className="text-[11px] text-warn-text leading-snug">{isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish.</p>
-              </div>
+                <div className="px-[13px] py-[11px] border-t border-border-subtle flex-shrink-0">
+                  {jobBlocked && (
+                    <div className="flex items-start gap-2 mb-2 px-2.5 py-2 rounded-md bg-warn-muted/40 border border-warn-text/20">
+                      <AlertTriangle size={12} className="text-warn-text flex-shrink-0 mt-[1px]" />
+                      <p className="text-[11px] text-warn-text leading-snug">{isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish.</p>
+                    </div>
+                  )}
+                  <button
+                    onClick={runIteration}
+                    disabled={!isDirty || jobBlocked || trigger.isPending}
+                    className="w-full flex items-center justify-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] py-2 rounded-md hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                  >
+                    <Play size={13} />
+                    {trigger.isPending ? 'Starting…' : isDirty ? `Run with ${dirtyKeys.length} change${dirtyKeys.length !== 1 ? 's' : ''}` : 'Change a param to run'}
+                  </button>
+                </div>
+              </>
             )}
-            <button
-              onClick={runIteration}
-              disabled={!isDirty || jobBlocked || trigger.isPending}
-              className="w-full flex items-center justify-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] py-2 rounded-md hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-            >
-              <Play size={13} />
-              {trigger.isPending ? 'Starting…' : isDirty ? `Run with ${dirtyKeys.length} change${dirtyKeys.length !== 1 ? 's' : ''}` : 'Change a param to run'}
-            </button>
-          </div>
           </div>
         </div>
-        )}
 
-        {/* ── Results ──────────────────────────────────────────── */}
-        <div className="space-y-[14px]">
+        {/* ── Results (the hero) — no top padding so ITERATIONS lines up with PARAMETERS ── */}
+        <div className="flex-1 min-w-0 space-y-[14px] px-[22px] pb-[22px]">
 
           {/* Leaderboard */}
           <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -500,7 +495,7 @@ export function TuningWorkbench() {
                               <div className="flex flex-col gap-[2px]">
                                 {changes.map(([k, v]) => (
                                   <span key={k} className="whitespace-nowrap">
-                                    <span className="text-text-tertiary">{k} </span>
+                                    <span className="text-text-tertiary">{schemaByName.get(k)?.label || k} </span>
                                     <span className="text-text-tertiary line-through">{String(baseline.params[k])}</span>
                                     <span className="text-accent">→{String(v)}</span>
                                   </span>
@@ -520,44 +515,25 @@ export function TuningWorkbench() {
           <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
             <div className="px-[15px] py-[10px] border-b border-border-subtle flex items-center justify-between">
               <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Cumulative P&L overlay</span>
-              <label className="flex items-center gap-1.5 text-[11px] text-text-tertiary cursor-pointer select-none">
-                <input type="checkbox" checked={showRegime} onChange={e => setShowRegime(e.target.checked)} className="w-3 h-3 rounded accent-accent" />
-                Regime overlay
-              </label>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 text-[11px] text-text-tertiary cursor-pointer select-none">
+                  <input type="checkbox" checked={showRegime} onChange={e => setShowRegime(e.target.checked)} className="w-3 h-3 rounded accent-accent" />
+                  Regime overlay
+                </label>
+                {overlayData.length > 0 && (
+                  <button onClick={() => setChartFs(true)} title="Fullscreen"
+                    className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors">
+                    <Maximize2 size={13} />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="px-[10px] py-[12px]">
               {overlayData.length === 0 ? (
                 <p className="text-[12px] text-text-tertiary text-center py-12">No completed runs to chart yet. Tweak a param and run an iteration.</p>
               ) : (
                 <>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={overlayData} margin={{ top: 6, right: 12, bottom: 0, left: 4 }}>
-                      <CartesianGrid stroke={C.grid} vertical={false} />
-                      {showRegime && bands.map((b, i) => (
-                        <ReferenceArea key={i} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
-                      ))}
-                      <XAxis
-                        dataKey="t" type="number" domain={['dataMin', 'dataMax']} scale="time"
-                        tickFormatter={t => new Date(t).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
-                        tick={{ fill: C.axisTick, fontSize: 10 }} stroke={C.grid}
-                      />
-                      <YAxis tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fill: C.axisTick, fontSize: 10 }} stroke={C.grid} width={48} />
-                      <Tooltip
-                        contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 12, padding: '8px 12px' }}
-                        labelStyle={{ color: C.axisTick }}
-                        itemStyle={{ color: '#e5e7eb' }}
-                        labelFormatter={t => new Date(t as number).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        formatter={(v: number, name: string) => [money(v), labelFor(name)]}
-                      />
-                      {completeIds.map(id => (
-                        <Line
-                          key={id} type="monotone" dataKey={id} stroke={colorFor.get(id)}
-                          strokeWidth={id === baseline.run_id ? 2.5 : 1.5} dot={false} connectNulls
-                          strokeDasharray={id === baseline.run_id ? undefined : '4 2'}
-                        />
-                      ))}
-                    </LineChart>
-                  </ResponsiveContainer>
+                  {renderOverlay(440)}
                   {/* Legend */}
                   <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 px-2">
                     {completeIds.map(id => (
@@ -619,6 +595,27 @@ export function TuningWorkbench() {
           )}
         </div>
       </div>
+
+      {/* Fullscreen cumulative-P&L overlay */}
+      {chartFs && (
+        <div className="fixed inset-0 z-50 bg-bg-base flex flex-col">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Cumulative P&L overlay — {baseline.strategy_name} · {baseline.instrument}</span>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-1.5 text-[11px] text-text-tertiary cursor-pointer select-none">
+                <input type="checkbox" checked={showRegime} onChange={e => setShowRegime(e.target.checked)} className="w-3 h-3 rounded accent-accent" />
+                Regime overlay
+              </label>
+              <button onClick={() => setChartFs(false)} title="Close (Esc)" className="text-text-tertiary hover:text-text-primary transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 px-5 py-4">
+            {renderOverlay(Math.max(300, window.innerHeight - 120))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

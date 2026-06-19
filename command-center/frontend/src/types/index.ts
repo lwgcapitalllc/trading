@@ -236,6 +236,16 @@ export interface ParamSchemaEntry {
   display_name: string
   description?: string
   category?: 'strategy_logic' | 'foundational'
+  // Editor metadata overlaid from a strategy's companion <Strategy>.meta.json (optional).
+  label?: string            // friendly label, preferred over display_name
+  desc?: string             // plain-English explanation for the explainer panel
+  unit?: string             // e.g. "× ATR", "pips", "R"
+  core?: boolean            // essential knob — shown in the Essentials card up front
+  widget?: 'toggle' | 'switch' | 'time' | 'number' | 'text'
+  options?: { off: string; on: string }   // labels for a bool rendered as a segmented toggle
+  show_if?: Record<string, string | number | boolean>  // show only when another param equals a value
+  guide?: [string, string]  // [what lowering does, what raising does]
+  step?: number             // input step
 }
 
 export interface Strategy {

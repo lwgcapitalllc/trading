@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Tune screen — layout prototypes</title>
+<style>
+  :root{
+    --bg:#08090e;--surface:#11131b;--surface2:#0c0e15;--sunken:#0a0b11;--raised:#171a24;
+    --border:#1e2330;--border2:#2a3140;--t1:#e8eaf0;--t2:#9aa2b1;--t3:#646c7e;--t4:#454c5c;
+    --accent:#22c8e6;--accent-dim:#0e6e80;--gold:#f3c64a;--pos:#34d27b;--neg:#ef5350;--violet:#8b5cf6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--t1);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;padding:18px 22px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .brand{font-weight:700;letter-spacing:.5px;font-size:17px}
+  .brand .dim{color:var(--t3)}
+  .tabs{display:flex;gap:6px;background:var(--surface2);border:1px solid var(--border);padding:5px;border-radius:11px}
+  .tab{padding:8px 15px;border-radius:7px;color:var(--t2);cursor:pointer;font-weight:600;font-size:12.5px}
+  .tab:hover{color:var(--t1)}
+  .tab.active{background:var(--accent);color:#04141a}
+  .tab small{display:block;font-weight:500;font-size:10px;opacity:.75}
+  .blurb{color:var(--t2);font-size:12.5px;margin:0 2px 14px;max-width:900px}
+  .blurb b{color:var(--t1)}
+  .stage{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;position:relative;min-height:680px}
+  /* page header (mock) */
+  .ph{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  .ph h2{margin:0;font-size:16px;font-weight:700}
+  .ph h2 span{color:var(--t3);font-weight:500;font-size:13px;margin-left:8px}
+  .chips{display:flex;gap:6px;margin-top:6px}
+  .chip{font-size:11px;font-family:ui-monospace,monospace;padding:2px 7px;border-radius:5px;border:1px solid}
+  .chip.inst{color:var(--accent);background:#22c8e618;border-color:#22c8e644}
+  .chip.dt{color:var(--t2);background:var(--surface);border-color:var(--border)}
+  .chip.rs{color:var(--gold);background:#f3c64a18;border-color:#f3c64a44}
+  /* leaderboard + chart */
+  .card{border:1px solid var(--border);border-radius:11px;background:var(--surface2);overflow:hidden}
+  .card-h{padding:9px 13px;border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--t2);display:flex;justify-content:space-between}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;padding:7px 13px;color:var(--t3);font-weight:500;font-size:11px}
+  td{padding:9px 13px;border-top:1px solid var(--border)}
+  .mono{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .neg{color:var(--neg)}.pos{color:var(--pos)}
+  .chart{padding:10px 6px 4px}
+  .chart svg{width:100%;height:300px;display:block}
+  .axis{font-size:9px;fill:var(--t4);font-family:ui-monospace,monospace}
+  /* editor mock */
+  .ed{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden}
+  .ed-tools{display:flex;justify-content:flex-end;gap:8px;padding:9px 12px}
+  .pill{display:inline-flex;background:var(--sunken);border:1px solid var(--border);border-radius:8px;padding:3px}
+  .pill button{border:none;background:none;color:var(--t2);font-weight:600;font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer}
+  .pill button.on{background:var(--accent);color:#04141a}
+  .ess{margin:0 12px;border:1px solid var(--border);border-left:3px solid var(--accent);background:#22c8e60a;border-radius:11px;padding:2px 13px 8px}
+  .ess.idle{border-color:var(--border);border-left-color:transparent;background:var(--surface2)}
+  .cap{font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;padding:10px 0 3px;color:var(--accent)}
+  .ess.idle .cap{color:var(--gold)}
+  .acc{margin:9px 12px 0;border:1px solid var(--border);border-left:3px solid transparent;border-radius:11px;background:var(--surface2)}
+  .acc-h{display:flex;justify-content:space-between;align-items:center;padding:10px 13px;cursor:pointer}
+  .acc-h .l{font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--gold);display:flex;gap:8px;align-items:center}
+  .acc-h .c{font-size:11px;color:var(--t3)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 6px;margin:0 -6px;border-radius:8px;cursor:pointer}
+  .row:hover{background:var(--raised)}
+  .row.focus{background:#22c8e618}
+  .row .lab{font-size:12.5px;font-weight:600;display:flex;gap:7px;align-items:center}
+  .row .lab .star{color:var(--gold);font-size:10px}
+  .ess .row .lab .star{color:var(--accent)}
+  .seg{display:inline-flex;background:var(--sunken);border:1px solid var(--border2);border-radius:8px;padding:3px;width:210px}
+  .seg button{flex:1;border:none;background:none;color:var(--t2);font-size:11.5px;font-weight:600;padding:6px;border-radius:6px;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#04141a}
+  .num{display:inline-flex;align-items:center;background:var(--sunken);border:1px solid var(--border2);border-radius:8px;width:150px;overflow:hidden}
+  .num input{flex:1;width:100%;min-width:0;background:none;border:none;color:var(--t1);padding:7px 9px;font:inherit;font-family:ui-monospace,monospace;outline:none}
+  .num .u{font-size:10.5px;color:var(--t3);padding:0 9px;border-left:1px solid var(--border);align-self:stretch;display:flex;align-items:center}
+  /* inline explainer (layout B) */
+  .inx{margin:2px -6px 4px;padding:9px 11px;background:var(--sunken);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px}
+  .inx p{margin:0 0 7px;color:var(--t2);font-size:12px}
+  .inx .arrow{display:flex;gap:8px}
+  .inx .arrow div{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:7px;font-size:11px;color:var(--t2)}
+  .inx .arrow b{color:var(--accent);display:block;margin-bottom:2px}
+  /* right explainer panel */
+  .panelx{border-left:1px solid var(--border);background:var(--surface2);padding:16px}
+  .panelx .eh{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--t3);margin-bottom:7px}
+  .panelx h3{margin:0 0 7px;font-size:16px}
+  .panelx p{color:var(--t2);font-size:12px;margin:0 0 12px}
+  .kv{display:flex;justify-content:space-between;font-size:11.5px;padding:7px 0;border-top:1px solid var(--border)}
+  .kv span:last-child{font-family:ui-monospace,monospace;font-weight:600}
+  .btn{padding:8px 15px;border-radius:9px;font-weight:600;font-size:12.5px;cursor:pointer;border:1px solid transparent;display:inline-flex;gap:6px;align-items:center}
+  .btn.primary{background:var(--accent);color:#04141a}
+  .btn.ghost{background:var(--sunken);border-color:var(--border2);color:var(--t2)}
+  .btn.gold{background:#f3c64a18;border-color:#f3c64a44;color:var(--gold)}
+  .changed{color:var(--accent);font-weight:600}
+  .muted{color:var(--t3)}
+  /* drawer */
+  .scrim{position:absolute;inset:0;background:#000a;display:none}
+  .scrim.open{display:block}
+  .drawer{position:absolute;top:0;right:0;height:100%;width:640px;background:var(--surface);border-left:1px solid var(--border2);transform:translateX(100%);transition:transform .18s;display:flex;flex-direction:column}
+  .drawer.open{transform:translateX(0)}
+  .drawer-h{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+  .drawer-b{flex:1;overflow:auto;padding:12px 0}
+  .drawer-f{padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+  .x{background:none;border:none;color:var(--t3);font-size:19px;cursor:pointer}
+  .foot{margin-top:18px;color:var(--t4);font-size:11px;text-align:center}
+  .hint{font-size:11px;color:var(--t3);font-style:italic}
+  /* combined: dockable side panel */
+  .edpanel{width:430px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;transition:width .18s ease;overflow:hidden}
+  .edpanel.col{width:48px}
+  .edpanel.col .edhide{display:none}
+  .edpanel .edshow{display:none}
+  .edpanel.col .edshow{display:flex}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">LWG <span class="dim">· Tune screen — layout options</span></div>
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-l="D">★ Combined<small>dockable side panel</small></div>
+      <div class="tab" data-l="B">Side-by-side<small>params left, chart right</small></div>
+      <div class="tab" data-l="A">Drawer<small>editor slides in</small></div>
+      <div class="tab" data-l="C">Collapsed bar<small>folds to a strip</small></div>
+    </div>
+  </div>
+  <p class="blurb" id="blurb"></p>
+  <div class="stage" id="stage"></div>
+  <div class="foot">Prototype only — mock data. Goal: chart is the hero again on the tune screen, editor stays usable.</div>
+
+<script>
+const BLURB = {
+  D:'<b>★ Combined — dockable side panel (recommended).</b> Chart + leaderboard are the hero and fill the page. The editor docks on the left, <b>side-by-side</b> with the chart (it pushes, never overlays), with the explainer inline under the focused row. Collapse it to a thin rail (← button) to give the chart full width — the drawer\'s summon/dismiss, but docked so both stay visible while you iterate. Try the <b>←</b> / rail toggle.',
+  B:'<b>Side-by-side.</b> Closest to what you had before: a left rail holds the editor, the chart + leaderboard fill the rest as the hero. The explainer is no longer a fixed right column — it drops in <b>under the row you focus</b>, so the editor fits a narrow rail. Params and chart both always visible.',
+  A:'<b>B · Drawer.</b> The page is purely chart + leaderboard (maximally hero). An "Edit parameters" button slides the full editor in from the right (same component as Run/Optimize). Cleanest chart, but you summon the editor each time — more clicks while iterating.',
+  C:'<b>C · Collapsed bar.</b> The editor folds to a one-line strip at the top (mode · changes · Edit). Chart is immediately visible; expanding the strip drops the full editor down temporarily. Default = collapsed = chart hero.',
+}
+
+function chartSVG(){
+  return `<svg viewBox="0 0 1000 300" preserveAspectRatio="none">
+    <polyline fill="none" stroke="#22c8e6" stroke-width="2" points="0,150 60,140 120,165 180,150 240,120 300,130 360,110 420,135 480,100 540,210 600,235 660,250 720,255 780,200 840,205 900,195 1000,190"/>
+    <line x1="0" y1="150" x2="1000" y2="150" stroke="#1e2330" stroke-width="1"/>
+  </svg>`
+}
+function leaderboard(){
+  return `<div class="card"><div class="card-h"><span>Iterations (1)</span><span class="muted">Ranked by profit factor · ★ best · Δ vs baseline</span></div>
+    <table><thead><tr><th></th><th>Run</th><th>Net P&L</th><th>Max DD</th><th>PF</th><th>Win%</th><th>Trades</th><th>Changes</th></tr></thead>
+    <tbody><tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#22c8e6"></span></td>
+    <td>★ Baseline</td><td class="mono neg">-$237</td><td class="mono neg">$851</td><td class="mono">0.90</td><td class="mono muted">53.1%</td><td class="mono muted">113</td><td class="muted">—</td></tr></tbody></table></div>`
+}
+function chartCard(){
+  return `<div class="card"><div class="card-h"><span>Cumulative P&L overlay</span><span class="muted">☑ Regime overlay</span></div><div class="chart">${chartSVG()}</div></div>`
+}
+
+// editor pieces -------------------------------------------------
+function essRow(star,label,ctl,active){
+  return `<div class="row ${active?'focus':''}"><div class="lab">${star?'<span class="star">★</span>':''}${label}</div><div>${ctl}</div></div>`
+}
+const segMarket = `<div class="seg"><button class="on">Market on close</button><button>Pending stop</button></div>`
+const segAtr = `<div class="seg"><button class="on">ATR band</button><button>Fixed pips</button></div>`
+const numMin = `<span class="num"><input value="0.5"><span class="u">× ATR</span></span>`
+const numRR = `<span class="num"><input value="2"><span class="u">R</span></span>`
+
+function essentials(idle){
+  return `<div class="ess ${idle?'idle':''}"><div class="cap">★ Essentials</div>
+    ${essRow(true,'Entry style',segMarket,false)}
+    ${essRow(true,'Filter mode',segAtr,false)}
+    ${essRow(true,'Min range',numMin,!idle)}
+    ${essRow(true,'Profit target',numRR,false)}
+  </div>`
+}
+function accordions(){
+  return `${acc('Range filter','1 setting')}${acc('Breakout & target','2 settings')}${acc('Stop management','1 setting')}${acc('Session windows','5 settings')}`
+}
+function acc(name,count){return `<div class="acc"><div class="acc-h"><span class="l">▸ ${name}</span><span class="c">${count}</span></div></div>`}
+
+// inline explainer used by layout B (drops under the focused row)
+const inlineExplainer = `<div class="inx">
+  <p><b style="color:#e8eaf0">Min range</b> — skip the day if the Asian range is smaller than this × daily ATR. Setting it too low lets lower-quality days through.</p>
+  <div class="arrow"><div><b>↓ Lower</b>Fewer, cleaner trades</div><div><b>↑ Higher</b>More trades but lower-quality days</div></div>
+</div>`
+
+// right explainer panel used by drawer
+const rightPanel = `<div class="panelx"><div class="eh">Now editing</div><h3>Entry style</h3>
+  <p>How the breakout trade gets placed. Market enters at the close of the bar that breaks the range; Pending places stop orders at the levels.</p>
+  <div class="kv"><span class="muted">Current</span><span>off</span></div>
+  <div class="kv"><span class="muted">Default</span><span>off</span></div></div>`
+
+// ---- LAYOUT A: drawer ----
+function layoutA(){
+  return `<div class="ph"><div><h2>Tune Parameters <span>London session breakout</span></h2>
+      <div class="chips"><span class="chip inst">GBPJPY.s</span><span class="chip dt">2023-06-18 → 2026-06-18</span><span class="chip rs">personal_forex_demo</span></div></div>
+      <button class="btn gold" onclick="document.getElementById('dr').classList.add('open');document.getElementById('sc').classList.add('open')">✎ Edit parameters</button></div>
+    <div style="padding:14px;display:flex;flex-direction:column;gap:14px">${leaderboard()}${chartCard()}</div>
+    <div class="scrim" id="sc" onclick="this.classList.remove('open');document.getElementById('dr').classList.remove('open')"></div>
+    <div class="drawer" id="dr">
+      <div class="drawer-h"><strong>Parameters</strong><button class="x" onclick="document.getElementById('dr').classList.remove('open');document.getElementById('sc').classList.remove('open')">×</button></div>
+      <div class="drawer-b">
+        <div class="ed" style="border:none">
+          <div class="ed-tools"><span class="pill"><button>Simple</button><button class="on">Expert</button></span></div>
+          ${essentials(false)}${accordions()}
+        </div>
+      </div>
+      <div class="drawer-f"><span class="hint">0 changes</span><button class="btn primary">▷ Run iteration</button></div>
+    </div>`
+}
+
+// ---- LAYOUT B: side-by-side, inline explainer ----
+function layoutB(){
+  const ess = `<div class="ess"><div class="cap">★ Essentials</div>
+    ${essRow(true,'Entry style',segMarket,false)}
+    ${essRow(true,'Filter mode',segAtr,false)}
+    ${essRow(true,'Min range',numMin,true)}
+    ${inlineExplainer}
+    ${essRow(true,'Profit target',numRR,false)}
+  </div>`
+  return `<div class="ph"><div><h2>Tune Parameters <span>London session breakout</span></h2>
+      <div class="chips"><span class="chip inst">GBPJPY.s</span><span class="chip dt">2023-06-18 → 2026-06-18</span><span class="chip rs">personal_forex_demo</span></div></div></div>
+    <div style="display:grid;grid-template-columns:420px 1fr;gap:0;min-height:560px">
+      <div style="border-right:1px solid var(--border);display:flex;flex-direction:column">
+        <div style="padding:11px 13px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--t2)">Parameters</span>
+          <span class="pill"><button>Simple</button><button class="on">Expert</button></span>
+        </div>
+        <div style="flex:1;overflow:auto;padding-bottom:10px">${ess}${accordions()}</div>
+        <div style="padding:11px 13px;border-top:1px solid var(--border);display:flex;justify-content:flex-end"><button class="btn primary">▷ Run iteration</button></div>
+      </div>
+      <div style="padding:14px;display:flex;flex-direction:column;gap:14px">${leaderboard()}${chartCard()}</div>
+    </div>`
+}
+
+// ---- LAYOUT C: collapsed bar ----
+function layoutC(){
+  return `<div class="ph"><div><h2>Tune Parameters <span>London session breakout</span></h2>
+      <div class="chips"><span class="chip inst">GBPJPY.s</span><span class="chip dt">2023-06-18 → 2026-06-18</span><span class="chip rs">personal_forex_demo</span></div></div></div>
+    <div style="padding:14px;display:flex;flex-direction:column;gap:14px">
+      <div id="strip" class="card" style="background:var(--surface)">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 14px">
+          <span style="font-size:12px;color:var(--t2)"><b style="color:#e8eaf0">Parameters</b> · Expert · <span class="muted">0 changed</span></span>
+          <button class="btn ghost" onclick="var e=document.getElementById('expand');e.style.display=e.style.display==='none'?'block':'none';this.textContent=e.style.display==='none'?'▾ Edit parameters':'▴ Hide'">▾ Edit parameters</button>
+        </div>
+        <div id="expand" style="display:none;border-top:1px solid var(--border);padding-bottom:10px">
+          <div class="ed-tools"><span class="pill"><button>Simple</button><button class="on">Expert</button></span></div>
+          <div style="display:grid;grid-template-columns:1fr 300px">
+            <div>${essentials(false)}${accordions()}</div>
+            ${rightPanel}
+          </div>
+          <div style="display:flex;justify-content:flex-end;padding:10px 14px"><button class="btn primary">▷ Run iteration</button></div>
+        </div>
+      </div>
+      ${leaderboard()}${chartCard()}
+    </div>`
+}
+
+// ---- LAYOUT D: combined — dockable side panel ----
+function layoutD(){
+  const ess = `<div class="ess"><div class="cap">★ Essentials</div>
+    ${essRow(true,'Entry style',segMarket,false)}
+    ${essRow(true,'Filter mode',segAtr,false)}
+    ${essRow(true,'Min range',numMin,true)}
+    ${inlineExplainer}
+    ${essRow(true,'Profit target',numRR,false)}
+  </div>`
+  return `<div class="ph"><div><h2>Tune Parameters <span>London session breakout</span></h2>
+      <div class="chips"><span class="chip inst">GBPJPY.s</span><span class="chip dt">2023-06-18 → 2026-06-18</span><span class="chip rs">personal_forex_demo</span></div></div></div>
+    <div style="display:flex;min-height:560px">
+      <div class="edpanel" id="edpanel">
+        <button class="edshow" onclick="toggleEd()" title="Show parameters"
+          style="flex-direction:column;gap:10px;align-items:center;padding:14px 0;background:none;border:none;color:var(--t3);cursor:pointer;width:100%">
+          <span style="font-size:14px">→</span>
+          <span style="writing-mode:vertical-rl;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase">Parameters</span>
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--accent)" title="changes pending"></span>
+        </button>
+        <div class="edhide" style="flex-direction:column;height:100%">
+          <div style="padding:11px 13px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--t2)">Parameters</span>
+            <div style="display:flex;gap:10px;align-items:center">
+              <span class="pill"><button>Simple</button><button class="on">Expert</button></span>
+              <button onclick="toggleEd()" title="Collapse" class="x" style="font-size:15px">←</button>
+            </div>
+          </div>
+          <div style="flex:1;overflow:auto;padding-bottom:10px">${ess}${accordions()}</div>
+          <div style="padding:11px 13px;border-top:1px solid var(--border);display:flex;justify-content:flex-end"><button class="btn primary">▷ Run iteration</button></div>
+        </div>
+      </div>
+      <div style="flex:1;padding:14px;display:flex;flex-direction:column;gap:14px;min-width:0">${leaderboard()}${chartCard()}</div>
+    </div>`
+}
+function toggleEd(){ document.getElementById('edpanel').classList.toggle('col') }
+
+const L = { A:layoutA, B:layoutB, C:layoutC, D:layoutD }
+function render(l){ document.getElementById('blurb').innerHTML=BLURB[l]; document.getElementById('stage').innerHTML=L[l]() }
+document.getElementById('tabs').addEventListener('click',e=>{const t=e.target.closest('.tab');if(!t)return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));render(t.dataset.l)})
+render('D')
+</script>
+</body>
+</html>

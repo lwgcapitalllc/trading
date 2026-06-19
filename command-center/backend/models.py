@@ -284,7 +284,10 @@ class Strategy(BaseModel):
     suggested_instrument: Optional[str] = None
     description: Optional[str] = None
     default_params: dict = {}
-    param_schema: list[dict] = []          # [{name, type, min?, max?, default, group, display_name}]
+    # [{name, type, min?, max?, default, group, display_name}] plus optional editor
+    # metadata overlaid from a companion <Strategy>.meta.json by the scanner:
+    # label, desc, unit, core, widget, options{off,on}, show_if{param:value}, guide[lo,hi], step
+    param_schema: list[dict] = []
     scanned_at: datetime
     run_count: int = 0
     runner: str = "ninjatrader"

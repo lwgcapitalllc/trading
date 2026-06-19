@@ -63,11 +63,14 @@
 //--- Strategy logic parameters (Layer A — tunable by optimizer) ---
 // Session windows are in GMT. They define the strategy, not the instrument,
 // so they are the same for every pair. Times are "HH:MM".
-input string AsianStartGMT   = "00:00";   // Asian range window start (GMT)
-input string AsianEndGMT     = "06:00";   // Asian range window end (GMT, exclusive)
-input string LondonOpenGMT   = "07:00";   // start watching for the break (GMT)
-input string EntryCutoffGMT  = "09:00";   // last bar we may enter on (GMT, exclusive)
-input string ForceFlatGMT    = "11:00";   // close any open trade at/after this (GMT)
+// These are GMT and DST-safe (the EA derives the broker↔GMT offset live, see
+// BrokerToGmtSec) — they define the strategy, not a per-run knob, so the lab
+// surfaces them in a separate collapsed "Session Windows" section.
+input string AsianStartGMT   = "00:00";   // [group: Session Windows] Asian range window start (GMT)
+input string AsianEndGMT     = "06:00";   // [group: Session Windows] Asian range window end (GMT, exclusive)
+input string LondonOpenGMT   = "07:00";   // [group: Session Windows] start watching for the break (GMT)
+input string EntryCutoffGMT  = "09:00";   // [group: Session Windows] last bar we may enter on (GMT, exclusive)
+input string ForceFlatGMT    = "11:00";   // [group: Session Windows] close any open trade at/after this (GMT)
 
 // Volatility scale — everything per-pair is expressed against this ATR.
 input int    AtrPeriod       = 14;        // ATR lookback, on the DAILY timeframe

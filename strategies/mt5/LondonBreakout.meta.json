@@ -1,0 +1,161 @@
+{
+  "_comment": "Editor UI metadata for LondonBreakout — labels, groups, descriptions, the 'essentials' (core) flag, conditional visibility (show_if), and toggle option labels. Consumed by the command-center scanner and overlaid onto the scanned param schema. Affects the lab UI only; never the compiled .ex5 or the source hash. Param order here is the canonical UI order.",
+  "params": [
+    {
+      "name": "PendingEntry",
+      "group": "Entry model",
+      "core": true,
+      "widget": "toggle",
+      "label": "Entry style",
+      "options": { "off": "Market on close", "on": "Pending stop" },
+      "desc": "How the breakout trade gets placed. Market enters at the close of the bar that breaks the range. Pending places stop orders at the breakout levels and fills when price touches them."
+    },
+    {
+      "name": "PipRangeFilter",
+      "group": "Range filter",
+      "core": true,
+      "widget": "toggle",
+      "label": "Filter mode",
+      "options": { "off": "ATR band", "on": "Fixed pips" },
+      "desc": "Which days are tradable, judged by the size of the Asian range. ATR band scales the size limits with each pair's own volatility. Fixed pips uses hard pip bounds that don't adapt."
+    },
+    {
+      "name": "RangeMinAtr",
+      "group": "Range filter",
+      "core": true,
+      "label": "Min range",
+      "unit": "× ATR",
+      "step": 0.1,
+      "desc": "Skip the day if the Asian range is smaller than this × daily ATR. Setting it too low lets lower-quality days through.",
+      "show_if": { "PipRangeFilter": false },
+      "guide": ["Fewer, cleaner trades", "More trades but lower-quality days get through"]
+    },
+    {
+      "name": "TargetRR",
+      "group": "Breakout & target",
+      "core": true,
+      "label": "Profit target",
+      "unit": "R",
+      "step": 0.5,
+      "desc": "Take-profit as a multiple of the stop distance. 1.0 means reward equals risk.",
+      "guide": ["Banks profit sooner", "Aims for more per trade, but may not be reached before force-flat"]
+    },
+    {
+      "name": "BufferPips",
+      "group": "Entry model",
+      "label": "Pending buffer",
+      "unit": "pips",
+      "step": 0.5,
+      "desc": "How far beyond the range the pending stop sits. Only used with pending entry.",
+      "show_if": { "PendingEntry": true }
+    },
+    {
+      "name": "RangeMaxAtr",
+      "group": "Range filter",
+      "label": "Max range",
+      "unit": "× ATR",
+      "step": 0.1,
+      "desc": "Skip the day if the Asian range is larger than this × daily ATR.",
+      "show_if": { "PipRangeFilter": false },
+      "guide": ["Rejects more wild days", "Lets bigger ranges through"]
+    },
+    {
+      "name": "RangeMinPips",
+      "group": "Range filter",
+      "label": "Min range",
+      "unit": "pips",
+      "step": 1,
+      "desc": "Reject the day if the Asian range is below this many pips.",
+      "show_if": { "PipRangeFilter": true },
+      "guide": ["Fewer, cleaner trades", "More trades but lower-quality days get through"]
+    },
+    {
+      "name": "RangeMaxPips",
+      "group": "Range filter",
+      "label": "Max range",
+      "unit": "pips",
+      "step": 1,
+      "desc": "Reject the day if the Asian range is above this many pips.",
+      "show_if": { "PipRangeFilter": true },
+      "guide": ["Rejects more wild days", "Lets bigger ranges through"]
+    },
+    {
+      "name": "SweetMinPips",
+      "group": "Range filter",
+      "label": "Sweet spot low",
+      "unit": "pips",
+      "step": 1,
+      "desc": "Logged only, never a gate — tracks how many qualifying days landed in the sweet spot.",
+      "show_if": { "PipRangeFilter": true }
+    },
+    {
+      "name": "SweetMaxPips",
+      "group": "Range filter",
+      "label": "Sweet spot high",
+      "unit": "pips",
+      "step": 1,
+      "desc": "Logged only, never a gate.",
+      "show_if": { "PipRangeFilter": true }
+    },
+    {
+      "name": "BufferAtr",
+      "group": "Breakout & target",
+      "label": "Breakout buffer",
+      "unit": "× ATR",
+      "step": 0.05,
+      "desc": "How far beyond the range price must travel to trigger an entry (ATR entry mode).",
+      "guide": ["Triggers on smaller breaks", "Needs a bigger break to enter"]
+    },
+    {
+      "name": "AtrPeriod",
+      "group": "Breakout & target",
+      "label": "ATR lookback",
+      "unit": "days",
+      "step": 1,
+      "desc": "Daily ATR window used to scale the range band and the breakout buffer.",
+      "guide": ["Reacts faster to volatility shifts", "Smoother, slower ATR"]
+    },
+    {
+      "name": "BreakEvenMove",
+      "group": "Stop management",
+      "widget": "switch",
+      "label": "Break-even stop",
+      "desc": "Move the stop to entry once price reaches +1R, taking risk off the trade."
+    },
+    {
+      "name": "AsianStartGMT",
+      "group": "Session windows",
+      "widget": "time",
+      "label": "Asian range start",
+      "desc": "Start of the quiet Asian window that sets the reference range. GMT, auto DST-adjusted."
+    },
+    {
+      "name": "AsianEndGMT",
+      "group": "Session windows",
+      "widget": "time",
+      "label": "Asian range end",
+      "desc": "End of the Asian window (exclusive). GMT, auto DST-adjusted."
+    },
+    {
+      "name": "LondonOpenGMT",
+      "group": "Session windows",
+      "widget": "time",
+      "label": "London watch start",
+      "desc": "When the strategy starts watching for the breakout. GMT, auto DST-adjusted."
+    },
+    {
+      "name": "EntryCutoffGMT",
+      "group": "Session windows",
+      "widget": "time",
+      "label": "Entry cutoff",
+      "desc": "Last bar an entry may be taken on (exclusive). GMT, auto DST-adjusted."
+    },
+    {
+      "name": "ForceFlatGMT",
+      "group": "Session windows",
+      "widget": "time",
+      "label": "Force-flat",
+      "desc": "Any open trade is closed at or after this time. GMT, auto DST-adjusted."
+    }
+  ]
+}

@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Parameter UI — prototypes</title>
+<style>
+  :root{
+    --bg:#08090e; --surface:#11131b; --surface2:#0c0e15; --sunken:#0a0b11;
+    --raised:#171a24; --border:#1e2330; --border2:#2a3140;
+    --t1:#e8eaf0; --t2:#9aa2b1; --t3:#646c7e; --t4:#454c5c;
+    --accent:#22c8e6; --accent-dim:#0e6e80; --gold:#f3c64a; --gold-dim:#6b5a1f;
+    --pos:#34d27b; --neg:#ef5350; --violet:#9a7cf0;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(1200px 700px at 70% -10%, #11203022, transparent),
+      radial-gradient(900px 600px at 10% 110%, #1a142a22, transparent),
+      var(--bg);
+    color:var(--t1); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; padding:26px;
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+
+  /* top chrome */
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .brand{font-weight:700;letter-spacing:.5px;font-size:18px}
+  .brand .dim{color:var(--t3);font-weight:600}
+  .designtabs{display:flex;gap:6px;background:var(--surface2);border:1px solid var(--border);padding:5px;border-radius:12px}
+  .dtab{padding:8px 16px;border-radius:8px;color:var(--t2);cursor:pointer;font-weight:600;font-size:13px;border:1px solid transparent;white-space:nowrap}
+  .dtab:hover{color:var(--t1)}
+  .dtab.active{background:var(--accent);color:#04141a;border-color:var(--accent)}
+  .dtab small{display:block;font-weight:500;font-size:10px;opacity:.7;letter-spacing:.3px}
+
+  .blurb{color:var(--t2);font-size:13px;margin:0 2px 16px;max-width:760px}
+  .blurb b{color:var(--t1)}
+
+  /* modal-ish panel */
+  .stage{display:flex;justify-content:center}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:660px;box-shadow:0 30px 80px #000a;overflow:hidden}
+  .panel.wide{width:980px}
+  .phead{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+  .phead .h{font-weight:700;font-size:16px;display:flex;align-items:center;gap:10px}
+  .chip{font-size:10px;font-weight:700;letter-spacing:.6px;padding:3px 7px;border-radius:5px;background:var(--gold-dim);color:var(--gold);border:1px solid #f3c64a44}
+  .x{background:none;border:none;color:var(--t3);font-size:20px;cursor:pointer;line-height:1}
+  .pbody{padding:6px 20px 18px;max-height:72vh;overflow:auto}
+  .pfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}
+  .btn{padding:9px 16px;border-radius:9px;font-weight:600;font-size:13px;cursor:pointer;border:1px solid transparent}
+  .btn.ghost{background:none;color:var(--t2)}
+  .btn.ghost:hover{color:var(--t1)}
+  .btn.primary{background:var(--accent);color:#04141a;display:flex;gap:7px;align-items:center}
+  .btn.primary:hover{filter:brightness(1.08)}
+
+  /* context switch */
+  .ctxrow{display:flex;align-items:center;gap:12px;padding:14px 0 6px}
+  .ctxseg{display:inline-flex;background:var(--sunken);border:1px solid var(--border);border-radius:9px;padding:3px}
+  .ctxseg button{padding:6px 14px;border:none;background:none;color:var(--t2);font-weight:600;font-size:12px;border-radius:6px;cursor:pointer}
+  .ctxseg button.active{background:var(--raised);color:var(--t1);box-shadow:0 1px 0 #0006}
+  .ctxnote{font-size:11.5px;color:var(--t3)}
+  .ctxnote b{color:var(--accent)}
+
+  /* section */
+  .sec{margin-top:18px}
+  .sec-h{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+  .sec-h .t{font-size:11px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--t2)}
+  .sec-h .p{font-size:12px;color:var(--t3)}
+  .sec-divider{height:1px;background:var(--border);margin:14px 0 0}
+
+  /* param row (design A) */
+  .prow{padding:12px 0;border-bottom:1px solid #161a24}
+  .prow:last-child{border-bottom:none}
+  .prow .lab{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--t1);font-size:13.5px}
+  .prow .unit{color:var(--t3);font-weight:500;font-size:12px}
+  .prow .desc{color:var(--t3);font-size:12px;margin-top:3px;max-width:560px}
+  .prow .ctl{margin-top:8px}
+  .info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;border:1px solid var(--border2);color:var(--t3);font-size:10px;cursor:help;font-style:normal}
+
+  /* controls */
+  .num{display:inline-flex;align-items:center;background:var(--sunken);border:1px solid var(--border2);border-radius:8px;overflow:hidden;width:210px}
+  .num input{flex:1;width:100%;background:none;border:none;color:var(--t1);padding:9px 11px;font:inherit;font-variant-numeric:tabular-nums;outline:none}
+  .num .suffix{color:var(--t3);font-size:11px;padding:0 11px;border-left:1px solid var(--border);align-self:stretch;display:flex;align-items:center}
+  .num.dim{opacity:.45}
+
+  .seg{display:inline-flex;background:var(--sunken);border:1px solid var(--border2);border-radius:9px;padding:3px;gap:3px}
+  .seg button{border:none;background:none;color:var(--t2);font-weight:600;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:6px}
+  .seg button .dot{width:7px;height:7px;border-radius:50%;background:var(--t4)}
+  .seg button.on{background:var(--accent);color:#04141a}
+  .seg button.on .dot{background:#04141a}
+  .seg.alt button.on{background:var(--violet);color:#0c0720}
+  .seg.alt button.on .dot{background:#0c0720}
+
+  .switch{display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+  .switch .track{width:42px;height:24px;border-radius:14px;background:var(--border2);position:relative;transition:.15s}
+  .switch .knob{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#cfd4de;transition:.15s}
+  .switch.on .track{background:var(--accent)}
+  .switch.on .knob{left:21px;background:#04141a}
+  .switch .stxt{font-size:12.5px;color:var(--t2);font-weight:600}
+
+  /* baseline chip (tune) + sweep (optimize) */
+  .baseline{display:inline-flex;align-items:center;gap:6px;margin-left:10px;font-size:11px;color:var(--t3)}
+  .baseline b{color:var(--t2);font-variant-numeric:tabular-nums}
+  .delta{color:var(--gold);font-weight:700}
+  .sweepbtn{margin-left:10px;font-size:11px;font-weight:600;color:var(--t3);background:var(--sunken);border:1px solid var(--border2);border-radius:7px;padding:6px 10px;cursor:pointer}
+  .sweepbtn.on{color:var(--accent);border-color:var(--accent-dim);background:#0e6e8018}
+  .sweeprow{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+  .mini{display:inline-flex;align-items:center;background:var(--sunken);border:1px solid var(--border2);border-radius:7px}
+  .mini label{color:var(--t3);font-size:10px;padding:0 4px 0 9px}
+  .mini input{width:54px;background:none;border:none;color:var(--t1);padding:7px 8px 7px 4px;font:inherit;font-size:12px;outline:none;font-variant-numeric:tabular-nums}
+  .swtag{font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--accent);background:#0e6e8022;border:1px solid var(--accent-dim);border-radius:5px;padding:3px 7px}
+  .locktag{font-size:11px;color:var(--t4);font-style:italic}
+
+  /* accordion (design B) */
+  .acc{border:1px solid var(--border);border-radius:11px;margin-top:10px;overflow:hidden;background:var(--surface2)}
+  .acc-h{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;cursor:pointer}
+  .acc-h .l{display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px}
+  .acc-h .cnt{font-size:11px;color:var(--t3);font-weight:500}
+  .acc-h .chev{color:var(--t3);transition:.15s}
+  .acc.open .chev{transform:rotate(90deg)}
+  .acc-body{padding:2px 15px 12px;border-top:1px solid var(--border)}
+  .essentials{background:linear-gradient(180deg,#0e6e8012,transparent);border:1px solid var(--accent-dim);border-radius:12px;padding:6px 16px 14px;margin-top:6px}
+  .essentials .cap{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--accent);padding:12px 0 2px}
+
+  /* design C split */
+  .split{display:grid;grid-template-columns:1fr 320px;gap:0}
+  .split .left{padding:6px 20px 18px;max-height:72vh;overflow:auto;border-right:1px solid var(--border)}
+  .split .right{padding:18px 18px;background:var(--surface2);position:relative}
+  .split .right .sticky{position:sticky;top:10px}
+  .modepill{display:inline-flex;background:var(--sunken);border:1px solid var(--border);border-radius:9px;padding:3px}
+  .modepill button{border:none;background:none;color:var(--t2);font-weight:600;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer}
+  .modepill button.active{background:var(--raised);color:var(--t1)}
+  .crow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border-radius:9px;margin:5px 0;border:1px solid transparent;cursor:default}
+  .crow:hover{background:var(--raised);border-color:var(--border)}
+  .crow.focused{background:var(--raised);border-color:var(--accent-dim)}
+  .crow .cl{font-weight:600;font-size:13px;color:var(--t1)}
+  .crow .cl small{display:block;color:var(--t3);font-weight:500;font-size:11px}
+  .explainer .ehead{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--t3);margin-bottom:8px}
+  .explainer h3{margin:0 0 6px;font-size:16px}
+  .explainer p{color:var(--t2);font-size:12.5px;margin:0 0 12px}
+  .explainer .kv{display:flex;justify-content:space-between;font-size:12px;padding:7px 0;border-top:1px solid var(--border)}
+  .explainer .kv span:first-child{color:var(--t3)}
+  .explainer .kv span:last-child{color:var(--t1);font-variant-numeric:tabular-nums;font-weight:600}
+  .explainer .arrow{display:flex;gap:8px;font-size:11.5px;color:var(--t2);margin-top:10px}
+  .explainer .arrow div{flex:1;background:var(--sunken);border:1px solid var(--border);border-radius:8px;padding:8px}
+  .explainer .arrow b{color:var(--accent)}
+  .grp-label{font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--t3);margin:16px 0 2px}
+  .empty{color:var(--t4);font-size:12.5px;font-style:italic;padding:30px 10px;text-align:center}
+
+  .footnote{margin-top:22px;color:var(--t4);font-size:11.5px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">LWG <span class="dim">· Parameter UI prototypes</span></div>
+    <div class="designtabs" id="designtabs">
+      <div class="dtab active" data-d="A">Guided Groups<small>readable · self-explaining</small></div>
+      <div class="dtab" data-d="B">Essentials First<small>progressive disclosure</small></div>
+      <div class="dtab" data-d="C">Live Explainer<small>teach-as-you-tune</small></div>
+    </div>
+  </div>
+  <p class="blurb" id="blurb"></p>
+  <div class="stage" id="stage"></div>
+  <div class="footnote">Prototype only — not wired to the backend. Same LondonBreakout parameters in every design. Switch <b>Run / Tune / Optimize</b> inside each to see how the layout carries across all three editing surfaces.</div>
+</div>
+
+<script>
+// ---- shared data model: the labels/descriptions/units are the real upgrade ----
+const GROUPS = [
+  {id:'entry',  t:'Entry model',     p:'How the breakout trade gets placed.'},
+  {id:'filter', t:'Range filter',    p:'Which days are tradable, judged by the size of the Asian range.'},
+  {id:'target', t:'Breakout & target',p:'Trigger distance and where profit is taken.'},
+  {id:'stop',   t:'Stop management', p:'What happens to the stop after entry.'},
+  {id:'session',t:'Session windows', p:'GMT, auto DST-adjusted. These define the strategy — rarely changed.', advanced:true},
+  {id:'costs',  t:'Costs',           p:'Modelled trading frictions.', advanced:true},
+];
+
+const PARAMS = [
+  {k:'PendingEntry',group:'entry',type:'toggle',label:'Entry style',core:true,value:false,base:false,
+   off:'Market on close',on:'Pending stop',
+   desc:'Market enters at the close of the bar that breaks the range. Pending places stop orders at the breakout levels and fills when price touches them.'},
+  {k:'BufferPips',group:'entry',type:'number',label:'Pending buffer',unit:'pips',value:5,base:5,step:0.5,
+   desc:'How far beyond the range the pending stop sits. Only used with pending entry.',showIf:{PendingEntry:true}},
+
+  {k:'PipRangeFilter',group:'filter',type:'toggle',alt:true,label:'Filter mode',core:true,value:false,base:false,
+   off:'ATR band (adaptive)',on:'Fixed pips',
+   desc:'ATR band scales the size limits with each pair’s own volatility. Fixed pips uses hard pip bounds that don’t adapt.'},
+  {k:'RangeMinAtr',group:'filter',type:'number',label:'Min range',unit:'× ATR',core:true,value:0.5,base:0.5,step:0.1,
+   desc:'Skip the day if the Asian range is smaller than this × daily ATR. Load-bearing — too low lets junk days in and bleeds money.',showIf:{PipRangeFilter:false}},
+  {k:'RangeMaxAtr',group:'filter',type:'number',label:'Max range',unit:'× ATR',value:1.3,base:1.3,step:0.1,
+   desc:'Skip the day if the Asian range is larger than this × daily ATR.',showIf:{PipRangeFilter:false}},
+  {k:'RangeMinPips',group:'filter',type:'number',label:'Min range',unit:'pips',value:15,base:15,step:1,
+   desc:'Reject the day if the Asian range is below this many pips.',showIf:{PipRangeFilter:true}},
+  {k:'RangeMaxPips',group:'filter',type:'number',label:'Max range',unit:'pips',value:40,base:40,step:1,
+   desc:'Reject the day if the Asian range is above this many pips.',showIf:{PipRangeFilter:true}},
+  {k:'SweetMinPips',group:'filter',type:'number',label:'Sweet spot low',unit:'pips',value:20,base:20,step:1,muted:true,
+   desc:'Logged only, never a gate — tracks how many qualifying days landed in the sweet spot.',showIf:{PipRangeFilter:true}},
+  {k:'SweetMaxPips',group:'filter',type:'number',label:'Sweet spot high',unit:'pips',value:35,base:35,step:1,muted:true,
+   desc:'Logged only, never a gate.',showIf:{PipRangeFilter:true}},
+
+  {k:'TargetRR',group:'target',type:'number',label:'Profit target',unit:'R',core:true,value:2,base:2,step:0.5,
+   desc:'Take-profit as a multiple of the stop distance. 1.0 = reward equals risk. Testing showed 1.0 best here — London is too short to bank 2R before force-flat.'},
+  {k:'BufferAtr',group:'target',type:'number',label:'Breakout buffer',unit:'× ATR',value:0.1,base:0.1,step:0.05,
+   desc:'How far beyond the range price must travel to trigger an entry (ATR entry mode).'},
+  {k:'AtrPeriod',group:'target',type:'number',label:'ATR lookback',unit:'days',value:14,base:14,step:1,
+   desc:'Daily ATR window used to scale the range band and the breakout buffer.'},
+
+  {k:'BreakEvenMove',group:'stop',type:'switch',label:'Break-even stop',value:false,base:false,
+   desc:'Move the stop to entry once price reaches +1R, taking risk off the trade.'},
+
+  {k:'AsianStartGMT',group:'session',type:'time',label:'Asian range start',value:'00:00',base:'00:00',
+   desc:'Start of the quiet Asian window that sets the reference range.'},
+  {k:'AsianEndGMT',group:'session',type:'time',label:'Asian range end',value:'06:00',base:'06:00',
+   desc:'End of the Asian window (exclusive).'},
+  {k:'LondonOpenGMT',group:'session',type:'time',label:'London watch start',value:'07:00',base:'07:00',
+   desc:'When the strategy starts watching for the breakout.'},
+  {k:'EntryCutoffGMT',group:'session',type:'time',label:'Entry cutoff',value:'09:00',base:'09:00',
+   desc:'Last bar an entry may be taken on (exclusive).'},
+  {k:'ForceFlatGMT',group:'session',type:'time',label:'Force-flat',value:'11:00',base:'11:00',
+   desc:'Any open trade is closed at or after this time.'},
+
+  {k:'CommPerSide',group:'costs',type:'number',label:'Commission / side',unit:'$',value:2.25,base:2.25,step:0.01,
+   desc:'Charged on every fill by the tester.'},
+  {k:'Slippage',group:'costs',type:'number',label:'Slippage',unit:'pts',value:1,base:1,step:1,
+   desc:'Extra points deducted per fill to model spread.'},
+];
+
+const BLURBS = {
+  A:'<b>Guided Groups.</b> Every knob has a human label and a one-line explanation, organised by what it actually does. Toggles say what each state means. Pip-band fields only appear when you switch to pip mode — no dead inputs. Single column, comprehension-first.',
+  B:'<b>Essentials First.</b> Only the few high-impact knobs show up front; everything else is folded into labelled accordions you open when you need them. The least overwhelming — you decide how deep to go.',
+  C:'<b>Live Explainer.</b> Compact controls on the left, a panel on the right that explains whatever you’re touching — what it does, what raising or lowering it costs you, and the tested-best value. A Simple/Expert switch hides the rarely-touched knobs entirely.'
+};
+
+const state = {
+  d:'A', ctx:'run', simple:false,
+  values:Object.fromEntries(PARAMS.map(p=>[p.k,p.value])),
+  sweeps:{}, open:{filter:false,target:false,stop:false,session:false,costs:false}, focus:'TargetRR'
+};
+
+// ---- helpers ----
+const byGroup = id => PARAMS.filter(p=>p.group===id);
+const visible = p => !p.showIf || Object.entries(p.showIf).every(([k,v])=>state.values[k]===v);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function control(p, opts={}){
+  const v = state.values[p.k];
+  if(state.ctx==='optimize') return optimizeControl(p);
+  if(p.type==='toggle'){
+    return `<div class="seg ${p.alt?'alt':''}" data-toggle="${p.k}">
+      <button class="${!v?'on':''}" data-val="false"><span class="dot"></span>${esc(p.off)}</button>
+      <button class="${v?'on':''}" data-val="true"><span class="dot"></span>${esc(p.on)}</button>
+    </div>${tuneTag(p)}`;
+  }
+  if(p.type==='switch'){
+    return `<div class="switch ${v?'on':''}" data-toggle="${p.k}"><div class="track"><div class="knob"></div></div><span class="stxt">${v?'On':'Off'}</span></div>${tuneTag(p)}`;
+  }
+  // number / time
+  return `<div class="num"><input data-num="${p.k}" value="${esc(v)}" ${p.type==='time'?'':'inputmode="decimal"'}/>${p.unit?`<span class="suffix">${esc(p.unit)}</span>`:''}</div>${tuneTag(p)}`;
+}
+
+function tuneTag(p){
+  if(state.ctx!=='tune') return '';
+  const v=state.values[p.k], changed = String(v)!==String(p.base);
+  return `<span class="baseline">baseline <b>${esc(fmt(p.base))}</b>${changed?` <span class="delta">→ ${esc(fmt(v))}</span>`:''}</span>`;
+}
+const fmt = v => v===true?'on':v===false?'off':v;
+
+function optimizeControl(p){
+  if(p.type==='time'){ return `<div class="num dim"><input value="${esc(state.values[p.k])}" disabled/></div><span class="locktag">— time, not sweepable</span>`; }
+  if(p.type==='toggle'||p.type==='switch'){
+    const on = state.sweeps[p.k];
+    return `<div class="seg ${p.alt?'alt':''}" style="opacity:${on?.35:1}" data-toggle="${p.k}">
+        <button class="${!state.values[p.k]?'on':''}" data-val="false"><span class="dot"></span>${esc(p.off||'Off')}</button>
+        <button class="${state.values[p.k]?'on':''}" data-val="true"><span class="dot"></span>${esc(p.on||'On')}</button>
+      </div>
+      <button class="sweepbtn ${on?'on':''}" data-sweep="${p.k}">${on?'✓ testing both':'⤢ test both'}</button>`;
+  }
+  const on = state.sweeps[p.k];
+  let html = `<div class="num ${on?'dim':''}"><input data-num="${p.k}" value="${esc(state.values[p.k])}" ${on?'disabled':''}/>${p.unit?`<span class="suffix">${esc(p.unit)}</span>`:''}</div>`;
+  html += `<button class="sweepbtn ${on?'on':''}" data-sweep="${p.k}">${on?'✓ sweeping':'⤢ sweep'}</button>`;
+  if(on){
+    const s = state.sweeps[p.k];
+    html += `<div class="sweeprow">
+      <span class="swtag">RANGE</span>
+      <div class="mini"><label>from</label><input data-swf="${p.k}.from" value="${s.from}"/></div>
+      <div class="mini"><label>to</label><input data-swf="${p.k}.to" value="${s.to}"/></div>
+      <div class="mini"><label>step</label><input data-swf="${p.k}.step" value="${s.step}"/></div>
+    </div>`;
+  }
+  return html;
+}
+
+function comboCount(){
+  let n=1, any=false;
+  for(const k in state.sweeps){ const s=state.sweeps[k]; if(!s) continue; any=true;
+    if(s===true || s.both){ n*=2; }
+    else { const c=Math.max(1,Math.floor((parseFloat(s.to)-parseFloat(s.from))/parseFloat(s.step))+1)||1; n*=c; }
+  }
+  return any? n : 0;
+}
+
+// ---- design A ----
+function renderA(){
+  let secs = GROUPS.filter(g=>!g.advanced).map(g=>{
+    const rows = byGroup(g.id).filter(visible).map(rowA).join('');
+    return `<div class="sec"><div class="sec-h"><span class="t">${g.t}</span><span class="p">${g.p}</span></div>${rows}</div>`;
+  }).join('');
+  // advanced groups collapsed
+  GROUPS.filter(g=>g.advanced).forEach(g=>{
+    const rows = byGroup(g.id).filter(visible).map(rowA).join('');
+    secs += `<div class="acc ${state.open[g.id]?'open':''}"><div class="acc-h" data-acc="${g.id}">
+        <span class="l"><span class="chev">▸</span>${g.t}</span><span class="cnt">${g.p}</span></div>
+        ${state.open[g.id]?`<div class="acc-body">${rows}</div>`:''}</div>`;
+  });
+  return panel(`<div class="ctxrow">${ctxSeg()}${ctxNote()}</div>${secs}`);
+}
+function rowA(p){
+  return `<div class="prow"><div class="lab">${esc(p.label)} ${p.unit&&p.type==='number'?`<span class="unit">${esc(p.unit)}</span>`:''}<i class="info" title="${esc(p.desc)}">i</i></div>
+    <div class="ctl">${control(p)}</div>
+    <div class="desc">${esc(p.desc)}</div></div>`;
+}
+
+// ---- design B ----
+function renderB(){
+  const core = PARAMS.filter(p=>p.core && visible(p));
+  let html = `<div class="ctxrow">${ctxSeg()}${ctxNote()}</div>`;
+  html += `<div class="essentials"><div class="cap">★ Essentials</div>${core.map(rowA).join('')}</div>`;
+  // remaining groups as accordions
+  GROUPS.forEach(g=>{
+    const rows = byGroup(g.id).filter(p=>visible(p) && !p.core);
+    if(!rows.length) return;
+    html += `<div class="acc ${state.open[g.id]?'open':''}"><div class="acc-h" data-acc="${g.id}">
+        <span class="l"><span class="chev">▸</span>${g.t}</span><span class="cnt">${rows.length} setting${rows.length>1?'s':''}</span></div>
+        ${state.open[g.id]?`<div class="acc-body">${rows.map(rowA).join('')}</div>`:''}</div>`;
+  });
+  return panel(html);
+}
+
+// ---- design C ----
+function renderC(){
+  const list = GROUPS.map(g=>{
+    if(state.simple && g.advanced) return '';
+    let rows = byGroup(g.id).filter(visible);
+    if(state.simple) rows = rows.filter(p=>p.core);
+    if(!rows.length) return '';
+    return `<div class="grp-label">${g.t}</div>` + rows.map(rowC).join('');
+  }).join('');
+  const p = PARAMS.find(x=>x.k===state.focus) || PARAMS[0];
+  const left = `<div class="left">
+      <div class="ctxrow" style="justify-content:space-between">
+        <div style="display:flex;gap:12px;align-items:center">${ctxSeg()}</div>
+        <div class="modepill"><button class="${state.simple?'active':''}" data-mode="simple">Simple</button><button class="${!state.simple?'active':''}" data-mode="expert">Expert</button></div>
+      </div>
+      ${ctxNote()?`<div style="padding:4px 0 0">${ctxNote()}</div>`:''}
+      ${list||'<div class="empty">Nothing to show in Simple mode for this section.</div>'}
+    </div>`;
+  const right = `<div class="right"><div class="sticky explainer">
+      <div class="ehead">Now editing</div>
+      <h3>${esc(p.label)}${p.unit?` <span style="color:var(--t3);font-size:13px;font-weight:500">(${esc(p.unit)})</span>`:''}</h3>
+      <p>${esc(p.desc)}</p>
+      <div class="kv"><span>Current</span><span>${esc(fmt(state.values[p.k]))}</span></div>
+      <div class="kv"><span>Default</span><span>${esc(fmt(p.base))}</span></div>
+      ${guidance(p)}
+    </div></div>`;
+  return `<div class="panel wide"><div class="phead"><div class="h">Tune Parameters <span style="color:var(--t3);font-weight:500;font-size:13px">London session breakout</span></div><button class="x">×</button></div><div class="split">${left}${right}</div><div class="pfoot">${footer()}</div></div>`;
+}
+function rowC(p){
+  return `<div class="crow ${state.focus===p.k?'focused':''}" data-focus="${p.k}">
+      <div class="cl">${esc(p.label)}<small>${p.type==='toggle'?esc(state.values[p.k]?p.on:p.off):''}</small></div>
+      <div>${control(p)}</div></div>`;
+}
+function guidance(p){
+  if(p.type!=='number') return '';
+  const map={
+    RangeMinAtr:['Fewer, cleaner trades','More trades, more junk days — bleeds money below ~0.4'],
+    RangeMaxAtr:['Rejects more wild days','Lets bigger ranges through'],
+    TargetRR:['Banks profit sooner (1.0 tested best)','Aims for more per trade — often unreached before force-flat'],
+    BufferAtr:['Triggers on smaller breaks','Needs a bigger break to enter'],
+    AtrPeriod:['Reacts faster to volatility shifts','Smoother, slower ATR'],
+  };
+  const g = map[p.k] || ['Lower value','Higher value'];
+  return `<div class="arrow"><div><b>↓ Lower</b><br>${esc(g[0])}</div><div><b>↑ Higher</b><br>${esc(g[1])}</div></div>`;
+}
+
+// ---- shared chrome ----
+function ctxSeg(){
+  const o=(c,l)=>`<button class="${state.ctx===c?'active':''}" data-ctx="${c}">${l}</button>`;
+  return `<div class="ctxseg">${o('run','Run Backtest')}${o('tune','Tune')}${o('optimize','Optimize')}</div>`;
+}
+function ctxNote(){
+  if(state.ctx==='tune') return `<span class="ctxnote">Each knob shows its <b>baseline</b> and your change. Session times sit in the collapsed group.</span>`;
+  if(state.ctx==='optimize') return `<span class="ctxnote">Mark knobs to <b>sweep</b> a range; combos build below. Session times are locked — text, not sweepable.</span>`;
+  return `<span class="ctxnote">Set values and run a single backtest.</span>`;
+}
+function panel(body){
+  return `<div class="panel"><div class="phead"><div class="h">${state.ctx==='tune'?'Tune Parameters':state.ctx==='optimize'?'Optimize from this run':'Run Backtest'} <span class="chip">FOREX</span></div><button class="x">×</button></div>
+    <div class="pbody">${body}</div><div class="pfoot">${footer()}</div></div>`;
+}
+function footer(){
+  const cta = state.ctx==='tune'?'Run iteration':state.ctx==='optimize'?'Start optimization':'Run Backtest';
+  const left = state.ctx==='optimize'?`<span class="ctxnote"><b>${comboCount()}</b> combinations</span>`:`<span class="ctxnote">LondonBreakout · GBPJPY · 3y · 15m</span>`;
+  return `${left}<div style="display:flex;gap:10px"><button class="btn ghost">Cancel</button><button class="btn primary">▷ ${cta}</button></div>`;
+}
+
+// ---- render + events ----
+function render(){
+  document.getElementById('blurb').innerHTML = BLURBS[state.d];
+  document.getElementById('stage').innerHTML = state.d==='A'?renderA():state.d==='B'?renderB():renderC();
+}
+document.getElementById('designtabs').addEventListener('click',e=>{
+  const t=e.target.closest('.dtab'); if(!t)return;
+  document.querySelectorAll('.dtab').forEach(x=>x.classList.toggle('active',x===t));
+  state.d=t.dataset.d; render();
+});
+document.getElementById('stage').addEventListener('click',e=>{
+  const ctx=e.target.closest('[data-ctx]'); if(ctx){state.ctx=ctx.dataset.ctx; render(); return;}
+  const acc=e.target.closest('[data-acc]'); if(acc){const id=acc.dataset.acc; state.open[id]=!state.open[id]; render(); return;}
+  const mode=e.target.closest('[data-mode]'); if(mode){state.simple=mode.dataset.mode==='simple'; render(); return;}
+  const sw=e.target.closest('[data-sweep]'); if(sw){const k=sw.dataset.sweep;
+    if(state.sweeps[k]) delete state.sweeps[k];
+    else { const p=PARAMS.find(x=>x.k===k);
+      state.sweeps[k]= (p.type==='number')?{from:p.value,to:(p.value*2)||(p.value+1),step:p.step}:{both:true}; }
+    render(); return;}
+  const tg=e.target.closest('[data-toggle] [data-val]'); if(tg){const k=tg.parentElement.dataset.toggle; state.values[k]=tg.dataset.val==='true'; render(); return;}
+  const swt=e.target.closest('.switch[data-toggle]'); if(swt){const k=swt.dataset.toggle; state.values[k]=!state.values[k]; render(); return;}
+  const fc=e.target.closest('[data-focus]'); if(fc){state.focus=fc.dataset.focus; render(); return;}
+});
+document.getElementById('stage').addEventListener('input',e=>{
+  const n=e.target.closest('[data-num]'); if(n){ state.values[n.dataset.num]=e.target.value;
+    if(state.d==='C'){ state.focus=n.dataset.num; const p=PARAMS.find(x=>x.k===state.focus);
+      const box=document.querySelector('.explainer .kv span:last-child'); if(box) box.textContent=fmt(state.values[p.k]); }
+    return; }
+  const sf=e.target.closest('[data-swf]'); if(sf){const [k,field]=sf.dataset.swf.split('.'); if(state.sweeps[k]){state.sweeps[k][field]=e.target.value;
+    const c=document.querySelector('.pfoot .ctxnote b'); if(c) c.textContent=comboCount(); } }
+});
+document.getElementById('stage').addEventListener('focusin',e=>{
+  if(state.d!=='C')return; const r=e.target.closest('[data-focus]'); if(r){state.focus=r.dataset.focus;
+    document.querySelectorAll('.crow').forEach(x=>x.classList.toggle('focused',x===r)); }
+});
+render();
+</script>
+</body>
+</html>

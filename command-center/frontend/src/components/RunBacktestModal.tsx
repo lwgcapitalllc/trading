@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { X, Play, Info } from 'lucide-react'
 import { AlertTriangle } from 'lucide-react'
 import { useFirms, useTriggerBacktest, useRunningVpsJob } from '@/hooks/useLab'
-import type { Strategy, Firm, ParamSchemaEntry } from '@/types'
+import { ParamEditor } from '@/components/ParamEditor'
+import type { Strategy, Firm } from '@/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -114,97 +115,6 @@ function InfoTooltip({ content, side = 'right' }: { content: string; side?: 'rig
         {content}
       </span>
     </span>
-  )
-}
-
-function paramTooltipText(entry: ParamSchemaEntry): string {
-  if (entry.description) return entry.description
-  const parts: string[] = []
-  if (entry.min != null && entry.max != null) parts.push(`Range: ${entry.min}–${entry.max}`)
-  else if (entry.min != null) parts.push(`Min: ${entry.min}`)
-  else if (entry.max != null) parts.push(`Max: ${entry.max}`)
-  parts.push(`Default: ${entry.default}`)
-  parts.push(`Type: ${entry.type}`)
-  return parts.join(' · ')
-}
-
-// ── Param input ───────────────────────────────────────────────────────────────
-
-function ParamInput({
-  entry,
-  value,
-  onChange,
-  tooltipSide = 'right',
-}: {
-  entry: ParamSchemaEntry
-  value: number | boolean | string
-  onChange: (v: number | boolean | string) => void
-  tooltipSide?: 'right' | 'left'
-}) {
-  const inputCls = 'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
-  const t = entry.type.toLowerCase()
-  const tooltip = paramTooltipText(entry)
-
-  if (t === 'bool' || t === 'boolean') {
-    return (
-      <label className="flex items-center gap-2 cursor-pointer col-span-2">
-        <input
-          type="checkbox"
-          checked={Boolean(value)}
-          onChange={e => onChange(e.target.checked)}
-          className="w-4 h-4 rounded accent-accent"
-        />
-        <span className="text-[13px] text-text-secondary">{entry.display_name}</span>
-        <InfoTooltip content={tooltip} side="right" />
-      </label>
-    )
-  }
-
-  if (t === 'string') {
-    return (
-      <div>
-        <div className="flex items-center mb-1">
-          <label className="text-[11px] text-text-secondary">{entry.display_name}</label>
-          <InfoTooltip content={tooltip} side={tooltipSide} />
-        </div>
-        <input
-          type="text"
-          value={(value as string) ?? ''}
-          onChange={e => onChange(e.target.value)}
-          className={inputCls}
-        />
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <div className="flex items-baseline justify-between mb-1">
-        <div className="flex items-center">
-          <label className="text-[11px] text-text-secondary">{entry.display_name}</label>
-          <InfoTooltip content={tooltip} side={tooltipSide} />
-        </div>
-        {(entry.min != null || entry.max != null) && (
-          <span className="text-[10px] text-text-tertiary">
-            {entry.min != null && entry.max != null
-              ? `${entry.min}–${entry.max}`
-              : entry.min != null ? `≥ ${entry.min}` : `≤ ${entry.max}`}
-          </span>
-        )}
-      </div>
-      <input
-        type="number"
-        step={t === 'int' ? 1 : 'any'}
-        min={entry.min}
-        max={entry.max}
-        value={value as number}
-        onChange={e => {
-          const v = t === 'int' ? parseInt(e.target.value, 10) : parseFloat(e.target.value)
-          onChange(isNaN(v) ? (entry.default as number) : v)
-        }}
-        className={inputCls}
-      />
-    </div>
   )
 }
 
@@ -395,18 +305,6 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     }
   }, [primaryRuleset?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Param groups (strategy_logic only — foundational hidden from user) ────────
-  const paramGroups = useMemo(() => {
-    const map = new Map<string, ParamSchemaEntry[]>()
-    for (const e of strategy.param_schema) {
-      if (e.category === 'foundational') continue
-      const g = e.group || 'General'
-      if (!map.has(g)) map.set(g, [])
-      map.get(g)!.push(e)
-    }
-    return map
-  }, [strategy.param_schema])
-
   // ── Validation ───────────────────────────────────────────────────────────────
   const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
   // Forex runs evaluate against the personal forex ruleset(s); futures against prop
@@ -460,7 +358,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[680px] max-h-[90vh] flex flex-col shadow-2xl">
+      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[900px] max-h-[90vh] flex flex-col shadow-2xl">
 
         {/* ── Header ──────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle flex-shrink-0">
@@ -740,28 +638,12 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <Divider />
               <div>
                 <SectionHead label="Strategy Parameters" />
-                <div className="space-y-4">
-                  {Array.from(paramGroups.entries()).map(([group, entries]) => (
-                    <div key={group}>
-                      {paramGroups.size > 1 && (
-                        <div className="text-[10px] text-text-tertiary uppercase tracking-[0.5px] mb-2">
-                          {group}
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-3">
-                        {entries.map((e, i) => (
-                          <ParamInput
-                            key={e.name}
-                            entry={e}
-                            value={params[e.name] ?? e.default as number | boolean | string}
-                            onChange={v => setParams(p => ({ ...p, [e.name]: v }))}
-                            tooltipSide={i % 2 === 1 ? 'left' : 'right'}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <ParamEditor
+                  schema={strategy.param_schema}
+                  mode="run"
+                  values={params}
+                  onChange={(name, val) => setParams(p => ({ ...p, [name]: val }))}
+                />
               </div>
             </>
           )}

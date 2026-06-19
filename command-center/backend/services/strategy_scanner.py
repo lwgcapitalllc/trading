@@ -266,6 +266,11 @@ _MQL5_INPUT_RE = re.compile(
     re.MULTILINE,
 )
 
+# Optional explicit UI group tag in a trailing comment, e.g.
+# `// [group: Session Windows] Asian range window start (GMT)`. Parity with
+# NinjaScript's [Category("...")] — lets an .mq5 declare its own param sections.
+_MQL5_GROUP_RE = re.compile(r'\[group:\s*([^\]]+)\]', re.IGNORECASE)
+
 
 def _mql5_type(type_str: str) -> str:
     t = type_str.lower()
@@ -293,6 +298,14 @@ def _parse_mql5_params(source: str) -> list[dict]:
         name      = m.group(2)
         raw_val   = m.group(3).strip()
         comment   = (m.group(4) or "").strip()
+
+        # Pull an explicit "[group: ...]" tag out of the comment before anything
+        # else reads it, so the tag never leaks into the display_name.
+        custom_group = None
+        gm = _MQL5_GROUP_RE.search(comment)
+        if gm:
+            custom_group = gm.group(1).strip()
+            comment = _MQL5_GROUP_RE.sub("", comment).strip()
 
         comment_lower = comment.lower()
         if "strategy_logic" in comment_lower:
@@ -328,7 +341,7 @@ def _parse_mql5_params(source: str) -> list[dict]:
             "type":         param_type,
             "display_name": display_name,
             "category":     category,
-            "group":        "Foundational" if category == "foundational" else "Strategy Logic",
+            "group":        custom_group or ("Foundational" if category == "foundational" else "Strategy Logic"),
             "order":        order,
         }
         if default is not None:
@@ -354,6 +367,57 @@ def _mql5_display_name(stem: str, source: str) -> str:
     return re.sub(r"([A-Z])", r" \1", stem).strip()
 
 
+# UI metadata keys overlaid from a companion <Strategy>.meta.json onto each param.
+# These drive the editor UI only — never the compiled strategy or the source hash.
+_PARAM_META_KEYS = ("label", "desc", "unit", "core", "widget",
+                    "options", "show_if", "guide", "group", "step", "min", "max")
+
+
+def meta_path_for(source_path: Path) -> Path:
+    """Companion metadata file next to a strategy: LondonBreakout.mq5 -> LondonBreakout.meta.json."""
+    return source_path.with_name(source_path.stem + ".meta.json")
+
+
+def _apply_param_meta(params: list[dict], meta_path: Path) -> list[dict]:
+    """Overlay editor metadata from a companion meta.json onto scanned params.
+
+    Enriches labels, descriptions, units, grouping, the 'essentials' (core) flag,
+    conditional visibility (show_if), and toggle option labels. Params absent from
+    the meta file keep their scanned values. The meta param order becomes the
+    canonical UI order; unlisted params (e.g. foundational f_*) follow in source
+    order. A missing or malformed meta file is a no-op — the UI degrades to the
+    raw scanned schema.
+    """
+    if not meta_path.exists():
+        return params
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8", errors="replace"))
+    except (ValueError, OSError):
+        return params
+
+    meta_list = meta.get("params", []) if isinstance(meta, dict) else []
+    order: dict[str, int] = {}
+    by_name: dict[str, dict] = {}
+    for i, m in enumerate(meta_list):
+        name = m.get("name")
+        if not name:
+            continue
+        order[name] = i
+        by_name[name] = m
+
+    for p in params:
+        m = by_name.get(p["name"])
+        if not m:
+            continue
+        for key in _PARAM_META_KEYS:
+            if m.get(key) is not None:
+                p[key] = m[key]
+
+    # Stable sort: meta-listed params first (in meta order), the rest keep source order.
+    params.sort(key=lambda p: order.get(p["name"], len(order) + 1))
+    return params
+
+
 def _parse_mql5_file(mq5_path: Path, monorepo_root: Path, source: str) -> Optional[dict]:
     """Parse a .mq5 EA file and return a strategy dict ready for lab_db.upsert_strategy.
 
@@ -363,6 +427,7 @@ def _parse_mql5_file(mq5_path: Path, monorepo_root: Path, source: str) -> Option
     params = _parse_mql5_params(source)
     if not params:
         return None
+    params = _apply_param_meta(params, meta_path_for(mq5_path))
 
     stem        = mq5_path.stem          # "MeanReversion"
     strategy_id = stem.lower()           # "meanreversion"
@@ -437,11 +502,18 @@ def scan_strategies() -> dict:
         strategy_count += 1
         lab_db.ensure_strategy_version(strategy_id, current_hash, len(source.encode("utf-8", errors="replace")))
 
-        if lab_db.get_strategy_hash(strategy_id) == current_hash:
+        # Re-scan when the source OR the companion meta.json changed. The meta file
+        # carries no source hash (it must not trigger needs-deploy), so detect its
+        # edits by mtime vs the last scan time.
+        meta_p = meta_path_for(mq5_path)
+        meta_mtime = meta_p.stat().st_mtime if meta_p.exists() else 0
+        existing = lab_db.get_strategy(strategy_id)
+        if (existing and existing.get("source_hash") == current_hash
+                and meta_mtime <= (existing.get("scanned_at") or 0)):
             skipped += 1
             continue
 
-        is_new = lab_db.get_strategy(strategy_id) is None
+        is_new = existing is None
         lab_db.upsert_strategy(data)
         if is_new:
             added += 1

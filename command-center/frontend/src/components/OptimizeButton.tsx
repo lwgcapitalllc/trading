@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sliders, Plus, Minus, AlertTriangle, RotateCcw } from 'lucide-react'
+import { Sliders, AlertTriangle, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
-import { useTriggerOptimization, useFirms, useRunningVpsJob, useOptimizations, useParamTypes } from '@/hooks/useLab'
+import { ParamEditor, type ParamValue } from '@/components/ParamEditor'
+import { useTriggerOptimization, useFirms, useRunningVpsJob, useOptimizations, useParamTypes, useStrategy } from '@/hooks/useLab'
 import type { BacktestDetail, ParamAxisSpec } from '@/types'
 
 interface Props {
@@ -26,31 +27,6 @@ function rangeValueCount(min: string, max: string, step: string): number | null 
   return Math.floor((hi - lo) / incr + 1e-9) + 1
 }
 
-// ── Range preview ─────────────────────────────────────────────────────────────
-
-function RangePreview({ min, max, step }: { min: string; max: string; step: string }) {
-  const lo   = parseFloat(min)
-  const hi   = parseFloat(max)
-  const incr = parseFloat(step)
-  if (isNaN(lo) || isNaN(hi) || isNaN(incr) || incr <= 0 || lo > hi) return null
-
-  const values: number[] = []
-  for (let v = lo; v <= hi + incr * 1e-9; v += incr) {
-    values.push(parseFloat(v.toPrecision(10)))
-    if (values.length > 50) break
-  }
-  const count = values.length
-  const SHOW  = 6
-  const shown = values.slice(0, SHOW)
-  const label = shown.join(', ') + (count > SHOW ? ` … (${count} values)` : ` (${count} value${count !== 1 ? 's' : ''})`)
-
-  return (
-    <span className="text-[11px] text-text-tertiary font-mono">
-      → {label}
-    </span>
-  )
-}
-
 // ── Optimizer modal ────────────────────────────────────────────────────────────
 
 function OptimizerModal({
@@ -65,6 +41,7 @@ function OptimizerModal({
   const triggerOpt    = useTriggerOptimization()
   const { data: runningJob } = useRunningVpsJob()
   const { data: paramTypes } = useParamTypes(run.strategy_id)
+  const { data: strategy } = useStrategy(run.strategy_id)
   const isMt5 = run.runner === 'mt5'
   const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
 
@@ -138,9 +115,10 @@ function OptimizerModal({
 
   const toggleAxis = (name: string) => {
     const cur = axes[name]
-    if (cur.mode === 'fixed') {
-      // Promote to range: use current value as default for min/max
-      const numVal = Number(cur.value)
+    if (!cur || cur.mode === 'fixed') {
+      // Promote to range: use current value as default for min/max. `cur` can be
+      // absent when optimizing from a run whose params predate a schema param.
+      const numVal = Number(cur?.value ?? run.params[name] ?? 0)
       setAxes(prev => ({
         ...prev,
         [name]: { mode: 'range', min: String(numVal), max: String(numVal + 10), step: '5' },
@@ -200,14 +178,12 @@ function OptimizerModal({
     })
   }
 
-  const paramEntries = Object.entries(run.params).filter(([k]) => !FOUNDATIONAL_PARAMS.has(k))
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[600px] max-h-[85vh] flex flex-col shadow-2xl">
+      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[900px] max-h-[85vh] flex flex-col shadow-2xl">
         {/* Header */}
         <div className="px-5 py-4 border-b border-border-subtle flex-shrink-0">
           <div className="text-[15px] font-semibold">Optimize from this run</div>
@@ -279,67 +255,21 @@ function OptimizerModal({
             )}
           </div>
 
-          {/* Param grid editor */}
+          {/* Param editor (shared) — mark a parameter to sweep it across a range */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[12px] font-semibold text-text-secondary">Parameters</span>
-              <span className="text-[11px] text-text-tertiary">
-                Click <Plus size={10} className="inline" /> to sweep a param across a range
-              </span>
+              <span className="text-[11px] text-text-tertiary">Mark a parameter to sweep it across a range</span>
             </div>
-            <div className="space-y-2">
-              {paramEntries.map(([name, val]) => {
-                const ax = axes[name]
-                return (
-                  <div key={name} className="flex items-center gap-2 bg-bg-sunken rounded-md px-3 py-2">
-                    <button
-                      onClick={() => toggleAxis(name)}
-                      className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center transition-colors ${
-                        ax?.mode === 'range'
-                          ? 'bg-accent text-bg-base'
-                          : 'bg-bg-hover text-text-tertiary hover:text-text-primary'
-                      }`}
-                    >
-                      {ax?.mode === 'range' ? <Minus size={10} /> : <Plus size={10} />}
-                    </button>
-                    <span className="w-32 text-[12px] font-mono text-text-secondary flex-shrink-0">{name}</span>
-
-                    {ax?.mode === 'range' ? (
-                      <div className="flex flex-col gap-1 flex-1">
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={ax.min}
-                            onChange={e => updateAxis(name, 'min', e.target.value)}
-                            placeholder="min"
-                            className={`w-20 bg-bg-base border rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent ${intErrors[name] ? 'border-neg-text/60' : 'border-border-subtle'}`}
-                          />
-                          <span className="text-text-tertiary text-[11px]">to</span>
-                          <input
-                            value={ax.max}
-                            onChange={e => updateAxis(name, 'max', e.target.value)}
-                            placeholder="max"
-                            className={`w-20 bg-bg-base border rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent ${intErrors[name] ? 'border-neg-text/60' : 'border-border-subtle'}`}
-                          />
-                          <span className="text-text-tertiary text-[11px]">every</span>
-                          <input
-                            value={ax.step}
-                            onChange={e => updateAxis(name, 'step', e.target.value)}
-                            placeholder="step"
-                            className={`w-16 bg-bg-base border rounded px-2 py-[3px] text-[12px] font-mono focus:outline-none focus:border-accent ${intErrors[name] ? 'border-neg-text/60' : 'border-border-subtle'}`}
-                          />
-                        </div>
-                        {intErrors[name]
-                          ? <span className="text-[11px] text-neg-text">{intErrors[name]}</span>
-                          : <RangePreview min={ax.min} max={ax.max} step={ax.step} />
-                        }
-                      </div>
-                    ) : (
-                      <span className="text-[12px] font-mono text-text-primary flex-1">{String(val)}</span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+            <ParamEditor
+              schema={strategy?.param_schema ?? []}
+              mode="optimize"
+              values={run.params as Record<string, ParamValue>}
+              axes={axes}
+              onToggleAxis={toggleAxis}
+              onUpdateAxis={updateAxis}
+              intErrors={intErrors}
+            />
           </div>
 
           {rangeParamCount > 0 && (
