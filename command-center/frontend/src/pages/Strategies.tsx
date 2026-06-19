@@ -15,6 +15,7 @@ import { RunBacktestModal } from '@/components/RunBacktestModal'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { useStrategyBestGrades } from '@/hooks/useStressTests'
 import { RunnerBadge } from '@/components/RunnerBadge'
+import StickyHeader from '@/components/StickyHeader'
 import { toast } from 'sonner'
 import type { Strategy, StrategyFile, StrategyFileSyncStatus } from '@/types'
 
@@ -32,7 +33,7 @@ function TabBar({ active, onChange, counts }: {
     { id: 'deployed',   label: 'Deployed' },
   ]
   return (
-    <div className="flex gap-0 border-b border-border-subtle mb-6">
+    <div className="flex items-center gap-0 border-b border-border-subtle mb-6">
       {tabs.map(t => (
         <button
           key={t.id}
@@ -698,10 +699,16 @@ export function Strategies() {
 
   return (
     <div>
-      <div className="flex items-end gap-3 mb-[18px]">
-        <h1 className="text-h1 font-semibold">Strategies</h1>
-      </div>
-      <TabBar active={tab} onChange={setTab} counts={counts} />
+      <StickyHeader>
+        {scrolled => (
+          <>
+            <div className={`flex items-end gap-3 transition-all duration-200 ${scrolled ? 'mb-2.5' : 'mb-[18px]'}`}>
+              <h1 className={`font-semibold transition-all duration-200 ${scrolled ? 'text-[16px]' : 'text-h1'}`}>Strategies</h1>
+            </div>
+            <TabBar active={tab} onChange={setTab} counts={counts} />
+          </>
+        )}
+      </StickyHeader>
       {tab === 'strategies' && <StrategiesTab />}
       {tab === 'deployed'   && <FilesTab />}
     </div>

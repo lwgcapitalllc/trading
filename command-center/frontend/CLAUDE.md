@@ -185,6 +185,22 @@ Extend an existing component with a new prop before forking a near-duplicate.
 
 ---
 
+## Sticky page banners (`StickyHeader` + condense-on-scroll)
+
+Top page banners are sticky and condense as you scroll, on every list page (Rulesets, Backtests, Optimizations, Stress Tests, Strategies) and the full-bleed detail pages (BacktestDetail, TuningWorkbench). Content scrolls behind the banner; tabs, filters, action buttons, and any collapsed score/grade legend stay pinned.
+
+**The 22px gotcha — read before touching any sticky banner.** The app shell's `<main>` is the scroll container and has `p-[22px]`. A `position: sticky; top: 0` child of a *padded* scroller pins **22px below** the visible top, not flush against it. That single transparent strip is what caused the earlier round of bugs: a horizontal gap content scrolled through, "cropped" table headers (rows peeking through the strip), and a 22px jump the instant scroll crossed the threshold.
+
+Fix, baked into the shared `components/StickyHeader.tsx`: pin at **`-top-[22px]`** (not `top-0`), full-bleed back across the padding with `-mx-[22px] -mt-[22px] px-[22px] pt-[22px]`, and `flow-root` so child margins are contained and the painted `bg-bg-base` reaches the content boundary (no gap). At rest the banner already sits at its pinned spot, so there's no jump.
+
+Use the shared `StickyHeader` for list pages — it's a render-prop: `children: (scrolled) => ReactNode`. Pages condense by shrinking the title (`text-h1` 20px → `text-[16px]`) and forcing any legend collapsed (`<GradeLegend forceCollapsed={scrolled} />`), all under `transition-all duration-200`. **Keep the painted bottom spacing inside the banner** (e.g. `${scrolled ? 'mb-2.5' : 'mb-[18px]'}` on the inner row) — do NOT rely on a parent `space-y-*` gap, which is transparent and outside the banner, so condensed content scrolls right up to the title (this was the Rulesets fix).
+
+Do NOT inline the page title into a tab row when condensed — it reads as a tab item. Keep the title its own shrinking row above the tabs.
+
+Full-bleed detail pages hand-roll their banner (it coexists with a full-height sticky side panel) via the `useStickyBanner` hook, which also returns the live measured banner `height`. Same `-top-[22px]` correction applies, and the side panel offsets its own sticky `top` by `Math.max(headerH - 22, 0)` to pin directly below the banner (not behind it). Condensed detail banners keep the period + ruleset chips (drop them only at narrow widths via `max-[1100px]:hidden` / `max-[900px]:hidden`).
+
+---
+
 ## Theme system — how it works and how to swap
 
 All color values live in **`src/themes/electric-indigo.js`** — the single source of truth.

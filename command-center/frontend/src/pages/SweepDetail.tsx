@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2 } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
+import StickyHeader from '@/components/StickyHeader'
 import { useSweep, useDeleteSweep, useRetrySweep, useCancelSweep, useRetryBacktest, useRunningVpsJob, useFirms, useReevaluateSweep } from '@/hooks/useLab'
 import type { BacktestSummary, SweepDetail as Sweep } from '@/types'
 
@@ -353,23 +354,38 @@ export function SweepDetail() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <button
-          onClick={() => navigate('/backtests?tab=sweeps')}
-          className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors"
-        >
-          <ArrowLeft size={14} /> Sweeps
-        </button>
-        {sweep && !isRunning && (
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors"
-          >
-            <Trash2 size={12} />
-            Delete
-          </button>
+      <StickyHeader>
+        {scrolled => (
+          <div className={`flex items-center justify-between gap-3 ${scrolled ? 'mb-4' : 'mb-5'}`}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                onClick={() => navigate('/backtests?tab=sweeps')}
+                className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0"
+              >
+                <ArrowLeft size={14} /> {!scrolled && 'Sweeps'}
+              </button>
+              {scrolled && sweep && (
+                <>
+                  <span className="text-text-tertiary flex-shrink-0">·</span>
+                  <h1 className="text-[14px] font-semibold truncate">{sweep.strategy_name || sweep.strategy_id}</h1>
+                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
+                    {sweep.total_instruments}-inst Sweep
+                  </span>
+                </>
+              )}
+            </div>
+            {sweep && !isRunning && (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors flex-shrink-0"
+              >
+                <Trash2 size={12} />
+                Delete
+              </button>
+            )}
+          </div>
         )}
-      </div>
+      </StickyHeader>
 
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onClick={e => { if (e.target === e.currentTarget) setConfirmDelete(false) }}>

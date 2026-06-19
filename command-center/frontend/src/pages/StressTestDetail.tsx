@@ -8,6 +8,7 @@ import DrawdownDistribution from '@/components/DrawdownDistribution'
 import WalkForwardChart from '@/components/WalkForwardChart'
 import SensitivityRadar from '@/components/SensitivityRadar'
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
+import StickyHeader from '@/components/StickyHeader'
 
 
 // ── InfoTip ───────────────────────────────────────────────────────────────────
@@ -526,21 +527,38 @@ export default function StressTestDetail() {
     <div className="space-y-8">
 
       {/* ── Back + Delete (delete placement mirrors OptimizationDetail) ─────────── */}
-      <div className="flex items-center justify-between mb-5">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors"
-        >
-          <ArrowLeft size={14} /> Stress Tests
-        </button>
-        <button
-          onClick={() => setConfirmDelete(true)}
-          className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors"
-        >
-          <Trash2 size={12} />
-          Delete
-        </button>
-      </div>
+      <StickyHeader>
+        {scrolled => (
+          <div className={`flex items-center justify-between gap-3 ${scrolled ? 'mb-4' : 'mb-5'}`}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                onClick={() => navigate(-1)}
+                className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0"
+              >
+                <ArrowLeft size={14} /> {!scrolled && 'Stress Tests'}
+              </button>
+              {scrolled && (
+                <>
+                  <span className="text-text-tertiary flex-shrink-0">·</span>
+                  <h1 className="text-[14px] font-semibold truncate">{st.strategy_name || 'Stress Test'}</h1>
+                  {st.instrument && (
+                    <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
+                      {st.instrument}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors flex-shrink-0"
+            >
+              <Trash2 size={12} />
+              Delete
+            </button>
+          </div>
+        )}
+      </StickyHeader>
 
       {/* ══ Context row — grade (with per-analysis verdicts) + source backtest ════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">

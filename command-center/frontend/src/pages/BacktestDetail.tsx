@@ -21,6 +21,7 @@ import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import { OptimizeButton } from '@/components/OptimizeButton'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { StatusPill } from '@/components/StatusPill'
+import { useStickyBanner } from '@/components/StickyHeader'
 
 // Lazy so klinecharts + the chart fixture only load when the Price chart section opens.
 const ChartPanel = lazy(() => import('@/components/ChartPanel'))
@@ -1817,7 +1818,7 @@ function FullBacktestEvalModal({ run, busy, onConfirm, onClose }: {
 
 // ── Parameters side panel ─────────────────────────────────────────────────────
 
-function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle, balance, defaultBalance, onBalanceChange }: {
+function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle, balance, defaultBalance, onBalanceChange, headerH = 0 }: {
   run: Run
   paramSchema?: ParamSchemaEntry[]
   baselineParams?: Record<string, unknown>
@@ -1826,6 +1827,7 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
   balance?: number | null
   defaultBalance?: number | null
   onBalanceChange?: (v: number | null) => void
+  headerH?: number
 }) {
   const schemaByName = new Map((paramSchema ?? []).map(s => [s.name, s]))
   const isFoundational = (k: string) => schemaByName.get(k)?.category === 'foundational'
@@ -1846,7 +1848,8 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
         <button
           onClick={onToggle}
           title="Show parameters"
-          className="sticky top-0 flex flex-col items-center gap-2 py-4 px-2 w-full hover:bg-bg-hover transition-colors"
+          style={{ top: Math.max(headerH - 22, 0) }}
+          className="sticky flex flex-col items-center gap-2 py-4 px-2 w-full hover:bg-bg-hover transition-colors"
         >
           <ChevronRight size={14} className="text-text-tertiary" />
           <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary [writing-mode:vertical-rl]">Parameters</span>
@@ -1858,7 +1861,7 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
 
   return (
     <div className="flex-shrink-0 w-[248px] bg-bg-surface border-r border-border-subtle">
-      <div className="sticky top-0 max-h-[calc(100vh-56px)] flex flex-col">
+      <div className="sticky flex flex-col" style={{ top: Math.max(headerH - 22, 0), maxHeight: `calc(100vh - 56px - ${headerH}px)` }}>
         <div className="px-3 py-[10px] border-b border-border-subtle flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Parameters</span>
@@ -1945,6 +1948,7 @@ export function BacktestDetail() {
     try { localStorage.setItem('bt_params_panel', next ? 'collapsed' : 'open') } catch { /* quota */ }
     return next
   })
+  const { ref: headerRef, scrolled, height: headerH } = useStickyBanner()
   const { data: progress }       = useLabProgress()
   const stopBacktest             = useStopBacktest()
   const reloadCharts             = useReloadCharts()
@@ -2053,20 +2057,50 @@ export function BacktestDetail() {
     // Full-bleed page (cancel main's p-[22px]): a full-width header row on top, then a
     // flex row that shares the space below it between the params panel and the content.
     <div className="-m-[22px] flex flex-col min-h-[calc(100vh-56px)]">
-      {/* ── Full-width header ─────────────────────────────────────────────── */}
-      <div className="px-[22px] pt-[22px] pb-8">
-        <button
-          onClick={() => navigate(backPath)}
-          className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
-        >
-          <ArrowLeft size={14} /> {backLabel}
-        </button>
+      {/* ── Full-width header — condenses to a single row once scrolled ────── */}
+      <div
+        ref={headerRef}
+        className={`sticky -top-[22px] z-30 bg-bg-base px-[22px] pt-[22px] transition-[padding] duration-200 ${scrolled ? 'pb-3 shadow-[0_10px_18px_-14px_rgba(0,0,0,0.8)]' : 'pb-8'}`}
+      >
+        {!scrolled && (
+          <button
+            onClick={() => navigate(backPath)}
+            className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary mb-5 transition-colors"
+          >
+            <ArrowLeft size={14} /> {backLabel}
+          </button>
+        )}
 
         {isLoading && <Skeleton />}
 
         {run && (
           <div>
             <div className="flex items-start justify-between gap-4">
+              {scrolled ? (
+                <div className="flex items-center gap-2 min-w-0">
+                  <button onClick={() => navigate(backPath)} title={backLabel} className="flex items-center text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0">
+                    <ArrowLeft size={14} />
+                  </button>
+                  <h1
+                    className="text-[15px] font-semibold leading-tight truncate cursor-pointer hover:text-accent transition-colors flex-shrink-0"
+                    onClick={() => navigate(`/strategies/${run.strategy_id}`)}
+                    title="Go to strategy"
+                  >
+                    {run.strategy_name || run.strategy_id}
+                  </h1>
+                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
+                    {run.instrument}
+                  </span>
+                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono flex-shrink-0 truncate max-[1100px]:hidden">
+                    {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
+                  </span>
+                  {run.evaluations.length > 0 && (
+                    <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text flex-shrink-0 truncate max-[900px]:hidden">
+                      {run.evaluations.map(e => e.ruleset_id).join(', ')}
+                    </span>
+                  )}
+                </div>
+              ) : (
               <div>
                 <div className="flex items-center gap-3 flex-wrap mb-2">
                   <h1
@@ -2108,6 +2142,7 @@ export function BacktestDetail() {
                   )}
                 </div>
               </div>
+              )}
               <div className="flex items-center gap-2 flex-shrink-0">
                 {!isRunning && (
                   <button
@@ -2190,6 +2225,7 @@ export function BacktestDetail() {
             balance={balance}
             defaultBalance={rulesetBalance}
             onBalanceChange={setBalanceOverride}
+            headerH={headerH}
           />
           <div className="flex-1 min-w-0 px-[22px] pb-[22px] space-y-8">
 

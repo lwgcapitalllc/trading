@@ -13,20 +13,22 @@ const ROWS: { tier: WorthinessScore['tier']; desc: string }[] = [
   { tier: 'TIER_3_DISCARD',     desc: 'Not viable as-is. Profit factor below 0.8, drawdown over the firm limit, or fewer than 30 trades.' },
 ]
 
-export default function WorthinessLegend() {
+export default function WorthinessLegend({ forceCollapsed = false }: { forceCollapsed?: boolean }) {
   const [open, setOpen] = useState(false)
+  const isOpen = open && !forceCollapsed
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-surface">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-4 py-2.5 text-left"
+        disabled={forceCollapsed}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-left disabled:cursor-default"
       >
         <span className="text-[12px] font-semibold text-text-secondary uppercase tracking-[0.5px]">
           Score key — what each score means
         </span>
-        {open ? <ChevronUp size={15} className="text-text-tertiary" /> : <ChevronDown size={15} className="text-text-tertiary" />}
+        {isOpen ? <ChevronUp size={15} className="text-text-tertiary" /> : <ChevronDown size={15} className="text-text-tertiary" />}
       </button>
-      {open && (
+      {isOpen && (
         <div className="px-4 pb-4 pt-3 space-y-3 border-t border-border-subtle">
           <div className="text-[12px] text-text-secondary leading-relaxed">
             The Score is an automatic verdict on each completed run — how good the result is and what to do with it next.

@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { api } from '@/api/client'
 import { useOptimizations, useBacktestRuns } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
+import StickyHeader from '@/components/StickyHeader'
 import { ConfirmDeleteModal, RunsTableSkeleton, fmtOptStatus } from '@/pages/Backtests'
 
 export function Optimizations() {
@@ -52,27 +53,31 @@ export function Optimizations() {
 
   return (
     <div>
-      <div className="flex items-end justify-between gap-3 mb-[18px]">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-h1 font-semibold">Optimizations</h1>
-          {opts && opts.length > 0 && (
-            <span className="text-[12px] font-semibold font-mono tabular-nums px-2 py-[2px] rounded-full bg-accent/15 text-accent">
-              {opts.length}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {selectedIds.size > 0 && (
-            <button
-              onClick={() => setShowBulkConfirm(true)}
-              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[12px] font-medium bg-neg-muted text-neg-text border border-neg-text/20 hover:bg-neg-text/20 transition-colors"
-            >
-              <Trash2 size={11} />
-              Delete {selectedIds.size}
-            </button>
-          )}
-        </div>
-      </div>
+      <StickyHeader>
+        {scrolled => (
+          <div className={`flex items-center justify-between gap-3 transition-all duration-200 ${scrolled ? 'mb-2.5' : 'mb-[18px]'}`}>
+            <div className="flex items-center gap-2.5">
+              <h1 className={`${scrolled ? 'text-[16px]' : 'text-h1'} font-semibold transition-all duration-200`}>Optimizations</h1>
+              {opts && opts.length > 0 && (
+                <span className="text-[12px] font-semibold font-mono tabular-nums px-2 py-[2px] rounded-full bg-accent/15 text-accent">
+                  {opts.length}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={() => setShowBulkConfirm(true)}
+                  className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[12px] font-medium bg-neg-muted text-neg-text border border-neg-text/20 hover:bg-neg-text/20 transition-colors"
+                >
+                  <Trash2 size={11} />
+                  Delete {selectedIds.size}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </StickyHeader>
 
       {isLoading ? (
         <RunsTableSkeleton />

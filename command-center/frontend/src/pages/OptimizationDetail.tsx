@@ -4,6 +4,7 @@ import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, Rot
 import { useOptimization, useCancelOptimization, useRetryOptimization, useRerunOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog, useBacktestRuns } from '@/hooks/useLab'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
+import StickyHeader from '@/components/StickyHeader'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -628,15 +629,28 @@ export function OptimizationDetail() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <button
-          onClick={() => navigate('/optimizations')}
-          className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors"
-        >
-          <ArrowLeft size={14} /> Optimizations
-        </button>
-        {opt && !isRunning && (
-          <div className="flex items-center gap-2">
+      <StickyHeader>
+        {scrolled => (
+          <div className={`flex items-center justify-between gap-3 ${scrolled ? 'mb-4' : 'mb-5'}`}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                onClick={() => navigate('/optimizations')}
+                className="flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0"
+              >
+                <ArrowLeft size={14} /> {!scrolled && 'Optimizations'}
+              </button>
+              {scrolled && opt && (
+                <>
+                  <span className="text-text-tertiary flex-shrink-0">·</span>
+                  <h1 className="text-[14px] font-semibold truncate">{opt.strategy_name || opt.strategy_id}</h1>
+                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
+                    {opt.instrument}
+                  </span>
+                </>
+              )}
+            </div>
+            {opt && !isRunning && (
+              <div className="flex items-center gap-2 flex-shrink-0">
             {opt.status.startsWith('failed') && (
               <button
                 onClick={() => rerunOpt.mutate(optimizationId!)}
@@ -654,9 +668,11 @@ export function OptimizationDetail() {
               <Trash2 size={12} />
               Delete
             </button>
+              </div>
+            )}
           </div>
         )}
-      </div>
+      </StickyHeader>
 
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onClick={e => { if (e.target === e.currentTarget) setConfirmDelete(false) }}>

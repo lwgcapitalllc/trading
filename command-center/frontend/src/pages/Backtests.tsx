@@ -10,6 +10,7 @@ import { useRunningStressLock } from '@/hooks/useStressTests'
 import { EmptyState } from '@/components/EmptyState'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import WorthinessLegend from '@/components/WorthinessLegend'
+import StickyHeader from '@/components/StickyHeader'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
 import type { BacktestSummary, VerdictSummary, WorthinessScore } from '@/types'
@@ -192,7 +193,7 @@ function TabBar({
   ]
   return (
     <div className="flex items-center justify-between border-b border-border-subtle mb-6">
-      <div className="flex gap-0">
+      <div className="flex items-center gap-0">
       {tabs.map(t => (
         <button
           key={t.id}
@@ -449,7 +450,6 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
         />
       ) : (
         <>
-        <div className="mb-4"><WorthinessLegend /></div>
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           <table className="w-full text-[13px]">
             <thead>
@@ -1023,16 +1023,26 @@ export function Backtests() {
 
   return (
     <div>
-      <div className="flex items-end gap-3 mb-[18px]">
-        <h1 className="text-h1 font-semibold">Backtests</h1>
-      </div>
+      <StickyHeader>
+        {scrolled => (
+          <>
+            <div className={`flex items-end gap-3 transition-all duration-200 ${scrolled ? 'mb-2.5' : 'mb-[18px]'}`}>
+              <h1 className={`font-semibold transition-all duration-200 ${scrolled ? 'text-[16px]' : 'text-h1'}`}>Backtests</h1>
+            </div>
 
-      <TabBar
-        active={tab} onChange={setTab}
-        runsCount={runsCount} sweepsCount={sweepsCount}
-        runsActive={runsActive} sweepsActive={sweepsActive}
-        right={tab === 'runs' ? runsControls : undefined}
-      />
+            <TabBar
+              active={tab} onChange={setTab}
+              runsCount={runsCount} sweepsCount={sweepsCount}
+              runsActive={runsActive} sweepsActive={sweepsActive}
+              right={tab === 'runs' ? runsControls : undefined}
+            />
+
+            {tab === 'runs' && (allRuns?.length ?? 0) > 0 && (
+              <div className="mb-4"><WorthinessLegend forceCollapsed={scrolled} /></div>
+            )}
+          </>
+        )}
+      </StickyHeader>
 
       {tab === 'runs'   && <RunsTab statusFilter={statusFilter} marketFilter={marketFilter} />}
       {tab === 'sweeps' && <SweepsTab />}

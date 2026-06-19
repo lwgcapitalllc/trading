@@ -3,6 +3,7 @@ import { Pencil, X, Lock, ExternalLink, ClipboardList } from 'lucide-react'
 import { useFirms, usePatchPersonalRuleset } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
 import { RulesetTypeBadge } from '@/components/RulesetTypeBadge'
+import StickyHeader from '@/components/StickyHeader'
 import { toast } from 'sonner'
 import type { Ruleset } from '@/types'
 
@@ -192,17 +193,8 @@ function RulesetsView() {
   const { data: rulesets, isLoading } = useFirms()
   const [brandFilter, setBrandFilter] = useState<string | null>(null)
 
-  if (isLoading) return <FirmsSkeleton />
-  if (!rulesets?.length) return (
-    <EmptyState
-      icon={<ClipboardList size={20} />}
-      title="No rulesets configured"
-      description="Rulesets are seeded automatically on backend startup."
-    />
-  )
-
-  const propRulesets = rulesets.filter(r => r.ruleset_type === 'prop_eval' || r.ruleset_type === 'prop_funded')
-  const otherRulesets = rulesets.filter(r => r.ruleset_type !== 'prop_eval' && r.ruleset_type !== 'prop_funded')
+  const propRulesets = rulesets?.filter(r => r.ruleset_type === 'prop_eval' || r.ruleset_type === 'prop_funded') ?? []
+  const otherRulesets = rulesets?.filter(r => r.ruleset_type !== 'prop_eval' && r.ruleset_type !== 'prop_funded') ?? []
   const brands = [...new Set(propRulesets.map(r => firmBrand(r.id)))]
   const PERSONAL = 'Personal'
   const visible = brandFilter && brandFilter !== PERSONAL ? [brandFilter] : brands
@@ -210,20 +202,38 @@ function RulesetsView() {
   const showPersonal = (brandFilter === null || brandFilter === PERSONAL) && otherRulesets.length > 0
   const filterBtnCls = (active: boolean) =>
     `px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${active ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'}`
+  const hasData = !isLoading && !!rulesets?.length
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
-        <div className="flex items-center gap-1">
-          <button onClick={() => setBrandFilter(null)} className={filterBtnCls(brandFilter === null)}>All</button>
-          {brands.map(b => (
-            <button key={b} onClick={() => setBrandFilter(brandFilter === b ? null : b)} className={filterBtnCls(brandFilter === b)}>{b}</button>
-          ))}
-          {otherRulesets.length > 0 && (
-            <button onClick={() => setBrandFilter(brandFilter === PERSONAL ? null : PERSONAL)} className={filterBtnCls(brandFilter === PERSONAL)}>{PERSONAL}</button>
-          )}
-        </div>
-      </div>
+      <StickyHeader>
+        {scrolled => (
+          <div className={`flex items-center justify-between gap-3 transition-all duration-200 ${scrolled ? 'pb-2.5' : ''}`}>
+            <h1 className={`${scrolled ? 'text-[16px]' : 'text-h1'} font-semibold transition-all duration-200`}>Rulesets</h1>
+            {hasData && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setBrandFilter(null)} className={filterBtnCls(brandFilter === null)}>All</button>
+                {brands.map(b => (
+                  <button key={b} onClick={() => setBrandFilter(brandFilter === b ? null : b)} className={filterBtnCls(brandFilter === b)}>{b}</button>
+                ))}
+                {otherRulesets.length > 0 && (
+                  <button onClick={() => setBrandFilter(brandFilter === PERSONAL ? null : PERSONAL)} className={filterBtnCls(brandFilter === PERSONAL)}>{PERSONAL}</button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </StickyHeader>
+
+      {isLoading && <FirmsSkeleton />}
+
+      {!isLoading && !rulesets?.length && (
+        <EmptyState
+          icon={<ClipboardList size={20} />}
+          title="No rulesets configured"
+          description="Rulesets are seeded automatically on backend startup."
+        />
+      )}
 
       {showProp && (
         <div>
@@ -372,9 +382,6 @@ function FirmsSkeleton() {
 export function Rulesets() {
   return (
     <div>
-      <div className="flex items-end gap-3 mb-[18px]">
-        <h1 className="text-h1 font-semibold">Rulesets</h1>
-      </div>
       <RulesetsView />
     </div>
   )

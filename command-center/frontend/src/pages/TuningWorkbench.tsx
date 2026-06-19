@@ -7,6 +7,7 @@ import {
 import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, ChevronRight, Maximize2, X } from 'lucide-react'
 import { useBacktestRun, useStrategy, useBacktestRuns, useTriggerBacktest, useRunningVpsJob, useLabProgress } from '@/hooks/useLab'
 import { ParamEditor, ParamCoach, type ParamValue } from '@/components/ParamEditor'
+import { useStickyBanner } from '@/components/StickyHeader'
 import { api } from '@/api/client'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL, REGIME_ORDER } from '@/lib/regime'
@@ -114,6 +115,7 @@ export function TuningWorkbench() {
     try { localStorage.setItem('tune_params_panel', next ? 'collapsed' : 'open') } catch { /* quota */ }
     return next
   })
+  const { ref: headerRef, scrolled, height: headerH } = useStickyBanner()
 
   const schemaByName = useMemo(() => {
     const m = new Map<string, ParamSchemaEntry>()
@@ -288,36 +290,61 @@ export function TuningWorkbench() {
 
   return (
     <div className="-m-[22px] flex flex-col min-h-[calc(100vh-56px)]">
-      <div className="px-[22px] pt-[22px]">
-      {/* Header */}
-      <button
-        onClick={() => navigate(`/backtests/runs/${baseline.run_id}`)}
-        className="flex items-center gap-1.5 text-[12px] text-text-tertiary hover:text-text-secondary transition-colors mb-3"
+      <div
+        ref={headerRef}
+        className={`sticky -top-[22px] z-30 bg-bg-base px-[22px] pt-[22px] transition-[padding] duration-200 ${scrolled ? 'pb-3 shadow-[0_10px_18px_-14px_rgba(0,0,0,0.8)]' : 'pb-4'}`}
       >
-        <ArrowLeft size={13} /> Back to run
-      </button>
-      <div className="flex items-baseline gap-3 mb-2">
-        <h1 className="text-h1 font-semibold">Tune Parameters</h1>
-        <span className="text-[15px] font-semibold text-text-secondary">{baseline.strategy_name}</span>
-      </div>
-      <div className="flex items-center gap-1.5 mb-5 flex-wrap text-[12px]">
-        <span className="font-semibold font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-[2px] rounded">{baseline.instrument}</span>
-        <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-2 py-[2px] rounded">{baseline.start_date} → {baseline.end_date}</span>
-        {rulesetIds.length > 0 ? (
-          rulesetIds.map(id => (
-            <span key={id} className="font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text px-2 py-[2px] rounded">{id}</span>
-          ))
-        ) : (
-          <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary px-2 py-[2px] rounded">No ruleset</span>
-        )}
-      </div>
+      {/* Header — condenses to a single row once scrolled */}
+      {scrolled ? (
+        <div className="flex items-center gap-2 text-[13px] min-w-0">
+          <button
+            onClick={() => navigate(`/backtests/runs/${baseline.run_id}`)}
+            title="Back to run"
+            className="flex items-center text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0"
+          >
+            <ArrowLeft size={14} />
+          </button>
+          <span className="font-semibold text-[14px] flex-shrink-0">Tune Parameters</span>
+          <span className="text-text-tertiary flex-shrink-0">·</span>
+          <span className="font-semibold text-text-secondary truncate flex-shrink min-w-0">{baseline.strategy_name}</span>
+          <span className="font-semibold font-mono bg-accent/10 text-accent border border-accent/20 px-1.5 py-[1px] rounded text-[11px] flex-shrink-0">{baseline.instrument}</span>
+          <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-1.5 py-[1px] rounded text-[11px] flex-shrink-0 max-[1100px]:hidden">{baseline.start_date} → {baseline.end_date}</span>
+          {rulesetIds.length > 0 && (
+            <span className="font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text px-1.5 py-[1px] rounded text-[11px] flex-shrink-0 max-[900px]:hidden">{rulesetIds.join(', ')}</span>
+          )}
+        </div>
+      ) : (
+        <>
+          <button
+            onClick={() => navigate(`/backtests/runs/${baseline.run_id}`)}
+            className="flex items-center gap-1.5 text-[12px] text-text-tertiary hover:text-text-secondary transition-colors mb-3"
+          >
+            <ArrowLeft size={13} /> Back to run
+          </button>
+          <div className="flex items-baseline gap-3 mb-2">
+            <h1 className="text-h1 font-semibold">Tune Parameters</h1>
+            <span className="text-[15px] font-semibold text-text-secondary">{baseline.strategy_name}</span>
+          </div>
+          <div className="flex items-center gap-1.5 mb-5 flex-wrap text-[12px]">
+            <span className="font-semibold font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-[2px] rounded">{baseline.instrument}</span>
+            <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-2 py-[2px] rounded">{baseline.start_date} → {baseline.end_date}</span>
+            {rulesetIds.length > 0 ? (
+              rulesetIds.map(id => (
+                <span key={id} className="font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text px-2 py-[2px] rounded">{id}</span>
+              ))
+            ) : (
+              <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary px-2 py-[2px] rounded">No ruleset</span>
+            )}
+          </div>
+        </>
+      )}
       </div>
 
       <div className="flex items-stretch flex-1 min-h-0">
 
         {/* ── Param editor — full-height dockable side column (mirrors BacktestDetail) ── */}
         <div className={`flex-shrink-0 bg-bg-surface border-r border-border-subtle transition-[width] duration-200 ${panelCollapsed ? 'w-[44px]' : 'w-[440px]'}`}>
-          <div className="sticky top-0 max-h-[calc(100vh-56px)] flex flex-col">
+          <div className="sticky flex flex-col" style={{ top: Math.max(headerH - 22, 0), maxHeight: `calc(100vh - 56px - ${headerH}px)` }}>
             {panelCollapsed ? (
               <button
                 onClick={togglePanel}
