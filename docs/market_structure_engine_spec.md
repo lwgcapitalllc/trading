@@ -1,88 +1,102 @@
 # Market Structure Rule Engine — Spec
 
-Derived from the SMC Engine training (Modules 1–4). Platform-agnostic rules, mapped to the LWG build and a LuxAlgo (Price Action Concepts) implementation path. This is the conceptual skeleton — your own engine, not a copy of his indicator.
+Replication target: **Structure OS** (private TradingView indicator). This doc defines only the
+structure-detection logic — swing highs/lows, HH/HL/LH/LL, BOS, CHoCH — using the indicator's own
+confirmation method. Everything else (sessions, order blocks, FVG, liquidity, MTF dashboard) is out of scope.
 
 ---
 
 ## Core principle
 
-Structure is mechanical, not subjective. Every swing point must be confirmed by a valid pullback. No valid pullback = no confirmed point. Without a pullback rule, 100 people mark the same chart differently — the rule is what makes the markup deterministic.
+Structure is mechanical, not subjective. Swing points are NOT found with a lookback window
+(`ta.pivothigh` / `ta.pivotlow` over N bars). They are confirmed in real time by a **pullback of three
+consecutive opposing candles**. No valid three-candle pullback = no confirmed swing point.
+
+This is the one rule that defines the whole engine. A fixed-lookback pivot and a three-candle pullback
+produce *different* swing maps on the same data → different BOS/CHoCH events → different signals. Get this
+rule exact or nothing downstream matches.
 
 ---
 
-## 1. Swing points: definition & confirmation
+## 1. Swing point detection (the three-candle pullback rule)
 
-- Two structure layers run on the **same timeframe**: SWING (external) and INTERNAL (inside the swing range). Swing vs internal is NOT a timeframe distinction — that is the most common misconception.
-- A candidate swing high/low is **UNCONFIRMED** (drawn dashed) until a valid pullback occurs. Once validated it becomes **CONFIRMED** (solid).
-- A swing high is confirmed only once the prior swing low is broken by body close (and vice versa). A pullback alone does not confirm it — price could pull back then continue.
-- **Break = candle BODY close beyond the level. A wick through does NOT count.** This is the rule that keeps the prior level intact when price only whips it.
-- After a confirmed break, the swing point = the extreme reached before the break: highest high before a downside break (→ swing high), lowest low before an upside break (→ swing low).
+Two independent engines run on the **same timeframe** with the **same confirmation logic**: SWING (external)
+and INTERNAL (inside the swing range). Swing vs internal is a scope distinction, not a timeframe distinction.
 
-## 2. BOS vs CHoCH
+**Tracking.** As price moves, the engine tracks a candidate extreme:
+- Candidate **swing high** = the highest high reached so far in the up-move.
+- Candidate **swing low** = the lowest low reached so far in the down-move.
 
-- **BOS (Break of Structure) = continuation.** Body-close break of the prior swing high in an uptrend / prior swing low in a downtrend.
-- **CHoCH (Change of Character) = reversal.** Body-close break of the prior swing low in an uptrend / prior swing high in a downtrend. Flips the trend state; fires once per direction before the opposite must occur.
-- LuxAlgo convention (worth adopting): a BOS is only valid *after* a CHoCH. Ben doesn't state this explicitly but his examples follow it. Successive BOS's are normal within one trend.
-- Optional stricter filter: LuxAlgo's **CHoCH+** ("supported CHoCH") fires only when there was an early reversal sign first (a failed higher high / lower low). Useful as a higher-quality reversal gate if you want two confidence tiers.
+**Confirmation — three consecutive opposing candles:**
+- To confirm a **swing high**: three consecutive **bearish** candles, each closing **below the previous
+  candle's low**.
+- To confirm a **swing low**: three consecutive **bullish** candles, each closing **above the previous
+  candle's high**.
 
-## 3. Strong / weak sides
+**Reset rule.** If price prints a **new extreme** (new high while confirming a high / new low while
+confirming a low) before the three-candle count completes, the candidate resets and the count restarts from
+zero at the new extreme.
 
-- After a CHoCH, the extreme that produced it is the **STRONG (protected)** side; the opposite is **WEAK (expected to break)**.
-- Bullish trend: swing low strong, swing high weak → expect the high to break.
-- Bearish trend: swing high strong, swing low weak → expect the low to break.
-- Bias your entries toward taking out the weak side.
+**Result.** Once confirmed, the swing point is the extreme that was being tracked (the highest high before a
+confirmed bearish pullback → swing high; the lowest low before a confirmed bullish pullback → swing low).
 
-## 4. Internal structure
+**Display.** A candidate level is drawn **dotted** while the three-candle count is in progress, and becomes
+**solid** once confirmed.
 
-- Internal = all structure inside the current swing range (swing low → swing high "box").
-- Labelled with an **I-** prefix: I-HH, I-HL, I-BOS, I-CHoCH.
-- Internal structure **resets/clears** when price breaks the swing range and new swing points form. It only exists while a range is live.
-- Use: a deep pullback into the range followed by an **internal CHoCH** signals internal realigning with the swing direction — this is the trigger to target the swing extreme.
+> ⚠️ Discrepancy to resolve before coding. The indicator's overview says each candle must close "beyond the
+> previous one's **body**," while its swing-engine section says "beyond the previous one's **low** (bearish)
+> / **high** (bullish)." These give slightly different confirmations. The low/high wording is the more
+> specific and is treated as primary here — but pin this down against live behaviour before backtesting,
+> because it changes which swings confirm.
 
-## 5. Multi-timeframe stack
+## 2. Swing labels: HH / HL / LH / LL
 
-- **4H / Daily** → directional bias.
-- **15m** → operative structure / the shift.
-- **1m** → entry only. ("1 minute is where we always enter.")
-- Sequence: 15m shifts direction (e.g. bearish during London) → drop to 1m → wait for a 1m CHoCH in that same direction → 1m now aligned with 15m → enter.
+Each newly confirmed swing point is labelled by comparing it to the prior swing point of the same type:
+- **HH** (Higher High) — confirmed swing high above the previous swing high.
+- **LH** (Lower High) — confirmed swing high below the previous swing high.
+- **HL** (Higher Low) — confirmed swing low above the previous swing low.
+- **LL** (Lower Low) — confirmed swing low below the previous swing low.
 
-## 6. Session liquidity (killzones)
+Uptrend reads as a sequence of HH + HL. Downtrend reads as LH + LL. The transition between these sequences is
+what BOS and CHoCH formalise.
 
-- Times in **UTC−4**: Asia 20:00–00:00 (blue) | London 02:00–05:00 (green) | New York 07:00–10:00 (orange).
-  - NOTE: transcript said London "2am till 5pm" — almost certainly 5am given killzone logic. Verify against the video before hardcoding.
-- **Don't trade Asia. Trade London + New York.**
-- Each session's high and low are liquidity targets.
-- Logic: whichever side (high or low) is swept FIRST, the **unswept side is the target** for the rest of the session.
-- Frankfurt (pre-London) sweeps count — the sweep can happen before London open.
+## 3. The trading range, BOS and CHoCH
+
+Once two swing points are confirmed (a swing high and a swing low), they define an active **trading range**.
+A **candle body close beyond a range boundary** triggers a break event. A wick through the level does
+**not** qualify — close only.
+
+- **BOS (Break of Structure) = continuation.** Body close beyond the swing level **in the direction of the
+  current trend** (close above swing high in an uptrend / below swing low in a downtrend).
+- **CHoCH (Change of Character) = reversal.** Body close beyond the swing level **against** the prevailing
+  trend (close below swing low in an uptrend / above swing high in a downtrend). Flips the trend state.
+
+After a break, a new range is established from the new confirmed swing points and the cycle repeats.
+
+## 4. Internal structure engine
+
+Internal structure uses the **identical three-candle confirmation logic**, but scoped **only within the
+current confirmed swing high and swing low**.
+
+- Activates only **after** a new swing point is established.
+- Cannot detect or plot structure **outside** the active swing boundaries.
+- **Resets completely** when a swing-level BOS or CHoCH occurs (a new swing range begins).
+- Tracks pullbacks *inside* the range independently of swing-level reversals.
+
+Internal events are labelled **iBOS** and **iCHoCH** (and internal swing labels iHH / iHL / iLH / iLL), drawn
+**dashed** to distinguish them from swing structure.
+
+**Use.** A deep pullback into the range followed by an **internal CHoCH** in the swing's direction signals the
+internal realigning with the swing — the trigger to target the swing extreme.
 
 ---
 
-## Mapping to existing LWG rules
+## Build checklist
 
-- **CONFIRMS** — your body-close requirement for BOS/SOS matches Ben's body-close break rule exactly. Aligned, no change needed.
-- **CONFIRMS** — wick-through-doesn't-count handling matches.
-- **TERMINOLOGY** — your "SOS = body close below prior HL (trend failure)" is the same thing as Ben's bearish CHoCH. Same concept, different label. Pick one vocabulary for the engine so the code isn't ambiguous.
-- **DIVERGES (entry model)** — your FFT uses the first fib touch into the 61.8–88.6% zone as the primary entry. Ben uses internal-CHoCH realignment inside the swing range as the trigger. These are different entry layers sitting on the *same* structural skeleton. Decision: run them as alternatives, or stack them as a confluence gate (structure engine defines the skeleton → fib-zone AND/OR internal-CHoCH fires the entry).
-- **GAP** — the pullback-validity rule is the core of the whole engine and Ben never fully specifies it. You must define it. See below.
-
----
-
-## The one decision that determines everything: the pullback rule
-
-LuxAlgo detects swings via a **lookback** (configurable 5–49 bars) — fundamentally different from Ben's fixed wave rule. Because of that, LuxAlgo's markup shifts when you change the lookback, which is exactly the subjectivity Ben claims to eliminate. Two paths:
-
-- **(a) Use LuxAlgo's lookback detection as-is.** Fastest to ship. Downside: structure is only as fixed as your chosen lookback number; it's not the timeframe-independent markup Ben implies.
-- **(b) Replicate a fractal/wave pullback.** A confirmed pullback = price prints a swing extreme, then a defined fractal forms against it (e.g. a 3-bar fractal: a high with a lower high on both sides), confirmed by a body close. This is the closest mechanical analogue to "a certain order of candles as waves" and gives the deterministic, lookback-free markup that is Ben's actual selling point.
-
-**Recommendation: (b).** It's more work but it's the thing that makes your engine behave like his rather than like a generic SMC indicator. The exact fractal/wave definition is the single variable that decides whether your output matches his — pin that down first, before any backtesting, because (per your own governing principle) wrong structure detection produces false passes that only fail live.
-
----
-
-## LuxAlgo build path (practical)
-
-Most of Sections 1–4 already exist in Price Action Concepts: swing/internal BOS/CHoCH, HH/HL/LH/LL labels, EQH/EQL, dashed-unconfirmed vs solid-confirmed lines. Your real build work is:
-
-1. Decide the pullback rule (above) — and if going with (b), this likely means custom Pine on top of, or instead of, PAC's lookback engine.
-2. Add the strong/weak side tagging if PAC doesn't expose it directly.
-3. Add the session killzone boxes with the UTC−4 times (PAC's liquidity tools may not match these exact windows — likely a separate session-box script).
-4. Wire the 4H/15m/1m alignment logic as your signal layer on top of the structure layer.
+1. Implement the three-candle pullback tracker with the reset-on-new-extreme rule. This is the core; verify
+   it against the live indicator before anything else.
+2. Resolve the body-vs-low/high close discrepancy (§1) against live behaviour.
+3. Add HH/HL/LH/LL labelling off confirmed swings.
+4. Add the range + body-close BOS/CHoCH logic.
+5. Add the internal engine as the same tracker scoped to the live range, resetting on swing breaks.
+6. Render candidates dotted, confirmed swings solid, internal structure dashed.

@@ -1,0 +1,286 @@
+//@version=6
+strategy("London Breakout Research V2", overlay=true, pyramiding=0, calc_on_order_fills=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+
+//==================================================
+// INPUTS
+//==================================================
+asianStartHour = input.int(0, "Asian Start Hour GMT", minval=0, maxval=23, group="Sessions")
+asianEndHour   = input.int(6, "Asian End Hour GMT",   minval=0, maxval=23, group="Sessions")
+entryStartHour = input.int(7, "Entry Start Hour GMT", minval=0, maxval=23, group="Sessions")
+entryEndHour   = input.int(9, "Entry End Hour GMT",   minval=0, maxval=23, group="Sessions")
+forceCloseHour = input.int(11,"Force Close Hour GMT", minval=0, maxval=23, group="Sessions")
+
+minRangePips   = input.float(15, "Min Range (Pips)", group="Filter")
+maxRangePips   = input.float(40, "Max Range (Pips)", group="Filter")
+bufferPips     = input.float(5,  "Buffer (Pips)",    group="Entry")
+riskReward     = input.float(2,  "Risk Reward",      group="Entry")
+confirmCloses  = input.int(1, "Body Closes To Confirm", minval=1, group="Entry", tooltip="Consecutive candle bodies that must close beyond the trigger before entering. 1 = enter on first close.")
+
+useTrail        = input.bool(true, "Step-Trail Stop",       group="Trade Management")
+trailStepR      = input.float(0.5, "Trail Step (R)",        minval=0.1, step=0.1, group="Trade Management", tooltip="Ratchet the stop up by this R for every +this R of open profit (bar-close). The first step lands on breakeven, then it trails one step behind.")
+usePartial      = input.bool(true, "Take Partial Profit",   group="Trade Management")
+partialTriggerR = input.float(1.0, "Partial Trigger (R)",   minval=0.1, step=0.1, group="Trade Management", tooltip="Resting limit that books part of the position at this R multiple.")
+partialPct      = input.float(50,  "Partial Size (%)",      minval=1, maxval=99, step=5, group="Trade Management")
+
+reversalMode    = input.string("Off", "Reversal Mode", options=["Off", "Mid-Range Flip", "Range-Break Flip"], group="Reversal", tooltip="Off = never flip. Mid-Range Flip = while a trade is open, if a body closes back past the range midpoint in the opposite direction, close it and take the opposite side. Range-Break Flip = let the trade run; after it closes, if a body closes beyond the FAR side of the range, take the opposite breakout. Either way the flipped trade uses the standard stop (far side of range) and RR target. One flip per day.")
+
+showAsianBoxes = input.bool(true, "Show Asian Boxes",    group="Display")
+showInvalid    = input.bool(true, "Show Invalid Ranges", group="Display")
+showTradeBoxes = input.bool(true, "Show TP/SL Boxes",    group="Display")
+showTriggers   = input.bool(true, "Show Trigger Levels", group="Display")
+showCutoff     = input.bool(true, "Show Entry Cutoff",   group="Display")
+showLabels     = input.bool(true, "Show Labels",         group="Display")
+
+//==================================================
+// COLORS
+//==================================================
+COL_TP_OPEN  = color.new(color.green, 85)
+COL_SL_OPEN  = color.new(color.red,   85)
+COL_TP_WIN   = color.new(color.rgb(0, 100, 0),   25)   // dark green
+COL_SL_LOSS  = color.new(color.rgb(139, 0, 0),   25)   // dark red
+COL_FLIP     = color.new(color.blue, 0)                // border for flipped (reversal) trades
+
+//==================================================
+// PIP SIZE + TIME
+//==================================================
+float pip = str.contains(syminfo.ticker, "JPY") ? 0.01 : 0.0001
+gmtHour   = hour(time, "GMT+0")
+newDay    = dayofmonth(time, "GMT+0") != dayofmonth(time[1], "GMT+0")
+
+//==================================================
+// DAILY STATE
+//==================================================
+var float asianHigh    = na
+var float asianLow     = na
+var int   asianStartBar = na
+var int   asianEndBar   = na
+var bool  tradeTaken    = false
+var int   buyCloses     = 0      // consecutive bodies closed above buy trigger
+var int   sellCloses    = 0      // consecutive bodies closed below sell trigger
+var int   tradeDir      = 0      // 1 = long, -1 = short (current/last trade this day)
+var bool  reversed      = false  // a flip already happened this day (cap = 1)
+
+// trade refs (recolored on outcome)
+var float activeEntry  = na
+var float activeStop   = na
+var float activeTarget = na
+var float activeRisk   = na      // initial risk in price (entry -> initial stop)
+var float initialStop  = na      // original stop (for outcome coloring; activeStop moves to BE)
+var float tp1          = na      // partial-profit limit price
+var box   tpBox        = na
+var box   slBox        = na
+var int   closedCount  = 0
+
+if newDay
+    asianHigh    := na
+    asianLow     := na
+    asianStartBar := na
+    asianEndBar   := na
+    tradeTaken   := false
+    buyCloses    := 0
+    sellCloses   := 0
+    tradeDir     := 0
+    reversed     := false
+    activeEntry  := na
+    activeStop   := na
+    activeTarget := na
+    activeRisk   := na
+    initialStop  := na
+    tp1          := na
+    tpBox        := na   // keep old box on chart, just drop the ref
+    slBox        := na
+
+//==================================================
+// BUILD ASIAN RANGE
+//==================================================
+asianSession = gmtHour >= asianStartHour and gmtHour < asianEndHour
+if asianSession
+    if na(asianStartBar)
+        asianStartBar := bar_index
+    asianEndBar := bar_index
+    asianHigh   := na(asianHigh) ? high : math.max(asianHigh, high)
+    asianLow    := na(asianLow)  ? low  : math.min(asianLow,  low)
+
+rangePips  = not na(asianHigh) and not na(asianLow) ? (asianHigh - asianLow) / pip : na
+validRange = not na(rangePips) and rangePips >= minRangePips and rangePips <= maxRangePips
+
+//==================================================
+// DRAW ASIAN BOX (once, on first bar after session)
+//==================================================
+if not asianSession and asianEndBar == bar_index - 1 and not na(rangePips)
+    isValid = validRange
+    if (isValid and showAsianBoxes) or (not isValid and showInvalid)
+        bxCol  = isValid ? color.yellow : color.gray
+        bgCol  = isValid ? color.new(color.yellow, 80) : color.new(color.gray, 85)
+        box.new(asianStartBar, asianHigh, asianEndBar, asianLow, bgcolor=bgCol, border_color=bxCol)
+        if showLabels
+            txt = "ASIAN\n" + str.tostring(rangePips, "#.0") + "p\n" + (isValid ? "VALID" : "INVALID")
+            label.new(asianEndBar, asianHigh, txt, style=label.style_label_down, color=bxCol, textcolor=isValid ? color.black : color.white)
+
+//==================================================
+// ENTRY TRIGGERS (require a BODY close beyond level, not a wick)
+//==================================================
+buyTrigger  = asianHigh + (bufferPips * pip)
+sellTrigger = asianLow  - (bufferPips * pip)
+entryWindow = gmtHour >= entryStartHour and gmtHour < entryEndHour
+
+// Count consecutive body closes beyond each trigger; a close back inside resets.
+// Enter once the count reaches confirmCloses. Fills at next bar open.
+if validRange and entryWindow and not tradeTaken and not reversed
+    buyCloses  := close > buyTrigger  ? buyCloses  + 1 : 0
+    sellCloses := close < sellTrigger ? sellCloses + 1 : 0
+    if buyCloses >= confirmCloses
+        strategy.entry("LONG", strategy.long)
+    else if sellCloses >= confirmCloses
+        strategy.entry("SHORT", strategy.short)
+
+// Show the buy/sell trigger levels only while they are live (range formed,
+// valid, inside the entry window, no trade yet). linebr -> line breaks on na.
+cutoffBar    = gmtHour >= entryEndHour and gmtHour[1] < entryEndHour
+triggersLive = showTriggers and validRange and not tradeTaken and not asianSession and (gmtHour < entryEndHour or cutoffBar)
+plot(triggersLive ? buyTrigger  : na, "Buy Trigger",  color=color.green, style=plot.style_linebr, linewidth=2)
+plot(triggersLive ? sellTrigger : na, "Sell Trigger", color=color.red,   style=plot.style_linebr, linewidth=2)
+
+// Dashed line at the entry cutoff, spanning sell->buy trigger to cap the box:
+// the buy line (top), sell line (bottom) and this line frame the entry window.
+if showCutoff and validRange and not tradeTaken and cutoffBar
+    line.new(bar_index, sellTrigger, bar_index, buyTrigger, color=color.new(color.orange, 0), style=line.style_dashed, width=2)
+
+//==================================================
+// LONG FILLED
+//==================================================
+if strategy.position_size > 0 and not tradeTaken
+    tradeTaken   := true                           // rule 11: tradeTaken blocks the opposite side
+    tradeDir     := 1
+    activeEntry  := strategy.position_avg_price
+    activeStop   := asianLow
+    initialStop  := asianLow
+    activeRisk   := activeEntry - activeStop
+    activeTarget := activeEntry + (activeRisk * riskReward)
+    tp1          := activeEntry + (activeRisk * partialTriggerR)
+    // resting partial limit (issued ONCE); the stop leg covers the whole position
+    // and is the only leg the trail re-issues.
+    if usePartial
+        strategy.exit("L_TP1", from_entry="LONG", qty_percent=partialPct, limit=tp1)
+    strategy.exit("L_STOP", from_entry="LONG", stop=activeStop, limit=activeTarget)
+    if showTradeBoxes
+        tpBdr = reversed ? COL_FLIP : color.green
+        slBdr = reversed ? COL_FLIP : color.red
+        tpBox := box.new(bar_index, activeTarget, bar_index, activeEntry, bgcolor=COL_TP_OPEN, border_color=tpBdr)
+        slBox := box.new(bar_index, activeEntry,  bar_index, activeStop,  bgcolor=COL_SL_OPEN, border_color=slBdr)
+
+//==================================================
+// SHORT FILLED
+//==================================================
+if strategy.position_size < 0 and not tradeTaken
+    tradeTaken   := true                           // rule 11: tradeTaken blocks the opposite side
+    tradeDir     := -1
+    activeEntry  := strategy.position_avg_price
+    activeStop   := asianHigh
+    initialStop  := asianHigh
+    activeRisk   := activeStop - activeEntry
+    activeTarget := activeEntry - (activeRisk * riskReward)
+    tp1          := activeEntry - (activeRisk * partialTriggerR)
+    // resting partial limit (issued ONCE); the stop leg covers the whole position
+    // and is the only leg the trail re-issues.
+    if usePartial
+        strategy.exit("S_TP1", from_entry="SHORT", qty_percent=partialPct, limit=tp1)
+    strategy.exit("S_STOP", from_entry="SHORT", stop=activeStop, limit=activeTarget)
+    if showTradeBoxes
+        tpBdr = reversed ? COL_FLIP : color.green
+        slBdr = reversed ? COL_FLIP : color.red
+        tpBox := box.new(bar_index, activeEntry, bar_index, activeTarget, bgcolor=COL_TP_OPEN, border_color=tpBdr)
+        slBox := box.new(bar_index, activeStop,  bar_index, activeEntry,  bgcolor=COL_SL_OPEN, border_color=slBdr)
+
+//==================================================
+// TRADE MANAGEMENT — step-trail the stop (bar-close)
+// Every +trailStepR of open profit, ratchet the stop up by trailStepR.
+// First step (curR >= trailStepR) lands on breakeven, then trails one step behind.
+//==================================================
+if useTrail and strategy.position_size != 0 and not na(activeEntry) and activeRisk > 0
+    isLong   = strategy.position_size > 0
+    curR     = isLong ? (close - activeEntry) / activeRisk : (activeEntry - close) / activeRisk
+    steps    = math.floor(curR / trailStepR)
+    if steps >= 1
+        stopR    = (steps - 1) * trailStepR        // 1 step -> BE, 2 -> +1 step behind, ...
+        newStop  = isLong ? activeEntry + stopR * activeRisk : activeEntry - stopR * activeRisk
+        improved = isLong ? newStop > activeStop : newStop < activeStop
+        if improved
+            activeStop := newStop                   // only re-issue the stop leg
+            if isLong
+                strategy.exit("L_STOP", from_entry="LONG", stop=activeStop, limit=activeTarget)
+            else
+                strategy.exit("S_STOP", from_entry="SHORT", stop=activeStop, limit=activeTarget)
+
+//==================================================
+// REVERSAL / FLIP (optional) — one flip per day. The flip fires the opposite
+// strategy.entry and resets tradeTaken, so the FILLED block re-initialises the
+// new trade with the STANDARD stop (far side of range) + RR target.
+//==================================================
+rangeMid = not na(asianHigh) and not na(asianLow) ? (asianHigh + asianLow) / 2 : na
+if reversalMode != "Off" and tradeTaken and not reversed and validRange and not na(rangeMid) and gmtHour < forceCloseHour
+    // Option 1 — Mid-Range Flip: trade still open, body closes back past the midpoint
+    if reversalMode == "Mid-Range Flip" and strategy.position_size != 0
+        if tradeDir < 0 and close > rangeMid           // short -> flip long
+            reversed   := true
+            tradeTaken := false
+            strategy.entry("LONG", strategy.long)
+        else if tradeDir > 0 and close < rangeMid      // long -> flip short
+            reversed   := true
+            tradeTaken := false
+            strategy.entry("SHORT", strategy.short)
+    // Option 2 — Range-Break Flip: original trade closed, body closes beyond far side
+    else if reversalMode == "Range-Break Flip" and strategy.position_size == 0
+        if tradeDir < 0 and close > asianHigh          // short done -> break up -> long
+            reversed   := true
+            tradeTaken := false
+            strategy.entry("LONG", strategy.long)
+        else if tradeDir > 0 and close < asianLow      // long done -> break down -> short
+            reversed   := true
+            tradeTaken := false
+            strategy.entry("SHORT", strategy.short)
+
+//==================================================
+// EXTEND OPEN TRADE BOXES TO CURRENT BAR
+//==================================================
+if strategy.position_size != 0
+    if not na(tpBox)
+        box.set_right(tpBox, bar_index)
+    if not na(slBox)
+        box.set_right(slBox, bar_index)
+
+//==================================================
+// OUTCOME: recolor boxes (rules 7/8/9) + win/loss label
+//==================================================
+if strategy.closedtrades > closedCount
+    last      = strategy.closedtrades - 1
+    exitPrice = strategy.closedtrades.exit_price(last)
+    tol       = 0.5 * pip
+    // compare to the ORIGINAL stop so a breakeven scratch isn't painted as a loss
+    hitTP     = not na(activeTarget) and math.abs(exitPrice - activeTarget) <= tol
+    hitSL     = not na(initialStop)  and math.abs(exitPrice - initialStop)  <= tol
+
+    if not na(tpBox)
+        box.set_right(tpBox, bar_index)
+    if not na(slBox)
+        box.set_right(slBox, bar_index)
+
+    // only finalize colour when fully flat (skip the partial-profit sub-close).
+    // recolour the FILL only; leave the border (green/red, or blue for a flip).
+    if strategy.position_size == 0
+        if hitTP and not na(tpBox)
+            box.set_bgcolor(tpBox, COL_TP_WIN)      // 8: TP hit -> dark green fill
+        else if hitSL and not na(slBox)
+            box.set_bgcolor(slBox, COL_SL_LOSS)     // 7: SL hit -> dark red fill
+        // 9: neither (BE scratch / force-close) -> keeps default fill
+
+    closedCount := strategy.closedtrades
+
+// Rule 12 note: no pending orders to cancel — a bar-close entry only fires
+// inside the entry window, so missing the window simply means no trade.
+
+//==================================================
+// FORCE CLOSE (intraday only)
+//==================================================
+if gmtHour >= forceCloseHour
+    strategy.close_all()

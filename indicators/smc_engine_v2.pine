@@ -1,0 +1,376 @@
+//@version=6
+// SMC Engine — pullback-only rebuild of "Structure OS".
+// Stage 2b: BREAK-GATED swing structure. The range [Swing Low, Swing High] only
+//           changes on a body-close break: BOS/CHoCH, broken swings → HH/HL/LH/LL,
+//           new swing pullback-confirmed after the break. No structure inside the
+//           range (that's INTERNAL — Stage 3).
+// See indicators/STRUCTURE_OS_BUILD.md for the full plan and status.
+indicator("SMC Engine", overlay = true, max_labels_count = 500, max_lines_count = 500)
+
+// ─────────────────────────────────────────────
+// INPUTS — STRUCTURE  (panel parity with the original; some wired in later stages)
+// ─────────────────────────────────────────────
+g = "Structure"
+showSwing       = input.bool(true,  "Show Swing Structure",            group = g, tooltip = "Main swing highs/lows using the 3-candle pullback rule.")
+showBosLbl      = input.bool(true,  "Show BOS Labels",                 group = g, tooltip = "Break of Structure — continuation in the current trend direction.")          // Stage 2
+showChochLbl    = input.bool(true,  "Show CHoCH Labels",               group = g, tooltip = "Change of Character — reversal against the current trend.")                   // Stage 2
+showSwingPtLbl  = input.bool(true,  "Show Swing Point Labels",         group = g, tooltip = "HH, HL, LH, LL labels at confirmed swing points.")
+showSwingLines  = input.bool(true,  "Show Swing Level Lines",          group = g, tooltip = "Horizontal lines at active swing high/low levels.")
+showUnconfirmed = input.bool(true,  "Show Unconfirmed Levels",         group = g, tooltip = "Dotted line at candidate swing point before 3-candle confirmation.")
+showInternal    = input.bool(false, "Show Internal Structure",         group = g, tooltip = "Structure within the current swing range. Same 3-candle rule.")                // Stage 3
+showIntBos      = input.bool(true,  "Show Internal BOS",               group = g, tooltip = "Internal Break of Structure labels.")                                          // Stage 3
+showIntChoch    = input.bool(true,  "Show Internal CHoCH",             group = g, tooltip = "Internal Change of Character labels.")                                         // Stage 3
+showIntPtLbl    = input.bool(true,  "Show Internal Point Labels",      group = g, tooltip = "iHH, iHL, iLH, iLL labels at internal swing points.")                          // Stage 3
+showIntLines    = input.bool(true,  "Show Internal Level Lines",       group = g, tooltip = "Dashed lines at active internal high/low levels.")                             // Stage 3
+showHistInt     = input.bool(true,  "Show Historic Internal Structure",group = g, tooltip = "Keep internal structure labels and lines from previous swing ranges on the chart. Off = only show current swing range internals.") // Stage 3
+
+gc = "Colors"
+bullColor = input.color(color.blue,  "Bullish", group = gc)
+bearColor = input.color(color.black, "Bearish", group = gc)
+
+// TEMPORARY diagnostic — how far past the previous candle a close must go to count
+// toward the 3-candle pullback. Resolves spec §1 (body vs low/high). Once we know
+// which one matches the original, this gets hardcoded and the input removed.
+gd = "Diagnostics (temporary)"
+confMode = input.string("Previous candle body", "Confirmation close must clear",
+             options = ["Previous candle low/high", "Previous candle body", "Previous candle close"],
+             group = gd,
+             tooltip = "How strict the 3-candle pullback is. low/high = strictest (close beyond prior bar's full low/high). body = close beyond prior bar's open/close body. close = loosest (close beyond prior bar's close). Strict gives FEWER swings.")
+
+// Bearish-pullback close test (confirming a swing HIGH): is this close low enough?
+f_bearClose() =>
+    switch confMode
+        "Previous candle low/high" => close < low[1]
+        "Previous candle body"     => close < math.min(open[1], close[1])
+        => close < close[1]
+
+// Bullish-pullback close test (confirming a swing LOW): is this close high enough?
+f_bullClose() =>
+    switch confMode
+        "Previous candle low/high" => close > high[1]
+        "Previous candle body"     => close > math.max(open[1], close[1])
+        => close > close[1]
+
+// ─────────────────────────────────────────────
+// PULLBACK TRACKER  (the ONLY swing detector — no ta.pivot*)
+// ─────────────────────────────────────────────
+// Confirms a swing HIGH when CONFIRM consecutive candles each close below the
+// previous candle's LOW. Confirms a swing LOW when CONFIRM consecutive candles
+// each close above the previous candle's HIGH. A new extreme before the count
+// completes resets the count (spec §1, reset-on-new-extreme).
+const int CONFIRM = 3
+
+type PB
+    int   phase       = 0    // 0 neutral (bootstrap), +1 seeking high, -1 seeking low
+    float candHigh    = na   // running candidate swing high
+    int   candHighBar = na
+    float candLow     = na   // running candidate swing low
+    int   candLowBar  = na
+    int   bearCnt     = 0    // consecutive closes below the previous bar's low
+    int   bullCnt     = 0    // consecutive closes above the previous bar's high
+    int   event       = 0    // this bar: +1 swing high confirmed, -1 swing low confirmed, 0 none
+    float eventPrice  = na
+    int   eventBar    = na
+
+// Seed the down-leg's candidate low: lowest low from the swing-high bar to now.
+method seedLow(PB t) =>
+    float lo = low
+    int   lb = bar_index
+    int   sp = math.min(bar_index - t.candHighBar, 500)
+    for i = 0 to sp
+        if low[i] < lo
+            lo := low[i]
+            lb := bar_index - i
+    t.candLow    := lo
+    t.candLowBar := lb
+
+// Seed the up-leg's candidate high: highest high from the swing-low bar to now.
+method seedHigh(PB t) =>
+    float hi = high
+    int   hb = bar_index
+    int   sp = math.min(bar_index - t.candLowBar, 500)
+    for i = 0 to sp
+        if high[i] > hi
+            hi := high[i]
+            hb := bar_index - i
+    t.candHigh    := hi
+    t.candHighBar := hb
+
+method confirmHigh(PB t) =>
+    t.event      := 1
+    t.eventPrice := t.candHigh
+    t.eventBar   := t.candHighBar
+    t.phase      := -1
+    t.bullCnt    := 0
+    t.seedLow()
+
+method confirmLow(PB t) =>
+    t.event      := -1
+    t.eventPrice := t.candLow
+    t.eventBar   := t.candLowBar
+    t.phase      := 1
+    t.bearCnt    := 0
+    t.seedHigh()
+
+method step(PB t) =>
+    t.event := 0
+
+    if t.phase == 0
+        // Bootstrap: track both extremes until the first swing confirms.
+        if na(t.candHigh)
+            t.candHigh    := high
+            t.candHighBar := bar_index
+        if na(t.candLow)
+            t.candLow    := low
+            t.candLowBar := bar_index
+
+        bool newHigh = high > t.candHigh
+        bool newLow  = low  < t.candLow
+        if newHigh
+            t.candHigh    := high
+            t.candHighBar := bar_index
+            t.bearCnt     := 0
+        if newLow
+            t.candLow    := low
+            t.candLowBar := bar_index
+            t.bullCnt    := 0
+        if not newHigh
+            t.bearCnt := f_bearClose() ? t.bearCnt + 1 : 0
+        if not newLow
+            t.bullCnt := f_bullClose() ? t.bullCnt + 1 : 0
+
+        if t.bearCnt >= CONFIRM
+            t.confirmHigh()
+        else if t.bullCnt >= CONFIRM
+            t.confirmLow()
+
+    else if t.phase == 1
+        // Seeking a swing HIGH: track the running high, count the bearish pullback.
+        bool newHigh = high > t.candHigh
+        if newHigh
+            t.candHigh    := high
+            t.candHighBar := bar_index
+            t.bearCnt     := 0
+        if not newHigh
+            t.bearCnt := f_bearClose() ? t.bearCnt + 1 : 0
+        if t.bearCnt >= CONFIRM
+            t.confirmHigh()
+
+    else if t.phase == -1
+        // Seeking a swing LOW: track the running low, count the bullish pullback.
+        bool newLow = low < t.candLow
+        if newLow
+            t.candLow    := low
+            t.candLowBar := bar_index
+            t.bullCnt    := 0
+        if not newLow
+            t.bullCnt := f_bullClose() ? t.bullCnt + 1 : 0
+        if t.bullCnt >= CONFIRM
+            t.confirmLow()
+
+// ─────────────────────────────────────────────
+// EXECUTION (Stage 2b: BREAK-GATED swing structure)
+// ─────────────────────────────────────────────
+// Swing structure only changes at BREAKS of the trading range. While price stays
+// inside [asl, ash] no new swing points form (those are INTERNAL — Stage 3). On a
+// body close beyond the active swing high/low: label BOS (with trend) / CHoCH
+// (against → flips trend), relabel the broken swings HH/HL/LH/LL, take the protected
+// opposing extreme as the new active swing, and pullback-confirm the new swing in
+// the break direction (dotted candidate → solid "Swing High"/"Swing Low").
+
+var PB    boot   = PB.new()   // free-running detector — seeds the first range only
+
+var float ash    = na         // active swing high ("Swing High")
+var int   ashLoc = na
+var label ashLbl = na
+var line  ashLine= na
+var float asl    = na         // active swing low ("Swing Low")
+var int   aslLoc = na
+var label aslLbl = na
+var line  aslLine= na
+
+var float lastHigh = na       // last broken swing high (for HH/LH)
+var float lastLow  = na       // last broken swing low  (for HL/LL)
+
+var int   dir    = 0          // trend: +1 up, -1 down, 0 none
+var bool  booted = false
+
+var int   pbMode = 0          // 0 none, +1 confirming new high, -1 confirming new low
+var float pbExt  = na
+var int   pbExtLoc = na
+var int   pbCnt  = 0
+var line  pbLine = na
+
+// ── BOOTSTRAP: seed the first range from the free-running detector ──
+if not booted
+    boot.step()
+    if boot.event == 1
+        ash    := boot.eventPrice
+        ashLoc := boot.eventBar
+    if boot.event == -1
+        asl    := boot.eventPrice
+        aslLoc := boot.eventBar
+    if not na(ash) and not na(asl)
+        booted := true
+        dir    := ashLoc >= aslLoc ? 1 : -1
+        if showSwing and showSwingPtLbl
+            ashLbl := label.new(ashLoc, ash, "Swing High\n", color = color(na), textcolor = bearColor, style = label.style_label_down, size = size.small)
+            aslLbl := label.new(aslLoc, asl, "\nSwing Low",  color = color(na), textcolor = bullColor, style = label.style_label_up,   size = size.small)
+        if showSwing and showSwingLines
+            ashLine := line.new(ashLoc, ash, bar_index, ash, color = bearColor, style = line.style_solid, width = 2)
+            aslLine := line.new(aslLoc, asl, bar_index, asl, color = bullColor, style = line.style_solid, width = 2)
+
+// ── BREAK-GATED ENGINE ──
+if booted
+    // (1) Pullback-confirm the new swing after a break
+    if pbMode == 1
+        bool nh = na(pbExt) or high > pbExt
+        if nh
+            pbExt    := high
+            pbExtLoc := bar_index
+            pbCnt    := 0
+        if not nh
+            pbCnt := f_bearClose() ? pbCnt + 1 : 0
+        if showSwing and showUnconfirmed
+            if na(pbLine)
+                pbLine := line.new(pbExtLoc, pbExt, bar_index, pbExt, color = color.new(bearColor, 40), style = line.style_dotted, width = 1)
+            else
+                line.set_x1(pbLine, pbExtLoc)
+                line.set_y1(pbLine, pbExt)
+                line.set_x2(pbLine, bar_index)
+                line.set_y2(pbLine, pbExt)
+        if pbCnt >= CONFIRM
+            if not na(pbLine)
+                line.delete(pbLine)
+                pbLine := na
+            ash    := pbExt
+            ashLoc := pbExtLoc
+            ashLbl := showSwing and showSwingPtLbl ? label.new(ashLoc, ash, "Swing High\n", color = color(na), textcolor = bearColor, style = label.style_label_down, size = size.small) : na
+            ashLine:= showSwing and showSwingLines ? line.new(ashLoc, ash, bar_index, ash, color = bearColor, style = line.style_solid, width = 2) : na
+            pbMode := 0
+    else if pbMode == -1
+        bool nl = na(pbExt) or low < pbExt
+        if nl
+            pbExt    := low
+            pbExtLoc := bar_index
+            pbCnt    := 0
+        if not nl
+            pbCnt := f_bullClose() ? pbCnt + 1 : 0
+        if showSwing and showUnconfirmed
+            if na(pbLine)
+                pbLine := line.new(pbExtLoc, pbExt, bar_index, pbExt, color = color.new(bullColor, 40), style = line.style_dotted, width = 1)
+            else
+                line.set_x1(pbLine, pbExtLoc)
+                line.set_y1(pbLine, pbExt)
+                line.set_x2(pbLine, bar_index)
+                line.set_y2(pbLine, pbExt)
+        if pbCnt >= CONFIRM
+            if not na(pbLine)
+                line.delete(pbLine)
+                pbLine := na
+            asl    := pbExt
+            aslLoc := pbExtLoc
+            aslLbl := showSwing and showSwingPtLbl ? label.new(aslLoc, asl, "\nSwing Low", color = color(na), textcolor = bullColor, style = label.style_label_up, size = size.small) : na
+            aslLine:= showSwing and showSwingLines ? line.new(aslLoc, asl, bar_index, asl, color = bullColor, style = line.style_solid, width = 2) : na
+            pbMode := 0
+
+    // (2) BULLISH BREAK — body close above the active swing high
+    if not na(ash) and close > ash
+        if not na(pbLine)
+            line.delete(pbLine)
+            pbLine := na
+        bool isChoch = dir == -1
+        if showSwing and (isChoch ? showChochLbl : showBosLbl)
+            int mx = math.round((ashLoc + bar_index) / 2)
+            label.new(mx, ash, "\n" + (isChoch ? "CHoCH" : "BOS"), color = color(na), textcolor = bullColor, style = label.style_label_up, size = size.tiny)
+        // broken high → HH/LH
+        if not na(ashLbl)
+            label.set_text(ashLbl, (na(lastHigh) or ash > lastHigh ? "HH" : "LH") + "\n")
+        if not na(ashLine)
+            line.delete(ashLine)
+            ashLine := na
+        lastHigh := ash
+        // protected low = lowest low from the broken-high bar to now
+        float lo    = low
+        int   loLoc = bar_index
+        int   sp    = math.min(bar_index - ashLoc, 500)
+        for i = 0 to sp
+            if low[i] < lo
+                lo    := low[i]
+                loLoc := bar_index - i
+        // Adopt the protected low as the new active swing low. Demote the previous one
+        // only if it existed and is a different bar. (Always set asl so it can never get
+        // stuck na when a break interrupts a pending low confirmation.)
+        if na(asl) or loLoc != aslLoc
+            if not na(asl)
+                if not na(aslLbl)
+                    label.set_text(aslLbl, "\n" + (na(lastLow) or asl > lastLow ? "HL" : "LL"))
+                if not na(aslLine)
+                    line.delete(aslLine)
+                    aslLine := na
+                lastLow := asl
+            asl     := lo
+            aslLoc  := loLoc
+            aslLbl  := showSwing and showSwingPtLbl ? label.new(aslLoc, asl, "\nSwing Low", color = color(na), textcolor = bullColor, style = label.style_label_up, size = size.small) : na
+            aslLine := showSwing and showSwingLines ? line.new(aslLoc, asl, bar_index, asl, color = bullColor, style = line.style_solid, width = 2) : na
+        // start confirming the new swing high
+        ash    := na
+        ashLoc := na
+        ashLbl := na
+        pbMode := 1
+        pbExt  := high
+        pbExtLoc := bar_index
+        pbCnt  := 0
+        dir    := 1
+
+    // (3) BEARISH BREAK — body close below the active swing low
+    else if not na(asl) and close < asl
+        if not na(pbLine)
+            line.delete(pbLine)
+            pbLine := na
+        bool isChoch = dir == 1
+        if showSwing and (isChoch ? showChochLbl : showBosLbl)
+            int mx = math.round((aslLoc + bar_index) / 2)
+            label.new(mx, asl, (isChoch ? "CHoCH" : "BOS") + "\n", color = color(na), textcolor = bearColor, style = label.style_label_down, size = size.tiny)
+        // broken low → LL/HL
+        if not na(aslLbl)
+            label.set_text(aslLbl, "\n" + (na(lastLow) or asl > lastLow ? "HL" : "LL"))
+        if not na(aslLine)
+            line.delete(aslLine)
+            aslLine := na
+        lastLow := asl
+        // protected high = highest high from the broken-low bar to now
+        float hi    = high
+        int   hiLoc = bar_index
+        int   sp2   = math.min(bar_index - aslLoc, 500)
+        for i = 0 to sp2
+            if high[i] > hi
+                hi    := high[i]
+                hiLoc := bar_index - i
+        if na(ash) or hiLoc != ashLoc
+            if not na(ash)
+                if not na(ashLbl)
+                    label.set_text(ashLbl, (na(lastHigh) or ash > lastHigh ? "HH" : "LH") + "\n")
+                if not na(ashLine)
+                    line.delete(ashLine)
+                    ashLine := na
+                lastHigh := ash
+            ash      := hi
+            ashLoc   := hiLoc
+            ashLbl   := showSwing and showSwingPtLbl ? label.new(ashLoc, ash, "Swing High\n", color = color(na), textcolor = bearColor, style = label.style_label_down, size = size.small) : na
+            ashLine  := showSwing and showSwingLines ? line.new(ashLoc, ash, bar_index, ash, color = bearColor, style = line.style_solid, width = 2) : na
+        // start confirming the new swing low
+        asl    := na
+        aslLoc := na
+        aslLbl := na
+        pbMode := -1
+        pbExt  := low
+        pbExtLoc := bar_index
+        pbCnt  := 0
+        dir    := -1
+
+    // (4) Extend active swing-level lines to the current bar
+    if not na(ashLine)
+        line.set_x2(ashLine, bar_index)
+    if not na(aslLine)
+        line.set_x2(aslLine, bar_index)

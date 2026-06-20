@@ -1,0 +1,592 @@
+//@version=6
+indicator("SMC Engine - External Core Only", overlay = true, max_labels_count = 500, max_lines_count = 500)
+
+// ─────────────────────────────────────────────
+// INPUTS
+// ─────────────────────────────────────────────
+majorLength = input.int(15, "External Structure Length", group = "Settings")
+pbBuffer    = input.float(1.0, "Pullback Confirmation Buffer", minval = 0.0, step = 0.1, group = "Settings",
+                tooltip = "Minimum amount a close must clear the extreme bar's own close by to count toward the 3-bar pullback confirmation. 0 = any close past the anchor counts. Raise this to filter out thin/marginal confirming closes.")
+bodyStrength = input.float(0.5, "Body Strength Filter", minval = 0.0, maxval = 1.0, step = 0.05, group = "Settings",
+                tooltip = "For the original pullback rule, each qualifying candle's close must be in this fraction of the candle's range. 0.5 = upper/lower 50% of range. Raise to require stronger candles, lower to be more permissive.")
+bullColor   = input.color(color.blue, "Bullish Color", group = "Settings")
+bearColor   = input.color(color.black, "Bearish Color", group = "Settings")
+
+// ─────────────────────────────────────────────
+// TYPE
+// ─────────────────────────────────────────────
+type SMCStructure
+    int    length
+
+    float  ash             = na
+    int    ash_loc         = na
+    string ash_type        = ""
+    line   ash_line        = na
+    label  ash_lbl         = na
+
+    float  asl             = na
+    int    asl_loc         = na
+    string asl_type        = ""
+    line   asl_line        = na
+    label  asl_lbl         = na
+
+    float  last_conf_high     = na
+    int    last_conf_high_loc = na
+    float  last_conf_low      = na
+    int    last_conf_low_loc  = na
+
+    int    dir            = 0
+    bool   choch_lock     = false
+    line   choch_ref      = na
+
+    int    pb_mode        = 0
+    int    pb_count       = 0
+    float  pb_level       = na
+    float  pb_extreme     = na
+    int    pb_extreme_loc = na
+    line   pb_line        = na
+    bool   pb_started     = false
+    float  pb_extreme_close = na
+    float  pb_last_count_close = na
+    int    pb_consec_count     = 0
+    float  pb_consec_last      = na
+
+    float  prev_close     = na
+    float  prev_high      = na
+    float  prev_low       = na
+
+    bool   seeded         = false
+
+// ─────────────────────────────────────────────
+// METHODS
+// ─────────────────────────────────────────────
+method create_ash(SMCStructure st, float val, int loc, color col, bool solid) =>
+    if not na(st.ash_line)
+        line.delete(st.ash_line)
+    if not na(st.ash_lbl)
+        label.delete(st.ash_lbl)
+        st.ash_lbl := na
+    st.ash      := val
+    st.ash_loc  := loc
+    st.ash_type := ""
+    st.ash_lbl  := label.new(loc, val, "Swing High\n",
+                     color=color(na), textcolor=col,
+                     style=label.style_label_down, size=size.small)
+    st.ash_line := line.new(loc, val, bar_index, val,
+                     color=col,
+                     style=solid ? line.style_solid : line.style_dashed,
+                     width=solid ? 2 : 1)
+
+method create_asl(SMCStructure st, float val, int loc, color col, bool solid) =>
+    if not na(st.asl_line)
+        line.delete(st.asl_line)
+    if not na(st.asl_lbl)
+        label.delete(st.asl_lbl)
+        st.asl_lbl := na
+    st.asl      := val
+    st.asl_loc  := loc
+    st.asl_type := ""
+    st.asl_lbl  := label.new(loc, val, "\nSwing Low",
+                     color=color(na), textcolor=col,
+                     style=label.style_label_up, size=size.small)
+    st.asl_line := line.new(loc, val, bar_index, val,
+                     color=col,
+                     style=solid ? line.style_solid : line.style_dashed,
+                     width=solid ? 2 : 1)
+
+// ─────────────────────────────────────────────
+// MAIN PROCESS
+// ─────────────────────────────────────────────
+method process(SMCStructure st, float ph_val, float pl_val) =>
+
+    bool is_inside = false
+    if not na(st.prev_high) and not na(st.prev_low)
+        is_inside := high <= st.prev_high and low >= st.prev_low
+
+    if st.choch_lock
+        if st.dir == 1 and not na(pl_val)
+            st.choch_lock := false
+        else if st.dir == -1 and not na(ph_val)
+            st.choch_lock := false
+
+    if st.pb_mode == 1
+        if not st.pb_started
+            st.pb_started          := true
+            st.pb_last_count_close := na
+            st.pb_consec_count     := 0
+            st.pb_consec_last      := na
+            if not na(st.pb_line)
+                line.delete(st.pb_line)
+            st.pb_extreme       := high
+            st.pb_extreme_loc   := bar_index
+            st.pb_extreme_close := close
+            st.pb_line := line.new(bar_index, high, bar_index, high,
+                           color=color.new(bullColor, 50),
+                           style=line.style_dotted, width=1)
+            if not is_inside
+                if close < open and (na(st.pb_consec_last) or close < st.pb_consec_last)
+                    st.pb_consec_count += 1
+                    st.pb_consec_last  := close
+                else
+                    st.pb_consec_count := 0
+                    st.pb_consec_last  := na
+        else
+            bool is_new_high = not na(st.pb_extreme) and high > st.pb_extreme
+            if is_new_high
+                st.pb_extreme       := high
+                st.pb_extreme_loc   := bar_index
+                st.pb_extreme_close := close
+
+            if not na(st.pb_line)
+                line.set_x1(st.pb_line, st.pb_extreme_loc)
+                line.set_y1(st.pb_line, st.pb_extreme)
+                line.set_x2(st.pb_line, bar_index)
+                line.set_y2(st.pb_line, st.pb_extreme)
+
+            if not is_inside
+                // ORIGINAL rule: close must clear the anchor, close progressively lower,
+                // AND close in the LOWER half of the candle's own range (body strength).
+                // This filters out weak doji/spinning top candles.
+                float candle_range    = high - low
+                bool  strong_body_low = candle_range <= 0 or close < high - (candle_range * bodyStrength)
+                bool  clears_anchor   = not na(st.pb_extreme_close) and close < st.pb_extreme_close - pbBuffer
+                bool  clears_previous = na(st.pb_last_count_close) or close < st.pb_last_count_close
+                if clears_anchor and clears_previous and strong_body_low
+                    st.pb_count            += 1
+                    st.pb_last_count_close := close
+
+                // CONSECUTIVE rule: 3 strictly consecutive bearish candles each closing
+                // lower than the one before, AND closing in the lower half of their range.
+                float candle_range_c   = high - low
+                bool  strong_body_c    = candle_range_c <= 0 or close < high - (candle_range_c * bodyStrength)
+                if close < open and strong_body_c and (na(st.pb_consec_last) or close < st.pb_consec_last)
+                    st.pb_consec_count += 1
+                    st.pb_consec_last  := close
+                else
+                    st.pb_consec_count := 0
+                    st.pb_consec_last  := na
+
+            if (st.pb_count >= 3 or st.pb_consec_count >= 3) and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                if not na(st.pb_line)
+                    line.delete(st.pb_line)
+                    st.pb_line := na
+                if not na(st.ash_line)
+                    line.delete(st.ash_line)
+                if not na(st.ash_lbl)
+                    label.delete(st.ash_lbl)
+                st.ash      := st.pb_extreme
+                st.ash_loc  := st.pb_extreme_loc
+                st.ash_type := "LOCKED"
+                st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme,
+                                bar_index, st.pb_extreme,
+                                color=bearColor, style=line.style_solid, width=2)
+                st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme,
+                                "Swing High\n",
+                                color=color(na), textcolor=bearColor,
+                                style=label.style_label_down, size=size.small)
+                st.pb_mode             := 0
+                st.pb_count            := 0
+                st.pb_last_count_close := na
+                st.pb_consec_count     := 0
+                st.pb_consec_last      := na
+                st.choch_lock          := false
+
+    else if st.pb_mode == -1
+        if not st.pb_started
+            st.pb_started          := true
+            st.pb_last_count_close := na
+            st.pb_consec_count     := 0
+            st.pb_consec_last      := na
+            if not na(st.pb_line)
+                line.delete(st.pb_line)
+            st.pb_extreme       := low
+            st.pb_extreme_loc   := bar_index
+            st.pb_extreme_close := close
+            st.pb_line := line.new(bar_index, low, bar_index, low,
+                           color=color.new(bearColor, 50),
+                           style=line.style_dotted, width=1)
+            if not is_inside
+                if close > open and (na(st.pb_consec_last) or close > st.pb_consec_last)
+                    st.pb_consec_count += 1
+                    st.pb_consec_last  := close
+                else
+                    st.pb_consec_count := 0
+                    st.pb_consec_last  := na
+        else
+            bool is_new_low = not na(st.pb_extreme) and low < st.pb_extreme
+            if is_new_low
+                st.pb_extreme       := low
+                st.pb_extreme_loc   := bar_index
+                st.pb_extreme_close := close
+
+            if not na(st.pb_line)
+                line.set_x1(st.pb_line, st.pb_extreme_loc)
+                line.set_y1(st.pb_line, st.pb_extreme)
+                line.set_x2(st.pb_line, bar_index)
+                line.set_y2(st.pb_line, st.pb_extreme)
+
+            if not is_inside
+                // ORIGINAL rule: close must clear the anchor, close progressively higher,
+                // AND close in the UPPER half of the candle's own range (body strength).
+                // This filters out weak doji/spinning top candles.
+                float candle_range     = high - low
+                bool  strong_body_high = candle_range <= 0 or close > low + (candle_range * bodyStrength)
+                bool  clears_anchor    = not na(st.pb_extreme_close) and close > st.pb_extreme_close + pbBuffer
+                bool  clears_previous  = na(st.pb_last_count_close) or close > st.pb_last_count_close
+                if clears_anchor and clears_previous and strong_body_high
+                    st.pb_count            += 1
+                    st.pb_last_count_close := close
+
+                // CONSECUTIVE rule: 3 strictly consecutive bullish candles each closing
+                // higher than the one before, AND closing in the upper half of their range.
+                float candle_range_c   = high - low
+                bool  strong_body_c    = candle_range_c <= 0 or close > low + (candle_range_c * bodyStrength)
+                if close > open and strong_body_c and (na(st.pb_consec_last) or close > st.pb_consec_last)
+                    st.pb_consec_count += 1
+                    st.pb_consec_last  := close
+                else
+                    st.pb_consec_count := 0
+                    st.pb_consec_last  := na
+
+            if (st.pb_count >= 3 or st.pb_consec_count >= 3) and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                if not na(st.pb_line)
+                    line.delete(st.pb_line)
+                    st.pb_line := na
+                if not na(st.asl_line)
+                    line.delete(st.asl_line)
+                if not na(st.asl_lbl)
+                    label.delete(st.asl_lbl)
+                st.asl      := st.pb_extreme
+                st.asl_loc  := st.pb_extreme_loc
+                st.asl_type := "LOCKED"
+                st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme,
+                                bar_index, st.pb_extreme,
+                                color=bullColor, style=line.style_solid, width=2)
+                st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme,
+                                "\nSwing Low",
+                                color=color(na), textcolor=bullColor,
+                                style=label.style_label_up, size=size.small)
+                st.pb_mode             := 0
+                st.pb_count            := 0
+                st.pb_last_count_close := na
+                st.pb_consec_count     := 0
+                st.pb_consec_last      := na
+                st.choch_lock          := false
+
+    st.prev_close := close
+    st.prev_high  := high
+    st.prev_low   := low
+
+    // INITIALISE
+    if na(st.ash) and na(st.asl) and not st.seeded
+        if not na(ph_val)
+            st.create_ash(ph_val, bar_index[st.length], bearColor, false)
+            st.dir := -1
+        else if not na(pl_val)
+            st.create_asl(pl_val, bar_index[st.length], bullColor, false)
+            st.dir := 1
+
+    // SEED opposing swing
+    if not st.seeded
+        if not na(st.ash) and na(st.asl)
+            float seed_low = low
+            int   seed_loc = bar_index
+            int   lb       = math.min(bar_index, 500)
+            for i = 0 to lb
+                if low[i] < seed_low
+                    seed_low := low[i]
+                    seed_loc := bar_index - i
+            if seed_low < st.ash
+                st.asl      := seed_low
+                st.asl_loc  := seed_loc
+                st.asl_type := ""
+                st.asl_line := line.new(seed_loc, seed_low, bar_index, seed_low,
+                                color=bullColor, style=line.style_dashed, width=1)
+                st.asl_lbl  := label.new(seed_loc, seed_low, "\nSwing Low",
+                                color=color(na), textcolor=bullColor,
+                                style=label.style_label_up, size=size.small)
+                st.seeded := true
+        else if not na(st.asl) and na(st.ash)
+            float seed_high = high
+            int   seed_loc  = bar_index
+            int   lb        = math.min(bar_index, 500)
+            for i = 0 to lb
+                if high[i] > seed_high
+                    seed_high := high[i]
+                    seed_loc  := bar_index - i
+            if seed_high > st.asl
+                st.ash      := seed_high
+                st.ash_loc  := seed_loc
+                st.ash_type := ""
+                st.ash_line := line.new(seed_loc, seed_high, bar_index, seed_high,
+                                color=bearColor, style=line.style_dashed, width=1)
+                st.ash_lbl  := label.new(seed_loc, seed_high, "Swing High\n",
+                                color=color(na), textcolor=bearColor,
+                                style=label.style_label_down, size=size.small)
+                st.seeded := true
+        else if not na(st.ash) and not na(st.asl)
+            st.seeded := true
+
+    // UPDATE unconfirmed pivots
+    if na(st.last_conf_high) and na(st.last_conf_low)
+        if not na(ph_val) and not na(st.ash) and st.ash_type == "" and st.pb_mode == 0
+            if ph_val > st.ash
+                st.create_ash(ph_val, bar_index[st.length], bearColor, false)
+
+        if not na(pl_val) and not na(st.asl) and st.asl_type == "" and st.pb_mode == 0
+            if pl_val < st.asl
+                st.create_asl(pl_val, bar_index[st.length], bullColor, false)
+
+    // BREAK DETECTION
+    bool ash_broken = not na(st.ash) and close > st.ash
+    bool asl_broken = not na(st.asl) and close < st.asl
+
+    // BULLISH BREAK
+    if ash_broken
+        if not na(st.pb_line)
+            line.delete(st.pb_line)
+            st.pb_line := na
+        st.pb_mode             := 0
+        st.pb_count            := 0
+        st.pb_last_count_close := na
+
+        bool   is_choch     = st.dir == -1 and not st.choch_lock
+        string brk_lbl_txt  = is_choch ? "SOS" : "BOS"
+        int    mid_x        = math.round((st.ash_loc + bar_index) / 2)
+        label.new(mid_x, st.ash, "\n" + brk_lbl_txt,
+                  color=color(na), textcolor=bullColor,
+                  style=label.style_label_down, size=size.tiny)
+
+        if is_choch
+            if not na(st.choch_ref)
+                line.delete(st.choch_ref)
+            st.choch_ref  := line.new(time[bar_index - st.ash_loc], st.ash, time, st.ash,
+                              xloc=xloc.bar_time,
+                              color=color.new(bullColor, 60),
+                              style=line.style_dotted, width=1,
+                              extend=extend.right)
+            st.choch_lock := true
+
+        bool   brk_is_hh   = na(st.last_conf_high) or st.ash >= st.last_conf_high
+        string brk_high_t  = brk_is_hh ? "HH" : "LH"
+        if not na(st.ash_lbl)
+            label.delete(st.ash_lbl)
+        label.new(st.ash_loc, st.ash, brk_high_t + "\n",
+                  color=color(na), textcolor=bullColor,
+                  style=label.style_label_down, size=size.small)
+
+        if not na(st.ash_line)
+            line.set_style(st.ash_line, line.style_solid)
+            line.set_color(st.ash_line, bullColor)
+            line.set_x2(st.ash_line, bar_index)
+            st.ash_line := na
+
+        st.last_conf_high     := st.ash
+        st.last_conf_high_loc := st.ash_loc
+        st.ash_lbl            := na
+        st.ash                := na
+        st.dir                := 1
+
+        if not na(st.asl)
+            bool is_dup_low = st.asl_type == "DUP" or (not na(st.last_conf_low) and st.asl == st.last_conf_low)
+            if not is_dup_low
+                bool   old_is_hl  = is_choch ? false : (na(st.last_conf_low) or st.asl >= st.last_conf_low)
+                string old_low_t  = old_is_hl ? "HL" : "LL"
+                if not na(st.asl_lbl)
+                    label.delete(st.asl_lbl)
+                label.new(st.asl_loc, st.asl, "\n" + old_low_t,
+                          color=color(na), textcolor=bullColor,
+                          style=label.style_label_up, size=size.small)
+                if not na(st.asl_line)
+                    line.delete(st.asl_line)
+                st.asl_line          := na
+                st.asl_lbl           := na
+                st.last_conf_low     := st.asl
+                st.last_conf_low_loc := st.asl_loc
+                st.asl               := na
+            else
+                if not na(st.asl_lbl)
+                    label.delete(st.asl_lbl)
+                if not na(st.asl_line)
+                    line.delete(st.asl_line)
+                st.asl_line := na
+                st.asl_lbl  := na
+                st.asl      := na
+
+        float lowest_val = low
+        int   lowest_loc = bar_index
+        int   bars_back  = na(st.last_conf_high_loc) ? bar_index : bar_index - st.last_conf_high_loc
+        if bars_back > 0
+            int max_lb = math.min(math.min(bars_back, 2000), bar_index)
+            for i = 0 to max_lb
+                if low[i] < lowest_val
+                    lowest_val := low[i]
+                    lowest_loc := bar_index - i
+
+        bool not_separated_low = not na(st.last_conf_low_loc) and (lowest_loc - st.last_conf_low_loc) < 3
+        bool is_dup_search_low = lowest_val == st.last_conf_low or not_separated_low
+        if is_dup_search_low and not na(st.last_conf_low)
+            st.asl      := st.last_conf_low
+            st.asl_loc  := st.last_conf_low_loc
+            st.asl_type := "DUP"
+        else
+            st.asl      := lowest_val
+            st.asl_loc  := lowest_loc
+            st.asl_type := ""
+
+        st.asl_line := line.new(st.asl_loc, st.asl, bar_index, st.asl,
+                        color=bullColor, style=line.style_solid, width=2)
+
+        if st.asl_type != "DUP"
+            st.asl_lbl := label.new(st.asl_loc, st.asl, "\nSwing Low",
+                            color=color(na), textcolor=bullColor,
+                            style=label.style_label_up, size=size.small)
+        else
+            st.asl_lbl := na
+
+        st.pb_mode             := 1
+        st.pb_count            := 0
+        st.pb_last_count_close := na
+        st.pb_consec_count     := 0
+        st.pb_consec_last      := na
+        st.pb_level            := na
+        st.pb_extreme          := high
+        st.pb_extreme_loc      := bar_index
+        st.pb_extreme_close    := close
+        st.pb_started          := true
+        st.pb_line := line.new(bar_index, high, bar_index, high,
+                        color=color.new(bullColor, 50),
+                        style=line.style_dotted, width=1)
+
+    // BEARISH BREAK
+    else if asl_broken
+        if not na(st.pb_line)
+            line.delete(st.pb_line)
+            st.pb_line := na
+        st.pb_mode             := 0
+        st.pb_count            := 0
+        st.pb_last_count_close := na
+
+        bool   is_choch    = st.dir == 1 and not st.choch_lock
+        string brk_lbl_txt = is_choch ? "SOS" : "BOS"
+        int    mid_x       = math.round((st.asl_loc + bar_index) / 2)
+        label.new(mid_x, st.asl, brk_lbl_txt + "\n",
+                  color=color(na), textcolor=bearColor,
+                  style=label.style_label_up, size=size.tiny)
+
+        if is_choch
+            if not na(st.choch_ref)
+                line.delete(st.choch_ref)
+            st.choch_ref  := line.new(time[bar_index - st.asl_loc], st.asl, time, st.asl,
+                              xloc=xloc.bar_time,
+                              color=color.new(bearColor, 60),
+                              style=line.style_dotted, width=1,
+                              extend=extend.right)
+            st.choch_lock := true
+
+        bool   brk_is_hl  = na(st.last_conf_low) or st.asl >= st.last_conf_low
+        string brk_low_t  = brk_is_hl ? "HL" : "LL"
+        if not na(st.asl_lbl)
+            label.delete(st.asl_lbl)
+        label.new(st.asl_loc, st.asl, "\n" + brk_low_t,
+                  color=color(na), textcolor=bearColor,
+                  style=label.style_label_up, size=size.small)
+
+        if not na(st.asl_line)
+            line.set_style(st.asl_line, line.style_solid)
+            line.set_color(st.asl_line, bearColor)
+            line.set_x2(st.asl_line, bar_index)
+            st.asl_line := na
+
+        st.last_conf_low     := st.asl
+        st.last_conf_low_loc := st.asl_loc
+        st.asl_lbl           := na
+        st.asl               := na
+        st.dir               := -1
+
+        if not na(st.ash)
+            bool is_dup_high = st.ash_type == "DUP" or (not na(st.last_conf_high) and st.ash == st.last_conf_high)
+            if not is_dup_high
+                bool   old_is_hh  = is_choch ? true : (na(st.last_conf_high) or st.ash >= st.last_conf_high)
+                string old_high_t = old_is_hh ? "HH" : "LH"
+                if not na(st.ash_lbl)
+                    label.delete(st.ash_lbl)
+                label.new(st.ash_loc, st.ash, old_high_t + "\n",
+                          color=color(na), textcolor=bearColor,
+                          style=label.style_label_down, size=size.small)
+                if not na(st.ash_line)
+                    line.delete(st.ash_line)
+                st.ash_line           := na
+                st.ash_lbl            := na
+                st.last_conf_high     := st.ash
+                st.last_conf_high_loc := st.ash_loc
+                st.ash                := na
+            else
+                if not na(st.ash_lbl)
+                    label.delete(st.ash_lbl)
+                if not na(st.ash_line)
+                    line.delete(st.ash_line)
+                st.ash_line := na
+                st.ash_lbl  := na
+                st.ash      := na
+
+        float highest_val = high
+        int   highest_loc = bar_index
+        int   bars_back   = na(st.last_conf_low_loc) ? bar_index : bar_index - st.last_conf_low_loc
+        if bars_back > 0
+            int max_lb = math.min(math.min(bars_back, 2000), bar_index)
+            for i = 0 to max_lb
+                if high[i] > highest_val
+                    highest_val := high[i]
+                    highest_loc := bar_index - i
+
+        bool not_separated_high = not na(st.last_conf_high_loc) and (highest_loc - st.last_conf_high_loc) < 3
+        bool is_dup_search_high = highest_val == st.last_conf_high or not_separated_high
+        if is_dup_search_high and not na(st.last_conf_high)
+            st.ash      := st.last_conf_high
+            st.ash_loc  := st.last_conf_high_loc
+            st.ash_type := "DUP"
+        else
+            st.ash      := highest_val
+            st.ash_loc  := highest_loc
+            st.ash_type := ""
+
+        st.ash_line := line.new(st.ash_loc, st.ash, bar_index, st.ash,
+                        color=bearColor, style=line.style_solid, width=2)
+
+        if st.ash_type != "DUP"
+            st.ash_lbl := label.new(st.ash_loc, st.ash, "Swing High\n",
+                            color=color(na), textcolor=bearColor,
+                            style=label.style_label_down, size=size.small)
+        else
+            st.ash_lbl := na
+
+        st.pb_mode             := -1
+        st.pb_count            := 0
+        st.pb_last_count_close := na
+        st.pb_consec_count     := 0
+        st.pb_consec_last      := na
+        st.pb_level            := na
+        st.pb_extreme          := low
+        st.pb_extreme_loc      := bar_index
+        st.pb_extreme_close    := close
+        st.pb_started          := true
+        st.pb_line := line.new(bar_index, low, bar_index, low,
+                        color=color.new(bearColor, 50),
+                        style=line.style_dotted, width=1)
+
+    // EXTEND ACTIVE LINES
+    if not na(st.ash_line) and not ash_broken
+        line.set_x2(st.ash_line, bar_index)
+    if not na(st.asl_line) and not asl_broken
+        line.set_x2(st.asl_line, bar_index)
+
+// ─────────────────────────────────────────────
+// EXECUTION
+// ─────────────────────────────────────────────
+var st = SMCStructure.new(majorLength)
+
+ph = ta.pivothigh(high, majorLength, majorLength)
+pl = ta.pivotlow(low,  majorLength, majorLength)
+
+st.process(ph, pl)
