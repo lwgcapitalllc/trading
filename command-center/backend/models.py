@@ -566,6 +566,8 @@ class BacktestDetail(BaseModel):
     optimization_id: Optional[str] = None
     source_run_id: Optional[str] = None
     runner: str = "ninjatrader"
+    sizing_mode: str = "consistent"   # 'consistent' | 'bullet' — engine sizing mode this run used
+    sized: bool = False               # True once a reshaped strategy emitted engine_trades and the engine sized the run
 
 
 # ── Lab — progress + system health ───────────────────────────────────────────

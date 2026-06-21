@@ -2126,6 +2126,14 @@ export function BacktestDetail() {
                       {run.evaluations.map(e => e.ruleset_id).join(', ')}
                     </span>
                   )}
+                  {run.sized && (
+                    <span
+                      className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20 flex-shrink-0 max-[1100px]:hidden"
+                      title="Sizing engine set contract size from the ruleset's ladder and room left."
+                    >
+                      Sized · {run.sizing_mode === 'bullet' ? 'Bullet' : 'Consistent'}
+                    </span>
+                  )}
                 </div>
               ) : (
               <div>
@@ -2148,6 +2156,14 @@ export function BacktestDetail() {
                   {run.evaluations.length > 0 && (
                     <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text">
                       {run.evaluations.map(e => e.ruleset_id).join(', ')}
+                    </span>
+                  )}
+                  {run.sized && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20"
+                      title="The sizing engine set contract size from each ruleset's contract ladder and room left — this run reflects real prop-firm sizing, not unit size."
+                    >
+                      Engine-sized · {run.sizing_mode === 'bullet' ? 'Bullet' : 'Consistent'}
                     </span>
                   )}
                   {isTuneIteration && (

@@ -164,6 +164,8 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         optimization_id=row.get("optimization_id"),
         source_run_id=row.get("source_run_id"),
         runner=row.get("runner", "ninjatrader"),
+        sizing_mode=row.get("sizing_mode", "consistent"),
+        sized=(LAB_RESULTS_DIR / row["run_id"] / "engine_timeline.json").exists(),
     )
 
 

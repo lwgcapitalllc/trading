@@ -486,6 +486,8 @@ export interface BacktestDetail {
   optimization_id: string | null
   source_run_id: string | null
   runner: string
+  sizing_mode: 'consistent' | 'bullet'   // engine sizing mode this run used
+  sized: boolean                          // true once the engine sized the run (reshaped strategy emitted engine_trades)
 }
 
 // ── Lab — Progress + System Health ───────────────────────────────────────────

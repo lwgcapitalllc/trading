@@ -291,10 +291,12 @@ after, shipping the rows as `result["engine_trades"]`. `backtest_runner._handle_
 as the headline, grades each ruleset against its OWN sized P&L, and persists the primary's audit
 log + timeline. Native (unit-size) runs carry no `engine_trades` → unchanged. The per-run
 **bullet/consistent** switch is plumbed: `BacktestRunRequest.sizing_mode` → `backtest_runs.sizing_mode`
-column (`DEFAULT 'consistent'`) → read back in `_handle_complete`. **Still pending:** the UI control
-to pick the mode, a sized equity curve + the timeline view in the frontend, and reshaping the two
-MT5 strategies the same way. The whole sized path stays dormant until a reshaped strategy actually
-emits `engine_trades.csv` on the VPS.
+column (`DEFAULT 'consistent'`) → read back in `_handle_complete`. The `BacktestDetail` model exposes
+`sizing_mode` (off the run row) and `sized` (a bool — `_row_to_detail` checks the primary ruleset's
+`reports/lab/<run_id>/engine_timeline.json` exists, the persisted marker of a real sized run) so the
+frontend can badge sized runs. **Still pending:** a sized equity curve + the timeline view in the
+frontend, and reshaping the two MT5 strategies the same way. The whole sized path stays dormant until
+a reshaped strategy actually emits `engine_trades.csv` on the VPS.
 
 ## Lens metrics (the per-run scoring layer)
 
