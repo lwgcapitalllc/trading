@@ -87,21 +87,19 @@ def build_foundational_params(ruleset: dict) -> dict:
 
     These map directly to [Category("Foundational")] NinjaScriptProperty names.
     Call inject_foundational() rather than this directly.
+
+    Only cost + time facts remain. Account size, risk %, daily-loss, halt-fraction,
+    consecutive-loss, profit-target and lock-in were removed 2026-06-21 when ORB was reshaped
+    to the gated-layer rules: the strategy no longer sizes or self-halts (the dynamic sizing &
+    gating engine owns those), so those NinjaScriptProperties no longer exist to inject into.
     """
     days = ruleset.get("days_of_week_allowed") or []
     return {
-        "AccountSize":          float(ruleset.get("account_size") or 0),
-        "RiskPerTradePct":      float(ruleset.get("risk_per_trade_pct") or 0),
-        "MaxDailyLoss":         float(ruleset.get("daily_loss_cap") or 0),
-        "DailyHaltFraction":    float(ruleset.get("daily_halt_fraction") or 0),
-        "MaxConsecutiveLosses": int(ruleset.get("max_consecutive_losses") or 0),
         "CommissionPerSide":    float(ruleset.get("default_commission_per_side") or 0),
         "ForceFlatTimeET":      ruleset.get("force_flat_time_et") or "",
         "EarliestEntryTimeET":  ruleset.get("earliest_entry_time_et") or "",
         "LatestEntryTimeET":    ruleset.get("latest_entry_time_et") or "",
         "DaysOfWeekAllowed":    ",".join(days) if isinstance(days, list) else (days or ""),
-        "DailyProfitTarget":    float(ruleset.get("daily_profit_target") or 0),
-        "DailyProfitLockPct":   float(ruleset.get("daily_profit_lock_pct") or 0),
     }
 
 

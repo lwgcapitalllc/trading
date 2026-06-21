@@ -12,9 +12,7 @@
 ```
 strategies/
 ├── ninjatrader/    ← NT8 NinjaScript strategies (.cs files, C#)
-│   ├── ORB.cs
-│   ├── VWAP_MR.cs
-│   └── Momentum.cs
+│   └── ORB.cs            (VWAP_MR.cs, Momentum.cs deleted 2026-06-21 — see below)
 ├── mt5/            ← MT5 expert advisors (.mq5, MQL5)
 │   ├── MeanReversion.mq5
 │   └── LondonBreakout.mq5
@@ -69,11 +67,17 @@ strategies/
 
 ## Current strategies
 
+**Deleted 2026-06-21:** `VWAP_MR.cs` and `Momentum.cs`. They embedded their own
+account-governance (daily-loss halt, profit-target stop, consecutive-loss halt, profit
+lock-in) — risk management that now belongs in the dynamic sizing & gating engine, not the
+strategy. Rather than refactor strategies that were against the gated-layer rules, they were
+removed. `ORB.cs` is the one NT8 strategy carried forward and re-shaped to the engine. Any
+lingering DB rows/runs clear on the next **Scan Strategies** (the scanner warns on a missing
+`source_path`, never auto-deletes); remove the deployed `.cs` from the VPS via the Deployed tab.
+
 | File | Class | Runner | Description |
 |---|---|---|---|
-| `ORB.cs` | ORB | ninjatrader | Opening Range Breakout — entry on ORB high/low break |
-| `VWAP_MR.cs` | VWAP_MR | ninjatrader | VWAP mean reversion — fades extended moves back to VWAP |
-| `Momentum.cs` | Momentum | ninjatrader | EMA-based momentum — trend-following with MA crossover |
+| `ORB.cs` | ORB | ninjatrader | Opening Range Breakout — entry on ORB high/low break. The only live NT8 strategy. **Reshaped to the gated-layer rules 2026-06-21:** trades unit size (1 contract), self-policing halts removed (moved to the engine), keeps only signal + stop/target + time rules; emits the per-trade record to `engine_trades.csv` (the runner→engine contract). Needs VPS compile + backtest to verify. |
 | `MeanReversion.mq5` | MeanReversion | mt5 | BB + RSI + intraday VWAP confluence — ported from `algos/bots/bot_mean_reversion.py` |
 | `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London breakout, instrument-agnostic. v2 layers three default-OFF spec-faithful toggles (PendingEntry OCO, PipRangeFilter, BreakEvenMove) over the v1 bar-close/ATR/1:1 baseline; TargetRR default 2.0. Carries the `OnTester*` optimizer callbacks (writes the 5 strategy-logic params + 8 KPI columns to `opt_results.csv`). AUDJPY survivor config + per-toggle deltas in `mt5/LONDON_BREAKOUT.md`. |
 | `ny_orb.pine` | — | tradingview | **In TradingView research/tuning (2026-06-20), not yet promoted.** NY Opening Range Breakout, instrument-agnostic (FX + futures). Built on `london_breakout.pine`'s skeleton. Range = wick-to-wick high/low of the opening window; sessions anchored to `America/New_York` (DST-safe). Entry = break candle (excluded from count) + N direction-filtered confirmation closes (`confirmCloses`, 0 = enter on the break candle itself; bullish closes for longs, bearish for shorts). Two entry methods: **Breakout Close** (market) and **Retest** (limit at the broken box edge). Far-side stop, RR target, optional partial + step-trail. Win/loss boxes recolour like London Breakout (no labels). Guards: forced `orderQty` (futures otherwise round to 0 contracts — see notes), weekend skip, and a volume-based thin/holiday-day filter (Pine has no calendar; OR volume < % of lookback average ⇒ skip). |

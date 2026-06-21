@@ -18,7 +18,7 @@ from typing import Optional
 
 import pandas as pd
 
-from services import lab_db, evaluator, runner_dispatch, worthiness
+from services import lab_db, evaluator, runner_dispatch, worthiness, sizing_pipeline
 
 # Add repo root so we can import from trading/regime/
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -357,6 +357,31 @@ async def _handle_complete(
     equity_curve = result.get("equity_curve", [])
     daily_pnl    = result.get("daily_pnl", [])
 
+    # ── Dynamic sizing — only when the runner shipped the per-trade engine export ──
+    # A reshaped strategy (ORB) runs at unit size and emits the runner→engine contract
+    # records as result["engine_trades"]. When present, THAT is the real run: the firm's
+    # contract ladder is enforced and the run is sized per ruleset (each firm's ladder/
+    # floor differ). The first ruleset is the headline; each ruleset is graded against its
+    # OWN sized P&L below. Native (unit-size) runs carry no engine_trades → unchanged.
+    sized_by_ruleset = None
+    engine_trades = result.get("engine_trades") or []
+    if engine_trades and firm_ids:
+        rulesets = [r for r in (lab_db.get_ruleset(fid) for fid in firm_ids) if r]
+        if rulesets:
+            # Per-run mode chosen at run creation; fall back to consistent for old/invalid rows.
+            mode = (lab_db.get_run(run_id) or {}).get("sizing_mode") or sizing_pipeline.MODE_CONSISTENT
+            if mode not in (sizing_pipeline.MODE_BULLET, sizing_pipeline.MODE_CONSISTENT):
+                mode = sizing_pipeline.MODE_CONSISTENT
+            sized_by_ruleset = sizing_pipeline.size_run_for_rulesets(
+                run_id, engine_trades, rulesets, mode=mode,
+                instrument=instrument, strategy=strategy_id,
+            )
+            primary = rulesets[0]["id"]
+            kpis      = dict(sized_by_ruleset[primary]["kpis"])
+            daily_pnl = sized_by_ruleset[primary]["daily_pnl"]
+            # equity_curve stays the agent's unit-size reference (contract-cap is informational;
+            # the engine already enforces the real ladder). A sized equity curve is a later UI item.
+
     # persist JSON files
     run_dir = _LAB_RESULTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -403,7 +428,14 @@ async def _handle_complete(
         "daily_pnl":    str(daily_pnl_path),
     })
 
-    evaluator.evaluate_run(run_id, firm_ids, kpis, equity_curve, daily_pnl)
+    if sized_by_ruleset:
+        # Grade each ruleset against its OWN sized run (different ladder → different P&L).
+        for rid in firm_ids:
+            s = sized_by_ruleset.get(rid)
+            if s:
+                evaluator.evaluate_run(run_id, [rid], s["kpis"], equity_curve, s["daily_pnl"])
+    else:
+        evaluator.evaluate_run(run_id, firm_ids, kpis, equity_curve, daily_pnl)
 
     w = worthiness.score_run_after_evals(
         run_id, firm_ids,

@@ -1802,9 +1802,45 @@ def _try_export_trades(sa, job_id: str) -> tuple:
     return _parse_trades_csv(str(csv_path))
 
 
+ENGINE_TRADES_CSV = NT8_DOCS / "engine_trades.csv"
+
+
+def _clear_engine_trades():
+    """Delete the engine-trades export before a run so the file holds only THIS run's rows.
+
+    A reshaped strategy (ORB) appends to engine_trades.csv and recreates the header if absent,
+    so removing the file first prevents an earlier run's rows leaking into this run's sized P&L.
+    """
+    try:
+        ENGINE_TRADES_CSV.unlink()
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"  [engine] Could not clear {ENGINE_TRADES_CSV.name}: {e}")
+
+
+def _read_engine_trades() -> list:
+    """Read the per-trade engine export (the runner→engine contract) into a list of dicts.
+
+    Returns [] when the strategy isn't reshaped (no file) — the backend then takes the
+    normal unit-size path unchanged. Cells stay as strings; RawTrade.from_record coerces.
+    """
+    if not ENGINE_TRADES_CSV.exists():
+        return []
+    try:
+        with open(ENGINE_TRADES_CSV, newline="", encoding="utf-8", errors="replace") as f:
+            rows = [dict(r) for r in csv.DictReader(f)]
+        print(f"  [engine] Read {len(rows)} trade records from {ENGINE_TRADES_CSV.name}")
+        return rows
+    except Exception as e:
+        print(f"  [engine] Could not read {ENGINE_TRADES_CSV.name}: {e}")
+        return []
+
+
 def write_job_result(job_id: str, spec: dict, kpis: dict,
                      equity_curve: list | None = None,
-                     daily_pnl: list | None = None):
+                     daily_pnl: list | None = None,
+                     engine_trades: list | None = None):
     out_dir = NT8_DOCS / "lab_results" / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
     result = {
@@ -1829,6 +1865,7 @@ def write_job_result(job_id: str, spec: dict, kpis: dict,
         },
         "equity_curve": equity_curve or [],
         "daily_pnl":    daily_pnl    or [],
+        "engine_trades": engine_trades or [],
         "completed_at": datetime.now().isoformat(),
     }
     (out_dir / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
@@ -1855,6 +1892,9 @@ def run_job_mode(job_id: str, spec_path: str):
         print(f"  ERROR: {e}")
         sys.exit(1)
     time.sleep(1)
+
+    # Clear the engine-trades export so it holds only this run's rows (reshaped strategies append).
+    _clear_engine_trades()
 
     click_time = time.time()
     try:
@@ -1910,7 +1950,10 @@ def run_job_mode(job_id: str, spec_path: str):
     print(f"  Trades={kpis['trade_count']}  NetPnL={kpis['net_pnl']:.2f}"
           f"  PF={kpis['profit_factor']:.4f}  MaxDD={kpis['max_drawdown']:.2f}")
 
-    write_job_result(job_id, spec, kpis, equity_curve, daily_pnl)
+    # Per-trade engine export (empty for unreshaped strategies → backend keeps the unit-size path).
+    engine_trades = _read_engine_trades()
+
+    write_job_result(job_id, spec, kpis, equity_curve, daily_pnl, engine_trades)
     _pct(100, "Complete")
 
 

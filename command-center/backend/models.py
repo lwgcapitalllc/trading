@@ -448,6 +448,7 @@ class BacktestRunRequest(BaseModel):
     evaluate_rulesets: list[str] = []   # ruleset_ids to evaluate against
     evaluate_firms: list[str] = []      # backward-compat alias; prefer evaluate_rulesets
     source_run_id: Optional[str] = None # run this was derived from (e.g. a tuning iteration)
+    sizing_mode: str = "consistent"     # dynamic-sizing mode: 'consistent' (room÷7) | 'bullet' (max ladder)
 
     @property
     def ruleset_ids(self) -> list[str]:

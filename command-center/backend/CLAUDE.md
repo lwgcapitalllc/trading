@@ -42,6 +42,8 @@ backend/
 │   ├── strategy_scanner.py  reads from strategies/ (not algos/); emits warnings for stale source_paths
 │   ├── evaluator.py       per-ruleset verdict; also exports compute_contract_cap_status()
 │   ├── trailing_drawdown.py  compute_trailing_mll() — EOD trailing max-loss engine (the drawdown check)
+│   ├── sizing_engine.py     dynamic sizing & risk engine — PURE (no DB/network). run_engine(mode="bullet"|"consistent") sizes each trade off the room left (bullet=max the rules allow; consistent=room÷7), reserves open-trade risk, applies halts, rounds-up-to-min-or-skip, detects breaches; emits size-correct daily_pnl (feeds evaluator) + the decision log. CORE BUILT, not yet wired to a runner — see "Dynamic sizing & risk engine" below
+│   ├── decision_log.py      the ONE reusable audit log — TradeDecision/DecisionLog. One JSONL record per signal (taken or not): idea + setup score, every gate's verdict in order, the sizing decision, and the full life of a taken trade. Extensible (new gate = decision.gate(...)); identical in backtest and live
 │   ├── metrics.py         shared metric helpers: daily_sharpe / apply_canonical_sharpe / profit_concentration_pct / compute_regime_breakdown (per-regime P&L table → BacktestDetail.regime_breakdown; rescales direction-point counts to trade_count — after the _normalize_mt5_results fix, MT5 equity curves have one point per trade so scale=1.0, but the rescale is kept for safety)
 │   ├── backtest_runner.py background VPS polling task (single run)
 │   ├── sweep_runner.py    runs N backtests sequentially (semaphore = 1) for a sweep
@@ -239,6 +241,60 @@ Columns on `rulesets`: `ruleset_type`, `daily_loss_cap`, `weekly_loss_cap`, `dai
 Seeded rulesets (16 rows): 4 prop firms = 14 prop rows — LucidFlex, FundedNext, Tradeify each at 50k/100k × eval/funded (12 rows), plus Apex EOD eval-only at 50k/100k (2 rows; funded/PA not yet seeded) — plus 2 personal demo rows (`personal_forex_demo`, `personal_futures_demo`; ruleset_type `personal`, account_tier `demo`). Personal demo rules on a $10k balance: $500 daily loss cap, $1,000 daily profit target, fail at 15% drawdown from peak (`max_drawdown_from_peak_pct`) or 3 consecutive capped-loss days (`max_consecutive_loss_days`) — stored now, enforced in a later evaluator pass. `max_loss_eod = 0` is the sentinel for "no trailing EOD rule" on personal rows (the column is NOT NULL); the evaluator must treat it as rule-absent. All seeded via the per-id idempotent pattern (`_PROP_SEED_ROWS` + `_seed_apex_eod_eval`). The core KPIs of all 14 prop rows (account size, target, drawdown type/amount/lock, consistency, min trading days, contract scaling, funded split, doc links) are documented for hand-off in `command-center/docs/PROP_RULESET_KPIS.md`, which also carries the firm doc links, the saved sync query (`scripts/prop_kpi_audit.py`), and a verification prompt; re-run that prompt to re-check the firms and keep the doc in sync with the DB. Display names: the firm name lives in the UI group header only; `name` carries the program/challenge ("LucidFlex $50k Evaluation", "Select $50k Evaluation", "Futures Flex $50k Challenge", "EOD $50k Evaluation") — canonical map in `_RULESET_DISPLAY_NAMES`, re-applied on every `init_db`. The firm behind the `lucidflex_*` ids is Lucid (Lucid Trading); LucidFlex is its program name.
 
 ---
+
+## Dynamic sizing & risk engine + decision log (in progress — core built 2026-06-21)
+
+The mechanism behind the LWG gated-layer model (`docs/LWG_Strategy_Framework.md`,
+`docs/dynamic_sizing_engine.md`): the strategy proposes setups at unit size; gates decide
+*whether* a trade is allowed; the engine decides *how big* from the room left now. No strategy
+manages risk.
+
+- **`services/sizing_engine.py`** — PURE (no DB/network/clock). `run_engine(trades, ruleset,
+  *, is_micro, mode)` where mode is the per-run **bullet/consistent** switch: bullet = the most
+  the rules allow (with a one-loss-can't-breach guard); consistent = **room ÷ 7** per trade.
+  Room is measured to the **trailing floor** (highest-EOD-based, capped at the firm lock — NOT
+  balance−start, so growth doesn't fake a buffer). It reserves **open-trade risk** (a running
+  trade holds its risk; the next signal shrinks or is blocked), rounds a sub-minimum size **up
+  to 1 only if 1 still fits the room** else skips, applies the daily-loss / profit-target halts,
+  and detects breaches. Output: `daily_pnl` (size-correct — feeds `evaluator.evaluate_run`
+  unchanged, so no second grader), a day-by-day `timeline`, `sized_trades`, and `decisions`.
+  Sizing is goal-driven, NOT % of balance and NOT `daily-loss ÷ trade-count` (both dead).
+- **`services/decision_log.py`** — `TradeDecision` / `DecisionLog`, the one reusable audit log.
+  One JSONL record per signal (taken or not): idea + setup score, every gate's verdict in order
+  (which one shut it down, or that all passed), the sizing decision (size + what bound it, or why
+  skipped), and the full life of a taken trade (entry, exit, exit reason, P&L). Gates are an
+  ordered list — a new gate just calls `decision.gate(name, passed, reason)`, no schema change.
+  Pure stdlib, identical in backtest and live.
+- **Tests:** `tests/test_sizing_engine.py` (20), `tests/test_decision_log.py` (7) — all green.
+
+- **`services/sizing_pipeline.py`** — the FS/IO wiring: `run_sizing_engine(run_id, trade_records,
+  ruleset, *, mode, instrument, strategy, results_dir)` builds `RawTrade`s from a runner's export,
+  runs the engine, and persists `decisions.jsonl` + `engine_timeline.json` + `engine_daily_pnl.json`
+  to the run dir. Locks the runner→engine column contract. `tests/test_sizing_pipeline.py` (3) green.
+
+**Done 2026-06-21 — `ORB.cs` reshaped to the rules.** It now trades **unit size (1 contract)**,
+its self-policing halts are **removed** (daily-loss halt, profit-target stop, profit lock-in,
+consecutive-loss halt all moved to the engine), and it keeps only signal + stop/target + time
+rules (force-flat, entry hours, allowed days). It emits the per-trade record — the runner→engine
+contract columns — to `engine_trades.csv` (`strategy_results.csv` is still written but is now a
+unit-size reference only). `build_foundational_params` was trimmed to match: it injects only
+`CommissionPerSide`, `ForceFlatTimeET`, `EarliestEntryTimeET`, `LatestEntryTimeET`,
+`DaysOfWeekAllowed` (the removed NinjaScriptProperties no longer exist). **Needs VPS compile +
+backtest to verify — cannot be tested locally.** ORB is the only NT8 strategy carried forward
+(VWAP_MR, Momentum deleted 2026-06-21).
+
+**Wired 2026-06-21 (code-complete, needs a VPS run to verify):** the NT8 runner
+(`nt8_backtest_runner.run_job_mode`) clears `engine_trades.csv` before the run and reads it back
+after, shipping the rows as `result["engine_trades"]`. `backtest_runner._handle_complete` then,
+**only when `engine_trades` is present**, sizes the run PER RULESET via
+`sizing_pipeline.size_run_for_rulesets` (each firm's ladder/floor differ), uses the first ruleset
+as the headline, grades each ruleset against its OWN sized P&L, and persists the primary's audit
+log + timeline. Native (unit-size) runs carry no `engine_trades` → unchanged. The per-run
+**bullet/consistent** switch is plumbed: `BacktestRunRequest.sizing_mode` → `backtest_runs.sizing_mode`
+column (`DEFAULT 'consistent'`) → read back in `_handle_complete`. **Still pending:** the UI control
+to pick the mode, a sized equity curve + the timeline view in the frontend, and reshaping the two
+MT5 strategies the same way. The whole sized path stays dormant until a reshaped strategy actually
+emits `engine_trades.csv` on the VPS.
 
 ## Lens metrics (the per-run scoring layer)
 

@@ -122,13 +122,11 @@ A strategy-agnostic candlestick panel (`command-center/frontend/src/components/C
 
 ## Current state of strategies
 
-Five strategies are registered — three NinjaTrader `.cs` files and two MT5 `.mq5` files. The first Tier 1 run has now appeared (LondonBreakout); the best stress grade so far is **C** (also LondonBreakout). Every graded stress test on the other strategies is F. The DB holds 9 stress tests total; 5 are orphaned grade-F tests (their source runs were deleted).
+Three strategies are registered — one NinjaTrader `.cs` file (ORB; VWAP_MR and Momentum deleted 2026-06-21 for embedding risk management) and two MT5 `.mq5` files. The first Tier 1 run has now appeared (LondonBreakout); the best stress grade so far is **C** (also LondonBreakout). Every graded stress test on the other strategies is F. The DB holds 9 stress tests total; 5 are orphaned grade-F tests (their source runs were deleted).
 
 | Strategy | File | Runner | Category | State (verified from `lab.db`) |
 |---|---|---|---|---|
-| ORB | `strategies/ninjatrader/ORB.cs` | ninjatrader | breakout | 2 runs, all TIER_3_DISCARD. No stress tests. Opening Range Breakout — entry on ORB high/low break. |
-| VWAP_MR | `strategies/ninjatrader/VWAP_MR.cs` | ninjatrader | mean_reversion | No runs in the DB yet. Fades extended moves back to VWAP. |
-| Momentum | `strategies/ninjatrader/Momentum.cs` | ninjatrader | momentum | 6 runs (2 TIER_2_OPTIMIZE, 4 TIER_3_DISCARD). 1 linked stress test grade F, plus 5 orphaned F tests from earlier deleted runs. EMA-based intraday momentum pullback. |
+| ORB | `strategies/ninjatrader/ORB.cs` | ninjatrader | breakout | 2 runs, all TIER_3_DISCARD. No stress tests. Opening Range Breakout — entry on ORB high/low break. The only live NT8 strategy and the first target of the dynamic sizing & gating engine. |
 | MeanReversion | `strategies/mt5/MeanReversion.mq5` | mt5 | mean_reversion | 10 runs, no worthiness tier assigned. 2 stress tests (one grade F, one ungraded). Ported from `algos/bots/bot_mean_reversion.py` — BB + RSI + intraday VWAP confluence. |
 | LondonBreakout | `strategies/mt5/LondonBreakout.mq5` | mt5 | breakout | 7 runs (1 TIER_1_STRESS_TEST, 4 TIER_2_OPTIMIZE, 2 TIER_3_DISCARD). 1 stress test grade C. Instrument-agnostic Asian-range → London breakout; v1 showed no edge on AUDJPY (notes in `LONDON_BREAKOUT.md`). |
 

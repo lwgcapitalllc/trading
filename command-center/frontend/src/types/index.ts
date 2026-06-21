@@ -363,6 +363,7 @@ export interface BacktestRunRequest {
   slippage_ticks?: number
   evaluate_rulesets: string[]
   source_run_id?: string | null
+  sizing_mode?: 'consistent' | 'bullet'
 }
 
 export interface VerdictSummary {

@@ -1011,6 +1011,28 @@ const VERDICT_CONFIG = {
   INFO:    { label: 'INFO',    bg: 'bg-bg-sunken',  text: 'text-text-tertiary', border: 'border-l-border-default', Icon: Info   },
 } as const
 
+// Firm switcher — shown only when a run is scored against 2+ rulesets. A compact "1/N" counter
+// with prev/next arrows that lives ON the Evaluation header line, so switching firms never grows
+// the card or KPI height (one verdict shows at a time; the firm name is inside the card).
+function EvalSwitcher({ count, selected, onSelect }: {
+  count: number; selected: number; onSelect: (i: number) => void
+}) {
+  const btn = "p-0.5 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-surface transition-colors"
+  return (
+    <div className="flex items-center gap-1">
+      <button className={btn} aria-label="Previous firm"
+        onClick={() => onSelect((selected - 1 + count) % count)}>
+        <ChevronLeft size={14} />
+      </button>
+      <span className="text-[11px] font-mono tabular-nums text-text-secondary">{selected + 1}/{count}</span>
+      <button className={btn} aria-label="Next firm"
+        onClick={() => onSelect((selected + 1) % count)}>
+        <ChevronRight size={14} />
+      </button>
+    </div>
+  )
+}
+
 function EvalCard({ ev, netPnl, tradeCount, showName = true }: { ev: EvaluationDetail; netPnl?: number | null; tradeCount?: number | null; showName?: boolean }) {
   const cfg = VERDICT_CONFIG[ev.verdict as keyof typeof VERDICT_CONFIG] ?? VERDICT_CONFIG.DISCARD
   // Profitable runs that fail a firm rule get amber styling (not red) — keep the DISCARD label.
@@ -1966,6 +1988,11 @@ export function BacktestDetail() {
   const [primaryTab, setPrimaryTab] = useState<'equity' | 'price' | 'breakdown'>('equity')
   const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
   const [showMoreKpis, setShowMoreKpis] = useState(false)
+  // When a run is scored against several firms, show ONE at a time (a wall of cards is
+  // confusing). This selects which firm's evaluation card is shown; defaults to the first
+  // and resets when the run changes. Performance follows the same firm once sizing lands.
+  const [selectedEvalIdx, setSelectedEvalIdx] = useState(0)
+  useEffect(() => { setSelectedEvalIdx(0) }, [run?.run_id])
 
   // Capital-based scores (Calmar, Max DD %) rebase the run to an account balance. Default to the
   // primary evaluated ruleset's account_size; the slider is a view-time what-if override only.
@@ -2241,17 +2268,33 @@ export function BacktestDetail() {
             run.evaluations.length > 0 || isOptCombo ? (
               <div className="space-y-3">
                 <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
-                  {/* Left: firm evaluation cards — height measured so the KPI grid can match it. */}
+                  {/* Left: ONE firm evaluation card — height measured so the KPI grid can match it.
+                      Multi-firm runs switch via the compact counter on the header line (no growth). */}
                   <div className="flex flex-col">
-                    <SectionLabel>Evaluation</SectionLabel>
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">Evaluation</h2>
+                      {!isOptCombo && run.evaluations.length > 1 && (
+                        <EvalSwitcher count={run.evaluations.length}
+                          selected={Math.min(selectedEvalIdx, run.evaluations.length - 1)}
+                          onSelect={setSelectedEvalIdx} />
+                      )}
+                    </div>
                     <div className="flex flex-col gap-3" ref={measureEvalRef}>
-                      {isOptCombo
-                        ? <UnscoredEvalCard
-                            tradeCount={run.trade_count}
-                            onRunFullBacktest={runFullBacktest}
-                            busy={retryBacktest.isPending || jobBusy}
-                          />
-                        : run.evaluations.map(ev => <EvalCard key={ev.eval_id} ev={ev} netPnl={run.net_pnl} tradeCount={run.trade_count} showName={run.evaluations.length > 1} />)}
+                      {isOptCombo ? (
+                        <UnscoredEvalCard
+                          tradeCount={run.trade_count}
+                          onRunFullBacktest={runFullBacktest}
+                          busy={retryBacktest.isPending || jobBusy}
+                        />
+                      ) : (() => {
+                        // One firm at a time. Clamp the index in case the eval list shrank.
+                        const idx = Math.min(selectedEvalIdx, run.evaluations.length - 1)
+                        const ev = run.evaluations[idx]
+                        return (
+                          <EvalCard key={ev.eval_id} ev={ev} netPnl={run.net_pnl}
+                            tradeCount={run.trade_count} showName={run.evaluations.length > 1} />
+                        )
+                      })()}
                     </div>
                   </div>
                   {/* Right: flat KPIs pinned to the eval card's measured pixel height. */}

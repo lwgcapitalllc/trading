@@ -250,6 +250,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "evaluate_rulesets":  ruleset_ids,
         "runner":             runner,
         "source_run_id":      req.source_run_id,
+        "sizing_mode":        req.sizing_mode,
     })
 
     job_spec = {

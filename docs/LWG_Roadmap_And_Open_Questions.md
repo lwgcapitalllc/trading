@@ -1,5 +1,5 @@
 # LWG Capital — Roadmap and Open Questions
-**Last updated:** 2026-06-16
+**Last updated:** 2026-06-21
 
 > Companion to the Project State Snapshot. Hand both to any new Claude.ai chat.
 
@@ -11,7 +11,7 @@
 
 2. **Take MeanReversion.mq5 through the framework pipeline on a tight-spread major.** (strategy task) The build order is MT5-first, mean reversion first, EURUSD/GBPUSD at M5/M15. MeanReversion has 10 runs but no assigned worthiness tier and one grade-F stress test — and it has not been run on the tight-spread major the build order calls for. Run the full loop: simple baseline → trade management on → coarse sweep for the parameter plateau → pick from the middle → stress test.
 
-3. **Get an NT8 strategy off the floor on a futures instrument.** (strategy task) Momentum keeps grading F — stop spending time on it. ORB has 2 runs on MNQ, all Tier 3; VWAP_MR has no runs yet. Run a proper optimization on ORB or VWAP_MR across MES / MNQ / MGC (integer-only parameter steps; the UI blocks decimal steps on `int` params). Use the Tuning Workbench to iterate a winner against a baseline.
+3. **Get ORB off the floor on a futures instrument.** (strategy task) ORB is now the only NT8 strategy (VWAP_MR and Momentum deleted 2026-06-21 for embedding risk management). It has 2 runs on MNQ, all Tier 3. Run a proper optimization across MES / MNQ / MGC (integer-only parameter steps; the UI blocks decimal steps on `int` params), and use the Tuning Workbench to iterate a winner against a baseline. Note ORB is also the first strategy being re-shaped for the dynamic sizing & gating engine (emit per-trade stop, halts move out) — coordinate the two.
 
 4. **Stress-test the first viable parameter set to a B grade.** (strategy task) Once item 1, 2, or 3 yields a Tier 1 combo, run the full manual stress test (Monte Carlo + walk-forward + sensitivity). Grade B or better is the gate to purchasing an eval challenge (the deployment-gate convention: A = funded, B = eval purchase, C = demo).
 
@@ -25,8 +25,22 @@ Resolved since the last roadmap: the price-chart panel shipped end-to-end (real 
 
 ## Future platform milestones (in order, not yet started)
 
+### Dynamic sizing & gating engine  (CORE BUILT 2026-06-21 — VPS tail pending)
+The mechanism behind the whole gated-layer model: the strategy signals at unit size; layered
+gates decide *whether* a trade is allowed (time cutoff, daily loss/profit limit, consistency
+limit, the Section-3 filters); the engine decides *how big* from the room left now — max
+scaling size for bullet evals, room-to-the-floor ÷ 7 for funded/live. The stop comes from the
+strategy. **Done:** the pure Python engine + waterfall + 14 unit tests (`command-center/
+backend/services/sizing_engine.py`). **Pending (needs the live VPS):** strategies emit their
+per-trade stream incl. stop distance and run with halts OFF; both agents export it; wire
+`run_engine` into the completion path; rework the base-size step to the locked two-mode model;
+remove the halts from the .cs/.mq5; build the day-by-day timeline UI. Full spec + status:
+`docs/dynamic_sizing_engine.md`. Sizing rationale: `LWG_Strategy_Framework.md` ("Sizing is set
+by the engine"). **Prerequisite:** none technical for the core; the tail touches deployed
+strategy files + VPS agents.
+
 ### Funded account management
-Once a strategy earns a stress test grade of B or better, the next step is purchasing an eval and, after passing, going funded. The platform needs a way to track live funded accounts: current equity, daily loss remaining (the trailing-MLL engine already computes the floor), profit target progress, halt status. A new "Accounts" tab pulling from MT5 or NT8 live data. **Prerequisite:** at least one strategy with a B+ grade.
+Once a strategy earns a stress test grade of B or better, the next step is purchasing an eval and, after passing, going funded. The platform needs a way to track live funded accounts: current equity, daily loss remaining (the trailing-MLL engine already computes the floor), profit target progress, halt status. A new "Accounts" tab pulling from MT5 or NT8 live data. Sizing and halts on these live accounts are driven by the dynamic sizing & gating engine above (funded mode = room ÷ 7). **Prerequisite:** at least one strategy with a B+ grade.
 
 ### Live-bot version tracking (running-commit → v1/v2/v3)
 At go-live you must know exactly what code each bot is running, and be able to confirm a bug fix is actually *live* — not just pulled. A `git pull` on the VPS updates the files but does not change a running bot; it keeps trading the old code until it is restarted. So "the repo is on the fixed commit" ≠ "the bot is running the fix."

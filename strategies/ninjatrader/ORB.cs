@@ -1,16 +1,34 @@
 // Opening Range Breakout
 //
 // Strategy logic:
-//   OR period  : first ORMinutes of session starting 09:30 ET
-//   Long entry : first bar closing above OR high after OR is set
-//   Short entry: first bar closing below OR low after OR is set
-//   Stop       : opposite side of OR
-//   Target     : OR high/low ± TpMultiple × OR width
+//   OR period  : first ORMinutes of session starting 09:30 ET (wick-to-wick high/low)
+//   Long entry : a BULLISH body closes above OR high. The break candle does not
+//                count on its own (it can reverse like a wick) — ConfirmationCloses
+//                more consecutive bullish closes must follow. 0 = enter on the break.
+//   Short entry: mirror — bearish body closes below OR low + confirmations
+//   Stop       : opposite (far) side of OR
+//   Target     : entry ± RiskReward × stop distance (true R:R, default 1:2)
 //   One long + one short per day (or one total if OneTradePer = true)
 //
-// Foundational config (account size, risk, halt rules, hours) is injected at
-// runtime from the active ruleset. Placeholder defaults (-1 / empty string)
-// cause the strategy to refuse all trades rather than silently use wrong values.
+// Gated-layer rules (docs/LWG_Strategy_Framework.md, docs/dynamic_sizing_engine.md):
+//   NO STRATEGY KNOWS HOW TO MANAGE RISK. ORB proposes setups at UNIT size (1 contract).
+//   It does NOT size, halt on losses, stop at a profit target, lock in profit, or count
+//   consecutive losses — those decisions belong to the dynamic sizing & gating engine,
+//   which sizes and grades the run OFFLINE from the per-trade record this strategy emits.
+//
+//   ORB keeps only what is part of its edge: the entry signal, the stop, the target, and
+//   the time rules that define WHEN the setup is valid (force-flat, entry hours, allowed
+//   days). It emits one row per closed trade — the runner→engine contract — to
+//   engine_trades.csv: index, entry/exit time + price, direction, stop_distance,
+//   point_value, commission_per_side, exit_reason. The NT8 agent ships that file; the
+//   engine (services/sizing_engine.py via sizing_pipeline.py) reads it and decides size.
+//
+//   strategy_results.csv is still written, but it is now a UNIT-SIZE (1-contract) raw
+//   reference only — the engine's sized daily P&L is authoritative for grading.
+//
+// Foundational config (commission, hours, allowed days) is injected at runtime from the
+// active ruleset. Placeholder defaults (-1 / empty string) cause the strategy to refuse all
+// trades rather than silently use wrong values.
 //
 // Install: copy to Documents/NinjaTrader 8/bin/Custom/Strategies/
 //          Compile in NT8 (F5), then attach in Strategy Analyzer.
@@ -19,6 +37,9 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Globalization;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using NinjaTrader.Cbi;
@@ -32,66 +53,34 @@ namespace NinjaTrader.NinjaScript.Strategies
     public class ORB : Strategy
     {
         // ── Foundational parameters (injected from active ruleset at runtime) ──
+        // Only cost + time facts remain. Account size, risk %, daily-loss, profit-target,
+        // halt-fraction, lock-in and consecutive-loss params were removed — the engine owns
+        // every one of those decisions now (see header).
 
         [NinjaScriptProperty]
         [Category("Foundational")]
-        [Display(Name = "Account Size ($)", Order = 1)]
-        public double AccountSize { get; set; }
-
-        [NinjaScriptProperty]
-        [Category("Foundational")]
-        [Display(Name = "Risk % per Trade", Order = 2)]
-        public double RiskPerTradePct { get; set; }
-
-        [NinjaScriptProperty]
-        [Category("Foundational")]
-        [Display(Name = "Max Daily Loss ($)", Order = 3)]
-        public double MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Category("Foundational")]
-        [Display(Name = "Daily Halt Fraction (0 = off)", Order = 4)]
-        public double DailyHaltFraction { get; set; }
-
-        [NinjaScriptProperty]
-        [Category("Foundational")]
-        [Display(Name = "Commission/Side ($)", Order = 5)]
+        [Display(Name = "Commission/Side ($)", Order = 1)]
         public double CommissionPerSide { get; set; }
 
         [NinjaScriptProperty]
         [Category("Foundational")]
-        [Display(Name = "Force Flat Time ET (HH:MM)", Order = 6)]
+        [Display(Name = "Force Flat Time ET (HH:MM)", Order = 2)]
         public string ForceFlatTimeET { get; set; }
 
         [NinjaScriptProperty]
         [Category("Foundational")]
-        [Display(Name = "Max Consecutive Losses (0 = off)", Order = 7)]
-        public int MaxConsecutiveLosses { get; set; }
-
-        [NinjaScriptProperty]
-        [Category("Foundational")]
-        [Display(Name = "Earliest Entry Time ET (HH:MM, empty = none)", Order = 8)]
+        [Display(Name = "Earliest Entry Time ET (HH:MM, empty = none)", Order = 3)]
         public string EarliestEntryTimeET { get; set; }
 
         [NinjaScriptProperty]
         [Category("Foundational")]
-        [Display(Name = "Latest Entry Time ET (HH:MM, empty = none)", Order = 9)]
+        [Display(Name = "Latest Entry Time ET (HH:MM, empty = none)", Order = 4)]
         public string LatestEntryTimeET { get; set; }
 
         [NinjaScriptProperty]
         [Category("Foundational")]
-        [Display(Name = "Days of Week Allowed (mon,tue,...  empty = all)", Order = 10)]
+        [Display(Name = "Days of Week Allowed (mon,tue,...  empty = all)", Order = 5)]
         public string DaysOfWeekAllowed { get; set; }
-
-        [NinjaScriptProperty]
-        [Category("Foundational")]
-        [Display(Name = "Daily Profit Target ($, 0 = none)", Order = 11)]
-        public double DailyProfitTarget { get; set; }
-
-        [NinjaScriptProperty]
-        [Category("Foundational")]
-        [Display(Name = "Daily Profit Lock-In Pct (0 = off)", Order = 12)]
-        public double DailyProfitLockPct { get; set; }
 
         // ── Strategy Logic parameters (tunable by optimizer) ─────────────────
 
@@ -104,40 +93,49 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Range(0.5, 5.0)]
         [Category("Strategy Logic")]
-        [Display(Name = "TP Multiple (× OR width)", Order = 2)]
-        public double TpMultiple { get; set; }
+        [Display(Name = "Risk : Reward (× stop distance)", Order = 2)]
+        public double RiskReward { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 5)]
+        [Category("Strategy Logic")]
+        [Display(Name = "Confirmation Closes (after break)", Order = 3)]
+        public int ConfirmationCloses { get; set; }
 
         [NinjaScriptProperty]
         [Category("Strategy Logic")]
-        [Display(Name = "One Trade Per Day (long OR short)", Order = 3)]
+        [Display(Name = "One Trade Per Day (long OR short)", Order = 4)]
         public bool OneTradePer { get; set; }
+
+        // Every proposed trade is exactly this size. The engine resizes offline.
+        private const int UnitSize = 1;
 
         // ── Intraday state ────────────────────────────────────────────────────
 
         private double   orHigh, orLow;
         private bool     orSet;
         private bool     longDone, shortDone;
-        private bool     tradingHalted;
+        private int      buyCloses, sellCloses;
         private bool     dayAllowed;
         private DateTime currentDay = DateTime.MinValue;
 
-        // ── P&L tracking ──────────────────────────────────────────────────────
+        // ── Open-trade tracking (to build the per-trade record on exit) ───────
+
+        private double   pendingEntryPrice;
+        private DateTime pendingEntryTime;
+        private double   pendingStopPrice;
+        private int      pendingQty;
+        private int      pendingDir;
+
+        // ── Per-trade record rows (the runner→engine contract) ────────────────
+
+        private readonly List<string> tradeRows = new List<string>();
+        private int recordIndex;
+
+        // ── Unit-size performance accumulators (strategy_results.csv only) ────
 
         private double cumulativePnl;
-        private double dayStartPnl;
-        private double pendingEntryPrice;
-        private int    pendingQty;
-        private int    pendingDir;
-
-        // ── Lock-in and consecutive loss state ────────────────────────────────
-
-        private bool   _lockInActive;
-        private double _currentRiskMultiplier;
-        private int    _consecutiveLosses;
-
-        // ── Performance accumulators ──────────────────────────────────────────
-
-        private double peakEquity;
+        private double peakPnl;
         private double maxDrawdown;
         private double grossWins;
         private double grossLosses;
@@ -161,7 +159,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (State == State.SetDefaults)
             {
-                Description                  = "Opening Range Breakout";
+                Description                  = "Opening Range Breakout (unit size; engine sizes & grades)";
                 Name                         = "ORB";
                 Calculate                    = Calculate.OnBarClose;
                 IsExitOnSessionCloseStrategy = false;
@@ -171,23 +169,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 // Foundational — placeholder values. Dispatcher injects from active ruleset.
                 // Strategy refuses to trade if required fields remain at placeholder values.
-                AccountSize          = -1;
-                RiskPerTradePct      = -1;
-                MaxDailyLoss         = -1;
-                DailyHaltFraction    = 0;      // 0 = disabled
-                CommissionPerSide    = -1;
-                ForceFlatTimeET      = "";
-                MaxConsecutiveLosses = 0;      // 0 = disabled
-                EarliestEntryTimeET  = "";     // empty = no restriction
-                LatestEntryTimeET    = "";     // empty = no restriction
-                DaysOfWeekAllowed    = "";     // empty = all days allowed
-                DailyProfitTarget    = 0;      // 0 = no target
-                DailyProfitLockPct   = 0;      // 0 = no lock-in
+                CommissionPerSide   = -1;
+                ForceFlatTimeET     = "";
+                EarliestEntryTimeET = "";     // empty = no restriction
+                LatestEntryTimeET   = "";     // empty = no restriction
+                DaysOfWeekAllowed   = "";     // empty = all days allowed
 
                 // Strategy logic — real defaults used by optimizer
-                ORMinutes   = 15;
-                TpMultiple  = 1.5;
-                OneTradePer = false;
+                ORMinutes          = 15;
+                RiskReward         = 2.0;
+                ConfirmationCloses = 1;
+                OneTradePer        = false;
             }
             else if (State == State.Configure)
             {
@@ -202,52 +194,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 _hasLatestEntry   = !string.IsNullOrWhiteSpace(LatestEntryTimeET);
                 if (_hasEarliestEntry) tEarliestEntry = TimeSpan.Parse(EarliestEntryTimeET);
                 if (_hasLatestEntry)   tLatestEntry   = TimeSpan.Parse(LatestEntryTimeET);
-
-                peakEquity = AccountSize;
             }
             else if (State == State.Terminated)
             {
-                try
-                {
-                    double net    = grossWins + grossLosses;
-                    double pf     = grossLosses != 0 ? grossWins / Math.Abs(grossLosses) : 0;
-                    double winPct = tradeCount > 0 ? (double)winCount / tradeCount * 100.0 : 0;
-
-                    string dir  = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                        "NinjaTrader 8");
-                    string path = Path.Combine(dir, "strategy_results.csv");
-
-                    if (!File.Exists(path))
-                        File.WriteAllText(path,
-                            "Strategy,Instrument,NetPnL,MaxDD,ProfitFactor,WinPct,Trades\r\n");
-
-                    File.AppendAllText(path, string.Format(
-                        "{0},{1},{2:F2},{3:F2},{4:F4},{5:F1},{6}\r\n",
-                        Name, Instrument.MasterInstrument.Name,
-                        net, maxDrawdown, pf, winPct, tradeCount));
-                }
-                catch { }
+                WriteTradeRecords();
+                WriteSummary();
             }
         }
 
         private bool ValidateConfig()
         {
-            if (AccountSize <= 0)
-            {
-                Print("ORB: AccountSize not injected by dispatcher — no trades will be placed.");
-                return false;
-            }
-            if (RiskPerTradePct <= 0)
-            {
-                Print("ORB: RiskPerTradePct not injected by dispatcher — no trades will be placed.");
-                return false;
-            }
-            if (MaxDailyLoss <= 0)
-            {
-                Print("ORB: MaxDailyLoss not injected by dispatcher — no trades will be placed.");
-                return false;
-            }
             if (CommissionPerSide < 0)
             {
                 Print("ORB: CommissionPerSide not injected by dispatcher — no trades will be placed.");
@@ -272,24 +228,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             // ── Day boundary ───────────────────────────────────────────────────
             if (barDate != currentDay)
             {
-                currentDay             = barDate;
-                orHigh                 = double.MinValue;
-                orLow                  = double.MaxValue;
-                orSet                  = false;
-                longDone               = false;
-                shortDone              = false;
-                tradingHalted          = false;
-                dayStartPnl            = cumulativePnl;
-                _lockInActive          = false;
-                _currentRiskMultiplier = 1.0;
-                _consecutiveLosses     = 0;
+                currentDay = barDate;
+                orHigh     = double.MinValue;
+                orLow      = double.MaxValue;
+                orSet      = false;
+                longDone   = false;
+                shortDone  = false;
+                buyCloses  = 0;
+                sellCloses = 0;
 
                 dayAllowed = IsDayAllowed(barDate);
             }
 
             if (!dayAllowed) return;
 
-            // ── Force flat ─────────────────────────────────────────────────────
+            // ── Force flat (intraday-only rule — part of the setup, kept) ──────
             if (tod >= tForceFlat)
             {
                 if (Position.MarketPosition != MarketPosition.Flat)
@@ -315,83 +268,63 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else return;
             }
 
-            if (tradingHalted) return;
-
-            double dayPnl = cumulativePnl - dayStartPnl;
-
-            // Daily profit target reached — stop trading for the rest of the day
-            if (DailyProfitTarget > 0 && dayPnl >= DailyProfitTarget) return;
-
-            // Entry hours gate
+            // Entry hours gate (part of the setup window — kept)
             if (_hasEarliestEntry && tod < tEarliestEntry) return;
             if (_hasLatestEntry   && tod > tLatestEntry)   return;
 
-            // Consecutive loss halt
-            if (MaxConsecutiveLosses > 0 && _consecutiveLosses >= MaxConsecutiveLosses) return;
-
-            // Fraction-of-daily-loss halt — one-way, resets at next day boundary
-            if (DailyHaltFraction > 0)
-            {
-                double dayLoss = dayStartPnl - cumulativePnl;
-                if (dayLoss >= MaxDailyLoss * DailyHaltFraction)
-                {
-                    tradingHalted = true;
-                    return;
-                }
-            }
-
-            // Daily profit lock-in — halves risk when dayPnl crosses the lock threshold
-            if (DailyProfitTarget > 0 && DailyProfitLockPct > 0 && !_lockInActive)
-            {
-                if (dayPnl >= DailyProfitLockPct * DailyProfitTarget)
-                {
-                    _lockInActive          = true;
-                    _currentRiskMultiplier = 0.5;
-                    Print($"ORB: Profit lock-in active at ${dayPnl:F2}. Risk halved for rest of day.");
-                }
-            }
-
             if (Position.MarketPosition != MarketPosition.Flat) return;
 
-            double orWidth = orHigh - orLow;
-            double close   = Close[0];
+            double close = Close[0];
+            double open  = Open[0];
+
+            // Confirmation count — a BODY must close beyond the range IN the trade's
+            // direction. The first such close is the break candle; on its own it can
+            // reverse like a wick, so it does not qualify. We need ConfirmationCloses
+            // more consecutive direction-matched closes after it (needCloses total).
+            // Any non-confirming bar resets that side's count.
+            bool bullClose = close > orHigh && close > open;   // bullish body above OR high
+            bool bearClose = close < orLow  && close < open;   // bearish body below OR low
+            buyCloses  = bullClose ? buyCloses  + 1 : 0;
+            sellCloses = bearClose ? sellCloses + 1 : 0;
+            int needCloses = ConfirmationCloses + 1;           // +1 = the break candle, which doesn't count
 
             // ── Long breakout ──────────────────────────────────────────────────
-            if (!longDone && close > orHigh)
+            if (!longDone && buyCloses >= needCloses)
             {
                 longDone = true;
                 if (!(OneTradePer && shortDone))
                 {
-                    int qty = CalcContracts(orWidth);
-                    if (qty >= 1)
+                    double stop = orLow;                       // far side of the range
+                    double risk = close - stop;
+                    if (risk > 0)
                     {
-                        double stop   = orLow;
-                        double target = orHigh + TpMultiple * orWidth;
-                        SetStopLoss("ORB_Long",    CalculationMode.Price, stop,   false);
+                        double target = close + RiskReward * risk;
+                        SetStopLoss("ORB_Long",     CalculationMode.Price, stop,   false);
                         SetProfitTarget("ORB_Long", CalculationMode.Price, target);
-                        EnterLong(0, qty, "ORB_Long");
-                        pendingDir = 1;
-                        pendingQty = qty;
+                        EnterLong(0, UnitSize, "ORB_Long");
+                        pendingDir       = 1;
+                        pendingQty       = UnitSize;
+                        pendingStopPrice = stop;
                     }
                 }
             }
-
             // ── Short breakout ─────────────────────────────────────────────────
-            if (!shortDone && close < orLow)
+            else if (!shortDone && sellCloses >= needCloses)
             {
                 shortDone = true;
                 if (!(OneTradePer && longDone))
                 {
-                    int qty = CalcContracts(orWidth);
-                    if (qty >= 1)
+                    double stop = orHigh;                      // far side of the range
+                    double risk = stop - close;
+                    if (risk > 0)
                     {
-                        double stop   = orHigh;
-                        double target = orLow - TpMultiple * orWidth;
-                        SetStopLoss("ORB_Short",    CalculationMode.Price, stop,   false);
+                        double target = close - RiskReward * risk;
+                        SetStopLoss("ORB_Short",     CalculationMode.Price, stop,   false);
                         SetProfitTarget("ORB_Short", CalculationMode.Price, target);
-                        EnterShort(0, qty, "ORB_Short");
-                        pendingDir = -1;
-                        pendingQty = qty;
+                        EnterShort(0, UnitSize, "ORB_Short");
+                        pendingDir       = -1;
+                        pendingQty       = UnitSize;
+                        pendingStopPrice = stop;
                     }
                 }
             }
@@ -408,42 +341,111 @@ namespace NinjaTrader.NinjaScript.Strategies
                 case OrderAction.Buy:
                 case OrderAction.SellShort:
                     pendingEntryPrice = price;
+                    pendingEntryTime  = time;
                     break;
 
                 case OrderAction.Sell:
                 case OrderAction.BuyToCover:
                     if (pendingEntryPrice > 0 && pendingQty > 0)
                     {
-                        double pv    = Instrument.MasterInstrument.PointValue;
-                        int    dir   = execution.Order.OrderAction == OrderAction.Sell ? 1 : -1;
-                        double gross = (price - pendingEntryPrice) * dir * quantity * pv;
-                        double costs = CommissionPerSide * 2 * quantity;
-                        double tradePnl   = gross - costs;
-                        cumulativePnl    += tradePnl;
-                        pendingEntryPrice  = 0;
-                        pendingQty         = 0;
-                        pendingDir         = 0;
+                        double pv         = Instrument.MasterInstrument.PointValue;
+                        double stopDist   = Math.Abs(pendingEntryPrice - pendingStopPrice);
+                        string exitReason = execution.Order.Name;
+
+                        RecordTrade(pendingEntryTime, time, pendingDir,
+                                    pendingEntryPrice, price, stopDist, pv, exitReason);
+
+                        // Unit-size P&L — strategy_results.csv reference only, drives nothing.
+                        double gross    = (price - pendingEntryPrice) * pendingDir * quantity * pv;
+                        double costs    = CommissionPerSide * 2 * quantity;
+                        double tradePnl  = gross - costs;
+                        cumulativePnl  += tradePnl;
 
                         tradeCount++;
-                        if (tradePnl > 0)
-                        {
-                            grossWins += tradePnl;
-                            winCount++;
-                            _consecutiveLosses = 0;
-                        }
-                        else
-                        {
-                            grossLosses += tradePnl;
-                            _consecutiveLosses++;
-                        }
+                        if (tradePnl > 0) { grossWins += tradePnl; winCount++; }
+                        else              { grossLosses += tradePnl; }
 
-                        double equity = AccountSize + cumulativePnl;
-                        if (equity > peakEquity) peakEquity = equity;
-                        double dd = peakEquity - equity;
+                        if (cumulativePnl > peakPnl) peakPnl = cumulativePnl;
+                        double dd = peakPnl - cumulativePnl;
                         if (dd > maxDrawdown) maxDrawdown = dd;
+
+                        pendingEntryPrice = 0;
+                        pendingQty        = 0;
+                        pendingDir        = 0;
+                        pendingStopPrice  = 0;
                     }
                     break;
             }
+        }
+
+        // Append one row to the per-trade record (the runner→engine contract).
+        // Columns: index,entry_time,exit_time,direction,entry_price,exit_price,
+        //          stop_distance,point_value,commission_per_side,exit_reason
+        private void RecordTrade(DateTime entryTime, DateTime exitTime, int dir,
+            double entryPrice, double exitPrice, double stopDist, double pointValue,
+            string exitReason)
+        {
+            recordIndex++;
+            string row = string.Format(CultureInfo.InvariantCulture,
+                "{0},{1},{2},{3},{4},{5},{6},{7},{8},\"{9}\"\r\n",
+                recordIndex,
+                entryTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture),
+                exitTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture),
+                dir == 1 ? "Long" : "Short",
+                entryPrice, exitPrice, stopDist, pointValue, CommissionPerSide,
+                (exitReason ?? "").Replace("\"", "'"));
+            tradeRows.Add(row);
+        }
+
+        // Write the per-trade record file the engine consumes. Mirrors the strategy_results.csv
+        // pattern: header written once if the file is absent, rows appended. The NT8 agent
+        // clears engine_trades.csv before each run and ships it after (single instrument/run).
+        private void WriteTradeRecords()
+        {
+            if (tradeRows.Count == 0) return;
+            try
+            {
+                string dir  = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "NinjaTrader 8");
+                string path = Path.Combine(dir, "engine_trades.csv");
+
+                if (!File.Exists(path))
+                    File.WriteAllText(path,
+                        "index,entry_time,exit_time,direction,entry_price,exit_price," +
+                        "stop_distance,point_value,commission_per_side,exit_reason\r\n");
+
+                StringBuilder sb = new StringBuilder();
+                foreach (string r in tradeRows) sb.Append(r);
+                File.AppendAllText(path, sb.ToString());
+            }
+            catch { }
+        }
+
+        // Unit-size run summary — reference only. The engine's sized run is authoritative.
+        private void WriteSummary()
+        {
+            try
+            {
+                double net    = grossWins + grossLosses;
+                double pf     = grossLosses != 0 ? grossWins / Math.Abs(grossLosses) : 0;
+                double winPct = tradeCount > 0 ? (double)winCount / tradeCount * 100.0 : 0;
+
+                string dir  = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "NinjaTrader 8");
+                string path = Path.Combine(dir, "strategy_results.csv");
+
+                if (!File.Exists(path))
+                    File.WriteAllText(path,
+                        "Strategy,Instrument,NetPnL,MaxDD,ProfitFactor,WinPct,Trades\r\n");
+
+                File.AppendAllText(path, string.Format(CultureInfo.InvariantCulture,
+                    "{0},{1},{2:F2},{3:F2},{4:F4},{5:F1},{6}\r\n",
+                    Name, Instrument.MasterInstrument.Name,
+                    net, maxDrawdown, pf, winPct, tradeCount));
+            }
+            catch { }
         }
 
         // Returns true if trading is allowed on the given date.
@@ -453,16 +455,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (string.IsNullOrWhiteSpace(DaysOfWeekAllowed)) return true;
             string today = date.DayOfWeek.ToString().Substring(0, 3).ToLower();
             return DaysOfWeekAllowed.Split(',').Any(d => d.Trim() == today);
-        }
-
-        // Position size: floor(equity × riskPct × multiplier / (stopDist × pointValue))
-        private int CalcContracts(double stopDistPoints)
-        {
-            if (stopDistPoints <= 0) return 0;
-            double equity     = AccountSize + cumulativePnl;
-            double dollarRisk = equity * (RiskPerTradePct / 100.0) * _currentRiskMultiplier;
-            double pv         = Instrument.MasterInstrument.PointValue;
-            return Math.Max(0, (int)(dollarRisk / (stopDistPoints * pv)));
         }
     }
 }

@@ -80,8 +80,9 @@ The rule that keeps it simple: only *configure* what the broker can't *tell* you
 
 ### Layer C — Account ruleset
 Governance, split into the two axes that get graded:
-- **Sizing (how big):** account size, contract-scaling table, max position. Risk
-  per trade is **derived, not a free knob** — see below.
+- **Sizing (how big):** account size, contract-scaling table, max position. Per-trade
+  size is set by the **sizing engine** from the room left right now, never a stored
+  per-trade slider — see "Sizing is set by the engine" below.
 - **Guardrails (when to stop):** loss limits, profit target, drawdown, consistency,
   flatten time, etc. — the exact fields differ between prop and personal (Section 4).
 - Convention: MQL5 `f_` prefix; NT8 `[Category("Foundational")]`; injected at
@@ -94,17 +95,47 @@ guardrails). **A layer can only shrink or veto, never expand.** A strategy can
 never override an account limit. This is the silent-corruption guard expressed as
 architecture.
 
-### Risk per trade is derived, not chosen
-Risk per trade is **not a free slider**. It's computed from the daily loss limit
-and how many losing trades you'll tolerate in a day before that limit is hit:
+### Sizing is set by the engine, not the strategy — and depends on the goal
+There is **no fixed number of trades per day** and **no per-trade risk slider**. The
+strategy signals as often as its edge fires; the sizing engine decides each trade's size
+from how much risk the account has room for *right now*, and layered gates decide whether
+a trade is allowed at all ("The gates" below). How big each trade is set two ways,
+depending on what the account is for:
 
-```
-max risk per trade  ≈  daily loss limit  ÷  max losing trades per day
-```
+- **Bullet accounts (eval, pass fast):** take only the cleanest setups (A / A+ on the
+  confluence score, ~90% win) at the **maximum size the scaling table allows**, with one
+  hard guard — a single stop-out can never breach the floor (always keep room for the next
+  trade). Speed comes from setup *quality*, not from over-betting; many cheap evals run in
+  parallel do the rest. A single-account pass is ~85%+ when filtered to A/A+, not the ~40%
+  coin flip that max-sizing generic trades would give.
+- **Funded & live accounts (consistency, survive to payout):** risk a **fixed fraction of
+  the room left to the drawdown floor**, recomputed every trade — **room ÷ 7** (each loss
+  costs ~14% of what remains). This shrinks the bet as the account bleeds and grows it as
+  profit banks, and it survives long losing streaks on its own: seven straight losses still
+  leaves ~34% of the room intact. The "7" is a growth dial (smaller = faster but choppier),
+  not a streak counter.
 
-On **prop** accounts this is locked — the firm's loss limit bounds it, and the
-strategy's expected losers-per-day sets it. On **personal** accounts it's freer,
-but still derived from the (relaxed) daily loss limit, not picked arbitrarily.
+Two reasons this is the shape: on a trailing-drawdown account what matters is the distance
+to the *floor*, not the balance — so size off the room, not the balance. And a real edge
+must never be max-bet, because variance then drowns the edge (max-sizing turns a 70%-win
+strategy into a ~40% coin flip on the eval). You also **cannot guarantee a strategy never
+loses N in a row** — streaks are random and unbounded — so the engine never assumes a max
+streak; fraction-of-room sizing makes streaks survivable instead.
+
+The stop itself comes from the **strategy**, not the engine — it's part of the edge (where
+the trade idea is proven wrong: far side of the range, the pullback low). The engine never
+invents stops; it reads the strategy's stop distance and sizes around it.
+
+### The gates (what stops a trade, instead of a trade count)
+A trade is blocked only when a gate vetoes it — never because a counter ran out:
+- time-of-day cutoff (no new trades after X),
+- daily loss limit hit → done for the day,
+- daily profit limit hit → done for the day,
+- consistency limit reached (e.g. a 50% rule: if yesterday made $1,000, today is capped at
+  $500 — once hit, stop),
+- the pre-trade filters of Section 3 (news, regime, session, spread).
+
+Live-account stop rules are still being decided (likely time + % limits only).
 
 ---
 
@@ -198,7 +229,9 @@ their docs). The four that matter, all enforced:
   the target* on breach instead of failing).
 - **Contract scaling** — balance → max contracts (funded phase; eval is fixed cap).
 
-Risk per trade and core rules are **locked** on prop.
+The firm's rules (loss limits, target, consistency, scaling table) are **locked** —
+they're the firm's. Sizing *within* those rules is the engine's job and follows the
+account's goal (bullet vs funded, Section 2). There is no stored per-trade risk to edit.
 
 ### Personal demo ruleset (relaxed — editable)
 The goal is **grow consistently, never get close to blowing it.** Fails fire
@@ -226,7 +259,8 @@ means one breach is instant violation. Same architecture, opposite tolerance.
 
 ### Editability rule
 - **Personal/demo rulesets:** editable from the Rulesets page.
-- **Prop rulesets:** locked — core rules and risk-per-trade cannot be edited.
+- **Prop rulesets:** locked — the firm's core rules cannot be edited; sizing is set by the
+  engine per goal, not a stored per-trade risk.
 
 ---
 
@@ -412,7 +446,12 @@ different questions.
   before building on top.
 - Re-entry and time-of-day rules are the two easiest ways to fool yourself — cap
   re-entries, require a real reason for time rules, prove both on untuned data.
-- Risk per trade is derived from the daily loss limit, not chosen freely.
+- Sizing is set by the engine from the room left now, never a fixed per-trade slider:
+  max-size on A/A+ setups for bullet evals, fraction-of-room (÷7) for funded/live.
+- Gates stop trading (time cutoff, daily loss/profit limit, consistency limit), never a
+  fixed trade count.
+- The stop comes from the strategy (it's the edge); the engine sizes around it, never invents it.
+- You can't guarantee a strategy never loses N in a row — size so streaks survive instead.
 - A layer can only shrink or veto a trade, never expand it.
 - Collect uncorrelated edges, not more of the same edge.
 - Optimization tunes a real edge; it cannot create one.

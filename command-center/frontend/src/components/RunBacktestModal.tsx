@@ -222,6 +222,9 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const BAR_PRESETS = isMt5 ? [5, 15, 30, 60, 240] : [1, 3, 5, 15, 30]
   const [barValue, setBarValue] = useState(isMt5 ? 60 : 5)
 
+  // ── Sizing mode — how the engine sizes each trade from the room left ───────────
+  const [sizingMode, setSizingMode] = useState<'consistent' | 'bullet'>('consistent')
+
   function barLabel(v: number) {
     if (v < 60) return `${v}m`
     const h = v / 60
@@ -335,6 +338,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         commission_per_side: commPerSide,
         slippage_ticks:      slippageTicks,
         evaluate_rulesets:   Array.from(selectedFirms),
+        sizing_mode:         sizingMode,
       },
       {
         onSuccess: (data) => {
@@ -529,6 +533,31 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             </div>
           </div>
 
+          {/* Sizing Mode — how the engine sizes each trade from the room left to the floor */}
+          <div>
+            <SectionHead
+              label="Sizing Mode"
+              tooltip="How the sizing engine turns the strategy's unit-size signals into real contracts. Applies only to strategies reshaped for the engine (e.g. ORB); ignored otherwise."
+            />
+            <div className="flex gap-2">
+              <PresetBtn
+                label="Consistent"
+                active={sizingMode === 'consistent'}
+                onClick={() => setSizingMode('consistent')}
+              />
+              <PresetBtn
+                label="Bullet"
+                active={sizingMode === 'bullet'}
+                onClick={() => setSizingMode('bullet')}
+              />
+            </div>
+            <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
+              {sizingMode === 'consistent'
+                ? 'Sizes each trade off room ÷ 7 — steady, spreads risk across trades. Best for clearing a consistency rule.'
+                : 'Sizes each trade to the most the firm’s contract ladder allows — fastest to target, higher variance.'}
+            </p>
+          </div>
+
           <Divider />
 
           {/* Evaluate Against — prop firm challenges for futures, personal ruleset(s) for forex */}
@@ -660,7 +689,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   </span>
                 </div>
                 <p className="text-[11px] text-text-tertiary mb-3">
-                  These values are injected automatically. To change them, edit the ruleset.
+                  <span className="text-text-secondary font-medium">Firm-controlled — set at run time by the ruleset, read-only.</span>{' '}
+                  Injected into the strategy automatically; to change them, edit the ruleset.
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">
                   {[

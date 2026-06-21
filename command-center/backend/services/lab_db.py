@@ -188,6 +188,10 @@ def init_db() -> None:
             # measures only the run that produced the result — not back to the first kickoff.
             "ALTER TABLE backtest_runs ADD COLUMN started_at INTEGER",
             "UPDATE backtest_runs SET started_at = created_at WHERE started_at IS NULL",
+            # sizing_mode — per-run dynamic-sizing mode for reshaped strategies that emit the
+            # engine export ('consistent' = room÷7 per trade, 'bullet' = max the ladder allows).
+            # Inert for unit-size runs (no engine_trades). Default keeps existing runs consistent.
+            "ALTER TABLE backtest_runs ADD COLUMN sizing_mode TEXT NOT NULL DEFAULT 'consistent'",
             # rulesets new columns (existing DBs had them as firms)
             "ALTER TABLE rulesets ADD COLUMN eval_cost_usd INTEGER",
             "ALTER TABLE rulesets ADD COLUMN activation_fee_usd INTEGER",
@@ -1312,8 +1316,9 @@ def insert_run(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, started_at, evaluate_firms, runner, optimization_id, source_run_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, started_at, evaluate_firms, runner, optimization_id,
+                 source_run_id, sizing_mode)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
@@ -1324,6 +1329,7 @@ def insert_run(data: dict) -> None:
             data.get("runner", "ninjatrader"),
             data.get("optimization_id"),
             data.get("source_run_id"),
+            data.get("sizing_mode", "consistent"),
         ))
 
 
