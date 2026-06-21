@@ -1,0 +1,295 @@
+//@version=6
+// NY Opening Range Breakout — TradingView research strategy.
+// Range = wick-to-wick high/low of the opening window (NOT bodies). First body
+// close beyond the range (in the entry window) takes the trade; far-side stop,
+// RR target, optional partial + step-trail. No breakout by the entry-window end
+// => no trade that day. Time is America/New_York so the open is DST-stable.
+// Win/loss box colours match london_breakout.pine.
+strategy("NY ORB Research", overlay=true, pyramiding=0, calc_on_order_fills=true,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+
+//==================================================
+// INPUTS — SESSIONS (America/New_York, DST-aware)
+//==================================================
+tz        = input.string("America/New_York", "Timezone", group="Sessions", tooltip="Anchor all times to this zone. NY equity/index open is 09:30.")
+orSess    = input.session("0930-0945", "Opening Range",  group="Sessions", tooltip="Window whose wick-to-wick high/low define the range. 09:30-09:45 = classic 15-min NY ORB. Edit to move the open or change the length.")
+entrySess = input.session("0945-1100", "Entry Window",   group="Sessions", tooltip="Breakouts are only taken inside this window. Its END is the shut-off: no breakout by then => no trade today. Open trades keep running.")
+flatSess  = input.session("0930-1555", "Holding Window", group="Sessions", tooltip="Force-close everything when this window ends (e.g. 15:55 ET). No overnight risk.")
+skipWeekends = input.bool(true, "Skip Saturday & Sunday", group="Sessions", tooltip="Don't form a range or take trades on weekends. Futures reopen Sunday evening, so without this you can get weekend trades.")
+
+//==================================================
+// INPUTS — FILTERS
+//==================================================
+skipHolidays = input.bool(true, "Skip Thin / Holiday Days", group="Filters", tooltip="Pine has no holiday calendar, so flag holidays by VOLUME: if the opening range's volume is far below its recent average, the day is treated as a holiday/half-day and skipped. Catches bank holidays where futures trade thin and erratic.")
+volLookback  = input.int(20, "Volume Lookback (days)", minval=1, group="Filters", tooltip="How many prior trading days to average the opening-range volume over.")
+volPct       = input.float(40, "Min Volume (% of avg)", minval=1, maxval=100, group="Filters", tooltip="Skip the day if its opening-range volume is below this % of the lookback average. 40 = skip days under 40% of normal.")
+
+//==================================================
+// INPUTS — ENTRY / EXIT
+//==================================================
+bufferPct     = input.float(0.0, "Breakout Buffer (% of range)", minval=0, step=0.5, group="Entry", tooltip="Push the trigger this far past the range edge, as a % of range height. 0 = a body close just beyond the high/low triggers.")
+confirmCloses = input.int(1, "Confirmation Closes (after break)", minval=0, group="Entry", tooltip="How many ADDITIONAL candles must close beyond the range, in the trade direction, AFTER the break candle. 0 = enter directly on the break candle (first body to close outside). 1 = wait for one more bullish/bearish close after the break (2 closes total). Higher = stricter.")
+entryMode     = input.string("Breakout Close", "Entry Method", options=["Breakout Close", "Retest"], group="Entry", tooltip="Breakout Close = market entry the moment the confirming candle(s) close beyond the range. Retest = the breakout confirmation only ARMS the trade; a limit then waits at the broken box edge and fills only if price pulls back to retest it. No retest => no trade.")
+riskReward    = input.float(2.0, "Risk : Reward", minval=0.5, step=0.5, group="Entry", tooltip="Target distance as a multiple of risk (range height). 2 = target is 2x the stop distance.")
+orderQty      = input.float(1, "Order Size (contracts / units)", minval=0.0001, group="Entry", tooltip="Forced position size, sent on every entry. Overrides the Properties 'order size' so expensive futures can't round down to 0 contracts (the classic 'no trades on futures' bug). 1 = one contract. Bump up for forex units.")
+
+//==================================================
+// INPUTS — TRADE MANAGEMENT
+//==================================================
+useTrail        = input.bool(true, "Step-Trail Stop",     group="Trade Management")
+trailStepR      = input.float(0.5, "Trail Step (R)",      minval=0.1, step=0.1, group="Trade Management", tooltip="Ratchet the stop by this R for every +this R of open profit (bar-close). First step lands on breakeven, then trails one step behind.")
+usePartial      = input.bool(true, "Take Partial Profit", group="Trade Management", tooltip="Off = no partial; the whole position runs to the full RR target.")
+partialTriggerR = input.float(1.0, "Partial Trigger (R)", minval=0.1, step=0.1, group="Trade Management", tooltip="Resting limit that books part of the position at this R multiple.")
+partialPct      = input.float(50,  "Partial Size (%)",    minval=1, maxval=99, step=5, group="Trade Management")
+
+//==================================================
+// INPUTS — DISPLAY
+//==================================================
+showORBox      = input.bool(true, "Show OR Box",         group="Display")
+showTradeBoxes = input.bool(true, "Show TP/SL Boxes",    group="Display")
+showTriggers   = input.bool(true, "Show Trigger Levels", group="Display")
+showCutoff     = input.bool(true, "Show Entry Cutoff",   group="Display", tooltip="Vertical line joining the range high and low at the end of the entry window — the 'no new trades after this' deadline.")
+
+//==================================================
+// COLORS  (identical to london_breakout.pine)
+//==================================================
+COL_TP_OPEN  = color.new(color.green, 85)
+COL_SL_OPEN  = color.new(color.red,   85)
+COL_TP_WIN   = color.new(color.rgb(0, 100, 0), 25)   // dark green — TP hit
+COL_SL_LOSS  = color.new(color.rgb(139, 0, 0), 25)   // dark red   — SL hit
+
+//==================================================
+// TIME / SESSION FLAGS
+//==================================================
+dow         = dayofweek(time, tz)
+isWeekend   = dow == dayofweek.saturday or dow == dayofweek.sunday
+tradingDay  = not (skipWeekends and isWeekend)
+inOR        = not na(time(timeframe.period, orSess,    tz)) and tradingDay
+inEntry     = not na(time(timeframe.period, entrySess, tz)) and tradingDay
+inHold      = not na(time(timeframe.period, flatSess,  tz))
+newDay        = inOR and not inOR[1]        // first bar of today's opening range
+orJustEnded   = not inOR and inOR[1]        // first bar after the OR completes
+entryJustEnded= not inEntry and inEntry[1]  // first bar after the entry window — trade cutoff
+flatten       = not inHold and inHold[1]    // first bar after the holding window
+
+//==================================================
+// DAILY STATE
+//==================================================
+var float orHigh     = na
+var float orLow      = na
+var int   orStartBar = na
+var int   orEndBar   = na
+var bool  tradeTaken = false      // one breakout per day; blocks the opposite side too
+var int   buyCloses  = 0          // consecutive bodies closed above buy trigger
+var int   sellCloses = 0          // consecutive bodies closed below sell trigger
+var int   armedDir   = 0          // retest mode: 0 none, +1 long limit armed, -1 short limit armed
+var float orVol      = 0.0        // volume accumulated during the opening range
+var bool  dayThin    = false      // today flagged as a thin/holiday session => skip
+var orVolHist = array.new_float() // prior days' OR volume, for the rolling average
+
+// active trade refs (recolored on outcome)
+var float activeEntry  = na
+var float activeStop   = na
+var float activeTarget = na
+var float activeRisk   = na       // initial risk in price (entry -> initial stop)
+var float initialStop  = na       // original stop (activeStop moves with the trail)
+var float tp1          = na
+var box   tpBox        = na
+var box   slBox        = na
+var int   closedCount  = 0
+
+if newDay
+    orHigh     := na
+    orLow      := na
+    orStartBar := na
+    orEndBar   := na
+    tradeTaken := false
+    buyCloses  := 0
+    sellCloses := 0
+    armedDir   := 0
+    orVol      := 0.0
+    dayThin    := false
+    activeEntry  := na
+    activeStop   := na
+    activeTarget := na
+    activeRisk   := na
+    initialStop  := na
+    tp1          := na
+    tpBox        := na            // keep old box drawn, just drop the ref
+    slBox        := na
+
+//==================================================
+// BUILD OPENING RANGE — wick to wick (high/low, NOT bodies)
+//==================================================
+if inOR
+    if na(orStartBar)
+        orStartBar := bar_index
+    orEndBar := bar_index
+    orHigh   := na(orHigh) ? high : math.max(orHigh, high)
+    orLow    := na(orLow)  ? low  : math.min(orLow,  low)
+    orVol    += nz(volume)
+
+// Thin/holiday filter — compare today's OR volume to the lookback average (built
+// from prior days only). Flag the day once the range completes; the flag persists
+// all day so it also blocks the box, triggers and entries.
+if orJustEnded
+    avgVol = array.size(orVolHist) >= volLookback ? array.avg(orVolHist) : na
+    dayThin := skipHolidays and not na(avgVol) and orVol < avgVol * volPct / 100
+    array.push(orVolHist, orVol)
+    if array.size(orVolHist) > volLookback
+        array.shift(orVolHist)
+
+rangeSize  = not na(orHigh) and not na(orLow) ? orHigh - orLow : na
+validRange = not na(rangeSize) and rangeSize > 0 and not dayThin
+
+//==================================================
+// DRAW OR BOX (once, on the first bar after the range completes)
+//==================================================
+if orJustEnded and validRange and showORBox
+    box.new(orStartBar, orHigh, orEndBar, orLow, bgcolor=color.new(color.yellow, 80), border_color=color.yellow)
+
+//==================================================
+// ENTRY TRIGGERS (require a BODY close beyond the level, not a wick)
+//==================================================
+buffer      = not na(rangeSize) ? rangeSize * bufferPct / 100 : 0
+buyTrigger  = orHigh + buffer
+sellTrigger = orLow  - buffer
+
+// Count consecutive confirming candles beyond each trigger; the candle must close
+// IN the trade's direction (bullish body above the high / bearish body below the
+// low) — a bullish candle that dips under the low does NOT count toward a short.
+// Anything else resets the count. The FIRST close beyond is the break candle and
+// does NOT qualify on its own (it can reverse like a wick); we need the break +
+// confirmCloses more consecutive closes, so the threshold is confirmCloses + 1.
+// No breakout by the entry-window end => no trade today.
+bullClose   = close > buyTrigger  and close > open   // bullish candle closing above the range high
+bearClose   = close < sellTrigger and close < open   // bearish candle closing below the range low
+retestLong  = orHigh                                 // box top    — broken level a long retests
+retestShort = orLow                                  // box bottom — broken level a short retests
+needCloses  = confirmCloses + 1                      // +1 = the break candle itself, which doesn't count
+
+// While unarmed (and in the window), look for the confirmed breakout.
+// Breakout Close => market entry now. Retest => arm a limit at the box edge; it
+// persists past the window and fills only if price pulls back to the level.
+if validRange and inEntry and not inOR and not tradeTaken and armedDir == 0
+    buyCloses  := bullClose ? buyCloses  + 1 : 0
+    sellCloses := bearClose ? sellCloses + 1 : 0
+    if buyCloses >= needCloses
+        if entryMode == "Retest"
+            armedDir := 1
+            strategy.entry("LONG", strategy.long, limit=retestLong, qty=orderQty)
+        else
+            strategy.entry("LONG", strategy.long, qty=orderQty)
+    else if sellCloses >= needCloses
+        if entryMode == "Retest"
+            armedDir := -1
+            strategy.entry("SHORT", strategy.short, limit=retestShort, qty=orderQty)
+        else
+            strategy.entry("SHORT", strategy.short, qty=orderQty)
+
+// Live trigger levels (range formed, valid, in window, no trade yet, not yet armed)
+triggersLive = showTriggers and validRange and not tradeTaken and inEntry and not inOR and armedDir == 0
+plot(triggersLive ? buyTrigger  : na, "Buy Trigger",  color=color.green, style=plot.style_linebr, linewidth=2)
+plot(triggersLive ? sellTrigger : na, "Sell Trigger", color=color.red,   style=plot.style_linebr, linewidth=2)
+
+// Retest level — where the armed limit waits for the pullback (retest mode only)
+retestLive = showTriggers and not tradeTaken and armedDir != 0
+plot(retestLive ? (armedDir == 1 ? retestLong : retestShort) : na, "Retest Level", color=color.orange, style=plot.style_linebr, linewidth=2)
+
+// Cutoff marker — vertical line joining the range high/low at the entry-window
+// end. "No new trades after this point." Only on days with no breakout at all.
+if showCutoff and validRange and not tradeTaken and armedDir == 0 and entryJustEnded
+    line.new(bar_index, orLow, bar_index, orHigh, color=color.new(color.orange, 0), style=line.style_dashed, width=2)
+
+//==================================================
+// LONG FILLED
+//==================================================
+if strategy.position_size > 0 and not tradeTaken
+    tradeTaken   := true
+    activeEntry  := strategy.position_avg_price
+    activeStop   := orLow
+    initialStop  := orLow
+    activeRisk   := activeEntry - activeStop
+    activeTarget := activeEntry + activeRisk * riskReward
+    tp1          := activeEntry + activeRisk * partialTriggerR
+    if usePartial
+        strategy.exit("L_TP1", from_entry="LONG", qty_percent=partialPct, limit=tp1)
+    strategy.exit("L_STOP", from_entry="LONG", stop=activeStop, limit=activeTarget)
+    if showTradeBoxes
+        tpBox := box.new(bar_index, activeTarget, bar_index, activeEntry, bgcolor=COL_TP_OPEN, border_color=color.green)
+        slBox := box.new(bar_index, activeEntry,  bar_index, activeStop,  bgcolor=COL_SL_OPEN, border_color=color.red)
+
+//==================================================
+// SHORT FILLED
+//==================================================
+if strategy.position_size < 0 and not tradeTaken
+    tradeTaken   := true
+    activeEntry  := strategy.position_avg_price
+    activeStop   := orHigh
+    initialStop  := orHigh
+    activeRisk   := activeStop - activeEntry
+    activeTarget := activeEntry - activeRisk * riskReward
+    tp1          := activeEntry - activeRisk * partialTriggerR
+    if usePartial
+        strategy.exit("S_TP1", from_entry="SHORT", qty_percent=partialPct, limit=tp1)
+    strategy.exit("S_STOP", from_entry="SHORT", stop=activeStop, limit=activeTarget)
+    if showTradeBoxes
+        tpBox := box.new(bar_index, activeEntry, bar_index, activeTarget, bgcolor=COL_TP_OPEN, border_color=color.green)
+        slBox := box.new(bar_index, activeStop,  bar_index, activeEntry,  bgcolor=COL_SL_OPEN, border_color=color.red)
+
+//==================================================
+// TRADE MANAGEMENT — step-trail the stop (bar-close)
+//==================================================
+if useTrail and strategy.position_size != 0 and not na(activeEntry) and activeRisk > 0
+    isLong  = strategy.position_size > 0
+    curR    = isLong ? (close - activeEntry) / activeRisk : (activeEntry - close) / activeRisk
+    steps   = math.floor(curR / trailStepR)
+    if steps >= 1
+        stopR   = (steps - 1) * trailStepR        // 1 step -> BE, 2 -> +1 step behind, ...
+        newStop = isLong ? activeEntry + stopR * activeRisk : activeEntry - stopR * activeRisk
+        improved = isLong ? newStop > activeStop : newStop < activeStop
+        if improved
+            activeStop := newStop                 // only re-issue the stop leg
+            if isLong
+                strategy.exit("L_STOP", from_entry="LONG", stop=activeStop, limit=activeTarget)
+            else
+                strategy.exit("S_STOP", from_entry="SHORT", stop=activeStop, limit=activeTarget)
+
+//==================================================
+// EXTEND OPEN TRADE BOXES TO CURRENT BAR
+//==================================================
+if strategy.position_size != 0
+    if not na(tpBox)
+        box.set_right(tpBox, bar_index)
+    if not na(slBox)
+        box.set_right(slBox, bar_index)
+
+//==================================================
+// OUTCOME: recolor boxes (win/loss) when flat
+//==================================================
+if strategy.closedtrades > closedCount
+    last      = strategy.closedtrades - 1
+    exitPrice = strategy.closedtrades.exit_price(last)
+    tol       = syminfo.mintick
+    // compare to the ORIGINAL stop so a breakeven scratch isn't painted as a loss
+    hitTP     = not na(activeTarget) and math.abs(exitPrice - activeTarget) <= tol
+    hitSL     = not na(initialStop)  and math.abs(exitPrice - initialStop)  <= tol
+    if not na(tpBox)
+        box.set_right(tpBox, bar_index)
+    if not na(slBox)
+        box.set_right(slBox, bar_index)
+    // only finalize colour when fully flat (skip the partial-profit sub-close)
+    if strategy.position_size == 0
+        if hitTP and not na(tpBox)
+            box.set_bgcolor(tpBox, COL_TP_WIN)    // TP hit -> dark green fill
+        else if hitSL and not na(slBox)
+            box.set_bgcolor(slBox, COL_SL_LOSS)   // SL hit -> dark red fill
+    closedCount := strategy.closedtrades
+
+//==================================================
+// FORCE CLOSE — flatten when the holding window ends
+//==================================================
+if flatten
+    strategy.cancel_all()                  // drop any unfilled retest limit
+    strategy.close_all(comment="ForceClose")

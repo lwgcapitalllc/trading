@@ -1,9 +1,9 @@
 # CLAUDE.md — Strategies
 
 **Purpose:** Generic trading strategy implementations, organized by runner platform.
-**Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5). Does NOT cover backtest infrastructure (see `command-center/`), live bot runtime logic (see `algos/`), or regime classification (see `regime/`).
-**Status:** Production. NinjaTrader strategies are live and deployed via the command center. MT5 has one strategy (MeanReversion.mq5, smoke-tested). Tradovate is a placeholder.
-**Last reviewed:** 2026-06-12
+**Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5, `.pine` for TradingView). Does NOT cover backtest infrastructure (see `command-center/`), live bot runtime logic (see `algos/`), or regime classification (see `regime/`).
+**Status:** Production. NinjaTrader strategies are live and deployed via the command center. MT5 has two strategies (MeanReversion.mq5 smoke-tested, LondonBreakout.mq5). `tradingview/` holds Pine research strategies tested in the TradingView Strategy Tester only (NOT scanned/deployed by the command center). Tradovate is a placeholder.
+**Last reviewed:** 2026-06-20
 
 ---
 
@@ -18,8 +18,13 @@ strategies/
 ├── mt5/            ← MT5 expert advisors (.mq5, MQL5)
 │   ├── MeanReversion.mq5
 │   └── LondonBreakout.mq5
+├── tradingview/    ← Pine v6 research strategies (.pine) — TV Strategy Tester only
+│   ├── london_breakout.pine
+│   └── ny_orb.pine
 └── tradovate/      ← placeholder for future Tradovate strategies
 ```
+
+`tradingview/` is research scratch space: hand-tested in the TradingView Strategy Tester, not picked up by the command-center scanner (which only rglobs `.cs` and `.mq5`). Promote a validated Pine idea by porting it to NT8/MT5.
 
 ---
 
@@ -71,6 +76,7 @@ strategies/
 | `Momentum.cs` | Momentum | ninjatrader | EMA-based momentum — trend-following with MA crossover |
 | `MeanReversion.mq5` | MeanReversion | mt5 | BB + RSI + intraday VWAP confluence — ported from `algos/bots/bot_mean_reversion.py` |
 | `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London breakout, instrument-agnostic. v2 layers three default-OFF spec-faithful toggles (PendingEntry OCO, PipRangeFilter, BreakEvenMove) over the v1 bar-close/ATR/1:1 baseline; TargetRR default 2.0. Carries the `OnTester*` optimizer callbacks (writes the 5 strategy-logic params + 8 KPI columns to `opt_results.csv`). AUDJPY survivor config + per-toggle deltas in `mt5/LONDON_BREAKOUT.md`. |
+| `ny_orb.pine` | — | tradingview | **In TradingView research/tuning (2026-06-20), not yet promoted.** NY Opening Range Breakout, instrument-agnostic (FX + futures). Built on `london_breakout.pine`'s skeleton. Range = wick-to-wick high/low of the opening window; sessions anchored to `America/New_York` (DST-safe). Entry = break candle (excluded from count) + N direction-filtered confirmation closes (`confirmCloses`, 0 = enter on the break candle itself; bullish closes for longs, bearish for shorts). Two entry methods: **Breakout Close** (market) and **Retest** (limit at the broken box edge). Far-side stop, RR target, optional partial + step-trail. Win/loss boxes recolour like London Breakout (no labels). Guards: forced `orderQty` (futures otherwise round to 0 contracts — see notes), weekend skip, and a volume-based thin/holiday-day filter (Pine has no calendar; OR volume < % of lookback average ⇒ skip). |
 
 ---
 
@@ -83,6 +89,12 @@ MT5 bots use `SYS_STARTUP` (Windows scheduled task, "run whether logged on or no
 To fix: add a Windows scheduled task (trigger: At startup, run whether user is logged on or not) that launches NT8 and loads the active strategy set. Model it on `SYS_STARTUP` in `algos/`.
 
 ---
+
+## TradingView (Pine) gotchas — learned on `ny_orb.pine`
+
+- **No trades on futures = order-size/margin, not the script.** TV's Properties "order size" defaults to a cash/% value; one expensive futures contract (NQ ≈ $420k notional, MES ≈ $27k) divided by that rounds to **0 contracts**, or fails the 100% margin check against a small initial capital → every order rejected. FX fills because one unit is tiny. Fixes: pass an explicit `qty` (the script forces `orderQty`), set Properties order size to **Contracts**, raise initial capital, or lower margin %. Use the `SYMBOL1!` continuous contract (e.g. `MNQ1!`) and prefer micros for eval-sized accounts.
+- **OR window ≠ chart timeframe.** A 15-min opening range on a 15-min chart is one candle and barely trades; run it on 1–5 min bars.
+- **The volume thin/holiday filter is a backtest-only proxy.** Pine has no holiday/economic calendar. Live, the correct pattern is a shared calendar/event-gate service (like the regime classifier) that every bot checks before trading — it's proactive and also covers high-impact news (which is high-volume, so the volume filter misses it). Keep the volume proxy for TV research only.
 
 ## References
 
