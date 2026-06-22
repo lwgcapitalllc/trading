@@ -297,10 +297,11 @@ the engine's day-by-day record). `_row_to_detail` loads `reports/lab/<run_id>/en
 ONCE: its content becomes `sized_timeline` and `sized = bool(sized_timeline)` (the persisted marker of
 a real sized run) — no second `.exists()` stat. `SizedTimelineDay` mirrors `sizing_engine.DayTimeline`
 (date, trades_taken, contracts_total, day_pnl, eod_balance, risk_floor, floor_distance,
-consistency_share_pct, halt_reason); it drives the frontend's Sized equity curve and the (still-pending)
-timeline table. **Still pending:** the timeline table in the frontend (data is now exposed — render-only),
-and reshaping the two MT5 strategies the same way. The whole sized path stays dormant until a reshaped
-strategy actually emits `engine_trades.csv` on the VPS.
+consistency_share_pct, halt_reason); it drives the frontend's Sized equity curve AND the day-by-day
+Sizing Timeline table (both built). **Still pending:** reshaping the two MT5 strategies the same way
+(ORB is the only reshaped strategy). The whole sized path stays dormant until a reshaped strategy
+actually emits `engine_trades.csv` on the VPS — both the curve and the table render only once a real
+sized run exists.
 
 ## Lens metrics (the per-run scoring layer)
 

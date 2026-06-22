@@ -1850,6 +1850,94 @@ function PerformanceByRegimeTable({ run }: { run: Run }) {
   )
 }
 
+// ── Sized timeline table ──────────────────────────────────────────────────────
+// The dynamic-sizing engine's day-by-day audit, day for day: how many contracts it
+// sized, the day's sized P&L, the end-of-day balance, the trailing risk floor and the
+// buffer to it, and any halt/breach. Reads run.sized_timeline (engine_timeline.json);
+// shown only for engine-sized runs. Collapsible — a sized run can be hundreds of days.
+
+function SizedTimelineTable({ run }: { run: Run }) {
+  const rows = run.sized_timeline
+  const [open, setOpen] = useState(false)
+  if (!rows.length) return null
+
+  const haltDays   = rows.filter(d => d.halt_reason).length
+  const tradedDays = rows.filter(d => d.trades_taken > 0).length
+  const finalBal   = rows[rows.length - 1].eod_balance
+
+  const headCells = ['Date', 'Trades', 'Contracts', 'Day P&L', 'EOD Balance', 'Risk Floor', 'Buffer', 'Status']
+
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-3 border-b border-border-subtle flex items-center justify-between text-left hover:bg-bg-elevated/30 transition-colors"
+      >
+        <div>
+          <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">Sizing Timeline</div>
+          <div className="text-[10px] text-text-tertiary mt-[2px]">
+            {rows.length} day{rows.length === 1 ? '' : 's'} · {tradedDays} traded
+            {haltDays > 0 && <span className="text-gold-text"> · {haltDays} halted</span>}
+            {' '}· what the engine sized, day by day.
+          </div>
+        </div>
+        {open ? <ChevronUp size={15} className="text-text-tertiary" /> : <ChevronDown size={15} className="text-text-tertiary" />}
+      </button>
+      {open && (
+        <div className="overflow-auto max-h-[480px]">
+          <table className="w-full text-[13px]">
+            <thead className="sticky top-0 bg-bg-surface z-10">
+              <tr className="border-b border-border-subtle">
+                {headCells.map(h => (
+                  <th key={h} className={`text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] px-5 py-3 ${h === 'Date' ? 'text-left' : h === 'Status' ? 'text-center' : 'text-right'}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((d, i) => {
+                const breached = d.risk_floor != null && d.eod_balance < d.risk_floor
+                const rowTint  = breached ? 'bg-neg-muted/30' : d.halt_reason ? 'bg-gold-muted/20' : ''
+                return (
+                  <tr key={i} className={`${i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''} ${rowTint}`}>
+                    <td className="px-5 py-3 text-left text-text-secondary tabular-nums whitespace-nowrap">{fmtChartDate(d.date)}</td>
+                    <td className="px-5 py-3 text-right text-text-secondary tabular-nums">{d.trades_taken}</td>
+                    <td className="px-5 py-3 text-right text-text-secondary tabular-nums">{d.contracts_total}</td>
+                    <td className={`px-5 py-3 text-right tabular-nums font-medium ${d.day_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(d.day_pnl, true)}</td>
+                    <td className="px-5 py-3 text-right text-text-secondary tabular-nums">{dollar(d.eod_balance)}</td>
+                    <td className="px-5 py-3 text-right text-text-tertiary tabular-nums">{d.risk_floor != null ? dollar(d.risk_floor) : '—'}</td>
+                    <td className={`px-5 py-3 text-right tabular-nums ${d.floor_distance != null && d.floor_distance <= 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{d.floor_distance != null ? dollar(d.floor_distance) : '—'}</td>
+                    <td className="px-5 py-3 text-center">
+                      {breached ? (
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.5px] px-2 py-0.5 rounded bg-neg-muted text-neg-text border border-neg/40">Breach</span>
+                      ) : d.halt_reason ? (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-gold-muted text-gold-text border border-gold-text/20" title={d.halt_reason}>{d.halt_reason}</span>
+                      ) : (
+                        <span className="text-text-tertiary">—</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-border-subtle bg-bg-elevated/30">
+                <td className="px-5 py-3 text-[11px] font-semibold text-text-secondary">Final</td>
+                <td className="text-right px-5 py-3 text-[11px] font-medium text-text-secondary tabular-nums">{run.trade_count ?? '—'}</td>
+                <td className="px-5 py-3" />
+                <td className={`text-right px-5 py-3 text-[11px] font-semibold tabular-nums ${(run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(run.net_pnl, true)}</td>
+                <td className="text-right px-5 py-3 text-[11px] font-semibold text-text-secondary tabular-nums">{dollar(finalBal)}</td>
+                <td className="px-5 py-3" />
+                <td className="px-5 py-3" />
+                <td className="px-5 py-3" />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Run Stress Test Modal ─────────────────────────────────────────────────────
 
 function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () => void; navigate: (path: string) => void }) {
@@ -2644,6 +2732,9 @@ export function BacktestDetail() {
 
                     {/* Performance by Regime — permanent panel */}
                     {hasRealRegimeTags && <PerformanceByRegimeTable run={run} />}
+
+                    {/* Sizing timeline — engine's day-by-day audit; sized runs only */}
+                    {hasSized && <SizedTimelineTable run={run} />}
 
                     {fullscreenChart && fullscreenChart !== 'price' && (
                       <ChartModal
