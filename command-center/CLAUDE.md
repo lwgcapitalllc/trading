@@ -78,7 +78,7 @@ cd command-center
 | App shell | ✅ Live | Sidebar, topbar, routing across all pages |
 | Overview | ✅ Live | Stat row plus Bots, Smart Money, and Backtests summary cards |
 | Smart Money | ✅ Live | Full pipeline UI: scan, terminal, rankings, profiles, config, cache |
-| Bots | ✅ Live | Monitor, control, configure risk caps and deploy, manage Telegram users |
+| Bots | ✅ Live | Monitor/control scaffold; no bots registered yet (all four first-attempt bots deleted 2026-06-22). Configure risk caps and deploy, manage Telegram users |
 | Rulesets | ✅ Live | Own top-level page: firm-grouped tables, contract scaling column, editable personal rules (server-side lock on prop rows) |
 | Backtests lab | ✅ Live | Runs and Sweeps tabs; BacktestDetail with collapsible params side panel |
 | Optimizations | ✅ Live | Own top-level RESEARCH page (`/optimizations`); native NT8/MT5 optimizer; ranked results; "Tune winner" |

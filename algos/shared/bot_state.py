@@ -31,29 +31,22 @@ from pathlib import Path
 
 ALGOS_ROOT = Path("C:/trading/algos")
 
-# Bot registries. SMC Trend, Scalper, FFT removed 2026-06-21 for a
-# backtest-first rebuild; Mean Reversion kept as the reference bot.
+# Bot registries. All first-attempt bots (SMC Trend, Scalper, FFT, Mean Reversion)
+# were deleted 2026-06-22 — see algos/docs/BOT_DEPLOYMENT_INFRA.md. Add a new bot
+# key to each registry below when one goes live.
 
 # Instance directory for each bot key
-BOT_INSTANCES = {
-    "mean_reversion": ALGOS_ROOT / "markets/fx/instances/gold_main",
-}
+BOT_INSTANCES = {}
 
 # Account numbers for each bot
-BOT_ACCOUNTS = {
-    "mean_reversion": "700103491",
-}
+BOT_ACCOUNTS = {}
 
 # Display names
-BOT_NAMES = {
-    "mean_reversion": "Mean Reversion",
-}
+BOT_NAMES = {}
 
 
 # Thresholds — defaults; overridden by thresholds.json if present
-_BOT_THRESHOLDS_DEFAULT = {
-    "mean_reversion": {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
-}
+_BOT_THRESHOLDS_DEFAULT = {}
 
 _THRESHOLDS_PATH = Path(__file__).parent / "thresholds.json"
 

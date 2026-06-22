@@ -3,10 +3,11 @@ launcher.py — Universal launcher for all bots.
 Used by Windows Task Scheduler. Accepts bot name and config path.
 
 Usage:
-    python bots/launcher.py --bot bot_mean_reversion --config markets/fx/instances/gold_main/config.json
+    python bots/launcher.py --bot <bot_name> --config markets/fx/instances/<instance>/config.json
 
-Bot map:
-    bot_mean_reversion = bot_mean_reversion.py  (FX, MT5)
+No bots are currently registered (BOT_SCRIPTS is empty).
+The reusable deployment infrastructure is documented in
+algos/docs/BOT_DEPLOYMENT_INFRA.md.
 
 One launcher handles all bots and all instances.
 To add a new bot: add its script name to BOT_SCRIPTS below.
@@ -17,9 +18,7 @@ import sys
 import argparse
 from pathlib import Path
 
-BOT_SCRIPTS = {
-    "bot_mean_reversion": "bot_mean_reversion.py",
-}
+BOT_SCRIPTS = {}
 
 def main():
     parser = argparse.ArgumentParser()

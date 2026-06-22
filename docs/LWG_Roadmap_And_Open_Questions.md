@@ -48,7 +48,7 @@ At go-live you must know exactly what code each bot is running, and be able to c
 **Design (agreed earlier, not yet built):**
 - Each bot records the commit it **started on** (`git rev-parse HEAD` on the VPS, captured once at startup — not in the trade loop) and reports it in its status.
 - The command-center keeps a tiny **per-bot ledger** that auto-assigns v1, v2, v3… the first time it observes a bot running a commit it hasn't seen before, storing `(bot, version, commit, first-seen)`. Zero manual mapping — the number is a friendly label; the commit SHA is the source of truth.
-- The Bots monitor shows e.g. `gold_main — v3 (4c58350), running 6h · latest v4 (1ca8c0c) — restart to apply`. The ledger doubles as a per-bot deploy-history audit trail.
+- The Bots monitor shows e.g. `<instance> — v3 (4c58350), running 6h · latest v4 (1ca8c0c) — restart to apply`. The ledger doubles as a per-bot deploy-history audit trail.
 
 **Touches:** `algos/` bot startup (one `git rev-parse`) + command-center Bots monitor + a small ledger table. **Prerequisite:** none technical; most valuable at go-live.
 

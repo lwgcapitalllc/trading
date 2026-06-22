@@ -5,15 +5,11 @@ Runs on a Windows VPS (ForexVPS). Managed from Mac via SSH alias `forexvps`.
 
 ---
 
-## Accounts
+## Bots
 
-| Instance | Account | Bot(s) | Balance |
-|---|---|---|---|
-| gold_main | #700103491 | Mean Reversion | $2,759.28 |
+There are currently **no live bots**. All four first-attempt bots — SMC Trend, Scalper, FFT, and Mean Reversion — were deleted 2026-06-22 to rebuild the suite backtest-first.
 
-Starting balance: **$1,000**
-
-Mean Reversion is the one surviving bot, kept as a read-only reference. SMC Trend, Scalper, and FFT were removed 2026-06-21 for a backtest-first rebuild.
+New bots follow the S.Y.S.T.E.M. process in `../docs/BOT_DEVELOPMENT_METHOD.md` (repo root). The reusable deployment plumbing (MT5 connection, per-instance configs, Task Scheduler, liveness layer) is documented in `docs/BOT_DEPLOYMENT_INFRA.md`.
 
 ---
 
@@ -24,13 +20,13 @@ algos/
 ├── README.md
 ├── docs/
 │   ├── ARCHITECTURE.md              ← Multi-instrument system design (Phases 1–5)
-│   └── BOT_MEAN_REVERSION_GUIDE.md
+│   └── BOT_DEPLOYMENT_INFRA.md      ← Reusable deploy plumbing (MT5, configs, scheduler, liveness)
 ├── scripts/
 │   ├── deploy.py                    ← File staging tool
 │   └── cleanup_vps.bat
 ├── bots/
-│   ├── bot_mean_reversion.py
-│   ├── bot_utils.py
+│   ├── bot_utils.py                 ← Config loader, logging, path resolver
+│   ├── launcher.py                  ← Universal Task Scheduler launcher
 │   └── startup_coordinator.py       ← Sequential startup (single entry point)
 ├── shared/
 │   ├── bot_state.py                 ← Single source of truth (read/write)
@@ -66,15 +62,12 @@ algos/
 │   └── backtest_config.json        ← Default backtest parameters
 └── markets/
     ├── fx/
-    │   ├── tools/
-    │   │   └── mt5_agent.py        ← MT5 HTTP agent (VPS, port 8766)
-    │   └── instances/
-    │       └── gold_main/
-    │           ├── config.json
-    │           ├── bot_state.json  ← Live state (balance, P&L, status)
-    │           └── mean_reversion_trades.json
+    │   └── tools/
+    │       └── mt5_agent.py        ← MT5 HTTP agent (VPS, port 8766)
     └── crypto/instances/           ← Reserved (empty)
 ```
+
+Per-bot instance directories (`markets/<market>/instances/<name>/` with `config.json` + `bot_state.json`) are created when a new bot is deployed — see `docs/BOT_DEPLOYMENT_INFRA.md`. None exist today.
 
 ---
 
@@ -111,9 +104,7 @@ ssh forexvps "wmic process where \"name='python.exe'\" get commandline 2>nul"
 
 ## MT5 Instances (VPS)
 
-| Terminal | Path | Account |
-|---|---|---|
-| MT5 Main | `C:\Program Files\PU Prime MT5 Terminal\terminal64.exe` | #700103491 |
+No bot instances are configured today. When a validated strategy is wired to live demo, each instance maps to one MT5 terminal — see `docs/BOT_DEPLOYMENT_INFRA.md`.
 
 **Critical**: Each terminal must have ONLY its own account logged in.
 If extra accounts appear in Navigator → Accounts → right-click → Remove.

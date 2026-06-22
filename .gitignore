@@ -83,14 +83,6 @@ command-center/backend/reports/lab/
 # Live bot state
 algos/markets/fx/instances/*/bot_state.json
 
-# Trade histories
-algos/markets/fx/instances/*/mean_reversion_trades.json
-
-# Equity curves and daily/weekly performance
-algos/markets/fx/instances/*/gold_main_equity.json
-algos/markets/fx/instances/*/mean_reversion_daily.json
-algos/markets/fx/instances/*/mean_reversion_weekly.json
-
 # Telegram runtime
 algos/users.json
 algos/telegram_offset.json

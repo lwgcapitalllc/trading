@@ -1,8 +1,8 @@
 # CLAUDE.md — LWG Capital Algo Trading Suite
 
-**Purpose:** Standing instructions for the live XAUUSD/forex MT5 bot suite (one reference bot on a single PU Prime demo instance) running on the Windows VPS.
+**Purpose:** Standing instructions for the XAUUSD/forex MT5 bot suite running on the Windows VPS.
 **Scope:** This covers the bots, shared utilities, risk rules, scheduler, and deploy for `algos/`. It does NOT cover `command-center/`, `smart-money/`, or `regime/` internals (regime is imported via the `shared_regime.py` shim).
-**Status:** Active — Mean Reversion kept as a read-only reference bot; the suite is being rebuilt backtest-first.
+**Status:** Active — no live bots; all four first-attempt bots were deleted 2026-06-22 to rebuild backtest-first. Deployment plumbing preserved.
 **Last reviewed:** 2026-06-22
 
 This file is auto-loaded by Claude Code at the start of every session. Read it fully before touching any code.
@@ -29,11 +29,9 @@ Think like one at all times:
 
 ### The Bots
 
-| Bot | File | Strategy | Watchlist | Account | MT5 Instance |
-|-----|------|----------|-----------|---------|--------------|
-| Mean Reversion | `bot_mean_reversion.py` | BB + RSI + VWAP, 1R target, fast close | XAUUSD, EURUSD, AUDUSD, USDCAD, EURGBP | gold_main #700103491 | PU Prime Terminal |
+There are currently **no live bots**. All four first-attempt bots — SMC Trend, Scalper, FFT, and Mean Reversion — were deleted 2026-06-22 to rebuild the suite backtest-first.
 
-Mean Reversion is the one surviving bot, kept as a read-only reference. SMC Trend, Scalper, and FFT were removed 2026-06-21 for a backtest-first rebuild.
+New bots follow the S.Y.S.T.E.M. process in `docs/BOT_DEVELOPMENT_METHOD.md` (specify → backtest → stress test → live demo). The reusable deployment plumbing left behind by the deleted suite — the MT5 connection layer, per-instance configs, Task Scheduler wiring, and the liveness/notification layer — is documented in `docs/BOT_DEPLOYMENT_INFRA.md` so a validated strategy can be wired to live demo without rebuilding the infrastructure.
 
 ### Shared Components
 
@@ -58,15 +56,15 @@ Multi-instrument architecture (Phases 1–5) explained in `docs/ARCHITECTURE.md`
 
 ### Risk Rules Summary
 
-Mean Reversion: 1%/1:1/5% daily/10% weekly. Full rules in `docs/BOT_MEAN_REVERSION_GUIDE.md`.
+n/a — no live bots.
 
 ### AI Thresholds
 
-Mean Reversion: `min_ai_probability = 0.52`. Trains at 15 closed trades, retrains every 5, requires AUC ≥ 0.55.
+n/a — no live bots.
 
 ### What I Am Working On
 
-**Phase:** Mean Reversion is kept as a read-only reference bot. The live suite is being rebuilt backtest-first — SMC Trend, Scalper, and FFT were removed 2026-06-21 to be redesigned through the command-center backtest lab before any return to live demo trading.
+**Phase:** No live bots. All four first-attempt bots were deleted 2026-06-22. The suite is being rebuilt backtest-first per the S.Y.S.T.E.M. method (`docs/BOT_DEVELOPMENT_METHOD.md`) — strategies are validated through the command-center backtest lab before any return to live demo trading. The reusable deployment infrastructure is preserved in `docs/BOT_DEPLOYMENT_INFRA.md`.
 
 Update this section when the phase changes or a new open question arises.
 

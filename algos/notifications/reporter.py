@@ -39,20 +39,9 @@ GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadc
 ALGOS_ROOT     = Path("C:/trading/algos")
 TEXAS          = ZoneInfo("America/Chicago")
 
-# SMC Trend, Scalper, FFT removed 2026-06-21; Mean Reversion kept as reference.
-BOTS = {
-    "mean_reversion": {
-        "name":      "Bot Mean Reversion",
-        "emoji":     "↩️",
-        "script":    "bot_mean_reversion.py",
-        "trades":    ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_trades.json",
-        "daily":     ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_daily.json",
-        "equity":    ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
-        "log":       ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
-        "daily_cap": 10.0,
-        "acct_type":  "demo",
-    },
-}
+# All first-attempt bots deleted 2026-06-22 (see algos/docs/BOT_DEPLOYMENT_INFRA.md).
+# No bots registered.
+BOTS = {}
 
 
 # =============================================================================
@@ -279,7 +268,7 @@ def format_report(bot_key: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bot",   help="mean_reversion")
+    parser.add_argument("--bot",   help="<bot_name> (none registered yet)")
     parser.add_argument("--test",  action="store_true")
     parser.add_argument("--force", action="store_true", help="Send even on weekends")
     parser.add_argument("--group", choices=["demo","live","all"], default="all",

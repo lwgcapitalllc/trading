@@ -10,7 +10,7 @@ METHOD 1 — FLAT (for simple updates, most common)
 Drop files flat into algos/files/ using the names in MANIFEST below.
 Files with the same name in different folders get a prefix:
 
-  config.json from gold_main/    → name it: gold_main_config.json
+  config.json from <instance>/   → name it: <instance>_config.json
 Everything else (bots, guides, xmls) has a unique name already.
 
 ────────────────────────────────────────────────────────────
@@ -20,12 +20,11 @@ Create subfolders inside files/ that match the repo structure:
 
   files/
   ├── bots/
-  │   ├── bot_mean_reversion.py
   │   └── launcher.py
   ├── markets/
   │   └── fx/
   │       └── instances/
-  │           └── gold_main/
+  │           └── <instance>/
   │               └── config.json
   └── notifications/
       └── reporter.py
@@ -64,12 +63,8 @@ def info(msg): print(f"  {GRAY}{msg}{RESET}")
 
 MANIFEST = {
     # ── Bots ──────────────────────────────────────────────────────────────────
-    "bot_mean_reversion.py":         "bots/bot_mean_reversion.py",
     "bot_utils.py":                  "bots/bot_utils.py",
     "launcher.py":                   "bots/launcher.py",
-
-    # ── Bot guides ────────────────────────────────────────────────────────────
-    "BOT_MEAN_REVERSION_GUIDE.md":   "docs/BOT_MEAN_REVERSION_GUIDE.md",
 
     # ── Shared ────────────────────────────────────────────────────────────────
     "shared_ai_brain.py":            "shared/shared_ai_brain.py",
@@ -83,16 +78,11 @@ MANIFEST = {
     "NOTIFICATIONS_GUIDE.md":        "notifications/NOTIFICATIONS_GUIDE.md",
 
     # ── Scheduler XMLs ────────────────────────────────────────────────────────
-    "mean_reversion_task.xml":       "scheduler/mean_reversion_task.xml",
     "telegram_task.xml":             "scheduler/telegram_task.xml",
     "reporter_task.xml":             "scheduler/reporter_task.xml",
     "monitor_task.xml":              "scheduler/monitor_task.xml",
     "SCHEDULER_GUIDE.md":            "scheduler/SCHEDULER_GUIDE.md",
 
-    # ── Instance configs — use prefixed names to avoid name collisions ─────────
-    "gold_main_config.json":         "markets/fx/instances/gold_main/config.json",
-    "gold_main_credentials.template.json":
-                                     "markets/fx/instances/gold_main/credentials.template.json",
     # ── Root files ────────────────────────────────────────────────────────────
     "algo.py":                                   "algo.py",
     "README.md":                                 "README.md",

@@ -30,7 +30,7 @@ Two standing rules shape every strategy: intraday only (flat by session end, nev
 - NinjaTrader 8 — backtest engine, Strategy Analyzer, and native optimizer.
 - `nt8_agent.py` (port 8765 via SSH tunnel) — Flask HTTP bridge; `pywinauto` drives the NT8 WPF UI.
 - `mt5_agent.py` (port 8766 via SSH tunnel) — Flask HTTP bridge; drives the MT5 Strategy Tester and supplies intraday OHLC for the price chart.
-- One reference MT5 forex/gold bot (`algos/`, Mean Reversion on gold_main) — demo phase on a PU Prime account. SMC Trend, Scalper, and FFT were removed 2026-06-21 for a backtest-first rebuild.
+- No live bots (`algos/`). The four first-attempt bots (SMC Trend, Scalper, FFT, Mean Reversion) were deleted 2026-06-22 to rebuild the suite backtest-first. Reusable deployment plumbing is preserved in `algos/docs/BOT_DEPLOYMENT_INFRA.md`.
 - Windows Task Scheduler — `NT8Agent` (NT8 agent), `MT5AgentRDP` (MT5 agent), `SYS_STARTUP` (bots).
 
 **SSH tunnel:** `start.sh` opens a persistent `ssh -N forexvps` background process. `LocalForward 8765` (NT8 agent) and `LocalForward 8766` (MT5 agent) use `127.0.0.1` as the remote target — not `localhost` — because the VPS resolves `localhost` to IPv6 but the Flask agents bind IPv4 only.
@@ -43,7 +43,7 @@ Two standing rules shape every strategy: intraday only (flat by session end, nev
 
 ```
 trading/
-├── algos/           ← One reference MT5 forex/gold bot on the VPS (Mean Reversion, demo phase)
+├── algos/           ← Bot deployment infra (no live bots — first-attempt suite deleted 2026-06-22, rebuilding backtest-first)
 ├── smart-money/     ← Crypto/forex trader scanner for copy-trading candidates
 ├── command-center/  ← React + FastAPI local operations platform (fully live)
 ├── regime/          ← Shared market regime classifier (live bots + backtest lab)
@@ -59,7 +59,7 @@ trading/
 ## What's shipped (oldest first)
 
 ### App shell + Smart Money + Bots monitor (pre-M1) ✅
-First working command center. React shell with sidebar routing, the Bots tab (SSH monitor for gold_main, risk-cap deploy, Telegram users), and the full Smart Money pipeline UI (scan, terminal, rankings, candidate profiles, disqualified log, config, cache). Smart Money stages 1–2 and 5 are live; stages 3–4 are blocked on API keys.
+First working command center. React shell with sidebar routing, the Bots tab (SSH monitor + control scaffold, risk-cap deploy, Telegram users — no bots registered today), and the full Smart Money pipeline UI (scan, terminal, rankings, candidate profiles, disqualified log, config, cache). Smart Money stages 1–2 and 5 are live; stages 3–4 are blocked on API keys.
 
 ### Pre-M4 unification — single regime classifier ✅
 The regime classifier was simplified to one 5-label output set (TRENDING / TRANSITIONING / RANGING / HIGH_VOLATILITY / LOW_VOLATILITY, plus UNKNOWN) and made the single canonical implementation in `regime/`. The live bots use it via `algos/shared/shared_regime.py`; the lab imports it directly. The old two-mode design and any duplicate classifiers were removed.
@@ -122,12 +122,11 @@ A strategy-agnostic candlestick panel (`command-center/frontend/src/components/C
 
 ## Current state of strategies
 
-Three strategies are registered — one NinjaTrader `.cs` file (ORB; VWAP_MR and Momentum deleted 2026-06-21 for embedding risk management) and two MT5 `.mq5` files. The first Tier 1 run has now appeared (LondonBreakout); the best stress grade so far is **C** (also LondonBreakout). Every graded stress test on the other strategies is F. The DB holds 9 stress tests total; 5 are orphaned grade-F tests (their source runs were deleted).
+Two strategy files remain — one NinjaTrader `.cs` file (ORB; VWAP_MR and Momentum deleted 2026-06-21 for embedding risk management) and one MT5 `.mq5` file (LondonBreakout; `MeanReversion.mq5` deleted 2026-06-22 alongside the Mean Reversion bot). The first Tier 1 run has now appeared (LondonBreakout); the best stress grade so far is **C** (also LondonBreakout). Every graded stress test on the other strategies is F. The DB holds 9 stress tests total; 5 are orphaned grade-F tests (their source runs were deleted).
 
 | Strategy | File | Runner | Category | State (verified from `lab.db`) |
 |---|---|---|---|---|
 | ORB | `strategies/ninjatrader/ORB.cs` | ninjatrader | breakout | 2 runs, all TIER_3_DISCARD. No stress tests. Opening Range Breakout — entry on ORB high/low break. The only live NT8 strategy and the first target of the dynamic sizing & gating engine. |
-| MeanReversion | `strategies/mt5/MeanReversion.mq5` | mt5 | mean_reversion | 10 runs, no worthiness tier assigned. 2 stress tests (one grade F, one ungraded). Ported from `algos/bots/bot_mean_reversion.py` — BB + RSI + intraday VWAP confluence. |
 | LondonBreakout | `strategies/mt5/LondonBreakout.mq5` | mt5 | breakout | 7 runs (1 TIER_1_STRESS_TEST, 4 TIER_2_OPTIMIZE, 2 TIER_3_DISCARD). 1 stress test grade C. Instrument-agnostic Asian-range → London breakout; v1 showed no edge on AUDJPY (notes in `LONDON_BREAKOUT.md`). |
 
 `strategies/tradovate/` is an empty placeholder (no source files yet).

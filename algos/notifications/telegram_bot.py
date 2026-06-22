@@ -12,11 +12,13 @@ READ-ONLY COMMANDS:
 
 CONTROL COMMANDS (require /confirm within 30 seconds):
   /restart         — restart all bots
-  /restart reversion — restart specific bot (reversion)
+  /restart <bot>   — restart specific bot
   /stop            — stop all bots
-  /stop reversion  — stop specific bot
+  /stop <bot>      — stop specific bot
   /emergency       — kill everything immediately
   /confirm         — confirm pending action
+
+No bots are registered yet — the TASK_NAMES/BOTS maps below are empty.
 
 Run via Task Scheduler at startup (runs 24/7).
 Install: pip install requests
@@ -60,20 +62,9 @@ ROLE_COMMANDS = {
 }
 
 
-TASK_NAMES = {
-    "reversion": "BOT_MEAN_REVERSION",
-}
+TASK_NAMES = {}
 
-BOTS = {
-    "reversion": {
-        "name":      "Mean Reversion",
-        "state_key": "mean_reversion",
-        "script": "bot_mean_reversion.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
-        "trades": ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_trades.json",
-        "log":    ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
-    },
-}
+BOTS = {}
 
 # Per-user pending actions — keyed by user_id so two users can't overwrite each other's confirm state
 pending_actions: dict = {}
@@ -433,9 +424,7 @@ def cmd_status() -> str:
     now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
     lines  = [f"📊 *Bot Status*  _{now_tx}_", ""]
 
-    BOT_SCRIPTS = {
-        "mean_reversion": "bot_mean_reversion.py",
-    }
+    BOT_SCRIPTS = {}
 
     lines.append("*Trading Bots*")
     for key, script in BOT_SCRIPTS.items():
@@ -601,15 +590,15 @@ def cmd_help() -> str:
         "`/users`          List authorized users\n\n"
         "*Control*  _type /confirm within 30s_\n"
         "`/restart`        Restart all bots\n"
-        "`/restart reversion` Restart one bot\n"
+        "`/restart <bot>`  Restart one bot\n"
         "`/stop`           Stop all bots\n"
-        "`/stop reversion` Stop one bot\n"
+        "`/stop <bot>`     Stop one bot\n"
         "`/emergency`      Kill everything immediately\n\n"
         "*Override*  _no confirm needed_\n"
-        "`/resume reversion` Resume a locked bot (overrides peak protection)\n"
+        "`/resume <bot>`   Resume a locked bot (overrides peak protection)\n"
         "`/resetweek`      Reset weekly/daily P&L references to current balance\n"
-        "`/resetweek reversion` Reset one bot only\n\n"
-        "_Bot keys: reversion_"
+        "`/resetweek <bot>` Reset one bot only\n\n"
+        "_No bots are registered yet._"
     )
 
 
@@ -730,7 +719,7 @@ def handle_message(text: str, chat_id: str, user_id: str) -> str:
             return denied()
         bot_key = parse_bot_key(parts)
         if not bot_key:
-            return "Usage: `/resume <bot>`\nBot keys: reversion"
+            return "Usage: `/resume <bot>`\nNo bots are registered yet."
         from bot_state import read_bot, write_bot
         state_key = BOTS[bot_key].get("state_key", bot_key)
         state = read_bot(state_key)

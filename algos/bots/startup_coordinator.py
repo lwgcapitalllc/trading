@@ -9,7 +9,7 @@ Run via SYS_STARTUP task at boot, or manually:
     python C:/trading/algos/bots/startup_coordinator.py
 
 Single-bot mode (Command Center per-bot start/restart):
-    python C:/trading/algos/bots/startup_coordinator.py --bot mean_reversion
+    python C:/trading/algos/bots/startup_coordinator.py --bot <bot_name>
 
 In single-bot mode: skips lock clear, skips marking other bots stopped,
 launches the bot and exits immediately (bot survives via CREATE_NEW_PROCESS_GROUP).
@@ -28,17 +28,7 @@ BOTS   = Path("C:/trading/algos/bots")
 sys.path.insert(0, str(ALGOS / "shared"))
 from bot_state import set_started, set_status
 
-STARTUP_SEQUENCE = [
-    (
-        "mean_reversion",
-        "Mean Reversion",
-        r"C:\trading\algos\bots\bot_mean_reversion.py",
-        r"C:\trading\algos\markets\fx\instances\gold_main\config.json",
-        r"C:\trading\algos\markets\fx\instances\gold_main\mean_reversion_stdout.log",
-        "Connected | #700103491",
-        30,
-    ),
-]
+STARTUP_SEQUENCE = []
 
 
 def clear_lock():
@@ -81,7 +71,7 @@ def wait_for_connection(log_path: str, ready_string: str,
 def main():
     parser = argparse.ArgumentParser(description="Start bots (all or single)")
     parser.add_argument("--bot", default=None,
-                        help="Start only this bot key (e.g. mean_reversion). "
+                        help="Start only this bot key (e.g. <bot_name>). "
                              "Skips lock clear and connection wait — bot detaches immediately.")
     args = parser.parse_args()
 

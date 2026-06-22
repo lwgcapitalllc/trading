@@ -1,9 +1,11 @@
 # Trader Migration Audit — Administrator → trader
 
 > **Stale entries flagged 2026-06-22.** Several files referenced below were deleted in the
-> 2026-06-21 suite cutdown and no longer exist — ignore their rows when running this audit:
-> - Scheduler XMLs `smc_trend_task.xml`, `scalper_task.xml`, `fft_task.xml`, and `backup_task.xml`
->   (the SMC Trend / Scalper / FFT bots and the VPS data-backup feature were removed).
+> suite cutdown and no longer exist — ignore their rows when running this audit:
+> - Scheduler XMLs `smc_trend_task.xml`, `scalper_task.xml`, `fft_task.xml`,
+>   `mean_reversion_task.xml`, and `backup_task.xml`. All four first-attempt bots (SMC Trend,
+>   Scalper, FFT, and Mean Reversion) were deleted — Mean Reversion was also removed 2026-06-22,
+>   so its task XML is gone too — along with the VPS data-backup feature.
 > - The backup scripts `scripts/backup.py` and `scripts/nt8_backup.py` (the `backups` orphan
 >   branch and twice-daily backup task are gone), so the `nt8_backup.py` class (b) fallback note
 >   and the "Restore Data from Backup" / profile-note steps no longer apply.

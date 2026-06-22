@@ -35,11 +35,9 @@ ALGOS_ROOT      = Path("C:/trading/algos")
 TEXAS           = ZoneInfo("America/Chicago")
 BOT_LIVE_WINDOW = 300  # seconds — treat bot as live if last_write is within this
 
-# Trades files per bot. SMC Trend, Scalper, FFT removed 2026-06-21;
-# Mean Reversion kept as the reference bot.
-BOT_TRADES = {
-    "mean_reversion": ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_trades.json",
-}
+# Trades files per bot. All first-attempt bots deleted 2026-06-22
+# (see algos/docs/BOT_DEPLOYMENT_INFRA.md). No bots registered.
+BOT_TRADES = {}
 
 
 def send_alert(message: str):

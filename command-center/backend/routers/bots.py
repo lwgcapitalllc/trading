@@ -39,26 +39,19 @@ router = APIRouter(prefix="/bots", tags=["bots"])
 VPS_HOST = cfg.SSH_ALIAS
 
 # Mirror algo.py's constants so behaviour matches the retired panel exactly.
-# SMC Trend, Scalper, FFT removed 2026-06-21; Mean Reversion kept as reference.
-_BOT_DISPLAY_ORDER = [
-    "BOT_MEAN_REVERSION",
-]
+# All first-attempt bots deleted 2026-06-22 (see algos/docs/BOT_DEPLOYMENT_INFRA.md).
+# No bots registered — the Bots page shows the SYS_* jobs + Telegram only until a
+# new bot is added back here.
+_BOT_DISPLAY_ORDER = []
 _DISPLAY_NAMES = {
-    "BOT_MEAN_REVERSION": "Mean Reversion",
     "SYS_TELEGRAM":       "Telegram",
     "SYS_REPORTER":       "Reporter",
     "SYS_MONITOR":        "Monitor",
     "SYS_PNLTRACKER":     "P&L Tracker",
 }
-_TASK_BOT_KEYS = {
-    "BOT_MEAN_REVERSION": "mean_reversion",
-}
-_TASK_ACCT_TYPE = {
-    "BOT_MEAN_REVERSION": "demo",
-}
-_LOG_MAP = {
-    "BOT_MEAN_REVERSION": ("fx", "gold_main",    "mean_reversion_stdout.log"),
-}
+_TASK_BOT_KEYS = {}
+_TASK_ACCT_TYPE = {}
+_LOG_MAP = {}
 _SCHEDULED_JOBS = [
     JobStatus(name="Monitor",     schedule="every 1 min",  status="UNKNOWN"),
     JobStatus(name="P&L Tracker", schedule="every 1 min",  status="UNKNOWN"),
@@ -67,15 +60,11 @@ _SCHEDULED_JOBS = [
 
 # Crash-alert suppress keys — must match telegram_bot.py / monitor.py
 # (bot_key → the short key written to stop_suppress.json)
-_SUPPRESS_KEYS: dict[str, str] = {
-    "mean_reversion": "reversion",
-}
+_SUPPRESS_KEYS: dict[str, str] = {}
 
 # Risk caps per bot — mirrors bot_state.py BOT_THRESHOLDS.
 # Update here whenever thresholds change in the algo.
-_BOT_THRESHOLDS: dict[str, dict[str, float]] = {
-    "mean_reversion": {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
-}
+_BOT_THRESHOLDS: dict[str, dict[str, float]] = {}
 
 # Telegram — same credentials as notify.py / algo.py
 _TG_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
@@ -109,20 +98,12 @@ def _get_thresholds(bot_key: str) -> dict[str, float]:
 
 # Maps (bot_key, cap_name) → [(section, field)] pairs to write into instance config.json.
 # These are the fields the strategy engines actually read for hard stops.
-_CAP_CONFIG_FIELDS: dict[str, dict[str, list[tuple[str, str]]]] = {
-    "mean_reversion": {
-        "daily_cap":  [("protection", "max_daily_loss_pct_bot2")],
-        "weekly_cap": [("protection", "max_weekly_loss_pct_bot2")],
-        "daily_goal": [],
-    },
-}
+_CAP_CONFIG_FIELDS: dict[str, dict[str, list[tuple[str, str]]]] = {}
 
 
 # ── Per-bot config file mapping ───────────────────────────────────────────────
 # Maps bot_key → the instance config.json path and the strategy section name.
-_BOT_INSTANCE_MAP: dict[str, dict] = {
-    "mean_reversion": {"path": cfg.INSTANCES_DIR / "gold_main"    / "config.json", "section": "bot_mean_reversion"},
-}
+_BOT_INSTANCE_MAP: dict[str, dict] = {}
 
 
 def _read_instance_config(bot_key: str) -> dict:
@@ -224,11 +205,11 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     )
     sections = _parse_sections(_ssh(cmd1), "procs")
 
-    instances_base = "C:\\trading\\algos\\markets\\fx\\instances"
+    # No bot instances exist (all deleted 2026-06-22). Only the Telegram start
+    # marker is fetched; per-bot state is read from each instance's bot_state.json
+    # via _BOT_STATE_SECTIONS once a bot is registered again.
     cmd2 = (
-        f"if exist {instances_base}\\gold_main\\bot_state.json"
-        f" (type {instances_base}\\gold_main\\bot_state.json)"
-        " & echo. & echo ===TELEGRAM_START==="
+        "echo ===TELEGRAM_START==="
         " & if exist C:\\trading\\algos\\telegram_start.json"
         " (type C:\\trading\\algos\\telegram_start.json)"
     )
@@ -236,11 +217,13 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     return sections
 
 
+# (section, [bot keys in that bot_state.json]) — empty until a bot is registered.
+_BOT_STATE_SECTIONS: list[tuple[str, list[str]]] = []
+
+
 def _parse_bot_states(snap: dict[str, str]) -> dict[str, dict]:
     states: dict[str, dict] = {}
-    for section, keys in [
-        ("state_main",    ["mean_reversion"]),
-    ]:
+    for section, keys in _BOT_STATE_SECTIONS:
         raw = snap.get(section, "")
         if not raw:
             continue

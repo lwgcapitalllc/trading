@@ -52,7 +52,7 @@ class InstrumentScanner:
     Returns candidates ranked best-first by confluence_score.
 
     One instance per bot. Create after loading config:
-        scanner = InstrumentScanner(watchlist, "BOT_MEAN_REVERSION", "mean_reversion", _INST, log)
+        scanner = InstrumentScanner(watchlist, "BOT_EXAMPLE", "example_bot", _INST, log)
         candidates = scanner.scan(detect_setup)
     """
 

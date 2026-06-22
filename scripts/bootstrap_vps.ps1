@@ -116,10 +116,10 @@ $Tasks = @(
     [pscustomobject]@{ Xml = 'monitor_task.xml';             Name = 'SYS_MONITOR' }
     [pscustomobject]@{ Xml = 'pnl_tracker_task.xml';         Name = 'SYS_PNLTRACKER' }
     [pscustomobject]@{ Xml = 'reporter_task.xml';            Name = 'SYS_REPORTER' }
-    [pscustomobject]@{ Xml = 'mean_reversion_task.xml';      Name = 'BOT_MEAN_REVERSION' }
 )
-# These are started by SYS_STARTUP only — disable so they never auto-fire.
-$DisableTasks = @('BOT_MEAN_REVERSION')
+# BOT_ tasks are started by SYS_STARTUP only — disable so they never auto-fire.
+# No bots are registered yet, so this list is empty.
+$DisableTasks = @()
 
 # --------------------------------------------------------------------------
 # Helpers

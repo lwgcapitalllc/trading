@@ -2,15 +2,15 @@
 Strategy scanning — current contract.
 
 The scanner reads from `<MONOREPO_ROOT>/strategies/**` : 1 NinjaTrader .cs (ORB; VWAP_MR
-and Momentum deleted 2026-06-21) + 2 MT5 .mq5 (MeanReversion, LondonBreakout) = 3 strategies.
-NT8 strategies get an inferred suggested_instrument; MT5 does not. Param types span
-int/double/bool (NT8) and string (MT5).
+and Momentum deleted 2026-06-21) + 1 MT5 .mq5 (LondonBreakout; MeanReversion deleted
+2026-06-22) = 2 strategies. NT8 strategies get an inferred suggested_instrument; MT5 does
+not. Param types span int/double/bool (NT8) and string (MT5).
 """
 
 import textwrap
 import pytest
 
-EXPECTED_CLASS_NAMES = {"ORB", "MeanReversion", "LondonBreakout"}
+EXPECTED_CLASS_NAMES = {"ORB", "LondonBreakout"}
 
 SYNTHETIC_CS = textwrap.dedent("""\
     public class SyntheticStrat : Strategy
@@ -34,18 +34,18 @@ SYNTHETIC_CS = textwrap.dedent("""\
 
 # ── Cold start ─────────────────────────────────────────────────────────────────
 
-def test_scan_adds_three_strategies(client):
+def test_scan_adds_two_strategies(client):
     r = client.post("/strategies/scan")
     assert r.status_code == 200
     data = r.json()
-    assert data["added"] == 3
+    assert data["added"] == 2
     assert data["updated"] == 0
 
 
 def test_scan_returns_correct_class_names(client):
     client.post("/strategies/scan")
     strategies = client.get("/strategies").json()
-    assert len(strategies) == 3
+    assert len(strategies) == 2
     assert {s["class_name"] for s in strategies} == EXPECTED_CLASS_NAMES
 
 
@@ -62,7 +62,7 @@ def test_strategies_have_populated_param_schema(client):
 
 
 def test_nt8_strategies_have_suggested_instrument(client):
-    """NT8 strategies get an inferred instrument; MT5 (MeanReversion) legitimately has none."""
+    """NT8 strategies get an inferred instrument; MT5 (LondonBreakout) legitimately has none."""
     client.post("/strategies/scan")
     strategies = client.get("/strategies").json()
     nt8 = [s for s in strategies if s.get("runner", "ninjatrader") == "ninjatrader"]
@@ -79,7 +79,7 @@ def test_second_scan_is_idempotent(client):
     data = r.json()
     assert data["added"] == 0
     assert data["updated"] == 0
-    assert data["skipped"] == 3
+    assert data["skipped"] == 2
 
 
 # ── Param-schema + hash update on source change ───────────────────────────────
