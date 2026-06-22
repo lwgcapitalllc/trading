@@ -11,8 +11,6 @@ Drop files flat into algos/files/ using the names in MANIFEST below.
 Files with the same name in different folders get a prefix:
 
   config.json from gold_main/    → name it: gold_main_config.json
-  config.json from gold_scalper/ → name it: gold_scalper_config.json
-  config.json from gold_fft/     → name it: gold_fft_config.json
 Everything else (bots, guides, xmls) has a unique name already.
 
 ────────────────────────────────────────────────────────────
@@ -22,7 +20,7 @@ Create subfolders inside files/ that match the repo structure:
 
   files/
   ├── bots/
-  │   ├── bot_smc_trend.py
+  │   ├── bot_mean_reversion.py
   │   └── launcher.py
   ├── markets/
   │   └── fx/
@@ -66,18 +64,12 @@ def info(msg): print(f"  {GRAY}{msg}{RESET}")
 
 MANIFEST = {
     # ── Bots ──────────────────────────────────────────────────────────────────
-    "bot_smc_trend.py":              "bots/bot_smc_trend.py",
     "bot_mean_reversion.py":         "bots/bot_mean_reversion.py",
-    "bot_scalper.py":                "bots/bot_scalper.py",
-    "bot_fft.py":                    "bots/bot_fft.py",
     "bot_utils.py":                  "bots/bot_utils.py",
     "launcher.py":                   "bots/launcher.py",
 
     # ── Bot guides ────────────────────────────────────────────────────────────
-    "BOT_SMC_TREND_GUIDE.md":        "docs/BOT_SMC_TREND_GUIDE.md",
     "BOT_MEAN_REVERSION_GUIDE.md":   "docs/BOT_MEAN_REVERSION_GUIDE.md",
-    "BOT_SCALPER_GUIDE.md":          "docs/BOT_SCALPER_GUIDE.md",
-    "BOT_FFT_GUIDE.md":              "docs/BOT_FFT_GUIDE.md",
 
     # ── Shared ────────────────────────────────────────────────────────────────
     "shared_ai_brain.py":            "shared/shared_ai_brain.py",
@@ -91,10 +83,7 @@ MANIFEST = {
     "NOTIFICATIONS_GUIDE.md":        "notifications/NOTIFICATIONS_GUIDE.md",
 
     # ── Scheduler XMLs ────────────────────────────────────────────────────────
-    "smc_trend_task.xml":            "scheduler/smc_trend_task.xml",
     "mean_reversion_task.xml":       "scheduler/mean_reversion_task.xml",
-    "scalper_task.xml":              "scheduler/scalper_task.xml",
-    "fft_task.xml":                  "scheduler/fft_task.xml",
     "telegram_task.xml":             "scheduler/telegram_task.xml",
     "reporter_task.xml":             "scheduler/reporter_task.xml",
     "monitor_task.xml":              "scheduler/monitor_task.xml",
@@ -104,12 +93,6 @@ MANIFEST = {
     "gold_main_config.json":         "markets/fx/instances/gold_main/config.json",
     "gold_main_credentials.template.json":
                                      "markets/fx/instances/gold_main/credentials.template.json",
-    "gold_scalper_config.json":      "markets/fx/instances/gold_scalper/config.json",
-    "gold_scalper_credentials.template.json":
-                                     "markets/fx/instances/gold_scalper/credentials.template.json",
-    "gold_fft_config.json":          "markets/fx/instances/gold_fft/config.json",
-    "gold_fft_credentials.template.json":
-                                     "markets/fx/instances/gold_fft/credentials.template.json",
     # ── Root files ────────────────────────────────────────────────────────────
     "algo.py":                                   "algo.py",
     "README.md":                                 "README.md",
@@ -127,7 +110,6 @@ MANIFEST = {
 # =============================================================================
 
 OLD_FILES = [
-    "bots/bot1_smc_trend.py",
     "bots/bot2_mean_reversion.py",
     "bots/bot3_scalper.py",
     "bots/bot4_lucidflex.py",

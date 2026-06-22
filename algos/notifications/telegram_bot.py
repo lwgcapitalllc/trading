@@ -12,9 +12,9 @@ READ-ONLY COMMANDS:
 
 CONTROL COMMANDS (require /confirm within 30 seconds):
   /restart         — restart all bots
-  /restart smc     — restart specific bot (smc/reversion/scalper/fft)
+  /restart reversion — restart specific bot (reversion)
   /stop            — stop all bots
-  /stop smc        — stop specific bot
+  /stop reversion  — stop specific bot
   /emergency       — kill everything immediately
   /confirm         — confirm pending action
 
@@ -61,21 +61,10 @@ ROLE_COMMANDS = {
 
 
 TASK_NAMES = {
-    "smc":       "BOT_SMC_TREND",
     "reversion": "BOT_MEAN_REVERSION",
-    "scalper":   "BOT_SCALPER",
-    "fft":       "BOT_FFT",
 }
 
 BOTS = {
-    "smc": {
-        "name":      "SMC Trend",
-        "state_key": "smc_trend",
-        "script": "bot_smc_trend.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
-        "trades": ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_trades.json",
-        "log":    ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
-    },
     "reversion": {
         "name":      "Mean Reversion",
         "state_key": "mean_reversion",
@@ -83,20 +72,6 @@ BOTS = {
         "equity": ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "trades": ALGOS_ROOT / "markets/fx/instances/gold_main/mean_reversion_trades.json",
         "log":    ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
-    },
-    "scalper": {
-        "name":   "Scalper",
-        "script": "bot_scalper.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_equity.json",
-        "trades": ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_trades.json",
-        "log":    ALGOS_ROOT / "markets/fx/instances/gold_scalper/bot_scalper.log",
-    },
-    "fft": {
-        "name":   "FFT",
-        "script": "bot_fft.py",
-        "equity": ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_equity.json",
-        "trades": ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_trades.json",
-        "log":    ALGOS_ROOT / "markets/fx/instances/gold_fft/bot_fft.log",
     },
 }
 
@@ -459,10 +434,7 @@ def cmd_status() -> str:
     lines  = [f"📊 *Bot Status*  _{now_tx}_", ""]
 
     BOT_SCRIPTS = {
-        "smc_trend":      "bot_smc_trend.py",
         "mean_reversion": "bot_mean_reversion.py",
-        "scalper":        "bot_scalper.py",
-        "fft":            "bot_fft.py",
     }
 
     lines.append("*Trading Bots*")
@@ -629,15 +601,15 @@ def cmd_help() -> str:
         "`/users`          List authorized users\n\n"
         "*Control*  _type /confirm within 30s_\n"
         "`/restart`        Restart all bots\n"
-        "`/restart smc`    Restart one bot\n"
+        "`/restart reversion` Restart one bot\n"
         "`/stop`           Stop all bots\n"
-        "`/stop scalper`   Stop one bot\n"
+        "`/stop reversion` Stop one bot\n"
         "`/emergency`      Kill everything immediately\n\n"
         "*Override*  _no confirm needed_\n"
-        "`/resume scalper` Resume a locked bot (overrides peak protection)\n"
+        "`/resume reversion` Resume a locked bot (overrides peak protection)\n"
         "`/resetweek`      Reset weekly/daily P&L references to current balance\n"
-        "`/resetweek smc`  Reset one bot only\n\n"
-        "_Bot keys: smc  reversion  scalper  fft_"
+        "`/resetweek reversion` Reset one bot only\n\n"
+        "_Bot keys: reversion_"
     )
 
 
@@ -758,7 +730,7 @@ def handle_message(text: str, chat_id: str, user_id: str) -> str:
             return denied()
         bot_key = parse_bot_key(parts)
         if not bot_key:
-            return "Usage: `/resume <bot>`\nBot keys: smc  reversion  scalper  fft"
+            return "Usage: `/resume <bot>`\nBot keys: reversion"
         from bot_state import read_bot, write_bot
         state_key = BOTS[bot_key].get("state_key", bot_key)
         state = read_bot(state_key)

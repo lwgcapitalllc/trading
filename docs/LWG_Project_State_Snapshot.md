@@ -30,7 +30,7 @@ Two standing rules shape every strategy: intraday only (flat by session end, nev
 - NinjaTrader 8 — backtest engine, Strategy Analyzer, and native optimizer.
 - `nt8_agent.py` (port 8765 via SSH tunnel) — Flask HTTP bridge; `pywinauto` drives the NT8 WPF UI.
 - `mt5_agent.py` (port 8766 via SSH tunnel) — Flask HTTP bridge; drives the MT5 Strategy Tester and supplies intraday OHLC for the price chart.
-- Four live MT5 forex/gold trading bots (`algos/`) — demo phase on PU Prime accounts.
+- One reference MT5 forex/gold bot (`algos/`, Mean Reversion on gold_main) — demo phase on a PU Prime account. SMC Trend, Scalper, and FFT were removed 2026-06-21 for a backtest-first rebuild.
 - Windows Task Scheduler — `NT8Agent` (NT8 agent), `MT5AgentRDP` (MT5 agent), `SYS_STARTUP` (bots).
 
 **SSH tunnel:** `start.sh` opens a persistent `ssh -N forexvps` background process. `LocalForward 8765` (NT8 agent) and `LocalForward 8766` (MT5 agent) use `127.0.0.1` as the remote target — not `localhost` — because the VPS resolves `localhost` to IPv6 but the Flask agents bind IPv4 only.
@@ -43,7 +43,7 @@ Two standing rules shape every strategy: intraday only (flat by session end, nev
 
 ```
 trading/
-├── algos/           ← Four live MT5 forex/gold bots on the VPS (demo phase)
+├── algos/           ← One reference MT5 forex/gold bot on the VPS (Mean Reversion, demo phase)
 ├── smart-money/     ← Crypto/forex trader scanner for copy-trading candidates
 ├── command-center/  ← React + FastAPI local operations platform (fully live)
 ├── regime/          ← Shared market regime classifier (live bots + backtest lab)
@@ -59,7 +59,7 @@ trading/
 ## What's shipped (oldest first)
 
 ### App shell + Smart Money + Bots monitor (pre-M1) ✅
-First working command center. React shell with sidebar routing, the Bots tab (SSH monitor for gold_main/gold_scalper/gold_fft, risk-cap deploy, Telegram users), and the full Smart Money pipeline UI (scan, terminal, rankings, candidate profiles, disqualified log, config, cache). Smart Money stages 1–2 and 5 are live; stages 3–4 are blocked on API keys.
+First working command center. React shell with sidebar routing, the Bots tab (SSH monitor for gold_main, risk-cap deploy, Telegram users), and the full Smart Money pipeline UI (scan, terminal, rankings, candidate profiles, disqualified log, config, cache). Smart Money stages 1–2 and 5 are live; stages 3–4 are blocked on API keys.
 
 ### Pre-M4 unification — single regime classifier ✅
 The regime classifier was simplified to one 5-label output set (TRENDING / TRANSITIONING / RANGING / HIGH_VOLATILITY / LOW_VOLATILITY, plus UNKNOWN) and made the single canonical implementation in `regime/`. The live bots use it via `algos/shared/shared_regime.py`; the lab imports it directly. The old two-mode design and any duplicate classifiers were removed.

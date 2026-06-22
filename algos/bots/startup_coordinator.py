@@ -9,7 +9,7 @@ Run via SYS_STARTUP task at boot, or manually:
     python C:/trading/algos/bots/startup_coordinator.py
 
 Single-bot mode (Command Center per-bot start/restart):
-    python C:/trading/algos/bots/startup_coordinator.py --bot smc_trend
+    python C:/trading/algos/bots/startup_coordinator.py --bot mean_reversion
 
 In single-bot mode: skips lock clear, skips marking other bots stopped,
 launches the bot and exits immediately (bot survives via CREATE_NEW_PROCESS_GROUP).
@@ -30,39 +30,12 @@ from bot_state import set_started, set_status
 
 STARTUP_SEQUENCE = [
     (
-        "smc_trend",
-        "SMC Trend",
-        r"C:\trading\algos\bots\bot_smc_trend.py",
-        r"C:\trading\algos\markets\fx\instances\gold_main\config.json",
-        r"C:\trading\algos\markets\fx\instances\gold_main\smc_trend_stdout.log",
-        "Connected | #700103491",
-        30,
-    ),
-    (
         "mean_reversion",
         "Mean Reversion",
         r"C:\trading\algos\bots\bot_mean_reversion.py",
         r"C:\trading\algos\markets\fx\instances\gold_main\config.json",
         r"C:\trading\algos\markets\fx\instances\gold_main\mean_reversion_stdout.log",
         "Connected | #700103491",
-        30,
-    ),
-    (
-        "scalper",
-        "Scalper",
-        r"C:\trading\algos\bots\bot_scalper.py",
-        r"C:\trading\algos\markets\fx\instances\gold_scalper\config.json",
-        r"C:\trading\algos\markets\fx\instances\gold_scalper\scalper_stdout.log",
-        "Connected | #700107520",
-        30,
-    ),
-    (
-        "fft",
-        "FFT",
-        r"C:\trading\algos\bots\bot_fft.py",
-        r"C:\trading\algos\markets\fx\instances\gold_fft\config.json",
-        r"C:\trading\algos\markets\fx\instances\gold_fft\fft_stdout.log",
-        "Connected | #700107749",
         30,
     ),
 ]
@@ -108,7 +81,7 @@ def wait_for_connection(log_path: str, ready_string: str,
 def main():
     parser = argparse.ArgumentParser(description="Start bots (all or single)")
     parser.add_argument("--bot", default=None,
-                        help="Start only this bot key (e.g. smc_trend). "
+                        help="Start only this bot key (e.g. mean_reversion). "
                              "Skips lock clear and connection wait — bot detaches immediately.")
     args = parser.parse_args()
 

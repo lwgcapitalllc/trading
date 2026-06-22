@@ -13,11 +13,7 @@ All tasks run as `trader` user on the VPS.
 | SYS_MONITOR | Scheduled | Every 1 min | `notifications/monitor.py` |
 | SYS_PNLTRACKER | Scheduled | Every 1 min | `notifications/pnl_tracker.py` |
 | SYS_REPORTER | Scheduled | Daily 4pm CT | `notifications/reporter.py` |
-| SYS_BACKUP | Scheduled | Daily midnight + noon CT (twice daily) | `scripts/backup.py` |
-| BOT_SMC_TREND | **Disabled** | (manual only) | `bots/bot_smc_trend.py` |
 | BOT_MEAN_REVERSION | **Disabled** | (manual only) | `bots/bot_mean_reversion.py` |
-| BOT_SCALPER | **Disabled** | (manual only) | `bots/bot_scalper.py` |
-| BOT_FFT | **Disabled** | (manual only) | `bots/bot_fft.py` |
 
 **Important**: BOT_ tasks are disabled. Only `SYS_STARTUP` fires bots.
 `SYS_STARTUP` uses `schtasks /run` to start each BOT_ task sequentially.
@@ -42,21 +38,14 @@ $tasks = @(
     "monitor_task.xml:SYS_MONITOR",
     "pnl_tracker_task.xml:SYS_PNLTRACKER",
     "reporter_task.xml:SYS_REPORTER",
-    "backup_task.xml:SYS_BACKUP",
-    "smc_trend_task.xml:BOT_SMC_TREND",
-    "mean_reversion_task.xml:BOT_MEAN_REVERSION",
-    "scalper_task.xml:BOT_SCALPER",
-    "fft_task.xml:BOT_FFT"
+    "mean_reversion_task.xml:BOT_MEAN_REVERSION"
 )
 foreach ($t in $tasks) {
     $parts = $t.Split(":")
     Copy-Item "C:\trading\algos\scheduler\$($parts[0])" "C:\temp\$($parts[0])"
     schtasks /create /tn $parts[1] /xml "C:\temp\$($parts[0])" /ru trader /rp $pass
 }
-schtasks /change /tn BOT_SMC_TREND /disable
 schtasks /change /tn BOT_MEAN_REVERSION /disable
-schtasks /change /tn BOT_SCALPER /disable
-schtasks /change /tn BOT_FFT /disable
 ```
 
 ---
@@ -70,7 +59,6 @@ ssh forexvps "schtasks /query /fo TABLE | findstr BOT_"
 
 # Run manually
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
-ssh forexvps "schtasks /run /tn SYS_BACKUP"
 
 # Restart everything
 ssh forexvps "del C:\trading\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"

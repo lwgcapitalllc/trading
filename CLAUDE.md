@@ -35,7 +35,7 @@ trading/
 ## System Summaries
 
 ### algos/
-Live automated trading on PU Prime demo accounts. Four bots across three account instances (gold_main, gold_scalper, gold_fft). Runs on Windows VPS (ForexVPS) via Windows Task Scheduler. Full rules in `algos/CLAUDE.md`.
+Live automated trading on PU Prime demo accounts. One reference bot (Mean Reversion) on the gold_main instance; the SMC Trend, Scalper, and FFT bots were removed 2026-06-21 for a backtest-first rebuild. Runs on Windows VPS (ForexVPS) via Windows Task Scheduler. Full rules in `algos/CLAUDE.md`.
 
 ### smart-money/
 Scans and profiles consistent crypto/forex traders for copy trading candidate pool construction. Runs locally on Mac. Stages 1–2 and 5 live; Stages 3–4 need API keys. Full rules in `smart-money/CLAUDE.md`.
@@ -69,19 +69,18 @@ sleep 60
 ssh forexvps "wmic process where \"name='python.exe'\" get commandline 2>nul"
 ```
 
-VPS paths: `C:\trading\algos\` (main), `C:\trading-backup\` (backups worktree)
+VPS path: `C:\trading\algos\` (main)
 
 ---
 
 ## Branches
 
 - `main` — active development, all code changes go here
-- `backups` — orphan branch, VPS runtime data only, never merges to main
 
 ---
 
 ## Never Do
 
-- Commit `credentials.json`, `users.json`, `.env`, any `.pkl` model files, or API tokens/keys to main branch
+- Commit `credentials.json`, `users.json`, `.env`, any `.pkl` model files, or API tokens/keys
 - Touch `algos/` when working on `smart-money/` or `command-center/` and vice versa
 - Build a second regime classifier in `command-center/` or anywhere else — `regime/classifier.py` is the canonical implementation; all consumers import from there

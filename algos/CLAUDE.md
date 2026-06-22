@@ -1,9 +1,9 @@
 # CLAUDE.md — LWG Capital Algo Trading Suite
 
-**Purpose:** Standing instructions for the live XAUUSD/forex MT5 bot suite (four bots across three PU Prime demo instances) running on the Windows VPS.
+**Purpose:** Standing instructions for the live XAUUSD/forex MT5 bot suite (one reference bot on a single PU Prime demo instance) running on the Windows VPS.
 **Scope:** This covers the bots, shared utilities, risk rules, scheduler, and deploy for `algos/`. It does NOT cover `command-center/`, `smart-money/`, or `regime/` internals (regime is imported via the `shared_regime.py` shim).
-**Status:** Active — demo trading, accumulating trade history toward Calmar targets. Phases 1–5 of the multi-instrument architecture complete.
-**Last reviewed:** 2026-06-10
+**Status:** Active — Mean Reversion kept as a read-only reference bot; the suite is being rebuilt backtest-first.
+**Last reviewed:** 2026-06-22
 
 This file is auto-loaded by Claude Code at the start of every session. Read it fully before touching any code.
 
@@ -31,13 +31,9 @@ Think like one at all times:
 
 | Bot | File | Strategy | Watchlist | Account | MT5 Instance |
 |-----|------|----------|-----------|---------|--------------|
-| SMC Trend | `bot_smc_trend.py` | Judas Swing + FVG, H4 trend filter, M15 | XAUUSD, GBPJPY, EURUSD, XAGUSD, USDJPY | gold_main #700103491 | PU Prime Terminal |
 | Mean Reversion | `bot_mean_reversion.py` | BB + RSI + VWAP, 1R target, fast close | XAUUSD, EURUSD, AUDUSD, USDCAD, EURGBP | gold_main #700103491 | PU Prime Terminal |
-| Scalper | `bot_scalper.py` | EMA stack + pullback, M5/M1, 5–20 trades/day | XAUUSD, GBPJPY, NAS100, EURUSD, USDJPY | gold_scalper #700107520 | MT5_Scalper |
-| FFT | `bot_fft.py` | Dual Fibonacci confluence, H1+H4 trend | XAUUSD only (Phase 5 gate) | gold_fft #700107749 | MT5_FFT |
 
-SMC Trend and Mean Reversion share one MT5 account and are designed to be uncorrelated.
-Scalper is isolated on its own account (higher volatility). FFT is lowest risk (1%) — gold-only until 30+ closed trades with solid Calmar.
+Mean Reversion is the one surviving bot, kept as a read-only reference. SMC Trend, Scalper, and FFT were removed 2026-06-21 for a backtest-first rebuild.
 
 ### Shared Components
 
@@ -53,7 +49,7 @@ Shared logic lives in `shared/`; the launcher, coordinator, and config loader li
 | `mt5_ops.py` | `shared/` | All MT5 operations — symbol-parameterized, single shared instance per bot |
 | `bot_state.py` | `shared/` | Single source of truth read/write for each instance's `bot_state.json` |
 | `notify.py` | `shared/` | Telegram notification helpers (token source of truth) |
-| `structure_engine.py` | `shared/` | BOS/SOS/retracement event detection (used by FFT) |
+| `structure_engine.py` | `shared/` | BOS/SOS/retracement event detection |
 | `bot_utils.py` | `bots/` | Config loader, logging, path resolver |
 | `launcher.py` | `bots/` | Universal Task Scheduler launcher |
 | `startup_coordinator.py` | `bots/` | Orchestrates bot startup sequence |
@@ -62,25 +58,15 @@ Multi-instrument architecture (Phases 1–5) explained in `docs/ARCHITECTURE.md`
 
 ### Risk Rules Summary
 
-SMC Trend: 1%/3:1/5% daily/10% weekly. Mean Reversion: 1%/1:1/5%/10%. Scalper: 1–2%/−5% floor/+15% ceiling/10% weekly/8% peak drawdown. FFT: 1%/2:1–5:1/5%/10%. Full rules in each bot's `docs/BOT_*_GUIDE.md`.
+Mean Reversion: 1%/1:1/5% daily/10% weekly. Full rules in `docs/BOT_MEAN_REVERSION_GUIDE.md`.
 
 ### AI Thresholds
 
-SMC Trend: `min_ai_probability = 0.55`. Mean Reversion, Scalper, FFT: `min_ai_probability = 0.52`. All bots train at 15 closed trades, retrain every 5, require AUC ≥ 0.55.
-
-### Current Phase
-
-Demo trading. Targets to advance:
-- 15+ closed trades per bot
-- Calmar >= 2.0 to continue demo
-- Calmar >= 2.5 (SMC Trend) / 2.0 (Mean Reversion) to begin prop firm evaluation
-- FFT risk stays at 1% until 30+ trades with solid Calmar
-
-Calmar benchmarks: 2.0 = okay | 3.0 = decent | 5.0+ = exceptional
+Mean Reversion: `min_ai_probability = 0.52`. Trains at 15 closed trades, retrains every 5, requires AUC ≥ 0.55.
 
 ### What I Am Working On
 
-**Phase:** Demo trading — accumulating trade history toward Calmar targets. All Phases 1–5 of the multi-instrument architecture are complete. No open architectural questions.
+**Phase:** Mean Reversion is kept as a read-only reference bot. The live suite is being rebuilt backtest-first — SMC Trend, Scalper, and FFT were removed 2026-06-21 to be redesigned through the command-center backtest lab before any return to live demo trading.
 
 Update this section when the phase changes or a new open question arises.
 

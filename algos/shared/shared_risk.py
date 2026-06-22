@@ -21,7 +21,7 @@ Default daily_budget = each bot's existing daily loss cap, so day-one
 behaviour is identical to the static cap.
 
 Usage:
-    engine = RiskEngine("BOT_SMC_TREND", daily_budget_pct=10.0, log=log)
+    engine = RiskEngine("BOT_MEAN_REVERSION", daily_budget_pct=10.0, log=log)
     engine.reset_day(acct.balance)          # at startup + each midnight
 
     allowed, effective_risk = engine.evaluate(open_trades, balance, proposed_risk_pct)

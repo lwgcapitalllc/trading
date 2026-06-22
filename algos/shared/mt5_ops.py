@@ -51,7 +51,7 @@ Usage in a bot:
     from mt5_ops import BotMT5, now_utc, is_market_close, should_close_for_weekend
     from mt5_ops import is_dead_zone, get_atr, get_ema
 
-    _mt5 = BotMT5(SYMBOL, MAGIC, "BOT_SCALPER", _CFG, ACCOUNT, log)
+    _mt5 = BotMT5(SYMBOL, MAGIC, "BOT_MEAN_REVERSION", _CFG, ACCOUNT, log)
 
     def connect():              return _mt5.connect()
     def get_candles(tf, n):     return _mt5.get_candles(tf, n)
@@ -145,7 +145,7 @@ class BotMT5:
     all MT5 operations can be called without passing those values every time.
     Create one instance per bot after loading config; pass it into run().
 
-    bot_label (e.g. "BOT_SCALPER") appears in MT5 order comments and log
+    bot_label (e.g. "BOT_MEAN_REVERSION") appears in MT5 order comments and log
     messages so positions can be identified in the broker terminal.
     """
 

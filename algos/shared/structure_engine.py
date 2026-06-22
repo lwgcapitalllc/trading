@@ -1,7 +1,7 @@
 """
 FFT Structure Engine — event-driven market structure detection.
 
-Replaces find_swing_highs / find_swing_lows / detect_bos in bot_fft.py.
+Swing-high/low and BOS detection, extracted into a shared engine.
 
 Core rules:
   - Body closes confirm breaks; wick-only moves never register.

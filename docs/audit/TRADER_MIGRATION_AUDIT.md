@@ -1,5 +1,16 @@
 # Trader Migration Audit — Administrator → trader
 
+> **Stale entries flagged 2026-06-22.** Several files referenced below were deleted in the
+> 2026-06-21 suite cutdown and no longer exist — ignore their rows when running this audit:
+> - Scheduler XMLs `smc_trend_task.xml`, `scalper_task.xml`, `fft_task.xml`, and `backup_task.xml`
+>   (the SMC Trend / Scalper / FFT bots and the VPS data-backup feature were removed).
+> - The backup scripts `scripts/backup.py` and `scripts/nt8_backup.py` (the `backups` orphan
+>   branch and twice-daily backup task are gone), so the `nt8_backup.py` class (b) fallback note
+>   and the "Restore Data from Backup" / profile-note steps no longer apply.
+>
+> The remaining Administrator→trader actions (Python path, `backtest_config.json`, `setup_agent_task.py`,
+> `bots.py`, `test_integration.py`, the surviving scheduler XMLs, and the bootstrap scripts) still stand.
+
 **Context:** This VPS was provisioned with only a `trader` login (a local admin account).
 Over time, software installed to default "current user" locations that landed under the
 built-in Administrator profile by accident — Python is at

@@ -48,30 +48,15 @@ import bot_state as _bot_state
 # "manage trades only") can sleep up to ~2-3 min. 5 min is a safe floor.
 LOG_STALE_SECS = 5 * 60
 
+# SMC Trend, Scalper, and FFT were removed 2026-06-21 for a backtest-first
+# rebuild. Mean Reversion is kept as the reference bot. Add a new bot here —
+# {"name", "suppress_key", "script", "log"} — when one goes live.
 BOTS = {
-    "smc_trend": {
-        "name":         "Bot SMC Trend",
-        "suppress_key": "smc",
-        "script":       "bot_smc_trend.py",
-        "log":          ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
-    },
     "mean_reversion": {
         "name":         "Bot Mean Reversion",
         "suppress_key": "reversion",
         "script":       "bot_mean_reversion.py",
         "log":          ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
-    },
-    "scalper": {
-        "name":         "Bot Scalper",
-        "suppress_key": "scalper",
-        "script":       "bot_scalper.py",
-        "log":          ALGOS_ROOT / "markets/fx/instances/gold_scalper/bot_scalper.log",
-    },
-    "fft": {
-        "name":         "Bot FFT",
-        "suppress_key": "fft",
-        "script":       "bot_fft.py",
-        "log":          ALGOS_ROOT / "markets/fx/instances/gold_fft/bot_fft.log",
     },
 }
 

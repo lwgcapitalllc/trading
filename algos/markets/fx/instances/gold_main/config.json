@@ -1,5 +1,5 @@
 {
-  "_instance": "gold_main — SMC Trend + Mean Reversion (XAUUSD)",
+  "_instance": "gold_main — Mean Reversion (XAUUSD). SMC Trend removed 2026-06-21.",
   "account_type": "demo",
   "symbol": "XAUUSD.s",
   "dead_zone": {
@@ -8,15 +8,12 @@
     "end_ct": 17
   },
   "risk": {
-    "risk_pct_bot1": 1,
     "risk_pct_bot2": 1,
     "min_lot_size": 0.01,
     "max_lot_size": 10.0
   },
   "protection": {
-    "max_daily_loss_pct_bot1": 5,
     "max_daily_loss_pct_bot2": 5,
-    "max_weekly_loss_pct_bot1": 10,
     "max_weekly_loss_pct_bot2": 10,
     "cooldown_1_loss_seconds": 1800,
     "cooldown_2_loss_seconds": 3600,
@@ -33,87 +30,6 @@
     "atr_ratio_compressing": 0.8,
     "rsi_range_trending": 35,
     "rsi_range_ranging": 20
-  },
-  "bot_scalper": {
-    "min_atr_ratio": 0.8,
-    "force_trade": false,
-    "ema_fast": 9,
-    "ema_mid": 21,
-    "ema_slow": 50,
-    "min_rr": 1.5,
-    "atr_period": 14,
-    "atr_sl_multiplier": 0.8,
-    "pullback_tolerance": 0.3,
-    "breakeven_at_r": 0.5,
-    "trail_atr_mult": 0.4,
-    "max_hold_candles": 20,
-    "daily_profit_target_pct": 5,
-    "daily_ceiling_multiplier": 3,
-    "peak_drawdown_trigger_pct": 8,
-    "daily_loss_cap_pct": 5,
-    "weekly_loss_cap_pct": 10,
-    "account_goal": 10000,
-    "dead_zone_start_utc": 15,
-    "dead_zone_end_utc": 19,
-    "news_pause_minutes": 30,
-    "news_widen_sl_multiplier": 1.0,
-    "news_events": [],
-    "compound_tiers": [
-      {
-        "from": 0,
-        "to": 2000,
-        "risk_pct": 1
-      },
-      {
-        "from": 2000,
-        "to": 4000,
-        "risk_pct": 2
-      },
-      {
-        "from": 4000,
-        "to": 7000,
-        "risk_pct": 2
-      },
-      {
-        "from": 7000,
-        "to": 10000,
-        "risk_pct": 2
-      },
-      {
-        "from": 10000,
-        "to": 999999,
-        "risk_pct": 1
-      }
-    ]
-  },
-  "bot_smc_trend": {
-    "watchlist": ["XAUUSD.s", "GBPJPY.s", "EURUSD.s", "XAGUSD.s", "USDJPY.s"],
-    "min_atr_ratio": 0.8,
-    "force_trade": false,
-    "correlation_action": "block",
-    "daily_budget_pct": 5,
-    "min_rr": 3.0,
-    "atr_period": 14,
-    "atr_sl_multiplier": 1.5,
-    "ema_trend_period": 200,
-    "min_confluence_score": 5,
-    "min_ai_probability": 0.55,
-    "partial_close_r": 3.0,
-    "partial_close_pct": 0.5,
-    "runner_trail_wide": 2.0,
-    "runner_trail_mid": 1.5,
-    "runner_trail_tight": 1.0,
-    "runner_key_level_exit": true,
-    "runner_session_exit": true,
-    "london_kz_start_utc": 7,
-    "london_kz_end_utc": 10,
-    "ny_kz_start_utc": 12,
-    "ny_kz_end_utc": 15,
-    "asian_session_start_utc": 20,
-    "asian_session_end_utc": 24,
-    "min_sweep_atr_factor": 0.15,
-    "velocity_trail_sensitivity": 1.5,
-    "breakeven_at_r": 1.0
   },
   "bot_mean_reversion": {
     "watchlist": ["XAUUSD.s", "EURUSD.s", "AUDUSD.s", "USDCAD.s", "EURGBP.s"],

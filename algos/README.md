@@ -9,11 +9,11 @@ Runs on a Windows VPS (ForexVPS). Managed from Mac via SSH alias `forexvps`.
 
 | Instance | Account | Bot(s) | Balance |
 |---|---|---|---|
-| gold_main | #700103491 | SMC Trend + Mean Reversion | $2,759.28 |
-| gold_scalper | #700107520 | Scalper | $981.41 |
-| gold_fft | #700107749 | FFT | $1,070.50 |
+| gold_main | #700103491 | Mean Reversion | $2,759.28 |
 
-Starting balance for all accounts: **$1,000**
+Starting balance: **$1,000**
+
+Mean Reversion is the one surviving bot, kept as a read-only reference. SMC Trend, Scalper, and FFT were removed 2026-06-21 for a backtest-first rebuild.
 
 ---
 
@@ -24,20 +24,12 @@ algos/
 ├── README.md
 ├── docs/
 │   ├── ARCHITECTURE.md              ← Multi-instrument system design (Phases 1–5)
-│   ├── BOT_SMC_TREND_GUIDE.md
-│   ├── BOT_MEAN_REVERSION_GUIDE.md
-│   ├── BOT_SCALPER_GUIDE.md
-│   └── BOT_FFT_GUIDE.md
+│   └── BOT_MEAN_REVERSION_GUIDE.md
 ├── scripts/
-│   ├── backup.py                    ← Twice-daily backup to GitHub (backups branch)
-│   ├── nt8_backup.py                ← NT8 user-folder backup extension (called by backup.py)
 │   ├── deploy.py                    ← File staging tool
 │   └── cleanup_vps.bat
 ├── bots/
-│   ├── bot_smc_trend.py
 │   ├── bot_mean_reversion.py
-│   ├── bot_scalper.py
-│   ├── bot_fft.py
 │   ├── bot_utils.py
 │   └── startup_coordinator.py       ← Sequential startup (single entry point)
 ├── shared/
@@ -49,7 +41,7 @@ algos/
 │   ├── shared_regime.py             ← Market regime detection
 │   ├── shared_risk.py               ← Dynamic risk / capacity engine (RiskEngine)
 │   ├── shared_scanner.py            ← Multi-instrument scanner (InstrumentScanner, LearningPhaseGate)
-│   ├── structure_engine.py          ← BOS/SOS/retracement event detection (used by FFT)
+│   ├── structure_engine.py          ← BOS/SOS/retracement event detection
 │   └── thresholds.json              ← Risk cap overrides (written by command-center deploy)
 ├── notifications/
 │   ├── monitor.py                   ← Process watchdog (every 1 min)
@@ -77,19 +69,10 @@ algos/
     │   ├── tools/
     │   │   └── mt5_agent.py        ← MT5 HTTP agent (VPS, port 8766)
     │   └── instances/
-    │       ├── gold_main/
-    │       │   ├── config.json
-    │       │   ├── bot_state.json  ← Live state (balance, P&L, status)
-    │       │   ├── smc_trend_trades.json
-    │       │   └── mean_reversion_trades.json
-    │       ├── gold_scalper/
-    │       │   ├── config.json
-    │       │   ├── bot_state.json
-    │       │   └── scalper_trades.json
-    │       └── gold_fft/
+    │       └── gold_main/
     │           ├── config.json
-    │           ├── bot_state.json
-    │           └── fft_trades.json
+    │           ├── bot_state.json  ← Live state (balance, P&L, status)
+    │           └── mean_reversion_trades.json
     └── crypto/instances/           ← Reserved (empty)
 ```
 
@@ -126,34 +109,11 @@ ssh forexvps "wmic process where \"name='python.exe'\" get commandline 2>nul"
 
 ---
 
-## VPS Data Backup
-
-Critical VPS-only files are backed up to GitHub twice daily (midnight + noon CT) via `SYS_BACKUP`.
-
-**What is backed up:** `bot_state.json`, `*_trades.json` (AI training data),
-`*_model.pkl` + `*_model_scaler.pkl` (trained AI models), `*_equity.json`,
-`*_daily.json`, `*_weekly.json`, `*_stdout.log`, `users.json`;
-NT8 user folder: `nt8/bin/Custom` (custom NinjaScript), `nt8/workspaces`,
-`nt8/templates`, `nt8/strategyanalyzerlogs` (backtest result XMLs)
-
-**Where:** The `backups` orphan branch of this repo (separate from `main`).
-Backup commits never land on `main`, so Mac development and VPS backups never conflict.
-
-**On VPS:** `scripts/backup.py` uses a git worktree at `C:\trading-backup` pointing to the
-`backups` branch. The `main` branch working tree at `C:\trading\algos` is never touched
-by backup operations.
-
-To restore after VPS rebuild — see `scripts/README.md` § Full VPS recovery.
-
----
-
 ## MT5 Instances (VPS)
 
 | Terminal | Path | Account |
 |---|---|---|
 | MT5 Main | `C:\Program Files\PU Prime MT5 Terminal\terminal64.exe` | #700103491 |
-| MT5 Scalper | `C:\MT5_Scalper\terminal64.exe` | #700107520 |
-| MT5 FFT | `C:\MT5_FFT\terminal64.exe` | #700107749 |
 
 **Critical**: Each terminal must have ONLY its own account logged in.
 If extra accounts appear in Navigator → Accounts → right-click → Remove.

@@ -3,9 +3,9 @@
     LWG Capital — VPS bootstrap / disaster-recovery script.
 
     Rebuilds the algo trading suite on a fresh (or wiped) Windows VPS from the
-    GitHub repo plus the `backups` branch. Idempotent: safe to re-run. Each
-    phase checks current state before acting, and a failed phase reports the
-    problem and moves on rather than aborting the whole run.
+    GitHub repo. Idempotent: safe to re-run. Each phase checks current state
+    before acting, and a failed phase reports the problem and moves on rather
+    than aborting the whole run.
 
     This automates everything in docs/SETUP.md that can be automated. The two
     things it CANNOT do for you (and will instead detect + report) are:
@@ -19,9 +19,7 @@
       2. Python deps ....... pip install the runtime packages
       3. MT5 check ......... verify the three terminals exist (cannot install)
       4. Secrets scaffold .. create credentials.json / users.json templates if absent
-      5. Restore data ...... (opt-in) restore live state from the `backups` branch
-      6. Backup worktree ... set up C:\trading-backup for future SYS_BACKUP runs
-      7. Task Scheduler .... create the 10 tasks, disable the 4 BOT_ tasks
+      7. Task Scheduler .... create the tasks, disable the BOT_ task
       8. Start ............. clear stale lock, run SYS_STARTUP, verify processes
 
 .PARAMETER RepoUrl
@@ -32,15 +30,6 @@
 
 .PARAMETER Branch
     Branch to check out for code. Default: main
-
-.PARAMETER RestoreData
-    Opt-in. Restore live bot state (balances, P&L, trade history, AI models)
-    from the `backups` branch. OFF by default because it overwrites live data —
-    only use on a genuinely fresh VPS or after disaster recovery.
-
-.PARAMETER Force
-    Allow -RestoreData to overwrite existing bot_state.json files. Without it,
-    the restore phase refuses if live state is already present.
 
 .PARAMETER SkipDeps
     Skip the pip install phase.
@@ -58,11 +47,11 @@
     Full path to python.exe. Auto-detected if omitted.
 
 .EXAMPLE
-    # Fresh VPS, full rebuild including data restore:
-    .\bootstrap_vps.ps1 -RestoreData
+    # Fresh VPS, full rebuild:
+    .\bootstrap_vps.ps1
 
 .EXAMPLE
-    # Re-run on a partially-set-up box, skip the risky data restore:
+    # Re-run on a partially-set-up box:
     .\bootstrap_vps.ps1
 
 .NOTES
@@ -76,8 +65,6 @@ param(
     [string] $RepoUrl    = 'https://github.com/lwgcapitalllc/trading.git',
     [string] $RepoRoot   = 'C:\trading',
     [string] $Branch     = 'main',
-    [switch] $RestoreData,
-    [switch] $Force,
     [switch] $SkipDeps,
     [switch] $SkipTasks,
     [switch] $NoStart,
@@ -91,8 +78,6 @@ $ErrorActionPreference = 'Stop'
 # Static configuration — derived from the repo docs. Edit here, not inline.
 # --------------------------------------------------------------------------
 $AlgosRoot     = Join-Path $RepoRoot 'algos'
-$BackupWorktree = 'C:\trading-backup'      # README: backups worktree location
-$RestoreStaging = 'C:\trading-restore'     # SETUP.md staging dir for restore
 $LockFile      = Join-Path $AlgosRoot 'mt5_connect.lock'
 $TempDir       = 'C:\temp'
 
@@ -131,39 +116,10 @@ $Tasks = @(
     [pscustomobject]@{ Xml = 'monitor_task.xml';             Name = 'SYS_MONITOR' }
     [pscustomobject]@{ Xml = 'pnl_tracker_task.xml';         Name = 'SYS_PNLTRACKER' }
     [pscustomobject]@{ Xml = 'reporter_task.xml';            Name = 'SYS_REPORTER' }
-    [pscustomobject]@{ Xml = 'backup_task.xml';              Name = 'SYS_BACKUP' }
-    [pscustomobject]@{ Xml = 'smc_trend_task.xml';           Name = 'BOT_SMC_TREND' }
     [pscustomobject]@{ Xml = 'mean_reversion_task.xml';      Name = 'BOT_MEAN_REVERSION' }
-    [pscustomobject]@{ Xml = 'scalper_task.xml';             Name = 'BOT_SCALPER' }
-    [pscustomobject]@{ Xml = 'fft_task.xml';                 Name = 'BOT_FFT' }
 )
 # These are started by SYS_STARTUP only — disable so they never auto-fire.
-$DisableTasks = @('BOT_SMC_TREND', 'BOT_MEAN_REVERSION', 'BOT_SCALPER', 'BOT_FFT')
-
-# Files restored from the `backups` branch (relative to repo root). Tolerant:
-# missing files are skipped (e.g. AI models that don't exist until training).
-$RestoreFiles = @(
-    'markets\fx\instances\gold_main\bot_state.json'
-    'markets\fx\instances\gold_main\smc_trend_trades.json'
-    'markets\fx\instances\gold_main\mean_reversion_trades.json'
-    'markets\fx\instances\gold_main\smc_trend_model.pkl'
-    'markets\fx\instances\gold_main\smc_trend_model_scaler.pkl'
-    'markets\fx\instances\gold_main\mean_reversion_model.pkl'
-    'markets\fx\instances\gold_main\mean_reversion_model_scaler.pkl'
-    'markets\fx\instances\gold_main\gold_main_equity.json'
-    'markets\fx\instances\gold_main\smc_trend_daily.json'
-    'markets\fx\instances\gold_main\mean_reversion_daily.json'
-    'markets\fx\instances\gold_scalper\bot_state.json'
-    'markets\fx\instances\gold_scalper\scalper_trades.json'
-    'markets\fx\instances\gold_scalper\scalper_model.pkl'
-    'markets\fx\instances\gold_scalper\scalper_model_scaler.pkl'
-    'markets\fx\instances\gold_scalper\scalper_equity.json'
-    'markets\fx\instances\gold_fft\bot_state.json'
-    'markets\fx\instances\gold_fft\fft_trades.json'
-    'markets\fx\instances\gold_fft\fft_equity.json'
-    'markets\fx\instances\gold_fft\fft_daily.json'
-    'users.json'
-)
+$DisableTasks = @('BOT_MEAN_REVERSION')
 
 # --------------------------------------------------------------------------
 # Helpers
@@ -218,17 +174,6 @@ function ConvertFrom-SecureToPlain {
     $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
     try   { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
-}
-
-function Copy-IfExists {
-    param([string]$Src, [string]$Dst)
-    if (Test-Path $Src) {
-        $dstDir = Split-Path $Dst -Parent
-        if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Path $dstDir -Force | Out-Null }
-        Copy-Item $Src $Dst -Force
-        return $true
-    }
-    return $false
 }
 
 function Get-RunningBots {
@@ -369,73 +314,6 @@ function Invoke-ScaffoldSecrets {
 }
 
 # --------------------------------------------------------------------------
-# Phase 5 — Restore live data from the `backups` branch (opt-in)
-# --------------------------------------------------------------------------
-function Invoke-RestoreData {
-    Write-Phase 'Phase 5 — Restore data from backups branch'
-    if (-not $RestoreData) {
-        Write-Info 'Skipped (pass -RestoreData to restore live state on a fresh VPS).'
-        $script:Results['Restore data'] = 'skipped'
-        return
-    }
-
-    # Guard 1: never restore over a running system.
-    $running = @(Get-RunningBots)
-    if ($running.Count -gt 0) {
-        throw "Bot processes are running ($($running.Count)). Refusing to restore over a live VPS. Stop bots first."
-    }
-    # Guard 2: don't clobber existing live state unless -Force.
-    $existing = $RestoreFiles | Where-Object { $_ -like '*bot_state.json' } |
-                ForEach-Object { Join-Path $RepoRoot $_ } | Where-Object { Test-Path $_ }
-    if ($existing -and -not $Force) {
-        throw "Live bot_state.json files already exist. Re-run with -Force to overwrite (DESTRUCTIVE)."
-    }
-
-    if (Test-Path $RestoreStaging) { Remove-Item $RestoreStaging -Recurse -Force }
-    Write-Info "Cloning backups branch -> $RestoreStaging"
-    Invoke-Native { & git clone --branch backups --single-branch $RepoUrl $RestoreStaging } 'git clone (backups)'
-
-    $copied = 0; $skipped = 0
-    foreach ($rel in $RestoreFiles) {
-        $src = Join-Path $RestoreStaging $rel
-        $dst = Join-Path $RepoRoot $rel
-        if (Copy-IfExists -Src $src -Dst $dst) { $copied++; Write-Ok "restored $rel" }
-        else { $skipped++; Write-Info "not in backup, skipped: $rel" }
-    }
-    Remove-Item $RestoreStaging -Recurse -Force
-    Write-Ok "Restore complete — $copied file(s) restored, $skipped not present in backup."
-    $script:Results['Restore data'] = "OK ($copied restored)"
-}
-
-# --------------------------------------------------------------------------
-# Phase 6 — Backup worktree (so SYS_BACKUP works going forward)
-# --------------------------------------------------------------------------
-function Invoke-BackupWorktree {
-    Write-Phase 'Phase 6 — Backup worktree setup'
-    $backupScript = Join-Path $AlgosRoot 'scripts\backup.py'
-    if (-not (Test-Path $backupScript)) {
-        Write-Warn2 "scripts\backup.py not found — skipping worktree setup."
-        $script:Results['Backup worktree'] = 'missing script'
-        return
-    }
-    if (Test-Path $BackupWorktree) {
-        Write-Ok "Backup worktree already present at $BackupWorktree."
-        $script:Results['Backup worktree'] = 'OK (existing)'
-        return
-    }
-    try {
-        Write-Info 'Running backup.py --setup'
-        & $script:Py $backupScript --setup 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }
-        Write-Ok 'Backup worktree created.'
-        $script:Results['Backup worktree'] = 'OK'
-    } catch {
-        Write-Warn2 "backup.py --setup failed: $($_.Exception.Message)"
-        $script:Results['Backup worktree'] = 'failed'
-    }
-}
-
-# --------------------------------------------------------------------------
 # Phase 7 — Task Scheduler
 # --------------------------------------------------------------------------
 function Invoke-InstallTasks {
@@ -525,7 +403,7 @@ function Invoke-Phase {
 
 Write-Host "LWG Capital — VPS Bootstrap" -ForegroundColor White
 Write-Host "Repo: $RepoUrl  ->  $RepoRoot  (branch $Branch)" -ForegroundColor DarkGray
-Write-Host "RestoreData=$RestoreData  Force=$Force  SkipDeps=$SkipDeps  SkipTasks=$SkipTasks  NoStart=$NoStart" -ForegroundColor DarkGray
+Write-Host "SkipDeps=$SkipDeps  SkipTasks=$SkipTasks  NoStart=$NoStart" -ForegroundColor DarkGray
 
 # Pre-flight is fatal; the rest are independent so a partial rebuild still reports.
 Invoke-Preflight
@@ -534,8 +412,6 @@ Invoke-Phase 'Clone/update'    { Invoke-CloneRepo }
 Invoke-Phase 'Python deps'     { Invoke-PipInstall }
 Invoke-Phase 'MT5 check'       { Invoke-CheckMt5 }
 Invoke-Phase 'Secrets scaffold'{ Invoke-ScaffoldSecrets }
-Invoke-Phase 'Restore data'    { Invoke-RestoreData }
-Invoke-Phase 'Backup worktree' { Invoke-BackupWorktree }
 Invoke-Phase 'Task Scheduler'  { Invoke-InstallTasks }
 Invoke-Phase 'Start'           { Invoke-StartSystem }
 

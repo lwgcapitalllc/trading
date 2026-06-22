@@ -76,32 +76,20 @@ command-center/backend/reports/lab/
 
 # =============================================================
 # Algos — VPS-only runtime files
-# These live only on the VPS and are backed up to the
-# `backups` branch via backup.py. Never overwrite via git pull.
+# These live only on the VPS. Never overwrite via git pull.
+# (Data-backup-to-GitHub feature removed 2026-06-21.)
 # =============================================================
-
-# Algo backup snapshots (backups branch only)
-algos/backup/
 
 # Live bot state
 algos/markets/fx/instances/*/bot_state.json
 
 # Trade histories
-algos/markets/fx/instances/*/smc_trend_trades.json
 algos/markets/fx/instances/*/mean_reversion_trades.json
-algos/markets/fx/instances/*/scalper_trades.json
-algos/markets/fx/instances/*/fft_trades.json
 
 # Equity curves and daily/weekly performance
 algos/markets/fx/instances/*/gold_main_equity.json
-algos/markets/fx/instances/*/scalper_equity.json
-algos/markets/fx/instances/*/fft_equity.json
-algos/markets/fx/instances/*/smc_trend_daily.json
 algos/markets/fx/instances/*/mean_reversion_daily.json
-algos/markets/fx/instances/*/fft_daily.json
-algos/markets/fx/instances/*/smc_trend_weekly.json
 algos/markets/fx/instances/*/mean_reversion_weekly.json
-algos/markets/fx/instances/*/fft_weekly.json
 
 # Telegram runtime
 algos/users.json

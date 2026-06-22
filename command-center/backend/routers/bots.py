@@ -39,36 +39,25 @@ router = APIRouter(prefix="/bots", tags=["bots"])
 VPS_HOST = cfg.SSH_ALIAS
 
 # Mirror algo.py's constants so behaviour matches the retired panel exactly.
+# SMC Trend, Scalper, FFT removed 2026-06-21; Mean Reversion kept as reference.
 _BOT_DISPLAY_ORDER = [
-    "BOT_SMC_TREND", "BOT_MEAN_REVERSION", "BOT_SCALPER", "BOT_FFT",
+    "BOT_MEAN_REVERSION",
 ]
 _DISPLAY_NAMES = {
-    "BOT_SMC_TREND":      "SMC Trend",
     "BOT_MEAN_REVERSION": "Mean Reversion",
-    "BOT_SCALPER":        "Scalper",
-    "BOT_FFT":            "FFT",
     "SYS_TELEGRAM":       "Telegram",
     "SYS_REPORTER":       "Reporter",
     "SYS_MONITOR":        "Monitor",
     "SYS_PNLTRACKER":     "P&L Tracker",
 }
 _TASK_BOT_KEYS = {
-    "BOT_SMC_TREND":      "smc_trend",
     "BOT_MEAN_REVERSION": "mean_reversion",
-    "BOT_SCALPER":        "scalper",
-    "BOT_FFT":            "fft",
 }
 _TASK_ACCT_TYPE = {
-    "BOT_SMC_TREND":      "demo",
     "BOT_MEAN_REVERSION": "demo",
-    "BOT_SCALPER":        "demo",
-    "BOT_FFT":            "demo",
 }
 _LOG_MAP = {
-    "BOT_SMC_TREND":      ("fx", "gold_main",    "smc_trend_stdout.log"),
     "BOT_MEAN_REVERSION": ("fx", "gold_main",    "mean_reversion_stdout.log"),
-    "BOT_SCALPER":        ("fx", "gold_scalper", "scalper_stdout.log"),
-    "BOT_FFT":            ("fx", "gold_fft",     "fft_stdout.log"),
 }
 _SCHEDULED_JOBS = [
     JobStatus(name="Monitor",     schedule="every 1 min",  status="UNKNOWN"),
@@ -79,19 +68,13 @@ _SCHEDULED_JOBS = [
 # Crash-alert suppress keys — must match telegram_bot.py / monitor.py
 # (bot_key → the short key written to stop_suppress.json)
 _SUPPRESS_KEYS: dict[str, str] = {
-    "smc_trend":      "smc",
     "mean_reversion": "reversion",
-    "scalper":        "scalper",
-    "fft":            "fft",
 }
 
 # Risk caps per bot — mirrors bot_state.py BOT_THRESHOLDS.
 # Update here whenever thresholds change in the algo.
 _BOT_THRESHOLDS: dict[str, dict[str, float]] = {
-    "smc_trend":      {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
     "mean_reversion": {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
-    "scalper":        {"daily_goal": 10.0, "daily_cap": 8.0,  "weekly_cap": 20.0},
-    "fft":            {"daily_goal": 2.0,  "daily_cap": 5.0,  "weekly_cap": 15.0},
 }
 
 # Telegram — same credentials as notify.py / algo.py
@@ -127,24 +110,9 @@ def _get_thresholds(bot_key: str) -> dict[str, float]:
 # Maps (bot_key, cap_name) → [(section, field)] pairs to write into instance config.json.
 # These are the fields the strategy engines actually read for hard stops.
 _CAP_CONFIG_FIELDS: dict[str, dict[str, list[tuple[str, str]]]] = {
-    "smc_trend": {
-        "daily_cap":  [("protection", "max_daily_loss_pct_bot1")],
-        "weekly_cap": [("protection", "max_weekly_loss_pct_bot1")],
-        "daily_goal": [],
-    },
     "mean_reversion": {
         "daily_cap":  [("protection", "max_daily_loss_pct_bot2")],
         "weekly_cap": [("protection", "max_weekly_loss_pct_bot2")],
-        "daily_goal": [],
-    },
-    "scalper": {
-        "daily_cap":  [("bot_scalper", "daily_loss_cap_pct")],
-        "weekly_cap": [("bot_scalper", "weekly_loss_cap_pct")],
-        "daily_goal": [("bot_scalper", "daily_profit_target_pct")],
-    },
-    "fft": {
-        "daily_cap":  [("bot_fft", "max_daily_loss_pct"), ("bot_fft", "daily_budget_pct")],
-        "weekly_cap": [("bot_fft", "max_weekly_loss_pct")],
         "daily_goal": [],
     },
 }
@@ -153,10 +121,7 @@ _CAP_CONFIG_FIELDS: dict[str, dict[str, list[tuple[str, str]]]] = {
 # ── Per-bot config file mapping ───────────────────────────────────────────────
 # Maps bot_key → the instance config.json path and the strategy section name.
 _BOT_INSTANCE_MAP: dict[str, dict] = {
-    "smc_trend":      {"path": cfg.INSTANCES_DIR / "gold_main"    / "config.json", "section": "bot_smc_trend"},
     "mean_reversion": {"path": cfg.INSTANCES_DIR / "gold_main"    / "config.json", "section": "bot_mean_reversion"},
-    "scalper":        {"path": cfg.INSTANCES_DIR / "gold_scalper" / "config.json", "section": "bot_scalper"},
-    "fft":            {"path": cfg.INSTANCES_DIR / "gold_fft"     / "config.json", "section": "bot_fft"},
 }
 
 
@@ -263,12 +228,6 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     cmd2 = (
         f"if exist {instances_base}\\gold_main\\bot_state.json"
         f" (type {instances_base}\\gold_main\\bot_state.json)"
-        " & echo. & echo ===STATE_SCALPER==="
-        f" & if exist {instances_base}\\gold_scalper\\bot_state.json"
-        f" (type {instances_base}\\gold_scalper\\bot_state.json)"
-        " & echo. & echo ===STATE_FFT==="
-        f" & if exist {instances_base}\\gold_fft\\bot_state.json"
-        f" (type {instances_base}\\gold_fft\\bot_state.json)"
         " & echo. & echo ===TELEGRAM_START==="
         " & if exist C:\\trading\\algos\\telegram_start.json"
         " (type C:\\trading\\algos\\telegram_start.json)"
@@ -280,9 +239,7 @@ def _fetch_vps_snapshot() -> dict[str, str]:
 def _parse_bot_states(snap: dict[str, str]) -> dict[str, dict]:
     states: dict[str, dict] = {}
     for section, keys in [
-        ("state_main",    ["smc_trend", "mean_reversion"]),
-        ("state_scalper", ["scalper"]),
-        ("state_fft",     ["fft"]),
+        ("state_main",    ["mean_reversion"]),
     ]:
         raw = snap.get(section, "")
         if not raw:

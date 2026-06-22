@@ -31,37 +31,28 @@ from pathlib import Path
 
 ALGOS_ROOT = Path("C:/trading/algos")
 
+# Bot registries. SMC Trend, Scalper, FFT removed 2026-06-21 for a
+# backtest-first rebuild; Mean Reversion kept as the reference bot.
+
 # Instance directory for each bot key
 BOT_INSTANCES = {
-    "smc_trend":      ALGOS_ROOT / "markets/fx/instances/gold_main",
     "mean_reversion": ALGOS_ROOT / "markets/fx/instances/gold_main",
-    "scalper":        ALGOS_ROOT / "markets/fx/instances/gold_scalper",
-    "fft":            ALGOS_ROOT / "markets/fx/instances/gold_fft",
 }
 
 # Account numbers for each bot
 BOT_ACCOUNTS = {
-    "smc_trend":      "700103491",
     "mean_reversion": "700103491",
-    "scalper":        "700107520",
-    "fft":            "700107749",
 }
 
 # Display names
 BOT_NAMES = {
-    "smc_trend":      "SMC Trend",
     "mean_reversion": "Mean Reversion",
-    "scalper":        "Scalper",
-    "fft":            "FFT",
 }
 
 
 # Thresholds — defaults; overridden by thresholds.json if present
 _BOT_THRESHOLDS_DEFAULT = {
-    "smc_trend":      {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
     "mean_reversion": {"daily_goal": 2.0,  "daily_cap": 10.0, "weekly_cap": 20.0},
-    "scalper":        {"daily_goal": 10.0, "daily_cap": 8.0,  "weekly_cap": 20.0},
-    "fft":            {"daily_goal": 2.0,  "daily_cap": 5.0,  "weekly_cap": 15.0},
 }
 
 _THRESHOLDS_PATH = Path(__file__).parent / "thresholds.json"

@@ -1,12 +1,12 @@
 # scripts/ — Cross-subsystem ops & recovery
 
 Root-level operational scripts that span more than one subsystem. Subsystem-specific
-scripts stay in their own subsystem (e.g. `algos/scripts/backup.py`); these live here
+scripts stay in their own subsystem (e.g. `algos/scripts/deploy.py`); these live here
 because they rebuild or recover the whole VPS.
 
 | Script | Covers | Run as |
 |---|---|---|
-| `bootstrap_vps.ps1` | MT5 / algos side — clone, deps, MT5 check, secrets, data restore, Task Scheduler, start | elevated PowerShell |
+| `bootstrap_vps.ps1` | MT5 / algos side — clone, deps, MT5 check, secrets, Task Scheduler, start | elevated PowerShell |
 | `bootstrap_ninjatrader.ps1` | Futures side — NT8 + .NET check, user-folder restore, deploy `.cs`, nt8_agent deps + task, health | PowerShell as `trader` (elevated for task creation) |
 
 Both are **idempotent** — safe to re-run. Each runs in independent phases; a failed
@@ -27,12 +27,12 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
 
 2. **MT5 / algos side**
    ```powershell
-   # From an ELEVATED prompt. -RestoreData pulls live state from the backups branch.
-   .\scripts\bootstrap_vps.ps1 -RestoreData
+   # From an ELEVATED prompt.
+   .\scripts\bootstrap_vps.ps1
    ```
    Then fill real passwords into `algos\credentials.json` (replace every `REPLACE_ME`)
-   and verify the Telegram admin ID in `algos\users.json`. Re-run without `-RestoreData`
-   to finish startup once secrets are in place.
+   and verify the Telegram admin ID in `algos\users.json`. Re-run to finish startup
+   once secrets are in place.
 
 3. **Register the nt8_agent task (from your Mac, one time)**
    The `NT8Agent` task has no XML in the repo — it's created from the Mac:
@@ -45,13 +45,7 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
    # Restore the NT8 user folder from a backup, deploy strategies, start the agent.
    .\scripts\bootstrap_ninjatrader.ps1 -RestoreUserData -UserDataBackup '<path-to-NinjaTrader 8 backup>'
    ```
-   The NT8 user-folder backup comes from the `backups` branch under `nt8/` (written by
-   `algos/scripts/backup.py` via `nt8_backup.py`). Clone it and point `-UserDataBackup`
-   at the `nt8` folder:
-   ```powershell
-   git clone -b backups <repo-url> C:\trading-restore
-   .\scripts\bootstrap_ninjatrader.ps1 -RestoreUserData -UserDataBackup 'C:\trading-restore\nt8'
-   ```
+   Point `-UserDataBackup` at a NinjaTrader 8 user-folder backup you supply.
 
 5. **Launch NinjaTrader (manual)**
    Open NT8, confirm NinjaScript compiled with no errors (Editor → F5), open Strategy
@@ -79,8 +73,5 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
 
 ## Related (not in this folder)
 
-- `algos/scripts/backup.py` — twice-daily backup of MT5 runtime state **and** NT8
-  folders to the `backups` branch. Stays in `algos/` (algos-specific).
-- `algos/scripts/nt8_backup.py` — NT8 backup module imported by `backup.py`. Must sit
-  next to it so the import resolves.
+- `algos/scripts/deploy.py` — pushes algo changes to the VPS. Stays in `algos/` (algos-specific).
 - `algos/docs/ARCHITECTURE.md` — multi-instrument system design (scanner, risk engine, learning gate).

@@ -39,18 +39,8 @@ GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadc
 ALGOS_ROOT     = Path("C:/trading/algos")
 TEXAS          = ZoneInfo("America/Chicago")
 
+# SMC Trend, Scalper, FFT removed 2026-06-21; Mean Reversion kept as reference.
 BOTS = {
-    "smc_trend": {
-        "name":      "Bot SMC Trend",
-        "emoji":     "📈",
-        "script":    "bot_smc_trend.py",
-        "trades":    ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_trades.json",
-        "daily":     ALGOS_ROOT / "markets/fx/instances/gold_main/smc_trend_daily.json",
-        "equity":    ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
-        "log":       ALGOS_ROOT / "markets/fx/instances/gold_main/bot_smc_trend.log",
-        "daily_cap": 10.0,
-        "acct_type":  "demo",
-    },
     "mean_reversion": {
         "name":      "Bot Mean Reversion",
         "emoji":     "↩️",
@@ -60,26 +50,7 @@ BOTS = {
         "equity":    ALGOS_ROOT / "markets/fx/instances/gold_main/gold_main_equity.json",
         "log":       ALGOS_ROOT / "markets/fx/instances/gold_main/bot_mean_reversion.log",
         "daily_cap": 10.0,
-    },
-    "scalper": {
-        "name":      "Bot Scalper",
-        "emoji":     "⚡",
-        "script":    "bot_scalper.py",
-        "trades":    ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_trades.json",
-        "daily":     ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_daily.json",
-        "equity":    ALGOS_ROOT / "markets/fx/instances/gold_scalper/scalper_equity.json",
-        "log":       ALGOS_ROOT / "markets/fx/instances/gold_scalper/bot_scalper.log",
-        "daily_cap": 8.0,
-    },
-    "fft": {
-        "name":      "Bot FFT",
-        "emoji":     "🎯",
-        "script":    "bot_fft.py",
-        "trades":    ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_trades.json",
-        "daily":     ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_daily.json",
-        "equity":    ALGOS_ROOT / "markets/fx/instances/gold_fft/fft_equity.json",
-        "log":       ALGOS_ROOT / "markets/fx/instances/gold_fft/bot_fft.log",
-        "daily_cap": 5.0,
+        "acct_type":  "demo",
     },
 }
 
@@ -308,7 +279,7 @@ def format_report(bot_key: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bot",   help="smc_trend/mean_reversion/scalper/fft")
+    parser.add_argument("--bot",   help="mean_reversion")
     parser.add_argument("--test",  action="store_true")
     parser.add_argument("--force", action="store_true", help="Send even on weekends")
     parser.add_argument("--group", choices=["demo","live","all"], default="all",
