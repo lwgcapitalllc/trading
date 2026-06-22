@@ -22,7 +22,7 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
 1. **Prerequisites (manual, one time per box)**
    - Windows VPS, logged in as `trader` (admin).
    - Install Git for Windows and Python 3.11.
-   - Install the three **MT5** terminals (PU Prime main, Scalper, FFT) — one account each, Algo Trading ON.
+   - Install **MT5** (PU Prime) — needed by the command-center MT5 backtest agent. No live-bot terminals are required yet (no bots registered); add one per bot account when you deploy a bot.
    - Install **NinjaTrader 8** + .NET Framework 4.8; log into your data/broker connection.
 
 2. **MT5 / algos side**

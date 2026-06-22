@@ -7,9 +7,15 @@
     before acting, and a failed phase reports the problem and moves on rather
     than aborting the whole run.
 
-    This automates everything in docs/SETUP.md that can be automated. The two
-    things it CANNOT do for you (and will instead detect + report) are:
-      1. Installing the three MT5 terminals (GUI installers + manual login).
+    No bots are registered yet (the first-attempt suite was deleted 2026-06-22 — see
+    algos/docs/BOT_DEPLOYMENT_INFRA.md). This script provisions the FOUNDATION: repo,
+    Python, deps, the SYS_ task scaffold, and the secrets mechanism. When a real
+    strategy is ready to deploy as a bot, add its MT5 terminal + account to the two
+    lists in "Static configuration" below and its task to $Tasks — the per-bot data
+    is the only thing that changes; the machinery here does not.
+
+    The two things it CANNOT do for you (and will instead detect + report) are:
+      1. Installing each registered bot's MT5 terminal (GUI installer + manual login).
       2. Filling in real account passwords in credentials.json.
 
 .DESCRIPTION
@@ -17,10 +23,10 @@
       0. Pre-flight ........ admin check, locate git + python
       1. Clone / update .... clone repo to -RepoRoot, or git pull if present
       2. Python deps ....... pip install the runtime packages
-      3. MT5 check ......... verify the three terminals exist (cannot install)
+      3. MT5 check ......... verify each registered bot's terminal exists (none yet)
       4. Secrets scaffold .. create credentials.json / users.json templates if absent
-      7. Task Scheduler .... create the tasks, disable the BOT_ task
-      8. Start ............. clear stale lock, run SYS_STARTUP, verify processes
+      5. Task Scheduler .... create the SYS_ tasks (no BOT_ tasks registered yet)
+      6. Start ............. clear stale lock, run SYS_STARTUP, verify processes
 
 .PARAMETER RepoUrl
     Git URL to clone. Default: the LWG Capital trading monorepo.
@@ -81,35 +87,32 @@ $AlgosRoot     = Join-Path $RepoRoot 'algos'
 $LockFile      = Join-Path $AlgosRoot 'mt5_connect.lock'
 $TempDir       = 'C:\temp'
 
-# Runtime Python packages. NOTE: SETUP.md lists `zoneinfo`, but that PyPI package
-# is a pre-3.9 backport and fails to install on Python 3.11. On Windows the
-# package you actually need for IANA timezones is `tzdata` — substituted here.
+# Runtime Python packages. NOTE: `zoneinfo` is a pre-3.9 backport that fails to
+# install on Python 3.11 — on Windows the package you actually need for IANA
+# timezones is `tzdata`, used here. MetaTrader5 is for live MT5 bots (no bots yet)
+# and the command-center MT5 backtest agent.
 $PipPackages = @('requests', 'pandas', 'numpy', 'MetaTrader5', 'tzdata')
-$PipFlags    = @('--break-system-packages')   # per SETUP.md; harmless if pip ignores
+$PipFlags    = @('--break-system-packages')   # harmless if pip ignores
 
-# The three MT5 terminals (RECOVERY: must be installed + logged in by hand).
-$Mt5Terminals = @(
-    [pscustomobject]@{ Name = 'MT5 Main';    Path = 'C:\Program Files\PU Prime MT5 Terminal\terminal64.exe'; Account = '700103491' }
-    [pscustomobject]@{ Name = 'MT5 Scalper'; Path = 'C:\MT5_Scalper\terminal64.exe';                          Account = '700107520' }
-    [pscustomobject]@{ Name = 'MT5 FFT';     Path = 'C:\MT5_FFT\terminal64.exe';                              Account = '700107749' }
-)
+# Per-bot MT5 terminals (RECOVERY: each must be installed + logged in by hand).
+# EMPTY — no bots registered. When deploying a bot, add a row, e.g.:
+#   [pscustomobject]@{ Name = 'MT5 <bot>'; Path = 'C:\<dir>\terminal64.exe'; Account = '<acct#>' }
+$Mt5Terminals = @()
 
 # Account credentials template (PASSWORDS ARE PLACEHOLDERS — fill in by hand).
+# EMPTY accounts — add one entry per bot account when deploying, e.g.:
+#   '<acct#>' = [ordered]@{ password = $PlaceholderMarker; server = 'PUPrime-Demo' }
 $PlaceholderMarker = 'REPLACE_ME'
 $CredentialsTemplate = [ordered]@{
-    accounts = [ordered]@{
-        '700103491' = [ordered]@{ password = $PlaceholderMarker; server = 'PUPrime-Demo' }
-        '700107520' = [ordered]@{ password = $PlaceholderMarker; server = 'PUPrime-Demo' }
-        '700107749' = [ordered]@{ password = $PlaceholderMarker; server = 'PUPrime-Demo' }
-    }
+    accounts = [ordered]@{}
 }
 
-# Telegram users template (admin entry from SETUP.md — verify the ID before use).
+# Telegram users template (verify the admin Telegram ID before use).
 $UsersTemplate = [ordered]@{
     '429207285' = [ordered]@{ name = 'Aaron'; role = 'admin'; added = (Get-Date -Format 'yyyy-MM-dd') }
 }
 
-# Task Scheduler tasks: xml file -> task name. Order matches SETUP.md.
+# Task Scheduler tasks: xml file -> task name. SYS_STARTUP must be created first.
 $Tasks = @(
     [pscustomobject]@{ Xml = 'startup_coordinator_task.xml'; Name = 'SYS_STARTUP' }
     [pscustomobject]@{ Xml = 'telegram_task.xml';            Name = 'SYS_TELEGRAM' }
@@ -273,6 +276,12 @@ function Invoke-PipInstall {
 # --------------------------------------------------------------------------
 function Invoke-CheckMt5 {
     Write-Phase 'Phase 3 — MT5 terminal verification'
+    if ($Mt5Terminals.Count -eq 0) {
+        Write-Ok 'No bots registered — no MT5 terminals required yet.'
+        $script:Mt5Missing = $false
+        $script:Results['MT5 check'] = 'OK (no bots)'
+        return
+    }
     $missing = @()
     foreach ($t in $Mt5Terminals) {
         if (Test-Path $t.Path) { Write-Ok "$($t.Name) present (acct #$($t.Account))." }
@@ -314,10 +323,10 @@ function Invoke-ScaffoldSecrets {
 }
 
 # --------------------------------------------------------------------------
-# Phase 7 — Task Scheduler
+# Phase 5 — Task Scheduler
 # --------------------------------------------------------------------------
 function Invoke-InstallTasks {
-    Write-Phase 'Phase 7 — Task Scheduler'
+    Write-Phase 'Phase 5 — Task Scheduler'
     if ($SkipTasks) { Write-Info 'Skipped (-SkipTasks).'; $script:Results['Task Scheduler'] = 'skipped'; return }
     if (-not (Test-Admin)) {
         Write-Warn2 'Not elevated — cannot create scheduled tasks. Re-run as admin.'
@@ -355,13 +364,27 @@ function Invoke-InstallTasks {
 }
 
 # --------------------------------------------------------------------------
-# Phase 8 — Start + verify
+# Phase 6 — Start + verify
 # --------------------------------------------------------------------------
 function Invoke-StartSystem {
-    Write-Phase 'Phase 8 — Start system'
+    Write-Phase 'Phase 6 — Start system'
     if ($NoStart) { Write-Info 'Skipped (-NoStart).'; $script:Results['Start'] = 'skipped'; return }
 
-    # Don't start into a broken state.
+    if (Test-Path $LockFile) { Remove-Item $LockFile -Force; Write-Info 'Cleared stale mt5_connect.lock' }
+
+    # No bots registered — SYS_STARTUP only launches Telegram + monitoring. Fire it
+    # and report, but skip the bot-connection wait (there is nothing to wait for).
+    if ($Mt5Terminals.Count -eq 0) {
+        Write-Info 'No bots registered — running SYS_STARTUP for Telegram/monitoring only...'
+        & schtasks /run /tn SYS_STARTUP | Out-Null
+        Start-Sleep -Seconds 5
+        $procs = @(Get-RunningBots)
+        Write-Ok "SYS_STARTUP fired — $($procs.Count) system process(es) running (Telegram/monitoring)."
+        $script:Results['Start'] = "OK (no bots; $($procs.Count) sys procs)"
+        return
+    }
+
+    # Bots registered — don't start into a broken state.
     if ($script:Mt5Missing) {
         Write-Warn2 'MT5 terminal(s) missing — not starting bots. Install them, then run: schtasks /run /tn SYS_STARTUP'
         $script:Results['Start'] = 'skipped (MT5 missing)'; return
@@ -370,8 +393,6 @@ function Invoke-StartSystem {
         Write-Warn2 'credentials.json still contains placeholders — not starting bots. Fill it in, then run: schtasks /run /tn SYS_STARTUP'
         $script:Results['Start'] = 'skipped (creds placeholder)'; return
     }
-
-    if (Test-Path $LockFile) { Remove-Item $LockFile -Force; Write-Info 'Cleared stale mt5_connect.lock' }
 
     Write-Info 'Running SYS_STARTUP...'
     & schtasks /run /tn SYS_STARTUP | Out-Null
@@ -426,7 +447,11 @@ foreach ($k in $script:Results.Keys) {
 }
 
 Write-Host "`nManual steps this script cannot do for you:" -ForegroundColor White
-Write-Host "  - Install + log into the three MT5 terminals (one account each, Algo Trading ON)." -ForegroundColor Gray
-Write-Host "  - Put real passwords in $AlgosRoot\credentials.json (replace '$PlaceholderMarker')." -ForegroundColor Gray
 Write-Host "  - Verify the Telegram admin ID in $AlgosRoot\users.json." -ForegroundColor Gray
-Write-Host "`nVerify from your Mac:  algo   (control panel)   and Telegram:  /status  /balance" -ForegroundColor White
+if ($Mt5Terminals.Count -gt 0) {
+    Write-Host "  - Install + log into each bot's MT5 terminal (one account each, Algo Trading ON)." -ForegroundColor Gray
+    Write-Host "  - Put real passwords in $AlgosRoot\credentials.json (replace '$PlaceholderMarker')." -ForegroundColor Gray
+}
+Write-Host "`nWhen you deploy your first bot: add its terminal + account to the lists in this" -ForegroundColor White
+Write-Host "script's 'Static configuration' block and its task XML to `$Tasks, then re-run." -ForegroundColor White
+Write-Host "Verify from your Mac:  algo   (control panel)   and Telegram:  /status" -ForegroundColor White
