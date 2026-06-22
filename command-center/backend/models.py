@@ -31,6 +31,21 @@ class EquityPoint(BaseModel):
     exit_name: Optional[str] = None
 
 
+class SizedTimelineDay(BaseModel):
+    """One trading day of a SIZED run — the engine's day-by-day record (mirrors
+    sizing_engine.DayTimeline). Loaded from engine_timeline.json on disk; drives the
+    sized equity curve (eod_balance vs risk_floor) and the timeline view."""
+    date: str
+    trades_taken: int
+    contracts_total: int
+    day_pnl: float
+    eod_balance: float
+    risk_floor: Optional[float] = None
+    floor_distance: Optional[float] = None
+    consistency_share_pct: Optional[float] = None
+    halt_reason: Optional[str] = None
+
+
 class RegimeBreakdownRow(BaseModel):
     """One market-regime's slice of a run's performance. Built server-side by
     metrics.compute_regime_breakdown — the single source of truth for the table."""
@@ -307,7 +322,13 @@ class ScanResult(BaseModel):
     added: int
     updated: int
     skipped: int
+    orphans: list[str] = []    # DB strategies whose source file is gone from the repo
     warnings: list[str] = []
+
+
+class ReconcileResult(BaseModel):
+    removed: list[str] = []    # orphaned strategies removed from DB + VPS
+    warnings: list[str] = []   # per-strategy notes (e.g. VPS file could not be deleted)
 
 
 class DeployJobStatus(BaseModel):
@@ -568,6 +589,7 @@ class BacktestDetail(BaseModel):
     runner: str = "ninjatrader"
     sizing_mode: str = "consistent"   # 'consistent' | 'bullet' — engine sizing mode this run used
     sized: bool = False               # True once a reshaped strategy emitted engine_trades and the engine sized the run
+    sized_timeline: list[SizedTimelineDay] = []   # the engine's day-by-day record (sized runs only) — sized equity curve + timeline
 
 
 # ── Lab — progress + system health ───────────────────────────────────────────

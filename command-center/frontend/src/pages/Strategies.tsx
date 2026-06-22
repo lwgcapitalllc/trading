@@ -3,13 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { RefreshCw, Play, ChevronRight, Upload, Trash2, CloudUpload } from 'lucide-react'
 import {
   useStrategies,
-  useScanStrategies,
+  useScanStrategies, useReconcileStrategies,
   useStrategyFiles, useStrategyFileSyncStatus,
   useUploadStrategyFile, useDeleteStrategyFile,
   useTriggerCompile, useCompileStatus,
   useTriggerCompileMt5, useCompileStatusMt5,
   useDeployStrategy, useRunningVpsJob,
 } from '@/hooks/useLab'
+import { ConfirmDeleteModal } from '@/pages/Backtests'
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
@@ -102,6 +103,9 @@ function StrategiesTab() {
   const { data: strategyGrades } = useStrategyBestGrades()
   useRunningVpsJob()
   const scan = useScanStrategies()
+  const reconcile = useReconcileStrategies()
+  const [confirmReconcile, setConfirmReconcile] = useState(false)
+  const orphans = scan.data?.orphans ?? []
   const deploy = useDeployStrategy()
   const compileMut = useTriggerCompile()
   const compileMt5Mut = useTriggerCompileMt5()
@@ -165,15 +169,43 @@ function StrategiesTab() {
           </span>
           <MarketFilterBar value={marketFilter} onChange={setMarketFilter} />
         </div>
-        <button
-          onClick={() => scan.mutate()}
-          disabled={scan.isPending}
-          className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-accent text-bg-base hover:opacity-90 transition-opacity disabled:opacity-50"
-        >
-          <RefreshCw size={12} className={scan.isPending ? 'animate-spin' : ''} />
-          Scan Strategies
-        </button>
+        <div className="flex items-center gap-2">
+          {orphans.length > 0 && (
+            <button
+              onClick={() => setConfirmReconcile(true)}
+              disabled={reconcile.isPending}
+              title="Remove strategies whose source file was deleted — DB row + the deployed file on the VPS"
+              className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/15 transition-colors disabled:opacity-50"
+            >
+              <Trash2 size={12} />
+              Reconcile ({orphans.length})
+            </button>
+          )}
+          <button
+            onClick={() => scan.mutate()}
+            disabled={scan.isPending}
+            className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-accent text-bg-base hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={scan.isPending ? 'animate-spin' : ''} />
+            Scan Strategies
+          </button>
+        </div>
       </div>
+
+      {confirmReconcile && (
+        <ConfirmDeleteModal
+          count={orphans.length}
+          isPending={reconcile.isPending}
+          confirmLabel={reconcile.isPending ? 'Removing…' : `Remove ${orphans.length}`}
+          customMessage={`These strategies have no source file in the repo: ${orphans.join(', ')}. Each will be removed from the database and its deployed .cs/.mq5 deleted from the VPS.`}
+          onCancel={() => setConfirmReconcile(false)}
+          onConfirm={async () => {
+            await reconcile.mutateAsync()
+            scan.reset()
+            setConfirmReconcile(false)
+          }}
+        />
+      )}
 
       {isLoading ? (
         <StrategiesSkeleton />

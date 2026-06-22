@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
-  Strategy, ScanResult, DeployJobStatus,
+  Strategy, ScanResult, ReconcileResult, DeployJobStatus,
   Ruleset, RulesetCreate, PersonalRulesetPatch,
   BacktestRunRequest, BacktestSummary, BacktestDetail,
   LabProgress, SystemHealth,
@@ -73,10 +73,28 @@ export function useScanStrategies() {
   return useMutation({
     mutationFn: () => api.post<ScanResult>('/strategies/scan'),
     onSuccess: (data) => {
-      toast.success(`Scanned — ${data.added} added, ${data.updated} updated`)
+      const orphans = data.orphans?.length
+        ? ` · ${data.orphans.length} orphaned (source deleted — use Reconcile)`
+        : ''
+      toast.success(`Scanned — ${data.added} added, ${data.updated} updated${orphans}`)
       qc.invalidateQueries({ queryKey: ['lab', 'strategies'] })
     },
     onError: () => toast.error('Strategy scan failed'),
+  })
+}
+
+export function useReconcileStrategies() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<ReconcileResult>('/strategies/reconcile'),
+    onSuccess: (data) => {
+      toast.success(`Reconciled — ${data.removed.length} removed from DB + VPS`)
+      data.warnings?.forEach((w) => toast.error(w))
+      qc.invalidateQueries({ queryKey: ['lab', 'strategies'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'strategy-files'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'strategy-files', 'sync-status'] })
+    },
+    onError: () => toast.error('Reconcile failed'),
   })
 }
 

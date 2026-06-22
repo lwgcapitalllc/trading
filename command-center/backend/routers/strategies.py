@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from models import Strategy, ScanResult, InstrumentSummary, InstrumentResult, DeployJobStatus, StrategyVersion
+from models import Strategy, ScanResult, ReconcileResult, InstrumentSummary, InstrumentResult, DeployJobStatus, StrategyVersion
 
 
 class StrategyPatch(BaseModel):
@@ -30,6 +30,14 @@ def list_strategies():
 @router.post("/scan", response_model=ScanResult)
 def scan_strategies():
     return strategy_scanner.scan_strategies()
+
+
+@router.post("/reconcile", response_model=ReconcileResult)
+def reconcile_strategies():
+    """Explicit, destructive cleanup: remove every strategy whose source file was
+    deleted from the repo — DB row + its deployed file on the VPS NT8/MT5 folder.
+    Separate from /scan (read-only) so a routine scan never deletes VPS files."""
+    return strategy_scanner.reconcile_strategies()
 
 
 @router.get("/{strategy_id}/param-types")
@@ -77,8 +85,11 @@ def patch_strategy(strategy_id: str, body: StrategyPatch):
 
 @router.delete("/{strategy_id}", status_code=204)
 def delete_strategy(strategy_id: str):
-    if not lab_db.delete_strategy(strategy_id):
+    if not lab_db.get_strategy(strategy_id):
         raise HTTPException(404, f"Strategy '{strategy_id}' not found")
+    # Deleting a strategy removes it everywhere — DB row + the deployed file on
+    # the VPS NT8/MT5 folder. VPS delete is best-effort (see remove_strategy).
+    strategy_scanner.remove_strategy(strategy_id)
 
 
 @router.post("/{strategy_id}/deploy", status_code=202)

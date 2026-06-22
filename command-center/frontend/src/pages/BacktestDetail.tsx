@@ -7,13 +7,13 @@ import {
   Copy, Check, SlidersHorizontal, X,
 } from 'lucide-react'
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Label,
+  AreaChart, Area, ComposedChart, Line, BarChart, Bar, PieChart, Pie, Label,
   XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, ReferenceLine, ReferenceArea,
+  ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
 } from 'recharts'
 import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
-import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry } from '@/types'
+import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay } from '@/types'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
 
@@ -742,6 +742,145 @@ function EquityCurveChart({ data, bands = [], height = 300 }: { data: EquityPoin
         />
       </AreaChart>
     </ResponsiveContainer>
+  )
+}
+
+// ── Sized equity curve (dynamic-sizing engine) ───────────────────────────────
+// Day-by-day from the engine's timeline: end-of-day balance vs the trailing risk
+// floor (the firm's max-loss line). The gap between them is the buffer the engine
+// sized against; balance crossing the floor is a breach. Unlike the per-trade
+// equity curve above, this is the REAL sized account — what actually traded.
+
+function SizedEquityCurveChart({ data, height = 300 }: {
+  data: SizedTimelineDay[]; height?: number
+}) {
+  if (!data.length) return null
+
+  const rows = data.map((d, i) => ({
+    i,
+    date: d.date,
+    balance: d.eod_balance,
+    floor: d.risk_floor,
+    buffer: d.floor_distance,
+    trades: d.trades_taken,
+    contracts: d.contracts_total,
+    halt: d.halt_reason,
+  }))
+
+  const startBal = rows[0].balance
+  const endBal   = rows[rows.length - 1].balance
+  const profitable = endBal >= startBal
+  const lineColor  = profitable ? C.pos : C.neg
+
+  const vals = rows.flatMap(r => [r.balance, ...(r.floor != null ? [r.floor] : [])])
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  const pad = (max - min) * 0.08 || 500
+
+  // Mark days where a breach happened or the engine halted trading.
+  const breachIdx = rows.findIndex(r => r.floor != null && r.balance < r.floor)
+  const haltDays  = rows.filter(r => r.halt)
+
+  // X ticks: first, ~quarterly, last (calendar-spaced, matching the other charts).
+  const step = Math.max(1, Math.floor(rows.length / 5))
+  const xTicks = rows.filter((_, i) => i === 0 || i === rows.length - 1 || i % step === 0).map(r => r.i)
+
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+        <defs>
+          <linearGradient id="sizedFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"  stopColor={lineColor} stopOpacity={0.18} />
+            <stop offset="95%" stopColor={lineColor} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
+        <XAxis
+          dataKey="i"
+          ticks={xTicks}
+          tick={{ fill: C.axisTick, fontSize: 10 }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => fmtChartDate(rows[v]?.date)}
+        />
+        <YAxis
+          domain={[min - pad, max + pad]}
+          tick={{ fill: C.axisTick, fontSize: 10 }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+          width={56}
+        />
+        <Tooltip
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null
+            const r = payload[0]?.payload as (typeof rows)[number] | undefined
+            if (!r) return null
+            return (
+              <div style={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}>
+                <p style={{ color: C.axisTick, marginBottom: 4 }}>{fmtChartDate(r.date)}</p>
+                <p style={{ color: '#e5e7eb' }}>Balance&nbsp;${r.balance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                {r.floor != null && (
+                  <p style={{ color: C.neg }}>Floor&nbsp;${r.floor.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                )}
+                {r.buffer != null && (
+                  <p style={{ color: C.axisTick }}>Buffer&nbsp;${r.buffer.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                )}
+                <p style={{ color: C.axisTick }}>{r.trades} trade{r.trades === 1 ? '' : 's'} · {r.contracts} contracts</p>
+                {r.halt && <p style={{ color: C.gold }}>Halted: {r.halt}</p>}
+              </div>
+            )
+          }}
+        />
+        <ReferenceLine y={startBal} stroke={C.refLine} strokeDasharray="4 4" />
+        <Area
+          type="monotone"
+          dataKey="balance"
+          stroke={lineColor}
+          strokeWidth={1.5}
+          fill="url(#sizedFill)"
+          dot={false}
+          activeDot={{ r: 4, fill: lineColor, stroke: 'transparent' }}
+          baseValue="dataMin"
+          isAnimationActive={false}
+        />
+        <Line
+          type="stepAfter"
+          dataKey="floor"
+          stroke={C.neg}
+          strokeWidth={1.25}
+          strokeDasharray="5 4"
+          dot={false}
+          connectNulls
+          isAnimationActive={false}
+        />
+        {/* Mark halt days and the breach day so the why-it-stopped reads at a glance. */}
+        {haltDays.map(d => (
+          <ReferenceDot key={`h${d.i}`} x={d.i} y={d.balance} r={3} fill={C.gold} stroke="none" />
+        ))}
+        {breachIdx >= 0 && (
+          <ReferenceDot x={rows[breachIdx].i} y={rows[breachIdx].balance} r={4.5} fill={C.neg} stroke={C.tooltipBg} strokeWidth={1.5} />
+        )}
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+
+function SizedCurveLegend({ mode }: { mode: 'consistent' | 'bullet' }) {
+  return (
+    <div className="flex items-center gap-4 mt-2 text-[11px] text-text-tertiary">
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: C.pos }} />
+        End-of-day balance
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: C.neg }} />
+        Trailing risk floor (breach = fail)
+      </span>
+      <span className="ml-auto font-medium text-text-secondary">
+        Engine-sized · {mode === 'bullet' ? 'Bullet' : 'Consistent'}
+      </span>
+    </div>
   )
 }
 
@@ -1985,7 +2124,7 @@ export function BacktestDetail() {
   const [overlayOn, setOverlayOn] = useState(getOverlayPref)
   const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
   // Primary chart tab (the big charts) + secondary tab (supporting charts). Price lazy-loads.
-  const [primaryTab, setPrimaryTab] = useState<'equity' | 'price' | 'breakdown'>('equity')
+  const [primaryTab, setPrimaryTab] = useState<'equity' | 'sized' | 'price' | 'breakdown'>('equity')
   const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
   const [showMoreKpis, setShowMoreKpis] = useState(false)
   // When a run is scored against several firms, show ONE at a time (a wall of cards is
@@ -2356,14 +2495,23 @@ export function BacktestDetail() {
 
             const SUBS: Record<string, string> = {
               equity: 'Steadily rising = good. Big peak then long decline = giving back gains.',
+              sized: 'The real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.',
               price: 'Candlesticks with trade context.',
               breakdown: 'Drawdown, daily P&L, and long vs short — the supporting detail.',
             }
             const TITLES: Record<string, string> = {
-              equity: 'Equity curve', price: 'Price', breakdown: 'Breakdown',
+              equity: 'Equity curve', sized: 'Sized equity', price: 'Price', breakdown: 'Breakdown',
             }
             const hasDirection = run.equity_curve.some(p => p.direction)
-            const primaryTabs: ReadonlyArray<readonly [string, string]> = [['equity', 'Equity'], ['price', 'Price'], ['breakdown', 'Breakdown']]
+            // The Sized tab appears only for engine-sized runs (a reshaped strategy emitted
+            // engine_trades → the engine produced a day-by-day timeline). Inert for every unit-size run.
+            const hasSized = run.sized && run.sized_timeline.length > 0
+            const primaryTabs: ReadonlyArray<readonly [string, string]> = [
+              ['equity', 'Equity'],
+              ...(hasSized ? [['sized', 'Sized'] as const] : []),
+              ['price', 'Price'],
+              ['breakdown', 'Breakdown'],
+            ]
             const subLabel = (t: string) => <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-secondary mb-1.5">{t}</div>
 
             // isModal=true means this render call is from inside ChartModal (equity/breakdown only).
@@ -2376,6 +2524,13 @@ export function BacktestDetail() {
                     <>
                       <EquityCurveChart data={run.equity_curve} bands={regimeBands} height={h} />
                       {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
+                    </>
+                  )
+                case 'sized':
+                  return (
+                    <>
+                      <SizedEquityCurveChart data={run.sized_timeline} height={h} />
+                      <SizedCurveLegend mode={run.sizing_mode} />
                     </>
                   )
                 case 'price': {
@@ -2454,7 +2609,7 @@ export function BacktestDetail() {
                     <ChartTabPanel
                       tabs={primaryTabs}
                       active={primaryTab}
-                      onActive={k => setPrimaryTab(k as 'equity' | 'price' | 'breakdown')}
+                      onActive={k => setPrimaryTab(k as 'equity' | 'sized' | 'price' | 'breakdown')}
                       sub={SUBS[primaryTab]}
                       height={520}
                       onExpand={() => setFullscreenChart(primaryTab)}

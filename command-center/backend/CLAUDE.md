@@ -27,7 +27,7 @@ backend/
 │   ├── smart_money.py
 │   ├── bots.py
 │   ├── backtests.py       lab — backtest runs; GET /runs/{id}/chart-spec serves the price-chart ChartSpec (chart_spec.py)
-│   ├── strategies.py      lab — strategy registry + deploy endpoint + GET /:id/instrument_summary + GET /:id/param-types
+│   ├── strategies.py      lab — strategy registry + deploy endpoint + POST /scan (read-only) + POST /reconcile (destructive orphan cleanup) + GET /:id/instrument_summary + GET /:id/param-types
 │   ├── rulesets.py        lab — ruleset CRUD (/rulesets); PATCH = guarded personal-rules edit (prop rows locked 403; PUT also 403 on prop)
 │   ├── firms.py           backward-compat redirect /firms → /rulesets (deprecated, keep until all callers confirmed updated)
 │   ├── system.py          lab — health + log proxies
@@ -39,7 +39,7 @@ backend/
 │   └── settings.py
 ├── services/              business logic, DB access, external clients
 │   ├── lab_db.py          only module that touches lab.db
-│   ├── strategy_scanner.py  reads from strategies/ (not algos/); emits warnings for stale source_paths
+│   ├── strategy_scanner.py  reads from strategies/ (not algos/); scan is READ-ONLY (add/update + report orphans, never deletes). reconcile_strategies() is the explicit destructive counterpart (DB row + VPS file); remove_strategy() is the shared one-strategy delete
 │   ├── evaluator.py       per-ruleset verdict; also exports compute_contract_cap_status()
 │   ├── trailing_drawdown.py  compute_trailing_mll() — EOD trailing max-loss engine (the drawdown check)
 │   ├── sizing_engine.py     dynamic sizing & risk engine — PURE (no DB/network). run_engine(mode="bullet"|"consistent") sizes each trade off the room left (bullet=max the rules allow; consistent=room÷7), reserves open-trade risk, applies halts, rounds-up-to-min-or-skip, detects breaches; emits size-correct daily_pnl (feeds evaluator) + the decision log. CORE BUILT, not yet wired to a runner — see "Dynamic sizing & risk engine" below
@@ -292,11 +292,15 @@ as the headline, grades each ruleset against its OWN sized P&L, and persists the
 log + timeline. Native (unit-size) runs carry no `engine_trades` → unchanged. The per-run
 **bullet/consistent** switch is plumbed: `BacktestRunRequest.sizing_mode` → `backtest_runs.sizing_mode`
 column (`DEFAULT 'consistent'`) → read back in `_handle_complete`. The `BacktestDetail` model exposes
-`sizing_mode` (off the run row) and `sized` (a bool — `_row_to_detail` checks the primary ruleset's
-`reports/lab/<run_id>/engine_timeline.json` exists, the persisted marker of a real sized run) so the
-frontend can badge sized runs. **Still pending:** a sized equity curve + the timeline view in the
-frontend, and reshaping the two MT5 strategies the same way. The whole sized path stays dormant until
-a reshaped strategy actually emits `engine_trades.csv` on the VPS.
+`sizing_mode` (off the run row), `sized` (a bool), and `sized_timeline` (`list[SizedTimelineDay]` —
+the engine's day-by-day record). `_row_to_detail` loads `reports/lab/<run_id>/engine_timeline.json`
+ONCE: its content becomes `sized_timeline` and `sized = bool(sized_timeline)` (the persisted marker of
+a real sized run) — no second `.exists()` stat. `SizedTimelineDay` mirrors `sizing_engine.DayTimeline`
+(date, trades_taken, contracts_total, day_pnl, eod_balance, risk_floor, floor_distance,
+consistency_share_pct, halt_reason); it drives the frontend's Sized equity curve and the (still-pending)
+timeline table. **Still pending:** the timeline table in the frontend (data is now exposed — render-only),
+and reshaping the two MT5 strategies the same way. The whole sized path stays dormant until a reshaped
+strategy actually emits `engine_trades.csv` on the VPS.
 
 ## Lens metrics (the per-run scoring layer)
 
@@ -506,3 +510,5 @@ Versions are registered in three places: the **scanner** (every scan, both `.cs`
 ## Strategy location + deploy (Pass 2.5)
 
 Live behavior. Scanner reads from `strategies/` via `rglob("*.cs")`/`rglob("*.mq5")`; `source_path` stored relative to monorepo root (e.g. `strategies/ninjatrader/ORB.cs`); missing `source_path` warns, never auto-deletes. `POST /strategies/{id}/deploy` reads `source_path` and uploads via `runner_dispatch` (`.mq5` → MT5 agent, `.cs` → NT8 agent), returns 202 + `deploy_job_id`. Edge cases: `source_path` null → 400, file missing → 404, VPS locked → 423. Detail is in git history (Pass 2.5).
+
+**Bidirectional delete (reconcile) — deletion propagates only on an explicit action.** Deleting a source file from the repo should mean "remove everywhere" (DB row + the deployed `.cs`/`.mq5` on the VPS NT8/MT5 folder), but that destructive step is **never** wired into a scan. `scan_strategies()` is READ-ONLY: it adds/updates from disk and calls `_detect_orphans()` (DB strategies whose recorded `source_path` no longer exists on disk) to REPORT them in `ScanResult.orphans` — it deletes nothing. A scan is a frequent read; a mis-synced disk (wrong `MONOREPO_ROOT`, repo not checked out) would otherwise silently wipe every deployed file. The destructive cleanup is a separate endpoint, `POST /strategies/reconcile` → `reconcile_strategies()`, which calls `remove_strategy(sid)` for each orphan (best-effort VPS delete — 404/"not found" counts as success; a real failure is surfaced as a warning but never blocks the DB removal) and returns `ReconcileResult{removed, warnings}`. The per-strategy `DELETE /strategies/{id}` uses the same `remove_strategy` helper. Frontend (`Strategies.tsx`): Scan toast flags orphan count; a red **Reconcile (N)** button appears only when the last scan found orphans, fronted by a `ConfirmDeleteModal` listing exactly which strategies go.

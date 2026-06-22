@@ -20,6 +20,21 @@ export interface EquityPoint {
   exit_name?: string
 }
 
+// One trading day of a SIZED run — the dynamic-sizing engine's day-by-day record
+// (mirrors backend SizedTimelineDay / sizing_engine.DayTimeline). Drives the sized
+// equity curve (eod_balance vs risk_floor) and the timeline view.
+export interface SizedTimelineDay {
+  date: string
+  trades_taken: number
+  contracts_total: number
+  day_pnl: number
+  eod_balance: number
+  risk_floor: number | null
+  floor_distance: number | null
+  consistency_share_pct: number | null
+  halt_reason: string | null
+}
+
 export interface JobStatus {
   name: string
   schedule: string
@@ -277,7 +292,13 @@ export interface ScanResult {
   added: number
   updated: number
   skipped: number
+  orphans: string[]   // DB strategies whose source file is gone from the repo
   warnings: string[]
+}
+
+export interface ReconcileResult {
+  removed: string[]   // orphaned strategies removed from DB + VPS
+  warnings: string[]  // per-strategy notes (e.g. VPS file could not be deleted)
 }
 
 export interface DeployJobStatus {
@@ -488,6 +509,7 @@ export interface BacktestDetail {
   runner: string
   sizing_mode: 'consistent' | 'bullet'   // engine sizing mode this run used
   sized: boolean                          // true once the engine sized the run (reshaped strategy emitted engine_trades)
+  sized_timeline: SizedTimelineDay[]      // the engine's day-by-day record (sized runs only)
 }
 
 // ── Lab — Progress + System Health ───────────────────────────────────────────

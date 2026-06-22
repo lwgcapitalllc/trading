@@ -121,6 +121,11 @@ def _row_to_detail(row: dict) -> BacktestDetail:
     equity_curve = _load_json(row.get("equity_curve_path"))
     daily_pnl = _load_json(row.get("daily_pnl_path"))
 
+    # The sized run's day-by-day engine record (present only when a reshaped strategy
+    # emitted engine_trades and the engine sized the run). Its existence IS the `sized`
+    # marker — load once and derive the flag from it rather than stat-ing the file twice.
+    sized_timeline = _load_json(str(LAB_RESULTS_DIR / row["run_id"] / "engine_timeline.json"))
+
     return BacktestDetail(
         run_id=row["run_id"],
         strategy_id=row["strategy_id"],
@@ -165,7 +170,8 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         source_run_id=row.get("source_run_id"),
         runner=row.get("runner", "ninjatrader"),
         sizing_mode=row.get("sizing_mode", "consistent"),
-        sized=(LAB_RESULTS_DIR / row["run_id"] / "engine_timeline.json").exists(),
+        sized=bool(sized_timeline),
+        sized_timeline=sized_timeline,
     )
 
 

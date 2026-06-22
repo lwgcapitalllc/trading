@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 import config as cfg
-from services import lab_db
+from services import lab_db, runner_dispatch
 
 _CATEGORY_MAP = {
     "orb": "breakout",
@@ -553,11 +553,77 @@ def scan_strategies() -> dict:
         else:
             updated += 1
 
-    # Warn about DB rows whose source_path no longer exists on disk
-    warnings: list[str] = []
+    # Detect — but never delete during a scan — strategies whose source file is
+    # gone from the repo. Deleting a source means "remove everywhere" (DB row +
+    # deployed VPS file), but that destructive step is gated behind an explicit
+    # Reconcile action (POST /strategies/reconcile). A scan is a frequent read; a
+    # mis-synced disk (wrong MONOREPO_ROOT, repo not checked out) would otherwise
+    # silently wipe every deployed file. So scan only REPORTS the orphans.
+    orphans = _detect_orphans(monorepo_root)
+
+    return {"scanned": strategy_count, "added": added, "updated": updated,
+            "skipped": skipped, "orphans": orphans, "warnings": []}
+
+
+def _detect_orphans(monorepo_root: Optional[Path] = None) -> list[str]:
+    """IDs of DB strategies whose recorded source_path no longer exists on disk —
+    i.e. the source file was deleted from the repo. Strategies with no source_path
+    are skipped (they were never tied to a repo file, so they aren't orphans)."""
+    root = monorepo_root or Path(cfg.MONOREPO_ROOT)
+    orphans: list[str] = []
     for s in lab_db.list_strategies():
         sp = s.get("source_path")
-        if sp and not (monorepo_root / sp).exists():
-            warnings.append(f"{s['id']}: source_path '{sp}' not found on disk")
+        if sp and not (root / sp).exists():
+            orphans.append(s["id"])
+    return orphans
 
-    return {"scanned": strategy_count, "added": added, "updated": updated, "skipped": skipped, "warnings": warnings}
+
+def reconcile_strategies() -> dict:
+    """Explicit, destructive counterpart to scan_strategies: for every DB strategy
+    whose source file was deleted from the repo, remove it everywhere — DB row +
+    deployed VPS file. The VPS delete is best-effort (see remove_strategy); a
+    failure is surfaced as a warning but never blocks the DB removal. Returns
+    {removed, warnings}."""
+    removed: list[str] = []
+    warnings: list[str] = []
+    for sid in _detect_orphans():
+        res = remove_strategy(sid)
+        removed.append(sid)
+        if res["vps_error"]:
+            warnings.append(
+                f"{sid}: removed from DB, but its VPS file could not be "
+                f"deleted — {res['vps_error']}"
+            )
+    return {"removed": removed, "warnings": warnings}
+
+
+def remove_strategy(strategy_id: str, *, delete_vps_file: bool = True) -> dict:
+    """Remove a strategy everywhere: delete its deployed file from the VPS NT8/MT5
+    strategy folder (best-effort) and delete its DB row. The VPS delete is
+    best-effort — an unreachable agent or an already-absent file never blocks the
+    DB removal (the source is gone, so the strategy is conceptually deleted).
+    Returns {removed, vps_deleted, vps_error}.
+    """
+    row = lab_db.get_strategy(strategy_id)
+    if not row:
+        return {"removed": False, "vps_deleted": False, "vps_error": None}
+
+    vps_deleted = False
+    vps_error: Optional[str] = None
+    if delete_vps_file:
+        sp = row.get("source_path")
+        filename = Path(sp).name if sp else None
+        if filename:
+            try:
+                runner_dispatch.delete_strategy_file(filename)
+                vps_deleted = True
+            except RuntimeError as exc:
+                msg = str(exc)
+                # "already gone" is success, not a failure.
+                if "HTTP 404" in msg or "not found" in msg.lower():
+                    vps_deleted = True
+                else:
+                    vps_error = msg
+
+    lab_db.delete_strategy(strategy_id)
+    return {"removed": True, "vps_deleted": vps_deleted, "vps_error": vps_error}
