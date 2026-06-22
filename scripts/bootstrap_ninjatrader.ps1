@@ -5,13 +5,14 @@
     Companion to bootstrap_vps.ps1 (which covers the MT5 algos side). This one
     rebuilds the NinjaTrader 8 + nt8_agent side of the same VPS.
 
-    HONEST SCOPE NOTE: your uploaded docs include a full runbook for the MT5
-    suite (SETUP.md) but NO equivalent for NinjaTrader. What the docs DO tell us
-    is the integration shape: NT8 on the VPS, a nt8_agent.py on :8765 started by
-    a scheduled task named `NT8Agent`, health = NT8 process + Strategy
-    Analyzer open + clean NinjaScript compile. Everything keyed off those facts
-    is grounded; the rest uses standard NinjaTrader-on-VPS layout and is exposed
-    as parameters so you can correct it.
+    HONEST SCOPE NOTE: the MT5 deploy plumbing is documented (see
+    algos/docs/BOT_DEPLOYMENT_INFRA.md) but there is NO live-bot equivalent for
+    NinjaTrader — NT8's only role today is the command-center backtest agent. What
+    IS grounded is the integration shape: NT8 on the VPS, a nt8_agent.py on :8765
+    started by a scheduled task named `NT8Agent`, health = NT8 process + Strategy
+    Analyzer open + clean NinjaScript compile. Everything keyed off those facts is
+    grounded; the rest uses standard NinjaTrader-on-VPS layout and is exposed as
+    parameters so you can correct it.
 
     CANNOT be automated (GUI / account work) — detected + reported instead:
       - Installing the NinjaTrader 8 desktop app.
