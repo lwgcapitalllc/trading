@@ -18,6 +18,7 @@ Output lines:
     LOG:<message>
 """
 
+import re
 import sys
 import time
 from pathlib import Path
@@ -33,9 +34,68 @@ NT8_DOCS       = Path.home() / "Documents" / "NinjaTrader 8"
 NT8_CUSTOM_DLL = NT8_DOCS / "bin" / "Custom" / "NinjaTrader.Custom.dll"
 TIMEOUT_SECS   = 90
 
+# NT8 keeps F5 compile errors ONLY in the editor's in-memory error grid — they are
+# never written to any trace/log file. The status bar shows this exact string when a
+# build is rejected, so it's our reliable, fast "the build failed" signal.
+FAIL_MARKER = "must be resolved before compiling"
+# Each grid row's Code column is a C# compiler code like CS1001 / CS0246.
+CS_RE = re.compile(r"\bCS\d{3,4}\b")
+
 
 def log(msg: str):
     print(f"LOG:{msg}", flush=True)
+
+
+def _read_compile_errors(ed) -> tuple[list[str], bool]:
+    """Best-effort scrape of the NinjaScript Editor.
+
+    Returns (error_rows, marker_present). `marker_present` is True if NT8 is
+    showing the "errors must be resolved" status marker. `error_rows` are
+    reconstructed grid rows ("ORB.cs  Identifier expected  CS1001  1  16"),
+    best-effort and possibly empty if the UIA layout differs. The caller compares
+    the marker before vs after F5 so a stale marker from a previous failed build is
+    never mistaken for a fresh one. All scraping is defensive: any failure yields
+    ([], False) so the caller falls back to dll-mtime / timeout detection.
+    """
+    rows: list[str] = []
+    marker = False
+    try:
+        for item in ed.descendants(control_type="DataItem"):
+            cells = []
+            for c in item.descendants():
+                try:
+                    txt = c.window_text()
+                except Exception:
+                    continue
+                if txt and txt.strip():
+                    cells.append(txt.strip())
+            line = "  ".join(cells)
+            if CS_RE.search(line):
+                rows.append(line)
+    except Exception:
+        rows = []
+
+    try:
+        for d in ed.descendants():
+            try:
+                txt = d.window_text()
+            except Exception:
+                continue
+            if txt and FAIL_MARKER in txt.lower():
+                marker = True
+                break
+    except Exception:
+        pass
+
+    # Dedupe rows, preserve order, cap the volume we ship back.
+    seen, deduped = set(), []
+    for r in rows:
+        if r not in seen:
+            seen.add(r)
+            deduped.append(r)
+        if len(deduped) >= 15:
+            break
+    return deduped, marker
 
 
 def _find_cc_hwnd() -> int | None:
@@ -105,6 +165,11 @@ def main():
         import ctypes
         dt = Desktop(backend="uia")
         ed = open_ns_editor(dt)
+        # Snapshot any pre-existing "errors must be resolved" marker BEFORE we
+        # compile, so a stale marker left by an earlier failed build isn't mistaken
+        # for this compile's result.
+        _, pre_marker = _read_compile_errors(ed)
+        log(f"Pre-compile fail marker present: {pre_marker}")
         # SetForegroundWindow makes the editor receive keyboard input without
         # cursor movement (no mouse needed). send_keys uses SendInput (keyboard
         # only) which works in disconnected RDP sessions.
@@ -120,15 +185,37 @@ def main():
         print("STATUS:error", flush=True)
         sys.exit(2)
 
-    deadline = time.time() + TIMEOUT_SECS
+    start = time.time()
+    deadline = start + TIMEOUT_SECS
+    # Give the build a moment to start before we trust the "no errors" state — the
+    # error grid clears on F5 and repopulates, so an immediate read can be empty.
+    grace = start + 6
     while time.time() < deadline:
         time.sleep(3)
         if NT8_CUSTOM_DLL.exists() and NT8_CUSTOM_DLL.stat().st_mtime > pre_mtime:
-            elapsed = round(time.time() - (deadline - TIMEOUT_SECS), 1)
-            log(f"dll updated — compile succeeded in ~{elapsed}s")
+            log(f"dll updated — compile succeeded in ~{round(time.time() - start, 1)}s")
             print("STATUS:success", flush=True)
             sys.exit(0)
 
+        if time.time() < grace:
+            continue
+        errors, marker = _read_compile_errors(ed)
+        # Fail fast on real error rows, or on a FRESH fail marker (one that wasn't
+        # already showing before this compile). dll-mtime is checked first above, so
+        # a clean build exits as success before we ever look at the marker.
+        if errors or (marker and not pre_marker):
+            if errors:
+                for e in errors:
+                    print(f"ERROR:{e}", flush=True)
+            else:
+                print("ERROR:NinjaTrader reports build errors. Open the NinjaScript "
+                      "Editor error panel on the VPS for the full list.", flush=True)
+            log(f"compile failed in ~{round(time.time() - start, 1)}s "
+                f"({len(errors)} error rows read)")
+            print("STATUS:failed", flush=True)
+            sys.exit(1)
+
+    # Neither the dll updated nor did the grid show errors — a genuine timeout.
     print(
         "ERROR:Compile did not complete within 90 s. "
         "Check the NinjaScript Editor output panel for errors.",

@@ -159,8 +159,8 @@ def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict
         raise RuntimeError(f"MT5 upload {filename}: {exc}") from exc
 
 
-def delete_strategy_file(filename: str) -> dict:
-    """DELETE /files/strategies/<filename> — delete a .mq5 or .ex5 file."""
+def _delete_one(filename: str) -> dict:
+    """DELETE /files/strategies/<filename> — delete a single .mq5 or .ex5 file."""
     url = cfg.MT5_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
     req = urllib.request.Request(url, method="DELETE")
     try:
@@ -170,6 +170,32 @@ def delete_strategy_file(filename: str) -> dict:
         raise RuntimeError(f"MT5 delete {filename}: HTTP {exc.code} — {exc.read().decode()}") from exc
     except Exception as exc:
         raise RuntimeError(f"MT5 delete {filename}: {exc}") from exc
+
+
+def delete_strategy_file(filename: str) -> dict:
+    """Delete an MT5 strategy's whole footprint: BOTH the .mq5 source and its compiled
+    .ex5 binary. MT5 loads the .ex5, and it outlives its source — deleting only the
+    .mq5 leaves the strategy showing in the Navigator and Strategy Tester. So we remove
+    both siblings. An already-absent sibling (HTTP 404) is fine; we only fail on a real
+    error, or if neither file existed (surfaced as 404 so the caller treats it as
+    already-gone)."""
+    stem = filename.rsplit(".", 1)[0]
+    deleted: list[str] = []
+    errors: list[str] = []
+    for name in (f"{stem}.mq5", f"{stem}.ex5"):
+        try:
+            _delete_one(name)
+            deleted.append(name)
+        except RuntimeError as exc:
+            msg = str(exc)
+            if "HTTP 404" in msg or "not found" in msg.lower():
+                continue  # already gone — fine
+            errors.append(msg)
+    if errors:
+        raise RuntimeError("; ".join(errors))
+    if not deleted:
+        raise RuntimeError(f"MT5 delete {stem}: HTTP 404 — no .mq5 or .ex5 found")
+    return {"ok": True, "deleted": deleted}
 
 
 def trigger_compile() -> dict:

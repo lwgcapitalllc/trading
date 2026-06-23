@@ -1090,7 +1090,23 @@ def set_strategy_deployed(class_name: str, source_hash: str) -> None:
 
 
 def delete_strategy(strategy_id: str) -> bool:
+    """Delete a strategy and everything that depends on it. Foreign keys are ON, so
+    the strategy row can't go while any backtest_run or optimization still points at
+    it — and those runs are in turn referenced by evaluations and stress_tests. So we
+    purge the whole chain children-first in one transaction: evaluations + stress_tests
+    (via the strategy's run_ids) → backtest_runs + optimizations → strategy_versions →
+    the strategy itself. Without this, deleting a strategy that has any runs raises a
+    FOREIGN KEY constraint failure."""
     with _connect() as conn:
+        conn.execute(
+            "DELETE FROM evaluations WHERE run_id IN "
+            "(SELECT run_id FROM backtest_runs WHERE strategy_id = ?)", (strategy_id,))
+        conn.execute(
+            "DELETE FROM stress_tests WHERE run_id IN "
+            "(SELECT run_id FROM backtest_runs WHERE strategy_id = ?)", (strategy_id,))
+        conn.execute("DELETE FROM backtest_runs WHERE strategy_id = ?", (strategy_id,))
+        conn.execute("DELETE FROM optimizations WHERE strategy_id = ?", (strategy_id,))
+        conn.execute("DELETE FROM strategy_versions WHERE strategy_id = ?", (strategy_id,))
         cur = conn.execute("DELETE FROM strategies WHERE id = ?", (strategy_id,))
     return cur.rowcount > 0
 
