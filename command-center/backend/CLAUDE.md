@@ -298,10 +298,22 @@ ONCE: its content becomes `sized_timeline` and `sized = bool(sized_timeline)` (t
 a real sized run) — no second `.exists()` stat. `SizedTimelineDay` mirrors `sizing_engine.DayTimeline`
 (date, trades_taken, contracts_total, day_pnl, eod_balance, risk_floor, floor_distance,
 consistency_share_pct, halt_reason); it drives the frontend's Sized equity curve AND the day-by-day
-Sizing Timeline table (both built). **Still pending:** reshaping the two MT5 strategies the same way
-(ORB is the only reshaped strategy). The whole sized path stays dormant until a reshaped strategy
-actually emits `engine_trades.csv` on the VPS — both the curve and the table render only once a real
-sized run exists.
+Sizing Timeline table (both built).
+
+**MT5 reshaped too (2026-06-22).** `LondonBreakout.mq5` is now reshaped like ORB: it trades UNIT size
+= the broker minimum lot (the forex analog of "1 micro" — always tradeable, finest legal granularity),
+strips all account governance, and writes the per-trade record to `engine_trades.csv` in the tester's
+`MQL5\Files`. The MT5 agent (`algos/.../mt5_agent.py`) reads that file back after a single backtest
+(`_read_engine_trades`, cleared pre-run so a failed run ships nothing) and attaches it as
+`result["engine_trades"]`; `runner_dispatch._normalize_mt5_results` passes the key through at the top
+level, so `_handle_complete` sizes the run runner-agnostically — the SAME gate as NT8 (`if engine_trades
+and firm_ids`). MT5 forex runs size against the personal/demo forex ruleset (no prop firm covers forex);
+the engine reads `max_drawdown_from_peak_pct × account_size` as the floor, so personal rulesets size
+fine (`EngineRuleset.from_ruleset` is `.get()`-safe). The forex `point_value` recorded is value of one
+price point for one min-lot (`tickValue/tickSize × unitLots`), so `risk_per_contract` is real USD.
+**Both ORB and LondonBreakout need a VPS compile + backtest to verify — neither can run locally.** The
+whole sized path stays dormant until a reshaped strategy actually emits `engine_trades.csv` on the VPS;
+both the curve and the table render only once a real sized run exists.
 
 ## Lens metrics (the per-run scoring layer)
 

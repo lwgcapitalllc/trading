@@ -122,13 +122,6 @@
       "guide": ["Reacts faster to volatility shifts", "Smoother, slower ATR"]
     },
     {
-      "name": "BreakEvenMove",
-      "group": "Stop management",
-      "widget": "switch",
-      "label": "Break-even stop",
-      "desc": "Move the stop to entry once price reaches +1R, taking risk off the trade."
-    },
-    {
       "name": "AsianStartGMT",
       "group": "Session windows",
       "widget": "time",

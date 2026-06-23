@@ -5,6 +5,17 @@ live in `strategies/CLAUDE.md`; this file holds the design rationale and the bac
 record (v1 baseline + v2 spec-faithful), which are reference material, not standing
 instructions.
 
+> **v3 reshape (2026-06-22) — the signal below is unchanged, the risk model is not.**
+> The EA was reshaped to the LWG gated-layer rules: it now trades UNIT size (the broker
+> minimum lot) and the dynamic sizing engine resizes/grades the run offline from a per-trade
+> record (`engine_trades.csv`). All account governance was removed — the risk-% sizing,
+> daily-loss cap, halt fraction, consecutive-loss halt, profit target, profit lock-in, and
+> the **BreakEvenMove** toggle are gone. The entry-shaping toggles (PendingEntry, PipRangeFilter)
+> and every session/range/target knob below are unchanged. The v1/v2 backtest numbers in this
+> doc were recorded under the old risk-% sizing and no longer describe the deployed EA's P&L;
+> they remain valid as a description of the *signal's* behaviour. See `strategies/CLAUDE.md`
+> and `command-center/backend/CLAUDE.md` ("Dynamic sizing & risk engine") for the reshape.
+
 ## Design (v1)
 
 Fully instrument-agnostic by construction — no symbol, no pip value, no per-pair

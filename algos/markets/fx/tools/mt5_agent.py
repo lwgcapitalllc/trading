@@ -37,6 +37,7 @@ Startup (Windows Task Scheduler, suggested task name: MT5Agent):
 
 from __future__ import annotations
 
+import csv
 import datetime
 import json
 import sys
@@ -861,6 +862,53 @@ def _parse_mt5_report(html: str) -> dict:
     }
 
 
+_ENGINE_TRADES_COLS = (
+    "index", "entry_time", "exit_time", "direction", "entry_price", "exit_price",
+    "stop_distance", "point_value", "commission_per_side", "exit_reason",
+)
+
+
+def _engine_trades_path(data_dir: Path) -> Path:
+    """Where a gated-layer EA writes the per-trade record (runner→engine contract).
+    The EA writes engine_trades.csv with FILE_CSV (no FILE_COMMON), so it lands in the
+    tester instance's MQL5\\Files — the same folder OnTesterPass writes opt_results.csv."""
+    return data_dir / "MQL5" / "Files" / "engine_trades.csv"
+
+
+def _read_engine_trades(data_dir: Path) -> list[dict]:
+    """Read engine_trades.csv (the per-trade record a reshaped EA emits) into the dict
+    shape services.sizing_pipeline.RawTrade.from_record expects. Returns [] when the file
+    is absent — a unit-size (un-reshaped) EA writes no such file, and the sized path then
+    stays dormant exactly as on the NT8 side. Best-effort: any parse error yields []."""
+    path = _engine_trades_path(data_dir)
+    if not path.is_file():
+        return []
+    rows: list[dict] = []
+    try:
+        # EA writes FILE_ANSI, but the content is pure ASCII (numbers, ISO timestamps,
+        # Long/Short, plain exit reasons), so utf-8 decodes it exactly. Python has no
+        # "ansi" codec; utf-8 + errors=replace matches every other reader in this file.
+        with path.open("r", newline="", encoding="utf-8", errors="replace") as fh:
+            for rec in csv.DictReader(fh):
+                if not rec.get("entry_time") or not rec.get("exit_time"):
+                    continue
+                rows.append({
+                    "index":               int(float(rec["index"])),
+                    "entry_time":          rec["entry_time"].strip(),
+                    "exit_time":           rec["exit_time"].strip(),
+                    "direction":           rec["direction"].strip(),
+                    "entry_price":         float(rec["entry_price"]),
+                    "exit_price":          float(rec["exit_price"]),
+                    "stop_distance":       float(rec["stop_distance"]),
+                    "point_value":         float(rec["point_value"]),
+                    "commission_per_side": float(rec.get("commission_per_side", 0) or 0),
+                    "exit_reason":         (rec.get("exit_reason") or "").strip().strip('"'),
+                })
+    except Exception:
+        return []
+    return rows
+
+
 def _read_mt5_journal(data_dir: Path, lines: int = 30) -> str:
     """Read the most recent MT5 journal log from <data_dir>/logs/. Returns empty string on any failure."""
     logs_dir = data_dir / "logs"
@@ -1534,6 +1582,13 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         )
         jl(f"Config: {ini_path}")
 
+        # Clear any stale per-trade record so a reshaped EA's engine_trades.csv reflects
+        # only this run (a failed/empty run must not ship the prior run's trades).
+        try:
+            _engine_trades_path(data_dir).unlink(missing_ok=True)
+        except Exception:
+            pass
+
         killed = _kill_by_path(tester_exe)
         if killed:
             jl(f"Closed existing {tester_exe.name} instance before launch")
@@ -1593,6 +1648,15 @@ def _run_backtest(job_id: str, spec: dict) -> None:
     except Exception as exc:
         fail(f"Report parsing failed: {exc}")
         return
+
+    # If the EA was reshaped to the gated-layer rules it wrote the per-trade record
+    # (the runner→engine contract). Ship it so the backend sizes the run offline; a
+    # unit-size EA writes none and the key stays absent (sized path dormant), exactly
+    # like the NT8 side. The report itself remains the unit-size reference.
+    engine_trades = _read_engine_trades(data_dir)
+    if engine_trades:
+        result["engine_trades"] = engine_trades
+        jl(f"engine_trades: shipped {len(engine_trades)} rows for offline sizing")
 
     jl(
         f"Complete - pnl={result['net_pnl']:.2f}  "

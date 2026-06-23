@@ -398,12 +398,20 @@ def _normalize_mt5_results(raw: dict) -> dict:
             "size":      t.get("volume"),
         })
 
-    return {
+    out = {
         "kpis":         kpis,
         "equity_curve": equity_curve,
         "daily_pnl":    raw.get("daily_pnl", []),
         "trades":       trades,
     }
+    # Pass the per-trade record through when a reshaped EA emitted it (the runner→engine
+    # contract). backtest_runner._handle_complete sizes the run offline only when this key
+    # is present; a unit-size EA ships none, so the sized path stays dormant — same gate
+    # as the NT8 side. Kept at the top level (not under kpis), exactly where NT8 puts it.
+    engine_trades = raw.get("engine_trades")
+    if engine_trades:
+        out["engine_trades"] = engine_trades
+    return out
 
 
 def job_results(job_id: str, runner: Optional[str] = None) -> dict:

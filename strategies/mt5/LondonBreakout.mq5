@@ -2,55 +2,47 @@
 //|                                             LondonBreakout.mq5    |
 //|                                                LWG Capital LLC    |
 //+------------------------------------------------------------------+
-// London session breakout — spec-faithful build (v2).
+// London session breakout — reshaped to the LWG gated-layer rules (v3).
 //
-// v1 was bar-close market entry, an ATR range band, and a 1:1 target. v2 keeps
-//   every one of those as the default-OFF behaviour and layers three INDEPENDENT
-//   toggles that each move one piece toward the NexGenAlgo source spec:
-//     PendingEntry    — pending stop OCO entry with a fixed pip buffer
-//     PipRangeFilter  — fixed 15-40 pip range band (vs the ATR band)
-//     BreakEvenMove   — pull the stop to entry at +1R
-//   Each toggle is off by default and orthogonal, so step-4 can measure the
-//   delta of one change at a time. With all three OFF and TargetRR=1.0 the EA
-//   reproduces v1 exactly.
+// Gated-layer rules (docs/LWG_Strategy_Framework.md, docs/dynamic_sizing_engine.md):
+//   NO STRATEGY KNOWS HOW TO MANAGE RISK. LondonBreakout proposes setups at UNIT
+//   size (the broker's minimum lot). It does NOT size off the account, halt on a
+//   daily-loss cap, stop at a profit target, lock in profit, count consecutive
+//   losses, or pull stops to break-even — every one of those decisions belongs to
+//   the dynamic sizing & gating engine, which sizes and grades the run OFFLINE
+//   from the per-trade record this EA emits.
 //
-// Idea: the Asian session (00:00-06:00 GMT) sets a quiet reference range.
-//   At the London open, price often breaks that range and continues in the
-//   break direction. We mark the Asian high/low, wait for a bar-close break
-//   past a small buffer, take one trade in the break direction, and are flat
-//   by late London.
+//   It keeps only what is part of its edge: the entry signal (bar-close break or
+//   pending-stop OCO), the stop, the target, and the time rules that define WHEN
+//   the setup is valid (session windows, entry cutoff, force-flat). It emits one
+//   row per closed trade — the runner→engine contract — to engine_trades.csv in
+//   the tester's MQL5\Files folder: index, entry/exit time + price, direction,
+//   stop_distance, point_value, commission_per_side, exit_reason. The command-center
+//   MT5 agent ships that file; the engine (services/sizing_engine.py via
+//   sizing_pipeline.py) reads it and decides size per ruleset.
 //
-// This file is fully INSTRUMENT-AGNOSTIC. No symbol, no pip value, and no
-//   per-pair number is baked in. Everything that differs per instrument is
-//   either read from the broker (SymbolInfo) or expressed as a multiple of
-//   the instrument's own ATR, so the same file runs on AUDJPY, CADJPY,
-//   USDJPY, or XAUUSD with nothing changed but the injected layers.
-//   The word "pip" never appears in the logic — distances are points.
+//   UNIT = the broker's minimum lot (SYMBOL_VOLUME_MIN). It is the forex analog of
+//   "1 micro contract": always tradeable and the finest legal granularity, so the
+//   engine's integer sizing has the most resolution. point_value is reported for
+//   that unit (value of one price point for one min-lot), so risk_per_contract =
+//   stop_distance × point_value is the USD risk of one unit trade.
 //
-// Default entry is BAR-CLOSE market orders, to stay inside the trustworthy MT5
-//   data band (Model=1, M5/M15 bar-close). The PendingEntry toggle switches to
-//   intrabar pending stop orders; the both-sided diagnostic below justified that
-//   on AUDJPY (1 ambiguous day in 1,307 qualifying days — 0.08%).
+//   The MT5 Strategy Tester's own report is the UNIT-SIZE reference (one min-lot per
+//   trade); the engine's sized daily P&L is authoritative for grading.
 //
-// Diagnostic (the point of this run): independent of any trade, count how
-//   often a single M15 bar touches BOTH breakout levels. That is the case a
-//   bar model cannot resolve (it can't know which side was hit first), so it
-//   quantifies how much the bar model is silently guessing. Written to a CSV
-//   in the MQL5 Common\Files folder and printed at the end of the run.
+// Idea: the Asian session (00:00-06:00 GMT) sets a quiet reference range. At the
+//   London open price often breaks that range and continues. We mark the Asian
+//   high/low, wait for a bar-close break past a small buffer (or arm pending stops),
+//   take ONE trade per day in the break direction, and are flat by late London.
 //
-// Layers:
-//   Layer A (Strategy Logic, tunable, no prefix) — session windows + the
-//     ATR-scaled range/buffer/target knobs. All scale across instruments.
-//   Foundational (f_ prefix) — sizing, risk caps, and costs injected from the
-//     active ruleset by the lab dispatcher. Sentinel defaults (-1) force a
-//     hard fail at init if injection did not happen.
+// This file is fully INSTRUMENT-AGNOSTIC. No symbol, no pip value, and no per-pair
+//   number is baked in. Everything per-instrument is read from the broker
+//   (SymbolInfo) or expressed as a multiple of the instrument's own ATR, so the
+//   same file runs on AUDJPY, CADJPY, USDJPY, or XAUUSD unchanged.
 //
-// Timezone is fully automatic — there is NO manual offset and nothing to set.
-//   Session windows are defined in GMT; the broker->GMT offset is derived live
-//   from the broker itself (TimeTradeServer vs TimeGMT) and recomputed on every
-//   bar, so a daylight-savings shift on either the broker side or the GMT side
-//   is tracked automatically. It follows whatever broker the EA runs on and
-//   never depends on the machine's local clock. Human error is designed out.
+// Timezone is fully automatic — there is NO manual offset. Session windows are GMT;
+//   the broker→GMT offset is derived live from the broker (TimeTradeServer vs
+//   TimeGMT) and recomputed every bar, DST-safe on both sides.
 //+------------------------------------------------------------------+
 #property copyright "LWG Capital LLC"
 #property version   "1.00"
@@ -61,11 +53,9 @@
 #define MAGIC_NUMBER 20240003
 
 //--- Strategy logic parameters (Layer A — tunable by optimizer) ---
-// Session windows are in GMT. They define the strategy, not the instrument,
-// so they are the same for every pair. Times are "HH:MM".
-// These are GMT and DST-safe (the EA derives the broker↔GMT offset live, see
-// BrokerToGmtSec) — they define the strategy, not a per-run knob, so the lab
-// surfaces them in a separate collapsed "Session Windows" section.
+// Session windows are in GMT. They define the strategy, not the instrument, so
+// they are the same for every pair. Times are "HH:MM", DST-safe (the EA derives
+// the broker↔GMT offset live, see BrokerToGmtSec).
 input string AsianStartGMT   = "00:00";   // [group: Session Windows] Asian range window start (GMT)
 input string AsianEndGMT     = "06:00";   // [group: Session Windows] Asian range window end (GMT, exclusive)
 input string LondonOpenGMT   = "07:00";   // [group: Session Windows] start watching for the break (GMT)
@@ -77,42 +67,35 @@ input int    AtrPeriod       = 14;        // ATR lookback, on the DAILY timefram
 input double RangeMinAtr     = 0.5;       // skip day if Asian range < this x ATR
 input double RangeMaxAtr     = 1.3;       // skip day if Asian range > this x ATR
 input double BufferAtr       = 0.1;       // breakout buffer = this x ATR beyond the range
-input double TargetRR        = 2.0;       // target as a multiple of the stop distance (spec 2:1; v1 used 1.0)
+input double TargetRR        = 2.0;       // target as a multiple of the stop distance (spec 2:1)
 
-//--- Spec-faithful toggles (each INDEPENDENT, default OFF — measure deltas one at a time) ---
-// All pip distances below are derived from the broker's point size via PipSize();
-// the word "pip" never appears as a hardcoded number in the logic.
+//--- Entry-shaping toggles (part of the SIGNAL — kept; each INDEPENDENT, default OFF) ---
+// These change WHICH setup triggers and HOW it is entered, so they belong to the
+// strategy's edge, not to risk management. All pip distances derive from the
+// broker's point size via PipSize(); the word "pip" is never a hardcoded number.
 
-// 1. Entry model. OFF = current bar-close market entry using the ATR buffer.
+// 1. Entry model. OFF = bar-close market entry using the ATR buffer.
 //    ON  = pending stop orders at the breakout levels (OCO: first fill cancels the
 //          other; both cancelled if neither fills by EntryCutoffGMT). The buffer
 //          switches to a fixed pip distance (BufferPips).
 input bool   PendingEntry    = false;     // false = bar-close market; true = pending stop OCO
 input double BufferPips       = 5.0;      // breakout buffer in pips, used only when PendingEntry=true
 
-// 2. Range filter. OFF = current ATR band (RangeMin/MaxAtr).
-//    ON  = fixed pip band [RangeMinPips, RangeMaxPips]; days inside the
-//          [SweetMinPips, SweetMaxPips] sweet spot are tallied separately (log only).
+// 2. Range filter. OFF = ATR band (RangeMin/MaxAtr). ON = fixed pip band.
 input bool   PipRangeFilter  = false;     // false = ATR band; true = fixed pip band
 input double RangeMinPips      = 15.0;    // reject day if Asian range < this (pips)
 input double RangeMaxPips      = 40.0;    // reject day if Asian range > this (pips)
 input double SweetMinPips      = 20.0;    // sweet-spot lower bound (logged, not a gate)
 input double SweetMaxPips      = 35.0;    // sweet-spot upper bound (logged, not a gate)
 
-// 3. Stop management. OFF = fixed stop held until SL/TP/force-flat.
-//    ON  = pull the stop to break-even (entry) once price reaches +1R.
-//          Trailing is intentionally excluded — a separate later test.
-input bool   BreakEvenMove   = false;     // false = no break-even; true = move stop to entry at +1R
-
-//--- Foundational parameters (injected from ruleset — do not modify defaults) ---
-input double f_AccountSize           = -1;   // USD account size for position sizing
-input double f_RiskPerTradePct       = -1;   // % risk per trade (e.g. 1.0)
-input double f_DailyLossCap          = -1;   // USD daily max loss
-input double f_DailyHaltFraction     = -1;   // halt new entries at this fraction of cap (0-1)
-input int    f_MaxConsecutiveLosses  = -1;   // halt after N consecutive losses (0 = disabled)
-input double f_DailyProfitTarget     = -1;   // USD daily target (0 = disabled)
-input double f_DailyProfitLockPct    = -1;   // fraction of target where risk halves (0 = disabled)
-input double f_CommissionPerSide     = 0;    // commission per side (informational; spread is the live cost)
+//--- Foundational parameters (cost + execution only — injected by the lab dispatcher) ---
+// Account-governance foundational params (account size, risk %, daily-loss cap,
+// halt fraction, consecutive-loss limit, profit target, profit lock-in) were
+// REMOVED — the engine owns every one of those decisions now. Only the cost and
+// the execution-deviation facts remain. f_CommissionPerSide is recorded into the
+// per-trade contract so the engine prices the sized run; it is informational for
+// the tester's own report (spread is the live cost there).
+input double f_CommissionPerSide     = 0;    // commission per side ($/lot-side; recorded into the contract)
 input int    f_SlippageTicks         = 0;    // deviation tolerance in points
 
 //--- Globals ---
@@ -129,6 +112,11 @@ int g_londonOpenMin  = 0;
 int g_entryCutoffMin = 0;
 int g_forceFlatMin   = 0;
 
+// Unit size — the broker minimum lot. Every proposed trade is exactly this size;
+// the engine resizes offline. Resolved once in OnInit.
+double g_unitLots    = 0;
+double g_pointValue  = 0;   // $ per 1.0 price point per unit lot (recorded into the contract)
+
 // Per-day state (keyed on GMT calendar day).
 int      g_curDayYmd    = 0;       // yyyymmdd in GMT of the day being tracked
 double   g_asianHigh    = 0;
@@ -141,29 +129,26 @@ double   g_sellLevel    = 0;
 bool     g_tradedToday  = false;   // one trade per day, no re-entry
 bool     g_dayHasBoth   = false;   // this day already had a both-sided bar
 
-// Foundational daily risk state (reset on GMT-day rollover).
-double g_dayStartBalance   = 0;
-int    g_consecutiveLosses = 0;
-double g_riskMultiplier    = 1.0;
-bool   g_tradingHalted     = false;
-
 // Open trade state.
 ulong  g_ticket       = 0;
-double g_riskAtEntry  = 0;       // USD risk at open; used to classify win/loss in R
-double g_balanceAtEntry = 0;
+long   g_positionId   = 0;       // POSITION_IDENTIFIER — keys history lookup on close
 bool   g_inTrade      = false;
+
+// Per-trade record state (built at entry, completed at exit).
+datetime g_entryTime   = 0;
+double   g_entryPrice  = 0;       // fill price of the open trade
+double   g_stopDist    = 0;       // price distance entry->stop at open (the contract's stop_distance)
+int      g_dir         = 0;       // +1 long / -1 short
 
 // Pending-order state (PendingEntry mode). 0 = no live order on that side.
 ulong  g_buyStopTicket  = 0;
 ulong  g_sellStopTicket = 0;
 bool   g_pendingPlaced  = false;
 
-// Break-even state (BreakEvenMove mode).
-double g_entryPrice    = 0;       // fill price of the open trade
-double g_initialSlDist = 0;       // price distance entry->stop at open = 1R
-bool   g_beApplied     = false;   // stop already pulled to break-even this trade
+// Per-trade record rows (the runner→engine contract) and the diagnostic counters.
+string g_tradeRows[];            // one CSV line per closed trade
+int    g_recordIndex = 0;
 
-// Diagnostic counters (the point of this run).
 int      g_qualifyingDays = 0;   // days the range filter passed (levels live)
 int      g_bothSidedDays  = 0;   // qualifying days with >= 1 both-sided bar
 int      g_bothSidedBars  = 0;   // total both-sided bars across all qualifying days
@@ -183,17 +168,14 @@ bool ParseHHMM(const string s, int &minutes) {
    return true;
 }
 
-// Broker server time minus GMT, derived live from the broker each call and
-// snapped to the nearest minute. Recomputing per call (rather than caching one
-// value at init) means a daylight-savings shift on EITHER the broker side or
-// the GMT side is tracked automatically — there is no stored offset to go
-// stale and nothing for a human to set. Works on any broker, forex or futures.
+// Broker server time minus GMT, derived live from the broker each call and snapped
+// to the nearest minute. Recomputing per call (not caching at init) tracks a DST
+// shift on EITHER side automatically — no stored offset to go stale.
 int BrokerToGmtSec() {
    long raw = (long)TimeTradeServer() - (long)TimeGMT();
    return (int)((long)MathRound((double)raw / 60.0) * 60);
 }
 
-// Convert a broker-server time to GMT using the live broker offset.
 datetime ToGmt(const datetime brokerTime) {
    return (datetime)((long)brokerTime - (long)BrokerToGmtSec());
 }
@@ -216,8 +198,18 @@ string GmtDateString(const datetime brokerTime) {
    return StringFormat("%04d-%02d-%02d", dt.year, dt.mon, dt.day);
 }
 
-// Daily ATR of the last COMPLETED daily bar (shift 1 — never the forming one,
-// so there is no look-ahead). Returns 0 if unavailable.
+// ISO-8601 of a broker-server time (no offset) — the per-trade record's timestamps.
+// The engine buckets days off entry_time; using the broker clock keeps the engine's
+// day boundaries aligned with the tester report the agent parses for the unit-size
+// reference.
+string IsoTime(const datetime brokerTime) {
+   MqlDateTime dt;
+   TimeToStruct(brokerTime, dt);
+   return StringFormat("%04d-%02d-%02dT%02d:%02d:%02d",
+                       dt.year, dt.mon, dt.day, dt.hour, dt.min, dt.sec);
+}
+
+// Daily ATR of the last COMPLETED daily bar (shift 1 — no look-ahead). 0 if unavailable.
 double DailyAtr() {
    double atr[];
    ArraySetAsSeries(atr, true);
@@ -225,29 +217,24 @@ double DailyAtr() {
    return atr[0];
 }
 
-// One pip in price terms, derived from the broker — 10 points on 3/5-digit
-// quotes (JPY crosses, 5-digit majors), 1 point otherwise. No hardcoded pip.
+// One pip in price terms, derived from the broker — 10 points on 3/5-digit quotes,
+// 1 point otherwise. No hardcoded pip.
 double PipSize() {
    return ((_Digits == 3 || _Digits == 5) ? 10.0 : 1.0) * _Point;
 }
 
-//=============================================================================
-// FOUNDATIONAL CHECKS
-//=============================================================================
-
-bool ValidateFoundationalParams() {
-   bool ok = true;
-   if(f_AccountSize          < 0) { Print("ERROR: f_AccountSize not injected");          ok = false; }
-   if(f_RiskPerTradePct      < 0) { Print("ERROR: f_RiskPerTradePct not injected");      ok = false; }
-   if(f_DailyLossCap         < 0) { Print("ERROR: f_DailyLossCap not injected");         ok = false; }
-   if(f_DailyHaltFraction    < 0) { Print("ERROR: f_DailyHaltFraction not injected");    ok = false; }
-   if(f_MaxConsecutiveLosses < 0) { Print("ERROR: f_MaxConsecutiveLosses not injected"); ok = false; }
-   if(f_DailyProfitTarget    < 0) { Print("ERROR: f_DailyProfitTarget not injected");    ok = false; }
-   if(f_DailyProfitLockPct   < 0) { Print("ERROR: f_DailyProfitLockPct not injected");   ok = false; }
-   return ok;
+// Value of one price point for one UNIT lot, in account currency. tickValue is the
+// value of one tick for 1.0 lot; per-point for 1.0 lot = tickValue/tickSize; scale
+// to the unit lot. Returns 0 if the broker doesn't expose the tick economics.
+double UnitPointValue() {
+   double tickSize  = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
+   if(tickSize <= 0 || tickValue <= 0 || g_unitLots <= 0) return 0;
+   return (tickValue / tickSize) * g_unitLots;
 }
 
-// Reset both the session-day and the foundational daily-risk state.
+// Reset the session-day state. (No foundational daily-risk state remains — the
+// engine owns daily loss, profit target, halts and consecutive-loss limits.)
 void ResetForNewDay(const int ymd) {
    g_curDayYmd    = ymd;
    g_asianHigh    = 0;
@@ -262,63 +249,70 @@ void ResetForNewDay(const int ymd) {
 
    CancelPendingOrders();   // safety: drop any pending order left from the prior day
    g_pendingPlaced = false;
-   g_entryPrice    = 0;
-   g_initialSlDist = 0;
-   g_beApplied     = false;
-
-   g_dayStartBalance   = AccountInfoDouble(ACCOUNT_BALANCE);
-   g_consecutiveLosses = 0;
-   g_riskMultiplier    = 1.0;
-   g_tradingHalted     = false;
 }
 
-void UpdateRiskMultiplier() {
-   if(f_DailyProfitTarget <= 0 || f_DailyProfitLockPct <= 0) return;
-   double dayPnl = AccountInfoDouble(ACCOUNT_BALANCE) - g_dayStartBalance;
-   double lockAt = f_DailyProfitTarget * f_DailyProfitLockPct;
-   if(dayPnl >= lockAt && g_riskMultiplier > 0.5) {
-      g_riskMultiplier = 0.5;
-      PrintFormat("Profit lock-in: day P&L=%.2f >= %.2f. Risk halved.", dayPnl, lockAt);
+//=============================================================================
+// PER-TRADE RECORD (the runner→engine contract)
+//=============================================================================
+
+// Capture the open trade's contract fields. Direction, fill price, stop distance
+// and entry time are fixed at entry; the exit fields are filled in on close.
+void BeginTradeRecord(const int direction, const double entryPrice,
+                      const double slDistPrice, const datetime entryTime) {
+   g_dir        = direction;
+   g_entryPrice = entryPrice;
+   g_stopDist   = MathAbs(slDistPrice);
+   g_entryTime  = entryTime;
+}
+
+// Append one closed trade to the per-trade record. Columns mirror ORB.cs exactly:
+//   index,entry_time,exit_time,direction,entry_price,exit_price,
+//   stop_distance,point_value,commission_per_side,exit_reason
+void RecordClosedTrade(const double exitPrice, const datetime exitTime,
+                       const string exitReason) {
+   g_recordIndex++;
+   string safeReason = exitReason;
+   StringReplace(safeReason, "\"", "'");
+   string row = StringFormat(
+      "%d,%s,%s,%s,%s,%s,%s,%s,%s,\"%s\"",
+      g_recordIndex,
+      IsoTime(g_entryTime),
+      IsoTime(exitTime),
+      g_dir == 1 ? "Long" : "Short",
+      DoubleToString(g_entryPrice, _Digits),
+      DoubleToString(exitPrice,    _Digits),
+      DoubleToString(g_stopDist,   _Digits),
+      DoubleToString(g_pointValue, 2),
+      DoubleToString(f_CommissionPerSide, 2),
+      safeReason);
+   int n = ArraySize(g_tradeRows);
+   ArrayResize(g_tradeRows, n + 1);
+   g_tradeRows[n] = row;
+}
+
+// Write the per-trade record the engine consumes, to the tester's MQL5\Files folder
+// (same place OnTesterPass writes opt_results.csv — the agent reads it back from
+// there after the run). Single instrument/run, so the file is overwritten each run.
+void WriteTradeRecords() {
+   if(ArraySize(g_tradeRows) == 0) return;
+   int fh = FileOpen("engine_trades.csv", FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+   if(fh == INVALID_HANDLE) { Print("engine_trades: cannot write file."); return; }
+   FileWrite(fh,
+      "index", "entry_time", "exit_time", "direction", "entry_price", "exit_price",
+      "stop_distance", "point_value", "commission_per_side", "exit_reason");
+   for(int i = 0; i < ArraySize(g_tradeRows); i++) {
+      // Each row is already a comma-joined CSV line; write it verbatim.
+      FileWriteString(fh, g_tradeRows[i] + "\r\n");
    }
-}
-
-bool CanEnter() {
-   if(g_tradingHalted) return false;
-   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
-   double dayLoss = g_dayStartBalance - balance;
-   if(dayLoss >= f_DailyLossCap * f_DailyHaltFraction) return false;
-   if(f_DailyProfitTarget > 0 && (balance - g_dayStartBalance) >= f_DailyProfitTarget) return false;
-   return true;
-}
-
-//=============================================================================
-// SIZING — risk-based, read entirely from the broker. No pip assumption.
-//=============================================================================
-
-double CalcLots(const double slDistancePrice) {
-   double tickSize  = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
-   double tickValue = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
-   if(tickSize == 0 || tickValue == 0 || slDistancePrice <= 0) return 0;
-
-   double riskUSD = f_AccountSize * (f_RiskPerTradePct / 100.0) * g_riskMultiplier;
-   double lots    = riskUSD / (slDistancePrice / tickSize * tickValue);
-
-   double lotStep = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
-   double minLot  = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
-   double maxLot  = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MAX);
-   if(lotStep <= 0) return 0;
-
-   lots = MathFloor(lots / lotStep) * lotStep;
-   if(lots < minLot) lots = minLot;
-   if(lots > maxLot) lots = maxLot;
-   return lots;
+   FileClose(fh);
+   PrintFormat("engine_trades: wrote %d rows.", ArraySize(g_tradeRows));
 }
 
 //=============================================================================
 // ENTRY
 //=============================================================================
 
-void EnterTrade(const int direction, const double closePrice) {
+void EnterTrade(const int direction) {
    double point = _Point;
    double entry, sl, tp, slDist;
 
@@ -336,7 +330,6 @@ void EnterTrade(const int direction, const double closePrice) {
 
    if(slDist <= 0) { Print("Invalid SL distance. Skipping entry."); return; }
 
-   // Respect the broker's minimum stop distance (points), if any.
    double minStop = (double)SymbolInfoInteger(Symbol(), SYMBOL_TRADE_STOPS_LEVEL) * point;
    if(slDist < minStop) {
       PrintFormat("SL distance %.1f pts < broker min %.1f pts. Skipping entry.",
@@ -344,29 +337,22 @@ void EnterTrade(const int direction, const double closePrice) {
       return;
    }
 
-   double lots = CalcLots(slDist);
-   if(lots <= 0) { Print("Lot size zero or invalid. Skipping entry."); return; }
-
    sl = NormalizeDouble(sl, _Digits);
    tp = NormalizeDouble(tp, _Digits);
 
    bool ok = (direction == 1)
-      ? trade.Buy (lots, Symbol(), 0, sl, tp, "LondonBreakout")
-      : trade.Sell(lots, Symbol(), 0, sl, tp, "LondonBreakout");
+      ? trade.Buy (g_unitLots, Symbol(), 0, sl, tp, "LondonBreakout")
+      : trade.Sell(g_unitLots, Symbol(), 0, sl, tp, "LondonBreakout");
 
    if(ok && PositionSelect(Symbol())) {
-      g_ticket        = PositionGetInteger(POSITION_TICKET);
-      g_inTrade       = true;
-      g_tradedToday   = true;
-      g_balanceAtEntry = AccountInfoDouble(ACCOUNT_BALANCE);
-      g_riskAtEntry   = f_AccountSize * (f_RiskPerTradePct / 100.0) * g_riskMultiplier;
-      g_entryPrice    = PositionGetDouble(POSITION_PRICE_OPEN);
-      g_initialSlDist = MathAbs(g_entryPrice - sl);
-      g_beApplied     = false;
-      PrintFormat("ENTRY | %s | lots=%.2f | entry=%.5f | SL=%.5f | TP=%.5f | "
-                  "stop=%.1f pts | barClose=%.5f",
-                  direction == 1 ? "BUY" : "SELL", lots,
-                  PositionGetDouble(POSITION_PRICE_OPEN), sl, tp, slDist / point, closePrice);
+      g_ticket      = PositionGetInteger(POSITION_TICKET);
+      g_positionId  = PositionGetInteger(POSITION_IDENTIFIER);
+      g_inTrade     = true;
+      g_tradedToday = true;
+      double open   = PositionGetDouble(POSITION_PRICE_OPEN);
+      BeginTradeRecord(direction, open, open - sl, (datetime)PositionGetInteger(POSITION_TIME));
+      PrintFormat("ENTRY | %s | lots=%.2f | entry=%.5f | SL=%.5f | TP=%.5f | stop=%.1f pts",
+                  direction == 1 ? "BUY" : "SELL", g_unitLots, open, sl, tp, slDist / point);
    } else {
       g_tradedToday = true;   // do not retry the same break
       PrintFormat("Order failed: retcode=%d %s",
@@ -375,16 +361,14 @@ void EnterTrade(const int direction, const double closePrice) {
 }
 
 //=============================================================================
-// PENDING-ORDER ENTRY (PendingEntry mode) + BREAK-EVEN
+// PENDING-ORDER ENTRY (PendingEntry mode)
 //=============================================================================
 
-// Arm both breakout stop orders for a qualifying day. Buy stop at the upper
-// level, sell stop at the lower; first to fill is the trade, the other is
-// cancelled in ManagePending (OCO). Both are cancelled if neither fills by the
-// entry cutoff. Risk-based sizing per side, same as the market path.
+// Arm both breakout stop orders for a qualifying day. Buy stop at the upper level,
+// sell stop at the lower; first to fill is the trade, the other is cancelled in
+// ManagePending (OCO). Both cancelled if neither fills by the entry cutoff. Unit
+// size per side — the engine resizes offline.
 void PlacePendingOrders() {
-   if(!CanEnter()) { Print("Pending: entry gates closed, skipping day."); return; }
-
    double point    = _Point;
    double buyPx    = NormalizeDouble(g_buyLevel,  _Digits);
    double sellPx   = NormalizeDouble(g_sellLevel, _Digits);
@@ -400,18 +384,15 @@ void PlacePendingOrders() {
       return;
    }
 
-   double buyTp    = NormalizeDouble(buyPx  + buyDist  * TargetRR, _Digits);
-   double sellTp   = NormalizeDouble(sellPx - sellDist * TargetRR, _Digits);
-   double buyLots  = CalcLots(buyDist);
-   double sellLots = CalcLots(sellDist);
-   if(buyLots <= 0 || sellLots <= 0) { Print("Pending: lot size invalid, skipping day."); return; }
+   double buyTp  = NormalizeDouble(buyPx  + buyDist  * TargetRR, _Digits);
+   double sellTp = NormalizeDouble(sellPx - sellDist * TargetRR, _Digits);
 
-   if(trade.BuyStop(buyLots, buyPx, Symbol(), buySl, buyTp, ORDER_TIME_GTC, 0, "LondonBreakout"))
+   if(trade.BuyStop(g_unitLots, buyPx, Symbol(), buySl, buyTp, ORDER_TIME_GTC, 0, "LondonBreakout"))
       g_buyStopTicket = trade.ResultOrder();
    else
       PrintFormat("BuyStop failed: retcode=%d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
 
-   if(trade.SellStop(sellLots, sellPx, Symbol(), sellSl, sellTp, ORDER_TIME_GTC, 0, "LondonBreakout"))
+   if(trade.SellStop(g_unitLots, sellPx, Symbol(), sellSl, sellTp, ORDER_TIME_GTC, 0, "LondonBreakout"))
       g_sellStopTicket = trade.ResultOrder();
    else
       PrintFormat("SellStop failed: retcode=%d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
@@ -421,7 +402,6 @@ void PlacePendingOrders() {
                buyPx, buySl, buyTp, sellPx, sellSl, sellTp);
 }
 
-// Cancel whichever stop orders are still pending. Safe to call when none exist.
 void CancelPendingOrders() {
    if(g_buyStopTicket != 0) {
       if(OrderSelect(g_buyStopTicket)) trade.OrderDelete(g_buyStopTicket);
@@ -435,20 +415,20 @@ void CancelPendingOrders() {
 
 // Record the position created when a stop order fills, then mark the day traded.
 void RegisterPendingFill() {
-   g_ticket         = PositionGetInteger(POSITION_TICKET);
-   g_inTrade        = true;
-   g_tradedToday    = true;
-   g_balanceAtEntry = AccountInfoDouble(ACCOUNT_BALANCE);
-   g_riskAtEntry    = f_AccountSize * (f_RiskPerTradePct / 100.0) * g_riskMultiplier;
-   g_entryPrice     = PositionGetDouble(POSITION_PRICE_OPEN);
-   g_initialSlDist  = MathAbs(g_entryPrice - PositionGetDouble(POSITION_SL));
-   g_beApplied      = false;
+   g_ticket      = PositionGetInteger(POSITION_TICKET);
+   g_positionId  = PositionGetInteger(POSITION_IDENTIFIER);
+   g_inTrade     = true;
+   g_tradedToday = true;
+   double open   = PositionGetDouble(POSITION_PRICE_OPEN);
+   double sl     = PositionGetDouble(POSITION_SL);
+   int    dir    = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
+   BeginTradeRecord(dir, open, open - sl, (datetime)PositionGetInteger(POSITION_TIME));
    PrintFormat("Pending FILL | ticket=%s | entry=%.5f | stop=%.1f pts",
-               IntegerToString(g_ticket), g_entryPrice, g_initialSlDist / _Point);
+               IntegerToString(g_ticket), open, MathAbs(open - sl) / _Point);
 }
 
-// Per-tick lifecycle for the pending orders: detect a fill (then OCO-cancel the
-// other side) or cancel both once the entry cutoff passes with no fill.
+// Per-tick lifecycle for the pending orders: detect a fill (OCO-cancel the other
+// side) or cancel both once the entry cutoff passes with no fill.
 void ManagePending() {
    if(!PendingEntry || g_tradedToday || !g_pendingPlaced) return;
 
@@ -464,50 +444,44 @@ void ManagePending() {
    }
 }
 
-// Move the stop to break-even (entry) once price reaches +1R. One-shot per trade.
-void CheckBreakEven() {
-   if(!BreakEvenMove || !g_inTrade || g_beApplied || g_initialSlDist <= 0) return;
-   if(!PositionSelectByTicket(g_ticket)) return;
-
-   long   type = PositionGetInteger(POSITION_TYPE);
-   double open = PositionGetDouble(POSITION_PRICE_OPEN);
-   double tp   = PositionGetDouble(POSITION_TP);
-   double be   = NormalizeDouble(open, _Digits);
-
-   bool reached = (type == POSITION_TYPE_BUY)
-      ? (SymbolInfoDouble(Symbol(), SYMBOL_BID) >= open + g_initialSlDist)
-      : (SymbolInfoDouble(Symbol(), SYMBOL_ASK) <= open - g_initialSlDist);
-   if(!reached) return;
-
-   if(trade.PositionModify(g_ticket, be, tp)) {
-      g_beApplied = true;
-      Print("Break-even: stop pulled to entry at +1R.");
-   } else {
-      PrintFormat("Break-even modify failed: retcode=%d", trade.ResultRetcode());
-   }
-}
-
 //=============================================================================
 // EXITS
 //=============================================================================
 
-void OnPositionClosed() {
-   double profitUSD = AccountInfoDouble(ACCOUNT_BALANCE) - g_balanceAtEntry;
-   double profitR   = (g_riskAtEntry > 0) ? profitUSD / g_riskAtEntry : 0;
-   if(profitR < -0.1) {
-      g_consecutiveLosses++;
-      if(f_MaxConsecutiveLosses > 0 && g_consecutiveLosses >= f_MaxConsecutiveLosses) {
-         g_tradingHalted = true;
-         PrintFormat("HALT: %d consecutive losses.", g_consecutiveLosses);
+// The position is gone — find its closing (out) deal in history to recover the
+// exit price/time/reason, then append the per-trade record. Works in the tester.
+void RecordCloseFromHistory() {
+   double   exitPrice = g_entryPrice;
+   datetime exitTime  = TimeCurrent();
+   string   reason    = "Close";
+
+   if(g_positionId != 0 && HistorySelectByPosition(g_positionId)) {
+      int deals = HistoryDealsTotal();
+      for(int i = deals - 1; i >= 0; i--) {
+         ulong ticket = HistoryDealGetTicket(i);
+         if(ticket == 0) continue;
+         if((ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY) != DEAL_ENTRY_OUT) continue;
+         exitPrice = HistoryDealGetDouble(ticket, DEAL_PRICE);
+         exitTime  = (datetime)HistoryDealGetInteger(ticket, DEAL_TIME);
+         long dr   = HistoryDealGetInteger(ticket, DEAL_REASON);
+         if(dr == DEAL_REASON_SL)      reason = "StopLoss";
+         else if(dr == DEAL_REASON_TP) reason = "ProfitTarget";
+         else                          reason = "Close";
+         break;
       }
-   } else if(profitR > 0.1) {
-      g_consecutiveLosses = 0;
    }
-   g_inTrade = false;
-   g_ticket  = 0;
+   RecordClosedTrade(exitPrice, exitTime, reason);
 }
 
-// Force flat at/after ForceFlatGMT — time-critical, so checked every tick.
+void OnPositionClosed() {
+   RecordCloseFromHistory();
+   g_inTrade     = false;
+   g_ticket      = 0;
+   g_positionId  = 0;
+}
+
+// Force flat at/after ForceFlatGMT — time-critical, checked every tick. The exit is
+// recorded by ManageOpen once the position is actually gone.
 void CheckForceFlat() {
    if(!g_inTrade) return;
    if(GmtMinuteOfDay(TimeCurrent()) < g_forceFlatMin) return;
@@ -518,11 +492,11 @@ void CheckForceFlat() {
 
 void ManageOpen() {
    if(!g_inTrade) return;
-   if(!PositionSelectByTicket(g_ticket)) OnPositionClosed();   // SL/TP took it
+   if(!PositionSelectByTicket(g_ticket)) OnPositionClosed();   // SL/TP/force-flat took it
 }
 
 //=============================================================================
-// DIAGNOSTIC OUTPUT
+// DIAGNOSTIC OUTPUT (research only — independent of trading)
 //=============================================================================
 
 void WriteDiagnostic() {
@@ -533,8 +507,6 @@ void WriteDiagnostic() {
                "both_sided_days=%d | both_sided_bars=%d | pct_days=%.2f",
                Symbol(), g_qualifyingDays, g_sweetSpotDays, g_bothSidedDays, g_bothSidedBars, pct);
 
-   // Persist to the Common\Files folder so the result is retrievable after the
-   // tester exits (mirrors how the optimizer surfaces opt_results.csv).
    string fname = "LondonBreakout_diag_" + Symbol() + ".csv";
    int fh = FileOpen(fname, FILE_WRITE | FILE_CSV | FILE_ANSI | FILE_COMMON, ',');
    if(fh == INVALID_HANDLE) { PrintFormat("Diag: cannot write %s", fname); return; }
@@ -585,8 +557,6 @@ void OnClosedBar() {
       double range = g_asianHigh - g_asianLow;
       double pip   = PipSize();
 
-      // ATR is needed for the ATR band (PipRangeFilter=OFF) and the ATR buffer
-      // (PendingEntry=OFF). When both toggles are ON it is unused.
       bool needAtr = (!PipRangeFilter) || (!PendingEntry);
 
       if(needAtr && atr <= 0) {
@@ -613,7 +583,6 @@ void OnClosedBar() {
             g_sellLevel = g_asianLow  - buf;
             g_qualifyingDays++;
 
-            // Sweet-spot tally (pip filter only) — logged, never gates the day.
             if(PipRangeFilter) {
                double rpips = range / pip;
                if(rpips >= SweetMinPips && rpips <= SweetMaxPips) {
@@ -626,8 +595,6 @@ void OnClosedBar() {
                         GmtDateString(bt), g_buyLevel, g_sellLevel, range / _Point,
                         PendingEntry ? "pips" : "atr");
 
-            // Pending-order entry: arm both stop orders now; OCO + cutoff cancel
-            // run per tick in ManagePending().
             if(PendingEntry) PlacePendingOrders();
          }
       }
@@ -648,11 +615,12 @@ void OnClosedBar() {
          }
       }
 
-      // Entry (PendingEntry=OFF) — bar close past a level, one trade per day, gates pass.
-      // With PendingEntry=ON the stop orders own entry, so skip the market path here.
-      if(!PendingEntry && !g_tradedToday && !g_inTrade && CanEnter()) {
-         if(cl > g_buyLevel)       EnterTrade(1, cl);
-         else if(cl < g_sellLevel) EnterTrade(-1, cl);
+      // Entry (PendingEntry=OFF) — bar close past a level, one trade per day.
+      // With PendingEntry=ON the stop orders own entry, so skip the market path.
+      // No risk gate here — the engine decides whether/how big this setup trades.
+      if(!PendingEntry && !g_tradedToday && !g_inTrade) {
+         if(cl > g_buyLevel)       EnterTrade(1);
+         else if(cl < g_sellLevel) EnterTrade(-1);
       }
    }
 }
@@ -662,12 +630,6 @@ void OnClosedBar() {
 //=============================================================================
 
 int OnInit() {
-   if(!MQLInfoInteger(MQL_OPTIMIZATION) && !ValidateFoundationalParams()) {
-      Print("INIT FAILED: foundational parameters at placeholder values. "
-            "The lab dispatcher must inject all f_ params before running.");
-      return INIT_FAILED;
-   }
-
    if(Period() != PERIOD_M15)
       PrintFormat("WARNING: designed for M15 bar-close logic; running on %s.",
                   EnumToString(Period()));
@@ -681,11 +643,22 @@ int OnInit() {
       return INIT_FAILED;
    }
 
-   // Timezone is automatic: session windows are GMT and the broker->GMT offset
-   // is derived live from the broker every bar (see BrokerToGmtSec), DST-aware,
-   // with nothing to configure. Log it once at init purely for verification.
-   PrintFormat("Broker->GMT offset at init: %d min (server=%s, gmt=%s). "
-               "Auto-derived & DST-aware; recomputed each bar — no manual setting.",
+   // Unit size = broker minimum lot, normalized to the volume step. The engine
+   // resizes offline; the EA always proposes this fixed reference size.
+   double minLot  = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
+   double lotStep = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
+   if(minLot <= 0 || lotStep <= 0) {
+      Print("INIT FAILED: broker did not expose a valid minimum lot / step.");
+      return INIT_FAILED;
+   }
+   g_unitLots   = MathRound(minLot / lotStep) * lotStep;
+   if(g_unitLots < minLot) g_unitLots = minLot;
+   g_pointValue = UnitPointValue();
+   if(g_pointValue <= 0)
+      Print("WARNING: unit point value is 0 (broker tick economics unavailable) — "
+            "the engine cannot price this run until it is resolved.");
+
+   PrintFormat("Broker->GMT offset at init: %d min (server=%s, gmt=%s). Auto-derived & DST-aware.",
                BrokerToGmtSec() / 60,
                TimeToString(TimeTradeServer(), TIME_DATE | TIME_MINUTES),
                TimeToString(TimeGMT(), TIME_DATE | TIME_MINUTES));
@@ -699,38 +672,39 @@ int OnInit() {
    trade.SetExpertMagicNumber(MAGIC_NUMBER);
    trade.SetDeviationInPoints(f_SlippageTicks);
 
-   g_lastBarTime     = 0;
-   g_curDayYmd       = 0;
-   g_inTrade         = false;
-   g_qualifyingDays  = 0;
-   g_sweetSpotDays   = 0;
-   g_bothSidedDays   = 0;
-   g_bothSidedBars   = 0;
-   g_buyStopTicket   = 0;
-   g_sellStopTicket  = 0;
-   g_pendingPlaced   = false;
-   g_beApplied       = false;
+   g_lastBarTime    = 0;
+   g_curDayYmd      = 0;
+   g_inTrade        = false;
+   g_positionId     = 0;
+   g_recordIndex    = 0;
+   g_qualifyingDays = 0;
+   g_sweetSpotDays  = 0;
+   g_bothSidedDays  = 0;
+   g_bothSidedBars  = 0;
+   g_buyStopTicket  = 0;
+   g_sellStopTicket = 0;
+   g_pendingPlaced  = false;
    ArrayResize(g_bothSidedDates, 0);
+   ArrayResize(g_tradeRows, 0);
 
-   PrintFormat("LondonBreakout init | symbol=%s | TF=%s | account=%.2f | risk=%.2f%% | "
-               "commission/side=%.2f (informational; spread is the live cost)",
-               Symbol(), EnumToString(Period()), f_AccountSize, f_RiskPerTradePct, f_CommissionPerSide);
+   PrintFormat("LondonBreakout init | symbol=%s | TF=%s | unit=%.2f lots | pointValue=%.2f | "
+               "commission/side=%.2f (recorded into the contract)",
+               Symbol(), EnumToString(Period()), g_unitLots, g_pointValue, f_CommissionPerSide);
    return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason) {
    if(g_atrHandle != INVALID_HANDLE) IndicatorRelease(g_atrHandle);
+   WriteTradeRecords();   // ship the per-trade record (the runner→engine contract)
    WriteDiagnostic();
 }
 
 //=============================================================================
 // OPTIMIZATION CALLBACKS
-// OnTesterInit / OnTester / OnTesterPass / OnTesterDeinit are only invoked when
-// the terminal runs with Optimization=1. OnTick/OnInit still run in each worker;
-// these run in the collecting terminal (Init/Pass/Deinit) and in each worker
-// (OnTester). The command-center MT5 agent reads opt_results.csv after the run;
-// KPI column names must match its parser (_parse_opt_csv / _OPT_KPI_COLS) and
-// the param column names must match the optimization grid keys.
+// Only invoked when the terminal runs with Optimization=1. The command-center MT5
+// agent reads opt_results.csv after the run; KPI column names must match its parser
+// (_parse_opt_csv / _OPT_KPI_COLS) and the param column names must match the
+// optimization grid keys.
 //=============================================================================
 
 #define OPT_CSV       "opt_results.csv"
@@ -795,14 +769,12 @@ void OnTesterDeinit()
 
 void OnTick() {
    CheckForceFlat();                         // time-critical, every tick
-   CheckBreakEven();                         // price-critical; no-op unless BreakEvenMove
    ManagePending();                          // OCO + cutoff cancel; no-op unless PendingEntry
 
    datetime barTime = iTime(Symbol(), PERIOD_CURRENT, 0);
    if(barTime == g_lastBarTime) return;      // act only on a new completed bar
    g_lastBarTime = barTime;
 
-   UpdateRiskMultiplier();
    ManageOpen();
    OnClosedBar();
 }
