@@ -1970,8 +1970,13 @@ def _run_compile(job_id: str, experts_dir: Path) -> None:
 
             if ex5.exists() and post_mtime > pre_mtime:
                 compiled.append(src.name)
+                # Match real warning lines only — MQL5 format is
+                # "file(line,col) : warning 123: message". The trailing summary
+                # line "Result: 0 errors, 0 warnings, ..." also contains the word
+                # "warning", so a bare substring check false-positives on a clean
+                # build. Require the ": warning" token, mirroring the ": error" check below.
                 for ln in log_lines:
-                    if "warning" in ln.lower():
+                    if ": warning" in ln.lower():
                         warnings.append(f"{src.name}: {ln}")
             else:
                 # mtime did not advance → no new binary was produced (silent no-op

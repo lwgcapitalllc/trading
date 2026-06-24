@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Upload, Trash2, CloudUpload } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, Upload, Trash2, CloudUpload, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
 import {
   useStrategies,
   useScanStrategies, useReconcileStrategies,
@@ -415,6 +415,43 @@ function FileStatusBadge({ filename, vpsFiles, sync }: {
   return <div className="flex items-center gap-1.5">{chip}{pill}</div>
 }
 
+// Round status badge shown in the modal header — spinner / check / X.
+function StatusIcon({ status }: { status?: 'running' | 'success' | 'failed' }) {
+  if (status === 'success')
+    return <div className="shrink-0 mt-0.5 size-7 rounded-full bg-pos-muted flex items-center justify-center"><CheckCircle2 size={18} className="text-pos-text" /></div>
+  if (status === 'failed')
+    return <div className="shrink-0 mt-0.5 size-7 rounded-full bg-neg-muted flex items-center justify-center"><XCircle size={18} className="text-neg-text" /></div>
+  return <div className="shrink-0 mt-0.5 size-7 rounded-full bg-bg-sunken flex items-center justify-center"><RefreshCw size={16} className="text-accent animate-spin" /></div>
+}
+
+// A titled, color-coded block of compiler lines (errors or warnings). Each line is a
+// monospace row so CS codes and line/column numbers stay aligned and readable.
+function CompileSection({ label, count, tone, lines }: {
+  label: string
+  count: number
+  tone: 'neg' | 'warn'
+  lines: string[]
+}) {
+  const accent = tone === 'neg' ? 'text-neg-text' : 'text-warn-text'
+  const Icon = tone === 'neg' ? XCircle : AlertTriangle
+  return (
+    <div className="space-y-2">
+      <div className={`flex items-center gap-1.5 text-[12px] font-medium ${accent}`}>
+        <Icon size={13} />
+        <span>{count} {label}</span>
+      </div>
+      <div className="space-y-1.5">
+        {lines.map((line, i) => (
+          <div key={i} className="flex gap-2 bg-bg-sunken rounded-lg p-2.5">
+            <span className="text-text-tertiary text-[11px] tabular-nums select-none shrink-0 w-5 text-right">{i + 1}</span>
+            <pre className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono ${accent} m-0`}>{line}</pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', usePollHook }: {
   compileJobId: string
   onClose: () => void
@@ -422,38 +459,83 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
   usePollHook: (id: string | null) => { data: import('@/types').CompileJobStatus | undefined }
 }) {
   const { data: job } = usePollHook(compileJobId)
-  const elapsed = job?.started_at ? Math.round((Date.now() / 1000) - job.started_at) : 0
+
+  // Tick once a second while the compile is running so the elapsed counter advances
+  // smoothly. Without this, `elapsed` only recomputes when the poll hook re-fetches,
+  // so it jumps in poll-sized steps. We anchor to the server's started_at when known,
+  // falling back to when this modal mounted.
+  const mountedAt = useRef(Date.now() / 1000)
+  const [now, setNow] = useState(Date.now() / 1000)
+  const running = !job || job.status === 'running'
+  useEffect(() => {
+    if (!running) return
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000)
+    return () => clearInterval(id)
+  }, [running])
+  const startedAt = job?.started_at ?? mountedAt.current
+  const endAt = running ? now : (job?.completed_at ?? now)
+  const elapsed = Math.max(0, Math.round(endAt - startedAt))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-[480px] shadow-xl">
-        <h3 className="text-text-primary font-semibold mb-4">{title}</h3>
-        {(!job || job.status === 'running') && (
-          <div className="text-text-secondary text-[13px] space-y-1">
-            <div className="flex items-center gap-2">
-              <RefreshCw size={14} className="animate-spin text-accent" />
-              <span>Compiling… (Elapsed: {elapsed}s)</span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+      <div className="bg-bg-surface border border-border-default rounded-2xl w-[640px] max-w-full max-h-[85vh] shadow-2xl flex flex-col overflow-hidden">
+        {/* Header — status icon + title + one-line summary */}
+        <div className="flex items-start gap-3 p-5 shrink-0 border-b border-border-subtle">
+          <StatusIcon status={job?.status} />
+          <div className="min-w-0">
+            <h3 className="text-text-primary font-semibold text-[15px] leading-tight">{title}</h3>
+            <p className="text-[12px] mt-0.5 text-text-tertiary">
+              {(!job || job.status === 'running') && `Compiling… ${elapsed}s elapsed`}
+              {job?.status === 'success' && (
+                job.warnings.length > 0
+                  ? `Compiled with ${job.warnings.length} warning${job.warnings.length === 1 ? '' : 's'}`
+                  : 'All strategies compiled successfully'
+              )}
+              {job?.status === 'failed' && `Failed — ${job.errors.length} error${job.errors.length === 1 ? '' : 's'}`}
+            </p>
+          </div>
+        </div>
+
+        {/* Body — scrollable detail */}
+        <div className="px-5 py-4 overflow-y-auto grow min-h-0 space-y-4">
+          {(!job || job.status === 'running') && (
+            <div className="space-y-2.5" aria-label="Compiling">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex gap-2 bg-bg-sunken rounded-lg p-2.5">
+                  <div className="h-3 w-5 rounded bg-bg-hover shrink-0 animate-pulse" style={{ animationDelay: `${i * 150}ms` }} />
+                  <div className="h-3 rounded bg-bg-hover animate-pulse" style={{ width: `${70 - i * 18}%`, animationDelay: `${i * 150}ms` }} />
+                </div>
+              ))}
             </div>
-            <p className="text-text-tertiary text-[12px]">When complete, results will appear here.</p>
-          </div>
-        )}
-        {job?.status === 'success' && (
-          <div className="space-y-2">
-            <p className="text-pos-text text-[13px]">✓ All strategies compiled successfully.</p>
-            {job.warnings.length > 0 && <p className="text-warn-text text-[12px]">Warnings: {job.warnings.length}</p>}
-          </div>
-        )}
-        {job?.status === 'failed' && (
-          <div className="space-y-2">
-            <p className="text-neg-text text-[13px]">✗ Compilation failed.</p>
-            {job.errors.map((e, i) => (
-              <pre key={i} className="text-[11px] bg-bg-sunken rounded p-2 text-neg-text whitespace-pre-wrap">{e}</pre>
-            ))}
-          </div>
-        )}
+          )}
+
+          {job?.status === 'success' && job.warnings.length === 0 && (
+            <p className="text-[13px] text-text-secondary">No errors, no warnings. You're good to run a backtest.</p>
+          )}
+
+          {job?.status === 'failed' && job.errors.length > 0 && (
+            <CompileSection
+              label={`Error${job.errors.length === 1 ? '' : 's'}`}
+              count={job.errors.length}
+              tone="neg"
+              lines={job.errors}
+            />
+          )}
+
+          {job?.warnings && job.warnings.length > 0 && (
+            <CompileSection
+              label={`Warning${job.warnings.length === 1 ? '' : 's'}`}
+              count={job.warnings.length}
+              tone="warn"
+              lines={job.warnings}
+            />
+          )}
+        </div>
+
+        {/* Footer */}
         {job?.status && job.status !== 'running' && (
-          <div className="flex justify-end mt-5">
-            <button onClick={onClose} className="px-4 py-2 rounded-lg border border-border-subtle text-text-secondary text-[13px] hover:text-text-primary">Close</button>
+          <div className="flex justify-end p-4 shrink-0 border-t border-border-subtle">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg bg-bg-sunken border border-border-subtle text-text-secondary text-[13px] hover:text-text-primary hover:border-border-default transition-colors">Close</button>
           </div>
         )}
       </div>
