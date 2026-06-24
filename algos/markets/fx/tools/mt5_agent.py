@@ -869,20 +869,39 @@ _ENGINE_TRADES_COLS = (
 
 
 def _engine_trades_path(data_dir: Path) -> Path:
-    """Where a gated-layer EA writes the per-trade record (runner→engine contract).
-    The EA writes engine_trades.csv with FILE_CSV (no FILE_COMMON), so it lands in the
-    tester instance's MQL5\\Files — the same folder OnTesterPass writes opt_results.csv."""
+    """Terminal-data-dir location of the per-trade record (runner→engine contract).
+    Kept as the forward-compat anchor, but a SINGLE backtest does NOT land here — see
+    _engine_trades_candidates for why."""
     return data_dir / "MQL5" / "Files" / "engine_trades.csv"
+
+
+def _engine_trades_candidates(data_dir: Path) -> list[Path]:
+    """Every path a gated-layer EA's engine_trades.csv can land in.
+
+    The EA writes with FILE_CSV (no FILE_COMMON). Under a single backtest the EA runs in a
+    local tester *agent* whose sandbox is %APPDATA%\\MetaQuotes\\Tester\\<hash>\\Agent-*\\
+    MQL5\\Files — NOT the terminal data dir. So the file never appears in data_dir\\MQL5\\Files
+    (that path only ever sees opt_results.csv, which OnTesterPass writes from the collecting
+    terminal, not the agent sandbox). Return the terminal path first (forward-compat) then
+    every tester-agent sandbox match, oldest→newest by glob order."""
+    cands = [_engine_trades_path(data_dir)]
+    # data_dir = ...\MetaQuotes\Terminal\<hash>  →  tester base = ...\MetaQuotes\Tester
+    tester_base = data_dir.parent.parent / "Tester"
+    if tester_base.is_dir():
+        cands.extend(tester_base.glob("*/Agent-*/MQL5/Files/engine_trades.csv"))
+    return cands
 
 
 def _read_engine_trades(data_dir: Path) -> list[dict]:
     """Read engine_trades.csv (the per-trade record a reshaped EA emits) into the dict
-    shape services.sizing_pipeline.RawTrade.from_record expects. Returns [] when the file
-    is absent — a unit-size (un-reshaped) EA writes no such file, and the sized path then
-    stays dormant exactly as on the NT8 side. Best-effort: any parse error yields []."""
-    path = _engine_trades_path(data_dir)
-    if not path.is_file():
+    shape services.sizing_pipeline.RawTrade.from_record expects. Returns [] when no file
+    is present — a unit-size (un-reshaped) EA writes none, and the sized path then stays
+    dormant exactly as on the NT8 side. Best-effort: any parse error yields []."""
+    existing = [p for p in _engine_trades_candidates(data_dir) if p.is_file()]
+    if not existing:
         return []
+    # Multiple stale sandboxes can coexist; the freshest is this run's.
+    path = max(existing, key=lambda p: p.stat().st_mtime)
     rows: list[dict] = []
     try:
         # EA writes FILE_ANSI, but the content is pure ASCII (numbers, ISO timestamps,
@@ -1583,11 +1602,14 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         jl(f"Config: {ini_path}")
 
         # Clear any stale per-trade record so a reshaped EA's engine_trades.csv reflects
-        # only this run (a failed/empty run must not ship the prior run's trades).
-        try:
-            _engine_trades_path(data_dir).unlink(missing_ok=True)
-        except Exception:
-            pass
+        # only this run (a failed/empty run must not ship the prior run's trades). Clears
+        # every candidate — the terminal path AND each tester-agent sandbox — since a single
+        # backtest writes to the sandbox, not data_dir\MQL5\Files.
+        for stale in _engine_trades_candidates(data_dir):
+            try:
+                stale.unlink(missing_ok=True)
+            except Exception:
+                pass
 
         killed = _kill_by_path(tester_exe)
         if killed:

@@ -302,9 +302,14 @@ Sizing Timeline table (both built).
 
 **MT5 reshaped too (2026-06-22).** `LondonBreakout.mq5` is now reshaped like ORB: it trades UNIT size
 = the broker minimum lot (the forex analog of "1 micro" — always tradeable, finest legal granularity),
-strips all account governance, and writes the per-trade record to `engine_trades.csv` in the tester's
-`MQL5\Files`. The MT5 agent (`algos/.../mt5_agent.py`) reads that file back after a single backtest
-(`_read_engine_trades`, cleared pre-run so a failed run ships nothing) and attaches it as
+strips all account governance, and writes the per-trade record to `engine_trades.csv` with `FILE_CSV`
+(no `FILE_COMMON`). **Gotcha (fixed 2026-06-24):** under a single backtest the EA runs in a local tester
+*agent*, so the file lands in the agent sandbox `%APPDATA%\MetaQuotes\Tester\<hash>\Agent-*\MQL5\Files`,
+NOT the terminal data dir's `MQL5\Files` (that path only ever gets `opt_results.csv`, which
+`OnTesterPass` writes from the collecting terminal, not the agent). The MT5 agent
+(`algos/.../mt5_agent.py`) reads that file back after a single backtest (`_read_engine_trades` →
+`_engine_trades_candidates`, which globs every `Tester\*\Agent-*\MQL5\Files\engine_trades.csv` and takes
+the freshest by mtime; all candidates cleared pre-run so a failed run ships nothing) and attaches it as
 `result["engine_trades"]`; `runner_dispatch._normalize_mt5_results` passes the key through at the top
 level, so `_handle_complete` sizes the run runner-agnostically — the SAME gate as NT8 (`if engine_trades
 and firm_ids`). MT5 forex runs size against the personal/demo forex ruleset (no prop firm covers forex);
