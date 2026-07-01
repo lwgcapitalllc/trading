@@ -9,6 +9,7 @@ trading/
 ├── command-center/  ← Local ops platform: bot monitor, smart money UI, backtests lab
 ├── regime/          ← Shared market regime classifier (live bots + backtest lab)
 ├── strategies/      ← Generic strategy source files organized by runner platform
+├── indicators/      ← Pine Script market-structure indicator rebuild (TradingView)
 ├── scripts/         ← Cross-subsystem VPS recovery and bootstrap scripts
 └── docs/            ← Cross-subsystem reference docs and audit tools
 ```
@@ -23,18 +24,20 @@ Read these in order for full context:
 5. `smart-money/CLAUDE.md` — pipeline status, thresholds, where we left off
 6. `regime/CLAUDE.md` — shared classifier, public API, consumers
 7. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
-8. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
-9. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
+8. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
+9. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
+10. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
 
 ## Subsystems
 
 | Subsystem | Purpose | Status | Rules |
 |---|---|---|---|
-| `algos/` | Live algo trading — 4 bots on Windows VPS | Demo trading | `algos/CLAUDE.md` |
+| `algos/` | Live algo trading on Windows VPS | No live bots — rebuilding backtest-first | `algos/CLAUDE.md` |
 | `smart-money/` | Trader scanner for copy-trading candidates | Stages 1–2, 5 live | `smart-money/CLAUDE.md` |
 | `command-center/` | React + FastAPI ops platform | Live | `command-center/CLAUDE.md` |
 | `regime/` | Shared regime classifier for live bots and backtest lab | Production | `regime/CLAUDE.md` |
-| `strategies/` | Generic strategy source files (NT8 + MT5; Tradovate placeholder) | Production | `strategies/CLAUDE.md` |
+| `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
+| `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |
 
 ## Conventions

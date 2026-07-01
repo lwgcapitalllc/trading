@@ -6,15 +6,28 @@ record (v1 baseline + v2 spec-faithful), which are reference material, not stand
 instructions.
 
 > **v3 reshape (2026-06-22) — the signal below is unchanged, the risk model is not.**
-> The EA was reshaped to the LWG gated-layer rules: it now trades UNIT size (the broker
-> minimum lot) and the dynamic sizing engine resizes/grades the run offline from a per-trade
-> record (`engine_trades.csv`). All account governance was removed — the risk-% sizing,
-> daily-loss cap, halt fraction, consecutive-loss halt, profit target, profit lock-in, and
-> the **BreakEvenMove** toggle are gone. The entry-shaping toggles (PendingEntry, PipRangeFilter)
-> and every session/range/target knob below are unchanged. The v1/v2 backtest numbers in this
-> doc were recorded under the old risk-% sizing and no longer describe the deployed EA's P&L;
-> they remain valid as a description of the *signal's* behaviour. See `strategies/CLAUDE.md`
-> and `command-center/backend/CLAUDE.md` ("Dynamic sizing & risk engine") for the reshape.
+> The EA was reshaped to the LWG gated-layer rules: it now trades UNIT size — the broker
+> minimum lot (`SYMBOL_VOLUME_MIN`, the forex analog of "1 micro") — and the dynamic sizing
+> engine resizes/grades the run offline from a per-trade record (`engine_trades.csv`). All
+> account governance was removed — the risk-% sizing, daily-loss cap, halt fraction,
+> consecutive-loss halt, profit target, profit lock-in, and the **BreakEvenMove** toggle are
+> gone (BreakEvenMove specifically: post-entry stop modification muddies the static-stop
+> contract). The entry-shaping toggles (PendingEntry OCO, PipRangeFilter) stay because they
+> change the SIGNAL, not the risk model, so they and every session/range/target knob below
+> are unchanged. Foundational params are trimmed to cost+execution only (`f_CommissionPerSide`,
+> `f_SlippageTicks`); the 7 risk `f_` params are gone. The EA still carries the `OnTester*`
+> optimizer callbacks (`OnTesterInit`/`OnTester`/`OnTesterPass`/`OnTesterDeinit`).
+>
+> `engine_trades.csv` uses the same columns as ORB's runner→engine contract. Under a single
+> backtest the EA runs inside an MT5 tester agent, so the file lands in the agent sandbox
+> (`%APPDATA%\MetaQuotes\Tester\<hash>\Agent-*\MQL5\Files`), not the terminal data dir — the
+> MT5 agent globs the sandbox to read it back, and the backend sizes the run per ruleset
+> offline. The tester's own report remains the unit-size reference.
+>
+> The v1/v2 backtest numbers in this doc were recorded under the old risk-% sizing and no
+> longer describe the deployed EA's P&L; they remain valid as a description of the *signal's*
+> behaviour. See `strategies/CLAUDE.md` and `command-center/backend/CLAUDE.md` ("Dynamic
+> sizing & risk engine") for the reshape.
 
 ## Design (v1)
 

@@ -2,7 +2,7 @@
 
 **Purpose:** Generic trading strategy implementations, organized by runner platform.
 **Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5, `.pine` for TradingView). Does NOT cover backtest infrastructure (see `command-center/`), live bot runtime logic (see `algos/`), or regime classification (see `regime/`).
-**Status:** Production. NinjaTrader strategies are live and deployed via the command center. MT5 has one strategy (LondonBreakout.mq5). `tradingview/` holds Pine research strategies tested in the TradingView Strategy Tester only (NOT scanned/deployed by the command center). Tradovate is a placeholder.
+**Status:** Production. NinjaTrader strategies are live and deployed via the command center. MT5 has one strategy (LondonBreakout.mq5). `tradingview/` holds Pine research strategies tested in the TradingView Strategy Tester only (NOT scanned/deployed by the command center).
 **Last reviewed:** 2026-06-20
 
 ---
@@ -15,10 +15,9 @@ strategies/
 │   └── ORB.cs            (VWAP_MR.cs, Momentum.cs deleted 2026-06-21 — see below)
 ├── mt5/            ← MT5 expert advisors (.mq5, MQL5)
 │   └── LondonBreakout.mq5
-├── tradingview/    ← Pine v6 research strategies (.pine) — TV Strategy Tester only
-│   ├── london_breakout.pine
-│   └── ny_orb.pine
-└── tradovate/      ← placeholder for future Tradovate strategies
+└── tradingview/    ← Pine v6 research strategies (.pine) — TV Strategy Tester only
+    ├── london_breakout.pine
+    └── ny_orb.pine
 ```
 
 `tradingview/` is research scratch space: hand-tested in the TradingView Strategy Tester, not picked up by the command-center scanner (which only rglobs `.cs` and `.mq5`). Promote a validated Pine idea by porting it to NT8/MT5.
@@ -77,7 +76,7 @@ lingering DB rows/runs clear on the next **Scan Strategies** (the scanner warns 
 | File | Class | Runner | Description |
 |---|---|---|---|
 | `ORB.cs` | ORB | ninjatrader | Opening Range Breakout — entry on ORB high/low break. The only live NT8 strategy. **Reshaped to the gated-layer rules 2026-06-21:** trades unit size (1 contract), self-policing halts removed (moved to the engine), keeps only signal + stop/target + time rules; emits the per-trade record to `engine_trades.csv` (the runner→engine contract). Needs VPS compile + backtest to verify. |
-| `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range (00:00–06:00 GMT) → London breakout, instrument-agnostic. **Reshaped to the gated-layer rules 2026-06-22 (v3):** trades UNIT size = the broker minimum lot (`SYMBOL_VOLUME_MIN`, the forex analog of "1 micro"; the engine resizes offline); all account governance removed (risk-% sizing, daily-loss cap, halt fraction, consecutive-loss halt, profit target, profit lock-in, **and the BreakEvenMove toggle** — post-entry stop modification muddies the static-stop contract). Keeps only signal + stop/target + time rules; the two entry-shaping toggles (PendingEntry OCO, PipRangeFilter) stay because they change the SIGNAL. Foundational params trimmed to cost+execution only (`f_CommissionPerSide`, `f_SlippageTicks`); the 7 risk `f_` params are gone. Emits the per-trade record to `engine_trades.csv` (the runner→engine contract — same columns as ORB); under a single backtest the EA runs in a tester agent, so the file lands in the agent sandbox (`%APPDATA%\MetaQuotes\Tester\<hash>\Agent-*\MQL5\Files`), not the terminal data dir — the MT5 agent globs the sandbox to read it back and the backend sizes the run per ruleset offline. The tester's own report is the unit-size reference. Still carries the `OnTester*` optimizer callbacks. **Needs VPS compile + backtest to verify — cannot be tested locally.** AUDJPY survivor config + per-toggle deltas in `mt5/LONDON_BREAKOUT.md`. |
+| `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range → London breakout, instrument-agnostic. Reshaped to the gated-layer rules 2026-06-22 (v3). Needs VPS compile + backtest to verify — cannot be tested locally. See `mt5/LONDON_BREAKOUT.md` for design + reshape detail and backtest record. |
 | `ny_orb.pine` | — | tradingview | **In TradingView research/tuning (2026-06-20), not yet promoted.** NY Opening Range Breakout, instrument-agnostic (FX + futures). Built on `london_breakout.pine`'s skeleton. Range = wick-to-wick high/low of the opening window; sessions anchored to `America/New_York` (DST-safe). Entry = break candle (excluded from count) + N direction-filtered confirmation closes (`confirmCloses`, 0 = enter on the break candle itself; bullish closes for longs, bearish for shorts). Two entry methods: **Breakout Close** (market) and **Retest** (limit at the broken box edge). Far-side stop, RR target, optional partial + step-trail. Win/loss boxes recolour like London Breakout (no labels). Guards: forced `orderQty` (futures otherwise round to 0 contracts — see notes), weekend skip, and a volume-based thin/holiday-day filter (Pine has no calendar; OR volume < % of lookback average ⇒ skip). |
 
 ---
@@ -100,7 +99,7 @@ To fix: add a Windows scheduled task (trigger: At startup, run whether user is l
 
 ## References
 
-- `mt5/LONDON_BREAKOUT.md` — LondonBreakout design notes + v1 backtest record
+- `mt5/LONDON_BREAKOUT.md` — LondonBreakout design notes, v3 reshape detail, and backtest record
 - Build history (foundational config rules, NT8/MT5 deployment manager, this directory's creation) is in git history.
 - `command-center/backend/CLAUDE.md` — scanner, deploy endpoint, sync-status logic, MT5 agent client
 - `command-center/frontend/CLAUDE.md` — Strategies page, Deployed tab, Deploy button, MT5 compile button

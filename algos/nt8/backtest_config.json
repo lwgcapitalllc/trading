@@ -41,46 +41,6 @@
         "TpMultiple": "1.5",
         "OneTradePer": "False"
       }
-    },
-    {
-      "id": "VWAP_MES",
-      "strategy": "VWAP_MR",
-      "instrument": "MES 06-26",
-      "params": {
-        "EntryStd": "2.0",
-        "StopExtension": "1.0",
-        "TpFraction": "1.0",
-        "MinBarsBeforeEntry": "20"
-      }
-    },
-    {
-      "id": "VWAP_MGC",
-      "strategy": "VWAP_MR",
-      "instrument": "MGC 06-26",
-      "params": {
-        "EntryStd": "2.0",
-        "StopExtension": "1.0",
-        "TpFraction": "1.0",
-        "MinBarsBeforeEntry": "20"
-      }
-    },
-    {
-      "id": "MOM_MGC",
-      "strategy": "Momentum",
-      "instrument": "MGC 06-26",
-      "params": {
-        "MaPeriod": "20",
-        "RrRatio": "2.0"
-      }
-    },
-    {
-      "id": "MOM_MCL",
-      "strategy": "Momentum",
-      "instrument": "MCL 06-26",
-      "params": {
-        "MaPeriod": "20",
-        "RrRatio": "2.0"
-      }
     }
   ],
 

@@ -12,7 +12,7 @@ import os
 import time
 
 CFG_PATH = os.path.join(os.path.dirname(__file__), "backtest_config.json")
-STRATEGY_FILES = ["ORB.cs", "VWAP_MR.cs", "Momentum.cs"]
+STRATEGY_FILES = ["ORB.cs"]
 
 
 def load_config():

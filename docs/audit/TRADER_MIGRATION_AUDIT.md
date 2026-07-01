@@ -9,6 +9,10 @@
 > - The backup scripts `scripts/backup.py` and `scripts/nt8_backup.py` (the `backups` orphan
 >   branch and twice-daily backup task are gone), so the `nt8_backup.py` class (b) fallback note
 >   and the "Restore Data from Backup" / profile-note steps no longer apply.
+> - `algos/docs/SETUP.md` — deleted in commit `f5d56db` (before the bot-suite cutdown), and
+>   nothing replaced its install-prereq content. **Step 2b** (SETUP.md prerequisites edit) and
+>   **Step 3** (profile note to add to SETUP.md) below target a file that no longer exists — they
+>   are kept here only as a record of the intended guidance in case a new setup guide is written.
 >
 > The remaining Administrator→trader actions (Python path, `backtest_config.json`, `setup_agent_task.py`,
 > `bots.py`, `test_integration.py`, the surviving scheduler XMLs, and the bootstrap scripts) still stand.

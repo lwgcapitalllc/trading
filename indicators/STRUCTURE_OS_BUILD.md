@@ -11,7 +11,6 @@ Keep it accurate — update status as each stage is validated on a real chart.
 
 **Files:**
 - `indicators/smc_engine_v2.pine` — the NEW pullback-only build (this rewrite).
-- `indicators/smc_engine.pine` — the OLD hybrid version (uses `ta.pivothigh/low`). Kept for reference only. Do NOT edit. Once v2 is fully validated, this can be replaced/deleted.
 
 ---
 

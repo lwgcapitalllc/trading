@@ -17,16 +17,7 @@
 
 ## Repo Structure
 
-```
-trading/
-├── algos/           ← Live algo trading suite (XAUUSD, Windows VPS)
-├── smart-money/     ← Smart money replication system (Mac-only, active)
-├── command-center/  ← Local operations platform (React + FastAPI)
-├── regime/          ← Shared market regime classifier (bots + backtest lab)
-├── strategies/      ← Generic trading strategy source files, organized by runner platform
-├── scripts/         ← Cross-subsystem VPS recovery and bootstrap scripts
-└── docs/            ← Cross-subsystem reference docs and audit tools
-```
+See `README.md` for the full repo map and subsystem list.
 
 `algos/`, `smart-money/`, and `command-center/` are fully independent from each other. `regime/` is a shared library imported by `algos/` (via shim) and `command-center/` (directly). `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS (NT8 strategy folder).
 
@@ -47,10 +38,13 @@ React + FastAPI local operations platform. Monitors bots via SSH, surfaces Smart
 Shared market regime classifier. Imported by the live bots (via `algos/shared/shared_regime.py` thin shim) and by the command-center backtest lab. Single output set: 5 labels (TRENDING, TRANSITIONING, RANGING, HIGH_VOLATILITY, LOW_VOLATILITY). Each bot owns its own `REGIME_RISK_TABLE` mapping labels to trade decisions. Full rules in `regime/CLAUDE.md`. Algorithm documented in `regime/REGIME_CLASSIFIER.md`.
 
 ### strategies/
-Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the only live NinjaScript strategy, `ORB.cs` (VWAP_MR and Momentum were deleted 2026-06-21 — they baked risk management into the strategy, against the gated-layer rules). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS (NT8 or MT5 folder by extension). `strategies/mt5/` holds one MQL5 strategy: `LondonBreakout.mq5` (instrument-agnostic Asian-range → London breakout). `strategies/tradovate/` is a placeholder. Full rules in `strategies/CLAUDE.md`.
+Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the only live NinjaScript strategy, `ORB.cs` (VWAP_MR and Momentum were deleted 2026-06-21 — they baked risk management into the strategy, against the gated-layer rules). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS (NT8 or MT5 folder by extension). `strategies/mt5/` holds one MQL5 strategy: `LondonBreakout.mq5` (instrument-agnostic Asian-range → London breakout). Full rules in `strategies/CLAUDE.md`.
 
 ### scripts/
 Cross-subsystem VPS bootstrap and full-recovery scripts (`bootstrap_vps.ps1` for the MT5/algos side, `bootstrap_ninjatrader.ps1` for the NT8 side). Idempotent, run on a wiped or new VPS. Full run order in `scripts/README.md`.
+
+### indicators/
+From-scratch Pine Script rewrite of the "Structure OS / SMC Engine" market-structure indicator (`indicators/smc_engine_v2.pine`), replicating a private TradingView indicator using a pullback-only (no pivot lookback) swing detection method. Mid-rebuild: swing detection and break-gated BOS/CHoCH (Stage 2b) are ~95% validated against the original; internal structure (Stage 3) and full multi-symbol comparison (Stage 4) are not started. Full rules in `indicators/CLAUDE.md`.
 
 ---
 

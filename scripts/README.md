@@ -1,7 +1,7 @@
 # scripts/ — Cross-subsystem ops & recovery
 
 Root-level operational scripts that span more than one subsystem. Subsystem-specific
-scripts stay in their own subsystem (e.g. `algos/scripts/deploy.py`); these live here
+scripts stay in their own subsystem (e.g. `algos/scripts/cleanup_vps.bat`); these live here
 because they rebuild or recover the whole VPS.
 
 | Script | Covers | Run as |
@@ -52,11 +52,14 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
    Analyzer. The command-center NT8 health dot needs SA open.
 
 6. **Verify**
+   No bots are currently deployed — the suite was deleted 2026-06-22 and is being rebuilt
+   backtest-first (see `algos/CLAUDE.md`). Verify infrastructure instead:
    ```bash
-   algo            # control panel — all 4 MT5 bots RUNNING
+   algo            # control panel loads, no bots listed
    ```
-   Telegram: `/status` (4 bots green), `/balance` (correct balances).
+   Telegram: `/status` responds (even with zero bots registered).
    Command-center sidebar: API / SSH / NT8 / MT5 Agent dots green.
+   Once a bot is redeployed, confirm it shows RUNNING in `algo` and green in Telegram `/status`.
 
 ---
 
@@ -73,5 +76,4 @@ cannot be scripted; the scripts detect them and tell you what's outstanding.
 
 ## Related (not in this folder)
 
-- `algos/scripts/deploy.py` — pushes algo changes to the VPS. Stays in `algos/` (algos-specific).
 - `algos/docs/ARCHITECTURE.md` — multi-instrument system design (scanner, risk engine, learning gate).

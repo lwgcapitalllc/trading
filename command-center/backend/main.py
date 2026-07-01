@@ -5,7 +5,7 @@ import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import smart_money, bots, backtests, stress_tests, settings, strategies, firms, rulesets, system, sweeps, optimizations, strategy_files, queue
+from routers import smart_money, bots, backtests, stress_tests, settings, strategies, rulesets, system, sweeps, optimizations, strategy_files, queue
 from services import lab_db, runner_dispatch, mt5_agent_client
 from services.backtest_runner import read_progress, clear_progress
 from services import queue_runner
@@ -29,7 +29,6 @@ app.include_router(stress_tests.router)
 app.include_router(settings.router)
 app.include_router(strategies.router)
 app.include_router(rulesets.router)
-app.include_router(firms.router)          # backward-compat redirect — deprecated in M3
 app.include_router(system.router)
 app.include_router(strategy_files.router)
 app.include_router(queue.router)

@@ -83,7 +83,6 @@ Not as a follow-up. Right now, before moving on.
 | `docs/ARCHITECTURE.md` | Multi-instrument system design changes (scanner, risk engine, correlation, learning gate) |
 
 | `README.md` | Repo structure changes, new top-level files/dirs, workflow changes |
-| `docs/BOT_*_GUIDE.md` | Any change to that bot's behavior, config, or risk rules |
 | `notifications/NOTIFICATIONS_GUIDE.md` | Any change to alerts, Telegram commands, monitor behavior |
 | `scheduler/SCHEDULER_GUIDE.md` | Task Scheduler changes |
 
@@ -104,7 +103,6 @@ Not as a follow-up. Right now, before moving on.
 Architecture deep-dive: `docs/ARCHITECTURE.md`
 VPS recovery: `scripts/README.md` + `scripts/bootstrap_vps.ps1`
 Notification system: `notifications/NOTIFICATIONS_GUIDE.md`
-Bot guides: `docs/BOT_*_GUIDE.md`
 
 ---
 

@@ -15,6 +15,13 @@ The lab module (strategies, firms, backtests, evaluations) is live as of M1.
 
 ---
 
+## Guides & references
+
+- `command-center/docs/PROP_RULESET_KPIS.md` — per-firm prop ruleset KPIs, doc links, and the DB sync-check query.
+- `command-center/docs/BACKEND_BUILD_NOTES.md` — NT8 Strategy Analyzer pywinauto automation implementation notes, and the dynamic sizing/risk engine build history.
+
+---
+
 ## Directory layout
 
 ```
@@ -29,7 +36,6 @@ backend/
 │   ├── backtests.py       lab — backtest runs; GET /runs/{id}/chart-spec serves the price-chart ChartSpec (chart_spec.py)
 │   ├── strategies.py      lab — strategy registry + deploy endpoint + POST /scan (read-only) + POST /reconcile (destructive orphan cleanup) + GET /:id/instrument_summary + GET /:id/param-types
 │   ├── rulesets.py        lab — ruleset CRUD (/rulesets); PATCH = guarded personal-rules edit (prop rows locked 403; PUT also 403 on prop)
-│   ├── firms.py           backward-compat redirect /firms → /rulesets (deprecated, keep until all callers confirmed updated)
 │   ├── system.py          lab — health + log proxies
 │   ├── strategy_files.py  lab — strategy file deployment (list, upload, delete, compile, sync-status)
 │   ├── stress_tests.py    lab — stress test CRUD + trigger (GET /stress-tests, GET /running-lock, GET /strategy-grades, GET /:id, POST /run, DELETE /:id)
@@ -128,48 +134,9 @@ Never make a synchronous SSH call from a request handler that could take > 2s. B
 
 ## NT8 Strategy Analyzer UI automation (nt8_backtest_runner.py)
 
-Hard-won rules for pywinauto + NT8 WPF — violating these causes silent wrong-strategy runs or broken SA state:
+Backtest and optimization runs drive NT8's Strategy Analyzer window via pywinauto (WPF UI automation over SSH), not an API — there's no native NT8 automation interface. This is inherently fragile: WPF control identification, popup timing, and mode-switch state all have non-obvious failure modes.
 
-**PCT:100 hung fix**: In `nt8_agent.py`, the `for line in proc.stdout:` loop never sees EOF on Windows when the subprocess calls `os._exit(0)`. This is because `subprocess.Popen` with `stdout=PIPE` sets `close_fds=False` on Windows — the agent process inherits the write-end of the pipe, keeping it open after the child exits. Fix: mark the job `status="complete"` *inside* the stdout loop the moment `PCT:100` arrives AND the results file exists — never wait for loop exit. Same pattern applies to walk-forward jobs.
-
-**SA auto-open**: `find_strategy_analyzer` opens SA automatically via NT8's New → Strategy Analyzer menu if not already visible. This handles the case where NT8 crashes and restarts without restoring the SA window. Retries once after opening.
-
-**Narrow scan `txtBox` probe**: `_build_opt_grid_map` uses a narrow scan to avoid the ~22s full `sa.descendants()` call. The probe must use `found_index=0` — `sa.child_window(auto_id="txtBox", control_type="Edit", found_index=0)` — because multiple elements match and `child_window()` without `found_index` throws "N elements match." Each `node.parent()` call in the walk must be in its own `try/except` so a COM error on one level doesn't abort the entire walk.
-
-**Strategy compile delays**: After NT8 restart, strategies are compiled lazily. `select_strategy` retries with increasing waits (1.5s → 5s → 10s) to allow NT8 time to compile before giving up.
-
-**ComboBox identification**
-- All NT8 WPF ComboBoxes return empty `window_text()` — you cannot identify them by their current value.
-- Named ComboBoxes (`auto_id != ''`) are all strategy/config controls (BacktestType, TradingHours, EntryHandling, etc.). **Never click them during trade export** — it corrupts SA configuration for the next run.
-- The Display combo (Summary/Analysis/Chart/Trades/…) always has an empty `auto_id`. Only scan unnamed ComboBoxes.
-- To identify the Display combo: click it, then look for a "Trades" item in the SA subtree or Desktop. Try `control_type="MenuItem"` first, then `"ListItem"`, then a broad `descendants()` scan by `window_text()`.
-- To close a dropdown without selecting: click the same combo again (toggle). **Do not use `send_keys("{ESCAPE}")`** — it sends ESCAPE to the active window and can dismiss unrelated dialogs.
-
-**Strategy selection**
-- `select_strategy()` returns `True/False`. If it returns `False`, the SA still has the previous strategy loaded.
-- `configure_from_spec()` raises `RuntimeError` on strategy-selection failure; `run_job_mode()` catches it and calls `sys.exit(1)`. **Never let a run proceed if strategy selection failed** — NT8 will silently run whatever was last loaded.
-- Strategy dropdown items are `control_type="MenuItem"`, not `ListItem`.
-- **WPF popup location changes after first run**: On a fresh SA the dropdown popup is a child of the SA window in the UIA tree. After a backtest completes, subsequent clicks on the selector render the popup as a top-level Desktop element. `select_strategy` uses `_find_strategy_item` which tries both: `sa.child_window(...)` first, then `Desktop(backend="uia").window(...)`. Never search only within SA.
-
-**Optimization results export**
-- Right-click CSV export from the SA results grid is the **only** way to get optimization results. Native optimize writes `.cs` files per combo — no `.xml`. Never look for an output file; always export via the context menu.
-- `_export_optimization_results` uses a two-pass right-click: Pass 1 opens the context menu and scans the UIA tree to find Export coordinates (the scan causes WPF to close the popup), Pass 2 right-clicks again and immediately clicks Export at the recorded coordinates.
-- Sleep **1.0 s** (not 0.3 s) after `sa.restore()` before right-clicking — the SA needs time to finish restoring before WM_RBUTTONDOWN lands on the right element.
-- Right-click at `y = sa_rect.top + int(sa_h * 0.20)` — 20% skips the Display dropdown and column headers. y=5% lands in the header row (no Export option). y=50%+ lands in the performance summary tab (wrong export format). The print log shows `[opt-export] Right-click at (x, y)  sa=WxH` for debugging.
-- **0-trade combos kill Export**: when all optimization combos produce 0 trades, NT8 shows no results in the grid and the Export context menu item does not appear. Root cause: NinjaScript `int` parameters (e.g. `MaPeriod`) silently truncate decimal values — a step of 2.5 generates values like 22.5 → cast to 22, but NT8 skips the combo because the effective value doesn't match. The `param-types` endpoint + frontend validation (see frontend CLAUDE.md) prevents users from entering non-integer steps on `int` params.
-- When the same 3 persistent items (`Momentum`, `Select`, `Trades ($)`) appear in the UIA scan, the right-click is NOT opening a context menu — it landed on a different element. These are persistent WPF dropdown elements, not context menu items.
-
-**Param setting in Optimize mode — confirmed behavior**
-- NT8 does NOT automatically reset BacktestType after `select_strategy`. It stays in whatever mode was active. Always call `_set_backtest_type("Backtest")` explicitly after `select_strategy` + 3s sleep to get a clean state.
-- String and bool params: set via PDEX `set_edit_typed`/`set_checkbox` in Backtest mode. These persist through Backtest→Optimize switch (no Optimize-grid entry for them).
-- Numeric params: DO NOT persist through Backtest→Optimize switch. NT8 resets all Optimize-grid params to their NinjaScript defaults on the mode switch. Must be set via the Optimize grid (`_set_range_in_grid` with lo=hi=value, step=1) AFTER switching to Optimize mode.
-- One-time re-render: the first write to ANY txtBox in the Optimize grid triggers NT8's WPF property-change event, rebuilding the entire grid (stale elements). Set RANGE params first — they absorb the re-render. Then rebuild `grid_map` (0.5s sleep) and set fixed numeric params. They will stick because the re-render has already fired.
-- Confirmed flow in `run_native_optimize_mode`: select_strategy → 3s → `_set_backtest_type("Backtest")` → 1.5s → set str/bool via PDEX → `_set_backtest_type("Optimize")` → set instrument/dates → build grid_map → set range params → 0.5s → rebuild grid_map → set fixed numeric params (lo=hi=value, step=1).
-- `set_edit_text` does not trigger NT8's WPF LostFocus commit handler. Always use `set_edit_typed` (click_input + type_keys with `~`) for strategy PDEX fields.
-
-**Timing**
-- After `select_strategy`, sleep 2–3 s — NT8 fully rebuilds the property grid and the UIA tree is temporarily invalid.
-- After clicking a WPF ComboBox to open it, sleep ≥ 0.7 s before searching for items — the popup renders asynchronously.
+Full implementation notes (exact sleep durations, coordinate math, ComboBox identification quirks, optimization export mechanics, param-setting order): `command-center/docs/BACKEND_BUILD_NOTES.md`.
 
 ---
 
@@ -221,7 +188,7 @@ Lab backtests use the same pattern but the "worker" is the NT8 agent over HTTP.
 
 ## Ruleset abstraction (M3)
 
-The `firms` table is now `rulesets`; `firm_id` is `ruleset_id` everywhere (evaluations, optimizations). `/firms/*` routes redirect to `/rulesets/*` via `routers/firms.py` (deprecated shim; keep until all callers confirmed updated). `BacktestRunRequest.evaluate_rulesets` replaces `evaluate_firms` (backward-compat alias still accepted). Full migration story is in git history (M3).
+The `firms` table is now `rulesets`; `firm_id` is `ruleset_id` everywhere (evaluations, optimizations). The `/firms/*` backward-compat redirect shim (`routers/firms.py`) was removed 2026-07-01 — no callers were found (frontend's `useFirms` is an alias to `useRulesets`, never hit `/firms` directly). `BacktestRunRequest.evaluate_rulesets` replaces `evaluate_firms` (backward-compat alias still accepted). Full migration story is in git history (M3).
 
 **`ruleset_type` values and evaluation logic:**
 
@@ -242,7 +209,7 @@ Seeded rulesets (16 rows): 4 prop firms = 14 prop rows — LucidFlex, FundedNext
 
 ---
 
-## Dynamic sizing & risk engine + decision log (in progress — core built 2026-06-21)
+## Dynamic sizing & risk engine + decision log
 
 The mechanism behind the LWG gated-layer model (`docs/LWG_Strategy_Framework.md`,
 `docs/dynamic_sizing_engine.md`): the strategy proposes setups at unit size; gates decide
@@ -265,80 +232,30 @@ manages risk.
   skipped), and the full life of a taken trade (entry, exit, exit reason, P&L). Gates are an
   ordered list — a new gate just calls `decision.gate(name, passed, reason)`, no schema change.
   Pure stdlib, identical in backtest and live.
-- **Tests:** `tests/test_sizing_engine.py` (20), `tests/test_decision_log.py` (7) — all green.
-
 - **`services/sizing_pipeline.py`** — the FS/IO wiring: `run_sizing_engine(run_id, trade_records,
   ruleset, *, mode, instrument, strategy, results_dir)` builds `RawTrade`s from a runner's export,
   runs the engine, and persists `decisions.jsonl` + `engine_timeline.json` + `engine_daily_pnl.json`
   to the run dir. `size_run_for_rulesets(...)` sizes once per ruleset and additionally writes every
-  firm's `{kpis, daily_pnl, timeline}` to `ruleset_sizing.json` (see "Per-firm sized results" below).
-  Locks the runner→engine column contract. `tests/test_sizing_pipeline.py` (7) green.
+  firm's `{kpis, daily_pnl, timeline}` to `ruleset_sizing.json`, keyed by ruleset id, so every
+  evaluation carries its own P&L, timeline, and equity curve (not just the primary/headline
+  ruleset) — this is what lets BacktestDetail switch all ruleset-dependent charts/KPIs per firm.
+  Locks the runner→engine column contract.
+- **Tests:** `tests/test_sizing_engine.py` (20), `tests/test_decision_log.py` (7),
+  `tests/test_sizing_pipeline.py` (7) — all green.
 
-**Done 2026-06-21 — `ORB.cs` reshaped to the rules.** It now trades **unit size (1 contract)**,
-its self-policing halts are **removed** (daily-loss halt, profit-target stop, profit lock-in,
-consecutive-loss halt all moved to the engine), and it keeps only signal + stop/target + time
-rules (force-flat, entry hours, allowed days). It emits the per-trade record — the runner→engine
-contract columns — to `engine_trades.csv` (`strategy_results.csv` is still written but is now a
-unit-size reference only). `build_foundational_params` was trimmed to match: it injects only
-`CommissionPerSide`, `ForceFlatTimeET`, `EarliestEntryTimeET`, `LatestEntryTimeET`,
-`DaysOfWeekAllowed` (the removed NinjaScriptProperties no longer exist). **Needs VPS compile +
-backtest to verify — cannot be tested locally.** ORB is the only NT8 strategy carried forward
-(VWAP_MR, Momentum deleted 2026-06-21).
+**Current state:** ORB.cs (NT8) and LondonBreakout.mq5 (MT5) are both reshaped to trade unit
+size and emit `engine_trades.csv` (the runner→engine contract). `nt8_backtest_runner` and the
+MT5 agent both read that file back after a run and attach it as `result["engine_trades"]`;
+`backtest_runner._handle_complete` sizes any run that carries `engine_trades` per ruleset,
+runner-agnostically (same gate for NT8 and MT5). The per-run **bullet/consistent** sizing mode
+is plumbed end-to-end: `BacktestRunRequest.sizing_mode` → `backtest_runs.sizing_mode` column →
+`BacktestDetail.sizing_mode`/`sized`/`sized_timeline`. Native (unit-size, non-reshaped) runs
+carry no `engine_trades` and are unaffected. The whole sized path only activates once a reshaped
+strategy actually emits `engine_trades.csv` from a VPS run.
 
-**Wired 2026-06-21 (code-complete, needs a VPS run to verify):** the NT8 runner
-(`nt8_backtest_runner.run_job_mode`) clears `engine_trades.csv` before the run and reads it back
-after, shipping the rows as `result["engine_trades"]`. `backtest_runner._handle_complete` then,
-**only when `engine_trades` is present**, sizes the run PER RULESET via
-`sizing_pipeline.size_run_for_rulesets` (each firm's ladder/floor differ), uses the first ruleset
-as the headline, grades each ruleset against its OWN sized P&L, and persists the primary's audit
-log + timeline. Native (unit-size) runs carry no `engine_trades` → unchanged. The per-run
-**bullet/consistent** switch is plumbed: `BacktestRunRequest.sizing_mode` → `backtest_runs.sizing_mode`
-column (`DEFAULT 'consistent'`) → read back in `_handle_complete`. The `BacktestDetail` model exposes
-`sizing_mode` (off the run row), `sized` (a bool), and `sized_timeline` (`list[SizedTimelineDay]` —
-the engine's day-by-day record). `_row_to_detail` loads `reports/lab/<run_id>/engine_timeline.json`
-ONCE: its content becomes `sized_timeline` and `sized = bool(sized_timeline)` (the persisted marker of
-a real sized run) — no second `.exists()` stat. `SizedTimelineDay` mirrors `sizing_engine.DayTimeline`
-(date, trades_taken, contracts_total, day_pnl, eod_balance, risk_floor, floor_distance,
-consistency_share_pct, halt_reason); it drives the frontend's Sized equity curve AND the day-by-day
-Sizing Timeline table (both built).
-
-**Per-firm sized results (2026-06-30).** The strategy makes the SAME trades for every firm — only the
-contract count differs (each firm's ladder/floor), so every firm has its own dollar P&L, sized daily
-P&L, and sized timeline. `size_run_for_rulesets` now writes **all** of them to
-`reports/lab/<run_id>/ruleset_sizing.json` (`_persist_ruleset_sizing`) — one map keyed by ruleset id,
-each `{kpis, daily_pnl, timeline}` — not just the primary. `EvaluationDetail` carries the per-firm
-KPI fields (`net_pnl`, `max_drawdown`, `profit_factor`, `win_rate`, `trade_count`, `avg_win`,
-`avg_loss`) + `daily_pnl` + `sized_timeline` + **`equity_curve`** (`engine_result_to_equity_curve` —
-the sized trade-by-trade curve, EquityPoint shape, excluding skipped/blocked signals); `_row_to_detail`
-loads `ruleset_sizing.json` and attaches each firm's slice to its evaluation (null/empty on unit-size +
-pre-2026-06-30 runs, which have no file → the UI falls back to the run-level headline). This is what
-lets BacktestDetail switch **everything ruleset-dependent** per firm when clicking through evaluations:
-KPI cards (incl. the equity-derived Calmar / Max DD % / Z-Score, off `equity_curve`), Sized-account
-chart, Daily P&L bars, Sizing Timeline table, **Drawdown chart** and **Long-vs-Short breakdown**. Only
-the "Strategy (1 unit)" equity tab + Price chart stay firm-independent by design (the bare 1-unit
-strategy). Firms skip different trades on halt/breach days, so `equity_curve` length (trade count) and
-its long/short split genuinely differ per firm. The primary's `engine_timeline.json`/
-`engine_daily_pnl.json` stay the run headline (unchanged); `ruleset_sizing.json` is the per-firm superset.
-
-**MT5 reshaped too (2026-06-22).** `LondonBreakout.mq5` is now reshaped like ORB: it trades UNIT size
-= the broker minimum lot (the forex analog of "1 micro" — always tradeable, finest legal granularity),
-strips all account governance, and writes the per-trade record to `engine_trades.csv` with `FILE_CSV`
-(no `FILE_COMMON`). **Gotcha (fixed 2026-06-24):** under a single backtest the EA runs in a local tester
-*agent*, so the file lands in the agent sandbox `%APPDATA%\MetaQuotes\Tester\<hash>\Agent-*\MQL5\Files`,
-NOT the terminal data dir's `MQL5\Files` (that path only ever gets `opt_results.csv`, which
-`OnTesterPass` writes from the collecting terminal, not the agent). The MT5 agent
-(`algos/.../mt5_agent.py`) reads that file back after a single backtest (`_read_engine_trades` →
-`_engine_trades_candidates`, which globs every `Tester\*\Agent-*\MQL5\Files\engine_trades.csv` and takes
-the freshest by mtime; all candidates cleared pre-run so a failed run ships nothing) and attaches it as
-`result["engine_trades"]`; `runner_dispatch._normalize_mt5_results` passes the key through at the top
-level, so `_handle_complete` sizes the run runner-agnostically — the SAME gate as NT8 (`if engine_trades
-and firm_ids`). MT5 forex runs size against the personal/demo forex ruleset (no prop firm covers forex);
-the engine reads `max_drawdown_from_peak_pct × account_size` as the floor, so personal rulesets size
-fine (`EngineRuleset.from_ruleset` is `.get()`-safe). The forex `point_value` recorded is value of one
-price point for one min-lot (`tickValue/tickSize × unitLots`), so `risk_per_contract` is real USD.
-**Both ORB and LondonBreakout need a VPS compile + backtest to verify — neither can run locally.** The
-whole sized path stays dormant until a reshaped strategy actually emits `engine_trades.csv` on the VPS;
-both the curve and the table render only once a real sized run exists.
+Build history (the ORB/LondonBreakout reshape, the NT8/MT5 wiring order, the per-firm
+`ruleset_sizing.json` rollout, and the MT5 tester-agent sandbox file-path gotcha) is in
+`command-center/docs/BACKEND_BUILD_NOTES.md`.
 
 ## Lens metrics (the per-run scoring layer)
 
