@@ -62,7 +62,7 @@ def engine_result_to_kpis(result: EngineResult) -> dict:
     kpis: dict = {
         "net_pnl": round(result.net_pnl, 2),
         "profit_factor": round(profit_factor, 2),
-        "win_rate": round(len(wins) / len(taken) * 100.0, 1) if taken else 0.0,
+        "win_rate": round(len(wins) / len(taken), 4) if taken else 0.0,
         "max_drawdown": round(max_dd, 2),
         "trade_count": len(taken),
     }

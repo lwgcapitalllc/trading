@@ -110,7 +110,7 @@ def test_kpis_from_engine_result_derives_summary():
     assert k["trade_count"] == 3                 # skipped excluded
     assert k["net_pnl"] == 200.0
     assert k["profit_factor"] == 2.0             # 400 gross win / 200 gross loss
-    assert k["win_rate"] == 66.7                 # 2 of 3
+    assert k["win_rate"] == 0.6667               # 2 of 3, a fraction like every other path
     assert k["avg_win"] == 200.0 and k["avg_loss"] == -200.0
 
 
