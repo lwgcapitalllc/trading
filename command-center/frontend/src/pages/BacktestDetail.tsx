@@ -645,6 +645,27 @@ function computeRegimeBands(equity: EquityPoint[], dailyPnl: DailyPnlPoint[]): R
   return bands
 }
 
+// Same idea, but indexed by the sized timeline's day position — the SizedEquityCurveChart
+// plots on day-index i, not the equity curve's trade index, so it needs its own bands.
+function computeSizedRegimeBands(timeline: SizedTimelineDay[], dailyPnl: DailyPnlPoint[]): RegimeBand[] {
+  const dateToRegime = new Map<string, string>()
+  for (const d of dailyPnl) dateToRegime.set(d.date, d.regime_tag ?? 'UNKNOWN')
+  const bands: RegimeBand[] = []
+  let cur: RegimeBand | null = null
+  timeline.forEach((day, i) => {
+    const dateKey = day.date?.slice(0, 10)
+    const regime = dateKey ? (dateToRegime.get(dateKey) ?? 'UNKNOWN') : 'UNKNOWN'
+    if (!cur || cur.regime !== regime) {
+      cur = { x1: i, x2: i, regime }
+      bands.push(cur)
+    } else {
+      cur.x2 = i
+    }
+  })
+  for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
+  return bands
+}
+
 // ── Equity curve ──────────────────────────────────────────────────────────────
 
 function fmtChartDate(d?: string): string {
@@ -705,7 +726,11 @@ function EquityCurveChart({ data, bands = [], height = 300 }: { data: EquityPoin
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => v === 0 ? '$0' : `${v >= 0 ? '+' : ''}$${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(v: number) => {
+            if (v === 0) return '$0'
+            const k = v / 1000
+            return `${v >= 0 ? '+' : ''}$${Number.isInteger(k) ? k : k.toFixed(1)}k`
+          }}
           width={56}
         />
         {/* Custom tooltip: always shows the 'equity' entry, ignores _sN segment keys */}
@@ -751,8 +776,8 @@ function EquityCurveChart({ data, bands = [], height = 300 }: { data: EquityPoin
 // sized against; balance crossing the floor is a breach. Unlike the per-trade
 // equity curve above, this is the REAL sized account — what actually traded.
 
-function SizedEquityCurveChart({ data, height = 300 }: {
-  data: SizedTimelineDay[]; height?: number
+function SizedEquityCurveChart({ data, bands = [], height = 300 }: {
+  data: SizedTimelineDay[]; bands?: RegimeBand[]; height?: number
 }) {
   if (!data.length) return null
 
@@ -786,7 +811,7 @@ function SizedEquityCurveChart({ data, height = 300 }: {
   const xTicks = rows.filter((_, i) => i === 0 || i === rows.length - 1 || i % step === 0).map(r => r.i)
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer key={bands.length ? 'regime' : 'base'} width="100%" height={height}>
       <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           <linearGradient id="sizedFill" x1="0" y1="0" x2="0" y2="1">
@@ -795,6 +820,9 @@ function SizedEquityCurveChart({ data, height = 300 }: {
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
+        {bands.map((b, i) => (
+          <ReferenceArea key={i} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
+        ))}
         <XAxis
           dataKey="i"
           ticks={xTicks}
@@ -808,7 +836,10 @@ function SizedEquityCurveChart({ data, height = 300 }: {
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(v: number) => {
+            const k = v / 1000
+            return `$${Number.isInteger(k) ? k : k.toFixed(1)}k`
+          }}
           width={56}
         />
         <Tooltip
@@ -842,7 +873,7 @@ function SizedEquityCurveChart({ data, height = 300 }: {
           dot={false}
           activeDot={{ r: 4, fill: lineColor, stroke: 'transparent' }}
           baseValue="dataMin"
-          isAnimationActive={false}
+          animationDuration={1500}
         />
         <Line
           type="stepAfter"
@@ -852,7 +883,7 @@ function SizedEquityCurveChart({ data, height = 300 }: {
           strokeDasharray="5 4"
           dot={false}
           connectNulls
-          isAnimationActive={false}
+          animationDuration={1500}
         />
         {/* Mark halt days and the breach day so the why-it-stopped reads at a glance. */}
         {haltDays.map(d => (
@@ -866,11 +897,11 @@ function SizedEquityCurveChart({ data, height = 300 }: {
   )
 }
 
-function SizedCurveLegend({ mode }: { mode: 'consistent' | 'bullet' }) {
+function SizedCurveLegend({ mode, profitable = true }: { mode: 'consistent' | 'bullet'; profitable?: boolean }) {
   return (
     <div className="flex items-center gap-4 mt-2 text-[11px] text-text-tertiary">
       <span className="flex items-center gap-1.5">
-        <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: C.pos }} />
+        <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: profitable ? C.pos : C.neg }} />
         End-of-day balance
       </span>
       <span className="flex items-center gap-1.5">
@@ -2246,6 +2277,13 @@ export function BacktestDetail() {
     [overlayOn, hasRealRegimeTags, run?.equity_curve, run?.daily_pnl],
   )
 
+  const sizedRegimeBands = useMemo(
+    () => (overlayOn && hasRealRegimeTags && run?.sized_timeline.length)
+      ? computeSizedRegimeBands(run.sized_timeline, run.daily_pnl)
+      : [],
+    [overlayOn, hasRealRegimeTags, run?.sized_timeline, run?.daily_pnl],
+  )
+
   const isRunning  = run?.status === 'running'
   const isFailed   = run?.status.startsWith('failed') ?? false
   const isComplete    = run?.status === 'complete'
@@ -2581,22 +2619,24 @@ export function BacktestDetail() {
               }
             }
 
+            // The Sized tab appears only for engine-sized runs (a reshaped strategy emitted
+            // engine_trades → the engine produced a day-by-day timeline). Inert for every unit-size run.
+            const hasSized = run.sized && run.sized_timeline.length > 0
             const SUBS: Record<string, string> = {
-              equity: 'Steadily rising = good. Big peak then long decline = giving back gains.',
+              equity: hasSized
+                ? 'The bare strategy at a flat 1 unit — no sizing. This is the raw edge: is there one at all?'
+                : 'Steadily rising = good. Big peak then long decline = giving back gains.',
               sized: 'The real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.',
               price: 'Candlesticks with trade context.',
               breakdown: 'Drawdown, daily P&L, and long vs short — the supporting detail.',
             }
             const TITLES: Record<string, string> = {
-              equity: 'Equity curve', sized: 'Sized equity', price: 'Price', breakdown: 'Breakdown',
+              equity: hasSized ? 'Strategy (1 unit)' : 'Equity curve', sized: 'Sized account', price: 'Price', breakdown: 'Breakdown',
             }
             const hasDirection = run.equity_curve.some(p => p.direction)
-            // The Sized tab appears only for engine-sized runs (a reshaped strategy emitted
-            // engine_trades → the engine produced a day-by-day timeline). Inert for every unit-size run.
-            const hasSized = run.sized && run.sized_timeline.length > 0
             const primaryTabs: ReadonlyArray<readonly [string, string]> = [
-              ['equity', 'Equity'],
-              ...(hasSized ? [['sized', 'Sized'] as const] : []),
+              ['equity', hasSized ? 'Strategy (1 unit)' : 'Equity'],
+              ...(hasSized ? [['sized', 'Sized account'] as const] : []),
               ['price', 'Price'],
               ['breakdown', 'Breakdown'],
             ]
@@ -2617,8 +2657,12 @@ export function BacktestDetail() {
                 case 'sized':
                   return (
                     <>
-                      <SizedEquityCurveChart data={run.sized_timeline} height={h} />
-                      <SizedCurveLegend mode={run.sizing_mode} />
+                      <SizedEquityCurveChart data={run.sized_timeline} bands={sizedRegimeBands} height={h} />
+                      <SizedCurveLegend
+                        mode={run.sizing_mode}
+                        profitable={run.sized_timeline[run.sized_timeline.length - 1].eod_balance >= run.sized_timeline[0].eod_balance}
+                      />
+                      {overlayOn && sizedRegimeBands.length > 0 && <RegimeLegend bands={sizedRegimeBands} />}
                     </>
                   )
                 case 'price': {
@@ -2703,7 +2747,7 @@ export function BacktestDetail() {
                       onExpand={() => setFullscreenChart(primaryTab)}
                       render={renderChart}
                       right={<>
-                        {primaryTab === 'equity' && hasRealRegimeTags && (
+                        {(primaryTab === 'equity' || primaryTab === 'sized') && hasRealRegimeTags && (
                           <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
                         )}
                         {!isMt5 && (
