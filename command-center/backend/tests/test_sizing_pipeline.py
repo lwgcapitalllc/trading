@@ -90,9 +90,21 @@ def test_size_run_for_rulesets_sizes_each_and_persists_primary_only(tmp_path):
     assert out["firm_b"]["result"].decisions[0]["sizing"]["contracts"] == 10
     assert "net_pnl" in out["firm_a"]["kpis"] and "net_pnl" in out["firm_b"]["kpis"]
 
-    # Only the PRIMARY (first) ruleset's timeline is persisted — one sized timeline per run.
+    # The PRIMARY (first) ruleset's timeline is the run headline.
     assert (tmp_path / "run50" / "engine_timeline.json").exists()
     assert (tmp_path / "run50" / "engine_daily_pnl.json").exists()
+
+    # EVERY ruleset's sized KPIs + daily P&L + timeline are persisted for the UI (per-firm cards
+    # and charts) in one map keyed by ruleset id.
+    sizing = json.loads((tmp_path / "run50" / "ruleset_sizing.json").read_text())
+    assert set(sizing) == {"firm_a", "firm_b"}
+    assert sizing["firm_a"]["kpis"]["net_pnl"] == out["firm_a"]["kpis"]["net_pnl"]
+    assert "timeline" in sizing["firm_b"] and "daily_pnl" in sizing["firm_b"]
+    # Per-firm sized equity curve (drives Drawdown / Long-Short / Calmar per firm).
+    ec_a = sizing["firm_a"]["equity_curve"]
+    assert ec_a and ec_a[-1]["index"] == len(ec_a)
+    assert set(ec_a[0]) >= {"index", "equity", "date", "direction", "profit"}
+    assert ec_a[0]["direction"] in ("Long", "Short")
 
 
 def _sized(index, contracts, net, skipped=False):

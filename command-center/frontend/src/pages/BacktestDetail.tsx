@@ -430,6 +430,13 @@ function InfoTip({ text }: { text: string }) {
 
 // ── KPI grid ──────────────────────────────────────────────────────────────────
 
+// Fixed pixel heights shared by the eval card and the KPI grid on lg. COLLAPSED sits at the short
+// height (one KPI row, sized to fit the tallest verdict card); EXPANDED grows both columns together
+// so the two KPI rows each get enough room (no crop) while still matching the eval card exactly.
+// Fixed per state → paging evaluations never grows/shrinks the row.
+const KPI_ROW_H = 196
+const KPI_ROW_H_EXPANDED = 228
+
 type KpiTone = 'good' | 'bad' | 'warn' | 'neutral'
 const KPI_TONE_BORDER: Record<KpiTone, string> = {
   good:    'border-l-pos-text/60',
@@ -547,34 +554,36 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
   const card = (m: KMetric, fixedCard = false, valSize = 'text-[26px] lg:text-[30px]') => (
     <div
       key={m.key}
-      className={`flex flex-col justify-center bg-bg-surface border border-border-subtle border-l-[3px] ${KPI_TONE_BORDER[m.tone ?? kpiTone(m.valueCls)]} rounded-xl px-4 py-3 overflow-hidden transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${fixedCard ? 'h-full min-h-[100px]' : 'min-h-[100px]'}`}
+      className={`flex flex-col justify-center bg-bg-surface border border-border-subtle border-l-[3px] ${KPI_TONE_BORDER[m.tone ?? kpiTone(m.valueCls)]} rounded-xl px-4 py-3 overflow-hidden transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${fixedCard ? 'h-full min-h-[88px]' : 'min-h-[100px]'}`}
     >
       <div className="flex items-center text-[9px] font-bold uppercase tracking-[0.8px] text-text-tertiary">
         {m.label}{m.tooltip && <InfoTip text={m.tooltip} />}
       </div>
-      <div className={`${valSize} font-bold tracking-[-0.6px] font-mono leading-none mt-2 transition-[font-size] duration-300 ${m.valueCls ?? ''}`}>{m.value}</div>
-      <div className="text-[10px] text-text-tertiary mt-1.5 leading-snug min-h-[14px]">{m.sub}</div>
+      <div className={`${valSize} font-bold tracking-[-0.6px] font-mono leading-none mt-1.5 transition-[font-size] duration-300 ${m.valueCls ?? ''}`}>{m.value}</div>
+      <div className="text-[10px] text-text-tertiary mt-1 leading-snug min-h-[14px]">{m.sub}</div>
     </div>
   )
 
-  // On lg the grid is pinned to the eval card's measured pixel height (fixedHeight). Two row-grids
-  // with explicit heights: collapsed → core row = full height; expanded → both rows at half height
-  // summing (with the gap) to exactly the same total. Heights animate. Off lg → normal flow.
+  // On lg the grid is pinned to the shared fixed height (fixedHeight), which already reflects the
+  // collapsed/expanded state (the parent grows it when More metrics opens). Two row-grids with
+  // explicit heights: collapsed → core row = full height; expanded → both rows at half height
+  // summing (with the gap) to exactly the same total, so the grid and eval card always match.
+  // Heights animate. Off lg → normal flow.
   const fh = fixedHeight
   if (fh != null) {
     const gap = 12
     const half = Math.max(0, (fh - gap) / 2)
     return (
-      <div className="flex flex-col" style={{ height: fh, overflow: 'hidden' }}>
+      <div className="flex flex-col" style={{ height: fh }}>
         <div
           className="grid grid-cols-6 gap-x-3 shrink-0"
-          style={{ height: showMore ? half : fh, gridTemplateRows: '1fr', transition: 'height 0.3s ease' }}
+          style={{ height: showMore ? half : fh, transition: 'height 0.3s ease' }}
         >
-          {core.map(m => card(m, true, showMore ? 'text-[26px]' : 'text-[38px]'))}
+          {core.map(m => card(m, true, showMore ? 'text-[26px]' : 'text-[34px]'))}
         </div>
         <div
           className="grid grid-cols-6 gap-x-3 shrink-0 overflow-hidden"
-          style={{ height: showMore ? half : 0, marginTop: showMore ? gap : 0, gridTemplateRows: '1fr', transition: 'height 0.3s ease, margin-top 0.3s ease' }}
+          style={{ height: showMore ? half : 0, marginTop: showMore ? gap : 0, transition: 'height 0.3s ease, margin-top 0.3s ease' }}
         >
           {more.map(m => card(m, true, 'text-[26px]'))}
         </div>
@@ -664,6 +673,18 @@ function computeSizedRegimeBands(timeline: SizedTimelineDay[], dailyPnl: DailyPn
   })
   for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
   return bands
+}
+
+// Drop the dead flat tail after trading stops. A breached account freezes its balance for the
+// rest of the requested date range, which otherwise draws a long flat line to the end (and pads
+// the timeline table with hundreds of no-trade rows). End the sized view at the last day that
+// actually traded, so the chart stops where trading stopped.
+function trimToLastActive(tl: SizedTimelineDay[]): SizedTimelineDay[] {
+  let last = -1
+  for (let i = tl.length - 1; i >= 0; i--) {
+    if (tl[i].trades_taken > 0) { last = i; break }
+  }
+  return last >= 0 ? tl.slice(0, last + 1) : tl
 }
 
 // ── Equity curve ──────────────────────────────────────────────────────────────
@@ -1181,25 +1202,41 @@ const VERDICT_CONFIG = {
   INFO:    { label: 'INFO',    bg: 'bg-bg-sunken',  text: 'text-text-tertiary', border: 'border-l-border-default', Icon: Info   },
 } as const
 
-// Firm switcher — shown only when a run is scored against 2+ rulesets. A compact "1/N" counter
-// with prev/next arrows that lives ON the Evaluation header line, so switching firms never grows
-// the card or KPI height (one verdict shows at a time; the firm name is inside the card).
-function EvalSwitcher({ count, selected, onSelect }: {
-  count: number; selected: number; onSelect: (i: number) => void
+// Compact ruleset chip that doubles as the firm switcher. Lives in BOTH header layouts (full and
+// condensed sticky) so you can page firms without scrolling back to the eval card, and shows only
+// the SELECTED firm — listing all four overflowed into the action buttons. Chevrons appear only for
+// multi-firm runs; a single-firm run is just the name.
+function HeaderRulesetChip({ evals, selected, onSelect, compact = false }: {
+  evals: EvaluationDetail[]; selected: number; onSelect: (i: number) => void; compact?: boolean
 }) {
-  const btn = "p-0.5 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-surface transition-colors"
+  if (!evals.length) return null
+  const idx = Math.min(selected, evals.length - 1)
+  const multi = evals.length > 1
+  const py = compact ? 'py-[1px]' : 'py-[2px]'
+  // Tighter left/right padding when chevrons sit inside the pill; symmetric when it's just a name.
+  const px = multi
+    ? (compact ? 'pl-1 pr-1.5' : 'pl-1.5 pr-2')
+    : (compact ? 'px-1.5' : 'px-2')
+  const chev = "flex items-center text-warn-text/50 hover:text-warn-text transition-colors flex-shrink-0"
   return (
-    <div className="flex items-center gap-1">
-      <button className={btn} aria-label="Previous firm"
-        onClick={() => onSelect((selected - 1 + count) % count)}>
-        <ChevronLeft size={14} />
-      </button>
-      <span className="text-[11px] font-mono tabular-nums text-text-secondary">{selected + 1}/{count}</span>
-      <button className={btn} aria-label="Next firm"
-        onClick={() => onSelect((selected + 1) % count)}>
-        <ChevronRight size={14} />
-      </button>
-    </div>
+    <span className={`inline-flex items-center gap-1 rounded text-[11px] font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text flex-shrink-0 ${py} ${px}`}>
+      {multi && (
+        <button className={chev} aria-label="Previous firm"
+          onClick={() => onSelect((idx - 1 + evals.length) % evals.length)}>
+          <ChevronLeft size={13} />
+        </button>
+      )}
+      <span className="truncate max-w-[200px]">{evals[idx].ruleset_id}</span>
+      {multi && (
+        <>
+          <span className="text-warn-text/50 tabular-nums flex-shrink-0">{idx + 1}/{evals.length}</span>
+          <button className={chev} aria-label="Next firm"
+            onClick={() => onSelect((idx + 1) % evals.length)}>
+            <ChevronRight size={13} />
+          </button>
+        </>
+      )}
+    </span>
   )
 }
 
@@ -2246,6 +2283,9 @@ export function BacktestDetail() {
   const [primaryTab, setPrimaryTab] = useState<'equity' | 'sized' | 'price' | 'breakdown'>('equity')
   const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
   const [showMoreKpis, setShowMoreKpis] = useState(false)
+  // Shared eval-card / KPI-grid height: short when collapsed, taller when More metrics is open so
+  // both grow together and the two KPI rows get enough room (no crop) while staying the same height.
+  const kpiRowH = showMoreKpis ? KPI_ROW_H_EXPANDED : KPI_ROW_H
   // When a run is scored against several firms, show ONE at a time (a wall of cards is
   // confusing). This selects which firm's evaluation card is shown; defaults to the first
   // and resets when the run changes. Performance follows the same firm once sizing lands.
@@ -2260,9 +2300,55 @@ export function BacktestDetail() {
   useEffect(() => { setBalanceOverride(null) }, [run?.run_id])
   const balance = balanceOverride ?? rulesetBalance
 
+  // The firm whose evaluation card is currently shown.
+  const selectedEval = (run && run.evaluations.length)
+    ? run.evaluations[Math.min(selectedEvalIdx, run.evaluations.length - 1)]
+    : null
+
+  // Engine-sized runs size the SAME strategy differently per firm (each firm's own contract
+  // ladder / drawdown floor), so every firm has its OWN net P&L, daily P&L and sized timeline.
+  // Swap the selected firm's sized results into a shallow copy so the KPI cards, the Sized-account
+  // chart and the timeline table all follow the firm the user is viewing. Unit-size runs (and
+  // older runs with no per-firm sizing) carry no `net_pnl` on the eval → effRun stays the headline.
+  const effRun = useMemo<Run | undefined>(() => {
+    if (!run) return run
+    const ev = selectedEval
+    if (!ev || ev.net_pnl == null) return run
+    const sizedTl = trimToLastActive(ev.sized_timeline?.length ? ev.sized_timeline : run.sized_timeline)
+    const cutoff = sizedTl.length ? sizedTl[sizedTl.length - 1].date : ''
+    return {
+      ...run,
+      net_pnl: ev.net_pnl,
+      max_drawdown: ev.max_drawdown,
+      profit_factor: ev.profit_factor,
+      win_rate: ev.win_rate,
+      trade_count: ev.trade_count,
+      avg_win: ev.avg_win,
+      avg_loss: ev.avg_loss,
+      // Trim the frozen post-breach tail so the sized chart + timeline stop where trading stopped.
+      sized_timeline: sizedTl,
+      // Daily P&L trimmed to the same cutoff so its chart ends with the others (and the daily-derived
+      // KPIs — worst day / streak / Sharpe / concentration — don't count dead post-breach flat days).
+      daily_pnl: cutoff
+        ? (ev.daily_pnl?.length ? ev.daily_pnl : run.daily_pnl).filter(d => d.date <= cutoff)
+        : (ev.daily_pnl?.length ? ev.daily_pnl : run.daily_pnl),
+      // Sized trade-by-trade curve for THIS firm — drives its Drawdown, Long/Short, Calmar,
+      // Max DD % and Z-Score. The Equity/"Strategy (1 unit)" tab keeps the raw run.equity_curve.
+      equity_curve: ev.equity_curve?.length ? ev.equity_curve : run.equity_curve,
+      // Metrics derived from daily P&L: null the persisted primary-firm values so they recompute
+      // from THIS firm's sized daily P&L (worst day / streak / Sharpe via `fallback`, profit conc).
+      worst_day_pnl: null,
+      worst_losing_streak: null,
+      sharpe: null,
+      platform_sharpe: null,
+      sharpe_low_sample: false,
+      profit_concentration_pct: null,
+    }
+  }, [run, selectedEval])
+
   const fallback = useMemo(
-    () => computeFallbacks(run?.daily_pnl ?? []),
-    [run?.daily_pnl],
+    () => computeFallbacks(effRun?.daily_pnl ?? []),
+    [effRun?.daily_pnl],
   )
 
   const hasRealRegimeTags = useMemo(
@@ -2277,12 +2363,24 @@ export function BacktestDetail() {
     [overlayOn, hasRealRegimeTags, run?.equity_curve, run?.daily_pnl],
   )
 
+  // Regime is a market property (same calendar days for every firm), so tag lookup uses the
+  // primary run's tagged daily P&L; day positions come from the selected firm's sized timeline.
   const sizedRegimeBands = useMemo(
-    () => (overlayOn && hasRealRegimeTags && run?.sized_timeline.length)
-      ? computeSizedRegimeBands(run.sized_timeline, run.daily_pnl)
+    () => (overlayOn && hasRealRegimeTags && run && effRun?.sized_timeline.length)
+      ? computeSizedRegimeBands(effRun.sized_timeline, run.daily_pnl)
       : [],
-    [overlayOn, hasRealRegimeTags, run?.sized_timeline, run?.daily_pnl],
+    [overlayOn, hasRealRegimeTags, effRun?.sized_timeline, run?.daily_pnl],
   )
+
+  // Did the SELECTED firm breach its trailing drawdown floor? If so the account is dead — trading
+  // stops at the breach, which is why the sized/breakdown charts end there. Surface the date so the
+  // page explains its own cutoff instead of just looking truncated.
+  const breachInfo = useMemo(() => {
+    const ev = selectedEval
+    if (!ev || ev.drawdown_pass !== false) return null
+    const day = (ev.sized_timeline || []).find(t => t.risk_floor != null && t.eod_balance < t.risk_floor)
+    return { date: day?.date ?? null }
+  }, [selectedEval])
 
   const isRunning  = run?.status === 'running'
   const isFailed   = run?.status.startsWith('failed') ?? false
@@ -2310,25 +2408,16 @@ export function BacktestDetail() {
     )
   }, [run, retryBacktest])
 
-  // Match the KPI grid height to the eval card (lg only). The eval card's height is measured in JS
-  // and passed as fixedHeight so both rows (collapsed: one tall, expanded: two half-height) sum to
-  // the same total. Pure-CSS stretch caused a grow-then-shrink reflow on toggle.
-  const [evalH, setEvalH] = useState<number | null>(null)
+  // The eval card and KPI grid share ONE fixed height on lg so paging through evaluations never
+  // grows or shrinks the row. Was JS-measured off the eval card, but each verdict has a different
+  // number of rule lines (PASS = 1, DISCARD = 2–3), so the grid stretched/squished per verdict.
+  // Fixed height sized to fit the tallest verdict; shorter verdicts just leave headroom.
   const [isLg, setIsLg] = useState(() => window.matchMedia('(min-width: 1024px)').matches)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)')
     const on = () => setIsLg(mq.matches)
     mq.addEventListener('change', on)
     return () => mq.removeEventListener('change', on)
-  }, [])
-  const evalRoRef = useRef<ResizeObserver | null>(null)
-  const measureEvalRef = useCallback((el: HTMLDivElement | null) => {
-    evalRoRef.current?.disconnect()
-    if (!el) { setEvalH(null); return }
-    setEvalH(el.offsetHeight)
-    const ro = new ResizeObserver(() => setEvalH(el.offsetHeight))
-    ro.observe(el)
-    evalRoRef.current = ro
   }, [])
 
   const progressMatches = progress?.job_id === run?.run_id
@@ -2367,14 +2456,14 @@ export function BacktestDetail() {
 
         {run && (
           <div>
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center justify-between gap-4">
               {scrolled ? (
                 <div className="flex items-center gap-2 min-w-0">
                   <button onClick={() => navigate(backPath)} title={backLabel} className="flex items-center text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0">
                     <ArrowLeft size={14} />
                   </button>
                   <h1
-                    className="text-[15px] font-semibold leading-tight truncate cursor-pointer hover:text-accent transition-colors flex-shrink-0"
+                    className="text-[15px] font-semibold leading-tight truncate min-w-0 cursor-pointer hover:text-accent transition-colors"
                     onClick={() => navigate(`/strategies/${run.strategy_id}`)}
                     title="Go to strategy"
                   >
@@ -2387,9 +2476,9 @@ export function BacktestDetail() {
                     {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
                   </span>
                   {run.evaluations.length > 0 && (
-                    <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text flex-shrink-0 truncate max-[900px]:hidden">
-                      {run.evaluations.map(e => e.ruleset_id).join(', ')}
-                    </span>
+                    <div className="max-[900px]:hidden">
+                      <HeaderRulesetChip evals={run.evaluations} selected={selectedEvalIdx} onSelect={setSelectedEvalIdx} compact />
+                    </div>
                   )}
                   {run.sized && (
                     <span
@@ -2419,9 +2508,7 @@ export function BacktestDetail() {
                     {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
                   </span>
                   {run.evaluations.length > 0 && (
-                    <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text">
-                      {run.evaluations.map(e => e.ruleset_id).join(', ')}
-                    </span>
+                    <HeaderRulesetChip evals={run.evaluations} selected={selectedEvalIdx} onSelect={setSelectedEvalIdx} />
                   )}
                   {run.sized && (
                     <span
@@ -2554,13 +2641,10 @@ export function BacktestDetail() {
                   <div className="flex flex-col">
                     <div className="flex items-center justify-between mb-3">
                       <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">Evaluation</h2>
-                      {!isOptCombo && run.evaluations.length > 1 && (
-                        <EvalSwitcher count={run.evaluations.length}
-                          selected={Math.min(selectedEvalIdx, run.evaluations.length - 1)}
-                          onSelect={setSelectedEvalIdx} />
-                      )}
+                      {/* Firm switching now lives on the header ruleset chip (always visible, even
+                          scrolled) — no second switcher here. */}
                     </div>
-                    <div className="flex flex-col gap-3" ref={measureEvalRef}>
+                    <div className="flex flex-col gap-3" style={isLg ? { height: kpiRowH, transition: 'height 0.3s ease' } : undefined}>
                       {isOptCombo ? (
                         <UnscoredEvalCard
                           tradeCount={run.trade_count}
@@ -2572,8 +2656,8 @@ export function BacktestDetail() {
                         const idx = Math.min(selectedEvalIdx, run.evaluations.length - 1)
                         const ev = run.evaluations[idx]
                         return (
-                          <EvalCard key={ev.eval_id} ev={ev} netPnl={run.net_pnl}
-                            tradeCount={run.trade_count} showName={run.evaluations.length > 1} />
+                          <EvalCard key={ev.eval_id} ev={ev} netPnl={ev.net_pnl ?? run.net_pnl}
+                            tradeCount={ev.trade_count ?? run.trade_count} showName={run.evaluations.length > 1} />
                         )
                       })()}
                     </div>
@@ -2581,8 +2665,8 @@ export function BacktestDetail() {
                   {/* Right: flat KPIs pinned to the eval card's measured pixel height. */}
                   <div className="flex flex-col min-w-0">
                     <SectionLabel>Performance</SectionLabel>
-                    <KpiGrid run={run} fallback={fallback} equity={run.equity_curve}
-                      balance={balance} showMore={showMoreKpis} fixedHeight={isLg ? evalH : null} />
+                    <KpiGrid run={effRun!} fallback={fallback} equity={effRun!.equity_curve}
+                      balance={balance} showMore={showMoreKpis} fixedHeight={isLg ? kpiRowH : null} />
                   </div>
                 </div>
                 {/* "More metrics" below the cards (left-aligned) — outside the grid so it doesn't
@@ -2594,7 +2678,7 @@ export function BacktestDetail() {
                 <div>
                   <SectionLabel>Performance</SectionLabel>
                   {run.trade_count != null && <div className="mb-3"><TradeCountStandout count={run.trade_count} /></div>}
-                  <KpiGrid run={run} fallback={fallback} equity={run.equity_curve}
+                  <KpiGrid run={effRun!} fallback={fallback} equity={effRun!.equity_curve}
                     balance={balance} showMore={showMoreKpis} />
                 </div>
                 <MoreMetricsToggle open={showMoreKpis} onToggle={() => setShowMoreKpis(s => !s)} count={6} />
@@ -2606,34 +2690,39 @@ export function BacktestDetail() {
           {isComplete && !isOptCombo && (() => {
             const hasCharts = run.equity_curve.length > 0
 
-            const seenLimits = new Set<number>()
+            // Drawdown limit line follows the SELECTED firm (the chart plots that firm's sized
+            // curve). Personal/demo have no trailing EOD rule — firm_max_loss_eod is the 0 sentinel
+            // and must never render as a "$0 limit" reference line.
             const evalLimits: Array<{ limit: number; label: string; pass: boolean }> = []
-            for (const e of run.evaluations) {
-              // Personal/demo have no trailing EOD rule — firm_max_loss_eod is the 0
-              // sentinel and must never render as a "$0 limit" reference line.
-              if (isPersonal(e)) continue
-              if (!seenLimits.has(e.firm_max_loss_eod)) {
-                seenLimits.add(e.firm_max_loss_eod)
-                const same = run.evaluations.filter(x => x.firm_max_loss_eod === e.firm_max_loss_eod && !isPersonal(x))
-                evalLimits.push({ limit: e.firm_max_loss_eod, label: e.ruleset_name, pass: same.every(x => x.drawdown_pass) })
-              }
+            if (selectedEval && !isPersonal(selectedEval) && selectedEval.firm_max_loss_eod) {
+              evalLimits.push({
+                limit: selectedEval.firm_max_loss_eod,
+                label: selectedEval.ruleset_name,
+                pass: selectedEval.drawdown_pass,
+              })
             }
 
             // The Sized tab appears only for engine-sized runs (a reshaped strategy emitted
             // engine_trades → the engine produced a day-by-day timeline). Inert for every unit-size run.
-            const hasSized = run.sized && run.sized_timeline.length > 0
+            const hasSized = run.sized && effRun!.sized_timeline.length > 0
+            const firmName = selectedEval?.ruleset_name || 'the selected firm'
+            const endsAtBreach = breachInfo ? ' Ends where the account breached.' : ''
             const SUBS: Record<string, string> = {
               equity: hasSized
                 ? 'The bare strategy at a flat 1 unit — no sizing. This is the raw edge: is there one at all?'
                 : 'Steadily rising = good. Big peak then long decline = giving back gains.',
-              sized: 'The real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.',
+              sized: hasSized
+                ? `${firmName}'s real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.${endsAtBreach}`
+                : 'The real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.',
               price: 'Candlesticks with trade context.',
-              breakdown: 'Drawdown, daily P&L, and long vs short — the supporting detail.',
+              breakdown: hasSized
+                ? `Sized to ${firmName} — drawdown, daily P&L, and long vs short.${endsAtBreach}`
+                : 'Drawdown, daily P&L, and long vs short — the supporting detail.',
             }
             const TITLES: Record<string, string> = {
               equity: hasSized ? 'Strategy (1 unit)' : 'Equity curve', sized: 'Sized account', price: 'Price', breakdown: 'Breakdown',
             }
-            const hasDirection = run.equity_curve.some(p => p.direction)
+            const hasDirection = effRun!.equity_curve.some(p => p.direction)
             const primaryTabs: ReadonlyArray<readonly [string, string]> = [
               ['equity', hasSized ? 'Strategy (1 unit)' : 'Equity'],
               ...(hasSized ? [['sized', 'Sized account'] as const] : []),
@@ -2641,6 +2730,18 @@ export function BacktestDetail() {
               ['breakdown', 'Breakdown'],
             ]
             const subLabel = (t: string) => <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-secondary mb-1.5">{t}</div>
+
+            // Explains the cutoff: a breached account stops trading, so the sized + breakdown charts
+            // end at the breach instead of running to the end of the requested range.
+            const breachNote = breachInfo ? (
+              <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-md bg-neg-muted border border-neg-text/20 text-neg-text text-[12px] leading-snug">
+                <AlertTriangle size={13} className="flex-shrink-0 mt-[1px]" />
+                <span>
+                  <span className="font-semibold">{firmName} breached its drawdown limit{breachInfo.date ? ` on ${fmtDate(breachInfo.date)}` : ''}.</span>{' '}
+                  The account failed there, so trading stopped — these charts end at the breach, not at the end of the test.
+                </span>
+              </div>
+            ) : null
 
             // isModal=true means this render call is from inside ChartModal (equity/breakdown only).
             // Price chart manages its own fullscreen internally via position:fixed so the single
@@ -2657,10 +2758,11 @@ export function BacktestDetail() {
                 case 'sized':
                   return (
                     <>
-                      <SizedEquityCurveChart data={run.sized_timeline} bands={sizedRegimeBands} height={h} />
+                      {breachNote}
+                      <SizedEquityCurveChart data={effRun!.sized_timeline} bands={sizedRegimeBands} height={h} />
                       <SizedCurveLegend
                         mode={run.sizing_mode}
-                        profitable={run.sized_timeline[run.sized_timeline.length - 1].eod_balance >= run.sized_timeline[0].eod_balance}
+                        profitable={effRun!.sized_timeline[effRun!.sized_timeline.length - 1].eod_balance >= effRun!.sized_timeline[0].eod_balance}
                       />
                       {overlayOn && sizedRegimeBands.length > 0 && <RegimeLegend bands={sizedRegimeBands} />}
                     </>
@@ -2686,19 +2788,20 @@ export function BacktestDetail() {
                   const hRow = Math.max(160, Math.round((h - 56) * 0.55))
                   return (
                     <div className="space-y-8">
+                      {breachNote}
                       <div>
                         {subLabel('Drawdown from peak')}
-                        <DrawdownChart equity={run.equity_curve} limitLines={evalLimits} height={hDraw} />
+                        <DrawdownChart equity={effRun!.equity_curve} limitLines={evalLimits} height={hDraw} />
                       </div>
                       <div className={hasDirection ? 'grid gap-6 lg:grid-cols-2' : ''}>
                         <div>
                           {subLabel('Daily P&L')}
-                          <DailyPnlChart data={run.daily_pnl} netPnl={run.net_pnl} height={hRow} />
+                          <DailyPnlChart data={effRun!.daily_pnl} netPnl={effRun!.net_pnl} height={hRow} />
                         </div>
                         {hasDirection && (
                           <div>
                             {subLabel('Long vs Short')}
-                            <DirectionBreakdown equity={run.equity_curve} />
+                            <DirectionBreakdown equity={effRun!.equity_curve} />
                           </div>
                         )}
                       </div>
@@ -2778,7 +2881,7 @@ export function BacktestDetail() {
                     {hasRealRegimeTags && <PerformanceByRegimeTable run={run} />}
 
                     {/* Sizing timeline — engine's day-by-day audit; sized runs only */}
-                    {hasSized && <SizedTimelineTable run={run} />}
+                    {hasSized && <SizedTimelineTable run={effRun!} />}
 
                     {fullscreenChart && fullscreenChart !== 'price' && (
                       <ChartModal

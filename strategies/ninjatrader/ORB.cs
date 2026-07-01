@@ -159,7 +159,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (State == State.SetDefaults)
             {
-                Description                  = "Opening Range Breakout (unit size; engine sizes & grades)";
+                Description                  = "Opening Range Breakout";
                 Name                         = "ORB";
                 Calculate                    = Calculate.OnBarClose;
                 IsExitOnSessionCloseStrategy = false;

@@ -538,6 +538,20 @@ class EvaluationDetail(BaseModel):
     personal_max_drawdown_from_peak_pct: Optional[float] = None
     personal_max_consecutive_loss_days: Optional[int] = None
     notes: Optional[str] = None
+    # Per-ruleset sized results — each firm's own contract ladder sizes the run differently,
+    # so its KPIs, daily P&L and sized timeline differ. Populated only for sized runs (from
+    # ruleset_sizing.json); the UI switches the KPI cards and sized/breakdown charts per firm.
+    # None/empty on unit-size runs — the UI falls back to the run-level headline.
+    net_pnl: Optional[float] = None
+    max_drawdown: Optional[float] = None
+    profit_factor: Optional[float] = None
+    win_rate: Optional[float] = None
+    trade_count: Optional[int] = None
+    avg_win: Optional[float] = None
+    avg_loss: Optional[float] = None
+    daily_pnl: list[dict] = []                       # [{date, pnl}] sized for this ruleset
+    sized_timeline: list[SizedTimelineDay] = []      # engine day-by-day, sized for this ruleset
+    equity_curve: list[EquityPoint] = []             # sized trade-by-trade curve (drawdown, long/short, calmar…)
 
 
 class BacktestDetail(BaseModel):

@@ -73,6 +73,33 @@ def engine_result_to_kpis(result: EngineResult) -> dict:
     return kpis
 
 
+def engine_result_to_equity_curve(result: EngineResult) -> list[dict]:
+    """Per-firm SIZED trade-by-trade equity curve, in the frontend EquityPoint shape.
+
+    Each firm sizes the SAME signals differently and skips different trades on halt/breach days,
+    so the sized trade sequence — and its cumulative equity, drawdown and long/short split —
+    differs per firm. This rebuilds that curve from the sized trades so BacktestDetail can drive
+    the per-firm Drawdown chart, Long-vs-Short breakdown, Calmar, Max DD % and Z-Score off it.
+    Skipped/blocked signals (contracts == 0) are not trades and are excluded.
+    """
+    taken = sorted(
+        (t for t in result.sized_trades if not t.skipped and t.contracts > 0),
+        key=lambda x: x.index,
+    )
+    curve: list[dict] = []
+    equity = 0.0
+    for i, t in enumerate(taken, start=1):
+        equity += t.net_pnl
+        curve.append({
+            "index": i,
+            "equity": round(equity, 2),
+            "date": t.day,
+            "direction": "Long" if t.direction > 0 else "Short",
+            "profit": round(t.net_pnl, 2),
+        })
+    return curve
+
+
 def is_micro_instrument(instrument: str) -> bool:
     """CME micro-contract naming heuristic — M-prefixed roots are micros (MNQ, MES, MGC)."""
     return (instrument or "").upper().startswith("M")
@@ -111,9 +138,10 @@ def size_run_for_rulesets(run_id: str, trade_records: list[dict], rulesets: list
     sized separately against each.
 
     The FIRST ruleset is the **primary**: its sized artifacts (decisions, timeline,
-    daily P&L) are persisted to the run dir and become the run's headline. The rest
-    are sized in memory only (graded against their own sized P&L, no stored timeline —
-    one sized timeline per run).
+    daily P&L) are persisted under the run's headline filenames (engine_timeline.json etc.)
+    and become the run's headline. EVERY ruleset's sized KPIs + daily P&L + day-by-day
+    timeline are ALSO written to ``ruleset_sizing.json`` (one map keyed by ruleset id), so
+    the UI can switch the numbers AND the sized/breakdown charts per firm.
 
     Returns ``{ruleset_id: {"kpis": dict, "daily_pnl": list, "result": EngineResult}}``.
     """
@@ -128,7 +156,30 @@ def size_run_for_rulesets(run_id: str, trade_records: list[dict], rulesets: list
             res = _size(run_id, trade_records, ruleset, mode=mode,
                         instrument=instrument, strategy=strategy)
         out[rid] = {"kpis": engine_result_to_kpis(res), "daily_pnl": res.daily_pnl, "result": res}
+
+    _persist_ruleset_sizing(run_id, out, results_dir)
     return out
+
+
+def _persist_ruleset_sizing(run_id: str, sized: dict, results_dir: Optional[str | Path]) -> None:
+    """Write per-ruleset sized KPIs + daily P&L + timeline so the UI can render each firm.
+
+    One file, ``ruleset_sizing.json``, mapping ruleset id → {kpis, daily_pnl, timeline}.
+    The timeline is the same day-by-day record persisted for the primary, per ruleset.
+    """
+    base = Path(results_dir) if results_dir else _LAB_RESULTS_DIR
+    run_dir = base / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        rid: {
+            "kpis": s["kpis"],
+            "daily_pnl": s["daily_pnl"],
+            "timeline": [asdict(d) for d in s["result"].timeline],
+            "equity_curve": engine_result_to_equity_curve(s["result"]),
+        }
+        for rid, s in sized.items()
+    }
+    (run_dir / "ruleset_sizing.json").write_text(json.dumps(payload, default=str))
 
 
 def _persist(run_id: str, result: EngineResult, results_dir: Optional[str | Path]) -> None:

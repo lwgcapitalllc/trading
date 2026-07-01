@@ -446,6 +446,19 @@ export interface EvaluationDetail {
   personal_max_drawdown_from_peak_pct: number | null
   personal_max_consecutive_loss_days: number | null
   notes: string | null
+  // Per-ruleset sized results — each firm's own contract ladder sizes the run differently,
+  // so its KPIs, daily P&L and sized timeline differ. Populated only for sized runs; null/empty
+  // on unit-size runs (the UI falls back to the run-level headline).
+  net_pnl: number | null
+  max_drawdown: number | null
+  profit_factor: number | null
+  win_rate: number | null
+  trade_count: number | null
+  avg_win: number | null
+  avg_loss: number | null
+  daily_pnl: DailyPnlPoint[]
+  sized_timeline: SizedTimelineDay[]
+  equity_curve: EquityPoint[]              // sized trade-by-trade curve (drawdown, long/short, calmar…)
 }
 
 export interface DailyPnlPoint {

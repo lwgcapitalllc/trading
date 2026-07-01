@@ -84,11 +84,24 @@ def _row_to_summary(row: dict) -> BacktestSummary:
 
 
 def _row_to_detail(row: dict) -> BacktestDetail:
+    # Per-ruleset sized results (sized runs only) — each firm's own KPIs, sized daily P&L
+    # and sized timeline, keyed by ruleset id. Empty on unit-size runs (file absent).
+    ruleset_sizing = _load_json(str(LAB_RESULTS_DIR / row["run_id"] / "ruleset_sizing.json")) or {}
     evals = [
         EvaluationDetail(
             eval_id=e["eval_id"],
             ruleset_id=e["ruleset_id"],
             ruleset_name=e["ruleset_name"],
+            net_pnl=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("net_pnl"),
+            max_drawdown=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("max_drawdown"),
+            profit_factor=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("profit_factor"),
+            win_rate=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("win_rate"),
+            trade_count=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("trade_count"),
+            avg_win=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("avg_win"),
+            avg_loss=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("avg_loss"),
+            daily_pnl=ruleset_sizing.get(e["ruleset_id"], {}).get("daily_pnl") or [],
+            sized_timeline=ruleset_sizing.get(e["ruleset_id"], {}).get("timeline") or [],
+            equity_curve=ruleset_sizing.get(e["ruleset_id"], {}).get("equity_curve") or [],
             verdict=e["verdict"],
             drawdown_pass=bool(e["drawdown_pass"]),
             target_pass=bool(e["target_pass"]),

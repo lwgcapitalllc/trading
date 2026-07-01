@@ -270,7 +270,9 @@ manages risk.
 - **`services/sizing_pipeline.py`** — the FS/IO wiring: `run_sizing_engine(run_id, trade_records,
   ruleset, *, mode, instrument, strategy, results_dir)` builds `RawTrade`s from a runner's export,
   runs the engine, and persists `decisions.jsonl` + `engine_timeline.json` + `engine_daily_pnl.json`
-  to the run dir. Locks the runner→engine column contract. `tests/test_sizing_pipeline.py` (3) green.
+  to the run dir. `size_run_for_rulesets(...)` sizes once per ruleset and additionally writes every
+  firm's `{kpis, daily_pnl, timeline}` to `ruleset_sizing.json` (see "Per-firm sized results" below).
+  Locks the runner→engine column contract. `tests/test_sizing_pipeline.py` (7) green.
 
 **Done 2026-06-21 — `ORB.cs` reshaped to the rules.** It now trades **unit size (1 contract)**,
 its self-policing halts are **removed** (daily-loss halt, profit-target stop, profit lock-in,
@@ -299,6 +301,24 @@ a real sized run) — no second `.exists()` stat. `SizedTimelineDay` mirrors `si
 (date, trades_taken, contracts_total, day_pnl, eod_balance, risk_floor, floor_distance,
 consistency_share_pct, halt_reason); it drives the frontend's Sized equity curve AND the day-by-day
 Sizing Timeline table (both built).
+
+**Per-firm sized results (2026-06-30).** The strategy makes the SAME trades for every firm — only the
+contract count differs (each firm's ladder/floor), so every firm has its own dollar P&L, sized daily
+P&L, and sized timeline. `size_run_for_rulesets` now writes **all** of them to
+`reports/lab/<run_id>/ruleset_sizing.json` (`_persist_ruleset_sizing`) — one map keyed by ruleset id,
+each `{kpis, daily_pnl, timeline}` — not just the primary. `EvaluationDetail` carries the per-firm
+KPI fields (`net_pnl`, `max_drawdown`, `profit_factor`, `win_rate`, `trade_count`, `avg_win`,
+`avg_loss`) + `daily_pnl` + `sized_timeline` + **`equity_curve`** (`engine_result_to_equity_curve` —
+the sized trade-by-trade curve, EquityPoint shape, excluding skipped/blocked signals); `_row_to_detail`
+loads `ruleset_sizing.json` and attaches each firm's slice to its evaluation (null/empty on unit-size +
+pre-2026-06-30 runs, which have no file → the UI falls back to the run-level headline). This is what
+lets BacktestDetail switch **everything ruleset-dependent** per firm when clicking through evaluations:
+KPI cards (incl. the equity-derived Calmar / Max DD % / Z-Score, off `equity_curve`), Sized-account
+chart, Daily P&L bars, Sizing Timeline table, **Drawdown chart** and **Long-vs-Short breakdown**. Only
+the "Strategy (1 unit)" equity tab + Price chart stay firm-independent by design (the bare 1-unit
+strategy). Firms skip different trades on halt/breach days, so `equity_curve` length (trade count) and
+its long/short split genuinely differ per firm. The primary's `engine_timeline.json`/
+`engine_daily_pnl.json` stay the run headline (unchanged); `ruleset_sizing.json` is the per-firm superset.
 
 **MT5 reshaped too (2026-06-22).** `LondonBreakout.mq5` is now reshaped like ORB: it trades UNIT size
 = the broker minimum lot (the forex analog of "1 micro" — always tradeable, finest legal granularity),
