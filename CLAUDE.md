@@ -19,7 +19,7 @@
 
 See `README.md` for the full repo map and subsystem list.
 
-`algos/`, `smart-money/`, and `command-center/` are fully independent from each other. `regime/` is a shared library imported by `algos/` (via shim) and `command-center/` (directly). `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS (NT8 strategy folder).
+`algos/`, `smart-money/`, and `command-center/` are fully independent from each other. `regime/` and `market_structure/` are shared libraries imported by `algos/` (each via a thin shim in `algos/shared/`); `regime/` is also imported by `command-center/` (directly). `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS (NT8 strategy folder).
 
 ---
 
@@ -36,6 +36,9 @@ React + FastAPI local operations platform. Monitors bots via SSH, surfaces Smart
 
 ### regime/
 Shared market regime classifier. Imported by the live bots (via `algos/shared/shared_regime.py` thin shim) and by the command-center backtest lab. Single output set: 5 labels (TRENDING, TRANSITIONING, RANGING, HIGH_VOLATILITY, LOW_VOLATILITY). Each bot owns its own `REGIME_RISK_TABLE` mapping labels to trade decisions. Full rules in `regime/CLAUDE.md`. Algorithm documented in `regime/REGIME_CLASSIFIER.md`.
+
+### market_structure/
+Canonical market-structure detection engine (BOS/CHoCH, swing highs/lows, HH/HL/LH/LL, internal structure). A stateful streaming state machine ported line-by-line from `indicators/structure_engine.pine` and validated at 100% Pine parity on a real XAUUSD 15m export. Imported by the live bots via `algos/shared/structure_engine.py` (thin shim); the command-center backtest lab is a future consumer. This is the single implementation — do not build another anywhere. Full rules in `market_structure/CLAUDE.md`; algorithm in `market_structure/MARKET_STRUCTURE_ENGINE.md`.
 
 ### strategies/
 Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the only live NinjaScript strategy, `ORB.cs` (VWAP_MR and Momentum were deleted 2026-06-21 — they baked risk management into the strategy, against the gated-layer rules). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS (NT8 or MT5 folder by extension). `strategies/mt5/` holds one MQL5 strategy: `LondonBreakout.mq5` (instrument-agnostic Asian-range → London breakout). Full rules in `strategies/CLAUDE.md`.

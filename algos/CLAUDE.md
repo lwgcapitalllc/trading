@@ -47,7 +47,7 @@ Shared logic lives in `shared/`; the launcher, coordinator, and config loader li
 | `mt5_ops.py` | `shared/` | All MT5 operations — symbol-parameterized, single shared instance per bot |
 | `bot_state.py` | `shared/` | Single source of truth read/write for each instance's `bot_state.json` |
 | `notify.py` | `shared/` | Telegram notification helpers (token source of truth) |
-| `structure_engine.py` | `shared/` | BOS/SOS/retracement event detection |
+| `structure_engine.py` | `shared/` | Market structure shim over `market_structure.StructureEngine` (canonical BOS/CHoCH/swing detection, ported from `indicators/structure_engine.pine`) — bot-facing `update(candle: dict)` interface |
 | `bot_utils.py` | `bots/` | Config loader, logging, path resolver |
 | `launcher.py` | `bots/` | Universal Task Scheduler launcher |
 | `startup_coordinator.py` | `bots/` | Orchestrates bot startup sequence |
