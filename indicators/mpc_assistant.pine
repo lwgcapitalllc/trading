@@ -1,6 +1,6 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
-indicator("MPC Assistant", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, max_polylines_count = 100)
+indicator("MPC - JARVIS", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, max_polylines_count = 100)
 
 //============================================================
 //  SMC SETTINGS (hardcoded)
@@ -1366,7 +1366,7 @@ if canShowDaily and hasDailyTimeChanged and not isLastDaily and barstate.isconfi
     array.set(a_lastLows,  0, dailyLow)
 
 if not na(d_hLine)
-    if not d_hMit and close > d_hPrice
+    if not d_hMit and high > d_hPrice and close < d_hPrice
         d_hMit := true
         d_hMitBar := bar_index
     bool showDH = (i_showMitigated or not d_hMit) and i_showLiquidity and i_isDailyEnabled
@@ -1378,7 +1378,7 @@ if not na(d_hLine)
     label.set_x(d_hLbl,  showDH ? d_hX2 : -1)
 
 if not na(d_lLine)
-    if not d_lMit and close < d_lPrice
+    if not d_lMit and low < d_lPrice and close > d_lPrice
         d_lMit := true
         d_lMitBar := bar_index
     bool showDL = (i_showMitigated or not d_lMit) and i_showLiquidity and i_isDailyEnabled
@@ -1688,7 +1688,7 @@ if not inNY and inNY[1] and i_showNYHL and i_showLiquidity and not na(nyHigh)
     nyLMit   := false
 
 if not na(asiaHLine)
-    if not asiaHMit and close > asiaHPrice
+    if not asiaHMit and high > asiaHPrice and close < asiaHPrice
         asiaHMit := true
         asiaHMitBar := bar_index
     bool showAH = (i_showMitigated or not asiaHMit) and i_showLiquidity and i_showAsiaHL
@@ -1700,7 +1700,7 @@ if not na(asiaHLine)
     label.set_x(asiaHLbl,  showAH ? asiaHX2 : -1)
 
 if not na(asiaLLine)
-    if not asiaLMit and close < asiaLPrice
+    if not asiaLMit and low < asiaLPrice and close > asiaLPrice
         asiaLMit := true
         asiaLMitBar := bar_index
     bool showAL = (i_showMitigated or not asiaLMit) and i_showLiquidity and i_showAsiaHL
@@ -1712,7 +1712,7 @@ if not na(asiaLLine)
     label.set_x(asiaLLbl,  showAL ? asiaLX2 : -1)
 
 if not na(londonHLine)
-    if not londonHMit and close > londonHPrice
+    if not londonHMit and high > londonHPrice and close < londonHPrice
         londonHMit := true
         londonHMitBar := bar_index
     bool showLH = (i_showMitigated or not londonHMit) and i_showLiquidity and i_showLondonHL
@@ -1724,7 +1724,7 @@ if not na(londonHLine)
     label.set_x(londonHLbl,  showLH ? londonHX2 : -1)
 
 if not na(londonLLine)
-    if not londonLMit and close < londonLPrice
+    if not londonLMit and low < londonLPrice and close > londonLPrice
         londonLMit := true
         londonLMitBar := bar_index
     bool showLL = (i_showMitigated or not londonLMit) and i_showLiquidity and i_showLondonHL
@@ -1736,7 +1736,7 @@ if not na(londonLLine)
     label.set_x(londonLLbl,  showLL ? londonLX2 : -1)
 
 if not na(nyHLine)
-    if not nyHMit and close > nyHPrice
+    if not nyHMit and high > nyHPrice and close < nyHPrice
         nyHMit := true
         nyHMitBar := bar_index
     bool showNH = (i_showMitigated or not nyHMit) and i_showLiquidity and i_showNYHL
@@ -1748,7 +1748,7 @@ if not na(nyHLine)
     label.set_x(nyHLbl,  showNH ? nyHX2 : -1)
 
 if not na(nyLLine)
-    if not nyLMit and close < nyLPrice
+    if not nyLMit and low < nyLPrice and close > nyLPrice
         nyLMit := true
         nyLMitBar := bar_index
     bool showNL = (i_showMitigated or not nyLMit) and i_showLiquidity and i_showNYHL
@@ -1972,6 +1972,9 @@ var array<box>   sniperBoxArr    = array.new<box>()
 var array<line>  sniper382Arr    = array.new<line>()
 var array<line>  sniper50Arr     = array.new<line>()
 var array<label> sniperLbl382Arr = array.new<label>()
+var float        sniperZoneTop   = na
+var float        sniperZoneBot   = na
+var bool         sniperZoneActive = false
 
 var float fibo_ash     = na
 var float fibo_asl     = na
@@ -1980,7 +1983,10 @@ var int   fibo_asl_loc = na
 var int   fibo_dir     = 0
 
 // ── Touched tracking: each level goes grey until price reaches it ──
-color FIBO_GREY = color.new(#888888, 0)
+color FIBO_GREY  = color.new(#888888, 0)
+color MACRO_GREY = color.new(#888888, 0)
+var bool fiboOriginChanged = false
+fiboOriginChanged := false   // reset every bar — only true on the specific bar origin changes
 var bool fibo1Touched  = false
 var bool fibo2Touched  = false
 var bool fibo3Touched  = false
@@ -2042,7 +2048,7 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     fiboP10 := fibo_dir == 1 ? fibo_ash - fiboRange * fibo10Value : fibo_asl + fiboRange * fibo10Value
 
     // Reset touched flags when fib origin changes (new leg)
-    bool fiboOriginChanged = fiboStartIndex != fiboStartIndexPrev
+    fiboOriginChanged = fiboStartIndex != fiboStartIndexPrev
     if fiboOriginChanged
         fibo1Touched  := false
         fibo2Touched  := false
@@ -2242,7 +2248,6 @@ var line  macroLine886 = na, var label macroLabel886 = na
 var line  macroLine100 = na, var label macroLabel100 = na
 
 // ── Macro fib touched tracking ──
-color MACRO_GREY          = color.new(#888888, 0)
 var bool macro0Touched    = false   // HH / 0.0
 var bool macro382Touched  = false   // TP2
 var bool macro50Touched   = false   // TP1 / FFT
@@ -2534,6 +2539,9 @@ if _snBearBOS or _snBullBOS
     array.push(sniper382Arr,    line.new(_snS, _sn382, _snE, _sn382, color = color.new(#4caf50, 0), style = line.style_dotted, width = 1))
     array.push(sniper50Arr,     line.new(_snS, _sn50,  _snE, _sn50,  color = color.new(#4caf50, 0), style = line.style_dotted, width = 1))
     array.push(sniperLbl382Arr, label.new(_snE + 2, (_sn382 + _sn50) / 2, "SZ", style = label.style_none, textcolor = color.new(#4caf50, 0), size = size.small, textalign = text.align_center))
+    sniperZoneTop    := _zTop
+    sniperZoneBot    := _zBot
+    sniperZoneActive := false   // reset entry flag on new sniper zone
 
 if showFibo and showSniperFib and array.size(sniperBoxArr) > 0
     for _sni = 0 to array.size(sniperBoxArr) - 1
@@ -2667,9 +2675,216 @@ if showVwap
         if array.size(vwapPts) >= 2
             vwapPoly := polyline.new(vwapPts, line_color = vwapColor, line_width = vwapWidth, curved = false, closed = false)
 
+
 plot(array.get(a_lastHighs, 0), "DH", color.new(i_dailyColor,   100), editable = false, display = display.none)
 plot(array.get(a_lastLows,  0), "DL", color.new(i_dailyColor,   100), editable = false, display = display.none)
 plot(array.get(a_lastHighs, 1), "WH", color.new(i_weeklyColor,  100), editable = false, display = display.none)
 plot(array.get(a_lastLows,  1), "WL", color.new(i_weeklyColor,  100), editable = false, display = display.none)
 plot(array.get(a_lastHighs, 2), "MH", color.new(i_monthlyColor, 100), editable = false, display = display.none)
 plot(array.get(a_lastLows,  2), "ML", color.new(i_monthlyColor, 100), editable = false, display = display.none)
+
+//============================================================
+//  MPC - JARVIS CONFIRMATION TABLE
+//============================================================
+color JARVIS_YELLOW = #fbe35e
+color JARVIS_BLUE   = #17578e
+color JARVIS_WHITE  = #ffffff
+color JARVIS_BLACK  = #000000
+color JARVIS_BSL    = color.new(#ff4444, 0)
+color JARVIS_SSL    = color.new(#00cc66, 0)
+
+var GRP_TABLE = "Confirmation Table"
+bool showConfTable = input.bool(true, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
+
+// ── 1. LIQUIDITY slots ──
+var string liq_h4h = "", var string liq_h4l = ""
+var string liq_dh  = "", var string liq_dl  = ""
+var string liq_ash = "", var string liq_asl = ""
+var string liq_ldh = "", var string liq_ldl = ""
+var string liq_nyh = "", var string liq_nyl = ""
+
+if i_showH4Sweep and i_showLiquidity
+    if h4HighSwept and not h4HighSwept[1]
+        liq_h4h := "BSL"
+    if h4LowSwept and not h4LowSwept[1]
+        liq_h4l := "SSL"
+if i_isDailyEnabled and i_showLiquidity
+    if d_hMit and not d_hMit[1]
+        liq_dh := "BSL"
+    if d_lMit and not d_lMit[1]
+        liq_dl := "SSL"
+if i_showAsiaHL and i_showLiquidity
+    if asiaHMit and not asiaHMit[1]
+        liq_ash := "BSL"
+    if asiaLMit and not asiaLMit[1]
+        liq_asl := "SSL"
+if i_showLondonHL and i_showLiquidity
+    if londonHMit and not londonHMit[1]
+        liq_ldh := "BSL"
+    if londonLMit and not londonLMit[1]
+        liq_ldl := "SSL"
+if i_showNYHL and i_showLiquidity
+    if nyHMit and not nyHMit[1]
+        liq_nyh := "BSL"
+    if nyLMit and not nyLMit[1]
+        liq_nyl := "SSL"
+
+if h4BarChanged
+    liq_h4h := "", liq_h4l := ""
+if newDay
+    liq_dh := "", liq_dl := ""
+    liq_ash := "", liq_asl := ""
+    liq_ldh := "", liq_ldl := ""
+    liq_nyh := "", liq_nyl := ""
+
+// ── 2. STRUCTURE slots ──
+var string ext_struct = ""
+var string int_struct = ""
+
+if st.bull_sos
+    ext_struct := "▲ SOS"
+else if st.bear_sos
+    ext_struct := "▼ SOS"
+else if st.bull_bos
+    ext_struct := "▲ BOS"
+else if st.bear_bos
+    ext_struct := "▼ BOS"
+
+if int_bull_break
+    int_struct := "▲ iBOS/iSOS"
+else if int_bear_break
+    int_struct := "▼ iBOS/iSOS"
+
+// ── 3. FIBONACCI slot ──
+var string fib_entry = ""
+
+if fibo3Touched and not fibo3Touched[1]
+    fib_entry := "E1 / 0.618"
+if fibo4Touched and not fibo4Touched[1]
+    fib_entry := "E2 / 0.702"
+if fibo5Touched and not fibo5Touched[1]
+    fib_entry := "E3 / 0.786"
+if fibo6Touched and not fibo6Touched[1]
+    fib_entry := "E4 / 0.886"
+if fiboOriginChanged
+    fib_entry := ""
+
+// ── 4. MV slot ──
+var string mv_status  = ""
+var float  mv_pocPrice = na
+var bool   mv_swept   = false
+
+if showSVP and array.size(svp_poc_px) > 0
+    mv_pocPrice := array.get(svp_poc_px, array.size(svp_poc_px) - 1)
+
+if not na(mv_pocPrice)
+    if not mv_swept and (high >= mv_pocPrice and low <= mv_pocPrice)
+        mv_swept  := true
+        mv_status := "Confirmed"
+
+if svpEnd
+    mv_swept := false, mv_status := ""
+
+// ── 5. SNIPER ZONE slot ──
+var string sz_status = ""
+
+if not na(sniperZoneTop) and not na(sniperZoneBot)
+    if not sniperZoneActive and high >= sniperZoneBot and low <= sniperZoneTop
+        sniperZoneActive := true
+        sz_status        := "Confirmed"
+
+if _snBearBOS or _snBullBOS
+    sz_status := ""
+
+// ── Draw table ──
+var table jarvisTable = table.new(position.top_right, 2, 22,
+  bgcolor      = color.new(JARVIS_BLACK, 10),
+  border_color = color.new(JARVIS_BLUE,  40),
+  border_width = 1,
+  frame_color  = JARVIS_YELLOW,
+  frame_width  = 2)
+
+f_jHdr(table t, int row, string title) =>
+    table.cell(t, 0, row, title,
+      text_color = JARVIS_YELLOW, text_size = size.tiny,
+      bgcolor = color.new(JARVIS_BLUE, 30), text_halign = text.align_left)
+    table.cell(t, 1, row, "",
+      bgcolor = color.new(JARVIS_BLUE, 30))
+
+f_jRow(table t, int row, string src, string val, color vc) =>
+    table.cell(t, 0, row, src,
+      text_color = JARVIS_WHITE, text_size = size.tiny,
+      bgcolor = color.new(JARVIS_BLACK, 20), text_halign = text.align_left)
+    table.cell(t, 1, row, val,
+      text_color = vc, text_size = size.tiny,
+      bgcolor = color.new(JARVIS_BLACK, 20), text_halign = text.align_center)
+
+f_jBlank(table t, int row) =>
+    table.cell(t, 0, row, "—", text_color = color.new(JARVIS_WHITE, 60), text_size = size.tiny, bgcolor = color.new(JARVIS_BLACK, 20))
+    table.cell(t, 1, row, "—", text_color = color.new(JARVIS_WHITE, 60), text_size = size.tiny, bgcolor = color.new(JARVIS_BLACK, 20))
+
+if showConfTable and barstate.islast
+    table.cell(jarvisTable, 0, 0, "MPC - JARVIS",
+      text_color = JARVIS_YELLOW, text_size = size.small,
+      bgcolor = JARVIS_BLUE, text_halign = text.align_center)
+    table.cell(jarvisTable, 1, 0, "CONFIRMATIONS",
+      text_color = JARVIS_YELLOW, text_size = size.small,
+      bgcolor = JARVIS_BLUE, text_halign = text.align_center)
+
+    int r = 1
+
+    // LIQUIDITY
+    f_jHdr(jarvisTable, r, "LIQUIDITY"), r := r + 1
+    bool anyLiq = liq_h4h != "" or liq_h4l != "" or liq_dh != "" or liq_dl != "" or liq_ash != "" or liq_asl != "" or liq_ldh != "" or liq_ldl != "" or liq_nyh != "" or liq_nyl != ""
+    if liq_h4h != ""
+        f_jRow(jarvisTable, r, "H4 H", liq_h4h, liq_h4h == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if liq_h4l != ""
+        f_jRow(jarvisTable, r, "H4 L", liq_h4l, liq_h4l == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if liq_dh != ""
+        f_jRow(jarvisTable, r, "DH", liq_dh, liq_dh == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if liq_dl != ""
+        f_jRow(jarvisTable, r, "DL", liq_dl, liq_dl == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if liq_ash != ""
+        f_jRow(jarvisTable, r, "AS H", liq_ash, liq_ash == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if liq_asl != ""
+        f_jRow(jarvisTable, r, "AS L", liq_asl, liq_asl == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if liq_ldh != ""
+        f_jRow(jarvisTable, r, "LD H", liq_ldh, liq_ldh == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if liq_ldl != ""
+        f_jRow(jarvisTable, r, "LD L", liq_ldl, liq_ldl == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if liq_nyh != ""
+        f_jRow(jarvisTable, r, "NY H", liq_nyh, liq_nyh == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if liq_nyl != ""
+        f_jRow(jarvisTable, r, "NY L", liq_nyl, liq_nyl == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
+    if not anyLiq
+        f_jBlank(jarvisTable, r), r := r + 1
+
+    // STRUCTURE
+    f_jHdr(jarvisTable, r, "STRUCTURE"), r := r + 1
+    if ext_struct != ""
+        f_jRow(jarvisTable, r, "Ext", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL), r := r + 1
+    if int_struct != ""
+        f_jRow(jarvisTable, r, "Int", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL), r := r + 1
+    if ext_struct == "" and int_struct == ""
+        f_jBlank(jarvisTable, r), r := r + 1
+
+    // FIBONACCI
+    f_jHdr(jarvisTable, r, "FIBONACCI"), r := r + 1
+    if fib_entry != ""
+        f_jRow(jarvisTable, r, "Entry", fib_entry, JARVIS_YELLOW), r := r + 1
+    else
+        f_jBlank(jarvisTable, r), r := r + 1
+
+    // MV
+    f_jHdr(jarvisTable, r, "MV"), r := r + 1
+    if mv_status != ""
+        f_jRow(jarvisTable, r, "MV", mv_status, JARVIS_YELLOW), r := r + 1
+    else
+        f_jBlank(jarvisTable, r), r := r + 1
+
+    // SNIPER
+    f_jHdr(jarvisTable, r, "SNIPER"), r := r + 1
+    if sz_status != ""
+        f_jRow(jarvisTable, r, "SZ", sz_status, JARVIS_YELLOW)
+    else
+        f_jBlank(jarvisTable, r)
