@@ -51,6 +51,22 @@ class ExternalEvents:
     bear_bos_price: Optional[float] = None    # the ASL level that broke
     bear_sos: bool = False
 
+    # The full impulse LEG of the break — both endpoints of the move that broke, fired on the
+    # break bar only (None otherwise). For a bull BOS: high = the ASH that broke, low = the swing
+    # low the impulse launched from; for a bear BOS: low = the ASL that broke, high = the swing
+    # high it launched from. The `_loc` fields are the bar index of each endpoint. These are what
+    # the Sniper-fib anchor needs (0.382–0.5 zone drawn across this leg) — the plain bull_bos_price
+    # above is only the broken level, not the leg. Ported from structure_engine.pine's
+    # bull_bos_high/h_loc/low/l_loc + bear mirror (the port originally dropped them).
+    bull_bos_high: Optional[float] = None
+    bull_bos_h_loc: Optional[int] = None
+    bull_bos_low: Optional[float] = None
+    bull_bos_l_loc: Optional[int] = None
+    bear_bos_high: Optional[float] = None
+    bear_bos_h_loc: Optional[int] = None
+    bear_bos_low: Optional[float] = None
+    bear_bos_l_loc: Optional[int] = None
+
     # New swing high/low, pullback-confirmed (locked) — Pine's "ASH"/"ASL" text with
     # ash_type/asl_type == "LOCKED", solid line. Fires ONLY via a normal 3-qualifying-candle
     # pullback confirmation (Pine lines 174 / 216). It does NOT fire on break-promotion (when an

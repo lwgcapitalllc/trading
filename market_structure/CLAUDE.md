@@ -36,7 +36,8 @@ eng = StructureEngine(major_length=15)   # 15 is the validated default; do not c
 # Feed one closed candle at a time, in order:
 events = eng.update(Bar(index=i, open=o, high=h, low=l, close=c))
 # events.external -> ExternalEvents (bull_bos, bear_bos, bull_sos, bear_sos, new_swing_high/low,
-#                    unconfirmed_high/low, broken_high/low_label, ...)
+#                    unconfirmed_high/low, broken_high/low_label,
+#                    bull/bear_bos_high/low + _h_loc/_l_loc [break-leg endpoints, break bar only], ...)
 # events.internal -> InternalEvents (bull_bos, bear_bos, bull_sos, bear_sos, new_swing_high/low,
 #                    demoted_high/low_label, ...)
 # Every label the Pine source draws has a matching event field carrying its *_price and *_index.
@@ -147,6 +148,20 @@ there is no data-source mismatch to muddy the result.
 never does (Pine sets those flags only in the 3-candle pullback-confirm block). That false signal
 seeded the internal engine early and drifted `internal_mode` for ~22 bars. Fixed in
 `_on_ash_broken`/`_on_asl_broken`. Re-run this tool after any `engine.py` change to keep it at 100%.
+
+**Second gap (2026-07-02, post-validation):** the eight break-leg fields (`bull_bos_high`,
+`bull_bos_h_loc`, `bull_bos_low`, `bull_bos_l_loc` + bear mirror) existed in
+`structure_engine.pine` but were never ported — they carry the full impulse leg of a BOS (both
+endpoints), which the Sniper-fib anchor needs. Added to `engine.py`/`types.py` and to the export +
+compare tool (`px_bull_bos_high` / `px_bull_bos_h_ago` columns; `_loc` exported as "bars ago" to
+survive the Pine absolute-index vs Python 0-based-index offset). The new columns are **optional** in
+`compare_tradingview.py`, so old CSVs still validate every other field. **Parity confirmed
+2026-07-02** on a fresh `VANTAGE_XAUUSD, 15m` export (9,721 bars): every field — the eight new
+break-leg fields included — matches on all 9,494 warm bars (`--warmup 227`, exit 0). The first 227
+bars mismatch only because the Pine export begins at a non-zero `bar_index` (TradingView had chart
+history before the export window, so its engine was already warm while the Python engine starts
+cold); both converge once the structure re-establishes inside the window. This is a second,
+independent dataset from the original OANDA validation, so it re-confirms the whole engine too.
 
 ## References
 

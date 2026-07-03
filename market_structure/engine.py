@@ -77,6 +77,18 @@ class _ExternalState:
         self.bull_sos: bool = False
         self.bear_sos: bool = False
 
+        # Full break-leg endpoints (Pine st.bull_bos_high/h_loc/low/l_loc + bear mirror). Set on
+        # the break bar in _on_ash_broken/_on_asl_broken, reset each bar like the other break
+        # outputs. Needed by the Sniper-fib anchor. See types.ExternalEvents for semantics.
+        self.bull_bos_high: Optional[float] = None
+        self.bull_bos_h_loc: Optional[int] = None
+        self.bull_bos_low: Optional[float] = None
+        self.bull_bos_l_loc: Optional[int] = None
+        self.bear_bos_high: Optional[float] = None
+        self.bear_bos_h_loc: Optional[int] = None
+        self.bear_bos_low: Optional[float] = None
+        self.bear_bos_l_loc: Optional[int] = None
+
         self.new_swing_high: bool = False
         self.new_swing_high_price: Optional[float] = None
         self.new_swing_high_index: Optional[int] = None
@@ -331,6 +343,14 @@ class StructureEngine:
         st.bear_bos_price = None
         st.bull_sos = False
         st.bear_sos = False
+        st.bull_bos_high = None
+        st.bull_bos_h_loc = None
+        st.bull_bos_low = None
+        st.bull_bos_l_loc = None
+        st.bear_bos_high = None
+        st.bear_bos_h_loc = None
+        st.bear_bos_low = None
+        st.bear_bos_l_loc = None
         st.new_swing_high = False
         st.new_swing_high_price = None
         st.new_swing_high_index = None
@@ -531,6 +551,14 @@ class StructureEngine:
             bear_bos=st.bear_bos,
             bear_bos_price=st.bear_bos_price,
             bear_sos=st.bear_sos,
+            bull_bos_high=st.bull_bos_high,
+            bull_bos_h_loc=st.bull_bos_h_loc,
+            bull_bos_low=st.bull_bos_low,
+            bull_bos_l_loc=st.bull_bos_l_loc,
+            bear_bos_high=st.bear_bos_high,
+            bear_bos_h_loc=st.bear_bos_h_loc,
+            bear_bos_low=st.bear_bos_low,
+            bear_bos_l_loc=st.bear_bos_l_loc,
             new_swing_high=st.new_swing_high,
             new_swing_high_price=st.new_swing_high_price,
             new_swing_high_index=st.new_swing_high_index,
@@ -557,6 +585,8 @@ class StructureEngine:
         bar_index = bar.index
         st.bull_bos = True
         st.bull_bos_price = st.ash
+        st.bull_bos_high = st.ash          # Pine: st.bull_bos_high  := st.ash
+        st.bull_bos_h_loc = st.ash_loc     # Pine: st.bull_bos_h_loc := st.ash_loc
 
         was_in_bear_pb = st.pb_mode == -1 and st.pb_extreme is not None and st.pb_extreme_loc is not None
         st.pb_mode = 0
@@ -588,6 +618,9 @@ class StructureEngine:
             # the internal engine, and Pine deliberately never seeds internal off a
             # break-promotion swing. Setting it here diverged from Pine (validated on the
             # XAUUSD-15m export at bar 1947) — so it is intentionally not set.
+            st.bull_bos_low = st.pb_extreme        # Pine: st.bull_bos_low  := st.pb_extreme
+            st.bull_bos_l_loc = st.pb_extreme_loc  # Pine: st.bull_bos_l_loc := st.pb_extreme_loc
+
             pb_is_hl = False if is_choch else (st.last_conf_low is None or st.pb_extreme >= st.last_conf_low)
             st.broken_low_label = "HL" if pb_is_hl else "LL"
             st.broken_low_price = st.pb_extreme
@@ -629,6 +662,9 @@ class StructureEngine:
                         lowest_val = b.low
                         lowest_loc = bar_index - i
 
+            st.bull_bos_low = lowest_val       # Pine: st.bull_bos_low  := lowest_val
+            st.bull_bos_l_loc = lowest_loc     # Pine: st.bull_bos_l_loc := lowest_loc
+
             st.asl = lowest_val
             st.asl_loc = lowest_loc
             st.asl_type = ""
@@ -649,6 +685,8 @@ class StructureEngine:
         bar_index = bar.index
         st.bear_bos = True
         st.bear_bos_price = st.asl
+        st.bear_bos_low = st.asl           # Pine: st.bear_bos_low  := st.asl
+        st.bear_bos_l_loc = st.asl_loc     # Pine: st.bear_bos_l_loc := st.asl_loc
 
         was_in_bull_pb = st.pb_mode == 1 and st.pb_extreme is not None and st.pb_extreme_loc is not None
         st.pb_mode = 0
@@ -680,6 +718,9 @@ class StructureEngine:
             # the internal engine, and Pine deliberately never seeds internal off a
             # break-promotion swing. Setting it here diverged from Pine (validated on the
             # XAUUSD-15m export) — so it is intentionally not set. Mirror of _on_ash_broken.
+            st.bear_bos_high = st.pb_extreme       # Pine: st.bear_bos_high  := st.pb_extreme
+            st.bear_bos_h_loc = st.pb_extreme_loc  # Pine: st.bear_bos_h_loc := st.pb_extreme_loc
+
             pb_is_hh = st.last_conf_high is None or st.pb_extreme >= st.last_conf_high
             st.broken_high_label = "HH" if pb_is_hh else "LH"
             st.broken_high_price = st.pb_extreme
@@ -723,6 +764,9 @@ class StructureEngine:
                     if b is not None and b.high > highest_val:
                         highest_val = b.high
                         highest_loc = bar_index - i
+
+            st.bear_bos_high = highest_val     # Pine: st.bear_bos_high  := highest_val
+            st.bear_bos_h_loc = highest_loc    # Pine: st.bear_bos_h_loc := highest_loc
 
             st.ash = highest_val
             st.ash_loc = highest_loc

@@ -16,6 +16,8 @@ You export ONE CSV from TradingView (chart menu → Export chart data) with the
   - the Pine engine's output columns:  px_ash, px_asl, px_dir, px_lch, px_lcl,
     px_bull_bos, px_bear_bos, px_bull_sos, px_bear_sos, px_new_sh, px_new_sl,
     px_i_sw, px_i_mode, px_i_bull_break, px_i_bear_break
+  - (newer export builds also add the break-leg columns px_bull_bos_high/low/h_ago/l_ago +
+    bear mirror; these are compared when present and simply skipped for older CSVs that lack them)
 Because both sides come from the SAME file, there is no data-source mismatch and no timestamp
 alignment problem — we compare row against row. We feed the OHLC columns into the Python engine
 and compare its output against the px_* columns in the same row.
@@ -55,6 +57,15 @@ PULSE_FIELDS = [
     "px_new_sh", "px_new_sl", "px_i_bull_break", "px_i_bear_break",
 ]
 ALL_FIELDS = PRICE_FIELDS + INT_FIELDS + PULSE_FIELDS
+
+# OPTIONAL break-leg columns — only present in CSVs exported from the newer export build. Old
+# exports lack them and are still fully validated on every field they DO carry. Prices compare
+# with a float tolerance; the *_ago columns are "bars ago" integers (compared exactly), which is
+# how the export makes bar locations comparable across Pine's absolute bar_index vs the engine's
+# 0-based row index. See structure_engine_export.pine for the matching plot() calls.
+LEG_PRICE_FIELDS = ["px_bull_bos_high", "px_bull_bos_low", "px_bear_bos_high", "px_bear_bos_low"]
+LEG_AGO_FIELDS = ["px_bull_bos_h_ago", "px_bull_bos_l_ago", "px_bear_bos_h_ago", "px_bear_bos_l_ago"]
+OPTIONAL_FIELDS = LEG_PRICE_FIELDS + LEG_AGO_FIELDS
 
 
 def _num(s):
@@ -102,10 +113,16 @@ def _resolve_columns(header):
     cols["time"] = find("time", required=False)
     for f in ALL_FIELDS:
         cols[f] = find(f)
-    return cols
+    present_optional = []
+    for f in OPTIONAL_FIELDS:
+        col = find(f, required=False)
+        if col is not None:
+            cols[f] = col
+            present_optional.append(f)
+    return cols, present_optional
 
 
-def _python_row(engine, ev):
+def _python_row(engine, ev, bar_index):
     """Compute the Python engine's equivalent of each px_* column, end-of-bar."""
     ash = engine.active_swing_high
     asl = engine.active_swing_low
@@ -113,6 +130,11 @@ def _python_row(engine, ev):
     lcl = engine.last_confirmed_low
     isw = engine.internal_swing
     e, n = ev.external, ev.internal
+
+    def ago(loc):
+        # Match the export's "bars ago" encoding; None (na) except on the break bar.
+        return None if loc is None else float(bar_index - loc)
+
     return {
         "px_ash": ash.price if ash else None,
         "px_asl": asl.price if asl else None,
@@ -130,11 +152,20 @@ def _python_row(engine, ev):
         # Pine's int_bull_break/int_bear_break fire for BOTH iBOS and iSOS — combine to match.
         "px_i_bull_break": 1.0 if (n.bull_bos or n.bull_sos) else 0.0,
         "px_i_bear_break": 1.0 if (n.bear_bos or n.bear_sos) else 0.0,
+        # Optional break-leg columns (only compared when present in the CSV).
+        "px_bull_bos_high": e.bull_bos_high,
+        "px_bull_bos_low": e.bull_bos_low,
+        "px_bear_bos_high": e.bear_bos_high,
+        "px_bear_bos_low": e.bear_bos_low,
+        "px_bull_bos_h_ago": ago(e.bull_bos_h_loc),
+        "px_bull_bos_l_ago": ago(e.bull_bos_l_loc),
+        "px_bear_bos_h_ago": ago(e.bear_bos_h_loc),
+        "px_bear_bos_l_ago": ago(e.bear_bos_l_loc),
     }
 
 
 def _values_match(field, py_val, pine_val, tol):
-    if field in PRICE_FIELDS:
+    if field in PRICE_FIELDS or field in LEG_PRICE_FIELDS:
         if py_val is None and pine_val is None:
             return True
         if py_val is None or pine_val is None:
@@ -186,13 +217,15 @@ def main(argv=None):
 
     with open(path, newline="") as f:
         header = next(csv.reader(f))
-    cols = _resolve_columns(header)
+    cols, present_optional = _resolve_columns(header)
     rows = _load_rows(path, cols)
+
+    compare_fields = ALL_FIELDS + present_optional
 
     engine = StructureEngine(major_length=args.major_length)
 
     total = 0
-    per_field_mismatch = {fld: 0 for fld in ALL_FIELDS}
+    per_field_mismatch = {fld: 0 for fld in compare_fields}
     detailed = []
 
     for i, row in enumerate(rows):
@@ -204,14 +237,14 @@ def main(argv=None):
             continue  # skip incomplete rows (e.g. a trailing live/blank bar)
 
         ev = engine.update(Bar(index=i, open=o, high=h, low=l, close=c))
-        py = _python_row(engine, ev)
+        py = _python_row(engine, ev, i)
         total += 1
 
         if i < args.warmup:
             continue
 
         bar_mismatches = []
-        for fld in ALL_FIELDS:
+        for fld in compare_fields:
             pine_val = _num(row[cols[fld]])
             if not _values_match(fld, py[fld], pine_val, args.tolerance):
                 per_field_mismatch[fld] += 1
@@ -223,6 +256,10 @@ def main(argv=None):
 
     # ── Report ──
     print(f"\nCompared {total} bars from {path.name}  (major_length={args.major_length}, tol={args.tolerance})")
+    if present_optional:
+        print(f"Break-leg columns found and checked: {', '.join(present_optional)}")
+    else:
+        print("Break-leg columns not in this CSV (older export) — skipped; all other fields checked.")
     print("-" * 72)
     any_mismatch = any(per_field_mismatch.values())
     if not any_mismatch:
@@ -230,7 +267,7 @@ def main(argv=None):
         return 0
 
     print("MISMATCHES BY FIELD:")
-    for fld in ALL_FIELDS:
+    for fld in compare_fields:
         n = per_field_mismatch[fld]
         if n:
             print(f"  {fld:<18} {n} bar(s)")

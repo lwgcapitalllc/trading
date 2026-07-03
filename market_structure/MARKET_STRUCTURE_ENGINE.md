@@ -184,6 +184,23 @@ That event is reserved for the clean 3-candle pullback confirmation only (see th
 4). Detect a break-promotion off `broken_high_label`/`broken_low_label` plus
 `active_swing_high`/`active_swing_low`, not off the `new_swing_*` events.
 
+**Break-leg geometry (not a label — extra fields on `ExternalEvents`):** on a BOS bar the event
+also carries the full impulse leg that broke, not just the broken level:
+
+| Field(s) | Meaning |
+|---|---|
+| `bull_bos_high` + `bull_bos_h_loc` | on a bull BOS: the ASH price that broke and its bar (same value as `bull_bos_price`) |
+| `bull_bos_low` + `bull_bos_l_loc` | on a bull BOS: the low the impulse launched from (a promoted pullback extreme, or the lowest low back to the prior confirmed high) and its bar |
+| `bear_bos_low` + `bear_bos_l_loc` | on a bear BOS: the ASL price that broke and its bar (same value as `bear_bos_price`) |
+| `bear_bos_high` + `bear_bos_h_loc` | on a bear BOS: the high the impulse launched from and its bar |
+
+All eight are `None` except on the break bar. This is the leg a Sniper-fib anchor draws its
+0.382–0.5 zone across — the plain `*_bos_price` fields give only the broken level, which is not
+enough to place a fib. The low can sit at an earlier *or* later bar than the broken high (the low
+comes from a backward rescan since the previous confirmed high), so do not assume a chronological
+low→high ordering. These fields exist in `structure_engine.pine` but were dropped by the original
+port; re-added and carried through the shim to `algos/`.
+
 **Internal (`events.internal`, an `InternalEvents`):**
 
 | Pine label text | Event field(s) |
@@ -230,3 +247,15 @@ port had been raising external `new_swing_high`/`new_swing_low` on the mid-pullb
 break-promotion path, which the Pine source never does — that false signal seeded the internal
 engine early and drifted `internal_mode` for ~22 bars before an SOS resynced it. Fixed 2026-07-02.
 Re-run the tool after any change to `engine.py` to keep this at 100%.
+
+A **second** port gap was found later the same day: the eight break-leg fields
+(`bull_bos_high`/`h_loc`/`low`/`l_loc` + bear mirror) existed in `structure_engine.pine` but were
+never carried into the Python port, so the Sniper-fib anchor had nothing to attach to. They were
+added to `engine.py` and to the export/compare tooling (the `px_bull_bos_high` /
+`px_bull_bos_h_ago` columns, with `_loc` exported as "bars ago" so it survives Pine's absolute
+`bar_index` vs the engine's 0-based index). Their Pine↔Python parity was then **confirmed
+2026-07-02** on a fresh `VANTAGE_XAUUSD, 15m` export (9,721 bars, a second independent dataset from
+the original OANDA run): all eight fields match on every one of the 9,494 warm bars (exit 0 with
+`--warmup 227`). Only the first 227 bars differ, because the Pine export begins at a non-zero
+`bar_index` — TradingView had history before the export window, so its engine was already warm
+while the Python engine starts cold; both converge once the structure re-establishes in-window.

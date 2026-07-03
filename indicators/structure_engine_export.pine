@@ -967,3 +967,16 @@ plot(i_sw_price,                "px_i_sw",         color = color.new(color.orang
 plot(i_mode,                    "px_i_mode",       color = color.new(color.gray,   100))
 plot(int_bull_break    ? 1 : 0, "px_i_bull_break", color = color.new(color.green,  100))
 plot(int_bear_break    ? 1 : 0, "px_i_bear_break", color = color.new(color.green,  100))
+
+// Break-leg endpoints — emitted ONLY on the break bar (na otherwise) so they line up with the
+// Python event fields, which are None except on the break bar. Prices compare directly; the
+// _loc columns are exported as "bars ago" (bar_index - loc) so they match despite Pine's
+// absolute bar_index differing from the Python engine's 0-based row index by a constant offset.
+plot(st.bull_bos ? st.bull_bos_high : na,                "px_bull_bos_high",  color = color.new(color.green, 100))
+plot(st.bull_bos ? (bar_index - st.bull_bos_h_loc) : na, "px_bull_bos_h_ago", color = color.new(color.green, 100))
+plot(st.bull_bos ? st.bull_bos_low : na,                 "px_bull_bos_low",   color = color.new(color.green, 100))
+plot(st.bull_bos ? (bar_index - st.bull_bos_l_loc) : na, "px_bull_bos_l_ago", color = color.new(color.green, 100))
+plot(st.bear_bos ? st.bear_bos_high : na,                "px_bear_bos_high",  color = color.new(color.green, 100))
+plot(st.bear_bos ? (bar_index - st.bear_bos_h_loc) : na, "px_bear_bos_h_ago", color = color.new(color.green, 100))
+plot(st.bear_bos ? st.bear_bos_low : na,                 "px_bear_bos_low",   color = color.new(color.green, 100))
+plot(st.bear_bos ? (bar_index - st.bear_bos_l_loc) : na, "px_bear_bos_l_ago", color = color.new(color.green, 100))
