@@ -19,7 +19,7 @@
 
 See `README.md` for the full repo map and subsystem list.
 
-`algos/`, `smart-money/`, and `command-center/` are fully independent from each other. `regime/` and `market_structure/` are shared libraries imported by `algos/` (each via a thin shim in `algos/shared/`); `regime/` is also imported by `command-center/` (directly). `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS (NT8 strategy folder).
+`algos/`, `smart-money/`, and `command-center/` are fully independent from each other. `regime/` and `market_structure/` are shared libraries imported by `algos/` (each via a thin shim in `algos/shared/`); `regime/` is also imported by `command-center/` (directly). `fibonacci/` is a shared library downstream of `market_structure/` — it consumes that engine's public output (a `StructureSnapshot`) and will get an `algos/shared/` shim when a bot first uses it. `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS (NT8 strategy folder).
 
 ---
 
@@ -39,6 +39,9 @@ Shared market regime classifier. Imported by the live bots (via `algos/shared/sh
 
 ### market_structure/
 Canonical market-structure detection engine (BOS/CHoCH, swing highs/lows, HH/HL/LH/LL, internal structure). A stateful streaming state machine ported line-by-line from `indicators/structure_engine.pine` and validated at 100% Pine parity on a real XAUUSD 15m export. Imported by the live bots via `algos/shared/structure_engine.py` (thin shim); the command-center backtest lab is a future consumer. This is the single implementation — do not build another anywhere. Full rules in `market_structure/CLAUDE.md`; algorithm in `market_structure/MARKET_STRUCTURE_ENGINE.md`.
+
+### fibonacci/
+Canonical fib engine. Turns `market_structure/` output into fib LEVEL EVENTS — the first-touch of each fib level (E1–E4 entries, TP1–TP5 targets, 1.0) — for entries, take-profits, and setup grading. One shared geometry core serves all three fibs (Structure, Sniper, Macro); each is a small state machine ported line-by-line from `indicators/mpc_assistant.pine`. Consumes the structure engine's public output only (never its internals) via a `StructureSnapshot`. The Structure fib ("FFT") is ported and validated at 100% Pine parity on a real XAUUSD 15m export; Sniper and Macro fibs are not yet ported. Emits events, not visuals. This is the single implementation — do not build another. Full rules in `fibonacci/CLAUDE.md`.
 
 ### strategies/
 Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the only live NinjaScript strategy, `ORB.cs` (VWAP_MR and Momentum were deleted 2026-06-21 — they baked risk management into the strategy, against the gated-layer rules). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS (NT8 or MT5 folder by extension). `strategies/mt5/` holds one MQL5 strategy: `LondonBreakout.mq5` (instrument-agnostic Asian-range → London breakout). Full rules in `strategies/CLAUDE.md`.
@@ -81,3 +84,4 @@ VPS path: `C:\trading\algos\` (main)
 - Commit `credentials.json`, `users.json`, `.env`, any `.pkl` model files, or API tokens/keys
 - Touch `algos/` when working on `smart-money/` or `command-center/` and vice versa
 - Build a second regime classifier in `command-center/` or anywhere else — `regime/classifier.py` is the canonical implementation; all consumers import from there
+- Build a second structure engine or a second fib engine anywhere — `market_structure/engine.py` and `fibonacci/` are the canonical implementations; all consumers import from them

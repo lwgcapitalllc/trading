@@ -280,6 +280,25 @@ class StructureEngine:
             return None
         return SwingLevel(price=self._int.sw_price, index=self._int.sw_loc, locked=self._int.sw_locked)
 
+    # Live pullback state — surfaces st.pb_mode / st.pb_extreme / st.pb_extreme_loc so a
+    # consumer (the Structure fib) can follow the in-progress pullback extreme exactly as
+    # mpc_assistant.pine does (fibo_ash := st.pb_extreme while pb_mode == 1, etc.). These are
+    # read-only getters over existing state — no behavior change to the state machine.
+    @property
+    def pullback_mode(self) -> int:
+        """1 = tracking a pullback high (bull leg), -1 = pullback low (bear leg), 0 = none."""
+        return self._ext.pb_mode
+
+    @property
+    def pullback_extreme(self) -> Optional[float]:
+        """The running extreme of the in-progress pullback (None when pb_mode == 0)."""
+        return self._ext.pb_extreme
+
+    @property
+    def pullback_extreme_loc(self) -> Optional[int]:
+        """Bar index of the current pullback extreme (None when pb_mode == 0)."""
+        return self._ext.pb_extreme_loc
+
     # ------------------------------------------------------------------
     # Pivot detection — ta.pivothigh(high, L, L) / ta.pivotlow(low, L, L)
     # ------------------------------------------------------------------

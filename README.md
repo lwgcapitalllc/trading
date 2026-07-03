@@ -8,6 +8,8 @@ trading/
 ├── smart-money/     ← Crypto/forex trader scanner and copy-trading candidate pool
 ├── command-center/  ← Local ops platform: bot monitor, smart money UI, backtests lab
 ├── regime/          ← Shared market regime classifier (live bots + backtest lab)
+├── market_structure/← Canonical BOS/CHoCH/swing detection engine (shared)
+├── fibonacci/       ← Fib level-event engine, downstream of market_structure/
 ├── strategies/      ← Generic strategy source files organized by runner platform
 ├── indicators/      ← Pine Script market-structure indicator rebuild (TradingView)
 ├── scripts/         ← Cross-subsystem VPS recovery and bootstrap scripts
@@ -36,6 +38,8 @@ Read these in order for full context:
 | `smart-money/` | Trader scanner for copy-trading candidates | Stages 1–2, 5 live | `smart-money/CLAUDE.md` |
 | `command-center/` | React + FastAPI ops platform | Live | `command-center/CLAUDE.md` |
 | `regime/` | Shared regime classifier for live bots and backtest lab | Production | `regime/CLAUDE.md` |
+| `market_structure/` | Canonical structure detection engine (BOS/CHoCH/swings) | Production — 100% Pine parity | `market_structure/CLAUDE.md` |
+| `fibonacci/` | Fib level-event engine (downstream of market_structure) | Structure fib validated; Sniper/Macro pending | `fibonacci/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
 | `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |
