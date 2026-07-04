@@ -65,6 +65,31 @@ gate is the caller's job (feed `MacroFib` only ≤5m bars).
 
 ---
 
+## Timeframes & what each fib needs
+
+**Which fib works on which timeframe:**
+
+| Fib | Timeframes | Note |
+|---|---|---|
+| **Structure** | any | no timeframe branching — same code every TF |
+| **Sniper** | any | same |
+| **Macro** | **≤5m only** | Pine gates it to `timeframe.in_seconds() <= 300`; that gate is NOT in `MacroFib` — the caller must only feed it ≤5m bars |
+
+**What the fibs need to be accurate (all three):**
+
+1. **An accurate structure engine.** The fibs are downstream of `market_structure/` — they read its
+   swings, BOS/SOS, and confirmed highs/lows. Wrong structure → wrong fibs. It is the foundation.
+2. **The right candles.** They must see the same price data you chart on. Same code + a different
+   broker/feed = different candles = different levels. (See "Live parity" below.)
+3. **Closed bars, in order, one at a time.** Each fib is a streaming state machine — its
+   touch/gate/zone/cycle state carries bar-to-bar and cannot be recomputed from a single bar. Feed
+   one closed bar per `update()`, in sequence; never skip or replay out of order.
+4. **Warm-up.** Nothing fires until the first real setup forms in-window: a first leg (Structure),
+   a first BOS (Sniper), or a full bear-SOS→bull-SOS cycle (Macro — the longest to warm up). Don't
+   act on events during warm-up.
+
+---
+
 ## Public API
 
 ```python
