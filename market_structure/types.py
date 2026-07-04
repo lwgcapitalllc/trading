@@ -148,6 +148,16 @@ class InternalEvents:
     bear_sos: bool = False
     bear_sos_price: Optional[float] = None
 
+    # Order-block creation gate for the INTERNAL engine — mirrors mpc_assistant.pine's
+    # int_bull_break / int_bear_break / int_break_origin_loc (~lines 1115-1275). These fire on the
+    # same bar as bull_bos/bear_bos/bull_sos/bear_sos, but are kept as separate fields because the
+    # OB anchor is a distinct location from the break price: int_break_origin_loc is the bar the
+    # order_blocks engine scans back from to find the OB candle — i_tracked_ext_loc on an iBOS,
+    # i_sw_loc on an iSOS. None off the break bar. Consumed only by order_blocks/ (not the fibs).
+    int_bull_break: bool = False
+    int_bear_break: bool = False
+    int_break_origin_loc: Optional[int] = None
+
 
 @dataclass
 class StructureEvents:

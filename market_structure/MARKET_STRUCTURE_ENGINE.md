@@ -213,6 +213,15 @@ port; re-added and carried through the shim to `algos/`.
 | "iSOS" (bearish flip) | `bear_sos` + `bear_sos_price` |
 | "iHL" (pullback low demoted at a bullish iBOS) | `demoted_low_label` + `demoted_low_price` + `demoted_low_index` |
 | "iLH" (pullback high demoted at a bearish iBOS) | `demoted_high_label` + `demoted_high_price` + `demoted_high_index` |
+| internal break fired (any iBOS/iSOS) → OB-creation gate | `int_bull_break` / `int_bear_break` + `int_break_origin_loc` |
+
+**Internal-break OB gate (`int_bull_break` / `int_bear_break` / `int_break_origin_loc`).** Added for
+the `order_blocks/` engine; mirror Pine's identically-named vars. On any internal break these flag
+its direction and expose the origin bar index the order-block engine scans back from — the two iBOS
+sites set `int_break_origin_loc` to `tracked_ext_loc`, the four iSOS branches to `sw_loc`, matching
+`mpc_assistant.pine` (~lines 1115-1275). Capture-only: set right beside the existing
+`bull_bos`/`bear_sos` fields, before the state reset; no structure logic changed. `None`/`False` on
+bars with no internal break.
 
 **Two caveats carried over from the Pine source (see `# NOTE:` in `engine.py`):**
 

@@ -1,0 +1,4 @@
+# Drop folder for TradingView Pine chart-data exports used by
+# ../tools/compare_ob.py. These CSVs are large, local-only test data —
+# never commit them. This file keeps the folder present in the repo.
+*.csv

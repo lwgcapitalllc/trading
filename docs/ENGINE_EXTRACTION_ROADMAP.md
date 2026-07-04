@@ -24,41 +24,35 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 - **`regime/`** — market regime classifier (separate source, not the SMC indicator).
 - **`market_structure/`** — external + internal structure (BOS/CHoCH, swings, HH/HL/LH/LL). 100% Pine parity.
 - **`fibonacci/`** — Structure, Sniper, and Macro fibs. 100% Pine parity. Downstream of `market_structure/`.
+- **`order_blocks/`** — bull/bear OB zones off external + internal breaks, with mitigation + FIFO eviction. Sibling of `fibonacci/` (consumes `market_structure/` directly). Ported line-by-line, 12 unit tests, 100% Pine parity on a real `VANTAGE_XAUUSD, 5m` export (harness: `indicators/ob_export.pine` + `order_blocks/tools/compare_ob.py`).
 
 ---
 
 ## Still to build — in priority order
 
-### 1. Order Blocks — do this next
-- **What:** the zone where a bot enters after the trend breaks. Bull/bear OBs form off a structure break and die when tapped (mitigated).
-- **Depends on:** `market_structure/` output — same setup as the fibs (same `StructureSnapshot` input, same shim, same parity workflow).
-- **Emits:** OB-created, OB-mitigated (tapped).
-- **Why first:** completes the SMC core a bot actually trades — structure says the trend broke, order blocks say *where* to enter, fibs give the levels. Lowest new-concept cost, highest value.
-- **Source block:** `ORDER BLOCKS` (~line 27 in `mpc_assistant.pine`).
-
-### 2. Liquidity levels
+### 1. Liquidity levels
 - **What:** the prices price runs toward and grabs — prev day/week/month highs and lows, previous-week-close, session highs and lows, H4 sweep (SSH/BSL), with mitigation tracking.
-- **Depends on:** nothing (standalone), but the session H/L piece wants Sessions (#3) first.
+- **Depends on:** nothing (standalone), but the session H/L piece wants Sessions (#2) first.
 - **Emits:** level-created, level-swept.
 - **Note:** biggest block of code (~400+ lines).
 - **Source block:** `LIQUIDITY LEVELS` (~line 123) plus `DAILY / WEEKLY / MONTHLY LEVELS`, `PWC`, `H4 LIQUIDITY SWEEP`, `SESSION H/L` (~lines 1335–1762).
 
-### 3. Sessions + Kill Zones
+### 2. Sessions + Kill Zones
 - **What:** clock rules — Tokyo/London/New York session windows, kill zones, NY range box.
 - **Depends on:** nothing. Small and simple.
 - **Emits:** session-open/close, in-killzone flag, NY range high/low.
-- **Note:** a prerequisite for the session-scoped parts of #2 (session H/L) and #4 (VWAP anchor). Worth doing before those.
+- **Note:** a prerequisite for the session-scoped parts of #1 (session H/L) and #3 (VWAP anchor). Worth doing before those.
 - **Source block:** `TRADING SESSIONS` (~line 69), `KILL ZONES & NY RANGE` (~line 104), `SESSION H/L TRACKING` (~line 1594).
 
-### 4. VWAP
+### 3. VWAP
 - **What:** a session-anchored average line + cross events.
-- **Depends on:** Sessions (#3) for the anchor; needs a **volume** column in the feed.
+- **Depends on:** Sessions (#2) for the anchor; needs a **volume** column in the feed.
 - **Emits:** VWAP value, VWAP cross.
 - **Source block:** `VWAP` (~line 115).
 
-### 5. Session Volume Profile (SVP)
+### 4. Session Volume Profile (SVP)
 - **What:** the Asia point-of-control / MV line.
-- **Depends on:** Sessions (#3); volume-heavy.
+- **Depends on:** Sessions (#2); volume-heavy.
 - **Note:** niche — do last.
 - **Source block:** `SESSION VOLUME PROFILE` (~line 220, 2554).
 
@@ -66,8 +60,8 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 
 ## Suggested batch order
 
-`Order Blocks → Sessions → Liquidity → VWAP → SVP`
+`Sessions → Liquidity → VWAP → SVP`
 
 Sessions is low down the value list but unlocks the session-scoped pieces of Liquidity and VWAP, so build it before them if batching.
 
-If building just one: **Order Blocks**.
+If building just one: **Sessions** (it unblocks the most downstream).

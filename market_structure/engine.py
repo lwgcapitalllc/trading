@@ -985,6 +985,8 @@ class StructureEngine:
             if close > ist.sw_price and ist.last_mode == 1:
                 events.bull_bos = True
                 events.bull_bos_price = ist.sw_price
+                events.int_bull_break = True                      # Pine int_bull_break := true
+                events.int_break_origin_loc = ist.tracked_ext_loc  # Pine := i_tracked_ext_loc (pre-reset)
 
                 if ist.tracked_ext is not None:
                     ist.last_hl = ist.tracked_ext
@@ -1011,6 +1013,8 @@ class StructureEngine:
             elif close < ist.sw_price and ist.last_mode == -1:
                 events.bear_bos = True
                 events.bear_bos_price = ist.sw_price
+                events.int_bear_break = True                      # Pine int_bear_break := true
+                events.int_break_origin_loc = ist.tracked_ext_loc  # Pine := i_tracked_ext_loc (pre-reset)
 
                 if ist.tracked_ext is not None:
                     ist.last_lh = ist.tracked_ext
@@ -1043,6 +1047,8 @@ class StructureEngine:
 
                 events.bear_sos = True
                 events.bear_sos_price = ist.last_hl
+                events.int_bear_break = True              # Pine int_bear_break := true
+                events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 ist.sw_price = None
                 ist.sw_loc = None
@@ -1064,6 +1070,8 @@ class StructureEngine:
 
                 events.bull_sos = True
                 events.bull_sos_price = ist.last_lh
+                events.int_bull_break = True              # Pine int_bull_break := true
+                events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 ist.sw_price = None
                 ist.sw_loc = None
@@ -1081,6 +1089,8 @@ class StructureEngine:
             elif ist.last_mode == -1 and ist.sos_watch_hh is not None and close > ist.sos_watch_hh and ist.mode == 0:
                 events.bull_sos = True
                 events.bull_sos_price = ist.sos_watch_hh
+                events.int_bull_break = True              # Pine int_bull_break := true
+                events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 ist.sos_watch_ll = ist.sw_price
                 ist.sos_watch_ll_loc = ist.sw_loc
@@ -1102,6 +1112,8 @@ class StructureEngine:
             elif ist.last_mode == 1 and ist.sos_watch_ll is not None and close < ist.sos_watch_ll and ist.mode == 0:
                 events.bear_sos = True
                 events.bear_sos_price = ist.sos_watch_ll
+                events.int_bear_break = True              # Pine int_bear_break := true
+                events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 ist.sos_watch_hh = ist.sw_price
                 ist.sos_watch_hh_loc = ist.sw_loc

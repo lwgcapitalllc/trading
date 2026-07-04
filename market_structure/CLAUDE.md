@@ -39,7 +39,8 @@ events = eng.update(Bar(index=i, open=o, high=h, low=l, close=c))
 #                    unconfirmed_high/low, broken_high/low_label,
 #                    bull/bear_bos_high/low + _h_loc/_l_loc [break-leg endpoints, break bar only], ...)
 # events.internal -> InternalEvents (bull_bos, bear_bos, bull_sos, bear_sos, new_swing_high/low,
-#                    demoted_high/low_label, ...)
+#                    demoted_high/low_label,
+#                    int_bull_break/int_bear_break + int_break_origin_loc [OB-creation gate, see below], ...)
 # Every label the Pine source draws has a matching event field carrying its *_price and *_index.
 # See the "Label -> event field" table in MARKET_STRUCTURE_ENGINE.md for the full mapping.
 
@@ -97,7 +98,19 @@ already-known level fires. Internal structure has no pivot lag at all. See
 | Consumer | Path | Status |
 |---|---|---|
 | Live/algos bots | `algos/shared/structure_engine.py` (thin shim over `market_structure.StructureEngine`) | Wired |
+| `fibonacci/` | reads the public `ExternalEvents` + read properties via its own `StructureSnapshot` | Wired |
+| `order_blocks/` | reads the public `ExternalEvents` + `InternalEvents` via its own `StructureSnapshot` | Wired |
 | Command-center backtest lab | `command-center/backend/services/` | Not yet wired — future consumer, not touched by this port |
+
+**`InternalEvents` OB-creation gate (`int_bull_break` / `int_bear_break` / `int_break_origin_loc`).**
+These three fields were added for `order_blocks/`. They are a purely additive, capture-only exposure
+of state the engine already computes — they mirror Pine's `int_bull_break` / `int_bear_break` /
+`int_break_origin_loc` and are set at the six internal-break sites (iBOS bull/bear use
+`tracked_ext_loc` as the origin; the four iSOS branches use `sw_loc`), right where the existing
+`bull_bos` / `bear_sos` / `*_price` fields are set, before the state reset. No structure logic
+changed and structure parity was re-confirmed unbroken. `order_blocks/` scans back from
+`int_break_origin_loc` to drop an OB on the internal break; the external OB path reads the existing
+`bull_bos_l_loc` / `bear_bos_h_loc`.
 
 ---
 
