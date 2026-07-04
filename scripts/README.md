@@ -1,8 +1,8 @@
 # scripts/ — Cross-subsystem ops & recovery
 
 Root-level operational scripts that span more than one subsystem. Subsystem-specific
-scripts stay in their own subsystem (e.g. `algos/scripts/cleanup_vps.bat`); these live here
-because they rebuild or recover the whole VPS.
+scripts stay in their own subsystem; these live here because they rebuild or recover
+the whole VPS.
 
 | Script | Covers | Run as |
 |---|---|---|

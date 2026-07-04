@@ -38,9 +38,10 @@ next audit doesn't re-flag it.
    artifacts, and `.git`.
 2. Enumerate every **entry point** — anything that starts execution or is invoked from
    outside the codebase. For this repo that includes Task Scheduler definitions
-   (`scheduler/*_task.xml`), the startup coordinator, `algo.py` / control-panel
-   commands, Telegram bot commands, the scheduled scripts (backup, pnl_tracker,
-   monitor, reporter), the Command Center backend routes/frontend, and any CI hooks.
+   (`scheduler/*_task.xml`), the startup coordinator, Telegram bot commands, the
+   scheduled scripts (pnl_tracker, monitor, reporter), the VPS agents
+   (`nt8_agent.py`, `mt5_agent.py`), the bootstrap scripts (`scripts/*.ps1`), the
+   Command Center backend routes/frontend, manual CLI tools, and any CI hooks.
 3. State plainly: reachability is measured **from these roots**, not from "is it
    imported somewhere."
 

@@ -1367,7 +1367,7 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
 
     if not csv_out.exists():
         fail("opt_results.csv not written — OnTesterPass may not have fired. "
-             "Ensure MeanReversion.ex5 is compiled from the latest source.")
+             "Ensure the strategy .ex5 is compiled from the latest source.")
         return
 
     results = _parse_opt_csv(csv_out, param_ranges)

@@ -4,7 +4,7 @@
 
 ```
 trading/
-├── algos/           ← Live algo trading (XAUUSD, Windows VPS, PU Prime demo)
+├── algos/           ← Algo trading suite (Windows VPS, PU Prime demo — no live bots, rebuilding backtest-first)
 ├── smart-money/     ← Crypto/forex trader scanner and copy-trading candidate pool
 ├── command-center/  ← Local ops platform: bot monitor, smart money UI, backtests lab
 ├── regime/          ← Shared market regime classifier (live bots + backtest lab)
@@ -25,10 +25,12 @@ Read these in order for full context:
 4. `command-center/CLAUDE.md` — what's built, design decisions
 5. `smart-money/CLAUDE.md` — pipeline status, thresholds, where we left off
 6. `regime/CLAUDE.md` — shared classifier, public API, consumers
-7. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
-8. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
-9. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
-10. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
+7. `market_structure/CLAUDE.md` — canonical structure engine, parity rules, consumers
+8. `fibonacci/CLAUDE.md` — fib level-event engine, the three fibs, parity rules
+9. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
+10. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
+11. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
+12. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
 
 ## Subsystems
 
@@ -58,6 +60,8 @@ Cross-subsystem reference documents:
 - `docs/BOT_DEVELOPMENT_METHOD.md` — S.Y.S.T.E.M. six-step process for building and validating any trading bot
 - `docs/LWG_Strategy_Framework.md` — Standing reference for how strategies are designed, layered, built, and graded
 - `docs/market_structure_engine_spec.md` — Spec for the BOS/SOS market-structure detection engine
+- `docs/dynamic_sizing_engine.md` — Design doc for the dynamic sizing & risk engine (sizing, gating, decision log)
 - `docs/LWG_Project_State_Snapshot.md` — Current platform state; hand to new Claude.ai chats
 - `docs/LWG_Roadmap_And_Open_Questions.md` — Forward plan and open questions; hand to new Claude.ai chats
+- `docs/ENGINE_EXTRACTION_ROADMAP.md` — Which SMC-indicator blocks still need to become their own Python engines, in priority order (Order Blocks next)
 - `docs/audit/` — Audit and snapshot prompt templates

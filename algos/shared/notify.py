@@ -6,7 +6,7 @@ monitor, and any other VPS process. Sends to GROUP_CHAT by default.
 
 Usage:
     from notify import send_telegram
-    send_telegram("🟢 *Scalper online*")
+    send_telegram("🟢 *Bot online*")
 """
 
 import sys

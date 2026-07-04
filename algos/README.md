@@ -21,9 +21,6 @@ algos/
 ├── docs/
 │   ├── ARCHITECTURE.md              ← Multi-instrument system design (Phases 1–5)
 │   └── BOT_DEPLOYMENT_INFRA.md      ← Reusable deploy plumbing (MT5, configs, scheduler, liveness)
-├── scripts/
-│   ├── deploy.py                    ← File staging tool
-│   └── cleanup_vps.bat
 ├── bots/
 │   ├── bot_utils.py                 ← Config loader, logging, path resolver
 │   ├── launcher.py                  ← Universal Task Scheduler launcher
