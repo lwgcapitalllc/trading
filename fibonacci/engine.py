@@ -14,16 +14,17 @@ Currently implemented:
   - StructureFib  (GRP_FIBO "Structure Fibonacci", Pine ~2009-2114) — the main retracement fib.
   - SniperFib     (GRP_SNIPER "Sniper Fib", Pine ~2510-2551 + zone-touch ~2788-2797) — the
                   BOS impulse-leg 0.382-0.5 confirmation zone.
+  - MacroFib      (GRP_MACRO "Macro Cycle Fib", Pine ~2290-2432) — the multi-BOS bull-cycle fib.
 
-Next (not yet ported): MacroFib (HH->LL cycle).
+All three fibs are ported.
 """
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .geometry import fib_from_origin, fib_level, origin_index
-from .types import FibTouch, SniperFibEvents, StructureFibEvents, StructureSnapshot
+from .types import FibTouch, MacroFibEvents, SniperFibEvents, StructureFibEvents, StructureSnapshot
 
 # ── Structure fib levels, in Pine's own check order within each group ──
 # Gate: 0.618 (E1) must be reached before anything else arms.
@@ -218,4 +219,199 @@ class SniperFib:
             created=created,
             confirmed=confirmed,
             zone_active=self._zone_active,
+        )
+
+
+# ── Macro cycle fib levels (bull-only: HH sits at 0.0, LL at 1.0, retraces measured down) ──
+# Retrace group — gated by 0.618, tested on the pullback (low) side, same order as Pine:
+_MACRO_RETRACE: Tuple[Tuple[str, float], ...] = (
+    ("E1", 0.618),   # the gate
+    ("E2", 0.702),
+    ("E3", 0.786),
+    ("E4", 0.886),
+    ("LL", 1.000),
+)
+# Target group — armed only after 0.618 was reached, tested on the push (high) side:
+_MACRO_TARGET: Tuple[Tuple[str, float], ...] = (
+    ("TP1", 0.500),
+    ("TP2", 0.382),
+    ("HH", 0.000),
+)
+_MACRO_GATE = "E1"  # 0.618
+_MACRO_ORDER = _MACRO_RETRACE + _MACRO_TARGET
+_MACRO_ROLE = {name: "entry" for name, _ in _MACRO_RETRACE}
+_MACRO_ROLE.update({name: "target" for name, _ in _MACRO_TARGET})
+_MACRO_RATIO = {name: r for name, r in _MACRO_ORDER}
+
+
+class MacroFib:
+    """The Macro cycle fib.
+
+    A bull-cycle retracement that spans multiple BOS legs. Its bottom (LL, the 1.0 level) locks on
+    a bullish SOS that follows a bearish SOS; its top (HH, the 0.0 level) extends on every new
+    confirmed higher-high; the whole cycle resets when price closes back below the locked bottom,
+    and hides (but stays locked) when price closes above the top. Level touches are gated on 0.618
+    exactly like the Structure fib. Line-by-line port of mpc_assistant.pine GRP_MACRO, drawing
+    removed. Pine restricts it to <=5m timeframes — that gate is the CALLER's job (feed this only
+    <=5m bars), mirroring how the bot selects its data.
+
+    NOTE on touch events: unlike the Structure fib, the Macro does NOT skip its checks on the bar a
+    cycle locks/extends (its `macroExtChanged` guard is effectively always false in the source), so
+    a level can be reset and re-touched on the same bar. To match Pine's plotted `X and not X[1]`
+    pulse exactly, touches are edge-detected against the PREVIOUS bar's end state, not "flipped this
+    update".
+    """
+
+    def __init__(self) -> None:
+        # Cycle anchors + direction (Pine `var macro_*`). Locs kept for parity of the anchor bar;
+        # the drawing-only `time` fields are dropped.
+        self._dir: int = 0
+        self._origin: Optional[float] = None       # locked bottom (LL)
+        self._origin_loc: Optional[int] = None
+        self._extreme: Optional[float] = None       # extending top (HH)
+        self._extreme_loc: Optional[int] = None
+        self._origin_locked: bool = False
+        self._visible: bool = False
+        self._last_conf_high: Optional[float] = None
+        self._prev_extreme: Optional[float] = None
+
+        # Bottom-tracking since the last bearish SOS (Pine macro_ll_since_bear_sos*).
+        self._last_bear_sos_bar: Optional[int] = None
+        self._ll_since: Optional[float] = None
+        self._ll_since_bar: Optional[int] = None
+
+        # Touched flags + the 0.618 latch. `_touched_prev` = last bar's end state, for the edge.
+        self._touched = {name: False for name in _MACRO_RATIO}
+        self._touched_prev = {name: False for name in _MACRO_RATIO}
+        self._gate_ever = False
+
+        self._prev_st_dir: int = 0  # Pine macro_prev_st_dir — tracked but unused, kept for fidelity
+
+    def _reset_touched(self) -> None:
+        for name in self._touched:
+            self._touched[name] = False
+        self._gate_ever = False
+
+    # ------------------------------------------------------------------
+    def update(self, bar_index: int, high: float, low: float, close: float,
+               snap: StructureSnapshot) -> MacroFibEvents:
+        """Feed one closed bar (index + high/low/close) plus this bar's structure snapshot.
+
+        Only feed <=5m bars — the Pine timeframe gate is the caller's responsibility.
+        """
+
+        # ── 1. Track the most recent bearish SOS; start tracking the low from there (Pine 2293) ──
+        if snap.bear_sos:
+            self._last_bear_sos_bar = bar_index
+            self._ll_since = low
+            self._ll_since_bar = bar_index
+
+        # ── 2. While unlocked, keep the lowest low since that bear SOS (Pine 2301) ──
+        if not self._origin_locked and self._last_bear_sos_bar is not None:
+            if self._ll_since is None or low < self._ll_since:
+                self._ll_since = low
+                self._ll_since_bar = bar_index
+
+        # ── 3. RESET: price closed below the locked bottom (Pine 2307) ──
+        if self._origin_locked and self._origin is not None and close < self._origin:
+            self._dir = 0
+            self._origin = None
+            self._origin_loc = None
+            self._extreme = None
+            self._extreme_loc = None
+            self._origin_locked = False
+            self._last_conf_high = None
+            self._visible = False
+            self._last_bear_sos_bar = bar_index
+            self._ll_since = low
+            self._ll_since_bar = bar_index
+
+        # ── 4. BOTTOM LOCKS on a bullish SOS (Pine 2331) ──
+        ll_after_sos = (
+            snap.last_conf_low is not None
+            and self._last_bear_sos_bar is not None
+            and snap.last_conf_low_loc is not None
+            and snap.last_conf_low_loc > self._last_bear_sos_bar
+        )
+        bottom_anchor = snap.last_conf_low if ll_after_sos else self._ll_since
+        bottom_anchor_bar = snap.last_conf_low_loc if ll_after_sos else self._ll_since_bar
+        new_cycle = False
+        if (snap.bull_sos and not self._origin_locked and bottom_anchor is not None
+                and snap.last_conf_high is not None):
+            self._dir = 1
+            self._origin = bottom_anchor
+            self._origin_loc = bottom_anchor_bar
+            self._extreme = snap.last_conf_high
+            self._extreme_loc = snap.last_conf_high_loc
+            self._origin_locked = True
+            self._last_conf_high = snap.last_conf_high
+            self._visible = True
+            self._prev_extreme = snap.last_conf_high
+            self._reset_touched()
+            new_cycle = True
+
+        # ── 5. HIDE when price closes above the locked top (Pine 2358) ──
+        if (self._origin_locked and self._visible and self._extreme is not None
+                and close > self._extreme):
+            self._visible = False
+
+        # ── 6. TOP EXTENDS on every new confirmed HH (Pine 2370) ──
+        extended = False
+        if (self._origin_locked and snap.last_conf_high is not None
+                and self._last_conf_high is not None and snap.last_conf_high > self._last_conf_high):
+            self._extreme = snap.last_conf_high
+            self._extreme_loc = snap.last_conf_high_loc
+            self._last_conf_high = snap.last_conf_high
+            self._visible = True
+            self._prev_extreme = snap.last_conf_high
+            self._reset_touched()
+            extended = True
+
+        # ── 7. Touched tracking — same gated logic as the Structure fib (Pine 2390) ──
+        levels: Dict[str, float] = {}
+        active = False
+        if (self._visible and self._origin_locked and self._origin is not None
+                and self._extreme is not None):
+            mH = self._extreme
+            mL = self._origin
+            if mH - mL > 0:
+                active = True
+                levels = {name: fib_level(mH, mL, 1, r) for name, r in _MACRO_ORDER}
+                ext_changed = self._extreme != self._prev_extreme  # source no-op; kept for fidelity
+                gate_reached = low <= levels[_MACRO_GATE]
+
+                if not ext_changed:
+                    if gate_reached:
+                        for name, _ in _MACRO_RETRACE:
+                            if not self._touched[name] and low <= levels[name]:
+                                self._touched[name] = True
+                    if self._gate_ever:
+                        for name, _ in _MACRO_TARGET:
+                            if not self._touched[name] and high >= levels[name]:
+                                self._touched[name] = True
+                    if gate_reached and not self._gate_ever:
+                        self._gate_ever = True
+
+        self._prev_st_dir = snap.direction  # Pine 2432 (unused)
+
+        # Edge-detect touches against the PREVIOUS bar's end state (Pine `X and not X[1]`).
+        touched_now: List[FibTouch] = [
+            FibTouch(name, _MACRO_RATIO[name], levels[name], _MACRO_ROLE[name])
+            for name, _ in _MACRO_ORDER
+            if self._touched[name] and not self._touched_prev[name]
+        ]
+        self._touched_prev = dict(self._touched)
+
+        return MacroFibEvents(
+            active=active,
+            direction=self._dir,
+            top=self._extreme if active else None,
+            bot=self._origin if active else None,
+            locked=self._origin_locked,
+            visible=self._visible,
+            new_cycle=new_cycle,
+            extended=extended,
+            touched=touched_now,
+            levels=levels,
+            touched_so_far={name for name, hit in self._touched.items() if hit},
         )

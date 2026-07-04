@@ -21,8 +21,8 @@ Public API:
 """
 
 from .geometry import fib_from_origin, fib_level, fib_levels, origin_index
-from .types import FibTouch, SniperFibEvents, StructureFibEvents, StructureSnapshot
-from .engine import SniperFib, StructureFib
+from .types import FibTouch, MacroFibEvents, SniperFibEvents, StructureFibEvents, StructureSnapshot
+from .engine import MacroFib, SniperFib, StructureFib
 
 __all__ = [
     "fib_level",
@@ -32,7 +32,9 @@ __all__ = [
     "FibTouch",
     "StructureFibEvents",
     "SniperFibEvents",
+    "MacroFibEvents",
     "StructureSnapshot",
     "StructureFib",
     "SniperFib",
+    "MacroFib",
 ]

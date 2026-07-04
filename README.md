@@ -39,7 +39,7 @@ Read these in order for full context:
 | `command-center/` | React + FastAPI ops platform | Live | `command-center/CLAUDE.md` |
 | `regime/` | Shared regime classifier for live bots and backtest lab | Production | `regime/CLAUDE.md` |
 | `market_structure/` | Canonical structure detection engine (BOS/CHoCH/swings) | Production — 100% Pine parity | `market_structure/CLAUDE.md` |
-| `fibonacci/` | Fib level-event engine (downstream of market_structure) | Structure fib validated; Sniper ported (parity pending export); Macro pending | `fibonacci/CLAUDE.md` |
+| `fibonacci/` | Fib level-event engine (downstream of market_structure) | Production — all 3 fibs (Structure/Sniper/Macro) 100% Pine parity | `fibonacci/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
 | `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |

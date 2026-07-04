@@ -704,6 +704,159 @@ if not na(sniperZoneTop) and not na(sniperZoneBot)
 if _snBearBOS or _snBullBOS
     sniperConfirmedNow := false
 
+//============================================================
+//  MACRO CYCLE FIB  (lifted from mpc_assistant.pine GRP_MACRO ~2290-2432)
+//  State machine + touched tracking ONLY — every line/label draw removed. Reads the external
+//  structure engine's st.* above. SOURCE OF TRUTH for the Python MacroFib in fibonacci/, checked
+//  via the px_macro_* plots below. Deviations from mpc_assistant.pine, all drawing-only, none
+//  change state: line/label vars + all line.new/label.new/delete removed; the drawing-only
+//  macro_*_time fields dropped (never read by the state machine); showMacroFib hardcoded true.
+//  macroFibAllowed is KEPT — export on a <=5m chart or the whole block never runs.
+//============================================================
+var int   macro_dir                   = 0
+var float macro_origin                = na
+var int   macro_origin_loc            = na
+var float macro_extreme               = na
+var int   macro_extreme_loc           = na
+var bool  macro_origin_locked         = false
+var float macro_last_conf_high        = na
+var bool  macro_visible               = false
+var float macro_prev_extreme          = na
+var int   macro_last_bear_sos_bar     = na
+var float macro_ll_since_bear_sos     = na
+var int   macro_ll_since_bear_sos_bar = na
+
+var bool macro0Touched   = false
+var bool macro382Touched = false
+var bool macro50Touched  = false
+var bool macro618Touched = false
+var bool macro702Touched = false
+var bool macro786Touched = false
+var bool macro886Touched = false
+var bool macro100Touched = false
+var bool macro618EverReached = false
+
+bool showMacroFib    = true
+bool macroFibAllowed = timeframe.in_seconds() <= 300
+
+var bool macroNewCycle = false
+macroNewCycle := false
+var bool macroExtended = false
+macroExtended := false
+
+if showMacroFib and macroFibAllowed
+    if st.bear_sos
+        macro_last_bear_sos_bar     := bar_index
+        macro_ll_since_bear_sos     := low
+        macro_ll_since_bear_sos_bar := bar_index
+
+    if not macro_origin_locked and not na(macro_last_bear_sos_bar)
+        if low < macro_ll_since_bear_sos
+            macro_ll_since_bear_sos     := low
+            macro_ll_since_bear_sos_bar := bar_index
+
+    if macro_origin_locked and not na(macro_origin) and close < macro_origin
+        macro_dir             := 0
+        macro_origin          := na
+        macro_origin_loc      := na
+        macro_extreme         := na
+        macro_extreme_loc     := na
+        macro_origin_locked   := false
+        macro_last_conf_high  := na
+        macro_visible         := false
+        macro_last_bear_sos_bar     := bar_index
+        macro_ll_since_bear_sos     := low
+        macro_ll_since_bear_sos_bar := bar_index
+
+    bool macroLLafterSOS = not na(st.last_conf_low) and not na(macro_last_bear_sos_bar) and st.last_conf_low_loc > macro_last_bear_sos_bar
+    float macroBottomAnchor    = macroLLafterSOS ? st.last_conf_low     : macro_ll_since_bear_sos
+    int   macroBottomAnchorBar = macroLLafterSOS ? st.last_conf_low_loc : macro_ll_since_bear_sos_bar
+    if st.bull_sos and not macro_origin_locked and not na(macroBottomAnchor) and not na(st.last_conf_high)
+        macro_dir             := 1
+        macro_origin          := macroBottomAnchor
+        macro_origin_loc      := macroBottomAnchorBar
+        macro_extreme         := st.last_conf_high
+        macro_extreme_loc     := st.last_conf_high_loc
+        macro_origin_locked   := true
+        macro_last_conf_high  := st.last_conf_high
+        macro_visible         := true
+        macro_prev_extreme    := st.last_conf_high
+        macro0Touched   := false
+        macro382Touched := false
+        macro50Touched  := false
+        macro618Touched := false
+        macro702Touched := false
+        macro786Touched := false
+        macro886Touched := false
+        macro100Touched := false
+        macro618EverReached := false
+        macroNewCycle := true
+
+    if macro_origin_locked and macro_visible and not na(macro_extreme) and close > macro_extreme
+        macro_visible := false
+
+    bool macroNewHH = macro_origin_locked and not na(st.last_conf_high) and st.last_conf_high > macro_last_conf_high
+    if macroNewHH
+        macro_extreme         := st.last_conf_high
+        macro_extreme_loc     := st.last_conf_high_loc
+        macro_last_conf_high  := st.last_conf_high
+        macro_visible         := true
+        macro_prev_extreme    := st.last_conf_high
+        macro0Touched   := false
+        macro382Touched := false
+        macro50Touched  := false
+        macro618Touched := false
+        macro702Touched := false
+        macro786Touched := false
+        macro886Touched := false
+        macro100Touched := false
+        macro618EverReached := false
+        macroExtended := true
+
+    if macro_visible and macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
+        float mH = macro_extreme
+        float mL = macro_origin
+        float mR = mH - mL
+        if mR > 0
+            float mP618 = mH - mR * 0.618
+            float mP702 = mH - mR * 0.702
+            float mP786 = mH - mR * 0.786
+            float mP886 = mH - mR * 0.886
+            float mP100 = mH - mR * 1.0
+            float mP50  = mH - mR * 0.5
+            float mP382 = mH - mR * 0.382
+            float mP0   = mH - mR * 0.0
+
+            bool macroExtChanged = macro_extreme != macro_prev_extreme
+            bool macro618Reached = low <= mP618
+
+            if not macroExtChanged
+                if macro618Reached
+                    if not macro618Touched
+                        macro618Touched := true
+                    if not macro702Touched and low <= mP702
+                        macro702Touched := true
+                    if not macro786Touched and low <= mP786
+                        macro786Touched := true
+                    if not macro886Touched and low <= mP886
+                        macro886Touched := true
+                    if not macro100Touched and low <= mP100
+                        macro100Touched := true
+                if macro618EverReached
+                    if not macro50Touched and high >= mP50
+                        macro50Touched  := true
+                    if not macro382Touched and high >= mP382
+                        macro382Touched := true
+                    if not macro0Touched and high >= mP0
+                        macro0Touched   := true
+                if macro618Reached and not macro618EverReached
+                    macro618EverReached := true
+
+bool  macroActive = macro_visible and macro_origin_locked and not na(macro_origin) and not na(macro_extreme) and (macro_extreme - macro_origin) > 0
+float macroH = macroActive ? macro_extreme : na
+float macroL = macroActive ? macro_origin  : na
+float macroR = macroActive ? macroH - macroL : na
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  PARITY-EXPORT PLOTS  (fib) — read AFTER the fib block so each series holds this bar's final
 //  value. Colors fully transparent (alpha 100) so they don't clutter the pane but DO export.
@@ -745,3 +898,31 @@ plot(sniperConfirmedNow ? 1 : 0,              "px_sniper_confirmed",   color = c
 plot(sniperZoneActive ? 1 : 0,                "px_sniper_zone_active", color = color.new(color.gray,  100))
 plot(sniperZoneTop,                           "px_sniper_top",         color = color.new(color.green, 100))
 plot(sniperZoneBot,                           "px_sniper_bot",         color = color.new(color.green, 100))
+
+// ── Macro cycle fib: state + level prices + first-touch pulses (only on <=5m exports) ──
+plot(macroActive ? 1 : 0,               "px_macro_active",    color = color.new(color.gray,  100))
+plot(macroActive ? macro_dir : na,      "px_macro_dir",       color = color.new(color.gray,  100))
+plot(macro_origin_locked ? 1 : 0,       "px_macro_locked",    color = color.new(color.gray,  100))
+plot(macro_visible ? 1 : 0,             "px_macro_visible",   color = color.new(color.gray,  100))
+plot(macroNewCycle ? 1 : 0,             "px_macro_new_cycle", color = color.new(color.gray,  100))
+plot(macroExtended ? 1 : 0,             "px_macro_extended",  color = color.new(color.gray,  100))
+plot(macroActive ? macroH : na,         "px_macro_top",       color = color.new(color.green, 100))
+plot(macroActive ? macroL : na,         "px_macro_bot",       color = color.new(color.green, 100))
+
+plot(macroActive ? macroH - macroR * 0.618 : na, "px_macro_e1_price",  color = color.new(color.blue,  100))
+plot(macroActive ? macroH - macroR * 0.702 : na, "px_macro_e2_price",  color = color.new(color.blue,  100))
+plot(macroActive ? macroH - macroR * 0.786 : na, "px_macro_e3_price",  color = color.new(color.blue,  100))
+plot(macroActive ? macroH - macroR * 0.886 : na, "px_macro_e4_price",  color = color.new(color.blue,  100))
+plot(macroActive ? macroH - macroR * 1.000 : na, "px_macro_ll_price",  color = color.new(color.blue,  100))
+plot(macroActive ? macroH - macroR * 0.500 : na, "px_macro_tp1_price", color = color.new(color.green, 100))
+plot(macroActive ? macroH - macroR * 0.382 : na, "px_macro_tp2_price", color = color.new(color.green, 100))
+plot(macroActive ? macroH - macroR * 0.000 : na, "px_macro_hh_price",  color = color.new(color.green, 100))
+
+plot((macro618Touched and not macro618Touched[1]) ? 1 : 0, "px_macro_e1_touch",  color = color.new(color.blue,  100))
+plot((macro702Touched and not macro702Touched[1]) ? 1 : 0, "px_macro_e2_touch",  color = color.new(color.blue,  100))
+plot((macro786Touched and not macro786Touched[1]) ? 1 : 0, "px_macro_e3_touch",  color = color.new(color.blue,  100))
+plot((macro886Touched and not macro886Touched[1]) ? 1 : 0, "px_macro_e4_touch",  color = color.new(color.blue,  100))
+plot((macro100Touched and not macro100Touched[1]) ? 1 : 0, "px_macro_ll_touch",  color = color.new(color.blue,  100))
+plot((macro50Touched  and not macro50Touched[1])  ? 1 : 0, "px_macro_tp1_touch", color = color.new(color.green, 100))
+plot((macro382Touched and not macro382Touched[1]) ? 1 : 0, "px_macro_tp2_touch", color = color.new(color.green, 100))
+plot((macro0Touched   and not macro0Touched[1])   ? 1 : 0, "px_macro_hh_touch",  color = color.new(color.green, 100))

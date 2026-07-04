@@ -125,6 +125,31 @@ class StructureFibEvents:
 
 
 @dataclass
+class MacroFibEvents:
+    """The Macro cycle fib's per-bar output.
+
+    The Macro fib spans a whole bull cycle: its bottom (LL / 1.0) locks on a bullish SOS after a
+    bearish SOS, and its top (HH / 0.0) extends across every new confirmed higher-high until price
+    closes back below the locked bottom (which resets the cycle). It emits the same first-touch
+    level events as the Structure fib, plus two lifecycle events: `new_cycle` (the cycle locked
+    this bar) and `extended` (the top pushed to a new HH this bar). Only runs on <=5m timeframes.
+    See mpc_assistant.pine GRP_MACRO.
+    """
+
+    active: bool = False                              # levels currently computed (visible + locked + range>0)
+    direction: int = 0                                # 1 while a cycle is live (bull-only), 0 otherwise
+    top: Optional[float] = None                       # macro_extreme — the HH (0.0 level)
+    bot: Optional[float] = None                       # macro_origin — the LL (1.0 level)
+    locked: bool = False                              # a cycle bottom is locked (may be hidden)
+    visible: bool = False                             # the fib is currently shown (hidden above the top)
+    new_cycle: bool = False                           # a fresh cycle locked THIS bar — event
+    extended: bool = False                            # the top extended to a new HH THIS bar — event
+    touched: List[FibTouch] = field(default_factory=list)   # levels first-touched THIS bar (events)
+    levels: Dict[str, float] = field(default_factory=dict)  # current price of every level (state)
+    touched_so_far: Set[str] = field(default_factory=set)   # cumulative touched names this cycle-range
+
+
+@dataclass
 class SniperFibEvents:
     """The Sniper fib's per-bar output.
 

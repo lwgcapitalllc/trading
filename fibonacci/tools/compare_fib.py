@@ -4,11 +4,11 @@ compare_fib.py — parity check: TradingView Pine export vs Python Structure fib
 
 Purpose
 -------
-Prove the Python fibs in fibonacci/ (Structure + Sniper) produce the same level events as the
-source-of-truth fibs in mpc_assistant.pine, on real candles. It runs the REAL pipeline —
-market_structure's StructureEngine feeds a StructureSnapshot into StructureFib and SniperFib — on
-the same candles the Pine build saw, and diffs their output against the px_fib_* / px_sniper_*
-columns the Pine build plotted.
+Prove the Python fibs in fibonacci/ (Structure + Sniper + Macro) produce the same level events as
+the source-of-truth fibs in mpc_assistant.pine, on real candles. It runs the REAL pipeline —
+market_structure's StructureEngine feeds a StructureSnapshot into StructureFib, SniperFib and
+MacroFib — on the same candles the Pine build saw, and diffs their output against the px_fib_* /
+px_sniper_* / px_macro_* columns the Pine build plotted.
 
 Data lineup
 -----------
@@ -18,7 +18,10 @@ Export chart data). Each row carries the candle (fed to Python) and the Pine fib
              px_fib_<lvl>_price and px_fib_<lvl>_touch for lvl in E1..E4, 100, TP1..TP5
   Sniper:    px_sniper_active, px_sniper_dir, px_sniper_top, px_sniper_bot,
              px_sniper_created, px_sniper_confirmed, px_sniper_zone_active
-Both sides come from the same file, so there is no data-source mismatch.
+  Macro:     px_macro_active/dir/locked/visible/new_cycle/extended, px_macro_top, px_macro_bot,
+             px_macro_<lvl>_price and px_macro_<lvl>_touch for lvl in E1..E4, LL, TP1, TP2, HH
+Both sides come from the same file, so there is no data-source mismatch. The Macro fib only runs
+on <=5m in Pine, so export on a <=5m chart to validate it (Structure + Sniper validate on any TF).
 
 Warmup
 ------
@@ -48,12 +51,17 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from market_structure import Bar, StructureEngine
-from fibonacci import SniperFib, StructureFib, StructureSnapshot
+from fibonacci import MacroFib, SniperFib, StructureFib, StructureSnapshot
 
 # Column suffix -> Python level name (see fib_export.pine plot titles).
 _LVL = [
     ("e1", "E1"), ("e2", "E2"), ("e3", "E3"), ("e4", "E4"), ("100", "1.0"),
     ("tp1", "TP1"), ("tp2", "TP2"), ("tp3", "TP3"), ("tp4", "TP4"), ("tp5", "TP5"),
+]
+# Macro fib level suffix -> Python level name.
+_MACRO_LVL = [
+    ("e1", "E1"), ("e2", "E2"), ("e3", "E3"), ("e4", "E4"), ("ll", "LL"),
+    ("tp1", "TP1"), ("tp2", "TP2"), ("hh", "HH"),
 ]
 
 # ── Structure fib columns ──
@@ -64,15 +72,23 @@ TOUCH_FIELDS = [f"px_fib_{sfx}_touch" for sfx, _ in _LVL]
 SNIPER_PRICE_FIELDS = ["px_sniper_top", "px_sniper_bot"]
 SNIPER_PULSE_FIELDS = ["px_sniper_active", "px_sniper_created", "px_sniper_confirmed", "px_sniper_zone_active"]
 
-PRICE_FIELDS = FIB_PRICE_FIELDS + SNIPER_PRICE_FIELDS
-PULSE_FIELDS = TOUCH_FIELDS + ["px_fib_active", "px_fib_origin"] + SNIPER_PULSE_FIELDS
-DIR_FIELDS = ["px_fib_dir", "px_sniper_dir"]
+# ── Macro fib columns ──
+MACRO_PRICE_FIELDS = [f"px_macro_{sfx}_price" for sfx, _ in _MACRO_LVL] + ["px_macro_top", "px_macro_bot"]
+MACRO_TOUCH_FIELDS = [f"px_macro_{sfx}_touch" for sfx, _ in _MACRO_LVL]
+MACRO_PULSE_FIELDS = MACRO_TOUCH_FIELDS + [
+    "px_macro_active", "px_macro_locked", "px_macro_visible", "px_macro_new_cycle", "px_macro_extended",
+]
+
+PRICE_FIELDS = FIB_PRICE_FIELDS + SNIPER_PRICE_FIELDS + MACRO_PRICE_FIELDS
+PULSE_FIELDS = TOUCH_FIELDS + ["px_fib_active", "px_fib_origin"] + SNIPER_PULSE_FIELDS + MACRO_PULSE_FIELDS
+DIR_FIELDS = ["px_fib_dir", "px_sniper_dir", "px_macro_dir"]
 ALL_FIELDS = PRICE_FIELDS + PULSE_FIELDS + DIR_FIELDS
 
-# The Structure fib columns are required; the Sniper columns are optional so this tool still runs
-# against an older export made before the px_sniper_* plots existed (it just skips the Sniper check).
+# The Structure fib columns are required; Sniper and Macro columns are optional so this tool still
+# runs against an older export made before those plots existed (it just skips that fib's check).
 STRUCT_FIELDS = FIB_PRICE_FIELDS + TOUCH_FIELDS + ["px_fib_active", "px_fib_origin", "px_fib_dir"]
 SNIPER_FIELDS = SNIPER_PRICE_FIELDS + SNIPER_PULSE_FIELDS + ["px_sniper_dir"]
+MACRO_FIELDS = MACRO_PRICE_FIELDS + MACRO_PULSE_FIELDS + ["px_macro_dir"]
 
 
 def _num(s):
@@ -114,13 +130,13 @@ def _resolve_columns(header):
     cols["time"] = find("time", required=False)
     for f in STRUCT_FIELDS:
         cols[f] = find(f)                     # required
-    for f in SNIPER_FIELDS:
-        cols[f] = find(f, required=False)     # optional (older exports lack these)
+    for f in SNIPER_FIELDS + MACRO_FIELDS:
+        cols[f] = find(f, required=False)     # optional (older / higher-TF exports lack these)
     return cols
 
 
-def _python_row(fib_ev, sniper_ev):
-    """Map the Python fib events to each px_fib_* / px_sniper_* column value."""
+def _python_row(fib_ev, sniper_ev, macro_ev):
+    """Map the Python fib events to each px_fib_* / px_sniper_* / px_macro_* column value."""
     active = fib_ev.active
     touched_names = {t.level for t in fib_ev.touched}
     row = {
@@ -141,6 +157,21 @@ def _python_row(fib_ev, sniper_ev):
     row["px_sniper_dir"] = float(sniper_ev.direction) if sn_active else None
     row["px_sniper_top"] = sniper_ev.zone_top if sn_active else None
     row["px_sniper_bot"] = sniper_ev.zone_bot if sn_active else None
+
+    # Macro fib. active == levels currently computed (visible + locked + range>0).
+    m_active = macro_ev.active
+    macro_touched = {t.level for t in macro_ev.touched}
+    row["px_macro_active"] = 1.0 if m_active else 0.0
+    row["px_macro_locked"] = 1.0 if macro_ev.locked else 0.0
+    row["px_macro_visible"] = 1.0 if macro_ev.visible else 0.0
+    row["px_macro_new_cycle"] = 1.0 if macro_ev.new_cycle else 0.0
+    row["px_macro_extended"] = 1.0 if macro_ev.extended else 0.0
+    row["px_macro_dir"] = float(macro_ev.direction) if m_active else None
+    row["px_macro_top"] = macro_ev.top if m_active else None
+    row["px_macro_bot"] = macro_ev.bot if m_active else None
+    for sfx, name in _MACRO_LVL:
+        row[f"px_macro_{sfx}_price"] = macro_ev.levels.get(name) if m_active else None
+        row[f"px_macro_{sfx}_touch"] = 1.0 if name in macro_touched else 0.0
     return row
 
 
@@ -199,13 +230,23 @@ def main(argv=None):
     cols = _resolve_columns(header)
     rows = _load_rows(path, cols)
 
-    # Only compare fields the CSV actually carries (Sniper columns are optional).
-    compare_fields = [fld for fld in ALL_FIELDS if cols.get(fld) is not None]
     have_sniper = any(cols.get(fld) is not None for fld in SNIPER_FIELDS)
+    have_macro = any(cols.get(fld) is not None for fld in MACRO_FIELDS)
+    # The Macro fib only runs on <=5m in Pine; a higher-TF export carries the columns but they are
+    # never active. Only compare Macro if the export actually exercised it (px_macro_active hits 1).
+    macro_col = cols.get("px_macro_active")
+    macro_exercised = have_macro and macro_col is not None and any(_num(r.get(macro_col)) == 1.0 for r in rows)
+
+    # Only compare fields the CSV carries; drop Macro fields on an export that never exercised it.
+    compare_fields = [
+        fld for fld in ALL_FIELDS
+        if cols.get(fld) is not None and not (fld in MACRO_FIELDS and not macro_exercised)
+    ]
 
     engine = StructureEngine(major_length=args.major_length)
     fib = StructureFib()
     sniper = SniperFib()
+    macro = MacroFib()
 
     total = 0
     per_field_mismatch = {fld: 0 for fld in compare_fields}
@@ -224,7 +265,8 @@ def main(argv=None):
         snap = StructureSnapshot.from_engine(engine, ev)
         fib_ev = fib.update(h, l, snap)
         sniper_ev = sniper.update(h, l, snap)
-        py = _python_row(fib_ev, sniper_ev)
+        macro_ev = macro.update(i, h, l, c, snap)
+        py = _python_row(fib_ev, sniper_ev, macro_ev)
         total += 1
 
         if i < args.warmup:
@@ -244,7 +286,21 @@ def main(argv=None):
                 detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
-    scope = "Structure + Sniper" if have_sniper else "Structure (Sniper columns absent — re-export fib_export.pine to check it)"
+    parts = ["Structure"]
+    if have_sniper:
+        parts.append("Sniper")
+    if macro_exercised:
+        parts.append("Macro")
+    scope = " + ".join(parts)
+    notes = []
+    if not have_sniper:
+        notes.append("Sniper columns absent")
+    if have_macro and not macro_exercised:
+        notes.append("Macro present but never active — export on <=5m to check it")
+    elif not have_macro:
+        notes.append("Macro columns absent")
+    if notes:
+        scope += "  (" + "; ".join(notes) + ")"
     print(f"\nCompared {total} bars from {path.name}  (major_length={args.major_length}, tol={args.tolerance})")
     print(f"Scope: {scope}")
     print("-" * 72)
