@@ -665,6 +665,45 @@ if fibActive
         if fibo618Reached and not fibo618EverReached
             fibo618EverReached := true
 
+//============================================================
+//  SNIPER FIB  (lifted from mpc_assistant.pine GRP_SNIPER ~2510-2551 + zone-touch ~2788-2797)
+//  Compute + zone-touch state ONLY — every box/line/label draw removed. Reads the external
+//  structure engine's st.* above. This is the SOURCE-OF-TRUTH Sniper logic the Python SniperFib
+//  in fibonacci/ is validated against, via the px_sniper_* plots below.
+//  Two deviations from mpc_assistant.pine, both drawing-only, neither changes zone state:
+//    - the box/line/label arrays are gone; only sniperZoneTop/Bot/Active (+ a sniperDir for the
+//      export) are kept — those are the whole state machine.
+//    - the display string sz_status is replaced by a per-bar bool sniperConfirmedNow so the
+//      confirm EVENT (edge) is observable by a plot. The latch sniperZoneActive updates identically.
+//============================================================
+var float sniperZoneTop    = na
+var float sniperZoneBot    = na
+var bool  sniperZoneActive = false
+var int   sniperDir        = 0
+
+bool _snBearBOS = st.bear_bos
+bool _snBullBOS = st.bull_bos
+bool sniperCreated = _snBearBOS or _snBullBOS
+
+if _snBearBOS or _snBullBOS
+    float _snh   = _snBullBOS ? st.bull_bos_high : st.bear_bos_high
+    float _snl   = _snBullBOS ? st.bull_bos_low : st.bear_bos_low
+    float _snr   = _snh - _snl
+    float _sn382 = _snBullBOS ? _snl + _snr * 0.382 : _snh - _snr * 0.382
+    float _sn50  = _snBullBOS ? _snl + _snr * 0.500 : _snh - _snr * 0.500
+    sniperZoneTop    := math.max(_sn382, _sn50)
+    sniperZoneBot    := math.min(_sn382, _sn50)
+    sniperZoneActive := false
+    sniperDir        := _snBullBOS ? 1 : -1
+
+bool sniperConfirmedNow = false
+if not na(sniperZoneTop) and not na(sniperZoneBot)
+    if not sniperZoneActive and high >= sniperZoneBot and low <= sniperZoneTop
+        sniperZoneActive   := true
+        sniperConfirmedNow := true
+if _snBearBOS or _snBullBOS
+    sniperConfirmedNow := false
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  PARITY-EXPORT PLOTS  (fib) — read AFTER the fib block so each series holds this bar's final
 //  value. Colors fully transparent (alpha 100) so they don't clutter the pane but DO export.
@@ -697,3 +736,12 @@ plot((fibo1Touched  and not fibo1Touched[1])  ? 1 : 0, "px_fib_tp2_touch", color
 plot((fibo7Touched  and not fibo7Touched[1])  ? 1 : 0, "px_fib_tp3_touch", color = color.new(color.green, 100))
 plot((fibo8Touched  and not fibo8Touched[1])  ? 1 : 0, "px_fib_tp4_touch", color = color.new(color.green, 100))
 plot((fibo9Touched  and not fibo9Touched[1])  ? 1 : 0, "px_fib_tp5_touch", color = color.new(color.green, 100))
+
+// ── Sniper fib: zone state + the created/confirmed events ──
+plot(not na(sniperZoneTop) ? 1 : 0,           "px_sniper_active",      color = color.new(color.gray,  100))
+plot(not na(sniperZoneTop) ? sniperDir : na,  "px_sniper_dir",         color = color.new(color.gray,  100))
+plot(sniperCreated ? 1 : 0,                   "px_sniper_created",     color = color.new(color.gray,  100))
+plot(sniperConfirmedNow ? 1 : 0,              "px_sniper_confirmed",   color = color.new(color.gray,  100))
+plot(sniperZoneActive ? 1 : 0,                "px_sniper_zone_active", color = color.new(color.gray,  100))
+plot(sniperZoneTop,                           "px_sniper_top",         color = color.new(color.green, 100))
+plot(sniperZoneBot,                           "px_sniper_bot",         color = color.new(color.green, 100))

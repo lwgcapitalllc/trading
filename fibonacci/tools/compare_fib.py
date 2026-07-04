@@ -4,17 +4,20 @@ compare_fib.py — parity check: TradingView Pine export vs Python Structure fib
 
 Purpose
 -------
-Prove the Python Structure fib in fibonacci/ produces the same level events as the source-of-truth
-fib in mpc_assistant.pine, on real candles. It runs the REAL pipeline — market_structure's
-StructureEngine feeds a StructureSnapshot into StructureFib — on the same candles the Pine build
-saw, and diffs the fib's output against the px_fib_* columns the Pine build plotted.
+Prove the Python fibs in fibonacci/ (Structure + Sniper) produce the same level events as the
+source-of-truth fibs in mpc_assistant.pine, on real candles. It runs the REAL pipeline —
+market_structure's StructureEngine feeds a StructureSnapshot into StructureFib and SniperFib — on
+the same candles the Pine build saw, and diffs their output against the px_fib_* / px_sniper_*
+columns the Pine build plotted.
 
 Data lineup
 -----------
 Export ONE CSV from TradingView with indicators/fib_export.pine on the chart (chart menu →
-Export chart data). Each row carries the candle (fed to Python) and the Pine fib's outputs:
-  px_fib_active, px_fib_dir, px_fib_origin,
-  px_fib_<lvl>_price and px_fib_<lvl>_touch for lvl in E1..E4, 100, TP1..TP5
+Export chart data). Each row carries the candle (fed to Python) and the Pine fibs' outputs:
+  Structure: px_fib_active, px_fib_dir, px_fib_origin,
+             px_fib_<lvl>_price and px_fib_<lvl>_touch for lvl in E1..E4, 100, TP1..TP5
+  Sniper:    px_sniper_active, px_sniper_dir, px_sniper_top, px_sniper_bot,
+             px_sniper_created, px_sniper_confirmed, px_sniper_zone_active
 Both sides come from the same file, so there is no data-source mismatch.
 
 Warmup
@@ -45,7 +48,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from market_structure import Bar, StructureEngine
-from fibonacci import StructureFib, StructureSnapshot
+from fibonacci import SniperFib, StructureFib, StructureSnapshot
 
 # Column suffix -> Python level name (see fib_export.pine plot titles).
 _LVL = [
@@ -53,11 +56,23 @@ _LVL = [
     ("tp1", "TP1"), ("tp2", "TP2"), ("tp3", "TP3"), ("tp4", "TP4"), ("tp5", "TP5"),
 ]
 
-PRICE_FIELDS = [f"px_fib_{sfx}_price" for sfx, _ in _LVL]
+# ── Structure fib columns ──
+FIB_PRICE_FIELDS = [f"px_fib_{sfx}_price" for sfx, _ in _LVL]
 TOUCH_FIELDS = [f"px_fib_{sfx}_touch" for sfx, _ in _LVL]
-PULSE_FIELDS = TOUCH_FIELDS + ["px_fib_active", "px_fib_origin"]
-DIR_FIELD = "px_fib_dir"
-ALL_FIELDS = PRICE_FIELDS + PULSE_FIELDS + [DIR_FIELD]
+
+# ── Sniper fib columns ──
+SNIPER_PRICE_FIELDS = ["px_sniper_top", "px_sniper_bot"]
+SNIPER_PULSE_FIELDS = ["px_sniper_active", "px_sniper_created", "px_sniper_confirmed", "px_sniper_zone_active"]
+
+PRICE_FIELDS = FIB_PRICE_FIELDS + SNIPER_PRICE_FIELDS
+PULSE_FIELDS = TOUCH_FIELDS + ["px_fib_active", "px_fib_origin"] + SNIPER_PULSE_FIELDS
+DIR_FIELDS = ["px_fib_dir", "px_sniper_dir"]
+ALL_FIELDS = PRICE_FIELDS + PULSE_FIELDS + DIR_FIELDS
+
+# The Structure fib columns are required; the Sniper columns are optional so this tool still runs
+# against an older export made before the px_sniper_* plots existed (it just skips the Sniper check).
+STRUCT_FIELDS = FIB_PRICE_FIELDS + TOUCH_FIELDS + ["px_fib_active", "px_fib_origin", "px_fib_dir"]
+SNIPER_FIELDS = SNIPER_PRICE_FIELDS + SNIPER_PULSE_FIELDS + ["px_sniper_dir"]
 
 
 def _num(s):
@@ -97,13 +112,15 @@ def _resolve_columns(header):
 
     cols = {k: find(k) for k in ("open", "high", "low", "close")}
     cols["time"] = find("time", required=False)
-    for f in ALL_FIELDS:
-        cols[f] = find(f)
+    for f in STRUCT_FIELDS:
+        cols[f] = find(f)                     # required
+    for f in SNIPER_FIELDS:
+        cols[f] = find(f, required=False)     # optional (older exports lack these)
     return cols
 
 
-def _python_row(fib_ev):
-    """Map the Python fib events to each px_fib_* column value."""
+def _python_row(fib_ev, sniper_ev):
+    """Map the Python fib events to each px_fib_* / px_sniper_* column value."""
     active = fib_ev.active
     touched_names = {t.level for t in fib_ev.touched}
     row = {
@@ -114,16 +131,26 @@ def _python_row(fib_ev):
     for sfx, name in _LVL:
         row[f"px_fib_{sfx}_price"] = fib_ev.levels.get(name) if active else None
         row[f"px_fib_{sfx}_touch"] = 1.0 if name in touched_names else 0.0
+
+    # Sniper fib. active == a zone exists; top/dir are na until then (matches the Pine plots).
+    sn_active = sniper_ev.active
+    row["px_sniper_active"] = 1.0 if sn_active else 0.0
+    row["px_sniper_created"] = 1.0 if sniper_ev.created else 0.0
+    row["px_sniper_confirmed"] = 1.0 if sniper_ev.confirmed else 0.0
+    row["px_sniper_zone_active"] = 1.0 if sniper_ev.zone_active else 0.0
+    row["px_sniper_dir"] = float(sniper_ev.direction) if sn_active else None
+    row["px_sniper_top"] = sniper_ev.zone_top if sn_active else None
+    row["px_sniper_bot"] = sniper_ev.zone_bot if sn_active else None
     return row
 
 
 def _values_match(field, py_val, pine_val, tol):
-    if field in PRICE_FIELDS or field == DIR_FIELD:
+    if field in PRICE_FIELDS or field in DIR_FIELDS:
         if py_val is None and pine_val is None:
             return True
         if py_val is None or pine_val is None:
             return False
-        if field == DIR_FIELD:
+        if field in DIR_FIELDS:
             return int(round(py_val)) == int(round(pine_val))
         return abs(py_val - pine_val) <= tol
     # pulse fields: a missing Pine cell is 0
@@ -172,11 +199,16 @@ def main(argv=None):
     cols = _resolve_columns(header)
     rows = _load_rows(path, cols)
 
+    # Only compare fields the CSV actually carries (Sniper columns are optional).
+    compare_fields = [fld for fld in ALL_FIELDS if cols.get(fld) is not None]
+    have_sniper = any(cols.get(fld) is not None for fld in SNIPER_FIELDS)
+
     engine = StructureEngine(major_length=args.major_length)
     fib = StructureFib()
+    sniper = SniperFib()
 
     total = 0
-    per_field_mismatch = {fld: 0 for fld in ALL_FIELDS}
+    per_field_mismatch = {fld: 0 for fld in compare_fields}
     detailed = []
     last_mismatch_bar = None
 
@@ -191,14 +223,15 @@ def main(argv=None):
         ev = engine.update(Bar(index=i, open=o, high=h, low=l, close=c))
         snap = StructureSnapshot.from_engine(engine, ev)
         fib_ev = fib.update(h, l, snap)
-        py = _python_row(fib_ev)
+        sniper_ev = sniper.update(h, l, snap)
+        py = _python_row(fib_ev, sniper_ev)
         total += 1
 
         if i < args.warmup:
             continue
 
         bar_mismatches = []
-        for fld in ALL_FIELDS:
+        for fld in compare_fields:
             pine_val = _num(row[cols[fld]])
             if not _values_match(fld, py[fld], pine_val, args.tolerance):
                 per_field_mismatch[fld] += 1
@@ -211,17 +244,19 @@ def main(argv=None):
                 detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
+    scope = "Structure + Sniper" if have_sniper else "Structure (Sniper columns absent — re-export fib_export.pine to check it)"
     print(f"\nCompared {total} bars from {path.name}  (major_length={args.major_length}, tol={args.tolerance})")
+    print(f"Scope: {scope}")
     print("-" * 72)
     if not any(per_field_mismatch.values()):
-        print("✓ FIB PARITY: every field matched on every bar. Python Structure fib == Pine source.")
+        print(f"✓ FIB PARITY: every compared field matched on every bar. Python fibs == Pine source ({scope}).")
         return 0
 
     print("MISMATCHES BY FIELD:")
-    for fld in ALL_FIELDS:
+    for fld in compare_fields:
         n = per_field_mismatch[fld]
         if n:
-            print(f"  {fld:<20} {n} bar(s)")
+            print(f"  {fld:<22} {n} bar(s)")
     print("-" * 72)
     print(f"Last mismatching bar: {last_mismatch_bar}  "
           f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})")

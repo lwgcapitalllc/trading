@@ -12,16 +12,18 @@ any change breaks parity with the chart.
 
 Currently implemented:
   - StructureFib  (GRP_FIBO "Structure Fibonacci", Pine ~2009-2114) — the main retracement fib.
+  - SniperFib     (GRP_SNIPER "Sniper Fib", Pine ~2510-2551 + zone-touch ~2788-2797) — the
+                  BOS impulse-leg 0.382-0.5 confirmation zone.
 
-Next (not yet ported): SniperFib (BOS impulse-leg 0.382-0.5 zone) and MacroFib (HH->LL cycle).
+Next (not yet ported): MacroFib (HH->LL cycle).
 """
 
 from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from .geometry import fib_level, origin_index
-from .types import FibTouch, StructureFibEvents, StructureSnapshot
+from .geometry import fib_from_origin, fib_level, origin_index
+from .types import FibTouch, SniperFibEvents, StructureFibEvents, StructureSnapshot
 
 # ── Structure fib levels, in Pine's own check order within each group ──
 # Gate: 0.618 (E1) must be reached before anything else arms.
@@ -148,4 +150,72 @@ class StructureFib:
             touched=touched_now,
             levels=levels,
             touched_so_far={name for name, hit in self._touched.items() if hit},
+        )
+
+
+# ── Sniper fib ratios (the two zone edges, measured from the impulse-leg origin) ──
+_SNIPER_382 = 0.382
+_SNIPER_500 = 0.500
+
+
+class SniperFib:
+    """The Sniper confirmation zone.
+
+    On each BOS, drops a fresh 0.382-0.5 zone across the impulse leg (`bull/bear_bos_high/low`)
+    and arms it. When price later trades into that zone for the first time, it "confirms". A new
+    BOS replaces the zone and re-arms it. Only one zone lives at a time. Line-by-line port of
+    mpc_assistant.pine GRP_SNIPER (compute + zone-touch), drawing removed.
+    """
+
+    def __init__(self) -> None:
+        # Persistent zone (Pine `var sniperZoneTop/Bot/Active`) + the zone's direction.
+        self._zone_top: Optional[float] = None
+        self._zone_bot: Optional[float] = None
+        self._zone_active: bool = False
+        self._dir: int = 0
+
+    # ------------------------------------------------------------------
+    def update(self, high: float, low: float, snap: StructureSnapshot) -> SniperFibEvents:
+        """Feed one closed bar (its high/low) plus this bar's structure snapshot."""
+
+        # Pine gates on barstate.isconfirmed; on closed/historical bars that is always true, so a
+        # BOS event this bar is the whole trigger (Pine 2512-2513).
+        bull_bos = snap.bull_bos
+        bear_bos = snap.bear_bos
+        is_bos = bull_bos or bear_bos
+
+        created = False
+        # ── New zone on a BOS (Pine 2515-2544) ──
+        if is_bos:
+            bull = bull_bos  # Pine keys every ternary off _snBullBOS -> bull takes precedence
+            snh = snap.bull_bos_high if bull else snap.bear_bos_high
+            snl = snap.bull_bos_low if bull else snap.bear_bos_low
+            d = 1 if bull else -1
+            sn382 = fib_from_origin(snh, snl, d, _SNIPER_382)  # bull: snl + r*0.382 ; bear: snh - r*0.382
+            sn50 = fib_from_origin(snh, snl, d, _SNIPER_500)
+            self._zone_top = max(sn382, sn50)
+            self._zone_bot = min(sn382, sn50)
+            self._zone_active = False  # re-arm the entry flag on a new zone (Pine 2544)
+            self._dir = d
+            created = True
+
+        # ── Zone touch -> confirm (Pine 2791-2797) ──
+        confirmed = False
+        if self._zone_top is not None and self._zone_bot is not None:
+            if (not self._zone_active) and high >= self._zone_bot and low <= self._zone_top:
+                self._zone_active = True
+                confirmed = True
+        # A BOS this bar clears the confirmation (Pine 2796-2797): the fresh zone can't count its
+        # own break bar as a confirm, even though the flag above may have latched.
+        if is_bos:
+            confirmed = False
+
+        return SniperFibEvents(
+            active=self._zone_top is not None,
+            direction=self._dir,
+            zone_top=self._zone_top,
+            zone_bot=self._zone_bot,
+            created=created,
+            confirmed=confirmed,
+            zone_active=self._zone_active,
         )

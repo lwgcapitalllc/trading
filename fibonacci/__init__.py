@@ -20,16 +20,19 @@ Public API:
         ...
 """
 
-from .geometry import fib_level, fib_levels, origin_index
-from .types import FibTouch, StructureFibEvents, StructureSnapshot
-from .engine import StructureFib
+from .geometry import fib_from_origin, fib_level, fib_levels, origin_index
+from .types import FibTouch, SniperFibEvents, StructureFibEvents, StructureSnapshot
+from .engine import SniperFib, StructureFib
 
 __all__ = [
     "fib_level",
     "fib_levels",
+    "fib_from_origin",
     "origin_index",
     "FibTouch",
     "StructureFibEvents",
+    "SniperFibEvents",
     "StructureSnapshot",
     "StructureFib",
+    "SniperFib",
 ]

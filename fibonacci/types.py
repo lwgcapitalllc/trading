@@ -122,3 +122,23 @@ class StructureFibEvents:
     touched: List[FibTouch] = field(default_factory=list)   # levels first-touched THIS bar (events)
     levels: Dict[str, float] = field(default_factory=dict)  # current price of every level (state)
     touched_so_far: Set[str] = field(default_factory=set)   # cumulative touched names this leg
+
+
+@dataclass
+class SniperFibEvents:
+    """The Sniper fib's per-bar output.
+
+    The Sniper fib is a single 0.382-0.5 zone drawn off the BOS impulse leg. It has no per-level
+    touch machine like the Structure fib — just two events: `created` (a BOS fired, a fresh zone
+    replaced any old one) and `confirmed` (price entered the zone for the first time on this
+    zone). `zone_active` is the cumulative latch behind `confirmed`; once a zone is entered it
+    cannot re-confirm until the next BOS resets it. See mpc_assistant.pine GRP_SNIPER.
+    """
+
+    active: bool = False                 # a zone currently exists (a BOS has fired at least once)
+    direction: int = 0                   # 1 bull zone, -1 bear zone, 0 none
+    zone_top: Optional[float] = None     # upper edge (max of the 0.382 / 0.5 levels)
+    zone_bot: Optional[float] = None     # lower edge (min of the 0.382 / 0.5 levels)
+    created: bool = False                # a fresh zone was set THIS bar (a BOS fired) — event
+    confirmed: bool = False              # price entered the zone for the first time THIS bar — event
+    zone_active: bool = False            # cumulative latch: price has entered the current zone

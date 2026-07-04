@@ -31,6 +31,24 @@ def fib_level(anchor_high: float, anchor_low: float, direction: int, ratio: floa
     return anchor_low + rng * ratio
 
 
+def fib_from_origin(anchor_high: float, anchor_low: float, direction: int, ratio: float) -> float:
+    """Price of a ratio measured FROM the leg origin (the Sniper/Macro zone convention).
+
+    Where fib_level measures a retracement back from the trend extreme, some fibs measure the
+    ratio the other way — UP from the origin low (bull) or DOWN from the origin high (bear):
+
+        bull:  low  + range*ratio
+        bear:  high - range*ratio
+
+    This is exactly fib_level(high, low, direction, 1 - ratio); it is kept as its own name so the
+    Sniper port reads like its Pine source (_snl + _snr * 0.382), not an inverted ratio.
+    """
+    rng = anchor_high - anchor_low
+    if direction == 1:
+        return anchor_low + rng * ratio
+    return anchor_high - rng * ratio
+
+
 def fib_levels(
     anchor_high: float,
     anchor_low: float,
