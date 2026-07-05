@@ -1,0 +1,162 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// ── PARITY-EXPORT BUILD (LIQUIDITY LEVELS) ──────────────────────────────────
+// Instrumented build used ONLY to validate the Python port (engines/liquidity/) against this Pine
+// source. It reproduces the liquidity levels from mpc_assistant.pine — previous day/week/month
+// high & low (PDH/PDL/PWH/PWL/PMH/PML), previous week close (PWC), the H4 sweep high/low, and the
+// Asia/London/NY session high & low — with ALL drawing (lines/labels/colours) removed and plot()
+// columns added for each level's price + its mitigation flag.
+//
+// DELIBERATE DEVIATION — NON-REPAINTING (Aaron's decision, 2026-07-05), mirrored in
+// engines/liquidity/engine.py: the mpc source reads the day/week/month high/low via
+// request.security(..., high, lookahead_on), which PEEKS at the developing period's future extreme
+// (a repaint the source hides on the live bar via `not isLastDaily`). A streaming engine cannot
+// peek ahead and a bot must never trade a future-derived level, so BOTH this export and the Python
+// engine use the PREVIOUS, completed period only: request.security(..., high[1], lookahead_on). The
+// H4 block already used high[1]/low[1] in the source — unchanged. Session H/L is computed from the
+// intraday stream (already non-repainting) and lifted verbatim from sessions_export.pine.
+//
+// The "Hide Mitigated on New Day" tidy (mpc i_currentDayOnly) is a drawing concern that only DELETES
+// spent lines; it changes no level value or mitigation flag. It is dropped here and the Python
+// parity run uses hide_mitigated_on_new_day=False to match (the tidy is covered by unit tests).
+//
+// Export on the SAME chart/timeframe you run the Python compare on (e.g. VANTAGE_XAUUSD, 5m or 15m),
+// Export chart data → CSV, and diff with engines/liquidity/tools/compare_liquidity.py. The HTF
+// boundary the Python side cuts on (--htf-tz / --htf-rollover) must be calibrated to match this
+// chart's "D"/"W"/"M"/"240" session — see that tool's header. Do NOT let the logic here drift.
+indicator("Liquidity Engine EXPORT", overlay = false)
+
+//============================================================
+//  HTF SECURITIES — non-repainting previous-period values (high[1]/low[1]/close[1])
+//============================================================
+[dTime, dHigh1, dLow1]          = request.security(syminfo.tickerid, "D",   [time, high[1], low[1]],            lookahead = barmerge.lookahead_on)
+[wTime, wHigh1, wLow1, wClose1] = request.security(syminfo.tickerid, "W",   [time, high[1], low[1], close[1]],  lookahead = barmerge.lookahead_on)
+[mTime, mHigh1, mLow1]          = request.security(syminfo.tickerid, "M",   [time, high[1], low[1]],            lookahead = barmerge.lookahead_on)
+[h4Time, h4High1, h4Low1]       = request.security(syminfo.tickerid, "240", [time, high[1], low[1]],            lookahead = barmerge.lookahead_on)
+
+dayRoll   = dTime  != dTime[1]
+weekRoll  = wTime  != wTime[1]
+monthRoll = mTime  != mTime[1]
+h4Roll    = h4Time != h4Time[1]
+
+//============================================================
+//  DAILY — sweep rule (high>lvl and close<lvl / low<lvl and close>lvl)
+//============================================================
+var float pdh = na, var float pdl = na
+var bool  pdh_mit = false, var bool pdl_mit = false
+if dayRoll
+    pdh := dHigh1, pdl := dLow1
+    pdh_mit := false, pdl_mit := false
+if not na(pdh) and not pdh_mit and high > pdh and close < pdh
+    pdh_mit := true
+if not na(pdl) and not pdl_mit and low < pdl and close > pdl
+    pdl_mit := true
+
+//============================================================
+//  WEEKLY — break rule (close>lvl / close<lvl) + PWC (no mitigation)
+//============================================================
+var float pwh = na, var float pwl = na, var float pwc = na
+var bool  pwh_mit = false, var bool pwl_mit = false
+if weekRoll
+    pwh := wHigh1, pwl := wLow1, pwc := wClose1
+    pwh_mit := false, pwl_mit := false
+if not na(pwh) and not pwh_mit and close > pwh
+    pwh_mit := true
+if not na(pwl) and not pwl_mit and close < pwl
+    pwl_mit := true
+
+//============================================================
+//  MONTHLY — break rule
+//============================================================
+var float pmh = na, var float pml = na
+var bool  pmh_mit = false, var bool pml_mit = false
+if monthRoll
+    pmh := mHigh1, pml := mLow1
+    pmh_mit := false, pml_mit := false
+if not na(pmh) and not pmh_mit and close > pmh
+    pmh_mit := true
+if not na(pml) and not pml_mit and close < pml
+    pml_mit := true
+
+//============================================================
+//  H4 SWEEP — sweep rule (source already used high[1]/low[1])
+//============================================================
+var float h4h = na, var float h4l = na
+var bool  h4h_mit = false, var bool h4l_mit = false
+if h4Roll
+    h4h := h4High1, h4l := h4Low1
+    h4h_mit := false, h4l_mit := false
+if not na(h4h) and not h4h_mit and high > h4h and close < h4h
+    h4h_mit := true
+if not na(h4l) and not h4l_mit and low < h4l and close > h4l
+    h4l_mit := true
+
+//============================================================
+//  SESSION H/L — running extremes (verbatim from sessions_export.pine) → published on close edge
+//============================================================
+string firstSessionTime  = "2000-0500", string firstSessionTZ  = "GMT-4"   // Asia
+string secondSessionTime = "0400-1300", string secondSessionTZ = "GMT-4"   // London
+string thirdSessionTime  = "0900-1800", string thirdSessionTZ  = "GMT-4"   // New York
+inAsia   = not na(time("", firstSessionTime,  firstSessionTZ))
+inLondon = not na(time("", secondSessionTime, secondSessionTZ))
+inNY     = not na(time("", thirdSessionTime,  thirdSessionTZ))
+
+var float asiaHigh = na, var float asiaLow = na
+var float londonHigh = na, var float londonLow = na
+var float nyHigh = na, var float nyLow = na
+if inAsia
+    asiaHigh := (not inAsia[1]) ? high : math.max(asiaHigh, high)
+    asiaLow  := (not inAsia[1]) ? low  : math.min(asiaLow,  low)
+if inLondon
+    londonHigh := (not inLondon[1]) ? high : math.max(londonHigh, high)
+    londonLow  := (not inLondon[1]) ? low  : math.min(londonLow,  low)
+if inNY
+    nyHigh := (not inNY[1]) ? high : math.max(nyHigh, high)
+    nyLow  := (not inNY[1]) ? low  : math.min(nyLow,  low)
+
+// publish the finished session's H/L as a level on the close edge; sweep rule; reset on re-publish
+f_sessLevels(bool justClosed, float sHigh, float sLow, float lvlH, float lvlL, bool mitH, bool mitL) =>
+    _lvlH = lvlH, _lvlL = lvlL, _mitH = mitH, _mitL = mitL
+    if justClosed and not na(sHigh)
+        _lvlH := sHigh, _lvlL := sLow, _mitH := false, _mitL := false
+    if not na(_lvlH) and not _mitH and high > _lvlH and close < _lvlH
+        _mitH := true
+    if not na(_lvlL) and not _mitL and low < _lvlL and close > _lvlL
+        _mitL := true
+    [_lvlH, _lvlL, _mitH, _mitL]
+
+var float asiaHLvl = na, var float asiaLLvl = na, var bool asiaHmit = false, var bool asiaLmit = false
+var float ldnHLvl  = na, var float ldnLLvl  = na, var bool ldnHmit  = false, var bool ldnLmit  = false
+var float nyHLvl   = na, var float nyLLvl   = na, var bool nyHmit   = false, var bool nyLmit   = false
+[a1, a2, a3, a4] = f_sessLevels(not inAsia   and inAsia[1],   asiaHigh,   asiaLow,   asiaHLvl, asiaLLvl, asiaHmit, asiaLmit)
+asiaHLvl := a1, asiaLLvl := a2, asiaHmit := a3, asiaLmit := a4
+[l1, l2, l3, l4] = f_sessLevels(not inLondon and inLondon[1], londonHigh, londonLow, ldnHLvl,  ldnLLvl,  ldnHmit,  ldnLmit)
+ldnHLvl := l1, ldnLLvl := l2, ldnHmit := l3, ldnLmit := l4
+[n1, n2, n3, n4] = f_sessLevels(not inNY     and inNY[1],     nyHigh,     nyLow,     nyHLvl,   nyLLvl,   nyHmit,   nyLmit)
+nyHLvl := n1, nyLLvl := n2, nyHmit := n3, nyLmit := n4
+
+//============================================================
+//  PARITY OUTPUT COLUMNS  (na when a level has not formed yet)
+//============================================================
+c0 = color.new(color.gray, 100)
+plot(pdh, "px_pdh", c0), plot(pdh_mit ? 1 : 0, "px_pdh_mit", c0)
+plot(pdl, "px_pdl", c0), plot(pdl_mit ? 1 : 0, "px_pdl_mit", c0)
+plot(pwh, "px_pwh", c0), plot(pwh_mit ? 1 : 0, "px_pwh_mit", c0)
+plot(pwl, "px_pwl", c0), plot(pwl_mit ? 1 : 0, "px_pwl_mit", c0)
+plot(pmh, "px_pmh", c0), plot(pmh_mit ? 1 : 0, "px_pmh_mit", c0)
+plot(pml, "px_pml", c0), plot(pml_mit ? 1 : 0, "px_pml_mit", c0)
+plot(pwc, "px_pwc", c0)
+plot(h4h, "px_h4h", c0), plot(h4h_mit ? 1 : 0, "px_h4h_mit", c0)
+plot(h4l, "px_h4l", c0), plot(h4l_mit ? 1 : 0, "px_h4l_mit", c0)
+plot(asiaHLvl, "px_asia_h", c0), plot(asiaHmit ? 1 : 0, "px_asia_h_mit", c0)
+plot(asiaLLvl, "px_asia_l", c0), plot(asiaLmit ? 1 : 0, "px_asia_l_mit", c0)
+plot(ldnHLvl,  "px_london_h", c0), plot(ldnHmit ? 1 : 0, "px_london_h_mit", c0)
+plot(ldnLLvl,  "px_london_l", c0), plot(ldnLmit ? 1 : 0, "px_london_l_mit", c0)
+plot(nyHLvl,   "px_ny_h", c0), plot(nyHmit ? 1 : 0, "px_ny_h_mit", c0)
+plot(nyLLvl,   "px_ny_l", c0), plot(nyLmit ? 1 : 0, "px_ny_l_mit", c0)
+
+// boundary-roll pulses — help calibrate the Python --htf-tz / --htf-rollover to this chart's session
+plot(dayRoll   ? 1 : 0, "px_day_roll",   c0)
+plot(weekRoll  ? 1 : 0, "px_week_roll",  c0)
+plot(monthRoll ? 1 : 0, "px_month_roll", c0)
+plot(h4Roll    ? 1 : 0, "px_h4_roll",    c0)

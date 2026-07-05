@@ -21,8 +21,9 @@ trading/
 │   ├── market_structure/← BOS/CHoCH/swing detection engine (base engine)
 │   ├── fibonacci/       ← Fib level-event engine, downstream of market_structure/
 │   ├── order_blocks/    ← Order-block (supply/demand zone) engine, sibling of fibonacci/
-│   └── sessions/        ← Time-driven sessions / kill-zones / NY-range engine (standalone)
-│                           (next: liquidity, vwap, svp — see ENGINE_EXTRACTION_ROADMAP.md)
+│   ├── sessions/        ← Time-driven sessions / kill-zones / NY-range engine (standalone)
+│   └── liquidity/       ← Liquidity-levels engine (prev D/W/M H·L, PWC, H4 sweep, session H·L); consumes sessions/
+│                           (next: vwap, svp — see ENGINE_EXTRACTION_ROADMAP.md)
 │
 │  ── TOOLING / SOURCE ────────────────────────────────────────────
 ├── indicators/          ← Pine Script market-structure indicator rebuild + parity-export harnesses
@@ -51,6 +52,7 @@ Read these in order for full context:
 8. `engines/fibonacci/CLAUDE.md` — fib level-event engine, the three fibs, parity rules
 9. `engines/order_blocks/CLAUDE.md` — order-block (supply/demand zone) engine, parity rules
 10. `engines/sessions/CLAUDE.md` — time-driven sessions/kill-zones/NY-range engine, parity rules
+11. `engines/liquidity/CLAUDE.md` — liquidity-levels engine (non-repainting), parity rules
 11. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
 12. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
 13. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
@@ -68,6 +70,7 @@ Read these in order for full context:
 | `engines/fibonacci/` | Fib level-event engine (downstream of market_structure) | Production — all 3 fibs (Structure/Sniper/Macro) 100% Pine parity | `engines/fibonacci/CLAUDE.md` |
 | `engines/order_blocks/` | Order-block engine (supply/demand zones; sibling of fibonacci) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/order_blocks/CLAUDE.md` |
 | `engines/sessions/` | Time-driven sessions / kill-zones / NY-range engine (standalone) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/sessions/CLAUDE.md` |
+| `engines/liquidity/` | Liquidity-levels engine (prev D/W/M H·L, PWC, H4 sweep, session H·L; non-repainting) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/liquidity/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
 | `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |
