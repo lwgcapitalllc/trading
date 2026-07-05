@@ -2,6 +2,7 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
+**Progress:** 5 engines done (regime, market_structure, fibonacci, order_blocks, sessions) · 3 to build (Liquidity, VWAP, SVP).
 **Last reviewed:** 2026-07-04
 
 ---
@@ -24,7 +25,8 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 - **`regime/`** — market regime classifier (separate source, not the SMC indicator).
 - **`market_structure/`** — external + internal structure (BOS/CHoCH, swings, HH/HL/LH/LL). 100% Pine parity.
 - **`fibonacci/`** — Structure, Sniper, and Macro fibs. 100% Pine parity. Downstream of `market_structure/`.
-- **`order_blocks/`** — bull/bear OB zones off external + internal breaks, with mitigation + FIFO eviction. Sibling of `fibonacci/` (consumes `market_structure/` directly). Ported line-by-line, 12 unit tests, 100% Pine parity on a real `VANTAGE_XAUUSD, 5m` export (harness: `indicators/ob_export.pine` + `order_blocks/tools/compare_ob.py`).
+- **`order_blocks/`** — bull/bear OB zones off external + internal breaks, with mitigation + FIFO eviction. Sibling of `fibonacci/` (consumes `market_structure/` directly). Ported line-by-line, 12 unit tests, 100% Pine parity on two independent real exports — `VANTAGE_XAUUSD, 5m` (`--warmup 594`) and `VANTAGE_XAUUSD, 15m` (`--warmup 207`), confirming it's timeframe-agnostic (harness: `indicators/ob_export.pine` + `order_blocks/tools/compare_ob.py`).
+- **`sessions/`** — Tokyo/London/NY session windows + running session H/L, the three NY kill zones, and the NY opening range. The first **time-driven** engine (input = the bar's UTC timestamp + high/low, not just OHLC); standalone (depends on nothing). Ported line-by-line, 17 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (all 18 fields, `--warmup 263`), re-confirmed on a 15m export for the 16 timeframe-agnostic fields (harness: `indicators/sessions_export.pine` + `sessions/tools/compare_sessions.py`). Unblocks the session-scoped parts of Liquidity (session H/L levels) and VWAP (session anchor).
 
 ---
 
@@ -32,27 +34,20 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 
 ### 1. Liquidity levels
 - **What:** the prices price runs toward and grabs — prev day/week/month highs and lows, previous-week-close, session highs and lows, H4 sweep (SSH/BSL), with mitigation tracking.
-- **Depends on:** nothing (standalone), but the session H/L piece wants Sessions (#2) first.
+- **Depends on:** `sessions/` for the session-H/L piece (now done — consume its `closed` SessionRange). The rest (day/week/month, PWC, H4) is standalone.
 - **Emits:** level-created, level-swept.
 - **Note:** biggest block of code (~400+ lines).
 - **Source block:** `LIQUIDITY LEVELS` (~line 123) plus `DAILY / WEEKLY / MONTHLY LEVELS`, `PWC`, `H4 LIQUIDITY SWEEP`, `SESSION H/L` (~lines 1335–1762).
 
-### 2. Sessions + Kill Zones
-- **What:** clock rules — Tokyo/London/New York session windows, kill zones, NY range box.
-- **Depends on:** nothing. Small and simple.
-- **Emits:** session-open/close, in-killzone flag, NY range high/low.
-- **Note:** a prerequisite for the session-scoped parts of #1 (session H/L) and #3 (VWAP anchor). Worth doing before those.
-- **Source block:** `TRADING SESSIONS` (~line 69), `KILL ZONES & NY RANGE` (~line 104), `SESSION H/L TRACKING` (~line 1594).
-
-### 3. VWAP
+### 2. VWAP
 - **What:** a session-anchored average line + cross events.
-- **Depends on:** Sessions (#2) for the anchor; needs a **volume** column in the feed.
+- **Depends on:** `sessions/` for the anchor (now done); needs a **volume** column in the feed.
 - **Emits:** VWAP value, VWAP cross.
 - **Source block:** `VWAP` (~line 115).
 
-### 4. Session Volume Profile (SVP)
+### 3. Session Volume Profile (SVP)
 - **What:** the Asia point-of-control / MV line.
-- **Depends on:** Sessions (#2); volume-heavy.
+- **Depends on:** `sessions/` (now done); volume-heavy.
 - **Note:** niche — do last.
 - **Source block:** `SESSION VOLUME PROFILE` (~line 220, 2554).
 
@@ -60,8 +55,9 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 
 ## Suggested batch order
 
-`Sessions → Liquidity → VWAP → SVP`
+`Liquidity → VWAP → SVP`
 
-Sessions is low down the value list but unlocks the session-scoped pieces of Liquidity and VWAP, so build it before them if batching.
+Sessions is done, so its downstream dependants are unblocked. Liquidity is the highest-value
+remaining engine; VWAP and SVP both also lean on `sessions/`.
 
-If building just one: **Sessions** (it unblocks the most downstream).
+If building just one: **Liquidity** (highest value, and the session-H/L piece is now unblocked).

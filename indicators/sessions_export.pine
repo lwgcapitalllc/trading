@@ -1,0 +1,115 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// ── PARITY-EXPORT BUILD (TRADING SESSIONS / KILL ZONES / NY RANGE) ───────────
+// Instrumented build used ONLY to validate the Python port (sessions/) against this
+// Pine source. It lifts the clock logic from mpc_assistant.pine — the session windows
+// inAsia/inLondon/inNY (mpc 836-838), the SESSION H/L TRACKING running extremes
+// (mpc 1638-1646), the KILL ZONES inKZ1/inKZ2/inKZ3 (mpc 1861-1866), the NY RANGE
+// opening range (mpc 1824-1856) and newDay / isMondayToFriday (mpc 808-809) — with
+// ALL drawing (boxes/lines/labels/colours) removed, and plot() columns added.
+//
+// Two deliberate deviations, matching sessions/engine.py (see its module docstring):
+//   1. No box/line/label drawing — this file only computes + plots.
+//   2. The two "days-back" render gates (withinKZDays / withinNYRangeDays, mpc 847-850)
+//      are dropped. They only limit how far back mpc draws boxes from `timenow`, which is
+//      non-reproducible; the underlying flags/values they gate are computed unconditionally
+//      here so the CSV is reproducible bar-for-bar.
+//
+// Export on a 5-minute chart (the NY opening range reads a 5m security, so 5m makes
+// high5/low5/startTime5 == the current bar exactly as mpc sees them). Export chart data
+// to CSV and diff with sessions/tools/compare_sessions.py. Do NOT let the clock logic
+// here drift from mpc_assistant.pine.
+indicator("Sessions Engine EXPORT", overlay = false)
+
+//============================================================
+//  SESSION INPUTS (hardcoded to the mpc_assistant.pine defaults)
+//============================================================
+string firstSessionTime  = "2000-0500", string firstSessionTZ  = "GMT-4"   // Tokyo / Asia
+string secondSessionTime = "0400-1300", string secondSessionTZ = "GMT-4"   // London
+string thirdSessionTime  = "0900-1800", string thirdSessionTZ  = "GMT-4"   // New York
+
+//============================================================
+//  SHARED CLOCK (mpc 808-809)
+//============================================================
+isMondayToFriday = dayofweek(time, "America/New_York") >= dayofweek.monday and dayofweek(time, "America/New_York") <= dayofweek.friday
+newDay           = dayofweek(time, "America/New_York") != dayofweek(time[1], "America/New_York")
+
+//============================================================
+//  SESSION WINDOWS (mpc 836-838)
+//============================================================
+inAsia   = not na(time("", firstSessionTime,  firstSessionTZ))
+inLondon = not na(time("", secondSessionTime, secondSessionTZ))
+inNY     = not na(time("", thirdSessionTime,  thirdSessionTZ))
+
+// 5-minute NY range windows + security (mpc 840-842)
+inSession5 = not na(time("5", "0930-0935", "America/New_York"))
+inExtend5  = not na(time("5", "0935-1600", "America/New_York"))
+[startTime5, high5, low5] = request.security(syminfo.tickerid, "5", [time, high, low], lookahead = barmerge.lookahead_on)
+
+//============================================================
+//  SESSION H/L TRACKING (mpc 1638-1646)
+//============================================================
+var float asiaHigh = na, var float asiaLow = na
+var float londonHigh = na, var float londonLow = na
+var float nyHigh = na, var float nyLow = na
+
+if inAsia
+    asiaHigh := (not inAsia[1]) ? high : math.max(asiaHigh, high)
+    asiaLow  := (not inAsia[1]) ? low  : math.min(asiaLow,  low)
+if inLondon
+    londonHigh := (not inLondon[1]) ? high : math.max(londonHigh, high)
+    londonLow  := (not inLondon[1]) ? low  : math.min(londonLow,  low)
+if inNY
+    nyHigh := (not inNY[1]) ? high : math.max(nyHigh, high)
+    nyLow  := (not inNY[1]) ? low  : math.min(nyLow,  low)
+
+//============================================================
+//  KILL ZONES (mpc 1861-1866)  — days-back gate + drawing dropped
+//============================================================
+nyHour   = hour(time,   "America/New_York")
+nyMinute = minute(time, "America/New_York")
+
+inKZ1 = nyHour == 10
+inKZ2 = (nyHour == 11 and nyMinute >= 45) or (nyHour == 12 and nyMinute <= 14)
+inKZ3 = nyHour == 13 and nyMinute <= 30
+
+//============================================================
+//  NY RANGE (mpc 1824-1837)  — withinNYRangeDays + drawing dropped
+//============================================================
+var float nyr_low_val = na, var float nyr_high_val = na
+
+if inSession5 and not inSession5[1] and isMondayToFriday
+    nyr_low_val  := low5
+    nyr_high_val := high5
+if inSession5 and isMondayToFriday
+    if low5 < nyr_low_val
+        nyr_low_val := low5
+    if high5 > nyr_high_val
+        nyr_high_val := high5
+
+//============================================================
+//  PARITY OUTPUT COLUMNS
+//============================================================
+plot(inAsia    ? 1 : 0, "px_in_asia",    color = color.new(color.blue,  100))
+plot(inLondon  ? 1 : 0, "px_in_london",  color = color.new(color.blue,  100))
+plot(inNY      ? 1 : 0, "px_in_ny",      color = color.new(color.blue,  100))
+
+plot(inKZ1     ? 1 : 0, "px_in_kz1",     color = color.new(color.green, 100))
+plot(inKZ2     ? 1 : 0, "px_in_kz2",     color = color.new(color.green, 100))
+plot(inKZ3     ? 1 : 0, "px_in_kz3",     color = color.new(color.green, 100))
+
+plot(inSession5 ? 1 : 0, "px_in_nyr_window", color = color.new(color.orange, 100))
+plot(inExtend5  ? 1 : 0, "px_in_nyr_extend", color = color.new(color.orange, 100))
+
+plot(newDay          ? 1 : 0, "px_new_day", color = color.new(color.gray, 100))
+plot(isMondayToFriday ? 1 : 0, "px_weekday", color = color.new(color.gray, 100))
+
+plot(asiaHigh,   "px_asia_high",   color = color.new(color.red,  100))
+plot(asiaLow,    "px_asia_low",    color = color.new(color.red,  100))
+plot(londonHigh, "px_london_high", color = color.new(color.red,  100))
+plot(londonLow,  "px_london_low",  color = color.new(color.red,  100))
+plot(nyHigh,     "px_ny_high",     color = color.new(color.red,  100))
+plot(nyLow,      "px_ny_low",      color = color.new(color.red,  100))
+
+plot(nyr_high_val, "px_nyr_high", color = color.new(color.blue, 100))
+plot(nyr_low_val,  "px_nyr_low",  color = color.new(color.blue, 100))

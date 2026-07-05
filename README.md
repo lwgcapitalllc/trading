@@ -11,6 +11,7 @@ trading/
 ├── market_structure/← Canonical BOS/CHoCH/swing detection engine (shared)
 ├── fibonacci/       ← Fib level-event engine, downstream of market_structure/
 ├── order_blocks/    ← Order-block (supply/demand zone) engine, sibling of fibonacci/
+├── sessions/        ← Time-driven sessions / kill-zones / NY-range engine (standalone)
 ├── strategies/      ← Generic strategy source files organized by runner platform
 ├── indicators/      ← Pine Script market-structure indicator rebuild (TradingView)
 ├── scripts/         ← Cross-subsystem VPS recovery and bootstrap scripts
@@ -29,10 +30,11 @@ Read these in order for full context:
 7. `market_structure/CLAUDE.md` — canonical structure engine, parity rules, consumers
 8. `fibonacci/CLAUDE.md` — fib level-event engine, the three fibs, parity rules
 9. `order_blocks/CLAUDE.md` — order-block (supply/demand zone) engine, parity rules
-10. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
-11. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
-12. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
-13. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
+10. `sessions/CLAUDE.md` — time-driven sessions/kill-zones/NY-range engine, parity rules
+11. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
+12. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
+13. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
+14. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
 
 ## Subsystems
 
@@ -45,6 +47,7 @@ Read these in order for full context:
 | `market_structure/` | Canonical structure detection engine (BOS/CHoCH/swings) | Production — 100% Pine parity | `market_structure/CLAUDE.md` |
 | `fibonacci/` | Fib level-event engine (downstream of market_structure) | Production — all 3 fibs (Structure/Sniper/Macro) 100% Pine parity | `fibonacci/CLAUDE.md` |
 | `order_blocks/` | Order-block engine (supply/demand zones; sibling of fibonacci) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `order_blocks/CLAUDE.md` |
+| `sessions/` | Time-driven sessions / kill-zones / NY-range engine (standalone) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `sessions/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
 | `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |
