@@ -4,10 +4,11 @@
 level (E1–E4 entries, TP1–TP5 targets, 1.0) — for use in entries, take-profits, and grading. The
 signal is the event ("price reached E1 / 0.618"), not the drawing.
 **Scope:** Fib geometry + per-fib touch state machines only. No trading decisions, no structure
-detection (it consumes `market_structure/`), no MT5 ops, no UI, no chart rendering.
+detection (it consumes `engines/market_structure/`), no MT5 ops, no UI, no chart rendering.
 **Status:** All three fibs ported, unit-tested, and Pine-parity-validated (100%). Structure ("FFT")
 and Sniper on `VANTAGE_XAUUSD, 15m` exports; Macro on a `VANTAGE_XAUUSD, 5m` export (Pine gates the
 Macro to ≤5m). The one canonical implementation — no consumer builds its own.
+**Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/fib_export.pine`, diffed against this Python by `tools/compare_fib.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-07-04
 
 ---
@@ -15,7 +16,7 @@ Macro to ≤5m). The one canonical implementation — no consumer builds its own
 ## Key paths
 
 ```
-fibonacci/
+engines/fibonacci/
 ├── geometry.py     ← the one shared fib-math core (fib_level / fib_from_origin / fib_levels / origin_index)
 ├── engine.py       ← the per-fib state machines (StructureFib + SniperFib + MacroFib)
 ├── types.py        ← StructureSnapshot (input); FibTouch / StructureFibEvents / SniperFibEvents / MacroFibEvents (output)
@@ -77,7 +78,7 @@ gate is the caller's job (feed `MacroFib` only ≤5m bars).
 
 **What the fibs need to be accurate (all three):**
 
-1. **An accurate structure engine.** The fibs are downstream of `market_structure/` — they read its
+1. **An accurate structure engine.** The fibs are downstream of `engines/market_structure/` — they read its
    swings, BOS/SOS, and confirmed highs/lows. Wrong structure → wrong fibs. It is the foundation.
 2. **The right candles.** They must see the same price data you chart on. Same code + a different
    broker/feed = different candles = different levels. (See "Live parity" below.)
@@ -130,7 +131,7 @@ macro_events.levels          # dict{name: price}; names: HH/TP2/TP1/E1/E2/E3/E4/
 
 ---
 
-## Relationship to `market_structure/`
+## Relationship to `engines/market_structure/`
 
 The fib engine is **downstream** of the structure engine and depends only on its PUBLIC output —
 never its internals. `StructureSnapshot.from_engine(engine, events)` reads the documented
@@ -143,7 +144,7 @@ The Macro fib also reads `last_confirmed_high/low` (+ locs) and needs the curren
 close, so its signature is `macro.update(bar_index, high, low, close, snap)` — the others take only
 `(high, low, snap)`.
 
-Same stateful-streaming rationale as `market_structure/` (see its CLAUDE.md): the touch/gate/zone
+Same stateful-streaming rationale as `engines/market_structure/` (see its CLAUDE.md): the touch/gate/zone
 state carries bar-to-bar and cannot be recomputed from a single bar. Build one `StructureFib`, one
 `SniperFib` and one `MacroFib` per symbol/timeframe, feed one closed bar per `update()`.
 
@@ -189,18 +190,18 @@ exercised it (`px_macro_active` hits 1); on a higher-TF export it prints "Macro 
 active — export on ≤5m".
 
 The first N bars always mismatch because the Pine export begins warm (chart history before the
-window) while the Python engines start cold — the same cold-start pattern as `market_structure/`;
+window) while the Python engines start cold — the same cold-start pattern as `engines/market_structure/`;
 `--warmup N` skips them (the tool prints the last mismatching bar to help pick N). Re-run
 `compare_fib.py` after any change to a fib or the fib blocks in `mpc_assistant.pine`.
 
-Wired up, mirrors `market_structure/`'s flow. Two pieces:
+Wired up, mirrors `engines/market_structure/`'s flow. Two pieces:
 
 1. `indicators/fib_export.pine` — the external structure engine (byte-identical to
    `structure_engine_export.pine`) + the real Structure, Sniper and Macro fibs lifted from
    `mpc_assistant.pine` (compute + state machines, drawing removed) + `plot()` columns for all
    three fibs' outputs (`px_fib_*`, `px_sniper_*`, `px_macro_*`). Put it on a chart, export chart
-   data to CSV, drop it in `fibonacci/exports/` (git-ignored). Export on ≤5m to also cover Macro.
-2. `fibonacci/tools/compare_fib.py <that.csv>` — runs the REAL pipeline (StructureEngine →
+   data to CSV, drop it in `engines/fibonacci/exports/` (git-ignored). Export on ≤5m to also cover Macro.
+2. `engines/fibonacci/tools/compare_fib.py <that.csv>` — runs the REAL pipeline (StructureEngine →
    StructureSnapshot → StructureFib + SniperFib + MacroFib) on the CSV's candles and diffs against
    the `px_fib_*` / `px_sniper_*` / `px_macro_*` columns, bar by bar. Exit 0 = parity. Standard
    library only. Sniper and Macro columns are optional, so the tool also runs on older/higher-TF
@@ -235,5 +236,5 @@ Not built yet — there is no bot consuming this engine. Wire it up together wit
 - Pine source of truth: `indicators/mpc_assistant.pine` (fib blocks `GRP_FIBO` ~2009-2114,
   `GRP_SNIPER` compute ~2510-2551 + zone-touch ~2788-2797, `GRP_MACRO` ~2290-2432) and its live
   "MPC - JARVIS" confirmation table, which defines the event model this engine reproduces.
-- Upstream structure engine: `market_structure/CLAUDE.md`.
+- Upstream structure engine: `engines/market_structure/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.

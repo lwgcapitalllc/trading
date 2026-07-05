@@ -2,21 +2,41 @@
 
 ## Repo map
 
+Dirs fall into four groups. Only the **Engines** group grows — each new engine
+extracted from the SMC indicator (see `docs/ENGINE_EXTRACTION_ROADMAP.md`) is a
+new peer dir here. Apps, Tooling, and Docs are fixed.
+
 ```
 trading/
-├── algos/           ← Algo trading suite (Windows VPS, PU Prime demo — no live bots, rebuilding backtest-first)
-├── smart-money/     ← Crypto/forex trader scanner and copy-trading candidate pool
-├── command-center/  ← Local ops platform: bot monitor, smart money UI, backtests lab
-├── regime/          ← Shared market regime classifier (live bots + backtest lab)
-├── market_structure/← Canonical BOS/CHoCH/swing detection engine (shared)
-├── fibonacci/       ← Fib level-event engine, downstream of market_structure/
-├── order_blocks/    ← Order-block (supply/demand zone) engine, sibling of fibonacci/
-├── sessions/        ← Time-driven sessions / kill-zones / NY-range engine (standalone)
-├── strategies/      ← Generic strategy source files organized by runner platform
-├── indicators/      ← Pine Script market-structure indicator rebuild (TradingView)
-├── scripts/         ← Cross-subsystem VPS recovery and bootstrap scripts
-└── docs/            ← Cross-subsystem reference docs and audit tools
+│
+│  ── APPS (deployables) ──────────────────────────────────────────
+├── algos/               ← Algo trading suite (Windows VPS, PU Prime demo — no live bots, rebuilding backtest-first)
+├── smart-money/         ← Crypto/forex trader scanner and copy-trading candidate pool
+├── command-center/      ← Local ops platform: bot monitor, smart money UI, backtests lab
+├── strategies/          ← Generic strategy source files organized by runner platform
+│
+│  ── ENGINES (canonical shared libraries — the growing group) ─────
+├── engines/
+│   ├── regime/          ← Market regime classifier (live bots + backtest lab)
+│   ├── market_structure/← BOS/CHoCH/swing detection engine (base engine)
+│   ├── fibonacci/       ← Fib level-event engine, downstream of market_structure/
+│   ├── order_blocks/    ← Order-block (supply/demand zone) engine, sibling of fibonacci/
+│   └── sessions/        ← Time-driven sessions / kill-zones / NY-range engine (standalone)
+│                           (next: liquidity, vwap, svp — see ENGINE_EXTRACTION_ROADMAP.md)
+│
+│  ── TOOLING / SOURCE ────────────────────────────────────────────
+├── indicators/          ← Pine Script market-structure indicator rebuild + parity-export harnesses
+├── scripts/             ← Cross-subsystem VPS recovery and bootstrap scripts
+│
+│  ── DOCS ─────────────────────────────────────────────────────────
+└── docs/                ← Cross-subsystem reference docs and audit tools
 ```
+
+Engines live under `engines/` but are imported by bare top-level name
+(`from market_structure import …`) — `engines/` is placed on `sys.path` by the
+consumers' shims and the root `conftest.py`, matching the repo-wide
+"dir-on-path, import bare" convention. Bots consume them through thin shims in
+`algos/shared/`.
 
 ## Start here
 
@@ -26,11 +46,11 @@ Read these in order for full context:
 3. `algos/CLAUDE.md` — bot table, risk rules, current phase
 4. `command-center/CLAUDE.md` — what's built, design decisions
 5. `smart-money/CLAUDE.md` — pipeline status, thresholds, where we left off
-6. `regime/CLAUDE.md` — shared classifier, public API, consumers
-7. `market_structure/CLAUDE.md` — canonical structure engine, parity rules, consumers
-8. `fibonacci/CLAUDE.md` — fib level-event engine, the three fibs, parity rules
-9. `order_blocks/CLAUDE.md` — order-block (supply/demand zone) engine, parity rules
-10. `sessions/CLAUDE.md` — time-driven sessions/kill-zones/NY-range engine, parity rules
+6. `engines/regime/CLAUDE.md` — shared classifier, public API, consumers
+7. `engines/market_structure/CLAUDE.md` — canonical structure engine, parity rules, consumers
+8. `engines/fibonacci/CLAUDE.md` — fib level-event engine, the three fibs, parity rules
+9. `engines/order_blocks/CLAUDE.md` — order-block (supply/demand zone) engine, parity rules
+10. `engines/sessions/CLAUDE.md` — time-driven sessions/kill-zones/NY-range engine, parity rules
 11. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
 12. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
 13. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
@@ -43,11 +63,11 @@ Read these in order for full context:
 | `algos/` | Live algo trading on Windows VPS | No live bots — rebuilding backtest-first | `algos/CLAUDE.md` |
 | `smart-money/` | Trader scanner for copy-trading candidates | Stages 1–2, 5 live | `smart-money/CLAUDE.md` |
 | `command-center/` | React + FastAPI ops platform | Live | `command-center/CLAUDE.md` |
-| `regime/` | Shared regime classifier for live bots and backtest lab | Production | `regime/CLAUDE.md` |
-| `market_structure/` | Canonical structure detection engine (BOS/CHoCH/swings) | Production — 100% Pine parity | `market_structure/CLAUDE.md` |
-| `fibonacci/` | Fib level-event engine (downstream of market_structure) | Production — all 3 fibs (Structure/Sniper/Macro) 100% Pine parity | `fibonacci/CLAUDE.md` |
-| `order_blocks/` | Order-block engine (supply/demand zones; sibling of fibonacci) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `order_blocks/CLAUDE.md` |
-| `sessions/` | Time-driven sessions / kill-zones / NY-range engine (standalone) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `sessions/CLAUDE.md` |
+| `engines/regime/` | Shared regime classifier for live bots and backtest lab | Production | `engines/regime/CLAUDE.md` |
+| `engines/market_structure/` | Canonical structure detection engine (BOS/CHoCH/swings) | Production — 100% Pine parity | `engines/market_structure/CLAUDE.md` |
+| `engines/fibonacci/` | Fib level-event engine (downstream of market_structure) | Production — all 3 fibs (Structure/Sniper/Macro) 100% Pine parity | `engines/fibonacci/CLAUDE.md` |
+| `engines/order_blocks/` | Order-block engine (supply/demand zones; sibling of fibonacci) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/order_blocks/CLAUDE.md` |
+| `engines/sessions/` | Time-driven sessions / kill-zones / NY-range engine (standalone) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/sessions/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
 | `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |

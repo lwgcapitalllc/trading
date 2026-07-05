@@ -36,7 +36,7 @@ Read these in order:
 3. **`command-center/backend/CLAUDE.md`** — backend services, tables, endpoints, architectural decisions, what's built
 4. **`command-center/frontend/CLAUDE.md`** — frontend pages, components, what's built
 5. **`algos/CLAUDE.md`** — forex bots and shared utilities (live MT5 side)
-6. **`regime/CLAUDE.md`** and **`regime/REGIME_CLASSIFIER.md`** — the shared classifier
+6. **`engines/regime/CLAUDE.md`** and **`engines/regime/REGIME_CLASSIFIER.md`** — the shared classifier
 7. **`strategies/CLAUDE.md`** — the generic strategies subsystem
 
 Also look at:

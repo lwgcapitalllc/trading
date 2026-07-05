@@ -45,7 +45,7 @@ The framework defines a per-symbol config layer — spread guards, session windo
 Smart Money stages 3–4 (API keys required) are incomplete. When unblocked, the pipeline produces a ranked list of traders to copy; the command center would need a Copy Trading tab tying the candidate pool to configurable copy-trade rules (max allocation, max drawdown per copied trader, kill switch). **Prerequisite:** API keys for stages 3–4.
 
 ### Per-instrument regime thresholds
-The regime classifier uses fixed ADX/ATR/RSI thresholds calibrated for XAUUSD on H1/H4. `REGIME_CLASSIFIER.md` flags this as a known gap — other instruments have different volatility profiles. A per-instrument threshold config in `regime/thresholds.py` would improve label quality. **Prerequisite:** none technical; most valuable once a strategy trades multiple instruments live enough to care about regime-conditioned sizing.
+The regime classifier uses fixed ADX/ATR/RSI thresholds calibrated for XAUUSD on H1/H4. `REGIME_CLASSIFIER.md` flags this as a known gap — other instruments have different volatility profiles. A per-instrument threshold config in `engines/regime/thresholds.py` would improve label quality. **Prerequisite:** none technical; most valuable once a strategy trades multiple instruments live enough to care about regime-conditioned sizing.
 
 ### Tick-level backtest fidelity
 Both testers currently run on minute bars (MT5 `Model=1`, NT8 standard fills) — trustworthy for bar-close logic at M5+, not sub-minute scalping. Real bid/ask ticks exist on the broker ≥ 2 years deep. Enabling MT5 `Model=4` / NT8 Tick Replay is a known one-line lever, not yet turned on. **Prerequisite:** a scalping-speed strategy worth validating.
@@ -62,7 +62,7 @@ A from-scratch rewrite of a TradingView SMC/market-structure indicator (`indicat
 - **Foundational-values edit UI on personal rulesets:** the `PUT` endpoint can still edit foundational fields on personal rows, but there's no UI affordance since `FoundationalEditModal` was removed with the prop lock. Add one only if it becomes a real workflow.
 - **Register any LondonBreakout runs made via direct MT5-agent calls in `lab.db`:** run Scan Strategies periodically to catch anything unregistered.
 - **Smart Money stages 3–4:** blocked externally on API keys. No code work needed until keys are available.
-- **`fibonacci/` shim in `algos/shared/`:** deliberately deferred until a bot actually consumes the fib engine — same pattern as the regime and structure shims.
+- **`engines/fibonacci/` shim in `algos/shared/`:** deliberately deferred until a bot actually consumes the fib engine — same pattern as the regime and structure shims.
 
 ---
 
@@ -88,7 +88,7 @@ Note: there is currently no "bots accumulating live trade history" track — `al
 
 **Resolved — NT8 cumulative drawdown versus prop firm daily drawdown.** Closed by `services/trailing_drawdown.py`: the evaluator recomputes EOD equity from daily P&L and applies a real trailing max-loss floor with per-firm lock balances. Kept here only so a new chat doesn't re-raise it.
 
-**Resolved — where market analysis lives.** Structure detection and fib levels are canonical Python engines (`market_structure/`, `fibonacci/`), extracted from the TradingView indicator and parity-validated — bots consume engines, they don't re-implement chart logic. The remaining blocks are queued in `docs/ENGINE_EXTRACTION_ROADMAP.md`.
+**Resolved — where market analysis lives.** Structure detection and fib levels are canonical Python engines (`engines/market_structure/`, `engines/fibonacci/`), extracted from the TradingView indicator and parity-validated — bots consume engines, they don't re-implement chart logic. The remaining blocks are queued in `docs/ENGINE_EXTRACTION_ROADMAP.md`.
 
 ---
 

@@ -7,6 +7,7 @@ chart rendering.
 **Status:** Production — ported, unit-tested, and Pine-parity-validated (100% on the
 `OANDA_XAUUSD, 15m` export, 21,729 bars); wired into `algos/` via
 `algos/shared/structure_engine.py` (shim).
+**Pine:** ported from `indicators/structure_engine.pine`; parity harness is `indicators/structure_engine_export.pine`, diffed against this Python by `tools/compare_tradingview.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-07-02
 
 ---
@@ -14,7 +15,7 @@ chart rendering.
 ## Key paths
 
 ```
-market_structure/
+engines/market_structure/
 ├── engine.py                      ← StructureEngine (the state machine)
 ├── types.py                       ← Bar, SwingLevel, ExternalEvents, InternalEvents, StructureEvents
 ├── __init__.py                    ← re-exports the public API
@@ -59,9 +60,9 @@ eng.internal_swing
 
 ---
 
-## Why this is a stateful class, not a stateless function (deviation from `regime/`)
+## Why this is a stateful class, not a stateless function (deviation from `engines/regime/`)
 
-`regime/` is the sibling shared-library pattern in this repo: stateless `df -> label` functions,
+`engines/regime/` is the sibling shared-library pattern in this repo: stateless `df -> label` functions,
 recomputed fresh on every call from a dataframe slice. This module intentionally does **not**
 follow that pattern, and the reason is structural, not stylistic:
 
@@ -76,7 +77,7 @@ symbol/timeframe, fed one bar per `update()` call as candles close, and carries 
 indefinitely at O(1) amortized cost per bar (aside from the bounded backward scans described in
 `MARKET_STRUCTURE_ENGINE.md`, which are capped, not unbounded rescans of full history).
 
-Do not "fix" this into a stateless function to match `regime/`'s shape. The two subsystems solve
+Do not "fix" this into a stateless function to match `engines/regime/`'s shape. The two subsystems solve
 different problems: regime classification is a snapshot judgment over a rolling window; structure
 tracking is inherently sequential.
 
@@ -98,17 +99,17 @@ already-known level fires. Internal structure has no pivot lag at all. See
 | Consumer | Path | Status |
 |---|---|---|
 | Live/algos bots | `algos/shared/structure_engine.py` (thin shim over `market_structure.StructureEngine`) | Wired |
-| `fibonacci/` | reads the public `ExternalEvents` + read properties via its own `StructureSnapshot` | Wired |
-| `order_blocks/` | reads the public `ExternalEvents` + `InternalEvents` via its own `StructureSnapshot` | Wired |
+| `engines/fibonacci/` | reads the public `ExternalEvents` + read properties via its own `StructureSnapshot` | Wired |
+| `engines/order_blocks/` | reads the public `ExternalEvents` + `InternalEvents` via its own `StructureSnapshot` | Wired |
 | Command-center backtest lab | `command-center/backend/services/` | Not yet wired — future consumer, not touched by this port |
 
 **`InternalEvents` OB-creation gate (`int_bull_break` / `int_bear_break` / `int_break_origin_loc`).**
-These three fields were added for `order_blocks/`. They are a purely additive, capture-only exposure
+These three fields were added for `engines/order_blocks/`. They are a purely additive, capture-only exposure
 of state the engine already computes — they mirror Pine's `int_bull_break` / `int_bear_break` /
 `int_break_origin_loc` and are set at the six internal-break sites (iBOS bull/bear use
 `tracked_ext_loc` as the origin; the four iSOS branches use `sw_loc`), right where the existing
 `bull_bos` / `bear_sos` / `*_price` fields are set, before the state reset. No structure logic
-changed and structure parity was re-confirmed unbroken. `order_blocks/` scans back from
+changed and structure parity was re-confirmed unbroken. `engines/order_blocks/` scans back from
 `int_break_origin_loc` to drop an OB on the internal break; the external OB path reads the existing
 `bull_bos_l_loc` / `bear_bos_h_loc`.
 
@@ -147,7 +148,7 @@ Before trusting the engine on live money, confirm it matches the Pine source on 
 1. `indicators/structure_engine_export.pine` — an instrumented copy of `structure_engine.pine`
    (logic byte-identical; adds `plot()` columns for every engine output). Put it on a chart in
    TradingView and export the chart data to CSV.
-2. `market_structure/tools/compare_tradingview.py <that.csv>` — feeds the CSV's candles through
+2. `engines/market_structure/tools/compare_tradingview.py <that.csv>` — feeds the CSV's candles through
    `StructureEngine` and diffs its output against the Pine columns in the same file, bar by bar.
    Exit 0 = full parity; exit 1 = prints every mismatch. Pass `--major-length` to match the Pine
    build. Uses only the standard library.
@@ -182,5 +183,5 @@ independent dataset from the original OANDA validation, so it re-confirms the wh
 - Pine source of truth: `indicators/structure_engine.pine` (validated ~99.99% parity against the
   original "Structure OS" TradingView indicator via `indicators/mpc_assistant.pine`)
 - Shim and bot integration: `algos/shared/structure_engine.py`
-- Sibling shared-library pattern (stateless, for contrast): `regime/CLAUDE.md`
+- Sibling shared-library pattern (stateless, for contrast): `engines/regime/CLAUDE.md`
 - Monorepo context: `../CLAUDE.md`

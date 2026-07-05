@@ -1,7 +1,7 @@
 # CLAUDE.md — LWG Capital Algo Trading Suite
 
 **Purpose:** Standing instructions for the XAUUSD/forex MT5 bot suite running on the Windows VPS.
-**Scope:** This covers the bots, shared utilities, risk rules, scheduler, and deploy for `algos/`. It does NOT cover `command-center/`, `smart-money/`, or `regime/` internals (regime is imported via the `shared_regime.py` shim).
+**Scope:** This covers the bots, shared utilities, risk rules, scheduler, and deploy for `algos/`. It does NOT cover `command-center/`, `smart-money/`, or `engines/regime/` internals (regime is imported via the `shared_regime.py` shim).
 **Status:** Active — no live bots; all four first-attempt bots were deleted 2026-06-22 to rebuild backtest-first. Deployment plumbing preserved.
 **Last reviewed:** 2026-06-22
 
@@ -51,6 +51,8 @@ Shared logic lives in `shared/`; the launcher, coordinator, and config loader li
 | `bot_utils.py` | `bots/` | Config loader, logging, path resolver |
 | `launcher.py` | `bots/` | Universal Task Scheduler launcher |
 | `startup_coordinator.py` | `bots/` | Orchestrates bot startup sequence |
+
+Standalone MT5 lab tooling (not imported by any bot) lives in `tools/`: `download_mt5_history.py` (warm the lab MT5 history cache) and `audit_mt5_data_quality.py` (its read-only companion — probes what the broker actually serves). Both run on the VPS against `C:\MT5_Lab`.
 
 Multi-instrument architecture (Phases 1–5) explained in `docs/ARCHITECTURE.md`.
 

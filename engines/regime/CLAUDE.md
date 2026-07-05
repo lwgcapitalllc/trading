@@ -10,7 +10,7 @@
 ## Key paths
 
 ```
-regime/
+engines/regime/
 ├── classifier.py      ← compute_signals(), classify_regime()
 ├── thresholds.py      ← all configurable cutoffs as module-level constants
 ├── __init__.py        ← re-exports the public API

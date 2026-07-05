@@ -4,7 +4,7 @@
 off each structure break, and the bar it is later mitigated (tapped out) on. The signal is the
 event ("a bull OB formed at 4102–4108", "price mitigated it"), not the drawing.
 **Scope:** OB zone geometry + the two live OB lists + their lifecycle (create / mitigate / evict)
-only. No trading decisions, no structure detection (it consumes `market_structure/`), no MT5 ops,
+only. No trading decisions, no structure detection (it consumes `engines/market_structure/`), no MT5 ops,
 no UI, no chart rendering (no boxes, no colours).
 **Status:** Production — ported line-by-line from `mpc_assistant.pine`, unit-tested (12 hand-traced
 tests), and Pine-parity-validated (100%) on two independent real exports: `VANTAGE_XAUUSD, 5m`
@@ -13,6 +13,7 @@ Every OB field — active bull/bear arrays slot-by-slot, counts, created/mitigat
 internal-break origin — matched on every warm bar of both. Two timeframes with no timeframe-specific
 branching re-confirms the engine is timeframe-agnostic. The one canonical implementation — no
 consumer builds its own.
+**Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/ob_export.pine`, diffed against this Python by `tools/compare_ob.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-07-04
 
 ---
@@ -20,7 +21,7 @@ consumer builds its own.
 ## Key paths
 
 ```
-order_blocks/
+engines/order_blocks/
 ├── engine.py       ← the OB state machine (OrderBlockEngine): extend/mitigate + external & internal creation
 ├── types.py        ← OrderBlock (a zone); StructureSnapshot (input); OrderBlockEvents (output)
 ├── __init__.py     ← re-exports the public API
@@ -77,11 +78,11 @@ bar. Keep it identical to Pine.
 ## Timeframes & what it needs
 
 No timeframe branching — the same code runs on every TF (unlike the Macro fib, which is ≤5m only).
-To be accurate the engine needs, exactly like `fibonacci/`:
+To be accurate the engine needs, exactly like `engines/fibonacci/`:
 
-1. **An accurate structure engine.** OBs are downstream of `market_structure/` — wrong structure →
+1. **An accurate structure engine.** OBs are downstream of `engines/market_structure/` — wrong structure →
    wrong OBs. It is the foundation.
-2. **The right candles.** Same price feed you chart on (see "Live parity" in `fibonacci/CLAUDE.md`
+2. **The right candles.** Same price feed you chart on (see "Live parity" in `engines/fibonacci/CLAUDE.md`
    — the same rule applies here once a bot consumes this engine).
 3. **Closed bars, in order, one at a time.** The two OB lists + the rolling OHLC window carry
    bar-to-bar; feed one closed bar per `update()`, in sequence, never replayed out of order.
@@ -119,22 +120,22 @@ origin location); the snapshot carries only the structure engine's break flags +
 
 ---
 
-## Relationship to `market_structure/`
+## Relationship to `engines/market_structure/`
 
-Order Blocks is a **sibling** of `fibonacci/`, not downstream of it: both consume
-`market_structure/` directly and keep their own decoupled `StructureSnapshot`. It reads only the
+Order Blocks is a **sibling** of `engines/fibonacci/`, not downstream of it: both consume
+`engines/market_structure/` directly and keep their own decoupled `StructureSnapshot`. It reads only the
 structure engine's PUBLIC output — never its internals. `StructureSnapshot.from_engine(engine,
 events)` reads the documented `ExternalEvents` (`bull/bear_bos`, `bull/bear_sos`, and the break-leg
 `bull_bos_l_loc` / `bear_bos_h_loc`) and `InternalEvents` (`int_bull_break`, `int_bear_break`,
 `int_break_origin_loc`).
 
-**The three internal-break fields were added to `market_structure/` for this engine.** They are a
+**The three internal-break fields were added to `engines/market_structure/` for this engine.** They are a
 purely additive, capture-only exposure of state the structure engine already computed (mirroring
 Pine's `int_bull_break` / `int_bear_break` / `int_break_origin_loc`), set at the six internal-break
 sites — no structure logic changed, and structure parity was re-confirmed unbroken. If you need a
 new field from structure, add a capture like that — do not reach into `_ext`/`_int`.
 
-Same stateful-streaming rationale as `market_structure/` and `fibonacci/`: build one
+Same stateful-streaming rationale as `engines/market_structure/` and `engines/fibonacci/`: build one
 `OrderBlockEngine` per symbol/timeframe, feed one closed bar per `update()`.
 
 ---
@@ -160,7 +161,7 @@ Same stateful-streaming rationale as `market_structure/` and `fibonacci/`: build
 
 ## Validation (Pine ↔ Python parity)
 
-**Unit tests — GREEN:** `python3 -m pytest order_blocks/tests/ -q` (12 hand-traced tests pinning
+**Unit tests — GREEN:** `python3 -m pytest engines/order_blocks/tests/ -q` (12 hand-traced tests pinning
 creation, the first-opposite-colour scan, body-only geometry, the lookback guards, mitigation, FIFO
 eviction, and the shared internal-break path).
 
@@ -174,16 +175,16 @@ bars mismatch only because the TradingView chart had history before the export w
 arrays opened already holding 3 bull + 5 bear OBs whose origin candles were off-screen; the Python
 engine starts cold and cannot know them. Those phantom OBs flush (mitigate or FIFO-evict) out of
 Pine's arrays by bar 594, and the two engines are bar-for-bar identical from there — the same
-warm-start offset the structure engine has. The harness mirrors the `market_structure/` and
-`fibonacci/` flow:
+warm-start offset the structure engine has. The harness mirrors the `engines/market_structure/` and
+`engines/fibonacci/` flow:
 
 1. `indicators/ob_export.pine` — `structure_engine_export.pine` (the byte-identical structure
    engine, external + internal) + the OB blocks from `mpc_assistant.pine` (drawing removed) +
    `plot()` columns for the active OB arrays (6 slots × top/bottom per direction), counts,
    created/mitigated pulses, and `px_i_break_origin_ago` (the one internal field with no prior
-   column). Put it on a chart, Export chart data → CSV, drop it in `order_blocks/exports/`
+   column). Put it on a chart, Export chart data → CSV, drop it in `engines/order_blocks/exports/`
    (git-ignored).
-2. `order_blocks/tools/compare_ob.py <that.csv>` — runs the REAL pipeline (StructureEngine →
+2. `engines/order_blocks/tools/compare_ob.py <that.csv>` — runs the REAL pipeline (StructureEngine →
    StructureSnapshot → OrderBlockEngine) on the CSV's candles and diffs against the `px_ob_*`
    columns, bar by bar. The active arrays are compared slot-by-slot (oldest first), which proves
    creation, mitigation AND eviction at once. Exit 0 = parity. Standard library only.
@@ -196,6 +197,6 @@ Pine's arrays); the tool prints the last mismatching bar so you can pick `--warm
 
 - Pine source of truth: `indicators/mpc_assistant.pine` OB blocks (38-66 / 863-895 / 1290-1317).
 - Parity export build: `indicators/ob_export.pine`.
-- Upstream structure engine: `market_structure/CLAUDE.md`.
-- Sibling engine (same pattern, downstream of the same structure engine): `fibonacci/CLAUDE.md`.
+- Upstream structure engine: `engines/market_structure/CLAUDE.md`.
+- Sibling engine (same pattern, downstream of the same structure engine): `engines/fibonacci/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.

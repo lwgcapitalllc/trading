@@ -20,10 +20,10 @@ import pandas as pd
 
 from services import lab_db, evaluator, runner_dispatch, worthiness, sizing_pipeline
 
-# Add repo root so we can import from trading/regime/
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+# Add engines/ to sys.path so we can import from trading/engines/regime/
+_ENGINES = Path(__file__).resolve().parent.parent.parent.parent / "engines"
+if str(_ENGINES) not in sys.path:
+    sys.path.insert(0, str(_ENGINES))
 
 from regime import classify_regime
 from services.ohlc_fetcher import get_ohlc

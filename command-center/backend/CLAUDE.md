@@ -410,13 +410,14 @@ When walk-forward/sensitivity weren't run, those conditions are skipped (grade i
 
 **Deployment gates (UI only, soft):** A = funded; B = eval purchase; C = demo. Shown as warnings, never blocking.
 
-**Regime classifier (M4):** Import from `trading/regime/` — the canonical implementation lives there, never duplicate it here. The canonical algorithm doc is at `trading/regime/REGIME_CLASSIFIER.md`. Import pattern:
+**Regime classifier (M4):** Import from `trading/engines/regime/` — the canonical implementation lives there, never duplicate it here. The canonical algorithm doc is at `trading/engines/regime/REGIME_CLASSIFIER.md`. Import pattern:
 ```python
 import sys
 from pathlib import Path
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+# engines/ on sys.path so the canonical engines import by bare name
+_ENGINES = Path(__file__).resolve().parent.parent.parent.parent / "engines"
+if str(_ENGINES) not in sys.path:
+    sys.path.insert(0, str(_ENGINES))
 from regime import classify_regime  # returns one of 5 labels + UNKNOWN
 ```
 Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long` (`classify_regime(df_daily, df_daily)`). Warmup: fetch 50 extra days before `start_date` so day 1 gets a real label. Window: 34 bars. The OHLC cache is in `instrument_daily_ohlc` — use `services/ohlc_fetcher.get_ohlc()`, never fetch directly in service code.

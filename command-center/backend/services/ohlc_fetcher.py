@@ -11,7 +11,7 @@ Cache freshness: dates/timestamps older than _RECENT_DAYS are fetched once
 and never refetched. The recent window is always refetched since intraday
 closes may have been incomplete on first fetch.
 
-See trading/regime/REGIME_CLASSIFIER.md for classifier data requirements.
+See trading/engines/regime/REGIME_CLASSIFIER.md for classifier data requirements.
 """
 
 from __future__ import annotations

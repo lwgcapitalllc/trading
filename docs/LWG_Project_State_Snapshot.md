@@ -54,9 +54,9 @@ trading/
 ├── command-center/    ← React + FastAPI local operations platform (fully live)
 │   ├── backend/           FastAPI app, SQLite (lab.db), VPS clients, backtest/stress/optimizer services
 │   └── frontend/          React + Vite UI — lab, bots monitor, smart money, rulesets
-├── regime/            ← Shared market regime classifier (live bots + backtest lab)
-├── market_structure/  ← Canonical BOS/CHoCH/swing detection engine (Python, 100% Pine parity)
-├── fibonacci/         ← Canonical fib level-event engine, downstream of market_structure/ (100% Pine parity)
+├── engines/regime/            ← Shared market regime classifier (live bots + backtest lab)
+├── engines/market_structure/  ← Canonical BOS/CHoCH/swing detection engine (Python, 100% Pine parity)
+├── engines/fibonacci/         ← Canonical fib level-event engine, downstream of engines/market_structure/ (100% Pine parity)
 ├── strategies/        ← Generic strategy source files, organized by runner platform
 │   ├── ninjatrader/       NT8 NinjaScript strategies (.cs)
 │   ├── mt5/               MT5 expert advisors (.mq5)
@@ -66,7 +66,7 @@ trading/
 └── docs/              ← Cross-subsystem reference docs and audit tools
 ```
 
-`algos/`, `smart-money/`, and `command-center/` are fully independent. `regime/` and `market_structure/` are shared libraries imported by `algos/` (each via a thin shim in `algos/shared/`); `regime/` is also imported by `command-center/` directly. `fibonacci/` is downstream of `market_structure/` — it consumes that engine's public output (a `StructureSnapshot`) only, never its internals, and will get an `algos/shared/` shim when a bot first uses it. `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS strategy folders.
+`algos/`, `smart-money/`, and `command-center/` are fully independent. `engines/regime/` and `engines/market_structure/` are shared libraries imported by `algos/` (each via a thin shim in `algos/shared/`); `engines/regime/` is also imported by `command-center/` directly. `engines/fibonacci/` is downstream of `engines/market_structure/` — it consumes that engine's public output (a `StructureSnapshot`) only, never its internals, and will get an `algos/shared/` shim when a bot first uses it. `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS strategy folders.
 
 ---
 
@@ -74,7 +74,7 @@ trading/
 
 **App shell + Smart Money + Bots monitor (pre-M1) — shipped.** First working command center. React shell with sidebar routing, the Bots tab (SSH monitor + control scaffold, risk-cap deploy, Telegram users), and the full Smart Money pipeline UI (scan, terminal, rankings, candidate profiles, disqualified log, config, cache). Smart Money stages 1–2 and 5 are live; stages 3–4 are blocked on API keys.
 
-**Pre-M4 unification — single regime classifier — shipped.** The regime classifier was simplified to one 5-label output set (TRENDING / TRANSITIONING / RANGING / HIGH_VOLATILITY / LOW_VOLATILITY, plus UNKNOWN) and made the single canonical implementation in `regime/`. Live bots use it via `algos/shared/shared_regime.py`; the lab imports it directly.
+**Pre-M4 unification — single regime classifier — shipped.** The regime classifier was simplified to one 5-label output set (TRENDING / TRANSITIONING / RANGING / HIGH_VOLATILITY / LOW_VOLATILITY, plus UNKNOWN) and made the single canonical implementation in `engines/regime/`. Live bots use it via `algos/shared/shared_regime.py`; the lab imports it directly.
 
 **M1 — Backtests Lab (strategy registry + runs + evaluations) — shipped.** The Strategies tab scans `strategies/` for `.cs` and `.mq5` files. Users pick a strategy, instrument, date range, and which rulesets to evaluate against. NT8 runs the backtest; results are stored under `reports/lab/`. Per-ruleset evaluations (PASS/WARN/DISCARD) fire on completion — the user always picks the rulesets.
 
@@ -118,9 +118,9 @@ trading/
 
 **Dynamic sizing & risk engine + decision log (core built 2026-06-21, wired through 2026-06-30) — shipped.** The mechanism behind the LWG gated-layer model: a strategy signals at unit size; gates decide whether a trade is allowed; `services/sizing_engine.py` (pure, no DB/network) decides how big from the room left, in one of two per-run modes (bullet = max the rules allow; consistent = room ÷ 7). `services/decision_log.py` is the one reusable audit log (one JSONL record per signal). `ORB.cs` and `LondonBreakout.mq5` were both reshaped to trade unit size and emit `engine_trades.csv` (the runner→engine contract); `services/sizing_pipeline.py` wires the engine into the run-completion path. Every prop/personal ruleset gets its own sized P&L, timeline, and equity curve per run (`ruleset_sizing.json`), and BacktestDetail switches all ruleset-dependent charts/KPIs per firm.
 
-**Structure engine — canonical Python port (validated through 2026-07-02) — shipped.** `market_structure/` — a stateful streaming state machine ported line-by-line from `indicators/structure_engine.pine` (itself extracted from a full SMC indicator). External + internal structure: BOS/CHoCH, swing highs/lows, HH/HL/LH/LL, plus the BOS break-leg endpoints. Validated at **100% Pine parity** on real XAUUSD 15m exports (21,729 bars OANDA; re-confirmed on a fresh 9,721-bar Vantage export) via `market_structure/tools/compare_tradingview.py`. Wired into `algos/` via the `algos/shared/structure_engine.py` shim. This is the single structure implementation — no consumer builds its own.
+**Structure engine — canonical Python port (validated through 2026-07-02) — shipped.** `engines/market_structure/` — a stateful streaming state machine ported line-by-line from `indicators/structure_engine.pine` (itself extracted from a full SMC indicator). External + internal structure: BOS/CHoCH, swing highs/lows, HH/HL/LH/LL, plus the BOS break-leg endpoints. Validated at **100% Pine parity** on real XAUUSD 15m exports (21,729 bars OANDA; re-confirmed on a fresh 9,721-bar Vantage export) via `engines/market_structure/tools/compare_tradingview.py`. Wired into `algos/` via the `algos/shared/structure_engine.py` shim. This is the single structure implementation — no consumer builds its own.
 
-**Fibonacci engine — all three fibs, Pine-parity-validated (2026-07-02 to 2026-07-04) — shipped.** `fibonacci/` — one shared geometry core plus three per-fib state machines ported line-by-line from `mpc_assistant.pine`: Structure ("FFT", swing-anchored E1–E4/TP1–TP5 with the 0.618 gate), Sniper (BOS-impulse 0.382–0.5 zone), and Macro (HH→LL cycle, ≤5m only). Emits level EVENTS (first-touch pulses), not visuals. Consumes the structure engine's public `StructureSnapshot` only. All three validated at **100% Pine parity** on real XAUUSD exports (Structure/Sniper on 15m, Macro on 5m) via `fibonacci/tools/compare_fib.py` against the instrumented `indicators/fib_export.pine`. Gets an `algos/shared/` shim when a bot first consumes it.
+**Fibonacci engine — all three fibs, Pine-parity-validated (2026-07-02 to 2026-07-04) — shipped.** `engines/fibonacci/` — one shared geometry core plus three per-fib state machines ported line-by-line from `mpc_assistant.pine`: Structure ("FFT", swing-anchored E1–E4/TP1–TP5 with the 0.618 gate), Sniper (BOS-impulse 0.382–0.5 zone), and Macro (HH→LL cycle, ≤5m only). Emits level EVENTS (first-touch pulses), not visuals. Consumes the structure engine's public `StructureSnapshot` only. All three validated at **100% Pine parity** on real XAUUSD exports (Structure/Sniper on 15m, Macro on 5m) via `engines/fibonacci/tools/compare_fib.py` against the instrumented `indicators/fib_export.pine`. Gets an `algos/shared/` shim when a bot first consumes it.
 
 **First sized-path VPS run — NT8 verified (2026-07-01) — shipped.** ORB ran on MES and MNQ from the lab (both completed; both Tier 3 on performance). The MES run produced the full sized-engine output on disk — `engine_trades.csv` came back from the VPS, and `decisions.jsonl`, `engine_timeline.json`, `engine_daily_pnl.json`, and the per-firm `ruleset_sizing.json` were all written. The NT8 runner→engine→files path is proven end-to-end on a real VPS backtest. The MT5 side (LondonBreakout) has not yet produced engine output — see the roadmap.
 
@@ -166,7 +166,7 @@ Evaluator behavior by type: `prop_eval` checks EOD trailing max-loss (DISCARD on
 
 4. **Every account has a ruleset.** Personal/demo accounts get relaxed rules and a real verdict — there is no "no-verdict" account type. Prop rulesets are locked (server-side 403 on edit); personal rules are editable.
 
-5. **One canonical implementation per engine.** `regime/classifier.py`, `market_structure/engine.py`, and `fibonacci/` are the single implementations of their domains. Consumers import them (bots via thin `algos/shared/` shims); nobody builds a second one anywhere.
+5. **One canonical implementation per engine.** `engines/regime/classifier.py`, `engines/market_structure/engine.py`, and `engines/fibonacci/` are the single implementations of their domains. Consumers import them (bots via thin `algos/shared/` shims); nobody builds a second one anywhere.
 
 6. **Engines are ported line-by-line and Pine-parity-validated.** Every engine extracted from the TradingView SMC indicator follows the same pattern: port the Pine block into a stateful streaming state machine (one closed bar at a time), emit events (never visuals), instrument the Pine with export plots, and diff Python-vs-Pine bar-by-bar to 100% before shipping. Downstream engines read another engine's public output only — never its internals. The queue of remaining blocks is `docs/ENGINE_EXTRACTION_ROADMAP.md`.
 

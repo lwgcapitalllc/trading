@@ -1,8 +1,8 @@
 """
-shared_regime.py — Thin shim over trading/regime/classifier.py
+shared_regime.py — Thin shim over trading/engines/regime/classifier.py
 
 Preserves the RegimeClassifier class interface used by all bots unchanged.
-All signal math and classification logic now lives in trading/regime/.
+All signal math and classification logic now lives in trading/engines/regime/.
 
 Returns one of 5 labels: TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY | UNKNOWN
 Each bot owns its own REGIME_RISK_TABLE mapping these labels to (risk_multiplier, trade_allowed).
@@ -17,10 +17,10 @@ from pathlib import Path
 
 import pandas as pd
 
-# Add repo root to sys.path so we can import from trading/regime/
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+# Add engines/ to sys.path so we can import from trading/engines/regime/
+_ENGINES = Path(__file__).resolve().parent.parent.parent / "engines"
+if str(_ENGINES) not in sys.path:
+    sys.path.insert(0, str(_ENGINES))
 
 from regime import classify_regime as _classify_regime, compute_signals as _compute_signals
 

@@ -216,7 +216,7 @@ port; re-added and carried through the shim to `algos/`.
 | internal break fired (any iBOS/iSOS) → OB-creation gate | `int_bull_break` / `int_bear_break` + `int_break_origin_loc` |
 
 **Internal-break OB gate (`int_bull_break` / `int_bear_break` / `int_break_origin_loc`).** Added for
-the `order_blocks/` engine; mirror Pine's identically-named vars. On any internal break these flag
+the `engines/order_blocks/` engine; mirror Pine's identically-named vars. On any internal break these flag
 its direction and expose the origin bar index the order-block engine scans back from — the two iBOS
 sites set `int_break_origin_loc` to `tracked_ext_loc`, the four iSOS branches to `sw_loc`, matching
 `mpc_assistant.pine` (~lines 1115-1275). Capture-only: set right beside the existing

@@ -16,6 +16,7 @@ export where the 16 timeframe-agnostic fields matched (all 10 flags zero-warmup,
 bar 66); only the NY opening range differs on 15m because it is a ≤5m feature. Two timeframes
 confirm the clock/session logic is timeframe-agnostic. The one canonical implementation — no
 consumer builds its own.
+**Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/sessions_export.pine`, diffed against this Python by `tools/compare_sessions.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-07-04
 
 ---
@@ -23,7 +24,7 @@ consumer builds its own.
 ## Key paths
 
 ```
-sessions/
+engines/sessions/
 ├── engine.py       ← SessionEngine: the time-driven state machine
 ├── types.py        ← SessionSpec (a window), SessionRange (a session H/L), SessionEvents (output)
 ├── __init__.py     ← re-exports the public API
@@ -42,7 +43,7 @@ TRACKING (1638-1646), KILL ZONES (1861-1866), NY RANGE BOX (1824-1856), newDay /
 
 ## What this engine is (ported semantics)
 
-Unlike `market_structure/`, `fibonacci/` and `order_blocks/` — all price-driven — this engine is
+Unlike `engines/market_structure/`, `engines/fibonacci/` and `engines/order_blocks/` — all price-driven — this engine is
 **time-driven**. Its inputs are the bar's **UTC timestamp (epoch milliseconds, == Pine's `time`)**
 plus the bar's high/low (needed only for the running session / NY-range extremes).
 
@@ -112,7 +113,7 @@ Custom windows: pass `SessionEngine(sessions=[SessionSpec.from_pine("Asia", "200
 
 ## Relationship to the other engines
 
-**Standalone** — depends on nothing but the bar's timestamp + high/low (not on `market_structure/`).
+**Standalone** — depends on nothing but the bar's timestamp + high/low (not on `engines/market_structure/`).
 It is the **prerequisite** the roadmap calls out: the future **Liquidity** engine consumes the
 session H/L emitted here (adding sweep/mitigation tracking — a liquidity concern kept out of this
 engine), and the future **VWAP** engine uses the session open as its anchor. Session H/L is
@@ -144,7 +145,7 @@ engine), and the future **VWAP** engine uses the session open as its anchor. Ses
 
 ## Validation (Pine ↔ Python parity)
 
-**Unit tests — GREEN:** `python3 -m pytest sessions/tests/ -q` (17 hand-traced tests pinning the
+**Unit tests — GREEN:** `python3 -m pytest engines/sessions/tests/ -q` (17 hand-traced tests pinning the
 GMT-offset parsing, the overnight-wrap window rule, fixed-offset-vs-DST behaviour, session H/L
 open/expand/close edges, the kill-zone windows + DST, the NY opening range, and new-day/weekday).
 
@@ -161,8 +162,8 @@ export, not 15m. The harness mirrors the other engines:
 1. `indicators/sessions_export.pine` — the session / kill-zone / NY-range clock lifted from
    `mpc_assistant.pine` (drawing + the two days-back gates removed) with `px_*` `plot()` columns
    for every flag, running session H/L, and the NY range. Put it on a **5-minute** chart (the NY
-   range reads a 5m security), Export chart data → CSV, drop it in `sessions/exports/` (git-ignored).
-2. `python3 sessions/tools/compare_sessions.py <that.csv>` — feeds each bar's timestamp + high/low
+   range reads a 5m security), Export chart data → CSV, drop it in `engines/sessions/exports/` (git-ignored).
+2. `python3 engines/sessions/tools/compare_sessions.py <that.csv>` — feeds each bar's timestamp + high/low
    through `SessionEngine` and diffs against the `px_*` columns, bar by bar. Exit 0 = parity.
    Standard library only.
 
@@ -178,5 +179,5 @@ Re-run `compare_sessions.py` after any change to the session blocks in `mpc_assi
 - Parity export build: `indicators/sessions_export.pine`.
 - Downstream consumers (future): Liquidity engine (session H/L levels), VWAP engine (session anchor)
   — see `docs/ENGINE_EXTRACTION_ROADMAP.md`.
-- Sibling engines / the shared porting pattern: `order_blocks/CLAUDE.md`, `fibonacci/CLAUDE.md`.
+- Sibling engines / the shared porting pattern: `engines/order_blocks/CLAUDE.md`, `engines/fibonacci/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.

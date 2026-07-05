@@ -1,8 +1,8 @@
 """
-structure_engine.py — Thin shim over trading/market_structure/engine.py
+structure_engine.py — Thin shim over trading/engines/market_structure/engine.py
 
 Preserves a bot-friendly update(candle: dict) interface. All BOS/CHoCH/swing detection logic now
-lives in trading/market_structure/ — this file does not reimplement any of it.
+lives in trading/engines/market_structure/ — this file does not reimplement any of it.
 
 Replaces a prior, unrelated "FFT Structure Engine" implementation (left over from the deleted FFT
 bot) that nothing in the repo imported. See algos/CLAUDE.md's Shared Components table.
@@ -12,10 +12,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# Add repo root to sys.path so we can import from trading/market_structure/
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+# Add engines/ to sys.path so we can import from trading/engines/market_structure/
+_ENGINES = Path(__file__).resolve().parent.parent.parent / "engines"
+if str(_ENGINES) not in sys.path:
+    sys.path.insert(0, str(_ENGINES))
 
 from market_structure import Bar, StructureEngine as _StructureEngine, StructureEvents
 
