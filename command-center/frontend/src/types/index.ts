@@ -15,9 +15,33 @@ export interface EquityPoint {
   index: number
   equity: number
   date?: string
+  entry_ms?: number | null   // trade OPEN time, UTC epoch ms — what the news filter tags against
   direction?: 'Long' | 'Short'
   profit?: number
   exit_name?: string
+}
+
+// Post-run news/holiday tagging of a run's trades (GET /backtests/runs/{id}/news).
+// The lab runs backtests raw; this marks which trades opened in a news window / on a bank holiday
+// so the UI can remove them and recompute KPIs live. Mirrors backend models.NewsTradeTag / RunNewsReport.
+export interface NewsTradeTag {
+  index: number | null
+  entry_ms: number | null
+  in_coverage: boolean
+  in_news: boolean       // opened inside a high-impact news window — the toggle removes these
+  in_holiday: boolean    // opened on a bank holiday — always removed, not part of the toggle
+  title: string | null
+}
+
+export interface RunNewsReport {
+  has_data: boolean                  // false when the calendar cache is empty → filter inert
+  coverage_start_ms: number | null   // earliest ms with news data — the "news starts here" boundary
+  coverage_end_ms: number | null
+  pre_minutes: number
+  post_minutes: number
+  trades: NewsTradeTag[]
+  news_trade_count: number
+  holiday_trade_count: number
 }
 
 // One trading day of a SIZED run — the dynamic-sizing engine's day-by-day record
@@ -279,6 +303,7 @@ export interface Strategy {
   // Strategy-level narrative overlaid from <Strategy>.meta.json (optional).
   edge?: string | null
   steps?: StrategyStep[]
+  avoid_news?: boolean   // News toggle starts on "Removed" when true (strategy avoids high-impact news)
 }
 
 export interface StrategyStep {

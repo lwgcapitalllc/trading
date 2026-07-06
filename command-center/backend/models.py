@@ -309,6 +309,9 @@ class Strategy(BaseModel):
     # Strategy-level narrative overlaid from <Strategy>.meta.json (UI only).
     edge: Optional[str] = None
     steps: list[dict] = []   # flow: [{label, title, detail}]
+    # News-filter default (UI only): 1/true = the News toggle on BacktestDetail starts on "Removed"
+    # (this strategy avoids high-impact news); false = starts "Included". From meta.json "avoid_news".
+    avoid_news: bool = False
 
     @field_validator("steps", mode="before")
     @classmethod
@@ -604,6 +607,28 @@ class BacktestDetail(BaseModel):
     sizing_mode: str = "consistent"   # 'consistent' | 'bullet' — engine sizing mode this run used
     sized: bool = False               # True once a reshaped strategy emitted engine_trades and the engine sized the run
     sized_timeline: list[SizedTimelineDay] = []   # the engine's day-by-day record (sized runs only) — sized equity curve + timeline
+
+
+# ── Lab — news filter (post-run trade tagging) ───────────────────────────────
+
+class NewsTradeTag(BaseModel):
+    index: Optional[int] = None      # trade number, matches the equity-curve point
+    entry_ms: Optional[int] = None   # trade OPEN time, UTC epoch ms (null on old runs with no stored time)
+    in_coverage: bool = False        # calendar data covers this date (else we don't guess)
+    in_news: bool = False            # opened inside a high-impact news window — the toggle removes these
+    in_holiday: bool = False         # opened on a bank holiday — always removed, not part of the toggle
+    title: Optional[str] = None      # the event that tagged it
+
+
+class RunNewsReport(BaseModel):
+    has_data: bool                             # False when the calendar cache is empty → filter inert
+    coverage_start_ms: Optional[int] = None    # earliest ms with news data — the "news starts here" line
+    coverage_end_ms: Optional[int] = None
+    pre_minutes: int                           # block window before an event (default 15)
+    post_minutes: int                          # block window after an event (default 30)
+    trades: list[NewsTradeTag] = []
+    news_trade_count: int = 0
+    holiday_trade_count: int = 0
 
 
 # ── Lab — progress + system health ───────────────────────────────────────────

@@ -37,7 +37,7 @@ frontend/src/
 ├── api/client.ts            ONLY place fetch() lives
 ├── types/index.ts           mirrors all backend Pydantic models exactly
 ├── hooks/                   one file per backend domain
-│   ├── useLab.ts            strategies, rulesets (useRulesets + useFirms alias), runs, evals, sweeps, optimizations, useChartSpec (price-chart panel)
+│   ├── useLab.ts            strategies, rulesets (useRulesets + useFirms alias), runs, evals, sweeps, optimizations, useChartSpec (price-chart panel), useRunNews (post-run news/holiday tags)
 │   ├── useBots.ts
 │   ├── useSmartMoney.ts
 │   ├── useStressTests.ts    stress tests — useStressTests, useStressTest, useRunStressTest, useDeleteStressTest, useRunningStressLock, useStrategyBestGrades
@@ -84,7 +84,7 @@ frontend/src/
     │   └── UsersTab.tsx      Telegram users
     ├── Rulesets.tsx          own top-level page (/rulesets) — firm-grouped prop tables + personal group
     ├── Backtests.tsx         lab landing — Runs / Sweeps tabs
-    ├── BacktestDetail.tsx    full run detail — params side panel, per-firm evaluation + KPIs, tabbed charts, logs
+    ├── BacktestDetail.tsx    full run detail — params side panel, per-firm evaluation + KPIs, tabbed charts, logs, News & Holiday filter card (inline NewsFilterCard)
     ├── StrategyDetail.tsx    strategy "spec sheet" — overview + grouped param reference tables
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
     ├── Optimizations.tsx     own top-level RESEARCH page (/optimizations) — optimization list table
@@ -367,6 +367,7 @@ Full implementation detail (exact card set, fixed-height math, per-metric fallba
 | Settings | ✅ Live | Config read/write; `nt8_agent_tunnel` + `mt5_agent_tunnel` |
 | Sidebar health strip | ✅ Live | 4 dots: API, SSH, NT8 (3-state), MT5 Agent |
 | Price-chart panel | ✅ Live | Lazy klinecharts candlestick panel on BacktestDetail (`components/ChartPanel/`, own CLAUDE.md): TF switch, sessions, trades, generic overlays, indicators, day breaks. Real spec via `useChartSpec`; overlays/indicators (strategy structure) still pending (Step 7b) |
+| News & Holiday filter | ✅ Live (NT8) | Post-run card on BacktestDetail (`NewsFilterCard`, inline). `useRunNews` tags the RAW `equity_curve` trades; News Included/Removed segmented toggle + before/after sliders (default 15/30) → KPIs (Net/Win%/PF/MaxDD/Trades, with deltas) + a filtered equity curve recomputed **client-side** (`newsKpisFrom`). Bank holidays always excluded (off the toggle). Toggle start = the strategy's `avoid_news` (`removeNews = choice ?? avoidNews`). Coverage-honest (untagged where no data; "Reload charts" note on pre-`entry_ms` runs). **Forex/MT5 not wired — TODO #3** (needs MT5 `entry_ms` + non-UTC broker timezone handling) |
 
 ---
 

@@ -1,0 +1,4 @@
+{
+  "_comment": "UI metadata for ORB, read by the command-center scanner (not compiled into the strategy). 'avoid_news' sets the starting position of the News filter toggle on a backtest's results page: true = news-window trades start REMOVED (gold avoids high-impact news); the user can still flip it per run.",
+  "avoid_news": true
+}

@@ -4,16 +4,16 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
   CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Layers, Play,
-  Copy, Check, SlidersHorizontal, X,
+  Copy, Check, SlidersHorizontal, X, Newspaper,
 } from 'lucide-react'
 import {
   AreaChart, Area, ComposedChart, Line, BarChart, Bar, PieChart, Pie, Label,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunNews } from '@/hooks/useLab'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
-import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay } from '@/types'
+import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag } from '@/types'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
 
@@ -2246,6 +2246,210 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
   )
 }
 
+// ── News filter (post-run) ──────────────────────────────────────────────────────
+// The backtest runs RAW (the strategy trades straight through news). This card is the post-run
+// view: remove trades that opened inside a high-impact news window (15 min before → 30 min after)
+// or on a bank holiday, and watch the KPIs + equity curve update live. Pure client-side arithmetic
+// on the raw trade curve — no re-run. Bank-holiday trades are ALWAYS removed (Aaron's rule); the
+// toggle only governs news-window trades. Operates on run.equity_curve (the raw, firm-independent
+// curve — the only one carrying entry_ms; per-firm sized curves are day-granular and unaffected).
+
+type NewsKpis = { net: number; winRate: number; pf: number; maxDd: number; trades: number }
+
+function newsKpisFrom(trades: EquityPoint[]): NewsKpis {
+  const pnls = trades.map(t => t.profit ?? 0)
+  const wins = pnls.filter(p => p > 0)
+  const grossWin  = wins.reduce((a, b) => a + b, 0)
+  const grossLoss = Math.abs(pnls.filter(p => p < 0).reduce((a, b) => a + b, 0))
+  let cum = 0, peak = 0, maxDd = 0
+  for (const p of pnls) { cum += p; peak = Math.max(peak, cum); maxDd = Math.max(maxDd, peak - cum) }
+  return {
+    net: pnls.reduce((a, b) => a + b, 0),
+    winRate: trades.length ? wins.length / trades.length : 0,
+    pf: grossLoss > 0 ? grossWin / grossLoss : (grossWin || 0),
+    maxDd,
+    trades: trades.length,
+  }
+}
+
+function NewsDelta({ from, to, kind, goodWhen = 'higher' }: {
+  from: number; to: number; kind: 'money' | 'pct' | 'pf' | 'num'; goodWhen?: 'higher' | 'lower'
+}) {
+  const d = to - from
+  if (Math.abs(d) < (kind === 'pf' ? 5e-3 : 1e-9)) return <span className="text-text-tertiary">·</span>
+  const good = goodWhen === 'higher' ? d > 0 : d < 0
+  const cls = good ? 'text-pos-text' : 'text-neg-text'
+  const sign = d >= 0 ? '+' : ''
+  const body = kind === 'money' ? dollar(d, true)
+    : kind === 'pct' ? `${sign}${(d * 100).toFixed(1)}%`
+    : kind === 'pf' ? `${sign}${d.toFixed(2)}`
+    : `${sign}${d}`
+  return <span className={`tabular-nums ${cls}`}>{body}</span>
+}
+
+function NewsMiniKpi({ label, value, from, to, kind, goodWhen }: {
+  label: string; value: React.ReactNode; from: number; to: number
+  kind: 'money' | 'pct' | 'pf' | 'num'; goodWhen?: 'higher' | 'lower'
+}) {
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-sunken px-3 py-2 min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-text-tertiary">{label}</div>
+      <div className="text-[15px] font-semibold tabular-nums text-text-primary truncate">{value}</div>
+      <div className="text-[11px] mt-0.5"><NewsDelta from={from} to={to} kind={kind} goodWhen={goodWhen} /></div>
+    </div>
+  )
+}
+
+function NewsFilterCard({ run, avoidNews }: { run: Run; avoidNews: boolean }) {
+  // null = follow the strategy's own default (avoidNews); once the user clicks, their choice sticks.
+  const [removeNewsChoice, setRemoveNewsChoice] = useState<boolean | null>(null)
+  const removeNews = removeNewsChoice ?? avoidNews
+  const [pre, setPre]   = useState(15)                 // block window before an event (minutes)
+  const [post, setPost] = useState(30)                 // block window after an event (minutes)
+  const enabled = run.equity_curve.length > 0
+  const { data: report, isLoading } = useRunNews(run.run_id, pre, post, enabled)
+
+  // Raw trades = curve points carrying a per-trade P&L (a leading balance anchor, if any, has none).
+  const rawTrades = useMemo(
+    () => run.equity_curve.filter(p => p.profit != null || p.direction),
+    [run.equity_curve],
+  )
+
+  // Apply the filter: holidays always out, news out only when toggled. Rebuild the cumulative
+  // equity for the filtered chart. One pass, keyed on the tags + the toggle.
+  const view = useMemo(() => {
+    const tag = new Map<number, NewsTradeTag>()
+    for (const t of report?.trades ?? []) if (t.index != null) tag.set(t.index, t)
+    const kept: EquityPoint[] = []
+    let holidayCount = 0, newsCount = 0
+    for (const p of rawTrades) {
+      const tg = tag.get(p.index)
+      if (tg?.in_holiday) { holidayCount++; continue }              // always removed
+      if (tg?.in_news)   { newsCount++; if (removeNews) continue }  // removed only when toggled on
+      kept.push(p)
+    }
+    let cum = 0
+    const curve = kept.map((p, i) => ({ ...p, index: i + 1, equity: (cum += (p.profit ?? 0)) }))
+    return { kept, curve, holidayCount, newsCount }
+  }, [rawTrades, report, removeNews])
+
+  const baseline = useMemo(() => newsKpisFrom(rawTrades), [rawTrades])   // raw backtest (everything in)
+  const filtered = useMemo(() => newsKpisFrom(view.kept), [view.kept])   // after the filter
+
+  if (!enabled) return null
+
+  const hasEntryTimes = rawTrades.some(p => p.entry_ms != null)
+  const noData    = !isLoading && report && !report.has_data
+  const oldRun    = !isLoading && report && report.has_data && !hasEntryTimes
+  const nothingHit = !isLoading && report && report.has_data && hasEntryTimes
+                     && view.holidayCount === 0 && view.newsCount === 0
+
+  return (
+    <div className="space-y-3">
+      <SectionLabel>News &amp; Holiday Filter</SectionLabel>
+      <div className="rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <Newspaper size={15} className="text-accent shrink-0" />
+            <span className="text-[13px] font-medium text-text-primary">
+              Remove trades around high-impact news
+            </span>
+          </div>
+          {/* News-window toggle. Holidays are not on this toggle — always excluded. */}
+          {report?.has_data && hasEntryTimes && (
+            <div className="inline-flex rounded-md border border-border-subtle overflow-hidden shrink-0">
+              {(['Included', 'Removed'] as const).map(opt => {
+                const active = (opt === 'Removed') === removeNews
+                return (
+                  <button key={opt} onClick={() => setRemoveNewsChoice(opt === 'Removed')}
+                    className={`px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                      active ? 'bg-accent text-bg-base' : 'bg-bg-sunken text-text-secondary hover:text-text-primary'}`}>
+                    News {opt}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {isLoading && <div className="text-[12px] text-text-tertiary">Checking the calendar…</div>}
+
+        {noData && (
+          <div className="flex items-start gap-2 text-[12px] text-text-secondary">
+            <Info size={14} className="text-text-tertiary mt-0.5 shrink-0" />
+            <span>No news data cached for this period yet. Run <code className="text-text-primary">engines/news/tools/backfill.py</code> for these months to turn the filter on. Until then the backtest is shown unfiltered.</span>
+          </div>
+        )}
+
+        {oldRun && (
+          <div className="flex items-start gap-2 text-[12px] text-text-secondary">
+            <Info size={14} className="text-warn-text mt-0.5 shrink-0" />
+            <span>This run was made before trade times were recorded. Hit <span className="text-text-primary font-medium">Reload charts</span> (or rerun it) to record each trade's time and enable the filter.</span>
+          </div>
+        )}
+
+        {report?.has_data && hasEntryTimes && (
+          <>
+            {/* Window sliders — drag to change how long before/after a release to block; re-tags live. */}
+            <div className="flex items-center gap-x-6 gap-y-2 flex-wrap">
+              <label className="flex items-center gap-2 text-[12px] text-text-secondary">
+                <span className="w-20 shrink-0">Before news</span>
+                <input type="range" min={0} max={120} step={5} value={pre}
+                  onChange={e => setPre(Number(e.target.value))}
+                  className="w-40 accent-accent cursor-pointer" />
+                <span className="w-10 tabular-nums text-text-primary font-medium">{pre}m</span>
+              </label>
+              <label className="flex items-center gap-2 text-[12px] text-text-secondary">
+                <span className="w-20 shrink-0">After news</span>
+                <input type="range" min={0} max={120} step={5} value={post}
+                  onChange={e => setPost(Number(e.target.value))}
+                  className="w-40 accent-accent cursor-pointer" />
+                <span className="w-10 tabular-nums text-text-primary font-medium">{post}m</span>
+              </label>
+            </div>
+            {nothingHit ? (
+              <div className="text-[12px] text-text-tertiary">No news releases or bank holidays landed on any trade in this window.</div>
+            ) : (
+              <>
+              <div className="flex items-center gap-4 text-[12px] text-text-secondary flex-wrap">
+                <span>
+                  <span className="text-neg-text font-medium tabular-nums">{view.holidayCount}</span> bank-holiday {view.holidayCount === 1 ? 'trade' : 'trades'} always excluded
+                </span>
+                <span className="text-text-tertiary">·</span>
+                <span>
+                  <span className="text-gold-text font-medium tabular-nums">{view.newsCount}</span> news-window {view.newsCount === 1 ? 'trade' : 'trades'} {removeNews ? 'removed' : 'kept'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                <NewsMiniKpi label="Net P&L" value={<FitMoney n={filtered.net} signed />}
+                  from={baseline.net} to={filtered.net} kind="money" />
+                <NewsMiniKpi label="Win Rate" value={pct(filtered.winRate)}
+                  from={baseline.winRate} to={filtered.winRate} kind="pct" />
+                <NewsMiniKpi label="Profit Factor" value={filtered.pf.toFixed(2)}
+                  from={baseline.pf} to={filtered.pf} kind="pf" />
+                <NewsMiniKpi label="Max DD" value={dollar(filtered.maxDd)}
+                  from={baseline.maxDd} to={filtered.maxDd} kind="money" goodWhen="lower" />
+                <NewsMiniKpi label="Trades" value={filtered.trades}
+                  from={baseline.trades} to={filtered.trades} kind="num" />
+              </div>
+              {view.curve.length > 0 && (
+                <div>
+                  <div className="text-[11px] text-text-tertiary mb-1">
+                    Filtered equity curve {removeNews ? '(news + holidays removed)' : '(holidays removed)'}
+                  </div>
+                  <EquityCurveChart data={view.curve} height={200} />
+                </div>
+              )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function BacktestDetail() {
@@ -2684,6 +2888,11 @@ export function BacktestDetail() {
                 <MoreMetricsToggle open={showMoreKpis} onToggle={() => setShowMoreKpis(s => !s)} count={6} />
               </div>
             )
+          )}
+
+          {/* ── News & holiday filter (post-run view) ─────────────────────── */}
+          {isComplete && !isOptCombo && run.equity_curve.length > 0 && (
+            <NewsFilterCard run={run} avoidNews={strategy?.avoid_news ?? false} />
           )}
 
           {/* ── Charts ────────────────────────────────────────────────────── */}

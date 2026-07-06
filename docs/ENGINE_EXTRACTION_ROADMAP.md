@@ -2,7 +2,7 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
-**Progress:** 6 engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity) · 2 to build (VWAP, SVP).
+**Progress:** 6 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity) · 2 to build (VWAP, SVP) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below.
 **Last reviewed:** 2026-07-05
 
 ---
@@ -46,6 +46,28 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 - **Source block:** `SESSION VOLUME PROFILE` (~line 220, 2554).
 
 ---
+
+## Off-roadmap engines (not from the SMC indicator)
+
+These do not come from `mpc_assistant.pine`, so they follow the engine *shape* (time-driven,
+streaming, events-not-visuals, `algos/shared/` shim) but **not** step 3 (Pine parity) — there is no
+Pine source to diff against. Validated by unit tests + a live check instead.
+
+- **`engines/news/`** — economic-calendar (news) engine. Built 2026-07-05. Turns each bar's UTC
+  timestamp into a trade **blackout** around scheduled macro releases (NFP/CPI/FOMC/PCE/ISM/EIA…),
+  plus **whole-day bank-holiday** blackouts (gold can't trade holidays; futures liquidity is thin),
+  plus coming-up / happening-now / just-finished phases — so a bot can veto trading during news.
+  Macro calendar keyed by currency → serves FX, gold and index/rates futures (not single-stock
+  earnings). Two data paths, both into one local `EventStore` cache, behind a swappable
+  `CalendarSource`: **live** = the free Forex Factory / faireconomy JSON feed (current week, no deps,
+  `tools/refresh.py`); **history** = scrape the FF website month-by-month past Cloudflare via
+  `curl_cffi` (`tools/backfill.py`) — cached, so static months are fetched once. Honest-coverage by
+  Aaron's call (2026-07-05): before the cache's earliest fetched date the filter is inert (backtest
+  trades normally) and the engine exposes `coverage_start_ms` for a UI "news starts here" line.
+  29 unit tests + a live feed smoke + a real Feb-2025 backfill (blacked out ISM PMI + USD Presidents
+  Day), green. Full rules in `engines/news/CLAUDE.md`.
+  **Follow-up (not built):** wire `coverage_start_ms` into the command-center backtest lab as a
+  vertical line; add the `algos/shared/` shim when a bot first consumes it.
 
 ## Suggested batch order
 

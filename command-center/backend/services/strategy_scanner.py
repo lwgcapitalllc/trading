@@ -253,6 +253,7 @@ def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dic
         "runner": "ninjatrader",
         "edge": overview.get("edge"),
         "steps": overview.get("steps", []),
+        "avoid_news": overview.get("avoid_news", False),
     }
 
 
@@ -404,6 +405,10 @@ def _read_strategy_overview(meta_path: Path) -> dict:
         clean = [s for s in steps if isinstance(s, dict) and s.get("title")]
         if clean:
             out["steps"] = clean
+    # News-filter default (UI only): does this strategy avoid trading around high-impact news?
+    # Sets the starting position of BacktestDetail's News toggle. Absent -> included (False).
+    if isinstance(meta.get("avoid_news"), bool):
+        out["avoid_news"] = meta["avoid_news"]
     return out
 
 
@@ -479,6 +484,7 @@ def _parse_mql5_file(mq5_path: Path, monorepo_root: Path, source: str) -> Option
         "runner":               "mt5",
         "edge":                 overview.get("edge"),
         "steps":                overview.get("steps", []),
+        "avoid_news":           overview.get("avoid_news", False),
     }
 
 
@@ -506,7 +512,15 @@ def scan_strategies() -> dict:
         current_hash = _md5_text(source)
         lab_db.ensure_strategy_version(strategy_id, current_hash, len(source.encode("utf-8", errors="replace")))
 
-        if lab_db.get_strategy_hash(strategy_id) == current_hash:
+        # Re-scan when the source OR the companion meta.json changed. The meta file carries no
+        # source hash (it must not trigger needs-deploy), so detect its edits by mtime vs the last
+        # scan time — same rule as the .mq5 path. Without the meta check a meta-only edit (avoid_news,
+        # edge/steps, param labels) never takes effect on an unchanged .cs source.
+        meta_p = meta_path_for(cs_path)
+        meta_mtime = meta_p.stat().st_mtime if meta_p.exists() else 0
+        existing = lab_db.get_strategy(strategy_id)
+        if (existing and lab_db.get_strategy_hash(strategy_id) == current_hash
+                and meta_mtime <= (existing.get("scanned_at") or 0)):
             skipped += 1
             continue
 

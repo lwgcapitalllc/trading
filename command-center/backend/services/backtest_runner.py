@@ -12,7 +12,7 @@ import json
 import logging
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -48,6 +48,19 @@ def _parse_dollar(s: str) -> float:
         return 0.0
 
 
+def _parse_nt8_dt(s: str) -> Optional[datetime]:
+    """Parse an NT8 export timestamp ('MM/DD/YYYY hh:mm:ss AM' or 24h) to a UTC datetime.
+    The VPS NinjaTrader Time zone is UTC (Tools → Options → General), so a naive value IS UTC —
+    no offset applied. Returns None if the field is blank/unparseable."""
+    s = (s or "").strip()
+    for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S"):
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    return None
+
+
 def parse_trades_csv(csv_text: str) -> tuple[list[dict], list[dict]]:
     """Parse NT8 Trades export CSV.
     Returns (equity_curve, daily_pnl) ready for JSON serialisation."""
@@ -75,20 +88,18 @@ def parse_trades_csv(csv_text: str) -> tuple[list[dict], list[dict]]:
             except (ValueError, TypeError):
                 size = None
 
-        exit_date: Optional[str] = None
-        for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S"):
-            try:
-                exit_date = datetime.strptime(
-                    (row.get("Exit time", "") or "").strip(), fmt
-                ).strftime("%Y-%m-%d")
-                break
-            except ValueError:
-                pass
+        exit_dt = _parse_nt8_dt(row.get("Exit time", ""))
+        exit_date = exit_dt.strftime("%Y-%m-%d") if exit_dt else None
+        # Trade OPEN time in UTC epoch ms — what the news filter tests against (did the trade enter
+        # inside a news window?). Null on old runs re-parsed without an Entry time column.
+        entry_dt = _parse_nt8_dt(row.get("Entry time", ""))
+        entry_ms = int(entry_dt.timestamp() * 1000) if entry_dt else None
 
         equity_curve.append({
             "index":     trade_num,
             "equity":    round(cum_pnl, 2),
             "date":      exit_date,
+            "entry_ms":  entry_ms,
             "direction": direction or None,
             "profit":    round(profit, 2),
             "exit_name": exit_name or None,

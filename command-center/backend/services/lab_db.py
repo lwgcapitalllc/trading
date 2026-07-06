@@ -219,6 +219,10 @@ def init_db() -> None:
             # Backfill: rows that predate the column (or skipped re-scan) carry NULL,
             # which fails the Strategy.steps list[dict] validation on GET /strategies.
             "UPDATE strategies SET steps = '[]' WHERE steps IS NULL",
+            # Per-strategy default for the news filter's toggle (UI only): 1 = start with news
+            # trades removed (this strategy avoids news), 0 = start included. Overlaid from
+            # <Strategy>.meta.json "avoid_news"; NOT NULL default 0 so existing rows start included.
+            "ALTER TABLE strategies ADD COLUMN avoid_news INTEGER NOT NULL DEFAULT 0",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
             # Strategy version registry — content-addressed (source_hash → monotonic version).
@@ -973,8 +977,9 @@ def upsert_strategy(data: dict) -> None:
         conn.execute("""
             INSERT INTO strategies
                 (id, name, class_name, source_path, category, suggested_instrument,
-                 default_params, param_schema, scanned_at, source_hash, runner, edge, steps)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 default_params, param_schema, scanned_at, source_hash, runner, edge, steps,
+                 avoid_news)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -987,7 +992,8 @@ def upsert_strategy(data: dict) -> None:
                 source_hash=excluded.source_hash,
                 runner=excluded.runner,
                 edge=excluded.edge,
-                steps=excluded.steps
+                steps=excluded.steps,
+                avoid_news=excluded.avoid_news
         """, (
             data["id"], data["name"], data["class_name"], data["source_path"],
             data.get("category"), data.get("suggested_instrument"),
@@ -997,6 +1003,7 @@ def upsert_strategy(data: dict) -> None:
             data.get("runner", "ninjatrader"),
             data.get("edge"),
             json.dumps(data.get("steps", [])),
+            1 if data.get("avoid_news") else 0,
         ))
 
 

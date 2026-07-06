@@ -18,9 +18,9 @@ from pydantic import BaseModel
 
 from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
-    WorthinessScore, RunningJobStatus, RunningJobInfo, RetryRunRequest,
+    WorthinessScore, RunningJobStatus, RunningJobInfo, RetryRunRequest, RunNewsReport,
 )
-from services import lab_db, runner_dispatch, chart_spec
+from services import lab_db, runner_dispatch, chart_spec, news_filter
 from services.backtest_runner import (
     run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv,
 )
@@ -217,6 +217,25 @@ def get_backtest_run(run_id: str) -> BacktestDetail:
     if not row:
         raise HTTPException(404, "Run not found")
     return _row_to_detail(row)
+
+
+@router.get("/runs/{run_id}/news", response_model=RunNewsReport)
+def get_run_news(
+    run_id: str,
+    pre: int = news_filter.NEWS_PRE_DEFAULT,
+    post: int = news_filter.NEWS_POST_DEFAULT,
+) -> RunNewsReport:
+    """Tag this run's trades against the economic calendar so the UI can remove news-window and
+    bank-holiday trades and recompute KPIs/charts live. Pure post-processing off the stored equity
+    curve — no VPS re-run. `pre`/`post` are the block window in minutes (default 15/30); slide them
+    and re-call to re-tag. A trade with no stored entry time (old run) comes back untagged."""
+    row = lab_db.get_run(run_id)
+    if not row:
+        raise HTTPException(404, "Run not found")
+    equity_curve = _load_json(row.get("equity_curve_path"))
+    trades = [{"index": p.get("index"), "entry_ms": p.get("entry_ms")} for p in equity_curve]
+    report = news_filter.build_report(trades, pre_minutes=max(0, pre), post_minutes=max(0, post))
+    return RunNewsReport(**report)
 
 
 @router.get("/runs/{run_id}/log", response_class=PlainTextResponse)

@@ -4,7 +4,7 @@ import { api } from '@/api/client'
 import type {
   Strategy, ScanResult, ReconcileResult, DeployJobStatus,
   Ruleset, RulesetCreate, PersonalRulesetPatch,
-  BacktestRunRequest, BacktestSummary, BacktestDetail,
+  BacktestRunRequest, BacktestSummary, BacktestDetail, RunNewsReport,
   LabProgress, SystemHealth,
   SweepRequest, SweepResponse, SweepDetail,
   OptimizationRequest, OptimizationSummary, OptimizationDetail,
@@ -194,6 +194,18 @@ export function useBacktestRun(runId: string | null) {
       const status = (query.state.data as BacktestDetail | undefined)?.status
       return status === 'running' ? 1_500 : false
     },
+  })
+}
+
+// News/holiday tagging of a completed run's trades — the post-run filter. Static per (run, window),
+// so cache indefinitely; re-fetches when pre/post change. `enabled` off until the section is opened.
+export function useRunNews(runId: string | null, pre = 15, post = 30, enabled = true) {
+  return useQuery({
+    queryKey: ['lab', 'run', runId, 'news', pre, post],
+    queryFn: () => api.get<RunNewsReport>(`/backtests/runs/${runId}/news?pre=${pre}&post=${post}`),
+    enabled: !!runId && enabled,
+    staleTime: Infinity,
+    placeholderData: (prev) => prev,   // keep the last window's tags visible while a new pre/post loads (no flicker on slider drag)
   })
 }
 
