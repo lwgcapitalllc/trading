@@ -116,8 +116,10 @@ Custom windows: pass `SessionEngine(sessions=[SessionSpec.from_pine("Asia", "200
 **Standalone** — depends on nothing but the bar's timestamp + high/low (not on `engines/market_structure/`).
 It is the **prerequisite** the roadmap calls out: **`engines/liquidity/`** (now built) consumes the
 session H/L emitted here (adding sweep/mitigation tracking — a liquidity concern kept out of this
-engine), and the future **VWAP** engine uses the session open as its anchor. Session H/L is
-*computed* here; sweep tracking is not.
+engine). **`engines/vwap/`** (now built) turned out to anchor on the **trading-day** boundary (Pine
+`ta.vwap`'s default anchor), not the Asia/London/NY session windows, so it reconstructs that
+boundary directly rather than composing this engine. Session H/L is *computed* here; sweep tracking
+is not.
 
 ---
 
@@ -177,7 +179,7 @@ Re-run `compare_sessions.py` after any change to the session blocks in `mpc_assi
 
 - Pine source of truth: `indicators/mpc_assistant.pine` (session blocks listed under Key paths).
 - Parity export build: `indicators/sessions_export.pine`.
-- Downstream consumers: `engines/liquidity/` (session H/L levels — built), VWAP engine (session anchor — future)
-  — see `docs/ENGINE_EXTRACTION_ROADMAP.md`.
+- Downstream consumers: `engines/liquidity/` (session H/L levels — built). `engines/vwap/` (built)
+  anchors on the trading-day boundary, not this engine's session windows — see `docs/ENGINE_EXTRACTION_ROADMAP.md`.
 - Sibling engines / the shared porting pattern: `engines/order_blocks/CLAUDE.md`, `engines/fibonacci/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.

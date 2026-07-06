@@ -2,7 +2,7 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
-**Progress:** 6 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity) · 2 to build (VWAP, SVP) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below.
+**Progress:** 7 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap) · 1 to build (SVP) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below.
 **Last reviewed:** 2026-07-05
 
 ---
@@ -28,21 +28,16 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 - **`engines/order_blocks/`** — bull/bear OB zones off external + internal breaks, with mitigation + FIFO eviction. Sibling of `engines/fibonacci/` (consumes `engines/market_structure/` directly). Ported line-by-line, 12 unit tests, 100% Pine parity on two independent real exports — `VANTAGE_XAUUSD, 5m` (`--warmup 594`) and `VANTAGE_XAUUSD, 15m` (`--warmup 207`), confirming it's timeframe-agnostic (harness: `indicators/ob_export.pine` + `engines/order_blocks/tools/compare_ob.py`).
 - **`engines/sessions/`** — Tokyo/London/NY session windows + running session H/L, the three NY kill zones, and the NY opening range. The first **time-driven** engine (input = the bar's UTC timestamp + high/low, not just OHLC); standalone (depends on nothing). Ported line-by-line, 17 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (all 18 fields, `--warmup 263`), re-confirmed on a 15m export for the 16 timeframe-agnostic fields (harness: `indicators/sessions_export.pine` + `engines/sessions/tools/compare_sessions.py`). Unblocks the session-scoped parts of Liquidity (session H/L levels) and VWAP (session anchor).
 - **`engines/liquidity/`** — the prices price runs toward and grabs: prev day/week/month H/L (PDH/PDL/PWH/PWL/PMH/PML), previous-week-close (PWC), the H4 sweep (SSH/BSL), and Asia/London/NY session H/L, with mitigation (sweep vs break) tracking. Consumes `engines/sessions/` for session H/L (composes it); reconstructs the day/week/month/H4 levels from the bar stream. **Non-repainting by Aaron's explicit decision (2026-07-05): every HTF level uses the PREVIOUS completed period only — the engine never forecasts the current period's high/low.** Ported, 15 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (11,457 bars; all 33 fields — 15 level prices, their mitigation flags, 4 boundary-roll pulses — match, `--htf-rollover 18 --warmup 4653`, exit 0; harness: `indicators/liquidity_export.pine` + `engines/liquidity/tools/compare_liquidity.py`). Calibrated boundary: XAUUSD session opens 18:00 NY (baked in as the default).
+- **`engines/vwap/`** — the session VWAP: a volume-weighted running mean of `hlc3` (`ta.vwap(hlc3)`), re-anchored each trading day, plus a derived close-vs-line cross. First engine to need a **volume** column in the feed (XAUUSD tick volume — what the Pine `ta.vwap` already reads). Time-driven; reconstructs the trading-day anchor directly (the **same** 18:00-NY boundary the liquidity daily level uses), so it does not compose the sessions engine. Ported line-by-line from `mpc_assistant.pine` line 852, 13 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (6,973 bars; both fields — VWAP value + trading-day anchor pulse — match, `--htf-rollover 18 --warmup 90`, exit 0; harness: `indicators/vwap_export.pine` + `engines/vwap/tools/compare_vwap.py`). Uses a **relative** tolerance (1e-6) because the value is a cumulative sum that drifts at float-rounding level — unlike the copied-value level engines' exact match.
 
 ---
 
 ## Still to build — in priority order
 
-### 1. VWAP
-- **What:** a session-anchored average line + cross events.
-- **Depends on:** `engines/sessions/` for the anchor (now done); needs a **volume** column in the feed.
-- **Emits:** VWAP value, VWAP cross.
-- **Source block:** `VWAP` (~line 115).
-
-### 2. Session Volume Profile (SVP)
+### 1. Session Volume Profile (SVP)
 - **What:** the Asia point-of-control / MV line.
-- **Depends on:** `engines/sessions/` (now done); volume-heavy.
-- **Note:** niche — do last.
+- **Depends on:** `engines/sessions/` (now done); volume-heavy (uses the same volume feed VWAP just added).
+- **Note:** niche — the last SMC-port engine.
 - **Source block:** `SESSION VOLUME PROFILE` (~line 220, 2554).
 
 ---
@@ -71,9 +66,8 @@ Pine source to diff against. Validated by unit tests + a live check instead.
 
 ## Suggested batch order
 
-`VWAP → SVP`
+`SVP` (last one)
 
-Sessions and Liquidity are done. VWAP is next — it also leans on `engines/sessions/` (session
-anchor) and needs a **volume** column in the feed. SVP (also volume-heavy, niche) is last.
-
-If building just one: **VWAP** (session anchor is unblocked; more broadly useful than SVP).
+Sessions, Liquidity and VWAP are done. **SVP is the only SMC-port engine left** — the Asia
+point-of-control / MV line, volume-heavy (it reuses the volume feed VWAP just introduced) and niche.
+After SVP the extraction roadmap is complete.

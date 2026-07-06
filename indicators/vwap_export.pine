@@ -1,0 +1,30 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// ── PARITY-EXPORT BUILD (VWAP) ──────────────────────────────────────────────
+// Instrumented build used ONLY to validate the Python port (engines/vwap/) against this Pine source.
+// It reproduces the single VWAP line from mpc_assistant.pine — `vwapValue = ta.vwap(hlc3)` (line
+// 852) — and emits the columns the Python compare tool needs:
+//
+//   px_volume       — the bar's volume (the input Python's engine is fed; guarantees both sides use
+//                     the exact same volume series, so there is no data-source mismatch).
+//   px_vwap         — ta.vwap(hlc3), the ground-truth session VWAP value to diff against.
+//   px_vwap_anchor  — the trading-day roll pulse (1 on the first bar of a new "D" bar). ta.vwap's
+//                     default anchor is the start of the trading day, i.e. THIS boundary; it is the
+//                     CALIBRATION signal for the Python --htf-tz / --htf-rollover, exactly like the
+//                     liquidity export's px_day_roll.
+//
+// Export on the SAME chart/timeframe you run the Python compare on (e.g. VANTAGE_XAUUSD, 5m), Export
+// chart data → CSV, and diff with engines/vwap/tools/compare_vwap.py. Do NOT let the logic drift.
+indicator("VWAP Engine EXPORT", overlay = false)
+
+// Ground-truth VWAP — identical to mpc_assistant.pine line 852.
+vwapValue = ta.vwap(hlc3)
+
+// Trading-day boundary (ta.vwap's default anchor). Same "D" security roll the liquidity export uses.
+[dTime] = request.security(syminfo.tickerid, "D", [time], lookahead = barmerge.lookahead_on)
+dayRoll = dTime != dTime[1]
+
+c0 = color.new(color.gray, 100)
+plot(volume,               "px_volume",      c0)
+plot(vwapValue,            "px_vwap",        c0)
+plot(dayRoll ? 1 : 0,      "px_vwap_anchor", c0)
