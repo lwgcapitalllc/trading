@@ -1,5 +1,5 @@
 """
-svp/ — the Session Volume Profile (SVP) engine subsystem.
+session_volume_profile/ — the Session Volume Profile (SVP) engine subsystem.
 
 Turns the bar stream into the Asia session POINT-OF-CONTROL — the "MV" line — plus its confirmation.
 On each Asia session (2000-0500 GMT-4) close the engine builds a 100-row volume profile over the
@@ -13,7 +13,7 @@ Composes engines/sessions/ for the Asia window/edges (the same pattern engines/l
 the histogram drawing.
 
 Public API:
-    from svp import SvpEngine, SvpEvents
+    from session_volume_profile import SvpEngine, SvpEvents
 
     sv = SvpEngine()                     # Pine defaults: Asia 2000-0500 GMT-4, 100 rows, keep 2 POCs
     # each closed intraday bar (timestamp is epoch MILLISECONDS, UTC — exactly Pine's `time`):

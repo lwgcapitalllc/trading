@@ -81,7 +81,7 @@ is 5m).
 ## Key paths
 
 ```
-engines/svp/
+engines/session_volume_profile/
 ├── engine.py       ← SvpEngine: the streaming state machine (composes engines/sessions/)
 ├── types.py        ← SvpEvents (poc + formed + swept + confirmed)
 ├── __init__.py     ← re-exports the public API
@@ -100,7 +100,7 @@ Parity export build: `indicators/svp_export.pine`.
 ## Public API
 
 ```python
-from svp import SvpEngine, SvpEvents
+from session_volume_profile import SvpEngine, SvpEvents
 
 sv = SvpEngine()   # Pine defaults: Asia 2000-0500 GMT-4, 100 rows, keep 2 POCs
 
@@ -152,7 +152,7 @@ sv.poc()        # current POC (read)
 
 ## Validation (Pine ↔ Python parity)
 
-**Unit tests — GREEN:** `python3 -m pytest engines/svp/tests/ -q` (12 hand-traced tests pinning the
+**Unit tests — GREEN:** `python3 -m pytest engines/session_volume_profile/tests/ -q` (12 hand-traced tests pinning the
 100-row profile + POC, the close-bar-in-profile quirk, the na/zero-volume guard, the degenerate-range
 skip, the FIFO history, and the MV sweep state/edge).
 
@@ -169,8 +169,8 @@ matched on every bar, warm-up included. The harness mirrors the other engines:
 1. `indicators/svp_export.pine` — the SVP block + MV slot lifted from `mpc_assistant.pine` (drawing
    removed) with `px_volume`, `px_svp_poc`, `px_svp_formed` and `px_svp_swept` columns. Put it on a
    **5-minute** `VANTAGE_XAUUSD` chart (SVP is intraday), Export chart data → CSV, drop it in
-   `engines/svp/exports/` (git-ignored).
-2. `python3 engines/svp/tools/compare_svp.py <that.csv> --warmup N` — feeds each bar (timestamp +
+   `engines/session_volume_profile/exports/` (git-ignored).
+2. `python3 engines/session_volume_profile/tools/compare_svp.py <that.csv> --warmup N` — feeds each bar (timestamp +
    OHLC + volume) through `SvpEngine` and diffs the three columns, bar by bar. Exit 0 = parity. If the
    export opens mid-Asia (or carries a pre-window POC), the tool prints the last mismatching bar; set
    `--warmup` past it. Standard library only.

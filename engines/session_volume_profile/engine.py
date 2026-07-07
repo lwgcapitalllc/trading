@@ -1,5 +1,5 @@
 """
-svp/engine.py — the Session Volume Profile (SVP) / Asia POC ("MV" line) state machine.
+session_volume_profile/engine.py — the Session Volume Profile (SVP) / Asia POC ("MV" line) state machine.
 
 One stateful streaming engine, fed one closed bar at a time (index + UTC timestamp + high/low/close/
 open + volume), returning that bar's SVP EVENTS: the current Asia POC price, whether a fresh POC

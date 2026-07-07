@@ -1,7 +1,7 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
 // ── PARITY-EXPORT BUILD (SVP / Asia POC — the "MV" line) ────────────────────
-// Instrumented build used ONLY to validate the Python port (engines/svp/) against this Pine source.
+// Instrumented build used ONLY to validate the Python port (engines/session_volume_profile/) against this Pine source.
 // It lifts the SESSION VOLUME PROFILE block from mpc_assistant.pine (line ~2554) and its
 // confirmation-table "MV slot" (line ~2772) VERBATIM, drops all drawing (the POC line/label arrays
 // and the redraw loop), and emits the columns the Python compare tool needs:
@@ -15,7 +15,7 @@
 // The bull/bear (rowUp/rowDn) split and the newest-first replay order are kept EXACTLY as the source
 // so the POC is bit-identical to the Python port (float addition is not associative). Put on the SAME
 // chart/timeframe you run the Python compare on (e.g. VANTAGE_XAUUSD, 5m), Export chart data → CSV,
-// and diff with engines/svp/tools/compare_svp.py. Do NOT let the logic drift from mpc_assistant.pine.
+// and diff with engines/session_volume_profile/tools/compare_svp.py. Do NOT let the logic drift from mpc_assistant.pine.
 indicator("SVP Engine EXPORT", overlay = false)
 
 // ── SVP inputs (mpc 224-225, 2556-2557) — drawing inputs/colours dropped ──

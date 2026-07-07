@@ -39,8 +39,8 @@ sides match.
 
 Usage
 -----
-    python3 engines/svp/tools/compare_svp.py path/to/svp_export.csv
-    python3 engines/svp/tools/compare_svp.py svp_export.csv --warmup 300
+    python3 engines/session_volume_profile/tools/compare_svp.py path/to/svp_export.csv
+    python3 engines/session_volume_profile/tools/compare_svp.py svp_export.csv --warmup 300
 
 Exit 0 if every compared field matches on every warm bar, 1 otherwise. Standard library only.
 """
@@ -57,7 +57,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from svp import SvpEngine
+from session_volume_profile import SvpEngine
 
 PRICE_FIELDS = ["px_svp_poc"]
 FLAG_FIELDS = ["px_svp_formed", "px_svp_swept"]

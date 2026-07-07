@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from svp import SvpEngine
+from session_volume_profile import SvpEngine
 
 
 def ums(y, mo, d, h, mi=0):

@@ -1,5 +1,5 @@
 """
-svp/types.py — plain data container for the Session Volume Profile (SVP) engine.
+session_volume_profile/types.py — plain data container for the Session Volume Profile (SVP) engine.
 
 One container, no behaviour:
 
