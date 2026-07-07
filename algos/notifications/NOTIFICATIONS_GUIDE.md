@@ -31,7 +31,7 @@ Bot status notifications are event-driven, not polling-based:
 | Bot comes back online after crash | `monitor.py` (same cycle as crash detection) | ≤ 1 min |
 | Telegram bot goes down | `monitor.py` watchdog (every 1 min) | ≤ 1 min |
 
-`shared/notify.py` is the single helper used by all VPS-side components. Mac-side Telegram calls go through the command-center bots router.
+`shared/notify.py` is *meant* to be the single Telegram helper for all VPS-side components, but today each notification script carries its own inline copy of `send_telegram` (and the token) — nothing imports `notify.py` yet. Refactor the scripts to import it when bots are wired for deploy (Aaron's call, 2026-07-06). Mac-side Telegram calls go through the command-center bots router.
 
 ### monitor.py (SYS_MONITOR — every 1 min)
 Bot availability and heartbeat monitor. Handles availability alerting and Telegram bot watchdog only.

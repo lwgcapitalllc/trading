@@ -37,6 +37,8 @@ New bots follow the S.Y.S.T.E.M. process in `docs/BOT_DEVELOPMENT_METHOD.md` (sp
 
 Shared logic lives in `shared/`; the launcher, coordinator, and config loader live in `bots/`.
 
+**Deliberately parked (Aaron's call, 2026-07-06):** with no live bots, `shared_ai_brain.py`, `shared_calmar.py`, `shared_risk.py`, `shared_scanner.py`, and `mt5_ops.py` currently have no consumers. They are kept on purpose for the backtest-first rebuild — do not flag them as dead code or delete them. Note `shared_risk.py` may be superseded by the command-center sizing engine; decide its fate when the first new bot is wired.
+
 | File | Location | Role |
 |------|----------|------|
 | `shared_ai_brain.py` | `shared/` | AI engine (Claude API), trade logger, daily performance logger |
@@ -46,7 +48,7 @@ Shared logic lives in `shared/`; the launcher, coordinator, and config loader li
 | `shared_risk.py` | `shared/` | Dynamic risk / capacity engine — `RiskEngine` tracks portfolio-level risk budget per bot |
 | `mt5_ops.py` | `shared/` | All MT5 operations — symbol-parameterized, single shared instance per bot |
 | `bot_state.py` | `shared/` | Single source of truth read/write for each instance's `bot_state.json` |
-| `notify.py` | `shared/` | Telegram notification helpers (token source of truth) |
+| `notify.py` | `shared/` | Telegram notification helper — currently UNUSED: the notification scripts carry inline copies of `send_telegram` + the token. Refactor them to import this file at the bot-deploy stage (Aaron's call, 2026-07-06). |
 | `structure_engine.py` | `shared/` | Market structure shim over `market_structure.StructureEngine` (canonical BOS/CHoCH/swing detection, ported from `indicators/structure_engine.pine`) — bot-facing `update(candle: dict)` interface |
 | `bot_utils.py` | `bots/` | Config loader, logging, path resolver |
 | `launcher.py` | `bots/` | Universal Task Scheduler launcher |

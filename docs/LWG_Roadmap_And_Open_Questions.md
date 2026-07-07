@@ -1,5 +1,5 @@
 # LWG Capital — Roadmap and Open Questions
-**Last updated:** 2026-07-04
+**Last updated:** 2026-07-06
 
 > Companion to the Project State Snapshot. Hand both to any new Claude.ai chat.
 
@@ -13,15 +13,15 @@
 
 3. **Get ORB off the floor on a futures instrument.** (strategy task) ORB has 2 runs (MES + MNQ, 2026-07-01), both Tier 3. Run a proper optimization across MES / MNQ / MGC (integer-only parameter steps — the UI blocks decimal steps on `int` params), then use the Tuning Workbench to iterate a winner against a baseline.
 
-4. **Engine extraction — Order Blocks next.** (platform/engine task) The structure and fib engines are done at 100% Pine parity. `docs/ENGINE_EXTRACTION_ROADMAP.md` queues the remaining SMC-indicator blocks: **Order Blocks first** (completes the tradeable SMC core — structure says the trend broke, OBs say where to enter, fibs give the levels), then Sessions/Kill Zones, Liquidity levels, VWAP, SVP. Same pattern every time: line-by-line port, events not visuals, instrumented Pine export, 100% parity diff.
+4. **First engine-consuming bot — start the backtest-first rebuild.** (platform + strategy task) The engine extraction is **complete**: all eight SMC engines plus the news engine are ported, tested, and validated. There is no next engine to extract — the forward work is consumption. `algos/` has zero live bots; new bots follow the S.Y.S.T.E.M. six-step process in `docs/BOT_DEVELOPMENT_METHOD.md` — a strategy only reaches live demo after clearing the backtest lab and a stress-test grade. Whichever strategy first earns a B+ grade is the candidate for live demo wiring, using the preserved plumbing in `algos/docs/BOT_DEPLOYMENT_INFRA.md`. Each engine gets its `algos/shared/` shim when a bot first consumes it (regime and market_structure already have theirs). When a bot consumes the fib engine, add live event-logging and re-run `compare_fib.py` against a fresh TradingView export to prove the live feed sees the same candles/fibs as the chart (the live-drift check).
 
-5. **Rebuild the algos/ bot suite backtest-first.** (platform + strategy task) `algos/` has zero live bots. New bots follow the S.Y.S.T.E.M. six-step process in `docs/BOT_DEVELOPMENT_METHOD.md` — a strategy only reaches live demo after clearing the backtest lab and a stress-test grade. This is really the same track as items 2–3: whichever strategy first earns a B+ grade is the candidate for live demo wiring, using the preserved plumbing in `algos/docs/BOT_DEPLOYMENT_INFRA.md`. When a bot consumes the fib engine, add live event-logging and re-run `compare_fib.py` against a fresh TradingView export to prove the live feed sees the same candles/fibs as the chart (the live-drift check).
+5. **News-filter follow-ups in the backtest lab.** (platform task) Two loose ends from the 2026-07-05 news work: draw the `coverage_start_ms` "news data starts here" vertical line on the BacktestDetail equity/chart views (the engine exposes it; the UI doesn't show it yet), and wire the MT5/forex path (TODO #3 — it needs its own `entry_ms` capture and non-UTC broker-clock handling before the filter can tag forex backtests; NT8/UTC is live).
 
 6. **NT8 auto-start on VPS reboot.** (platform task) Still open. NT8 does not relaunch after a VPS reboot or crash; it needs manual RDP. Add a Windows Task Scheduler task (trigger: At startup, run whether logged on or not) modeled on `SYS_STARTUP`.
 
 7. **Seed Apex funded/PA rulesets.** (platform task) Apex EOD eval rulesets (50k/100k) are seeded; the funded/PA side is not. Verify the rules from Apex's docs (`docs_url` convention) and add the rows so an Apex eval pass has a funded ruleset to graduate into.
 
-TODO: verify items 2–3 against the latest `lab.db` state at the start of a new session — strategy tiers and run counts move as backtests complete.
+TODO: verify items 2–3 against the latest `lab.db` state at the start of a new session — strategy tiers and run counts move as backtests complete. (Verified 2026-07-06: unchanged since 2026-07-04 — 10 runs, no stress tests.)
 
 ---
 
@@ -62,14 +62,16 @@ A from-scratch rewrite of a TradingView SMC/market-structure indicator (`indicat
 - **Foundational-values edit UI on personal rulesets:** the `PUT` endpoint can still edit foundational fields on personal rows, but there's no UI affordance since `FoundationalEditModal` was removed with the prop lock. Add one only if it becomes a real workflow.
 - **Register any LondonBreakout runs made via direct MT5-agent calls in `lab.db`:** run Scan Strategies periodically to catch anything unregistered.
 - **Smart Money stages 3–4:** blocked externally on API keys. No code work needed until keys are available.
-- **`engines/fibonacci/` shim in `algos/shared/`:** deliberately deferred until a bot actually consumes the fib engine — same pattern as the regime and structure shims.
+- **Per-engine `algos/shared/` shims:** deliberately deferred until a bot actually consumes each engine — same pattern as the regime and structure shims. Applies to fibonacci, order_blocks, sessions, liquidity, vwap, session_volume_profile, and news.
+- **Consolidate Telegram sending into `algos/shared/notify.py`:** the four VPS notification scripts each carry their own inline copy of `send_telegram` and the bot token; the shared helper is unused. Refactor them to import the one helper when bots are wired for deploy (decided 2026-07-06).
+- **Telegram bot token is hardcoded in committed source (security):** the token sits in 7 tracked files across `algos/` and `command-center/`, against the repo's own never-commit-tokens rule. Fix later: rotate the token with BotFather and read it from an untracked file/env var on each machine (decided 2026-07-06 to defer; natural time is the notify.py consolidation above).
 
 ---
 
 ## Parallel tracks Aaron is running separately
 
 - **Smart Money candidate research:** Stages 1–2 and 5 of the Smart Money pipeline are live and can be run locally to build a copy-trading candidate pool. Separate track from command-center development, no shared sessions.
-- **Prop firm research:** evaluating and onboarding prop firms (rules, drawdown models, lock balances, payout terms) feeds the ruleset library but is researched outside the codebase. The Apex addition came from this track. Each new firm becomes eval + funded rulesets with `docs_url` filled in; trailing-MLL lock behavior varies by firm and must be captured per ruleset.
+- **Prop firm research:** evaluating and onboarding prop firms (rules, drawdown models, lock balances, payout terms) feeds the ruleset library but is researched outside the codebase. The Apex addition came from this track. Each new firm becomes eval + funded rulesets with `docs_url` filled in; trailing-MLL lock behavior varies by firm and must be captured per ruleset. The `/prop-firm-rules-audit` command re-checks seeded rows against each firm's docs.
 - **Structure OS / SMC indicator rebuild:** the `indicators/` Pine rewrite is validated interactively against TradingView chart screenshots and the public indicator page — a manual, chart-by-chart comparison process distinct from the command-center backtest pipeline. Currently waiting on Aaron's chart validation before Stage 3.
 
 Note: there is currently no "bots accumulating live trade history" track — `algos/` has zero live bots as of 2026-06-22. Any future note about live demo bots running independently should only be added here once a bot actually exists and is deployed.
@@ -88,7 +90,9 @@ Note: there is currently no "bots accumulating live trade history" track — `al
 
 **Resolved — NT8 cumulative drawdown versus prop firm daily drawdown.** Closed by `services/trailing_drawdown.py`: the evaluator recomputes EOD equity from daily P&L and applies a real trailing max-loss floor with per-firm lock balances. Kept here only so a new chat doesn't re-raise it.
 
-**Resolved — where market analysis lives.** Structure detection and fib levels are canonical Python engines (`engines/market_structure/`, `engines/fibonacci/`), extracted from the TradingView indicator and parity-validated — bots consume engines, they don't re-implement chart logic. The remaining blocks are queued in `docs/ENGINE_EXTRACTION_ROADMAP.md`.
+**Resolved — where market analysis lives.** Market analysis is canonical Python engines under `engines/` — bots consume engines, they don't re-implement chart logic. The SMC extraction roadmap (`docs/ENGINE_EXTRACTION_ROADMAP.md`) is **complete**: all eight SMC engines (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, session_volume_profile) are ported and Pine-parity-validated, plus the off-roadmap news engine. There is no next engine to extract; forward work is consumption (shims as bots adopt engines, the news coverage line in the lab UI).
+
+**Resolved — repainting and honest data coverage.** Two engine-behavior decisions locked 2026-07-05: liquidity HTF levels never repaint (previous completed period only), and the news filter is inert before its cache's earliest fetched date rather than pretending coverage (backtests trade normally there; `coverage_start_ms` marks the boundary). Kept here so a new chat doesn't propose forecasting current-period levels or "filling in" missing calendar history.
 
 ---
 

@@ -1,5 +1,5 @@
 # LWG Capital — Project State Snapshot
-**Last updated:** 2026-07-04
+**Last updated:** 2026-07-06
 **Source:** live repo state — verified against filesystem, `lab.db`, git log, and CLAUDE.md files
 
 > Hand this document to any new Claude.ai chat as the first message, along with
@@ -10,7 +10,7 @@
 
 ## What this project is
 
-LWG Capital is a personal algorithmic trading operation. The near-term goal is to pass prop firm evaluation challenges (LucidFlex and similar). The long-term goal is to run 30–50 funded prop accounts. Prop firms are the capital engine, not the destination — the plan is to use prop payouts to fund personal demo forex/futures accounts where the rules are looser and the real growth happens. The working method is S.Y.S.T.E.M. — a six-step process for building any strategy: Specify, Yield (build), Stress test (backtest), Threshold check (robustness), Evaluate (live demo), Manage (monitor funded/live). Today the focus is two tracks: futures (NinjaTrader 8) and forex (MT5) strategy research through the command-center backtest lab, and a growing library of canonical Python market-analysis engines (market structure, fibonacci — extracted from a TradingView SMC indicator and validated at 100% Pine parity) that future bots will trade from. The `algos/` live-bot suite is not currently running anything: the first four bots were deleted 2026-06-22 to rebuild backtest-first, so forex/MT5 live trading is present as infrastructure and one candidate strategy (LondonBreakout), not as a running bot. The core platform (command center) is feature-complete; the remaining work is grinding strategies through the pipeline until one earns a funded account.
+LWG Capital is a personal algorithmic trading operation. The near-term goal is to pass prop firm evaluation challenges (LucidFlex and similar). The long-term goal is to run 30–50 funded prop accounts. Prop firms are the capital engine, not the destination — the plan is to use prop payouts to fund personal demo forex/futures accounts where the rules are looser and the real growth happens. The working method is S.Y.S.T.E.M. — a six-step process for building any strategy: Specify, Yield (build), Stress test (backtest), Threshold check (robustness), Evaluate (live demo), Manage (monitor funded/live). Today the focus is two tracks: futures (NinjaTrader 8) and forex (MT5) strategy research through the command-center backtest lab, and a library of canonical Python market-analysis engines extracted from a TradingView SMC indicator. That extraction is now **complete**: all eight SMC engines (regime, market structure, fibonacci, order blocks, sessions, liquidity, VWAP, session volume profile) are ported and validated at 100% Pine parity, plus one off-roadmap news/economic-calendar engine. The `algos/` live-bot suite is not currently running anything: the first four bots were deleted 2026-06-22 to rebuild backtest-first, so forex/MT5 live trading is present as infrastructure and one candidate strategy (LondonBreakout), not as a running bot. The core platform (command center) is feature-complete; the remaining work is consumption — grinding strategies through the pipeline, and building bots that trade from the engines, until one earns a funded account.
 
 Two standing rules shape every strategy: intraday only (flat by session end, never hold overnight), and every account has a ruleset — personal/demo accounts get relaxed rules and a real PASS/DISCARD verdict, not a free pass. The full design philosophy — layer architecture, edge buckets, build order, KPI floor — lives in `docs/LWG_Strategy_Framework.md`.
 
@@ -22,7 +22,7 @@ Two standing rules shape every strategy: intraday only (flat by session end, nev
 - FastAPI backend (`command-center/backend/`, port 8000) — owns all SQLite state and is the only process that touches the filesystem or the VPS.
 - React + Vite + TypeScript frontend (`command-center/frontend/`, port 5173) — talks to the backend via the `/api` Vite proxy.
 - SQLite (`command-center/backend/data/lab.db`) — strategies, rulesets, runs, evaluations, optimizations, stress tests, job queue, strategy versions.
-- VS Code + Claude Code (primary dev tools).
+- VS Code + Claude Code (primary dev tools). Repo slash commands live in `.claude/commands/` (`/doc-audit`, `/dead-code-audit`, `/regenerate-snapshots`, `/audit-engines`, `/prop-firm-rules-audit`).
 - Claude.ai chat (architecture and planning discussions).
 - GitHub — single monorepo, `main` branch for all development.
 
@@ -54,19 +54,26 @@ trading/
 ├── command-center/    ← React + FastAPI local operations platform (fully live)
 │   ├── backend/           FastAPI app, SQLite (lab.db), VPS clients, backtest/stress/optimizer services
 │   └── frontend/          React + Vite UI — lab, bots monitor, smart money, rulesets
-├── engines/regime/            ← Shared market regime classifier (live bots + backtest lab)
-├── engines/market_structure/  ← Canonical BOS/CHoCH/swing detection engine (Python, 100% Pine parity)
-├── engines/fibonacci/         ← Canonical fib level-event engine, downstream of engines/market_structure/ (100% Pine parity)
+├── engines/           ← Canonical shared engines (SMC extraction COMPLETE)
+│   ├── regime/                market regime classifier (live bots + backtest lab)
+│   ├── market_structure/      BOS/CHoCH/swing detection (base engine, 100% Pine parity)
+│   ├── fibonacci/             fib level events, downstream of market_structure (100% parity)
+│   ├── order_blocks/          supply/demand zone events, sibling of fibonacci (100% parity)
+│   ├── sessions/              time-driven sessions / kill zones / NY range (100% parity)
+│   ├── liquidity/             PDH/PDL/PWH/PWL/PMH/PML, PWC, H4 sweep, session H/L (100% parity)
+│   ├── vwap/                  session VWAP, first engine needing volume (100% parity)
+│   ├── session_volume_profile/ Asia POC / "MV" line + sweep (100% parity — the final SMC engine)
+│   └── news/                  off-roadmap economic-calendar blackout engine (tests + live checks)
 ├── strategies/        ← Generic strategy source files, organized by runner platform
 │   ├── ninjatrader/       NT8 NinjaScript strategies (.cs)
 │   ├── mt5/               MT5 expert advisors (.mq5)
 │   └── tradingview/       Pine v6 research strategies — TradingView Strategy Tester only, not scanned
 ├── indicators/        ← TradingView Pine indicator rebuild + Pine sources/parity exports for the engines
 ├── scripts/           ← Cross-subsystem VPS bootstrap and full-recovery scripts
-└── docs/              ← Cross-subsystem reference docs and audit tools
+└── docs/              ← Cross-subsystem reference docs
 ```
 
-`algos/`, `smart-money/`, and `command-center/` are fully independent. `engines/regime/` and `engines/market_structure/` are shared libraries imported by `algos/` (each via a thin shim in `algos/shared/`); `engines/regime/` is also imported by `command-center/` directly. `engines/fibonacci/` is downstream of `engines/market_structure/` — it consumes that engine's public output (a `StructureSnapshot`) only, never its internals, and will get an `algos/shared/` shim when a bot first uses it. `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS strategy folders.
+`algos/`, `smart-money/`, and `command-center/` are fully independent. Engines live under `engines/` but are imported by bare top-level name — consumers' shims and the root `conftest.py` put `engines/` on `sys.path`. `engines/regime/` and `engines/market_structure/` are imported by `algos/` via thin shims in `algos/shared/`; `engines/regime/` and `engines/news/` are also imported by `command-center/` directly. `engines/fibonacci/` and `engines/order_blocks/` are siblings downstream of `engines/market_structure/` — each consumes that engine's public output (a `StructureSnapshot`) only, never its internals. `engines/liquidity/` and `engines/session_volume_profile/` compose `engines/sessions/`; `engines/vwap/` reconstructs its trading-day anchor directly. Every engine gets an `algos/shared/` shim when a bot first uses it. `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS strategy folders.
 
 ---
 
@@ -120,15 +127,27 @@ trading/
 
 **Structure engine — canonical Python port (validated through 2026-07-02) — shipped.** `engines/market_structure/` — a stateful streaming state machine ported line-by-line from `indicators/structure_engine.pine` (itself extracted from a full SMC indicator). External + internal structure: BOS/CHoCH, swing highs/lows, HH/HL/LH/LL, plus the BOS break-leg endpoints. Validated at **100% Pine parity** on real XAUUSD 15m exports (21,729 bars OANDA; re-confirmed on a fresh 9,721-bar Vantage export) via `engines/market_structure/tools/compare_tradingview.py`. Wired into `algos/` via the `algos/shared/structure_engine.py` shim. This is the single structure implementation — no consumer builds its own.
 
-**Fibonacci engine — all three fibs, Pine-parity-validated (2026-07-02 to 2026-07-04) — shipped.** `engines/fibonacci/` — one shared geometry core plus three per-fib state machines ported line-by-line from `mpc_assistant.pine`: Structure ("FFT", swing-anchored E1–E4/TP1–TP5 with the 0.618 gate), Sniper (BOS-impulse 0.382–0.5 zone), and Macro (HH→LL cycle, ≤5m only). Emits level EVENTS (first-touch pulses), not visuals. Consumes the structure engine's public `StructureSnapshot` only. All three validated at **100% Pine parity** on real XAUUSD exports (Structure/Sniper on 15m, Macro on 5m) via `engines/fibonacci/tools/compare_fib.py` against the instrumented `indicators/fib_export.pine`. Gets an `algos/shared/` shim when a bot first consumes it.
+**Fibonacci engine — all three fibs, Pine-parity-validated (2026-07-02 to 2026-07-04) — shipped.** `engines/fibonacci/` — one shared geometry core plus three per-fib state machines ported line-by-line from `mpc_assistant.pine`: Structure ("FFT", swing-anchored E1–E4/TP1–TP5 with the 0.618 gate), Sniper (BOS-impulse 0.382–0.5 zone), and Macro (HH→LL cycle, ≤5m only). Emits level EVENTS (first-touch pulses), not visuals. Consumes the structure engine's public `StructureSnapshot` only. All three validated at **100% Pine parity** on real XAUUSD exports via `compare_fib.py` against the instrumented `indicators/fib_export.pine`.
 
 **First sized-path VPS run — NT8 verified (2026-07-01) — shipped.** ORB ran on MES and MNQ from the lab (both completed; both Tier 3 on performance). The MES run produced the full sized-engine output on disk — `engine_trades.csv` came back from the VPS, and `decisions.jsonl`, `engine_timeline.json`, `engine_daily_pnl.json`, and the per-firm `ruleset_sizing.json` were all written. The NT8 runner→engine→files path is proven end-to-end on a real VPS backtest. The MT5 side (LondonBreakout) has not yet produced engine output — see the roadmap.
+
+**Order Blocks engine (2026-07-04) — shipped.** `engines/order_blocks/` — bull/bear supply/demand zones created off external (BOS/SOS) and internal (iBOS/iSOS) structure breaks, with mitigation (tap) detection and FIFO eviction past a per-direction cap of 6. A sibling of `engines/fibonacci/`, not downstream of it — both consume the structure engine's public output only, via their own decoupled `StructureSnapshot`. 12 hand-traced unit tests; **100% Pine parity** on two independent real Vantage XAUUSD exports (5m and 15m), confirming it is timeframe-agnostic.
+
+**Sessions engine (2026-07-04) — shipped.** `engines/sessions/` — the first **time-driven** engine (input = the bar's UTC timestamp + high/low, not structure output). Tokyo/London/NY session windows with running session high/low finalized on close, the three DST-aware NY kill zones, the NY opening range, and new-day/weekday flags. Standalone — depends on nothing. 17 hand-traced unit tests; **100% Pine parity** on a real Vantage XAUUSD 5m export (all 18 fields), re-confirmed on 15m for the 16 timeframe-agnostic fields. Prerequisite for the liquidity and SVP engines.
+
+**Liquidity engine (2026-07-05) — shipped.** `engines/liquidity/` — the prices price runs toward and grabs: previous day/week/month high & low, previous week close, the H4 sweep high/low, and Asia/London/NY session high & low, each mitigated by a sweep (wick through + close back) or a break (close through). Composes `engines/sessions/` for the session levels; reconstructs day/week/month/H4 from the bar stream. **Non-repainting by explicit decision: every HTF level uses the previous completed period only — the engine never forecasts the current period's high/low.** 15 hand-traced unit tests; **100% Pine parity** on a real Vantage XAUUSD 5m export (11,457 bars, all 33 fields). Calibrated boundary: XAUUSD trading day opens 18:00 NY, baked in as the default.
+
+**News engine + backtest-lab news/holiday filter (2026-07-05) — shipped.** `engines/news/` — the one off-roadmap engine (not a Pine port): turns an external economic calendar into trade-blackout events around scheduled macro releases (NFP/CPI/FOMC/PCE/ISM/EIA…) plus whole-day bank-holiday blackouts. Two data paths into one cached `EventStore`: the free Forex Factory live feed (current week) and a month-by-month website scrape for history. **Honest coverage: before the cache's earliest fetched date the filter is inert and the engine exposes `coverage_start_ms`.** No Pine source, so no parity check — 29 unit tests + a live-feed smoke + a real Feb-2025 backfill instead. First consumer shipped same day: the command-center BacktestDetail "News & Holiday Filter" card tags a finished run's trades and recomputes KPIs/equity live (NT8 runs only; the MT5 path needs non-UTC broker-clock handling).
+
+**VWAP engine (2026-07-05) — shipped.** `engines/vwap/` — the session VWAP: a volume-weighted running mean of `hlc3` re-anchored each trading day (the same 18:00-NY boundary as the liquidity daily level), plus a derived close-vs-line cross. The **first engine to need a volume column** in the feed (XAUUSD tick volume — exactly what Pine's `ta.vwap` reads). 13 hand-traced unit tests; **100% Pine parity** on a real Vantage XAUUSD 5m export (6,973 bars), using a relative tolerance because the cumulative sum drifts at float-rounding level.
+
+**Session Volume Profile engine (2026-07-06) — shipped. Extraction roadmap COMPLETE.** `engines/session_volume_profile/` — the Asia point-of-control ("MV" line): on each Asia session close, a 100-row volume profile over the session range whose highest-volume row gives the POC, plus the MV confirmation when price first straddles it. Composes `engines/sessions/`; needs the volume feed. Two Pine quirks ported exactly (session-close bar folded into the profile; the bull/bear two-array newest-first summation, kept because float addition is not associative). 12 hand-traced unit tests; **100% Pine parity** on a real Vantage XAUUSD 5m export (7,608 bars, all 3 fields). This was the last SMC-port engine — every block on `docs/ENGINE_EXTRACTION_ROADMAP.md` is done; forward work is consumption, not extraction.
 
 ---
 
 ## Current state of strategies
 
-Three strategy source files exist today, across two runners plus one research-only Pine track. Run facts verified by direct `lab.db` query on 2026-07-04 (10 real runs total; the stress-tests table is currently empty — earlier stress-test records were deleted along with their runs).
+Three strategy source files exist today, across two runners plus one research-only Pine track. Run facts verified by direct `lab.db` query on 2026-07-06 (10 real runs total; the stress-tests table is currently empty — earlier stress-test records were deleted along with their runs).
 
 | Strategy | File | Runner | State |
 |---|---|---|---|
@@ -144,13 +163,13 @@ The Strategy Framework build order: MT5 first (faster optimization), mean revers
 
 ## Current state of rulesets
 
-16 rulesets in `lab.db` (verified by direct query on 2026-07-04):
+16 rulesets in `lab.db` (verified by direct query on 2026-07-06):
 - `prop_eval`: 8 rows
 - `prop_funded`: 6 rows
 - `personal`: 2 rows (`account_tier = demo` on both — `personal_forex_demo`, `personal_futures_demo`)
 - `demo` (as a distinct `ruleset_type`): 0 rows — both demo accounts are typed `personal` with `account_tier = demo`. The evaluator code path for `ruleset_type = demo` exists but is currently unused.
 
-Firm coverage: 4 prop firms — LucidFlex, FundedNext, Tradeify (each 50k/100k × eval/funded, 12 rows) — plus Apex EOD eval-only at 50k/100k (2 rows; Apex funded/PA not yet seeded). Personal demo rules on a $10k balance: $500 daily loss cap, $1,000 daily profit target, fail at 15% drawdown from peak or 3 consecutive capped-loss days.
+Firm coverage: 4 prop firms — LucidFlex, FundedNext, Tradeify (each 50k/100k × eval/funded, 12 rows) — plus Apex EOD eval-only at 50k/100k (2 rows; Apex funded/PA not yet seeded). Personal demo rules on a $10k balance: $500 daily loss cap, $1,000 daily profit target, fail at 15% drawdown from peak or 3 consecutive capped-loss days. The prop-row KPIs and firm doc links are maintained in `command-center/docs/PROP_RULESET_KPIS.md` (sync-checked via `scripts/prop_kpi_audit.py` and the `/prop-firm-rules-audit` command).
 
 Evaluator behavior by type: `prop_eval` checks EOD trailing max-loss (DISCARD on breach), profit target (WARN), consistency (WARN). `prop_funded` checks trailing max-loss only. `personal`/`demo` get a real PASS/DISCARD verdict against relaxed rules — no trailing MLL, no profit-target requirement, no consistency rule. For personal rows, `max_loss_eod = 0` is a sentinel meaning "no trailing EOD rule" and must never render or feed a verdict.
 
@@ -166,25 +185,27 @@ Evaluator behavior by type: `prop_eval` checks EOD trailing max-loss (DISCARD on
 
 4. **Every account has a ruleset.** Personal/demo accounts get relaxed rules and a real verdict — there is no "no-verdict" account type. Prop rulesets are locked (server-side 403 on edit); personal rules are editable.
 
-5. **One canonical implementation per engine.** `engines/regime/classifier.py`, `engines/market_structure/engine.py`, and `engines/fibonacci/` are the single implementations of their domains. Consumers import them (bots via thin `algos/shared/` shims); nobody builds a second one anywhere.
+5. **One canonical implementation per engine.** The nine engines under `engines/` (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, session_volume_profile, news) are the single implementations of their domains. Consumers import them (bots via thin `algos/shared/` shims); nobody builds a second one anywhere.
 
-6. **Engines are ported line-by-line and Pine-parity-validated.** Every engine extracted from the TradingView SMC indicator follows the same pattern: port the Pine block into a stateful streaming state machine (one closed bar at a time), emit events (never visuals), instrument the Pine with export plots, and diff Python-vs-Pine bar-by-bar to 100% before shipping. Downstream engines read another engine's public output only — never its internals. The queue of remaining blocks is `docs/ENGINE_EXTRACTION_ROADMAP.md`.
+6. **Engines are ported line-by-line and Pine-parity-validated.** Every engine extracted from the TradingView SMC indicator follows the same pattern: port the Pine block into a stateful streaming state machine (one closed bar at a time), emit events (never visuals), instrument the Pine with export plots, and diff Python-vs-Pine bar-by-bar to 100% before shipping. Downstream engines read another engine's public output only — never its internals. The extraction roadmap (`docs/ENGINE_EXTRACTION_ROADMAP.md`) is complete; no engine ships or changes without its parity check re-run green.
 
-7. **NT8 is the futures backtest + execution engine; MT5 is the forex track.** The same command-center dispatcher (`runner_dispatch.py`) routes to both via runner-aware clients.
+7. **Engines never lie about what they know.** Two explicit decisions: liquidity HTF levels are non-repainting (previous completed period only — never forecast the current period), and the news filter is honest about coverage (inert before the cache's earliest fetched date; `coverage_start_ms` exposed so the UI can show where news data starts).
 
-8. **Drawdown means EOD trailing max-loss.** `compute_trailing_mll()` is the lens drawdown check for prop rulesets — not whole-test peak-to-trough. One canonical Sharpe (daily √252) everywhere via `services/metrics.py`.
+8. **NT8 is the futures backtest + execution engine; MT5 is the forex track.** The same command-center dispatcher (`runner_dispatch.py`) routes to both via runner-aware clients.
 
-9. **Strategies signal; the engine sizes.** Strategies emit trades at unit size only and never manage account-level risk. `sizing_engine.py` decides position size from the room left against the ruleset's trailing floor. Enforced on both reshaped strategies (ORB, LondonBreakout).
+9. **Drawdown means EOD trailing max-loss.** `compute_trailing_mll()` is the lens drawdown check for prop rulesets — not whole-test peak-to-trough. One canonical Sharpe (daily √252) everywhere via `services/metrics.py`.
 
-10. **Observability is mandatory.** Every run writes progress, logs, and output files. Optimization runs persist their VPS logs. Progress bars are wired to real agent output, not faked.
+10. **Strategies signal; the engine sizes.** Strategies emit trades at unit size only and never manage account-level risk. `sizing_engine.py` decides position size from the room left against the ruleset's trailing floor. Enforced on both reshaped strategies (ORB, LondonBreakout).
 
-11. **CLAUDE.md updates in the same session as approved changes.** Not as a follow-up. Every session that ships a feature ends with the relevant CLAUDE.md files updated.
+11. **Observability is mandatory.** Every run writes progress, logs, and output files. Optimization runs persist their VPS logs. Progress bars are wired to real agent output, not faked.
 
-12. **Strict build order with stop-and-report checkpoints.** Each step is confirmed working before the next begins.
+12. **CLAUDE.md updates in the same session as approved changes.** Not as a follow-up. Every session that ships a feature ends with the relevant CLAUDE.md files updated.
 
-13. **Per-platform job lock, DB as the single lock source.** One job per platform at a time; NT8 and MT5 lock independently; stale `running` rows are reset on boot. Stress tests additionally lock by market (one futures + one forex at most).
+13. **Strict build order with stop-and-report checkpoints.** Each step is confirmed working before the next begins.
 
-14. **No ORM, no task queues, no extra frameworks.** Raw `sqlite3`, asyncio for the queue loop, `subprocess` for SSH. New dependencies require explicit discussion first. Heavy data (equity curves, trade lists) lives in JSON files on disk, not in SQLite.
+14. **Per-platform job lock, DB as the single lock source.** One job per platform at a time; NT8 and MT5 lock independently; stale `running` rows are reset on boot. Stress tests additionally lock by market (one futures + one forex at most).
+
+15. **No ORM, no task queues, no extra frameworks.** Raw `sqlite3`, asyncio for the queue loop, `subprocess` for SSH. New dependencies require explicit discussion first. Heavy data (equity curves, trade lists) lives in JSON files on disk, not in SQLite.
 
 ---
 

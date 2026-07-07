@@ -33,8 +33,9 @@ up a new bot you write a config, not new code paths. (Instance dirs lived under
 `algos/markets/fx/instances/<name>/`.)
 
 ### 3. Credentials pattern — `credentials.template.json` (git) + `credentials.json` (VPS-only)
-The template (placeholder fields) is committed; the real `credentials.json` is gitignored and
-exists only on the VPS. This is how account logins stay off GitHub.
+A template with placeholder fields lives in git; the real `credentials.json` is gitignored and
+exists only on the VPS. This is how account logins stay off GitHub. (The template file was
+deleted with the bot suite — recreate it when the first new bot is stood up.)
 
 ### 4. Task Scheduler boot — `algos/scheduler/*.xml` + `algos/bots/launcher.py` + `startup_coordinator.py`
 How bots auto-start on VPS boot:

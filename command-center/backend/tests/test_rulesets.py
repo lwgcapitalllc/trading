@@ -1,9 +1,10 @@
 """
-Ruleset seeding + CRUD (firms → rulesets, M3 rename).
+Ruleset seeding + CRUD.
 
 init_db() seeds 14 prop-firm rows across 4 firms (LucidFlex, FundedNext, Tradeify, Apex)
-plus 2 personal demo rows = 16 total. The /firms routes are a deprecated 308 redirect to
-/rulesets; these tests hit the canonical /rulesets endpoint.
+plus 2 personal demo rows = 16 total. These tests hit the canonical /rulesets endpoint.
+(The old /firms redirect shim was removed 2026-07-01; this file was test_firms.py until
+the 2026-07-06 rename.)
 """
 
 LUCIDFLEX_IDS = {

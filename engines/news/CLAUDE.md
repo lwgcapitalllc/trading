@@ -8,10 +8,10 @@ skip or trade.
 **Scope:** Economic-calendar (scheduled macro releases: NFP/CPI/FOMC/PCE/ISM/EIA…) blackout gating +
 coverage tracking. NOT headline/sentiment NLP, NOT single-stock earnings, NOT trading decisions, NOT
 position sizing, NOT UI. The engine emits facts; a bot owns the policy and the skip/trade call.
-**Status:** Built 2026-07-05. Unit-tested (25 tests, green) + validated live end-to-end against the
+**Status:** Built 2026-07-05. Unit-tested (29 tests, green) + validated live end-to-end against the
 real Forex Factory calendar (live weekly feed + a real Feb-2025 history backfill → cache → engine
 blackout). **Off the roadmap and NOT a Pine port** — see "Validation".
-**Last reviewed:** 2026-07-05
+**Last reviewed:** 2026-07-06
 
 ---
 
