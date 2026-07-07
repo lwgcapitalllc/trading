@@ -99,4 +99,5 @@ Cross-subsystem reference documents:
 - `docs/LWG_Project_State_Snapshot.md` — Current platform state; hand to new Claude.ai chats
 - `docs/LWG_Roadmap_And_Open_Questions.md` — Forward plan and open questions; hand to new Claude.ai chats
 - `docs/ENGINE_EXTRACTION_ROADMAP.md` — Which SMC-indicator blocks became their own Python engines (SMC extraction COMPLETE — all 8 done and Pine-parity-validated; plus 1 off-roadmap news engine)
-- `docs/audit/` — Audit and snapshot prompt templates
+- `docs/audit/TRADER_MIGRATION_AUDIT.md` — Findings report from the Administrator→trader VPS migration audit
+- `.claude/commands/` — Repo slash commands: `/audit-engines`, `/doc-audit`, `/dead-code-audit`, `/regenerate-snapshots`, `/prop-firm-rules-audit` (the former `docs/audit/` prompt templates)
