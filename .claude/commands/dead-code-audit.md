@@ -1,9 +1,13 @@
+---
+description: Deliberate, opt-in dead-code cleanup pass — heavier and riskier than /doc-audit; run after an iteration or before a refactor, not routinely
+---
+
 # Dead-Code Audit — LWG Capital Monorepo
 
-> Paste this whole file to Claude Code from the repo root. This is a **deliberate,
-> opt-in code cleanup pass** — heavier and riskier than the doc audit, so run it on
-> purpose (e.g. after finishing an iteration or before a refactor), not routinely.
-> It is separate from `DOC_AUDIT_PROMPT.md` by design; do not merge the two.
+> This is a **deliberate, opt-in code cleanup pass** — heavier and riskier than the
+> doc audit, so run it on purpose (e.g. after finishing an iteration or before a
+> refactor), not routinely. It is separate from `/doc-audit` by design; do not merge
+> the two.
 
 ---
 

@@ -1,8 +1,11 @@
+---
+description: Documentation audit — check every README/CLAUDE.md/guide for drift, contradictions, bloat, and secrets; report first, edit only after approval
+---
+
 # Documentation Audit — LWG Capital Monorepo
 
-> Paste this whole file to Claude Code from the repo root. It is a **documentation
-> audit**, not a code task. Re-run it any time the repo structure changes or on a
-> regular cadence (e.g. end of each work session, or weekly).
+> This is a **documentation audit**, not a code task. Re-run it any time the repo
+> structure changes or on a regular cadence (e.g. end of each work session, or weekly).
 
 ---
 

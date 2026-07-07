@@ -1,10 +1,13 @@
-# Snapshot Regeneration Prompt
-## Run on Claude Code to refresh the project state and roadmap docs
+---
+description: Regenerate the two portable handoff docs (project state snapshot + roadmap/open questions) from the current repo state
+---
 
-> Run this on Claude Code (in the repo root) whenever you want to refresh
-> the two handoff documents that you hand to new Claude.ai chats. Should
-> be run after each milestone or pass ships, before starting a new chat
-> session, or any time the project state has drifted.
+# Snapshot Regeneration
+## Refresh the project state and roadmap docs
+
+> Run this whenever you want to refresh the two handoff documents that get pasted
+> into new Claude.ai chats. Should be run after each milestone or pass ships, before
+> starting a new chat session, or any time the project state has drifted.
 
 ---
 
@@ -184,11 +187,6 @@ generate task.
 - Whenever the project has drifted noticeably from the last snapshot
 - On a fixed cadence (e.g. end of each week of active work)
 
-The audit prompt (`DOC_AUDIT_PROMPT.md`) cleans the source-of-truth docs
-in the repo. This prompt produces portable handoff documents from those
-cleaned docs. Run the audit first if the repo docs are stale, then run
-this regeneration.
-
----
-
-*End of regeneration prompt.*
+The audit command (`/doc-audit`) cleans the source-of-truth docs in the repo. This
+command produces portable handoff documents from those cleaned docs. Run the audit
+first if the repo docs are stale, then run this regeneration.
