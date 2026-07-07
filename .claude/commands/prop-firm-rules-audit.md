@@ -1,3 +1,7 @@
+---
+description: Read-only audit of the prop firm rulesets in lab.db against each firm's own support documentation — report only, no edits
+---
+
 Audit my prop firm rulesets against the firms' actual support documentation.
 Plain English replies only. This is a READ-ONLY audit — do NOT modify the
 database, the seed file, or any row. Produce a report only; I'll decide what to fix.
