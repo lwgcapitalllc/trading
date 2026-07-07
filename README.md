@@ -98,5 +98,5 @@ Cross-subsystem reference documents:
 - `docs/dynamic_sizing_engine.md` — Design doc for the dynamic sizing & risk engine (sizing, gating, decision log)
 - `docs/LWG_Project_State_Snapshot.md` — Current platform state; hand to new Claude.ai chats
 - `docs/LWG_Roadmap_And_Open_Questions.md` — Forward plan and open questions; hand to new Claude.ai chats
-- `docs/ENGINE_EXTRACTION_ROADMAP.md` — Which SMC-indicator blocks still need to become their own Python engines, in priority order (Order Blocks done, Pine-parity-validated; Sessions/Liquidity next)
+- `docs/ENGINE_EXTRACTION_ROADMAP.md` — Which SMC-indicator blocks became their own Python engines (SMC extraction COMPLETE — all 8 done and Pine-parity-validated; plus 1 off-roadmap news engine)
 - `docs/audit/` — Audit and snapshot prompt templates
