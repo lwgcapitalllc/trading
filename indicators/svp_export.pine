@@ -1,0 +1,128 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// ── PARITY-EXPORT BUILD (SVP / Asia POC — the "MV" line) ────────────────────
+// Instrumented build used ONLY to validate the Python port (engines/svp/) against this Pine source.
+// It lifts the SESSION VOLUME PROFILE block from mpc_assistant.pine (line ~2554) and its
+// confirmation-table "MV slot" (line ~2772) VERBATIM, drops all drawing (the POC line/label arrays
+// and the redraw loop), and emits the columns the Python compare tool needs:
+//
+//   px_volume     — the bar's volume (the input Python's engine is fed; guarantees both sides use
+//                   the exact same volume series, so there is no data-source mismatch).
+//   px_svp_poc    — mv_pocPrice: the current Asia POC / MV price (na until the first session closes).
+//   px_svp_formed — 1 on the bar a fresh POC forms (Asia session just closed, range > 0), else 0.
+//   px_svp_swept  — mv_swept: 1 once price has straddled the current POC since it formed, else 0.
+//
+// The bull/bear (rowUp/rowDn) split and the newest-first replay order are kept EXACTLY as the source
+// so the POC is bit-identical to the Python port (float addition is not associative). Put on the SAME
+// chart/timeframe you run the Python compare on (e.g. VANTAGE_XAUUSD, 5m), Export chart data → CSV,
+// and diff with engines/svp/tools/compare_svp.py. Do NOT let the logic drift from mpc_assistant.pine.
+indicator("SVP Engine EXPORT", overlay = false)
+
+// ── SVP inputs (mpc 224-225, 2556-2557) — drawing inputs/colours dropped ──
+int    svpHistory  = 2
+int    svpRows     = 100
+string SVP_SESSION = "2000-0500"
+string SVP_TZ      = "GMT-4"
+
+// Only the POC-price FIFO array survives (the line/label arrays are drawing — dropped).
+var array<float> svp_poc_px   = array.new<float>()
+
+var float svp_hi       = na
+var float svp_lo       = na
+var int   svp_startBar = na
+var bool  svp_inSess   = false
+
+var float svp_range    = na
+var float svp_bHi      = na
+var float svp_bLo      = na
+var float svp_bVol     = na
+var bool  svp_bull     = false
+var int   svp_rLo      = 0
+var int   svp_rHi      = 0
+var int   svp_span     = 0
+var float svp_perRow   = na
+var float svp_rv       = na
+var float svp_maxVol   = 0.0
+var int   svp_pocRow   = 0
+var float svp_pocPx    = na
+var int   svp_sLen     = 0
+var array<float> svp_rowUp = array.new<float>()
+var array<float> svp_rowDn = array.new<float>()
+
+bool inSVP  = not na(time(timeframe.period, SVP_SESSION, SVP_TZ))
+bool svpNew = inSVP and not inSVP[1]
+bool svpEnd = not inSVP and inSVP[1]
+
+bool svpFormed = false   // export-only pulse: a POC formed on this bar
+
+if svpNew and timeframe.isintraday
+    svp_hi       := high
+    svp_lo       := low
+    svp_startBar := bar_index
+    svp_inSess   := true
+
+if svp_inSess and inSVP and timeframe.isintraday
+    if high > svp_hi
+        svp_hi := high
+    if low < svp_lo
+        svp_lo := low
+
+if svpEnd and svp_inSess and timeframe.isintraday and not na(svp_hi) and not na(svp_lo)
+    svp_inSess := false
+    svp_range  := svp_hi - svp_lo
+    if svp_range > 0
+        svp_sLen := bar_index - svp_startBar + 1
+        array.clear(svp_rowUp)
+        array.clear(svp_rowDn)
+        for r = 0 to svpRows - 1
+            array.push(svp_rowUp, 0.0)
+            array.push(svp_rowDn, 0.0)
+        for b = 0 to math.min(svp_sLen - 1, 1490)
+            svp_bHi  := high[b]
+            svp_bLo  := low[b]
+            svp_bVol := volume[b]
+            svp_bull := close[b] >= open[b]
+            svp_rLo  := math.max(0, math.min(math.floor((svp_bLo - svp_lo) / svp_range * svpRows), svpRows - 1))
+            svp_rHi  := math.max(0, math.min(math.ceil( (svp_bHi - svp_lo) / svp_range * svpRows) - 1, svpRows - 1))
+            svp_span := math.max(1, svp_rHi - svp_rLo + 1)
+            svp_perRow := svp_bVol / svp_span
+            for r = svp_rLo to svp_rHi
+                if svp_bull
+                    array.set(svp_rowUp, r, array.get(svp_rowUp, r) + svp_perRow)
+                else
+                    array.set(svp_rowDn, r, array.get(svp_rowDn, r) + svp_perRow)
+
+        svp_maxVol := 0.0
+        svp_pocRow := 0
+        for r = 0 to svpRows - 1
+            svp_rv := array.get(svp_rowUp, r) + array.get(svp_rowDn, r)
+            if svp_rv > svp_maxVol
+                svp_maxVol := svp_rv
+                svp_pocRow := r
+
+        svp_pocPx := svp_lo + (svp_pocRow + 0.5) * (svp_range / svpRows)
+
+        if array.size(svp_poc_px) >= svpHistory
+            array.shift(svp_poc_px)
+        array.push(svp_poc_px, svp_pocPx)
+        svpFormed := true
+
+// ── MV slot (mpc 2772-2786), drawing/table removed ──
+var float mv_pocPrice = na
+var bool  mv_swept    = false
+
+if array.size(svp_poc_px) > 0
+    mv_pocPrice := array.get(svp_poc_px, array.size(svp_poc_px) - 1)
+
+if not na(mv_pocPrice)
+    if not mv_swept and (high >= mv_pocPrice and low <= mv_pocPrice)
+        mv_swept := true
+
+if svpEnd
+    mv_swept := false
+
+c0 = color.new(color.gray, 100)
+plot(volume,             "px_volume",     c0)
+plot(mv_pocPrice,        "px_svp_poc",    c0)
+plot(svpFormed ? 1 : 0,  "px_svp_formed", c0)
+plot(mv_swept  ? 1 : 0,  "px_svp_swept",  c0)

@@ -2,8 +2,8 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
-**Progress:** 7 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap) · 1 to build (SVP) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below.
-**Last reviewed:** 2026-07-05
+**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · 0 to build — **extraction roadmap COMPLETE** · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below.
+**Last reviewed:** 2026-07-06
 
 ---
 
@@ -29,16 +29,13 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 - **`engines/sessions/`** — Tokyo/London/NY session windows + running session H/L, the three NY kill zones, and the NY opening range. The first **time-driven** engine (input = the bar's UTC timestamp + high/low, not just OHLC); standalone (depends on nothing). Ported line-by-line, 17 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (all 18 fields, `--warmup 263`), re-confirmed on a 15m export for the 16 timeframe-agnostic fields (harness: `indicators/sessions_export.pine` + `engines/sessions/tools/compare_sessions.py`). Unblocks the session-scoped parts of Liquidity (session H/L levels) and VWAP (session anchor).
 - **`engines/liquidity/`** — the prices price runs toward and grabs: prev day/week/month H/L (PDH/PDL/PWH/PWL/PMH/PML), previous-week-close (PWC), the H4 sweep (SSH/BSL), and Asia/London/NY session H/L, with mitigation (sweep vs break) tracking. Consumes `engines/sessions/` for session H/L (composes it); reconstructs the day/week/month/H4 levels from the bar stream. **Non-repainting by Aaron's explicit decision (2026-07-05): every HTF level uses the PREVIOUS completed period only — the engine never forecasts the current period's high/low.** Ported, 15 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (11,457 bars; all 33 fields — 15 level prices, their mitigation flags, 4 boundary-roll pulses — match, `--htf-rollover 18 --warmup 4653`, exit 0; harness: `indicators/liquidity_export.pine` + `engines/liquidity/tools/compare_liquidity.py`). Calibrated boundary: XAUUSD session opens 18:00 NY (baked in as the default).
 - **`engines/vwap/`** — the session VWAP: a volume-weighted running mean of `hlc3` (`ta.vwap(hlc3)`), re-anchored each trading day, plus a derived close-vs-line cross. First engine to need a **volume** column in the feed (XAUUSD tick volume — what the Pine `ta.vwap` already reads). Time-driven; reconstructs the trading-day anchor directly (the **same** 18:00-NY boundary the liquidity daily level uses), so it does not compose the sessions engine. Ported line-by-line from `mpc_assistant.pine` line 852, 13 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (6,973 bars; both fields — VWAP value + trading-day anchor pulse — match, `--htf-rollover 18 --warmup 90`, exit 0; harness: `indicators/vwap_export.pine` + `engines/vwap/tools/compare_vwap.py`). Uses a **relative** tolerance (1e-6) because the value is a cumulative sum that drifts at float-rounding level — unlike the copied-value level engines' exact match.
+- **`engines/svp/`** — the Session Volume Profile: on each **Asia** session close, a 100-row volume profile over the session range whose highest-volume row gives the **POC** (the "MV" line), plus the MV confirmation (price straddling the POC). Composes `engines/sessions/` for the Asia window/edges (like liquidity) and needs the **volume** feed (like VWAP). Two Pine quirks ported exactly: the session-close bar is folded into the profile, and the bull/bear two-array newest-first summation is kept (float addition is not associative — collapsing it could flip a near-tie POC row). Ported from `mpc_assistant.pine` (SVP block 2554, MV slot 2772), 12 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (7,608 bars; all 3 fields — POC price + form pulse + sweep state — match, `--warmup 116`, exit 0; harness: `indicators/svp_export.pine` + `engines/svp/tools/compare_svp.py`). The POC uses an **exact** (1e-6) tolerance — it is a deterministic formula on the copied session H/L + integer volume, so it is bit-identical, unlike VWAP's cumulative value.
 
 ---
 
-## Still to build — in priority order
+## Still to build
 
-### 1. Session Volume Profile (SVP)
-- **What:** the Asia point-of-control / MV line.
-- **Depends on:** `engines/sessions/` (now done); volume-heavy (uses the same volume feed VWAP just added).
-- **Note:** niche — the last SMC-port engine.
-- **Source block:** `SESSION VOLUME PROFILE` (~line 220, 2554).
+**None — the SMC-indicator extraction is complete.** All 8 engines are ported and Pine-parity-validated (bar `engines/regime/`, which came from a separate source). The remaining forward work is *consumption*, not extraction: give each engine an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
 
 ---
 
@@ -64,10 +61,10 @@ Pine source to diff against. Validated by unit tests + a live check instead.
   **Follow-up (not built):** wire `coverage_start_ms` into the command-center backtest lab as a
   vertical line; add the `algos/shared/` shim when a bot first consumes it.
 
-## Suggested batch order
+## Extraction complete
 
-`SVP` (last one)
-
-Sessions, Liquidity and VWAP are done. **SVP is the only SMC-port engine left** — the Asia
-point-of-control / MV line, volume-heavy (it reuses the volume feed VWAP just introduced) and niche.
-After SVP the extraction roadmap is complete.
+Every SMC block that was on this roadmap is now its own Pine-parity-validated Python engine —
+Sessions, Liquidity, VWAP and SVP were the final four, all done. **There is no next engine to
+extract.** Forward work is consumption (per-engine `algos/shared/` shims as bots adopt them, the news
+`coverage_start_ms` backtest-lab line) and the backtest-first bot rebuild in
+`docs/BOT_DEVELOPMENT_METHOD.md`.

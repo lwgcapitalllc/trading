@@ -23,8 +23,9 @@ trading/
 │   ├── order_blocks/    ← Order-block (supply/demand zone) engine, sibling of fibonacci/
 │   ├── sessions/        ← Time-driven sessions / kill-zones / NY-range engine (standalone)
 │   ├── liquidity/       ← Liquidity-levels engine (prev D/W/M H·L, PWC, H4 sweep, session H·L); consumes sessions/
-│   └── vwap/            ← Session VWAP engine (volume-weighted hlc3, trading-day anchor + cross); needs volume
-│                           (next: svp — see ENGINE_EXTRACTION_ROADMAP.md)
+│   ├── vwap/            ← Session VWAP engine (volume-weighted hlc3, trading-day anchor + cross); needs volume
+│   └── svp/             ← Session Volume Profile engine (Asia POC / MV line + sweep); consumes sessions/, needs volume
+│                           (SMC extraction COMPLETE — see ENGINE_EXTRACTION_ROADMAP.md)
 │
 │  ── TOOLING / SOURCE ────────────────────────────────────────────
 ├── indicators/          ← Pine Script market-structure indicator rebuild + parity-export harnesses
@@ -55,10 +56,11 @@ Read these in order for full context:
 10. `engines/sessions/CLAUDE.md` — time-driven sessions/kill-zones/NY-range engine, parity rules
 11. `engines/liquidity/CLAUDE.md` — liquidity-levels engine (non-repainting), parity rules
 12. `engines/vwap/CLAUDE.md` — session VWAP engine (volume-weighted, trading-day anchor), parity rules
-13. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
-14. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
-15. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
-16. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
+13. `engines/svp/CLAUDE.md` — Session Volume Profile engine (Asia POC / MV line), parity rules
+14. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
+15. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
+16. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
+17. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
 
 ## Subsystems
 
@@ -74,6 +76,7 @@ Read these in order for full context:
 | `engines/sessions/` | Time-driven sessions / kill-zones / NY-range engine (standalone) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/sessions/CLAUDE.md` |
 | `engines/liquidity/` | Liquidity-levels engine (prev D/W/M H·L, PWC, H4 sweep, session H·L; non-repainting) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/liquidity/CLAUDE.md` |
 | `engines/vwap/` | Session VWAP engine (volume-weighted hlc3, trading-day anchor + cross) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/vwap/CLAUDE.md` |
+| `engines/svp/` | Session Volume Profile engine (Asia POC / MV line + sweep) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/svp/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
 | `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |

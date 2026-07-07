@@ -1,0 +1,2 @@
+# TradingView CSV exports for the parity check are local-only (large, regenerated on demand).
+*.csv
