@@ -118,19 +118,19 @@ def _formed_engine():
     return sv
 
 
-def test_no_confirm_on_the_form_bar():
-    # A close/form bar that straddles the freshly-formed POC must NOT confirm — the same-bar reset
-    # (Pine's `if svpEnd` at the end of the MV slot) wins over the tap.
+def test_form_bar_confirms_when_it_straddles():
+    # A close/form bar that straddles the freshly-formed POC now CONFIRMS on that bar. The reset
+    # moved from svpEnd (this bar) to the next svpNew (2026-07-06), so it no longer wipes the tap.
     sv = SvpEngine()
     ev = feed(sv, [
         (0, _PRIME, 100, 100, 100, 100, 0),
         (1, _OPEN, 100, 105, 95, 100, 10),
         (2, _MID, 100, 101, 99, 100, 100),
-        (3, _CLOSE, 100, 100, 99, 100, 0),    # this bar straddles 99.05, but it is the close bar
+        (3, _CLOSE, 100, 100, 99, 100, 0),    # this bar straddles the fresh POC (~99.05)
     ])
     assert ev.formed is True
-    assert ev.confirmed is False              # close-bar reset wins over a same-bar tap
-    assert ev.swept is False
+    assert ev.confirmed is True               # no same-bar reset anymore → the tap confirms
+    assert ev.swept is True
 
 
 def test_confirmed_edge_on_first_tap():
@@ -155,17 +155,16 @@ def test_no_confirm_when_price_misses_poc():
     assert ev.swept is False
 
 
-def test_swept_resets_on_next_session_close():
-    sv = _formed_engine()
-    sv.update(4, ums(2024, 7, 2, 10), 100, 100, 99, 100, 5)        # tap → swept True
-    ev = feed(sv, [
-        (5, ums(2024, 7, 2, 12), 100, 100, 100, 100, 0),          # out
-        (6, ums(2024, 7, 3, 0), 100, 105, 95, 100, 10),           # next Asia opens
-        (7, ums(2024, 7, 3, 3), 100, 101, 99, 100, 100),          # in-session
-        (8, ums(2024, 7, 3, 9), 100, 100, 100, 100, 0),           # closes → new POC, swept reset
-    ])
-    assert ev.formed is True
-    assert ev.swept is False                  # reset on the new session close
+def test_swept_resets_on_next_session_open():
+    sv = _formed_engine()                                         # POC ~99.05, not yet swept
+    ev = sv.update(4, ums(2024, 7, 2, 10), 100, 100, 99, 100, 5)  # tap → swept True
+    assert ev.swept is True
+    # the swept state now PERSISTS past the Asia close (no reset there anymore)...
+    ev = sv.update(5, ums(2024, 7, 2, 12), 100, 100, 99, 100, 5)  # still out, later same day
+    assert ev.swept is True
+    # ...until the NEXT Asia session OPENS (Pine svpNew), which resets it.
+    ev = sv.update(6, ums(2024, 7, 3, 0), 100, 98, 97, 98, 10)    # Asia opens; bar misses the POC
+    assert ev.swept is False                  # reset on the next session OPEN
     assert ev.confirmed is False
 
 

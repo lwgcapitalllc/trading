@@ -118,7 +118,9 @@ if not na(mv_pocPrice)
     if not mv_swept and (high >= mv_pocPrice and low <= mv_pocPrice)
         mv_swept := true
 
-if svpEnd
+// reset on the NEXT Asia OPEN (svpNew), not the close (svpEnd) — the confirmed state now persists
+// all day until the next session opens (changed 2026-07-06 to match mpc_assistant.pine)
+if svpNew
     mv_swept := false
 
 c0 = color.new(color.gray, 100)

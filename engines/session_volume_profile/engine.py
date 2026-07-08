@@ -114,7 +114,8 @@ class SvpEngine:
         asia_closed = next((r for r in sess.closed if r.name == "Asia"), None)
 
         # Buffer the session's bars. Start fresh on the open edge, append every in-session bar.
-        if "Asia" in sess.opened:
+        svp_new = "Asia" in sess.opened            # Pine svpNew — first bar of a new Asia session
+        if svp_new:
             self._buffer = []
         if sess.in_asia:
             self._buffer.append((open_, high, low, close, volume))
@@ -130,9 +131,9 @@ class SvpEngine:
         if poc is not None and not self._swept and high >= poc and low <= poc:
             self._swept = True
             ev.confirmed = True
-        if svp_end:                                  # reset on the close bar — this wins over a same
-            self._swept = False                      # -bar tap, exactly as the Pine ordering does
-            ev.confirmed = False
+        if svp_new:                                  # reset on the NEXT Asia OPEN (Pine svpNew, not
+            self._swept = False                      # svpEnd) — the confirmed/swept state now
+            ev.confirmed = False                     # persists all day until the next session opens
         ev.swept = self._swept
         return ev
 

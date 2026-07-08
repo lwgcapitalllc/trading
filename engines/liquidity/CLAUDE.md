@@ -66,15 +66,20 @@ ported exactly from the source:
 
 | kind | levels | mitigation rule (how it is "taken") |
 |---|---|---|
-| daily | PDH / PDL | **sweep** — `high>lvl and close<lvl` (H) / `low<lvl and close>lvl` (L) |
+| daily | PDH / PDL | **sweep** — wick through: `high>lvl` (H) / `low<lvl` (L) |
 | weekly | PWH / PWL | **break** — `close>lvl` (H) / `close<lvl` (L) |
 | monthly | PMH / PML | **break** — `close>lvl` / `close<lvl` |
 | pwc | PWC | none — a reference close, never mitigated (source only recolours it) |
 | h4 | H4 H / H4 L | **sweep**; the sweep emits the source's label — high→`BSL`, low→`SSL` |
 | session | Asia/London/NY H & L | **sweep** |
 
-Note the deliberate asymmetry: daily / session / H4 use the **sweep** rule (wick through, close back
-— a grab-and-reject); weekly / monthly use the **break** rule (a plain close through). Keep it exact.
+Note the deliberate asymmetry: daily / session / H4 use the **sweep** rule (a wick through the
+level); weekly / monthly use the **break** rule (a plain close through). Keep it exact.
+
+**Close-back guard dropped 2026-07-06.** The sweep rule used to also require price to close back the
+other side of the level (`high>lvl and close<lvl` for a high — a grab-and-reject). A re-pasted
+`mpc_assistant.pine` removed that guard: the daily/session/H4 sweeps now fire on the **wick alone**.
+Weekly/monthly break rule is unchanged.
 
 A level's price is **frozen at creation** and never repainted. A level created on a period roll or a
 session close **evicts** the previous same-slot level (a create→evict pair). A mitigated level stays

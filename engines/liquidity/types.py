@@ -27,11 +27,15 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 # Mitigation rules — how a level is "taken". Ported exactly from mpc_assistant.pine:
-#   SWEEP_HIGH  wick above then close back below   (high > price and close < price)   — day/session/H4 highs
-#   SWEEP_LOW   wick below then close back above   (low  < price and close > price)   — day/session/H4 lows
+#   SWEEP_HIGH  a wick through the level           (high > price)                     — day/session/H4 highs
+#   SWEEP_LOW   a wick through the level           (low  < price)                     — day/session/H4 lows
 #   BREAK_HIGH  a body close above                 (close > price)                    — week/month highs
 #   BREAK_LOW   a body close below                 (close < price)                    — week/month lows
 #   NONE        never mitigated                    (PWC — a reference close, not a swept level)
+#
+# The close-back guard was DROPPED 2026-07-06 to match a re-pasted mpc_assistant.pine: the sweep
+# rules used to require price close back the other side (high>price AND close<price); they now fire
+# on the wick alone. Weekly/monthly keep the plain close-through break rule (unchanged).
 SWEEP_HIGH = "sweep_high"
 SWEEP_LOW = "sweep_low"
 BREAK_HIGH = "break_high"
@@ -73,9 +77,9 @@ class LiquidityLevel:
         """Would this bar's high/low/close mitigate (sweep/break) this level? Pure test — does not
         mutate. Encodes the four ported rules exactly (see the constants above)."""
         if self.rule == SWEEP_HIGH:
-            return high > self.price and close < self.price
+            return high > self.price
         if self.rule == SWEEP_LOW:
-            return low < self.price and close > self.price
+            return low < self.price
         if self.rule == BREAK_HIGH:
             return close > self.price
         if self.rule == BREAK_LOW:

@@ -2,7 +2,7 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
-**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · 0 to build — **extraction roadmap COMPLETE** · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below.
+**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. A 2026-07-06 audit of a re-pasted `mpc_assistant.pine` found **1 NEW feature to extract (Internal Fib)** and **3 engines gone STALE** (liquidity, fibonacci Macro, SVP). The **3 stale engines were re-synced on 2026-07-06** (engine code + `*_export.pine` harness + unit tests all updated, unit tests green). On **2026-07-07** the fresh-export parity re-run ran: **liquidity and svp passed (exit 0) and are COMMITTED**; the **fibonacci Macro is HELD** — its port is a faithful mirror, but the re-pasted source change appears to disable the macro cycle (never displays over a ~4-month export; suspected `mpc_assistant.pine` bug), awaiting Aaron + brother review. Internal Fib is still to extract. See "Audit findings — 2026-07-06" below.
 **Last reviewed:** 2026-07-06
 
 ---
@@ -35,7 +35,85 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 
 ## Still to build
 
-**None — the SMC-indicator extraction is complete.** All 8 engines are ported and Pine-parity-validated (bar `engines/regime/`, which came from a separate source). The remaining forward work is *consumption*, not extraction: give each engine an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
+- **Internal Fib** (new, found 2026-07-06) — a **4th fib** for `engines/fibonacci/`, anchored to
+  INTERNAL structure (iBOS/iSOS) instead of external swings, with a live-updating anchor (extends to
+  the running low/high since the internal break), the same 0.618 gate as the Structure fib, and a
+  TP3-hit-then-close-through reset. Pine block `GRP_IFIB` inputs + the `INTERNAL FIB` compute/draw
+  block. Not covered by any engine yet. Port as `InternalFib` alongside `StructureFib` and add
+  `px_ifib_*` columns to `indicators/fib_export.pine`. See "Audit findings — 2026-07-06".
+
+Everything else is ported. The other forward work is *consumption*, not extraction: give each engine
+an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest
+lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
+
+---
+
+## Audit findings — 2026-07-06 (re-pasted `mpc_assistant.pine`)
+
+Working-tree diff of `indicators/mpc_assistant.pine` vs commit `6f76bed` (its last commit). Most of
+the diff is visual — a reworked JARVIS confirmation table (3-col, most-recent BSL/SSL + per-fib
+one-way stage tracking), a bottom watermark, new show/hide toggles (`showExternal`, `showConfTable`,
+`showIFib`), `showOBs`/`showKZandNYR`/`showVwap` flipped to default-off, `fiboLineExtend`/`iFibExtend`
+line-length inputs, sniper bull/bear colouring, and macro fib label renames (HH/LL → TP3/1.0). Those
+touch no engine. The engine-affecting changes:
+
+**RE-SYNC STATUS (2026-07-07):** all three engines were re-synced (engine code + `*_export.pine`
+harness + unit tests, all green: liquidity 15, fibonacci 25, svp 12) and the fresh-export parity
+re-run has now RUN:
+- **liquidity — VALIDATED & COMMITTED (2026-07-07):** `compare_liquidity.py` exit 0 on a real
+  month-spanning `VANTAGE_XAUUSD, 5m` export (10,543 bars, `--warmup 9137` past the June→July month
+  roll so the previous-month level warms; all 33 fields match).
+- **svp — VALIDATED & COMMITTED (2026-07-07):** `compare_svp.py` exit 0 on the same export
+  (`--warmup 304`; all 3 fields match).
+- **fibonacci Macro — RE-SYNCED but HELD (NOT committed):** the port is a faithful mirror (Python ==
+  Pine exactly: 45 lock attempts, 0 held, 0 mismatches over a 20,928-bar / ~4-month export), but the
+  re-pasted source change appears to **disable the macro cycle entirely** — the full-reset fires on
+  the same bar the cycle locks (the top is set to the swing high price just broke, so `close>top` is
+  already true on the birth bar), so the cycle never survives to a second bar and never displays. On
+  ~4 months of data it never once held (pre-re-paste it held 2,502 bars). Suspected bug in
+  `mpc_assistant.pine`, not the port. Awaiting Aaron + brother review before the Python change,
+  `fib_export.pine`, its tests and the re-pasted `mpc_assistant.pine`/`structure_engine.pine` are
+  committed.
+
+**NEW — Internal Fib** → not extracted (see "Still to build" above).
+
+**VALIDATED & COMMITTED (2026-07-07) — `engines/liquidity/`** (mitigation logic changed):
+- Daily, Asia, London, NY and H4 mitigation **dropped the close-back guard**: was the sweep rule
+  `high>lvl and close<lvl` (H) / `low<lvl and close>lvl` (L), now fires on the wick alone
+  (`high>lvl` / `low<lvl`). **FIXED:** `types.py` `is_taken_by` now defines `SWEEP_HIGH/LOW` as the
+  wick-only test (name kept — these are still "sweeps" in Aaron's vocabulary, just without the
+  close-back filter); daily/session/H4 creation sites unchanged (they already used `SWEEP_*`).
+  Weekly/monthly keep the `close`-only break rule — unchanged.
+- Weekly H/L and PWC `request.security` flipped `lookahead_on → lookahead_off` — a repaint fix in the
+  main indicator's display path; the engine is already non-repainting (prev-completed-period), so no
+  event change. No action needed; noted for reconciliation.
+- Harness `indicators/liquidity_export.pine` **FIXED** (lines 50/52, 89/91, 122/124 close-back guard
+  dropped). Tests updated (`test_daily_high_swept_on_wick_through`; sweep-test comments corrected).
+
+**HELD — NOT committed (2026-07-07) — `engines/fibonacci/` (Macro / "Cycle" fib)** (reset logic changed; suspected source bug — see RE-SYNC STATUS above):
+- Price closing **above the locked top** used to only HIDE the cycle (stay locked); it now does a
+  **full reset** — clears dir/origin/extreme, unlocks, clears touched flags, and **restarts
+  bottom-tracking** from the current bar (`macro_last_bear_sos_bar := bar_index`, `macro_ll_since_bear_sos := low`).
+  **FIXED:** `MacroFib` step 5 now does the full reset (mirrors the close-below-bottom reset + a
+  touched-flag wipe). Note the reset now pre-empts a same-bar HH-extend (step 5 runs before step 6
+  and unlocks the cycle) — matches Pine. (Structure + Sniper fibs unaffected — their changes are visual.)
+- Harness `indicators/fib_export.pine` **FIXED** (full reset). Test updated
+  (`test_close_above_top_resets_cycle`; the extend test now closes below the old top to isolate it).
+
+**VALIDATED & COMMITTED (2026-07-07) — `engines/session_volume_profile/`** (MV confirm reset timing changed):
+- `mv_swept` / MV confirmation now resets on **`svpNew`** (next Asia session open) instead of
+  **`svpEnd`** (Asia session close) — so the confirmed/swept state now persists through the whole day
+  until the next Asia session. **FIXED:** `SvpEngine` now resets on `svp_new` (`"Asia" in sess.opened`)
+  instead of `svp_end`; ordering (tap check then reset) preserved (POC price + formed pulse unchanged).
+- Harness `indicators/svp_export.pine` **FIXED** (line 121 `if svpEnd` → `if svpNew`). Tests updated
+  (`test_form_bar_confirms_when_it_straddles`, `test_swept_resets_on_next_session_open`).
+
+**Unaffected:** `engines/market_structure/` (new `int_bull/bear_bos/sos` flags just re-expose
+already-detected internal breaks for the table; detection unchanged), `engines/order_blocks/`,
+`engines/sessions/`, `engines/vwap/` — only default toggles / labels changed.
+
+Each engine fix must re-run its `compare_*.py` Pine-parity check on a fresh TradingView export
+(with the matching `*_export.pine` harness updated first) before it is committed.
 
 ---
 

@@ -40,16 +40,16 @@ monthRoll = mTime  != mTime[1]
 h4Roll    = h4Time != h4Time[1]
 
 //============================================================
-//  DAILY — sweep rule (high>lvl and close<lvl / low<lvl and close>lvl)
+//  DAILY — sweep rule: wick through the level (high>lvl / low<lvl); close-back guard dropped 2026-07-06
 //============================================================
 var float pdh = na, var float pdl = na
 var bool  pdh_mit = false, var bool pdl_mit = false
 if dayRoll
     pdh := dHigh1, pdl := dLow1
     pdh_mit := false, pdl_mit := false
-if not na(pdh) and not pdh_mit and high > pdh and close < pdh
+if not na(pdh) and not pdh_mit and high > pdh
     pdh_mit := true
-if not na(pdl) and not pdl_mit and low < pdl and close > pdl
+if not na(pdl) and not pdl_mit and low < pdl
     pdl_mit := true
 
 //============================================================
@@ -79,16 +79,16 @@ if not na(pml) and not pml_mit and close < pml
     pml_mit := true
 
 //============================================================
-//  H4 SWEEP — sweep rule (source already used high[1]/low[1])
+//  H4 SWEEP — sweep rule: wick through (high>lvl / low<lvl); close-back guard dropped 2026-07-06
 //============================================================
 var float h4h = na, var float h4l = na
 var bool  h4h_mit = false, var bool h4l_mit = false
 if h4Roll
     h4h := h4High1, h4l := h4Low1
     h4h_mit := false, h4l_mit := false
-if not na(h4h) and not h4h_mit and high > h4h and close < h4h
+if not na(h4h) and not h4h_mit and high > h4h
     h4h_mit := true
-if not na(h4l) and not h4l_mit and low < h4l and close > h4l
+if not na(h4l) and not h4l_mit and low < h4l
     h4l_mit := true
 
 //============================================================
@@ -114,14 +114,15 @@ if inNY
     nyHigh := (not inNY[1]) ? high : math.max(nyHigh, high)
     nyLow  := (not inNY[1]) ? low  : math.min(nyLow,  low)
 
-// publish the finished session's H/L as a level on the close edge; sweep rule; reset on re-publish
+// publish the finished session's H/L as a level on the close edge; sweep rule (wick through, close-
+// back guard dropped 2026-07-06); reset on re-publish
 f_sessLevels(bool justClosed, float sHigh, float sLow, float lvlH, float lvlL, bool mitH, bool mitL) =>
     _lvlH = lvlH, _lvlL = lvlL, _mitH = mitH, _mitL = mitL
     if justClosed and not na(sHigh)
         _lvlH := sHigh, _lvlL := sLow, _mitH := false, _mitL := false
-    if not na(_lvlH) and not _mitH and high > _lvlH and close < _lvlH
+    if not na(_lvlH) and not _mitH and high > _lvlH
         _mitH := true
-    if not na(_lvlL) and not _mitL and low < _lvlL and close > _lvlL
+    if not na(_lvlL) and not _mitL and low < _lvlL
         _mitL := true
     [_lvlH, _lvlL, _mitH, _mitL]
 

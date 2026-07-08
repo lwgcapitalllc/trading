@@ -71,16 +71,17 @@ def test_daily_level_is_previous_completed_day():
     assert all(not l.mitigated for l in ev.created)
 
 
-def test_daily_high_swept_needs_close_back_below():
+def test_daily_high_swept_on_wick_through():
     liq = _only(enable_daily=True)
     liq.update(0, ms(NY, 2024, 7, 1, 10), 100, 90, 95)
     liq.update(1, ms(NY, 2024, 7, 1, 12), 110, 90, 105)
     liq.update(2, ms(NY, 2024, 7, 2, 10), 105, 100, 102)    # PDH=110 created
-    # wick above but close above → NOT a sweep (a break, which is not the daily rule)
-    ev = liq.update(3, ms(NY, 2024, 7, 2, 12), 112, 104, 111)
+    # wick does not reach the level → not swept
+    ev = liq.update(3, ms(NY, 2024, 7, 2, 12), 109, 104, 108)
     assert ev.mitigated == []
-    # wick above then close back below → swept
-    ev = liq.update(4, ms(NY, 2024, 7, 2, 13), 113, 108, 109)
+    # wick through the level → swept, even though the bar also CLOSES above it (the close-back
+    # guard was dropped 2026-07-06 to match mpc_assistant.pine — a wick alone now sweeps)
+    ev = liq.update(4, ms(NY, 2024, 7, 2, 13), 112, 108, 111)
     assert [l.name for l in ev.mitigated] == ["PDH"]
     assert ev.mitigated[0].mitigated_index == 4
 
@@ -90,7 +91,7 @@ def test_daily_low_swept():
     liq.update(0, ms(NY, 2024, 7, 1, 10), 100, 90, 95)
     liq.update(1, ms(NY, 2024, 7, 1, 12), 110, 90, 105)
     liq.update(2, ms(NY, 2024, 7, 2, 10), 105, 100, 102)    # PDL=90 created
-    ev = liq.update(3, ms(NY, 2024, 7, 2, 12), 101, 88, 95)  # low 88<90, close 95>90 → swept
+    ev = liq.update(3, ms(NY, 2024, 7, 2, 12), 101, 88, 95)  # low 88<90 → swept (wick through)
     assert [l.name for l in ev.mitigated] == ["PDL"]
 
 
@@ -141,7 +142,7 @@ def test_h4_sweep_high_emits_bsl():
     liq.update(1, ms(NY, 2024, 7, 1, 10), 55, 42, 52)       # bucket high 55, low 40
     ev = liq.update(2, ms(NY, 2024, 7, 1, 13), 53, 48, 50)  # 12:00-16:00 bucket → roll
     assert {(l.name, l.price) for l in ev.created} == {("H4 H", 55), ("H4 L", 40)}
-    ev = liq.update(3, ms(NY, 2024, 7, 1, 14), 57, 49, 54)  # high 57>55, close 54<55 → swept
+    ev = liq.update(3, ms(NY, 2024, 7, 1, 14), 57, 49, 54)  # high 57>55 → swept (wick through)
     swept = [l for l in ev.mitigated if l.name == "H4 H"]
     assert len(swept) == 1 and swept[0].sweep_label == "BSL"
 
@@ -151,7 +152,7 @@ def test_h4_sweep_low_emits_ssl():
     liq.update(0, ms(NY, 2024, 7, 1, 9), 50, 40, 45)
     liq.update(1, ms(NY, 2024, 7, 1, 10), 55, 42, 52)
     liq.update(2, ms(NY, 2024, 7, 1, 13), 53, 48, 50)       # H4 L=40 created
-    ev = liq.update(3, ms(NY, 2024, 7, 1, 14), 52, 38, 45)  # low 38<40, close 45>40 → swept
+    ev = liq.update(3, ms(NY, 2024, 7, 1, 14), 52, 38, 45)  # low 38<40 → swept (wick through)
     swept = [l for l in ev.mitigated if l.name == "H4 L"]
     assert len(swept) == 1 and swept[0].sweep_label == "SSL"
 
@@ -174,7 +175,7 @@ def test_session_high_sweep():
     liq.update(0, ms("UTC", 2024, 7, 1, 0), 10, 5, 8)
     liq.update(1, ms("UTC", 2024, 7, 1, 4), 12, 6, 11)
     liq.update(2, ms("UTC", 2024, 7, 1, 9), 11, 9, 10)      # Asia H=12 created
-    ev = liq.update(3, ms("UTC", 2024, 7, 1, 10), 13, 10, 11)  # high 13>12, close 11<12 → swept
+    ev = liq.update(3, ms("UTC", 2024, 7, 1, 10), 13, 10, 11)  # high 13>12 → swept (wick through)
     assert [l.name for l in ev.mitigated] == ["Asia H"]
 
 

@@ -36,7 +36,10 @@ span, and the row that accumulated the most volume is the **POINT OF CONTROL**. 
     POC price  = sessionLow + (pocRow + 0.5) * (range / 100)
 
 The **MV slot** (confirmation table) then marks the most recent POC `swept` / "Confirmed" the first
-time a bar straddles it (`high >= poc and low <= poc`), and resets on the next Asia close.
+time a bar straddles it (`high >= poc and low <= poc`), and resets on the next Asia **open**
+(Pine `svpNew`). The reset moved from the Asia close (`svpEnd`) to the next Asia open on 2026-07-06
+to match a re-pasted `mpc_assistant.pine` — so a confirmed POC now stays confirmed all day until the
+next session opens, instead of being wiped the moment its own session closes.
 
 ### Two Pine quirks ported exactly
 
