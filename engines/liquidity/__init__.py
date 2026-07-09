@@ -2,14 +2,15 @@
 liquidity/ — the liquidity-levels engine subsystem.
 
 Turns the bar stream into liquidity LEVEL EVENTS — the prices the market runs toward and grabs:
-previous day/week/month highs and lows (PDH/PDL/PWH/PWL/PMH/PML), the previous week's close (PWC),
-the previous-H4 high/low sweep targets (SSH/BSL), and each finished session's high/low
-(Asia/London/NY). Emits create / mitigate (sweep-or-break) / evict events, not lines or boxes.
+previous day/week highs and lows (PDH/PDL/PWH/PWL), the previous week's close (PWC), the previous-H4
+high/low sweep targets (SSH/BSL), and each finished session's high/low (Asia/London/NY). Emits
+create / mitigate (sweep-or-break) / evict events, not lines or boxes. (The MONTHLY level PMH/PML was
+removed from the source and this engine on 2026-07-09.)
 
-Ported from indicators/mpc_assistant.pine's liquidity blocks (DAILY/WEEKLY/MONTHLY LEVELS, PWC, H4
-LIQUIDITY SWEEP TRACKER, SESSION H/L TRACKING). The session H/L is consumed from the canonical
-sessions engine (engines/sessions/), which this engine composes and drives internally; the
-day/week/month/H4 levels are reconstructed from the bar stream.
+Ported from indicators/mpc_assistant.pine's liquidity blocks (DAILY/WEEKLY LEVELS, PWC, H4 LIQUIDITY
+SWEEP TRACKER, SESSION H/L TRACKING). The session H/L is consumed from the canonical sessions engine
+(engines/sessions/), which this engine composes and drives internally; the day/week/H4 levels are
+reconstructed from the bar stream.
 
 NON-REPAINTING (Aaron's explicit decision, 2026-07-05): every HTF level is built from a PREVIOUS,
 fully-completed period — the engine never forecasts the current period's high/low, so a bot never

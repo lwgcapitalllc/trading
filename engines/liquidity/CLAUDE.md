@@ -1,19 +1,21 @@
 # CLAUDE.md — Liquidity Levels Engine Subsystem
 
 **Purpose:** Turn the bar stream into liquidity LEVEL EVENTS — the prices the market runs toward and
-grabs: previous day/week/month highs & lows (PDH/PDL/PWH/PWL/PMH/PML), the previous week's close
+grabs: previous day/week highs & lows (PDH/PDL/PWH/PWL), the previous week's close
 (PWC), the previous-H4 high/low sweep targets (SSH/BSL), and each finished session's high/low
 (Asia/London/NY). The signal is the event ("PDH created at 2358", "H4 high swept — BSL"), not the
 line or box.
 **Scope:** Level geometry + lifecycle (create on a completed period / session close → mitigate
 (sweep or break) → evict) only. No trading decisions, no MT5 ops, no UI, no chart rendering (no
 lines, labels or colours). Session high/low is CONSUMED from `engines/sessions/`, not recomputed.
-**Status:** Production — ported from `mpc_assistant.pine`'s liquidity blocks, unit-tested (15
-hand-traced tests, green), and **100% Pine-parity-validated on a real `VANTAGE_XAUUSD, 5m` export**
-(11,457 bars): all 33 fields — the 15 level prices, their mitigation flags, and the 4 boundary-roll
-pulses — match on every warm bar (`--htf-rollover 18 --warmup 4653`, exit 0). The one canonical
-implementation — no consumer builds its own.
-**Pine:** ported from `indicators/mpc_assistant.pine` (DAILY/WEEKLY/MONTHLY LEVELS, PWC, H4
+**Status:** Production — ported from `mpc_assistant.pine`'s liquidity blocks, unit-tested (14
+hand-traced tests, green), and **100% Pine-parity-validated**. The **MONTHLY level (PMH/PML) was
+removed from the source and this engine on 2026-07-09**; the check now covers 28 fields (13 level
+prices, their 12 mitigation flags, 3 boundary-roll pulses) and RE-PASSED exit 0 on a fresh
+`VANTAGE_XAUUSD, 5m` export (13,759 bars, `--htf-rollover 18 --warmup 1742` — the warm-up is now just
+the weekly cold-start, not the old monthly one). The one canonical implementation — no consumer builds
+its own.
+**Pine:** ported from `indicators/mpc_assistant.pine` (DAILY/WEEKLY LEVELS, PWC, H4
 LIQUIDITY SWEEP, SESSION H/L); parity harness is `indicators/liquidity_export.pine`, diffed against
 this Python by `tools/compare_liquidity.py`. Pine stays in `indicators/` (shared source,
 TradingView-only toolchain); the CSV + compare tool are the engine's half.
@@ -23,14 +25,14 @@ TradingView-only toolchain); the CSV + compare tool are the engine's half.
 
 ## NON-REPAINTING — Aaron's explicit decision (2026-07-05)
 
-The Pine source reads the day/week/month high/low with `request.security(..., high, lookahead_on)`,
+The Pine source reads the day/week high/low with `request.security(..., high, lookahead_on)`,
 which **peeks at the developing period's future extreme** and freezes it at the period's first bar
 (a repaint the source itself hides on the live bar via `not isLastDaily`). Aaron's decision: **the
 engine must only ever use PAST, completed data — never forecast the current period's high/low.** A
 live bot must not trade a level built from information it could not have had at the time.
 
 So every HTF level here is built from the **previous, fully-completed period only**: on the first bar
-of a new day/week/month the just-finished period's high/low (and, for PWC, its final close) become
+of a new day/week the just-finished period's high/low (and, for PWC, its final close) become
 the new level. This is exactly what the source shows in real time (yesterday's completed high), made
 deterministic and streamable. The parity export mirrors the same non-repainting reads
 (`high[1]/low[1]/close[1]`), so the Python↔Pine check still validates at 100% — the same "deliberate
@@ -47,12 +49,12 @@ engines/liquidity/
 ├── __init__.py     ← re-exports the public API
 ├── CLAUDE.md       ← this file
 ├── tests/
-│   └── test_engine.py       ← 15 hand-traced tests
+│   └── test_engine.py       ← 14 hand-traced tests
 └── tools/
     └── compare_liquidity.py ← Pine↔Python parity harness (reads a TradingView CSV export)
 ```
 
-Pine source of truth: `indicators/mpc_assistant.pine` — DAILY/WEEKLY/MONTHLY LEVELS (1334-1506),
+Pine source of truth: `indicators/mpc_assistant.pine` — DAILY/WEEKLY LEVELS (1334-1506),
 PREVIOUS WEEKLY CLOSE (1508-1533), H4 LIQUIDITY SWEEP TRACKER (1535-1591), SESSION H/L TRACKING
 (1593-1760), the HTF securities (811-817) and the newDay tidy (1344 / 1402 / 1460 / 1618).
 Parity export build: `indicators/liquidity_export.pine`.
@@ -68,18 +70,17 @@ ported exactly from the source:
 |---|---|---|
 | daily | PDH / PDL | **sweep** — wick through: `high>lvl` (H) / `low<lvl` (L) |
 | weekly | PWH / PWL | **break** — `close>lvl` (H) / `close<lvl` (L) |
-| monthly | PMH / PML | **break** — `close>lvl` / `close<lvl` |
 | pwc | PWC | none — a reference close, never mitigated (source only recolours it) |
 | h4 | H4 H / H4 L | **sweep**; the sweep emits the source's label — high→`BSL`, low→`SSL` |
 | session | Asia/London/NY H & L | **sweep** |
 
 Note the deliberate asymmetry: daily / session / H4 use the **sweep** rule (a wick through the
-level); weekly / monthly use the **break** rule (a plain close through). Keep it exact.
+level); weekly uses the **break** rule (a plain close through). Keep it exact.
 
 **Close-back guard dropped 2026-07-06.** The sweep rule used to also require price to close back the
 other side of the level (`high>lvl and close<lvl` for a high — a grab-and-reject). A re-pasted
 `mpc_assistant.pine` removed that guard: the daily/session/H4 sweeps now fire on the **wick alone**.
-Weekly/monthly break rule is unchanged.
+Weekly break rule is unchanged.
 
 A level's price is **frozen at creation** and never repainted. A level created on a period roll or a
 session close **evicts** the previous same-slot level (a create→evict pair). A mitigated level stays
@@ -93,8 +94,8 @@ Each bar, `update()` runs:
 
 1. **Drive the composed sessions engine** (gives the NY new-day flag + the finished SessionRange).
 2. **New-day tidy** (Pine `i_currentDayOnly`, keyed on NY `newDay`) — drop already-mitigated
-   day/week/month/session levels. H4 and PWC are excluded (source hides neither here).
-3. **Create** — day/week/month rolls, then PWC, then H4 roll, then session-close levels.
+   day/week/session levels. H4 and PWC are excluded (source hides neither here).
+3. **Create** — day/week rolls, then PWC, then H4 roll, then session-close levels.
 4. **Mitigate** — every active level, AFTER all creation, so a fresh level can be taken on its own
    creation bar (mirrors Pine's create-then-mitigate order within each block).
 
@@ -102,14 +103,13 @@ Each bar, `update()` runs:
 
 ## HTF period boundaries (the calibration knob)
 
-Day / week / month / H4 buckets are cut in a configurable timezone (`htf_timezone`), keyed on a clock
+Day / week / H4 buckets are cut in a configurable timezone (`htf_timezone`), keyed on a clock
 shifted so the session-open hour (`htf_rollover_hours`) lands at midnight — which correctly rolls an
-EVENING open (whose pre-midnight bar is the first bar of the new week/month) into the next period.
-TradingView's "D"/"W"/"M"/"240" resolutions align to the instrument's **exchange session**, which is
+EVENING open (whose pre-midnight bar is the first bar of the new week) into the next period.
+TradingView's "D"/"W"/"240" resolutions align to the instrument's **exchange session**, which is
 broker-dependent. **Validated for VANTAGE:XAUUSD: the session opens 18:00 New York** — its Sunday
-18:00 bar is the first bar of the new week, and the month rolls on the evening bar that opens the
-first trading day of the month → `htf_timezone="America/New_York", htf_rollover_hours=18` (the
-baked-in default; the `px_*_roll` columns were the calibration signal). The new-day tidy keys off NY
+18:00 bar is the first bar of the new week → `htf_timezone="America/New_York", htf_rollover_hours=18`
+(the baked-in default; the `px_*_roll` columns were the calibration signal). The new-day tidy keys off NY
 `newDay` (a separate, non-configurable clock the composed sessions engine already computes).
 
 ---
@@ -173,24 +173,25 @@ Feature toggles (`enable_daily`/`enable_weekly`/…/`enable_sessions`), `hide_mi
 
 ## Validation (Pine ↔ Python parity)
 
-**Unit tests — GREEN:** `python3 -m pytest engines/liquidity/tests/ -q` (15 hand-traced tests pinning
+**Unit tests — GREEN:** `python3 -m pytest engines/liquidity/tests/ -q` (14 hand-traced tests pinning
 non-repainting creation, the sweep-vs-break rules, PWC, the H4 SSH/BSL sweep, session levels via the
 composed sessions engine, the new-day tidy, and eviction on a roll).
 
-**Full Pine↔Python parity — GREEN (2026-07-05).** 100% match on a real `VANTAGE_XAUUSD, 5m` export
-(11,457 bars): all 33 fields — the 15 level prices, their mitigation flags, and the 4 boundary-roll
-pulses — matched on every warm bar (`--htf-rollover 18 --warmup 4653`, exit 0). The 4,653-bar
-warm-up is dominated by the **monthly** level: it only forms once a full calendar month completes
-inside the export window (the first in-window month roll is 31 May → June), and the chart carried
-history before the window so Pine's HTF securities opened already holding a value while Python starts
-cold — the same warm-start offset the structure and OB engines have. The harness:
+**Full Pine↔Python parity — GREEN (2026-07-09, monthly removed).** 100% match on a fresh
+`VANTAGE_XAUUSD, 5m` export (13,759 bars): all **28 fields** (13 level prices + 12 mitigation flags + 3
+boundary-roll pulses) matched on every warm bar (`--htf-rollover 18 --warmup 1742`, exit 0). Removing
+the monthly level dropped the harness's `px_pmh/px_pml(_mit)` + `px_month_roll` columns. The 1,742-bar
+warm-up is now just the **weekly** cold-start (Pine's HTF security opens holding a pre-window weekly
+value while Python forms its first in-window weekly level at bar 1742) — far shorter than the old
+4,653-bar warm-up, which the monthly level dominated. (Pre-removal run for the record: GREEN 2026-07-05,
+33 fields, `--warmup 4653`.) The harness:
 
 1. `indicators/liquidity_export.pine` — the liquidity levels lifted from `mpc_assistant.pine` with
    drawing removed, using the **non-repainting** `high[1]/low[1]/close[1]` reads, plus `px_*` columns
    for each level's price + mitigation flag and `px_*_roll` boundary pulses. Put it on the same
    `VANTAGE_XAUUSD` chart/timeframe (5m), Export chart data → CSV, drop it in
    `engines/liquidity/exports/` (git-ignored).
-2. `python3 engines/liquidity/tools/compare_liquidity.py <that.csv> --warmup 4653` — feeds each bar
+2. `python3 engines/liquidity/tools/compare_liquidity.py <that.csv> --warmup N` — feeds each bar
    through `LiquidityEngine` and diffs the active-level prices + mitigation flags against the `px_*`
    columns, bar by bar. Exit 0 = parity. Standard library only. **Boundary calibration** (already
    done — baked in as `htf_rollover_hours=18`): the `px_*_roll` columns are the signal; if they ever

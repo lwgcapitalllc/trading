@@ -3,9 +3,10 @@ Hand-traced tests for the Internal fib state machine (the 4th fib, GRP_IFIB).
 
 These pin the ported Pine behaviour (mpc_assistant.pine's Internal Fib block): the fib seeds off an
 internal-structure leg (an iBOS/iSOS, delivered as the snapshot's ifib_seed_*), extends its moving
-anchor live, registers first touches on the same 0.618 gate as the other fibs, latches
-reset_active once TP3 (0.0) is hit, and is wiped by ANY external BOS/SOS. Full Pine↔Python parity
-is validated separately against a <=5m TradingView export (compare_fib.py, px_ifib_* touch pulses).
+anchor live, registers first touches on the same 0.618 gate as the other fibs (skipping the checks
+on any bar the moving anchor itself changed — Pine iFibExtChanged), and is wiped by ANY external
+BOS/SOS. Full Pine↔Python parity is validated separately against a <=5m TradingView export
+(compare_fib.py, px_ifib_* touch pulses).
 
 Run:  python3 -m pytest fibonacci/tests/ -q      (from the repo root)
 """
@@ -106,21 +107,37 @@ def test_retrace_levels_arm_once_e1_ever_touched():
     assert {"E2", "E3"}.issubset({t.level for t in ev.touched})
 
 
-def test_tp3_latches_reset_active():
+def test_tp3_hit_no_longer_latches_reset_active():
+    """The 2026-07-09 re-paste dropped the TP3-hit setter — TP3 (0.0) still fires a touch, but
+    reset_active stays False (the leg is spent only on the external-break wipe, not on the tap)."""
     fib = InternalFib()
     fib.update(0, high=109.0, low=108.0, snap=_seed(1, 100.0, 110.0))
     fib.update(1, high=104.0, low=103.0, snap=_plain())        # gate (E1)
     ev = fib.update(2, high=110.0, low=104.0, snap=_plain())   # rally to 0.0 (TP3)
-    assert "TP3" in {t.level for t in ev.touched}
-    assert ev.reset_active
-    ev = fib.update(3, high=109.0, low=108.0, snap=_plain())   # stays latched on the same leg
-    assert ev.reset_active
+    assert "TP3" in {t.level for t in ev.touched}              # the touch still fires
+    assert not ev.reset_active                                 # ...but no longer latches
+    ev = fib.update(3, high=109.0, low=108.0, snap=_plain())
+    assert not ev.reset_active
 
 
-def test_reseed_clears_reset_active():
+def test_reseed_starts_a_fresh_leg():
     fib = InternalFib()
     fib.update(0, high=109.0, low=108.0, snap=_seed(1, 100.0, 110.0))
-    fib.update(1, high=104.0, low=103.0, snap=_plain())
-    fib.update(2, high=110.0, low=104.0, snap=_plain())        # reset_active latched
-    ev = fib.update(3, high=124.0, low=123.0, snap=_seed(1, 120.0, 130.0))  # fresh internal leg
-    assert ev.seeded and not ev.reset_active and ev.top == 130.0
+    fib.update(1, high=104.0, low=103.0, snap=_plain())            # E1 touched on the first leg
+    ev = fib.update(2, high=124.0, low=123.0, snap=_seed(1, 120.0, 130.0))  # fresh internal leg
+    assert ev.seeded and ev.top == 130.0 and ev.bot == 120.0      # fresh anchors
+    assert ev.touched_so_far == set()                             # old touches wiped
+
+
+def test_extend_bar_skips_touch_checks():
+    """A bar on which the moving anchor changed (a live wick extends the top) skips the touched-
+    checks — Pine iFibExtChanged — so a fresh extreme can't retroactively satisfy the level it just
+    created. The checks resume on the next stable bar."""
+    fib = InternalFib()
+    fib.update(0, high=109.0, low=108.0, snap=_seed(1, 100.0, 110.0))   # ash=110, asl=100
+    fib.update(1, high=104.0, low=103.0, snap=_plain())                 # gate E1 (no extend: 104<110)
+    ev = fib.update(2, high=116.0, low=104.0, snap=_plain())            # new high extends 110 -> 116
+    assert ev.top == 116.0                          # anchor rode up
+    assert ev.touched == []                          # ...but touched-checks skipped this bar
+    ev = fib.update(3, high=116.0, low=104.0, snap=_plain())            # anchor stable -> checks resume
+    assert "TP1" in {t.level for t in ev.touched}    # TP1 (100->116 leg) = 108, high 116 -> fires

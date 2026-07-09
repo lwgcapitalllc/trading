@@ -3,8 +3,8 @@ liquidity/types.py — plain data containers for the liquidity engine.
 
 No behavior lives here (bar a couple of tiny helpers on LiquidityLevel). Two containers:
 
-  LiquidityLevel — one price line the market runs toward and grabs: a previous day/week/month
-    high or low (PDH/PDL/PWH/PWL/PMH/PML), the previous week's close (PWC), a previous-H4 high/low
+  LiquidityLevel — one price line the market runs toward and grabs: a previous day/week high or low
+    (PDH/PDL/PWH/PWL), the previous week's close (PWC), a previous-H4 high/low
     (H4 sweep target), or a finished session's high/low (Asia/London/NY H/L). Carries its price, the
     bar it was created on, its mitigation rule, and — once price takes it — the bar it was mitigated
     (swept) on. Mirrors the persisted d_hPrice / w_hPrice / h4TrackHigh / asiaHigh ... state in
@@ -17,8 +17,10 @@ No behavior lives here (bar a couple of tiny helpers on LiquidityLevel). Two con
     (state). The signal is the event ("PDH created at 4108", "H4 high swept — BSL"), not the box.
 
 NON-REPAINTING BY DESIGN (Aaron's explicit decision, 2026-07-05): every HTF level is built from a
-PREVIOUS, fully-completed period — the engine never forecasts the current day/week/month's high or
-low. A live bot must never trade a level that peeked at the future. See engine.py and CLAUDE.md.
+PREVIOUS, fully-completed period — the engine never forecasts the current day/week's high or low.
+A live bot must never trade a level that peeked at the future. See engine.py and CLAUDE.md.
+
+(The MONTHLY level PMH/PML was removed from the source and this engine on 2026-07-09.)
 """
 
 from __future__ import annotations
@@ -29,13 +31,13 @@ from typing import List, Optional
 # Mitigation rules — how a level is "taken". Ported exactly from mpc_assistant.pine:
 #   SWEEP_HIGH  a wick through the level           (high > price)                     — day/session/H4 highs
 #   SWEEP_LOW   a wick through the level           (low  < price)                     — day/session/H4 lows
-#   BREAK_HIGH  a body close above                 (close > price)                    — week/month highs
-#   BREAK_LOW   a body close below                 (close < price)                    — week/month lows
+#   BREAK_HIGH  a body close above                 (close > price)                    — week highs
+#   BREAK_LOW   a body close below                 (close < price)                    — week lows
 #   NONE        never mitigated                    (PWC — a reference close, not a swept level)
 #
 # The close-back guard was DROPPED 2026-07-06 to match a re-pasted mpc_assistant.pine: the sweep
 # rules used to require price close back the other side (high>price AND close<price); they now fire
-# on the wick alone. Weekly/monthly keep the plain close-through break rule (unchanged).
+# on the wick alone. Weekly keeps the plain close-through break rule (unchanged).
 SWEEP_HIGH = "sweep_high"
 SWEEP_LOW = "sweep_low"
 BREAK_HIGH = "break_high"
@@ -47,9 +49,9 @@ NONE = "none"
 class LiquidityLevel:
     """One liquidity price line.
 
-    kind    — "daily" | "weekly" | "monthly" | "pwc" | "h4" | "session"
+    kind    — "daily" | "weekly" | "pwc" | "h4" | "session"
     side    — "high" | "low" | "close"   (close only for PWC)
-    name    — the source label: PDH/PDL, PWH/PWL, PMH/PML, PWC, "H4 H"/"H4 L", "Asia H"/"Asia L", …
+    name    — the source label: PDH/PDL, PWH/PWL, PWC, "H4 H"/"H4 L", "Asia H"/"Asia L", …
     price   — the level's price (frozen at creation; never repainted)
     rule    — the mitigation rule (one of the constants above)
     created_index    — bar index the level was created on
@@ -93,7 +95,7 @@ class LiquidityEvents:
 
     Edges (this bar):
       created    — levels created on this bar (a period completed, or a session closed)
-      mitigated  — levels price took on this bar (swept highs/lows, broken week/month levels)
+      mitigated  — levels price took on this bar (swept highs/lows, broken week levels)
       evicted    — levels removed on this bar because a period rolled or the new-day tidy dropped an
                    already-spent level. NOT a trading signal — a consumer must never confuse this
                    with `mitigated`.

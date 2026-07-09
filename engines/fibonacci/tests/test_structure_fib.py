@@ -148,19 +148,35 @@ def test_internal_swing_not_adopted_when_less_extreme():
     assert ev.levels["1.0"] == 100.0                           # kept the structure asl
 
 
-def test_tp3_hit_latches_reset_active_until_new_leg():
-    """Hitting TP3 (0.0, full retrace) latches reset_active; it stays latched on the same leg and
-    clears on a new leg (Pine fiboResetActive)."""
+def test_tp3_hit_no_longer_latches_reset_active():
+    """The 2026-07-09 re-paste dropped the TP3-hit setter: TP3 (0.0) still fires a touch, but
+    reset_active stays False for the whole leg — the leg is spent only when a new leg forms."""
     fib = StructureFib()
     snap = _bull_snap()                              # E1=103.82, TP1=105, TP3=110 (the high)
     fib.update(109.0, 108.0, snap)                   # origin bar
     ev = fib.update(109.0, 103.0, snap)             # tap the 0.618 gate
     assert not ev.reset_active
-    ev = fib.update(110.0, 108.0, snap)             # rally back to 0.0 (TP3) -> spent
-    assert "TP3" in {t.level for t in ev.touched}
-    assert ev.reset_active
-    ev = fib.update(110.0, 109.0, snap)             # same leg -> stays latched
-    assert ev.reset_active
-    new = _bull_snap(ash=130.0, asl=120.0, ash_loc=60, asl_loc=50)
-    ev = fib.update(125.0, 124.0, snap=new)         # new leg -> cleared
-    assert ev.origin_changed and not ev.reset_active
+    ev = fib.update(110.0, 108.0, snap)             # rally back to 0.0 (TP3)
+    assert "TP3" in {t.level for t in ev.touched}    # the touch still fires
+    assert not ev.reset_active                       # ...but no longer latches on the tap
+    ev = fib.update(110.0, 109.0, snap)             # same leg -> still not latched
+    assert not ev.reset_active
+
+
+def test_extend_changed_bar_skips_touch_checks():
+    """A bar on which the extending anchor itself moved skips ALL touched-checks (Pine
+    fiboExtChanged) — a live wick that just moved the anchor can't retroactively satisfy the very
+    level it created. The checks resume once the anchor is stable again."""
+    fib = StructureFib()
+    snap = _bull_snap()                              # ash=110, asl=100; E1=103.82
+    fib.update(109.0, 108.0, snap)                   # origin bar
+    fib.update(109.0, 103.0, snap)                   # gate reached (low 103 <= 103.82)
+    # This bar MOVES the top anchor (110 -> 112, same origin) AND prints a high reaching old TP1.
+    moved = _bull_snap(ash=112.0)                    # ash_loc/asl_loc default -> origin unchanged
+    ev = fib.update(high=106.0, low=104.0, snap=moved)
+    assert abs(ev.levels["E1"] - (112.0 - 12.0 * 0.618)) < 1e-9   # levels recomputed off the moved anchor
+    assert not ev.origin_changed                     # origin bar unchanged — only the anchor moved
+    assert ev.touched == []                          # ...but touched-checks skipped this bar
+    # Next bar, anchor stable -> checks resume; TP1 for the 100->112 leg = 106, high 106 -> fires.
+    ev = fib.update(high=106.0, low=104.0, snap=moved)
+    assert "TP1" in {t.level for t in ev.touched}

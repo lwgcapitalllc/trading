@@ -29,7 +29,7 @@ NY = "America/New_York"
 def _only(**flags):
     """A LiquidityEngine with every feature disabled except the ones named True, hide-on-new-day off
     by default (tests that want it pass hide=True). Isolates one feature at a time."""
-    base = dict(enable_daily=False, enable_weekly=False, enable_monthly=False,
+    base = dict(enable_daily=False, enable_weekly=False,
                 enable_pwc=False, enable_h4=False, enable_sessions=False,
                 hide_mitigated_on_new_day=False, htf_timezone=NY, htf_rollover_hours=0)
     base.update(flags)
@@ -95,7 +95,7 @@ def test_daily_low_swept():
     assert [l.name for l in ev.mitigated] == ["PDL"]
 
 
-# ── weekly / monthly: the break rule (close-through, no wick condition) ───────
+# ── weekly: the break rule (close-through, no wick condition) ─────────────────
 
 def test_weekly_high_broken_by_close_not_wick():
     liq = _only(enable_weekly=True)
@@ -109,14 +109,6 @@ def test_weekly_high_broken_by_close_not_wick():
     # close above → broken
     ev = liq.update(4, ms(NY, 2024, 7, 8, 13), 212, 200, 211)
     assert [l.name for l in ev.mitigated] == ["PWH"]
-
-
-def test_monthly_levels_created_on_month_roll():
-    liq = _only(enable_monthly=True)
-    liq.update(0, ms(NY, 2024, 6, 10, 10), 300, 280, 290)
-    liq.update(1, ms(NY, 2024, 6, 20, 10), 320, 270, 300)    # June: high 320, low 270
-    ev = liq.update(2, ms(NY, 2024, 7, 1, 10), 305, 295, 300)  # first bar of July → roll
-    assert {(l.name, l.price) for l in ev.created} == {("PMH", 320), ("PML", 270)}
 
 
 # ── PWC: previous week's final close, never mitigated ────────────────────────
@@ -195,7 +187,7 @@ def test_period_roll_evicts_old_level():
     assert active_prices == {("PDH", 105), ("PDL", 100)}
 
 
-# ── new-day tidy: drop mitigated day/week/month/session levels ────────────────
+# ── new-day tidy: drop mitigated day/week/session levels ──────────────────────
 
 def test_hide_mitigated_on_new_day():
     # weekly-only so the NY new-day fires WITHOUT a weekly roll, isolating the tidy from a roll.

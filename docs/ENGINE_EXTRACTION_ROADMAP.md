@@ -2,8 +2,8 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
-**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. A **2026-07-08 audit** of a fresh, much larger re-paste of `mpc_assistant.pine` (1721-line diff) superseded the 2026-07-06/07 findings and flagged three engines STALE. Re-sync progress: **market_structure — DONE** (two detection changes ported through the whole sync chain, exit 0, committed); **fibonacci — DONE** (Structure TP4/TP5 drop + internal-swing anchor + TP3 reset; Macro hide-only + always-`ll_since` bottom anchor; the new **Internal Fib** fully ported — re-validated 2026-07-09 on a fresh 5m export, exit 0); **SVP — DONE** (`svpRows` 100 → 50 through engine + harness + tests + docs; re-validated 2026-07-09 on a fresh 50-row 5m export, `--warmup 251`, exit 0). **liquidity stayed IN PARITY.** The earlier held fibonacci-Macro question is **resolved** (the source reverted the same-bar full-reset; the held changes were discarded and redone in the fib re-sync). **order_blocks — DONE** (engine untouched; its harness `ob_export.pine` re-synced to the new structure, then re-validated 2026-07-09 on a fresh 5m export, `--warmup 1133`, exit 0). **The 2026-07-08 re-sync is now complete — every engine back at 100% Pine parity.** See "Audit findings — 2026-07-08" below.
-**Last reviewed:** 2026-07-09
+**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. The 2026-07-08 re-sync brought every engine back to 100% Pine parity and was committed. A **fresh 2026-07-09 re-paste** of `mpc_assistant.pine` (184-line working-tree diff, uncommitted) then flagged **TWO engines STALE again — liquidity and fibonacci** — see "Audit findings — 2026-07-09" below. In one line: (a) **liquidity STALE** — the whole **MONTHLY level (PMH/PML) was removed from source**; the engine still emits it (`enable_monthly=True`). (b) **fibonacci STALE** — both Structure and Internal fibs **dropped the TP3-hit `resetActive` latch** and **added an extend-changed guard** (skip touched-checks the bar the live anchor moved), and the **Macro** now seeds its bear-SOS tracker on the first bar so the first bullish SOS locks immediately. **market_structure, order_blocks, sessions, vwap, svp, regime, news all IN PARITY / not affected** (the sessions display-window rework is visual). New computed block flagged: **SETUP GRADING** (A+/B/C setup classifier, table-only for now). **07-09 re-sync: DONE for both — liquidity (monthly removed entirely, Aaron's call) and fibonacci (TP3-reset drop + extend-changed guard + macro first-bar seed) — engine + harness + tests updated & green, and BOTH re-validated on a fresh combined `VANTAGE_XAUUSD, 5m` export (13,759 bars): `compare_liquidity.py --warmup 1742` and `compare_fib.py --warmup 3154` both exit 0. Ready to commit.**
+**Last reviewed:** 2026-07-09 (fresh re-paste audit — supersedes the "re-sync complete" state above)
 
 ---
 
@@ -44,9 +44,108 @@ Downstream engines (like the fibs) read another engine's **public output** only 
   `StructureFib` and add `px_ifib_*` columns to `indicators/fib_export.pine`. See "Audit findings —
   2026-07-08". **Do this as part of the fibonacci re-sync (the engine is STALE anyway).**
 
+- **SETUP GRADING** (new; found 2026-07-09 paste) — a **setup classifier** that synthesizes the five
+  confirmations into one grade + side: (1) Weekly+Daily bias, (2) SSL/BSL sweep "fuel", (3) external
+  structure break direction, (4) location (External Fib E-levels active in-direction OR Sniper Zone
+  confirmed), (5) internal-structure timing. Grades **A+** (all five) / **B** (four — bias half-formed
+  or timing missing) / **C** (structure scalp: structure+location+timing, bias not opposing) / Pass.
+  Currently feeds only the new JARVIS "SETUP" table row, but it is genuine bot-relevant decision logic
+  built entirely on existing engine outputs (bias, liquidity sweep, structure, fib, internal). Flagging
+  as a candidate — same status as the previously-flagged **HTF Directional Bias** helper
+  (`f_biasState`/`f_htfBias`). No engine yet; decide whether it belongs in a future `setup_grading`
+  engine or stays a bot-side composition of the existing engines.
+
 Everything else is ported. The other forward work is *consumption*, not extraction: give each engine
 an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest
 lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
+
+---
+
+## Audit findings — 2026-07-09 (fresh re-paste of `mpc_assistant.pine`, uncommitted)
+
+Working-tree diff vs commit `f2a8411` (its last commit; HEAD is `eecd3f7`). 184-line diff. This paste
+came AFTER the 2026-07-08 re-sync was completed & committed, so it re-opens drift. Most of it is one
+feature removal (Monthly liquidity), one fib touch-detection refinement (repeated across Structure +
+Internal), and one new table block. The engine-affecting changes:
+
+**liquidity — STALE (feature removed from source).** The entire **MONTHLY level (PMH/PML) is deleted**:
+the `request.security(..., "M", ...)` fetch, `hasMonthlyTimeChanged`, `canShowMonthly`, the whole
+`MONTHLY LEVELS` compute/mitigate block, the `i_isMonthlyEnabled` / `i_monthlyColor` inputs, the
+`a_lastHighs`/`a_lastLows` arrays shrunk **3 → 2** (monthly slot 2 gone), the monthly label pushes, and
+the `"MH"`/`"ML"` plot columns. The engine emitted PMH/PML, so its event set diverged from source.
+**RE-SYNC STATUS (2026-07-09): DONE + parity CONFIRMED (exit 0).** Aaron's call: **remove monthly entirely**
+(not keep behind a flag). Removed `_key_month`, `_monthly` tracker, the `enable_monthly` arg, the
+`"monthly"` enable/hide entries, and the PMH/PML emission from `engines/liquidity/engine.py`; dropped the
+MONTHLY block + `px_pmh/px_pml(_mit)` + `px_month_roll` from `indicators/liquidity_export.pine`; dropped
+the monthly columns + `_key_month` import + month roll-watcher from `tools/compare_liquidity.py`; removed
+the monthly unit test and `enable_monthly` from the test helper (14 tests green); scrubbed monthly from
+the engine/types/`__init__`/CLAUDE docstrings. The check now covers **28 fields** (13 prices + 12 mit +
+3 rolls). **RE-VALIDATED: `compare_liquidity.py --warmup 1742` exit 0** on a fresh combined
+`VANTAGE_XAUUSD, 5m` export (13,759 bars) — every retained field matches on every warm bar; the 1,742-bar
+warm-up is now just the weekly cold-start (monthly no longer dominates it). Everything else in liquidity is
+unchanged — daily/weekly/PWC/H4/session and their mitigation are untouched.
+
+**fibonacci — STALE (logic changed across Structure + Internal + Macro).**
+- *Structure fib*: (a) NEW **extend-changed guard** — touched-checks now also skip on the bar the
+  extending anchor itself moved (`fiboExtChanged` via new `fiboPrevAsh`/`fiboPrevAsl`), so a fresh live
+  wick-high can't retroactively satisfy the TP3 level it just created. (b) The **TP3-hit reset is
+  REMOVED** — `if fibo7Touched: fiboResetActive := true` is gone; the leg is no longer hidden/spent on a
+  TP3 tap (it now only clears on a real BOS/SOS / close past 1.0). The engine currently latches
+  `self._reset_active = True` on the TP3 hit (`engine.py:192`) — now WRONG.
+- *Internal fib*: same two changes — NEW `iFibExtChanged` guard (`iFibPrevAsh`/`iFibPrevAsl`, also
+  cleared in the external-BOS/SOS reset block), and the **TP3-hit reset REMOVED** (`iFibResetActive`
+  latch gone; engine still sets `self._reset_active = True` at `engine.py:626` — now WRONG).
+- *Macro / Cycle fib*: the bear-SOS tracker now **seeds on the first bar too**
+  (`if st.bear_sos or na(macro_last_bear_sos_bar)`) so the first bullish SOS can lock immediately
+  instead of waiting for a prior bearish SOS.
+- **RE-SYNC STATUS (2026-07-09): DONE + parity CONFIRMED (exit 0).** Ported into `engines/fibonacci/engine.py`:
+  removed both `reset_active`-on-TP3 latches (Structure + Internal; `_reset_active` kept as an
+  always-False mirror since the Pine var still exists), added the extend-changed guard + `_prev_ash/_prev_asl`
+  tracking to StructureFib and InternalFib (InternalFib resets them on the external-break clear only, not on
+  a seed — matching Pine), and gave MacroFib the first-bar seed. Dropped the now-unused `_TP3` constant.
+  `indicators/fib_export.pine` re-synced to match (both TP3 setters removed, `fiboPrevAsh/Asl` +
+  `iFibPrevAsh/Asl` vars + `*ExtChanged` guards + the macro seed fallback added). Fib tests re-traced (40
+  green: the two TP3-latch tests rewritten to assert reset_active stays False, + a new extend-changed-skip
+  test for both fibs). `compare_fib.py` needs NO change — the column set is unchanged
+  (`px_fib_reset_active` / `px_ifib_reset_active` are now always 0 on both sides). **RE-VALIDATED:
+  `compare_fib.py --warmup 3154` exit 0** on a fresh combined `VANTAGE_XAUUSD, 5m` export (13,759 bars) —
+  Structure + Sniper + Macro + Internal all match on every warm bar (the warm-up is the Macro cycle
+  cold-start). Downstream of market_structure (unchanged here), so no ordering constraint.
+- *Table-only consequence (VISUAL, no engine impact):* the JARVIS `fib_stage`/`int_fib_stage` rows no
+  longer clear on a TP3 tap (they mirror the removed reset) — that lives in the confirmation-table block,
+  not the fib engine.
+
+**market_structure — IN PARITY (sync chain NOT triggered).** Nothing in `process`, the 3-candle
+pullback, the break/CHoCH conditions, `choch_lock`, the seed/lookback scan, or the internal
+iSH/iSL/iBOS/iSOS detection changed. The `st.bear_sos` / `st.bull_bos` reads in the fib & macro blocks
+*consume* structure output; they don't alter detection. `structure_engine.pine`,
+`structure_engine_export.pine`, `engines/market_structure/engine.py` and the shim all stay current.
+
+**order_blocks — not affected.** Consumes internal structure breaks; structure is unchanged, so OB
+timing is unchanged and `ob_export.pine` (which embeds the structure engine) stays valid.
+
+**sessions — not affected (VISUAL).** `showHistoricSessions` renamed "Show All History",
+`sessionsDaysBack` input removed, and `sessionsCutoff`/`withinSessionDays` simplified to a fixed 7-day
+display window (or unlimited when the toggle is on). This gates only the drawn `sessionInfos`, not the
+event stream the engine emits. No engine impact (SVP, which composes the sessions event stream, is also
+unaffected).
+
+**vwap / svp / regime / news — not affected.** Untouched by this paste.
+
+**NEW block — SETUP GRADING (candidate, not extracted).** A setup classifier (A+/B/C/Pass) synthesizing
+bias + sweep + external structure + fib/sniper location + internal timing into one grade + side; feeds
+only the new JARVIS "SETUP" table row for now. Added to "Still to build" as a candidate (alongside the
+HTF Directional Bias helper). No engine yet.
+
+**Harnesses re-synced + validated (2026-07-09):** `indicators/liquidity_export.pine` (monthly block +
+`MH`/`ML` + `px_month_roll` removed) and `indicators/fib_export.pine` (both TP3 setters dropped;
+`fiboPrevAsh/Asl` + `iFibPrevAsh/Asl` vars + `*ExtChanged` guards + the Macro first-bar seed added). A
+single fresh combined export — both indicators on one `VANTAGE_XAUUSD, 5m` chart (13,759 bars) — validated
+both: `compare_liquidity.py --warmup 1742` and `compare_fib.py --warmup 3154`, both exit 0. Ready to commit.
+
+Each engine fix must re-run its `compare_*.py` Pine-parity check on a fresh TradingView export (with the
+matching `*_export.pine` harness updated first) before it is committed. **No engine code was changed in
+this audit — report only.**
 
 ---
 

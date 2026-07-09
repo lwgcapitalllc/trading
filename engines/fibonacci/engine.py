@@ -45,15 +45,14 @@ _STRUCT_RETRACE: Tuple[Tuple[str, float], ...] = (
 )
 # Target group (checked only from the bar AFTER 0.618 was first reached, on the profit side).
 # TP4 (-0.270) and TP5 (-0.618) were dropped in the 2026-07-08 mpc_assistant.pine re-paste — the
-# Structure fib now stops at TP3 (0.0, full retrace) and hides the whole leg once TP3 is hit
-# (see `_reset_active` below).
+# Structure fib now stops at TP3 (0.0, full retrace). The 2026-07-09 re-paste then dropped the
+# TP3-hit hide as well: the leg is spent only on a real BOS/SOS (a new origin), no longer on the tap.
 _STRUCT_TARGET: Tuple[Tuple[str, float], ...] = (
     ("TP1", 0.500),
     ("TP2", 0.382),
     ("TP3", 0.000),
 )
 _GATE = "E1"  # 0.618
-_TP3 = "TP3"  # 0.0 — hitting it latches `_reset_active` (the leg is spent until a new leg)
 
 _ROLE = {name: "entry" for name, _ in _STRUCT_RETRACE}
 _ROLE.update({name: "target" for name, _ in _STRUCT_TARGET})
@@ -81,9 +80,16 @@ class StructureFib:
         self._gate_ever_reached = False
         self._start_index_prev: Optional[int] = None
 
-        # TP3-hit latch (Pine `var fiboResetActive`): once the leg fully retraces to 0.0 the whole
-        # fib is spent — Pine hides every level until a new leg. Reset on origin change.
+        # `fiboResetActive` (Pine): still declared and reset on origin change, but the 2026-07-09
+        # re-paste DROPPED its TP3-hit setter — so it now stays False for the whole leg (the leg is
+        # spent only on a real BOS/SOS, which changes the origin). Kept as an always-False mirror.
         self._reset_active = False
+
+        # Previous bar's anchors, for the extend-changed guard (Pine `fiboPrevAsh/Asl`, mpc 2336):
+        # skip touched-checks on any bar the live anchor moved, so a fresh pullback wick can't
+        # retroactively satisfy the very level it just created.
+        self._prev_ash: Optional[float] = None
+        self._prev_asl: Optional[float] = None
 
         # Latched confirmed-internal-swing anchors (Pine top-level `var i_confirmed_*`, written by
         # the internal engine on a confirm bar, read here every bar, reset on origin change). Let
@@ -158,9 +164,14 @@ class StructureFib:
             self._i_confirmed_high_loc = None
         self._start_index_prev = start_index
 
+        # Skip touched-checks on the bar the origin changed OR the bar the extending anchor itself
+        # moved — a live pullback wick, not a confirmed close (Pine `fiboExtChanged`, mpc 2303-2309).
+        ext_changed = ((self._prev_ash is not None and self._ash != self._prev_ash)
+                       or (self._prev_asl is not None and self._asl != self._prev_asl))
+
         touched_now: List[FibTouch] = []
 
-        if not origin_changed:
+        if not origin_changed and not ext_changed:
             # 0.618 reached? retracement-side test (Pine 2363).
             gate_price = levels[_GATE]
             gate_reached = (low <= gate_price) if d == 1 else (high >= gate_price)
@@ -187,13 +198,14 @@ class StructureFib:
                         self._touched[name] = True
                         touched_now.append(FibTouch(name, _RATIO[name], price, _ROLE[name]))
 
-                # TP3 (0.0, full retrace) hit -> the leg is spent; hide until a new leg (Pine 2384).
-                if self._touched[_TP3]:
-                    self._reset_active = True
-
             # Latch the gate AFTER all checks, so targets never fire on the bar 0.618 was first hit.
             if gate_reached and not self._gate_ever_reached:
                 self._gate_ever_reached = True
+
+        # Remember this bar's anchors for next bar's extend-changed check (Pine 2336-2337; runs
+        # unconditionally within the active block, even on an origin/extend bar).
+        self._prev_ash = self._ash
+        self._prev_asl = self._asl
 
         return StructureFibEvents(
             active=True,
@@ -352,8 +364,10 @@ class MacroFib:
         Only feed <=5m bars — the Pine timeframe gate is the caller's responsibility.
         """
 
-        # ── 1. Track the most recent bearish SOS; start tracking the low from there (Pine 2293) ──
-        if snap.bear_sos:
+        # ── 1. Track the most recent bearish SOS; start tracking the low from there (Pine 2461). Also
+        #    seed once from the very first bar (Pine `or na(macro_last_bear_sos_bar)`, mpc 2464, added
+        #    2026-07-09) so the first bullish SOS can lock a cycle without waiting for a prior bear SOS.
+        if snap.bear_sos or self._last_bear_sos_bar is None:
             self._last_bear_sos_bar = bar_index
             self._ll_since = low
             self._ll_since_bar = bar_index
@@ -489,7 +503,7 @@ _IFIB_TARGET: Tuple[Tuple[str, float], ...] = (
     ("TP3", 0.000),
 )
 _IFIB_GATE = "E1"   # 0.618
-_IFIB_TP3 = "TP3"   # 0.0 — hitting it latches `_reset_active`
+_IFIB_TP3 = "TP3"   # 0.0 — full retrace; freezes `_tp3_hit_price` (no longer latches `_reset_active`)
 _IFIB_ORDER = _IFIB_RETRACE + _IFIB_TARGET
 _IFIB_ROLE = {name: "entry" for name, _ in _IFIB_RETRACE}
 _IFIB_ROLE.update({name: "target" for name, _ in _IFIB_TARGET})
@@ -512,10 +526,12 @@ class InternalFib:
     market_structure's `ifib_seed_*` (fired on the break bar). The anchor then extends live with
     the move: for a bull leg the 0.0/top rides up with new highs, for a bear leg the 1.0/bottom
     rides down with new lows. Its 8 levels register first touches on the same 0.618 gate as the
-    other fibs; hitting TP3 (0.0, full retrace) latches `reset_active` (the leg is spent, hidden
-    until a new leg). ANY external BOS/SOS clears the whole fib, which then waits for the next
-    iBOS/iSOS. Line-by-line port of mpc_assistant.pine's Internal Fib block (seed at the six
-    internal-break sites 1400-1609 + clear/extend/touch 2727-2791), drawing removed.
+    other fibs, and the touch checks are skipped on any bar the moving anchor itself changed (a live
+    wick, not a confirmed close — Pine `iFibExtChanged`). ANY external BOS/SOS clears the whole fib,
+    which then waits for the next iBOS/iSOS. Line-by-line port of mpc_assistant.pine's Internal Fib
+    block (seed at the six internal-break sites 1400-1609 + clear/extend/touch 2704-2743), drawing
+    removed. (`reset_active` is a kept-but-always-False mirror — the 2026-07-09 re-paste dropped the
+    TP3-hit setter, so the leg is now spent only on the external-break clear.)
     """
 
     def __init__(self) -> None:
@@ -527,10 +543,16 @@ class InternalFib:
 
         self._touched = {name: False for name in _IFIB_RATIO}
         self._gate_ever = False            # iFib618EverReached — arms the target side from next bar
-        self._reset_active = False         # iFibResetActive — TP3 hit, leg spent until re-seed/clear
+        # iFibResetActive — declared + reset like the source, but the 2026-07-09 re-paste dropped its
+        # TP3-hit setter, so it now stays False for the whole leg (kept as an always-False mirror).
+        self._reset_active = False
         # iFib_tp3_hit_price: frozen 0.0 price on first TP3 hit. Write-only in the source (a hook for
         # a future break-through check); kept for a faithful port.
         self._tp3_hit_price: Optional[float] = None
+        # iFibPrevAsh/Asl — last bar's anchors, for the extend-changed guard (Pine 2705). Reset by the
+        # external-break clear only (Pine 2680), NOT by a fresh seed (mpc seed sites leave them alone).
+        self._prev_ash: Optional[float] = None
+        self._prev_asl: Optional[float] = None
 
     def _clear(self) -> None:
         """Wipe the fib to its unseeded state (Pine's per-seed reset / external-break clear)."""
@@ -566,6 +588,8 @@ class InternalFib:
         cleared = False
         if snap.bull_bos or snap.bear_bos or snap.bull_sos or snap.bear_sos:
             self._clear()
+            self._prev_ash = None   # Pine 2680 — the external clear resets the prev anchors too
+            self._prev_asl = None
             cleared = True
 
         # ── 3. Live-extend the moving anchor (Pine 2744-2751) ──
@@ -578,15 +602,19 @@ class InternalFib:
                 self._ash = high
                 self._ash_loc = bar_index
 
-        # ── 4. Touch tracking (Pine 2754-2791) ──
+        # ── 4. Touch tracking (Pine 2704-2743) ──
         touched_now: List[FibTouch] = []
         levels: Dict[str, float] = {}
         active = self._dir != 0 and self._asl is not None and self._ash is not None
+        # Skip the touch checks on any bar the moving anchor itself changed — a live wick, not a
+        # confirmed close (Pine `iFibExtChanged`, mpc 2705). Geometry/levels still computed for the API.
+        ext_changed = ((self._prev_ash is not None and self._ash != self._prev_ash)
+                       or (self._prev_asl is not None and self._asl != self._prev_asl))
         if active:
             d = self._dir
             levels = {name: fib_level(self._ash, self._asl, d, r) for name, r in _IFIB_ORDER}
 
-            if (self._ash - self._asl) > 0:
+            if (self._ash - self._asl) > 0 and not ext_changed:
                 gate_price = levels[_IFIB_GATE]
                 gate_reached = (low <= gate_price + _TOUCH_EPS) if d == 1 else (high >= gate_price - _TOUCH_EPS)
 
@@ -621,13 +649,17 @@ class InternalFib:
                             if name == _IFIB_TP3:
                                 self._tp3_hit_price = price
 
-                # TP3 (0.0, full retrace) hit -> leg spent (Pine 2787).
-                if self._touched[_IFIB_TP3]:
-                    self._reset_active = True
+                # (TP3-reset dropped 2026-07-09 — mpc removed the `iFibResetActive := true` setter;
+                #  the leg is now spent only on a confirmed external BOS/SOS, which clears the fib.)
 
                 # Latch the gate AFTER all checks, so targets never fire on the bar E1 first hit.
                 if gate_reached and not self._gate_ever:
                     self._gate_ever = True
+
+        # Remember this bar's anchors for next bar's extend-changed check (Pine 2741-2743).
+        if self._dir != 0:
+            self._prev_ash = self._ash
+            self._prev_asl = self._asl
 
         return InternalFibEvents(
             active=active,

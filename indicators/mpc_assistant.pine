@@ -100,8 +100,7 @@ method extendOBs(array<OrderBlock> arr) =>
 var GRP_SESS = "Trading Sessions"
 bool showSessions         = input.bool(true,   "Show Sessions",      group = GRP_SESS, display = display.none)
 bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessions, display = display.none)
-bool showHistoricSessions = input.bool(false,  "Show Historic Sessions", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions further back, using the Days Back value below.", display = display.none)
-int  sessionsDaysBack     = input.int(7,       "Days Back", group = GRP_SESS, minval = 1, maxval = 365, active = showHistoricSessions, display = display.none)
+bool showHistoricSessions = input.bool(false,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the last 7 days. On = show sessions as far back as possible.", display = display.none)
 
 bool showSessionOC        = false
 bool showSessionTickRange = false
@@ -165,7 +164,6 @@ f_liqSize() =>
 
 var i_isDailyEnabled   = input.bool(true,  "Previous Day H/L",            group = GRP_LIQ, active = i_showLiquidity, display = display.none)
 var i_isWeeklyEnabled  = input.bool(true,  "Previous Week H/L",           group = GRP_LIQ, active = i_showLiquidity, display = display.none)
-var i_isMonthlyEnabled = input.bool(true,  "Previous Month H/L",          group = GRP_LIQ, active = i_showLiquidity, display = display.none)
 var i_showAsiaHL       = input.bool(true,  "Asia Session H/L",            group = GRP_LIQ, active = i_showLiquidity, display = display.none)
 var i_showLondonHL     = input.bool(true,  "London Session H/L",          group = GRP_LIQ, active = i_showLiquidity, display = display.none)
 var i_showNYHL         = input.bool(true,  "NY Session H/L",              group = GRP_LIQ, active = i_showLiquidity, display = display.none)
@@ -176,7 +174,6 @@ var i_lineExtend       = input.int(50,     "Line Extension (bars)",         grou
 
 color i_dailyColor    = color.black
 color i_weeklyColor   = color.black
-color i_monthlyColor  = color.black
 color i_asiaHLColor   = color.black
 color i_londonHLColor = color.black
 color i_nyHLColor     = color.black
@@ -926,11 +923,9 @@ newDay           = dayofweek(time, "America/New_York") != dayofweek(time[1], "Am
 pwcSecurity = timeframe.isweekly or timeframe.ismonthly ? request.security(syminfo.tickerid, "W", close, lookahead = barmerge.lookahead_off) : request.security(syminfo.tickerid, "W", close[1], lookahead = barmerge.lookahead_on)
 [h4Time, h4PrevHigh, h4PrevLow] = request.security(syminfo.tickerid, "240", [time, high[1], low[1]], lookahead = barmerge.lookahead_on)
 h4BarChanged = ta.change(h4Time) != 0
-[monthlyTime, monthlyHigh, monthlyLow, isLastMonthly] = request.security(syminfo.tickerid, "M", [time, high, low, barstate.islast], lookahead = barmerge.lookahead_on)
 
 hasDailyTimeChanged   = dailyTime   != dailyTime[1]
 hasWeeklyTimeChanged  = weeklyTime  != weeklyTime[1]
-hasMonthlyTimeChanged = monthlyTime != monthlyTime[1]
 
 // ── HTF Directional Bias (adapted from LuxAlgo's HTF Bias Tracker) ──
 // Compares an "action" period's high/low/close against a "context" period's high/low
@@ -978,14 +973,13 @@ f_htfBias(string htf, string tfPrefix) =>
 
 var canShowDaily   = i_isDailyEnabled   and i_showLiquidity and timeframe.isintraday
 var canShowWeekly  = i_isWeeklyEnabled  and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily)
-var canShowMonthly = i_isMonthlyEnabled and i_showLiquidity and not timeframe.ismonthly
 
 color  MITIGATED_COLOR = color.new(#666666, 25)
 string MITIGATED_STYLE = line.style_dotted
 float  lblOff          = syminfo.mintick * i_lblOffset
 
-var a_lastHighs = array.new_float(3)
-var a_lastLows  = array.new_float(3)
+var a_lastHighs = array.new_float(2)
+var a_lastLows  = array.new_float(2)
 
 f_labelText(string txt) => i_showLabels and i_showLiquidity ? txt : ""
 
@@ -1023,13 +1017,9 @@ withinKZDays      = time >= kzCutoff
 nyMidnightToday   = timestamp("America/New_York", year(timenow, "America/New_York"), month(timenow, "America/New_York"), dayofmonth(timenow, "America/New_York"), 0, 0)
 withinNYRangeDays = time >= (nyMidnightToday - nyrDaysBack * 86400000.0)
 
-// Start of the current week (Sunday 00:00 America/New_York) — used to default
-// Sessions to "this week only" unless Show Historic Sessions is enabled.
-int  nyDayOfWeek       = dayofweek(timenow, "America/New_York")
-int  daysSinceSunday   = nyDayOfWeek - dayofweek.sunday
-int  weekStartTime     = nyMidnightToday - daysSinceSunday * 86400000
-sessionsCutoff         = showHistoricSessions ? (timenow - sessionsDaysBack * 86400000.0) : weekStartTime
-bool withinSessionDays = time >= sessionsCutoff
+// Sessions: last 7 days by default, or unlimited history when Show All History is on.
+sessionsCutoff         = timenow - 7 * 86400000.0
+bool withinSessionDays = showHistoricSessions or time >= sessionsCutoff
 
 vwapValue = ta.vwap(hlc3)
 
@@ -1171,6 +1161,8 @@ var bool iFib886Touched   = false   // 0.886 E4
 var bool iFib100Touched   = false   // 1.0
 var bool iFib618EverReached = false  // gate flag
 var float iFib_tp3_hit_price = na    // frozen price level TP3 was hit at (for detecting a later break-through)
+var float iFibPrevAsh = na   // detects when the extending anchor itself changed this bar
+var float iFibPrevAsl = na   // (a live wick), so touched-checks don't self-trigger off it
 var bool  iFibResetActive    = false // true once TP3 has been hit — resets this internal fib immediately
 
 float i_lbl_y_offset = syminfo.mintick * 20   // vertical offset for iBOS/iSOS (smaller number = closer to the line)
@@ -1754,50 +1746,6 @@ if not na(w_lLine)
     w_lMitBar := neww_lMitBar
 
 //============================================================
-//  MONTHLY LEVELS
-//============================================================
-var line  m_hLine  = na, var line  m_lLine  = na
-var label m_hLbl   = na, var label m_lLbl   = na
-var float m_hPrice = na, var float m_lPrice = na
-var bool  m_hMit   = false, var bool  m_lMit = false
-var int   m_hMitBar = na, var int  m_lMitBar = na
-var int   m_hBar   = na, var int   m_lBar   = na
-
-if newDay and i_currentDayOnly and i_showLiquidity
-    if m_hMit
-        line.delete(m_hLine), label.delete(m_hLbl)
-        m_hLine := na, m_hLbl := na
-    if m_lMit
-        line.delete(m_lLine), label.delete(m_lLbl)
-        m_lLine := na, m_lLbl := na
-
-if canShowMonthly and hasMonthlyTimeChanged and not isLastMonthly and barstate.isconfirmed
-    line.delete(m_hLine), line.delete(m_lLine)
-    label.delete(m_hLbl), label.delete(m_lLbl)
-    m_hBar   := bar_index
-    m_lBar   := bar_index
-    m_hLine  := line.new(m_hBar, monthlyHigh, m_hBar + i_lineExtend, monthlyHigh, color = i_monthlyColor, style = line.style_solid, width = 1)
-    m_lLine  := line.new(m_lBar, monthlyLow,  m_lBar + i_lineExtend, monthlyLow,  color = i_monthlyColor, style = line.style_solid, width = 1)
-    m_hLbl   := label.new(m_hBar + i_lineExtend, monthlyHigh + lblOff, f_labelText("PMH"), style = label.style_none, textcolor = i_monthlyColor, size = f_liqSize(), textalign = text.align_left)
-    m_lLbl   := label.new(m_lBar + i_lineExtend, monthlyLow  - lblOff, f_labelText("PML"), style = label.style_none, textcolor = i_monthlyColor, size = f_liqSize(), textalign = text.align_left)
-    m_hPrice := monthlyHigh
-    m_lPrice := monthlyLow
-    m_hMit   := false
-    m_lMit   := false
-    array.set(a_lastHighs, 2, monthlyHigh)
-    array.set(a_lastLows,  2, monthlyLow)
-
-if not na(m_hLine)
-    [newm_hMit, newm_hMitBar] = f_liqMitigate(m_hLine, m_hLbl, m_hMit, m_hMitBar, m_hBar, close > m_hPrice, i_monthlyColor, i_isMonthlyEnabled)
-    m_hMit := newm_hMit
-    m_hMitBar := newm_hMitBar
-
-if not na(m_lLine)
-    [newm_lMit, newm_lMitBar] = f_liqMitigate(m_lLine, m_lLbl, m_lMit, m_lMitBar, m_lBar, close < m_lPrice, i_monthlyColor, i_isMonthlyEnabled)
-    m_lMit := newm_lMit
-    m_lMitBar := newm_lMitBar
-
-//============================================================
 //  PREVIOUS WEEKLY CLOSE (PWC)
 //============================================================
 var line  pwc_line  = na
@@ -2020,8 +1968,6 @@ if i_showLiquidity and i_showLabels
         array.push(liq_y, d_hPrice + lblOff),    array.push(liq_lbl, d_hLbl)
     if not na(w_hLbl)     and i_isWeeklyEnabled
         array.push(liq_y, w_hPrice + lblOff),    array.push(liq_lbl, w_hLbl)
-    if not na(m_hLbl)     and i_isMonthlyEnabled
-        array.push(liq_y, m_hPrice + lblOff),    array.push(liq_lbl, m_hLbl)
     if not na(pwc_lbl)    and i_showPWC
         array.push(liq_y, pwc_price + lblOff),   array.push(liq_lbl, pwc_lbl)
     if not na(h4HighLbl)  and i_showH4Sweep
@@ -2037,8 +1983,6 @@ if i_showLiquidity and i_showLabels
         array.push(liq_y, d_lPrice - lblOff),    array.push(liq_lbl, d_lLbl)
     if not na(w_lLbl)     and i_isWeeklyEnabled
         array.push(liq_y, w_lPrice - lblOff),    array.push(liq_lbl, w_lLbl)
-    if not na(m_lLbl)     and i_isMonthlyEnabled
-        array.push(liq_y, m_lPrice - lblOff),    array.push(liq_lbl, m_lLbl)
     if not na(h4LowLbl)   and i_showH4Sweep
         array.push(liq_y, h4TrackLow - lblOff),  array.push(liq_lbl, h4LowLbl)
     if not na(asiaLLbl)   and i_showAsiaHL
@@ -2254,6 +2198,9 @@ var float fiboP4  = na, var float fiboP5  = na, var float fiboP6  = na
 var float fiboP7  = na
 var float fiboP10 = na
 var int   fiboStartIndexPrev = na
+var float fiboPrevAsh = na   // detects when the extending anchor (ash/asl) itself
+var float fiboPrevAsl = na   // changed this bar — e.g. a live wick during pb_mode —
+                              // so touched-checks (esp. TP3) don't self-trigger off it
 var int   fiboStartIndex     = na   // persistent — accessible outside if showFibo block
 
 if not na(st.ash)
@@ -2353,10 +2300,13 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
         i_confirmed_high_loc   := na
     fiboStartIndexPrev := fiboStartIndex
 
-    // Skip ALL touched checks on the same bar the origin changed.
-    // This prevents instant coloring when a new fib leg is drawn and
-    // price is already past a level on that first bar.
-    if not fiboOriginChanged
+    // Skip ALL touched checks on the same bar the origin changed, OR the same bar
+    // the extending anchor (fibo_ash/fibo_asl) itself moved — that anchor tracks
+    // live wicks during a pullback watch, not confirmed closes, so without this
+    // guard a fresh wick-high can retroactively satisfy the very TP3 level it
+    // just created, hiding the fib with no real BOS/SOS behind it.
+    bool fiboExtChanged = (not na(fiboPrevAsh) and fibo_ash != fiboPrevAsh) or (not na(fiboPrevAsl) and fibo_asl != fiboPrevAsl)
+    if not fiboOriginChanged and not fiboExtChanged
         // Gate: coloring only activates once 0.618 is reached.
         // fibo618EverReached is only set TRUE at the END of this block (after all checks run),
         // so TP level checks never fire on the same bar that 0.618 was first hit.
@@ -2379,14 +2329,12 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
             fibo1Touched := f_checkTouch(fibo1Touched, fiboP1, fibo_dir == 1 ? high >= fiboP1 : low <= fiboP1)
             fibo7Touched := f_checkTouch(fibo7Touched, fiboP7, fibo_dir == 1 ? high >= fiboP7 : low <= fiboP7)
 
-            // TP3 hit → reset this fib (lines/labels/touched) immediately,
-            // until a genuinely new leg forms
-            if fibo7Touched
-                fiboResetActive := true
-
         // Set persistent flag AFTER all checks — so TP checks only run from NEXT bar
         if fibo618Reached and not fibo618EverReached
             fibo618EverReached := true
+
+    fiboPrevAsh := fibo_ash
+    fiboPrevAsl := fibo_asl
 
     int _fLblOff = bar_index + fiboLineExtend
 
@@ -2511,7 +2459,9 @@ bool macroFibAllowed = timeframe.in_seconds() <= 300
 if showMacroFib and macroFibAllowed
 
     // ── Track the most recent bearish SOS and start tracking the low from that point ──
-    if st.bear_sos
+    // Seeded once from the very first bar (fallback) so the first bullish SOS can
+    // lock immediately instead of waiting for a prior bearish SOS to seed the tracker.
+    if st.bear_sos or na(macro_last_bear_sos_bar)
         macro_last_bear_sos_bar    := bar_index
         macro_ll_since_bear_sos    := low
         macro_ll_since_bear_sos_bar := bar_index
@@ -2727,6 +2677,7 @@ var line  iFL100 = na, var label ifLbl100 = na
 // Clear internal fib when external BOS/SOS fires — wait for new iBOS/iSOS
 if st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos
     iFib_dir := 0, iFib_asl := na, iFib_asl_loc := na, iFib_ash := na, iFib_ash_loc := na
+    iFibPrevAsh := na, iFibPrevAsl := na
     iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
     iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
     iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
@@ -2751,7 +2702,8 @@ else if iFib_dir == 1 and not na(iFib_asl)
         iFib_ash_loc := bar_index
 
 // Internal fib touched tracking — same logic as micro fib
-if iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
+bool iFibExtChanged = (not na(iFibPrevAsh) and iFib_ash != iFibPrevAsh) or (not na(iFibPrevAsl) and iFib_asl != iFibPrevAsl)
+if iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash) and not iFibExtChanged
     float iFR  = iFib_ash - iFib_asl
     if iFR > 0
         // Level prices (same direction logic as micro fib)
@@ -2783,12 +2735,12 @@ if iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
             if iFib0Touched and not iFib0WasTouched
                 iFib_tp3_hit_price := iTP0
 
-        // TP3 hit → reset this internal fib immediately
-        if iFib0Touched
-            iFibResetActive := true
-
         if iGate618 and not iFib618EverReached
             iFib618EverReached := true
+
+if iFib_dir != 0
+    iFibPrevAsh := iFib_ash
+    iFibPrevAsl := iFib_asl
 
 if showFibo and showIFib and iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
     float iH  = iFib_ash
@@ -3044,8 +2996,6 @@ plot(array.get(a_lastHighs, 0), "DH", color.new(i_dailyColor,   100), editable =
 plot(array.get(a_lastLows,  0), "DL", color.new(i_dailyColor,   100), editable = false, display = display.none)
 plot(array.get(a_lastHighs, 1), "WH", color.new(i_weeklyColor,  100), editable = false, display = display.none)
 plot(array.get(a_lastLows,  1), "WL", color.new(i_weeklyColor,  100), editable = false, display = display.none)
-plot(array.get(a_lastHighs, 2), "MH", color.new(i_monthlyColor, 100), editable = false, display = display.none)
-plot(array.get(a_lastLows,  2), "ML", color.new(i_monthlyColor, 100), editable = false, display = display.none)
 
 //============================================================
 //  MPC - JARVIS CONFIRMATION TABLE
@@ -3174,10 +3124,10 @@ if fib_stage >= 2 and fibo1Touched and not fibo1Touched[1]
 if fib_stage >= 3 and fibo7Touched and not fibo7Touched[1]
     fib_level := "TP3", fib_stage := 4
 
-// Clear immediately once TP3 is hit (fib has reset), or if price closes past the full range
+// Clear if price closes past the full 1.0 range (genuine invalidation) —
+// no longer clears just because TP3 was tapped; that now only clears on a
+// confirmed BOS/SOS (handled by fib_all_clear / fiboOriginChanged above).
 if fib_stage > 0
-    if fibo7Touched
-        fib_level := "", fib_stage := 0
     if fibo_dir == 1
         if not na(fiboP10) and close < fiboP10
             fib_level := "", fib_stage := 0
@@ -3218,8 +3168,9 @@ if int_fib_stage >= 2 and iFib382Touched and not iFib382Touched[1]
 if int_fib_stage >= 3 and iFib0Touched and not iFib0Touched[1]
     int_fib_level := "TP3", int_fib_stage := 4
 
-// Clear when fib clears or TP3 has been broken through
-if iFib_dir == 0 or iFibResetActive
+// Clear only when Internal Fib itself resets (confirmed external BOS/SOS) —
+// no longer clears just because TP3 was tapped
+if iFib_dir == 0
     int_fib_level := ""
     int_fib_stage := 0
 var string macro_fib_level = ""
@@ -3362,6 +3313,57 @@ if showSessL and liq_ldl != "" and not na(liq_ldl_bar) and liq_ldl_bar > recentS
 if showSessL and liq_nyl != "" and not na(liq_nyl_bar) and liq_nyl_bar > recentSSL_bar
     recentSSL := "NY Low",   recentSSL_bar := liq_nyl_bar
 
+//============================================================
+//  SETUP GRADING — synthesizes the five confirmations into one grade
+//============================================================
+// The five questions (long side shown; short is mirrored):
+//   1. Bias:      Weekly and Daily bullish (A+), or one bullish + other neutral (B)
+//   2. Fuel:      a recent SSL sweep (sell-side liquidity taken before going up)
+//   3. Structure: EXT showing a bullish break (▲ SOS or ▲ BOS)
+//   4. Location:  price has tapped an entry zone — External Fib E-levels active
+//                 in the matching direction, or Sniper Zone confirmed bullish
+//   5. Timing:    INT confirming bullish inside the current leg
+//
+// Grades: A+ = all five  |  B = four (bias half-formed OR timing missing)
+//         C  = structure scalp: Structure + Location + Timing only, bias not
+//              opposing — reduced size, TP1/FFT target only
+bool wBull = wEstState == "Bullish", wBear = wEstState == "Bearish"
+bool dBull = dEstState == "Bullish", dBear = dEstState == "Bearish"
+
+// Long-side conditions
+bool biasBothL = wBull and dBull
+bool biasOneL  = (wBull or dBull) and not wBear and not dBear
+bool sweepL    = recentSSL != ""
+bool extL      = str.contains(ext_struct, "▲")
+bool zoneL     = (showFibo and fibo_dir == 1 and fibo618EverReached) or (sz_status != "" and sz_bullish)
+bool intL      = int_struct_valid and str.contains(int_struct, "▲")
+
+// Short-side conditions
+bool biasBothS = wBear and dBear
+bool biasOneS  = (wBear or dBear) and not wBull and not dBull
+bool sweepS    = recentBSL != ""
+bool extS      = str.contains(ext_struct, "▼")
+bool zoneS     = (showFibo and fibo_dir == -1 and fibo618EverReached) or (sz_status != "" and not sz_bullish)
+bool intS      = int_struct_valid and str.contains(int_struct, "▼")
+
+string setupGrade = ""
+string setupSide  = ""
+// A+ — everything aligned
+if biasBothL and sweepL and extL and zoneL and intL
+    setupGrade := "A+", setupSide := "LONG"
+else if biasBothS and sweepS and extS and zoneS and intS
+    setupGrade := "A+", setupSide := "SHORT"
+// B — bias half-formed with everything else, or full bias missing only timing
+else if (biasOneL and sweepL and extL and zoneL and intL) or (biasBothL and sweepL and extL and zoneL and not intL)
+    setupGrade := "B", setupSide := "LONG"
+else if (biasOneS and sweepS and extS and zoneS and intS) or (biasBothS and sweepS and extS and zoneS and not intS)
+    setupGrade := "B", setupSide := "SHORT"
+// C — structure scalp: no bias/sweep requirement, but W+D must not BOTH oppose
+else if extL and zoneL and intL and not (wBear and dBear)
+    setupGrade := "C", setupSide := "LONG"
+else if extS and zoneS and intS and not (wBull and dBull)
+    setupGrade := "C", setupSide := "SHORT"
+
 if showConfTable and barstate.islast
     // Header
     table.cell(jarvisTable, 0, 0, "MPC- JARVIS",
@@ -3375,6 +3377,16 @@ if showConfTable and barstate.islast
       bgcolor = JARVIS_BLUE, text_halign = text.align_center)
 
     int r = 1
+
+    // SETUP — the one-glance grade (A+ / B / C), or Pass when nothing aligns
+    if setupGrade != ""
+        color gradeCol = setupSide == "LONG" ? JARVIS_SSL : JARVIS_BSL
+        string gradeDetail = setupGrade == "C" ? "Scalp - TP1 only" : setupGrade == "B" ? "Reduced size" : "Full setup"
+        f_jRow3(jarvisTable, r, "SETUP", setupGrade + " " + setupSide, gradeCol, gradeDetail)
+        r := r + 1
+    else
+        f_jRow3(jarvisTable, r, "SETUP", "Pass", JARVIS_NEUTRAL, "No alignment")
+        r := r + 1
 
     // WEEKLY — Established Context (last closed week vs the one before)
     f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)

@@ -5,12 +5,13 @@ level (E1–E4 entries, TP1–TP3 targets, 1.0) — for use in entries, take-pro
 signal is the event ("price reached E1 / 0.618"), not the drawing.
 **Scope:** Fib geometry + per-fib touch state machines only. No trading decisions, no structure
 detection (it consumes `engines/market_structure/`), no MT5 ops, no UI, no chart rendering.
-**Status:** FOUR fibs ported (Structure "FFT", Sniper, Macro, and the new Internal fib), unit-tested
-(47 tests) and Pine-parity-validated (100%, exit 0). The 2026-07-08 `mpc_assistant.pine` re-paste
-re-synced all four (Structure dropped TP4/TP5 + adopts the confirmed internal swing + a TP3
-`reset_active`; Macro reverted to hide-only + always-`ll_since` bottom anchor; the Internal fib is new)
-— **re-validated 2026-07-09 on a fresh `VANTAGE_XAUUSD, 5m` export, exit 0** (see Validation). The one
-canonical implementation — no consumer builds its own.
+**Status:** FOUR fibs ported (Structure "FFT", Sniper, Macro, Internal), unit-tested (40 tests, green).
+A **2026-07-09 `mpc_assistant.pine` re-paste** changed three things: the Structure AND Internal fibs
+**dropped the TP3-hit `reset_active` latch** and **added an extend-changed guard** (skip touched-checks
+on any bar the live anchor moved), and the **Macro** now seeds its bear-SOS low-tracker on the first bar
+so the first bullish SOS can lock a cycle immediately. All three are ported and **re-validated at 100%
+Pine parity** on a fresh `VANTAGE_XAUUSD, 5m` export (13,759 bars, `--warmup 3154`, exit 0 —
+Structure + Sniper + Macro + Internal). The one canonical implementation — no consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/fib_export.pine`, diffed against this Python by `tools/compare_fib.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-07-09
 
@@ -37,22 +38,31 @@ engines/fibonacci/
 
 | Fib | Pine group | Anchors | Ratios drawn | Reset / lifecycle |
 |---|---|---|---|---|
-| **Structure** ("FFT") | `GRP_FIBO` | active swing high/low, **following the live pullback extreme**, and adopting a more-extreme **confirmed internal swing** (`i_confirmed_low/high`) as the pull anchor | E1–E4 (0.618/0.702/0.786/0.886), TP1–TP3 (0.5/0.382/0.0), 1.0 | new leg when the origin bar changes → all touches reset; hitting TP3 (0.0) latches `reset_active` (leg spent until the next leg) |
+| **Structure** ("FFT") | `GRP_FIBO` | active swing high/low, **following the live pullback extreme**, and adopting a more-extreme **confirmed internal swing** (`i_confirmed_low/high`) as the pull anchor | E1–E4 (0.618/0.702/0.786/0.886), TP1–TP3 (0.5/0.382/0.0), 1.0 | new leg when the origin bar changes → all touches reset (the only spend trigger; the TP3-hit `reset_active` latch was dropped 2026-07-09); touched-checks skipped on any bar the live anchor moved |
 | **Sniper** (`next`) | `GRP_SNIPER` | the **BOS impulse leg** (`bull/bear_bos_high/low` + locs) | 0.382–0.5 zone box | fires on a BOS, frozen (does not extend), replaced on the next BOS |
 | **Macro** | `GRP_MACRO` | HH→LL cycle (`last_conf_high` + the running low since bear SOS, bear-SOS→bull-SOS lock) | 0.0/0.382/0.5/0.618/0.702/0.786/0.886/1.0 | own lock/reset/extend cycle; **hide-only** above the top (extend→touch→hide order); ≤5m timeframe only |
-| **Internal** | `GRP_IFIB` | the **internal leg** that just broke (an iBOS/iSOS, delivered as the snapshot's `ifib_seed_*`); the moving anchor extends live | E1–E4, TP1–TP3, 1.0 (same 8 as Structure) | seeded on each iBOS/iSOS; TP3 (0.0) latches `reset_active`; **ANY external BOS/SOS clears it** — waits for the next iBOS/iSOS |
+| **Internal** | `GRP_IFIB` | the **internal leg** that just broke (an iBOS/iSOS, delivered as the snapshot's `ifib_seed_*`); the moving anchor extends live | E1–E4, TP1–TP3, 1.0 (same 8 as Structure) | seeded on each iBOS/iSOS; **ANY external BOS/SOS clears it** (the TP3-hit `reset_active` latch was dropped 2026-07-09) — waits for the next iBOS/iSOS; touched-checks skipped on any bar the live anchor moved |
 
 All four fibs are implemented.
 
-**2026-07-08 changes:** Structure dropped TP4 (−0.270) / TP5 (−0.618) — it now stops at TP3 (0.0) and
-hides the whole leg via `reset_active` once TP3 is hit; it also adopts a more-extreme confirmed internal
-swing as its pull anchor. Macro's held full-reset was reverted to hide-only, its bottom anchor is now
-always the running low since the bear SOS, and HIDE runs after extend+touch. The Internal fib is new.
+**2026-07-08 changes:** Structure dropped TP4 (−0.270) / TP5 (−0.618) — it now stops at TP3 (0.0); it
+also adopts a more-extreme confirmed internal swing as its pull anchor. Macro's held full-reset was
+reverted to hide-only, its bottom anchor is now always the running low since the bear SOS, and HIDE runs
+after extend+touch. The Internal fib is new.
+
+**2026-07-09 changes:** the Structure AND Internal fibs **dropped the TP3-hit `reset_active` latch**
+(the 2026-07-08 "hide the leg once TP3 is hit" is gone — TP3 is now just a touch; `reset_active` stays a
+kept-but-always-False mirror, and a leg is spent only on a new origin / external-break clear). Both also
+gained an **extend-changed guard**: touched-checks are skipped on any bar the live anchor itself moved (a
+pullback wick), so a fresh extreme can't retroactively satisfy the level it just created. The **Macro**
+seeds its bear-SOS low-tracker on the first bar too, so the first bullish SOS can lock without a prior
+bear SOS.
 
 Structure's gating logic (ported exactly): 0.618 (E1) is the gate — it must be reached before
 anything else arms; the deeper retrace levels (E2/E3/E4/1.0) only register while price is
-at/through 0.618; the targets (TP1–TP5) only register from the bar **after** 0.618 was first
-reached; a new leg (origin bar changes) resets every touch.
+at/through 0.618; the targets (TP1–TP3) only register from the bar **after** 0.618 was first
+reached; a new leg (origin bar changes) resets every touch — and any bar on which the anchor moved
+skips the touched-checks.
 
 Sniper's lifecycle (ported exactly): a BOS drops one 0.382–0.5 zone across the impulse leg
 (`bull/bear_bos_high/low`), measured **from the leg origin** (`fib_from_origin`), and arms it
@@ -85,7 +95,7 @@ gate is the caller's job (feed `MacroFib` only ≤5m bars).
 | **Sniper** | any | same |
 | **Macro** | **≤5m only** | Pine gates it to `timeframe.in_seconds() <= 300`; that gate is NOT in `MacroFib` — the caller must only feed it ≤5m bars |
 
-**What the fibs need to be accurate (all three):**
+**What the fibs need to be accurate (all four):**
 
 1. **An accurate structure engine.** The fibs are downstream of `engines/market_structure/` — they read its
    swings, BOS/SOS, and confirmed highs/lows. Wrong structure → wrong fibs. It is the foundation.
@@ -144,7 +154,7 @@ ifib_events.direction        # 1 bull leg, -1 bear leg, 0 none
 ifib_events.top              # the 0.0 anchor (bull) / 1.0 (bear); .bot = the opposite
 ifib_events.seeded           # a fresh internal leg seeded THIS bar (an iBOS/iSOS) — event
 ifib_events.cleared          # an external BOS/SOS wiped the fib THIS bar — event
-ifib_events.reset_active     # TP3 (0.0) hit -> leg spent until re-seed/clear
+ifib_events.reset_active     # kept-but-always-False mirror (TP3-hit setter dropped 2026-07-09)
 ifib_events.touched          # list[FibTouch] first-reached THIS bar (edge-triggered)
 ifib_events.levels           # dict{name: price}; names E1-E4/1.0/TP1-TP3 (same 8 as Structure)
 ```
@@ -181,7 +191,7 @@ state carries bar-to-bar and cannot be recomputed from a single bar. Build one `
   the Sniper's arm-on-BOS / confirm-once / break-bar-clears-confirm interaction, nor the Macro's
   lock/reset/extend cycle and its edge-vs-previous-bar touch detection.
 - When adding a new event or level, update this file's Public API and the tests in the same commit.
-- Keep `geometry.py` pure (no state, no I/O) — it is the one core shared by all three fibs.
+- Keep `geometry.py` pure (no state, no I/O) — it is the one core shared by all four fibs.
 
 ## Never do
 
@@ -195,6 +205,14 @@ state carries bar-to-bar and cannot be recomputed from a single bar. Build one `
 
 ## Validation (Pine ↔ Python parity)
 
+> **2026-07-09 re-paste — parity CONFIRMED (exit 0).** A newer `mpc_assistant.pine` paste dropped the
+> TP3-hit `reset_active` latch on the Structure AND Internal fibs, added an extend-changed guard to both
+> (skip touched-checks on any bar the live anchor moved), and gave the Macro a first-bar bear-SOS seed.
+> All three ported (engine + `fib_export.pine` harness + unit tests, 40 green) and re-validated on a fresh
+> `VANTAGE_XAUUSD, 5m` export (13,759 bars) — every compared field (Structure + Sniper + Macro + Internal)
+> matched on all warm bars (`--warmup 3154`, exit 0; the warm-up is the Macro cycle cold-start). The column
+> set is unchanged — `px_fib_reset_active` / `px_ifib_reset_active` are now always 0 on both sides.
+>
 > **2026-07-08 re-sync — parity CONFIRMED 2026-07-09 (exit 0).** The four fibs were re-synced to the
 > re-pasted `mpc_assistant.pine` (Structure TP4/TP5 drop + internal-swing anchor + TP3 `reset_active`;
 > Macro hide-only + always-`ll_since` bottom anchor; the new Internal fib). `fib_export.pine` +
@@ -234,18 +252,19 @@ window) while the Python engines start cold — the same cold-start pattern as `
 
 Wired up, mirrors `engines/market_structure/`'s flow. Two pieces:
 
-1. `indicators/fib_export.pine` — the external structure engine (byte-identical to
-   `structure_engine_export.pine`) + the real Structure, Sniper and Macro fibs lifted from
-   `mpc_assistant.pine` (compute + state machines, drawing removed) + `plot()` columns for all
-   three fibs' outputs (`px_fib_*`, `px_sniper_*`, `px_macro_*`). Put it on a chart, export chart
-   data to CSV, drop it in `engines/fibonacci/exports/` (git-ignored). Export on ≤5m to also cover Macro.
+1. `indicators/fib_export.pine` — the external + internal structure engine (byte-identical to
+   `structure_engine_export.pine`, plus the internal-fib seed captures) + the real Structure, Sniper,
+   Macro and Internal fibs lifted from `mpc_assistant.pine` (compute + state machines, drawing removed)
+   + `plot()` columns for all four fibs' outputs (`px_fib_*`, `px_sniper_*`, `px_macro_*`, `px_ifib_*`).
+   Put it on a chart, export chart data to CSV, drop it in `engines/fibonacci/exports/` (git-ignored).
+   Export on ≤5m to also cover Macro.
 2. `engines/fibonacci/tools/compare_fib.py <that.csv>` — runs the REAL pipeline (StructureEngine →
-   StructureSnapshot → StructureFib + SniperFib + MacroFib) on the CSV's candles and diffs against
-   the `px_fib_*` / `px_sniper_*` / `px_macro_*` columns, bar by bar. Exit 0 = parity. Standard
-   library only. Sniper and Macro columns are optional, so the tool also runs on older/higher-TF
-   exports (skipping whatever that export doesn't carry).
+   StructureSnapshot → StructureFib + SniperFib + MacroFib + InternalFib) on the CSV's candles and
+   diffs against the `px_fib_*` / `px_sniper_*` / `px_macro_*` / `px_ifib_*` columns, bar by bar.
+   Exit 0 = parity. Standard library only. Sniper, Macro and Internal columns are optional, so the
+   tool also runs on older/higher-TF exports (skipping whatever that export doesn't carry).
 
-All three fibs are green. Expect early-bar mismatches on any re-run to be warmup (structure not yet
+All four fibs are green. Expect early-bar mismatches on any re-run to be warmup (structure not yet
 converged, or a leg/zone/cycle that began before the export window) — parity holds from the first
 full in-window leg onward; the Macro needs the longest warmup because a cycle spans many bars.
 

@@ -11,12 +11,13 @@ the Pine build in indicators/liquidity_export.pine plotted, bar by bar.
 
 What is compared (per bar, after --warmup)
 ------------------------------------------
-  * Level prices (tolerance, na-aware): px_pdh/pdl, px_pwh/pwl, px_pmh/pml, px_pwc, px_h4h/h4l,
+  * Level prices (tolerance, na-aware): px_pdh/pdl, px_pwh/pwl, px_pwc, px_h4h/h4l,
     px_asia_h/l, px_london_h/l, px_ny_h/l — the active level's frozen price (na until it forms).
+    (The MONTHLY level PMH/PML was removed from the source and the engine on 2026-07-09.)
   * Mitigation flags (0/1): the *_mit column for each of the above (PWC has none — never mitigated).
-  * Boundary rolls (0/1): px_day_roll / px_week_roll / px_month_roll / px_h4_roll — where each HTF
-    period turns over. These are the CALIBRATION signal: if they mismatch, --htf-tz / --htf-rollover
-    do not match this chart's "D"/"W"/"M"/"240" session boundary (see Calibration below).
+  * Boundary rolls (0/1): px_day_roll / px_week_roll / px_h4_roll — where each HTF period turns over.
+    These are the CALIBRATION signal: if they mismatch, --htf-tz / --htf-rollover do not match this
+    chart's "D"/"W"/"240" session boundary (see Calibration below).
 
 NON-REPAINTING (Aaron's decision, 2026-07-05)
 ---------------------------------------------
@@ -26,8 +27,8 @@ So the level values here are the real, live, non-repainting ones a bot would act
 
 Calibration
 -----------
-TradingView's daily/weekly/monthly/H4 bars align to the instrument's exchange session, which is
-broker dependent. For XAUUSD that is usually a 17:00-New-York roll, i.e.
+TradingView's daily/weekly/H4 bars align to the instrument's exchange session, which is broker
+dependent. For XAUUSD that is usually a 17:00-New-York roll, i.e.
 `--htf-tz America/New_York --htf-rollover 17`. If px_*_roll or the level prices mismatch on otherwise
 warm bars, sweep --htf-rollover (and/or --htf-tz) until px_day_roll matches, then the prices follow.
 The winning pair is the LiquidityEngine default; bake it in once confirmed. Run with
@@ -67,14 +68,14 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from liquidity import LiquidityEngine
-from liquidity.engine import _key_day, _key_week, _key_month, _key_h4
+from liquidity.engine import _key_day, _key_week, _key_h4
 from sessions.engine import _resolve_tz
 
 # px_<col> : level name in LiquidityLevel.name  (price columns)
+# (The MONTHLY level PMH/PML was removed from the source and the engine on 2026-07-09.)
 PRICE_BY_NAME = {
     "px_pdh": "PDH", "px_pdl": "PDL",
     "px_pwh": "PWH", "px_pwl": "PWL",
-    "px_pmh": "PMH", "px_pml": "PML",
     "px_pwc": "PWC",
     "px_h4h": "H4 H", "px_h4l": "H4 L",
     "px_asia_h": "Asia H", "px_asia_l": "Asia L",
@@ -85,13 +86,12 @@ PRICE_BY_NAME = {
 MIT_BY_NAME = {
     "px_pdh_mit": "PDH", "px_pdl_mit": "PDL",
     "px_pwh_mit": "PWH", "px_pwl_mit": "PWL",
-    "px_pmh_mit": "PMH", "px_pml_mit": "PML",
     "px_h4h_mit": "H4 H", "px_h4l_mit": "H4 L",
     "px_asia_h_mit": "Asia H", "px_asia_l_mit": "Asia L",
     "px_london_h_mit": "London H", "px_london_l_mit": "London L",
     "px_ny_h_mit": "NY H", "px_ny_l_mit": "NY L",
 }
-ROLL_FIELDS = ["px_day_roll", "px_week_roll", "px_month_roll", "px_h4_roll"]
+ROLL_FIELDS = ["px_day_roll", "px_week_roll", "px_h4_roll"]
 
 PRICE_FIELDS = list(PRICE_BY_NAME)
 MIT_FIELDS = list(MIT_BY_NAME)
@@ -164,8 +164,8 @@ class _RollWatcher:
         from datetime import timedelta
         self._tz = _resolve_tz(htf_tz)
         self._shift = timedelta(hours=(24 - (rollover % 24)) % 24)
-        self._keys = {"day": None, "week": None, "month": None, "h4": None}
-        self._fns = {"day": _key_day, "week": _key_week, "month": _key_month, "h4": _key_h4}
+        self._keys = {"day": None, "week": None, "h4": None}
+        self._fns = {"day": _key_day, "week": _key_week, "h4": _key_h4}
 
     def pulses(self, ts_ms):
         local = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).astimezone(self._tz) + self._shift
@@ -174,8 +174,7 @@ class _RollWatcher:
             key = fn(local)
             out[k] = 1 if (self._keys[k] is not None and key != self._keys[k]) else 0
             self._keys[k] = key
-        return {"px_day_roll": out["day"], "px_week_roll": out["week"],
-                "px_month_roll": out["month"], "px_h4_roll": out["h4"]}
+        return {"px_day_roll": out["day"], "px_week_roll": out["week"], "px_h4_roll": out["h4"]}
 
 
 def _python_row(active, roll_pulses):

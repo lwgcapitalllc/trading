@@ -615,6 +615,8 @@ var bool iFib100Touched   = false
 var bool iFib618EverReached = false
 var float iFib_tp3_hit_price = na
 var bool  iFibResetActive    = false
+var float iFibPrevAsh = na   // last bar's anchors — the extend-changed guard (mpc 2705)
+var float iFibPrevAsl = na
 
 // ── Stop internal tracking on external BOS/SOS ───────────
 if showInternal and (st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos)
@@ -1048,13 +1050,15 @@ var bool fibo6Touched  = false
 var bool fibo7Touched  = false
 var bool fibo10Touched = false
 var bool fibo618EverReached = false
-var bool fiboResetActive    = false   // TP3 (0.0) hit -> leg spent/hidden until a new leg
+var bool fiboResetActive    = false   // declared + reset on origin change; TP3 setter dropped 2026-07-09
 
 var float fiboP1  = na, var float fiboP2  = na, var float fiboP3  = na
 var float fiboP4  = na, var float fiboP5  = na, var float fiboP6  = na
 var float fiboP7  = na
 var float fiboP10 = na
 var int   fiboStartIndexPrev = na
+var float fiboPrevAsh = na   // last bar's anchors — the extend-changed guard (mpc 2303-2309)
+var float fiboPrevAsl = na
 
 if not na(st.ash)
     fibo_ash     := st.ash
@@ -1113,7 +1117,10 @@ if fibActive
         i_confirmed_high_loc   := na
     fiboStartIndexPrev := fiboStartIndex
 
-    if not fiboOriginChanged
+    // Skip touched-checks on the bar the origin changed OR the bar the extending anchor itself moved
+    // (a live pullback wick, not a confirmed close) — mpc 2303-2309.
+    bool fiboExtChanged = (not na(fiboPrevAsh) and fibo_ash != fiboPrevAsh) or (not na(fiboPrevAsl) and fibo_asl != fiboPrevAsl)
+    if not fiboOriginChanged and not fiboExtChanged
         bool fibo618Reached = fibo_dir == 1 ? low <= fiboP3 : high >= fiboP3
 
         if fibo618Reached
@@ -1142,12 +1149,13 @@ if fibActive
             if not fibo7Touched and not na(fiboP7)
                 if fibo_dir == 1 ? high >= fiboP7 : low <= fiboP7
                     fibo7Touched := true
-            // TP3 (0.0) hit -> the leg is spent; hide until a new leg (mpc 2384).
-            if fibo7Touched
-                fiboResetActive := true
 
         if fibo618Reached and not fibo618EverReached
             fibo618EverReached := true
+
+    // Remember this bar's anchors for next bar's extend-changed check (mpc 2336-2337).
+    fiboPrevAsh := fibo_ash
+    fiboPrevAsl := fibo_asl
 
 //============================================================
 //  SNIPER FIB  (lifted from mpc_assistant.pine GRP_SNIPER ~2510-2551 + zone-touch ~2788-2797)
@@ -1229,7 +1237,8 @@ var bool macroExtended = false
 macroExtended := false
 
 if showMacroFib and macroFibAllowed
-    if st.bear_sos
+    // Seed once from the very first bar (fallback, mpc 2464) so the first bullish SOS can lock.
+    if st.bear_sos or na(macro_last_bear_sos_bar)
         macro_last_bear_sos_bar     := bar_index
         macro_ll_since_bear_sos     := low
         macro_ll_since_bear_sos_bar := bar_index
@@ -1352,6 +1361,7 @@ float macroR = macroActive ? macroH - macroL : na
 // Clear the internal fib when an external BOS/SOS fires — wait for a fresh iBOS/iSOS.
 if st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos
     iFib_dir := 0, iFib_asl := na, iFib_asl_loc := na, iFib_ash := na, iFib_ash_loc := na
+    iFibPrevAsh := na, iFibPrevAsl := na
     iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
     iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
     iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
@@ -1368,7 +1378,9 @@ else if iFib_dir == 1 and not na(iFib_asl)
         iFib_ash_loc := bar_index
 
 // Touched tracking — same 0.618-gate logic as the other fibs.
-if iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
+// Skip the checks on any bar the moving anchor itself changed — a live wick (mpc 2705).
+bool iFibExtChanged = (not na(iFibPrevAsh) and iFib_ash != iFibPrevAsh) or (not na(iFibPrevAsl) and iFib_asl != iFibPrevAsl)
+if iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash) and not iFibExtChanged
     float iFR  = iFib_ash - iFib_asl
     if iFR > 0
         float iTP618 = iFib_dir == 1 ? iFib_ash - iFR*0.618 : iFib_asl + iFR*0.618
@@ -1405,11 +1417,13 @@ if iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
             if iFib0Touched and not iFib0WasTouched
                 iFib_tp3_hit_price := iTP0
 
-        if iFib0Touched
-            iFibResetActive := true
-
         if iGate618 and not iFib618EverReached
             iFib618EverReached := true
+
+// Remember this bar's anchors for next bar's extend-changed check (mpc 2741-2743).
+if iFib_dir != 0
+    iFibPrevAsh := iFib_ash
+    iFibPrevAsl := iFib_asl
 
 bool  iFibActive = iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
 float iFibR = iFibActive ? iFib_ash - iFib_asl : na

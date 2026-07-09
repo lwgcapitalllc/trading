@@ -6,8 +6,9 @@ returning that bar's liquidity EVENTS: which levels were created, which price to
 which were evicted, and the full active set. Ported from the liquidity blocks of
 indicators/mpc_assistant.pine:
 
-  - DAILY / WEEKLY / MONTHLY LEVELS  .... mpc 1334-1506  (prev period high/low + mitigation)
-  - PREVIOUS WEEKLY CLOSE (PWC)  ........ mpc 1508-1533  (prev week's close, a reference line)
+  - DAILY / WEEKLY LEVELS  ............. mpc DAILY/WEEKLY blocks  (prev period high/low + mitigation)
+  - PREVIOUS WEEKLY CLOSE (PWC)  ........ mpc PWC block  (prev week's close, a reference line)
+  (the MONTHLY level PMH/PML was removed from the source and this engine on 2026-07-09.)
   - H4 LIQUIDITY SWEEP TRACKER  ........ mpc 1535-1591  (prev H4 high/low + SSH/BSL sweep)
   - SESSION H/L TRACKING  .............. mpc 1593-1760  (Asia/London/NY high/low + mitigation)
   plus the "Hide Mitigated on New Day" tidy ... mpc 1344/1402/1460/1618 (newDay, NY).
@@ -20,14 +21,14 @@ engine owns that block and emits a finalized SessionRange on each session close.
 --------------------------------------------------------------------------------------------------
 NON-REPAINTING — Aaron's explicit decision (2026-07-05)
 --------------------------------------------------------------------------------------------------
-The Pine source reads the day/week/month high/low via `request.security(..., high, lookahead_on)`,
-which PEEKS at the whole period's future extreme and freezes it at the period's first bar (a
-repaint that only shows up on saved history — the source already suppresses it on the live bar via
+The Pine source reads the day/week high/low via `request.security(..., high, lookahead_on)`, which
+PEEKS at the whole period's future extreme and freezes it at the period's first bar (a repaint that
+only shows up on saved history — the source already suppresses it on the live bar via
 `not isLastDaily`). A streaming engine that feeds one closed bar at a time cannot peek ahead, and a
 live bot must never trade a level built from future information. So every HTF level here is built
-from the PREVIOUS, fully-completed period only: on the first bar of a new day/week/month the just-
-finished period's high/low (and, for PWC, its final close) become the new level. This is exactly
-what the source shows in real time (yesterday's completed high), made deterministic and streamable.
+from the PREVIOUS, fully-completed period only: on the first bar of a new day/week the just-finished
+period's high/low (and, for PWC, its final close) become the new level. This is exactly what the
+source shows in real time (yesterday's completed high), made deterministic and streamable.
 The parity harness (indicators/liquidity_export.pine) mirrors the same non-repainting reads, so the
 Python↔Pine check still validates at 100% — the same "deliberate deviation, mirrored in the export"
 move the sessions engine used for its render gates.
@@ -35,14 +36,14 @@ move the sessions engine used for its render gates.
 --------------------------------------------------------------------------------------------------
 HTF period boundaries
 --------------------------------------------------------------------------------------------------
-Day / week / month / H4 buckets are cut in a single configurable timezone (`htf_timezone`), keyed on
-a clock shifted so the session-open hour (`htf_rollover_hours`) lands at midnight. Day = calendar
-date, week = ISO week, month = calendar month, H4 = 4-hour bucket — all on the shifted clock.
-TradingView's "D"/"W"/"M"/"240" resolutions align to the instrument's exchange session, which is
-broker-dependent: XAUUSD's session OPENS at 18:00 New York (its Sunday-evening bar is the first bar
-of the new week, DST-aware), which is `htf_timezone="America/New_York", htf_rollover_hours=18`
-(validated against the real export). Both are CALIBRATION knobs locked against the real export in
-tools/compare_liquidity.py (like the other engines' `--warmup`). The "Hide Mitigated on New Day"
+Day / week / H4 buckets are cut in a single configurable timezone (`htf_timezone`), keyed on a clock
+shifted so the session-open hour (`htf_rollover_hours`) lands at midnight. Day = calendar date,
+week = ISO week, H4 = 4-hour bucket — all on the shifted clock. TradingView's "D"/"W"/"240"
+resolutions align to the instrument's exchange session, which is broker-dependent: XAUUSD's session
+OPENS at 18:00 New York (its Sunday-evening bar is the first bar of the new week, DST-aware), which
+is `htf_timezone="America/New_York", htf_rollover_hours=18` (validated against the real export). Both
+are CALIBRATION knobs locked against the real export in tools/compare_liquidity.py (like the other
+engines' `--warmup`). The "Hide Mitigated on New Day"
 tidy keys off the NY calendar day (Pine `newDay`, America/New_York), which the composed sessions
 engine already computes — that is a separate clock from the HTF boundary and is not configurable.
 """
@@ -67,7 +68,7 @@ from .types import (
 
 # HTF boundary timezone. Broker/exchange dependent — calibrated against the real export; see the
 # module docstring. "America/New_York" is the working default for XAUUSD; change in one place here
-# (or pass htf_timezone=) if the parity run shows the daily/weekly/monthly boundary sits elsewhere.
+# (or pass htf_timezone=) if the parity run shows the daily/weekly boundary sits elsewhere.
 _DEFAULT_HTF_TZ = "America/New_York"
 
 
@@ -80,16 +81,12 @@ def _key_week(dt: datetime):
     return (iso[0], iso[1])           # (ISO year, ISO week) — week starts Monday
 
 
-def _key_month(dt: datetime):
-    return (dt.year, dt.month)
-
-
 def _key_h4(dt: datetime):
     return (dt.year, dt.month, dt.day, dt.hour // 4)   # 4-hour bucket from local midnight
 
 
 class _PeriodTracker:
-    """Running high/low/close for one HTF period (day/week/month/H4), rolling to a 'previous
+    """Running high/low/close for one HTF period (day/week/H4), rolling to a 'previous
     completed period' snapshot when the period key changes.
 
     Non-repainting: prev_* is only populated once a period has fully closed (a later bar carried a
@@ -130,9 +127,9 @@ class LiquidityEngine:
 
     Build one per symbol/timeframe and feed it one closed bar at a time, in order. It composes and
     drives its own sessions engine for the Asia/London/NY session-H/L levels, and reconstructs the
-    day/week/month/H4 levels from the bar stream (non-repainting — see the module docstring).
+    day/week/H4 levels from the bar stream (non-repainting — see the module docstring).
 
-    Defaults mirror the mpc_assistant.pine liquidity inputs: previous day/week/month H/L, PWC, the
+    Defaults mirror the mpc_assistant.pine liquidity inputs: previous day/week H/L, PWC, the
     H4 sweep, and all three session H/Ls enabled; mitigated levels are dropped on a new NY day
     (`hide_mitigated_on_new_day`, Pine i_currentDayOnly = true).
     """
@@ -144,23 +141,21 @@ class LiquidityEngine:
         hide_mitigated_on_new_day: bool = True,
         enable_daily: bool = True,
         enable_weekly: bool = True,
-        enable_monthly: bool = True,
         enable_pwc: bool = True,
         enable_h4: bool = True,
         enable_sessions: bool = True,
         session_engine: Optional[SessionEngine] = None,
     ) -> None:
         self._htf_tz: tzinfo = _resolve_tz(htf_timezone)
-        # htf_rollover_hours = the local hour the trading day/week/month OPENS (the session open).
+        # htf_rollover_hours = the local hour the trading day/week OPENS (the session open).
         # We shift the clock FORWARD so that open hour becomes midnight — this correctly rolls an
         # EVENING open (e.g. gold's 18:00 NY, whose Sunday-evening bar is the first bar of the new
-        # week) into the next calendar day/week/month, not the one it sits in by wall-clock date.
+        # week) into the next calendar day/week, not the one it sits in by wall-clock date.
         self._htf_shift = timedelta(hours=(24 - (htf_rollover_hours % 24)) % 24)
         self._hide_on_new_day = hide_mitigated_on_new_day
         self._enable = {
             "daily": enable_daily,
             "weekly": enable_weekly,
-            "monthly": enable_monthly,
             "pwc": enable_pwc,
             "h4": enable_h4,
             "session": enable_sessions,
@@ -171,7 +166,6 @@ class LiquidityEngine:
 
         self._daily = _PeriodTracker(_key_day)
         self._weekly = _PeriodTracker(_key_week)
-        self._monthly = _PeriodTracker(_key_month)
         self._h4 = _PeriodTracker(_key_h4)
 
         # Active levels, keyed by a stable slot so a period roll replaces the right pair:
@@ -191,7 +185,7 @@ class LiquidityEngine:
         sess = self._sessions.update(index, timestamp_ms, high, low)
 
         # HTF period clock: convert to the boundary timezone, then shift forward so a non-midnight
-        # session open (e.g. 18:00 NY for gold) cuts the day/week/month/H4 buckets correctly.
+        # session open (e.g. 18:00 NY for gold) cuts the day/week/H4 buckets correctly.
         local = (datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc)
                  .astimezone(self._htf_tz) + self._htf_shift)
 
@@ -199,7 +193,7 @@ class LiquidityEngine:
         if self._hide_on_new_day and sess.is_new_day:
             self._hide_mitigated(index, ev)
 
-        # 2. Day / week / month period levels (create on a period roll), then PWC.
+        # 2. Day / week period levels (create on a period roll), then PWC.
         self._roll_calendar(index, local, high, low, close, ev)
 
         # 3. H4 sweep levels (create on an H4 roll).
@@ -229,9 +223,9 @@ class LiquidityEngine:
 
     def _roll_calendar(self, index: int, local: datetime, high: float, low: float, close: float,
                        ev: LiquidityEvents) -> None:
-        """Daily / weekly / monthly previous-period H/L + PWC. On a period roll the just-completed
-        period's extremes become the new PDH/PDL (etc.); PWC takes the completed week's final close.
-        Daily uses the sweep rule; weekly/monthly use the close-through (break) rule (Pine 1427/1485).
+        """Daily / weekly previous-period H/L + PWC. On a period roll the just-completed period's
+        extremes become the new PDH/PDL (etc.); PWC takes the completed week's final close. Daily
+        uses the sweep rule; weekly uses the close-through (break) rule (Pine 1427).
         """
         if self._daily.update(local, high, low, close) and self._enable["daily"]:
             self._new_level(index, ev, "daily_high", kind="daily", side="high", name="PDH",
@@ -250,12 +244,6 @@ class LiquidityEngine:
                 # only recolours it above/below; there is no sweep/break tracking).
                 self._new_level(index, ev, "pwc", kind="pwc", side="close", name="PWC",
                                 price=self._weekly.prev_close, rule=NONE)       # type: ignore[arg-type]
-
-        if self._monthly.update(local, high, low, close) and self._enable["monthly"]:
-            self._new_level(index, ev, "monthly_high", kind="monthly", side="high", name="PMH",
-                            price=self._monthly.prev_high, rule=BREAK_HIGH)  # type: ignore[arg-type]
-            self._new_level(index, ev, "monthly_low", kind="monthly", side="low", name="PML",
-                            price=self._monthly.prev_low, rule=BREAK_LOW)    # type: ignore[arg-type]
 
     def _roll_h4(self, index: int, local: datetime, high: float, low: float, close: float,
                  ev: LiquidityEvents) -> None:
@@ -293,11 +281,11 @@ class LiquidityEngine:
                 ev.mitigated.append(lvl)
 
     def _hide_mitigated(self, index: int, ev: LiquidityEvents) -> None:
-        """New-day tidy (Pine i_currentDayOnly): drop already-mitigated day/week/month/session
-        levels from the active set. H4 and PWC are excluded — the source does not hide them here
-        (H4 self-resets on its own roll; PWC is replaced on value change)."""
+        """New-day tidy (Pine i_currentDayOnly): drop already-mitigated day/week/session levels from
+        the active set. H4 and PWC are excluded — the source does not hide them here (H4 self-resets
+        on its own roll; PWC is replaced on value change)."""
         for slot, lvl in list(self._active.items()):
-            if lvl.mitigated and lvl.kind in ("daily", "weekly", "monthly", "session"):
+            if lvl.mitigated and lvl.kind in ("daily", "weekly", "session"):
                 self._active.pop(slot)
                 ev.evicted.append(lvl)
 
