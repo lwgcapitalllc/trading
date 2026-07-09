@@ -11,10 +11,13 @@ tests), and Pine-parity-validated (100%) on two independent real exports: `VANTA
 (6,727 bars, `--warmup 594`, exit 0) and `VANTAGE_XAUUSD, 15m` (10,197 bars, `--warmup 207`, exit 0).
 Every OB field — active bull/bear arrays slot-by-slot, counts, created/mitigated pulses, and the
 internal-break origin — matched on every warm bar of both. Two timeframes with no timeframe-specific
-branching re-confirms the engine is timeframe-agnostic. The one canonical implementation — no
-consumer builds its own.
+branching re-confirms the engine is timeframe-agnostic. **Re-validated 2026-07-09** after the
+2026-07-08 structure re-sync (which shifted internal-break timing): the engine code was untouched, but
+its harness `indicators/ob_export.pine` embedded the pre-2026-07-08 structure block and was re-synced
+first — then `compare_ob.py` passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (12,618 bars,
+`--warmup 1133`). The one canonical implementation — no consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/ob_export.pine`, diffed against this Python by `tools/compare_ob.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-04
+**Last reviewed:** 2026-07-09
 
 ---
 
@@ -175,7 +178,19 @@ bars mismatch only because the TradingView chart had history before the export w
 arrays opened already holding 3 bull + 5 bear OBs whose origin candles were off-screen; the Python
 engine starts cold and cannot know them. Those phantom OBs flush (mitigate or FIFO-evict) out of
 Pine's arrays by bar 594, and the two engines are bar-for-bar identical from there — the same
-warm-start offset the structure engine has. The harness mirrors the `engines/market_structure/` and
+warm-start offset the structure engine has.
+
+**Re-validated — GREEN (2026-07-09).** After the 2026-07-08 structure re-sync shifted internal-break
+timing, `indicators/ob_export.pine` (which embeds the structure engine) was found still on the
+2026-07-04 structure block. It was re-synced with the two f2a8411 changes — the bear-BOS fallback
+swing-high scan and the internal-reset now firing on an external BOS too — leaving its `process`
+method byte-identical to the current `structure_engine_export.pine` and its internal state machine
+differing only by the OB creation blocks. `compare_ob.py` then passed on a fresh `VANTAGE_XAUUSD, 5m`
+export (12,618 bars, `--warmup 1133`, exit 0): every OB field matched on every warm bar. The OB
+**engine code was untouched** — only the harness was re-synced. The 1133-bar warm-up is the cold-start
+(Pine opened holding 6 pre-window bull OBs; the bull side flushed them by bar 1132, bear by bar 29).
+
+The harness mirrors the `engines/market_structure/` and
 `engines/fibonacci/` flow:
 
 1. `indicators/ob_export.pine` — `structure_engine_export.pine` (the byte-identical structure

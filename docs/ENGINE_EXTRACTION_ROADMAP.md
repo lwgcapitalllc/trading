@@ -2,7 +2,7 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
-**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. A **2026-07-08 audit** of a fresh, much larger re-paste of `mpc_assistant.pine` (1721-line diff) superseded the 2026-07-06/07 findings and flagged three engines STALE. Re-sync progress: **market_structure — DONE** (two detection changes ported through the whole sync chain, exit 0, committed); **fibonacci — DONE** (Structure TP4/TP5 drop + internal-swing anchor + TP3 reset; Macro hide-only + always-`ll_since` bottom anchor; the new **Internal Fib** fully ported — re-validated 2026-07-09 on a fresh 5m export, exit 0); **SVP — DONE** (`svpRows` 100 → 50 through engine + harness + tests + docs; re-validated 2026-07-09 on a fresh 50-row 5m export, `--warmup 251`, exit 0). **liquidity stayed IN PARITY.** The earlier held fibonacci-Macro question is **resolved** (the source reverted the same-bar full-reset; the held changes were discarded and redone in the fib re-sync). **Follow-up:** re-validate `order_blocks` (internal-break timing shifted with the structure re-sync). See "Audit findings — 2026-07-08" below.
+**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. A **2026-07-08 audit** of a fresh, much larger re-paste of `mpc_assistant.pine` (1721-line diff) superseded the 2026-07-06/07 findings and flagged three engines STALE. Re-sync progress: **market_structure — DONE** (two detection changes ported through the whole sync chain, exit 0, committed); **fibonacci — DONE** (Structure TP4/TP5 drop + internal-swing anchor + TP3 reset; Macro hide-only + always-`ll_since` bottom anchor; the new **Internal Fib** fully ported — re-validated 2026-07-09 on a fresh 5m export, exit 0); **SVP — DONE** (`svpRows` 100 → 50 through engine + harness + tests + docs; re-validated 2026-07-09 on a fresh 50-row 5m export, `--warmup 251`, exit 0). **liquidity stayed IN PARITY.** The earlier held fibonacci-Macro question is **resolved** (the source reverted the same-bar full-reset; the held changes were discarded and redone in the fib re-sync). **order_blocks — DONE** (engine untouched; its harness `ob_export.pine` re-synced to the new structure, then re-validated 2026-07-09 on a fresh 5m export, `--warmup 1133`, exit 0). **The 2026-07-08 re-sync is now complete — every engine back at 100% Pine parity.** See "Audit findings — 2026-07-08" below.
 **Last reviewed:** 2026-07-09
 
 ---
@@ -25,7 +25,7 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 - **`engines/regime/`** — market regime classifier (separate source, not the SMC indicator).
 - **`engines/market_structure/`** — external + internal structure (BOS/CHoCH, swings, HH/HL/LH/LL). 100% Pine parity.
 - **`engines/fibonacci/`** — Structure, Sniper, and Macro fibs. 100% Pine parity. Downstream of `engines/market_structure/`.
-- **`engines/order_blocks/`** — bull/bear OB zones off external + internal breaks, with mitigation + FIFO eviction. Sibling of `engines/fibonacci/` (consumes `engines/market_structure/` directly). Ported line-by-line, 12 unit tests, 100% Pine parity on two independent real exports — `VANTAGE_XAUUSD, 5m` (`--warmup 594`) and `VANTAGE_XAUUSD, 15m` (`--warmup 207`), confirming it's timeframe-agnostic (harness: `indicators/ob_export.pine` + `engines/order_blocks/tools/compare_ob.py`).
+- **`engines/order_blocks/`** — bull/bear OB zones off external + internal breaks, with mitigation + FIFO eviction. Sibling of `engines/fibonacci/` (consumes `engines/market_structure/` directly). Ported line-by-line, 12 unit tests, 100% Pine parity on two independent real exports — `VANTAGE_XAUUSD, 5m` (`--warmup 594`) and `VANTAGE_XAUUSD, 15m` (`--warmup 207`), confirming it's timeframe-agnostic (harness: `indicators/ob_export.pine` + `engines/order_blocks/tools/compare_ob.py`). Re-validated after the 2026-07-08 structure re-sync: engine untouched, but its harness `ob_export.pine` (which embeds the structure engine) was re-synced with the two f2a8411 changes, then re-validated 2026-07-09 on a fresh `VANTAGE_XAUUSD, 5m` export (12,618 bars; all OB fields match, `--warmup 1133`, exit 0).
 - **`engines/sessions/`** — Tokyo/London/NY session windows + running session H/L, the three NY kill zones, and the NY opening range. The first **time-driven** engine (input = the bar's UTC timestamp + high/low, not just OHLC); standalone (depends on nothing). Ported line-by-line, 17 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (all 18 fields, `--warmup 263`), re-confirmed on a 15m export for the 16 timeframe-agnostic fields (harness: `indicators/sessions_export.pine` + `engines/sessions/tools/compare_sessions.py`). Unblocks the session-scoped parts of Liquidity (session H/L levels) and VWAP (session anchor).
 - **`engines/liquidity/`** — the prices price runs toward and grabs: prev day/week/month H/L (PDH/PDL/PWH/PWL/PMH/PML), previous-week-close (PWC), the H4 sweep (SSH/BSL), and Asia/London/NY session H/L, with mitigation (sweep vs break) tracking. Consumes `engines/sessions/` for session H/L (composes it); reconstructs the day/week/month/H4 levels from the bar stream. **Non-repainting by Aaron's explicit decision (2026-07-05): every HTF level uses the PREVIOUS completed period only — the engine never forecasts the current period's high/low.** Ported, 15 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (11,457 bars; all 33 fields — 15 level prices, their mitigation flags, 4 boundary-roll pulses — match, `--htf-rollover 18 --warmup 4653`, exit 0; harness: `indicators/liquidity_export.pine` + `engines/liquidity/tools/compare_liquidity.py`). Calibrated boundary: XAUUSD session opens 18:00 NY (baked in as the default).
 - **`engines/vwap/`** — the session VWAP: a volume-weighted running mean of `hlc3` (`ta.vwap(hlc3)`), re-anchored each trading day, plus a derived close-vs-line cross. First engine to need a **volume** column in the feed (XAUUSD tick volume — what the Pine `ta.vwap` already reads). Time-driven; reconstructs the trading-day anchor directly (the **same** 18:00-NY boundary the liquidity daily level uses), so it does not compose the sessions engine. Ported line-by-line from `mpc_assistant.pine` line 852, 13 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (6,973 bars; both fields — VWAP value + trading-day anchor pulse — match, `--htf-rollover 18 --warmup 90`, exit 0; harness: `indicators/vwap_export.pine` + `engines/vwap/tools/compare_vwap.py`). Uses a **relative** tolerance (1e-6) because the value is a cumulative sum that drifts at float-rounding level — unlike the copied-value level engines' exact match.
@@ -142,10 +142,18 @@ for daily/session/H4, close-break for weekly/monthly. The PDH/PDL/PWH/PWL `[1]` 
 `lookahead_off` bring mpc's DISPLAY in line with the already-non-repainting engine (prev completed
 period), so no event change. No action.
 
-**order_blocks — not directly changed, but re-validate after the structure re-sync.** `extendOBs` and
-OB detection are untouched; only the default toggle flipped. But OB consumes internal breaks, whose
-timing shifts with the internal-reset-on-BOS change — so re-run `compare_ob.py` once structure is
-re-synced.
+**order_blocks — DONE, parity CONFIRMED (2026-07-09).** `extendOBs` and OB detection are untouched;
+only the default toggle flipped. But OB consumes internal breaks, whose timing shifts with the
+internal-reset-on-BOS change. The catch was the **harness**: `indicators/ob_export.pine` still embedded
+the pre-2026-07-08 structure block (built 2026-07-04), so it had to be re-synced first — the same two
+f2a8411 changes (bear-BOS fallback swing-high scan + internal-reset firing on external BOS too) ported
+in, leaving its `process` method byte-identical to the current `structure_engine_export.pine` and its
+internal state machine differing only by the OB creation blocks. With the harness current, `compare_ob.py`
+passed on a fresh `VANTAGE_XAUUSD, 5m` export (12,618 bars): every OB field — active bull/bear arrays
+slot-by-slot, counts, created/mitigated pulses, and `px_i_break_origin_ago` — matched on every warm bar
+(`--warmup 1133`, exit 0). The 1133-bar warm-up is the cold-start (Pine opened holding 6 pre-window bull
+OBs; the bull side flushed them by bar 1132, bear by bar 29). The OB **engine code needed no change** —
+this was a re-validation; only the harness was re-synced.
 
 **sessions / vwap / regime / news — not affected.** Sessions gained a `withinSessionDays` display-window
 gate (current-week-only unless `showHistoricSessions`); it gates only the drawn `sessionInfos`, not the
@@ -153,7 +161,8 @@ event stream the engine emits — visual, noted for reconciliation. VWAP/regime/
 
 **Stale harnesses to update before re-validation:** `structure_engine.pine` (+ its export),
 `fib_export.pine` (Structure fib level drop + internal anchor + `fiboResetActive` + macro hide-only/
-bottom-anchor + new `px_ifib_*`), `svp_export.pine` (50 rows).
+bottom-anchor + new `px_ifib_*`), `svp_export.pine` (50 rows), `ob_export.pine` (embedded structure
+block — re-synced 2026-07-09 with the two f2a8411 changes; ALL now DONE).
 
 **New block noted (not yet on the extract list):** the **HTF Directional Bias** helper
 (`f_biasState`/`f_htfBias`, Daily/Weekly established+current bias with sweep detection) — currently
