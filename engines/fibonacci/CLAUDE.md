@@ -1,15 +1,18 @@
 # CLAUDE.md — Fibonacci Engine Subsystem
 
 **Purpose:** Turn market-structure output into fib LEVEL EVENTS — the first-touch of each fib
-level (E1–E4 entries, TP1–TP5 targets, 1.0) — for use in entries, take-profits, and grading. The
+level (E1–E4 entries, TP1–TP3 targets, 1.0) — for use in entries, take-profits, and grading. The
 signal is the event ("price reached E1 / 0.618"), not the drawing.
 **Scope:** Fib geometry + per-fib touch state machines only. No trading decisions, no structure
 detection (it consumes `engines/market_structure/`), no MT5 ops, no UI, no chart rendering.
-**Status:** All three fibs ported, unit-tested, and Pine-parity-validated (100%). Structure ("FFT")
-and Sniper on `VANTAGE_XAUUSD, 15m` exports; Macro on a `VANTAGE_XAUUSD, 5m` export (Pine gates the
-Macro to ≤5m). The one canonical implementation — no consumer builds its own.
+**Status:** FOUR fibs ported (Structure "FFT", Sniper, Macro, and the new Internal fib), unit-tested
+(47 tests) and Pine-parity-validated (100%, exit 0). The 2026-07-08 `mpc_assistant.pine` re-paste
+re-synced all four (Structure dropped TP4/TP5 + adopts the confirmed internal swing + a TP3
+`reset_active`; Macro reverted to hide-only + always-`ll_since` bottom anchor; the Internal fib is new)
+— **re-validated 2026-07-09 on a fresh `VANTAGE_XAUUSD, 5m` export, exit 0** (see Validation). The one
+canonical implementation — no consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/fib_export.pine`, diffed against this Python by `tools/compare_fib.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-04
+**Last reviewed:** 2026-07-09
 
 ---
 
@@ -30,15 +33,21 @@ engines/fibonacci/
 
 ---
 
-## The three fibs (all identical geometry; they differ only in anchors + ratios + reset rule)
+## The four fibs (all identical geometry; they differ only in anchors + ratios + reset rule)
 
 | Fib | Pine group | Anchors | Ratios drawn | Reset / lifecycle |
 |---|---|---|---|---|
-| **Structure** ("FFT") | `GRP_FIBO` | active swing high/low, **following the live pullback extreme** while a pullback is in progress | E1–E4 (0.618/0.702/0.786/0.886), TP1–TP5 (0.5/0.382/0.0/−0.27/−0.618), 1.0 | new leg when the origin bar changes → all touches reset |
+| **Structure** ("FFT") | `GRP_FIBO` | active swing high/low, **following the live pullback extreme**, and adopting a more-extreme **confirmed internal swing** (`i_confirmed_low/high`) as the pull anchor | E1–E4 (0.618/0.702/0.786/0.886), TP1–TP3 (0.5/0.382/0.0), 1.0 | new leg when the origin bar changes → all touches reset; hitting TP3 (0.0) latches `reset_active` (leg spent until the next leg) |
 | **Sniper** (`next`) | `GRP_SNIPER` | the **BOS impulse leg** (`bull/bear_bos_high/low` + locs) | 0.382–0.5 zone box | fires on a BOS, frozen (does not extend), replaced on the next BOS |
-| **Macro** | `GRP_MACRO` | HH→LL cycle (`last_conf_high/low`, bear-SOS→bull-SOS lock) | 0.0/0.382/0.5/0.618/0.702/0.786/0.886/1.0 | own lock/reset/extend cycle; ≤5m timeframe only |
+| **Macro** | `GRP_MACRO` | HH→LL cycle (`last_conf_high` + the running low since bear SOS, bear-SOS→bull-SOS lock) | 0.0/0.382/0.5/0.618/0.702/0.786/0.886/1.0 | own lock/reset/extend cycle; **hide-only** above the top (extend→touch→hide order); ≤5m timeframe only |
+| **Internal** | `GRP_IFIB` | the **internal leg** that just broke (an iBOS/iSOS, delivered as the snapshot's `ifib_seed_*`); the moving anchor extends live | E1–E4, TP1–TP3, 1.0 (same 8 as Structure) | seeded on each iBOS/iSOS; TP3 (0.0) latches `reset_active`; **ANY external BOS/SOS clears it** — waits for the next iBOS/iSOS |
 
-All three fibs are implemented.
+All four fibs are implemented.
+
+**2026-07-08 changes:** Structure dropped TP4 (−0.270) / TP5 (−0.618) — it now stops at TP3 (0.0) and
+hides the whole leg via `reset_active` once TP3 is hit; it also adopts a more-extreme confirmed internal
+swing as its pull anchor. Macro's held full-reset was reverted to hide-only, its bottom anchor is now
+always the running low since the bear SOS, and HIDE runs after extend+touch. The Internal fib is new.
 
 Structure's gating logic (ported exactly): 0.618 (E1) is the gate — it must be reached before
 anything else arms; the deeper retrace levels (E2/E3/E4/1.0) only register while price is
@@ -94,11 +103,12 @@ gate is the caller's job (feed `MacroFib` only ≤5m bars).
 ## Public API
 
 ```python
-from fibonacci import StructureFib, SniperFib, MacroFib, StructureSnapshot
+from fibonacci import StructureFib, SniperFib, MacroFib, InternalFib, StructureSnapshot
 
 fib = StructureFib()
 sniper = SniperFib()
 macro = MacroFib()   # only feed this <=5m bars
+ifib = InternalFib()
 
 # Each closed bar, right after market_structure's engine.update(bar) -> events:
 snap = StructureSnapshot.from_engine(structure_engine, events)
@@ -127,6 +137,16 @@ macro_events.new_cycle       # a fresh cycle locked THIS bar — event
 macro_events.extended        # the top pushed to a new HH THIS bar — event
 macro_events.touched         # list[FibTouch] first-reached THIS bar (edge-triggered)
 macro_events.levels          # dict{name: price}; names: HH/TP2/TP1/E1/E2/E3/E4/LL
+
+ifib_events = ifib.update(bar.index, bar.high, bar.low, snap)   # note: needs index (for anchor locs)
+ifib_events.active           # an internal leg is currently seeded/drawn
+ifib_events.direction        # 1 bull leg, -1 bear leg, 0 none
+ifib_events.top              # the 0.0 anchor (bull) / 1.0 (bear); .bot = the opposite
+ifib_events.seeded           # a fresh internal leg seeded THIS bar (an iBOS/iSOS) — event
+ifib_events.cleared          # an external BOS/SOS wiped the fib THIS bar — event
+ifib_events.reset_active     # TP3 (0.0) hit -> leg spent until re-seed/clear
+ifib_events.touched          # list[FibTouch] first-reached THIS bar (edge-triggered)
+ifib_events.levels           # dict{name: price}; names E1-E4/1.0/TP1-TP3 (same 8 as Structure)
 ```
 
 ---
@@ -137,8 +157,12 @@ The fib engine is **downstream** of the structure engine and depends only on its
 never its internals. `StructureSnapshot.from_engine(engine, events)` reads the documented
 properties (`active_swing_high/low`, `dir`, `pullback_mode/extreme/extreme_loc`,
 `last_confirmed_high/low`) and the documented `ExternalEvents` (`bull/bear_bos`, `bull/bear_sos`,
-and the break-leg `bull/bear_bos_high/low` + locs). If you need a new field from structure, add a
-read property there (as was done for the pullback getters) — do not reach into `_ext`/`_int`.
+and the break-leg `bull/bear_bos_high/low` + locs). The 2026-07-08 re-sync added two capture-only
+`InternalEvents` reads: `i_confirmed_high/low_*` (fired on each iSH/iSL confirm — the Structure fib's
+internal-swing anchor) and `ifib_seed_*` (the internal leg's low/high/dir at each iBOS/iSOS — the
+Internal fib's seed). Both are additive exposures of state the structure engine already computes; no
+detection logic changed (structure parity re-confirmed exit 0). If you need a new field from structure,
+add a read property/event there (as was done for these) — do not reach into `_ext`/`_int`.
 
 The Macro fib also reads `last_confirmed_high/low` (+ locs) and needs the current bar index and
 close, so its signature is `macro.update(bar_index, high, low, close, snap)` — the others take only
@@ -169,9 +193,23 @@ state carries bar-to-bar and cannot be recomputed from a single bar. Build one `
 
 ---
 
-## Validation (Pine ↔ Python parity) — all three fibs GREEN
+## Validation (Pine ↔ Python parity)
 
-**Structure fib — GREEN (2026-07-02):** full parity on a `VANTAGE_XAUUSD, 15m` export. Every field
+> **2026-07-08 re-sync — parity CONFIRMED 2026-07-09 (exit 0).** The four fibs were re-synced to the
+> re-pasted `mpc_assistant.pine` (Structure TP4/TP5 drop + internal-swing anchor + TP3 `reset_active`;
+> Macro hide-only + always-`ll_since` bottom anchor; the new Internal fib). `fib_export.pine` +
+> `compare_fib.py` were updated to match (Internal fib = touch pulses + state only, no per-level price
+> columns, to stay under TradingView's 64-plot cap). On a fresh `VANTAGE_XAUUSD, 5m` export (7,562 bars)
+> every compared field — Structure + Sniper + Macro + Internal — matched on all 5,646 warm bars
+> (`--warmup 1916`, exit 0). The warmup is the Macro cycle's cold-start (Pine's macro is warm from a
+> pre-window cycle; a macro cycle is long-lived, so the two engines only reconcile once that cycle ends
+> and both lock the same in-window cycle at bar 1916 — Structure/Sniper converge by ~bar 108). One
+> InternalFib 0.5-touch fired a single bar late from CSV 2-dp rounding at a float-tie boundary; a
+> `_TOUCH_EPS = 1e-6` inclusive margin on the InternalFib touch comparisons absorbs it (« 0.01 tick, so
+> it can never register a real un-reached level early). The GREEN notes below predate the re-paste but
+> re-confirm the Structure/Sniper/Macro geometry on their own datasets.
+
+**Structure fib — GREEN (2026-07-02, pre-re-paste):** full parity on a `VANTAGE_XAUUSD, 15m` export. Every field
 — each level's price, its first-touch pulse, active/dir/origin — matched Python↔Pine across 258
 real touch events (E1×52, E2×44, E3×38, E4×34, 1.0×13, TP1×41, TP2×31, TP3×5; TP4/TP5 never reached
 in-window).
@@ -233,8 +271,10 @@ Not built yet — there is no bot consuming this engine. Wire it up together wit
 
 ## References
 
-- Pine source of truth: `indicators/mpc_assistant.pine` (fib blocks `GRP_FIBO` ~2009-2114,
-  `GRP_SNIPER` compute ~2510-2551 + zone-touch ~2788-2797, `GRP_MACRO` ~2290-2432) and its live
-  "MPC - JARVIS" confirmation table, which defines the event model this engine reproduces.
+- Pine source of truth: `indicators/mpc_assistant.pine` (fib blocks `GRP_FIBO` Structure fib
+  ~2318-2439, `GRP_SNIPER` Sniper zone, `GRP_MACRO` Macro ~2511-2655, `GRP_IFIB` Internal fib — seed
+  at the six iBOS/iSOS sites ~1400-1609 + clear/extend/touch ~2727-2791) and its live "MPC - JARVIS"
+  confirmation table, which defines the event model this engine reproduces. (Line numbers drift as the
+  source is re-pasted — grep the `GRP_*` markers.)
 - Upstream structure engine: `engines/market_structure/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.

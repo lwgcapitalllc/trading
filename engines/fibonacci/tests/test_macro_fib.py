@@ -106,6 +106,19 @@ def test_new_hh_extends_top_and_resets_touches():
     assert ev.touched_so_far == set()                                  # new range wipes touches
 
 
+def test_bottom_anchor_is_always_running_low_not_structure_lcl():
+    """2026-07-08 re-sync: the bottom anchor is ALWAYS the running lowest-low since the bear SOS,
+    never the structure engine's last_conf_low (which can be a historical scan reaching before the
+    SOS). Here the running low bottomed at 90 while last_conf_low reports a deeper 85 from further
+    back — the lock must use 90."""
+    fib = MacroFib()
+    fib.update(10, high=105, low=100, close=101, snap=_snap(bear_sos=True))   # bear SOS, low 100
+    fib.update(12, high=95, low=90, close=92, snap=_snap())                    # running low bottoms at 90
+    ev = fib.update(20, high=200, low=195, close=198,
+                    snap=_snap(bull_sos=True, lch=200, lch_loc=18, lcl=85, lcl_loc=15))
+    assert ev.new_cycle and ev.bot == 90.0            # 90 (running low), NOT 85 (structure lcl)
+
+
 def test_same_bar_reset_and_retouch_emits_no_event():
     """The Macro does NOT skip checks on an extend bar, so a level can be reset then re-touched on
     the same bar. Pine's plot compares to the previous bar (`X and not X[1]`), so it emits nothing

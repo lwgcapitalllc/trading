@@ -41,7 +41,8 @@ events = eng.update(Bar(index=i, open=o, high=h, low=l, close=c))
 #                    bull/bear_bos_high/low + _h_loc/_l_loc [break-leg endpoints, break bar only], ...)
 # events.internal -> InternalEvents (bull_bos, bear_bos, bull_sos, bear_sos, new_swing_high/low,
 #                    demoted_high/low_label,
-#                    int_bull_break/int_bear_break + int_break_origin_loc [OB-creation gate, see below], ...)
+#                    int_bull_break/int_bear_break + int_break_origin_loc [OB-creation gate, see below],
+#                    i_confirmed_high/low_* + ifib_seed_* [fib-support captures, see below], ...)
 # Every label the Pine source draws has a matching event field carrying its *_price and *_index.
 # See the "Label -> event field" table in MARKET_STRUCTURE_ENGINE.md for the full mapping.
 
@@ -99,7 +100,7 @@ already-known level fires. Internal structure has no pivot lag at all. See
 | Consumer | Path | Status |
 |---|---|---|
 | Live/algos bots | `algos/shared/structure_engine.py` (thin shim over `market_structure.StructureEngine`) | Wired |
-| `engines/fibonacci/` | reads the public `ExternalEvents` + read properties via its own `StructureSnapshot` | Wired |
+| `engines/fibonacci/` | reads the public `ExternalEvents` + `InternalEvents` (i_confirmed / ifib_seed) via its own `StructureSnapshot` | Wired |
 | `engines/order_blocks/` | reads the public `ExternalEvents` + `InternalEvents` via its own `StructureSnapshot` | Wired |
 | Command-center backtest lab | `command-center/backend/services/` | Not yet wired — future consumer, not touched by this port |
 
@@ -112,6 +113,16 @@ of state the engine already computes — they mirror Pine's `int_bull_break` / `
 changed and structure parity was re-confirmed unbroken. `engines/order_blocks/` scans back from
 `int_break_origin_loc` to drop an OB on the internal break; the external OB path reads the existing
 `bull_bos_l_loc` / `bear_bos_h_loc`.
+
+**`InternalEvents` fib-support captures (`i_confirmed_high/low_*` + `ifib_seed_*`).**
+Added for `engines/fibonacci/` in the 2026-07-08 fib re-sync, and the same additive, capture-only
+pattern as the OB gate above — no structure logic changed and structure parity was re-confirmed
+unbroken (`compare_tradingview.py` exit 0). Two groups: (1) `i_confirmed_high/low_price` + `_loc`
+are set on the bar an internal swing confirms (Pine's iSH/iSL confirm sites), and the Structure fib
+adopts the more-extreme confirmed internal swing as its pull anchor. (2) `ifib_seed_dir/asl/asl_loc/
+ash/ash_loc` are set at the six internal-break sites (iBOS bull/bear + the four iSOS branches), the
+same sites as the OB gate, and seed the new Internal fib (`InternalFib`) with the leg it anchors on.
+Both are `None` off their firing bar.
 
 ---
 

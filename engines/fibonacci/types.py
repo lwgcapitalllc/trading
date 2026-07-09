@@ -65,6 +65,22 @@ class StructureSnapshot:
     bear_bos_low: Optional[float] = None
     bear_bos_l_loc: Optional[int] = None
 
+    # Latest CONFIRMED internal swing (price + loc), fired on the iSH/iSL confirm bar only — the
+    # Structure fib adopts a more-extreme internal swing as its pull anchor. Latched + reset by the
+    # StructureFib itself (Pine keeps `i_confirmed_*` as a var reset on the fib's origin change).
+    i_confirmed_high_price: Optional[float] = None
+    i_confirmed_high_loc: Optional[int] = None
+    i_confirmed_low_price: Optional[float] = None
+    i_confirmed_low_loc: Optional[int] = None
+
+    # Internal-fib SEED — the internal leg (low + high + dir) that just broke, on the iBOS/iSOS bar
+    # only. The InternalFib runs its own live-extend + touch machine off this seed.
+    ifib_seed_dir: Optional[int] = None
+    ifib_seed_asl: Optional[float] = None
+    ifib_seed_asl_loc: Optional[int] = None
+    ifib_seed_ash: Optional[float] = None
+    ifib_seed_ash_loc: Optional[int] = None
+
     @classmethod
     def from_engine(cls, engine, events) -> "StructureSnapshot":
         """Build the snapshot from a market_structure StructureEngine and the StructureEvents it
@@ -75,6 +91,7 @@ class StructureSnapshot:
         lch = engine.last_confirmed_high
         lcl = engine.last_confirmed_low
         e = events.external
+        i = events.internal
         return cls(
             ash=ash.price if ash else None,
             ash_loc=ash.index if ash else None,
@@ -100,6 +117,15 @@ class StructureSnapshot:
             bear_bos_h_loc=e.bear_bos_h_loc,
             bear_bos_low=e.bear_bos_low,
             bear_bos_l_loc=e.bear_bos_l_loc,
+            i_confirmed_high_price=i.i_confirmed_high_price,
+            i_confirmed_high_loc=i.i_confirmed_high_loc,
+            i_confirmed_low_price=i.i_confirmed_low_price,
+            i_confirmed_low_loc=i.i_confirmed_low_loc,
+            ifib_seed_dir=i.ifib_seed_dir,
+            ifib_seed_asl=i.ifib_seed_asl,
+            ifib_seed_asl_loc=i.ifib_seed_asl_loc,
+            ifib_seed_ash=i.ifib_seed_ash,
+            ifib_seed_ash_loc=i.ifib_seed_ash_loc,
         )
 
 
@@ -122,6 +148,7 @@ class StructureFibEvents:
     touched: List[FibTouch] = field(default_factory=list)   # levels first-touched THIS bar (events)
     levels: Dict[str, float] = field(default_factory=dict)  # current price of every level (state)
     touched_so_far: Set[str] = field(default_factory=set)   # cumulative touched names this leg
+    reset_active: bool = False                        # TP3 (0.0) hit -> leg spent/hidden until new leg
 
 
 @dataclass
@@ -167,3 +194,26 @@ class SniperFibEvents:
     created: bool = False                # a fresh zone was set THIS bar (a BOS fired) — event
     confirmed: bool = False              # price entered the zone for the first time THIS bar — event
     zone_active: bool = False            # cumulative latch: price has entered the current zone
+
+
+@dataclass
+class InternalFibEvents:
+    """The Internal fib's per-bar output (the 4th fib, GRP_IFIB).
+
+    Anchored to the internal-structure leg that just broke (an iBOS/iSOS). Its anchor extends live
+    with the move; its 8 levels (E1-E4, 1.0, TP1-TP3) register first touches on the same 0.618
+    gate as the other fibs. Hitting TP3 (0.0) latches `reset_active` (the leg is spent). ANY
+    external BOS/SOS clears the whole fib, which then waits for the next iBOS/iSOS. See
+    mpc_assistant.pine's Internal Fib block.
+    """
+
+    active: bool = False                              # anchors valid -> a fib is currently drawn
+    direction: int = 0                                # 1 bull leg, -1 bear leg, 0 none
+    top: Optional[float] = None                       # iFib_ash — the 0.0 anchor (bull) / 1.0 (bear)
+    bot: Optional[float] = None                       # iFib_asl — the 1.0 anchor (bull) / 0.0 (bear)
+    seeded: bool = False                              # a fresh internal leg seeded THIS bar — event
+    cleared: bool = False                             # an external BOS/SOS wiped the fib THIS bar — event
+    reset_active: bool = False                        # TP3 (0.0) hit -> leg spent until re-seed/clear
+    touched: List[FibTouch] = field(default_factory=list)   # levels first-touched THIS bar (events)
+    levels: Dict[str, float] = field(default_factory=dict)  # current price of every level (state)
+    touched_so_far: Set[str] = field(default_factory=set)   # cumulative touched names this leg

@@ -158,6 +158,31 @@ class InternalEvents:
     int_bear_break: bool = False
     int_break_origin_loc: Optional[int] = None
 
+    # Latest CONFIRMED internal swing point (price + bar loc), captured on the bar an iSH/iSL
+    # confirms — mpc_assistant.pine's `i_confirmed_high_price/loc` (set at the iSH confirm, ~line
+    # 1299) and `i_confirmed_low_price/loc` (iSL confirm, ~line 1350). Consumed by the External
+    # ("Structure") fib only, which adopts a more-extreme internal swing as its pull anchor. Fired
+    # on the confirm bar only (None otherwise); the consumer latches + resets them (Pine keeps them
+    # as a top-level `var` reset by the fib's origin change). Capture-only — no structure logic
+    # depends on them, same additive pattern as int_break_origin_loc above.
+    i_confirmed_high_price: Optional[float] = None
+    i_confirmed_high_loc: Optional[int] = None
+    i_confirmed_low_price: Optional[float] = None
+    i_confirmed_low_loc: Optional[int] = None
+
+    # Internal-Fib SEED — the anchor pair (low + high + direction) of the internal leg that just
+    # broke, emitted on the bar an iBOS/iSOS fires (None off the break bar). Mirrors
+    # mpc_assistant.pine's `iFib_asl/asl_loc/ash/ash_loc/dir` assignments at the six internal-break
+    # sites (bull/bear iBOS + the four iSOS branches). Consumed by the new Internal fib, which runs
+    # its own live-extend + touch machine off this seed. Capture-only exposure of state the internal
+    # engine already computes at break time, before the state reset — same pattern as
+    # int_break_origin_loc. `ifib_seed_dir` is 1 (bull leg) or -1 (bear leg) on the break bar.
+    ifib_seed_dir: Optional[int] = None
+    ifib_seed_asl: Optional[float] = None
+    ifib_seed_asl_loc: Optional[int] = None
+    ifib_seed_ash: Optional[float] = None
+    ifib_seed_ash_loc: Optional[int] = None
+
 
 @dataclass
 class StructureEvents:

@@ -2,8 +2,8 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
-**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. A **2026-07-08 audit** of a fresh, much larger re-paste of `mpc_assistant.pine` (1721-line diff) supersedes the 2026-07-06/07 findings: **market_structure is now STALE** (two real detection changes → the whole sync chain), **fibonacci is heavily STALE** (Structure fib dropped TP4/TP5, added an internal-swing anchor + a TP3-hit reset; Macro reverted the held full-reset back to HIDE-only and changed its bottom anchor; the new **Internal Fib** is now fully implemented in source), and **SVP is STALE again** (`svpRows` 100 → 50). **liquidity stayed IN PARITY** (its refactor matches the already-committed wick-only sweep). The earlier held fibonacci-Macro question is **resolved** — the source reverted the same-bar full-reset, so the held engine/harness/test changes must be discarded and redone as part of the larger fib re-sync. See "Audit findings — 2026-07-08" below.
-**Last reviewed:** 2026-07-08
+**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. A **2026-07-08 audit** of a fresh, much larger re-paste of `mpc_assistant.pine` (1721-line diff) superseded the 2026-07-06/07 findings and flagged three engines STALE. Re-sync progress: **market_structure — DONE** (two detection changes ported through the whole sync chain, exit 0, committed); **fibonacci — DONE** (Structure TP4/TP5 drop + internal-swing anchor + TP3 reset; Macro hide-only + always-`ll_since` bottom anchor; the new **Internal Fib** fully ported — re-validated 2026-07-09 on a fresh 5m export, exit 0); **SVP — STILL STALE** (`svpRows` 100 → 50, not yet done). **liquidity stayed IN PARITY.** The earlier held fibonacci-Macro question is **resolved** (the source reverted the same-bar full-reset; the held changes were discarded and redone in the fib re-sync). **Follow-up:** re-validate `order_blocks` (internal-break timing shifted with the structure re-sync). See "Audit findings — 2026-07-08" below.
+**Last reviewed:** 2026-07-09
 
 ---
 
@@ -104,6 +104,26 @@ block needs re-syncing:
   BOS/SOS. Port as `InternalFib` alongside `StructureFib`; add `px_ifib_*` columns to `fib_export.pine`.
 - Downstream of market_structure — re-sync fibonacci only AFTER the structure engine is re-synced (the
   new external fallback changes `last_conf_high`, which the macro reads).
+- **RE-SYNC STATUS (2026-07-08): DONE — parity CONFIRMED (exit 0).** All four
+  changes ported: (1) `market_structure` now captures `i_confirmed_high/low_*` (at each iSH/iSL confirm)
+  and the `ifib_seed_*` anchors (at each of the six iBOS/iSOS sites) on `InternalEvents` — capture-only,
+  structure parity re-confirmed exit 0. (2) Structure fib drops TP4/TP5, adopts the confirmed internal
+  swing as its pull anchor (latched + reset on origin change), and latches `reset_active` on the TP3 hit.
+  (3) Macro bottom anchor is always `ll_since`, and HIDE now runs after extend+touch (hide-only). (4) New
+  `InternalFib` class + `InternalFibEvents` ported (seed → live-extend → 0.618-gated touch machine → TP3
+  reset → external-break clear). Harness `fib_export.pine` rebuilt: full internal-structure block + the
+  four fib blocks + 62 `plot()` columns (Internal fib emits touch pulses + state only — no per-level
+  price columns — to stay under TradingView's 64-plot cap; touches validate geometry indirectly).
+  `compare_fib.py` updated (drops tp4/tp5, adds `px_ifib_*` + `px_fib_reset_active`). Fib tests: 47 pass
+  (8 new: i_confirmed adoption, TP3 reset, macro bottom anchor, + a new `test_internal_fib.py`).
+  **Parity confirmed 2026-07-09** on a fresh `VANTAGE_XAUUSD, 5m` export (7,562 bars): every compared
+  field — Structure + Sniper + Macro + Internal — matches on all 5,646 warm bars (`--warmup 1916`, exit 0).
+  The warmup is the Macro cycle's cold-start: Pine's macro is active from bar 0 (a cycle that began before
+  the export window) and, being long-lived, only reconciles with the cold-started Python engine once that
+  pre-window cycle ends and both lock the same in-window cycle at bar 1916 (Structure/Sniper converge by
+  ~bar 108). One InternalFib 0.5-touch fired a single bar late from CSV 2-dp rounding at a float-tie
+  boundary; absorbed by a `_TOUCH_EPS = 1e-6` inclusive margin on the InternalFib touch comparisons
+  (« 0.01 tick — cannot register a real un-reached level early). Re-synced and committed.
 
 **session_volume_profile — STALE (logic changed).** `svpRows` **100 → 50** (`engine.py` hardcodes
 `_SVP_ROWS = 100`). Halving the profile granularity moves the POC price. Change `_SVP_ROWS` to 50, update

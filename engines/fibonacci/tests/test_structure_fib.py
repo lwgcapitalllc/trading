@@ -119,3 +119,48 @@ def test_pullback_extreme_extends_anchor():
     ev = fib.update(111.0, 109.0, snap)
     # E1 for a 100->112 leg is 112 - 12*0.618 = 104.584, not the 103.82 of the un-extended leg.
     assert abs(ev.levels["E1"] - (112.0 - 12.0 * 0.618)) < 1e-9
+
+
+# ── 2026-07-08 re-sync additions ──
+
+def test_internal_swing_adopted_as_pull_anchor():
+    """A more-extreme confirmed internal low is adopted as the bull fib's bottom anchor (Pine
+    2277-2282). 1.0 (the low anchor) should sit at the internal low, not the structure asl."""
+    fib = StructureFib()
+    snap = StructureSnapshot(
+        ash=110.0, asl=100.0, ash_loc=10, asl_loc=0, direction=1,
+        i_confirmed_low_price=95.0, i_confirmed_low_loc=5,     # deeper than asl=100
+    )
+    ev = fib.update(high=109.0, low=108.0, snap=snap)
+    assert ev.levels["1.0"] == 95.0                            # adopted the internal low
+    assert abs(ev.levels["E1"] - (110.0 - 15.0 * 0.618)) < 1e-9
+
+
+def test_internal_swing_not_adopted_when_less_extreme():
+    """An internal low that is HIGHER than the structure asl is ignored — only a MORE extreme
+    swing is adopted."""
+    fib = StructureFib()
+    snap = StructureSnapshot(
+        ash=110.0, asl=100.0, ash_loc=10, asl_loc=0, direction=1,
+        i_confirmed_low_price=103.0, i_confirmed_low_loc=5,    # shallower than asl=100
+    )
+    ev = fib.update(high=109.0, low=108.0, snap=snap)
+    assert ev.levels["1.0"] == 100.0                           # kept the structure asl
+
+
+def test_tp3_hit_latches_reset_active_until_new_leg():
+    """Hitting TP3 (0.0, full retrace) latches reset_active; it stays latched on the same leg and
+    clears on a new leg (Pine fiboResetActive)."""
+    fib = StructureFib()
+    snap = _bull_snap()                              # E1=103.82, TP1=105, TP3=110 (the high)
+    fib.update(109.0, 108.0, snap)                   # origin bar
+    ev = fib.update(109.0, 103.0, snap)             # tap the 0.618 gate
+    assert not ev.reset_active
+    ev = fib.update(110.0, 108.0, snap)             # rally back to 0.0 (TP3) -> spent
+    assert "TP3" in {t.level for t in ev.touched}
+    assert ev.reset_active
+    ev = fib.update(110.0, 109.0, snap)             # same leg -> stays latched
+    assert ev.reset_active
+    new = _bull_snap(ash=130.0, asl=120.0, ash_loc=60, asl_loc=50)
+    ev = fib.update(125.0, 124.0, snap=new)         # new leg -> cleared
+    assert ev.origin_changed and not ev.reset_active

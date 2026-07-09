@@ -24,7 +24,14 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 from .geometry import fib_from_origin, fib_level, origin_index
-from .types import FibTouch, MacroFibEvents, SniperFibEvents, StructureFibEvents, StructureSnapshot
+from .types import (
+    FibTouch,
+    InternalFibEvents,
+    MacroFibEvents,
+    SniperFibEvents,
+    StructureFibEvents,
+    StructureSnapshot,
+)
 
 # ── Structure fib levels, in Pine's own check order within each group ──
 # Gate: 0.618 (E1) must be reached before anything else arms.
@@ -36,15 +43,17 @@ _STRUCT_RETRACE: Tuple[Tuple[str, float], ...] = (
     ("E4", 0.886),
     ("1.0", 1.000),
 )
-# Target group (checked only from the bar AFTER 0.618 was first reached, on the profit side):
+# Target group (checked only from the bar AFTER 0.618 was first reached, on the profit side).
+# TP4 (-0.270) and TP5 (-0.618) were dropped in the 2026-07-08 mpc_assistant.pine re-paste — the
+# Structure fib now stops at TP3 (0.0, full retrace) and hides the whole leg once TP3 is hit
+# (see `_reset_active` below).
 _STRUCT_TARGET: Tuple[Tuple[str, float], ...] = (
     ("TP1", 0.500),
     ("TP2", 0.382),
     ("TP3", 0.000),
-    ("TP4", -0.270),
-    ("TP5", -0.618),
 )
 _GATE = "E1"  # 0.618
+_TP3 = "TP3"  # 0.0 — hitting it latches `_reset_active` (the leg is spent until a new leg)
 
 _ROLE = {name: "entry" for name, _ in _STRUCT_RETRACE}
 _ROLE.update({name: "target" for name, _ in _STRUCT_TARGET})
@@ -72,11 +81,23 @@ class StructureFib:
         self._gate_ever_reached = False
         self._start_index_prev: Optional[int] = None
 
+        # TP3-hit latch (Pine `var fiboResetActive`): once the leg fully retraces to 0.0 the whole
+        # fib is spent — Pine hides every level until a new leg. Reset on origin change.
+        self._reset_active = False
+
+        # Latched confirmed-internal-swing anchors (Pine top-level `var i_confirmed_*`, written by
+        # the internal engine on a confirm bar, read here every bar, reset on origin change). Let
+        # the fib adopt a more-extreme internal swing as its pull anchor.
+        self._i_confirmed_low: Optional[float] = None
+        self._i_confirmed_low_loc: Optional[int] = None
+        self._i_confirmed_high: Optional[float] = None
+        self._i_confirmed_high_loc: Optional[int] = None
+
     # ------------------------------------------------------------------
     def update(self, high: float, low: float, snap: StructureSnapshot) -> StructureFibEvents:
         """Feed one closed bar (its high/low) plus this bar's structure snapshot."""
 
-        # ── Anchor update (Pine 2009-2023, runs unconditionally) ──
+        # ── Anchor update (Pine 2259-2266, runs unconditionally) ──
         if snap.ash is not None:
             self._ash = snap.ash
             self._ash_loc = snap.ash_loc
@@ -86,7 +107,7 @@ class StructureFib:
         if snap.direction != 0:
             self._dir = snap.direction
 
-        # Follow the in-progress pullback extreme (Pine 2018-2023).
+        # Follow the in-progress pullback extreme (Pine 2268-2273).
         if snap.pb_mode == 1 and snap.pb_extreme is not None:
             self._ash = snap.pb_extreme
             self._ash_loc = snap.pb_extreme_loc
@@ -94,27 +115,53 @@ class StructureFib:
             self._asl = snap.pb_extreme
             self._asl_loc = snap.pb_extreme_loc
 
-        # ── Guard: no fib until both anchors and a direction exist (Pine 2029) ──
+        # Latch the confirmed-internal-swing anchors as they arrive (fired on the confirm bar only).
+        if snap.i_confirmed_low_price is not None:
+            self._i_confirmed_low = snap.i_confirmed_low_price
+            self._i_confirmed_low_loc = snap.i_confirmed_low_loc
+        if snap.i_confirmed_high_price is not None:
+            self._i_confirmed_high = snap.i_confirmed_high_price
+            self._i_confirmed_high_loc = snap.i_confirmed_high_loc
+
+        # ── Adopt a more-extreme internal swing for the fib pull only (Pine 2277-2282) ──
+        # Runs before the origin/guard below because it can move an anchor's loc, which is what the
+        # origin-change detection keys off. Nothing else about structure changes.
+        if (self._dir == 1 and self._i_confirmed_low is not None and self._asl is not None
+                and self._i_confirmed_low < self._asl):
+            self._asl = self._i_confirmed_low
+            self._asl_loc = self._i_confirmed_low_loc
+        if (self._dir == -1 and self._i_confirmed_high is not None and self._ash is not None
+                and self._i_confirmed_high > self._ash):
+            self._ash = self._i_confirmed_high
+            self._ash_loc = self._i_confirmed_high_loc
+
+        # ── Guard: no fib until both anchors and a direction exist (Pine 2318) ──
         if self._ash is None or self._asl is None or self._dir == 0:
             return StructureFibEvents(active=False, direction=self._dir)
 
         d = self._dir
-        # ── All level prices (Pine 2039-2048) ──
+        # ── All level prices (Pine 2328-2335) ──
         levels = {name: fib_level(self._ash, self._asl, d, r) for name, r in _RATIO.items()}
         start_index = origin_index(d, self._ash_loc, self._asl_loc)
 
-        # ── Origin change -> new leg: reset every touched flag + gate, skip checks this bar ──
+        # ── Origin change -> new leg: reset touched + gate + reset-latch + i_confirmed, skip checks
+        #    this bar (Pine 2338-2354) ──
         origin_changed = start_index != self._start_index_prev
         if origin_changed:
             for name in self._touched:
                 self._touched[name] = False
             self._gate_ever_reached = False
+            self._reset_active = False
+            self._i_confirmed_low = None
+            self._i_confirmed_low_loc = None
+            self._i_confirmed_high = None
+            self._i_confirmed_high_loc = None
         self._start_index_prev = start_index
 
         touched_now: List[FibTouch] = []
 
         if not origin_changed:
-            # 0.618 reached? retracement-side test (Pine 2073).
+            # 0.618 reached? retracement-side test (Pine 2363).
             gate_price = levels[_GATE]
             gate_reached = (low <= gate_price) if d == 1 else (high >= gate_price)
 
@@ -129,7 +176,7 @@ class StructureFib:
                         self._touched[name] = True
                         touched_now.append(FibTouch(name, _RATIO[name], price, _ROLE[name]))
 
-            # Targets only after 0.618 was reached on a PREVIOUS bar — profit-side test (Pine 2095).
+            # Targets only after 0.618 was reached on a PREVIOUS bar — profit-side test (Pine 2377).
             if self._gate_ever_reached:
                 for name, _ in _STRUCT_TARGET:
                     if self._touched[name]:
@@ -139,6 +186,10 @@ class StructureFib:
                     if hit:
                         self._touched[name] = True
                         touched_now.append(FibTouch(name, _RATIO[name], price, _ROLE[name]))
+
+                # TP3 (0.0, full retrace) hit -> the leg is spent; hide until a new leg (Pine 2384).
+                if self._touched[_TP3]:
+                    self._reset_active = True
 
             # Latch the gate AFTER all checks, so targets never fire on the bar 0.618 was first hit.
             if gate_reached and not self._gate_ever_reached:
@@ -151,6 +202,7 @@ class StructureFib:
             touched=touched_now,
             levels=levels,
             touched_so_far={name for name, hit in self._touched.items() if hit},
+            reset_active=self._reset_active,
         )
 
 
@@ -326,15 +378,12 @@ class MacroFib:
             self._ll_since = low
             self._ll_since_bar = bar_index
 
-        # ── 4. BOTTOM LOCKS on a bullish SOS (Pine 2331) ──
-        ll_after_sos = (
-            snap.last_conf_low is not None
-            and self._last_bear_sos_bar is not None
-            and snap.last_conf_low_loc is not None
-            and snap.last_conf_low_loc > self._last_bear_sos_bar
-        )
-        bottom_anchor = snap.last_conf_low if ll_after_sos else self._ll_since
-        bottom_anchor_bar = snap.last_conf_low_loc if ll_after_sos else self._ll_since_bar
+        # ── 4. BOTTOM LOCKS on a bullish SOS (Pine 2561) ──
+        # Bottom anchor is ALWAYS the running lowest-low since the last bearish SOS. The re-pasted
+        # mpc_assistant.pine dropped the older "prefer last_conf_low if it came after the SOS"
+        # branch — the true cycle low is the streamed extreme, not the structure engine's scan.
+        bottom_anchor = self._ll_since
+        bottom_anchor_bar = self._ll_since_bar
         new_cycle = False
         if (snap.bull_sos and not self._origin_locked and bottom_anchor is not None
                 and snap.last_conf_high is not None):
@@ -350,12 +399,7 @@ class MacroFib:
             self._reset_touched()
             new_cycle = True
 
-        # ── 5. HIDE when price closes above the locked top (Pine 2358) ──
-        if (self._origin_locked and self._visible and self._extreme is not None
-                and close > self._extreme):
-            self._visible = False
-
-        # ── 6. TOP EXTENDS on every new confirmed HH (Pine 2370) ──
+        # ── 5. TOP EXTENDS on every new confirmed HH (Pine 2584) ──
         extended = False
         if (self._origin_locked and snap.last_conf_high is not None
                 and self._last_conf_high is not None and snap.last_conf_high > self._last_conf_high):
@@ -367,15 +411,15 @@ class MacroFib:
             self._reset_touched()
             extended = True
 
-        # ── 7. Touched tracking — same gated logic as the Structure fib (Pine 2390) ──
+        # ── 6. Touched tracking — same gated logic as the Structure fib (Pine 2602). Runs on the
+        #    pre-hide `visible` state, before the HIDE step below (Pine order: extend -> touch ->
+        #    hide, changed from the old extend/hide order in the re-paste). ──
         levels: Dict[str, float] = {}
-        active = False
         if (self._visible and self._origin_locked and self._origin is not None
                 and self._extreme is not None):
             mH = self._extreme
             mL = self._origin
             if mH - mL > 0:
-                active = True
                 levels = {name: fib_level(mH, mL, 1, r) for name, r in _MACRO_ORDER}
                 ext_changed = self._extreme != self._prev_extreme  # source no-op; kept for fidelity
                 gate_reached = low <= levels[_MACRO_GATE]
@@ -392,7 +436,17 @@ class MacroFib:
                     if gate_reached and not self._gate_ever:
                         self._gate_ever = True
 
-        self._prev_st_dir = snap.direction  # Pine 2432 (unused)
+        # ── 7. HIDE when price closes above the locked top (Pine 2636) — now AFTER extend + touch,
+        #    and it hides only (no state wipe). Stays locked; the fib reappears on the next HH. ──
+        if (self._origin_locked and self._visible and self._extreme is not None
+                and close > self._extreme):
+            self._visible = False
+
+        self._prev_st_dir = snap.direction  # Pine 2655 (unused)
+
+        # Final active reflects the POST-hide state, matching the export's macroActive.
+        active = (self._visible and self._origin_locked and self._origin is not None
+                  and self._extreme is not None and (self._extreme - self._origin) > 0)
 
         # Edge-detect touches against the PREVIOUS bar's end state (Pine `X and not X[1]`).
         touched_now: List[FibTouch] = [
@@ -411,6 +465,178 @@ class MacroFib:
             visible=self._visible,
             new_cycle=new_cycle,
             extended=extended,
+            touched=touched_now,
+            levels=levels,
+            touched_so_far={name for name, hit in self._touched.items() if hit},
+        )
+
+
+# ── Internal fib levels — the same 8 as the Structure fib (post-TP4/TP5 drop), but anchored to the
+#    internal-structure leg and with its own gate/reset machine. Two differences from Structure:
+#    (1) no origin-change skip — the seed bar itself runs the touch checks; (2) the deeper retrace
+#    levels arm the moment E1 is EVER touched (persistent), not only while price is currently
+#    at/through 0.618. ──
+_IFIB_RETRACE: Tuple[Tuple[str, float], ...] = (
+    ("E1", 0.618),   # the gate
+    ("E2", 0.702),
+    ("E3", 0.786),
+    ("E4", 0.886),
+    ("1.0", 1.000),
+)
+_IFIB_TARGET: Tuple[Tuple[str, float], ...] = (
+    ("TP1", 0.500),
+    ("TP2", 0.382),
+    ("TP3", 0.000),
+)
+_IFIB_GATE = "E1"   # 0.618
+_IFIB_TP3 = "TP3"   # 0.0 — hitting it latches `_reset_active`
+_IFIB_ORDER = _IFIB_RETRACE + _IFIB_TARGET
+_IFIB_ROLE = {name: "entry" for name, _ in _IFIB_RETRACE}
+_IFIB_ROLE.update({name: "target" for name, _ in _IFIB_TARGET})
+_IFIB_RATIO = {name: r for name, r in _IFIB_ORDER}
+
+# A level price is `ash - (ash-asl)*ratio`; the same IEEE-754 path Pine uses. When a bar high/low
+# lands within a few ULPs of a level, whether the strict `>=`/`<=` counts as a touch is decided by
+# the last representable bit — and TradingView's CSV export rounds OHLC to the instrument's display
+# precision (2 dp on XAUUSD), dropping the sub-tick precision Pine's own comparison saw. That made
+# one 0.5-level touch fire a single bar late in Python vs Pine on the 2026-07-08 export. `_TOUCH_EPS`
+# makes the touch boundary inclusive by a ten-thousandth of a tick — enough to absorb that float/
+# export noise, far too small (1e-6 « 0.01) to ever register a real, un-reached level early.
+_TOUCH_EPS = 1e-6
+
+
+class InternalFib:
+    """The Internal fib (4th fib, GRP_IFIB).
+
+    Seeds off the internal-structure leg that just broke — an iBOS or iSOS — via
+    market_structure's `ifib_seed_*` (fired on the break bar). The anchor then extends live with
+    the move: for a bull leg the 0.0/top rides up with new highs, for a bear leg the 1.0/bottom
+    rides down with new lows. Its 8 levels register first touches on the same 0.618 gate as the
+    other fibs; hitting TP3 (0.0, full retrace) latches `reset_active` (the leg is spent, hidden
+    until a new leg). ANY external BOS/SOS clears the whole fib, which then waits for the next
+    iBOS/iSOS. Line-by-line port of mpc_assistant.pine's Internal Fib block (seed at the six
+    internal-break sites 1400-1609 + clear/extend/touch 2727-2791), drawing removed.
+    """
+
+    def __init__(self) -> None:
+        self._dir: int = 0
+        self._asl: Optional[float] = None
+        self._asl_loc: Optional[int] = None
+        self._ash: Optional[float] = None
+        self._ash_loc: Optional[int] = None
+
+        self._touched = {name: False for name in _IFIB_RATIO}
+        self._gate_ever = False            # iFib618EverReached — arms the target side from next bar
+        self._reset_active = False         # iFibResetActive — TP3 hit, leg spent until re-seed/clear
+        # iFib_tp3_hit_price: frozen 0.0 price on first TP3 hit. Write-only in the source (a hook for
+        # a future break-through check); kept for a faithful port.
+        self._tp3_hit_price: Optional[float] = None
+
+    def _clear(self) -> None:
+        """Wipe the fib to its unseeded state (Pine's per-seed reset / external-break clear)."""
+        self._dir = 0
+        self._asl = None
+        self._asl_loc = None
+        self._ash = None
+        self._ash_loc = None
+        for name in self._touched:
+            self._touched[name] = False
+        self._gate_ever = False
+        self._reset_active = False
+        self._tp3_hit_price = None
+
+    # ------------------------------------------------------------------
+    def update(self, bar_index: int, high: float, low: float,
+               snap: StructureSnapshot) -> InternalFibEvents:
+        """Feed one closed bar (index + high/low) plus this bar's structure snapshot."""
+
+        # ── 1. Seed on an internal break (fired on the iBOS/iSOS bar; Pine sites 1400-1609) ──
+        seeded = False
+        if snap.ifib_seed_dir is not None:
+            self._clear()  # reset flags/anchors, then set the fresh leg
+            self._dir = snap.ifib_seed_dir
+            self._asl = snap.ifib_seed_asl
+            self._asl_loc = snap.ifib_seed_asl_loc
+            self._ash = snap.ifib_seed_ash
+            self._ash_loc = snap.ifib_seed_ash_loc
+            seeded = True
+
+        # ── 2. Clear on ANY external BOS/SOS — runs AFTER the seed (Pine 2727-2733), so a same-bar
+        #    external break wins over a fresh internal seed. ──
+        cleared = False
+        if snap.bull_bos or snap.bear_bos or snap.bull_sos or snap.bear_sos:
+            self._clear()
+            cleared = True
+
+        # ── 3. Live-extend the moving anchor (Pine 2744-2751) ──
+        if self._dir == -1 and self._ash is not None:
+            if self._asl is None or low < self._asl:
+                self._asl = low
+                self._asl_loc = bar_index
+        elif self._dir == 1 and self._asl is not None:
+            if self._ash is None or high > self._ash:
+                self._ash = high
+                self._ash_loc = bar_index
+
+        # ── 4. Touch tracking (Pine 2754-2791) ──
+        touched_now: List[FibTouch] = []
+        levels: Dict[str, float] = {}
+        active = self._dir != 0 and self._asl is not None and self._ash is not None
+        if active:
+            d = self._dir
+            levels = {name: fib_level(self._ash, self._asl, d, r) for name, r in _IFIB_ORDER}
+
+            if (self._ash - self._asl) > 0:
+                gate_price = levels[_IFIB_GATE]
+                gate_reached = (low <= gate_price + _TOUCH_EPS) if d == 1 else (high >= gate_price - _TOUCH_EPS)
+
+                # E1 gate: mark it the moment it is first reached (Pine 2769).
+                if gate_reached and not self._touched[_IFIB_GATE]:
+                    self._touched[_IFIB_GATE] = True
+                    touched_now.append(
+                        FibTouch(_IFIB_GATE, _IFIB_RATIO[_IFIB_GATE], gate_price, _IFIB_ROLE[_IFIB_GATE])
+                    )
+
+                # Deeper retrace levels — armed the moment E1 is (ever) touched (Pine 2772).
+                if self._touched[_IFIB_GATE]:
+                    for name, _ in _IFIB_RETRACE:
+                        if name == _IFIB_GATE or self._touched[name]:
+                            continue
+                        price = levels[name]
+                        hit = (low <= price + _TOUCH_EPS) if d == 1 else (high >= price - _TOUCH_EPS)
+                        if hit:
+                            self._touched[name] = True
+                            touched_now.append(FibTouch(name, _IFIB_RATIO[name], price, _IFIB_ROLE[name]))
+
+                # Targets — armed only after E1 was reached on a PREVIOUS bar (Pine 2778).
+                if self._gate_ever:
+                    for name, _ in _IFIB_TARGET:
+                        if self._touched[name]:
+                            continue
+                        price = levels[name]
+                        hit = (high >= price - _TOUCH_EPS) if d == 1 else (low <= price + _TOUCH_EPS)
+                        if hit:
+                            self._touched[name] = True
+                            touched_now.append(FibTouch(name, _IFIB_RATIO[name], price, _IFIB_ROLE[name]))
+                            if name == _IFIB_TP3:
+                                self._tp3_hit_price = price
+
+                # TP3 (0.0, full retrace) hit -> leg spent (Pine 2787).
+                if self._touched[_IFIB_TP3]:
+                    self._reset_active = True
+
+                # Latch the gate AFTER all checks, so targets never fire on the bar E1 first hit.
+                if gate_reached and not self._gate_ever:
+                    self._gate_ever = True
+
+        return InternalFibEvents(
+            active=active,
+            direction=self._dir,
+            top=self._ash if active else None,
+            bot=self._asl if active else None,
+            seeded=seeded,
+            cleared=cleared,
+            reset_active=self._reset_active,
             touched=touched_now,
             levels=levels,
             touched_so_far={name for name, hit in self._touched.items() if hit},
