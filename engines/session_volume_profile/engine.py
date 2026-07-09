@@ -10,18 +10,18 @@ its confirmation-table "MV slot" (line ~2772).
 What a Session Volume Profile is
 --------------------------------
 While the Asia session (2000-0500 GMT-4 — the same window as the sessions engine's Asia) is open the
-Pine tracks the session high/low. When the session closes it builds a 100-row volume profile over
+Pine tracks the session high/low. When the session closes it builds a 50-row volume profile over
 [low, high]: each session bar's volume is spread evenly across the price rows the bar's range spans,
 and the row that accumulated the most volume is the POINT OF CONTROL. Its mid-price is the "MV" line
 — a magnet/level the bot watches. Only the POC price is consumed downstream; the histogram itself is
 a drawing and is dropped (see below).
 
     range      = sessionHigh - sessionLow
-    per bar b:  rLo = clamp(floor((low_b  - sessionLow)/range*100), 0, 99)
-                rHi = clamp(ceil ((high_b - sessionLow)/range*100) - 1, 0, 99)
+    per bar b:  rLo = clamp(floor((low_b  - sessionLow)/range*50), 0, 49)
+                rHi = clamp(ceil ((high_b - sessionLow)/range*50) - 1, 0, 49)
                 span = max(1, rHi - rLo + 1);  add volume_b/span to every row in [rLo, rHi]
     POC row    = argmax over rows of (bull volume + bear volume), first max wins (strict >)
-    POC price  = sessionLow + (pocRow + 0.5) * (range / 100)
+    POC price  = sessionLow + (pocRow + 0.5) * (range / 50)
 
 --------------------------------------------------------------------------------------------------
 COMPOSES THE SESSIONS ENGINE for Asia detection (same pattern as engines/liquidity/)
@@ -70,7 +70,7 @@ from .types import SvpEvents
 # same window the sessions engine's Asia tracker already validates.
 _ASIA_SPEC = SessionSpec.from_pine("Asia", "2000-0500", "GMT-4")
 
-_SVP_ROWS = 100        # svpRows (mpc line 225) — fixed row count of the profile
+_SVP_ROWS = 50         # svpRows (mpc line 317) — fixed row count of the profile (was 100 pre-2026-07-08)
 _SVP_HISTORY = 2       # svpHistory input default (mpc line 224) — FIFO cap on kept POCs
 # Pine caps the replay at `math.min(svp_sLen - 1, 1490)`, i.e. the newest 1491 bars of the session.
 # On a 5m feed the Asia session is ~108 bars so this never bites, but it is ported for fidelity.

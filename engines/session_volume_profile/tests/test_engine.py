@@ -1,7 +1,7 @@
 """
 Hand-traced tests for the SVP (Session Volume Profile / Asia POC) engine.
 
-These pin the mechanics against explicit bars: the 100-row volume profile + its POC, the Pine quirk
+These pin the mechanics against explicit bars: the 50-row volume profile + its POC, the Pine quirk
 that the session-close bar is folded into the profile, the FIFO history, and the MV confirmation
 (sweep) state/edge. Full Pine-parity validation of the POC lives in tools/compare_svp.py against a
 real TradingView export; these lock the logic so a regression is caught without an export.
@@ -51,8 +51,8 @@ def test_no_poc_until_first_session_closes():
 
 
 def test_poc_forms_on_asia_close():
-    # Session hi/lo = 105/95 (range 10 → 0.1-wide rows). bar2's heavy volume sits in the 99-101 band
-    # (rows 40-59); the wide bar1 spreads a thin 0.1 across all rows. POC row = 40 → 95 + 40.5*0.1.
+    # Session hi/lo = 105/95 (range 10 → 0.2-wide rows). bar2's heavy volume sits in the 99-101 band
+    # (rows 20-29); the wide bar1 spreads a thin 0.2 across all rows. POC row = 20 → 95 + 20.5*0.2.
     sv = SvpEngine()
     ev = feed(sv, [
         (0, _PRIME, 100, 100, 100, 100, 0),
@@ -61,14 +61,14 @@ def test_poc_forms_on_asia_close():
         (3, _CLOSE, 100, 100, 100, 100, 0),   # out — closes; volume 0 so the close bar adds nothing
     ])
     assert ev.formed is True
-    assert ev.poc == pytest.approx(99.05)
-    assert sv.poc() == pytest.approx(99.05)
+    assert ev.poc == pytest.approx(99.1)
+    assert sv.poc() == pytest.approx(99.1)
 
 
 def test_close_bar_is_included_in_profile():
     # Only one in-session bar (range 90..110). The heavy volume is on the CLOSE bar (out of session).
     # Pine folds the close bar into the profile (svp_sLen = bar_index - startBar + 1), so its 99..101
-    # band (rows 45-54) wins → POC 99.1. If the close bar were excluded, the POC would be 90.1.
+    # band (rows 22-27) wins → POC 99.0. If the close bar were excluded, the POC would be 90.2.
     sv = SvpEngine()
     ev = feed(sv, [
         (0, _PRIME, 100, 100, 100, 100, 0),
@@ -76,7 +76,7 @@ def test_close_bar_is_included_in_profile():
         (2, _CLOSE, 100, 101, 99, 100, 1000), # out — closes, but its heavy volume IS counted
     ])
     assert ev.formed is True
-    assert ev.poc == pytest.approx(99.1)
+    assert ev.poc == pytest.approx(99.0)
 
 
 def test_degenerate_range_no_form():
@@ -97,17 +97,17 @@ def test_na_volume_contributes_nothing():
     ev = feed(sv, [
         (0, _PRIME, 100, 100, 100, 100, 0),
         (1, _OPEN, 100, 110, 90, 100, None),  # in-session — sets range 90..110, but no volume
-        (2, _MID, 100, 101, 99, 100, 50),     # in-session — the only volume, band 99..101 (rows 45-54)
+        (2, _MID, 100, 101, 99, 100, 50),     # in-session — the only volume, band 99..101 (rows 22-27)
         (3, _CLOSE, 100, 95, 95, 100, None),  # out — na volume, adds nothing
     ])
     assert ev.formed is True
-    assert ev.poc == pytest.approx(99.1)
+    assert ev.poc == pytest.approx(99.0)
 
 
 # ── the MV confirmation (sweep) ──────────────────────────────────────────────
 
 def _formed_engine():
-    """An engine that has just formed the POC 99.05 (as in test_poc_forms_on_asia_close)."""
+    """An engine that has just formed the POC 99.1 (as in test_poc_forms_on_asia_close)."""
     sv = SvpEngine()
     feed(sv, [
         (0, _PRIME, 100, 100, 100, 100, 0),
@@ -126,7 +126,7 @@ def test_form_bar_confirms_when_it_straddles():
         (0, _PRIME, 100, 100, 100, 100, 0),
         (1, _OPEN, 100, 105, 95, 100, 10),
         (2, _MID, 100, 101, 99, 100, 100),
-        (3, _CLOSE, 100, 100, 99, 100, 0),    # this bar straddles the fresh POC (~99.05)
+        (3, _CLOSE, 100, 100, 99, 100, 0),    # this bar straddles the fresh POC (~99.1)
     ])
     assert ev.formed is True
     assert ev.confirmed is True               # no same-bar reset anymore → the tap confirms
@@ -135,7 +135,7 @@ def test_form_bar_confirms_when_it_straddles():
 
 def test_confirmed_edge_on_first_tap():
     sv = _formed_engine()
-    ev = sv.update(4, ums(2024, 7, 2, 10), 100, 100, 99, 100, 5)   # straddles 99.05
+    ev = sv.update(4, ums(2024, 7, 2, 10), 100, 100, 99, 100, 5)   # straddles 99.1
     assert ev.confirmed is True
     assert ev.swept is True
 
@@ -150,13 +150,13 @@ def test_confirmed_fires_only_once():
 
 def test_no_confirm_when_price_misses_poc():
     sv = _formed_engine()
-    ev = sv.update(4, ums(2024, 7, 2, 10), 98, 98, 97, 98, 5)      # entirely below 99.05
+    ev = sv.update(4, ums(2024, 7, 2, 10), 98, 98, 97, 98, 5)      # entirely below 99.1
     assert ev.confirmed is False
     assert ev.swept is False
 
 
 def test_swept_resets_on_next_session_open():
-    sv = _formed_engine()                                         # POC ~99.05, not yet swept
+    sv = _formed_engine()                                         # POC ~99.1, not yet swept
     ev = sv.update(4, ums(2024, 7, 2, 10), 100, 100, 99, 100, 5)  # tap → swept True
     assert ev.swept is True
     # the swept state now PERSISTS past the Asia close (no reset there anymore)...

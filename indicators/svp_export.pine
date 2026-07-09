@@ -20,7 +20,7 @@ indicator("SVP Engine EXPORT", overlay = false)
 
 // ── SVP inputs (mpc 224-225, 2556-2557) — drawing inputs/colours dropped ──
 int    svpHistory  = 2
-int    svpRows     = 100
+int    svpRows     = 50
 string SVP_SESSION = "2000-0500"
 string SVP_TZ      = "GMT-4"
 

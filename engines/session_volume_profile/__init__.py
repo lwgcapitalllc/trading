@@ -2,7 +2,7 @@
 session_volume_profile/ — the Session Volume Profile (SVP) engine subsystem.
 
 Turns the bar stream into the Asia session POINT-OF-CONTROL — the "MV" line — plus its confirmation.
-On each Asia session (2000-0500 GMT-4) close the engine builds a 100-row volume profile over the
+On each Asia session (2000-0500 GMT-4) close the engine builds a 50-row volume profile over the
 session's range, spreading each bar's volume across the rows its high/low span, and reports the
 mid-price of the highest-volume row as the POC. Ported line-by-line from the SESSION VOLUME PROFILE
 block in indicators/mpc_assistant.pine (line ~2554) plus its confirmation-table "MV slot" (line
@@ -15,7 +15,7 @@ the histogram drawing.
 Public API:
     from session_volume_profile import SvpEngine, SvpEvents
 
-    sv = SvpEngine()                     # Pine defaults: Asia 2000-0500 GMT-4, 100 rows, keep 2 POCs
+    sv = SvpEngine()                     # Pine defaults: Asia 2000-0500 GMT-4, 50 rows, keep 2 POCs
     # each closed intraday bar (timestamp is epoch MILLISECONDS, UTC — exactly Pine's `time`):
     ev = sv.update(bar.index, bar.timestamp_ms, bar.open, bar.high, bar.low, bar.close, bar.volume)
     ev.poc         # the current Asia POC / MV line (None until the first session closes)

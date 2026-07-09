@@ -14,7 +14,7 @@ What is compared (per bar, after --warmup)
 ------------------------------------------
   * px_svp_poc    — the current Asia POC price (abs tolerance, na-aware). Deterministic: same formula,
                     same session H/L + volume → bit-identical, so the tolerance is tight. A whole-row
-                    jump (~range/100 on gold) means the POC ROW diverged, not float noise.
+                    jump (~range/50 on gold) means the POC ROW diverged, not float noise.
   * px_svp_formed — 1 on the bar a fresh POC forms (pulse). Pine-validated.
   * px_svp_swept  — mv_swept, 1 once price has straddled the current POC since it formed. Pine-validated.
 

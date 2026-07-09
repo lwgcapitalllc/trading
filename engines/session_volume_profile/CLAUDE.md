@@ -10,30 +10,30 @@ no MT5 ops, no UI, no chart rendering (no histogram, POC line or label). Like VW
 **volume** column in the feed.
 **Status:** Production — ported from the SESSION VOLUME PROFILE block in `mpc_assistant.pine`, unit-
 tested (12 hand-traced tests, green), and **100% Pine-parity-validated on a real `VANTAGE_XAUUSD, 5m`
-export** (7,608 bars): all three fields — the POC price, the form pulse and the sweep state — match on
-every warm bar (`--warmup 116`, exit 0). The one canonical implementation — no consumer builds its own.
+export** (13,147 bars). **Row count re-synced 100 → 50 on 2026-07-09** (mpc line 317) and re-validated
+on a fresh 50-row export (`--warmup 251`, exit 0). The one canonical implementation — no consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine` — the SVP block (line ~2554) + its
 confirmation-table "MV slot" (line ~2772); parity harness is `indicators/svp_export.pine`, diffed
 against this Python by `tools/compare_svp.py`. Pine stays in `indicators/` (shared source,
 TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-06
+**Last reviewed:** 2026-07-09
 
 ---
 
 ## What this engine is (ported semantics)
 
 While the **Asia session** (2000-0500 GMT-4 — the same window as the sessions engine's Asia) is open,
-the source tracks the running session high/low. When it closes it builds a 100-row volume profile over
+the source tracks the running session high/low. When it closes it builds a 50-row volume profile over
 `[low, high]`: each session bar's volume is spread evenly across the price rows the bar's high/low
 span, and the row that accumulated the most volume is the **POINT OF CONTROL**. Its mid-price is the
 "MV" line.
 
     range      = sessionHigh - sessionLow
-    per bar b: rLo = clamp(floor((low_b  - sessionLow)/range*100), 0, 99)
-               rHi = clamp(ceil ((high_b - sessionLow)/range*100) - 1, 0, 99)
+    per bar b: rLo = clamp(floor((low_b  - sessionLow)/range*50), 0, 49)
+               rHi = clamp(ceil ((high_b - sessionLow)/range*50) - 1, 0, 49)
                span = max(1, rHi - rLo + 1);  add volume_b / span to every row in [rLo, rHi]
     POC row    = argmax over rows of (bull volume + bear volume), first max wins (strict >)
-    POC price  = sessionLow + (pocRow + 0.5) * (range / 100)
+    POC price  = sessionLow + (pocRow + 0.5) * (range / 50)
 
 The **MV slot** (confirmation table) then marks the most recent POC `swept` / "Confirmed" the first
 time a bar straddles it (`high >= poc and low <= poc`), and resets on the next Asia **open**
@@ -105,7 +105,7 @@ Parity export build: `indicators/svp_export.pine`.
 ```python
 from session_volume_profile import SvpEngine, SvpEvents
 
-sv = SvpEngine()   # Pine defaults: Asia 2000-0500 GMT-4, 100 rows, keep 2 POCs
+sv = SvpEngine()   # Pine defaults: Asia 2000-0500 GMT-4, 50 rows, keep 2 POCs
 
 # Each closed intraday bar (timestamp is epoch MILLISECONDS, UTC — exactly Pine's `time`):
 ev = sv.update(bar.index, bar.timestamp_ms, bar.open, bar.high, bar.low, bar.close, bar.volume)
@@ -135,7 +135,7 @@ sv.poc()        # current POC (read)
 
 ## Do
 
-- Port any change to `mpc_assistant.pine`'s SVP / MV-slot blocks back here. Keep the 100 rows, the
+- Port any change to `mpc_assistant.pine`'s SVP / MV-slot blocks back here. Keep the 50 rows, the
   `floor`/`ceil` row-binning with the clamps, the `span = max(1, …)` even-spread, the strict-`>`
   first-wins POC, the close-bar inclusion and the newest-first two-array summation EXACT.
 - Keep the Asia window in step with the sessions engine — both read 2000-0500 GMT-4.
@@ -156,18 +156,20 @@ sv.poc()        # current POC (read)
 ## Validation (Pine ↔ Python parity)
 
 **Unit tests — GREEN:** `python3 -m pytest engines/session_volume_profile/tests/ -q` (12 hand-traced tests pinning the
-100-row profile + POC, the close-bar-in-profile quirk, the na/zero-volume guard, the degenerate-range
+50-row profile + POC, the close-bar-in-profile quirk, the na/zero-volume guard, the degenerate-range
 skip, the FIFO history, and the MV sweep state/edge).
 
-**Full Pine↔Python parity — GREEN (2026-07-06).** 100% match on a real `VANTAGE_XAUUSD, 5m` export
-(7,608 bars): all three fields — the POC price, the form pulse and the sweep state — matched on every
-warm bar (`--warmup 116`, exit 0). The POC uses an **exact** price tolerance (1e-6), NOT the relative
+**Full Pine↔Python parity — GREEN (2026-07-09, 50-row build).** After the `svpRows` **100 → 50** re-sync,
+100% match on a fresh real `VANTAGE_XAUUSD, 5m` export (13,147 bars): all three fields — the POC price,
+the form pulse and the sweep state — matched on every warm bar (`--warmup 251`, exit 0, 12,896 bars
+compared). The POC uses an **exact** price tolerance (1e-6), NOT the relative
 tolerance VWAP needs: the POC is a deterministic formula on the (copied) session H/L + integer volume,
-so it is bit-identical — a whole-row jump (~range/100 on gold) would mean the POC ROW diverged, not
-float noise. The 116-bar warm-up is because the chart carried a POC from an Asia session that closed
+so it is bit-identical — a whole-row jump (~range/50 on gold) would mean the POC ROW diverged, not
+float noise. The 251-bar warm-up is because the chart carried a POC from an Asia session that closed
 BEFORE the export window (Pine shows it from bar 0 with its sweep already set), while Python starts
-cold; both sides form and agree from the first in-window Asia close (bar 116) on. The `formed` pulse
-matched on every bar, warm-up included. The harness mirrors the other engines:
+cold; both sides form and agree from the first in-window Asia close (bar 251) on. The `formed` pulse
+matched on every bar, warm-up included. (The prior 100-row build passed the same way on a separate 7,608-bar
+export, `--warmup 116`.) The harness mirrors the other engines:
 
 1. `indicators/svp_export.pine` — the SVP block + MV slot lifted from `mpc_assistant.pine` (drawing
    removed) with `px_volume`, `px_svp_poc`, `px_svp_formed` and `px_svp_swept` columns. Put it on a
