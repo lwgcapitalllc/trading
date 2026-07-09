@@ -1,6 +1,33 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
-indicator("MPC - JARVIS", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, max_polylines_count = 100)
+indicator("MPC- JARVIS", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, max_polylines_count = 100)
+var GRP_TABLE = "Confirmation Table"
+bool showConfTable = input.bool(true, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
+string tablePositionInput = input.string("Top Right", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
+string tableSizeInput = input.string("Tiny", "Table Text Size", group = GRP_TABLE, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
+
+f_tablePosition(string opt) =>
+    switch opt
+        "Top Left"      => position.top_left
+        "Top Center"    => position.top_center
+        "Top Right"     => position.top_right
+        "Middle Left"   => position.middle_left
+        "Middle Center" => position.middle_center
+        "Middle Right"  => position.middle_right
+        "Bottom Left"   => position.bottom_left
+        "Bottom Center" => position.bottom_center
+        "Bottom Right"  => position.bottom_right
+        => position.top_right
+
+f_tableSize(string opt) =>
+    switch opt
+        "Tiny"   => size.tiny
+        "Small"  => size.small
+        "Normal" => size.normal
+        "Large"  => size.large
+        "Huge"   => size.huge
+        => size.tiny
+
 
 //============================================================
 //  SMC SETTINGS (hardcoded)
@@ -16,18 +43,20 @@ color iBearColor  = bearColor
 //============================================================
 var GRP_STRUCT = "Market Structure"
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
+bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
+bool   showHistoricalInternal = input.bool(false, "Show Historic Internal Structure", group = GRP_STRUCT, tooltip = "Keep internal structure labels and lines from previous swing ranges on the chart. Off = only show current swing range internals.", display = display.none)
 int    internalLength   = 5
 float  pbBuffer         = 0.0
 
 f_structSize() =>
-    structLabelSize == "Tiny" ? size.tiny : structLabelSize == "Normal" ? size.normal : structLabelSize == "Large" ? size.large : structLabelSize == "Huge" ? size.huge : size.small
+    not showExternal ? size.auto : structLabelSize == "Tiny" ? size.tiny : structLabelSize == "Normal" ? size.normal : structLabelSize == "Large" ? size.large : structLabelSize == "Huge" ? size.huge : size.small
 
 //============================================================
 //  ORDER BLOCKS
 //============================================================
 var GRP_OB = "Order Blocks"
-bool  showOBs       = input.bool(true, "Show Order Blocks", group = GRP_OB, display = display.none)
+bool  showOBs       = input.bool(false, "Show Order Blocks", group = GRP_OB, display = display.none)
 bool  showBullOB    = input.bool(true, "Show Bullish OB", group = GRP_OB, inline = "BullOB", active = showOBs, display = display.none)
 color colBullOB     = input.color(color.new(color.blue, 85), "", group = GRP_OB, inline = "BullOB", display = display.none)
 bool  showBearOB    = input.bool(true, "Show Bearish OB", group = GRP_OB, inline = "BearOB", active = showOBs, display = display.none)
@@ -71,6 +100,8 @@ method extendOBs(array<OrderBlock> arr) =>
 var GRP_SESS = "Trading Sessions"
 bool showSessions         = input.bool(true,   "Show Sessions",      group = GRP_SESS, display = display.none)
 bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessions, display = display.none)
+bool showHistoricSessions = input.bool(false,  "Show Historic Sessions", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions further back, using the Days Back value below.", display = display.none)
+int  sessionsDaysBack     = input.int(7,       "Days Back", group = GRP_SESS, minval = 1, maxval = 365, active = showHistoricSessions, display = display.none)
 
 bool showSessionOC        = false
 bool showSessionTickRange = false
@@ -104,7 +135,7 @@ thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",   
 //  KILL ZONES & NY RANGE INPUTS (single toggle)
 //============================================================
 var GRP_KZ = "Kill Zones & NY Range"
-bool showKZandNYR  = input.bool(true, "Show Kill Zones & NY Range", group = GRP_KZ, display = display.none)
+bool showKZandNYR  = input.bool(false, "Show Kill Zones & NY Range", group = GRP_KZ, display = display.none)
 int  kzDaysBack    = input.int(7,     "Days Back",                  minval = 1, maxval = 100, group = GRP_KZ, active = showKZandNYR, display = display.none)
 
 bool showKillZones = showKZandNYR
@@ -115,7 +146,7 @@ int  nyrDaysBack   = kzDaysBack
 //  VWAP INPUTS
 //============================================================
 var GRP_VWAP = "VWAP Settings"
-bool  showVwap  = input.bool(true,                "Show VWAP",       group = GRP_VWAP, display = display.none)
+bool  showVwap  = input.bool(false,                "Show VWAP",       group = GRP_VWAP, display = display.none)
 color vwapColor = input.color(color.rgb(5, 5, 0), "VWAP Color",      group = GRP_VWAP, active = showVwap, display = display.none)
 int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1, maxval = 5, group = GRP_VWAP, active = showVwap, display = display.none)
 
@@ -126,12 +157,12 @@ var GRP_LIQ = "Liquidity Levels"
 var i_showLiquidity    = input.bool(true,  "Show All Liquidity Levels",  group = GRP_LIQ, display = display.none)
 var i_showLabels       = input.bool(true,  "Show Labels",                group = GRP_LIQ, active = i_showLiquidity, display = display.none)
 string liqLabelSize    = input.string("Small", "Liquidity Label Size",   group = GRP_LIQ, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = i_showLiquidity, display = display.none)
-var i_currentDayOnly   = input.bool(true,  "Hide Mitigated on New Day",  group = GRP_LIQ, active = i_showLiquidity, display = display.none)
+bool i_currentDayOnly  = true   // always hide mitigated on new day
+bool i_showMitigated   = false  // never show mitigated dotted lines
 
 f_liqSize() =>
     liqLabelSize == "Tiny" ? size.tiny : liqLabelSize == "Normal" ? size.normal : liqLabelSize == "Large" ? size.large : liqLabelSize == "Huge" ? size.huge : size.small
 
-var i_showMitigated    = input.bool(true,  "Show Mitigated Levels (dotted)",      group = GRP_LIQ, active = i_showLiquidity, display = display.none)
 var i_isDailyEnabled   = input.bool(true,  "Previous Day H/L",            group = GRP_LIQ, active = i_showLiquidity, display = display.none)
 var i_isWeeklyEnabled  = input.bool(true,  "Previous Week H/L",           group = GRP_LIQ, active = i_showLiquidity, display = display.none)
 var i_isMonthlyEnabled = input.bool(true,  "Previous Month H/L",          group = GRP_LIQ, active = i_showLiquidity, display = display.none)
@@ -151,11 +182,43 @@ color i_londonHLColor = color.black
 color i_nyHLColor     = color.black
 
 //============================================================
+//  INTERNAL FIB INPUTS
+//============================================================
+var GRP_IFIB      = "Internal Fib"
+bool showIFib     = input.bool(false, "Show Internal Fib", group = GRP_IFIB, display = display.none)
+int  iFibExtend   = input.int(50,   "Line Extension (bars)", group = GRP_IFIB, minval = 5, maxval = 500, active = showIFib, display = display.none)
+
+color  iFibo1Color    = input.color(#4caf50,"TP2 / 0.382",  group = GRP_IFIB, inline = "IFibo1", active = showIFib, display = display.none)
+string iFibo1Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo1", options = ["─","┈","╌"], display = display.none)
+
+color  iFibo2Color    = input.color(#4caf50,"TP1 / 0.500",  group = GRP_IFIB, inline = "IFibo2", active = showIFib, display = display.none)
+string iFibo2Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo2", options = ["─","┈","╌"], display = display.none)
+
+color  iFibo3Color    = input.color(#FF9800,"E1 / 0.618",   group = GRP_IFIB, inline = "IFibo3", active = showIFib, display = display.none)
+string iFibo3Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo3", options = ["─","┈","╌"], display = display.none)
+
+color  iFibo4Color    = input.color(#FF9800,"E2 / 0.702",   group = GRP_IFIB, inline = "IFibo4", active = showIFib, display = display.none)
+string iFibo4Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo4", options = ["─","┈","╌"], display = display.none)
+
+color  iFibo5Color    = input.color(#FF9800,"E3 / 0.786",   group = GRP_IFIB, inline = "IFibo5", active = showIFib, display = display.none)
+string iFibo5Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo5", options = ["─","┈","╌"], display = display.none)
+
+color  iFibo6Color    = input.color(#FF9800,"E4 / 0.886",   group = GRP_IFIB, inline = "IFibo6", active = showIFib, display = display.none)
+string iFibo6Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo6", options = ["─","┈","╌"], display = display.none)
+
+color  iFibo0Color      = input.color(#4caf50,"TP3 / 0.000",  group = GRP_IFIB, inline = "IFibo0",   active = showIFib, display = display.none)
+string iFibo0Style      = input.string("─",   "",              group = GRP_IFIB, inline = "IFibo0",   options = ["─","┈","╌"], display = display.none)
+
+color  iFibo100Color    = input.color(#4caf50,"1.000",        group = GRP_IFIB, inline = "IFibo100", active = showIFib, display = display.none)
+string iFibo100Style    = input.string("─",   "",              group = GRP_IFIB, inline = "IFibo100", options = ["─","┈","╌"], display = display.none)
+
+//============================================================
 //  FIBONACCI INPUTS
 //============================================================
-var GRP_FIBO = "Structure Fibonacci"
-bool   showFibo       = input.bool(true,          "Show Fibonacci Levels",     group = GRP_FIBO, display = display.none)
-string sharedLabelMode = input.string("TP/Entry", "Label Style",               group = GRP_FIBO, options = ["Fib Value", "TP/Entry"], active = showFibo, display = display.none)
+var GRP_FIBO = "External Fib"
+bool   showFibo        = input.bool(true,          "Show External Fib",       group = GRP_FIBO, display = display.none)
+string sharedLabelMode = input.string("TP/Entry",  "Label Style",               group = GRP_FIBO, options = ["Fib Value", "TP/Entry"], active = showFibo, display = display.none)
+int    fiboLineExtend  = input.int(80,             "Line Extension (bars)",     group = GRP_FIBO, minval = 5, maxval = 500, display = display.none)
 
 bool  isFibo1ToShow  = input.bool(true,    "TP2 / 0.382",  group = GRP_FIBO, inline = "Fibo1",  active = showFibo, display = display.none)
 float fibo1Value     = 0.382
@@ -197,18 +260,47 @@ float fibo7Value     = 0.000
 color fibo7Color     = input.color(#4caf50,"",              group = GRP_FIBO, inline = "Fibo7", display = display.none)
 string fibo7Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo7",  options = ["─","┈","╌"], display = display.none)
 
-bool  isFibo8ToShow  = input.bool(true,    "TP4 / -0.270", group = GRP_FIBO, inline = "Fibo8",  active = showFibo, display = display.none)
-float fibo8Value     = -0.270
-color fibo8Color     = input.color(#4caf50,"",              group = GRP_FIBO, inline = "Fibo8", display = display.none)
-string fibo8Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo8",  options = ["─","┈","╌"], display = display.none)
-
-bool  isFibo9ToShow  = input.bool(true,    "TP5 / -0.618", group = GRP_FIBO, inline = "Fibo9",  active = showFibo, display = display.none)
-float fibo9Value     = -0.618
-color fibo9Color     = input.color(#4caf50,"",              group = GRP_FIBO, inline = "Fibo9", display = display.none)
-string fibo9Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo9",  options = ["─","┈","╌"], display = display.none)
-
 f_fiboLineStyle(string opt) =>
     opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
+
+//============================================================
+//  MACRO FIB (full-cycle retracement across multiple BOS, locks in on trend reversal)
+//============================================================
+var GRP_MACRO = "Cycle Fib"
+bool   showMacroFib      = input.bool(true,         "Show Cycle Fib",             group = GRP_MACRO, display = display.none)
+int    macroLineExtend   = input.int(150,            "Line Extension (bars)",      group = GRP_MACRO, minval = 10, maxval = 500, display = display.none)
+
+bool   showMacro0        = input.bool(true,   "TP3 / 0.000",   group = GRP_MACRO, inline = "mFibo0",   active = showMacroFib, display = display.none)
+color  macro0Color       = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo0",   display = display.none)
+string macro0Style       = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo0",   options = ["─","┈","╌"], display = display.none)
+
+bool   showMacro382      = input.bool(true,   "TP2 / 0.382",   group = GRP_MACRO, inline = "mFibo382", active = showMacroFib, display = display.none)
+color  macro382Color     = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo382", display = display.none)
+string macro382Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo382", options = ["─","┈","╌"], display = display.none)
+
+bool   showMacro50       = input.bool(true,   "TP1 / 0.500",   group = GRP_MACRO, inline = "mFibo50",  active = showMacroFib, display = display.none)
+color  macro50Color      = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo50",  display = display.none)
+string macro50Style      = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo50",  options = ["─","┈","╌"], display = display.none)
+
+bool   showMacro618      = input.bool(true,   "E1 / 0.618",    group = GRP_MACRO, inline = "mFibo618", active = showMacroFib, display = display.none)
+color  macro618Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo618", display = display.none)
+string macro618Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo618", options = ["─","┈","╌"], display = display.none)
+
+bool   showMacro702      = input.bool(true,   "E2 / 0.702",    group = GRP_MACRO, inline = "mFibo702", active = showMacroFib, display = display.none)
+color  macro702Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo702", display = display.none)
+string macro702Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo702", options = ["─","┈","╌"], display = display.none)
+
+bool   showMacro786      = input.bool(true,   "E3 / 0.786",    group = GRP_MACRO, inline = "mFibo786", active = showMacroFib, display = display.none)
+color  macro786Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo786", display = display.none)
+string macro786Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo786", options = ["─","┈","╌"], display = display.none)
+
+bool   showMacro886      = input.bool(true,   "E4 / 0.886",    group = GRP_MACRO, inline = "mFibo886", active = showMacroFib, display = display.none)
+color  macro886Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo886", display = display.none)
+string macro886Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo886", options = ["─","┈","╌"], display = display.none)
+
+bool   showMacro100      = input.bool(true,   "1.000",         group = GRP_MACRO, inline = "mFibo100", active = showMacroFib, display = display.none)
+color  macro100Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo100", display = display.none)
+string macro100Style     = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo100", options = ["─","┈","╌"], display = display.none)
 
 //============================================================
 //  SNIPER FIB INPUTS
@@ -222,7 +314,7 @@ bool showSniperFib = input.bool(true, "Sniper Zone", group = GRP_SNIPER, active 
 var GRP_SVP   = "MV"
 bool  showSVP     = input.bool(true, "MV", group = GRP_SVP, display = display.none)
 int   svpHistory  = input.int(2,     "Days back", group = GRP_SVP, minval = 1, maxval = 500, active = showSVP, display = display.none)
-int   svpRows     = 100
+int   svpRows     = 50
 float svpVAvolPct = 68.0
 color svpPOCCol   = #9C27B0
 
@@ -653,6 +745,16 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             st.pb_mode               := -1
             st.pb_started            := true
         else
+            float highest_val = high
+            int   highest_loc = bar_index
+            int   bars_back   = na(st.last_conf_low_loc) ? bar_index : bar_index - st.last_conf_low_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if high[i] > highest_val
+                        highest_val := high[i]
+                        highest_loc := bar_index - i
+
             if not na(st.ash)
                 bool already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
                 if not already_conf_high
@@ -672,16 +774,17 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                 st.ash_line := na
                 st.ash_lbl  := na
                 st.ash      := na
-
-            float highest_val = high
-            int   highest_loc = bar_index
-            int   bars_back   = na(st.last_conf_low_loc) ? bar_index : bar_index - st.last_conf_low_loc
-            if bars_back > 0
-                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
-                for i = 0 to max_lb
-                    if high[i] > highest_val
-                        highest_val := high[i]
-                        highest_loc := bar_index - i
+            else
+                // Neither an active pullback high nor a confirmed ASH was available to
+                // promote — use the actual highest point since the last confirmed low so
+                // a genuine swing high still gets confirmed instead of silently vanishing.
+                bool   fallback_is_hh  = na(st.last_conf_high) or highest_val >= st.last_conf_high
+                string fallback_high_t = fallback_is_hh ? prefix + "HH" : prefix + "LH"
+                color  fallback_high_c = fallback_is_hh ? bull_col : bear_col
+                if highest_val != st.last_conf_high
+                    label.new(highest_loc, highest_val, fallback_high_t + "\n", color=color(na), textcolor=fallback_high_c, style=label.style_label_down, size=f_structSize())
+                    st.last_conf_high     := highest_val
+                    st.last_conf_high_loc := highest_loc
 
             st.bear_bos_high  := highest_val
             st.bear_bos_h_loc := highest_loc
@@ -707,8 +810,17 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
 
     if not na(st.ash_line)
         line.set_x2(st.ash_line, bar_index)
+        if not showExternal
+            line.set_color(st.ash_line, color(na))
     if not na(st.asl_line)
         line.set_x2(st.asl_line, bar_index)
+        if not showExternal
+            line.set_color(st.asl_line, color(na))
+    if not showExternal
+        if not na(st.ash_lbl)
+            label.set_textcolor(st.ash_lbl, color(na))
+        if not na(st.asl_lbl)
+            label.set_textcolor(st.asl_lbl, color(na))
 
 //============================================================
 //  TRADING SESSIONS TYPES & METHODS
@@ -810,7 +922,7 @@ newDay           = dayofweek(time, "America/New_York") != dayofweek(time[1], "Am
 
 [tzHighD, tzLowD] = request.security(syminfo.tickerid, "D", [high, low], lookahead = barmerge.lookahead_on)
 [dailyTime,   dailyHigh,   dailyLow,   isLastDaily]   = request.security(syminfo.tickerid, "D", [time, high, low, barstate.islast], lookahead = barmerge.lookahead_on)
-[weeklyTime,  weeklyHigh,  weeklyLow,  isLastWeekly]  = request.security(syminfo.tickerid, "W", [time, high, low, barstate.islast], lookahead = barmerge.lookahead_on)
+[weeklyTime,  weeklyHigh,  weeklyLow,  isLastWeekly]  = request.security(syminfo.tickerid, "W", [time, high, low, barstate.islast], lookahead = barmerge.lookahead_off)
 pwcSecurity = timeframe.isweekly or timeframe.ismonthly ? request.security(syminfo.tickerid, "W", close, lookahead = barmerge.lookahead_off) : request.security(syminfo.tickerid, "W", close[1], lookahead = barmerge.lookahead_on)
 [h4Time, h4PrevHigh, h4PrevLow] = request.security(syminfo.tickerid, "240", [time, high[1], low[1]], lookahead = barmerge.lookahead_on)
 h4BarChanged = ta.change(h4Time) != 0
@@ -819,6 +931,50 @@ h4BarChanged = ta.change(h4Time) != 0
 hasDailyTimeChanged   = dailyTime   != dailyTime[1]
 hasWeeklyTimeChanged  = weeklyTime  != weeklyTime[1]
 hasMonthlyTimeChanged = monthlyTime != monthlyTime[1]
+
+// ── HTF Directional Bias (adapted from LuxAlgo's HTF Bias Tracker) ──
+// Compares an "action" period's high/low/close against a "context" period's high/low
+// to classify Bullish / Bearish / Neutral, with sweep detection.
+f_biasState(float highAction, float lowAction, float closeAction, float highContext, float lowContext, string tfPrefix) =>
+    string state = "Neutral"
+    string desc  = "Inside " + tfPrefix + " Range"
+
+    bool bullishClosure = closeAction > highContext
+    bool bearishClosure = closeAction < lowContext
+    bool bearishSweep   = highAction > highContext and closeAction <= highContext
+    bool bullishSweep   = lowAction < lowContext and closeAction >= lowContext
+
+    if bullishClosure
+        state := "Bullish"
+        desc  := "Close > Prev " + tfPrefix + " High"
+    else if bearishClosure
+        state := "Bearish"
+        desc  := "Close < Prev " + tfPrefix + " Low"
+    else if bearishSweep
+        state := "Bearish"
+        desc  := "Swept " + tfPrefix + " High"
+    else if bullishSweep
+        state := "Bullish"
+        desc  := "Swept " + tfPrefix + " Low"
+
+    [state, desc]
+
+f_htfBias(string htf, string tfPrefix) =>
+    // Fetch data for the last 3 periods
+    [high2, low2]          = request.security(syminfo.tickerid, htf, [high[2], low[2]])
+    [high1, low1, close1]  = request.security(syminfo.tickerid, htf, [high[1], low[1], close[1]])
+    [high0, low0, close0]  = request.security(syminfo.tickerid, htf, [high, low, close])
+
+    // Established Context (Closed[1] vs Closed[2])
+    [estState, estDesc] = f_biasState(high1, low1, close1, high2, low2, tfPrefix)
+
+    // Current Forming (Live[0] vs Closed[1])
+    [curState, curDesc] = f_biasState(high0, low0, close0, high1, low1, tfPrefix)
+
+    [estState, estDesc, curState, curDesc]
+
+[dEstState, dEstDesc, dCurState, dCurDesc] = f_htfBias("D", "D")
+[wEstState, wEstDesc, wCurState, wCurDesc] = f_htfBias("W", "W")
 
 var canShowDaily   = i_isDailyEnabled   and i_showLiquidity and timeframe.isintraday
 var canShowWeekly  = i_isWeeklyEnabled  and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily)
@@ -832,6 +988,24 @@ var a_lastHighs = array.new_float(3)
 var a_lastLows  = array.new_float(3)
 
 f_labelText(string txt) => i_showLabels and i_showLiquidity ? txt : ""
+
+// Shared by Daily/Weekly/Monthly/Asia/London/NY liquidity levels: checks for
+// mitigation, updates the line/label color+style+extent in place, and returns
+// the (possibly updated) mitigated/mitigatedBar state.
+f_liqMitigate(line lineId, label lblId, bool mit, int mitBar, int barOrigin, bool breachCond, color baseColor, bool enabledFlag) =>
+    bool newMit    = mit
+    int  newMitBar = mitBar
+    if not newMit and breachCond
+        newMit    := true
+        newMitBar := bar_index
+    bool showLvl = (i_showMitigated or not newMit) and i_showLiquidity and enabledFlag
+    line.set_color(lineId, newMit ? MITIGATED_COLOR : baseColor)
+    line.set_style(lineId, newMit ? MITIGATED_STYLE : line.style_solid)
+    label.set_textcolor(lblId, newMit ? color(na) : baseColor)
+    int x2 = newMit ? newMitBar : bar_index + i_lineExtend
+    line.set_x2(lineId, showLvl ? x2 : barOrigin)
+    label.set_x(lblId, showLvl ? x2 : bar_index)
+    [newMit, newMitBar]
 
 inAsia   = not na(time("", firstSessionTime,  firstSessionTZ))
 inLondon = not na(time("", secondSessionTime, secondSessionTZ))
@@ -849,16 +1023,42 @@ withinKZDays      = time >= kzCutoff
 nyMidnightToday   = timestamp("America/New_York", year(timenow, "America/New_York"), month(timenow, "America/New_York"), dayofmonth(timenow, "America/New_York"), 0, 0)
 withinNYRangeDays = time >= (nyMidnightToday - nyrDaysBack * 86400000.0)
 
+// Start of the current week (Sunday 00:00 America/New_York) — used to default
+// Sessions to "this week only" unless Show Historic Sessions is enabled.
+int  nyDayOfWeek       = dayofweek(timenow, "America/New_York")
+int  daysSinceSunday   = nyDayOfWeek - dayofweek.sunday
+int  weekStartTime     = nyMidnightToday - daysSinceSunday * 86400000
+sessionsCutoff         = showHistoricSessions ? (timenow - sessionsDaysBack * 86400000.0) : weekStartTime
+bool withinSessionDays = time >= sessionsCutoff
+
 vwapValue = ta.vwap(hlc3)
 
 //============================================================
 //  EXECUTION — EXTERNAL + INTERNAL STRUCTURE
 //============================================================
-// External structure — majorLength=15, blue/red, prefix ""
+// External structure engine always runs — fib, macro fib, OBs all depend on it
 var st = SMCStructure.new(majorLength)
 ph = ta.pivothigh(high, majorLength, majorLength)
 pl = ta.pivotlow(low,  majorLength, majorLength)
-st.process(ph, pl, "", bullColor, bearColor)
+// showExternal off → pass color(na) so ALL lines and labels hidden inside process
+// showExternal off but showExternal on → pass color(na) for labels only — handled via ASH/ASL override below
+color extBullCol = showExternal ? (showExternal ? bullColor : color(na)) : color(na)
+color extBearCol = showExternal ? (showExternal ? bearColor : color(na)) : color(na)
+st.process(ph, pl, "", extBullCol, extBearCol)
+
+// After process runs — restore line colors when labels are hidden but structure is visible
+if not na(st.ash_line)
+    line.set_x2(st.ash_line, bar_index)
+    if showExternal and not showExternal
+        line.set_color(st.ash_line, bullColor)
+if not na(st.asl_line)
+    line.set_x2(st.asl_line, bar_index)
+    if showExternal and not showExternal
+        line.set_color(st.asl_line, bearColor)
+if not na(st.ash_lbl)
+    label.set_textcolor(st.ash_lbl, showExternal and showExternal ? bearColor : color(na))
+if not na(st.asl_lbl)
+    label.set_textcolor(st.asl_lbl, showExternal and showExternal ? bullColor : color(na))
 
 // Extend and clean OBs every bar
 if showOBs
@@ -935,6 +1135,14 @@ var color  i_l_col          = color.black
 var int   i_mid             = 0
 var int   i_mid2            = 0
 var float i_last_hl         = na   // last confirmed iHL price (for iSOS in bullish cycle)
+
+// Captures the latest confirmed internal swing point (price + location), so the
+// External Fib can adopt it as its anchor if it's more extreme than the external
+// structure's own point — used only for the fib pull, nothing else.
+var float i_confirmed_low_price  = na
+var int   i_confirmed_low_loc    = na
+var float i_confirmed_high_price = na
+var int   i_confirmed_high_loc   = na
 var float i_last_lh         = na   // last confirmed iLH price (for iSOS in bearish cycle)
 var int   i_last_hl_loc     = na
 var int   i_last_lh_loc     = na
@@ -944,10 +1152,40 @@ var int   i_sos_watch_hh_loc= na
 var float i_sos_watch_ll    = na
 var int   i_sos_watch_ll_loc= na
 
-float i_lbl_y_offset = syminfo.mintick * 100   // vertical offset for iBOS/iSOS (smaller number = closer to the line)
+// Internal fib anchor vars — declared before internal structure block so captures work
+var float iFib_asl     = na
+var int   iFib_asl_loc = na
+var float iFib_ash     = na
+var int   iFib_ash_loc = na
+var int   iFib_dir     = 0
+
+// Internal fib touched tracking — same system as micro fib
+color IFIB_GREY           = color.new(#888888, 0)
+var bool iFib0Touched     = false   // 0.0
+var bool iFib382Touched   = false   // 0.382 TP2
+var bool iFib50Touched    = false   // 0.5  FFT
+var bool iFib618Touched   = false   // 0.618 E1 — gate
+var bool iFib702Touched   = false   // 0.702 E2
+var bool iFib786Touched   = false   // 0.786 E3
+var bool iFib886Touched   = false   // 0.886 E4
+var bool iFib100Touched   = false   // 1.0
+var bool iFib618EverReached = false  // gate flag
+var float iFib_tp3_hit_price = na    // frozen price level TP3 was hit at (for detecting a later break-through)
+var bool  iFibResetActive    = false // true once TP3 has been hit — resets this internal fib immediately
+
+float i_lbl_y_offset = syminfo.mintick * 20   // vertical offset for iBOS/iSOS (smaller number = closer to the line)
+
+// Internal structure is naturally scoped to the current active external swing —
+// it resets on every external SOS/CHoCH (see block right below).
+bool internalActive = showInternal
+
+// Tracks every internal-structure label/line drawn during the current external
+// swing, so they can be wiped when a new swing starts (unless showHistoricalInternal is on).
+var array<label> intHistLabels = array.new<label>()
+var array<line>  intHistLines  = array.new<line>()
 
 // ── Stop internal tracking on external SOS ───────────────
-if showInternal and (st.bull_sos or st.bear_sos)
+if internalActive and (st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos)
     if not na(i_sw_line)
         line.set_x2(i_sw_line, bar_index)
         i_sw_line := na
@@ -964,15 +1202,25 @@ if showInternal and (st.bull_sos or st.bear_sos)
     i_had_bos         := false
     i_sos_watch_hh    := na
     i_sos_watch_ll    := na
+    // Past swing just ended — wipe its internal structure unless history is enabled
+    if not showHistoricalInternal
+        if array.size(intHistLabels) > 0
+            for i = 0 to array.size(intHistLabels) - 1
+                label.delete(array.get(intHistLabels, i))
+        if array.size(intHistLines) > 0
+            for i = 0 to array.size(intHistLines) - 1
+                line.delete(array.get(intHistLines, i))
+    array.clear(intHistLabels)
+    array.clear(intHistLines)
 
 // ── Track prev bar ────────────────────────────────────────
-if showInternal
+if internalActive
     i_prev_high := high
     i_prev_low  := low
 
 
 // ── Seed on new external swing ────────────────────────────
-if showInternal
+if internalActive
     if st.new_swing_low and not st.bull_sos and not st.bear_sos
         i_mode            := 1
         i_seeded          := true
@@ -1009,7 +1257,7 @@ if showInternal
         i_sos_watch_ll    := na
 
 // ── Mode 1: track upward move → confirm iSH ──────────────
-if showInternal and i_seeded and i_mode == 1
+if internalActive and i_seeded and i_mode == 1
     if not i_pb_started
         i_pb_started     := true
         i_pb_extreme     := high
@@ -1048,14 +1296,18 @@ if showInternal and i_seeded and i_mode == 1
             // Label: iSH if first swing, iHH if higher than last, iLH if lower
             i_h_lbl := not i_had_bos ? "iSH" : "iHH"
             i_h_col := not i_had_bos ? iBearColor : iBullColor
-            i_sw_line  := line.new(i_sw_loc, i_sw_price, bar_index, i_sw_price, color = color.new(i_h_col, 15), style = line.style_dotted, width = 1)
+            i_confirmed_high_price := i_sw_price
+            i_confirmed_high_loc   := i_sw_loc
+            i_sw_line  := line.new(i_sw_loc, i_sw_price, bar_index, i_sw_price, color = showInternal ? color.new(i_h_col, 15) : color(na), style = line.style_dotted, width = 1)
             i_sw_lbl   := label.new(i_sw_loc, i_sw_price, i_h_lbl + "\n", color = color(na), textcolor = color.new(i_h_col, 15), style = label.style_label_down, size = size.tiny)
+            array.push(intHistLines, i_sw_line)
+            array.push(intHistLabels, i_sw_lbl)
             i_mode       := 0
             i_pb_count   := 0
             i_pb_started := false
 
 // ── Mode -1: track downward move → confirm iSL ───────────
-if showInternal and i_seeded and i_mode == -1
+if internalActive and i_seeded and i_mode == -1
     if not i_pb_started
         i_pb_started     := true
         i_pb_extreme     := low
@@ -1094,14 +1346,18 @@ if showInternal and i_seeded and i_mode == -1
             // Label: iSL if first swing, iLL if lower than last, iHL if higher
             i_l_lbl := not i_had_bos ? "iSL" : "iLL"
             i_l_col := not i_had_bos ? iBullColor : iBearColor
-            i_sw_line  := line.new(i_sw_loc, i_sw_price, bar_index, i_sw_price, color = color.new(i_l_col, 15), style = line.style_dotted, width = 1)
+            i_confirmed_low_price := i_sw_price
+            i_confirmed_low_loc   := i_sw_loc
+            i_sw_line  := line.new(i_sw_loc, i_sw_price, bar_index, i_sw_price, color = showInternal ? color.new(i_l_col, 15) : color(na), style = line.style_dotted, width = 1)
             i_sw_lbl   := label.new(i_sw_loc, i_sw_price, "\n" + i_l_lbl, color = color(na), textcolor = color.new(i_l_col, 15), style = label.style_label_up, size = size.tiny)
+            array.push(intHistLines, i_sw_line)
+            array.push(intHistLabels, i_sw_lbl)
             i_mode       := 0
             i_pb_count   := 0
             i_pb_started := false
 
 // ── Track extreme while watching (mode 0) ────────────────
-if showInternal and i_seeded and i_mode == 0
+if internalActive and i_seeded and i_mode == 0
     if i_last_mode == 1
         if na(i_tracked_ext) or low < i_tracked_ext
             i_tracked_ext     := low
@@ -1114,24 +1370,41 @@ if showInternal and i_seeded and i_mode == 0
 // ── iBOS / iSOS detection ────────────────────────────────
 bool int_bull_break = false
 bool int_bear_break = false
+bool int_bull_bos   = false
+bool int_bull_sos   = false
+bool int_bear_bos   = false
+bool int_bear_sos   = false
 int  int_break_origin_loc = na
 
-if showInternal and i_mode == 0 and i_seeded and not na(i_sw_price) and barstate.isconfirmed
+if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barstate.isconfirmed
     if close > i_sw_price and i_last_mode == 1
         i_mid := math.round((i_sw_loc + bar_index) / 2)
-        label.new(i_mid, i_sw_price + i_lbl_y_offset, "iBOS", color = color(na), textcolor = iBullColor, style = label.style_none, size = size.tiny, textalign = text.align_center)
+        label iBullBOSLbl = label.new(i_mid, i_sw_price + i_lbl_y_offset, "iBOS", color = color(na), textcolor = showInternal ? iBullColor : color(na), style = label.style_none, size = size.tiny, textalign = text.align_center)
+        array.push(intHistLabels, iBullBOSLbl)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
             i_sw_line := na
         i_sw_lbl := na
         if not na(i_tracked_ext)
-            line.new(i_tracked_ext_loc, i_tracked_ext, bar_index, i_tracked_ext, color = color.new(iBullColor, 15), style = line.style_dotted, width = 1)
-            label.new(i_tracked_ext_loc, i_tracked_ext, "\niHL", color = color(na), textcolor = color.new(iBullColor, 15), style = label.style_label_up, size = size.tiny)
+            line  iHLLine = line.new(i_tracked_ext_loc, i_tracked_ext, bar_index, i_tracked_ext, color = showInternal ? color.new(iBullColor, 15) : color(na), style = line.style_dotted, width = 1)
+            label iHLLbl  = label.new(i_tracked_ext_loc, i_tracked_ext, "\niHL", color = color(na), textcolor = color.new(iBullColor, 15), style = label.style_label_up, size = size.tiny)
+            array.push(intHistLines, iHLLine)
+            array.push(intHistLabels, iHLLbl)
             i_last_hl     := i_tracked_ext
             i_last_hl_loc := i_tracked_ext_loc
         
         int_bull_break := true
+        int_bull_bos   := true
         int_break_origin_loc := i_tracked_ext_loc
+        // Bull BOS: bottom=i_last_hl (just set above), top=i_sw_price (high being broken)
+        if showIFib and not na(i_last_hl) and not na(i_sw_price)
+            iFib_asl := i_last_hl,  iFib_asl_loc := i_last_hl_loc
+            iFib_ash := i_sw_price, iFib_ash_loc := i_sw_loc
+            iFib_dir := 1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_price       := na
         i_tracked_ext    := na
@@ -1148,19 +1421,32 @@ if showInternal and i_mode == 0 and i_seeded and not na(i_sw_price) and barstate
 
     else if close < i_sw_price and i_last_mode == -1
         i_mid2 := math.round((i_sw_loc + bar_index) / 2)
-        label.new(i_mid2, i_sw_price - i_lbl_y_offset, "iBOS", color = color(na), textcolor = iBearColor, style = label.style_none, size = size.tiny, textalign = text.align_center)
+        label iBearBOSLbl = label.new(i_mid2, i_sw_price - i_lbl_y_offset, "iBOS", color = color(na), textcolor = showInternal ? iBearColor : color(na), style = label.style_none, size = size.tiny, textalign = text.align_center)
+        array.push(intHistLabels, iBearBOSLbl)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
             i_sw_line := na
         i_sw_lbl := na
         if not na(i_tracked_ext)
-            line.new(i_tracked_ext_loc, i_tracked_ext, bar_index, i_tracked_ext, color = color.new(iBearColor, 15), style = line.style_dotted, width = 1)
-            label.new(i_tracked_ext_loc, i_tracked_ext, "iLH\n", color = color(na), textcolor = color.new(iBearColor, 15), style = label.style_label_down, size = size.tiny)
+            line  iLHLine = line.new(i_tracked_ext_loc, i_tracked_ext, bar_index, i_tracked_ext, color = showInternal ? color.new(iBearColor, 15) : color(na), style = line.style_dotted, width = 1)
+            label iLHLbl  = label.new(i_tracked_ext_loc, i_tracked_ext, "iLH\n", color = color(na), textcolor = color.new(iBearColor, 15), style = label.style_label_down, size = size.tiny)
+            array.push(intHistLines, iLHLine)
+            array.push(intHistLabels, iLHLbl)
             i_last_lh     := i_tracked_ext
             i_last_lh_loc := i_tracked_ext_loc
             
         int_bear_break := true
+        int_bear_bos   := true
         int_break_origin_loc := i_tracked_ext_loc
+        // Bear BOS: bottom=i_sw_price (low being broken), top=i_last_lh (just set above)
+        if showIFib and not na(i_sw_price) and not na(i_last_lh)
+            iFib_asl := i_sw_price,  iFib_asl_loc := i_sw_loc
+            iFib_ash := i_last_lh,   iFib_ash_loc := i_last_lh_loc
+            iFib_dir := -1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_price        := na
         i_tracked_ext     := na
@@ -1178,11 +1464,13 @@ if showInternal and i_mode == 0 and i_seeded and not na(i_sw_price) and barstate
 
 
 // ── iSOS detection (watches last iHL / iLH) ──────────────
-if showInternal and i_seeded and i_had_bos and barstate.isconfirmed
+if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
     if i_last_mode == 1 and not na(i_last_hl) and close < i_last_hl and i_mode == 0
         i_mid2 := math.round((i_last_hl_loc + bar_index) / 2)
-        label.new(i_mid2, i_last_hl - i_lbl_y_offset, "iSOS", color = color(na), textcolor = iBearColor, style = label.style_none, size = size.tiny, textalign = text.align_center)
-        line.new(i_last_hl_loc, i_last_hl, bar_index, i_last_hl, color = color.new(iBearColor, 15), style = line.style_dotted, width = 1)
+        label iSOS1Lbl = label.new(i_mid2, i_last_hl - i_lbl_y_offset, "iSOS", color = color(na), textcolor = showInternal ? iBearColor : color(na), style = label.style_none, size = size.tiny, textalign = text.align_center)
+        line  iSOS1Line = line.new(i_last_hl_loc, i_last_hl, bar_index, i_last_hl, color = showInternal ? color.new(iBearColor, 15) : color(na), style = line.style_dotted, width = 1)
+        array.push(intHistLabels, iSOS1Lbl)
+        array.push(intHistLines, iSOS1Line)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
             i_sw_line := na
@@ -1192,7 +1480,17 @@ if showInternal and i_seeded and i_had_bos and barstate.isconfirmed
         i_sos_watch_ll     := na
         
         int_bear_break := true
+        int_bear_sos   := true
         int_break_origin_loc := i_sw_loc
+        // Bear iSOS: bottom=i_tracked_ext, top=i_sw_price (iLH being confirmed as ASH)
+        if showIFib and not na(i_tracked_ext) and not na(i_sw_price)
+            iFib_asl := i_tracked_ext, iFib_asl_loc := i_tracked_ext_loc
+            iFib_ash := i_sw_price,    iFib_ash_loc := i_sw_loc
+            iFib_dir := -1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1208,8 +1506,10 @@ if showInternal and i_seeded and i_had_bos and barstate.isconfirmed
 
     else if i_last_mode == -1 and not na(i_last_lh) and close > i_last_lh and i_mode == 0
         i_mid := math.round((i_last_lh_loc + bar_index) / 2)
-        label.new(i_mid, i_last_lh + i_lbl_y_offset, "iSOS", color = color(na), textcolor = iBullColor, style = label.style_none, size = size.tiny, textalign = text.align_center)
-        line.new(i_last_lh_loc, i_last_lh, bar_index, i_last_lh, color = color.new(iBullColor, 15), style = line.style_dotted, width = 1)
+        label iSOS2Lbl = label.new(i_mid, i_last_lh + i_lbl_y_offset, "iSOS", color = color(na), textcolor = showInternal ? iBullColor : color(na), style = label.style_none, size = size.tiny, textalign = text.align_center)
+        line  iSOS2Line = line.new(i_last_lh_loc, i_last_lh, bar_index, i_last_lh, color = showInternal ? color.new(iBullColor, 15) : color(na), style = line.style_dotted, width = 1)
+        array.push(intHistLabels, iSOS2Lbl)
+        array.push(intHistLines, iSOS2Line)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
             i_sw_line := na
@@ -1219,7 +1519,17 @@ if showInternal and i_seeded and i_had_bos and barstate.isconfirmed
         i_sos_watch_hh     := na
         
         int_bull_break := true
+        int_bull_sos   := true
         int_break_origin_loc := i_sw_loc
+        // Bull iSOS: bottom=i_sw_price (iHL), top=i_last_lh (LH being broken)
+        if showIFib and not na(i_sw_price) and not na(i_last_lh)
+            iFib_asl := i_sw_price, iFib_asl_loc := i_sw_loc
+            iFib_ash := i_last_lh,  iFib_ash_loc := i_last_lh_loc
+            iFib_dir := 1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1235,8 +1545,10 @@ if showInternal and i_seeded and i_had_bos and barstate.isconfirmed
 
     else if i_last_mode == -1 and not na(i_sos_watch_hh) and close > i_sos_watch_hh and i_mode == 0
         i_mid := math.round((i_sos_watch_hh_loc + bar_index) / 2)
-        label.new(i_mid, i_sos_watch_hh + i_lbl_y_offset, "iSOS", color = color(na), textcolor = iBullColor, style = label.style_none, size = size.tiny, textalign = text.align_center)
-        line.new(i_sos_watch_hh_loc, i_sos_watch_hh, bar_index, i_sos_watch_hh, color = color.new(iBullColor, 15), style = line.style_dotted, width = 1)
+        label iSOS3Lbl = label.new(i_mid, i_sos_watch_hh + i_lbl_y_offset, "iSOS", color = color(na), textcolor = showInternal ? iBullColor : color(na), style = label.style_none, size = size.tiny, textalign = text.align_center)
+        line  iSOS3Line = line.new(i_sos_watch_hh_loc, i_sos_watch_hh, bar_index, i_sos_watch_hh, color = showInternal ? color.new(iBullColor, 15) : color(na), style = line.style_dotted, width = 1)
+        array.push(intHistLabels, iSOS3Lbl)
+        array.push(intHistLines, iSOS3Line)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
             i_sw_line := na
@@ -1245,7 +1557,17 @@ if showInternal and i_seeded and i_had_bos and barstate.isconfirmed
         i_sos_watch_ll_loc := i_sw_loc
         
         int_bull_break := true
+        int_bull_sos   := true
         int_break_origin_loc := i_sw_loc
+        // Bull iSOS: bottom=i_sw_price (last iHL), top=i_sos_watch_hh (level being broken)
+        if showIFib and not na(i_sw_price) and not na(i_sos_watch_hh)
+            iFib_asl := i_sw_price,      iFib_asl_loc := i_sw_loc
+            iFib_ash := i_sos_watch_hh,  iFib_ash_loc := i_sos_watch_hh_loc
+            iFib_dir := 1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1262,8 +1584,10 @@ if showInternal and i_seeded and i_had_bos and barstate.isconfirmed
 
     else if i_last_mode == 1 and not na(i_sos_watch_ll) and close < i_sos_watch_ll and i_mode == 0
         i_mid2 := math.round((i_sos_watch_ll_loc + bar_index) / 2)
-        label.new(i_mid2, i_sos_watch_ll - i_lbl_y_offset, "iSOS", color = color(na), textcolor = iBearColor, style = label.style_none, size = size.tiny, textalign = text.align_center)
-        line.new(i_sos_watch_ll_loc, i_sos_watch_ll, bar_index, i_sos_watch_ll, color = color.new(iBearColor, 15), style = line.style_dotted, width = 1)
+        label iSOS4Lbl = label.new(i_mid2, i_sos_watch_ll - i_lbl_y_offset, "iSOS", color = color(na), textcolor = showInternal ? iBearColor : color(na), style = label.style_none, size = size.tiny, textalign = text.align_center)
+        line  iSOS4Line = line.new(i_sos_watch_ll_loc, i_sos_watch_ll, bar_index, i_sos_watch_ll, color = showInternal ? color.new(iBearColor, 15) : color(na), style = line.style_dotted, width = 1)
+        array.push(intHistLabels, iSOS4Lbl)
+        array.push(intHistLines, iSOS4Line)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
             i_sw_line := na
@@ -1272,7 +1596,17 @@ if showInternal and i_seeded and i_had_bos and barstate.isconfirmed
         i_sos_watch_hh_loc := i_sw_loc
         
         int_bear_break := true
+        int_bear_sos   := true
         int_break_origin_loc := i_sw_loc
+        // Bear iSOS: bottom=i_sos_watch_ll (level being broken), top=i_sw_price (last iLH)
+        if showIFib and not na(i_sos_watch_ll) and not na(i_sw_price)
+            iFib_asl := i_sos_watch_ll,     iFib_asl_loc := i_sos_watch_ll_loc
+            iFib_ash := i_sw_price,         iFib_ash_loc := i_sw_loc
+            iFib_dir := -1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1318,16 +1652,16 @@ if showOBs and showBearOB and int_bear_break and not na(int_break_origin_loc)
 
 
 // ── Update last_mode when mode changes ───────────────────
-if showInternal and i_mode != 0
+if internalActive and i_mode != 0
     i_last_mode := i_mode
 
 // ── Extend active swing line every bar ────────────────────
-if showInternal and not na(i_sw_line)
+if internalActive and not na(i_sw_line)
     line.set_x2(i_sw_line, bar_index)
 
 
 var array<SessionInfo> sessionInfos = getSessionInfos()
-if showSessions and timeframe.isintraday
+if showSessions and timeframe.isintraday and withinSessionDays
     for info in sessionInfos
         info.update()
 
@@ -1354,40 +1688,26 @@ if canShowDaily and hasDailyTimeChanged and not isLastDaily and barstate.isconfi
     label.delete(d_hLbl), label.delete(d_lLbl)
     d_hBar   := bar_index
     d_lBar   := bar_index
-    d_hLine  := line.new(d_hBar, dailyHigh, d_hBar + i_lineExtend, dailyHigh, color = i_dailyColor, style = line.style_solid, width = 1)
-    d_lLine  := line.new(d_lBar, dailyLow,  d_lBar + i_lineExtend, dailyLow,  color = i_dailyColor, style = line.style_solid, width = 1)
-    d_hLbl   := label.new(d_hBar + i_lineExtend, dailyHigh + lblOff, f_labelText("PDH"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
-    d_lLbl   := label.new(d_lBar + i_lineExtend, dailyLow  - lblOff, f_labelText("PDL"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
-    d_hPrice := dailyHigh
-    d_lPrice := dailyLow
+    d_hLine  := line.new(d_hBar, dailyHigh[1], d_hBar + i_lineExtend, dailyHigh[1], color = i_dailyColor, style = line.style_solid, width = 1)
+    d_lLine  := line.new(d_lBar, dailyLow[1],  d_lBar + i_lineExtend, dailyLow[1],  color = i_dailyColor, style = line.style_solid, width = 1)
+    d_hLbl   := label.new(d_hBar + i_lineExtend, dailyHigh[1] + lblOff, f_labelText("PDH"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
+    d_lLbl   := label.new(d_lBar + i_lineExtend, dailyLow[1]  - lblOff, f_labelText("PDL"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
+    d_hPrice := dailyHigh[1]
+    d_lPrice := dailyLow[1]
     d_hMit   := false
     d_lMit   := false
-    array.set(a_lastHighs, 0, dailyHigh)
-    array.set(a_lastLows,  0, dailyLow)
+    array.set(a_lastHighs, 0, dailyHigh[1])
+    array.set(a_lastLows,  0, dailyLow[1])
 
 if not na(d_hLine)
-    if not d_hMit and high > d_hPrice and close < d_hPrice
-        d_hMit := true
-        d_hMitBar := bar_index
-    bool showDH = (i_showMitigated or not d_hMit) and i_showLiquidity and i_isDailyEnabled
-    line.set_color(d_hLine, d_hMit ? MITIGATED_COLOR : i_dailyColor)
-    line.set_style(d_hLine, d_hMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(d_hLbl, d_hMit ? color(na) : i_dailyColor)
-    int d_hX2 = d_hMit ? d_hMitBar : bar_index + i_lineExtend
-    line.set_x2(d_hLine, showDH ? d_hX2 : d_hBar)
-    label.set_x(d_hLbl,  showDH ? d_hX2 : -1)
+    [newd_hMit, newd_hMitBar] = f_liqMitigate(d_hLine, d_hLbl, d_hMit, d_hMitBar, d_hBar, high > d_hPrice, i_dailyColor, i_isDailyEnabled)
+    d_hMit := newd_hMit
+    d_hMitBar := newd_hMitBar
 
 if not na(d_lLine)
-    if not d_lMit and low < d_lPrice and close > d_lPrice
-        d_lMit := true
-        d_lMitBar := bar_index
-    bool showDL = (i_showMitigated or not d_lMit) and i_showLiquidity and i_isDailyEnabled
-    line.set_color(d_lLine, d_lMit ? MITIGATED_COLOR : i_dailyColor)
-    line.set_style(d_lLine, d_lMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(d_lLbl, d_lMit ? color(na) : i_dailyColor)
-    int d_lX2 = d_lMit ? d_lMitBar : bar_index + i_lineExtend
-    line.set_x2(d_lLine, showDL ? d_lX2 : d_lBar)
-    label.set_x(d_lLbl,  showDL ? d_lX2 : -1)
+    [newd_lMit, newd_lMitBar] = f_liqMitigate(d_lLine, d_lLbl, d_lMit, d_lMitBar, d_lBar, low < d_lPrice, i_dailyColor, i_isDailyEnabled)
+    d_lMit := newd_lMit
+    d_lMitBar := newd_lMitBar
 
 //============================================================
 //  WEEKLY LEVELS
@@ -1412,40 +1732,26 @@ if canShowWeekly and hasWeeklyTimeChanged and not isLastWeekly and barstate.isco
     label.delete(w_hLbl), label.delete(w_lLbl)
     w_hBar   := bar_index
     w_lBar   := bar_index
-    w_hLine  := line.new(w_hBar, weeklyHigh, w_hBar + i_lineExtend, weeklyHigh, color = i_weeklyColor, style = line.style_solid, width = 1)
-    w_lLine  := line.new(w_lBar, weeklyLow,  w_lBar + i_lineExtend, weeklyLow,  color = i_weeklyColor, style = line.style_solid, width = 1)
-    w_hLbl   := label.new(w_hBar + i_lineExtend, weeklyHigh + lblOff, f_labelText("PWH"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
-    w_lLbl   := label.new(w_lBar + i_lineExtend, weeklyLow  - lblOff, f_labelText("PWL"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
-    w_hPrice := weeklyHigh
-    w_lPrice := weeklyLow
+    w_hLine  := line.new(w_hBar, weeklyHigh[1], w_hBar + i_lineExtend, weeklyHigh[1], color = i_weeklyColor, style = line.style_solid, width = 1)
+    w_lLine  := line.new(w_lBar, weeklyLow[1],  w_lBar + i_lineExtend, weeklyLow[1],  color = i_weeklyColor, style = line.style_solid, width = 1)
+    w_hLbl   := label.new(w_hBar + i_lineExtend, weeklyHigh[1] + lblOff, f_labelText("PWH"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
+    w_lLbl   := label.new(w_lBar + i_lineExtend, weeklyLow[1]  - lblOff, f_labelText("PWL"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
+    w_hPrice := weeklyHigh[1]
+    w_lPrice := weeklyLow[1]
     w_hMit   := false
     w_lMit   := false
-    array.set(a_lastHighs, 1, weeklyHigh)
-    array.set(a_lastLows,  1, weeklyLow)
+    array.set(a_lastHighs, 1, weeklyHigh[1])
+    array.set(a_lastLows,  1, weeklyLow[1])
 
 if not na(w_hLine)
-    if not w_hMit and close > w_hPrice
-        w_hMit := true
-        w_hMitBar := bar_index
-    bool showWH = (i_showMitigated or not w_hMit) and i_showLiquidity and i_isWeeklyEnabled
-    line.set_color(w_hLine, w_hMit ? MITIGATED_COLOR : i_weeklyColor)
-    line.set_style(w_hLine, w_hMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(w_hLbl, w_hMit ? color(na) : i_weeklyColor)
-    int w_hX2 = w_hMit ? w_hMitBar : bar_index + i_lineExtend
-    line.set_x2(w_hLine, showWH ? w_hX2 : w_hBar)
-    label.set_x(w_hLbl,  showWH ? w_hX2 : -1)
+    [neww_hMit, neww_hMitBar] = f_liqMitigate(w_hLine, w_hLbl, w_hMit, w_hMitBar, w_hBar, close > w_hPrice, i_weeklyColor, i_isWeeklyEnabled)
+    w_hMit := neww_hMit
+    w_hMitBar := neww_hMitBar
 
 if not na(w_lLine)
-    if not w_lMit and close < w_lPrice
-        w_lMit := true
-        w_lMitBar := bar_index
-    bool showWL = (i_showMitigated or not w_lMit) and i_showLiquidity and i_isWeeklyEnabled
-    line.set_color(w_lLine, w_lMit ? MITIGATED_COLOR : i_weeklyColor)
-    line.set_style(w_lLine, w_lMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(w_lLbl, w_lMit ? color(na) : i_weeklyColor)
-    int w_lX2 = w_lMit ? w_lMitBar : bar_index + i_lineExtend
-    line.set_x2(w_lLine, showWL ? w_lX2 : w_lBar)
-    label.set_x(w_lLbl,  showWL ? w_lX2 : -1)
+    [neww_lMit, neww_lMitBar] = f_liqMitigate(w_lLine, w_lLbl, w_lMit, w_lMitBar, w_lBar, close < w_lPrice, i_weeklyColor, i_isWeeklyEnabled)
+    w_lMit := neww_lMit
+    w_lMitBar := neww_lMitBar
 
 //============================================================
 //  MONTHLY LEVELS
@@ -1482,28 +1788,14 @@ if canShowMonthly and hasMonthlyTimeChanged and not isLastMonthly and barstate.i
     array.set(a_lastLows,  2, monthlyLow)
 
 if not na(m_hLine)
-    if not m_hMit and close > m_hPrice
-        m_hMit := true
-        m_hMitBar := bar_index
-    bool showMH = (i_showMitigated or not m_hMit) and i_showLiquidity and i_isMonthlyEnabled
-    line.set_color(m_hLine, m_hMit ? MITIGATED_COLOR : i_monthlyColor)
-    line.set_style(m_hLine, m_hMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(m_hLbl, m_hMit ? color(na) : i_monthlyColor)
-    int m_hX2 = m_hMit ? m_hMitBar : bar_index + i_lineExtend
-    line.set_x2(m_hLine, showMH ? m_hX2 : m_hBar)
-    label.set_x(m_hLbl,  showMH ? m_hX2 : -1)
+    [newm_hMit, newm_hMitBar] = f_liqMitigate(m_hLine, m_hLbl, m_hMit, m_hMitBar, m_hBar, close > m_hPrice, i_monthlyColor, i_isMonthlyEnabled)
+    m_hMit := newm_hMit
+    m_hMitBar := newm_hMitBar
 
 if not na(m_lLine)
-    if not m_lMit and close < m_lPrice
-        m_lMit := true
-        m_lMitBar := bar_index
-    bool showML = (i_showMitigated or not m_lMit) and i_showLiquidity and i_isMonthlyEnabled
-    line.set_color(m_lLine, m_lMit ? MITIGATED_COLOR : i_monthlyColor)
-    line.set_style(m_lLine, m_lMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(m_lLbl, m_lMit ? color(na) : i_monthlyColor)
-    int m_lX2 = m_lMit ? m_lMitBar : bar_index + i_lineExtend
-    line.set_x2(m_lLine, showML ? m_lX2 : m_lBar)
-    label.set_x(m_lLbl,  showML ? m_lX2 : -1)
+    [newm_lMit, newm_lMitBar] = f_liqMitigate(m_lLine, m_lLbl, m_lMit, m_lMitBar, m_lBar, close < m_lPrice, i_monthlyColor, i_isMonthlyEnabled)
+    m_lMit := newm_lMit
+    m_lMitBar := newm_lMitBar
 
 //============================================================
 //  PREVIOUS WEEKLY CLOSE (PWC)
@@ -1569,9 +1861,9 @@ if i_showH4Sweep and i_showLiquidity and h4BarChanged and not na(h4PrevHigh) and
     h4LowLbl   := label.new(bar_index + i_lineExtend, h4TrackLow  - lblOff, f_labelText("H4 L"), style = label.style_none, textcolor = H4_ACTIVE_COLOR, size = f_liqSize(), textalign = text.align_left)
 
 if not na(h4HighLine) and i_showH4Sweep and i_showLiquidity
-    if not h4HighSwept and high > h4TrackHigh and close < h4TrackHigh and barstate.isconfirmed
+    if not h4HighSwept and high > h4TrackHigh and barstate.isconfirmed
         h4HighSwept := true
-        h4SSHLbl    := label.new(bar_index + 3, high + lblOff * 2, "BSL", color = color(na), textcolor = color.red, style = label.style_none, size = f_liqSize())
+        h4SSHLbl    := na
     h4HCol = h4HighSwept ? H4_SWEPT_COLOR : H4_ACTIVE_COLOR
     line.set_color(h4HighLine, h4HCol)
     line.set_style(h4HighLine, h4HighSwept ? line.style_dotted : line.style_solid)
@@ -1580,9 +1872,9 @@ if not na(h4HighLine) and i_showH4Sweep and i_showLiquidity
     label.set_x(h4HighLbl, bar_index + i_lineExtend)
 
 if not na(h4LowLine) and i_showH4Sweep and i_showLiquidity
-    if not h4LowSwept and low < h4TrackLow and close > h4TrackLow and barstate.isconfirmed
+    if not h4LowSwept and low < h4TrackLow and barstate.isconfirmed
         h4LowSwept := true
-        h4BSLLbl   := label.new(bar_index + 3, low - lblOff * 2, "SSL", color = color(na), textcolor = color.green, style = label.style_none, size = f_liqSize())
+        h4BSLLbl   := na
     h4LCol = h4LowSwept ? H4_SWEPT_COLOR : H4_ACTIVE_COLOR
     line.set_color(h4LowLine, h4LCol)
     line.set_style(h4LowLine, h4LowSwept ? line.style_dotted : line.style_solid)
@@ -1688,76 +1980,34 @@ if not inNY and inNY[1] and i_showNYHL and i_showLiquidity and not na(nyHigh)
     nyLMit   := false
 
 if not na(asiaHLine)
-    if not asiaHMit and high > asiaHPrice and close < asiaHPrice
-        asiaHMit := true
-        asiaHMitBar := bar_index
-    bool showAH = (i_showMitigated or not asiaHMit) and i_showLiquidity and i_showAsiaHL
-    line.set_color(asiaHLine, asiaHMit ? MITIGATED_COLOR : i_asiaHLColor)
-    line.set_style(asiaHLine, asiaHMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(asiaHLbl, asiaHMit ? color(na) : i_asiaHLColor)
-    int asiaHX2 = asiaHMit ? asiaHMitBar : bar_index + i_lineExtend
-    line.set_x2(asiaHLine, showAH ? asiaHX2 : asiaHBar)
-    label.set_x(asiaHLbl,  showAH ? asiaHX2 : -1)
+    [newasiaHMit, newasiaHMitBar] = f_liqMitigate(asiaHLine, asiaHLbl, asiaHMit, asiaHMitBar, asiaHBar, high > asiaHPrice, i_asiaHLColor, i_showAsiaHL)
+    asiaHMit := newasiaHMit
+    asiaHMitBar := newasiaHMitBar
 
 if not na(asiaLLine)
-    if not asiaLMit and low < asiaLPrice and close > asiaLPrice
-        asiaLMit := true
-        asiaLMitBar := bar_index
-    bool showAL = (i_showMitigated or not asiaLMit) and i_showLiquidity and i_showAsiaHL
-    line.set_color(asiaLLine, asiaLMit ? MITIGATED_COLOR : i_asiaHLColor)
-    line.set_style(asiaLLine, asiaLMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(asiaLLbl, asiaLMit ? color(na) : i_asiaHLColor)
-    int asiaLX2 = asiaLMit ? asiaLMitBar : bar_index + i_lineExtend
-    line.set_x2(asiaLLine, showAL ? asiaLX2 : asiaLBar)
-    label.set_x(asiaLLbl,  showAL ? asiaLX2 : -1)
+    [newasiaLMit, newasiaLMitBar] = f_liqMitigate(asiaLLine, asiaLLbl, asiaLMit, asiaLMitBar, asiaLBar, low < asiaLPrice, i_asiaHLColor, i_showAsiaHL)
+    asiaLMit := newasiaLMit
+    asiaLMitBar := newasiaLMitBar
 
 if not na(londonHLine)
-    if not londonHMit and high > londonHPrice and close < londonHPrice
-        londonHMit := true
-        londonHMitBar := bar_index
-    bool showLH = (i_showMitigated or not londonHMit) and i_showLiquidity and i_showLondonHL
-    line.set_color(londonHLine, londonHMit ? MITIGATED_COLOR : i_londonHLColor)
-    line.set_style(londonHLine, londonHMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(londonHLbl, londonHMit ? color(na) : i_londonHLColor)
-    int londonHX2 = londonHMit ? londonHMitBar : bar_index + i_lineExtend
-    line.set_x2(londonHLine, showLH ? londonHX2 : londonHBar)
-    label.set_x(londonHLbl,  showLH ? londonHX2 : -1)
+    [newlondonHMit, newlondonHMitBar] = f_liqMitigate(londonHLine, londonHLbl, londonHMit, londonHMitBar, londonHBar, high > londonHPrice, i_londonHLColor, i_showLondonHL)
+    londonHMit := newlondonHMit
+    londonHMitBar := newlondonHMitBar
 
 if not na(londonLLine)
-    if not londonLMit and low < londonLPrice and close > londonLPrice
-        londonLMit := true
-        londonLMitBar := bar_index
-    bool showLL = (i_showMitigated or not londonLMit) and i_showLiquidity and i_showLondonHL
-    line.set_color(londonLLine, londonLMit ? MITIGATED_COLOR : i_londonHLColor)
-    line.set_style(londonLLine, londonLMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(londonLLbl, londonLMit ? color(na) : i_londonHLColor)
-    int londonLX2 = londonLMit ? londonLMitBar : bar_index + i_lineExtend
-    line.set_x2(londonLLine, showLL ? londonLX2 : londonLBar)
-    label.set_x(londonLLbl,  showLL ? londonLX2 : -1)
+    [newlondonLMit, newlondonLMitBar] = f_liqMitigate(londonLLine, londonLLbl, londonLMit, londonLMitBar, londonLBar, low < londonLPrice, i_londonHLColor, i_showLondonHL)
+    londonLMit := newlondonLMit
+    londonLMitBar := newlondonLMitBar
 
 if not na(nyHLine)
-    if not nyHMit and high > nyHPrice and close < nyHPrice
-        nyHMit := true
-        nyHMitBar := bar_index
-    bool showNH = (i_showMitigated or not nyHMit) and i_showLiquidity and i_showNYHL
-    line.set_color(nyHLine, nyHMit ? MITIGATED_COLOR : i_nyHLColor)
-    line.set_style(nyHLine, nyHMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(nyHLbl, nyHMit ? color(na) : i_nyHLColor)
-    int nyHX2 = nyHMit ? nyHMitBar : bar_index + i_lineExtend
-    line.set_x2(nyHLine, showNH ? nyHX2 : nyHBar)
-    label.set_x(nyHLbl,  showNH ? nyHX2 : -1)
+    [newnyHMit, newnyHMitBar] = f_liqMitigate(nyHLine, nyHLbl, nyHMit, nyHMitBar, nyHBar, high > nyHPrice, i_nyHLColor, i_showNYHL)
+    nyHMit := newnyHMit
+    nyHMitBar := newnyHMitBar
 
 if not na(nyLLine)
-    if not nyLMit and low < nyLPrice and close > nyLPrice
-        nyLMit := true
-        nyLMitBar := bar_index
-    bool showNL = (i_showMitigated or not nyLMit) and i_showLiquidity and i_showNYHL
-    line.set_color(nyLLine, nyLMit ? MITIGATED_COLOR : i_nyHLColor)
-    line.set_style(nyLLine, nyLMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(nyLLbl, nyLMit ? color(na) : i_nyHLColor)
-    int nyLX2 = nyLMit ? nyLMitBar : bar_index + i_lineExtend
-    line.set_x2(nyLLine, showNL ? nyLX2 : nyLBar)
-    label.set_x(nyLLbl,  showNL ? nyLX2 : -1)
+    [newnyLMit, newnyLMitBar] = f_liqMitigate(nyLLine, nyLLbl, nyLMit, nyLMitBar, nyLBar, low < nyLPrice, i_nyHLColor, i_showNYHL)
+    nyLMit := newnyLMit
+    nyLMitBar := newnyLMitBar
 
 //============================================================
 //  LABEL COLLISION DETECTION
@@ -1964,17 +2214,17 @@ var line  fibo4Line  = na,  var label fibo4Label  = na
 var line  fibo5Line  = na,  var label fibo5Label  = na
 var line  fibo6Line  = na,  var label fibo6Label  = na
 var line  fibo7Line  = na,  var label fibo7Label  = na
-var line  fibo8Line  = na,  var label fibo8Label  = na
-var line  fibo9Line  = na,  var label fibo9Label  = na
 var line  fibo10Line = na,  var label fibo10Label = na
 
 var array<box>   sniperBoxArr    = array.new<box>()
 var array<line>  sniper382Arr    = array.new<line>()
 var array<line>  sniper50Arr     = array.new<line>()
 var array<label> sniperLbl382Arr = array.new<label>()
-var float        sniperZoneTop   = na
-var float        sniperZoneBot   = na
+var float        sniperZoneTop    = na
+var float        sniperZoneBot    = na
 var bool         sniperZoneActive = false
+var bool         sz_bullish       = true
+var string       sz_status        = ""
 
 var float fibo_ash     = na
 var float fibo_asl     = na
@@ -1994,17 +2244,17 @@ var bool fibo4Touched  = false
 var bool fibo5Touched  = false
 var bool fibo6Touched  = false
 var bool fibo7Touched  = false
-var bool fibo8Touched  = false
-var bool fibo9Touched  = false
 var bool fibo10Touched = false
 var bool fibo618EverReached = false  // persists true once 0.618 was hit — gates TP checks from NEXT bar
+var bool fiboResetActive    = false  // true once TP3 has been hit — suppresses drawing until the next new leg
 
 // Prices of each level (persistent so touched check works outside the draw block)
 var float fiboP1  = na, var float fiboP2  = na, var float fiboP3  = na
 var float fiboP4  = na, var float fiboP5  = na, var float fiboP6  = na
-var float fiboP7  = na, var float fiboP8  = na, var float fiboP9  = na
+var float fiboP7  = na
 var float fiboP10 = na
 var int   fiboStartIndexPrev = na
+var int   fiboStartIndex     = na   // persistent — accessible outside if showFibo block
 
 if not na(st.ash)
     fibo_ash     := st.ash
@@ -2022,13 +2272,52 @@ if st.pb_mode == -1 and not na(st.pb_extreme)
     fibo_asl     := st.pb_extreme
     fibo_asl_loc := st.pb_extreme_loc
 
+// If an internal swing confirmed a more extreme point than the external anchor,
+// adopt it for the fib pull only — nothing else about structure changes.
+if fibo_dir == 1 and not na(i_confirmed_low_price) and not na(fibo_asl) and i_confirmed_low_price < fibo_asl
+    fibo_asl     := i_confirmed_low_price
+    fibo_asl_loc := i_confirmed_low_loc
+if fibo_dir == -1 and not na(i_confirmed_high_price) and not na(fibo_ash) and i_confirmed_high_price > fibo_ash
+    fibo_ash     := i_confirmed_high_price
+    fibo_ash_loc := i_confirmed_high_loc
+
+// Shared by External/Internal/Cycle fib: a level is "touched" once it has been
+// reached, and stays touched thereafter.
+f_checkTouch(bool touched, float lvl, bool breachCond) =>
+    touched or (not na(lvl) and breachCond)
+
 f_fiboLabel(float val, string tpLabel, string entryLabel) =>
     sharedLabelMode == "TP/Entry"    ? tpLabel    + "  (" :
      str.tostring(val) + "  ("
 
+// Shared by External/Internal/Cycle fib: creates a level's line+label on first use,
+// updates them in place on later bars, or deletes+clears them when hidden/reset.
+f_fibLevel(bool show, line lineId, label labelId, int x1, float y, int x2, color col, string lstyle, string txt) =>
+    line  outLine  = lineId
+    label outLabel = labelId
+    if show
+        if na(outLine)
+            outLine  := line.new(x1, y, x2, y, xloc = xloc.bar_index, color = col, style = lstyle, width = 1)
+            outLabel := label.new(x2 + 2, y, txt, style = label.style_none, textcolor = col, size = size.small, xloc = xloc.bar_index)
+        else
+            line.set_xy1(outLine, x1, y)
+            line.set_xy2(outLine, x2, y)
+            line.set_color(outLine, col)
+            line.set_style(outLine, lstyle)
+            label.set_xy(outLabel, x2 + 2, y)
+            label.set_text(outLabel, txt)
+            label.set_textcolor(outLabel, col)
+    else
+        if not na(outLine)
+            line.delete(outLine)
+            label.delete(outLabel)
+            outLine  := na
+            outLabel := na
+    [outLine, outLabel]
+
 if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     fiboRange      = fibo_ash - fibo_asl
-    fiboStartIndex = fibo_dir == 1 ? fibo_asl_loc : fibo_ash_loc
+    fiboStartIndex := fibo_dir == 1 ? fibo_asl_loc : fibo_ash_loc
 
     fiboE1Price := fibo_dir == 1 ? fibo_ash - fiboRange * fibo3Value : fibo_asl + fiboRange * fibo3Value
     fiboE2Price := fibo_dir == 1 ? fibo_ash - fiboRange * fibo4Value : fibo_asl + fiboRange * fibo4Value
@@ -2043,8 +2332,6 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     fiboP5  := fibo_dir == 1 ? fibo_ash - fiboRange * fibo5Value  : fibo_asl + fiboRange * fibo5Value
     fiboP6  := fibo_dir == 1 ? fibo_ash - fiboRange * fibo6Value  : fibo_asl + fiboRange * fibo6Value
     fiboP7  := fibo_dir == 1 ? fibo_ash - fiboRange * fibo7Value  : fibo_asl + fiboRange * fibo7Value
-    fiboP8  := fibo_dir == 1 ? fibo_ash - fiboRange * fibo8Value  : fibo_asl + fiboRange * fibo8Value
-    fiboP9  := fibo_dir == 1 ? fibo_ash - fiboRange * fibo9Value  : fibo_asl + fiboRange * fibo9Value
     fiboP10 := fibo_dir == 1 ? fibo_ash - fiboRange * fibo10Value : fibo_asl + fiboRange * fibo10Value
 
     // Reset touched flags when fib origin changes (new leg)
@@ -2057,10 +2344,13 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
         fibo5Touched  := false
         fibo6Touched  := false
         fibo7Touched  := false
-        fibo8Touched  := false
-        fibo9Touched  := false
         fibo10Touched := false
         fibo618EverReached := false
+        fiboResetActive    := false
+        i_confirmed_low_price  := na
+        i_confirmed_low_loc    := na
+        i_confirmed_high_price := na
+        i_confirmed_high_loc   := na
     fiboStartIndexPrev := fiboStartIndex
 
     // Skip ALL touched checks on the same bar the origin changed.
@@ -2078,142 +2368,75 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
                 fibo3Touched := true
 
             // E levels (deeper retracements) — fire immediately when price goes through them
-            if not fibo4Touched and not na(fiboP4)
-                if fibo_dir == 1 ? low <= fiboP4 : high >= fiboP4
-                    fibo4Touched := true
-            if not fibo5Touched and not na(fiboP5)
-                if fibo_dir == 1 ? low <= fiboP5 : high >= fiboP5
-                    fibo5Touched := true
-            if not fibo6Touched and not na(fiboP6)
-                if fibo_dir == 1 ? low <= fiboP6 : high >= fiboP6
-                    fibo6Touched := true
-            if not fibo10Touched and not na(fiboP10)
-                if fibo_dir == 1 ? low <= fiboP10 : high >= fiboP10
-                    fibo10Touched := true
+            fibo4Touched  := f_checkTouch(fibo4Touched,  fiboP4,  fibo_dir == 1 ? low <= fiboP4  : high >= fiboP4)
+            fibo5Touched  := f_checkTouch(fibo5Touched,  fiboP5,  fibo_dir == 1 ? low <= fiboP5  : high >= fiboP5)
+            fibo6Touched  := f_checkTouch(fibo6Touched,  fiboP6,  fibo_dir == 1 ? low <= fiboP6  : high >= fiboP6)
+            fibo10Touched := f_checkTouch(fibo10Touched, fiboP10, fibo_dir == 1 ? low <= fiboP10 : high >= fiboP10)
 
         // TP levels — only checked AFTER 0.618 has been hit on a PREVIOUS bar
         if fibo618EverReached
-            if not fibo2Touched and not na(fiboP2)
-                if fibo_dir == 1 ? high >= fiboP2 : low <= fiboP2
-                    fibo2Touched := true
-            if not fibo1Touched and not na(fiboP1)
-                if fibo_dir == 1 ? high >= fiboP1 : low <= fiboP1
-                    fibo1Touched := true
-            if not fibo7Touched and not na(fiboP7)
-                if fibo_dir == 1 ? high >= fiboP7 : low <= fiboP7
-                    fibo7Touched := true
-            if not fibo8Touched and not na(fiboP8)
-                if fibo_dir == 1 ? high >= fiboP8 : low <= fiboP8
-                    fibo8Touched := true
-            if not fibo9Touched and not na(fiboP9)
-                if fibo_dir == 1 ? high >= fiboP9 : low <= fiboP9
-                    fibo9Touched := true
+            fibo2Touched := f_checkTouch(fibo2Touched, fiboP2, fibo_dir == 1 ? high >= fiboP2 : low <= fiboP2)
+            fibo1Touched := f_checkTouch(fibo1Touched, fiboP1, fibo_dir == 1 ? high >= fiboP1 : low <= fiboP1)
+            fibo7Touched := f_checkTouch(fibo7Touched, fiboP7, fibo_dir == 1 ? high >= fiboP7 : low <= fiboP7)
+
+            // TP3 hit → reset this fib (lines/labels/touched) immediately,
+            // until a genuinely new leg forms
+            if fibo7Touched
+                fiboResetActive := true
 
         // Set persistent flag AFTER all checks — so TP checks only run from NEXT bar
         if fibo618Reached and not fibo618EverReached
             fibo618EverReached := true
 
-    int _fLblOff = bar_index + 25
+    int _fLblOff = bar_index + fiboLineExtend
 
-    if isFibo1ToShow
-        line.delete(fibo1Line), label.delete(fibo1Label)
-        color c1 = fibo1Touched ? fibo1Color : FIBO_GREY
-        fibo1Line  := line.new(fiboStartIndex, fiboP1, bar_index + 25, fiboP1, xloc = xloc.bar_index, color = c1, style = f_fiboLineStyle(fibo1Style), width = 1)
-        fibo1Label := label.new(_fLblOff + 2, fiboP1, f_fiboLabel(fibo1Value, "TP2", "TP2") + str.tostring(fiboP1, format.mintick) + ")", style = label.style_none, textcolor = c1, size = size.small, xloc = xloc.bar_index)
+    color c1 = fibo1Touched ? fibo1Color : FIBO_GREY
+    string tx1 = f_fiboLabel(fibo1Value, "TP2", "TP2") + str.tostring(fiboP1, format.mintick) + ")"
+    [l1, lb1] = f_fibLevel(isFibo1ToShow and not fiboResetActive, fibo1Line, fibo1Label, fiboStartIndex, fiboP1, bar_index + fiboLineExtend, c1, f_fiboLineStyle(fibo1Style), tx1)
+    fibo1Line := l1
+    fibo1Label := lb1
 
-    if isFibo2ToShow
-        line.delete(fibo2Line), label.delete(fibo2Label)
-        color c2 = fibo2Touched ? fibo2Color : FIBO_GREY
-        fibo2Line  := line.new(fiboStartIndex, fiboP2, bar_index + 25, fiboP2, xloc = xloc.bar_index, color = c2, style = f_fiboLineStyle(fibo2Style), width = 1)
-        string tp1Lbl = fibo2Touched ? "FFT  (" : f_fiboLabel(fibo2Value, "TP1", "TP1")
-        fibo2Label := label.new(_fLblOff + 2, fiboP2, tp1Lbl + str.tostring(fiboP2, format.mintick) + ")", style = label.style_none, textcolor = c2, size = size.small, xloc = xloc.bar_index)
+    color c2 = fibo2Touched ? fibo2Color : FIBO_GREY
+    string tx2 = (fibo2Touched ? "FFT  (" : f_fiboLabel(fibo2Value, "TP1", "TP1")) + str.tostring(fiboP2, format.mintick) + ")"
+    [l2, lb2] = f_fibLevel(isFibo2ToShow and not fiboResetActive, fibo2Line, fibo2Label, fiboStartIndex, fiboP2, bar_index + fiboLineExtend, c2, f_fiboLineStyle(fibo2Style), tx2)
+    fibo2Line := l2
+    fibo2Label := lb2
 
-    if isFibo3ToShow
-        line.delete(fibo3Line), label.delete(fibo3Label)
-        color c3 = fibo3Touched ? fibo3Color : FIBO_GREY
-        fibo3Line  := line.new(fiboStartIndex, fiboP3, bar_index + 25, fiboP3, xloc = xloc.bar_index, color = c3, style = f_fiboLineStyle(fibo3Style), width = 1)
-        fibo3Label := label.new(_fLblOff + 2, fiboP3, f_fiboLabel(fibo3Value, "E1", "E1") + str.tostring(fiboP3, format.mintick) + ")", style = label.style_none, textcolor = c3, size = size.small, xloc = xloc.bar_index)
+    color c3 = fibo3Touched ? fibo3Color : FIBO_GREY
+    string tx3 = f_fiboLabel(fibo3Value, "E1", "E1") + str.tostring(fiboP3, format.mintick) + ")"
+    [l3, lb3] = f_fibLevel(isFibo3ToShow and not fiboResetActive, fibo3Line, fibo3Label, fiboStartIndex, fiboP3, bar_index + fiboLineExtend, c3, f_fiboLineStyle(fibo3Style), tx3)
+    fibo3Line := l3
+    fibo3Label := lb3
 
-    if isFibo4ToShow
-        line.delete(fibo4Line), label.delete(fibo4Label)
-        color c4 = fibo4Touched ? fibo4Color : FIBO_GREY
-        fibo4Line  := line.new(fiboStartIndex, fiboP4, bar_index + 25, fiboP4, xloc = xloc.bar_index, color = c4, style = f_fiboLineStyle(fibo4Style), width = 1)
-        fibo4Label := label.new(_fLblOff + 2, fiboP4, f_fiboLabel(fibo4Value, "E2", "E2") + str.tostring(fiboP4, format.mintick) + ")", style = label.style_none, textcolor = c4, size = size.small, xloc = xloc.bar_index)
+    color c4 = fibo4Touched ? fibo4Color : FIBO_GREY
+    string tx4 = f_fiboLabel(fibo4Value, "E2", "E2") + str.tostring(fiboP4, format.mintick) + ")"
+    [l4, lb4] = f_fibLevel(isFibo4ToShow and not fiboResetActive, fibo4Line, fibo4Label, fiboStartIndex, fiboP4, bar_index + fiboLineExtend, c4, f_fiboLineStyle(fibo4Style), tx4)
+    fibo4Line := l4
+    fibo4Label := lb4
 
-    if isFibo5ToShow
-        line.delete(fibo5Line), label.delete(fibo5Label)
-        color c5 = fibo5Touched ? fibo5Color : FIBO_GREY
-        fibo5Line  := line.new(fiboStartIndex, fiboP5, bar_index + 25, fiboP5, xloc = xloc.bar_index, color = c5, style = f_fiboLineStyle(fibo5Style), width = 1)
-        fibo5Label := label.new(_fLblOff + 2, fiboP5, f_fiboLabel(fibo5Value, "E3", "E3") + str.tostring(fiboP5, format.mintick) + ")", style = label.style_none, textcolor = c5, size = size.small, xloc = xloc.bar_index)
+    color c5 = fibo5Touched ? fibo5Color : FIBO_GREY
+    string tx5 = f_fiboLabel(fibo5Value, "E3", "E3") + str.tostring(fiboP5, format.mintick) + ")"
+    [l5, lb5] = f_fibLevel(isFibo5ToShow and not fiboResetActive, fibo5Line, fibo5Label, fiboStartIndex, fiboP5, bar_index + fiboLineExtend, c5, f_fiboLineStyle(fibo5Style), tx5)
+    fibo5Line := l5
+    fibo5Label := lb5
 
-    if isFibo6ToShow
-        line.delete(fibo6Line), label.delete(fibo6Label)
-        color c6 = fibo6Touched ? fibo6Color : FIBO_GREY
-        fibo6Line  := line.new(fiboStartIndex, fiboP6, bar_index + 25, fiboP6, xloc = xloc.bar_index, color = c6, style = f_fiboLineStyle(fibo6Style), width = 1)
-        fibo6Label := label.new(_fLblOff + 2, fiboP6, f_fiboLabel(fibo6Value, "E4", "E4") + str.tostring(fiboP6, format.mintick) + ")", style = label.style_none, textcolor = c6, size = size.small, xloc = xloc.bar_index)
+    color c6 = fibo6Touched ? fibo6Color : FIBO_GREY
+    string tx6 = f_fiboLabel(fibo6Value, "E4", "E4") + str.tostring(fiboP6, format.mintick) + ")"
+    [l6, lb6] = f_fibLevel(isFibo6ToShow and not fiboResetActive, fibo6Line, fibo6Label, fiboStartIndex, fiboP6, bar_index + fiboLineExtend, c6, f_fiboLineStyle(fibo6Style), tx6)
+    fibo6Line := l6
+    fibo6Label := lb6
 
-    if isFibo10ToShow
-        line.delete(fibo10Line), label.delete(fibo10Label)
-        color c10 = fibo10Touched ? fibo10Color : FIBO_GREY
-        fibo10Line  := line.new(fiboStartIndex, fiboP10, bar_index + 25, fiboP10, xloc = xloc.bar_index, color = c10, style = f_fiboLineStyle(fibo10Style), width = 1)
-        fibo10Label := label.new(_fLblOff + 2, fiboP10, f_fiboLabel(fibo10Value, "1.0", "1.0") + str.tostring(fiboP10, format.mintick) + ")", style = label.style_none, textcolor = c10, size = size.small, xloc = xloc.bar_index)
+    color c10 = fibo10Touched ? fibo10Color : FIBO_GREY
+    string tx10 = f_fiboLabel(fibo10Value, "1.0", "1.0") + str.tostring(fiboP10, format.mintick) + ")"
+    [l10, lb10] = f_fibLevel(isFibo10ToShow and not fiboResetActive, fibo10Line, fibo10Label, fiboStartIndex, fiboP10, bar_index + fiboLineExtend, c10, f_fiboLineStyle(fibo10Style), tx10)
+    fibo10Line := l10
+    fibo10Label := lb10
 
-    if isFibo7ToShow
-        line.delete(fibo7Line), label.delete(fibo7Label)
-        color c7 = fibo7Touched ? fibo7Color : FIBO_GREY
-        fibo7Line  := line.new(fiboStartIndex, fiboP7, bar_index + 25, fiboP7, xloc = xloc.bar_index, color = c7, style = f_fiboLineStyle(fibo7Style), width = 1)
-        fibo7Label := label.new(_fLblOff + 2, fiboP7, f_fiboLabel(fibo7Value, "TP3", "TP3") + str.tostring(fiboP7, format.mintick) + ")", style = label.style_none, textcolor = c7, size = size.small, xloc = xloc.bar_index)
-
-    if isFibo8ToShow
-        line.delete(fibo8Line), label.delete(fibo8Label)
-        color c8 = fibo8Touched ? fibo8Color : FIBO_GREY
-        fibo8Line  := line.new(fiboStartIndex, fiboP8, bar_index + 25, fiboP8, xloc = xloc.bar_index, color = c8, style = f_fiboLineStyle(fibo8Style), width = 1)
-        fibo8Label := label.new(_fLblOff + 2, fiboP8, f_fiboLabel(fibo8Value, "TP4", "TP4") + str.tostring(fiboP8, format.mintick) + ")", style = label.style_none, textcolor = c8, size = size.small, xloc = xloc.bar_index)
-
-    if isFibo9ToShow
-        line.delete(fibo9Line), label.delete(fibo9Label)
-        color c9 = fibo9Touched ? fibo9Color : FIBO_GREY
-        fibo9Line  := line.new(fiboStartIndex, fiboP9, bar_index + 25, fiboP9, xloc = xloc.bar_index, color = c9, style = f_fiboLineStyle(fibo9Style), width = 1)
-        fibo9Label := label.new(_fLblOff + 2, fiboP9, f_fiboLabel(fibo9Value, "TP5", "TP5") + str.tostring(fiboP9, format.mintick) + ")", style = label.style_none, textcolor = c9, size = size.small, xloc = xloc.bar_index)
-
-//============================================================
-//  MACRO FIB (full-cycle retracement across multiple BOS, locks in on trend reversal)
-//============================================================
-var GRP_MACRO = "Macro Cycle Fib"
-bool   showMacroFib      = input.bool(true,         "Show Macro Cycle Fib",      group = GRP_MACRO, display = display.none)
-int    macroLineExtend   = input.int(100,            "Line Extension (bars)",      group = GRP_MACRO, minval = 10, maxval = 500, display = display.none)
-
-bool   showMacro0        = input.bool(true,   "0.000 / HH",    group = GRP_MACRO, inline = "mFibo0",   active = showMacroFib, display = display.none)
-color  macro0Color       = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo0",   display = display.none)
-string macro0Style       = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo0",   options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro382      = input.bool(true,   "TP2 / 0.382",   group = GRP_MACRO, inline = "mFibo382", active = showMacroFib, display = display.none)
-color  macro382Color     = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo382", display = display.none)
-string macro382Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo382", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro50       = input.bool(true,   "TP1 / 0.500",   group = GRP_MACRO, inline = "mFibo50",  active = showMacroFib, display = display.none)
-color  macro50Color      = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo50",  display = display.none)
-string macro50Style      = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo50",  options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro618      = input.bool(true,   "E1 / 0.618",    group = GRP_MACRO, inline = "mFibo618", active = showMacroFib, display = display.none)
-color  macro618Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo618", display = display.none)
-string macro618Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo618", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro702      = input.bool(true,   "E2 / 0.702",    group = GRP_MACRO, inline = "mFibo702", active = showMacroFib, display = display.none)
-color  macro702Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo702", display = display.none)
-string macro702Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo702", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro786      = input.bool(true,   "E3 / 0.786",    group = GRP_MACRO, inline = "mFibo786", active = showMacroFib, display = display.none)
-color  macro786Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo786", display = display.none)
-string macro786Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo786", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro886      = input.bool(true,   "E4 / 0.886",    group = GRP_MACRO, inline = "mFibo886", active = showMacroFib, display = display.none)
-color  macro886Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo886", display = display.none)
-string macro886Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo886", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro100      = input.bool(true,   "1.000 / LL",    group = GRP_MACRO, inline = "mFibo100", active = showMacroFib, display = display.none)
-color  macro100Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo100", display = display.none)
-string macro100Style     = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo100", options = ["─","┈","╌"], display = display.none)
+    color c7 = fibo7Touched ? fibo7Color : FIBO_GREY
+    string tx7 = f_fiboLabel(fibo7Value, "TP3", "TP3") + str.tostring(fiboP7, format.mintick) + ")"
+    [l7, lb7] = f_fibLevel(isFibo7ToShow and not fiboResetActive, fibo7Line, fibo7Label, fiboStartIndex, fiboP7, bar_index + fiboLineExtend, c7, f_fiboLineStyle(fibo7Style), tx7)
+    fibo7Line := l7
+    fibo7Label := lb7
 
 f_macroLineStyle(string opt) =>
     opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
@@ -2232,10 +2455,8 @@ var int   macro_dir         = 0
 var int   macro_prev_st_dir = 0
 var float macro_origin      = na   // fixed anchor: the extreme of the PRIOR opposite cycle
 var int   macro_origin_loc  = na
-var int   macro_origin_time = na
 var float macro_extreme     = na   // running extreme of the CURRENT cycle (keeps extending across multiple BOS)
 var int   macro_extreme_loc = na
-var int   macro_extreme_time= na
 var bool  macro_locked      = false
 
 var line  macroLine0   = na, var label macroLabel0   = na
@@ -2313,13 +2534,19 @@ if showMacroFib and macroFibAllowed
         line.delete(macroLine786), label.delete(macroLabel786)
         line.delete(macroLine886), label.delete(macroLabel886)
         line.delete(macroLine100), label.delete(macroLabel100)
+        macroLine0 := na,   macroLabel0 := na
+        macroLine382 := na, macroLabel382 := na
+        macroLine50 := na,  macroLabel50 := na
+        macroLine618 := na, macroLabel618 := na
+        macroLine702 := na, macroLabel702 := na
+        macroLine786 := na, macroLabel786 := na
+        macroLine886 := na, macroLabel886 := na
+        macroLine100 := na, macroLabel100 := na
         macro_dir            := 0
         macro_origin          := na
         macro_origin_loc      := na
-        macro_origin_time     := na
         macro_extreme         := na
         macro_extreme_loc     := na
-        macro_extreme_time    := na
         macro_origin_locked   := false
         macro_last_conf_high  := na
         macro_visible         := false
@@ -2328,18 +2555,15 @@ if showMacroFib and macroFibAllowed
         macro_ll_since_bear_sos    := low
         macro_ll_since_bear_sos_bar := bar_index
 
-    // ── BOTTOM LOCKS on bullish SOS ──
-    bool macroLLafterSOS = not na(st.last_conf_low) and not na(macro_last_bear_sos_bar) and st.last_conf_low_loc > macro_last_bear_sos_bar
-    float macroBottomAnchor    = macroLLafterSOS ? st.last_conf_low    : macro_ll_since_bear_sos
-    int   macroBottomAnchorBar = macroLLafterSOS ? st.last_conf_low_loc : macro_ll_since_bear_sos_bar
+    // ── BOTTOM LOCKS on bullish SOS — always the true extreme low since bear SOS ──
+    float macroBottomAnchor    = macro_ll_since_bear_sos
+    int   macroBottomAnchorBar = macro_ll_since_bear_sos_bar
     if st.bull_sos and not macro_origin_locked and not na(macroBottomAnchor) and not na(st.last_conf_high)
         macro_dir            := 1
         macro_origin          := macroBottomAnchor
         macro_origin_loc      := macroBottomAnchorBar
-        macro_origin_time     := time[bar_index - macroBottomAnchorBar]
         macro_extreme         := st.last_conf_high
         macro_extreme_loc     := st.last_conf_high_loc
-        macro_extreme_time    := time[bar_index - st.last_conf_high_loc]
         macro_origin_locked   := true
         macro_last_conf_high  := st.last_conf_high
         macro_visible         := true
@@ -2355,24 +2579,11 @@ if showMacroFib and macroFibAllowed
         macro100Touched := false
         macro618EverReached := false
 
-    // ── HIDE when price breaks above the locked top ──
-    if macro_origin_locked and macro_visible and not na(macro_extreme) and close > macro_extreme
-        line.delete(macroLine0),   label.delete(macroLabel0)
-        line.delete(macroLine382), label.delete(macroLabel382)
-        line.delete(macroLine50),  label.delete(macroLabel50)
-        line.delete(macroLine618), label.delete(macroLabel618)
-        line.delete(macroLine702), label.delete(macroLabel702)
-        line.delete(macroLine786), label.delete(macroLabel786)
-        line.delete(macroLine886), label.delete(macroLabel886)
-        line.delete(macroLine100), label.delete(macroLabel100)
-        macro_visible         := false
-
     // ── TOP EXTENDS on every new confirmed HH — reset touched flags, fib reappears ──
     bool macroNewHH = macro_origin_locked and not na(st.last_conf_high) and st.last_conf_high > macro_last_conf_high
     if macroNewHH
         macro_extreme         := st.last_conf_high
         macro_extreme_loc      := st.last_conf_high_loc
-        macro_extreme_time     := time[bar_index - st.last_conf_high_loc]
         macro_last_conf_high   := st.last_conf_high
         macro_visible         := true
         macro_prev_extreme    := st.last_conf_high
@@ -2407,27 +2618,39 @@ if showMacroFib and macroFibAllowed
 
             if not macroExtChanged
                 if macro618Reached
-                    if not macro618Touched
-                        macro618Touched := true
-                    if not macro702Touched and low <= mP702
-                        macro702Touched := true
-                    if not macro786Touched and low <= mP786
-                        macro786Touched := true
-                    if not macro886Touched and low <= mP886
-                        macro886Touched := true
-                    if not macro100Touched and low <= mP100
-                        macro100Touched := true
+                    macro618Touched := true
+                    macro702Touched := f_checkTouch(macro702Touched, mP702, low <= mP702)
+                    macro786Touched := f_checkTouch(macro786Touched, mP786, low <= mP786)
+                    macro886Touched := f_checkTouch(macro886Touched, mP886, low <= mP886)
+                    macro100Touched := f_checkTouch(macro100Touched, mP100, low <= mP100)
 
                 if macro618EverReached
-                    if not macro50Touched and high >= mP50
-                        macro50Touched  := true
-                    if not macro382Touched and high >= mP382
-                        macro382Touched := true
-                    if not macro0Touched and high >= mP0
-                        macro0Touched   := true
+                    macro50Touched  := f_checkTouch(macro50Touched,  mP50,  high >= mP50)
+                    macro382Touched := f_checkTouch(macro382Touched, mP382, high >= mP382)
+                    macro0Touched   := f_checkTouch(macro0Touched,   mP0,   high >= mP0)
 
                 if macro618Reached and not macro618EverReached
                     macro618EverReached := true
+
+    // ── HIDE when price closes back above the locked top ──
+    if macro_origin_locked and macro_visible and not na(macro_extreme) and close > macro_extreme
+        line.delete(macroLine0),   label.delete(macroLabel0)
+        line.delete(macroLine382), label.delete(macroLabel382)
+        line.delete(macroLine50),  label.delete(macroLabel50)
+        line.delete(macroLine618), label.delete(macroLabel618)
+        line.delete(macroLine702), label.delete(macroLabel702)
+        line.delete(macroLine786), label.delete(macroLabel786)
+        line.delete(macroLine886), label.delete(macroLabel886)
+        line.delete(macroLine100), label.delete(macroLabel100)
+        macroLine0 := na,   macroLabel0 := na
+        macroLine382 := na, macroLabel382 := na
+        macroLine50 := na,  macroLabel50 := na
+        macroLine618 := na, macroLabel618 := na
+        macroLine702 := na, macroLabel702 := na
+        macroLine786 := na, macroLabel786 := na
+        macroLine886 := na, macroLabel886 := na
+        macroLine100 := na, macroLabel100 := na
+        macro_visible         := false
 
 macro_prev_st_dir := st.dir
 
@@ -2438,73 +2661,209 @@ if showMacroFib and macroFibAllowed and macro_visible and macro_origin_locked an
     float mRange  = mHigh - mLow
     int   mStart  = math.max(0, bar_index - macroLineExtend)
     int   mEnd    = bar_index + macroLineExtend
-    int   mLbl    = bar_index + macroLineExtend + 2
 
     if mRange > 0
-        // 0.000 — HH
-        line.delete(macroLine0), label.delete(macroLabel0)
-        if showMacro0
-            p0 = mHigh - mRange * 0.0
-            color cm0 = macro0Touched ? macro0Color : MACRO_GREY
-            macroLine0  := line.new(mStart, p0, mEnd, p0, xloc = xloc.bar_index, color = cm0, style = f_macroLineStyle(macro0Style), width = 1)
-            macroLabel0 := label.new(mLbl, p0, f_macroLabel(0.0, "HH", "HH") + str.tostring(p0, format.mintick) + ")", style = label.style_none, textcolor = cm0, size = size.small, xloc = xloc.bar_index)
+        float p0 = mHigh - mRange * 0.0
+        color cm0 = macro0Touched ? macro0Color : MACRO_GREY
+        string txm0 = f_macroLabel(0.0, "TP3", "TP3") + str.tostring(p0, format.mintick) + ")"
+        [nml0, nmlb0] = f_fibLevel(showMacro0, macroLine0, macroLabel0, mStart, p0, mEnd, cm0, f_macroLineStyle(macro0Style), txm0)
+        macroLine0 := nml0, macroLabel0 := nmlb0
 
-        // 0.382 — TP2
-        line.delete(macroLine382), label.delete(macroLabel382)
-        if showMacro382
-            p382 = mHigh - mRange * 0.382
-            color cm382 = macro382Touched ? macro382Color : MACRO_GREY
-            macroLine382  := line.new(mStart, p382, mEnd, p382, xloc = xloc.bar_index, color = cm382, style = f_macroLineStyle(macro382Style), width = 1)
-            macroLabel382 := label.new(mLbl, p382, f_macroLabel(0.382, "TP2", "TP2") + str.tostring(p382, format.mintick) + ")", style = label.style_none, textcolor = cm382, size = size.small, xloc = xloc.bar_index)
+        float p382 = mHigh - mRange * 0.382
+        color cm382 = macro382Touched ? macro382Color : MACRO_GREY
+        string txm382 = f_macroLabel(0.382, "TP2", "TP2") + str.tostring(p382, format.mintick) + ")"
+        [nml382, nmlb382] = f_fibLevel(showMacro382, macroLine382, macroLabel382, mStart, p382, mEnd, cm382, f_macroLineStyle(macro382Style), txm382)
+        macroLine382 := nml382, macroLabel382 := nmlb382
 
-        // 0.500 — TP1 / FFT
-        line.delete(macroLine50), label.delete(macroLabel50)
-        if showMacro50
-            p50 = mHigh - mRange * 0.5
-            color cm50 = macro50Touched ? macro50Color : MACRO_GREY
-            string mTp1Lbl = macro50Touched ? "FFT  (" : f_macroLabel(0.5, "TP1", "TP1")
-            macroLine50  := line.new(mStart, p50, mEnd, p50, xloc = xloc.bar_index, color = cm50, style = f_macroLineStyle(macro50Style), width = 1)
-            macroLabel50 := label.new(mLbl, p50, mTp1Lbl + str.tostring(p50, format.mintick) + ")", style = label.style_none, textcolor = cm50, size = size.small, xloc = xloc.bar_index)
+        float p50 = mHigh - mRange * 0.5
+        color cm50 = macro50Touched ? macro50Color : MACRO_GREY
+        string txm50 = (macro50Touched ? "FFT  (" : f_macroLabel(0.5, "TP1", "TP1")) + str.tostring(p50, format.mintick) + ")"
+        [nml50, nmlb50] = f_fibLevel(showMacro50, macroLine50, macroLabel50, mStart, p50, mEnd, cm50, f_macroLineStyle(macro50Style), txm50)
+        macroLine50 := nml50, macroLabel50 := nmlb50
 
-        // 0.618 — E1
-        line.delete(macroLine618), label.delete(macroLabel618)
-        if showMacro618
-            p618 = mHigh - mRange * 0.618
-            color cm618 = macro618Touched ? macro618Color : MACRO_GREY
-            macroLine618  := line.new(mStart, p618, mEnd, p618, xloc = xloc.bar_index, color = cm618, style = f_macroLineStyle(macro618Style), width = 1)
-            macroLabel618 := label.new(mLbl, p618, f_macroLabel(0.618, "E1", "E1") + str.tostring(p618, format.mintick) + ")", style = label.style_none, textcolor = cm618, size = size.small, xloc = xloc.bar_index)
+        float p618 = mHigh - mRange * 0.618
+        color cm618 = macro618Touched ? macro618Color : MACRO_GREY
+        string txm618 = f_macroLabel(0.618, "E1", "E1") + str.tostring(p618, format.mintick) + ")"
+        [nml618, nmlb618] = f_fibLevel(showMacro618, macroLine618, macroLabel618, mStart, p618, mEnd, cm618, f_macroLineStyle(macro618Style), txm618)
+        macroLine618 := nml618, macroLabel618 := nmlb618
 
-        // 0.702 — E2
-        line.delete(macroLine702), label.delete(macroLabel702)
-        if showMacro702
-            p702 = mHigh - mRange * 0.702
-            color cm702 = macro702Touched ? macro702Color : MACRO_GREY
-            macroLine702  := line.new(mStart, p702, mEnd, p702, xloc = xloc.bar_index, color = cm702, style = f_macroLineStyle(macro702Style), width = 1)
-            macroLabel702 := label.new(mLbl, p702, f_macroLabel(0.702, "E2", "E2") + str.tostring(p702, format.mintick) + ")", style = label.style_none, textcolor = cm702, size = size.small, xloc = xloc.bar_index)
+        float p702 = mHigh - mRange * 0.702
+        color cm702 = macro702Touched ? macro702Color : MACRO_GREY
+        string txm702 = f_macroLabel(0.702, "E2", "E2") + str.tostring(p702, format.mintick) + ")"
+        [nml702, nmlb702] = f_fibLevel(showMacro702, macroLine702, macroLabel702, mStart, p702, mEnd, cm702, f_macroLineStyle(macro702Style), txm702)
+        macroLine702 := nml702, macroLabel702 := nmlb702
 
-        // 0.786 — E3
-        line.delete(macroLine786), label.delete(macroLabel786)
-        if showMacro786
-            p786 = mHigh - mRange * 0.786
-            color cm786 = macro786Touched ? macro786Color : MACRO_GREY
-            macroLine786  := line.new(mStart, p786, mEnd, p786, xloc = xloc.bar_index, color = cm786, style = f_macroLineStyle(macro786Style), width = 1)
-            macroLabel786 := label.new(mLbl, p786, f_macroLabel(0.786, "E3", "E3") + str.tostring(p786, format.mintick) + ")", style = label.style_none, textcolor = cm786, size = size.small, xloc = xloc.bar_index)
+        float p786 = mHigh - mRange * 0.786
+        color cm786 = macro786Touched ? macro786Color : MACRO_GREY
+        string txm786 = f_macroLabel(0.786, "E3", "E3") + str.tostring(p786, format.mintick) + ")"
+        [nml786, nmlb786] = f_fibLevel(showMacro786, macroLine786, macroLabel786, mStart, p786, mEnd, cm786, f_macroLineStyle(macro786Style), txm786)
+        macroLine786 := nml786, macroLabel786 := nmlb786
 
-        // 0.886 — E4
-        line.delete(macroLine886), label.delete(macroLabel886)
-        if showMacro886
-            p886 = mHigh - mRange * 0.886
-            color cm886 = macro886Touched ? macro886Color : MACRO_GREY
-            macroLine886  := line.new(mStart, p886, mEnd, p886, xloc = xloc.bar_index, color = cm886, style = f_macroLineStyle(macro886Style), width = 1)
-            macroLabel886 := label.new(mLbl, p886, f_macroLabel(0.886, "E4", "E4") + str.tostring(p886, format.mintick) + ")", style = label.style_none, textcolor = cm886, size = size.small, xloc = xloc.bar_index)
+        float p886 = mHigh - mRange * 0.886
+        color cm886 = macro886Touched ? macro886Color : MACRO_GREY
+        string txm886 = f_macroLabel(0.886, "E4", "E4") + str.tostring(p886, format.mintick) + ")"
+        [nml886, nmlb886] = f_fibLevel(showMacro886, macroLine886, macroLabel886, mStart, p886, mEnd, cm886, f_macroLineStyle(macro886Style), txm886)
+        macroLine886 := nml886, macroLabel886 := nmlb886
 
-        // 1.000 — LL
-        line.delete(macroLine100), label.delete(macroLabel100)
-        if showMacro100
-            p100 = mHigh - mRange * 1.0
-            color cm100 = macro100Touched ? macro100Color : MACRO_GREY
-            macroLine100  := line.new(mStart, p100, mEnd, p100, xloc = xloc.bar_index, color = cm100, style = f_macroLineStyle(macro100Style), width = 1)
-            macroLabel100 := label.new(mLbl, p100, f_macroLabel(1.0, "LL", "LL") + str.tostring(p100, format.mintick) + ")", style = label.style_none, textcolor = cm100, size = size.small, xloc = xloc.bar_index)
+        float p100 = mHigh - mRange * 1.0
+        color cm100 = macro100Touched ? macro100Color : MACRO_GREY
+        string txm100 = f_macroLabel(1.0, "1.0", "1.0") + str.tostring(p100, format.mintick) + ")"
+        [nml100, nmlb100] = f_fibLevel(showMacro100, macroLine100, macroLabel100, mStart, p100, mEnd, cm100, f_macroLineStyle(macro100Style), txm100)
+        macroLine100 := nml100, macroLabel100 := nmlb100
+
+
+//============================================================
+//  INTERNAL FIB
+//============================================================
+var line  iFL0   = na, var label ifLbl0   = na
+var line  iFL382 = na, var label ifLbl382 = na
+var line  iFL50  = na, var label ifLbl50  = na
+var line  iFL618 = na, var label ifLbl618 = na
+var line  iFL702 = na, var label ifLbl702 = na
+var line  iFL786 = na, var label ifLbl786 = na
+var line  iFL886 = na, var label ifLbl886 = na
+var line  iFL100 = na, var label ifLbl100 = na
+
+// Clear internal fib when external BOS/SOS fires — wait for new iBOS/iSOS
+if st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos
+    iFib_dir := 0, iFib_asl := na, iFib_asl_loc := na, iFib_ash := na, iFib_ash_loc := na
+    iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+    iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+    iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+    iFib_tp3_hit_price := na, iFibResetActive := false
+    line.delete(iFL0),   label.delete(ifLbl0)
+    line.delete(iFL382), label.delete(ifLbl382)
+    line.delete(iFL50),  label.delete(ifLbl50)
+    line.delete(iFL618), label.delete(ifLbl618)
+    line.delete(iFL702), label.delete(ifLbl702)
+    line.delete(iFL786), label.delete(ifLbl786)
+    line.delete(iFL886), label.delete(ifLbl886)
+    line.delete(iFL100), label.delete(ifLbl100)
+
+// Track live low/high since iBOS fired — updates the moving anchor
+if iFib_dir == -1 and not na(iFib_ash)
+    if na(iFib_asl) or low < iFib_asl
+        iFib_asl     := low
+        iFib_asl_loc := bar_index
+else if iFib_dir == 1 and not na(iFib_asl)
+    if na(iFib_ash) or high > iFib_ash
+        iFib_ash     := high
+        iFib_ash_loc := bar_index
+
+// Internal fib touched tracking — same logic as micro fib
+if iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
+    float iFR  = iFib_ash - iFib_asl
+    if iFR > 0
+        // Level prices (same direction logic as micro fib)
+        float iTP618 = iFib_dir == 1 ? iFib_ash - iFR*0.618 : iFib_asl + iFR*0.618
+        float iTP702 = iFib_dir == 1 ? iFib_ash - iFR*0.702 : iFib_asl + iFR*0.702
+        float iTP786 = iFib_dir == 1 ? iFib_ash - iFR*0.786 : iFib_asl + iFR*0.786
+        float iTP886 = iFib_dir == 1 ? iFib_ash - iFR*0.886 : iFib_asl + iFR*0.886
+        float iTP50  = iFib_dir == 1 ? iFib_ash - iFR*0.5   : iFib_asl + iFR*0.5
+        float iTP382 = iFib_dir == 1 ? iFib_ash - iFR*0.382 : iFib_asl + iFR*0.382
+        float iTP0   = iFib_dir == 1 ? iFib_ash              : iFib_asl
+        float iTP100 = iFib_dir == 1 ? iFib_asl              : iFib_ash
+
+        // Gate: 0.618 must be reached first
+        bool iGate618 = iFib_dir == 1 ? low <= iTP618 : high >= iTP618
+        if iGate618 and not iFib618Touched
+            iFib618Touched := true
+
+        if iFib618Touched
+            iFib702Touched := f_checkTouch(iFib702Touched, iTP702, iFib_dir == 1 ? low <= iTP702 : high >= iTP702)
+            iFib786Touched := f_checkTouch(iFib786Touched, iTP786, iFib_dir == 1 ? low <= iTP786 : high >= iTP786)
+            iFib886Touched := f_checkTouch(iFib886Touched, iTP886, iFib_dir == 1 ? low <= iTP886 : high >= iTP886)
+            iFib100Touched := f_checkTouch(iFib100Touched, iTP100, iFib_dir == 1 ? low <= iTP100 : high >= iTP100)
+
+        if iFib618EverReached
+            iFib50Touched  := f_checkTouch(iFib50Touched,  iTP50,  iFib_dir == 1 ? high >= iTP50  : low <= iTP50)
+            iFib382Touched := f_checkTouch(iFib382Touched, iTP382, iFib_dir == 1 ? high >= iTP382 : low <= iTP382)
+            bool iFib0WasTouched = iFib0Touched
+            iFib0Touched := f_checkTouch(iFib0Touched, iTP0, iFib_dir == 1 ? high >= iTP0 : low <= iTP0)
+            if iFib0Touched and not iFib0WasTouched
+                iFib_tp3_hit_price := iTP0
+
+        // TP3 hit → reset this internal fib immediately
+        if iFib0Touched
+            iFibResetActive := true
+
+        if iGate618 and not iFib618EverReached
+            iFib618EverReached := true
+
+if showFibo and showIFib and iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
+    float iH  = iFib_ash
+    float iL  = iFib_asl
+    int   iS  = iFib_asl_loc
+    float iR  = iH - iL
+    int   iE  = bar_index + iFibExtend
+
+    if iR > 0
+        // Direction aware levels
+        // Bullish: 0=top(iH), 1=bottom(iL), levels go DOWN from top
+        // Bearish: 0=bottom(iL), 1=top(iH), levels go UP from bottom
+        float iP0   = iFib_dir == 1 ? iH : iL
+        float iP382 = iFib_dir == 1 ? iH - iR*0.382 : iL + iR*0.382
+        float iP50  = iFib_dir == 1 ? iH - iR*0.5   : iL + iR*0.5
+        float iP618 = iFib_dir == 1 ? iH - iR*0.618 : iL + iR*0.618
+        float iP702 = iFib_dir == 1 ? iH - iR*0.702 : iL + iR*0.702
+        float iP786 = iFib_dir == 1 ? iH - iR*0.786 : iL + iR*0.786
+        float iP886 = iFib_dir == 1 ? iH - iR*0.886 : iL + iR*0.886
+        float iP100 = iFib_dir == 1 ? iL : iH
+
+        // Colors — grey until touched, then the level's configured color
+        color c0 = iFib0Touched ? iFibo0Color : IFIB_GREY
+        color c382 = iFib382Touched ? iFibo1Color : IFIB_GREY
+        color c50 = iFib50Touched ? iFibo2Color : IFIB_GREY
+        color c618 = iFib618Touched ? iFibo3Color : IFIB_GREY
+        color c702 = iFib702Touched ? iFibo4Color : IFIB_GREY
+        color c786 = iFib786Touched ? iFibo5Color : IFIB_GREY
+        color c886 = iFib886Touched ? iFibo6Color : IFIB_GREY
+        color c100 = iFib100Touched ? iFibo100Color : IFIB_GREY
+
+        // FFT label when 0.5 first touched, otherwise honor TP/Entry vs Fib Value label mode
+        string tx0 = f_fiboLabel(0.0, "TP3", "TP3") + str.tostring(iP0, format.mintick) + ")"
+        string tx382 = f_fiboLabel(0.382, "TP2", "TP2") + str.tostring(iP382, format.mintick) + ")"
+        string tx50 = (iFib50Touched ? "FFT  (" : f_fiboLabel(0.5, "TP1", "TP1")) + str.tostring(iP50, format.mintick) + ")"
+        string tx618 = f_fiboLabel(0.618, "E1", "E1") + str.tostring(iP618, format.mintick) + ")"
+        string tx702 = f_fiboLabel(0.702, "E2", "E2") + str.tostring(iP702, format.mintick) + ")"
+        string tx786 = f_fiboLabel(0.786, "E3", "E3") + str.tostring(iP786, format.mintick) + ")"
+        string tx886 = f_fiboLabel(0.886, "E4", "E4") + str.tostring(iP886, format.mintick) + ")"
+        string tx100 = f_fiboLabel(1.0, "1.0", "1.0") + str.tostring(iP100, format.mintick) + ")"
+
+        bool ishow = not iFibResetActive
+        [nl0, nlb0] = f_fibLevel(ishow, iFL0, ifLbl0, iS, iP0, iE, c0, f_fiboLineStyle(iFibo0Style), tx0)
+        iFL0 := nl0, ifLbl0 := nlb0
+        [nl382, nlb382] = f_fibLevel(ishow, iFL382, ifLbl382, iS, iP382, iE, c382, f_fiboLineStyle(iFibo1Style), tx382)
+        iFL382 := nl382, ifLbl382 := nlb382
+        [nl50, nlb50] = f_fibLevel(ishow, iFL50, ifLbl50, iS, iP50, iE, c50, f_fiboLineStyle(iFibo2Style), tx50)
+        iFL50 := nl50, ifLbl50 := nlb50
+        [nl618, nlb618] = f_fibLevel(ishow, iFL618, ifLbl618, iS, iP618, iE, c618, f_fiboLineStyle(iFibo3Style), tx618)
+        iFL618 := nl618, ifLbl618 := nlb618
+        [nl702, nlb702] = f_fibLevel(ishow, iFL702, ifLbl702, iS, iP702, iE, c702, f_fiboLineStyle(iFibo4Style), tx702)
+        iFL702 := nl702, ifLbl702 := nlb702
+        [nl786, nlb786] = f_fibLevel(ishow, iFL786, ifLbl786, iS, iP786, iE, c786, f_fiboLineStyle(iFibo5Style), tx786)
+        iFL786 := nl786, ifLbl786 := nlb786
+        [nl886, nlb886] = f_fibLevel(ishow, iFL886, ifLbl886, iS, iP886, iE, c886, f_fiboLineStyle(iFibo6Style), tx886)
+        iFL886 := nl886, ifLbl886 := nlb886
+        [nl100, nlb100] = f_fibLevel(ishow, iFL100, ifLbl100, iS, iP100, iE, c100, f_fiboLineStyle(iFibo100Style), tx100)
+        iFL100 := nl100, ifLbl100 := nlb100
+    else
+        line.delete(iFL0),   label.delete(ifLbl0)
+        line.delete(iFL382), label.delete(ifLbl382)
+        line.delete(iFL50),  label.delete(ifLbl50)
+        line.delete(iFL618), label.delete(ifLbl618)
+        line.delete(iFL702), label.delete(ifLbl702)
+        line.delete(iFL786), label.delete(ifLbl786)
+        line.delete(iFL886), label.delete(ifLbl886)
+        line.delete(iFL100), label.delete(ifLbl100)
+        iFL0 := na, ifLbl0 := na
+        iFL382 := na, ifLbl382 := na
+        iFL50 := na, ifLbl50 := na
+        iFL618 := na, ifLbl618 := na
+        iFL702 := na, ifLbl702 := na
+        iFL786 := na, ifLbl786 := na
+        iFL886 := na, ifLbl886 := na
+        iFL100 := na, ifLbl100 := na
 
 //============================================================
 //  SNIPER FIB
@@ -2535,20 +2894,25 @@ if _snBearBOS or _snBullBOS
         array.clear(sniper50Arr)
         array.clear(sniperLbl382Arr)
 
-    array.push(sniperBoxArr,    box.new(_snS, _zTop, _snE, _zBot, bgcolor = color.new(#4caf50, 75), border_color = color(na)))
-    array.push(sniper382Arr,    line.new(_snS, _sn382, _snE, _sn382, color = color.new(#4caf50, 0), style = line.style_dotted, width = 1))
-    array.push(sniper50Arr,     line.new(_snS, _sn50,  _snE, _sn50,  color = color.new(#4caf50, 0), style = line.style_dotted, width = 1))
-    array.push(sniperLbl382Arr, label.new(_snE + 2, (_sn382 + _sn50) / 2, "SZ", style = label.style_none, textcolor = color.new(#4caf50, 0), size = size.small, textalign = text.align_center))
+    color _snColor = _snBullBOS ? color.new(#4caf50, 75) : color.new(#ff4444, 75)
+    color _snLineColor = _snBullBOS ? color.new(#4caf50, 0) : color.new(#ff4444, 0)
+
+    array.push(sniperBoxArr,    box.new(_snS, _zTop, _snE, _zBot, bgcolor = _snColor, border_color = color(na)))
+    array.push(sniper382Arr,    line.new(_snS, _sn382, _snE, _sn382, color = _snLineColor, style = line.style_dotted, width = 1))
+    array.push(sniper50Arr,     line.new(_snS, _sn50,  _snE, _sn50,  color = _snLineColor, style = line.style_dotted, width = 1))
+    array.push(sniperLbl382Arr, label.new(_snE + 2, (_sn382 + _sn50) / 2, "SZ", style = label.style_none, textcolor = _snLineColor, size = size.small, textalign = text.align_center))
     sniperZoneTop    := _zTop
     sniperZoneBot    := _zBot
-    sniperZoneActive := false   // reset entry flag on new sniper zone
+    sniperZoneActive := false
+    sz_status        := ""   // reset status on new zone
+    sz_bullish       := _snBullBOS
 
 if showFibo and showSniperFib and array.size(sniperBoxArr) > 0
     for _sni = 0 to array.size(sniperBoxArr) - 1
-        box.set_right(array.get(sniperBoxArr,    _sni), bar_index + 25)
-        line.set_x2(array.get(sniper382Arr,      _sni), bar_index + 25)
-        line.set_x2(array.get(sniper50Arr,       _sni), bar_index + 25)
-        label.set_x(array.get(sniperLbl382Arr,   _sni), bar_index + 27)
+        box.set_right(array.get(sniperBoxArr,    _sni), bar_index + fiboLineExtend)
+        line.set_x2(array.get(sniper382Arr,      _sni), bar_index + fiboLineExtend)
+        line.set_x2(array.get(sniper50Arr,       _sni), bar_index + fiboLineExtend)
+        label.set_x(array.get(sniperLbl382Arr,   _sni), bar_index + fiboLineExtend + 2)
 
 //============================================================
 //  SESSION VOLUME PROFILE — ASIA POC / MV LINE
@@ -2692,9 +3056,7 @@ color JARVIS_WHITE  = #ffffff
 color JARVIS_BLACK  = #000000
 color JARVIS_BSL    = color.new(#ff4444, 0)
 color JARVIS_SSL    = color.new(#00cc66, 0)
-
-var GRP_TABLE = "Confirmation Table"
-bool showConfTable = input.bool(true, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
+color JARVIS_NEUTRAL = color.new(#888888, 0)
 
 // ── 1. LIQUIDITY slots ──
 var string liq_h4h = "", var string liq_h4l = ""
@@ -2703,44 +3065,57 @@ var string liq_ash = "", var string liq_asl = ""
 var string liq_ldh = "", var string liq_ldl = ""
 var string liq_nyh = "", var string liq_nyl = ""
 
-if i_showH4Sweep and i_showLiquidity
-    if h4HighSwept and not h4HighSwept[1]
-        liq_h4h := "BSL"
-    if h4LowSwept and not h4LowSwept[1]
-        liq_h4l := "SSL"
-if i_isDailyEnabled and i_showLiquidity
-    if d_hMit and not d_hMit[1]
-        liq_dh := "BSL"
-    if d_lMit and not d_lMit[1]
-        liq_dl := "SSL"
-if i_showAsiaHL and i_showLiquidity
-    if asiaHMit and not asiaHMit[1]
-        liq_ash := "BSL"
-    if asiaLMit and not asiaLMit[1]
-        liq_asl := "SSL"
-if i_showLondonHL and i_showLiquidity
-    if londonHMit and not londonHMit[1]
-        liq_ldh := "BSL"
-    if londonLMit and not londonLMit[1]
-        liq_ldl := "SSL"
-if i_showNYHL and i_showLiquidity
-    if nyHMit and not nyHMit[1]
-        liq_nyh := "BSL"
-    if nyLMit and not nyLMit[1]
-        liq_nyl := "SSL"
+// Price levels at point of sweep confirmation — used to detect invalidation
+var float liq_h4h_px = na, var float liq_h4l_px = na
+var float liq_dh_px  = na, var float liq_dl_px  = na
+var float liq_ash_px = na, var float liq_asl_px = na
+var float liq_ldh_px = na, var float liq_ldl_px = na
+var float liq_nyh_px = na, var float liq_nyl_px = na
+// Bar timestamps for each sweep — used to find most recent BSL/SSL
+var int liq_h4h_bar = na, var int liq_h4l_bar = na
+var int liq_dh_bar  = na, var int liq_dl_bar  = na
+var int liq_ash_bar = na, var int liq_asl_bar = na
+var int liq_ldh_bar = na, var int liq_ldl_bar = na
+var int liq_nyh_bar = na, var int liq_nyl_bar = na
 
+// ── Activate on sweep — stays active until replaced by next sweep or session reset ──
+if barstate.isconfirmed
+    if i_showH4Sweep and i_showLiquidity
+        if h4HighSwept and not h4HighSwept[1] and not na(h4TrackHigh)
+            liq_h4h := "BSL", liq_h4h_px := h4TrackHigh, liq_h4h_bar := bar_index
+        if h4LowSwept and not h4LowSwept[1] and not na(h4TrackLow)
+            liq_h4l := "SSL", liq_h4l_px := h4TrackLow, liq_h4l_bar := bar_index
+    if i_isDailyEnabled and i_showLiquidity
+        if d_hMit and not d_hMit[1]
+            liq_dh := "BSL", liq_dh_px := d_hPrice, liq_dh_bar := bar_index
+        if d_lMit and not d_lMit[1]
+            liq_dl := "SSL", liq_dl_px := d_lPrice, liq_dl_bar := bar_index
+    if i_showAsiaHL and i_showLiquidity
+        if asiaHMit and not asiaHMit[1]
+            liq_ash := "BSL", liq_ash_px := asiaHPrice, liq_ash_bar := bar_index
+        if asiaLMit and not asiaLMit[1]
+            liq_asl := "SSL", liq_asl_px := asiaLPrice, liq_asl_bar := bar_index
+    if i_showLondonHL and i_showLiquidity
+        if londonHMit and not londonHMit[1]
+            liq_ldh := "BSL", liq_ldh_px := londonHPrice, liq_ldh_bar := bar_index
+        if londonLMit and not londonLMit[1]
+            liq_ldl := "SSL", liq_ldl_px := londonLPrice, liq_ldl_bar := bar_index
+    if i_showNYHL and i_showLiquidity
+        if nyHMit and not nyHMit[1]
+            liq_nyh := "BSL", liq_nyh_px := nyHPrice, liq_nyh_bar := bar_index
+        if nyLMit and not nyLMit[1]
+            liq_nyl := "SSL", liq_nyl_px := nyLPrice, liq_nyl_bar := bar_index
+
+// H4 resets on new H4 bar
 if h4BarChanged
-    liq_h4h := "", liq_h4l := ""
-if newDay
-    liq_dh := "", liq_dl := ""
-    liq_ash := "", liq_asl := ""
-    liq_ldh := "", liq_ldl := ""
-    liq_nyh := "", liq_nyl := ""
+    liq_h4h := "", liq_h4h_px := na, liq_h4h_bar := na
+    liq_h4l := "", liq_h4l_px := na, liq_h4l_bar := na
 
-// ── 2. STRUCTURE slots ──
+// ── 2. STRUCTURE slots — most recent external and internal ──
 var string ext_struct = ""
 var string int_struct = ""
 
+// External — update on every BOS/SOS, most recent always wins
 if st.bull_sos
     ext_struct := "▲ SOS"
 else if st.bear_sos
@@ -2750,24 +3125,140 @@ else if st.bull_bos
 else if st.bear_bos
     ext_struct := "▼ BOS"
 
-if int_bull_break
-    int_struct := "▲ iBOS/iSOS"
-else if int_bear_break
-    int_struct := "▼ iBOS/iSOS"
+// Internal — update on every iBOS/iSOS with correct label
+// Internal — track bar index so we can validate it's within current fib range
+var int int_struct_bar = na
+if int_bull_sos
+    int_struct := "▲ iSOS", int_struct_bar := bar_index
+else if int_bear_sos
+    int_struct := "▼ iSOS", int_struct_bar := bar_index
+else if int_bull_bos
+    int_struct := "▲ iBOS", int_struct_bar := bar_index
+else if int_bear_bos
+    int_struct := "▼ iBOS", int_struct_bar := bar_index
 
-// ── 3. FIBONACCI slot ──
-var string fib_entry = ""
+// Internal structure only valid if it fired AFTER the current fib origin bar
+// This ensures the iBOS/iSOS is within the same fib pull context
+bool int_struct_valid = int_struct != "" and not na(int_struct_bar) and not na(fiboStartIndex) and int_struct_bar >= fiboStartIndex
 
-if fibo3Touched and not fibo3Touched[1]
-    fib_entry := "E1 / 0.618"
-if fibo4Touched and not fibo4Touched[1]
-    fib_entry := "E2 / 0.702"
-if fibo5Touched and not fibo5Touched[1]
-    fib_entry := "E3 / 0.786"
-if fibo6Touched and not fibo6Touched[1]
-    fib_entry := "E4 / 0.886"
-if fiboOriginChanged
-    fib_entry := ""
+// ── 3. FIBONACCI slot — one-way progressive tracking ──
+var string fib_level = ""
+var int    fib_stage = 0
+
+// Reset when fib touched flags all clear (new leg drawn)
+bool fib_all_clear = not fibo3Touched and not fibo4Touched and not fibo5Touched and not fibo6Touched and not fibo2Touched and not fibo1Touched and not fibo7Touched
+if fib_all_clear and fib_stage > 0
+    fib_level := ""
+    fib_stage := 0
+
+// Stage 1: Entry zone — E levels, only while stage < 2 (before FFT)
+if fib_stage < 2
+    if fibo3Touched and not fibo3Touched[1]
+        fib_level := "E1 / 0.618", fib_stage := 1
+    if fibo4Touched and not fibo4Touched[1]
+        fib_level := "E2 / 0.702", fib_stage := 1
+    if fibo5Touched and not fibo5Touched[1]
+        fib_level := "E3 / 0.786", fib_stage := 1
+    if fibo6Touched and not fibo6Touched[1]
+        fib_level := "E4 / 0.886", fib_stage := 1
+
+// Stage 2: FFT — locks here, no going back to entry levels
+if fib_stage >= 1 and fibo2Touched and not fibo2Touched[1]
+    fib_level := "FFT", fib_stage := 2
+
+// Stage 3: TP2 — only after FFT
+if fib_stage >= 2 and fibo1Touched and not fibo1Touched[1]
+    fib_level := "TP2", fib_stage := 3
+
+// Stage 4: TP3 — only after TP2
+if fib_stage >= 3 and fibo7Touched and not fibo7Touched[1]
+    fib_level := "TP3", fib_stage := 4
+
+// Clear immediately once TP3 is hit (fib has reset), or if price closes past the full range
+if fib_stage > 0
+    if fibo7Touched
+        fib_level := "", fib_stage := 0
+    if fibo_dir == 1
+        if not na(fiboP10) and close < fiboP10
+            fib_level := "", fib_stage := 0
+    else if fibo_dir == -1
+        if not na(fiboP10) and close > fiboP10
+            fib_level := "", fib_stage := 0
+
+// ── 3c. INTERNAL FIB slot ──
+var string int_fib_level = ""
+var int    int_fib_stage = 0
+
+// Reset when all touched flags clear (new iBOS/iSOS)
+bool iFib_all_clear = not iFib618Touched and not iFib702Touched and not iFib786Touched and not iFib886Touched and not iFib50Touched and not iFib382Touched and not iFib0Touched
+if iFib_all_clear and int_fib_stage > 0
+    int_fib_level := ""
+    int_fib_stage := 0
+
+// Stage 1: E levels
+if int_fib_stage < 2
+    if iFib618Touched and not iFib618Touched[1]
+        int_fib_level := "E1 / 0.618", int_fib_stage := 1
+    if iFib702Touched and not iFib702Touched[1]
+        int_fib_level := "E2 / 0.702", int_fib_stage := 1
+    if iFib786Touched and not iFib786Touched[1]
+        int_fib_level := "E3 / 0.786", int_fib_stage := 1
+    if iFib886Touched and not iFib886Touched[1]
+        int_fib_level := "E4 / 0.886", int_fib_stage := 1
+
+// Stage 2: FFT — locks, no going back
+if int_fib_stage >= 1 and iFib50Touched and not iFib50Touched[1]
+    int_fib_level := "FFT", int_fib_stage := 2
+
+// Stage 3: TP2
+if int_fib_stage >= 2 and iFib382Touched and not iFib382Touched[1]
+    int_fib_level := "TP2", int_fib_stage := 3
+
+// Stage 4: TP3
+if int_fib_stage >= 3 and iFib0Touched and not iFib0Touched[1]
+    int_fib_level := "TP3", int_fib_stage := 4
+
+// Clear when fib clears or TP3 has been broken through
+if iFib_dir == 0 or iFibResetActive
+    int_fib_level := ""
+    int_fib_stage := 0
+var string macro_fib_level = ""
+var int    macro_fib_stage = 0
+
+// Reset on new macro cycle
+if not macro_visible or not macro_origin_locked
+    macro_fib_level := ""
+    macro_fib_stage := 0
+
+// Stage 1: Entry zone
+if macro_fib_stage < 2
+    if macro618Touched and not macro618Touched[1]
+        macro_fib_level := "E1 / 0.618", macro_fib_stage := 1
+    if macro702Touched and not macro702Touched[1]
+        macro_fib_level := "E2 / 0.702", macro_fib_stage := 1
+    if macro786Touched and not macro786Touched[1]
+        macro_fib_level := "E3 / 0.786", macro_fib_stage := 1
+    if macro886Touched and not macro886Touched[1]
+        macro_fib_level := "E4 / 0.886", macro_fib_stage := 1
+
+// Stage 2: FFT — locks here
+if macro_fib_stage >= 1 and macro50Touched and not macro50Touched[1]
+    macro_fib_level := "FFT", macro_fib_stage := 2
+
+// Stage 3: TP2
+if macro_fib_stage >= 2 and macro382Touched and not macro382Touched[1]
+    macro_fib_level := "TP2", macro_fib_stage := 3
+
+// Stage 4: TP3
+if macro_fib_stage >= 3 and macro0Touched and not macro0Touched[1]
+    macro_fib_level := "TP3", macro_fib_stage := 4
+
+// Clear if macro cycle resets or new HH
+if macro_fib_stage > 0
+    if not na(macro_origin) and close < macro_origin
+        macro_fib_level := "", macro_fib_stage := 0
+    if not na(macro_extreme) and close > macro_extreme
+        macro_fib_level := "", macro_fib_stage := 0
 
 // ── 4. MV slot ──
 var string mv_status  = ""
@@ -2777,114 +3268,176 @@ var bool   mv_swept   = false
 if showSVP and array.size(svp_poc_px) > 0
     mv_pocPrice := array.get(svp_poc_px, array.size(svp_poc_px) - 1)
 
+// MV confirms when price crosses the POC line
 if not na(mv_pocPrice)
     if not mv_swept and (high >= mv_pocPrice and low <= mv_pocPrice)
         mv_swept  := true
         mv_status := "Confirmed"
 
-if svpEnd
+// Keep showing direction as long as POC exists — reset only on new Asia session
+if svpNew
     mv_swept := false, mv_status := ""
 
 // ── 5. SNIPER ZONE slot ──
-var string sz_status = ""
 
 if not na(sniperZoneTop) and not na(sniperZoneBot)
     if not sniperZoneActive and high >= sniperZoneBot and low <= sniperZoneTop
         sniperZoneActive := true
-        sz_status        := "Confirmed"
+        sz_status        := sz_bullish ? "▲ Confirmed" : "▼ Confirmed"
 
 if _snBearBOS or _snBullBOS
     sz_status := ""
 
 // ── Draw table ──
-var table jarvisTable = table.new(position.top_right, 2, 22,
-  bgcolor      = color.new(JARVIS_BLACK, 10),
-  border_color = color.new(JARVIS_BLUE,  40),
+var table jarvisTable = table.new(f_tablePosition(tablePositionInput), 3, 18,
+  bgcolor      = color.new(#0a0a14, 5),
+  border_color = color.new(JARVIS_BLUE, 50),
   border_width = 1,
   frame_color  = JARVIS_YELLOW,
   frame_width  = 2)
 
-f_jHdr(table t, int row, string title) =>
-    table.cell(t, 0, row, title,
-      text_color = JARVIS_YELLOW, text_size = size.tiny,
-      bgcolor = color.new(JARVIS_BLUE, 30), text_halign = text.align_left)
-    table.cell(t, 1, row, "",
-      bgcolor = color.new(JARVIS_BLUE, 30))
-
-f_jRow(table t, int row, string src, string val, color vc) =>
-    table.cell(t, 0, row, src,
-      text_color = JARVIS_WHITE, text_size = size.tiny,
-      bgcolor = color.new(JARVIS_BLACK, 20), text_halign = text.align_left)
+f_jRow3(table t, int row, string sec, string val, color vc, string detail) =>
+    table.cell(t, 0, row, sec,
+      text_color  = color.new(JARVIS_WHITE, 20),
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = color.new(#0a0a14, 15),
+      text_halign = text.align_left)
     table.cell(t, 1, row, val,
-      text_color = vc, text_size = size.tiny,
-      bgcolor = color.new(JARVIS_BLACK, 20), text_halign = text.align_center)
+      text_color  = vc,
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = color.new(#0a0a14, 15),
+      text_halign = text.align_center)
+    table.cell(t, 2, row, detail,
+      text_color  = color.new(JARVIS_WHITE, 40),
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = color.new(#0a0a14, 15),
+      text_halign = text.align_center)
 
-f_jBlank(table t, int row) =>
-    table.cell(t, 0, row, "—", text_color = color.new(JARVIS_WHITE, 60), text_size = size.tiny, bgcolor = color.new(JARVIS_BLACK, 20))
-    table.cell(t, 1, row, "—", text_color = color.new(JARVIS_WHITE, 60), text_size = size.tiny, bgcolor = color.new(JARVIS_BLACK, 20))
+f_jBlank3(table t, int row, string sec) =>
+    table.cell(t, 0, row, sec,
+      text_color  = color.new(JARVIS_WHITE, 20),
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = color.new(#0a0a14, 15),
+      text_halign = text.align_left)
+    table.cell(t, 1, row, "—",
+      text_color  = color.new(JARVIS_WHITE, 75),
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = color.new(#0a0a14, 15),
+      text_halign = text.align_center)
+    table.cell(t, 2, row, "—",
+      text_color  = color.new(JARVIS_WHITE, 75),
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = color.new(#0a0a14, 15),
+      text_halign = text.align_center)
+
+// Most recent BSL/SSL source — priority: NY > London > Asia > Daily > H4
+bool showSessH = liq_dh == ""
+bool showSessL = liq_dl == ""
+
+// Find most recent BSL — whichever was swept latest by bar_index
+string recentBSL = ""
+int    recentBSL_bar = -1
+if liq_h4h != "" and not na(liq_h4h_bar) and liq_h4h_bar > recentBSL_bar
+    recentBSL := "H4 High",   recentBSL_bar := liq_h4h_bar
+if liq_dh != "" and not na(liq_dh_bar) and liq_dh_bar > recentBSL_bar
+    recentBSL := "Day High",  recentBSL_bar := liq_dh_bar
+if showSessH and liq_ash != "" and not na(liq_ash_bar) and liq_ash_bar > recentBSL_bar
+    recentBSL := "Asia High", recentBSL_bar := liq_ash_bar
+if showSessH and liq_ldh != "" and not na(liq_ldh_bar) and liq_ldh_bar > recentBSL_bar
+    recentBSL := "Ldn High",  recentBSL_bar := liq_ldh_bar
+if showSessH and liq_nyh != "" and not na(liq_nyh_bar) and liq_nyh_bar > recentBSL_bar
+    recentBSL := "NY High",   recentBSL_bar := liq_nyh_bar
+
+// Find most recent SSL — whichever was swept latest by bar_index
+string recentSSL = ""
+int    recentSSL_bar = -1
+if liq_h4l != "" and not na(liq_h4l_bar) and liq_h4l_bar > recentSSL_bar
+    recentSSL := "H4 Low",   recentSSL_bar := liq_h4l_bar
+if liq_dl != "" and not na(liq_dl_bar) and liq_dl_bar > recentSSL_bar
+    recentSSL := "Day Low",  recentSSL_bar := liq_dl_bar
+if showSessL and liq_asl != "" and not na(liq_asl_bar) and liq_asl_bar > recentSSL_bar
+    recentSSL := "Asia Low", recentSSL_bar := liq_asl_bar
+if showSessL and liq_ldl != "" and not na(liq_ldl_bar) and liq_ldl_bar > recentSSL_bar
+    recentSSL := "Ldn Low",  recentSSL_bar := liq_ldl_bar
+if showSessL and liq_nyl != "" and not na(liq_nyl_bar) and liq_nyl_bar > recentSSL_bar
+    recentSSL := "NY Low",   recentSSL_bar := liq_nyl_bar
 
 if showConfTable and barstate.islast
-    table.cell(jarvisTable, 0, 0, "MPC - JARVIS",
-      text_color = JARVIS_YELLOW, text_size = size.small,
+    // Header
+    table.cell(jarvisTable, 0, 0, "MPC- JARVIS",
+      text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
       bgcolor = JARVIS_BLUE, text_halign = text.align_center)
-    table.cell(jarvisTable, 1, 0, "CONFIRMATIONS",
-      text_color = JARVIS_YELLOW, text_size = size.small,
+    table.cell(jarvisTable, 1, 0, "STATUS",
+      text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
+      bgcolor = JARVIS_BLUE, text_halign = text.align_center)
+    table.cell(jarvisTable, 2, 0, "SOURCE",
+      text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
       bgcolor = JARVIS_BLUE, text_halign = text.align_center)
 
     int r = 1
 
-    // LIQUIDITY
-    f_jHdr(jarvisTable, r, "LIQUIDITY"), r := r + 1
-    bool anyLiq = liq_h4h != "" or liq_h4l != "" or liq_dh != "" or liq_dl != "" or liq_ash != "" or liq_asl != "" or liq_ldh != "" or liq_ldl != "" or liq_nyh != "" or liq_nyl != ""
-    if liq_h4h != ""
-        f_jRow(jarvisTable, r, "H4 H", liq_h4h, liq_h4h == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if liq_h4l != ""
-        f_jRow(jarvisTable, r, "H4 L", liq_h4l, liq_h4l == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if liq_dh != ""
-        f_jRow(jarvisTable, r, "DH", liq_dh, liq_dh == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if liq_dl != ""
-        f_jRow(jarvisTable, r, "DL", liq_dl, liq_dl == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if liq_ash != ""
-        f_jRow(jarvisTable, r, "AS H", liq_ash, liq_ash == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if liq_asl != ""
-        f_jRow(jarvisTable, r, "AS L", liq_asl, liq_asl == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if liq_ldh != ""
-        f_jRow(jarvisTable, r, "LD H", liq_ldh, liq_ldh == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if liq_ldl != ""
-        f_jRow(jarvisTable, r, "LD L", liq_ldl, liq_ldl == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if liq_nyh != ""
-        f_jRow(jarvisTable, r, "NY H", liq_nyh, liq_nyh == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if liq_nyl != ""
-        f_jRow(jarvisTable, r, "NY L", liq_nyl, liq_nyl == "BSL" ? JARVIS_BSL : JARVIS_SSL), r := r + 1
-    if not anyLiq
-        f_jBlank(jarvisTable, r), r := r + 1
+    // WEEKLY — Established Context (last closed week vs the one before)
+    f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
+    r := r + 1
 
-    // STRUCTURE
-    f_jHdr(jarvisTable, r, "STRUCTURE"), r := r + 1
+    // DAILY — Established Context (last closed day vs the one before)
+    f_jRow3(jarvisTable, r, "Daily", dEstState, dEstState == "Bullish" ? JARVIS_SSL : dEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, dEstDesc)
+    r := r + 1
+
+    // LIQ BSL
+    if recentBSL != ""
+        f_jRow3(jarvisTable, r, "LIQ BSL", "BSL", JARVIS_BSL, recentBSL)
+        r := r + 1
+
+    // LIQ SSL
+    if recentSSL != ""
+        f_jRow3(jarvisTable, r, "LIQ SSL", "SSL", JARVIS_SSL, recentSSL)
+        r := r + 1
+
+    // STRUCTURE — EXT always, INT only if within current fib range
     if ext_struct != ""
-        f_jRow(jarvisTable, r, "Ext", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL), r := r + 1
-    if int_struct != ""
-        f_jRow(jarvisTable, r, "Int", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL), r := r + 1
-    if ext_struct == "" and int_struct == ""
-        f_jBlank(jarvisTable, r), r := r + 1
+        f_jRow3(jarvisTable, r, "EXT", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "External")
+        r := r + 1
+    if int_struct_valid
+        f_jRow3(jarvisTable, r, "INT", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "Internal")
+        r := r + 1
 
-    // FIBONACCI
-    f_jHdr(jarvisTable, r, "FIBONACCI"), r := r + 1
-    if fib_entry != ""
-        f_jRow(jarvisTable, r, "Entry", fib_entry, JARVIS_YELLOW), r := r + 1
-    else
-        f_jBlank(jarvisTable, r), r := r + 1
+    if showFibo and showIFib and iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
+        color  intFibCol = iFib_dir == 1 ? JARVIS_SSL : JARVIS_BSL
+        f_jRow3(jarvisTable, r, "FIB INTERNAL", int_fib_level, intFibCol, iFib618EverReached ? "Active" : "Tracking")
+        r := r + 1
 
-    // MV
-    f_jHdr(jarvisTable, r, "MV"), r := r + 1
+    // EXTERNAL FIB
+    if showFibo and fibo_dir != 0 and not na(fibo_ash) and not na(fibo_asl)
+        color  fibCol  = fibo_dir == 1 ? JARVIS_SSL : JARVIS_BSL
+        f_jRow3(jarvisTable, r, "FIB EXTERNAL", fib_level, fibCol, fibo618EverReached ? "Active" : "Tracking")
+        r := r + 1
+
+    // MACRO FIB
+    if showMacroFib and macro_visible and macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
+        color  macroCol = macro_dir == 1 ? JARVIS_SSL : JARVIS_BSL
+        f_jRow3(jarvisTable, r, "FIB CYCLE", macro_fib_level, macroCol, macro618EverReached ? "Active" : "Tracking")
+        r := r + 1
+
+    // MAX VOLUME
     if mv_status != ""
-        f_jRow(jarvisTable, r, "MV", mv_status, JARVIS_YELLOW), r := r + 1
-    else
-        f_jBlank(jarvisTable, r), r := r + 1
+        string mv_dir = close > mv_pocPrice ? "▲ Above" : "▼ Below"
+        color  mv_col = close > mv_pocPrice ? JARVIS_SSL : JARVIS_BSL
+        f_jRow3(jarvisTable, r, "MAX VOL", mv_dir, mv_col, "MV")
+        r := r + 1
 
     // SNIPER
-    f_jHdr(jarvisTable, r, "SNIPER"), r := r + 1
     if sz_status != ""
-        f_jRow(jarvisTable, r, "SZ", sz_status, JARVIS_YELLOW)
-    else
-        f_jBlank(jarvisTable, r)
+        color sz_col = sz_bullish ? JARVIS_SSL : JARVIS_BSL
+        f_jRow3(jarvisTable, r, "SNIPER", sz_status, sz_col, "SZ")
+
+//============================================================
+//  MPC- JARVIS WATERMARK
+//============================================================
+var table watermark = table.new(position.bottom_center, 1, 1)
+if barstate.islast
+    table.cell(watermark, 0, 0, "MPC- JARVIS",
+      text_color  = color.new(#17578e, 20),
+      text_size   = size.normal,
+      bgcolor     = color.new(JARVIS_BLACK, 100),
+      text_halign = text.align_center)

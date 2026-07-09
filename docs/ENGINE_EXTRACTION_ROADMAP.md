@@ -2,8 +2,8 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
-**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. A 2026-07-06 audit of a re-pasted `mpc_assistant.pine` found **1 NEW feature to extract (Internal Fib)** and **3 engines gone STALE** (liquidity, fibonacci Macro, SVP). The **3 stale engines were re-synced on 2026-07-06** (engine code + `*_export.pine` harness + unit tests all updated, unit tests green). On **2026-07-07** the fresh-export parity re-run ran: **liquidity and svp passed (exit 0) and are COMMITTED**; the **fibonacci Macro is HELD** — its port is a faithful mirror, but the re-pasted source change appears to disable the macro cycle (never displays over a ~4-month export; suspected `mpc_assistant.pine` bug), awaiting Aaron + brother review. Internal Fib is still to extract. See "Audit findings — 2026-07-06" below.
-**Last reviewed:** 2026-07-06
+**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. A **2026-07-08 audit** of a fresh, much larger re-paste of `mpc_assistant.pine` (1721-line diff) supersedes the 2026-07-06/07 findings: **market_structure is now STALE** (two real detection changes → the whole sync chain), **fibonacci is heavily STALE** (Structure fib dropped TP4/TP5, added an internal-swing anchor + a TP3-hit reset; Macro reverted the held full-reset back to HIDE-only and changed its bottom anchor; the new **Internal Fib** is now fully implemented in source), and **SVP is STALE again** (`svpRows` 100 → 50). **liquidity stayed IN PARITY** (its refactor matches the already-committed wick-only sweep). The earlier held fibonacci-Macro question is **resolved** — the source reverted the same-bar full-reset, so the held engine/harness/test changes must be discarded and redone as part of the larger fib re-sync. See "Audit findings — 2026-07-08" below.
+**Last reviewed:** 2026-07-08
 
 ---
 
@@ -35,12 +35,14 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 
 ## Still to build
 
-- **Internal Fib** (new, found 2026-07-06) — a **4th fib** for `engines/fibonacci/`, anchored to
-  INTERNAL structure (iBOS/iSOS) instead of external swings, with a live-updating anchor (extends to
-  the running low/high since the internal break), the same 0.618 gate as the Structure fib, and a
-  TP3-hit-then-close-through reset. Pine block `GRP_IFIB` inputs + the `INTERNAL FIB` compute/draw
-  block. Not covered by any engine yet. Port as `InternalFib` alongside `StructureFib` and add
-  `px_ifib_*` columns to `indicators/fib_export.pine`. See "Audit findings — 2026-07-06".
+- **Internal Fib** (new; found 2026-07-06, now FULLY implemented in source as of the 2026-07-08 paste) —
+  a **4th fib** for `engines/fibonacci/`, anchored to INTERNAL structure (iBOS/iSOS) instead of external
+  swings, with a live-updating anchor (extends to the running low/high since the internal break), the
+  same 0.618 gate as the Structure fib, and a TP3-hit reset (`iFibResetActive`), cleared on any external
+  BOS/SOS. Pine block `GRP_IFIB` inputs + the `INTERNAL FIB` compute/touch/draw block + the
+  internal-structure anchor captures. Not covered by any engine yet. Port as `InternalFib` alongside
+  `StructureFib` and add `px_ifib_*` columns to `indicators/fib_export.pine`. See "Audit findings —
+  2026-07-08". **Do this as part of the fibonacci re-sync (the engine is STALE anyway).**
 
 Everything else is ported. The other forward work is *consumption*, not extraction: give each engine
 an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest
@@ -48,7 +50,96 @@ lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
 
 ---
 
-## Audit findings — 2026-07-06 (re-pasted `mpc_assistant.pine`)
+## Audit findings — 2026-07-08 (fresh, larger re-paste of `mpc_assistant.pine`)
+
+Working-tree diff of `indicators/mpc_assistant.pine` vs commit `de54b6b` (HEAD; its mpc copy ==
+`6f76bed`). This is a big re-paste (1721 lines). Most of it is still visual — the JARVIS table rebuilt
+to a 3-col Weekly/Daily HTF-bias layout, a new watermark, table position/size inputs, `showExternal` /
+`showHistoricalInternal` / `showHistoricSessions` / `showIFib` toggles, `showOBs`/`showKZ`/`showVwap`
+default-off, mitigated-levels hardcoded off, line-length inputs, sniper bull/bear colouring, and the
+new HTF-bias table block. The engine-affecting changes:
+
+**market_structure — STALE (logic changed; whole sync chain).** Two real detection changes in mpc's
+structure block that are NOT in `structure_engine.pine` (which only got the visual table flags), so the
+mirror has drifted:
+- *External* (`process`): a new `else` fallback that, when no ASH pullback high exists at a bearish
+  confirmation, scans back for the highest high since the last confirmed low and promotes it to
+  `st.last_conf_high` / `st.last_conf_high_loc` (with an HH/LH label). Changes when/what a swing high
+  confirms — a public output the fib + macro anchor on.
+- *Internal*: the "stop internal tracking" reset now fires on external **BOS too**
+  (`st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos`), not just SOS — changes iBOS/iSOS timing.
+- Per the MOST-CRUCIAL rule these make `indicators/structure_engine.pine`,
+  `indicators/structure_engine_export.pine`, AND `engines/market_structure/engine.py` STALE as one
+  unit. Re-sync 2→3→4 and re-run `compare_tradingview.py` (exit 0) on a fresh export before committing;
+  then check the `algos/shared/structure_engine.py` shim only for any new public field.
+- Note: the new `int_bull/bear_bos/sos` flags + `i_lbl_y_offset` `*100→*20` in `structure_engine.pine`
+  are VISUAL (table flags / label offset) — they are fine, they are not the drift.
+- **RE-SYNC STATUS (2026-07-08): DONE — parity CONFIRMED (exit 0).** Both detection changes ported into
+  `structure_engine.pine`, `structure_engine_export.pine`, and `engines/market_structure/engine.py` (the
+  external fallback mirrors the `label.new` via `broken_high_*` and updates `st.last_conf_high`; the
+  internal reset now fires on `bull_bos/bear_bos` too). The `algos/shared/structure_engine.py` shim reads
+  only `last_confirmed_high/low` — no new field, no shim edit. Unit tests 10/10 pass.
+  `compare_tradingview.py` on a FRESH `VANTAGE_XAUUSD, 5m` export from the updated harness
+  (`exports/VANTAGE_XAUUSD, 5_ce976.csv`, 7,369 bars, `--warmup 161`) → **✓ PARITY: every field matched
+  on every bar** (bars 0-160 are the usual cold-start warmup — Pine's export began mid-history; they
+  converge cleanly and stay matched). (The `i_confirmed_low/high` internal-swing capture is fib-support —
+  "used only for the fib pull" — and is deferred to the fibonacci re-sync as a StructureSnapshot addition,
+  not part of this detection re-sync.)
+
+**fibonacci — STALE (logic changed, heavily).** The held Macro question is resolved and the whole fib
+block needs re-syncing:
+- *Structure fib*: **dropped TP4 (`fibo8`, -0.270) and TP5 (`fibo9`, -0.618)** — the emitted level set
+  shrank. Also added: adopt a more-extreme **internal** swing (`i_confirmed_low/high`) as the fib
+  anchor, and a **`fiboResetActive`** reset that hides all levels once TP3 (`fibo7`/0.0) is touched,
+  until a new leg. Touch checks refactored to `f_checkTouch` (same semantics).
+- *Macro / Cycle fib*: the held **full-reset is REVERTED to HIDE-only** (`macro_visible := false`, no
+  state wipe) and moved to run AFTER the HH-extend + touch checks; the bottom anchor is now **always**
+  `macro_ll_since_bear_sos` (the `macroLLafterSOS` conditional that could pick `st.last_conf_low` is
+  gone); dead `_time` vars removed. So the currently-HELD `engines/fibonacci/{engine.py,
+  tests/test_macro_fib.py}` + `indicators/fib_export.pine` full-reset edits are now WRONG — discard and
+  redo as hide-only + the new bottom anchor.
+- *Internal Fib (NEW, 4th fib)*: now FULLY implemented in source (`GRP_IFIB` inputs + the INTERNAL FIB
+  compute/touch/draw block + the internal-structure anchor captures) — anchored to iBOS/iSOS, live
+  anchor extending to the running low/high, 0.618 gate, TP3-hit reset, cleared on any external
+  BOS/SOS. Port as `InternalFib` alongside `StructureFib`; add `px_ifib_*` columns to `fib_export.pine`.
+- Downstream of market_structure — re-sync fibonacci only AFTER the structure engine is re-synced (the
+  new external fallback changes `last_conf_high`, which the macro reads).
+
+**session_volume_profile — STALE (logic changed).** `svpRows` **100 → 50** (`engine.py` hardcodes
+`_SVP_ROWS = 100`). Halving the profile granularity moves the POC price. Change `_SVP_ROWS` to 50, update
+`indicators/svp_export.pine`, re-run `compare_svp.py` (exit 0). (The `svpNew` MV-reset change already
+matches the committed engine — only the row count is newly stale.)
+
+**liquidity — IN PARITY (no new drift).** The mitigation was refactored into a shared `f_liqMitigate`
+helper but the conditions are unchanged from what's committed — wick-only sweep (`high>lvl`/`low<lvl`)
+for daily/session/H4, close-break for weekly/monthly. The PDH/PDL/PWH/PWL `[1]` offset + weekly
+`lookahead_off` bring mpc's DISPLAY in line with the already-non-repainting engine (prev completed
+period), so no event change. No action.
+
+**order_blocks — not directly changed, but re-validate after the structure re-sync.** `extendOBs` and
+OB detection are untouched; only the default toggle flipped. But OB consumes internal breaks, whose
+timing shifts with the internal-reset-on-BOS change — so re-run `compare_ob.py` once structure is
+re-synced.
+
+**sessions / vwap / regime / news — not affected.** Sessions gained a `withinSessionDays` display-window
+gate (current-week-only unless `showHistoricSessions`); it gates only the drawn `sessionInfos`, not the
+event stream the engine emits — visual, noted for reconciliation. VWAP/regime/news untouched.
+
+**Stale harnesses to update before re-validation:** `structure_engine.pine` (+ its export),
+`fib_export.pine` (Structure fib level drop + internal anchor + `fiboResetActive` + macro hide-only/
+bottom-anchor + new `px_ifib_*`), `svp_export.pine` (50 rows).
+
+**New block noted (not yet on the extract list):** the **HTF Directional Bias** helper
+(`f_biasState`/`f_htfBias`, Daily/Weekly established+current bias with sweep detection) — currently
+feeds only the JARVIS table, but it is genuinely new computed logic a bot might want. Flagging as a
+candidate; no engine yet.
+
+Each engine fix must re-run its `compare_*.py` Pine-parity check on a fresh TradingView export (with the
+matching `*_export.pine` harness updated first) before it is committed.
+
+---
+
+## Audit findings — 2026-07-06 (re-pasted `mpc_assistant.pine`) — SUPERSEDED by 2026-07-08 above
 
 Working-tree diff of `indicators/mpc_assistant.pine` vs commit `6f76bed` (its last commit). Most of
 the diff is visual — a reworked JARVIS confirmation table (3-col, most-recent BSL/SSL + per-fib

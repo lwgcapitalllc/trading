@@ -759,6 +759,17 @@ class StructureEngine:
             st.pb_count = 0
             st.pb_mode = -1
         else:
+            highest_val = bar.high
+            highest_loc = bar_index
+            bars_back = bar_index if st.last_conf_low_loc is None else bar_index - st.last_conf_low_loc
+            if bars_back > 0:
+                max_lb = min(min(bars_back, _RESCAN_BOUND), bar_index)
+                for i in range(0, max_lb + 1):
+                    b = self._bar_index_minus(i)
+                    if b is not None and b.high > highest_val:
+                        highest_val = b.high
+                        highest_loc = bar_index - i
+
             if st.ash is not None:
                 already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
                 if not already_conf_high:
@@ -772,17 +783,18 @@ class StructureEngine:
                     st.last_conf_high = st.ash
                     st.last_conf_high_loc = st.ash_loc
                 st.ash = None
-
-            highest_val = bar.high
-            highest_loc = bar_index
-            bars_back = bar_index if st.last_conf_low_loc is None else bar_index - st.last_conf_low_loc
-            if bars_back > 0:
-                max_lb = min(min(bars_back, _RESCAN_BOUND), bar_index)
-                for i in range(0, max_lb + 1):
-                    b = self._bar_index_minus(i)
-                    if b is not None and b.high > highest_val:
-                        highest_val = b.high
-                        highest_loc = bar_index - i
+            else:
+                # Neither an active pullback high nor a confirmed ASH was available to
+                # promote — use the actual highest point since the last confirmed low so a
+                # genuine swing high still gets confirmed instead of silently vanishing.
+                # Pine: mpc_assistant.pine lines 777-787 / structure_engine.pine else-branch.
+                if highest_val != st.last_conf_high:
+                    fallback_is_hh = st.last_conf_high is None or highest_val >= st.last_conf_high
+                    st.broken_high_label = "HH" if fallback_is_hh else "LH"
+                    st.broken_high_price = highest_val
+                    st.broken_high_index = highest_loc
+                    st.last_conf_high = highest_val
+                    st.last_conf_high_loc = highest_loc
 
             st.bear_bos_high = highest_val     # Pine: st.bear_bos_high  := highest_val
             st.bear_bos_h_loc = highest_loc    # Pine: st.bear_bos_h_loc := highest_loc
@@ -814,8 +826,10 @@ class StructureEngine:
 
         events = InternalEvents()
 
-        # ── Stop internal tracking on external SOS (lines 590-606) ──
-        if st.bull_sos or st.bear_sos:
+        # ── Stop internal tracking on external BOS/SOS (structure_engine.pine
+        #    "Stop internal tracking on external SOS" block; the reset now also
+        #    fires on an external BOS, not only an SOS/CHoCH) ──
+        if st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos:
             ist.sw_price = None
             ist.sw_loc = None
             ist.sw_locked = False
