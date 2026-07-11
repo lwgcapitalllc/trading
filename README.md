@@ -26,7 +26,8 @@ trading/
 │   ├── vwap/            ← Session VWAP engine (volume-weighted hlc3, trading-day anchor + cross); needs volume
 │   ├── session_volume_profile/  ← Session Volume Profile engine (Asia POC / MV line + sweep); consumes sessions/, needs volume
 │   ├── fair_value_gaps/ ← Fair-value-gap engine (3-candle displacement voids + mitigation); standalone, OHLC-only
-│   │                       (SMC extraction COMPLETE — see ENGINE_EXTRACTION_ROADMAP.md)
+│   ├── rsi_divergence/  ← RSI-divergence engine (regular divergence at the extremes + live confluence); standalone
+│   │                       (SMC extraction COMPLETE — FVG + RSI-div pulled later for the A+ setup; see ENGINE_EXTRACTION_ROADMAP.md)
 │   └── news/            ← Economic-calendar (news + holiday) blackout engine (off-roadmap, not a Pine port; standalone)
 │
 │  ── TOOLING / SOURCE ────────────────────────────────────────────
@@ -60,10 +61,11 @@ Read these in order for full context:
 12. `engines/vwap/CLAUDE.md` — session VWAP engine (volume-weighted, trading-day anchor), parity rules
 13. `engines/session_volume_profile/CLAUDE.md` — Session Volume Profile engine (Asia POC / MV line), parity rules
 14. `engines/fair_value_gaps/CLAUDE.md` — fair-value-gap engine (displacement voids + mitigation), parity rules
-15. `engines/news/CLAUDE.md` — news/economic-calendar blackout engine, data paths, validation (no Pine source)
-16. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
-17. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
-18. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
+15. `engines/rsi_divergence/CLAUDE.md` — RSI-divergence engine (regular divergence + live confluence), parity rules
+16. `engines/news/CLAUDE.md` — news/economic-calendar blackout engine, data paths, validation (no Pine source)
+17. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
+18. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
+19. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
 19. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
 
 ## Subsystems
@@ -82,6 +84,7 @@ Read these in order for full context:
 | `engines/vwap/` | Session VWAP engine (volume-weighted hlc3, trading-day anchor + cross) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/vwap/CLAUDE.md` |
 | `engines/session_volume_profile/` | Session Volume Profile engine (Asia POC / MV line + sweep) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/session_volume_profile/CLAUDE.md` |
 | `engines/fair_value_gaps/` | Fair-value-gap engine (3-candle displacement voids + mitigation; standalone) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/fair_value_gaps/CLAUDE.md` |
+| `engines/rsi_divergence/` | RSI-divergence engine (regular divergence at the extremes + live confluence; standalone) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/rsi_divergence/CLAUDE.md` |
 | `engines/news/` | Economic-calendar (news + holiday) blackout engine | Production — 29 tests + live checks (no Pine source) | `engines/news/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
 | `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |

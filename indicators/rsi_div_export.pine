@@ -1,0 +1,85 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// ============================================================================
+//  RSI DIVERGENCE EXPORT — parity harness for engines/rsi_divergence/
+// ============================================================================
+// Instrumented copy of the "RSI DIVERGENCE — regular divergence at the extremes"
+// block from mpc_assistant.pine, with ALL drawing removed (no dotted lines, no
+// labels — those are visuals) and the divergence state kept. It adds px_div_*
+// plot columns so a TradingView CSV export can be diffed bar-by-bar against the
+// Python RsiDivergenceEngine by engines/rsi_divergence/tools/compare_rsi_div.py.
+//
+// Keep the RSI + pivot + divergence logic byte-identical to mpc_assistant.pine's
+// RSI DIVERGENCE block. Do not let it drift.
+// ============================================================================
+// overlay=false: its own pane, so the transparent parity plots don't drag the price
+// chart's scale. All drawing is removed anyway (this is the harness). RSI divergence
+// detection is timeframe-agnostic — export on any intraday timeframe.
+indicator("RSI Divergence Export", overlay = false, max_bars_back = 2000)
+
+// ── GRP_DIV inputs (defaults == mpc_assistant.pine) ──
+bool showDiv      = input.bool(true, "Track RSI Divergence")
+int  divRsiLen    = input.int(14, "RSI Length",              minval = 2,  maxval = 50)
+int  divPivotLen  = input.int(5,  "Pivot Width (bars)",      minval = 1,  maxval = 20)
+int  divOS        = input.int(30, "Oversold Level",          minval = 5,  maxval = 50)
+int  divOB        = input.int(70, "Overbought Level",        minval = 50, maxval = 95)
+int  divValidBars = input.int(100, "Divergence Valid For (bars)", minval = 10, maxval = 500)
+
+// ── RSI + pivots (byte-identical to mpc) ──
+float divRsi   = ta.rsi(close, divRsiLen)
+float divPlRsi = ta.pivotlow(divRsi, divPivotLen, divPivotLen)
+float divPhRsi = ta.pivothigh(divRsi, divPivotLen, divPivotLen)
+
+var float divPrevRsiLow    = na
+var float divPrevPriceLow  = na
+var int   divPrevLowBar    = na
+var float divPrevRsiHigh   = na
+var float divPrevPriceHigh = na
+var int   divPrevHighBar   = na
+var int   lastBullDivBar   = na
+var int   lastBearDivBar   = na
+
+// Per-bar signal pulses (reset each bar) — did a divergence CONFIRM this bar?
+bool divBullSignal = false
+bool divBearSignal = false
+
+if showDiv and not na(divPlRsi)
+    float _pLow = low[divPivotLen]
+    int   _pBar = bar_index - divPivotLen
+    if not na(divPrevRsiLow)
+        if _pLow < divPrevPriceLow and divPlRsi > divPrevRsiLow and math.min(divPlRsi, divPrevRsiLow) <= divOS
+            lastBullDivBar := _pBar
+            divBullSignal := true
+    divPrevRsiLow   := divPlRsi
+    divPrevPriceLow := _pLow
+    divPrevLowBar   := _pBar
+
+if showDiv and not na(divPhRsi)
+    float _pHigh = high[divPivotLen]
+    int   _pBar  = bar_index - divPivotLen
+    if not na(divPrevRsiHigh)
+        if _pHigh > divPrevPriceHigh and divPhRsi < divPrevRsiHigh and math.max(divPhRsi, divPrevRsiHigh) >= divOB
+            lastBearDivBar := _pBar
+            divBearSignal := true
+    divPrevRsiHigh   := divPhRsi
+    divPrevPriceHigh := _pHigh
+    divPrevHighBar   := _pBar
+
+bool bullDivActive = showDiv and not na(lastBullDivBar) and bar_index - lastBullDivBar <= divValidBars
+bool bearDivActive = showDiv and not na(lastBearDivBar) and bar_index - lastBearDivBar <= divValidBars
+
+// ── Parity columns ──
+// NOTE: use a fully-transparent COLOUR (alpha 100), NOT `display = display.none`.
+// TradingView's "Export chart data" excludes display.none plots from the CSV; transparent
+// plots stay invisible on the chart but DO export (same trick fvg_export.pine uses).
+// Ages are DIFFERENCES of bar indices (bar_index - lastDivBar), so they survive the absolute
+// bar_index (Pine) vs 0-based row (Python) offset — compare exactly.
+plot(divRsi,   "px_div_rsi", color = color.new(color.gray, 100))
+plot(divPlRsi, "px_div_pl",  color = color.new(color.green, 100))
+plot(divPhRsi, "px_div_ph",  color = color.new(color.red, 100))
+plot(divBullSignal ? 1.0 : 0.0, "px_div_bull",        color = color.new(color.gray, 100))
+plot(divBearSignal ? 1.0 : 0.0, "px_div_bear",        color = color.new(color.gray, 100))
+plot(bullDivActive  ? 1.0 : 0.0, "px_div_bull_active", color = color.new(color.gray, 100))
+plot(bearDivActive  ? 1.0 : 0.0, "px_div_bear_active", color = color.new(color.gray, 100))
+plot(na(lastBullDivBar) ? na : bar_index - lastBullDivBar, "px_div_bull_age", color = color.new(color.gray, 100))
+plot(na(lastBearDivBar) ? na : bar_index - lastBearDivBar, "px_div_bear_age", color = color.new(color.gray, 100))

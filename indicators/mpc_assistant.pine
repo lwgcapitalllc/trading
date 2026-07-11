@@ -119,6 +119,17 @@ var GRP_APLUS = "A+ Setup"
 int aplusWindow = input.int(300, "Max Bars: Sweep → SOS", minval = 10, maxval = 1000, group = GRP_APLUS, tooltip = "Staleness backstop: the SOS must fire within this many bars of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
 
 //============================================================
+//  RSI DIVERGENCE INPUTS
+//============================================================
+var GRP_DIV = "RSI Divergence"
+bool showDiv     = input.bool(true, "Track RSI Divergence", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes: price makes a lower low while RSI makes a higher low from oversold (bullish), or price a higher high while RSI a lower high from overbought (bearish). Drawn on the chart and tagged as confluence on the A+ setup row. Pivot confirmation lags by the pivot width — the signal prints a few bars after the actual extreme.", display = display.none)
+int  divRsiLen   = input.int(14, "RSI Length", minval = 2, maxval = 50, group = GRP_DIV, active = showDiv, display = display.none)
+int  divPivotLen = input.int(5,  "Pivot Width (bars)", minval = 1, maxval = 20, group = GRP_DIV, active = showDiv, display = display.none)
+int  divOS       = input.int(30, "Oversold Level", minval = 5, maxval = 50, group = GRP_DIV, active = showDiv, display = display.none)
+int  divOB       = input.int(70, "Overbought Level", minval = 50, maxval = 95, group = GRP_DIV, active = showDiv, display = display.none)
+int  divValidBars = input.int(100, "Divergence Valid For (bars)", minval = 10, maxval = 500, group = GRP_DIV, active = showDiv, tooltip = "How long a divergence counts as live confluence for the A+ setup row.", display = display.none)
+
+//============================================================
 //  TRADING SESSIONS INPUTS
 //============================================================
 var GRP_SESS = "Trading Sessions"
@@ -1772,6 +1783,55 @@ if showFVG and array.size(fvgBoxes) > 0
             bool visible = not fvgDirOnly or st.dir == 0 or (isBull ? st.dir == 1 : st.dir == -1)
             box.set_bgcolor(fb, visible ? (isBull ? fvgBullColor : fvgBearColor) : color(na))
             box.set_text_color(fb, visible ? color.new(color.gray, 30) : color(na))
+
+//============================================================
+//  RSI DIVERGENCE — regular divergence at the extremes
+//============================================================
+// Bullish: price prints a LOWER low while RSI prints a HIGHER low, with the RSI
+// low coming from oversold. Bearish is the mirror from overbought. Pivots are
+// confirmed divPivotLen bars after the extreme (non-repainting by design).
+float divRsi = ta.rsi(close, divRsiLen)
+float divPlRsi = ta.pivotlow(divRsi, divPivotLen, divPivotLen)
+float divPhRsi = ta.pivothigh(divRsi, divPivotLen, divPivotLen)
+
+var float divPrevRsiLow    = na
+var float divPrevPriceLow  = na
+var int   divPrevLowBar    = na
+var float divPrevRsiHigh   = na
+var float divPrevPriceHigh = na
+var int   divPrevHighBar   = na
+var int   lastBullDivBar   = na
+var int   lastBearDivBar   = na
+
+if showDiv and not na(divPlRsi)
+    float _pLow = low[divPivotLen]
+    int   _pBar = bar_index - divPivotLen
+    if not na(divPrevRsiLow)
+        // Lower low in price, higher low in RSI, from the oversold extreme
+        if _pLow < divPrevPriceLow and divPlRsi > divPrevRsiLow and math.min(divPlRsi, divPrevRsiLow) <= divOS
+            lastBullDivBar := _pBar
+            line.new(divPrevLowBar, divPrevPriceLow, _pBar, _pLow, color = color.new(#4caf50, 0), style = line.style_dotted, width = 2)
+            label.new(_pBar, _pLow, "\nBull Div", color = color(na), textcolor = color.new(#4caf50, 0), style = label.style_label_up, size = size.tiny)
+    divPrevRsiLow   := divPlRsi
+    divPrevPriceLow := _pLow
+    divPrevLowBar   := _pBar
+
+if showDiv and not na(divPhRsi)
+    float _pHigh = high[divPivotLen]
+    int   _pBar  = bar_index - divPivotLen
+    if not na(divPrevRsiHigh)
+        // Higher high in price, lower high in RSI, from the overbought extreme
+        if _pHigh > divPrevPriceHigh and divPhRsi < divPrevRsiHigh and math.max(divPhRsi, divPrevRsiHigh) >= divOB
+            lastBearDivBar := _pBar
+            line.new(divPrevHighBar, divPrevPriceHigh, _pBar, _pHigh, color = color.new(#ff5252, 0), style = line.style_dotted, width = 2)
+            label.new(_pBar, _pHigh, "Bear Div\n", color = color(na), textcolor = color.new(#ff5252, 0), style = label.style_label_down, size = size.tiny)
+    divPrevRsiHigh   := divPhRsi
+    divPrevPriceHigh := _pHigh
+    divPrevHighBar   := _pBar
+
+// Live confluence flags for the A+ setup row
+bool bullDivActive = showDiv and not na(lastBullDivBar) and bar_index - lastBullDivBar <= divValidBars
+bool bearDivActive = showDiv and not na(lastBearDivBar) and bar_index - lastBearDivBar <= divValidBars
 
 
 var array<SessionInfo> sessionInfos = getSessionInfos()
@@ -3622,13 +3682,15 @@ if showConfTable and barstate.islast
         bool  seqCont = seqIsLong ? seqLIsCont : seqSIsCont
         bool  seqFvg  = seqIsLong ? aplusL_fvg : aplusS_fvg
         bool  seqPoi  = seqIsLong ? aplusL_poi : aplusS_poi
+        bool  seqDiv  = seqIsLong ? bullDivActive : bearDivActive
         string fvgTag = seqFvg ? " + FVG" : ""
         string poiTag = not seqCont and seqPoi ? " + POI" : ""
+        string divTag = seqDiv ? " + DIV" : ""
         string modeTag = seqCont ? "Cont · " : ""
         if seqStage == 4
-            f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, modeTag + "E1 zone" + fvgTag + poiTag)
+            f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, modeTag + "E1 zone" + fvgTag + poiTag + divTag)
         else if seqStage == 3
-            f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, modeTag + "0.5 early" + fvgTag + poiTag)
+            f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, modeTag + "0.5 early" + fvgTag + poiTag + divTag)
         else if seqStage == 2
             f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, seqCont ? "Cont · BOS ✓ await retrace" : "SOS ✓ await retrace" + poiTag)
         else

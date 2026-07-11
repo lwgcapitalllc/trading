@@ -3,7 +3,7 @@
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
 **Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. The 2026-07-09 re-sync (liquidity monthly-removal + fibonacci TP3-reset-drop/extend-guard/macro-seed) is now **committed** (`d367b6d`), every engine back at 100% Pine parity. A **fresh 2026-07-10 re-paste** of `mpc_assistant.pine` (524-line staged diff) was audited: **NO engine is stale.** Every engine-affecting change is either visual (swing-label hide toggle, VWAP polyline→plot, KZ/session display windows, session-H/L input consolidation, iBOS/iSOS label reposition) or already-aligned (macro fib run-guard opened to all-timeframes tracking, which the Python engine was already doing unconditionally). **TWO NEW blocks** appeared. One is engine work (now BUILT), one is strategy work (not built): (a) **FAIR VALUE GAPS (FVG)** — a 3-candle displacement gap detector (persists until tapped, FIFO cap); a genuine event detector → **✅ built + Pine-parity-validated 2026-07-10 as `engines/fair_value_gaps/`** (12 unit tests green; `compare_fvg.py --warmup 20` exit 0 on a real `VANTAGE_XAUUSD, 5m` export). The small **`fiboHalfReached`** fib add-on (inbound 0.5 touch) was **✅ built + parity-validated into `engines/fibonacci/`** the same day (2 new tests; `compare_fib.py --warmup 1002` exit 0). **Both ready to commit with the mpc re-paste.** (b) **A+ SETUP SEQUENCE** — a stateful sweep→SOS→fib-entry machine (continuation mode, Cycle-Fib POI, FVG confluence) that **REPLACES the old SETUP GRADING candidate**; it *decides trades*, so it is **strategy-tier, NOT an engine** — it belongs in `strategies/` (MT5/NT8) or a Python bot, and now has both its engine dependencies (FVG + `fiboHalfReached`) in place. **market_structure sync chain NOT triggered** (only label colour/position changed; no detection change). See "Audit findings — 2026-07-10" below.
-**Last reviewed:** 2026-07-10 (fresh re-paste audit — no engine drift; FVG engine + `fiboHalfReached` built & Pine-parity-validated, ready to commit; A+ setup remains strategy-tier, not built)
+**Last reviewed:** 2026-07-11 (RSI Divergence detector BUILT + PARITY-VALIDATED as `engines/rsi_divergence/` — engine + harness + compare tool + 9 tests green; `compare_rsi_div.py --warmup 1630` exit 0 on a real `VANTAGE_XAUUSD, 5m` export. Found in the 2026-07-10 re-paste audit post-`29d55f2`, where FVG + `fiboHalfReached` were confirmed COMMITTED (`29d55f2`).)
 
 ---
 
@@ -79,6 +79,22 @@ Downstream engines (like the fibs) read another engine's **public output** only 
   `VANTAGE_XAUUSD, 5m` export (7,891 bars) — `px_fibo_half_reached` matched Pine on every warm bar
   alongside all existing fib fields. Ready to commit (with the mpc re-paste).
 
+- **RSI Divergence detector** — ✅ **BUILT + PARITY-VALIDATED 2026-07-11** as `engines/rsi_divergence/`
+  (engine + types + `__init__` + CLAUDE.md + 9 tests, green). A standalone regular-divergence detector
+  at the extremes: bullish = price lower-low while Wilder's RSI (`ta.rsi`, len 14) prints a higher-low
+  from oversold (≤`divOS`); bearish = the overbought mirror. Pivots via `ta.pivotlow`/`ta.pivothigh` on
+  RSI (`divPivotLen`), so it confirms `divPivotLen` bars after the extreme (non-repainting). Emits a
+  divergence event per side + the live-confluence flags (`bull_active`/`bear_active`, valid
+  `divValidBars` bars). Standalone (no upstream engine, no volume, no timestamp — close for RSI + the
+  bar's high/low for the anchor) — same shape as the FVG engine. Feeds **only** the JARVIS "A+ SETUP"
+  table row as a "+ DIV" confluence tag (does not alter the A+ sequence's staging). Three Pine details
+  ported exactly: Wilder RSI (SMA-seeded RMA, not a gain average), strict `(2·L+1)`-window pivots (the
+  same semantics `market_structure` ports), and the `low[divPivotLen]`/`high[divPivotLen]` price anchor.
+  **`compare_rsi_div.py --warmup 1630` → exit 0** on a real `VANTAGE_XAUUSD, 5m` export (9,830 bars):
+  RSI value + both RSI pivots + both divergence pulses + both live flags + both ages matched Pine on all
+  8,200 warm bars (harness `indicators/rsi_div_export.pine`). The 1,630-bar warm-up is the cold-start
+  (Pine opens with off-window RSI + divergences; its first-bar ages are 471 / 1902).
+
 - **HTF Directional Bias helper** (candidate since 2026-07-08; simplified 2026-07-10) — `f_biasState` /
   `f_htfBias`: Daily+Weekly Established Context bias (Closed[1] vs Closed[2]) with sweep detection. The
   "Current Forming" half (Live[0] vs Closed[1]) was **removed from source 2026-07-10** ("never consumed"),
@@ -88,6 +104,40 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 Everything else is ported. The other forward work is *consumption*, not extraction: give each engine
 an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest
 lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
+
+---
+
+## Audit findings — 2026-07-10 (RSI-divergence re-paste, working tree vs committed `29d55f2`)
+
+Working-tree diff vs commit `29d55f2` (the FVG + `fiboHalfReached` + A+ setup commit — the section below
+this one is that audit). Tiny diff: **66 lines, 64+/2-**, one self-contained new feature. **No engine is
+stale. The market_structure sync chain is NOT triggered.** No `*_export.pine` harness is stale and no
+`compare_*.py` needs re-running.
+
+**NEW BLOCK — RSI Divergence** (un-extracted). A `GRP_DIV` input group (`showDiv`, `divRsiLen` 14,
+`divPivotLen` 5, `divOS` 30, `divOB` 70, `divValidBars` 100) + a compute block: `ta.rsi(close, divRsiLen)`
+with `ta.pivotlow`/`ta.pivothigh` on the RSI, detecting regular divergence at the extremes — price
+lower-low while RSI higher-low from oversold (bullish), price higher-high while RSI lower-high from
+overbought (bearish). Pivots confirm `divPivotLen` bars after the extreme (non-repainting). Draws a dotted
+line + label and sets `bullDivActive`/`bearDivActive` (live for `divValidBars` bars). Genuine new event
+logic; standalone (RSI + price/RSI pivots — no upstream engine, no volume, no timestamp), same shape as
+the FVG engine. Added to "Still to build" as a candidate.
+
+**Only consumer = the JARVIS "A+ SETUP" table row.** The flags flow to `seqDiv` (line 3685) → a `" + DIV"`
+tag appended to the READY/EARLY A+ row text (lines 3688–3693). They do NOT alter any engine's detection,
+and they do NOT alter the A+ setup sequence's staging (`seqStage`) — purely a display confluence tag. So
+this is an A+-support add-on in the strategy/display tier, not an engine change.
+
+**Every engine — not affected.** Nothing in the diff touches structure, fibonacci, order_blocks,
+sessions/kill zones/NY range, liquidity, vwap, svp, fair_value_gaps, regime, or news. All IN PARITY.
+
+**Housekeeping:** the FVG engine + `fiboHalfReached` that the audit below listed as "ready to commit" are
+now COMMITTED (`29d55f2`, 2026-07-10) — still listed under "Still to build" with their ✅ built markers
+for the port detail, but they are shipped and Pine-parity-validated.
+
+**No engine code was changed in this audit — report only.** If the RSI divergence detector is later
+extracted, it gets its own `rsi_divergence` engine + a parity harness (`rsi_div_export.pine`) +
+`compare_rsi_div.py`, run to exit 0 on a fresh TradingView export before commit.
 
 ---
 
