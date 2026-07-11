@@ -11,8 +11,18 @@ price + RSI directly), no MT5 ops, no UI, no chart rendering (no lines, no label
 **Status:** BUILT + PARITY-VALIDATED — ported line-by-line from `mpc_assistant.pine`'s "RSI
 DIVERGENCE" block, unit-tested (9 tests, green), and **100% Pine parity confirmed** on a real
 `VANTAGE_XAUUSD, 5m` export (`compare_rsi_div.py --warmup 1630`, exit 0, 9,830 bars — every field
-matched on all 8,200 warm bars — 2026-07-11). The one canonical implementation — no consumer builds
-its own.
+matched on all 8,200 warm bars — 2026-07-11, at the then-defaults divOS 30 / divOB 70). The one
+canonical implementation — no consumer builds its own.
+**Re-validated at divOS 25 / divOB 75 (2026-07-11):** the mpc re-paste changed the divergence-gate
+defaults 30→25 / 70→75. Synced here in code (engine defaults + harness + compare tool + tests + docs;
+9 tests green), then **re-confirmed 100% parity on a fresh 25/75 `VANTAGE_XAUUSD, 5m` export (16,887
+bars): `compare_rsi_div.py --warmup 8762` → exit 0**, every field matching and the divergence pulses
+matching from bar 16. The larger warm-up (vs the 1,630 at 30/70) is benign and verified: the `bull/bear_age`
+columns cold-start against an off-window divergence Pine carries in from before the export, and at the
+stricter 25/75 gate the first mutually-agreed in-window divergence that resets the bear-age counter lands
+near bar 8761; plus four isolated RSI-pivot float-ties (bars 1639/2179/3561/8761, RSI equal to a neighbour
+to ~1e-14) that Pine's strict `ta.pivothigh` confirms and Python skips — the documented Wilder float-tie,
+zero pulse impact. Detection formula unchanged (parameterized threshold); only the default constant moved.
 **Pine:** ported from `indicators/mpc_assistant.pine`'s RSI DIVERGENCE block (+ the `GRP_DIV`
 inputs); parity harness is `indicators/rsi_div_export.pine`, diffed against this Python by
 `tools/compare_rsi_div.py`.
@@ -48,10 +58,10 @@ The engine runs Wilder's RSI (`ta.rsi(close, rsi_len)`, default length 14) and f
 
 - **Bullish divergence** — on a confirmed RSI pivot LOW, compare it to the *previous* RSI pivot low:
   a LOWER price low (`price < prev_price`) with a HIGHER RSI low (`rsi > prev_rsi`), and the lower of
-  the two RSI lows ≤ the **oversold** level (default 30). The price anchor is `low[pivot_len]` — the
+  the two RSI lows ≤ the **oversold** level (default 25). The price anchor is `low[pivot_len]` — the
   bar's low AT the RSI-pivot bar, not a separately detected price pivot.
 - **Bearish divergence** — the mirror on a confirmed RSI pivot HIGH: a HIGHER price high with a LOWER
-  RSI high, the higher of the two RSI highs ≥ the **overbought** level (default 70).
+  RSI high, the higher of the two RSI highs ≥ the **overbought** level (default 75).
 
 Each confirmed pivot becomes the new "previous" for the next comparison (whether or not it fired a
 divergence). A divergence stays **live confluence** (`bull_active` / `bear_active`) for `valid_bars`
@@ -111,7 +121,7 @@ the value the parity harness uses.
 ```python
 from rsi_divergence import RsiDivergenceEngine
 
-div = RsiDivergenceEngine()   # rsi_len=14, pivot_len=5, oversold=30, overbought=70, valid_bars=100
+div = RsiDivergenceEngine()   # rsi_len=14, pivot_len=5, oversold=25, overbought=75, valid_bars=100
 
 # Each closed bar, in order:
 ev = div.update(bar.index, bar.high, bar.low, bar.close)

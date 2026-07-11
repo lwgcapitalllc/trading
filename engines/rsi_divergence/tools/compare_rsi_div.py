@@ -27,7 +27,7 @@ Export ONE CSV from TradingView with indicators/rsi_div_export.pine on the chart
 chart data), with showDiv ON. Each row carries the candle (fed to Python) and the Pine divergence
 engine's outputs. Both sides come from the same file, so there is no data-source mismatch. Set
 --rsi-len / --pivot-len / --oversold / --overbought / --valid-bars to match the Pine inputs (defaults
-14 / 5 / 30 / 70 / 100 = the mpc defaults).
+14 / 5 / 25 / 75 / 100 = the mpc defaults).
 
 Warmup
 ------
@@ -185,8 +185,8 @@ def main(argv=None):
     ap.add_argument("csv", help="CSV exported from TradingView with rsi_div_export.pine on the chart")
     ap.add_argument("--rsi-len", type=int, default=14, help="must match the Pine divRsiLen (default 14)")
     ap.add_argument("--pivot-len", type=int, default=5, help="must match the Pine divPivotLen (default 5)")
-    ap.add_argument("--oversold", type=float, default=30.0, help="must match the Pine divOS (default 30)")
-    ap.add_argument("--overbought", type=float, default=70.0, help="must match the Pine divOB (default 70)")
+    ap.add_argument("--oversold", type=float, default=25.0, help="must match the Pine divOS (default 25)")
+    ap.add_argument("--overbought", type=float, default=75.0, help="must match the Pine divOB (default 75)")
     ap.add_argument("--valid-bars", type=int, default=100, help="must match the Pine divValidBars (default 100)")
     ap.add_argument("--tolerance", type=float, default=1e-2, help="abs tolerance for RSI-value fields (default 1e-2, covers CSV rounding)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")

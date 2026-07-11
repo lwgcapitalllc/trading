@@ -85,7 +85,7 @@ def ref_pivots(vals, L):
     return pl, ph
 
 
-def ref_run(highs, lows, rsi, pivot_len=5, os_=30.0, ob=70.0, valid=100):
+def ref_run(highs, lows, rsi, pivot_len=5, os_=25.0, ob=75.0, valid=100):
     """Full reference output per bar, mirroring the Pine block with array logic.
 
     Takes a precomputed `rsi` array (rather than closes) so the structural pivot/divergence/flag
@@ -227,7 +227,7 @@ def test_pivot_low_confirms_late_at_the_trough():
 
 def test_engine_matches_reference_and_fires_both_divergences():
     highs, lows, closes = _swing_series()
-    eng = RsiDivergenceEngine()          # defaults: 14 / 5 / 30 / 70 / 100
+    eng = RsiDivergenceEngine()          # defaults: 14 / 5 / 25 / 75 / 100
     got, rsi = _feed_all(eng, highs, lows, closes)
     ref = ref_run(highs, lows, rsi)
 
@@ -261,11 +261,11 @@ def test_detected_divergence_carries_correct_anchors():
     # Bullish: lower price low but higher RSI low, the lower RSI from oversold.
     assert bull.pivot_price < bull.prev_price
     assert bull.pivot_rsi > bull.prev_rsi
-    assert min(bull.pivot_rsi, bull.prev_rsi) <= 30.0
+    assert min(bull.pivot_rsi, bull.prev_rsi) <= 25.0
     # Bearish: higher price high but lower RSI high, the higher RSI from overbought.
     assert bear.pivot_price > bear.prev_price
     assert bear.pivot_rsi < bear.prev_rsi
-    assert max(bear.pivot_rsi, bear.prev_rsi) >= 70.0
+    assert max(bear.pivot_rsi, bear.prev_rsi) >= 75.0
 
 
 # ── live-confluence flag window ──

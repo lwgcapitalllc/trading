@@ -121,15 +121,15 @@ class RsiDivergenceEngine:
 
     Build one per symbol/timeframe, feed it one closed candle at a time as they close, in order.
     Mirrors mpc_assistant.pine's default `GRP_DIV` settings: RSI length 14, pivot width 5, oversold
-    30, overbought 70, and a divergence stays "live" confluence for 100 bars after its pivot.
+    25, overbought 75, and a divergence stays "live" confluence for 100 bars after its pivot.
     """
 
-    def __init__(self, rsi_len: int = 14, pivot_len: int = 5, oversold: float = 30.0,
-                 overbought: float = 70.0, valid_bars: int = 100) -> None:
+    def __init__(self, rsi_len: int = 14, pivot_len: int = 5, oversold: float = 25.0,
+                 overbought: float = 75.0, valid_bars: int = 100) -> None:
         self._rsi_len = rsi_len            # Pine divRsiLen (default 14)
         self._pivot_len = pivot_len        # Pine divPivotLen (default 5)
-        self._oversold = oversold          # Pine divOS (default 30)
-        self._overbought = overbought      # Pine divOB (default 70)
+        self._oversold = oversold          # Pine divOS (default 25)
+        self._overbought = overbought      # Pine divOB (default 75)
         self._valid_bars = valid_bars      # Pine divValidBars (default 100)
 
         self._rsi = _RsiState(rsi_len)

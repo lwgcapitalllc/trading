@@ -14,7 +14,7 @@ Wilder's RSI) plus the bar's high/low (the price anchor at the RSI pivot). Pivot
 Public API:
     from rsi_divergence import RsiDivergenceEngine
 
-    div = RsiDivergenceEngine()          # rsi_len=14, pivot_len=5, oversold=30, overbought=70,
+    div = RsiDivergenceEngine()          # rsi_len=14, pivot_len=5, oversold=25, overbought=75,
                                          # valid_bars=100 — the Pine defaults
     # each closed bar, in order:
     ev = div.update(bar.index, bar.high, bar.low, bar.close)

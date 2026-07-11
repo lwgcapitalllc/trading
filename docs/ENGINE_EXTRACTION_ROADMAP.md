@@ -3,7 +3,7 @@
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
 **Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. The 2026-07-09 re-sync (liquidity monthly-removal + fibonacci TP3-reset-drop/extend-guard/macro-seed) is now **committed** (`d367b6d`), every engine back at 100% Pine parity. A **fresh 2026-07-10 re-paste** of `mpc_assistant.pine` (524-line staged diff) was audited: **NO engine is stale.** Every engine-affecting change is either visual (swing-label hide toggle, VWAP polyline→plot, KZ/session display windows, session-H/L input consolidation, iBOS/iSOS label reposition) or already-aligned (macro fib run-guard opened to all-timeframes tracking, which the Python engine was already doing unconditionally). **TWO NEW blocks** appeared. One is engine work (now BUILT), one is strategy work (not built): (a) **FAIR VALUE GAPS (FVG)** — a 3-candle displacement gap detector (persists until tapped, FIFO cap); a genuine event detector → **✅ built + Pine-parity-validated 2026-07-10 as `engines/fair_value_gaps/`** (12 unit tests green; `compare_fvg.py --warmup 20` exit 0 on a real `VANTAGE_XAUUSD, 5m` export). The small **`fiboHalfReached`** fib add-on (inbound 0.5 touch) was **✅ built + parity-validated into `engines/fibonacci/`** the same day (2 new tests; `compare_fib.py --warmup 1002` exit 0). **Both ready to commit with the mpc re-paste.** (b) **A+ SETUP SEQUENCE** — a stateful sweep→SOS→fib-entry machine (continuation mode, Cycle-Fib POI, FVG confluence) that **REPLACES the old SETUP GRADING candidate**; it *decides trades*, so it is **strategy-tier, NOT an engine** — it belongs in `strategies/` (MT5/NT8) or a Python bot, and now has both its engine dependencies (FVG + `fiboHalfReached`) in place. **market_structure sync chain NOT triggered** (only label colour/position changed; no detection change). See "Audit findings — 2026-07-10" below.
-**Last reviewed:** 2026-07-11 (RSI Divergence detector BUILT + PARITY-VALIDATED as `engines/rsi_divergence/` — engine + harness + compare tool + 9 tests green; `compare_rsi_div.py --warmup 1630` exit 0 on a real `VANTAGE_XAUUSD, 5m` export. Found in the 2026-07-10 re-paste audit post-`29d55f2`, where FVG + `fiboHalfReached` were confirmed COMMITTED (`29d55f2`).)
+**Last reviewed:** 2026-07-11 (SECOND audit of the day — a fresh working-tree re-paste vs commit `21cbe43`, 484-line diff. **NO engine is stale; market_structure sync chain NOT triggered; no `*_export.pine` harness or `compare_*.py` needs re-running.** The paste is (a) a new `marketStructureOnly` master DISPLAY toggle that force-hides every non-structure feature — each `show*` flag renamed `<flag>Input` and gated `marketStructureOnly ? false : …Input` — purely visual; (b) a heavy rework of the A+ SETUP SEQUENCE (edge-triggered arming on new sweep OR new divergence, stale-arm clearing, a separate CONT continuation trade type with its own row + chart labels, a divergence/extreme-RSI VETO, FVG now REQUIRED for READY) — all **strategy-tier**, the A+ machine is not an engine; (c) a divergence-staleness rule (`bullDivStale`/`bearDivStale`: a div goes stale on the next external break) + drawing-deletion — **strategy-tier composition** of RSI+structure, not the standalone RSI engine's job. **ONE engine-relevant nit:** the RSI-divergence input DEFAULTS drifted `divOS` 30→25 and `divOB` 70→75 — detection formula unchanged (still `<= divOS` / `>= divOB`), so the engine is parity-valid, but its default params should be synced 30→25 / 70→75 (and `compare_rsi_div.py` re-run at the new defaults) when convenient. See "Audit findings — 2026-07-11 (marketStructureOnly + A+/CONT rework)" below. Earlier today: RSI Divergence detector BUILT + PARITY-VALIDATED as `engines/rsi_divergence/` — engine + harness + compare tool + 9 tests green; `compare_rsi_div.py --warmup 1630` exit 0 on a real `VANTAGE_XAUUSD, 5m` export.)
 
 ---
 
@@ -104,6 +104,93 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 Everything else is ported. The other forward work is *consumption*, not extraction: give each engine
 an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest
 lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
+
+---
+
+## Audit findings — 2026-07-11 (marketStructureOnly + A+/CONT rework, working tree vs committed `21cbe43`)
+
+Working-tree diff vs commit `21cbe43` (the RSI-divergence-engine commit). 484-line diff (305+/179-).
+**No engine is stale. The market_structure sync chain is NOT triggered. No `*_export.pine` harness is
+stale and no `compare_*.py` needs re-running.** The diff is three things: a display master-toggle, a
+strategy-tier rework of the A+ setup machine, and a divergence liveness/veto rule. The structure `process`
++ internal detection region (mpc lines ~390–1800) has ZERO diff hunks — the hunks are all in the input
+block (lines 42–356), the divergence vars/logic (1835–1908), and the A+ sequence + JARVIS table (3596–3874).
+
+**NEW — `marketStructureOnly` master DISPLAY toggle (VISUAL).** A new `input.bool(true, "Hide Everything
+Except Market Structure")` at the top of the Market Structure group. Every non-structure feature toggle was
+renamed `<flag>Input` (e.g. `showOBs`→`showOBsInput`, `showFVG`→`showFVGInput`, `showDiv`→`showDivInput`,
+`showSessions`, `showKZandNYR`, `showVwap`, `i_showLiquidity`, `showIFib`, `showFibo`, `showMacroFib`,
+`showSVP`) and the live flag re-derived inline as `marketStructureOnly ? false : <flag>Input`; three
+downstream flags with no `active=` dependents (`showSniperFib`, `showKillZones`, `showNYRange`) get a plain
+`:=` override in a dedicated block. This force-hides every non-structure drawing when on (the default). It
+gates DISPLAY only — no detection, no event stream, and it lives only in `mpc_assistant.pine` (the
+standalone `*_export.pine` harnesses don't have it, so parity exports are unaffected). Every engine that
+these flags gate — order_blocks, fair_value_gaps, rsi_divergence, sessions/kill-zones/NY-range, vwap,
+liquidity, fibonacci (external/internal/macro/sniper), svp — is **not affected**.
+
+**market_structure — IN PARITY (sync chain NOT triggered).** No hunk touches `process`, the 3-candle
+pullback, the break/CHoCH conditions, `choch_lock`, the seed/lookback scan, the bear-BOS fallback, or the
+internal iSH/iSL/iBOS/iSOS detection. `extBreakThisBar` (mpc line 1255 = `bull_bos or bear_bos or bull_sos
+or bear_sos`) is the pre-existing structure-break alias, only newly *consumed* by the divergence-staleness
+and A+ blocks. `structure_engine.pine`, `structure_engine_export.pine`, `engines/market_structure/engine.py`
+and the shim all stay current.
+
+**rsi_divergence — DETECTION IN PARITY; ONE default drift + new staleness/veto is strategy-tier.**
+- *Detection unchanged.* The bull/bear divergence conditions (`_pLow < divPrevPriceLow and divPlRsi >
+  divPrevRsiLow and math.min(...) <= divOS`, and the bear mirror) and the pivot logic are byte-identical.
+  The only edit at the detection site is capturing the drawn line/label into `var line/label` vars so they
+  can later be deleted — visual.
+- *Config-default drift — SYNCED IN CODE + PARITY RE-CONFIRMED at 25/75 (2026-07-11).* Input defaults
+  `divOS` 30→25 and `divOB` 70→75 changed. The formula is unchanged (parameterized threshold), so the
+  algorithm is not broken. Synced `oversold` 30.0→25.0 / `overbought` 70.0→75.0 across
+  `engines/rsi_divergence/engine.py` (defaults + comments + docstring), `indicators/rsi_div_export.pine`
+  (input defaults), `engines/rsi_divergence/tools/compare_rsi_div.py` (argparse defaults + help + docstring),
+  `engines/rsi_divergence/tests/test_engine.py` (`ref_run` defaults + the two anchor assertions 30/70→25/75
+  + the defaults comment), `__init__.py` + `CLAUDE.md` doc refs. **9 unit tests green** at 25/75 (the swing
+  series still fires both divergences under the stricter gate). **PARITY: `compare_rsi_div.py --warmup 8762`
+  exit 0** on a fresh 25/75 `VANTAGE_XAUUSD, 5m` export (16,887 bars) — every field matches on all warm bars,
+  and the divergence **pulses** (`px_div_bull`/`px_div_bear`, the real output) match from bar 16 onward. The
+  warm-up is larger than the earlier 1,630 (30/70) run for two benign reasons, both verified: (1) the age
+  columns cold-start — Pine's export opens carrying an OFF-window divergence in `bull/bear_age`, which only
+  reconciles once the first mutually-agreed IN-window divergence resets both counters; at the stricter 25/75
+  gate qualifying divergences are rarer, so the bear-side reconciliation lands near bar 8761. (2) Four
+  isolated RSI-pivot float-ties (bars 1639/2179/3561/8761) where the CSV-rounded RSI equals a neighbour to
+  ~1e-14 (e.g. bar 1634 = 51.75679981943045 vs bar 1635 = …44) — Pine's full-precision strict `ta.pivothigh`
+  confirms the pivot, Python's RSI-from-rounded-closes sees a tie and skips it. This is the documented
+  Wilder-RMA float-tie, independent of the divOS/divOB change (pivots don't read those thresholds), and it
+  causes ZERO divergence-pulse mismatch on this export. **Validated — ready to commit.**
+- *New staleness rule = STRATEGY-tier, not the engine.* `bullDivStale`/`bearDivStale` mark a divergence
+  stale once the next external break fires after it (`lastExtBreakBar > lastBullDivBar`), and
+  `bullDivActive`/`bearDivActive` now AND in `not …Stale` (plus the drawing is deleted). This ties
+  divergence liveness to external structure — a composition of RSI + market_structure. The standalone RSI
+  engine has no structure input by design; its primitive (`bull_active`/`bear_active` = divergence within
+  `divValidBars` bars) is the right building block, and the A+ consumer ANDs it with "no external break
+  since." So this belongs in the A+ SEQUENCE strategy build, NOT in `engines/rsi_divergence/`.
+- *New veto = STRATEGY-tier.* `divVeto`/`divExtremeOB`(80)/`divExtremeOS`(20) inputs + `longVeto`/`shortVeto`
+  flags suppress a setup on opposing live divergence or extreme RSI. Pure trade-decision logic → A+ strategy.
+
+**A+ SETUP SEQUENCE — STRATEGY-tier rework, NOT an engine (unchanged classification).** Big rework, all in
+the decision layer: Stage-1 arming is now EDGE-triggered on a NEW sweep OR a NEW divergence (`newSweepL`/
+`newDivL` via `!= [1]`), the `aplusL_consumed`/`aplusL_done` bookkeeping is gone, a stale-arm is cleared
+when no SOS follows within `aplusWindow`, death rules are reworked (any SOS clears CONT on both sides), and
+**CONT (continuation) is split out into its own trade type** with its own JARVIS row + on-chart "CONT"
+labels (BOS with no A+ tracked on that side, entry at E1–E4). READY now REQUIRES a live FVG (else "AWAIT
+FVG"); the veto shows "EXTREME" instead of a tradeable row. It composes existing engine outputs + FVG +
+`fiboHalfReached` + the divergence flags; it decides trades, so it stays strategy-tier (belongs in
+`strategies/` or a Python bot per `docs/BOT_DEVELOPMENT_METHOD.md`). No engine dependency changed.
+
+**fibonacci / order_blocks / sessions / liquidity / vwap / svp / fair_value_gaps / regime / news — not
+affected.** Their compute blocks are untouched; the only edits near them are the `marketStructureOnly`
+display gate (visual), the FVG bull/bear colours flipped to grey (visual), and the removal of the FIB
+INTERNAL/EXTERNAL/CYCLE rows from the JARVIS table (visual — the fib engines still emit everything; the
+table just stopped printing those rows, replaced by a `table.clear` cleanup).
+
+**Harnesses — none stale.** No ported engine's detection changed, so no `*_export.pine` needs re-syncing.
+(The optional RSI default sync above would touch `rsi_div_export.pine` + a fresh export at that time.)
+
+**No engine code was changed in this audit — report only.** If the RSI defaults are synced, or the A+
+sequence / divergence-staleness / veto are ever extracted, each engine fix must re-run its `compare_*.py`
+Pine-parity check on a fresh TradingView export (matching `*_export.pine` updated first) before commit.
 
 ---
 

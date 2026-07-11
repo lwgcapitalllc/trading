@@ -21,8 +21,8 @@ indicator("RSI Divergence Export", overlay = false, max_bars_back = 2000)
 bool showDiv      = input.bool(true, "Track RSI Divergence")
 int  divRsiLen    = input.int(14, "RSI Length",              minval = 2,  maxval = 50)
 int  divPivotLen  = input.int(5,  "Pivot Width (bars)",      minval = 1,  maxval = 20)
-int  divOS        = input.int(30, "Oversold Level",          minval = 5,  maxval = 50)
-int  divOB        = input.int(70, "Overbought Level",        minval = 50, maxval = 95)
+int  divOS        = input.int(25, "Oversold Level",          minval = 5,  maxval = 50)
+int  divOB        = input.int(75, "Overbought Level",        minval = 50, maxval = 95)
 int  divValidBars = input.int(100, "Divergence Valid For (bars)", minval = 10, maxval = 500)
 
 // ── RSI + pivots (byte-identical to mpc) ──

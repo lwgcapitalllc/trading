@@ -42,6 +42,7 @@ color iBearColor  = bearColor
 //  MARKET STRUCTURE LABEL SIZE
 //============================================================
 var GRP_STRUCT = "Market Structure"
+bool   marketStructureOnly = input.bool(true, "Hide Everything Except Market Structure", group = GRP_STRUCT, tooltip = "On = show ONLY the external and internal structure engine (BOS/SOS/iBOS/iSOS). Every other feature — fibs, liquidity, sessions, kill zones, VWAP, MV, FVG, divergence, order blocks — is force-disabled regardless of its own toggle, and the table shows structure-related rows only. Off = every feature works normally per its own toggle. This is the default view.", display = display.none)
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
@@ -63,13 +64,14 @@ f_swingCol(color c) =>
 //  ORDER BLOCKS
 //============================================================
 var GRP_OB = "Order Blocks"
-bool  showOBs       = input.bool(false, "Show Order Blocks", group = GRP_OB, display = display.none)
-bool  showBullOB    = input.bool(true, "Show Bullish OB", group = GRP_OB, inline = "BullOB", active = showOBs, display = display.none)
+bool  showOBsInput       = input.bool(false, "Show Order Blocks", group = GRP_OB, display = display.none)
+bool showOBs = marketStructureOnly ? false : showOBsInput
+bool  showBullOB    = input.bool(true, "Show Bullish OB", group = GRP_OB, inline = "BullOB", active = showOBsInput, display = display.none)
 color colBullOB     = input.color(color.new(color.blue, 85), "", group = GRP_OB, inline = "BullOB", display = display.none)
-bool  showBearOB    = input.bool(true, "Show Bearish OB", group = GRP_OB, inline = "BearOB", active = showOBs, display = display.none)
+bool  showBearOB    = input.bool(true, "Show Bearish OB", group = GRP_OB, inline = "BearOB", active = showOBsInput, display = display.none)
 color colBearOB     = input.color(color.new(color.red, 85), "", group = GRP_OB, inline = "BearOB", display = display.none)
-int   maxActiveOB   = input.int(6, "Max Active OBs (per direction)", group = GRP_OB, minval = 1, maxval = 20, active = showOBs, display = display.none)
-bool  obBodyOnly    = input.bool(false, "Use Body Only for OB", group = GRP_OB, active = showOBs, display = display.none)
+int   maxActiveOB   = input.int(6, "Max Active OBs (per direction)", group = GRP_OB, minval = 1, maxval = 20, active = showOBsInput, display = display.none)
+bool  obBodyOnly    = input.bool(false, "Use Body Only for OB", group = GRP_OB, active = showOBsInput, display = display.none)
 
 type OrderBlock
     box   bg
@@ -105,12 +107,13 @@ method extendOBs(array<OrderBlock> arr) =>
 //  FAIR VALUE GAPS (FVG) INPUTS
 //============================================================
 var GRP_FVG = "Fair Value Gaps"
-bool  showFVG      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps left by clean 3-candle displacements only: three same-direction candles with progressively higher (or lower) closes. A gap disappears the moment price taps it.", display = display.none)
-bool  fvgDirOnly   = input.bool(true, "Directional FVGs Only", group = GRP_FVG, active = showFVG, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
-color fvgBullColor = input.color(color.new(#4caf50, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVG, display = display.none)
-color fvgBearColor = input.color(color.new(#ff5252, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVG, display = display.none)
-int   fvgMinTicks  = input.int(0, "Minimum Gap Size (ticks)", minval = 0, maxval = 1000, group = GRP_FVG, active = showFVG, tooltip = "Gaps smaller than this are ignored. 0 = no size filter.", display = display.none)
-int   fvgMaxCount  = input.int(3, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVG, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
+bool  showFVGInput      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps left by clean 3-candle displacements only: three same-direction candles with progressively higher (or lower) closes. A gap disappears the moment price taps it.", display = display.none)
+bool showFVG = marketStructureOnly ? false : showFVGInput
+bool  fvgDirOnly   = input.bool(true, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
+color fvgBullColor = input.color(color.new(color.gray, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVGInput, display = display.none)
+color fvgBearColor = input.color(color.new(color.gray, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVGInput, display = display.none)
+int   fvgMinTicks  = input.int(0, "Minimum Gap Size (ticks)", minval = 0, maxval = 1000, group = GRP_FVG, active = showFVGInput, tooltip = "Gaps smaller than this are ignored. 0 = no size filter.", display = display.none)
+int   fvgMaxCount  = input.int(3, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
 
 //============================================================
 //  A+ SETUP SEQUENCE INPUTS
@@ -122,19 +125,24 @@ int aplusWindow = input.int(300, "Max Bars: Sweep → SOS", minval = 10, maxval 
 //  RSI DIVERGENCE INPUTS
 //============================================================
 var GRP_DIV = "RSI Divergence"
-bool showDiv     = input.bool(true, "Track RSI Divergence", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes: price makes a lower low while RSI makes a higher low from oversold (bullish), or price a higher high while RSI a lower high from overbought (bearish). Drawn on the chart and tagged as confluence on the A+ setup row. Pivot confirmation lags by the pivot width — the signal prints a few bars after the actual extreme.", display = display.none)
-int  divRsiLen   = input.int(14, "RSI Length", minval = 2, maxval = 50, group = GRP_DIV, active = showDiv, display = display.none)
-int  divPivotLen = input.int(5,  "Pivot Width (bars)", minval = 1, maxval = 20, group = GRP_DIV, active = showDiv, display = display.none)
-int  divOS       = input.int(30, "Oversold Level", minval = 5, maxval = 50, group = GRP_DIV, active = showDiv, display = display.none)
-int  divOB       = input.int(70, "Overbought Level", minval = 50, maxval = 95, group = GRP_DIV, active = showDiv, display = display.none)
-int  divValidBars = input.int(100, "Divergence Valid For (bars)", minval = 10, maxval = 500, group = GRP_DIV, active = showDiv, tooltip = "How long a divergence counts as live confluence for the A+ setup row.", display = display.none)
+bool showDivInput     = input.bool(true, "Track RSI Divergence", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes: price makes a lower low while RSI makes a higher low from oversold (bullish), or price a higher high while RSI a lower high from overbought (bearish). Drawn on the chart and tagged as confluence on the A+ setup row. Pivot confirmation lags by the pivot width — the signal prints a few bars after the actual extreme.", display = display.none)
+bool showDiv = marketStructureOnly ? false : showDivInput
+int  divRsiLen   = input.int(14, "RSI Length", minval = 2, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divPivotLen = input.int(5,  "Pivot Width (bars)", minval = 1, maxval = 20, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divOS       = input.int(25, "Oversold Level", minval = 5, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divOB       = input.int(75, "Overbought Level", minval = 50, maxval = 95, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divValidBars = input.int(100, "Divergence Valid For (bars)", minval = 10, maxval = 500, group = GRP_DIV, active = showDivInput, tooltip = "How long a divergence counts as live confluence for the A+ setup row.", display = display.none)
+bool divVeto      = input.bool(true, "Veto Setups on Extreme/Divergence", group = GRP_DIV, active = showDivInput, tooltip = "Suppresses LONG setups when there's live bearish divergence or RSI is extremely overbought — shows 'Extreme / Possible Reversal' instead. Mirrored for SHORT setups on bullish divergence or extreme oversold.", display = display.none)
+int  divExtremeOB = input.int(80, "Extreme Overbought", minval = 50, maxval = 100, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divExtremeOS = input.int(20, "Extreme Oversold", minval = 0, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
 
 //============================================================
 //  TRADING SESSIONS INPUTS
 //============================================================
 var GRP_SESS = "Trading Sessions"
-bool showSessions         = input.bool(true,   "Show Sessions",      group = GRP_SESS, display = display.none)
-bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessions, display = display.none)
+bool showSessionsInput         = input.bool(true,   "Show Sessions",      group = GRP_SESS, display = display.none)
+bool showSessions = marketStructureOnly ? false : showSessionsInput
+bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessionsInput, display = display.none)
 bool showHistoricSessions = input.bool(false,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions as far back as possible.", display = display.none)
 
 bool showSessionOC        = false
@@ -169,8 +177,9 @@ thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",   
 //  KILL ZONES & NY RANGE INPUTS (single toggle)
 //============================================================
 var GRP_KZ = "Kill Zones & NY Range"
-bool showKZandNYR   = input.bool(true, "Show Kill Zones & NY Range", group = GRP_KZ, display = display.none)
-bool showKZHistoric = input.bool(false, "Show All History", group = GRP_KZ, active = showKZandNYR, tooltip = "Off = current day only. On = show as far back as possible.", display = display.none)
+bool showKZandNYRInput   = input.bool(true, "Show Kill Zones & NY Range", group = GRP_KZ, display = display.none)
+bool showKZandNYR = marketStructureOnly ? false : showKZandNYRInput
+bool showKZHistoric = input.bool(false, "Show All History", group = GRP_KZ, active = showKZandNYRInput, tooltip = "Off = current day only. On = show as far back as possible.", display = display.none)
 
 bool showKillZones = showKZandNYR
 bool showNYRange   = showKZandNYR
@@ -179,34 +188,36 @@ bool showNYRange   = showKZandNYR
 //  VWAP INPUTS
 //============================================================
 var GRP_VWAP = "VWAP Settings"
-bool  showVwap  = input.bool(true,                 "Show VWAP",       group = GRP_VWAP, display = display.none)
-color vwapColor = input.color(color.rgb(5, 5, 0), "VWAP Color",      group = GRP_VWAP, active = showVwap, display = display.none)
-int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1, maxval = 5, group = GRP_VWAP, active = showVwap, display = display.none)
+bool  showVwapInput  = input.bool(true,                 "Show VWAP",       group = GRP_VWAP, display = display.none)
+bool showVwap = marketStructureOnly ? false : showVwapInput
+color vwapColor = input.color(color.rgb(5, 5, 0), "VWAP Color",      group = GRP_VWAP, active = showVwapInput, display = display.none)
+int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1, maxval = 5, group = GRP_VWAP, active = showVwapInput, display = display.none)
 
 //============================================================
 //  LIQUIDITY LEVELS INPUTS
 //============================================================
 var GRP_LIQ = "Liquidity Levels"
-var i_showLiquidity    = input.bool(true,  "Show All Liquidity Levels",  group = GRP_LIQ, display = display.none)
-var i_showLabels       = input.bool(true,  "Show Labels",                group = GRP_LIQ, active = i_showLiquidity, display = display.none)
-string liqLabelSize    = input.string("Small", "Liquidity Label Size",   group = GRP_LIQ, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = i_showLiquidity, display = display.none)
+var i_showLiquidityInput    = input.bool(true,  "Show All Liquidity Levels",  group = GRP_LIQ, display = display.none)
+bool i_showLiquidity = marketStructureOnly ? false : i_showLiquidityInput
+var i_showLabels       = input.bool(true,  "Show Labels",                group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+string liqLabelSize    = input.string("Small", "Liquidity Label Size",   group = GRP_LIQ, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = i_showLiquidityInput, display = display.none)
 bool i_currentDayOnly  = true   // always hide mitigated on new day
 bool i_showMitigated   = false  // never show mitigated dotted lines
 
 f_liqSize() =>
     liqLabelSize == "Tiny" ? size.tiny : liqLabelSize == "Normal" ? size.normal : liqLabelSize == "Large" ? size.large : liqLabelSize == "Huge" ? size.huge : size.small
 
-var i_isDailyEnabled   = input.bool(true,  "Previous Day H/L",            group = GRP_LIQ, active = i_showLiquidity, display = display.none)
-var i_isWeeklyEnabled  = input.bool(true,  "Previous Week H/L",           group = GRP_LIQ, active = i_showLiquidity, display = display.none)
-var i_showSessionHL    = input.bool(true,  "Sessions H/L",                group = GRP_LIQ, active = i_showLiquidity, tooltip = "Shows Asia, London and New York session highs and lows.", display = display.none)
+var i_isDailyEnabled   = input.bool(true,  "Previous Day H/L",            group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+var i_isWeeklyEnabled  = input.bool(true,  "Previous Week H/L",           group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+var i_showSessionHL    = input.bool(true,  "Sessions H/L",                group = GRP_LIQ, active = i_showLiquidityInput, tooltip = "Shows Asia, London and New York session highs and lows.", display = display.none)
 
 // Single toggle drives all three session H/L sets — kept as separate internal
 // flags so the drawing/mitigation logic below stays unchanged.
 bool i_showAsiaHL      = i_showSessionHL
 bool i_showLondonHL    = i_showSessionHL
 bool i_showNYHL        = i_showSessionHL
-var i_showPWC          = input.bool(true,  "Previous Week Close (PWC)",   group = GRP_LIQ, active = i_showLiquidity, display = display.none)
-var i_showH4Sweep      = input.bool(true,  "H4 High/Low Sweep (SSH/BSL)", group = GRP_LIQ, active = i_showLiquidity, display = display.none)
+var i_showPWC          = input.bool(true,  "Previous Week Close (PWC)",   group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+var i_showH4Sweep      = input.bool(true,  "H4 High/Low Sweep (SSH/BSL)", group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
 var i_lblOffset        = input.int(300,    "Label Y Offset (ticks)",       group = GRP_LIQ, minval = 0, maxval = 5000, step = 50, tooltip = "Moves HIGH labels up and LOW labels down by this many ticks to reduce overlap", display = display.none)
 var i_lineExtend       = input.int(50,     "Line Extension (bars)",         group = GRP_LIQ, minval = 5, maxval = 200, display = display.none)
 
@@ -220,77 +231,79 @@ color i_nyHLColor     = color.black
 //  INTERNAL FIB INPUTS
 //============================================================
 var GRP_IFIB      = "Internal Fib"
-bool showIFib     = input.bool(false, "Show Internal Fib", group = GRP_IFIB, display = display.none)
-int  iFibExtend   = input.int(30,   "Line Extension (bars)", group = GRP_IFIB, minval = 5, maxval = 500, active = showIFib, display = display.none)
+bool showIFibInput     = input.bool(false, "Show Internal Fib", group = GRP_IFIB, display = display.none)
+bool showIFib = marketStructureOnly ? false : showIFibInput
+int  iFibExtend   = input.int(30,   "Line Extension (bars)", group = GRP_IFIB, minval = 5, maxval = 500, active = showIFibInput, display = display.none)
 
-color  iFibo1Color    = input.color(#4caf50,"TP2 / 0.382",  group = GRP_IFIB, inline = "IFibo1", active = showIFib, display = display.none)
+color  iFibo1Color    = input.color(#4caf50,"TP2 / 0.382",  group = GRP_IFIB, inline = "IFibo1", active = showIFibInput, display = display.none)
 string iFibo1Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo1", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo2Color    = input.color(#4caf50,"TP1 / 0.500",  group = GRP_IFIB, inline = "IFibo2", active = showIFib, display = display.none)
+color  iFibo2Color    = input.color(#4caf50,"TP1 / 0.500",  group = GRP_IFIB, inline = "IFibo2", active = showIFibInput, display = display.none)
 string iFibo2Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo2", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo3Color    = input.color(#FF9800,"E1 / 0.618",   group = GRP_IFIB, inline = "IFibo3", active = showIFib, display = display.none)
+color  iFibo3Color    = input.color(#FF9800,"E1 / 0.618",   group = GRP_IFIB, inline = "IFibo3", active = showIFibInput, display = display.none)
 string iFibo3Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo3", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo4Color    = input.color(#FF9800,"E2 / 0.702",   group = GRP_IFIB, inline = "IFibo4", active = showIFib, display = display.none)
+color  iFibo4Color    = input.color(#FF9800,"E2 / 0.702",   group = GRP_IFIB, inline = "IFibo4", active = showIFibInput, display = display.none)
 string iFibo4Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo4", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo5Color    = input.color(#FF9800,"E3 / 0.786",   group = GRP_IFIB, inline = "IFibo5", active = showIFib, display = display.none)
+color  iFibo5Color    = input.color(#FF9800,"E3 / 0.786",   group = GRP_IFIB, inline = "IFibo5", active = showIFibInput, display = display.none)
 string iFibo5Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo5", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo6Color    = input.color(#FF9800,"E4 / 0.886",   group = GRP_IFIB, inline = "IFibo6", active = showIFib, display = display.none)
+color  iFibo6Color    = input.color(#FF9800,"E4 / 0.886",   group = GRP_IFIB, inline = "IFibo6", active = showIFibInput, display = display.none)
 string iFibo6Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo6", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo0Color      = input.color(#4caf50,"TP3 / 0.000",  group = GRP_IFIB, inline = "IFibo0",   active = showIFib, display = display.none)
+color  iFibo0Color      = input.color(#4caf50,"TP3 / 0.000",  group = GRP_IFIB, inline = "IFibo0",   active = showIFibInput, display = display.none)
 string iFibo0Style      = input.string("─",   "",              group = GRP_IFIB, inline = "IFibo0",   options = ["─","┈","╌"], display = display.none)
 
-color  iFibo100Color    = input.color(#4caf50,"1.000",        group = GRP_IFIB, inline = "IFibo100", active = showIFib, display = display.none)
+color  iFibo100Color    = input.color(#4caf50,"1.000",        group = GRP_IFIB, inline = "IFibo100", active = showIFibInput, display = display.none)
 string iFibo100Style    = input.string("─",   "",              group = GRP_IFIB, inline = "IFibo100", options = ["─","┈","╌"], display = display.none)
 
 //============================================================
 //  FIBONACCI INPUTS
 //============================================================
 var GRP_FIBO = "External Fib"
-bool   showFibo        = input.bool(true,          "Show External Fib",       group = GRP_FIBO, display = display.none)
-string sharedLabelMode = input.string("TP/Entry",  "Label Style",               group = GRP_FIBO, options = ["Fib Value", "TP/Entry"], active = showFibo, display = display.none)
+bool   showFiboInput        = input.bool(true,          "Show External Fib",       group = GRP_FIBO, display = display.none)
+bool showFibo = marketStructureOnly ? false : showFiboInput
+string sharedLabelMode = input.string("TP/Entry",  "Label Style",               group = GRP_FIBO, options = ["Fib Value", "TP/Entry"], active = showFiboInput, display = display.none)
 int    fiboLineExtend  = input.int(80,             "Line Extension (bars)",     group = GRP_FIBO, minval = 5, maxval = 500, display = display.none)
 
-bool  isFibo1ToShow  = input.bool(true,    "TP2 / 0.382",  group = GRP_FIBO, inline = "Fibo1",  active = showFibo, display = display.none)
+bool  isFibo1ToShow  = input.bool(true,    "TP2 / 0.382",  group = GRP_FIBO, inline = "Fibo1",  active = showFiboInput, display = display.none)
 float fibo1Value     = 0.382
 color fibo1Color     = input.color(#4caf50,"",              group = GRP_FIBO, inline = "Fibo1", display = display.none)
 string fibo1Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo1",  options = ["─","┈","╌"], display = display.none)
 
-bool  isFibo2ToShow  = input.bool(true,    "TP1 / 0.500",  group = GRP_FIBO, inline = "Fibo2",  active = showFibo, display = display.none)
+bool  isFibo2ToShow  = input.bool(true,    "TP1 / 0.500",  group = GRP_FIBO, inline = "Fibo2",  active = showFiboInput, display = display.none)
 float fibo2Value     = 0.500
 color fibo2Color     = input.color(#4caf50,"",              group = GRP_FIBO, inline = "Fibo2", display = display.none)
 string fibo2Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo2",  options = ["─","┈","╌"], display = display.none)
 
-bool  isFibo3ToShow  = input.bool(true,    "E1 / 0.618",   group = GRP_FIBO, inline = "Fibo3",  active = showFibo, display = display.none)
+bool  isFibo3ToShow  = input.bool(true,    "E1 / 0.618",   group = GRP_FIBO, inline = "Fibo3",  active = showFiboInput, display = display.none)
 float fibo3Value     = 0.618
 color fibo3Color     = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo3", display = display.none)
 string fibo3Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo3",  options = ["─","┈","╌"], display = display.none)
 
-bool  isFibo4ToShow  = input.bool(true,    "E2 / 0.702",   group = GRP_FIBO, inline = "Fibo4",  active = showFibo, display = display.none)
+bool  isFibo4ToShow  = input.bool(true,    "E2 / 0.702",   group = GRP_FIBO, inline = "Fibo4",  active = showFiboInput, display = display.none)
 float fibo4Value     = 0.702
 color fibo4Color     = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo4", display = display.none)
 string fibo4Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo4",  options = ["─","┈","╌"], display = display.none)
 
-bool  isFibo5ToShow  = input.bool(true,    "E3 / 0.786",   group = GRP_FIBO, inline = "Fibo5",  active = showFibo, display = display.none)
+bool  isFibo5ToShow  = input.bool(true,    "E3 / 0.786",   group = GRP_FIBO, inline = "Fibo5",  active = showFiboInput, display = display.none)
 float fibo5Value     = 0.786
 color fibo5Color     = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo5", display = display.none)
 string fibo5Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo5",  options = ["─","┈","╌"], display = display.none)
 
-bool  isFibo6ToShow  = input.bool(true,    "E4 / 0.886",   group = GRP_FIBO, inline = "Fibo6",  active = showFibo, display = display.none)
+bool  isFibo6ToShow  = input.bool(true,    "E4 / 0.886",   group = GRP_FIBO, inline = "Fibo6",  active = showFiboInput, display = display.none)
 float fibo6Value     = 0.886
 color fibo6Color     = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo6", display = display.none)
 string fibo6Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo6",  options = ["─","┈","╌"], display = display.none)
 
-bool  isFibo10ToShow = input.bool(true,    "1.000",        group = GRP_FIBO, inline = "Fibo10", active = showFibo, display = display.none)
+bool  isFibo10ToShow = input.bool(true,    "1.000",        group = GRP_FIBO, inline = "Fibo10", active = showFiboInput, display = display.none)
 float fibo10Value    = 1.000
 color fibo10Color    = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo10", display = display.none)
 string fibo10Style   = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo10", options = ["─","┈","╌"], display = display.none)
 
-bool  isFibo7ToShow  = input.bool(true,    "TP3 / 0.000",  group = GRP_FIBO, inline = "Fibo7",  active = showFibo, display = display.none)
+bool  isFibo7ToShow  = input.bool(true,    "TP3 / 0.000",  group = GRP_FIBO, inline = "Fibo7",  active = showFiboInput, display = display.none)
 float fibo7Value     = 0.000
 color fibo7Color     = input.color(#4caf50,"",              group = GRP_FIBO, inline = "Fibo7", display = display.none)
 string fibo7Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo7",  options = ["─","┈","╌"], display = display.none)
@@ -302,39 +315,40 @@ f_fiboLineStyle(string opt) =>
 //  MACRO FIB (full-cycle retracement across multiple BOS, locks in on trend reversal)
 //============================================================
 var GRP_MACRO = "Cycle Fib"
-bool   showMacroFib      = input.bool(false,        "Show Cycle Fib",             group = GRP_MACRO, display = display.none)
+bool   showMacroFibInput      = input.bool(false,        "Show Cycle Fib",             group = GRP_MACRO, display = display.none)
+bool showMacroFib = marketStructureOnly ? false : showMacroFibInput
 int    macroLineExtend   = input.int(180,            "Line Extension (bars)",      group = GRP_MACRO, minval = 10, maxval = 500, display = display.none)
 int    macroMaxTfMin     = input.int(30,             "Draw Up To Timeframe (min)", group = GRP_MACRO, minval = 1, maxval = 240, tooltip = "The Cycle Fib is drawn on charts up to this timeframe (in minutes). Tracking runs on every timeframe regardless — the fib's discount/premium zones feed the A+ setup's POI even when the lines aren't drawn. Note the cycle recalculates per chart timeframe: a 15m chart tracks the 15m-scale cycle, not the 5m one.", display = display.none)
 
-bool   showMacro0        = input.bool(true,   "TP3 / 0.000",   group = GRP_MACRO, inline = "mFibo0",   active = showMacroFib, display = display.none)
+bool   showMacro0        = input.bool(true,   "TP3 / 0.000",   group = GRP_MACRO, inline = "mFibo0",   active = showMacroFibInput, display = display.none)
 color  macro0Color       = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo0",   display = display.none)
 string macro0Style       = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo0",   options = ["─","┈","╌"], display = display.none)
 
-bool   showMacro382      = input.bool(true,   "TP2 / 0.382",   group = GRP_MACRO, inline = "mFibo382", active = showMacroFib, display = display.none)
+bool   showMacro382      = input.bool(true,   "TP2 / 0.382",   group = GRP_MACRO, inline = "mFibo382", active = showMacroFibInput, display = display.none)
 color  macro382Color     = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo382", display = display.none)
 string macro382Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo382", options = ["─","┈","╌"], display = display.none)
 
-bool   showMacro50       = input.bool(true,   "TP1 / 0.500",   group = GRP_MACRO, inline = "mFibo50",  active = showMacroFib, display = display.none)
+bool   showMacro50       = input.bool(true,   "TP1 / 0.500",   group = GRP_MACRO, inline = "mFibo50",  active = showMacroFibInput, display = display.none)
 color  macro50Color      = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo50",  display = display.none)
 string macro50Style      = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo50",  options = ["─","┈","╌"], display = display.none)
 
-bool   showMacro618      = input.bool(true,   "E1 / 0.618",    group = GRP_MACRO, inline = "mFibo618", active = showMacroFib, display = display.none)
+bool   showMacro618      = input.bool(true,   "E1 / 0.618",    group = GRP_MACRO, inline = "mFibo618", active = showMacroFibInput, display = display.none)
 color  macro618Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo618", display = display.none)
 string macro618Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo618", options = ["─","┈","╌"], display = display.none)
 
-bool   showMacro702      = input.bool(true,   "E2 / 0.702",    group = GRP_MACRO, inline = "mFibo702", active = showMacroFib, display = display.none)
+bool   showMacro702      = input.bool(true,   "E2 / 0.702",    group = GRP_MACRO, inline = "mFibo702", active = showMacroFibInput, display = display.none)
 color  macro702Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo702", display = display.none)
 string macro702Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo702", options = ["─","┈","╌"], display = display.none)
 
-bool   showMacro786      = input.bool(true,   "E3 / 0.786",    group = GRP_MACRO, inline = "mFibo786", active = showMacroFib, display = display.none)
+bool   showMacro786      = input.bool(true,   "E3 / 0.786",    group = GRP_MACRO, inline = "mFibo786", active = showMacroFibInput, display = display.none)
 color  macro786Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo786", display = display.none)
 string macro786Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo786", options = ["─","┈","╌"], display = display.none)
 
-bool   showMacro886      = input.bool(true,   "E4 / 0.886",    group = GRP_MACRO, inline = "mFibo886", active = showMacroFib, display = display.none)
+bool   showMacro886      = input.bool(true,   "E4 / 0.886",    group = GRP_MACRO, inline = "mFibo886", active = showMacroFibInput, display = display.none)
 color  macro886Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo886", display = display.none)
 string macro886Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo886", options = ["─","┈","╌"], display = display.none)
 
-bool   showMacro100      = input.bool(true,   "1.000",         group = GRP_MACRO, inline = "mFibo100", active = showMacroFib, display = display.none)
+bool   showMacro100      = input.bool(true,   "1.000",         group = GRP_MACRO, inline = "mFibo100", active = showMacroFibInput, display = display.none)
 color  macro100Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo100", display = display.none)
 string macro100Style     = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo100", options = ["─","┈","╌"], display = display.none)
 
@@ -342,17 +356,36 @@ string macro100Style     = input.string("─",   "",              group = GRP_MA
 //  SNIPER FIB INPUTS
 //============================================================
 var GRP_SNIPER    = "Sniper Fib"
-bool showSniperFib = input.bool(true, "Sniper Zone", group = GRP_SNIPER, active = showFibo, display = display.none)
+bool showSniperFib = input.bool(true, "Sniper Zone", group = GRP_SNIPER, active = showFiboInput, display = display.none)
 
 //============================================================
 //  SESSION VOLUME PROFILE (SVP) INPUTS
 //============================================================
 var GRP_SVP   = "MV"
-bool  showSVP     = input.bool(true, "MV", group = GRP_SVP, display = display.none)
-int   svpHistory  = input.int(2,     "Days back", group = GRP_SVP, minval = 1, maxval = 500, active = showSVP, display = display.none)
+bool  showSVPInput     = input.bool(true, "MV", group = GRP_SVP, display = display.none)
+bool showSVP = marketStructureOnly ? false : showSVPInput
+int   svpHistory  = input.int(2,     "Days back", group = GRP_SVP, minval = 1, maxval = 500, active = showSVPInput, display = display.none)
 int   svpRows     = 50
 float svpVAvolPct = 68.0
 color svpPOCCol   = #9C27B0
+
+//============================================================
+//  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
+//  declared, before anything downstream uses them. When marketStructureOnly is
+//  on, every non-structure feature is force-disabled regardless of its own
+//  checkbox, so the chart shows only external/internal BOS/SOS/iBOS/iSOS.
+//============================================================
+//============================================================
+//  MARKET STRUCTURE OVERRIDE (remaining flags) — the other 11 flags now derive
+//  their override inline right next to their own input declaration (renamed
+//  to <flag>Input), which is required because Pine's "active=" parameter on
+//  other inputs must reference a pure, never-reassigned input bool; reassigning
+//  the original variable via ":=" anywhere in the script poisons its type for
+//  every "active=" use of it, even ones textually earlier in the file. These
+//  three have no "active=" dependents elsewhere, so a plain override is safe.
+showSniperFib  := marketStructureOnly ? false : showSniperFib
+showKillZones  := marketStructureOnly ? false : showKillZones
+showNYRange    := marketStructureOnly ? false : showNYRange
 
 //============================================================
 //  SMC STRUCTURE TYPE
@@ -1802,6 +1835,10 @@ var float divPrevPriceHigh = na
 var int   divPrevHighBar   = na
 var int   lastBullDivBar   = na
 var int   lastBearDivBar   = na
+var line  lastBullDivLine  = na
+var label lastBullDivLabel = na
+var line  lastBearDivLine  = na
+var label lastBearDivLabel = na
 
 if showDiv and not na(divPlRsi)
     float _pLow = low[divPivotLen]
@@ -1810,8 +1847,8 @@ if showDiv and not na(divPlRsi)
         // Lower low in price, higher low in RSI, from the oversold extreme
         if _pLow < divPrevPriceLow and divPlRsi > divPrevRsiLow and math.min(divPlRsi, divPrevRsiLow) <= divOS
             lastBullDivBar := _pBar
-            line.new(divPrevLowBar, divPrevPriceLow, _pBar, _pLow, color = color.new(#4caf50, 0), style = line.style_dotted, width = 2)
-            label.new(_pBar, _pLow, "\nBull Div", color = color(na), textcolor = color.new(#4caf50, 0), style = label.style_label_up, size = size.tiny)
+            lastBullDivLine  := line.new(divPrevLowBar, divPrevPriceLow, _pBar, _pLow, color = color.new(#4caf50, 0), style = line.style_dotted, width = 2)
+            lastBullDivLabel := label.new(_pBar, _pLow, "\nBull Div", color = color(na), textcolor = color.new(#4caf50, 0), style = label.style_label_up, size = size.tiny)
     divPrevRsiLow   := divPlRsi
     divPrevPriceLow := _pLow
     divPrevLowBar   := _pBar
@@ -1823,15 +1860,49 @@ if showDiv and not na(divPhRsi)
         // Higher high in price, lower high in RSI, from the overbought extreme
         if _pHigh > divPrevPriceHigh and divPhRsi < divPrevRsiHigh and math.max(divPhRsi, divPrevRsiHigh) >= divOB
             lastBearDivBar := _pBar
-            line.new(divPrevHighBar, divPrevPriceHigh, _pBar, _pHigh, color = color.new(#ff5252, 0), style = line.style_dotted, width = 2)
-            label.new(_pBar, _pHigh, "Bear Div\n", color = color(na), textcolor = color.new(#ff5252, 0), style = label.style_label_down, size = size.tiny)
+            lastBearDivLine  := line.new(divPrevHighBar, divPrevPriceHigh, _pBar, _pHigh, color = color.new(#ff5252, 0), style = line.style_dotted, width = 2)
+            lastBearDivLabel := label.new(_pBar, _pHigh, "Bear Div\n", color = color(na), textcolor = color.new(#ff5252, 0), style = label.style_label_down, size = size.tiny)
     divPrevRsiHigh   := divPhRsi
     divPrevPriceHigh := _pHigh
     divPrevHighBar   := _pBar
 
 // Live confluence flags for the A+ setup row
-bool bullDivActive = showDiv and not na(lastBullDivBar) and bar_index - lastBullDivBar <= divValidBars
-bool bearDivActive = showDiv and not na(lastBearDivBar) and bar_index - lastBearDivBar <= divValidBars
+// Divergence relevance is tied to structure, not just a bar count. A divergence
+// that fired several legs ago — with BOS/SOS events since — is stale even if
+// still within the bar window: price has already moved on, and citing it as a
+// veto reason (e.g. an old bullish divergence from the bottom blocking a fresh
+// short at a NEW top with its own current bearish divergence) is misleading.
+// So a divergence stays live only until the NEXT external break after it fired,
+// with the bar count as an outer safety cap on top of that.
+var int lastExtBreakBar = na
+if extBreakThisBar
+    lastExtBreakBar := bar_index
+
+bool bullDivStale = not na(lastExtBreakBar) and not na(lastBullDivBar) and lastExtBreakBar > lastBullDivBar
+bool bearDivStale = not na(lastExtBreakBar) and not na(lastBearDivBar) and lastExtBreakBar > lastBearDivBar
+
+// Remove the drawing itself once stale — not just the confluence flag. A
+// divergence from several legs ago has no business lingering on the chart
+// once a new external break has moved past it; deleting it keeps only
+// divergences relevant to the CURRENT swing visible.
+if bullDivStale and not na(lastBullDivLine)
+    line.delete(lastBullDivLine)
+    label.delete(lastBullDivLabel)
+    lastBullDivLine := na
+    lastBullDivLabel := na
+if bearDivStale and not na(lastBearDivLine)
+    line.delete(lastBearDivLine)
+    label.delete(lastBearDivLabel)
+    lastBearDivLine := na
+    lastBearDivLabel := na
+
+bool bullDivActive = showDiv and not na(lastBullDivBar) and not bullDivStale and bar_index - lastBullDivBar <= divValidBars
+bool bearDivActive = showDiv and not na(lastBearDivBar) and not bearDivStale and bar_index - lastBearDivBar <= divValidBars
+
+// Veto: suppress LONG setups on live bearish divergence or extreme overbought;
+// suppress SHORT setups on live bullish divergence or extreme oversold.
+bool longVeto  = showDiv and divVeto and (bearDivActive or divRsi >= divExtremeOB)
+bool shortVeto = showDiv and divVeto and (bullDivActive or divRsi <= divExtremeOS)
 
 
 var array<SessionInfo> sessionInfos = getSessionInfos()
@@ -3525,14 +3596,10 @@ if showSessL and liq_nyl != "" and not na(liq_nyl_bar) and liq_nyl_bar > recentS
 var int  aplusL_sweepBar = na
 var int  aplusL_sosBar   = na
 var bool aplusL_poi      = false
-var int  aplusL_consumed = na    // bar of the last sweep already used or killed — can't re-arm
-var bool aplusL_done     = false // A+ completed → continuation mode armed for this side
-var int  contL_bosBar    = na    // continuation leg trigger (BOS after a completed A+)
+var int  contL_bosBar    = na    // CONT trade trigger: external BOS with no A+ tracked on that side
 var int  aplusS_sweepBar = na
 var int  aplusS_sosBar   = na
 var bool aplusS_poi      = false
-var int  aplusS_consumed = na
-var bool aplusS_done     = false
 var int  contS_bosBar    = na
 
 // HTF POI — the Cycle Fib's zones, tracked on every timeframe (drawing stays gated):
@@ -3547,14 +3614,26 @@ if macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
         poiLongNow  := low <= macro_extreme - _mRp * 0.618 and high >= macro_extreme - _mRp * 0.886
         poiShortNow := high >= macro_extreme - _mRp * 0.382
 
-// Stage 1 — arm on a sweep NEWER than any already consumed. The sweep records
-// (recentSSL/recentBSL) persist until their session resets, so without the
-// consumed check every death would be silently undone one bar later by the
-// same stale record re-arming. A newer same-side sweep still refreshes freely.
-if recentSSL != "" and recentSSL_bar >= 0 and (na(aplusL_consumed) or recentSSL_bar > aplusL_consumed)
+// Stage 1 — arm on the EXACT bar a NEW sweep or NEW divergence fires (true edge
+// triggers, not "is this condition currently true"). recentSSL_bar/recentBSL_bar
+// are recomputed fresh each bar from the liquidity sources and only CHANGE VALUE
+// on the bar a genuinely more recent sweep becomes the newest one; lastBullDivBar/
+// lastBearDivBar likewise only change on the bar a new divergence confirms. Edge-
+// triggering this way means there is no stale state to accidentally re-arm from —
+// the event has to newly happen, not merely still be "active".
+bool newSweepL = recentSSL != "" and recentSSL_bar != recentSSL_bar[1]
+bool newDivL   = not na(lastBullDivBar) and lastBullDivBar != lastBullDivBar[1]
+if newSweepL
     aplusL_sweepBar := recentSSL_bar
-if recentBSL != "" and recentBSL_bar >= 0 and (na(aplusS_consumed) or recentBSL_bar > aplusS_consumed)
+if newDivL
+    aplusL_sweepBar := lastBullDivBar
+
+bool newSweepS = recentBSL != "" and recentBSL_bar != recentBSL_bar[1]
+bool newDivS   = not na(lastBearDivBar) and lastBearDivBar != lastBearDivBar[1]
+if newSweepS
     aplusS_sweepBar := recentBSL_bar
+if newDivS
+    aplusS_sweepBar := lastBearDivBar
 
 // POI latch while armed
 if not na(aplusL_sweepBar)
@@ -3568,53 +3647,67 @@ if st.bull_sos and not na(aplusL_sweepBar) and bar_index - aplusL_sweepBar <= ap
 if st.bear_sos and not na(aplusS_sweepBar) and bar_index - aplusS_sweepBar <= aplusWindow
     aplusS_sosBar := bar_index
 
-// Continuation trigger — after a completed A+ on this side, the next same-side
-// BOS arms a continuation setup with the same fib entry tiers.
-if aplusL_done and st.bull_bos
-    contL_bosBar := bar_index
-if aplusS_done and st.bear_bos
-    contS_bosBar := bar_index
+// Clear a stale arm — sweep/div fired but no SOS followed within the window.
+// Without this, aplusL_sweepBar stays set FOREVER even after the A+ row has
+// already fallen back to "Pass" (the display checks the window; this variable
+// didn't), which permanently blocked CONT from ever arming again.
+if not na(aplusL_sweepBar) and na(aplusL_sosBar) and bar_index - aplusL_sweepBar > aplusWindow
+    aplusL_sweepBar := na
+if not na(aplusS_sweepBar) and na(aplusS_sosBar) and bar_index - aplusS_sweepBar > aplusWindow
+    aplusS_sweepBar := na
 
-// Sequence death. Opposite SOS kills the whole side — sweep consumed, done flag
-// cleared, continuation dead (the trend it was continuing just reversed).
+// Sequence death. Opposite SOS kills the A+ tracking on that side — the trend
+// it was riding just reversed. ANY SOS (either direction) also clears CONT on
+// BOTH sides — an SOS is, by definition, a fresh reversal event, never a
+// continuation. Without this, a stale CONT armed from an earlier BOS could
+// keep showing even after a brand new SOS has since fired on that very side —
+// backwards, since once an SOS prints we're back in A+ (reversal) territory
+// until a genuine new BOS re-arms CONT on the far side of that fresh leg.
 if st.bear_sos
-    aplusL_consumed := na(aplusL_sweepBar) ? aplusL_consumed : aplusL_sweepBar
     aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false
-    aplusL_done := false, contL_bosBar := na
 if st.bull_sos
-    aplusS_consumed := na(aplusS_sweepBar) ? aplusS_consumed : aplusS_sweepBar
     aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false
-    aplusS_done := false, contS_bosBar := na
+if st.bull_sos or st.bear_sos
+    contL_bosBar := na
+    contS_bosBar := na
 
-// A+ leg resolution: completion (TP3) consumes the sweep and arms continuation
-// mode; invalidation (close past 1.0 or fib flipped) consumes it without arming.
+// A+ leg resolution: completion (TP3), invalidation (close past 1.0 or fib
+// flipped), or a CONTINUATION BOS once the SOS stage was already reached. That
+// last case is the one you're describing: the SOS fires, price never completes
+// the retrace, and instead breaks structure again in the same direction — the
+// leg has moved on without ever giving the fib entry, so the A+'s premise is
+// over and tracking hands off to CONT. Critically this must exclude the SOS's
+// OWN bar: your structure engine flags bull_bos = true on every bull_sos bar
+// too (they're not mutually exclusive), so without "not st.bull_sos" here, the
+// very bar that arms stage 2 would immediately kill itself.
 if not na(aplusL_sosBar)
-    bool _lComplete = fibo_dir == 1 and fibo7Touched
-    bool _lInvalid  = fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10)
-    if _lComplete or _lInvalid
-        aplusL_consumed := na(aplusL_sweepBar) ? aplusL_consumed : aplusL_sweepBar
+    if (fibo_dir == 1 and fibo7Touched) or fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10) or (st.bull_bos and not st.bull_sos)
         aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false
-        aplusL_done := _lComplete
 if not na(aplusS_sosBar)
-    bool _sComplete = fibo_dir == -1 and fibo7Touched
-    bool _sInvalid  = fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10)
-    if _sComplete or _sInvalid
-        aplusS_consumed := na(aplusS_sweepBar) ? aplusS_consumed : aplusS_sweepBar
+    if (fibo_dir == -1 and fibo7Touched) or fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10) or (st.bear_bos and not st.bear_sos)
         aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false
-        aplusS_done := _sComplete
 
-// Continuation leg resolution: completion keeps done=true so the NEXT BOS can
-// chain another continuation; invalidation ends the chain entirely.
+// CONT trigger — simply the BOS, but ONLY when no A+ is currently tracked on
+// that side (not even sweep-armed). Runs AFTER A+ resolution above so a BOS
+// that both completes an A+ and starts a continuation arms CONT the same bar.
+// A small "CONT" marker is drawn at the exact arming bar so this is directly
+// verifiable on the chart, rather than having to spot it inside a cluster of
+// regular BOS/SOS labels.
+if st.bull_bos and na(aplusL_sweepBar)
+    contL_bosBar := bar_index
+    label.new(bar_index, low, "\nCONT", color = color(na), textcolor = color.new(#2196F3, 0), style = label.style_label_up, size = size.tiny)
+if st.bear_bos and na(aplusS_sweepBar)
+    contS_bosBar := bar_index
+    label.new(bar_index, high, "CONT\n", color = color(na), textcolor = color.new(#2196F3, 0), style = label.style_label_down, size = size.tiny)
+
+// CONT leg resolution: completion (TP3) or invalidation clears it; the next
+// BOS arms a fresh one on its own leg.
 if not na(contL_bosBar)
-    if fibo_dir == 1 and fibo7Touched
+    if (fibo_dir == 1 and fibo7Touched) or fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10)
         contL_bosBar := na
-    else if fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10)
-        contL_bosBar := na, aplusL_done := false
 if not na(contS_bosBar)
-    if fibo_dir == -1 and fibo7Touched
+    if (fibo_dir == -1 and fibo7Touched) or fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10)
         contS_bosBar := na
-    else if fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10)
-        contS_bosBar := na, aplusS_done := false
 
 // Stage 3 — entry zone progress on the SOS leg's fib
 // EARLY = 0.5 tapped inbound, READY = 0.618 reached (E1-E3 zone live)
@@ -3630,13 +3723,16 @@ if not na(aplusS_sosBar) and fibo_dir == -1
 else if not na(aplusS_sweepBar) and bar_index - aplusS_sweepBar <= aplusWindow
     aplusS_stage := 1
 
-// Continuation stages — same entry tiers, applied to the BOS leg's fib
+// CONT stages — BOS, await retrace, then READY when price reaches the E1-E4
+// entry zone (0.618+). No 0.5 early tier for continuations. Suppressed entirely
+// while an A+ is active on that side (covers the case CONT armed just before
+// a fresh A+ sweep started tracking).
 int contL_stage = 0
-if not na(contL_bosBar) and fibo_dir == 1
-    contL_stage := fibo618EverReached ? 4 : fiboHalfReached ? 3 : 2
+if not na(contL_bosBar) and fibo_dir == 1 and aplusL_stage == 0
+    contL_stage := fibo618EverReached ? 4 : 2
 int contS_stage = 0
-if not na(contS_bosBar) and fibo_dir == -1
-    contS_stage := fibo618EverReached ? 4 : fiboHalfReached ? 3 : 2
+if not na(contS_bosBar) and fibo_dir == -1 and aplusS_stage == 0
+    contS_stage := fibo618EverReached ? 4 : 2
 
 // FVG confluence — a live clean gap overlapping the entry zone (0.5 to 0.886)
 bool aplusL_fvg = false
@@ -3668,55 +3764,96 @@ if showConfTable and barstate.islast
 
     int r = 1
 
-    // A+ SEQUENCE — live stage of the sweep → SOS → entry sequence, with a
-    // continuation mode after completion. A+ stages outrank continuation.
-    int  seqLStage = math.max(aplusL_stage, contL_stage)
-    int  seqSStage = math.max(aplusS_stage, contS_stage)
-    bool seqLIsCont = aplusL_stage == 0 and contL_stage > 0
-    bool seqSIsCont = aplusS_stage == 0 and contS_stage > 0
-    int  seqStage  = math.max(seqLStage, seqSStage)
-    bool seqIsLong = seqLStage >= seqSStage
-    if seqStage > 0
-        color seqCol = seqIsLong ? JARVIS_SSL : JARVIS_BSL
-        string seqSide = seqIsLong ? "LONG" : "SHORT"
-        bool  seqCont = seqIsLong ? seqLIsCont : seqSIsCont
-        bool  seqFvg  = seqIsLong ? aplusL_fvg : aplusS_fvg
-        bool  seqPoi  = seqIsLong ? aplusL_poi : aplusS_poi
-        bool  seqDiv  = seqIsLong ? bullDivActive : bearDivActive
-        string fvgTag = seqFvg ? " + FVG" : ""
-        string poiTag = not seqCont and seqPoi ? " + POI" : ""
-        string divTag = seqDiv ? " + DIV" : ""
-        string modeTag = seqCont ? "Cont · " : ""
-        if seqStage == 4
-            f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, modeTag + "E1 zone" + fvgTag + poiTag + divTag)
-        else if seqStage == 3
-            f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, modeTag + "0.5 early" + fvgTag + poiTag + divTag)
-        else if seqStage == 2
-            f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, seqCont ? "Cont · BOS ✓ await retrace" : "SOS ✓ await retrace" + poiTag)
+    // Everything below (A+ SETUP, CONT, Weekly, Daily, LIQ BSL/SSL) is hidden in
+    // Market Structure mode — only EXT/INT print then.
+    if not marketStructureOnly
+        // A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
+        // completes, this row goes back to Pass; what tracks afterward is the CONT
+        // row below — a different trade type, displayed separately so the two can
+        // never be confused. Divergence/extreme-RSI veto: a side with live opposing
+        // divergence or an extreme RSI reading is suppressed and flagged instead of
+        // displayed as a tradeable setup, even if the entry zone is reached.
+        // FVG is a REQUIRED confirmation for READY (not just a tag) — reaching 0.618
+        // without a live matching FVG holds the row at "awaiting FVG" instead of
+        // declaring the setup ready. POI (Cycle Fib discount/premium) is a separate,
+        // optional confirmation — it does not substitute for the FVG requirement.
+        bool aplusL_ok = aplusL_stage > 0 and not longVeto
+        bool aplusS_ok = aplusS_stage > 0 and not shortVeto
+        bool aplusL_blocked = aplusL_stage > 0 and longVeto
+        bool aplusS_blocked = aplusS_stage > 0 and shortVeto
+        if aplusL_ok or aplusS_ok
+            bool seqIsLong = aplusL_ok and (not aplusS_ok or aplusL_stage >= aplusS_stage)
+            int  seqStage  = seqIsLong ? aplusL_stage : aplusS_stage
+            color seqCol = seqIsLong ? JARVIS_SSL : JARVIS_BSL
+            string seqSide = seqIsLong ? "LONG" : "SHORT"
+            bool  seqFvg  = seqIsLong ? aplusL_fvg : aplusS_fvg
+            bool  seqPoi  = seqIsLong ? aplusL_poi : aplusS_poi
+            bool  seqDiv  = seqIsLong ? bullDivActive : bearDivActive
+            string poiTag = seqPoi ? " + POI" : ""
+            string divTag = seqDiv ? " + DIV" : ""
+            if seqStage == 4 and seqFvg
+                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, "E1 zone + FVG" + poiTag + divTag)
+            else if seqStage == 4
+                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT FVG " + seqSide, JARVIS_YELLOW, "E1 zone, no FVG yet" + poiTag + divTag)
+            else if seqStage == 3
+                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + (seqFvg ? " + FVG" : "") + poiTag + divTag)
+            else if seqStage == 2
+                f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag)
+            else
+                f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag)
+            r := r + 1
+        else if aplusL_blocked or aplusS_blocked
+            f_jRow3(jarvisTable, r, "A+ SETUP", "EXTREME", JARVIS_YELLOW, aplusL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
+            r := r + 1
         else
-            f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep ✓ await SOS" + poiTag)
-        r := r + 1
-    else
-        f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
+            f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
+            r := r + 1
+
+        // CONT — the continuation trade type: BOS, await retrace, entry at E1-E4
+        // where an FVG or Sniper Zone sits. Only appears while a leg is tracked.
+        // Same veto rule applies.
+        bool contL_ok = contL_stage > 0 and not longVeto
+        bool contS_ok = contS_stage > 0 and not shortVeto
+        bool contL_blocked = contL_stage > 0 and longVeto
+        bool contS_blocked = contS_stage > 0 and shortVeto
+        if contL_ok or contS_ok
+            bool contIsLong = contL_ok and (not contS_ok or contL_stage >= contS_stage)
+            int  contStage  = contIsLong ? contL_stage : contS_stage
+            color contCol = contIsLong ? JARVIS_SSL : JARVIS_BSL
+            string contSide = contIsLong ? "LONG" : "SHORT"
+            bool  contFvg  = contIsLong ? aplusL_fvg : aplusS_fvg
+            bool  contSz   = not na(sniperZoneTop) and (contIsLong ? sz_bullish : not sz_bullish)
+            bool  contDiv  = contIsLong ? bullDivActive : bearDivActive
+            string cFvgTag = contFvg ? " + FVG" : ""
+            string cSzTag  = contSz ? " + SZ" : ""
+            string cDivTag = contDiv ? " + DIV" : ""
+            if contStage == 4
+                f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + "READY " + contSide, contCol, "E1-E4 zone" + cFvgTag + cSzTag + cDivTag)
+            else
+                f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + contSide, contCol, "BOS ✓ await retrace" + cFvgTag + cSzTag)
+            r := r + 1
+        else if contL_blocked or contS_blocked
+            f_jRow3(jarvisTable, r, "CONT", "EXTREME", JARVIS_YELLOW, contL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
+            r := r + 1
+
+        // WEEKLY — Established Context (last closed week vs the one before)
+        f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
         r := r + 1
 
-    // WEEKLY — Established Context (last closed week vs the one before)
-    f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
-    r := r + 1
-
-    // DAILY — Established Context (last closed day vs the one before)
-    f_jRow3(jarvisTable, r, "Daily", dEstState, dEstState == "Bullish" ? JARVIS_SSL : dEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, dEstDesc)
-    r := r + 1
-
-    // LIQ BSL
-    if recentBSL != ""
-        f_jRow3(jarvisTable, r, "LIQ BSL", "BSL", JARVIS_BSL, recentBSL)
+        // DAILY — Established Context (last closed day vs the one before)
+        f_jRow3(jarvisTable, r, "Daily", dEstState, dEstState == "Bullish" ? JARVIS_SSL : dEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, dEstDesc)
         r := r + 1
 
-    // LIQ SSL
-    if recentSSL != ""
-        f_jRow3(jarvisTable, r, "LIQ SSL", "SSL", JARVIS_SSL, recentSSL)
-        r := r + 1
+        // LIQ BSL
+        if recentBSL != ""
+            f_jRow3(jarvisTable, r, "LIQ BSL", "BSL", JARVIS_BSL, recentBSL)
+            r := r + 1
+
+        // LIQ SSL
+        if recentSSL != ""
+            f_jRow3(jarvisTable, r, "LIQ SSL", "SSL", JARVIS_SSL, recentSSL)
+            r := r + 1
+
 
     // STRUCTURE — EXT always, INT only if within current fib range
     if ext_struct != ""
@@ -3726,22 +3863,11 @@ if showConfTable and barstate.islast
         f_jRow3(jarvisTable, r, "INT", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "Internal")
         r := r + 1
 
-    if showFibo and showIFib and iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
-        color  intFibCol = iFib_dir == 1 ? JARVIS_SSL : JARVIS_BSL
-        f_jRow3(jarvisTable, r, "FIB INTERNAL", int_fib_level, intFibCol, iFib618EverReached ? "Active" : "Tracking")
-        r := r + 1
-
-    // EXTERNAL FIB
-    if showFibo and fibo_dir != 0 and not na(fibo_ash) and not na(fibo_asl)
-        color  fibCol  = fibo_dir == 1 ? JARVIS_SSL : JARVIS_BSL
-        f_jRow3(jarvisTable, r, "FIB EXTERNAL", fib_level, fibCol, fibo618EverReached ? "Active" : "Tracking")
-        r := r + 1
-
-    // MACRO FIB
-    if showMacroFib and macro_visible and macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
-        color  macroCol = macro_dir == 1 ? JARVIS_SSL : JARVIS_BSL
-        f_jRow3(jarvisTable, r, "FIB CYCLE", macro_fib_level, macroCol, macro618EverReached ? "Active" : "Tracking")
-        r := r + 1
+    // Wipe any leftover cells below the last drawn row. Without this, a tick
+    // that draws FEWER rows than the previous one leaves the old rows visible
+    // (e.g. a ghost duplicate of the final row after a row above disappears).
+    if r <= 17
+        table.clear(jarvisTable, 0, r, 2, 17)
 
 //============================================================
 //  MPC- JARVIS WATERMARK
