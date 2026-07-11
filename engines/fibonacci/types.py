@@ -149,6 +149,7 @@ class StructureFibEvents:
     levels: Dict[str, float] = field(default_factory=dict)  # current price of every level (state)
     touched_so_far: Set[str] = field(default_factory=set)   # cumulative touched names this leg
     reset_active: bool = False                        # TP3 (0.0) hit -> leg spent/hidden until new leg
+    half_reached: bool = False                        # inbound 0.5 tapped this leg (ungated) — A+ EARLY tier
 
 
 @dataclass

@@ -93,7 +93,7 @@ IFIB_PULSE_FIELDS = IFIB_TOUCH_FIELDS + ["px_ifib_active", "px_ifib_reset_active
 
 PRICE_FIELDS = FIB_PRICE_FIELDS + SNIPER_PRICE_FIELDS + MACRO_PRICE_FIELDS
 PULSE_FIELDS = (
-    TOUCH_FIELDS + ["px_fib_active", "px_fib_origin", "px_fib_reset_active"]
+    TOUCH_FIELDS + ["px_fib_active", "px_fib_origin", "px_fib_reset_active", "px_fibo_half_reached"]
     + SNIPER_PULSE_FIELDS + MACRO_PULSE_FIELDS + IFIB_PULSE_FIELDS
 )
 DIR_FIELDS = ["px_fib_dir", "px_sniper_dir", "px_macro_dir", "px_ifib_dir"]
@@ -103,7 +103,9 @@ ALL_FIELDS = PRICE_FIELDS + PULSE_FIELDS + DIR_FIELDS
 # re-sync — optional so older exports still validate); Sniper, Macro and Internal columns are all
 # optional so this tool still runs against an older export made before those plots existed.
 STRUCT_FIELDS = FIB_PRICE_FIELDS + TOUCH_FIELDS + ["px_fib_active", "px_fib_origin", "px_fib_dir"]
-STRUCT_OPT_FIELDS = ["px_fib_reset_active"]
+# Optional so older exports still validate: px_fib_reset_active (2026-07-08), px_fibo_half_reached
+# (2026-07-10 — the inbound-0.5 A+ EARLY tier).
+STRUCT_OPT_FIELDS = ["px_fib_reset_active", "px_fibo_half_reached"]
 SNIPER_FIELDS = SNIPER_PRICE_FIELDS + SNIPER_PULSE_FIELDS + ["px_sniper_dir"]
 MACRO_FIELDS = MACRO_PRICE_FIELDS + MACRO_PULSE_FIELDS + ["px_macro_dir"]
 IFIB_FIELDS = IFIB_PULSE_FIELDS + ["px_ifib_dir"]
@@ -161,6 +163,7 @@ def _python_row(fib_ev, sniper_ev, macro_ev, ifib_ev):
         "px_fib_active": 1.0 if active else 0.0,
         "px_fib_origin": 1.0 if fib_ev.origin_changed else 0.0,
         "px_fib_reset_active": 1.0 if fib_ev.reset_active else 0.0,
+        "px_fibo_half_reached": 1.0 if fib_ev.half_reached else 0.0,
         "px_fib_dir": float(fib_ev.direction) if active else None,
     }
     for sfx, name in _LVL:

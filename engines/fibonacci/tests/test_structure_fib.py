@@ -180,3 +180,32 @@ def test_extend_changed_bar_skips_touch_checks():
     # Next bar, anchor stable -> checks resume; TP1 for the 100->112 leg = 106, high 106 -> fires.
     ev = fib.update(high=106.0, low=104.0, snap=moved)
     assert "TP1" in {t.level for t in ev.touched}
+
+
+# ── 2026-07-10 re-sync addition: fiboHalfReached (A+ EARLY tier) ──
+
+def test_half_reached_inbound_05_is_ungated():
+    """fiboHalfReached latches on the INBOUND 0.5 (TP1 price) tap during the retrace, WITHOUT the
+    0.618 gate — the A+ EARLY entry tier. Distinct from the TP1 target, which needs the gate and
+    tests the same price on the way OUT (Pine 2443)."""
+    fib = StructureFib()
+    snap = _bull_snap()                              # asl=100, ash=110 -> 0.5=105.0, E1(0.618)=103.82
+    fib.update(109.0, 108.0, snap)                   # origin bar (checks skipped)
+    # Retrace down to tap 0.5 (low 104.5 <= 105) but NOT reach 0.618 (104.5 > 103.82).
+    ev = fib.update(high=106.0, low=104.5, snap=snap)
+    assert ev.half_reached                            # inbound 0.5 tapped
+    assert "E1" not in ev.touched_so_far              # gate NOT reached -> proves it is ungated
+    assert "TP1" not in {t.level for t in ev.touched}  # the TP1 target did not fire (needs the gate)
+
+
+def test_half_reached_resets_on_new_leg():
+    fib = StructureFib()
+    snap = _bull_snap()
+    fib.update(109.0, 108.0, snap)
+    ev = fib.update(106.0, 104.5, snap)              # half reached on this leg
+    assert ev.half_reached
+    # New leg (origin bar moves): checks skipped this bar, and the latch is reset with the leg.
+    new = _bull_snap(ash=120.0, asl=108.0, ash_loc=60, asl_loc=50)
+    ev = fib.update(high=115.0, low=114.0, snap=new)
+    assert ev.origin_changed
+    assert not ev.half_reached

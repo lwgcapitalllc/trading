@@ -2,8 +2,8 @@
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
-**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. The 2026-07-08 re-sync brought every engine back to 100% Pine parity and was committed. A **fresh 2026-07-09 re-paste** of `mpc_assistant.pine` (184-line working-tree diff, uncommitted) then flagged **TWO engines STALE again — liquidity and fibonacci** — see "Audit findings — 2026-07-09" below. In one line: (a) **liquidity STALE** — the whole **MONTHLY level (PMH/PML) was removed from source**; the engine still emits it (`enable_monthly=True`). (b) **fibonacci STALE** — both Structure and Internal fibs **dropped the TP3-hit `resetActive` latch** and **added an extend-changed guard** (skip touched-checks the bar the live anchor moved), and the **Macro** now seeds its bear-SOS tracker on the first bar so the first bullish SOS locks immediately. **market_structure, order_blocks, sessions, vwap, svp, regime, news all IN PARITY / not affected** (the sessions display-window rework is visual). New computed block flagged: **SETUP GRADING** (A+/B/C setup classifier, table-only for now). **07-09 re-sync: DONE for both — liquidity (monthly removed entirely, Aaron's call) and fibonacci (TP3-reset drop + extend-changed guard + macro first-bar seed) — engine + harness + tests updated & green, and BOTH re-validated on a fresh combined `VANTAGE_XAUUSD, 5m` export (13,759 bars): `compare_liquidity.py --warmup 1742` and `compare_fib.py --warmup 3154` both exit 0. Ready to commit.**
-**Last reviewed:** 2026-07-09 (fresh re-paste audit — supersedes the "re-sync complete" state above)
+**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. The 2026-07-09 re-sync (liquidity monthly-removal + fibonacci TP3-reset-drop/extend-guard/macro-seed) is now **committed** (`d367b6d`), every engine back at 100% Pine parity. A **fresh 2026-07-10 re-paste** of `mpc_assistant.pine` (524-line staged diff) was audited: **NO engine is stale.** Every engine-affecting change is either visual (swing-label hide toggle, VWAP polyline→plot, KZ/session display windows, session-H/L input consolidation, iBOS/iSOS label reposition) or already-aligned (macro fib run-guard opened to all-timeframes tracking, which the Python engine was already doing unconditionally). **TWO NEW blocks** appeared. One is engine work (now BUILT), one is strategy work (not built): (a) **FAIR VALUE GAPS (FVG)** — a 3-candle displacement gap detector (persists until tapped, FIFO cap); a genuine event detector → **✅ built + Pine-parity-validated 2026-07-10 as `engines/fair_value_gaps/`** (12 unit tests green; `compare_fvg.py --warmup 20` exit 0 on a real `VANTAGE_XAUUSD, 5m` export). The small **`fiboHalfReached`** fib add-on (inbound 0.5 touch) was **✅ built + parity-validated into `engines/fibonacci/`** the same day (2 new tests; `compare_fib.py --warmup 1002` exit 0). **Both ready to commit with the mpc re-paste.** (b) **A+ SETUP SEQUENCE** — a stateful sweep→SOS→fib-entry machine (continuation mode, Cycle-Fib POI, FVG confluence) that **REPLACES the old SETUP GRADING candidate**; it *decides trades*, so it is **strategy-tier, NOT an engine** — it belongs in `strategies/` (MT5/NT8) or a Python bot, and now has both its engine dependencies (FVG + `fiboHalfReached`) in place. **market_structure sync chain NOT triggered** (only label colour/position changed; no detection change). See "Audit findings — 2026-07-10" below.
+**Last reviewed:** 2026-07-10 (fresh re-paste audit — no engine drift; FVG engine + `fiboHalfReached` built & Pine-parity-validated, ready to commit; A+ setup remains strategy-tier, not built)
 
 ---
 
@@ -44,20 +44,139 @@ Downstream engines (like the fibs) read another engine's **public output** only 
   `StructureFib` and add `px_ifib_*` columns to `indicators/fib_export.pine`. See "Audit findings —
   2026-07-08". **Do this as part of the fibonacci re-sync (the engine is STALE anyway).**
 
-- **SETUP GRADING** (new; found 2026-07-09 paste) — a **setup classifier** that synthesizes the five
-  confirmations into one grade + side: (1) Weekly+Daily bias, (2) SSL/BSL sweep "fuel", (3) external
-  structure break direction, (4) location (External Fib E-levels active in-direction OR Sniper Zone
-  confirmed), (5) internal-structure timing. Grades **A+** (all five) / **B** (four — bias half-formed
-  or timing missing) / **C** (structure scalp: structure+location+timing, bias not opposing) / Pass.
-  Currently feeds only the new JARVIS "SETUP" table row, but it is genuine bot-relevant decision logic
-  built entirely on existing engine outputs (bias, liquidity sweep, structure, fib, internal). Flagging
-  as a candidate — same status as the previously-flagged **HTF Directional Bias** helper
-  (`f_biasState`/`f_htfBias`). No engine yet; decide whether it belongs in a future `setup_grading`
-  engine or stays a bot-side composition of the existing engines.
+- **A+ SETUP SEQUENCE — STRATEGY, not an engine** (new; found 2026-07-10 paste — **REPLACES the
+  2026-07-09 SETUP GRADING checklist**, deleted from source). This is **trade-decision logic**, so it is
+  strategy-tier, not an engine: engines report facts, strategies decide trades, and this decides trades.
+  It sequences engine events into an entry, per side: (1) SWEEP — a tracked HTF liquidity grab
+  (`recentSSL`/`recentBSL`); (2) MSS — an external SOS after the sweep within `aplusWindow` bars;
+  (3) ENTRY — the SOS leg's fib retrace (0.5 tap → EARLY, 0.618 → READY). Plus a **Cycle-Fib POI** latch
+  (discount 0.618–0.886 long / premium ≥0.382 short), **FVG confluence** (a live gap in the 0.5–0.886
+  zone), a **continuation mode** (next same-side BOS after a completed A+ re-arms the tiers), and death
+  rules (opposite SOS, close past fib 1.0, TP3 hit). It composes existing engine outputs + the new FVG
+  engine + the `fiboHalfReached` fib flag. It does **not** go on the engine roadmap — it belongs in the
+  strategy layer (`strategies/` for the MT5/NT8 build, or a Python bot per `docs/BOT_DEVELOPMENT_METHOD.md`),
+  and it depends on the two engine items below being built first. Currently drives only the JARVIS "A+
+  SETUP" table row.
+
+- **FAIR VALUE GAPS (FVG)** — ✅ **BUILT + PARITY-VALIDATED 2026-07-10** as `engines/fair_value_gaps/`
+  (engine + types + `__init__` + CLAUDE.md + 12 hand-traced unit tests, green). A clean-displacement gap
+  detector: bullish gap = void between candle A's high and candle C's low when three same-direction candles
+  close progressively higher (bearish mirrors); confirmed bars only; **persists until price taps its near
+  edge** (deleted on tap, NOT on BOS/SOS); FIFO cap (`fvgMaxCount`). Standalone (OHLC-only — the Pine's
+  directional-visibility filter is drawing, not reproduced). **`compare_fvg.py --warmup 20` → exit 0** on a
+  real `VANTAGE_XAUUSD, 5m` export (8,578 bars): all 3 gap slots × top/bottom/is-bull + count + formed/mit
+  pulses matched Pine on every warm bar. The 20-bar warm-up is a lingering pre-window bear gap in the Pine
+  export whose near edge price never revisited (never tapped) — the cold-started Python engine can't know an
+  off-screen gap; it flushes by bar 20. **Harness gotcha (fixed):** the first export carried NO FVG columns
+  because the plots used `display = display.none`, which TradingView excludes from "Export chart data"; the
+  plots now use transparent colours (same as `fib_export.pine`). Ready to commit with the mpc re-paste.
+
+- **`fiboHalfReached` fib add-on** — ✅ **BUILT + PARITY-VALIDATED 2026-07-10** in `engines/fibonacci/`
+  (StructureFib now emits `half_reached`: the **inbound 0.5 touch** during the retrace, ungated, distinct
+  from the outbound TP1; a first-touch latch reset each leg). Additive — no existing fib level changed; 2
+  new unit tests green (42 total). `fib_export.pine` gained a `px_fibo_half_reached` column and
+  `compare_fib.py` compares it. **`compare_fib.py --warmup 1002` exit 0** on a fresh combined
+  `VANTAGE_XAUUSD, 5m` export (7,891 bars) — `px_fibo_half_reached` matched Pine on every warm bar
+  alongside all existing fib fields. Ready to commit (with the mpc re-paste).
+
+- **HTF Directional Bias helper** (candidate since 2026-07-08; simplified 2026-07-10) — `f_biasState` /
+  `f_htfBias`: Daily+Weekly Established Context bias (Closed[1] vs Closed[2]) with sweep detection. The
+  "Current Forming" half (Live[0] vs Closed[1]) was **removed from source 2026-07-10** ("never consumed"),
+  so it now returns a 2-value shape. Still feeds only the JARVIS table; no engine yet. Port the simplified
+  shape if extracted (the A+ sequence could consume it as a bias filter).
 
 Everything else is ported. The other forward work is *consumption*, not extraction: give each engine
 an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest
 lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
+
+---
+
+## Audit findings — 2026-07-10 (fresh re-paste of `mpc_assistant.pine`, staged, uncommitted)
+
+Staged diff vs commit `d367b6d` (the last audit's commit). 524-line diff (381+/143-). **No engine is
+stale.** This paste is mostly visual polish plus two genuinely new computed features (FVG + the A+ setup
+sequence machine). Block by block:
+
+**market_structure — IN PARITY (sync chain NOT triggered).** Only cosmetic changes touch the structure
+block: a new `showSwingLabels` input + `f_swingCol()` helper that hides swing-point labels by making
+their text transparent (the comment in source is explicit — "The label objects still exist and the
+engine's state is untouched"), every `textcolor=…` wrapped in `f_swingCol(…)`, and the iBOS/iSOS labels
+repositioned (dropped the `- i_lbl_y_offset`, style `label.style_none → label.style_label_up`). The
+3-candle pullback, break/CHoCH conditions, `choch_lock`, the seed/lookback scan, the bear-BOS fallback,
+and the internal iSH/iSL/iBOS/iSOS *detection* are all byte-unchanged. Per the MOST-CRUCIAL rule these
+are label colour/position tweaks → **VISUAL, chain not triggered.** `structure_engine.pine`,
+`structure_engine_export.pine`, `engines/market_structure/engine.py` and the shim all stay current. (The
+new `extBreakThisBar` bool just names the already-existing `bull_bos or bear_bos or bull_sos or bear_sos`
+condition to clear the *table's* INT row — not a detection change.)
+
+**fibonacci — IN PARITY (existing outputs unchanged) + one new A+-support flag noted.**
+- *Structure fib*: NEW `fiboHalfReached` var — the **inbound 0.5 touch** during the retracement toward
+  the entry zone (ungated; distinct from `fibo2Touched`, which tests the same price on the way *out* as
+  TP1, gated behind 0.618). It is reset in the new-leg block and computed via the existing `f_checkTouch`.
+  It changes NO existing level's detection (fibo1–fibo10 touch logic is byte-unchanged); it is a purely
+  additive flag that feeds ONLY the new A+ sequence. So the fib engine is correct on everything it emits
+  today; `fiboHalfReached` is a **new output it does not yet emit**. Add it (as a StructureFib event +
+  `px_fibo_half_reached` column) only when the A+ sequence is extracted or a bot needs the 0.5 early-entry
+  tier.
+- *Macro / Cycle fib*: the run-guard opened from `if showMacroFib and macroFibAllowed` to `if bar_index
+  >= 0` — the **tracking state machine now runs on every bar/timeframe** (drawing stays gated, now via the
+  new `macroMaxTfMin` input, and the `showMacroFib and macroFibAllowed` guard survives at the DRAW site,
+  mpc line 2740). The macro compute BODY is unchanged (bear-SOS first-bar seed, origin lock, bottom anchor
+  all identical). The Python `MacroFib` already runs unconditionally from bar 0, so this brings source
+  *toward* the engine, not away — and on the validated 5m export the old guard was already true, so the
+  harness output is bit-identical. **No re-validation needed; IN PARITY.**
+
+**order_blocks — not affected.** Structure detection unchanged → internal-break timing unchanged →
+`ob_export.pine` (embeds the structure engine) stays valid. No OB code touched.
+
+**sessions / kill zones / NY range — not affected (VISUAL).** Display-window reworks only: sessions
+switched from a rolling 7-day cutoff to a calendar-week anchor (Sunday 00:00 NY); kill zones / NY range
+switched from `kzDaysBack`/`nyrDaysBack` int inputs to a `showKZHistoric` toggle (current NY day only by
+default); the redundant `tzHighD/tzLowD` daily-security was removed and the KZ boxes now reuse
+`dailyHigh/dailyLow` (same values). All gate only drawn boxes/`sessionInfos`, never the event stream. No
+engine impact (SVP, which composes the sessions stream, is likewise unaffected).
+
+**liquidity — not affected (VISUAL).** The three `i_showAsiaHL/LondonHL/NYHL` inputs were collapsed into
+one `i_showSessionHL` toggle, kept as three internal flags "so the drawing/mitigation logic below stays
+unchanged" (source comment). No level or mitigation compute changed.
+
+**vwap — not affected (VISUAL).** `vwapValue = ta.vwap(hlc3)` is byte-unchanged; only the DRAWING switched
+from a per-bar-rebuilt polyline to a single `plot()` (O(1) vs O(n²)). Default toggle flipped on. Engine
+IN PARITY.
+
+**svp / regime / news — not affected.** SVP/MV and Sniper compute blocks are fully intact — only their
+JARVIS *table rows* were removed (visual). No compute touched.
+
+**HTF Directional Bias helper (candidate, still not extracted) — simplified.** `f_htfBias` dropped the
+"Current Forming" bias (Live[0] vs Closed[1]) that "was never consumed" and now returns only the
+Established Context (Closed[1] vs Closed[2]) from one security call. Still feeds only the JARVIS table;
+still a candidate, no engine. Noted so a future extraction ports the simplified 2-value shape.
+
+**NEW FEATURE #1 — FAIR VALUE GAPS (FVG)** (un-extracted). A clean-displacement gap detector: a bullish
+FVG is the void between candle A's high and candle C's low when three same-direction candles close
+progressively higher (bearish mirrors); confirmed bars only; persists until price taps its near edge
+(deleted on tap, NOT on BOS/SOS); optional directional filter (hide gaps opposing `st.dir`); FIFO cap
+(`fvgMaxCount`, oldest dropped). Genuine new event logic (gap formed / gap mitigated). Candidate for a
+small `fair_value_gaps` engine (or an A+ sub-component). Added to "Still to build".
+
+**NEW FEATURE #2 — A+ SETUP SEQUENCE** (un-extracted; REPLACES the old SETUP GRADING candidate). A
+stateful, ordered setup machine, per side: (1) SWEEP — a tracked HTF liquidity grab (recentSSL/recentBSL);
+(2) MSS — an external SOS firing after the sweep within `aplusWindow` bars; (3) ENTRY — the SOS leg's fib
+retrace (0.5 tapped → EARLY, 0.618 reached → READY/E1). Plus: a **Cycle-Fib POI** latch (discount 0.618–
+0.886 for longs / premium ≥0.382 for shorts, tracked on all timeframes), **FVG confluence** (a live gap
+overlapping the 0.5–0.886 entry zone), a **continuation mode** armed after a completed A+ (next same-side
+BOS re-arms the same entry tiers), and death rules (opposite SOS, close past fib 1.0, or TP3 hit). This is
+real bot-relevant decision logic built entirely on existing engine outputs + FVG + `fiboHalfReached`.
+Strong candidate for a `setup_sequence` engine. Added to "Still to build" (supersedes SETUP GRADING).
+
+**Harnesses — none stale.** No ported engine's detection changed, so no `*_export.pine` needs re-syncing
+and no `compare_*.py` needs re-running. (If/when FVG, the A+ sequence, or `fiboHalfReached` are extracted,
+each gets its own parity harness + check at that time.)
+
+**No engine code was changed in this audit — report only.** Any future engine change (e.g. adding
+`fiboHalfReached`, or building the FVG / A+ / bias engines) must re-run its `compare_*.py` Pine-parity
+check on a fresh TradingView export, with the matching `*_export.pine` harness updated first, before it is
+committed.
 
 ---
 

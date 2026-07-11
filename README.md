@@ -25,6 +25,7 @@ trading/
 │   ├── liquidity/       ← Liquidity-levels engine (prev D/W/M H·L, PWC, H4 sweep, session H·L); consumes sessions/
 │   ├── vwap/            ← Session VWAP engine (volume-weighted hlc3, trading-day anchor + cross); needs volume
 │   ├── session_volume_profile/  ← Session Volume Profile engine (Asia POC / MV line + sweep); consumes sessions/, needs volume
+│   ├── fair_value_gaps/ ← Fair-value-gap engine (3-candle displacement voids + mitigation); standalone, OHLC-only
 │   │                       (SMC extraction COMPLETE — see ENGINE_EXTRACTION_ROADMAP.md)
 │   └── news/            ← Economic-calendar (news + holiday) blackout engine (off-roadmap, not a Pine port; standalone)
 │
@@ -58,11 +59,12 @@ Read these in order for full context:
 11. `engines/liquidity/CLAUDE.md` — liquidity-levels engine (non-repainting), parity rules
 12. `engines/vwap/CLAUDE.md` — session VWAP engine (volume-weighted, trading-day anchor), parity rules
 13. `engines/session_volume_profile/CLAUDE.md` — Session Volume Profile engine (Asia POC / MV line), parity rules
-14. `engines/news/CLAUDE.md` — news/economic-calendar blackout engine, data paths, validation (no Pine source)
-15. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
-16. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
-17. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
-18. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
+14. `engines/fair_value_gaps/CLAUDE.md` — fair-value-gap engine (displacement voids + mitigation), parity rules
+15. `engines/news/CLAUDE.md` — news/economic-calendar blackout engine, data paths, validation (no Pine source)
+16. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
+17. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
+18. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
+19. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
 
 ## Subsystems
 
@@ -79,6 +81,7 @@ Read these in order for full context:
 | `engines/liquidity/` | Liquidity-levels engine (prev D/W/M H·L, PWC, H4 sweep, session H·L; non-repainting) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/liquidity/CLAUDE.md` |
 | `engines/vwap/` | Session VWAP engine (volume-weighted hlc3, trading-day anchor + cross) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/vwap/CLAUDE.md` |
 | `engines/session_volume_profile/` | Session Volume Profile engine (Asia POC / MV line + sweep) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/session_volume_profile/CLAUDE.md` |
+| `engines/fair_value_gaps/` | Fair-value-gap engine (3-candle displacement voids + mitigation; standalone) | Production — 100% Pine parity (VANTAGE_XAUUSD 5m) | `engines/fair_value_gaps/CLAUDE.md` |
 | `engines/news/` | Economic-calendar (news + holiday) blackout engine | Production — 29 tests + live checks (no Pine source) | `engines/news/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
 | `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
@@ -101,6 +104,6 @@ Cross-subsystem reference documents:
 - `docs/dynamic_sizing_engine.md` — Design doc for the dynamic sizing & risk engine (sizing, gating, decision log)
 - `docs/LWG_Project_State_Snapshot.md` — Current platform state; hand to new Claude.ai chats
 - `docs/LWG_Roadmap_And_Open_Questions.md` — Forward plan and open questions; hand to new Claude.ai chats
-- `docs/ENGINE_EXTRACTION_ROADMAP.md` — Which SMC-indicator blocks became their own Python engines (SMC extraction COMPLETE — all 8 done and Pine-parity-validated; plus 1 off-roadmap news engine)
+- `docs/ENGINE_EXTRACTION_ROADMAP.md` — Which SMC-indicator blocks became their own Python engines (SMC extraction COMPLETE — the 8 core blocks plus the later fair-value-gap engine done and Pine-parity-validated; plus 1 off-roadmap news engine)
 - `docs/audit/TRADER_MIGRATION_AUDIT.md` — Findings report from the Administrator→trader VPS migration audit
 - `.claude/commands/` — Repo slash commands: `/audit-engines`, `/doc-audit`, `/dead-code-audit`, `/regenerate-snapshots`, `/prop-firm-rules-audit` (the former `docs/audit/` prompt templates)

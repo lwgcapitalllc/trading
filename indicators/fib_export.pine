@@ -1051,6 +1051,7 @@ var bool fibo7Touched  = false
 var bool fibo10Touched = false
 var bool fibo618EverReached = false
 var bool fiboResetActive    = false   // declared + reset on origin change; TP3 setter dropped 2026-07-09
+var bool fiboHalfReached    = false   // inbound 0.5 (fiboP2) tap, UNGATED — A+ EARLY tier (mpc 2313/2443)
 
 var float fiboP1  = na, var float fiboP2  = na, var float fiboP3  = na
 var float fiboP4  = na, var float fiboP5  = na, var float fiboP6  = na
@@ -1111,6 +1112,7 @@ if fibActive
         fibo10Touched := false
         fibo618EverReached := false
         fiboResetActive    := false
+        fiboHalfReached    := false
         i_confirmed_low_price  := na
         i_confirmed_low_loc    := na
         i_confirmed_high_price := na
@@ -1122,6 +1124,10 @@ if fibActive
     bool fiboExtChanged = (not na(fiboPrevAsh) and fibo_ash != fiboPrevAsh) or (not na(fiboPrevAsl) and fibo_asl != fiboPrevAsl)
     if not fiboOriginChanged and not fiboExtChanged
         bool fibo618Reached = fibo_dir == 1 ? low <= fiboP3 : high >= fiboP3
+
+        // Inbound 0.5 (fiboP2) tap — UNGATED A+ EARLY tier (mpc 2443). Retracement-side, latched.
+        if not fiboHalfReached and (fibo_dir == 1 ? low <= fiboP2 : high >= fiboP2)
+            fiboHalfReached := true
 
         if fibo618Reached
             if not fibo3Touched
@@ -1457,6 +1463,7 @@ plot((fibo2Touched  and not fibo2Touched[1])  ? 1 : 0, "px_fib_tp1_touch", color
 plot((fibo1Touched  and not fibo1Touched[1])  ? 1 : 0, "px_fib_tp2_touch", color = color.new(color.green, 100))
 plot((fibo7Touched  and not fibo7Touched[1])  ? 1 : 0, "px_fib_tp3_touch", color = color.new(color.green, 100))
 plot(fiboResetActive ? 1 : 0,                          "px_fib_reset_active", color = color.new(color.green, 100))
+plot(fiboHalfReached ? 1 : 0,                          "px_fibo_half_reached", color = color.new(color.green, 100))
 
 // ── Sniper fib: zone state + the created/confirmed events ──
 plot(not na(sniperZoneTop) ? 1 : 0,           "px_sniper_active",      color = color.new(color.gray,  100))

@@ -1,0 +1,86 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// ============================================================================
+//  FVG EXPORT — parity harness for engines/fair_value_gaps/
+// ============================================================================
+// Instrumented copy of the "FAIR VALUE GAPS — persist until mitigated" block from
+// mpc_assistant.pine, with ALL drawing removed (no boxes, no directional-visibility
+// filter — those are visuals) and the four state arrays kept. It adds px_fvg_* plot
+// columns so a TradingView CSV export can be diffed bar-by-bar against the Python
+// FairValueGapEngine by engines/fair_value_gaps/tools/compare_fvg.py.
+//
+// Keep the detection + cap + tap logic byte-identical to mpc_assistant.pine's FVG
+// block. Do not let it drift.
+// ============================================================================
+// overlay=false: runs in its own pane so the transparent parity plots don't drag the price
+// chart's scale. All drawing is removed anyway (this is the harness), so nothing needs the
+// price overlay. Export on any intraday timeframe — FVG detection is timeframe-agnostic.
+indicator("FVG Export", overlay = false, max_bars_back = 2000)
+
+int fvgMaxCount = input.int(3, "Max Active FVGs",           minval = 1, maxval = 20)
+int fvgMinTicks = input.int(0, "Minimum Gap Size (ticks)",  minval = 0, maxval = 1000)
+
+// State arrays (the Pine fvgBoxes drawing array is intentionally dropped).
+var array<float> fvgTops   = array.new<float>()
+var array<float> fvgBots   = array.new<float>()
+var array<bool>  fvgIsBull = array.new<bool>()
+var array<int>   fvgBorn   = array.new<int>()
+
+// Per-bar pulse counters (reset each bar) — how many gaps formed / were tapped THIS bar.
+int fvgFormed = 0
+int fvgMit    = 0
+
+// ── Detection (confirmed bars only; needs the two-bars-back candle) ──
+if barstate.isconfirmed and bar_index >= 2
+    float fvgMinSize = fvgMinTicks * syminfo.mintick
+    bool bullCleanImpulse = close > open and close[1] > open[1] and close[2] > open[2] and close > close[1] and close[1] > close[2]
+    bool bearCleanImpulse = close < open and close[1] < open[1] and close[2] < open[2] and close < close[1] and close[1] < close[2]
+    if bullCleanImpulse and low > high[2] and (low - high[2]) >= fvgMinSize
+        array.push(fvgTops, low)
+        array.push(fvgBots, high[2])
+        array.push(fvgIsBull, true)
+        array.push(fvgBorn, bar_index)
+        fvgFormed := fvgFormed + 1
+    if bearCleanImpulse and high < low[2] and (low[2] - high) >= fvgMinSize
+        array.push(fvgTops, low[2])
+        array.push(fvgBots, high)
+        array.push(fvgIsBull, false)
+        array.push(fvgBorn, bar_index)
+        fvgFormed := fvgFormed + 1
+    while array.size(fvgTops) > fvgMaxCount
+        array.shift(fvgTops)
+        array.shift(fvgBots)
+        array.shift(fvgIsBull)
+        array.shift(fvgBorn)
+
+// ── Tap / mitigate (near-edge tap, skipped on the creation bar) ──
+if array.size(fvgTops) > 0
+    for i = array.size(fvgTops) - 1 to 0
+        bool  isBull = array.get(fvgIsBull, i)
+        float gTop   = array.get(fvgTops, i)
+        float gBot   = array.get(fvgBots, i)
+        bool tapped = bar_index > array.get(fvgBorn, i) and (isBull ? low <= gTop : high >= gBot)
+        if tapped
+            array.remove(fvgTops, i)
+            array.remove(fvgBots, i)
+            array.remove(fvgIsBull, i)
+            array.remove(fvgBorn, i)
+            fvgMit := fvgMit + 1
+
+// ── Parity columns (slot 1 = oldest, mirroring the array order) ──
+// NOTE: use a fully-transparent COLOUR (alpha 100), NOT `display = display.none`.
+// TradingView's "Export chart data" excludes display.none plots from the CSV, so hidden
+// columns never make it into the export. Transparent plots stay invisible on the chart but
+// DO export (same trick fib_export.pine uses).
+plot(array.size(fvgTops) > 0 ? array.get(fvgTops, 0) : na, "px_fvg_top_1",  color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 1 ? array.get(fvgTops, 1) : na, "px_fvg_top_2",  color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 2 ? array.get(fvgTops, 2) : na, "px_fvg_top_3",  color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 0 ? array.get(fvgBots, 0) : na, "px_fvg_bot_1",  color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 1 ? array.get(fvgBots, 1) : na, "px_fvg_bot_2",  color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 2 ? array.get(fvgBots, 2) : na, "px_fvg_bot_3",  color = color.new(color.green, 100))
+plot(array.size(fvgIsBull) > 0 ? (array.get(fvgIsBull, 0) ? 1.0 : 0.0) : na, "px_fvg_bull_1", color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 1 ? (array.get(fvgIsBull, 1) ? 1.0 : 0.0) : na, "px_fvg_bull_2", color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 2 ? (array.get(fvgIsBull, 2) ? 1.0 : 0.0) : na, "px_fvg_bull_3", color = color.new(color.gray, 100))
+plot(array.size(fvgTops), "px_fvg_count",  color = color.new(color.gray, 100))
+plot(fvgFormed,           "px_fvg_formed", color = color.new(color.gray, 100))
+plot(fvgMit,              "px_fvg_mit",    color = color.new(color.gray, 100))

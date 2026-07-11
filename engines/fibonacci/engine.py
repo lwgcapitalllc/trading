@@ -85,6 +85,13 @@ class StructureFib:
         # spent only on a real BOS/SOS, which changes the origin). Kept as an always-False mirror.
         self._reset_active = False
 
+        # `fiboHalfReached` (Pine, mpc 2313/2423/2443): the INBOUND 0.5 (TP1 price) tap during the
+        # retracement toward entry — the A+ setup's EARLY entry tier. UNGATED (not behind 0.618) and
+        # tested on the retracement side (bull: low<=0.5, bear: high>=0.5), so it is distinct from the
+        # TP1 target flag, which tests the same price on the way back OUT and is gated behind 0.618.
+        # A first-touch latch, reset each new leg. Feeds only the A+ sequence today.
+        self._half_reached = False
+
         # Previous bar's anchors, for the extend-changed guard (Pine `fiboPrevAsh/Asl`, mpc 2336):
         # skip touched-checks on any bar the live anchor moved, so a fresh pullback wick can't
         # retroactively satisfy the very level it just created.
@@ -158,6 +165,7 @@ class StructureFib:
                 self._touched[name] = False
             self._gate_ever_reached = False
             self._reset_active = False
+            self._half_reached = False
             self._i_confirmed_low = None
             self._i_confirmed_low_loc = None
             self._i_confirmed_high = None
@@ -175,6 +183,14 @@ class StructureFib:
             # 0.618 reached? retracement-side test (Pine 2363).
             gate_price = levels[_GATE]
             gate_reached = (low <= gate_price) if d == 1 else (high >= gate_price)
+
+            # Inbound 0.5 (TP1 price) tap — UNGATED A+ EARLY tier (Pine 2443). Retracement-side test,
+            # first-touch latch. Distinct from the TP1 target below, which tests the same price on the
+            # way OUT and is gated behind 0.618.
+            half_price = levels["TP1"]
+            half_hit = (low <= half_price) if d == 1 else (high >= half_price)
+            if half_hit:
+                self._half_reached = True
 
             if gate_reached:
                 # Mark the gate itself, then the deeper retrace levels — retracement-side test.
@@ -215,6 +231,7 @@ class StructureFib:
             levels=levels,
             touched_so_far={name for name, hit in self._touched.items() if hit},
             reset_active=self._reset_active,
+            half_reached=self._half_reached,
         )
 
 

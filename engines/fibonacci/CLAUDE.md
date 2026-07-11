@@ -5,7 +5,16 @@ level (E1–E4 entries, TP1–TP3 targets, 1.0) — for use in entries, take-pro
 signal is the event ("price reached E1 / 0.618"), not the drawing.
 **Scope:** Fib geometry + per-fib touch state machines only. No trading decisions, no structure
 detection (it consumes `engines/market_structure/`), no MT5 ops, no UI, no chart rendering.
-**Status:** FOUR fibs ported (Structure "FFT", Sniper, Macro, Internal), unit-tested (40 tests, green).
+**Status:** FOUR fibs ported (Structure "FFT", Sniper, Macro, Internal), unit-tested (42 tests, green).
+**2026-07-10 addition — `half_reached` (NOT yet parity-re-validated):** the Structure fib now emits
+`half_reached` — the INBOUND 0.5 (TP1-price) tap during the retrace, UNGATED (not behind 0.618) and
+tested on the retracement side, so it is distinct from the TP1 target (same price, outbound, gated). It
+is a first-touch latch reset each new leg, and it feeds only the new A+ setup's EARLY entry tier. Ported
+from `mpc_assistant.pine` (the new `fiboHalfReached` var); `fib_export.pine` gained a `px_fibo_half_reached`
+column and `compare_fib.py` compares it (optional, so older exports still validate). Unit-tested (2 new
+tests, green) and **parity CONFIRMED (exit 0):** on a fresh combined `VANTAGE_XAUUSD, 5m` export
+(7,891 bars, `--warmup 1002`) `px_fibo_half_reached` matched Pine on every warm bar, alongside all the
+existing Structure/Sniper/Macro/Internal fields (the 1002-bar warm-up is the Macro cycle cold-start).
 A **2026-07-09 `mpc_assistant.pine` re-paste** changed three things: the Structure AND Internal fibs
 **dropped the TP3-hit `reset_active` latch** and **added an extend-changed guard** (skip touched-checks
 on any bar the live anchor moved), and the **Macro** now seeds its bear-SOS low-tracker on the first bar
@@ -129,6 +138,7 @@ fib_events.origin_changed    # a new leg started this bar (all touches reset)
 fib_events.touched           # list[FibTouch] first-reached THIS bar (edge-triggered events)
 fib_events.levels            # dict{name: price} — every level's current price (state)
 fib_events.touched_so_far    # set[str] — cumulative touched names on this leg
+fib_events.half_reached      # inbound 0.5 tapped this leg (ungated) — A+ EARLY tier (state latch)
 # FibTouch = (level, ratio, price, role)  role: "entry" (retrace side) | "target" (profit side)
 
 sniper_events = sniper.update(bar.high, bar.low, snap)
