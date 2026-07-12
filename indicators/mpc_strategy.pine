@@ -3919,23 +3919,33 @@ if barstate.islast
 // retrace band, and a live FVG must overlap that band (aplus*_fvg). The RSI
 // divergence/extreme veto (longVeto/shortVeto) blocks the side when active.
 //
+// The Stage-1 trigger is SPLIT by two toggles — "Arm on liquidity sweep" and
+// "Arm on RSI divergence" — so the same stack can be backtested with either
+// trigger in isolation. See the arm-source filter further down. Both on = the
+// original sweep-OR-divergence behaviour; both off = no trades.
+//
 // EXITS: SL just beyond fib 1.0 (the leg origin — the same level the engine
-// uses to invalidate the leg). Scaled fib-target ladder:
-//     TP1 = 0.382 (fiboP1)
-//     TP2 = 0.0   (fiboP7, the swing extreme)
-//     TP3 = RUNNER — no fixed limit, it rides the trailing stop until stopped.
+// uses to invalidate the leg). The target ladder DEPENDS ON HOW DEEP THE ENTRY
+// FILLED, because TP1 may never sit on (or above) the entry price:
+//
+//   SHALLOW entry — the limit rested at the 0.5 clamp (edge above the 0.618 fib):
+//       TP1 = 0.382 (fiboP1)      TP2 = 0.0 (fiboP7)      TP3 = runner
+//   DEEP entry — the limit rested at 0.618 / 0.702 / 0.786 / 0.886:
+//       TP1 = 0.5   (fiboP2)      TP2 = 0.382 (fiboP1)    TP3 = runner
+//
+// TP3 is always a RUNNER — no fixed limit, it rides the trailing stop.
 // Percentages default 30/30/40.
 //
-// TP1 is deliberately NOT the 0.5 fib. The entry limit is clamped AT 0.5 (the
-// shallow edge of the retrace band), so a 0.5 TP1 would sit exactly on the entry
-// price: the trade would "hit TP1" on its own fill bar, instantly stage the stop
-// to breakeven, and die a scratch. That was the bug. Entry (0.5-0.886) and TP1
-// (0.382) must never overlap.
+// A shallow entry must NOT use 0.5 as TP1. The entry limit is clamped AT 0.5, so
+// a 0.5 TP1 would sit exactly on the entry price: the trade would "hit TP1" on
+// its own fill bar, instantly stage the stop to breakeven, and die a scratch.
+// That was the bug. The deep ladder is safe because a deep entry is a full fib
+// step (0.5 -> 0.618 or more) below TP1.
 //
 // All three legs carry ONE shared stop that STAGES up as targets are touched:
-//     stage 0  entry           → stop beyond fib 1.0
-//     stage 1  TP1 (0.382) hit → stop to breakeven + a tick buffer
-//     stage 2  TP2 (0.0) hit   → stop to the TP1 price (locks the first target)
+//     stage 0  entry       → stop beyond fib 1.0
+//     stage 1  TP1 hit     → stop to breakeven + a tick buffer
+//     stage 2  TP2 hit     → stop to the TP1 price (locks the first target)
 //     stage 3  running past TP2 by >= one trail step → stop to TP2, then ratchets
 //              up one trail step for every further trail step of favourable move.
 //
@@ -3947,18 +3957,32 @@ if barstate.islast
 var GRP_EXEC = "Strategy Execution"
 bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
 bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
+bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
+bool  execArmDiv   = input.bool(true, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
 bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
 bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
 bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade.")
 float execRiskPct = input.float(1.0,  "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 10, step = 0.1)
 float execSlBufTk = input.float(0.0,  "SL buffer beyond 1.0 (ticks)",  group = GRP_EXEC, minval = 0)
-float execTp1Pct  = input.float(30,   "TP1 size % (0.382 fib)",        group = GRP_EXEC, minval = 0, maxval = 100)
-float execTp2Pct  = input.float(30,   "TP2 size % (0.0 fib)",          group = GRP_EXEC, minval = 0, maxval = 100)
-float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "When TP1 (0.382) fills, the stop moves to entry + this buffer (longs) / entry - this buffer (shorts) so the scratch covers slippage + commission and never loses. Set at least equal to your slippage ticks. When TP2 (0.0) fills, the stop moves to the TP1 price to lock the first target.")
+float execTp1Pct  = input.float(30,   "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
+float execTp2Pct  = input.float(30,   "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
+float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The stats table below re-counts those honestly.")
 float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
 bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
 bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints a label at each entry listing the confluences that armed it: direction, sweep source, SOS age (bars), and whether FVG / POI / DIV were present. Lets you audit every trade on the chart.")
 bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the FURTHEST take-profit price the trade reached; RED from entry to the stop if it was stopped for a loss; ORANGE line at entry if it only scratched to breakeven with no target hit. Replaces TradingView's built-in trade markers.")
+
+// ── Honest result stats ───────────────────────────────────────────────────────
+// TradingView's "Breakevens: 0" is an artifact: our breakeven stop sits a few
+// ticks BEYOND entry (to cover commission), so a scratched trade books a tiny
+// profit and TradingView files it as a winner. That inflates the win rate — the
+// 15m run shows 71% wins while the average win is barely larger than the average
+// loss, which is the signature of a pile of near-zero "wins". We re-count here:
+// any trade that finishes inside +/- the scratch band is reported as a SCRATCH,
+// not a win and not a loss.
+var GRP_STATS = "Result Stats"
+bool  execShowStats = input.bool(true,  "Show W / L / Scratch table",  group = GRP_STATS)
+float execScratchR  = input.float(0.15, "Scratch band (R)",            group = GRP_STATS, minval = 0, step = 0.05, tooltip = "A closed trade whose net result lands inside +/- this many R counts as a SCRATCH. 0.15R on a 1%-risk account is +/- 0.15% of equity — small enough that it is noise, not an outcome.")
 
 // Frozen trade levels — snapshotted while armed so live fib recomputation on
 // later bars cannot drag the stop/targets of an open trade (the leg's fib is
@@ -3971,18 +3995,36 @@ var float lSL = na, var float lTP1 = na, var float lTP2 = na
 var float sSL = na, var float sTP1 = na, var float sTP2 = na
 var float lEntry = na, var float sEntry = na   // fill price of the open trade (breakeven anchor)
 var float lMaxFav = na, var float sMaxFav = na // high-water mark of the open trade, drives the runner ratchet
-var int   lStage = 0,  var int   sStage = 0    // 0 = full stop, 1 = TP1 hit (stop->BE), 2 = TP2 hit (stop->TP1, then runner ratchet)
+var int   lStage = 0,  var int   sStage = 0    // 0 = full stop, 1 = BE trigger reached (stop->BE), 2 = TP2 hit (stop->TP1, then runner ratchet)
+
+// Honest result accounting — see the "Result Stats" input group.
+// The six counters live in ONE array rather than six separate vars, and are
+// mutated inside f_grade() below. Pine caps how many statements the script's MAIN
+// BODY may contain (CE10295); arrays are passed by reference, so keeping the
+// tallying inside a function keeps this whole feature to a couple of main-body
+// statements instead of a dozen.
+//   slots: 0 = wins  1 = losses  2 = scratches  3 = sum win R  4 = sum loss R  5 = total R
+var array<float> stats = array.from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+var float openRiskUsd = na   // $ at risk on the open trade = 1R, used to grade the result
+var float netAtEntry  = na   // strategy.netprofit the moment the trade opened
 var string pendConfL = "", var string pendConfS = ""   // confluence summary snapshotted while armed, drawn on fill
 
 // Position-box state — one growing box per trade, painted by result on close.
-var box   posBox     = na
-var int   posDir     = 0
-var int   posEntryBar = na
-var float posEntry   = na
-var float posSL      = na
-var float posT1 = na, var float posT2 = na
-var float posMaxFav  = na    // best price reached during the trade (high for longs, low for shorts)
-var float posOpenNet = na
+// Held as a single OBJECT rather than nine loose vars: Pine objects are passed by
+// reference, so f_posBox() further down can mutate these fields from inside a
+// function. Nine `var` declarations and the ~35 statements that drove them would
+// otherwise sit in the main body, which Pine caps (CE10295).
+type PosBox
+    box   bx       = na
+    int   dir      = 0
+    int   entryBar = na
+    float entry    = na
+    float sl       = na
+    float t1       = na
+    float t2       = na
+    float maxFav   = na   // best price reached during the trade (high for longs, low for shorts)
+    float openNet  = na
+var PosBox pbx = PosBox.new()
 
 float execSlBuf = execSlBufTk * syminfo.mintick
 bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
@@ -4014,23 +4056,72 @@ if not execReqFVG and fibsReady
     if na(shortEdge) and fibo_dir == -1
         shortEdge := fiboP3
 
+// ── Arm-source filter — isolate WHICH Stage-1 confluence is allowed to arm ────
+// The engine treats a sweep and a divergence as interchangeable Stage-1 triggers
+// and collapses both into ONE variable (aplus*_sweepBar), so by the time an SOS
+// fires the origin of the arm is gone. We recover it here rather than editing the
+// engine (which must stay byte-identical to mpc_assistant.pine): keep the two arm
+// bars apart, and on the SOS bar snapshot which sources were still inside the
+// staleness window. A setup then only trades if a source you left ENABLED was one
+// of them. Everything downstream — SOS, fib zone, FVG, veto, TP ladder — is
+// untouched, so the only thing these toggles change is the trigger.
+// Note both sources can be live on the same SOS; that setup trades under either
+// toggle alone, which is correct — it genuinely had both.
+var int  armSwpL  = na,    var int  armSwpS  = na      // last sweep-arm bar, per side
+var int  armDivL  = na,    var int  armDivS  = na      // last divergence-arm bar, per side
+var bool sosL_swp = false, var bool sosL_div = false   // sources live at the long SOS
+var bool sosS_swp = false, var bool sosS_div = false   // sources live at the short SOS
+
+if newSweepL
+    armSwpL := recentSSL_bar
+if newDivL
+    armDivL := lastBullDivBar
+if newSweepS
+    armSwpS := recentBSL_bar
+if newDivS
+    armDivS := lastBearDivBar
+
+if st.bull_sos
+    sosL_swp := not na(armSwpL) and bar_index - armSwpL <= aplusWindow
+    sosL_div := not na(armDivL) and bar_index - armDivL <= aplusWindow
+if st.bear_sos
+    sosS_swp := not na(armSwpS) and bar_index - armSwpS <= aplusWindow
+    sosS_div := not na(armDivS) and bar_index - armDivS <= aplusWindow
+
+bool armOkL = (execArmSweep and sosL_swp) or (execArmDiv and sosL_div)
+bool armOkS = (execArmSweep and sosS_swp) or (execArmDiv and sosS_div)
+
+// What to print on the trade's label, so every entry says how it was armed.
+string armTagL = sosL_swp and sosL_div ? "\nArm: Sweep + Div" : sosL_swp ? "\nArm: Sweep" : "\nArm: Div"
+string armTagS = sosS_swp and sosS_div ? "\nArm: Sweep + Div" : sosS_swp ? "\nArm: Sweep" : "\nArm: Div"
+
 // ── Armed conditions — setup to SOS, fib aligned, an edge exists, not vetoed,
 //    flat, and this leg not already traded ──
 // Final-hour block: no new entries 16:00-17:00 NY (gold closes 17:00, reopens 18:00).
 bool lateDayBlock = execNoLateDay and nyHour >= 16 and nyHour < 18
-bool longArmed  = execLongs  and not lateDayBlock and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVeto  or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
-bool shortArmed = execShorts and not lateDayBlock and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVeto or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+bool longArmed  = execLongs  and armOkL and not lateDayBlock and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVeto  or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+bool shortArmed = execShorts and armOkS and not lateDayBlock and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVeto or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+
+// ── Ladder select — which rungs this trade gets depends on how DEEP the resting
+//    limit sits. "Deep" = at or beyond the 0.618 fib (E1), i.e. one of the lower
+//    eligible entry levels (0.618 / 0.702 / 0.786 / 0.886). A deep entry is a full
+//    fib step below 0.5, so 0.5 is a legitimate TP1 for it. A shallow entry rests
+//    ON the 0.5 clamp, so 0.5 is the entry price itself and TP1 must skip to 0.382.
+//    (With "Require FVG" off the edge falls back to 0.618 exactly — that is deep.)
+bool longDeep  = not na(longEdge)  and longEdge  <= fiboP3
+bool shortDeep = not na(shortEdge) and shortEdge >= fiboP3
 
 // ── Long: rest / refresh a buy-limit at the edge (cancel when disarmed) ──
 if longArmed
     lSL  := fiboP10 - execSlBuf
-    lTP1 := fiboP1    // 0.382 — above the 0.5 entry clamp, so it can never self-fill
-    lTP2 := fiboP7    // 0.0 — the swing extreme
     float slDist = longEdge - lSL
+    lTP1 := longDeep ? fiboP2 : fiboP1   // deep → 0.5, shallow → 0.382
+    lTP2 := longDeep ? fiboP1 : fiboP7   // deep → 0.382, shallow → 0.0 (swing extreme)
     if slDist > 0
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosL := aplusL_sosBar
-        pendConfL := "▲ LONG\nSweep: " + (recentSSL == "" ? "—" : recentSSL) + "\nSOS " + str.tostring(bar_index - aplusL_sosBar) + " bars ago" + (aplusL_fvg ? "\nFVG ✓" : "\nFVG ✗") + (aplusL_poi ? "\nPOI ✓" : "") + (bullDivActive ? "\nDIV ✓" : "")
+        string tpTagL = longDeep ? "\nTP 0.5 → 0.382 → run" : "\nTP 0.382 → 0.0 → run"
+        pendConfL := "▲ LONG" + armTagL + "\nSweep: " + (recentSSL == "" ? "—" : recentSSL) + "\nSOS " + str.tostring(bar_index - aplusL_sosBar) + " bars ago" + (aplusL_fvg ? "\nFVG ✓" : "\nFVG ✗") + (aplusL_poi ? "\nPOI ✓" : "") + (bullDivActive ? "\nDIV ✓" : "") + tpTagL
         strategy.entry("Long", strategy.long, qty = qty, limit = longEdge)
     else
         strategy.cancel("Long")
@@ -4040,13 +4131,14 @@ else if strategy.position_size == 0
 // ── Short: rest / refresh a sell-limit at the edge ──
 if shortArmed
     sSL  := fiboP10 + execSlBuf
-    sTP1 := fiboP1    // 0.382
-    sTP2 := fiboP7    // 0.0 — the swing extreme
     float slDist = sSL - shortEdge
+    sTP1 := shortDeep ? fiboP2 : fiboP1
+    sTP2 := shortDeep ? fiboP1 : fiboP7
     if slDist > 0
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosS := aplusS_sosBar
-        pendConfS := "▼ SHORT\nSweep: " + (recentBSL == "" ? "—" : recentBSL) + "\nSOS " + str.tostring(bar_index - aplusS_sosBar) + " bars ago" + (aplusS_fvg ? "\nFVG ✓" : "\nFVG ✗") + (aplusS_poi ? "\nPOI ✓" : "") + (bearDivActive ? "\nDIV ✓" : "")
+        string tpTagS = shortDeep ? "\nTP 0.5 → 0.382 → run" : "\nTP 0.382 → 0.0 → run"
+        pendConfS := "▼ SHORT" + armTagS + "\nSweep: " + (recentBSL == "" ? "—" : recentBSL) + "\nSOS " + str.tostring(bar_index - aplusS_sosBar) + " bars ago" + (aplusS_fvg ? "\nFVG ✓" : "\nFVG ✗") + (aplusS_poi ? "\nPOI ✓" : "") + (bearDivActive ? "\nDIV ✓" : "") + tpTagS
         strategy.entry("Short", strategy.short, qty = qty, limit = shortEdge)
     else
         strategy.cancel("Short")
@@ -4064,6 +4156,8 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     lEntry     := strategy.position_avg_price
     lStage     := 0
     lMaxFav    := high
+    openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
+    netAtEntry  := strategy.netprofit
     if execShowConfLabel
         line.new(bar_index, lEntry, bar_index, lEntry - _cOff, color = color.new(#26A69A, 0), width = 1)
         label.new(bar_index, lEntry - _cOff, pendConfL, color = color.new(#0a0a14, 10), textcolor = color.new(#26A69A, 0), style = label.style_label_up, size = size.small, textalign = text.align_left)
@@ -4072,12 +4166,30 @@ if strategy.position_size < 0 and strategy.position_size[1] >= 0
     sEntry     := strategy.position_avg_price
     sStage     := 0
     sMaxFav    := low
+    openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
+    netAtEntry  := strategy.netprofit
     if execShowConfLabel
         line.new(bar_index, sEntry, bar_index, sEntry + _cOff, color = color.new(#EF5350, 0), width = 1)
         label.new(bar_index, sEntry + _cOff, pendConfS, color = color.new(#0a0a14, 10), textcolor = color.new(#EF5350, 0), style = label.style_label_down, size = size.small, textalign = text.align_left)
 if strategy.position_size == 0
     lStage := 0
     sStage := 0
+
+// ── Grade the trade the bar it closes: WIN / LOSS / SCRATCH in R, not in cents ──
+f_grade(array<float> s, float tradeR, float band) =>
+    array.set(s, 5, array.get(s, 5) + tradeR)
+    if math.abs(tradeR) <= band
+        array.set(s, 2, array.get(s, 2) + 1)
+    else if tradeR > 0
+        array.set(s, 0, array.get(s, 0) + 1)
+        array.set(s, 3, array.get(s, 3) + tradeR)
+    else
+        array.set(s, 1, array.get(s, 1) + 1)
+        array.set(s, 4, array.get(s, 4) + tradeR)
+
+if strategy.position_size == 0 and strategy.position_size[1] != 0 and not na(openRiskUsd) and openRiskUsd > 0
+    f_grade(stats, (strategy.netprofit - netAtEntry) / openRiskUsd, execScratchR)
+    openRiskUsd := na
 
 // ── Position box: grows with the live trade, then paints the result on close ──
 //   GREEN  entry → furthest TP price the trade actually reached
@@ -4089,47 +4201,50 @@ color POS_OPEN   = color.new(#787B86, 80)
 color POS_ORANGE = color.new(#FF9800, 0)
 color POS_GREENB = color.new(#26A69A, 0)   // solid borders so even a thin box is visible
 color POS_REDB   = color.new(#EF5350, 0)
-if execShowPosBox
-    // Fresh fill → open a neutral box anchored at the entry bar
-    if strategy.position_size != 0 and strategy.position_size[1] == 0
-        posDir      := strategy.position_size > 0 ? 1 : -1
-        posEntryBar := bar_index
-        posEntry    := posDir > 0 ? lEntry : sEntry
-        posSL       := posDir > 0 ? lSL  : sSL
-        posT1       := posDir > 0 ? lTP1 : sTP1
-        posT2       := posDir > 0 ? lTP2 : sTP2
-        posMaxFav   := posDir > 0 ? high : low
-        posOpenNet  := strategy.netprofit
-        posBox      := box.new(bar_index, math.max(posEntry, close), bar_index, math.min(posEntry, close), bgcolor = POS_OPEN, border_color = color.new(#787B86, 0), border_width = 1)
-    // While open → track best price and grow the box right
-    if strategy.position_size != 0 and not na(posBox)
-        posMaxFav := posDir > 0 ? math.max(posMaxFav, high) : math.min(posMaxFav, low)
-        box.set_right(posBox, bar_index)
-        box.set_top(posBox, math.max(posEntry, close))
-        box.set_bottom(posBox, math.min(posEntry, close))
-    // Closed this bar → paint the outcome
-    if strategy.position_size == 0 and strategy.position_size[1] != 0 and not na(posBox)
-        // Furthest point the trade actually reached. Past TP2 the runner has no
-        // fixed target, so the honest "max TP" is the high-water mark itself.
-        bool  rT2   = posDir > 0 ? posMaxFav >= posT2 : posMaxFav <= posT2
-        bool  rT1   = posDir > 0 ? posMaxFav >= posT1 : posMaxFav <= posT1
-        float maxTp = rT2 ? posMaxFav : rT1 ? posT1 : na
-        float netPnl = strategy.netprofit - posOpenNet
-        box.set_right(posBox, bar_index)
-        if not na(maxTp)
-            box.set_top(posBox, math.max(posEntry, maxTp))
-            box.set_bottom(posBox, math.min(posEntry, maxTp))
-            box.set_bgcolor(posBox, POS_GREEN)
-            box.set_border_color(posBox, POS_GREENB)
-        else if netPnl < 0
-            box.set_top(posBox, math.max(posEntry, posSL))
-            box.set_bottom(posBox, math.min(posEntry, posSL))
-            box.set_bgcolor(posBox, POS_RED)
-            box.set_border_color(posBox, POS_REDB)
-        else
-            box.delete(posBox)
-            line.new(posEntryBar, posEntry, bar_index, posEntry, color = POS_ORANGE, width = 2)
-        posBox := na
+f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1, float l2, float s2) =>
+    if execShowPosBox
+        // Fresh fill → open a neutral box anchored at the entry bar
+        if strategy.position_size != 0 and strategy.position_size[1] == 0
+            p.dir      := strategy.position_size > 0 ? 1 : -1
+            p.entryBar := bar_index
+            p.entry    := p.dir > 0 ? lE : sE
+            p.sl       := p.dir > 0 ? lS : sS
+            p.t1       := p.dir > 0 ? l1 : s1
+            p.t2       := p.dir > 0 ? l2 : s2
+            p.maxFav   := p.dir > 0 ? high : low
+            p.openNet  := strategy.netprofit
+            p.bx       := box.new(bar_index, math.max(p.entry, close), bar_index, math.min(p.entry, close), bgcolor = POS_OPEN, border_color = color.new(#787B86, 0), border_width = 1)
+        // While open → track best price and grow the box right
+        if strategy.position_size != 0 and not na(p.bx)
+            p.maxFav := p.dir > 0 ? math.max(p.maxFav, high) : math.min(p.maxFav, low)
+            box.set_right(p.bx, bar_index)
+            box.set_top(p.bx, math.max(p.entry, close))
+            box.set_bottom(p.bx, math.min(p.entry, close))
+        // Closed this bar → paint the outcome
+        if strategy.position_size == 0 and strategy.position_size[1] != 0 and not na(p.bx)
+            // Furthest point the trade actually reached. Past TP2 the runner has no
+            // fixed target, so the honest "max TP" is the high-water mark itself.
+            bool  rT2    = p.dir > 0 ? p.maxFav >= p.t2 : p.maxFav <= p.t2
+            bool  rT1    = p.dir > 0 ? p.maxFav >= p.t1 : p.maxFav <= p.t1
+            float maxTp  = rT2 ? p.maxFav : rT1 ? p.t1 : na
+            float netPnl = strategy.netprofit - p.openNet
+            box.set_right(p.bx, bar_index)
+            if not na(maxTp)
+                box.set_top(p.bx, math.max(p.entry, maxTp))
+                box.set_bottom(p.bx, math.min(p.entry, maxTp))
+                box.set_bgcolor(p.bx, POS_GREEN)
+                box.set_border_color(p.bx, POS_GREENB)
+            else if netPnl < 0
+                box.set_top(p.bx, math.max(p.entry, p.sl))
+                box.set_bottom(p.bx, math.min(p.entry, p.sl))
+                box.set_bgcolor(p.bx, POS_RED)
+                box.set_border_color(p.bx, POS_REDB)
+            else
+                box.delete(p.bx)
+                line.new(p.entryBar, p.entry, bar_index, p.entry, color = POS_ORANGE, width = 2)
+            p.bx := na
+
+f_posBox(pbx, lEntry, sEntry, lSL, sSL, lTP1, sTP1, lTP2, sTP2)
 
 // Always-visible entry markers (the long/short position indicator itself) — a
 // triangle at every fill, so you can never miss where a trade opened even when
@@ -4140,10 +4255,16 @@ plotshape(execShowPosBox and strategy.position_size < 0 and strategy.position_si
 // ── Advance the stop stage as each target is touched THIS bar, and ratchet the
 //    runner past TP2. We react at the bar's close, so the tighter stop only ever
 //    governs FUTURE price (no look-ahead).
-//      Stage 1 (TP1 = 0.382 touched) → stop to breakeven + buffer
-//      Stage 2 (TP2 = 0.0 touched)   → stop to the TP1 price
+//      Stage 1 (TP1 touched) → stop to breakeven + buffer
+//      Stage 2 (TP2 touched) → stop to the TP1 price
 //      Runner: once price is one full trail step beyond TP2, the stop sits at TP2
 //              and climbs one step for every further step of favourable movement.
+// Stage 1 must stay tied to the TP1 TOUCH, not to a fixed R distance. TP1 is a
+// limit order: keying breakeven off TP1 guarantees the partial is banked before
+// the rest of the position is protected. An R trigger can fire on a wick BEFORE
+// TP1 fills, which protects a position that has taken no profit at all — tested
+// over 3.5y on XAUUSD 15m, every R variant (0.25/0.5/1R and off) underperformed
+// this rule, so do not "decouple" them again.
 float beBuf     = execBeBufTk * syminfo.mintick
 float trailStep = execTrailStep
 
@@ -4157,6 +4278,8 @@ f_trail(float maxFav, float tp2, int dir) =>
         out := dir > 0 ? tp2 + steps * trailStep : tp2 - steps * trailStep
     out
 
+// lSL / sSL are only ever written while flat (longArmed requires position_size == 0),
+// so entry-to-stop is frozen for the life of the trade and is a safe 1R yardstick.
 if strategy.position_size > 0
     lMaxFav := na(lMaxFav) ? high : math.max(lMaxFav, high)
     if lStage < 1 and high >= lTP1
@@ -4191,3 +4314,32 @@ if strategy.position_size < 0
     strategy.exit("S-RUN", from_entry = "Short",                                          stop = sStop)
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
+
+// ── Result table — the win rate TradingView will not show you ─────────────────
+// TradingView counts a breakeven scratch as a WIN, because our BE stop sits a few
+// ticks past entry. This table splits the three real outcomes apart and reports
+// everything in R, so a "win" has to actually be worth something to count as one.
+var table statsTbl = table.new(position.top_right, 2, 8, bgcolor = color.new(#0a0a14, 15), border_color = color.new(#2a2a3a, 0), border_width = 1)
+
+f_statRow(int r, string k, string v, color c) =>
+    table.cell(statsTbl, 0, r, k, text_color = color.new(#8a8a9a, 0), text_size = size.small, text_halign = text.align_left)
+    table.cell(statsTbl, 1, r, v, text_color = c, text_size = size.small, text_halign = text.align_right)
+
+// Whole render lives in a function (including its own barstate gate) so the main
+// body pays for exactly one call — see the CE10295 note on the stats array above.
+f_drawStats(array<float> s) =>
+    if execShowStats and barstate.islast
+        float w   = array.get(s, 0), float l = array.get(s, 1), float sc = array.get(s, 2)
+        float swR = array.get(s, 3), float slR = array.get(s, 4), float tR = array.get(s, 5)
+        float tot = w + l + sc
+        float dec = w + l
+        f_statRow(0, "Trades",            str.tostring(tot, "#"), color.new(#d0d0e0, 0))
+        f_statRow(1, "Wins",              str.tostring(w,   "#"), color.new(#26A69A, 0))
+        f_statRow(2, "Losses",            str.tostring(l,   "#"), color.new(#EF5350, 0))
+        f_statRow(3, "Scratches",         str.tostring(sc,  "#"), color.new(#FFA726, 0))
+        f_statRow(4, "Win % (real)",      str.tostring(dec > 0 ? w / dec * 100 : na, "#.#") + "%", color.new(#d0d0e0, 0))
+        f_statRow(5, "Win % (TV counts)", str.tostring(tot > 0 ? (w + sc) / tot * 100 : na, "#.#") + "%", color.new(#6a6a7a, 0))
+        f_statRow(6, "Avg win / loss",    str.tostring(w > 0 ? swR / w : na, "#.##") + "R / " + str.tostring(l > 0 ? slR / l : na, "#.##") + "R", color.new(#d0d0e0, 0))
+        f_statRow(7, "Total R  |  PF",    str.tostring(tR, "#.#") + "R  |  " + str.tostring(slR < 0 ? swR / math.abs(slR) : na, "#.##"), tR >= 0 ? color.new(#26A69A, 0) : color.new(#EF5350, 0))
+
+f_drawStats(stats)
