@@ -134,7 +134,7 @@ int aplusWindow = input.int(1440, "Max Time: Sweep → SOS (minutes)", minval = 
 //============================================================
 var GRP_DIV = "RSI Divergence"
 bool showDivInput     = input.bool(false, "Track RSI Divergence", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes and tags it as confluence on the A+ setup row. Settings are fixed to tuned defaults. Off by default.", display = display.none)
-bool showDivHistory   = input.bool(false, "Show Divergence History", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show divergences from the last 3 days. On = show as far back as possible.", display = display.none)
+bool showDivHistory   = input.bool(false, "Show Divergence History", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show the divergence that's currently feeding a live A+ setup. On = show full history up to the cap, regardless of whether a setup is using it.", display = display.none)
 bool showDiv = showDivInput
 int  divRsiLen    = 14
 int  divPivotLen  = 5
@@ -1848,24 +1848,27 @@ var int   lastBullDivBar   = na
 var int   lastBearDivBar   = na
 var array<line>  bullDivLines  = array.new<line>()
 var array<label> bullDivLabels = array.new<label>()
+var array<int>   bullDivBars   = array.new<int>()
 var array<line>  bearDivLines  = array.new<line>()
 var array<label> bearDivLabels = array.new<label>()
+var array<int>   bearDivBars   = array.new<int>()
 
 if showDiv and not na(divPlRsi)
     float _pLow = low[divPivotLen]
     int   _pBar = bar_index - divPivotLen
-    bool  _divRecent = showDivHistory or time[divPivotLen] >= time - 259200000
-    if not na(divPrevRsiLow) and _divRecent
+    if not na(divPrevRsiLow)
         // Lower low in price, higher low in RSI, from the oversold extreme
         if _pLow < divPrevPriceLow and divPlRsi > divPrevRsiLow and math.min(divPlRsi, divPrevRsiLow) <= divOS
             lastBullDivBar := _pBar
             array.push(bullDivLines, line.new(divPrevLowBar, divPrevPriceLow, _pBar, _pLow, color = color.new(#4caf50, 0), style = line.style_dotted, width = 2))
             array.push(bullDivLabels, label.new(_pBar, _pLow, "\nBull Div", color = color(na), textcolor = color.new(#4caf50, 0), style = label.style_label_up, size = size.tiny))
+            array.push(bullDivBars, _pBar)
             // Cap: drop the oldest marker once past the limit — nothing here is
             // deleted for being "stale," only for exceeding the display cap.
             if array.size(bullDivLines) > divMaxCount
                 line.delete(array.shift(bullDivLines))
                 label.delete(array.shift(bullDivLabels))
+                array.shift(bullDivBars)
     divPrevRsiLow   := divPlRsi
     divPrevPriceLow := _pLow
     divPrevLowBar   := _pBar
@@ -1873,16 +1876,17 @@ if showDiv and not na(divPlRsi)
 if showDiv and not na(divPhRsi)
     float _pHigh = high[divPivotLen]
     int   _pBar  = bar_index - divPivotLen
-    bool  _divRecentH = showDivHistory or time[divPivotLen] >= time - 259200000
-    if not na(divPrevRsiHigh) and _divRecentH
+    if not na(divPrevRsiHigh)
         // Higher high in price, lower high in RSI, from the overbought extreme
         if _pHigh > divPrevPriceHigh and divPhRsi < divPrevRsiHigh and math.max(divPhRsi, divPrevRsiHigh) >= divOB
             lastBearDivBar := _pBar
             array.push(bearDivLines, line.new(divPrevHighBar, divPrevPriceHigh, _pBar, _pHigh, color = color.new(#ff5252, 0), style = line.style_dotted, width = 2))
             array.push(bearDivLabels, label.new(_pBar, _pHigh, "Bear Div\n", color = color(na), textcolor = color.new(#ff5252, 0), style = label.style_label_down, size = size.tiny))
+            array.push(bearDivBars, _pBar)
             if array.size(bearDivLines) > divMaxCount
                 line.delete(array.shift(bearDivLines))
                 label.delete(array.shift(bearDivLabels))
+                array.shift(bearDivBars)
     divPrevRsiHigh   := divPhRsi
     divPrevPriceHigh := _pHigh
     divPrevHighBar   := _pBar
@@ -1904,6 +1908,24 @@ bool bearDivStale = (not na(lastExtBreakBar) and not na(lastBearDivBar) and last
 
 bool bullDivActive = showDiv and not na(lastBullDivBar) and not bullDivStale and bar_index - lastBullDivBar <= divValidBars
 bool bearDivActive = showDiv and not na(lastBearDivBar) and not bearDivStale and bar_index - lastBearDivBar <= divValidBars
+
+// Divergence display: relevance, not recency. Show a marker only while it's
+// the single most recent one on its side AND still live per the same
+// staleness rule the A+ table itself uses (bullDivActive/bearDivActive) —
+// not whether it happened to be the exact bar that armed an A+ sequence,
+// since most setups arm off a liquidity sweep instead, which left the
+// marker hidden almost always. showDivHistory bypasses this and shows the
+// full capped history regardless of live/stale state.
+if showDiv and array.size(bullDivBars) > 0
+    for i = 0 to array.size(bullDivBars) - 1
+        bool _bullLive = showDivHistory or (bullDivActive and array.get(bullDivBars, i) == lastBullDivBar)
+        line.set_color(array.get(bullDivLines, i), _bullLive ? color.new(#4caf50, 0) : color(na))
+        label.set_textcolor(array.get(bullDivLabels, i), _bullLive ? color.new(#4caf50, 0) : color(na))
+if showDiv and array.size(bearDivBars) > 0
+    for i = 0 to array.size(bearDivBars) - 1
+        bool _bearLive = showDivHistory or (bearDivActive and array.get(bearDivBars, i) == lastBearDivBar)
+        line.set_color(array.get(bearDivLines, i), _bearLive ? color.new(#ff5252, 0) : color(na))
+        label.set_textcolor(array.get(bearDivLabels, i), _bearLive ? color.new(#ff5252, 0) : color(na))
 
 // Veto: suppress LONG setups on live bearish divergence or extreme overbought;
 // suppress SHORT setups on live bullish divergence or extreme oversold.
