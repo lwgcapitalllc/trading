@@ -1,11 +1,32 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
-indicator("MPC- JARVIS", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000)
-
-var GRP_MASTER = "Display"
-bool showTradeTools = input.bool(false, "Show FVG, Order Blocks, Sessions & Liquidity", group = GRP_MASTER, tooltip = "Master switch for the discretionary tools: Fair Value Gaps, Order Blocks, Trading Sessions, Kill Zones and Liquidity Levels. Off by default for a clean market-structure-only chart.", display = display.none)
-bool showFibTool    = input.bool(false, "Show External Fib", group = GRP_MASTER, tooltip = "Master switch for the External Fibonacci (entry zones / OTE). Off by default.", display = display.none)
-
+// ============================================================================
+//  MPC A+ STRATEGY — backtest wrapper around the MPC-JARVIS engine
+// ============================================================================
+// Same market-structure / fib / liquidity / FVG / RSI-divergence engine as
+// mpc_assistant.pine (kept byte-identical so the A+ sequence stays at parity),
+// converted from indicator() to strategy() and given an execution layer at the
+// end of the file. It trades ONLY the confirmed A+ reversal sequence:
+//   sweep-or-divergence  ->  SOS (shift of structure)  ->  retrace into the
+//   0.5-0.886 fib of that leg WITH a live FVG overlapping the zone.
+// Exits: SL beyond fib 1.0 (leg origin), scaled fib-target ladder 30/30/40 at
+// TP1 (0.5) / TP2 (0.382) / TP3 (0.0 = swing extreme). Sizing: fixed % risk.
+// The execution block is the ONLY addition — do not let the engine above it
+// drift from mpc_assistant.pine.
+// ----------------------------------------------------------------------------
+// TRADE-CRITICAL INPUTS — these compute the values the execution block reads, so
+// turning ANY of them off stops trades (they are marked "(REQUIRED)" in the
+// settings panel). Keep ALL of them ON:
+//   • "Hide Everything Except Market Structure"  -> must stay OFF (it force-kills every feature)
+//   • "Show External Fib (REQUIRED)"             -> SL / TP / entry price levels
+//   • "Show FVG (REQUIRED)"                      -> the entry edges (limit price)
+//   • "Show All Liquidity Levels (REQUIRED)"     -> arms setups via sweeps
+//   • "Track RSI Divergence (REQUIRED)"          -> arms setups via divergence + veto
+// Everything else (Sessions, Kill Zones, VWAP, MV, Order Blocks, Internal/Cycle
+// Fib, Sniper, structure labels) is cosmetic and defaults OFF — safe to toggle
+// freely, it never affects trade firing.
+// ============================================================================
+strategy("MPC A+ Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0)
 var GRP_TABLE = "Confirmation Table"
 bool showConfTable = input.bool(true, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
 string tablePositionInput = input.string("Top Right", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
@@ -47,7 +68,7 @@ color iBearColor  = bearColor
 //  MARKET STRUCTURE LABEL SIZE
 //============================================================
 var GRP_STRUCT = "Market Structure"
-bool   marketStructureOnly = not showTradeTools and not showFibTool
+bool   marketStructureOnly = input.bool(false, "Hide Everything Except Market Structure", group = GRP_STRUCT, tooltip = "On = show ONLY the external and internal structure engine (BOS/SOS/iBOS/iSOS). Every other feature — fibs, liquidity, sessions, kill zones, VWAP, MV, FVG, divergence, order blocks — is force-disabled regardless of its own toggle, and the table shows structure-related rows only. Off = every feature works normally per its own toggle. This is the default view.", display = display.none)
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
@@ -70,7 +91,7 @@ f_swingCol(color c) =>
 //============================================================
 var GRP_OB = "Order Blocks"
 bool  showOBsInput       = input.bool(false, "Show Order Blocks", group = GRP_OB, display = display.none)
-bool showOBs = showTradeTools and showOBsInput
+bool showOBs = marketStructureOnly ? false : showOBsInput
 bool  showBullOB    = input.bool(true, "Show Bullish OB", group = GRP_OB, inline = "BullOB", active = showOBsInput, display = display.none)
 color colBullOB     = input.color(color.new(color.blue, 85), "", group = GRP_OB, inline = "BullOB", display = display.none)
 bool  showBearOB    = input.bool(true, "Show Bearish OB", group = GRP_OB, inline = "BearOB", active = showOBsInput, display = display.none)
@@ -112,8 +133,8 @@ method extendOBs(array<OrderBlock> arr) =>
 //  FAIR VALUE GAPS (FVG) INPUTS
 //============================================================
 var GRP_FVG = "Fair Value Gaps"
-bool  showFVGInput      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps left by clean 3-candle displacements only: three same-direction candles with progressively higher (or lower) closes. A gap disappears the moment price taps it.", display = display.none)
-bool showFVG = showTradeTools and showFVGInput
+bool  showFVGInput      = input.bool(true, "Show FVG (REQUIRED — feeds entries)", group = GRP_FVG, tooltip = "Detects fair value gaps left by clean 3-candle displacements only: three same-direction candles with progressively higher (or lower) closes. A gap disappears the moment price taps it.", display = display.none)
+bool showFVG = marketStructureOnly ? false : showFVGInput
 bool  fvgDirOnly   = input.bool(true, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
 color fvgBullColor = input.color(color.new(color.gray, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVGInput, display = display.none)
 color fvgBearColor = input.color(color.new(color.gray, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVGInput, display = display.none)
@@ -124,34 +145,29 @@ int   fvgMaxCount  = input.int(3, "Max Active FVGs", minval = 1, maxval = 20, gr
 //  A+ SETUP SEQUENCE INPUTS
 //============================================================
 var GRP_APLUS = "A+ Setup"
-bool aplusHtfWarn  = input.bool(true,  "Warn When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Shows a caution note on the A+ row when Weekly/Daily bias opposes the trade direction (e.g. a short while Weekly is Bullish). The setup still displays — it's an educational flag, not a block.", display = display.none)
-bool aplusHtfBlock = input.bool(false, "Block A+ When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Stronger version: if on, an A+ whose direction opposes HTF bias is suppressed entirely instead of just warned. Off by default.", display = display.none)
-bool aplusReqInt   = input.bool(false, "Require INT Confirmation for READY", group = GRP_APLUS, tooltip = "Holds the A+ at 'AWAIT ENTRY' until an iSOS/iBOS confirms in the trade direction inside the entry zone — a lower-timeframe structure trigger. Tighter, higher-probability entries at the cost of some fills. Off by default.", display = display.none)
-int aplusWindow = input.int(1440, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop, measured in TIME rather than bars — a bar count is fragile across timeframes (300 bars is 5 hours on 1m but 12.5 days on 4H). The SOS must fire within this many minutes of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
+int aplusWindow = input.int(300, "Max Bars: Sweep → SOS", minval = 10, maxval = 1000, group = GRP_APLUS, tooltip = "Staleness backstop: the SOS must fire within this many bars of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
 
 //============================================================
-//  RSI DIVERGENCE (locked defaults — not user-tunable)
+//  RSI DIVERGENCE INPUTS
 //============================================================
 var GRP_DIV = "RSI Divergence"
-bool showDivInput     = input.bool(false, "Track RSI Divergence", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes and tags it as confluence on the A+ setup row. Settings are fixed to tuned defaults. Off by default.", display = display.none)
-bool showDivHistory   = input.bool(false, "Show Divergence History", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show divergences from the last 3 days. On = show as far back as possible.", display = display.none)
-bool showDiv = showDivInput
-int  divRsiLen    = 14
-int  divPivotLen  = 5
-int  divOS        = 25
-int  divOB        = 75
-int  divValidBars = 100
-int  divMaxCount  = 10
-bool divVeto      = true
-int  divExtremeOB = 80
-int  divExtremeOS = 20
+bool showDivInput     = input.bool(true, "Track RSI Divergence (REQUIRED — arms setups + veto)", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes: price makes a lower low while RSI makes a higher low from oversold (bullish), or price a higher high while RSI a lower high from overbought (bearish). Drawn on the chart and tagged as confluence on the A+ setup row. Pivot confirmation lags by the pivot width — the signal prints a few bars after the actual extreme.", display = display.none)
+bool showDiv = marketStructureOnly ? false : showDivInput
+int  divRsiLen   = input.int(14, "RSI Length", minval = 2, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divPivotLen = input.int(5,  "Pivot Width (bars)", minval = 1, maxval = 20, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divOS       = input.int(25, "Oversold Level", minval = 5, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divOB       = input.int(75, "Overbought Level", minval = 50, maxval = 95, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divValidBars = input.int(100, "Divergence Valid For (bars)", minval = 10, maxval = 500, group = GRP_DIV, active = showDivInput, tooltip = "How long a divergence counts as live confluence for the A+ setup row.", display = display.none)
+bool divVeto      = input.bool(true, "Veto Setups on Extreme/Divergence", group = GRP_DIV, active = showDivInput, tooltip = "Suppresses LONG setups when there's live bearish divergence or RSI is extremely overbought — shows 'Extreme / Possible Reversal' instead. Mirrored for SHORT setups on bullish divergence or extreme oversold.", display = display.none)
+int  divExtremeOB = input.int(80, "Extreme Overbought", minval = 50, maxval = 100, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divExtremeOS = input.int(20, "Extreme Oversold", minval = 0, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
 
 //============================================================
 //  TRADING SESSIONS INPUTS
 //============================================================
 var GRP_SESS = "Trading Sessions"
-bool showSessionsInput         = input.bool(true,   "Show Sessions",      group = GRP_SESS, display = display.none)
-bool showSessions = showTradeTools and showSessionsInput
+bool showSessionsInput         = input.bool(false,  "Show Sessions",      group = GRP_SESS, display = display.none)
+bool showSessions = marketStructureOnly ? false : showSessionsInput
 bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessionsInput, display = display.none)
 bool showHistoricSessions = input.bool(false,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions as far back as possible.", display = display.none)
 
@@ -187,8 +203,8 @@ thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",   
 //  KILL ZONES & NY RANGE INPUTS (single toggle)
 //============================================================
 var GRP_KZ = "Kill Zones & NY Range"
-bool showKZandNYRInput   = input.bool(true, "Show Kill Zones & NY Range", group = GRP_KZ, display = display.none)
-bool showKZandNYR = showTradeTools and showKZandNYRInput
+bool showKZandNYRInput   = input.bool(false, "Show Kill Zones & NY Range", group = GRP_KZ, display = display.none)
+bool showKZandNYR = marketStructureOnly ? false : showKZandNYRInput
 bool showKZHistoric = input.bool(false, "Show All History", group = GRP_KZ, active = showKZandNYRInput, tooltip = "Off = current day only. On = show as far back as possible.", display = display.none)
 
 bool showKillZones = showKZandNYR
@@ -198,8 +214,8 @@ bool showNYRange   = showKZandNYR
 //  VWAP INPUTS
 //============================================================
 var GRP_VWAP = "VWAP Settings"
-bool  showVwapInput  = input.bool(true,                 "Show VWAP",       group = GRP_VWAP, display = display.none)
-bool showVwap = showTradeTools and showVwapInput
+bool  showVwapInput  = input.bool(false,                "Show VWAP",       group = GRP_VWAP, display = display.none)
+bool showVwap = marketStructureOnly ? false : showVwapInput
 color vwapColor = input.color(color.rgb(5, 5, 0), "VWAP Color",      group = GRP_VWAP, active = showVwapInput, display = display.none)
 int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1, maxval = 5, group = GRP_VWAP, active = showVwapInput, display = display.none)
 
@@ -207,8 +223,8 @@ int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1,
 //  LIQUIDITY LEVELS INPUTS
 //============================================================
 var GRP_LIQ = "Liquidity Levels"
-var i_showLiquidityInput    = input.bool(true,  "Show All Liquidity Levels",  group = GRP_LIQ, display = display.none)
-bool i_showLiquidity = showTradeTools and i_showLiquidityInput
+var i_showLiquidityInput    = input.bool(true,  "Show All Liquidity Levels (REQUIRED — arms sweeps)",  group = GRP_LIQ, display = display.none)
+bool i_showLiquidity = marketStructureOnly ? false : i_showLiquidityInput
 var i_showLabels       = input.bool(true,  "Show Labels",                group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
 string liqLabelSize    = input.string("Small", "Liquidity Label Size",   group = GRP_LIQ, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = i_showLiquidityInput, display = display.none)
 bool i_currentDayOnly  = true   // always hide mitigated on new day
@@ -242,8 +258,7 @@ color i_nyHLColor     = color.black
 //============================================================
 var GRP_IFIB      = "Internal Fib"
 bool showIFibInput     = input.bool(false, "Show Internal Fib", group = GRP_IFIB, display = display.none)
-bool hideFibsSub5m     = input.bool(false, "Hide Fibs Below 5m", group = GRP_IFIB, tooltip = "On = External and Internal fibs are turned off entirely on timeframes under 5 minutes (keeps low-timeframe charts clean). Off = fibs run on all timeframes.", display = display.none)
-bool showIFib = showFibTool and not (hideFibsSub5m and timeframe.in_seconds() < 300) and showIFibInput
+bool showIFib = marketStructureOnly ? false : showIFibInput
 int  iFibExtend   = input.int(30,   "Line Extension (bars)", group = GRP_IFIB, minval = 5, maxval = 500, active = showIFibInput, display = display.none)
 
 color  iFibo1Color    = input.color(#4caf50,"TP2 / 0.382",  group = GRP_IFIB, inline = "IFibo1", active = showIFibInput, display = display.none)
@@ -274,8 +289,8 @@ string iFibo100Style    = input.string("─",   "",              group = GRP_IFI
 //  FIBONACCI INPUTS
 //============================================================
 var GRP_FIBO = "External Fib"
-bool   showFiboInput        = input.bool(true,          "Show External Fib",       group = GRP_FIBO, display = display.none)
-bool showFibo = showFibTool and not (hideFibsSub5m and timeframe.in_seconds() < 300) and showFiboInput
+bool   showFiboInput        = input.bool(true,          "Show External Fib (REQUIRED — SL/TP/entry levels)",       group = GRP_FIBO, display = display.none)
+bool showFibo = marketStructureOnly ? false : showFiboInput
 string sharedLabelMode = input.string("TP/Entry",  "Label Style",               group = GRP_FIBO, options = ["Fib Value", "TP/Entry"], active = showFiboInput, display = display.none)
 int    fiboLineExtend  = input.int(80,             "Line Extension (bars)",     group = GRP_FIBO, minval = 5, maxval = 500, display = display.none)
 
@@ -327,7 +342,7 @@ f_fiboLineStyle(string opt) =>
 //============================================================
 var GRP_MACRO = "Cycle Fib"
 bool   showMacroFibInput      = input.bool(false,        "Show Cycle Fib",             group = GRP_MACRO, display = display.none)
-bool showMacroFib = showFibTool and showMacroFibInput
+bool showMacroFib = marketStructureOnly ? false : showMacroFibInput
 int    macroLineExtend   = input.int(180,            "Line Extension (bars)",      group = GRP_MACRO, minval = 10, maxval = 500, display = display.none)
 int    macroMaxTfMin     = input.int(30,             "Draw Up To Timeframe (min)", group = GRP_MACRO, minval = 1, maxval = 240, tooltip = "The Cycle Fib is drawn on charts up to this timeframe (in minutes). Tracking runs on every timeframe regardless — the fib's discount/premium zones feed the A+ setup's POI even when the lines aren't drawn. Note the cycle recalculates per chart timeframe: a 15m chart tracks the 15m-scale cycle, not the 5m one.", display = display.none)
 
@@ -367,14 +382,14 @@ string macro100Style     = input.string("─",   "",              group = GRP_MA
 //  SNIPER FIB INPUTS
 //============================================================
 var GRP_SNIPER    = "Sniper Fib"
-bool showSniperFib = input.bool(true, "Sniper Zone", group = GRP_SNIPER, active = showFiboInput, display = display.none)
+bool showSniperFib = input.bool(false, "Sniper Zone", group = GRP_SNIPER, active = showFiboInput, display = display.none)
 
 //============================================================
 //  SESSION VOLUME PROFILE (SVP) INPUTS
 //============================================================
 var GRP_SVP   = "MV"
-bool  showSVPInput     = input.bool(true, "MV", group = GRP_SVP, display = display.none)
-bool showSVP = showTradeTools and showSVPInput
+bool  showSVPInput     = input.bool(false, "MV", group = GRP_SVP, display = display.none)
+bool showSVP = marketStructureOnly ? false : showSVPInput
 int   svpHistory  = input.int(2,     "Days back", group = GRP_SVP, minval = 1, maxval = 500, active = showSVPInput, display = display.none)
 int   svpRows     = 50
 float svpVAvolPct = 68.0
@@ -394,9 +409,9 @@ color svpPOCCol   = #9C27B0
 //  the original variable via ":=" anywhere in the script poisons its type for
 //  every "active=" use of it, even ones textually earlier in the file. These
 //  three have no "active=" dependents elsewhere, so a plain override is safe.
-showSniperFib  := showTradeTools ? showSniperFib : false
-showKillZones  := showTradeTools ? showKillZones : false
-showNYRange    := showTradeTools ? showNYRange : false
+showSniperFib  := marketStructureOnly ? false : showSniperFib
+showKillZones  := marketStructureOnly ? false : showKillZones
+showNYRange    := marketStructureOnly ? false : showNYRange
 
 //============================================================
 //  SMC STRUCTURE TYPE
@@ -1846,26 +1861,20 @@ var float divPrevPriceHigh = na
 var int   divPrevHighBar   = na
 var int   lastBullDivBar   = na
 var int   lastBearDivBar   = na
-var array<line>  bullDivLines  = array.new<line>()
-var array<label> bullDivLabels = array.new<label>()
-var array<line>  bearDivLines  = array.new<line>()
-var array<label> bearDivLabels = array.new<label>()
+var line  lastBullDivLine  = na
+var label lastBullDivLabel = na
+var line  lastBearDivLine  = na
+var label lastBearDivLabel = na
 
 if showDiv and not na(divPlRsi)
     float _pLow = low[divPivotLen]
     int   _pBar = bar_index - divPivotLen
-    bool  _divRecent = showDivHistory or time[divPivotLen] >= time - 259200000
-    if not na(divPrevRsiLow) and _divRecent
+    if not na(divPrevRsiLow)
         // Lower low in price, higher low in RSI, from the oversold extreme
         if _pLow < divPrevPriceLow and divPlRsi > divPrevRsiLow and math.min(divPlRsi, divPrevRsiLow) <= divOS
             lastBullDivBar := _pBar
-            array.push(bullDivLines, line.new(divPrevLowBar, divPrevPriceLow, _pBar, _pLow, color = color.new(#4caf50, 0), style = line.style_dotted, width = 2))
-            array.push(bullDivLabels, label.new(_pBar, _pLow, "\nBull Div", color = color(na), textcolor = color.new(#4caf50, 0), style = label.style_label_up, size = size.tiny))
-            // Cap: drop the oldest marker once past the limit — nothing here is
-            // deleted for being "stale," only for exceeding the display cap.
-            if array.size(bullDivLines) > divMaxCount
-                line.delete(array.shift(bullDivLines))
-                label.delete(array.shift(bullDivLabels))
+            lastBullDivLine  := line.new(divPrevLowBar, divPrevPriceLow, _pBar, _pLow, color = color.new(#4caf50, 0), style = line.style_dotted, width = 2)
+            lastBullDivLabel := label.new(_pBar, _pLow, "\nBull Div", color = color(na), textcolor = color.new(#4caf50, 0), style = label.style_label_up, size = size.tiny)
     divPrevRsiLow   := divPlRsi
     divPrevPriceLow := _pLow
     divPrevLowBar   := _pBar
@@ -1873,16 +1882,12 @@ if showDiv and not na(divPlRsi)
 if showDiv and not na(divPhRsi)
     float _pHigh = high[divPivotLen]
     int   _pBar  = bar_index - divPivotLen
-    bool  _divRecentH = showDivHistory or time[divPivotLen] >= time - 259200000
-    if not na(divPrevRsiHigh) and _divRecentH
+    if not na(divPrevRsiHigh)
         // Higher high in price, lower high in RSI, from the overbought extreme
         if _pHigh > divPrevPriceHigh and divPhRsi < divPrevRsiHigh and math.max(divPhRsi, divPrevRsiHigh) >= divOB
             lastBearDivBar := _pBar
-            array.push(bearDivLines, line.new(divPrevHighBar, divPrevPriceHigh, _pBar, _pHigh, color = color.new(#ff5252, 0), style = line.style_dotted, width = 2))
-            array.push(bearDivLabels, label.new(_pBar, _pHigh, "Bear Div\n", color = color(na), textcolor = color.new(#ff5252, 0), style = label.style_label_down, size = size.tiny))
-            if array.size(bearDivLines) > divMaxCount
-                line.delete(array.shift(bearDivLines))
-                label.delete(array.shift(bearDivLabels))
+            lastBearDivLine  := line.new(divPrevHighBar, divPrevPriceHigh, _pBar, _pHigh, color = color.new(#ff5252, 0), style = line.style_dotted, width = 2)
+            lastBearDivLabel := label.new(_pBar, _pHigh, "Bear Div\n", color = color(na), textcolor = color.new(#ff5252, 0), style = label.style_label_down, size = size.tiny)
     divPrevRsiHigh   := divPhRsi
     divPrevPriceHigh := _pHigh
     divPrevHighBar   := _pBar
@@ -1899,8 +1904,23 @@ var int lastExtBreakBar = na
 if extBreakThisBar
     lastExtBreakBar := bar_index
 
-bool bullDivStale = (not na(lastExtBreakBar) and not na(lastBullDivBar) and lastExtBreakBar > lastBullDivBar) or (not na(lastBearDivBar) and not na(lastBullDivBar) and lastBearDivBar > lastBullDivBar)
-bool bearDivStale = (not na(lastExtBreakBar) and not na(lastBearDivBar) and lastExtBreakBar > lastBearDivBar) or (not na(lastBullDivBar) and not na(lastBearDivBar) and lastBullDivBar > lastBearDivBar)
+bool bullDivStale = not na(lastExtBreakBar) and not na(lastBullDivBar) and lastExtBreakBar > lastBullDivBar
+bool bearDivStale = not na(lastExtBreakBar) and not na(lastBearDivBar) and lastExtBreakBar > lastBearDivBar
+
+// Remove the drawing itself once stale — not just the confluence flag. A
+// divergence from several legs ago has no business lingering on the chart
+// once a new external break has moved past it; deleting it keeps only
+// divergences relevant to the CURRENT swing visible.
+if bullDivStale and not na(lastBullDivLine)
+    line.delete(lastBullDivLine)
+    label.delete(lastBullDivLabel)
+    lastBullDivLine := na
+    lastBullDivLabel := na
+if bearDivStale and not na(lastBearDivLine)
+    line.delete(lastBearDivLine)
+    label.delete(lastBearDivLabel)
+    lastBearDivLine := na
+    lastBearDivLabel := na
 
 bool bullDivActive = showDiv and not na(lastBullDivBar) and not bullDivStale and bar_index - lastBullDivBar <= divValidBars
 bool bearDivActive = showDiv and not na(lastBearDivBar) and not bearDivStale and bar_index - lastBearDivBar <= divValidBars
@@ -3602,16 +3622,10 @@ if showSessL and liq_nyl != "" and not na(liq_nyl_bar) and liq_nyl_bar > recentS
 var int  aplusL_sweepBar = na
 var int  aplusL_sosBar   = na
 var bool aplusL_poi      = false
-var int  aplusL_armTime  = na    // timestamp the sweep/div arm fired — window is measured in TIME, not bars
-var bool aplusL_half     = false // A+-owned 0.5 latch — survives fib redraw at session gap
-var bool aplusL_618      = false // A+-owned 0.618 latch
 var int  contL_bosBar    = na    // CONT trade trigger: external BOS with no A+ tracked on that side
 var int  aplusS_sweepBar = na
 var int  aplusS_sosBar   = na
 var bool aplusS_poi      = false
-var int  aplusS_armTime  = na
-var bool aplusS_half     = false
-var bool aplusS_618      = false
 var int  contS_bosBar    = na
 
 // HTF POI — the Cycle Fib's zones, tracked on every timeframe (drawing stays gated):
@@ -3633,50 +3647,19 @@ if macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
 // lastBearDivBar likewise only change on the bar a new divergence confirms. Edge-
 // triggering this way means there is no stale state to accidentally re-arm from —
 // the event has to newly happen, not merely still be "active".
-// Session-gap detector — first bar after a market close (e.g. daily 17:00-18:00)
-// has a time jump much larger than the normal bar spacing.
-int  barGap    = na(time[1]) ? 0 : time - time[1]
-int  normalGap = na(time[1]) or na(time[2]) ? 0 : time[1] - time[2]
-bool sessionGapBar = normalGap > 0 and barGap > normalGap * 2
-
-bool newSweepL = recentSSL != "" and recentSSL_bar != recentSSL_bar[1] and not sessionGapBar
+bool newSweepL = recentSSL != "" and recentSSL_bar != recentSSL_bar[1]
 bool newDivL   = not na(lastBullDivBar) and lastBullDivBar != lastBullDivBar[1]
-
-// Daily-level sweeps go stale after one day — a "Day Low" sweep from 3 days ago
-// is no longer meaningful fuel for a fresh setup. Only the PREVIOUS day's sweep
-// (or newer) counts; H4/session sweeps are inherently short-lived already and
-// aren't capped here.
-bool dailySweepTooOldL = newSweepL and recentSSL == "Day Low" and not na(time[bar_index - recentSSL_bar]) and (time - time[bar_index - recentSSL_bar]) > 86400000
-if dailySweepTooOldL
-    newSweepL := false
-
-// Arm ONLY when nothing is already tracking on this side. Once armed (Stage 1)
-// or locked (Stage 2), the arm is frozen — a rotating liquidity source (e.g. the
-// daily flipping from Day-Low-swept to Day-High-swept at the session boundary)
-// changes recentSSL_bar, but it must NOT overwrite or re-trigger a live arm. The
-// arm only clears through a real death: opposite SOS, TP3, or invalidation.
-bool aplusL_canArm = na(aplusL_sweepBar) and na(aplusL_sosBar)
-if newSweepL and aplusL_canArm
+if newSweepL
     aplusL_sweepBar := recentSSL_bar
-    aplusL_armTime  := time
-if newDivL and aplusL_canArm
+if newDivL
     aplusL_sweepBar := lastBullDivBar
-    aplusL_armTime  := time
 
-bool newSweepS = recentBSL != "" and recentBSL_bar != recentBSL_bar[1] and not sessionGapBar
+bool newSweepS = recentBSL != "" and recentBSL_bar != recentBSL_bar[1]
 bool newDivS   = not na(lastBearDivBar) and lastBearDivBar != lastBearDivBar[1]
-
-bool dailySweepTooOldS = newSweepS and recentBSL == "Day High" and not na(time[bar_index - recentBSL_bar]) and (time - time[bar_index - recentBSL_bar]) > 86400000
-if dailySweepTooOldS
-    newSweepS := false
-
-bool aplusS_canArm = na(aplusS_sweepBar) and na(aplusS_sosBar)
-if newSweepS and aplusS_canArm
+if newSweepS
     aplusS_sweepBar := recentBSL_bar
-    aplusS_armTime  := time
-if newDivS and aplusS_canArm
+if newDivS
     aplusS_sweepBar := lastBearDivBar
-    aplusS_armTime  := time
 
 // POI latch while armed
 if not na(aplusL_sweepBar)
@@ -3685,27 +3668,19 @@ if not na(aplusS_sweepBar)
     aplusS_poi := aplusS_poi or poiShortNow
 
 // Stage 2 — SOS must fire after the sweep, within the staleness window
-if st.bull_sos and not na(aplusL_armTime) and time - aplusL_armTime <= aplusWindow * 60000
+if st.bull_sos and not na(aplusL_sweepBar) and bar_index - aplusL_sweepBar <= aplusWindow
     aplusL_sosBar := bar_index
-if st.bear_sos and not na(aplusS_armTime) and time - aplusS_armTime <= aplusWindow * 60000
+if st.bear_sos and not na(aplusS_sweepBar) and bar_index - aplusS_sweepBar <= aplusWindow
     aplusS_sosBar := bar_index
-
-// Detect the first bar after a SESSION GAP (e.g. the daily 17:00-18:00 close).
-// On that bar `time` jumps by far more than the normal bar spacing, and the
-// daily security bar rolls — which was falsely tripping the stale-window clear
-// and resetting live arms. Skip the stale check on any bar whose gap from the
-// previous bar is more than 2x the normal spacing.
 
 // Clear a stale arm — sweep/div fired but no SOS followed within the window.
 // Without this, aplusL_sweepBar stays set FOREVER even after the A+ row has
 // already fallen back to "Pass" (the display checks the window; this variable
 // didn't), which permanently blocked CONT from ever arming again.
-if not sessionGapBar and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(aplusL_armTime) and time - aplusL_armTime > aplusWindow * 60000
+if not na(aplusL_sweepBar) and na(aplusL_sosBar) and bar_index - aplusL_sweepBar > aplusWindow
     aplusL_sweepBar := na
-    aplusL_armTime := na
-if not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(aplusS_armTime) and time - aplusS_armTime > aplusWindow * 60000
+if not na(aplusS_sweepBar) and na(aplusS_sosBar) and bar_index - aplusS_sweepBar > aplusWindow
     aplusS_sweepBar := na
-    aplusS_armTime := na
 
 // Sequence death. Opposite SOS kills the A+ tracking on that side — the trend
 // it was riding just reversed. ANY SOS (either direction) also clears CONT on
@@ -3714,11 +3689,11 @@ if not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not n
 // keep showing even after a brand new SOS has since fired on that very side —
 // backwards, since once an SOS prints we're back in A+ (reversal) territory
 // until a genuine new BOS re-arms CONT on the far side of that fresh leg.
-if st.bear_sos and not sessionGapBar
-    aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false, aplusL_armTime := na
-if st.bull_sos and not sessionGapBar
-    aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false, aplusS_armTime := na
-if (st.bull_sos or st.bear_sos) and not sessionGapBar
+if st.bear_sos
+    aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false
+if st.bull_sos
+    aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false
+if st.bull_sos or st.bear_sos
     contL_bosBar := na
     contS_bosBar := na
 
@@ -3731,12 +3706,12 @@ if (st.bull_sos or st.bear_sos) and not sessionGapBar
 // OWN bar: your structure engine flags bull_bos = true on every bull_sos bar
 // too (they're not mutually exclusive), so without "not st.bull_sos" here, the
 // very bar that arms stage 2 would immediately kill itself.
-if not na(aplusL_sosBar) and not sessionGapBar
+if not na(aplusL_sosBar)
     if (fibo_dir == 1 and fibo7Touched) or fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10) or (st.bull_bos and not st.bull_sos)
-        aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false, aplusL_armTime := na
-if not na(aplusS_sosBar) and not sessionGapBar
+        aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false
+if not na(aplusS_sosBar)
     if (fibo_dir == -1 and fibo7Touched) or fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10) or (st.bear_bos and not st.bear_sos)
-        aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false, aplusS_armTime := na
+        aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false
 
 // CONT trigger — simply the BOS, but ONLY when no A+ is currently tracked on
 // that side (not even sweep-armed). Runs AFTER A+ resolution above so a BOS
@@ -3746,8 +3721,10 @@ if not na(aplusS_sosBar) and not sessionGapBar
 // regular BOS/SOS labels.
 if st.bull_bos and na(aplusL_sweepBar)
     contL_bosBar := bar_index
+    label.new(bar_index, low, "\nCONT", color = color(na), textcolor = color.new(#2196F3, 0), style = label.style_label_up, size = size.tiny)
 if st.bear_bos and na(aplusS_sweepBar)
     contS_bosBar := bar_index
+    label.new(bar_index, high, "CONT\n", color = color(na), textcolor = color.new(#2196F3, 0), style = label.style_label_down, size = size.tiny)
 
 // CONT leg resolution: completion (TP3) or invalidation clears it; the next
 // BOS arms a fresh one on its own leg.
@@ -3760,34 +3737,17 @@ if not na(contS_bosBar)
 
 // Stage 3 — entry zone progress on the SOS leg's fib
 // EARLY = 0.5 tapped inbound, READY = 0.618 reached (E1-E3 zone live)
-// Latch the A+'s own 0.5/0.618 progress while its SOS is live. These persist
-// through a fib-origin redraw (which happens at the session gap and would
-// otherwise reset the global fiboHalfReached/618 flags, dropping EARLY→2/3).
-if not na(aplusL_sosBar)
-    aplusL_half := aplusL_half or fiboHalfReached
-    aplusL_618  := aplusL_618  or fibo618EverReached
-else
-    aplusL_half := false, aplusL_618 := false
-if not na(aplusS_sosBar)
-    aplusS_half := aplusS_half or fiboHalfReached
-    aplusS_618  := aplusS_618  or fibo618EverReached
-else
-    aplusS_half := false, aplusS_618 := false
-
-// Stage 2+ is defined by SOS presence alone (not fibo_dir, which flickers at
-// the daily rollover and was resetting live setups back to 1/3 at the gap).
 int aplusL_stage = 0
-if not na(aplusL_sosBar)
-    aplusL_stage := aplusL_618 ? 4 : aplusL_half ? 3 : 2
-else if not na(aplusL_sweepBar)
+if not na(aplusL_sosBar) and fibo_dir == 1
+    aplusL_stage := fibo618EverReached ? 4 : fiboHalfReached ? 3 : 2
+else if not na(aplusL_sweepBar) and bar_index - aplusL_sweepBar <= aplusWindow
     aplusL_stage := 1
 
 int aplusS_stage = 0
-if not na(aplusS_sosBar)
-    aplusS_stage := aplusS_618 ? 4 : aplusS_half ? 3 : 2
-else if not na(aplusS_sweepBar)
+if not na(aplusS_sosBar) and fibo_dir == -1
+    aplusS_stage := fibo618EverReached ? 4 : fiboHalfReached ? 3 : 2
+else if not na(aplusS_sweepBar) and bar_index - aplusS_sweepBar <= aplusWindow
     aplusS_stage := 1
-
 
 // CONT stages — BOS, await retrace, then READY when price reaches the E1-E4
 // entry zone (0.618+). No 0.5 early tier for continuations. Suppressed entirely
@@ -3836,69 +3796,40 @@ if showConfTable and barstate.islast
         // A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
         // completes, this row goes back to Pass; what tracks afterward is the CONT
         // row below — a different trade type, displayed separately so the two can
-        // A+ setup is a REVERSAL trade — a Bull/Bear Div at the sweep is usually part
-        // of its own confirmation, not a reason to distrust it, so no veto here.
-        // (CONT is the one that gets vetoed — see below — since it's riding an
-        // established trend where a fresh opposing divergence is real reversal risk.)
+        // never be confused. Divergence/extreme-RSI veto: a side with live opposing
+        // divergence or an extreme RSI reading is suppressed and flagged instead of
+        // displayed as a tradeable setup, even if the entry zone is reached.
         // FVG is a REQUIRED confirmation for READY (not just a tag) — reaching 0.618
-        // without a live matching FVG OR a confirmed Sniper Zone holds the row at
-        // "awaiting entry" instead of declaring the setup ready — either location
-        // confirmation is accepted, same as CONT treats them. POI (Cycle Fib
-        // discount/premium) is a separate, optional confirmation on top of this.
-        bool aplusL_ok = aplusL_stage > 0
-        bool aplusS_ok = aplusS_stage > 0
-        // HTF bias agreement — WEEKLY only. Weekly is the senior timeframe; when
-        // it agrees with the trade the setup is clean even if Daily hasn't caught
-        // up yet (Daily lagging behind a fresh Weekly turn is normal). We only warn
-        // when the trade fights WEEKLY itself — that's the real top-down risk.
-        // HTF bias grading. A trade only gets the strong warning when BOTH
-        // Weekly and Daily oppose it — that's the genuine "everything against you"
-        // fight. If only Weekly opposes and Daily is Neutral, the lower timeframe
-        // has already let go of the opposing bias: the turn is forming, which is a
-        // tradeable early-reversal case, flagged softly rather than warned against.
-        bool htfDisagreeL = wEstState == "Bearish" and dEstState == "Bearish"
-        bool htfDisagreeS = wEstState == "Bullish" and dEstState == "Bullish"
-        bool htfTurnL = wEstState == "Bearish" and dEstState != "Bearish" and not htfDisagreeL
-        bool htfTurnS = wEstState == "Bullish" and dEstState != "Bullish" and not htfDisagreeS
-        // Optional hard block — suppress a setup that opposes HTF bias, but ONLY
-        // at stage 1 (before the SOS confirms). Once a trade is past 1/3 it's
-        // committed; a later daily/weekly bias flip must not kill a running setup.
-        if aplusHtfBlock and aplusL_ok and htfDisagreeL and aplusL_stage <= 1
-            aplusL_ok := false
-        if aplusHtfBlock and aplusS_ok and htfDisagreeS and aplusS_stage <= 1
-            aplusS_ok := false
+        // without a live matching FVG holds the row at "awaiting FVG" instead of
+        // declaring the setup ready. POI (Cycle Fib discount/premium) is a separate,
+        // optional confirmation — it does not substitute for the FVG requirement.
+        bool aplusL_ok = aplusL_stage > 0 and not longVeto
+        bool aplusS_ok = aplusS_stage > 0 and not shortVeto
+        bool aplusL_blocked = aplusL_stage > 0 and longVeto
+        bool aplusS_blocked = aplusS_stage > 0 and shortVeto
         if aplusL_ok or aplusS_ok
             bool seqIsLong = aplusL_ok and (not aplusS_ok or aplusL_stage >= aplusS_stage)
             int  seqStage  = seqIsLong ? aplusL_stage : aplusS_stage
             color seqCol = seqIsLong ? JARVIS_SSL : JARVIS_BSL
             string seqSide = seqIsLong ? "LONG" : "SHORT"
             bool  seqFvg  = seqIsLong ? aplusL_fvg : aplusS_fvg
-            bool  seqSz   = not na(sniperZoneTop) and (seqIsLong ? sz_bullish : not sz_bullish)
             bool  seqPoi  = seqIsLong ? aplusL_poi : aplusS_poi
             bool  seqDiv  = seqIsLong ? bullDivActive : bearDivActive
             string poiTag = seqPoi ? " + POI" : ""
             string divTag = seqDiv ? " + DIV" : ""
-            string locTag = (seqFvg and seqSz) ? " + FVG + SZ" : seqFvg ? " + FVG" : seqSz ? " + SZ" : ""
-            // HTF disagreement warning — shown on the detail line so the setup
-            // still displays but flags that it's fighting the higher timeframe.
-            bool seqHtfWarn = aplusHtfWarn and (seqIsLong ? htfDisagreeL : htfDisagreeS)
-            bool seqHtfTurn = seqIsLong ? htfTurnL : htfTurnS
-            string htfTag = seqHtfWarn ? "  ⚠ HTF bias disagrees" : seqHtfTurn ? "  ↻ turn forming" : ""
-            // Optional LTF trigger: require an internal shift
-            // (iSOS/iBOS) in the trade direction before declaring READY.
-            bool seqInt = int_struct_valid and (seqIsLong ? str.contains(int_struct, "▲") : str.contains(int_struct, "▼"))
-            bool locOk  = (seqFvg or seqSz) and (not aplusReqInt or seqInt)
-            string intTag = aplusReqInt ? (seqInt ? " + INT" : "") : ""
-            if seqStage == 4 and locOk
-                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqHtfWarn ? JARVIS_YELLOW : seqCol, seqHtfWarn ? "E1 zone" + htfTag : "E1 zone" + locTag + intTag + poiTag + divTag + htfTag)
+            if seqStage == 4 and seqFvg
+                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, "E1 zone + FVG" + poiTag + divTag)
             else if seqStage == 4
-                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT ENTRY " + seqSide, JARVIS_YELLOW, (aplusReqInt and (seqFvg or seqSz) and not seqInt ? "E1 zone, await INT" : "E1 zone, no FVG/SZ yet") + poiTag + divTag + htfTag)
+                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT FVG " + seqSide, JARVIS_YELLOW, "E1 zone, no FVG yet" + poiTag + divTag)
             else if seqStage == 3
-                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + locTag + poiTag + divTag + htfTag)
+                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + (seqFvg ? " + FVG" : "") + poiTag + divTag)
             else if seqStage == 2
-                f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag + htfTag)
+                f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag)
             else
-                f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag + htfTag)
+                f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag)
+            r := r + 1
+        else if aplusL_blocked or aplusS_blocked
+            f_jRow3(jarvisTable, r, "A+ SETUP", "EXTREME", JARVIS_YELLOW, aplusL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
             r := r + 1
         else
             f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
@@ -3950,14 +3881,13 @@ if showConfTable and barstate.islast
             r := r + 1
 
 
-    // STRUCTURE — only shown in Market Structure mode now
-    if marketStructureOnly
-        if ext_struct != ""
-            f_jRow3(jarvisTable, r, "EXT", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "External")
-            r := r + 1
-        if int_struct_valid
-            f_jRow3(jarvisTable, r, "INT", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "Internal")
-            r := r + 1
+    // STRUCTURE — EXT always, INT only if within current fib range
+    if ext_struct != ""
+        f_jRow3(jarvisTable, r, "EXT", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "External")
+        r := r + 1
+    if int_struct_valid
+        f_jRow3(jarvisTable, r, "INT", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "Internal")
+        r := r + 1
 
     // Wipe any leftover cells below the last drawn row. Without this, a tick
     // that draws FEWER rows than the previous one leaves the old rows visible
@@ -3975,3 +3905,289 @@ if barstate.islast
       text_size   = size.normal,
       bgcolor     = color.new(JARVIS_BLACK, 100),
       text_halign = text.align_center)
+
+
+//============================================================
+//  STRATEGY EXECUTION — A+ sequence entries + scaled fib-target exits
+//============================================================
+// This is the ONLY block that is not part of the mpc_assistant.pine engine.
+// It reads the A+ state the engine already computes and turns it into orders.
+//
+// ENTRY (per your spec): the setup must be armed all the way to the SOS
+// (aplus*_sosBar set = sweep-or-div THEN shift of structure), the fib must
+// point the same way (fibo_dir), price must be trading inside the 0.5-0.886
+// retrace band, and a live FVG must overlap that band (aplus*_fvg). The RSI
+// divergence/extreme veto (longVeto/shortVeto) blocks the side when active.
+//
+// EXITS: SL just beyond fib 1.0 (the leg origin — the same level the engine
+// uses to invalidate the leg). Scaled fib-target ladder:
+//     TP1 = 0.382 (fiboP1)
+//     TP2 = 0.0   (fiboP7, the swing extreme)
+//     TP3 = RUNNER — no fixed limit, it rides the trailing stop until stopped.
+// Percentages default 30/30/40.
+//
+// TP1 is deliberately NOT the 0.5 fib. The entry limit is clamped AT 0.5 (the
+// shallow edge of the retrace band), so a 0.5 TP1 would sit exactly on the entry
+// price: the trade would "hit TP1" on its own fill bar, instantly stage the stop
+// to breakeven, and die a scratch. That was the bug. Entry (0.5-0.886) and TP1
+// (0.382) must never overlap.
+//
+// All three legs carry ONE shared stop that STAGES up as targets are touched:
+//     stage 0  entry           → stop beyond fib 1.0
+//     stage 1  TP1 (0.382) hit → stop to breakeven + a tick buffer
+//     stage 2  TP2 (0.0) hit   → stop to the TP1 price (locks the first target)
+//     stage 3  running past TP2 by >= one trail step → stop to TP2, then ratchets
+//              up one trail step for every further trail step of favourable move.
+//
+// SIZING: fixed fraction of equity risked per trade, sized off the SL distance
+// so every trade risks the same R. NOTE the contract math assumes 1.0 of price
+// = 1 unit of quote currency per contract (true for XAUUSD/most CFDs); revisit
+// syminfo.pointvalue if you run this on an instrument where that is not the case.
+
+var GRP_EXEC = "Strategy Execution"
+bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
+bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
+bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
+bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
+bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade.")
+float execRiskPct = input.float(1.0,  "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 10, step = 0.1)
+float execSlBufTk = input.float(0.0,  "SL buffer beyond 1.0 (ticks)",  group = GRP_EXEC, minval = 0)
+float execTp1Pct  = input.float(30,   "TP1 size % (0.382 fib)",        group = GRP_EXEC, minval = 0, maxval = 100)
+float execTp2Pct  = input.float(30,   "TP2 size % (0.0 fib)",          group = GRP_EXEC, minval = 0, maxval = 100)
+float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "When TP1 (0.382) fills, the stop moves to entry + this buffer (longs) / entry - this buffer (shorts) so the scratch covers slippage + commission and never loses. Set at least equal to your slippage ticks. When TP2 (0.0) fills, the stop moves to the TP1 price to lock the first target.")
+float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
+bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
+bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints a label at each entry listing the confluences that armed it: direction, sweep source, SOS age (bars), and whether FVG / POI / DIV were present. Lets you audit every trade on the chart.")
+bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the FURTHEST take-profit price the trade reached; RED from entry to the stop if it was stopped for a loss; ORANGE line at entry if it only scratched to breakeven with no target hit. Replaces TradingView's built-in trade markers.")
+
+// Frozen trade levels — snapshotted while armed so live fib recomputation on
+// later bars cannot drag the stop/targets of an open trade (the leg's fib is
+// stable during a retrace; it only moves when the leg dies, which cancels us).
+var int   tradedSosL = na    // the SOS bar we already took a long on (one entry per leg)
+var int   tradedSosS = na
+var int   pendSosL   = na    // the SOS bar whose entry limit is currently resting
+var int   pendSosS   = na
+var float lSL = na, var float lTP1 = na, var float lTP2 = na
+var float sSL = na, var float sTP1 = na, var float sTP2 = na
+var float lEntry = na, var float sEntry = na   // fill price of the open trade (breakeven anchor)
+var float lMaxFav = na, var float sMaxFav = na // high-water mark of the open trade, drives the runner ratchet
+var int   lStage = 0,  var int   sStage = 0    // 0 = full stop, 1 = TP1 hit (stop->BE), 2 = TP2 hit (stop->TP1, then runner ratchet)
+var string pendConfL = "", var string pendConfS = ""   // confluence summary snapshotted while armed, drawn on fill
+
+// Position-box state — one growing box per trade, painted by result on close.
+var box   posBox     = na
+var int   posDir     = 0
+var int   posEntryBar = na
+var float posEntry   = na
+var float posSL      = na
+var float posT1 = na, var float posT2 = na
+var float posMaxFav  = na    // best price reached during the trade (high for longs, low for shorts)
+var float posOpenNet = na
+
+float execSlBuf = execSlBufTk * syminfo.mintick
+bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
+
+// ── Entry EDGE — the exact price a resting limit sits at ───────────────────
+// We do NOT wait for a bar to close inside the zone. We rest a limit at the
+// near edge of the FVG that overlaps the 0.5-0.886 band, so a WICK to that edge
+// fills intrabar (and fills even though the FVG box is deleted the instant it is
+// tapped — the order is already placed). The edge is clamped into the band so we
+// never buy above 0.5 / sell below 0.5. If several FVGs qualify, we use the one
+// price reaches FIRST on the retrace (highest edge for longs, lowest for shorts).
+// With "Require FVG" off, the edge falls back to the 0.618 fib (E1) line.
+float longEdge  = na
+float shortEdge = na
+if fibsReady and array.size(fvgTops) > 0
+    for _i = 0 to array.size(fvgTops) - 1
+        float _gT = array.get(fvgTops, _i)
+        float _gB = array.get(fvgBots, _i)
+        bool  _gBull = array.get(fvgIsBull, _i)
+        if _gBull and fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6
+            float _e = math.min(_gT, fiboP2)                       // shallowest touch inside band
+            longEdge := na(longEdge) ? _e : math.max(longEdge, _e) // first one price reaches
+        if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6
+            float _e = math.max(_gB, fiboP2)
+            shortEdge := na(shortEdge) ? _e : math.min(shortEdge, _e)
+if not execReqFVG and fibsReady
+    if na(longEdge)  and fibo_dir == 1
+        longEdge  := fiboP3
+    if na(shortEdge) and fibo_dir == -1
+        shortEdge := fiboP3
+
+// ── Armed conditions — setup to SOS, fib aligned, an edge exists, not vetoed,
+//    flat, and this leg not already traded ──
+// Final-hour block: no new entries 16:00-17:00 NY (gold closes 17:00, reopens 18:00).
+bool lateDayBlock = execNoLateDay and nyHour >= 16 and nyHour < 18
+bool longArmed  = execLongs  and not lateDayBlock and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVeto  or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+bool shortArmed = execShorts and not lateDayBlock and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVeto or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+
+// ── Long: rest / refresh a buy-limit at the edge (cancel when disarmed) ──
+if longArmed
+    lSL  := fiboP10 - execSlBuf
+    lTP1 := fiboP1    // 0.382 — above the 0.5 entry clamp, so it can never self-fill
+    lTP2 := fiboP7    // 0.0 — the swing extreme
+    float slDist = longEdge - lSL
+    if slDist > 0
+        float qty = (strategy.equity * execRiskPct / 100.0) / slDist
+        pendSosL := aplusL_sosBar
+        pendConfL := "▲ LONG\nSweep: " + (recentSSL == "" ? "—" : recentSSL) + "\nSOS " + str.tostring(bar_index - aplusL_sosBar) + " bars ago" + (aplusL_fvg ? "\nFVG ✓" : "\nFVG ✗") + (aplusL_poi ? "\nPOI ✓" : "") + (bullDivActive ? "\nDIV ✓" : "")
+        strategy.entry("Long", strategy.long, qty = qty, limit = longEdge)
+    else
+        strategy.cancel("Long")
+else if strategy.position_size == 0
+    strategy.cancel("Long")
+
+// ── Short: rest / refresh a sell-limit at the edge ──
+if shortArmed
+    sSL  := fiboP10 + execSlBuf
+    sTP1 := fiboP1    // 0.382
+    sTP2 := fiboP7    // 0.0 — the swing extreme
+    float slDist = sSL - shortEdge
+    if slDist > 0
+        float qty = (strategy.equity * execRiskPct / 100.0) / slDist
+        pendSosS := aplusS_sosBar
+        pendConfS := "▼ SHORT\nSweep: " + (recentBSL == "" ? "—" : recentBSL) + "\nSOS " + str.tostring(bar_index - aplusS_sosBar) + " bars ago" + (aplusS_fvg ? "\nFVG ✓" : "\nFVG ✗") + (aplusS_poi ? "\nPOI ✓" : "") + (bearDivActive ? "\nDIV ✓" : "")
+        strategy.entry("Short", strategy.short, qty = qty, limit = shortEdge)
+    else
+        strategy.cancel("Short")
+else if strategy.position_size == 0
+    strategy.cancel("Short")
+
+// ── Mark the leg traded once the resting limit FILLS; snapshot the entry price
+//    and reset the stop stage. Reset stage to 0 whenever we are flat. ──
+// Offset the confluence label well clear of the candles (longs below, shorts
+// above) and drop a thin line from the entry price to the label so it still
+// points at the exact entry without covering the price action.
+float _cOff = ta.atr(14) * 6
+if strategy.position_size > 0 and strategy.position_size[1] <= 0
+    tradedSosL := pendSosL
+    lEntry     := strategy.position_avg_price
+    lStage     := 0
+    lMaxFav    := high
+    if execShowConfLabel
+        line.new(bar_index, lEntry, bar_index, lEntry - _cOff, color = color.new(#26A69A, 0), width = 1)
+        label.new(bar_index, lEntry - _cOff, pendConfL, color = color.new(#0a0a14, 10), textcolor = color.new(#26A69A, 0), style = label.style_label_up, size = size.small, textalign = text.align_left)
+if strategy.position_size < 0 and strategy.position_size[1] >= 0
+    tradedSosS := pendSosS
+    sEntry     := strategy.position_avg_price
+    sStage     := 0
+    sMaxFav    := low
+    if execShowConfLabel
+        line.new(bar_index, sEntry, bar_index, sEntry + _cOff, color = color.new(#EF5350, 0), width = 1)
+        label.new(bar_index, sEntry + _cOff, pendConfS, color = color.new(#0a0a14, 10), textcolor = color.new(#EF5350, 0), style = label.style_label_down, size = size.small, textalign = text.align_left)
+if strategy.position_size == 0
+    lStage := 0
+    sStage := 0
+
+// ── Position box: grows with the live trade, then paints the result on close ──
+//   GREEN  entry → furthest TP price the trade actually reached
+//   RED    entry → stop, if it was stopped for a net loss (no TP reached)
+//   ORANGE horizontal line at entry, if it only scratched to breakeven
+color POS_GREEN  = color.new(#26A69A, 62)
+color POS_RED    = color.new(#EF5350, 62)
+color POS_OPEN   = color.new(#787B86, 80)
+color POS_ORANGE = color.new(#FF9800, 0)
+color POS_GREENB = color.new(#26A69A, 0)   // solid borders so even a thin box is visible
+color POS_REDB   = color.new(#EF5350, 0)
+if execShowPosBox
+    // Fresh fill → open a neutral box anchored at the entry bar
+    if strategy.position_size != 0 and strategy.position_size[1] == 0
+        posDir      := strategy.position_size > 0 ? 1 : -1
+        posEntryBar := bar_index
+        posEntry    := posDir > 0 ? lEntry : sEntry
+        posSL       := posDir > 0 ? lSL  : sSL
+        posT1       := posDir > 0 ? lTP1 : sTP1
+        posT2       := posDir > 0 ? lTP2 : sTP2
+        posMaxFav   := posDir > 0 ? high : low
+        posOpenNet  := strategy.netprofit
+        posBox      := box.new(bar_index, math.max(posEntry, close), bar_index, math.min(posEntry, close), bgcolor = POS_OPEN, border_color = color.new(#787B86, 0), border_width = 1)
+    // While open → track best price and grow the box right
+    if strategy.position_size != 0 and not na(posBox)
+        posMaxFav := posDir > 0 ? math.max(posMaxFav, high) : math.min(posMaxFav, low)
+        box.set_right(posBox, bar_index)
+        box.set_top(posBox, math.max(posEntry, close))
+        box.set_bottom(posBox, math.min(posEntry, close))
+    // Closed this bar → paint the outcome
+    if strategy.position_size == 0 and strategy.position_size[1] != 0 and not na(posBox)
+        // Furthest point the trade actually reached. Past TP2 the runner has no
+        // fixed target, so the honest "max TP" is the high-water mark itself.
+        bool  rT2   = posDir > 0 ? posMaxFav >= posT2 : posMaxFav <= posT2
+        bool  rT1   = posDir > 0 ? posMaxFav >= posT1 : posMaxFav <= posT1
+        float maxTp = rT2 ? posMaxFav : rT1 ? posT1 : na
+        float netPnl = strategy.netprofit - posOpenNet
+        box.set_right(posBox, bar_index)
+        if not na(maxTp)
+            box.set_top(posBox, math.max(posEntry, maxTp))
+            box.set_bottom(posBox, math.min(posEntry, maxTp))
+            box.set_bgcolor(posBox, POS_GREEN)
+            box.set_border_color(posBox, POS_GREENB)
+        else if netPnl < 0
+            box.set_top(posBox, math.max(posEntry, posSL))
+            box.set_bottom(posBox, math.min(posEntry, posSL))
+            box.set_bgcolor(posBox, POS_RED)
+            box.set_border_color(posBox, POS_REDB)
+        else
+            box.delete(posBox)
+            line.new(posEntryBar, posEntry, bar_index, posEntry, color = POS_ORANGE, width = 2)
+        posBox := na
+
+// Always-visible entry markers (the long/short position indicator itself) — a
+// triangle at every fill, so you can never miss where a trade opened even when
+// the result box is a thin scratch.
+plotshape(execShowPosBox and strategy.position_size > 0 and strategy.position_size[1] <= 0, title = "Long entry",  style = shape.triangleup,   location = location.belowbar, color = POS_GREENB, size = size.small)
+plotshape(execShowPosBox and strategy.position_size < 0 and strategy.position_size[1] >= 0, title = "Short entry", style = shape.triangledown, location = location.abovebar, color = POS_REDB,   size = size.small)
+
+// ── Advance the stop stage as each target is touched THIS bar, and ratchet the
+//    runner past TP2. We react at the bar's close, so the tighter stop only ever
+//    governs FUTURE price (no look-ahead).
+//      Stage 1 (TP1 = 0.382 touched) → stop to breakeven + buffer
+//      Stage 2 (TP2 = 0.0 touched)   → stop to the TP1 price
+//      Runner: once price is one full trail step beyond TP2, the stop sits at TP2
+//              and climbs one step for every further step of favourable movement.
+float beBuf     = execBeBufTk * syminfo.mintick
+float trailStep = execTrailStep
+
+// f_trail — the runner's ratchet. Returns na until price has run a full step past
+// tp2, then floors the high-water mark to the step grid anchored on tp2.
+f_trail(float maxFav, float tp2, int dir) =>
+    float run = dir > 0 ? maxFav - tp2 : tp2 - maxFav
+    float out = na
+    if not na(run) and run >= trailStep
+        float steps = math.floor((run - trailStep) / trailStep)
+        out := dir > 0 ? tp2 + steps * trailStep : tp2 - steps * trailStep
+    out
+
+if strategy.position_size > 0
+    lMaxFav := na(lMaxFav) ? high : math.max(lMaxFav, high)
+    if lStage < 1 and high >= lTP1
+        lStage := 1
+    if lStage < 2 and high >= lTP2
+        lStage := 2
+if strategy.position_size < 0
+    sMaxFav := na(sMaxFav) ? low : math.min(sMaxFav, low)
+    if sStage < 1 and low <= sTP1
+        sStage := 1
+    if sStage < 2 and low <= sTP2
+        sStage := 2
+
+float lTrail = lStage >= 2 ? f_trail(lMaxFav, lTP2, 1)  : na
+float sTrail = sStage >= 2 ? f_trail(sMaxFav, sTP2, -1) : na
+
+float lStop = lStage >= 2 ? (na(lTrail) ? lTP1 : math.max(lTP1, lTrail)) : lStage >= 1 ? lEntry + beBuf : lSL
+float sStop = sStage >= 2 ? (na(sTrail) ? sTP1 : math.min(sTP1, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
+
+// ── Manage open long: TP1 / TP2 scale-outs + a runner that only trails ──
+if strategy.position_size > 0
+    strategy.exit("L-TP1", from_entry = "Long", qty_percent = execTp1Pct, limit = lTP1, stop = lStop)
+    strategy.exit("L-TP2", from_entry = "Long", qty_percent = execTp2Pct, limit = lTP2, stop = lStop)
+    strategy.exit("L-RUN", from_entry = "Long",                                          stop = lStop)
+    if execCloseOppSOS and st.bear_sos
+        strategy.close("Long", comment = "opp SOS")
+
+// ── Manage open short ──
+if strategy.position_size < 0
+    strategy.exit("S-TP1", from_entry = "Short", qty_percent = execTp1Pct, limit = sTP1, stop = sStop)
+    strategy.exit("S-TP2", from_entry = "Short", qty_percent = execTp2Pct, limit = sTP2, stop = sStop)
+    strategy.exit("S-RUN", from_entry = "Short",                                          stop = sStop)
+    if execCloseOppSOS and st.bull_sos
+        strategy.close("Short", comment = "opp SOS")
