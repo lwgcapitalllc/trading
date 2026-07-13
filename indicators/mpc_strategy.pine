@@ -3691,16 +3691,23 @@ bool dailySweepTooOldL = newSweepL and recentSSL == "Day Low" and not na(time[ba
 if dailySweepTooOldL
     newSweepL := false
 
-// Arm ONLY when nothing is already tracking on this side. Once armed (Stage 1)
-// or locked (Stage 2), the arm is frozen — a rotating liquidity source (e.g. the
-// daily flipping from Day-Low-swept to Day-High-swept at the session boundary)
-// changes recentSSL_bar, but it must NOT overwrite or re-trigger a live arm. The
-// arm only clears through a real death: opposite SOS, TP3, or invalidation.
-bool aplusL_canArm = na(aplusL_sweepBar) and na(aplusL_sosBar)
+// A SWEEP arms only when nothing is already tracking on this side — a rotating
+// liquidity source (e.g. the daily flipping from Day-Low-swept to Day-High-swept
+// at the session boundary) changes recentSSL_bar constantly, and must not
+// re-trigger or refresh a live arm.
+//
+// A DIVERGENCE is different: it may take over a slot a sweep is merely HOLDING at
+// stage 1, refreshing the clock to its own timestamp. Without this, a sweep squats
+// on the slot doing nothing, the divergence behind it is discarded, and Stage 2
+// below then measures its window against the stale SWEEP time — so a live
+// divergence never reaches stage 2 and never trades. The one thing a divergence
+// may NOT disturb is a LOCKED setup (stage 2, SOS already in), hence sosBar only.
+bool aplusL_canArm    = na(aplusL_sweepBar) and na(aplusL_sosBar)
+bool aplusL_canArmDiv = na(aplusL_sosBar)
 if newSweepL and aplusL_canArm
     aplusL_sweepBar := recentSSL_bar
     aplusL_armTime  := time
-if newDivL and aplusL_canArm
+if newDivL and aplusL_canArmDiv
     aplusL_sweepBar := lastBullDivBar
     aplusL_armTime  := time
 
@@ -3723,11 +3730,14 @@ bool dailySweepTooOldS = newSweepS and recentBSL == "Day High" and not na(time[b
 if dailySweepTooOldS
     newSweepS := false
 
-bool aplusS_canArm = na(aplusS_sweepBar) and na(aplusS_sosBar)
+// Mirror of the bull arming above — a bear divergence may take over a stage-1 slot
+// a sweep is holding, but never a locked stage-2 setup.
+bool aplusS_canArm    = na(aplusS_sweepBar) and na(aplusS_sosBar)
+bool aplusS_canArmDiv = na(aplusS_sosBar)
 if newSweepS and aplusS_canArm
     aplusS_sweepBar := recentBSL_bar
     aplusS_armTime  := time
-if newDivS and aplusS_canArm
+if newDivS and aplusS_canArmDiv
     aplusS_sweepBar := lastBearDivBar
     aplusS_armTime  := time
 
