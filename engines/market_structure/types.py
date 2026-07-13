@@ -97,10 +97,15 @@ class ExternalEvents:
     # Reclassification fired on the swing that just broke: "HH"/"LH" (a high) or "HL"/"LL"
     # (a low). This is a *label*, distinct from the BOS/SOS break label above, even though
     # both fire on the same bar and often at the same price.
-    broken_high_label: Optional[str] = None   # "HH" | "LH"
+    #
+    # On an SOS the mid-pullback extreme promoted by the break is NOT confirmed — it becomes the
+    # new active swing and is classified by the NEXT break in that direction. Those bars carry
+    # "ASH"/"ASL" instead of a confirmed label. Consumers keying off "HH"/"LH"/"HL"/"LL" must
+    # treat "ASH"/"ASL" as "not yet classified", not as an unknown value.
+    broken_high_label: Optional[str] = None   # "HH" | "LH" | "ASH"
     broken_high_price: Optional[float] = None
     broken_high_index: Optional[int] = None
-    broken_low_label: Optional[str] = None    # "HL" | "LL"
+    broken_low_label: Optional[str] = None    # "HL" | "LL" | "ASL"
     broken_low_price: Optional[float] = None
     broken_low_index: Optional[int] = None
 

@@ -17,7 +17,7 @@ its harness `indicators/ob_export.pine` embedded the pre-2026-07-08 structure bl
 first — then `compare_ob.py` passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (12,618 bars,
 `--warmup 1133`). The one canonical implementation — no consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/ob_export.pine`, diffed against this Python by `tools/compare_ob.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-09
+**Last reviewed:** 2026-07-12 — **re-validated after the `choch_lock` structure re-sync.** This engine was STALE-BY-INPUT, not stale: its own code was untouched, but the structure stream feeding it changed (more SOS fire, fewer swings confirm), and `ob_export.pine` embeds the structure block so it was re-synced first. `compare_ob.py --warmup 548` then passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (9,270 bars) — the same single CSV that validated market_structure and fibonacci, since `ob_export.pine` + `fib_export.pine` can sit on one chart (no `px_*` column collisions). Details in `engines/market_structure/CLAUDE.md`.
 
 ---
 

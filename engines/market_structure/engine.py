@@ -611,7 +611,7 @@ class StructureEngine:
         st.pb_mode = 0
         st.pb_count = 0
 
-        is_choch = st.dir == -1 and not st.choch_lock
+        is_choch = st.dir == -1
         if is_choch:
             st.bull_sos = True
         if is_choch:
@@ -641,15 +641,19 @@ class StructureEngine:
             st.bull_bos_l_loc = st.pb_extreme_loc  # Pine: st.bull_bos_l_loc := st.pb_extreme_loc
 
             pb_is_hl = False if is_choch else (st.last_conf_low is None or st.pb_extreme >= st.last_conf_low)
-            st.broken_low_label = "HL" if pb_is_hl else "LL"
+            # On an SOS (fast reversal) the extreme is only the ACTIVE swing low — it prints as
+            # ASL and is confirmed to HL/LL by the NEXT bullish break, so it must NOT overwrite
+            # the confirmed-swing map here.
+            st.broken_low_label = "ASL" if is_choch else ("HL" if pb_is_hl else "LL")
             st.broken_low_price = st.pb_extreme
             st.broken_low_index = st.pb_extreme_loc
 
             st.asl = st.pb_extreme
             st.asl_loc = st.pb_extreme_loc
             st.asl_type = "LOCKED"
-            st.last_conf_low = st.pb_extreme
-            st.last_conf_low_loc = st.pb_extreme_loc
+            if not is_choch:
+                st.last_conf_low = st.pb_extreme
+                st.last_conf_low_loc = st.pb_extreme_loc
 
             st.pb_extreme = bar.high
             st.pb_extreme_loc = bar_index
@@ -711,7 +715,7 @@ class StructureEngine:
         st.pb_mode = 0
         st.pb_count = 0
 
-        is_choch = st.dir == 1 and not st.choch_lock
+        is_choch = st.dir == 1
         if is_choch:
             st.bear_sos = True
         if is_choch:
@@ -741,15 +745,19 @@ class StructureEngine:
             st.bear_bos_h_loc = st.pb_extreme_loc  # Pine: st.bear_bos_h_loc := st.pb_extreme_loc
 
             pb_is_hh = st.last_conf_high is None or st.pb_extreme >= st.last_conf_high
-            st.broken_high_label = "HH" if pb_is_hh else "LH"
+            # On an SOS (fast reversal) the extreme is only the ACTIVE swing high — it prints as
+            # ASH and is confirmed to HH/LH by the NEXT bearish break, so it must NOT overwrite
+            # the confirmed-swing map here.
+            st.broken_high_label = "ASH" if is_choch else ("HH" if pb_is_hh else "LH")
             st.broken_high_price = st.pb_extreme
             st.broken_high_index = st.pb_extreme_loc
 
             st.ash = st.pb_extreme
             st.ash_loc = st.pb_extreme_loc
             st.ash_type = "LOCKED"
-            st.last_conf_high = st.pb_extreme
-            st.last_conf_high_loc = st.pb_extreme_loc
+            if not is_choch:
+                st.last_conf_high = st.pb_extreme
+                st.last_conf_high_loc = st.pb_extreme_loc
 
             st.pb_extreme = bar.low
             st.pb_extreme_loc = bar_index

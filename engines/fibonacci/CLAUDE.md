@@ -22,7 +22,7 @@ so the first bullish SOS can lock a cycle immediately. All three are ported and 
 Pine parity** on a fresh `VANTAGE_XAUUSD, 5m` export (13,759 bars, `--warmup 3154`, exit 0 —
 Structure + Sniper + Macro + Internal). The one canonical implementation — no consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/fib_export.pine`, diffed against this Python by `tools/compare_fib.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-09
+**Last reviewed:** 2026-07-12 — **re-validated after the `choch_lock` structure re-sync.** The four fibs were STALE-BY-INPUT, not stale: their own code was untouched, but the structure stream feeding them changed (more SOS fire, fewer swings confirm — and the MacroFib reads `bull_sos` + `last_conf_high` directly), and `fib_export.pine` embeds the structure block so it was re-synced first. `compare_fib.py --warmup 368` then passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (9,270 bars) across all four fibs — the same single CSV that validated market_structure and order_blocks, since `fib_export.pine` + `ob_export.pine` can sit on one chart (no `px_*` column collisions). Details in `engines/market_structure/CLAUDE.md`.
 
 ---
 

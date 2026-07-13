@@ -8,7 +8,7 @@ chart rendering.
 `OANDA_XAUUSD, 15m` export, 21,729 bars); wired into `algos/` via
 `algos/shared/structure_engine.py` (shim).
 **Pine:** ported from `indicators/structure_engine.pine`; parity harness is `indicators/structure_engine_export.pine`, diffed against this Python by `tools/compare_tradingview.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-02
+**Last reviewed:** 2026-07-12 — re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% parity (`compare_tradingview.py --warmup 365`, exit 0, `VANTAGE_XAUUSD, 5m`, 9,270 bars). See "The 2026-07-12 CHoCH re-sync" below.
 
 ---
 
@@ -143,8 +143,11 @@ Both are `None` off their firing bar.
   import pandas lazily (optional, DataFrame convenience only) — mirror the try/except pattern
   already used there.
 - Do not simplify, "clean up", or optimize away any branch of the ported state machine (pullback
-  qualifying-candle logic, choch_lock, bounded rescans, etc.) without Aaron's explicit sign-off —
-  this is validated against a real chart at ~99.99% parity and any behavioral change breaks that.
+  qualifying-candle logic, bounded rescans, etc.) without Aaron's explicit sign-off — this is
+  validated against a real chart at ~99.99% parity and any behavioral change breaks that.
+- Do not "tidy up" the now-unread `choch_lock` field. As of 2026-07-12 it is still declared, set and
+  released but nothing reads it — that dead state exists in `mpc_assistant.pine` too, and these
+  files are kept byte-identical to it. Deleting it here would make the next Pine diff lie.
 - Do not build a second structure engine anywhere else in the repo. This is the canonical
   implementation; all consumers import from here.
 - Do not change `major_length` from 15 in production consumers without discussing — it is the
@@ -187,6 +190,40 @@ bars mismatch only because the Pine export begins at a non-zero `bar_index` (Tra
 history before the export window, so its engine was already warm while the Python engine starts
 cold); both converge once the structure re-establishes inside the window. This is a second,
 independent dataset from the original OANDA validation, so it re-confirms the whole engine too.
+
+## The 2026-07-12 CHoCH re-sync (`choch_lock` removed from the break decision)
+
+Aaron's brother reported a missing higher high on XAUUSD 15m (17 Jun 2026, the ~4382 spike) and had
+it fixed on the TradingView side. That fix landed in `mpc_assistant.pine` and was ported down the
+whole chain. **Both symptoms he saw were one bug.** A bullish SOS set `choch_lock`; the next bearish
+break was therefore not treated as a CHoCH, so it rendered as a **BOS instead of an SOS**. And
+because the bear-break fallback classifies the old high with `old_is_hh = is_choch ? true : (…)`,
+losing the CHoCH also lost the forced `true` — so the **HH never printed**.
+
+Four changes, applied byte-identically to all six Pine copies of the engine and ported here:
+
+1. `is_choch = st.dir == -1` (was `… and not st.choch_lock`) — bull break.
+2. `is_choch = st.dir == 1` (was `… and not st.choch_lock`) — bear break.
+3. On a bull-break SOS, the promoted pullback low is labelled **ASL**, not HL/LL.
+4. On a bear-break SOS, the promoted pullback high is labelled **ASH**, not HH/LH.
+
+…plus, in both, the confirmed-swing map (`last_conf_high` / `last_conf_low`) is now written only
+`if not is_choch`. On a fast reversal the promoted extreme is merely the new ACTIVE swing — the NEXT
+break in that direction classifies it. That guard is what stops a lower high from overwriting a
+genuine higher high, which is what suppressed the HH.
+
+**Public-API consequence:** `broken_high_label` / `broken_low_label` widened from `"HH"|"LH"` /
+`"HL"|"LL"` to include `"ASH"` / `"ASL"`. Consumers keying off the confirmed labels must read ASH/ASL
+as *"not yet classified"*, not as an unknown value. No production consumer reads those fields today.
+
+`choch_lock` itself is now inert — still declared, set and released, never read. It is kept
+deliberately (see "Never do") so these files stay byte-identical to `mpc_assistant.pine`.
+
+**Parity re-confirmed 2026-07-12** on a single fresh `VANTAGE_XAUUSD, 5m` export (9,270 bars) that
+carried the OB + fib harnesses at once: `compare_tradingview.py --warmup 365` exit 0, and the two
+downstream engines (STALE-BY-INPUT, since the structure stream now fires more SOS and confirms fewer
+swings) re-validated off the same CSV — `compare_ob.py --warmup 548` and `compare_fib.py --warmup 368`,
+both exit 0.
 
 ## References
 

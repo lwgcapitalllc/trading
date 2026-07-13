@@ -291,7 +291,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
         st.pb_mode  := 0
         st.pb_count := 0
 
-        bool   is_choch    = st.dir == -1 and not st.choch_lock
+        bool   is_choch    = st.dir == -1
         string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
         if is_choch
             st.bull_sos := true
@@ -331,15 +331,18 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             if not na(st.asl_lbl)
                 label.delete(st.asl_lbl)
             bool   pb_is_hl = is_choch ? false : (na(st.last_conf_low) or st.pb_extreme >= st.last_conf_low)
-            string pb_low_t = pb_is_hl ? prefix + "HL" : prefix + "LL"
-            color  pb_low_c = pb_is_hl ? bull_col : bear_col
+            // On an SOS (fast reversal) the extreme is only the ACTIVE swing low —
+            // it prints as ASL and is confirmed to HL/LL by the NEXT bullish break.
+            string pb_low_t = is_choch ? prefix + "ASL" : (pb_is_hl ? prefix + "HL" : prefix + "LL")
+            color  pb_low_c = is_choch ? bull_col : (pb_is_hl ? bull_col : bear_col)
             st.asl      := st.pb_extreme
             st.asl_loc  := st.pb_extreme_loc
             st.asl_type := "LOCKED"
             st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
             st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + pb_low_t, color=color(na), textcolor=pb_low_c, style=label.style_label_up, size=f_structSize())
-            st.last_conf_low         := st.pb_extreme
-            st.last_conf_low_loc     := st.pb_extreme_loc
+            if not is_choch
+                st.last_conf_low     := st.pb_extreme
+                st.last_conf_low_loc := st.pb_extreme_loc
             st.pb_extreme            := high
             st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na
@@ -412,7 +415,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
         st.pb_mode  := 0
         st.pb_count := 0
 
-        bool   is_choch    = st.dir == 1 and not st.choch_lock
+        bool   is_choch    = st.dir == 1
         string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
         if is_choch
             st.bear_sos := true
@@ -451,15 +454,18 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             if not na(st.ash_lbl)
                 label.delete(st.ash_lbl)
             bool   pb_is_hh  = na(st.last_conf_high) or st.pb_extreme >= st.last_conf_high
-            string pb_high_t = pb_is_hh ? prefix + "HH" : prefix + "LH"
-            color  pb_high_c = pb_is_hh ? bull_col : bear_col
+            // On an SOS (fast reversal) the extreme is only the ACTIVE swing high —
+            // it prints as ASH and is confirmed to HH/LH by the NEXT bearish break.
+            string pb_high_t = is_choch ? prefix + "ASH" : (pb_is_hh ? prefix + "HH" : prefix + "LH")
+            color  pb_high_c = is_choch ? bear_col : (pb_is_hh ? bull_col : bear_col)
             st.ash      := st.pb_extreme
             st.ash_loc  := st.pb_extreme_loc
             st.ash_type := "LOCKED"
             st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
             st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, pb_high_t + "\n", color=color(na), textcolor=pb_high_c, style=label.style_label_down, size=f_structSize())
-            st.last_conf_high        := st.pb_extreme
-            st.last_conf_high_loc    := st.pb_extreme_loc
+            if not is_choch
+                st.last_conf_high     := st.pb_extreme
+                st.last_conf_high_loc := st.pb_extreme_loc
             st.pb_extreme            := low
             st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na

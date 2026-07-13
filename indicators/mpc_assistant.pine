@@ -134,7 +134,7 @@ int aplusWindow = input.int(1440, "Max Time: Sweep → SOS (minutes)", minval = 
 //============================================================
 var GRP_DIV = "RSI Divergence"
 bool showDivInput     = input.bool(false, "Track RSI Divergence", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes and tags it as confluence on the A+ setup row. Settings are fixed to tuned defaults. Off by default.", display = display.none)
-bool showDivHistory   = input.bool(false, "Show Divergence History", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show the divergence that's currently feeding a live A+ setup. On = show full history up to the cap, regardless of whether a setup is using it.", display = display.none)
+bool showDivHistory   = input.bool(false, "Show Divergence History", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show divergences from the last 3 days. On = show as far back as possible.", display = display.none)
 bool showDiv = showDivInput
 int  divRsiLen    = 14
 int  divPivotLen  = 5
@@ -645,7 +645,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
         st.pb_mode  := 0
         st.pb_count := 0
 
-        bool   is_choch    = st.dir == -1 and not st.choch_lock
+        bool   is_choch    = st.dir == -1
         string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
         if is_choch
             st.bull_sos := true
@@ -685,15 +685,18 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             if not na(st.asl_lbl)
                 label.delete(st.asl_lbl)
             bool   pb_is_hl = is_choch ? false : (na(st.last_conf_low) or st.pb_extreme >= st.last_conf_low)
-            string pb_low_t = pb_is_hl ? prefix + "HL" : prefix + "LL"
-            color  pb_low_c = pb_is_hl ? bull_col : bear_col
+            // On an SOS (fast reversal) the extreme is only the ACTIVE swing low —
+            // it prints as ASL and is confirmed to HL/LL by the NEXT bullish break.
+            string pb_low_t = is_choch ? prefix + "ASL" : (pb_is_hl ? prefix + "HL" : prefix + "LL")
+            color  pb_low_c = is_choch ? bull_col : (pb_is_hl ? bull_col : bear_col)
             st.asl      := st.pb_extreme
             st.asl_loc  := st.pb_extreme_loc
             st.asl_type := "LOCKED"
             st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
             st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + pb_low_t, color=color(na), textcolor=f_swingCol(pb_low_c), style=label.style_label_up, size=f_structSize())
-            st.last_conf_low         := st.pb_extreme
-            st.last_conf_low_loc     := st.pb_extreme_loc
+            if not is_choch
+                st.last_conf_low     := st.pb_extreme
+                st.last_conf_low_loc := st.pb_extreme_loc
             st.pb_extreme            := high
             st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na
@@ -766,7 +769,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
         st.pb_mode  := 0
         st.pb_count := 0
 
-        bool   is_choch    = st.dir == 1 and not st.choch_lock
+        bool   is_choch    = st.dir == 1
         string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
         if is_choch
             st.bear_sos := true
@@ -805,15 +808,18 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             if not na(st.ash_lbl)
                 label.delete(st.ash_lbl)
             bool   pb_is_hh  = na(st.last_conf_high) or st.pb_extreme >= st.last_conf_high
-            string pb_high_t = pb_is_hh ? prefix + "HH" : prefix + "LH"
-            color  pb_high_c = pb_is_hh ? bull_col : bear_col
+            // On an SOS (fast reversal) the extreme is only the ACTIVE swing high —
+            // it prints as ASH and is confirmed to HH/LH by the NEXT bearish break.
+            string pb_high_t = is_choch ? prefix + "ASH" : (pb_is_hh ? prefix + "HH" : prefix + "LH")
+            color  pb_high_c = is_choch ? bear_col : (pb_is_hh ? bull_col : bear_col)
             st.ash      := st.pb_extreme
             st.ash_loc  := st.pb_extreme_loc
             st.ash_type := "LOCKED"
             st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
             st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, pb_high_t + "\n", color=color(na), textcolor=f_swingCol(pb_high_c), style=label.style_label_down, size=f_structSize())
-            st.last_conf_high        := st.pb_extreme
-            st.last_conf_high_loc    := st.pb_extreme_loc
+            if not is_choch
+                st.last_conf_high     := st.pb_extreme
+                st.last_conf_high_loc := st.pb_extreme_loc
             st.pb_extreme            := low
             st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na
@@ -1848,27 +1854,24 @@ var int   lastBullDivBar   = na
 var int   lastBearDivBar   = na
 var array<line>  bullDivLines  = array.new<line>()
 var array<label> bullDivLabels = array.new<label>()
-var array<int>   bullDivBars   = array.new<int>()
 var array<line>  bearDivLines  = array.new<line>()
 var array<label> bearDivLabels = array.new<label>()
-var array<int>   bearDivBars   = array.new<int>()
 
 if showDiv and not na(divPlRsi)
     float _pLow = low[divPivotLen]
     int   _pBar = bar_index - divPivotLen
-    if not na(divPrevRsiLow)
+    bool  _divRecent = showDivHistory or time[divPivotLen] >= time - 259200000
+    if not na(divPrevRsiLow) and _divRecent
         // Lower low in price, higher low in RSI, from the oversold extreme
         if _pLow < divPrevPriceLow and divPlRsi > divPrevRsiLow and math.min(divPlRsi, divPrevRsiLow) <= divOS
             lastBullDivBar := _pBar
             array.push(bullDivLines, line.new(divPrevLowBar, divPrevPriceLow, _pBar, _pLow, color = color.new(#4caf50, 0), style = line.style_dotted, width = 2))
             array.push(bullDivLabels, label.new(_pBar, _pLow, "\nBull Div", color = color(na), textcolor = color.new(#4caf50, 0), style = label.style_label_up, size = size.tiny))
-            array.push(bullDivBars, _pBar)
             // Cap: drop the oldest marker once past the limit — nothing here is
             // deleted for being "stale," only for exceeding the display cap.
             if array.size(bullDivLines) > divMaxCount
                 line.delete(array.shift(bullDivLines))
                 label.delete(array.shift(bullDivLabels))
-                array.shift(bullDivBars)
     divPrevRsiLow   := divPlRsi
     divPrevPriceLow := _pLow
     divPrevLowBar   := _pBar
@@ -1876,17 +1879,16 @@ if showDiv and not na(divPlRsi)
 if showDiv and not na(divPhRsi)
     float _pHigh = high[divPivotLen]
     int   _pBar  = bar_index - divPivotLen
-    if not na(divPrevRsiHigh)
+    bool  _divRecentH = showDivHistory or time[divPivotLen] >= time - 259200000
+    if not na(divPrevRsiHigh) and _divRecentH
         // Higher high in price, lower high in RSI, from the overbought extreme
         if _pHigh > divPrevPriceHigh and divPhRsi < divPrevRsiHigh and math.max(divPhRsi, divPrevRsiHigh) >= divOB
             lastBearDivBar := _pBar
             array.push(bearDivLines, line.new(divPrevHighBar, divPrevPriceHigh, _pBar, _pHigh, color = color.new(#ff5252, 0), style = line.style_dotted, width = 2))
             array.push(bearDivLabels, label.new(_pBar, _pHigh, "Bear Div\n", color = color(na), textcolor = color.new(#ff5252, 0), style = label.style_label_down, size = size.tiny))
-            array.push(bearDivBars, _pBar)
             if array.size(bearDivLines) > divMaxCount
                 line.delete(array.shift(bearDivLines))
                 label.delete(array.shift(bearDivLabels))
-                array.shift(bearDivBars)
     divPrevRsiHigh   := divPhRsi
     divPrevPriceHigh := _pHigh
     divPrevHighBar   := _pBar
@@ -1908,24 +1910,6 @@ bool bearDivStale = (not na(lastExtBreakBar) and not na(lastBearDivBar) and last
 
 bool bullDivActive = showDiv and not na(lastBullDivBar) and not bullDivStale and bar_index - lastBullDivBar <= divValidBars
 bool bearDivActive = showDiv and not na(lastBearDivBar) and not bearDivStale and bar_index - lastBearDivBar <= divValidBars
-
-// Divergence display: relevance, not recency. Show a marker only while it's
-// the single most recent one on its side AND still live per the same
-// staleness rule the A+ table itself uses (bullDivActive/bearDivActive) —
-// not whether it happened to be the exact bar that armed an A+ sequence,
-// since most setups arm off a liquidity sweep instead, which left the
-// marker hidden almost always. showDivHistory bypasses this and shows the
-// full capped history regardless of live/stale state.
-if showDiv and array.size(bullDivBars) > 0
-    for i = 0 to array.size(bullDivBars) - 1
-        bool _bullLive = showDivHistory or (bullDivActive and array.get(bullDivBars, i) == lastBullDivBar)
-        line.set_color(array.get(bullDivLines, i), _bullLive ? color.new(#4caf50, 0) : color(na))
-        label.set_textcolor(array.get(bullDivLabels, i), _bullLive ? color.new(#4caf50, 0) : color(na))
-if showDiv and array.size(bearDivBars) > 0
-    for i = 0 to array.size(bearDivBars) - 1
-        bool _bearLive = showDivHistory or (bearDivActive and array.get(bearDivBars, i) == lastBearDivBar)
-        line.set_color(array.get(bearDivLines, i), _bearLive ? color.new(#ff5252, 0) : color(na))
-        label.set_textcolor(array.get(bearDivLabels, i), _bearLive ? color.new(#ff5252, 0) : color(na))
 
 // Veto: suppress LONG setups on live bearish divergence or extreme overbought;
 // suppress SHORT setups on live bullish divergence or extreme oversold.
@@ -2739,6 +2723,7 @@ var bool  macro_origin_locked  = false
 var float macro_last_conf_high = na
 var bool  macro_visible        = false
 var int   macro_last_bear_sos_bar = na
+
 var float macro_ll_since_bear_sos = na   // lowest low seen since the last bearish SOS — used as bottom anchor
 var int   macro_ll_since_bear_sos_bar = na
 
@@ -2951,9 +2936,7 @@ if showMacroFib and macroFibAllowed and macro_visible and macro_origin_locked an
         string txm100 = f_macroLabel(1.0, "1.0", "1.0") + str.tostring(p100, format.mintick) + ")"
         [nml100, nmlb100] = f_fibLevel(showMacro100, macroLine100, macroLabel100, mStart, p100, mEnd, cm100, f_macroLineStyle(macro100Style), txm100)
         macroLine100 := nml100, macroLabel100 := nmlb100
-
-
-//============================================================
+        //============================================================
 //  INTERNAL FIB
 //============================================================
 var line  iFL0   = na, var label ifLbl0   = na
@@ -3278,7 +3261,6 @@ plot(array.get(a_lastHighs, 0), "DH", color.new(i_dailyColor,   100), editable =
 plot(array.get(a_lastLows,  0), "DL", color.new(i_dailyColor,   100), editable = false, display = display.none)
 plot(array.get(a_lastHighs, 1), "WH", color.new(i_weeklyColor,  100), editable = false, display = display.none)
 plot(array.get(a_lastLows,  1), "WL", color.new(i_weeklyColor,  100), editable = false, display = display.none)
-
 //============================================================
 //  MPC - JARVIS CONFIRMATION TABLE
 //============================================================

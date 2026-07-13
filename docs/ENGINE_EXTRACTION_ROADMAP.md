@@ -3,7 +3,7 @@
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
 **Source indicator:** `indicators/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
 **Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **1 off-roadmap engine done (news / economic-calendar)** — see "Off-roadmap engines" below. The 2026-07-09 re-sync (liquidity monthly-removal + fibonacci TP3-reset-drop/extend-guard/macro-seed) is now **committed** (`d367b6d`), every engine back at 100% Pine parity. A **fresh 2026-07-10 re-paste** of `mpc_assistant.pine` (524-line staged diff) was audited: **NO engine is stale.** Every engine-affecting change is either visual (swing-label hide toggle, VWAP polyline→plot, KZ/session display windows, session-H/L input consolidation, iBOS/iSOS label reposition) or already-aligned (macro fib run-guard opened to all-timeframes tracking, which the Python engine was already doing unconditionally). **TWO NEW blocks** appeared. One is engine work (now BUILT), one is strategy work (not built): (a) **FAIR VALUE GAPS (FVG)** — a 3-candle displacement gap detector (persists until tapped, FIFO cap); a genuine event detector → **✅ built + Pine-parity-validated 2026-07-10 as `engines/fair_value_gaps/`** (12 unit tests green; `compare_fvg.py --warmup 20` exit 0 on a real `VANTAGE_XAUUSD, 5m` export). The small **`fiboHalfReached`** fib add-on (inbound 0.5 touch) was **✅ built + parity-validated into `engines/fibonacci/`** the same day (2 new tests; `compare_fib.py --warmup 1002` exit 0). **Both ready to commit with the mpc re-paste.** (b) **A+ SETUP SEQUENCE** — a stateful sweep→SOS→fib-entry machine (continuation mode, Cycle-Fib POI, FVG confluence) that **REPLACES the old SETUP GRADING candidate**; it *decides trades*, so it is **strategy-tier, NOT an engine** — it belongs in `strategies/` (MT5/NT8) or a Python bot, and now has both its engine dependencies (FVG + `fiboHalfReached`) in place. **market_structure sync chain NOT triggered** (only label colour/position changed; no detection change). See "Audit findings — 2026-07-10" below.
-**Last reviewed:** 2026-07-12 (fresh working-tree re-paste vs commit `5c477ac`, 308-line diff — 202+/106-. **NO engine is stale; market_structure sync chain NOT triggered; no `*_export.pine` harness or `compare_*.py` needs re-running.** The paste is (a) the `marketStructureOnly` master toggle REPLACED by two positive master switches — `showTradeTools` (FVG/OBs/sessions/KZ/liquidity/VWAP/MV) and `showFibTool` (external/internal/cycle fib) — with `marketStructureOnly` now *derived* (`not showTradeTools and not showFibTool`); plus a `hideFibsSub5m` timeframe gate on the fib drawing/compute. Same effective defaults as before (everything non-structure off) — purely visual; (b) RSI-divergence inputs **frozen into hardcoded constants** (`divRsiLen` 14, `divPivotLen` 5, `divOS` 25, `divOB` 75, `divValidBars` 100, `divVeto` true, extremes 80/20) — these match `engines/rsi_divergence/` defaults EXACTLY, so the 5c477ac sync is confirmed correct and nothing further is needed; the div drawings became a FIFO-capped array (`divMaxCount` 10) instead of a single deleted-on-stale line — visual; (c) a heavy A+ SETUP SEQUENCE rework (staleness window bars→MINUTES, a session-gap guard, daily-sweep age cap, arm-only-when-idle, A+-owned 0.5/0.618 latches, HTF-bias warn/block, Sniper Zone accepted as location confirmation alongside FVG, optional INT trigger, divergence veto REMOVED from A+) — all **strategy-tier**, the A+ machine is not an engine. **ONE SOURCE BUG flagged (not an engine issue):** the new "Show Divergence History" 3-day filter tests `time[divPivotLen] >= time - 259200000`, which measures the pivot's age as `divPivotLen` bars — always ~25 minutes on a 5m chart — so the toggle is inert on every intraday timeframe. See "Audit findings — 2026-07-12" below. Previously: 2026-07-11 (SECOND audit of the day — a fresh working-tree re-paste vs commit `21cbe43`, 484-line diff. **NO engine is stale; market_structure sync chain NOT triggered; no `*_export.pine` harness or `compare_*.py` needs re-running.** The paste is (a) a new `marketStructureOnly` master DISPLAY toggle that force-hides every non-structure feature — each `show*` flag renamed `<flag>Input` and gated `marketStructureOnly ? false : …Input` — purely visual; (b) a heavy rework of the A+ SETUP SEQUENCE (edge-triggered arming on new sweep OR new divergence, stale-arm clearing, a separate CONT continuation trade type with its own row + chart labels, a divergence/extreme-RSI VETO, FVG now REQUIRED for READY) — all **strategy-tier**, the A+ machine is not an engine; (c) a divergence-staleness rule (`bullDivStale`/`bearDivStale`: a div goes stale on the next external break) + drawing-deletion — **strategy-tier composition** of RSI+structure, not the standalone RSI engine's job. **ONE engine-relevant nit:** the RSI-divergence input DEFAULTS drifted `divOS` 30→25 and `divOB` 70→75 — detection formula unchanged (still `<= divOS` / `>= divOB`), so the engine is parity-valid, but its default params should be synced 30→25 / 70→75 (and `compare_rsi_div.py` re-run at the new defaults) when convenient. See "Audit findings — 2026-07-11 (marketStructureOnly + A+/CONT rework)" below. Earlier today: RSI Divergence detector BUILT + PARITY-VALIDATED as `engines/rsi_divergence/` — engine + harness + compare tool + 9 tests green; `compare_rsi_div.py --warmup 1630` exit 0 on a real `VANTAGE_XAUUSD, 5m` export.)
+**Last reviewed:** 2026-07-12 — ✅ **RE-SYNC APPLIED AND PINE-PARITY CONFIRMED.** The `choch_lock` chain break found by the second audit of the day has been fixed end-to-end per Aaron's "accept mpc as source of truth, accept the risk" call: all four detection changes are now byte-identical across `mpc_assistant.pine`, `structure_engine.pine`, `structure_engine_export.pine`, `ob_export.pine`, `fib_export.pine` and `mpc_strategy.pine`, and ported into `engines/market_structure/engine.py` (+ `types.py` label-domain widening to ASH/ASL). 64/64 tests green. **Root cause confirmed on Aaron's 17-Jun-2026 XAUUSD 15m chart: `choch_lock` suppressed the CHoCH, which both mislabelled the break as a BOS AND — via `old_is_hh = is_choch ? true : …` — suppressed the higher high. One bug, two symptoms; the removal was the fix, not a side effect.** ✅ **All three parity checks re-run on one fresh combined `VANTAGE_XAUUSD, 5m` export (9270 bars) and green:** `compare_tradingview.py --warmup 365`, `compare_ob.py --warmup 548`, `compare_fib.py --warmup 368` — all exit 0. `engines/fibonacci/` and `engines/order_blocks/` were STALE-BY-INPUT and are re-validated. **Safe to commit.** See "Re-sync applied — 2026-07-12" below. The audit that found it: (a fresh working-tree re-paste vs commit `7e0b30e`, 66-line diff — 24+/42-. 🔴 **THE MARKET_STRUCTURE SYNC CHAIN WAS TRIGGERED — first time since 2026-07-08.** Two real detection changes in mpc's `process`: (1) **`choch_lock` no longer gates CHoCH** (`is_choch = st.dir == -1 and not st.choch_lock` → `is_choch = st.dir == -1`, bull 648 / bear 772) — the flag is still declared/set/released but nothing reads it, so it is now inert in mpc while `structure_engine.pine`, `structure_engine_export.pine` and `engine.py` all still gate on it; (2) **`last_conf_high`/`last_conf_low` no longer update on a CHoCH** (now wrapped in `if not is_choch`, bull 697 / bear 820) — on an SOS the pullback extreme prints as an ACTIVE swing (ASH/ASL) and is confirmed only by the NEXT opposite break. **STALE as one unit: `indicators/structure_engine.pine`, `indicators/structure_engine_export.pine`, `engines/market_structure/engine.py`.** Cascade: **`engines/fibonacci/` (MacroFib reads `bull_sos` + `last_conf_high`) and `engines/order_blocks/` (creates OBs on `bull_sos`/`bear_sos`) are STALE-BY-INPUT** — their own code is fine, but their inputs and their structure-embedding harnesses (`fib_export.pine`, `ob_export.pine`) are not. **Public-API note:** `broken_high_label`/`broken_low_label` are typed `"HH"|"LH"` / `"HL"|"LL"`; mpc now prints ASH/ASL on a CHoCH, widening that domain. `indicators/mpc_strategy.pine` (the brother's backtest) also still carries the OLD `choch_lock` logic. The RSI-divergence 3-day-history source bug flagged in the audit below got **worse** (moved from the drawing layer into the detection `if`) but stays inert on intraday → `engines/rsi_divergence/` is still 100% parity. See "Audit findings — 2026-07-12 (SECOND — choch_lock removal)" below. Previously today: fresh working-tree re-paste vs commit `5c477ac`, 308-line diff — 202+/106-. **NO engine was stale; market_structure sync chain NOT triggered.** The paste was (a) the `marketStructureOnly` master toggle REPLACED by two positive master switches — `showTradeTools` (FVG/OBs/sessions/KZ/liquidity/VWAP/MV) and `showFibTool` (external/internal/cycle fib) — with `marketStructureOnly` now *derived* (`not showTradeTools and not showFibTool`); plus a `hideFibsSub5m` timeframe gate on the fib drawing/compute. Same effective defaults as before (everything non-structure off) — purely visual; (b) RSI-divergence inputs **frozen into hardcoded constants** (`divRsiLen` 14, `divPivotLen` 5, `divOS` 25, `divOB` 75, `divValidBars` 100, `divVeto` true, extremes 80/20) — these match `engines/rsi_divergence/` defaults EXACTLY, so the 5c477ac sync is confirmed correct and nothing further is needed; the div drawings became a FIFO-capped array (`divMaxCount` 10) instead of a single deleted-on-stale line — visual; (c) a heavy A+ SETUP SEQUENCE rework (staleness window bars→MINUTES, a session-gap guard, daily-sweep age cap, arm-only-when-idle, A+-owned 0.5/0.618 latches, HTF-bias warn/block, Sniper Zone accepted as location confirmation alongside FVG, optional INT trigger, divergence veto REMOVED from A+) — all **strategy-tier**, the A+ machine is not an engine. **ONE SOURCE BUG flagged (not an engine issue):** the new "Show Divergence History" 3-day filter tests `time[divPivotLen] >= time - 259200000`, which measures the pivot's age as `divPivotLen` bars — always ~25 minutes on a 5m chart — so the toggle is inert on every intraday timeframe. See "Audit findings — 2026-07-12" below. Previously: 2026-07-11 (SECOND audit of the day — a fresh working-tree re-paste vs commit `21cbe43`, 484-line diff. **NO engine is stale; market_structure sync chain NOT triggered; no `*_export.pine` harness or `compare_*.py` needs re-running.** The paste is (a) a new `marketStructureOnly` master DISPLAY toggle that force-hides every non-structure feature — each `show*` flag renamed `<flag>Input` and gated `marketStructureOnly ? false : …Input` — purely visual; (b) a heavy rework of the A+ SETUP SEQUENCE (edge-triggered arming on new sweep OR new divergence, stale-arm clearing, a separate CONT continuation trade type with its own row + chart labels, a divergence/extreme-RSI VETO, FVG now REQUIRED for READY) — all **strategy-tier**, the A+ machine is not an engine; (c) a divergence-staleness rule (`bullDivStale`/`bearDivStale`: a div goes stale on the next external break) + drawing-deletion — **strategy-tier composition** of RSI+structure, not the standalone RSI engine's job. **ONE engine-relevant nit:** the RSI-divergence input DEFAULTS drifted `divOS` 30→25 and `divOB` 70→75 — detection formula unchanged (still `<= divOS` / `>= divOB`), so the engine is parity-valid, but its default params should be synced 30→25 / 70→75 (and `compare_rsi_div.py` re-run at the new defaults) when convenient. See "Audit findings — 2026-07-11 (marketStructureOnly + A+/CONT rework)" below. Earlier today: RSI Divergence detector BUILT + PARITY-VALIDATED as `engines/rsi_divergence/` — engine + harness + compare tool + 9 tests green; `compare_rsi_div.py --warmup 1630` exit 0 on a real `VANTAGE_XAUUSD, 5m` export.)
 
 ---
 
@@ -113,6 +113,174 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 Everything else is ported. The other forward work is *consumption*, not extraction: give each engine
 an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest
 lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
+
+---
+
+## Re-sync applied — 2026-07-12 (chain 2→3→4 brought back in line) ✅ PARITY CONFIRMED
+
+Aaron's call: **accept `mpc_assistant.pine` as source of truth and port it as written**, `choch_lock`
+removal included, risk accepted. The audit below stands as the record of *what* changed; this section
+records *what was done about it*.
+
+**Root cause, confirmed against Aaron's chart (XAUUSD 15m, 17 Jun 2026, the ~4382 spike).** Both of the
+symptoms his brother reported are ONE bug, not two. A bullish SOS set `choch_lock`. The very next
+bearish break — the reversal off that spike — was therefore *not* treated as a CHoCH and rendered as a
+**BOS instead of an SOS**. And because the bear-break fallback classifies the old high with
+`old_is_hh = is_choch ? true : (st.ash >= st.last_conf_high)`, losing the CHoCH also lost the forced
+`true` — so the **HH never printed**. Removing `choch_lock` fixes the break label and the missing HH in
+one move. It was the fix, not a side effect. The `if not is_choch` gating of the confirmed-swing map is
+the matching half: on a fast reversal the promoted extreme is only ACTIVE (ASH/ASL), and a later,
+lower high can no longer overwrite a genuine higher high.
+
+**Applied — the same four changes, byte-identical, in every Pine copy of the structure engine:**
+`mpc_assistant.pine` (source), `structure_engine.pine`, `structure_engine_export.pine`,
+`ob_export.pine`, `fib_export.pine`, `mpc_strategy.pine`. Verified: `diff` of mpc's structure block
+(402–909) against `structure_engine.pine` (57–564) is now **empty — byte-for-byte identical**.
+`choch_lock` remains declared/set/released but unread in all six, exactly as mpc leaves it; the dead
+code is kept deliberately so the files stay identical to source.
+
+**Ported to Python:** `engines/market_structure/engine.py` (`_on_ash_broken` / `_on_asl_broken` — both
+`is_choch` lines, both label ternaries, both confirmed-map guards). `types.py`: the
+`broken_high_label` / `broken_low_label` domain is widened to `"HH"|"LH"|"ASH"` and `"HL"|"LL"|"ASL"` —
+consumers keying off the confirmed labels must read ASH/ASL as *"not yet classified"*. No production
+consumer reads those fields today (grep-verified: tests only). `algos/shared/structure_engine.py` is a
+pure pass-through and needed no edit.
+
+**Tests:** 64/64 green (market_structure 10, fibonacci 40, order_blocks 12+). One structure test
+(`test_bear_sos_choch_fires_on_bar_8`) legitimately hand-encoded the OLD behaviour and was updated: the
+break-promoted high now asserts `broken_high_label == "ASH"`, plus a new regression assertion that
+`last_confirmed_high` stays at the genuine 10.3@4 rather than being overwritten by the 10.6@7 promotion —
+that overwrite is precisely the bug that suppressed the HH.
+
+**✅ PINE PARITY RE-CONFIRMED — all three green, one export.** `ob_export.pine` + `fib_export.pine`
+were put on a single `VANTAGE_XAUUSD, 5m` chart and exported as ONE CSV
+(`engines/market_structure/exports/VANTAGE_XAUUSD, 5_9c376.csv`, 9270 bars). `structure_engine_export.pine`
+was **not needed on the chart**: `ob_export.pine` already carries all 23 of its `px_*` columns
+(strict superset), and `fib_export.pine` collides with neither. All three compare tools resolve columns
+by NAME (`csv.DictReader` + `_resolve_columns`) and ignore extras, so one file drives all three.
+`engines/fibonacci/` and `engines/order_blocks/` were **STALE-BY-INPUT** (own code correct, structure
+stream changed) — both re-validated unchanged.
+
+| Compare tool | Warm-up | Result |
+|---|---|---|
+| `engines/market_structure/tools/compare_tradingview.py` | `--warmup 365` | ✅ exit 0 |
+| `engines/order_blocks/tools/compare_ob.py` | `--warmup 548` | ✅ exit 0 |
+| `engines/fibonacci/tools/compare_fib.py` | `--warmup 368` | ✅ exit 0 |
+
+Every mismatch was a **contiguous block at bar 0** — the export starts mid-stream, so Pine holds swing
+state at row 0 that Python must rebuild; each engine re-synced at its warm-up bar and never drifted
+again across the remaining ~8.7–8.9k bars. (Warm-up differs per engine because each needs a different
+depth of history: OBs need enough breaks to fill the 6-deep FIFO, the fibs need one full cycle.)
+The single-CSV multi-indicator trick is the same one used for the 2026-07-09 liquidity+fib run.
+
+---
+
+## Audit findings — 2026-07-12 (SECOND — `choch_lock` removal, working tree vs committed `7e0b30e`) 🔴 CHAIN TRIGGERED
+
+Staged working-tree diff vs commit `7e0b30e`. Small diff — **66 lines (24+/42-)** — but it lands in the
+one place that costs the most. 🔴 **The market_structure sync chain IS triggered.** This is the first
+structure detection change since 2026-07-08.
+
+### market_structure — 🔴 STALE (whole sync chain)
+
+Two real detection changes in `method process`, each mirrored on the bull and bear side:
+
+1. **`choch_lock` no longer gates the CHoCH decision.**
+   `bool is_choch = st.dir == -1 and not st.choch_lock` → `bool is_choch = st.dir == -1`
+   (mpc 648 bull / 772 bear). The flag is still *declared* (421), still *set* on a CHoCH (656, 780) and
+   still *released* (492–496, 538, 580) — but **nothing reads it any more**, so `choch_lock` is now inert
+   in mpc. Meanwhile `structure_engine.pine:303/424`, `structure_engine_export.pine:295/416` and
+   `engines/market_structure/engine.py:614/714` **all still gate on it**. Effect: every counter-trend break
+   now fires as an SOS/CHoCH, where the lock previously suppressed the SOS on the break immediately after
+   a CHoCH. **More SOS events, fewer BOS.** This is squarely "WHEN a break/CHoCH fires" → logic.
+
+2. **`last_conf_high` / `last_conf_low` no longer update on a CHoCH.**
+   Both assignments are now wrapped in `if not is_choch` (mpc 697–699 bull / 820–822 bear). Python sets
+   them **unconditionally** (`engine.py:651–652` / `751–752`). Source comment states the intent: *"On an
+   SOS (fast reversal) the extreme is only the ACTIVE swing low — it prints as ASL and is confirmed to
+   HL/LL by the NEXT bullish break."* This changes the **confirmed-swing map**, and `last_conf_*` is
+   load-bearing — it feeds the HH/HL/LH/LL classification, the fallback scans
+   (`if lowest_val != st.last_conf_low`, mpc 748 / 882), the public `last_confirmed_high()` /
+   `last_confirmed_low()` API (`engine.py:261–270`), and the Macro fib's origin lock + new-HH extend.
+
+**Public-API consequence (check the shim + consumers).** `broken_high_label` / `broken_low_label` are
+typed `"HH" | "LH"` and `"HL" | "LL"` (`types.py:100/103`). On a CHoCH mpc now prints **ASH / ASL**
+instead, so the field's domain widens (or should go `None` on a CHoCH). `algos/shared/structure_engine.py`
+needs no *logic* edit (it is a thin shim) but this is exactly the "new public field a bot reads" check the
+sync rule calls for.
+
+**STALE as one unit — re-sync 2 → 3 → 4 in a single pass, then re-run
+`engines/market_structure/tools/compare_tradingview.py` to exit 0 on a fresh export before committing:**
+- `indicators/structure_engine.pine`
+- `indicators/structure_engine_export.pine`
+- `engines/market_structure/engine.py`
+
+### Cascade — STALE-BY-INPUT (engine code is fine; its INPUT changed)
+
+- **`engines/fibonacci/` — STALE-BY-INPUT.** `MacroFib` reads `snap.bull_sos` / `snap.bear_sos`
+  (`engine.py:387, 419`) to lock its origin, and `snap.last_conf_high` / `snap.last_conf_high_loc`
+  (`engine.py:419–425, 435–441`) as its extreme + new-HH extend. **Both of those inputs now change.** The
+  fib engine's own port is still a faithful copy of mpc's fib blocks (untouched by this diff) — but its
+  macro output will differ until structure is re-synced. `indicators/fib_export.pine` **embeds the
+  structure engine**, so it must be re-synced too, then `compare_fib.py` re-run.
+- **`engines/order_blocks/` — STALE-BY-INPUT.** Creates OBs on `(snap.bull_bos or snap.bull_sos)` /
+  `(snap.bear_bos or snap.bear_sos)` (`engine.py:78–81`). More SOS events → more order blocks.
+  `indicators/ob_export.pine` **embeds the structure engine** → re-sync, then re-run `compare_ob.py`.
+
+### Stale harnesses
+
+`structure_engine.pine`, `structure_engine_export.pine`, `ob_export.pine`, `fib_export.pine` — all four
+carry the old `choch_lock`-gated `is_choch` and the unconditional `last_conf_*` update.
+
+⚠️ **Also carrying the OLD logic: `indicators/mpc_strategy.pine`** (the brother's MPC-JARVIS backtest
+script). It embeds the same structure engine and its trades read **only** the BOS/SOS/iBOS/iSOS breaks —
+so its backtest results no longer match what the chart now prints. Not an engine, but flagging it: it is
+a real consumer of the changed logic.
+
+### rsi_divergence — IN PARITY (but the source bug got worse)
+
+The divergence-history bug flagged in the audit below **was "fixed" in the wrong direction.** The display
+layer (the `bullDivBars` / `bearDivBars` index arrays + the relevance-recolour loop, ~20 lines) was
+**deleted outright**, and the same broken 3-day test was moved **into the detection `if`**:
+
+```
+bool _divRecent = showDivHistory or time[divPivotLen] >= time - 259200000
+if not na(divPrevRsiLow) and _divRecent          // ← now gates DETECTION, not drawing
+```
+
+`time[divPivotLen]` is still the pivot bar — always exactly `divPivotLen` bars back, i.e. **~25 minutes on
+a 5m chart** — so `25 min >= now − 3 days` remains unconditionally true and the toggle is still inert on
+every intraday timeframe. **Engine impact: still none** — on 5m/15m the gate is a no-op, so
+`engines/rsi_divergence/` stays at 100% parity and needs no port of it. But the placement is now *worse*:
+on a Daily+ chart it silently disables divergence **detection** entirely (it used to only hide the
+drawing), and it now gates `lastBullDivBar`/`lastBearDivBar` — the state the A+ row reads. The correct fix
+is to age the divergence at *display* time against `lastBullDivBar`, not to gate detection. Still a Pine
+source bug for Aaron/his brother, not an engine issue.
+
+### Not affected
+
+`sessions`, `liquidity`, `vwap`, `session_volume_profile`, `fair_value_gaps`, `regime`, `news` — zero diff
+hunks in their compute blocks.
+
+### Coverage sweep — no new blocks
+
+Every functional block in the 3,980-line source still maps to an existing engine or to the known
+strategy-tier candidates (A+ SETUP SEQUENCE, HTF Directional Bias helper). **No new un-extracted feature
+appeared.**
+
+### Cosmetic / noise (no impact)
+
+- The `//===== INTERNAL FIB =====` header comment got indented **into** the macro-fib `if` block (mpc 2940).
+  Pine ignores comments, so it is harmless — but it is a paste accident worth cleaning.
+- Trailing newline removed at EOF; one blank line dropped before the JARVIS table; `showDivHistory` tooltip
+  text rewritten.
+
+### Reminder
+
+**No engine code was changed in this audit — report only.** The market_structure re-sync must re-run
+`compare_tradingview.py` on a fresh TradingView export (exit 0) before commit, and because the structure
+change cascades, `compare_ob.py` and `compare_fib.py` must be re-run too — each with its structure-embedding
+harness (`ob_export.pine`, `fib_export.pine`) re-synced FIRST.
 
 ---
 

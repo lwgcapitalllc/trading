@@ -188,10 +188,12 @@ def test_bull_bos_fires_on_bar_6(scenario_events):
 
 
 def test_bear_sos_choch_fires_on_bar_8(scenario_events):
-    """close=8.2 body-closes below asl=9.6. dir was bullish (1) and choch_lock was False, so
-    this break is classified as a CHoCH: both bear_bos and bear_sos fire, and dir flips to -1.
-    A bullish pullback was in progress (pb_extreme=10.6@7), so it gets immediately promoted to
-    a LOCKED ASH and classified "HH"; the broken asl is classified "HL".
+    """close=8.2 body-closes below asl=9.6. dir was bullish (1), so this break is classified as
+    a CHoCH: both bear_bos and bear_sos fire, and dir flips to -1. A bullish pullback was in
+    progress (pb_extreme=10.6@7), so it gets immediately promoted to a LOCKED ASH — but on an
+    SOS that high is only ACTIVE, not confirmed: it is labelled "ASH" and does not overwrite
+    last_confirmed_high, which stays at the real 10.3@4 until the next bearish break classifies
+    it. The broken asl is classified "HL".
 
     The promotion does NOT raise new_swing_high — that flag fires only on a clean 3-candle
     pullback confirmation, matching the Pine source (which sets st.new_swing_high only in the
@@ -216,13 +218,20 @@ def test_bear_sos_choch_fires_on_bar_8(scenario_events):
     assert eng.active_swing_high.index == 7
     assert eng.active_swing_high.locked is True
 
-    assert ev.broken_high_label == "HH"
+    # SOS: the promoted high is ACTIVE, not confirmed — it prints ASH, not HH/LH.
+    assert ev.broken_high_label == "ASH"
     assert ev.broken_high_price == 10.6
     assert ev.broken_high_index == 7
 
     assert ev.broken_low_label == "HL"
     assert ev.broken_low_price == 9.6
     assert ev.broken_low_index == 4
+
+    # ...and it must NOT be written into the confirmed-swing map. That map still holds the high
+    # confirmed by bar 6's BOS. Overwriting it here is the bug that suppressed a later HH.
+    assert eng.last_confirmed_high is not None
+    assert eng.last_confirmed_high.price == 10.3
+    assert eng.last_confirmed_high.index == 4
 
     # Re-derive dir at exactly bar 8 (not the end of the full replay) via a fresh engine.
     eng2 = StructureEngine(major_length=2)
