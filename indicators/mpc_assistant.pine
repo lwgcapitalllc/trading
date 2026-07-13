@@ -3630,6 +3630,15 @@ if macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
         poiLongNow  := low <= macro_extreme - _mRp * 0.618 and high >= macro_extreme - _mRp * 0.886
         poiShortNow := high >= macro_extreme - _mRp * 0.382
 
+// Last SOS on each side, remembered so a divergence that confirms LATE can still
+// reach it (see the retro-link below).
+var int lastBullSosBar = na, var int lastBullSosTime = na
+var int lastBearSosBar = na, var int lastBearSosTime = na
+if st.bull_sos
+    lastBullSosBar := bar_index, lastBullSosTime := time
+if st.bear_sos
+    lastBearSosBar := bar_index, lastBearSosTime := time
+
 // Stage 1 — arm on the EXACT bar a NEW sweep or NEW divergence fires (true edge
 // triggers, not "is this condition currently true"). recentSSL_bar/recentBSL_bar
 // are recomputed fresh each bar from the liquidity sources and only CHANGE VALUE
@@ -3667,6 +3676,15 @@ if newDivL and aplusL_canArm
     aplusL_sweepBar := lastBullDivBar
     aplusL_armTime  := time
 
+// Retro-link — a divergence pivot only CONFIRMS divPivotLen bars after the low it
+// marks. On a fast V-reversal the SOS fires inside that lag, so by the time the
+// divergence arms Stage 1 the SOS has already come and gone and the forward-only
+// Stage 2 check below never sees it — the setup sticks at 1/3 forever. If the last
+// bull SOS landed at or after the divergence's pivot bar (so the sequence really
+// did run div -> SOS) and is still inside the staleness window, adopt it.
+if newDivL and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(lastBullSosBar) and lastBullSosBar >= lastBullDivBar and time - lastBullSosTime <= aplusWindow * 60000
+    aplusL_sosBar := lastBullSosBar
+
 bool newSweepS = recentBSL != "" and recentBSL_bar != recentBSL_bar[1] and not sessionGapBar
 bool newDivS   = not na(lastBearDivBar) and lastBearDivBar != lastBearDivBar[1]
 
@@ -3681,6 +3699,10 @@ if newSweepS and aplusS_canArm
 if newDivS and aplusS_canArm
     aplusS_sweepBar := lastBearDivBar
     aplusS_armTime  := time
+
+// Mirror of the bull retro-link above.
+if newDivS and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(lastBearSosBar) and lastBearSosBar >= lastBearDivBar and time - lastBearSosTime <= aplusWindow * 60000
+    aplusS_sosBar := lastBearSosBar
 
 // POI latch while armed
 if not na(aplusL_sweepBar)

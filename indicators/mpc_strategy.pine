@@ -3646,6 +3646,15 @@ if macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
         poiLongNow  := low <= macro_extreme - _mRp * 0.618 and high >= macro_extreme - _mRp * 0.886
         poiShortNow := high >= macro_extreme - _mRp * 0.382
 
+// Last SOS on each side, remembered so a divergence that confirms LATE can still
+// reach it (see the retro-link below).
+var int lastBullSosBar = na
+var int lastBearSosBar = na
+if st.bull_sos
+    lastBullSosBar := bar_index
+if st.bear_sos
+    lastBearSosBar := bar_index
+
 // Stage 1 — arm on the EXACT bar a NEW sweep or NEW divergence fires (true edge
 // triggers, not "is this condition currently true"). recentSSL_bar/recentBSL_bar
 // are recomputed fresh each bar from the liquidity sources and only CHANGE VALUE
@@ -3660,12 +3669,27 @@ if newSweepL
 if newDivL
     aplusL_sweepBar := lastBullDivBar
 
+// Retro-link — a divergence pivot only CONFIRMS divPivotLen bars after the low it
+// marks. On a fast V-reversal the SOS fires inside that lag, so by the time the
+// divergence arms Stage 1 the SOS has already come and gone and the forward-only
+// Stage 2 check below never sees it — the setup sticks at 1/3 and never trades. If
+// the last bull SOS landed at or after the divergence's pivot bar (so the sequence
+// really did run div -> SOS) and is still inside the staleness window, adopt it.
+bool retroLinkL = newDivL and na(aplusL_sosBar) and not na(lastBullSosBar) and lastBullSosBar >= lastBullDivBar and bar_index - lastBullSosBar <= aplusWindow
+if retroLinkL
+    aplusL_sosBar := lastBullSosBar
+
 bool newSweepS = recentBSL != "" and recentBSL_bar != recentBSL_bar[1]
 bool newDivS   = not na(lastBearDivBar) and lastBearDivBar != lastBearDivBar[1]
 if newSweepS
     aplusS_sweepBar := recentBSL_bar
 if newDivS
     aplusS_sweepBar := lastBearDivBar
+
+// Mirror of the bull retro-link above.
+bool retroLinkS = newDivS and na(aplusS_sosBar) and not na(lastBearSosBar) and lastBearSosBar >= lastBearDivBar and bar_index - lastBearSosBar <= aplusWindow
+if retroLinkS
+    aplusS_sosBar := lastBearSosBar
 
 // POI latch while armed
 if not na(aplusL_sweepBar)
@@ -4093,6 +4117,16 @@ if st.bull_sos
 if st.bear_sos
     sosS_swp := not na(armSwpS) and bar_index - armSwpS <= aplusWindow
     sosS_div := not na(armDivS) and bar_index - armDivS <= aplusWindow
+
+// Retro-linked SOS: the snapshot above never ran for it, because on the SOS bar the
+// divergence had not confirmed yet. Take the snapshot now, measured against the SOS
+// bar rather than this one, so a divergence-armed setup can actually trade.
+if retroLinkL
+    sosL_div := true
+    sosL_swp := not na(armSwpL) and armSwpL <= lastBullSosBar and lastBullSosBar - armSwpL <= aplusWindow
+if retroLinkS
+    sosS_div := true
+    sosS_swp := not na(armSwpS) and armSwpS <= lastBearSosBar and lastBearSosBar - armSwpS <= aplusWindow
 
 bool armOkL = (execArmSweep and sosL_swp) or (execArmDiv and sosL_div)
 bool armOkS = (execArmSweep and sosS_swp) or (execArmDiv and sosS_div)
