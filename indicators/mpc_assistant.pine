@@ -3940,6 +3940,17 @@ if not na(aplusS_sosBar)
 else if not na(aplusS_sweepBar)
     aplusS_stage := 1
 
+// ── REV SETUP alert — Stage 3 EARLY (0.5 tapped on the SOS leg) ──
+// Fires once when a tracked A+ sequence first reaches the EARLY tier (price has
+// tapped the 0.5 retracement after the SOS). Edge-triggered on the confirmed bar
+// so it fires on the transition INTO EARLY, not every bar it stays there.
+bool aplusL_early = aplusL_stage == 3
+bool aplusS_early = aplusS_stage == 3
+if barstate.isconfirmed and aplusL_early and not aplusL_early[1]
+    alert("MPC-JARVIS: REV SETUP EARLY LONG (0.5 tap) — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar)
+if barstate.isconfirmed and aplusS_early and not aplusS_early[1]
+    alert("MPC-JARVIS: REV SETUP EARLY SHORT (0.5 tap) — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar)
+
 
 // CONT stages — BOS, await retrace, then READY when price reaches the E1-E4
 // entry zone (0.618+). No 0.5 early tier for continuations. Suppressed entirely
