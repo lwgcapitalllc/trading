@@ -148,6 +148,13 @@ var GRP_APLUS = "A+ Setup"
 int aplusWindow = input.int(1440, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop, measured in TIME rather than bars — a bar count is fragile across timeframes (300 bars is 5 hours on 1m but 12.5 days on 4H). The SOS must fire within this many minutes of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
 
 //============================================================
+//  A+ DEBUG (bar-replay diagnostics — no effect on trades)
+//============================================================
+var GRP_DEBUG = "A+ Debug"
+bool debugShow23 = input.bool(false, "Show 2-of-3 Confluence Setups", group = GRP_DEBUG, tooltip = "Marks only setups that confirmed 2 of the 3 A+ stages (Arm, SOS) but died before the 3rd (Zone/FVG retrace) ever came. Three arrows per setup, each pointing at the exact bar of that stage: green = confirmed, red = the one that never happened. Purely cosmetic — never changes trade results.")
+bool debugMarkNoFvg = input.bool(false, "Mark setups missed (no FVG)", group = GRP_DEBUG, tooltip = "Drops an orange 'NO FVG' label at every setup that had EVERYTHING lined up to trade — arm source enabled, SOS confirmed, price inside the 0.5-0.886 entry band, not vetoed, not late-day, flat — but never got an entry because NO fair-value gap overlapped the band. These are the trades you're missing purely for lack of an FVG. The count also appears in the Result Stats table. Purely cosmetic — never changes trade results.")
+
+//============================================================
 //  RSI DIVERGENCE INPUTS
 //============================================================
 var GRP_DIV = "RSI Divergence"
@@ -3646,6 +3653,33 @@ var bool aplusS_half     = false
 var bool aplusS_618      = false
 var int  contS_bosBar    = na
 
+// Debug only — remembers WHICH source currently holds the Stage-1 slot on each
+// side, so the 2-of-3 debug marker can label the arm correctly. Read-only
+// bookkeeping; nothing here feeds the engine or trade logic.
+var string armHolderL = ""   // "SWP" or "DIV"
+var string armHolderS = ""
+
+// Debug callout offset — keeps the box clear of price (% of price, not ATR,
+// so it stays put instead of collapsing in quiet chop).
+float _dbgOff = close * 0.006
+
+// One 2-of-3 debug callout = ONE dark box (same style as the existing WIN/
+// SCRATCH trade box) listing all three A+ stages, plus three individually
+// colored leader lines running from that same box out to the exact bar each
+// stage happened on — green for the two that confirmed, red for the one that
+// never came, arrowhead landing ON the bar. Mirrors the approved mockup.
+f_dbg23Box(int labelBar, float labelY, string side, string armSrc, int armBar, float armPx, int sosBar, float sosPx, int zoneBar, float zonePx) =>
+    color grn = color.new(color.green, 0)
+    color red = color.new(color.red, 0)
+    string body = "2/3 SETUP · " + side +
+      "\n① Arm: " + armSrc + " ✓" +
+      "\n② SOS ✓" +
+      "\n③ Zone/FVG ✗ never reached"
+    label.new(labelBar, labelY, body, color = color.new(#0a0a14, 10), textcolor = color.new(#d7d9e0, 0), style = label.style_label_left, size = size.small)
+    line.new(labelBar, labelY, armBar,  armPx,  color = grn, style = line.style_arrow_right, width = 1)
+    line.new(labelBar, labelY, sosBar,  sosPx,  color = grn, style = line.style_arrow_right, width = 1)
+    line.new(labelBar, labelY, zoneBar, zonePx, color = red, style = line.style_arrow_right, width = 1)
+
 // HTF POI — the Cycle Fib's zones, tracked on every timeframe (drawing stays gated):
 // longs care about the DISCOUNT (0.618-0.886 of the cycle), shorts about the
 // PREMIUM (0.382 up to the extreme). Latched while a sweep is armed, so a deeper
@@ -3707,9 +3741,11 @@ bool aplusL_canArmDiv = na(aplusL_sosBar)
 if newSweepL and aplusL_canArm
     aplusL_sweepBar := recentSSL_bar
     aplusL_armTime  := time
+    armHolderL := "SWP"
 if newDivL and aplusL_canArmDiv
     aplusL_sweepBar := lastBullDivBar
     aplusL_armTime  := time
+    armHolderL := "DIV"
 
 // Retro-link — a divergence pivot only CONFIRMS divPivotLen bars after the low it
 // marks. On a fast V-reversal the SOS fires inside that lag, so by the time the
@@ -3737,9 +3773,11 @@ bool aplusS_canArmDiv = na(aplusS_sosBar)
 if newSweepS and aplusS_canArm
     aplusS_sweepBar := recentBSL_bar
     aplusS_armTime  := time
+    armHolderS := "SWP"
 if newDivS and aplusS_canArmDiv
     aplusS_sweepBar := lastBearDivBar
     aplusS_armTime  := time
+    armHolderS := "DIV"
 
 // Mirror of the bull retro-link above.
 bool retroLinkS = newDivS and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(lastBearSosBar) and lastBearSosBar >= lastBearDivBar and time - lastBearSosTime <= aplusWindow * 60000
@@ -3768,9 +3806,11 @@ if st.bear_sos and not na(aplusS_armTime) and time - aplusS_armTime <= aplusWind
 if not sessionGapBar and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(aplusL_armTime) and time - aplusL_armTime > aplusWindow * 60000
     aplusL_sweepBar := na
     aplusL_armTime := na
+    armHolderL := ""
 if not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(aplusS_armTime) and time - aplusS_armTime > aplusWindow * 60000
     aplusS_sweepBar := na
     aplusS_armTime := na
+    armHolderS := ""
 
 // Sequence death. Opposite SOS kills the A+ tracking on that side — the trend
 // it was riding just reversed. ANY SOS (either direction) also clears CONT on
@@ -3781,8 +3821,10 @@ if not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not n
 // until a genuine new BOS re-arms CONT on the far side of that fresh leg.
 if st.bear_sos and not sessionGapBar
     aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false, aplusL_armTime := na
+    armHolderL := ""
 if st.bull_sos and not sessionGapBar
     aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false, aplusS_armTime := na
+    armHolderS := ""
 if (st.bull_sos or st.bear_sos) and not sessionGapBar
     contL_bosBar := na
     contS_bosBar := na
@@ -3799,9 +3841,11 @@ if (st.bull_sos or st.bear_sos) and not sessionGapBar
 if not na(aplusL_sosBar) and not sessionGapBar
     if (fibo_dir == 1 and fibo7Touched) or fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10) or (st.bull_bos and not st.bull_sos)
         aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false, aplusL_armTime := na
+        armHolderL := ""
 if not na(aplusS_sosBar) and not sessionGapBar
     if (fibo_dir == -1 and fibo7Touched) or fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10) or (st.bear_bos and not st.bear_sos)
         aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false, aplusS_armTime := na
+        armHolderS := ""
 
 // CONT trigger — simply the BOS, but ONLY when no A+ is currently tracked on
 // that side (not even sweep-armed). Runs AFTER A+ resolution above so a BOS
@@ -3854,6 +3898,38 @@ if not na(aplusS_sosBar)
     aplusS_stage := aplusS_618 ? 4 : aplusS_half ? 3 : 2
 else if not na(aplusS_sweepBar)
     aplusS_stage := 1
+
+// ── 2-of-3 confluence watch — catches a setup that confirmed Arm + SOS but
+// died before ever reaching the 3rd and final stage (Zone/FVG retrace).
+// Snapshot the arm/SOS bars the moment stage 2 starts: the engine clears
+// aplusL_sweepBar/aplusL_sosBar the instant the sequence dies, so by the time
+// we detect the death it's too late to ask it where those bars were.
+var bool   aplusL_watch23    = false
+var int    aplusL_armSnapBar = na
+var int    aplusL_sosSnapBar = na
+var string aplusL_armSnapSrc = ""
+if aplusL_stage == 2 and aplusL_stage[1] != 2
+    aplusL_watch23    := true
+    aplusL_armSnapBar := aplusL_sweepBar
+    aplusL_sosSnapBar := aplusL_sosBar
+    aplusL_armSnapSrc := armHolderL
+// Zone confirmed after all — not a miss, drop the watch here. The DEATH case
+// (stage fell back below 2) is fired further down, in the execution layer, so it
+// can respect the Arm-on-sweep / Arm-on-divergence toggles (declared only there).
+if aplusL_watch23 and aplusL_stage >= 3
+    aplusL_watch23 := false
+
+var bool   aplusS_watch23    = false
+var int    aplusS_armSnapBar = na
+var int    aplusS_sosSnapBar = na
+var string aplusS_armSnapSrc = ""
+if aplusS_stage == 2 and aplusS_stage[1] != 2
+    aplusS_watch23    := true
+    aplusS_armSnapBar := aplusS_sweepBar
+    aplusS_sosSnapBar := aplusS_sosBar
+    aplusS_armSnapSrc := armHolderS
+if aplusS_watch23 and aplusS_stage >= 3
+    aplusS_watch23 := false
 
 // CONT stages — BOS, await retrace, then READY when price reaches the E1-E4
 // entry zone (0.618+). No 0.5 early tier for continuations. Suppressed entirely
@@ -4244,6 +4320,25 @@ bool useDivS = execArmDiv   and sosS_div
 bool armOkL = useSwpL or useDivL
 bool armOkS = useSwpS or useDivS
 
+// ── 2-of-3 debug callout — DEATH case fired here (not where the watch is
+// snapshotted, up in the A+ section) so it obeys the SAME arm-source toggles the
+// strategy trades on. A setup whose Stage-1 arm was a SWEEP is only drawn when
+// "Arm on liquidity sweep" is on; a DIVERGENCE-armed one only when "Arm on RSI
+// divergence" is on. So with sweep off / divergence on, sweep-armed 2/3 setups
+// vanish from the chart exactly as they're excluded from trading.
+if aplusL_watch23 and aplusL_stage < 2
+    bool showL23 = debugShow23 and (aplusL_armSnapSrc == "DIV" ? execArmDiv : execArmSweep)
+    if showL23
+        f_dbg23Box(bar_index, low - _dbgOff * 2, "LONG", aplusL_armSnapSrc == "DIV" ? "Divergence" : "Sweep",
+          aplusL_armSnapBar, low[bar_index - aplusL_armSnapBar], aplusL_sosSnapBar, low[bar_index - aplusL_sosSnapBar], bar_index, low)
+    aplusL_watch23 := false
+if aplusS_watch23 and aplusS_stage < 2
+    bool showS23 = debugShow23 and (aplusS_armSnapSrc == "DIV" ? execArmDiv : execArmSweep)
+    if showS23
+        f_dbg23Box(bar_index, high + _dbgOff * 2, "SHORT", aplusS_armSnapSrc == "DIV" ? "Divergence" : "Sweep",
+          aplusS_armSnapBar, high[bar_index - aplusS_armSnapBar], aplusS_sosSnapBar, high[bar_index - aplusS_sosSnapBar], bar_index, high)
+    aplusS_watch23 := false
+
 // Confluence text — every line is printed because ITS OWN flag is true on the bar
 // the order was placed, never because the feature exists in the script. Nothing
 // in here is a fixed template.
@@ -4264,6 +4359,43 @@ f_conf(bool isLong, bool swp, bool div, string swpName, int sosAge, bool fvg, bo
 bool lateDayBlock = execNoLateDay and nyHour >= 16 and nyHour < 18
 bool longArmed  = execLongs  and armOkL and not lateDayBlock and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVeto  or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
 bool shortArmed = execShorts and armOkS and not lateDayBlock and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVeto or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+
+// ── MISSED-DUE-TO-NO-FVG counter ──────────────────────────────────────────────
+// A "missed" setup = every trade gate is satisfiable EXCEPT the FVG. Same
+// condition as longArmed/shortArmed but with na(edge) instead of not na(edge),
+// AND price actually inside the entry band (aplus*_half = 0.5 tapped) so we only
+// count genuine near-misses, not every pre-retrace bar. A per-leg latch survives
+// the death bar (the engine clears aplus*_sosBar / aplus*_618 the instant the
+// leg dies); the miss is booked when the leg dies still latched. If an FVG edge
+// EVER appears the latch clears — that is a no-fill, not an FVG-missing miss.
+var int  missedNoFvgL = 0,       var int  missedNoFvgS = 0
+var bool aplusL_fvgMiss = false, var bool aplusS_fvgMiss = false
+var int  aplusL_fvgMissBar = na, var int  aplusS_fvgMissBar = na
+
+bool longReadyNoFvg  = execLongs  and armOkL and not lateDayBlock and not na(aplusL_sosBar) and fibo_dir == 1  and na(longEdge)  and aplusL_half and (not longVeto  or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+bool shortReadyNoFvg = execShorts and armOkS and not lateDayBlock and not na(aplusS_sosBar) and fibo_dir == -1 and na(shortEdge) and aplusS_half and (not shortVeto or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+
+if longReadyNoFvg
+    aplusL_fvgMiss := true
+    aplusL_fvgMissBar := na(aplusL_fvgMissBar) ? bar_index : aplusL_fvgMissBar
+if aplusL_fvgMiss and (not na(longEdge) or (not na(tradedSosL) and aplusL_sosBar == tradedSosL))
+    aplusL_fvgMiss := false, aplusL_fvgMissBar := na
+if aplusL_fvgMiss and na(aplusL_sosBar)
+    missedNoFvgL := missedNoFvgL + 1
+    if debugMarkNoFvg
+        label.new(aplusL_fvgMissBar, low - _dbgOff * 2, "NO FVG\nlong missed", color = color.new(#FF9800, 15), textcolor = color.new(#FF9800, 0), style = label.style_label_up, size = size.small)
+    aplusL_fvgMiss := false, aplusL_fvgMissBar := na
+
+if shortReadyNoFvg
+    aplusS_fvgMiss := true
+    aplusS_fvgMissBar := na(aplusS_fvgMissBar) ? bar_index : aplusS_fvgMissBar
+if aplusS_fvgMiss and (not na(shortEdge) or (not na(tradedSosS) and aplusS_sosBar == tradedSosS))
+    aplusS_fvgMiss := false, aplusS_fvgMissBar := na
+if aplusS_fvgMiss and na(aplusS_sosBar)
+    missedNoFvgS := missedNoFvgS + 1
+    if debugMarkNoFvg
+        label.new(aplusS_fvgMissBar, high + _dbgOff * 2, "NO FVG\nshort missed", color = color.new(#FF9800, 15), textcolor = color.new(#FF9800, 0), style = label.style_label_down, size = size.small)
+    aplusS_fvgMiss := false, aplusS_fvgMissBar := na
 
 // ── Ladder select — which rungs this trade gets depends on how DEEP the resting
 //    limit sits. "Deep" = at or beyond the 0.618 fib (E1), i.e. one of the lower
@@ -4436,7 +4568,7 @@ f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1) =
                     // fills at the same price still read as two separate lines.
                     int xLbl = xBar + 3 + (p.fills - 1) * 9
                     line.new(nBar, xPx, xLbl, xPx, color = xc, style = line.style_dashed, width = 1)
-                    label.new(xLbl, xPx, " " + xId + "  " + str.tostring(xPx, format.mintick), color = color(na), textcolor = xc, style = label.style_label_left, size = size.tiny)
+                    label.new(xLbl, xPx, " " + xId + "  " + str.tostring(xPx, format.mintick), color = color(na), textcolor = xc, style = label.style_label_left, size = size.normal)
             p.seen := strategy.closedtrades
         // 3. While open → grow the box right
         if strategy.position_size != 0 and not na(p.bx)
@@ -4538,7 +4670,7 @@ if strategy.position_size < 0
 // TradingView counts a breakeven scratch as a WIN, because our BE stop sits a few
 // ticks past entry. This table splits the three real outcomes apart and reports
 // everything in R, so a "win" has to actually be worth something to count as one.
-var table statsTbl = table.new(position.top_right, 2, 8, bgcolor = color.new(#0a0a14, 15), border_color = color.new(#2a2a3a, 0), border_width = 1)
+var table statsTbl = table.new(position.top_right, 2, 9, bgcolor = color.new(#0a0a14, 15), border_color = color.new(#2a2a3a, 0), border_width = 1)
 
 f_statRow(int r, string k, string v, color c) =>
     table.cell(statsTbl, 0, r, k, text_color = color.new(#8a8a9a, 0), text_size = size.small, text_halign = text.align_left)
@@ -4560,5 +4692,106 @@ f_drawStats(array<float> s) =>
         f_statRow(5, "Win % (TV counts)", str.tostring(tot > 0 ? (w + sc) / tot * 100 : na, "#.#") + "%", color.new(#6a6a7a, 0))
         f_statRow(6, "Avg win / loss",    str.tostring(w > 0 ? swR / w : na, "#.##") + "R / " + str.tostring(l > 0 ? slR / l : na, "#.##") + "R", color.new(#d0d0e0, 0))
         f_statRow(7, "Total R  |  PF",    str.tostring(tR, "#.#") + "R  |  " + str.tostring(slR < 0 ? swR / math.abs(slR) : na, "#.##"), tR >= 0 ? color.new(#26A69A, 0) : color.new(#EF5350, 0))
+        f_statRow(8, "Missed (no FVG)",   str.tostring(missedNoFvgL + missedNoFvgS, "#") + "  (L " + str.tostring(missedNoFvgL, "#") + " / S " + str.tostring(missedNoFvgS, "#") + ")", color.new(#FFA726, 0))
 
 f_drawStats(stats)
+
+//============================================================
+//  DIAGNOSTIC LOG — full text trace for off-chart debugging
+//============================================================
+// Turns everything the strategy DOES into copy-pasteable text in TradingView's
+// Pine Logs tab (open it from the "⋮" menu on the Pine editor, or the Pine Logs
+// button at the bottom of the Strategy Tester). Select-all in that pane, paste
+// it to Claude, and the whole trade history is legible with no screenshot: every
+// entry with the exact confluences that armed it, every partial exit at its REAL
+// fill price and bar, the graded result in R, and every MISS — no-FVG, veto /
+// late-day block, and 2-of-3 death — each with its context. It reads engine +
+// execution state ONLY: it places no orders, draws nothing, touches no counter,
+// and cannot change a single trade or stat. Toggle off for a clean run.
+//
+// This is the one place built specifically so Claude can "see what you see" on
+// the chart as plain text. When a trade looks wrong on the chart, turn this on,
+// bar-replay (or run) across it, and paste the log lines for that trade.
+//
+// Line grammar (so a paste is self-describing):
+//   [ENTRY @bar]  a position opened, with its frozen SL/TP ladder + confluences
+//   [EXIT #i]     one partial leg (TP1/TP2/RUN) filled, at its true price + bar
+//   [RESULT]      the trade closed — WIN / LOSS / SCRATCH graded in R
+//   [MISS-NOFVG]  reached the entry band but no FVG overlapped it — no fill
+//   [MISS-2of3]   Arm + SOS confirmed, but the leg died before the zone retrace
+//   [BLOCK]       entry zone reached with a live edge, killed by veto / late-day
+//
+// The known "all three legs, same price, same bar, 1-bar duration" phantom-exit
+// bug (see BUG_exit_fill_price_mismatch.md) shows up directly here: three [EXIT]
+// lines sharing one fill price and one bar is exactly that shape.
+
+var GRP_DIAG = "Diagnostic Log"
+bool execDiagLog = input.bool(false, "Log every trade + miss to Pine Logs", group = GRP_DIAG, tooltip = "Writes one text line per event to the Pine Logs tab: entries (with the confluences that armed them), each partial exit at its true fill price, results in R, and every miss (no-FVG, veto/late-day block, 2-of-3 death). Copy the pane and paste it to Claude for a full off-chart trade audit. No effect on trades, stats or drawings.")
+
+// slot 0 = closed-trades already logged · slot 1/2 = last blocked long/short SOS bar (dedupe)
+var array<int> diagState = array.from(0, -1, -1)
+
+f_diagNum(float v) => na(v) ? "na" : str.tostring(v, format.mintick)
+
+// Whole trace lives in one function (its own toggle gate included) so the main
+// body pays for a single call — same CE10295 reason as f_drawTable / f_drawStats.
+// Everything it reads is a global declared above; the only state it writes is the
+// passed diagState array (mutated by reference, never a global reassignment).
+f_diag(array<int> ds) =>
+    if execDiagLog
+        // ── ENTRY — a position opened this bar. pendConf* already holds the arm
+        //    source, sweep name, SOS age, FVG/POI/DIV and deep/shallow snapshot. ──
+        if strategy.position_size != 0 and strategy.position_size[1] == 0
+            bool   isL  = strategy.position_size > 0
+            string conf = str.replace_all(isL ? pendConfL : pendConfS, "\n", " · ")
+            log.info("[ENTRY @" + str.tostring(bar_index) + "] " + (isL ? "LONG" : "SHORT") +
+              "  entry=" + f_diagNum(isL ? lEntry : sEntry) + " SL=" + f_diagNum(isL ? lSL : sSL) +
+              " TP1=" + f_diagNum(isL ? lTP1 : sTP1) + " TP2=" + f_diagNum(isL ? lTP2 : sTP2) +
+              " qty=" + str.tostring(math.abs(strategy.position_size), "#.###") + "  | " + conf)
+        // ── EXITS — drain every partial leg that filled since the last bar, each
+        //    at the price the engine REALLY got (from the closed-trades log, not
+        //    the fib level it aimed at). ──
+        if strategy.closedtrades > array.get(ds, 0)
+            for i = array.get(ds, 0) to strategy.closedtrades - 1
+                int   eBar = strategy.closedtrades.entry_bar_index(i)
+                int   xBar = strategy.closedtrades.exit_bar_index(i)
+                log.info("[EXIT #" + str.tostring(i) + "] " + strategy.closedtrades.exit_id(i) +
+                  "  fill=" + f_diagNum(strategy.closedtrades.exit_price(i)) +
+                  "  (entry " + f_diagNum(strategy.closedtrades.entry_price(i)) + " @" + str.tostring(eBar) +
+                  " → exit @" + str.tostring(xBar) + ", " + str.tostring(xBar - eBar) + " bars)" +
+                  "  pnl=$" + str.tostring(strategy.closedtrades.profit(i), "#.##"))
+            array.set(ds, 0, strategy.closedtrades)
+        // ── RESULT — the trade closed this bar (closedR is the execution layer's
+        //    own R grade, against the SAME scratch band the stats table uses). ──
+        if not na(closedR)
+            string verdict = math.abs(closedR) <= execScratchR ? "SCRATCH" : closedR > 0 ? "WIN" : "LOSS"
+            log.info("[RESULT] " + (strategy.position_size[1] > 0 ? "LONG " : "SHORT ") + verdict + "  " +
+              (closedR >= 0 ? "+" : "") + str.tostring(closedR, "#.##") + "R  | equity=$" + str.tostring(strategy.equity, "#.##"))
+        // ── MISS: no FVG — the execution layer just booked one (counter ticked). ──
+        if missedNoFvgL != missedNoFvgL[1]
+            log.info("[MISS-NOFVG] LONG @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
+        if missedNoFvgS != missedNoFvgS[1]
+            log.info("[MISS-NOFVG] SHORT @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
+        // ── MISS: 2-of-3 death — the watch flag cleared with the stage still below
+        //    2 (Arm + SOS were in, the zone retrace never came). ──
+        if aplusL_watch23[1] and not aplusL_watch23 and aplusL_stage < 2
+            log.info("[MISS-2of3] LONG — Arm(" + aplusL_armSnapSrc + ") ✓ + SOS ✓ (arm@" + str.tostring(aplusL_armSnapBar) + " sos@" + str.tostring(aplusL_sosSnapBar) + "), died before the zone/FVG retrace ever arrived.")
+        if aplusS_watch23[1] and not aplusS_watch23 and aplusS_stage < 2
+            log.info("[MISS-2of3] SHORT — Arm(" + aplusS_armSnapSrc + ") ✓ + SOS ✓ (arm@" + str.tostring(aplusS_armSnapBar) + " sos@" + str.tostring(aplusS_sosSnapBar) + "), died before the zone/FVG retrace ever arrived.")
+        // ── MISS: blocked at the entry zone — everything for a fill was satisfiable
+        //    EXCEPT a live veto or the final-hour rule. Deduped by SOS bar (via the
+        //    diagState array) so each blocked setup logs exactly once. ──
+        bool lReadyBase = execLongs and armOkL and not na(aplusL_sosBar) and fibo_dir == 1 and not na(longEdge) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+        bool lBlkVeto = lReadyBase and not lateDayBlock and longVeto and execRespectVeto
+        bool lBlkLate = lReadyBase and lateDayBlock
+        if (lBlkVeto or lBlkLate) and aplusL_sosBar != array.get(ds, 1)
+            array.set(ds, 1, aplusL_sosBar)
+            log.info("[BLOCK] LONG @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (lBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
+        bool sReadyBase = execShorts and armOkS and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+        bool sBlkVeto = sReadyBase and not lateDayBlock and shortVeto and execRespectVeto
+        bool sBlkLate = sReadyBase and lateDayBlock
+        if (sBlkVeto or sBlkLate) and aplusS_sosBar != array.get(ds, 2)
+            array.set(ds, 2, aplusS_sosBar)
+            log.info("[BLOCK] SHORT @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (sBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
+
+f_diag(diagState)

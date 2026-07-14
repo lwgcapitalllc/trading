@@ -112,12 +112,13 @@ method extendOBs(array<OrderBlock> arr) =>
 //  FAIR VALUE GAPS (FVG) INPUTS
 //============================================================
 var GRP_FVG = "Fair Value Gaps"
-bool  showFVGInput      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps left by clean 3-candle displacements only: three same-direction candles with progressively higher (or lower) closes. A gap disappears the moment price taps it.", display = display.none)
+bool  showFVGInput      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps: any 3-candle imbalance where bar A and bar C never overlap and the middle bar closed past the gap (the LuxAlgo definition). Gaps below the size threshold are ignored. A gap is removed only when a candle CLOSES fully past it.", display = display.none)
 bool showFVG = showTradeTools and showFVGInput
 bool  fvgDirOnly   = input.bool(true, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
 color fvgBullColor = input.color(color.new(color.gray, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVGInput, display = display.none)
 color fvgBearColor = input.color(color.new(color.gray, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVGInput, display = display.none)
-int   fvgMinTicks  = input.int(0, "Minimum Gap Size (ticks)", minval = 0, maxval = 1000, group = GRP_FVG, active = showFVGInput, tooltip = "Gaps smaller than this are ignored. 0 = no size filter.", display = display.none)
+bool  fvgAutoThresh = input.bool(true, "Auto Threshold", group = GRP_FVG, active = showFVGInput, tooltip = "Scale the minimum gap size to this symbol's own volatility — the running average of each bar's body move in % (the LuxAlgo 'Auto' method). Overrides the manual Threshold % below.", display = display.none)
+float fvgThreshPct  = input.float(0.0, "Threshold %", minval = 0.0, step = 0.1, group = GRP_FVG, active = showFVGInput, tooltip = "Manual minimum gap size as a percent of price. Only used when Auto Threshold is OFF. 0 = keep every gap.", display = display.none)
 int   fvgMaxCount  = input.int(3, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
 
 //============================================================
@@ -1792,7 +1793,8 @@ if internalActive and not na(i_sw_line)
 // (low > high[2]). Bearish is the mirror.
 // Lifecycle: gaps are NOT wiped on BOS/SOS — the impulse leg that breaks structure
 // is exactly what leaves the gaps, and the retracement back into them is the fib
-// entry confluence. A gap is deleted only when price fully fills it; chart clutter
+// entry confluence. A gap is deleted only when a candle CLOSES fully past it (a
+// wick into the gap leaves it alive); chart clutter
 // is bounded by the Max Active FVGs cap (oldest dropped first). The optional
 // directional filter hides (not deletes) gaps that oppose the current external
 // structure direction, so they reappear if direction flips back.
@@ -1817,15 +1819,19 @@ if not showFVG and array.size(fvgBoxes) > 0
     f_fvgClearAll()
 
 // ── Detection (confirmed bars only, so live wicks can't paint phantom gaps) ──
-// Clean displacement required: all three candles must close in the displacement
-// direction with progressively higher (bullish) or lower (bearish) closes. A gap
-// left by a mixed or choppy sequence is ignored — only clear one-way impulses count.
+// The FVG is the 3-candle imbalance itself (LuxAlgo definition): bar A and bar C
+// never overlap and the middle bar's close cleared the gap. No "clean impulse"
+// body/colour rule — any 3 bars that leave a big-enough gap qualify.
+// Threshold (LuxAlgo method): Auto = the running mean of each bar's body move in %,
+// else the manual Threshold %. Computed every bar so its history stays consistent.
+float fvgDeltaPer  = (close - open) / open * 100
+float fvgThreshold = fvgAutoThresh ? ta.cum(math.abs(fvgDeltaPer)) / bar_index : fvgThreshPct
 if showFVG and barstate.isconfirmed and bar_index >= 2
-    float fvgMinSize = fvgMinTicks * syminfo.mintick
-    bool bullCleanImpulse = close > open and close[1] > open[1] and close[2] > open[2] and close > close[1] and close[1] > close[2]
-    bool bearCleanImpulse = close < open and close[1] < open[1] and close[2] < open[2] and close < close[1] and close[1] < close[2]
-    // Bullish: gap between two bars ago's high and this bar's low
-    if bullCleanImpulse and low > high[2] and (low - high[2]) >= fvgMinSize
+    // Bullish: gap between two bars ago's high and this bar's low; middle bar closed above it
+    bool bullFvg = low > high[2] and close[1] > high[2] and (low - high[2]) / high[2] * 100 > fvgThreshold
+    // Bearish: mirror
+    bool bearFvg = high < low[2] and close[1] < low[2] and (low[2] - high) / low[2] * 100 > fvgThreshold
+    if bullFvg
         box b = box.new(bar_index - 1, low, bar_index, high[2], bgcolor = fvgBullColor, border_color = color(na), text = "FVG", text_color = color.new(color.gray, 30), text_size = size.tiny, text_halign = text.align_right)
         array.push(fvgBoxes, b)
         array.push(fvgTops, low)
@@ -1833,7 +1839,7 @@ if showFVG and barstate.isconfirmed and bar_index >= 2
         array.push(fvgIsBull, true)
         array.push(fvgBorn, bar_index)
     // Bearish: gap between two bars ago's low and this bar's high
-    if bearCleanImpulse and high < low[2] and (low[2] - high) >= fvgMinSize
+    if bearFvg
         box b = box.new(bar_index - 1, low[2], bar_index, high, bgcolor = fvgBearColor, border_color = color(na), text = "FVG", text_color = color.new(color.gray, 30), text_size = size.tiny, text_halign = text.align_right)
         array.push(fvgBoxes, b)
         array.push(fvgTops, low[2])
@@ -1854,11 +1860,13 @@ if showFVG and array.size(fvgBoxes) > 0
         bool  isBull = array.get(fvgIsBull, i)
         float gTop   = array.get(fvgTops, i)
         float gBot   = array.get(fvgBots, i)
-        // Mitigated = price tapped the gap at all (touched its near edge).
-        // Skipped on the creation bar itself: a bullish gap's top IS that bar's
-        // low, so without this guard every gap would self-delete instantly.
-        bool tapped = bar_index > array.get(fvgBorn, i) and (isBull ? low <= gTop : high >= gBot)
-        if tapped
+        // Mitigated = a candle CLOSES fully past the gap (through its far edge):
+        // a bull gap dies only on a close at/below its bottom, a bear gap on a
+        // close at/above its top — a mere wick into the gap no longer removes it.
+        // Decided on the confirmed close so a live intrabar print can't delete it,
+        // and skipped on the creation bar itself.
+        bool closedPast = barstate.isconfirmed and bar_index > array.get(fvgBorn, i) and (isBull ? close <= gBot : close >= gTop)
+        if closedPast
             box.delete(array.get(fvgBoxes, i))
             array.remove(fvgBoxes, i)
             array.remove(fvgTops, i)
