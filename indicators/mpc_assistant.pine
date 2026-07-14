@@ -3339,6 +3339,30 @@ var int liq_ash_bar = na, var int liq_asl_bar = na
 var int liq_ldh_bar = na, var int liq_ldl_bar = na
 var int liq_nyh_bar = na, var int liq_nyl_bar = na
 
+// Each tier's sweep memory lives exactly as long as THAT tier's pool is the
+// current one — clear it the moment the pool refreshes (its level is redrawn),
+// NOT on a fixed clock. This keeps the LIQ BSL/SSL rows tied to the live pool
+// for a session/daily/H4 bias read: never stale, and never wiped before the
+// pool it belongs to has actually rolled. Aligns with when the drawn levels
+// themselves reset. Placed BEFORE the sweep-activation block so a sweep firing
+// on the very same refresh bar still registers. (H4 is handled per H4 bar below.)
+//   Daily pool rolls at the exchange daily open (hasDailyTimeChanged), NOT NY
+//   midnight — for gold that's ~17:00-18:00 NY.
+if hasDailyTimeChanged
+    liq_dh := "", liq_dh_px := na, liq_dh_bar := na
+    liq_dl := "", liq_dl_px := na, liq_dl_bar := na
+//   Each session pool rolls when its NEW high/low is established, i.e. on the
+//   bar that session closes and the next range starts being tracked.
+if not inAsia and inAsia[1]
+    liq_ash := "", liq_ash_px := na, liq_ash_bar := na
+    liq_asl := "", liq_asl_px := na, liq_asl_bar := na
+if not inLondon and inLondon[1]
+    liq_ldh := "", liq_ldh_px := na, liq_ldh_bar := na
+    liq_ldl := "", liq_ldl_px := na, liq_ldl_bar := na
+if not inNY and inNY[1]
+    liq_nyh := "", liq_nyh_px := na, liq_nyh_bar := na
+    liq_nyl := "", liq_nyl_px := na, liq_nyl_bar := na
+
 // ── Activate on sweep — stays active until replaced by next sweep or session reset ──
 if barstate.isconfirmed
     if i_showH4Sweep and i_showLiquidity
