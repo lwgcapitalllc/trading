@@ -3655,7 +3655,12 @@ var int  aplusL_sosBar   = na
 var bool aplusL_poi      = false
 var int  aplusL_armTime  = na    // timestamp the sweep/div arm fired — window is measured in TIME, not bars
 var bool aplusL_half     = false // A+-owned 0.5 latch — survives fib redraw at session gap
-var bool aplusL_618      = false // A+-owned 0.618 latch
+var bool aplusL_618      = false // A+-owned 0.618 latch (E1)
+var bool aplusL_702      = false // A+-owned 0.702 latch (E2)
+var bool aplusL_786      = false // A+-owned 0.786 latch (E3)
+var bool aplusL_886      = false // A+-owned 0.886 latch (E4)
+var bool aplusL_fvgTap   = false // price actually traded INTO a matching FVG in the zone
+var bool aplusL_szTap    = false // price actually traded INTO the matching Sniper Zone
 var string aplusL_armSrc = ""    // what armed Stage 1: "Div" or "Sweep" (shown on the 1/3 row)
 var int  contL_bosBar    = na    // CONT trade trigger: external BOS with no A+ tracked on that side
 var int  aplusS_sweepBar = na
@@ -3664,6 +3669,11 @@ var bool aplusS_poi      = false
 var int  aplusS_armTime  = na
 var bool aplusS_half     = false
 var bool aplusS_618      = false
+var bool aplusS_702      = false
+var bool aplusS_786      = false
+var bool aplusS_886      = false
+var bool aplusS_fvgTap   = false
+var bool aplusS_szTap    = false
 var string aplusS_armSrc = ""    // what armed Stage 1: "Div" or "Sweep"
 var int  contS_bosBar    = na
 
@@ -3837,21 +3847,60 @@ if not na(contS_bosBar)
     if (fibo_dir == -1 and fibo7Touched) or fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10)
         contS_bosBar := na
 
+// Live "tapped into" detection for THIS bar — did price actually trade inside a
+// matching FVG in the entry zone, or inside the matching Sniper Zone (not merely
+// have one present nearby). Latched below so the table can report exactly which
+// confluence price reached, even after the gap is later mitigated.
+bool aplusL_fvgInNow = false
+bool aplusS_fvgInNow = false
+if array.size(fvgBoxes) > 0 and not na(fiboP2) and not na(fiboP6)
+    for _fj = 0 to array.size(fvgBoxes) - 1
+        float _gTt = array.get(fvgTops, _fj)
+        float _gBt = array.get(fvgBots, _fj)
+        bool  _priceIn = low <= _gTt and high >= _gBt
+        if array.get(fvgIsBull, _fj)
+            if fibo_dir == 1 and _gBt <= fiboP2 and _gTt >= fiboP6 and _priceIn
+                aplusL_fvgInNow := true
+        else
+            if fibo_dir == -1 and _gTt >= fiboP2 and _gBt <= fiboP6 and _priceIn
+                aplusS_fvgInNow := true
+// SZ tap is a PRECISE per-bar geometric test (price range overlaps the sniper
+// box THIS bar), not the global sniperZoneActive latch — that latch can already
+// be true from a tap that happened before the entry context, which falsely
+// stamped "+ SZ" onto setups whose zone was never actually reached on the retrace.
+bool _szTapNow = not na(sniperZoneTop) and not na(sniperZoneBot) and low <= sniperZoneTop and high >= sniperZoneBot
+bool aplusL_szInNow = _szTapNow and sz_bullish
+bool aplusS_szInNow = _szTapNow and not sz_bullish
+
 // Stage 3 — entry zone progress on the SOS leg's fib
 // EARLY = 0.5 tapped inbound, READY = 0.618 reached (E1-E3 zone live)
-// Latch the A+'s own 0.5/0.618 progress while its SOS is live. These persist
-// through a fib-origin redraw (which happens at the session gap and would
-// otherwise reset the global fiboHalfReached/618 flags, dropping EARLY→2/3).
+// Latch the A+'s own 0.5/0.618/0.702/0.786/0.886 progress + which confluence was
+// actually tapped, while its SOS is live. These persist through a fib-origin
+// redraw (session gap) that would otherwise reset the global touched flags.
 if not na(aplusL_sosBar)
-    aplusL_half := aplusL_half or fiboHalfReached
-    aplusL_618  := aplusL_618  or fibo618EverReached
+    aplusL_half   := aplusL_half   or fiboHalfReached
+    aplusL_618    := aplusL_618    or fibo618EverReached
+    aplusL_702    := aplusL_702    or fibo4Touched
+    aplusL_786    := aplusL_786    or fibo5Touched
+    aplusL_886    := aplusL_886    or fibo6Touched
+    aplusL_fvgTap := aplusL_fvgTap or aplusL_fvgInNow
+    aplusL_szTap  := aplusL_szTap  or aplusL_szInNow
 else
     aplusL_half := false, aplusL_618 := false
+    aplusL_702 := false, aplusL_786 := false, aplusL_886 := false
+    aplusL_fvgTap := false, aplusL_szTap := false
 if not na(aplusS_sosBar)
-    aplusS_half := aplusS_half or fiboHalfReached
-    aplusS_618  := aplusS_618  or fibo618EverReached
+    aplusS_half   := aplusS_half   or fiboHalfReached
+    aplusS_618    := aplusS_618    or fibo618EverReached
+    aplusS_702    := aplusS_702    or fibo4Touched
+    aplusS_786    := aplusS_786    or fibo5Touched
+    aplusS_886    := aplusS_886    or fibo6Touched
+    aplusS_fvgTap := aplusS_fvgTap or aplusS_fvgInNow
+    aplusS_szTap  := aplusS_szTap  or aplusS_szInNow
 else
     aplusS_half := false, aplusS_618 := false
+    aplusS_702 := false, aplusS_786 := false, aplusS_886 := false
+    aplusS_fvgTap := false, aplusS_szTap := false
 
 // Stage 2+ is defined by SOS presence alone (not fibo_dir, which flickers at
 // the daily rollover and was resetting live setups back to 1/3 at the gap).
@@ -3894,6 +3943,12 @@ if array.size(fvgBoxes) > 0 and not na(fiboP2) and not na(fiboP6)
             // bearish zone: prices from fiboP2 (0.5) up to fiboP6 (0.886)
             if fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6
                 aplusS_fvg := true
+
+// Deepest fib entry level price has tapped on the retrace — deeper implies the
+// shallower ones were already tapped, so this single label names how far in
+// price reached (E1=0.618, E2=0.702, E3=0.786, E4=0.886; 0.5 is the early tier).
+f_aplusEntryLvl(bool half, bool e618, bool e702, bool e786, bool e886) =>
+    e886 ? "0.886" : e786 ? "0.786" : e702 ? "0.702" : e618 ? "0.618" : half ? "0.5" : "entry"
 
 if showConfTable and barstate.islast
     // Header
@@ -3952,13 +4007,24 @@ if showConfTable and barstate.islast
             color seqCol = seqIsLong ? JARVIS_SSL : JARVIS_BSL
             string seqSide = seqIsLong ? "LONG" : "SHORT"
             string seqSrc  = seqIsLong ? aplusL_armSrc : aplusS_armSrc
+            // seqFvg / seqSz = a matching FVG / Sniper Zone is PRESENT in the entry
+            // zone (unchanged READY gate). seqFvgT / seqSzT = price actually traded
+            // INTO it — that's what the table reports as tapped.
             bool  seqFvg  = seqIsLong ? aplusL_fvg : aplusS_fvg
             bool  seqSz   = not na(sniperZoneTop) and (seqIsLong ? sz_bullish : not sz_bullish)
+            bool  seqFvgT = seqIsLong ? aplusL_fvgTap : aplusS_fvgTap
+            bool  seqSzT  = seqIsLong ? aplusL_szTap  : aplusS_szTap
             bool  seqPoi  = seqIsLong ? aplusL_poi : aplusS_poi
             bool  seqDiv  = seqIsLong ? bullDivActive : bearDivActive
-            string poiTag = seqPoi ? " + POI" : ""
+            // Specific fib level tapped on the retrace (0.5 / 0.618 / 0.702 / 0.786 / 0.886)
+            string seqLvl = seqIsLong ? f_aplusEntryLvl(aplusL_half, aplusL_618, aplusL_702, aplusL_786, aplusL_886) : f_aplusEntryLvl(aplusS_half, aplusS_618, aplusS_702, aplusS_786, aplusS_886)
+            // Cycle POI = price is in the higher-timeframe Cycle Fib's discount
+            // (long) / premium (short) zone — a top-down location confirmation,
+            // distinct from the local SOS-leg fib entry above.
+            string poiTag = seqPoi ? " + Cycle POI" : ""
             string divTag = seqDiv ? " + DIV" : ""
-            string locTag = (seqFvg and seqSz) ? " + FVG + SZ" : seqFvg ? " + FVG" : seqSz ? " + SZ" : ""
+            // Dynamic confluence tag — names exactly what price TAPPED (FVG / SZ)
+            string locTag = (seqFvgT and seqSzT) ? " + FVG + SZ" : seqFvgT ? " + FVG" : seqSzT ? " + SZ" : ""
             // HTF disagreement warning — shown on the detail line so the setup
             // still displays but flags that it's fighting the higher timeframe.
             bool seqHtfWarn = aplusHtfWarn and (seqIsLong ? htfDisagreeL : htfDisagreeS)
@@ -3967,14 +4033,17 @@ if showConfTable and barstate.islast
             // Optional LTF trigger: require an internal shift
             // (iSOS/iBOS) in the trade direction before declaring READY.
             bool seqInt = int_struct_valid and (seqIsLong ? str.contains(int_struct, "▲") : str.contains(int_struct, "▼"))
-            bool locOk  = (seqFvg or seqSz) and (not aplusReqInt or seqInt)
+            // READY now requires price to have ACTUALLY tapped the FVG/SZ (seqFvgT/
+            // seqSzT), not merely have one present in the zone — a stricter, higher-
+            // conviction entry trigger.
+            bool locOk  = (seqFvgT or seqSzT) and (not aplusReqInt or seqInt)
             string intTag = aplusReqInt ? (seqInt ? " + INT" : "") : ""
             if seqStage == 4 and locOk
-                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqHtfWarn ? JARVIS_YELLOW : seqCol, seqHtfWarn ? "E1 zone" + htfTag : "E1 zone" + locTag + intTag + poiTag + divTag + htfTag)
+                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqHtfWarn ? JARVIS_YELLOW : seqCol, seqHtfWarn ? "Tapped " + seqLvl + htfTag : "Tapped " + seqLvl + locTag + intTag + poiTag + divTag + htfTag)
             else if seqStage == 4
-                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT ENTRY " + seqSide, JARVIS_YELLOW, (aplusReqInt and (seqFvg or seqSz) and not seqInt ? "E1 zone, await INT" : "E1 zone, no FVG/SZ yet") + poiTag + divTag + htfTag)
+                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT ENTRY " + seqSide, JARVIS_YELLOW, "Tapped " + seqLvl + (aplusReqInt and (seqFvgT or seqSzT) and not seqInt ? ", await INT" : ", no FVG/SZ tap yet") + poiTag + divTag + htfTag)
             else if seqStage == 3
-                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + locTag + poiTag + divTag + htfTag)
+                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "Tapped " + seqLvl + " early" + locTag + poiTag + divTag + htfTag)
             else if seqStage == 2
                 f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag + htfTag)
             else
