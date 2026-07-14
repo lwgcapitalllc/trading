@@ -124,9 +124,11 @@ int   fvgMaxCount  = input.int(3, "Max Active FVGs", minval = 1, maxval = 20, gr
 //  A+ SETUP SEQUENCE INPUTS
 //============================================================
 var GRP_APLUS = "A+ Setup"
+bool aplusDivOnly  = input.bool(false, "A+ Stage 1: Divergence Only (ignore sweeps)", group = GRP_APLUS, tooltip = "When ON, the A+ sequence arms Stage 1 ONLY on an RSI divergence — liquidity sweeps no longer start a setup. Requires 'Track RSI Divergence' to also be enabled, otherwise no divergences are detected and the A+ row stays on 'Pass'. When OFF (default), either a sweep or a divergence arms Stage 1, exactly as before.", display = display.none)
 bool aplusHtfWarn  = input.bool(true,  "Warn When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Shows a caution note on the A+ row when Weekly/Daily bias opposes the trade direction (e.g. a short while Weekly is Bullish). The setup still displays — it's an educational flag, not a block.", display = display.none)
 bool aplusHtfBlock = input.bool(false, "Block A+ When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Stronger version: if on, an A+ whose direction opposes HTF bias is suppressed entirely instead of just warned. Off by default.", display = display.none)
 bool aplusReqInt   = input.bool(false, "Require INT Confirmation for READY", group = GRP_APLUS, tooltip = "Holds the A+ at 'AWAIT ENTRY' until an iSOS/iBOS confirms in the trade direction inside the entry zone — a lower-timeframe structure trigger. Tighter, higher-probability entries at the cost of some fills. Off by default.", display = display.none)
+bool aplusIgnoreWindow = input.bool(false, "A+: Ignore Sweep→SOS Time Window (sequence only)", group = GRP_APLUS, tooltip = "When ON, the Max Time window below is ignored entirely — the A+ sequence cares only about ORDER: once Stage 1 arms (a divergence in Div-Only mode, or a sweep/divergence otherwise), the NEXT same-side SOS advances it to 2/3 no matter how much time has passed. The arm never expires on time; it only clears on a real death (opposite-direction SOS, close past the fib 1.0, or TP3). Trade-off: if a same-side SOS never comes, that side stays at 1/3 until an opposite SOS or invalidation clears it, and won't hand off to CONT meanwhile.", display = display.none)
 int aplusWindow = input.int(1440, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop, measured in TIME rather than bars — a bar count is fragile across timeframes (300 bars is 5 hours on 1m but 12.5 days on 4H). The SOS must fire within this many minutes of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
 
 //============================================================
@@ -209,7 +211,7 @@ int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1,
 var GRP_LIQ = "Liquidity Levels"
 var i_showLiquidityInput    = input.bool(true,  "Show All Liquidity Levels",  group = GRP_LIQ, display = display.none)
 bool i_showLiquidity = showTradeTools and i_showLiquidityInput
-var i_showLabels       = input.bool(true,  "Show Labels",                group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+bool i_showLabels      = true
 string liqLabelSize    = input.string("Small", "Liquidity Label Size",   group = GRP_LIQ, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = i_showLiquidityInput, display = display.none)
 bool i_currentDayOnly  = true   // always hide mitigated on new day
 bool i_showMitigated   = false  // never show mitigated dotted lines
@@ -228,6 +230,7 @@ bool i_showLondonHL    = i_showSessionHL
 bool i_showNYHL        = i_showSessionHL
 var i_showPWC          = input.bool(true,  "Previous Week Close (PWC)",   group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
 var i_showH4Sweep      = input.bool(true,  "H4 High/Low Sweep (SSH/BSL)", group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+bool showMitLiq        = input.bool(false, "Show Mitigated Liquidity Lines", group = GRP_LIQ, active = i_showLiquidityInput, tooltip = "When ON, a liquidity level that price breaks (mitigates) is kept on the chart as a dotted line running from the candle that formed it up to the exact bar where it was broken — for reference. When OFF (default), broken levels are removed. Applies to the Previous Day/Week highs & lows and the Asia/London/New York session highs & lows.", display = display.none)
 var i_lblOffset        = input.int(300,    "Label Y Offset (ticks)",       group = GRP_LIQ, minval = 0, maxval = 5000, step = 50, tooltip = "Moves HIGH labels up and LOW labels down by this many ticks to reduce overlap", display = display.none)
 var i_lineExtend       = input.int(50,     "Line Extension (bars)",         group = GRP_LIQ, minval = 5, maxval = 200, display = display.none)
 
@@ -1008,6 +1011,16 @@ newDay           = dayofweek(time, "America/New_York") != dayofweek(time[1], "Am
 
 [dailyTime,   dailyHigh,   dailyLow,   isLastDaily]   = request.security(syminfo.tickerid, "D", [time, high, low, barstate.islast], lookahead = barmerge.lookahead_on)
 [weeklyTime,  weeklyHigh,  weeklyLow,  isLastWeekly]  = request.security(syminfo.tickerid, "W", [time, high, low, barstate.islast], lookahead = barmerge.lookahead_off)
+[pdhOn, pdlOn]   = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[pdhOff, pdlOff] = request.security(syminfo.tickerid, "D", [high, low], lookahead = barmerge.lookahead_off)
+bool  _pdDayChart = timeframe.isdaily or timeframe.isweekly or timeframe.ismonthly
+float pdh = _pdDayChart ? pdhOff : pdhOn
+float pdl = _pdDayChart ? pdlOff : pdlOn
+[pwhOn, pwlOn]   = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[pwhOff, pwlOff] = request.security(syminfo.tickerid, "W", [high, low], lookahead = barmerge.lookahead_off)
+bool  _pwWkChart = timeframe.isweekly or timeframe.ismonthly
+float pwh = _pwWkChart ? pwhOff : pwhOn
+float pwl = _pwWkChart ? pwlOff : pwlOn
 pwcSecurity = timeframe.isweekly or timeframe.ismonthly ? request.security(syminfo.tickerid, "W", close, lookahead = barmerge.lookahead_off) : request.security(syminfo.tickerid, "W", close[1], lookahead = barmerge.lookahead_on)
 [h4Time, h4PrevHigh, h4PrevLow] = request.security(syminfo.tickerid, "240", [time, high[1], low[1]], lookahead = barmerge.lookahead_on)
 h4BarChanged = ta.change(h4Time) != 0
@@ -1054,8 +1067,8 @@ f_htfBias(string htf, string tfPrefix) =>
 [dEstState, dEstDesc] = f_htfBias("D", "D")
 [wEstState, wEstDesc] = f_htfBias("W", "W")
 
-var canShowDaily   = i_isDailyEnabled   and i_showLiquidity and timeframe.isintraday
-var canShowWeekly  = i_isWeeklyEnabled  and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily)
+var canShowDaily   = i_isDailyEnabled   and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily)
+var canShowWeekly  = i_isWeeklyEnabled  and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily or timeframe.isweekly)
 
 color  MITIGATED_COLOR = color.new(#666666, 25)
 string MITIGATED_STYLE = line.style_dotted
@@ -1069,20 +1082,46 @@ f_labelText(string txt) => i_showLabels and i_showLiquidity ? txt : ""
 // Shared by Daily/Weekly/Monthly/Asia/London/NY liquidity levels: checks for
 // mitigation, updates the line/label color+style+extent in place, and returns
 // the (possibly updated) mitigated/mitigatedBar state.
-f_liqMitigate(line lineId, label lblId, bool mit, int mitBar, int barOrigin, bool breachCond, color baseColor, bool enabledFlag) =>
+f_liqMitigate(line lineId, label lblId, bool mit, int mitBar, int barOrigin, bool breachCond, color baseColor, bool enabledFlag, bool showMit) =>
     bool newMit    = mit
     int  newMitBar = mitBar
     if not newMit and breachCond
         newMit    := true
         newMitBar := bar_index
-    bool showLvl = (i_showMitigated or not newMit) and i_showLiquidity and enabledFlag
-    line.set_color(lineId, newMit ? MITIGATED_COLOR : baseColor)
-    line.set_style(lineId, newMit ? MITIGATED_STYLE : line.style_solid)
-    label.set_textcolor(lblId, newMit ? color(na) : baseColor)
-    int x2 = newMit ? newMitBar : bar_index + i_lineExtend
-    line.set_x2(lineId, showLvl ? x2 : barOrigin)
-    label.set_x(lblId, showLvl ? x2 : bar_index)
+    // Live levels always show (if enabled); broken levels show only when showMit is on.
+    bool showLvl = (not newMit or showMit) and i_showLiquidity and enabledFlag
+    if showLvl
+        line.set_color(lineId, newMit ? MITIGATED_COLOR : baseColor)
+        line.set_style(lineId, newMit ? line.style_dotted : line.style_solid)
+        // Live → extend right from the origin candle; broken → freeze at the break bar (dotted).
+        int x2 = newMit ? newMitBar : bar_index + i_lineExtend
+        line.set_x2(lineId, x2)
+        label.set_textcolor(lblId, newMit ? color(na) : baseColor)
+        label.set_x(lblId, x2)
+    else
+        line.set_color(lineId, color(na))
+        label.set_textcolor(lblId, color(na))
     [newMit, newMitBar]
+
+// Origin-candle finder — scans back for the most recent bar that reached a level, so a
+// liquidity line can start from the candle that formed it instead of the detection bar.
+int LIQ_ORIGIN_CAP = 1500
+f_originHigh(float lvl, int cap) =>
+    int ob = bar_index
+    if bar_index >= 1
+        for i = 1 to math.min(cap, bar_index)
+            if high[i] >= lvl
+                ob := bar_index - i
+                break
+    ob
+f_originLow(float lvl, int cap) =>
+    int ob = bar_index
+    if bar_index >= 1
+        for i = 1 to math.min(cap, bar_index)
+            if low[i] <= lvl
+                ob := bar_index - i
+                break
+    ob
 
 inAsia   = not na(time("", firstSessionTime,  firstSessionTZ))
 inLondon = not na(time("", secondSessionTime, secondSessionTZ))
@@ -1932,7 +1971,7 @@ var bool  d_hMit   = false, var bool  d_lMit = false
 var int   d_hMitBar = na, var int  d_lMitBar = na
 var int   d_hBar   = na, var int   d_lBar   = na
 
-if newDay and i_currentDayOnly and i_showLiquidity
+if newDay and i_currentDayOnly and i_showLiquidity and not showMitLiq
     if d_hMit
         line.delete(d_hLine), label.delete(d_hLbl)
         d_hLine := na, d_hLbl := na
@@ -1940,29 +1979,29 @@ if newDay and i_currentDayOnly and i_showLiquidity
         line.delete(d_lLine), label.delete(d_lLbl)
         d_lLine := na, d_lLbl := na
 
-if canShowDaily and hasDailyTimeChanged and not isLastDaily and barstate.isconfirmed
+if canShowDaily and hasDailyTimeChanged and (not _pdDayChart or barstate.isconfirmed)
     line.delete(d_hLine), line.delete(d_lLine)
     label.delete(d_hLbl), label.delete(d_lLbl)
-    d_hBar   := bar_index
-    d_lBar   := bar_index
-    d_hLine  := line.new(d_hBar, dailyHigh[1], d_hBar + i_lineExtend, dailyHigh[1], color = i_dailyColor, style = line.style_solid, width = 1)
-    d_lLine  := line.new(d_lBar, dailyLow[1],  d_lBar + i_lineExtend, dailyLow[1],  color = i_dailyColor, style = line.style_solid, width = 1)
-    d_hLbl   := label.new(d_hBar + i_lineExtend, dailyHigh[1] + lblOff, f_labelText("PDH"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
-    d_lLbl   := label.new(d_lBar + i_lineExtend, dailyLow[1]  - lblOff, f_labelText("PDL"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
-    d_hPrice := dailyHigh[1]
-    d_lPrice := dailyLow[1]
+    d_hBar   := _pdDayChart ? bar_index : f_originHigh(pdh, LIQ_ORIGIN_CAP)
+    d_lBar   := _pdDayChart ? bar_index : f_originLow(pdl, LIQ_ORIGIN_CAP)
+    d_hLine  := line.new(d_hBar, pdh, bar_index + i_lineExtend, pdh, color = i_dailyColor, style = line.style_solid, width = 1)
+    d_lLine  := line.new(d_lBar, pdl,  bar_index + i_lineExtend, pdl,  color = i_dailyColor, style = line.style_solid, width = 1)
+    d_hLbl   := label.new(bar_index + i_lineExtend, pdh + lblOff, f_labelText("PDH"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
+    d_lLbl   := label.new(bar_index + i_lineExtend, pdl  - lblOff, f_labelText("PDL"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
+    d_hPrice := pdh
+    d_lPrice := pdl
     d_hMit   := false
     d_lMit   := false
-    array.set(a_lastHighs, 0, dailyHigh[1])
-    array.set(a_lastLows,  0, dailyLow[1])
+    array.set(a_lastHighs, 0, pdh)
+    array.set(a_lastLows,  0, pdl)
 
 if not na(d_hLine)
-    [newd_hMit, newd_hMitBar] = f_liqMitigate(d_hLine, d_hLbl, d_hMit, d_hMitBar, d_hBar, high > d_hPrice, i_dailyColor, i_isDailyEnabled)
+    [newd_hMit, newd_hMitBar] = f_liqMitigate(d_hLine, d_hLbl, d_hMit, d_hMitBar, d_hBar, high > d_hPrice, i_dailyColor, i_isDailyEnabled, showMitLiq)
     d_hMit := newd_hMit
     d_hMitBar := newd_hMitBar
 
 if not na(d_lLine)
-    [newd_lMit, newd_lMitBar] = f_liqMitigate(d_lLine, d_lLbl, d_lMit, d_lMitBar, d_lBar, low < d_lPrice, i_dailyColor, i_isDailyEnabled)
+    [newd_lMit, newd_lMitBar] = f_liqMitigate(d_lLine, d_lLbl, d_lMit, d_lMitBar, d_lBar, low < d_lPrice, i_dailyColor, i_isDailyEnabled, showMitLiq)
     d_lMit := newd_lMit
     d_lMitBar := newd_lMitBar
 
@@ -1976,7 +2015,7 @@ var bool  w_hMit   = false, var bool  w_lMit = false
 var int   w_hMitBar = na, var int  w_lMitBar = na
 var int   w_hBar   = na, var int   w_lBar   = na
 
-if newDay and i_currentDayOnly and i_showLiquidity
+if newDay and i_currentDayOnly and i_showLiquidity and not showMitLiq
     if w_hMit
         line.delete(w_hLine), label.delete(w_hLbl)
         w_hLine := na, w_hLbl := na
@@ -1984,29 +2023,30 @@ if newDay and i_currentDayOnly and i_showLiquidity
         line.delete(w_lLine), label.delete(w_lLbl)
         w_lLine := na, w_lLbl := na
 
-if canShowWeekly and hasWeeklyTimeChanged and not isLastWeekly and barstate.isconfirmed
-    line.delete(w_hLine), line.delete(w_lLine)
-    label.delete(w_hLbl), label.delete(w_lLbl)
-    w_hBar   := bar_index
-    w_lBar   := bar_index
-    w_hLine  := line.new(w_hBar, weeklyHigh[1], w_hBar + i_lineExtend, weeklyHigh[1], color = i_weeklyColor, style = line.style_solid, width = 1)
-    w_lLine  := line.new(w_lBar, weeklyLow[1],  w_lBar + i_lineExtend, weeklyLow[1],  color = i_weeklyColor, style = line.style_solid, width = 1)
-    w_hLbl   := label.new(w_hBar + i_lineExtend, weeklyHigh[1] + lblOff, f_labelText("PWH"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
-    w_lLbl   := label.new(w_lBar + i_lineExtend, weeklyLow[1]  - lblOff, f_labelText("PWL"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
-    w_hPrice := weeklyHigh[1]
-    w_lPrice := weeklyLow[1]
-    w_hMit   := false
-    w_lMit   := false
-    array.set(a_lastHighs, 1, weeklyHigh[1])
-    array.set(a_lastLows,  1, weeklyLow[1])
+if canShowWeekly and not na(pwh) and not na(pwl) and (not _pwWkChart or barstate.isconfirmed)
+    if na(w_hPrice) or pwh != w_hPrice or pwl != w_lPrice
+        line.delete(w_hLine), line.delete(w_lLine)
+        label.delete(w_hLbl), label.delete(w_lLbl)
+        w_hBar   := _pwWkChart ? bar_index : f_originHigh(pwh, LIQ_ORIGIN_CAP)
+        w_lBar   := _pwWkChart ? bar_index : f_originLow(pwl, LIQ_ORIGIN_CAP)
+        w_hLine  := line.new(w_hBar, pwh, bar_index + i_lineExtend, pwh, color = i_weeklyColor, style = line.style_solid, width = 1)
+        w_lLine  := line.new(w_lBar, pwl,  bar_index + i_lineExtend, pwl,  color = i_weeklyColor, style = line.style_solid, width = 1)
+        w_hLbl   := label.new(bar_index + i_lineExtend, pwh + lblOff, f_labelText("PWH"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
+        w_lLbl   := label.new(bar_index + i_lineExtend, pwl  - lblOff, f_labelText("PWL"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
+        w_hPrice := pwh
+        w_lPrice := pwl
+        w_hMit   := false
+        w_lMit   := false
+        array.set(a_lastHighs, 1, pwh)
+        array.set(a_lastLows,  1, pwl)
 
 if not na(w_hLine)
-    [neww_hMit, neww_hMitBar] = f_liqMitigate(w_hLine, w_hLbl, w_hMit, w_hMitBar, w_hBar, close > w_hPrice, i_weeklyColor, i_isWeeklyEnabled)
+    [neww_hMit, neww_hMitBar] = f_liqMitigate(w_hLine, w_hLbl, w_hMit, w_hMitBar, w_hBar, close > w_hPrice, i_weeklyColor, i_isWeeklyEnabled, showMitLiq)
     w_hMit := neww_hMit
     w_hMitBar := neww_hMitBar
 
 if not na(w_lLine)
-    [neww_lMit, neww_lMitBar] = f_liqMitigate(w_lLine, w_lLbl, w_lMit, w_lMitBar, w_lBar, close < w_lPrice, i_weeklyColor, i_isWeeklyEnabled)
+    [neww_lMit, neww_lMitBar] = f_liqMitigate(w_lLine, w_lLbl, w_lMit, w_lMitBar, w_lBar, close < w_lPrice, i_weeklyColor, i_isWeeklyEnabled, showMitLiq)
     w_lMit := neww_lMit
     w_lMitBar := neww_lMitBar
 
@@ -2120,7 +2160,7 @@ var int   nyHMitBar = na, var int  nyLMitBar = na
 var float nyHPrice = na, var float nyLPrice = na
 var int   nyHBar = na, var int   nyLBar = na
 
-if newDay and i_currentDayOnly and i_showLiquidity
+if newDay and i_currentDayOnly and i_showLiquidity and not showMitLiq
     if asiaHMit
         line.delete(asiaHLine), label.delete(asiaHLbl)
         asiaHLine := na, asiaHLbl := na
@@ -2153,12 +2193,12 @@ if inNY
 if not inAsia and inAsia[1] and i_showAsiaHL and i_showLiquidity and not na(asiaHigh)
     line.delete(asiaHLine), line.delete(asiaLLine)
     label.delete(asiaHLbl), label.delete(asiaLLbl)
-    asiaHBar   := bar_index
-    asiaLBar   := bar_index
-    asiaHLine  := line.new(asiaHBar, asiaHigh, asiaHBar + i_lineExtend, asiaHigh, color = i_asiaHLColor, style = line.style_solid, width = 1)
-    asiaLLine  := line.new(asiaLBar, asiaLow,  asiaLBar + i_lineExtend, asiaLow,  color = i_asiaHLColor, style = line.style_solid, width = 1)
-    asiaHLbl   := label.new(asiaHBar + i_lineExtend, asiaHigh + lblOff, f_labelText("Asia H"), style = label.style_none, textcolor = i_asiaHLColor, size = f_liqSize(), textalign = text.align_left)
-    asiaLLbl   := label.new(asiaLBar + i_lineExtend, asiaLow  - lblOff, f_labelText("Asia L"), style = label.style_none, textcolor = i_asiaHLColor, size = f_liqSize(), textalign = text.align_left)
+    asiaHBar   := f_originHigh(asiaHigh, LIQ_ORIGIN_CAP)
+    asiaLBar   := f_originLow(asiaLow, LIQ_ORIGIN_CAP)
+    asiaHLine  := line.new(asiaHBar, asiaHigh, bar_index + i_lineExtend, asiaHigh, color = i_asiaHLColor, style = line.style_solid, width = 1)
+    asiaLLine  := line.new(asiaLBar, asiaLow,  bar_index + i_lineExtend, asiaLow,  color = i_asiaHLColor, style = line.style_solid, width = 1)
+    asiaHLbl   := label.new(bar_index + i_lineExtend, asiaHigh + lblOff, f_labelText("Asia H"), style = label.style_none, textcolor = i_asiaHLColor, size = f_liqSize(), textalign = text.align_left)
+    asiaLLbl   := label.new(bar_index + i_lineExtend, asiaLow  - lblOff, f_labelText("Asia L"), style = label.style_none, textcolor = i_asiaHLColor, size = f_liqSize(), textalign = text.align_left)
     asiaHPrice := asiaHigh
     asiaLPrice := asiaLow
     asiaHMit   := false
@@ -2167,12 +2207,12 @@ if not inAsia and inAsia[1] and i_showAsiaHL and i_showLiquidity and not na(asia
 if not inLondon and inLondon[1] and i_showLondonHL and i_showLiquidity and not na(londonHigh)
     line.delete(londonHLine), line.delete(londonLLine)
     label.delete(londonHLbl), label.delete(londonLLbl)
-    londonHBar   := bar_index
-    londonLBar   := bar_index
-    londonHLine  := line.new(londonHBar, londonHigh, londonHBar + i_lineExtend, londonHigh, color = i_londonHLColor, style = line.style_solid, width = 1)
-    londonLLine  := line.new(londonLBar, londonLow,  londonLBar + i_lineExtend, londonLow,  color = i_londonHLColor, style = line.style_solid, width = 1)
-    londonHLbl   := label.new(londonHBar + i_lineExtend, londonHigh + lblOff, f_labelText("Ldn H"), style = label.style_none, textcolor = i_londonHLColor, size = f_liqSize(), textalign = text.align_left)
-    londonLLbl   := label.new(londonLBar + i_lineExtend, londonLow  - lblOff, f_labelText("Ldn L"), style = label.style_none, textcolor = i_londonHLColor, size = f_liqSize(), textalign = text.align_left)
+    londonHBar   := f_originHigh(londonHigh, LIQ_ORIGIN_CAP)
+    londonLBar   := f_originLow(londonLow, LIQ_ORIGIN_CAP)
+    londonHLine  := line.new(londonHBar, londonHigh, bar_index + i_lineExtend, londonHigh, color = i_londonHLColor, style = line.style_solid, width = 1)
+    londonLLine  := line.new(londonLBar, londonLow,  bar_index + i_lineExtend, londonLow,  color = i_londonHLColor, style = line.style_solid, width = 1)
+    londonHLbl   := label.new(bar_index + i_lineExtend, londonHigh + lblOff, f_labelText("Ldn H"), style = label.style_none, textcolor = i_londonHLColor, size = f_liqSize(), textalign = text.align_left)
+    londonLLbl   := label.new(bar_index + i_lineExtend, londonLow  - lblOff, f_labelText("Ldn L"), style = label.style_none, textcolor = i_londonHLColor, size = f_liqSize(), textalign = text.align_left)
     londonHPrice := londonHigh
     londonLPrice := londonLow
     londonHMit   := false
@@ -2181,44 +2221,44 @@ if not inLondon and inLondon[1] and i_showLondonHL and i_showLiquidity and not n
 if not inNY and inNY[1] and i_showNYHL and i_showLiquidity and not na(nyHigh)
     line.delete(nyHLine), line.delete(nyLLine)
     label.delete(nyHLbl), label.delete(nyLLbl)
-    nyHBar   := bar_index
-    nyLBar   := bar_index
-    nyHLine  := line.new(nyHBar, nyHigh, nyHBar + i_lineExtend, nyHigh, color = i_nyHLColor, style = line.style_solid, width = 1)
-    nyLLine  := line.new(nyLBar, nyLow,  nyLBar + i_lineExtend, nyLow,  color = i_nyHLColor, style = line.style_solid, width = 1)
-    nyHLbl   := label.new(nyHBar + i_lineExtend, nyHigh + lblOff, f_labelText("NY H"), style = label.style_none, textcolor = i_nyHLColor, size = f_liqSize(), textalign = text.align_left)
-    nyLLbl   := label.new(nyLBar + i_lineExtend, nyLow  - lblOff, f_labelText("NY L"), style = label.style_none, textcolor = i_nyHLColor, size = f_liqSize(), textalign = text.align_left)
+    nyHBar   := f_originHigh(nyHigh, LIQ_ORIGIN_CAP)
+    nyLBar   := f_originLow(nyLow, LIQ_ORIGIN_CAP)
+    nyHLine  := line.new(nyHBar, nyHigh, bar_index + i_lineExtend, nyHigh, color = i_nyHLColor, style = line.style_solid, width = 1)
+    nyLLine  := line.new(nyLBar, nyLow,  bar_index + i_lineExtend, nyLow,  color = i_nyHLColor, style = line.style_solid, width = 1)
+    nyHLbl   := label.new(bar_index + i_lineExtend, nyHigh + lblOff, f_labelText("NY H"), style = label.style_none, textcolor = i_nyHLColor, size = f_liqSize(), textalign = text.align_left)
+    nyLLbl   := label.new(bar_index + i_lineExtend, nyLow  - lblOff, f_labelText("NY L"), style = label.style_none, textcolor = i_nyHLColor, size = f_liqSize(), textalign = text.align_left)
     nyHPrice := nyHigh
     nyLPrice := nyLow
     nyHMit   := false
     nyLMit   := false
 
 if not na(asiaHLine)
-    [newasiaHMit, newasiaHMitBar] = f_liqMitigate(asiaHLine, asiaHLbl, asiaHMit, asiaHMitBar, asiaHBar, high > asiaHPrice, i_asiaHLColor, i_showAsiaHL)
+    [newasiaHMit, newasiaHMitBar] = f_liqMitigate(asiaHLine, asiaHLbl, asiaHMit, asiaHMitBar, asiaHBar, high > asiaHPrice, i_asiaHLColor, i_showAsiaHL, showMitLiq)
     asiaHMit := newasiaHMit
     asiaHMitBar := newasiaHMitBar
 
 if not na(asiaLLine)
-    [newasiaLMit, newasiaLMitBar] = f_liqMitigate(asiaLLine, asiaLLbl, asiaLMit, asiaLMitBar, asiaLBar, low < asiaLPrice, i_asiaHLColor, i_showAsiaHL)
+    [newasiaLMit, newasiaLMitBar] = f_liqMitigate(asiaLLine, asiaLLbl, asiaLMit, asiaLMitBar, asiaLBar, low < asiaLPrice, i_asiaHLColor, i_showAsiaHL, showMitLiq)
     asiaLMit := newasiaLMit
     asiaLMitBar := newasiaLMitBar
 
 if not na(londonHLine)
-    [newlondonHMit, newlondonHMitBar] = f_liqMitigate(londonHLine, londonHLbl, londonHMit, londonHMitBar, londonHBar, high > londonHPrice, i_londonHLColor, i_showLondonHL)
+    [newlondonHMit, newlondonHMitBar] = f_liqMitigate(londonHLine, londonHLbl, londonHMit, londonHMitBar, londonHBar, high > londonHPrice, i_londonHLColor, i_showLondonHL, showMitLiq)
     londonHMit := newlondonHMit
     londonHMitBar := newlondonHMitBar
 
 if not na(londonLLine)
-    [newlondonLMit, newlondonLMitBar] = f_liqMitigate(londonLLine, londonLLbl, londonLMit, londonLMitBar, londonLBar, low < londonLPrice, i_londonHLColor, i_showLondonHL)
+    [newlondonLMit, newlondonLMitBar] = f_liqMitigate(londonLLine, londonLLbl, londonLMit, londonLMitBar, londonLBar, low < londonLPrice, i_londonHLColor, i_showLondonHL, showMitLiq)
     londonLMit := newlondonLMit
     londonLMitBar := newlondonLMitBar
 
 if not na(nyHLine)
-    [newnyHMit, newnyHMitBar] = f_liqMitigate(nyHLine, nyHLbl, nyHMit, nyHMitBar, nyHBar, high > nyHPrice, i_nyHLColor, i_showNYHL)
+    [newnyHMit, newnyHMitBar] = f_liqMitigate(nyHLine, nyHLbl, nyHMit, nyHMitBar, nyHBar, high > nyHPrice, i_nyHLColor, i_showNYHL, showMitLiq)
     nyHMit := newnyHMit
     nyHMitBar := newnyHMitBar
 
 if not na(nyLLine)
-    [newnyLMit, newnyLMitBar] = f_liqMitigate(nyLLine, nyLLbl, nyLMit, nyLMitBar, nyLBar, low < nyLPrice, i_nyHLColor, i_showNYHL)
+    [newnyLMit, newnyLMitBar] = f_liqMitigate(nyLLine, nyLLbl, nyLMit, nyLMitBar, nyLBar, low < nyLPrice, i_nyHLColor, i_showNYHL, showMitLiq)
     nyLMit := newnyLMit
     nyLMitBar := newnyLMitBar
 
@@ -3609,6 +3649,7 @@ var bool aplusL_poi      = false
 var int  aplusL_armTime  = na    // timestamp the sweep/div arm fired — window is measured in TIME, not bars
 var bool aplusL_half     = false // A+-owned 0.5 latch — survives fib redraw at session gap
 var bool aplusL_618      = false // A+-owned 0.618 latch
+var string aplusL_armSrc = ""    // what armed Stage 1: "Div" or "Sweep" (shown on the 1/3 row)
 var int  contL_bosBar    = na    // CONT trade trigger: external BOS with no A+ tracked on that side
 var int  aplusS_sweepBar = na
 var int  aplusS_sosBar   = na
@@ -3616,6 +3657,7 @@ var bool aplusS_poi      = false
 var int  aplusS_armTime  = na
 var bool aplusS_half     = false
 var bool aplusS_618      = false
+var string aplusS_armSrc = ""    // what armed Stage 1: "Div" or "Sweep"
 var int  contS_bosBar    = na
 
 // HTF POI — the Cycle Fib's zones, tracked on every timeframe (drawing stays gated):
@@ -3669,12 +3711,14 @@ if dailySweepTooOldL
 // changes recentSSL_bar, but it must NOT overwrite or re-trigger a live arm. The
 // arm only clears through a real death: opposite SOS, TP3, or invalidation.
 bool aplusL_canArm = na(aplusL_sweepBar) and na(aplusL_sosBar)
-if newSweepL and aplusL_canArm
+if newSweepL and aplusL_canArm and not aplusDivOnly
     aplusL_sweepBar := recentSSL_bar
     aplusL_armTime  := time
+    aplusL_armSrc   := "Sweep"
 if newDivL and aplusL_canArm
     aplusL_sweepBar := lastBullDivBar
     aplusL_armTime  := time
+    aplusL_armSrc   := "Div"
 
 // Retro-link — a divergence pivot only CONFIRMS divPivotLen bars after the low it
 // marks. On a fast V-reversal the SOS fires inside that lag, so by the time the
@@ -3682,7 +3726,7 @@ if newDivL and aplusL_canArm
 // Stage 2 check below never sees it — the setup sticks at 1/3 forever. If the last
 // bull SOS landed at or after the divergence's pivot bar (so the sequence really
 // did run div -> SOS) and is still inside the staleness window, adopt it.
-if newDivL and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(lastBullSosBar) and lastBullSosBar >= lastBullDivBar and time - lastBullSosTime <= aplusWindow * 60000
+if newDivL and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(lastBullSosBar) and lastBullSosBar >= lastBullDivBar and (aplusIgnoreWindow or time - lastBullSosTime <= aplusWindow * 60000)
     aplusL_sosBar := lastBullSosBar
 
 bool newSweepS = recentBSL != "" and recentBSL_bar != recentBSL_bar[1] and not sessionGapBar
@@ -3693,15 +3737,17 @@ if dailySweepTooOldS
     newSweepS := false
 
 bool aplusS_canArm = na(aplusS_sweepBar) and na(aplusS_sosBar)
-if newSweepS and aplusS_canArm
+if newSweepS and aplusS_canArm and not aplusDivOnly
     aplusS_sweepBar := recentBSL_bar
     aplusS_armTime  := time
+    aplusS_armSrc   := "Sweep"
 if newDivS and aplusS_canArm
     aplusS_sweepBar := lastBearDivBar
     aplusS_armTime  := time
+    aplusS_armSrc   := "Div"
 
 // Mirror of the bull retro-link above.
-if newDivS and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(lastBearSosBar) and lastBearSosBar >= lastBearDivBar and time - lastBearSosTime <= aplusWindow * 60000
+if newDivS and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(lastBearSosBar) and lastBearSosBar >= lastBearDivBar and (aplusIgnoreWindow or time - lastBearSosTime <= aplusWindow * 60000)
     aplusS_sosBar := lastBearSosBar
 
 // POI latch while armed
@@ -3711,9 +3757,9 @@ if not na(aplusS_sweepBar)
     aplusS_poi := aplusS_poi or poiShortNow
 
 // Stage 2 — SOS must fire after the sweep, within the staleness window
-if st.bull_sos and not na(aplusL_armTime) and time - aplusL_armTime <= aplusWindow * 60000
+if st.bull_sos and not na(aplusL_armTime) and (aplusIgnoreWindow or time - aplusL_armTime <= aplusWindow * 60000)
     aplusL_sosBar := bar_index
-if st.bear_sos and not na(aplusS_armTime) and time - aplusS_armTime <= aplusWindow * 60000
+if st.bear_sos and not na(aplusS_armTime) and (aplusIgnoreWindow or time - aplusS_armTime <= aplusWindow * 60000)
     aplusS_sosBar := bar_index
 
 // Detect the first bar after a SESSION GAP (e.g. the daily 17:00-18:00 close).
@@ -3726,10 +3772,10 @@ if st.bear_sos and not na(aplusS_armTime) and time - aplusS_armTime <= aplusWind
 // Without this, aplusL_sweepBar stays set FOREVER even after the A+ row has
 // already fallen back to "Pass" (the display checks the window; this variable
 // didn't), which permanently blocked CONT from ever arming again.
-if not sessionGapBar and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(aplusL_armTime) and time - aplusL_armTime > aplusWindow * 60000
+if not aplusIgnoreWindow and not sessionGapBar and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(aplusL_armTime) and time - aplusL_armTime > aplusWindow * 60000
     aplusL_sweepBar := na
     aplusL_armTime := na
-if not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(aplusS_armTime) and time - aplusS_armTime > aplusWindow * 60000
+if not aplusIgnoreWindow and not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(aplusS_armTime) and time - aplusS_armTime > aplusWindow * 60000
     aplusS_sweepBar := na
     aplusS_armTime := na
 
@@ -3898,6 +3944,7 @@ if showConfTable and barstate.islast
             int  seqStage  = seqIsLong ? aplusL_stage : aplusS_stage
             color seqCol = seqIsLong ? JARVIS_SSL : JARVIS_BSL
             string seqSide = seqIsLong ? "LONG" : "SHORT"
+            string seqSrc  = seqIsLong ? aplusL_armSrc : aplusS_armSrc
             bool  seqFvg  = seqIsLong ? aplusL_fvg : aplusS_fvg
             bool  seqSz   = not na(sniperZoneTop) and (seqIsLong ? sz_bullish : not sz_bullish)
             bool  seqPoi  = seqIsLong ? aplusL_poi : aplusS_poi
@@ -3924,7 +3971,7 @@ if showConfTable and barstate.islast
             else if seqStage == 2
                 f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag + htfTag)
             else
-                f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag + htfTag)
+                f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, (seqSrc != "" ? seqSrc : "Sweep/Div") + " ✓ await SOS" + poiTag + htfTag)
             r := r + 1
         else
             f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
