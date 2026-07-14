@@ -3,8 +3,8 @@
 indicator("MPC- JARVIS", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000)
 
 var GRP_MASTER = "Display"
-bool showTradeTools = input.bool(false, "Show FVG, Order Blocks, Sessions & Liquidity", group = GRP_MASTER, tooltip = "Master switch for the discretionary tools: Fair Value Gaps, Order Blocks, Trading Sessions, Kill Zones and Liquidity Levels. Off by default for a clean market-structure-only chart.", display = display.none)
-bool showFibTool    = input.bool(false, "Show External Fib", group = GRP_MASTER, tooltip = "Master switch for the External Fibonacci (entry zones / OTE). Off by default.", display = display.none)
+bool showTradeTools = input.bool(true, "Show FVG, Order Blocks, Sessions & Liquidity", group = GRP_MASTER, tooltip = "Master switch for the discretionary tools: Fair Value Gaps, Order Blocks, Trading Sessions, Kill Zones and Liquidity Levels. Off by default for a clean market-structure-only chart.", display = display.none)
+bool showFibTool    = input.bool(true, "Show External Fib", group = GRP_MASTER, tooltip = "Master switch for the External Fibonacci (entry zones / OTE). Off by default.", display = display.none)
 
 var GRP_TABLE = "Confirmation Table"
 bool showConfTable = input.bool(true, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
@@ -52,7 +52,7 @@ string structLabelSize  = input.string("Small", "Structure Label Size",    group
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
 bool   showHistoricalInternal = input.bool(false, "Show Historic Internal Structure", group = GRP_STRUCT, tooltip = "Keep internal structure labels and lines from previous swing ranges on the chart. Off = only show current swing range internals.", display = display.none)
-bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off = hide ASH/ASL, HH/HL, LH/LL and the internal swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart. The structure engine keeps running exactly as before — fibs, order blocks and the confirmation table are unaffected.", display = display.none)
+bool   showSwingLabels  = input.bool(false, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off = hide ASH/ASL, HH/HL, LH/LL and the internal swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart. The structure engine keeps running exactly as before — fibs, order blocks and the confirmation table are unaffected.", display = display.none)
 int    internalLength   = 5
 float  pbBuffer         = 0.0
 
@@ -75,7 +75,7 @@ bool  showBullOB    = input.bool(true, "Show Bullish OB", group = GRP_OB, inline
 color colBullOB     = input.color(color.new(color.blue, 85), "", group = GRP_OB, inline = "BullOB", display = display.none)
 bool  showBearOB    = input.bool(true, "Show Bearish OB", group = GRP_OB, inline = "BearOB", active = showOBsInput, display = display.none)
 color colBearOB     = input.color(color.new(color.red, 85), "", group = GRP_OB, inline = "BearOB", display = display.none)
-int   maxActiveOB   = input.int(6, "Max Active OBs (per direction)", group = GRP_OB, minval = 1, maxval = 20, active = showOBsInput, display = display.none)
+int   maxActiveOB   = input.int(2, "Max Active OBs (per direction)", group = GRP_OB, minval = 1, maxval = 20, active = showOBsInput, display = display.none)
 bool  obBodyOnly    = input.bool(false, "Use Body Only for OB", group = GRP_OB, active = showOBsInput, display = display.none)
 
 type OrderBlock
@@ -114,31 +114,31 @@ method extendOBs(array<OrderBlock> arr) =>
 var GRP_FVG = "Fair Value Gaps"
 bool  showFVGInput      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps: any 3-candle imbalance where bar A and bar C never overlap and the middle bar closed past the gap (the LuxAlgo definition). Gaps below the size threshold are ignored. A gap is removed only when a candle CLOSES fully past it.", display = display.none)
 bool showFVG = showTradeTools and showFVGInput
-bool  fvgDirOnly   = input.bool(false, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
+bool  fvgDirOnly   = input.bool(true, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
 color fvgBullColor = input.color(color.new(color.gray, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVGInput, display = display.none)
 color fvgBearColor = input.color(color.new(color.gray, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVGInput, display = display.none)
 // Minimum gap size is hardcoded (not user-tunable): a gap must be at least 0.1%
 // of price. No Auto-Threshold volatility scaling — a fixed floor by design.
 float fvgThreshPct = 0.1
-int   fvgMaxCount  = input.int(4, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
+int   fvgMaxCount  = input.int(6, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
 
 //============================================================
 //  A+ SETUP SEQUENCE INPUTS
 //============================================================
 var GRP_APLUS = "A+ Setup"
-bool aplusDivOnly  = input.bool(false, "A+ Stage 1: Divergence Only (ignore sweeps)", group = GRP_APLUS, tooltip = "When ON, the A+ sequence arms Stage 1 ONLY on an RSI divergence — liquidity sweeps no longer start a setup. Requires 'Track RSI Divergence' to also be enabled, otherwise no divergences are detected and the A+ row stays on 'Pass'. When OFF (default), either a sweep or a divergence arms Stage 1, exactly as before.", display = display.none)
+bool aplusDivOnly  = input.bool(true, "A+ Stage 1: Divergence Only (ignore sweeps)", group = GRP_APLUS, tooltip = "When ON, the A+ sequence arms Stage 1 ONLY on an RSI divergence — liquidity sweeps no longer start a setup. Requires 'Track RSI Divergence' to also be enabled, otherwise no divergences are detected and the A+ row stays on 'Pass'. When OFF (default), either a sweep or a divergence arms Stage 1, exactly as before.", display = display.none)
 bool aplusHtfWarn  = input.bool(true,  "Warn When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Shows a caution note on the A+ row when Weekly/Daily bias opposes the trade direction (e.g. a short while Weekly is Bullish). The setup still displays — it's an educational flag, not a block.", display = display.none)
 bool aplusHtfBlock = input.bool(false, "Block A+ When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Stronger version: if on, an A+ whose direction opposes HTF bias is suppressed entirely instead of just warned. Off by default.", display = display.none)
 bool aplusReqInt   = input.bool(false, "Require INT Confirmation for READY", group = GRP_APLUS, tooltip = "Holds the A+ at 'AWAIT ENTRY' until an iSOS/iBOS confirms in the trade direction inside the entry zone — a lower-timeframe structure trigger. Tighter, higher-probability entries at the cost of some fills. Off by default.", display = display.none)
-bool aplusIgnoreWindow = input.bool(false, "A+: Ignore Sweep→SOS Time Window (sequence only)", group = GRP_APLUS, tooltip = "When ON, the Max Time window below is ignored entirely — the A+ sequence cares only about ORDER: once Stage 1 arms (a divergence in Div-Only mode, or a sweep/divergence otherwise), the NEXT same-side SOS advances it to 2/3 no matter how much time has passed. The arm never expires on time; it only clears on a real death (opposite-direction SOS, close past the fib 1.0, or TP3). Trade-off: if a same-side SOS never comes, that side stays at 1/3 until an opposite SOS or invalidation clears it, and won't hand off to CONT meanwhile.", display = display.none)
+bool aplusIgnoreWindow = input.bool(true, "A+: Ignore Sweep→SOS Time Window (sequence only)", group = GRP_APLUS, tooltip = "When ON, the Max Time window below is ignored entirely — the A+ sequence cares only about ORDER: once Stage 1 arms (a divergence in Div-Only mode, or a sweep/divergence otherwise), the NEXT same-side SOS advances it to 2/3 no matter how much time has passed. The arm never expires on time; it only clears on a real death (opposite-direction SOS, close past the fib 1.0, or TP3). Trade-off: if a same-side SOS never comes, that side stays at 1/3 until an opposite SOS or invalidation clears it, and won't hand off to CONT meanwhile.", display = display.none)
 int aplusWindow = input.int(1440, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop, measured in TIME rather than bars — a bar count is fragile across timeframes (300 bars is 5 hours on 1m but 12.5 days on 4H). The SOS must fire within this many minutes of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
 
 //============================================================
 //  RSI DIVERGENCE (locked defaults — not user-tunable)
 //============================================================
 var GRP_DIV = "RSI Divergence"
-bool showDivInput     = input.bool(false, "Track RSI Divergence", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes and tags it as confluence on the A+ setup row. Settings are fixed to tuned defaults. Off by default.", display = display.none)
-bool showDivHistory   = input.bool(false, "Show Divergence History", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show divergences from the last 3 days. On = show as far back as possible.", display = display.none)
+bool showDivInput     = input.bool(true, "Track RSI Divergence", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes and tags it as confluence on the A+ setup row. Settings are fixed to tuned defaults. Off by default.", display = display.none)
+bool showDivHistory   = input.bool(true, "Show Divergence History", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show divergences from the last 3 days. On = show as far back as possible.", display = display.none)
 bool showDiv = showDivInput
 int  divRsiLen    = 14
 int  divPivotLen  = 5
@@ -157,7 +157,7 @@ var GRP_SESS = "Trading Sessions"
 bool showSessionsInput         = input.bool(true,   "Show Sessions",      group = GRP_SESS, display = display.none)
 bool showSessions = showTradeTools and showSessionsInput
 bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessionsInput, display = display.none)
-bool showHistoricSessions = input.bool(false,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions as far back as possible.", display = display.none)
+bool showHistoricSessions = input.bool(true,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions as far back as possible.", display = display.none)
 
 bool showSessionOC        = false
 bool showSessionTickRange = false
@@ -202,7 +202,7 @@ bool showNYRange   = showKZandNYR
 //  VWAP INPUTS
 //============================================================
 var GRP_VWAP = "VWAP Settings"
-bool  showVwapInput  = input.bool(true,                 "Show VWAP",       group = GRP_VWAP, display = display.none)
+bool  showVwapInput  = input.bool(false,                 "Show VWAP",       group = GRP_VWAP, display = display.none)
 bool showVwap = showTradeTools and showVwapInput
 color vwapColor = input.color(color.rgb(5, 5, 0), "VWAP Color",      group = GRP_VWAP, active = showVwapInput, display = display.none)
 int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1, maxval = 5, group = GRP_VWAP, active = showVwapInput, display = display.none)
@@ -214,7 +214,7 @@ var GRP_LIQ = "Liquidity Levels"
 var i_showLiquidityInput    = input.bool(true,  "Show All Liquidity Levels",  group = GRP_LIQ, display = display.none)
 bool i_showLiquidity = showTradeTools and i_showLiquidityInput
 bool i_showLabels      = true
-string liqLabelSize    = input.string("Small", "Liquidity Label Size",   group = GRP_LIQ, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = i_showLiquidityInput, display = display.none)
+string liqLabelSize    = input.string("Tiny", "Liquidity Label Size",   group = GRP_LIQ, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = i_showLiquidityInput, display = display.none)
 bool i_currentDayOnly  = true   // always hide mitigated on new day
 bool i_showMitigated   = false  // never show mitigated dotted lines
 
@@ -247,7 +247,7 @@ color i_nyHLColor     = color.black
 //============================================================
 var GRP_IFIB      = "Internal Fib"
 bool showIFibInput     = input.bool(false, "Show Internal Fib", group = GRP_IFIB, display = display.none)
-bool hideFibsSub5m     = input.bool(false, "Hide Fibs Below 5m", group = GRP_IFIB, tooltip = "On = External and Internal fibs are turned off entirely on timeframes under 5 minutes (keeps low-timeframe charts clean). Off = fibs run on all timeframes.", display = display.none)
+bool hideFibsSub5m     = input.bool(true, "Hide Fibs Below 5m", group = GRP_IFIB, tooltip = "On = External and Internal fibs are turned off entirely on timeframes under 5 minutes (keeps low-timeframe charts clean). Off = fibs run on all timeframes.", display = display.none)
 bool showIFib = showFibTool and not (hideFibsSub5m and timeframe.in_seconds() < 300) and showIFibInput
 int  iFibExtend   = input.int(30,   "Line Extension (bars)", group = GRP_IFIB, minval = 5, maxval = 500, active = showIFibInput, display = display.none)
 
@@ -331,7 +331,7 @@ f_fiboLineStyle(string opt) =>
 //  MACRO FIB (full-cycle retracement across multiple BOS, locks in on trend reversal)
 //============================================================
 var GRP_MACRO = "Cycle Fib"
-bool   showMacroFibInput      = input.bool(false,        "Show Cycle Fib",             group = GRP_MACRO, display = display.none)
+bool   showMacroFibInput      = input.bool(true,        "Show Cycle Fib",             group = GRP_MACRO, display = display.none)
 bool showMacroFib = showFibTool and showMacroFibInput
 int    macroLineExtend   = input.int(180,            "Line Extension (bars)",      group = GRP_MACRO, minval = 10, maxval = 500, display = display.none)
 int    macroMaxTfMin     = input.int(30,             "Draw Up To Timeframe (min)", group = GRP_MACRO, minval = 1, maxval = 240, tooltip = "The Cycle Fib is drawn on charts up to this timeframe (in minutes). Tracking runs on every timeframe regardless — the fib's discount/premium zones feed the A+ setup's POI even when the lines aren't drawn. Note the cycle recalculates per chart timeframe: a 15m chart tracks the 15m-scale cycle, not the 5m one.", display = display.none)
@@ -4063,46 +4063,49 @@ if showConfTable and barstate.islast
             bool locOk  = (seqFvgT or seqSzT) and (not aplusReqInt or seqInt)
             string intTag = aplusReqInt ? (seqInt ? " + INT" : "") : ""
             if seqStage == 4 and locOk
-                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqHtfWarn ? JARVIS_YELLOW : seqCol, seqHtfWarn ? "Tapped " + seqLvl + htfTag : "Tapped " + seqLvl + locTag + intTag + poiTag + divTag + htfTag)
+                f_jRow3(jarvisTable, r, "REV SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqHtfWarn ? JARVIS_YELLOW : seqCol, seqHtfWarn ? "Tapped " + seqLvl + htfTag : "Tapped " + seqLvl + locTag + intTag + poiTag + divTag + htfTag)
             else if seqStage == 4
-                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT ENTRY " + seqSide, JARVIS_YELLOW, "Tapped " + seqLvl + (aplusReqInt and (seqFvgT or seqSzT) and not seqInt ? ", await INT" : ", no FVG/SZ tap yet") + poiTag + divTag + htfTag)
+                f_jRow3(jarvisTable, r, "REV SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT ENTRY " + seqSide, JARVIS_YELLOW, "Tapped " + seqLvl + (aplusReqInt and (seqFvgT or seqSzT) and not seqInt ? ", await INT" : ", no FVG/SZ tap yet") + poiTag + divTag + htfTag)
             else if seqStage == 3
-                f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "Tapped " + seqLvl + " early" + locTag + poiTag + divTag + htfTag)
+                f_jRow3(jarvisTable, r, "REV SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "Tapped " + seqLvl + " early" + locTag + poiTag + divTag + htfTag)
             else if seqStage == 2
-                f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag + htfTag)
+                f_jRow3(jarvisTable, r, "REV SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag + htfTag)
             else
-                f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, (seqSrc != "" ? seqSrc : "Sweep/Div") + " ✓ await SOS" + poiTag + htfTag)
+                f_jRow3(jarvisTable, r, "REV SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, (seqSrc != "" ? seqSrc : "Sweep/Div") + " ✓ await SOS" + poiTag + htfTag)
             r := r + 1
         else
-            f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
+            f_jRow3(jarvisTable, r, "REV SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
             r := r + 1
 
-        // CONT — the continuation trade type: BOS, await retrace, entry at E1-E4
-        // where an FVG or Sniper Zone sits. Only appears while a leg is tracked.
-        // Same veto rule applies.
-        bool contL_ok = contL_stage > 0 and not longVeto
-        bool contS_ok = contS_stage > 0 and not shortVeto
-        bool contL_blocked = contL_stage > 0 and longVeto
-        bool contS_blocked = contS_stage > 0 and shortVeto
-        if contL_ok or contS_ok
-            bool contIsLong = contL_ok and (not contS_ok or contL_stage >= contS_stage)
-            int  contStage  = contIsLong ? contL_stage : contS_stage
-            color contCol = contIsLong ? JARVIS_SSL : JARVIS_BSL
-            string contSide = contIsLong ? "LONG" : "SHORT"
-            bool  contFvg  = contIsLong ? aplusL_fvg : aplusS_fvg
-            bool  contSz   = not na(sniperZoneTop) and (contIsLong ? sz_bullish : not sz_bullish)
-            bool  contDiv  = contIsLong ? bullDivActive : bearDivActive
-            string cFvgTag = contFvg ? " + FVG" : ""
-            string cSzTag  = contSz ? " + SZ" : ""
-            string cDivTag = contDiv ? " + DIV" : ""
-            if contStage == 4
-                f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + "READY " + contSide, contCol, "E1-E4 zone" + cFvgTag + cSzTag + cDivTag)
-            else
-                f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + contSide, contCol, "BOS ✓ await retrace" + cFvgTag + cSzTag)
-            r := r + 1
-        else if contL_blocked or contS_blocked
-            f_jRow3(jarvisTable, r, "CONT", "EXTREME", JARVIS_YELLOW, contL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
-            r := r + 1
+        // CONT rows temporarily hidden while the continuation trade type is being
+        // reworked — the CONT tracking logic still runs above, only the table
+        // display is suppressed. Uncomment this block to bring the rows back.
+        // // CONT — the continuation trade type: BOS, await retrace, entry at E1-E4
+        // // where an FVG or Sniper Zone sits. Only appears while a leg is tracked.
+        // // Same veto rule applies.
+        // bool contL_ok = contL_stage > 0 and not longVeto
+        // bool contS_ok = contS_stage > 0 and not shortVeto
+        // bool contL_blocked = contL_stage > 0 and longVeto
+        // bool contS_blocked = contS_stage > 0 and shortVeto
+        // if contL_ok or contS_ok
+        //     bool contIsLong = contL_ok and (not contS_ok or contL_stage >= contS_stage)
+        //     int  contStage  = contIsLong ? contL_stage : contS_stage
+        //     color contCol = contIsLong ? JARVIS_SSL : JARVIS_BSL
+        //     string contSide = contIsLong ? "LONG" : "SHORT"
+        //     bool  contFvg  = contIsLong ? aplusL_fvg : aplusS_fvg
+        //     bool  contSz   = not na(sniperZoneTop) and (contIsLong ? sz_bullish : not sz_bullish)
+        //     bool  contDiv  = contIsLong ? bullDivActive : bearDivActive
+        //     string cFvgTag = contFvg ? " + FVG" : ""
+        //     string cSzTag  = contSz ? " + SZ" : ""
+        //     string cDivTag = contDiv ? " + DIV" : ""
+        //     if contStage == 4
+        //         f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + "READY " + contSide, contCol, "E1-E4 zone" + cFvgTag + cSzTag + cDivTag)
+        //     else
+        //         f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + contSide, contCol, "BOS ✓ await retrace" + cFvgTag + cSzTag)
+        //     r := r + 1
+        // else if contL_blocked or contS_blocked
+        //     f_jRow3(jarvisTable, r, "CONT", "EXTREME", JARVIS_YELLOW, contL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
+        //     r := r + 1
 
         // WEEKLY — Established Context (last closed week vs the one before)
         f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
