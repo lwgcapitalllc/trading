@@ -114,12 +114,13 @@ method extendOBs(array<OrderBlock> arr) =>
 var GRP_FVG = "Fair Value Gaps"
 bool  showFVGInput      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps: any 3-candle imbalance where bar A and bar C never overlap and the middle bar closed past the gap (the LuxAlgo definition). Gaps below the size threshold are ignored. A gap is removed only when a candle CLOSES fully past it.", display = display.none)
 bool showFVG = showTradeTools and showFVGInput
-bool  fvgDirOnly   = input.bool(true, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
+bool  fvgDirOnly   = input.bool(false, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
 color fvgBullColor = input.color(color.new(color.gray, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVGInput, display = display.none)
 color fvgBearColor = input.color(color.new(color.gray, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVGInput, display = display.none)
-bool  fvgAutoThresh = input.bool(true, "Auto Threshold", group = GRP_FVG, active = showFVGInput, tooltip = "Scale the minimum gap size to this symbol's own volatility — the running average of each bar's body move in % (the LuxAlgo 'Auto' method). Overrides the manual Threshold % below.", display = display.none)
-float fvgThreshPct  = input.float(0.0, "Threshold %", minval = 0.0, step = 0.1, group = GRP_FVG, active = showFVGInput, tooltip = "Manual minimum gap size as a percent of price. Only used when Auto Threshold is OFF. 0 = keep every gap.", display = display.none)
-int   fvgMaxCount  = input.int(3, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
+// Minimum gap size is hardcoded (not user-tunable): a gap must be at least 0.1%
+// of price. No Auto-Threshold volatility scaling — a fixed floor by design.
+float fvgThreshPct = 0.1
+int   fvgMaxCount  = input.int(4, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
 
 //============================================================
 //  A+ SETUP SEQUENCE INPUTS
@@ -1822,10 +1823,8 @@ if not showFVG and array.size(fvgBoxes) > 0
 // The FVG is the 3-candle imbalance itself (LuxAlgo definition): bar A and bar C
 // never overlap and the middle bar's close cleared the gap. No "clean impulse"
 // body/colour rule — any 3 bars that leave a big-enough gap qualify.
-// Threshold (LuxAlgo method): Auto = the running mean of each bar's body move in %,
-// else the manual Threshold %. Computed every bar so its history stays consistent.
-float fvgDeltaPer  = (close - open) / open * 100
-float fvgThreshold = fvgAutoThresh ? ta.cum(math.abs(fvgDeltaPer)) / bar_index : fvgThreshPct
+// Threshold is the hardcoded 0.1%-of-price floor (see fvgThreshPct above).
+float fvgThreshold = fvgThreshPct
 if showFVG and barstate.isconfirmed and bar_index >= 2
     // Bullish: gap between two bars ago's high and this bar's low; middle bar closed above it
     bool bullFvg = low > high[2] and close[1] > high[2] and (low - high[2]) / high[2] * 100 > fvgThreshold
