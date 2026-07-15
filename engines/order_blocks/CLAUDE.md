@@ -17,7 +17,7 @@ its harness `indicators/ob_export.pine` embedded the pre-2026-07-08 structure bl
 first — then `compare_ob.py` passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (12,618 bars,
 `--warmup 1133`). The one canonical implementation — no consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/ob_export.pine`, diffed against this Python by `tools/compare_ob.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-12 — **re-validated after the `choch_lock` structure re-sync.** This engine was STALE-BY-INPUT, not stale: its own code was untouched, but the structure stream feeding it changed (more SOS fire, fewer swings confirm), and `ob_export.pine` embeds the structure block so it was re-synced first. `compare_ob.py --warmup 548` then passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (9,270 bars) — the same single CSV that validated market_structure and fibonacci, since `ob_export.pine` + `fib_export.pine` can sit on one chart (no `px_*` column collisions). Details in `engines/market_structure/CLAUDE.md`.
+**Last reviewed:** 2026-07-14 — **`max_active` default synced 6→2** to the mpc `maxActiveOB` paste (engine default, `ob_export.pine` cap, and a new `compare_ob.py --max-active` arg all now default 2; older cap-6 exports still checkable with `--max-active 6`). Re-validated on a fresh combined `VANTAGE_XAUUSD, 5m` export (`…5ead0.csv`, 10,364 bars): `compare_ob.py --warmup 353` (cap 2 default) exit 0 — every OB field matched on every warm bar, confirming the new default on fresh data. The algorithm was also re-confirmed at cap 6 (`--max-active 6`) against the Jul-12 `…9c376.csv`. Previously 2026-07-12 — **re-validated after the `choch_lock` structure re-sync.** This engine was STALE-BY-INPUT, not stale: its own code was untouched, but the structure stream feeding it changed (more SOS fire, fewer swings confirm), and `ob_export.pine` embeds the structure block so it was re-synced first. `compare_ob.py --warmup 548` then passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (9,270 bars) — the same single CSV that validated market_structure and fibonacci, since `ob_export.pine` + `fib_export.pine` can sit on one chart (no `px_*` column collisions). Details in `engines/market_structure/CLAUDE.md`.
 
 ---
 
@@ -52,7 +52,7 @@ the first opposite-colour candle and drops an OB across it. Two things kill an O
 
 - **Mitigation** — price closes through the far edge (bull OB: `close < bottom`; bear OB:
   `close > top`). This is the real signal: the zone was consumed. Emitted as `mitigated`.
-- **Eviction** — the per-direction list already holds `max_active` (default 6) OBs, so the oldest
+- **Eviction** — the per-direction list already holds `max_active` (default 2) OBs, so the oldest
   is dropped FIFO when a new one is pushed. Pine deletes the box silently; **not** a trading
   signal. Emitted separately as `evicted` so a consumer never confuses the two.
 
@@ -99,7 +99,7 @@ To be accurate the engine needs, exactly like `engines/fibonacci/`:
 ```python
 from order_blocks import OrderBlockEngine, StructureSnapshot
 
-ob = OrderBlockEngine()   # max_active=6, body_only=False — the Pine defaults
+ob = OrderBlockEngine()   # max_active=2, body_only=False — the Pine defaults
 
 # Each closed bar, right after market_structure's engine.update(bar) -> events:
 snap = StructureSnapshot.from_engine(structure_engine, events)

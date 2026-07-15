@@ -184,6 +184,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with ob_export.pine on the chart")
     ap.add_argument("--major-length", type=int, default=15, help="must match the Pine build (default 15)")
+    ap.add_argument("--max-active", type=int, default=2, help="must match the Pine maxActiveOB (default 2; older exports were made at 6)")
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engines)")
@@ -199,7 +200,7 @@ def main(argv=None):
     rows = _load_rows(path, cols)
 
     engine = StructureEngine(major_length=args.major_length)
-    ob = OrderBlockEngine()
+    ob = OrderBlockEngine(max_active=args.max_active)
 
     total = 0
     per_field_mismatch = {fld: 0 for fld in ALL_FIELDS}
@@ -237,7 +238,7 @@ def main(argv=None):
                 detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
-    print(f"\nCompared {total} bars from {path.name}  (major_length={args.major_length}, tol={args.tolerance})")
+    print(f"\nCompared {total} bars from {path.name}  (major_length={args.major_length}, max_active={args.max_active}, tol={args.tolerance})")
     print("-" * 72)
     if not any(per_field_mismatch.values()):
         print("✓ OB PARITY: every compared field matched on every bar. Python OB engine == Pine source.")

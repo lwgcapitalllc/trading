@@ -2,12 +2,14 @@
 Hand-traced tests for the fair-value-gap state machine.
 
 These pin the ported Pine behaviour (mpc_assistant.pine FVG block, "FAIR VALUE GAPS — persist until
-mitigated"): a clean 3-candle displacement (all same-direction closes, progressively higher/lower)
-that leaves a real void (`low > high[2]` bull / `high < low[2]` bear) forms a gap spanning that
-void; a gap is never tapped on its own creation bar; it is mitigated the moment price taps its near
-edge (bull `low <= top`, bear `high >= bottom`); the list is capped at max_count with oldest-first
-(FIFO) eviction; and a min-ticks size filter can reject small gaps. Full Pine<->Python parity is
-validated separately against a TradingView export (fair_value_gaps/tools/compare_fvg.py).
+mitigated"): a 3-candle imbalance (LuxAlgo definition) — the two outer candles don't overlap
+(`low > high[2]` bull / `high < low[2]` bear), the middle bar's close cleared the gap
+(`close[1] > high[2]` bull / `close[1] < low[2]` bear), and the gap is at least `threshold_pct`% of
+price — forms a gap spanning that void; there is NO clean-impulse / progressive-close requirement. A
+gap is never mitigated on its own creation bar; it is mitigated only when a candle CLOSES fully past
+its far edge (bull `close <= bottom`, bear `close >= top`) — a wick into the gap leaves it alive; the
+list is capped at max_count with oldest-first (FIFO) eviction. Full Pine<->Python parity is validated
+separately against a TradingView export (fair_value_gaps/tools/compare_fvg.py).
 
 Run:  python3 -m pytest fair_value_gaps/tests/ -q      (from the repo root)
 """
@@ -28,16 +30,16 @@ def _feed(eng, idx, o, h, l, c):
     return eng.update(idx, o, h, l, c)
 
 
-# A clean bullish displacement: bars 0,1,2 all bullish, progressively higher closes, and bar 2's
-# low (105.5) sits above bar 0's high (101) — a real gap of 4.5.
+# A bullish imbalance: bar 2's low (105.5) sits above bar 0's high (101) — a real gap of 4.5 (~4.5%
+# of price) — and the middle bar (bar 1) closed at 103, above bar 0's high. No impulse rule needed.
 _BULL = [
     (0, 100.0, 101.0, 99.0, 100.5),
     (1, 102.0, 104.0, 101.5, 103.0),
     (2, 105.0, 107.0, 105.5, 106.5),
 ]
 
-# A clean bearish displacement: bars 0,1,2 all bearish, progressively lower closes, and bar 2's
-# high (101.5) sits below bar 0's low (105.5) — a real gap.
+# A bearish imbalance: bar 2's high (101.5) sits below bar 0's low (105.5), and the middle bar closed
+# at 103, below bar 0's low.
 _BEAR = [
     (0, 106.0, 107.0, 105.5, 105.5),
     (1, 104.0, 104.5, 102.0, 103.0),
@@ -54,7 +56,7 @@ def _run(eng, bars):
 
 # ── formation ──
 
-def test_bull_gap_forms_on_clean_displacement():
+def test_bull_gap_forms_on_imbalance():
     eng = FairValueGapEngine()
     ev = _run(eng, _BULL)
     assert len(ev.formed) == 1
@@ -62,10 +64,10 @@ def test_bull_gap_forms_on_clean_displacement():
     assert g.is_bullish is True
     assert g.top == 105.5 and g.bottom == 101.0     # C's low over A's high
     assert g.born_index == 2
-    assert len(ev.active) == 1                        # not tapped on its own creation bar
+    assert len(ev.active) == 1                        # not mitigated on its own creation bar
 
 
-def test_bear_gap_forms_on_clean_displacement():
+def test_bear_gap_forms_on_imbalance():
     eng = FairValueGapEngine()
     ev = _run(eng, _BEAR)
     assert len(ev.formed) == 1
@@ -77,7 +79,7 @@ def test_bear_gap_forms_on_clean_displacement():
 
 
 def test_no_gap_when_void_does_not_open():
-    # Same bullish, progressive closes, but bar 0's high (106) overlaps bar 2's low (105.5) — no void.
+    # Bar 0's high (106) overlaps bar 2's low (105.5) — no void, so no gap regardless of closes.
     eng = FairValueGapEngine()
     bars = [
         (0, 100.0, 106.0, 99.0, 100.5),
@@ -89,28 +91,45 @@ def test_no_gap_when_void_does_not_open():
     assert ev.active == []
 
 
-def test_no_gap_when_displacement_not_clean():
-    # A real void, but bar 1 is bearish (close < open) — not a one-way impulse, so no gap.
+def test_gap_forms_even_when_displacement_not_clean():
+    # A real void with the middle close clearing it, but bar 1 is bearish (close < open). The old
+    # engine rejected this ("not a clean impulse"); the LuxAlgo rule accepts it.
     eng = FairValueGapEngine()
     bars = [
         (0, 100.0, 101.0, 99.0, 100.5),
-        (1, 104.0, 104.0, 101.5, 102.0),   # close 102 < open 104 -> not bullish
+        (1, 104.0, 104.0, 101.5, 102.0),   # bearish bar, but close 102 > bar0 high 101
         (2, 105.0, 107.0, 105.5, 106.5),
     ]
     ev = _run(eng, bars)
-    assert ev.formed == []
+    assert len(ev.formed) == 1
+    assert ev.formed[0].top == 105.5 and ev.formed[0].bottom == 101.0
 
 
-def test_no_gap_when_closes_not_progressive():
-    # All three bullish and a void exists, but closes are not progressively higher (c0 < c1).
+def test_gap_forms_even_when_closes_not_progressive():
+    # All bullish-ish with a void; closes are NOT progressively higher (c0 106 < c1 107). The old
+    # engine rejected this; the LuxAlgo rule only needs the MIDDLE close to clear the gap.
     eng = FairValueGapEngine()
     bars = [
         (0, 100.0, 101.0, 99.0, 100.5),
-        (1, 102.0, 108.0, 101.5, 107.0),   # close 107
-        (2, 105.0, 107.5, 105.5, 106.0),   # close 106 < previous close 107 -> not progressive
+        (1, 102.0, 108.0, 101.5, 107.0),   # middle close 107 > bar0 high 101
+        (2, 105.0, 107.5, 105.5, 106.0),   # close 106 < previous close 107
+    ]
+    ev = _run(eng, bars)
+    assert len(ev.formed) == 1
+
+
+def test_no_gap_when_middle_close_does_not_clear():
+    # Void exists (bar2 low 105.5 > bar0 high 105) but the middle bar closed at 104, BELOW the gap
+    # top — the LuxAlgo middle-bar-close condition fails, so no gap.
+    eng = FairValueGapEngine()
+    bars = [
+        (0, 100.0, 105.0, 99.0, 100.0),
+        (1, 101.0, 106.0, 100.0, 104.0),   # close 104 <= bar0 high 105 -> middle didn't clear
+        (2, 106.0, 108.0, 105.5, 107.0),
     ]
     ev = _run(eng, bars)
     assert ev.formed == []
+    assert ev.active == []
 
 
 def test_no_detection_before_two_bars_of_history():
@@ -122,29 +141,39 @@ def test_no_detection_before_two_bars_of_history():
     assert ev.active == []
 
 
-# ── mitigation ──
+# ── mitigation (close past the FAR edge) ──
 
-def test_bull_gap_mitigated_when_near_edge_tapped():
+def test_bull_gap_mitigated_when_close_past_far_edge():
     eng = FairValueGapEngine()
     _run(eng, _BULL)                                  # gap: top=105.5, bottom=101, born=2
-    # bar 3 dips to tap the top edge (low 105 <= 105.5); not itself an impulse, so no new gap.
-    ev = _feed(eng, 3, 106.0, 106.5, 105.0, 105.5)
+    # bar 3 closes at 100, below the gap's bottom (far edge) -> mitigated. Forms no new gap.
+    ev = _feed(eng, 3, 106.0, 106.5, 99.0, 100.0)
     assert len(ev.mitigated) == 1
     assert ev.mitigated[0].born_index == 2
     assert ev.active == []
 
 
-def test_bear_gap_mitigated_when_near_edge_tapped():
+def test_bear_gap_mitigated_when_close_past_far_edge():
     eng = FairValueGapEngine()
     _run(eng, _BEAR)                                  # gap: top=105.5, bottom=101.5, born=2
-    # bar 3 pops up to tap the bottom edge (high 102 >= 101.5).
-    ev = _feed(eng, 3, 100.5, 102.0, 100.0, 101.0)
+    # bar 3 closes at 106, above the gap's top (far edge) -> mitigated.
+    ev = _feed(eng, 3, 101.0, 106.5, 100.5, 106.0)
     assert len(ev.mitigated) == 1
     assert ev.active == []
 
 
-def test_gap_not_tapped_on_its_own_creation_bar():
-    # bar 2's own low IS the bull gap's top edge; the born guard must stop it self-mitigating.
+def test_wick_into_gap_does_not_mitigate():
+    # bar 3 wicks all the way through the bull gap (low 100.5 < bottom 101) but CLOSES at 104,
+    # inside/above the bottom — a wick no longer mitigates; the gap survives.
+    eng = FairValueGapEngine()
+    _run(eng, _BULL)                                  # gap: top=105.5, bottom=101, born=2
+    ev = _feed(eng, 3, 105.0, 106.0, 100.5, 104.0)
+    assert ev.mitigated == []
+    assert len(ev.active) == 1
+
+
+def test_gap_not_mitigated_on_its_own_creation_bar():
+    # The born guard must stop a gap self-mitigating on the bar it forms.
     eng = FairValueGapEngine()
     ev = _run(eng, _BULL)
     assert ev.mitigated == []
@@ -154,7 +183,8 @@ def test_gap_not_tapped_on_its_own_creation_bar():
 # ── FIFO eviction ──
 
 def test_oldest_gap_evicted_past_max_count():
-    # Ascending staircase: every bar from index 2 forms a gap, none tap the earlier (lower) gaps.
+    # Ascending staircase: every bar from index 2 forms a gap, none close past the earlier (lower)
+    # gaps' bottoms.
     eng = FairValueGapEngine(max_count=2)
     ev = None
     for k in range(5):
@@ -167,18 +197,22 @@ def test_oldest_gap_evicted_past_max_count():
     assert ev.mitigated == []
 
 
-# ── size filter ──
+# ── size threshold (% of price) ──
 
-def test_min_ticks_filter_rejects_small_gap():
-    # The bull gap is 4.5 wide; with min_size = 5 ticks * 1.0 mintick it is filtered out.
-    eng = FairValueGapEngine(min_ticks=5, mintick=1.0)
-    ev = _run(eng, _BULL)
+def test_threshold_rejects_small_gap():
+    # A tiny 0.04-wide gap on ~100 price = 0.04% < the default 0.1% floor -> rejected.
+    eng = FairValueGapEngine()
+    bars = [
+        (0, 99.90, 100.00, 99.80, 99.95),
+        (1, 100.05, 100.10, 100.02, 100.08),   # middle close 100.08 > bar0 high 100.00
+        (2, 100.06, 100.12, 100.04, 100.10),   # low 100.04 > bar0 high 100.00, gap = 0.04
+    ]
+    ev = _run(eng, bars)
     assert ev.formed == []
     assert ev.active == []
 
 
-def test_min_ticks_filter_allows_gap_at_threshold():
-    # Same gap (4.5) clears a 4-tick * 1.0 threshold.
-    eng = FairValueGapEngine(min_ticks=4, mintick=1.0)
-    ev = _run(eng, _BULL)
-    assert len(ev.formed) == 1
+def test_custom_threshold_rejects_and_allows():
+    # The _BULL gap is 4.5 wide on ~101 price = ~4.46%. A 5% threshold rejects it; 4% accepts it.
+    assert _run(FairValueGapEngine(threshold_pct=5.0), _BULL).formed == []
+    assert len(_run(FairValueGapEngine(threshold_pct=4.0), _BULL).formed) == 1

@@ -41,13 +41,13 @@ class OrderBlockEngine:
     """Streaming order-block detector.
 
     Build one per symbol/timeframe, feed it one closed candle at a time as they close, in order.
-    Mirrors mpc_assistant.pine's default OB settings: max_active = 6 OBs per direction,
+    Mirrors mpc_assistant.pine's default OB settings: max_active = 2 OBs per direction,
     body_only = False (use the full candle high/low, not just the body).
     """
 
-    def __init__(self, max_active: int = 6, body_only: bool = False,
+    def __init__(self, max_active: int = 2, body_only: bool = False,
                  window: int = _WINDOW) -> None:
-        self._max_active = max_active          # Pine maxActiveOB (default 6)
+        self._max_active = max_active          # Pine maxActiveOB (default 2)
         self._body_only = body_only            # Pine obBodyOnly (default false)
 
         # The two live OB lists, oldest-first — Pine activeBullOBs / activeBearOBs.
