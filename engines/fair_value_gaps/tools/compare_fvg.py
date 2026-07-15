@@ -10,8 +10,8 @@ saw and diffs its output against the px_fvg_* columns the Pine build plotted.
 
 What is compared (per bar, after --warmup)
 ------------------------------------------
-  * The active gap arrays, slot by slot (slot 1 = oldest): px_fvg_top_1..3 / px_fvg_bot_1..3 against
-    active[k].top / .bottom, and px_fvg_bull_1..3 against active[k].is_bullish (1/0). Matching the
+  * The active gap arrays, slot by slot (slot 1 = oldest): px_fvg_top_1..6 / px_fvg_bot_1..6 against
+    active[k].top / .bottom, and px_fvg_bull_1..6 against active[k].is_bullish (1/0). Matching the
     ordered arrays every bar proves formation, mitigation AND FIFO eviction all at once.
   * px_fvg_count against len(active).
   * px_fvg_formed / px_fvg_mit against the count of gaps formed / mitigated this bar (localisers).
@@ -20,21 +20,21 @@ Data lineup
 -----------
 Export ONE CSV from TradingView with indicators/fvg_export.pine on the chart (chart menu → Export
 chart data). Each row carries the candle (fed to Python) and the Pine FVG engine's outputs. Both
-sides come from the same file, so there is no data-source mismatch. Set --max-count / --min-ticks /
---mintick to match the Pine inputs (defaults 3 / 0 / 0.01 = the mpc defaults; with min-ticks 0 the
-mintick is irrelevant).
+sides come from the same file, so there is no data-source mismatch. Set --max-count / --threshold-pct
+to match the Pine inputs (defaults 6 / 0.1 = the mpc defaults — max_count 6 and a hardcoded
+0.1%-of-price gap floor).
 
 Warmup
 ------
 The Pine export usually begins at a non-zero bar_index (TradingView had history before the export
 window), so the Pine engine may already hold gaps whose displacement began off-window. The
-cold-started Python engine can't know them; they flush out as they tap or FIFO-evict. Use --warmup to
+cold-started Python engine can't know them; they flush out as they are closed past or FIFO-evicted. Use --warmup to
 skip those early bars; the tool prints the last mismatching bar to help you pick it.
 
 Usage
 -----
     python3 fair_value_gaps/tools/compare_fvg.py path/to/fvg_export.csv
-    python3 fair_value_gaps/tools/compare_fvg.py fvg_export.csv --max-count 3 --warmup 50
+    python3 fair_value_gaps/tools/compare_fvg.py fvg_export.csv --max-count 6 --warmup 50
 
 Exit 0 if every compared field matches on every bar, 1 otherwise. Standard library only.
 """
@@ -52,7 +52,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from fair_value_gaps import FairValueGapEngine
 
-_MAX_SLOTS = 3  # mpc fvgMaxCount default; fvg_export.pine plots 3 slots
+_MAX_SLOTS = 6  # mpc fvgMaxCount default; fvg_export.pine plots 6 slots
 
 # ── column groups ──
 TOP_FIELDS = [f"px_fvg_top_{k}" for k in range(1, _MAX_SLOTS + 1)]
@@ -167,9 +167,8 @@ def _load_rows(path, cols):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with fvg_export.pine on the chart")
-    ap.add_argument("--max-count", type=int, default=3, help="must match the Pine fvgMaxCount (default 3)")
-    ap.add_argument("--min-ticks", type=int, default=0, help="must match the Pine fvgMinTicks (default 0)")
-    ap.add_argument("--mintick", type=float, default=0.01, help="instrument mintick (default 0.01; only used if min-ticks>0)")
+    ap.add_argument("--max-count", type=int, default=6, help="must match the Pine fvgMaxCount (default 6)")
+    ap.add_argument("--threshold-pct", type=float, default=0.1, help="must match the Pine fvgThreshPct (default 0.1 = 0.1%% of price)")
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
@@ -184,7 +183,7 @@ def main(argv=None):
     cols = _resolve_columns(header)
     rows = _load_rows(path, cols)
 
-    fvg = FairValueGapEngine(max_count=args.max_count, min_ticks=args.min_ticks, mintick=args.mintick)
+    fvg = FairValueGapEngine(max_count=args.max_count, threshold_pct=args.threshold_pct)
 
     total = 0
     per_field_mismatch = {fld: 0 for fld in ALL_FIELDS}
@@ -220,7 +219,7 @@ def main(argv=None):
                 detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
-    print(f"\nCompared {total} bars from {path.name}  (max_count={args.max_count}, min_ticks={args.min_ticks}, tol={args.tolerance})")
+    print(f"\nCompared {total} bars from {path.name}  (max_count={args.max_count}, threshold_pct={args.threshold_pct}, tol={args.tolerance})")
     print("-" * 72)
     if not any(per_field_mismatch.values()):
         print("✓ FVG PARITY: every compared field matched on every bar. Python FVG engine == Pine source.")

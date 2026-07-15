@@ -9,7 +9,7 @@ No behavior lives here. Two kinds of container:
     `top`/`bottom` are the gap's price edges (top > bottom always); `born_index` is the bar it
     formed on; `id` is a stable id so a consumer can match a formed gap to its later mitigation.
 
-  FvgEvents — the FVG engine's OUTPUT: which gaps formed / were mitigated (tapped) / were evicted
+  FvgEvents — the FVG engine's OUTPUT: which gaps formed / were mitigated (closed past) / were evicted
     (aged out past the cap) THIS bar (edge events), plus the current live gap list (state). Colours,
     boxes and the directional-visibility filter are deliberately absent — those are TradingView
     visuals; the trading signal is the events. A consumer that cares about direction reads each
@@ -27,9 +27,10 @@ class FairValueGap:
     """One fair value gap — the void a clean 3-candle displacement leaves behind.
 
     A **bullish** gap is the space between candle A's high (two bars back) and candle C's low (the
-    displacement bar), when the three candles closed progressively higher and never overlapped
-    (`low > high[2]`): `top` = C's low, `bottom` = A's high. A **bearish** gap mirrors it: `top` =
-    A's low (two bars back), `bottom` = C's high, when `high < low[2]`. Either way `top > bottom`.
+    displacement bar), when the two never overlapped (`low > high[2]`) and the middle bar's close
+    cleared the gap (`close[1] > high[2]`): `top` = C's low, `bottom` = A's high. A **bearish** gap
+    mirrors it: `top` = A's low, `bottom` = C's high, when `high < low[2]` and `close[1] < low[2]`.
+    Either way `top > bottom`.
     """
     top: float
     bottom: float
@@ -47,13 +48,14 @@ class FvgEvents:
     bar.
 
     mitigated vs evicted are different things and kept apart on purpose:
-      - mitigated: price tapped the gap's near edge (bull: `low <= top`; bear: `high >= bottom`).
-        This is the real signal — the gap was filled / entered. Pine deletes the box on the tap.
-      - evicted: the gap simply aged out because the total cap (max_count, default 3) was exceeded
+      - mitigated: a candle CLOSED fully past the gap's far edge (bull: `close <= bottom`; bear:
+        `close >= top`). This is the real signal — the gap was consumed. Pine deletes the box on that
+        close; a wick into the gap does not count.
+      - evicted: the gap simply aged out because the total cap (max_count, default 6) was exceeded
         by a newer gap. Pine array.shifts the oldest; not a trading signal.
     """
 
     formed: List[FairValueGap] = field(default_factory=list)      # gaps created THIS bar (events)
-    mitigated: List[FairValueGap] = field(default_factory=list)   # gaps tapped out THIS bar (events)
+    mitigated: List[FairValueGap] = field(default_factory=list)   # gaps closed fully past THIS bar (events)
     evicted: List[FairValueGap] = field(default_factory=list)     # gaps aged out (FIFO > max) THIS bar
     active: List[FairValueGap] = field(default_factory=list)      # live gaps, oldest-first (state)
