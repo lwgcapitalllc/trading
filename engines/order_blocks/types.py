@@ -99,7 +99,7 @@ class OrderBlockEvents:
     mitigated vs evicted are different things and kept apart on purpose:
       - mitigated: price closed through the zone's far edge (bull: close < bottom; bear:
         close > top). This is the real signal — the zone was consumed.
-      - evicted: the OB simply aged out because the per-direction cap (max_active, default 6) was
+      - evicted: the OB simply aged out because the per-direction cap (max_active, default 2) was
         exceeded. Pine deletes the box silently; not a trading signal.
     """
 

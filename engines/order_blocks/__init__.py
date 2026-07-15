@@ -13,7 +13,7 @@ of fibonacci/, not downstream of it: both consume market_structure directly.
 Public API:
     from order_blocks import OrderBlockEngine, StructureSnapshot
 
-    ob = OrderBlockEngine()          # max_active=6, body_only=False — the Pine defaults
+    ob = OrderBlockEngine()          # max_active=2, body_only=False — the Pine defaults
     # each closed bar, after structure_engine.update(bar) -> events:
     snap = StructureSnapshot.from_engine(structure_engine, events)
     ob_events = ob.update(bar.index, bar.open, bar.high, bar.low, bar.close, snap)

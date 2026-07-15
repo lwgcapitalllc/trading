@@ -55,7 +55,7 @@ f_structSize() =>
 //  is kept, which is exactly the state order_blocks/ reproduces. Defaults mirror the
 //  Python engine: 6 active per direction, full candle high/low (not body-only).
 //============================================================
-int  maxActiveOB = 6       // mpc default 6
+int  maxActiveOB = 2       // mpc default 2 (was 6 before the 2026-07-14 paste)
 bool obBodyOnly  = false   // mpc default false
 
 type OrderBlock
