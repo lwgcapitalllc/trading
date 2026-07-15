@@ -133,18 +133,26 @@ method extendOBs(array<OrderBlock> arr) =>
 //  FAIR VALUE GAPS (FVG) INPUTS
 //============================================================
 var GRP_FVG = "Fair Value Gaps"
-bool  showFVGInput      = input.bool(true, "Show FVG (REQUIRED — feeds entries)", group = GRP_FVG, tooltip = "Detects fair value gaps left by clean 3-candle displacements only: three same-direction candles with progressively higher (or lower) closes. A gap disappears the moment price taps it.", display = display.none)
+bool  showFVGInput      = input.bool(true, "Show FVG (REQUIRED — feeds entries)", group = GRP_FVG, tooltip = "Detects fair value gaps: any 3-candle imbalance where bar A and bar C never overlap and the middle bar closed past the gap (the LuxAlgo definition). Gaps below 0.1% of price are ignored. A gap is removed the moment price taps it.", display = display.none)
 bool showFVG = marketStructureOnly ? false : showFVGInput
 bool  fvgDirOnly   = input.bool(true, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
 color fvgBullColor = input.color(color.new(color.gray, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVGInput, display = display.none)
 color fvgBearColor = input.color(color.new(color.gray, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVGInput, display = display.none)
-int   fvgMinTicks  = input.int(0, "Minimum Gap Size (ticks)", minval = 0, maxval = 1000, group = GRP_FVG, active = showFVGInput, tooltip = "Gaps smaller than this are ignored. 0 = no size filter.", display = display.none)
+// Minimum gap size floor: a gap must be at least this % of price to count.
+// No Auto-Threshold volatility scaling — a fixed floor, now user-tunable.
+float fvgThreshPct = input.float(0.1, "FVG Min Gap (% of price)", minval = 0.0, step = 0.01, group = GRP_FVG, active = showFVGInput, tooltip = "Minimum size of the 3-candle imbalance, as a percent of price. A gap smaller than this is ignored. Default 0.1%. Lower it to catch smaller gaps, raise it to only keep large displacements.", display = display.none)
 int   fvgMaxCount  = input.int(3, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
+bool  fvgKeepUntilBroken = input.bool(false, "FVG: keep until broken through (not on tap)", group = GRP_FVG, active = showFVGInput, tooltip = "OFF (default) = a gap is removed the moment price taps its near edge. ON = a tap no longer removes it; the gap stays alive until a candle CLOSES fully through it on the opposite (far) side. A gap that lives longer keeps its resting entry limit alive longer, so flip this to test whether it changes which entries fire.")
 
 //============================================================
 //  A+ SETUP SEQUENCE INPUTS
 //============================================================
 var GRP_APLUS = "A+ Setup"
+bool aplusDivOnly  = input.bool(true, "A+ Stage 1: Divergence Only (ignore sweeps)", group = GRP_APLUS, tooltip = "When ON, the A+ sequence arms Stage 1 ONLY on an RSI divergence — liquidity sweeps no longer start a setup. Requires 'Track RSI Divergence' to also be enabled, otherwise no divergences are detected and the A+ row stays on 'Pass'. When OFF (default), either a sweep or a divergence arms Stage 1, exactly as before.", display = display.none)
+bool aplusHtfWarn  = input.bool(true,  "Warn When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Shows a caution note on the A+ row when Weekly/Daily bias opposes the trade direction (e.g. a short while Weekly is Bullish). The setup still displays — it's an educational flag, not a block.", display = display.none)
+bool aplusHtfBlock = input.bool(false, "Block A+ When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Stronger version: if on, an A+ whose direction opposes HTF bias is suppressed entirely instead of just warned. Off by default.", display = display.none)
+bool aplusReqInt   = input.bool(false, "Require INT Confirmation for READY", group = GRP_APLUS, tooltip = "Holds the A+ at 'AWAIT ENTRY' until an iSOS/iBOS confirms in the trade direction inside the entry zone — a lower-timeframe structure trigger. Tighter, higher-probability entries at the cost of some fills. Off by default.", display = display.none)
+bool aplusIgnoreWindow = input.bool(true, "A+: Ignore Sweep→SOS Time Window (sequence only)", group = GRP_APLUS, tooltip = "When ON, the Max Time window below is ignored entirely — the A+ sequence cares only about ORDER: once Stage 1 arms (a divergence in Div-Only mode, or a sweep/divergence otherwise), the NEXT same-side SOS advances it to 2/3 no matter how much time has passed. The arm never expires on time; it only clears on a real death (opposite-direction SOS, close past the fib 1.0, or TP3). Trade-off: if a same-side SOS never comes, that side stays at 1/3 until an opposite SOS or invalidation clears it, and won't hand off to CONT meanwhile.", display = display.none)
 int aplusWindow = input.int(1440, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop, measured in TIME rather than bars — a bar count is fragile across timeframes (300 bars is 5 hours on 1m but 12.5 days on 4H). The SOS must fire within this many minutes of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
 
 //============================================================
@@ -1777,7 +1785,7 @@ if internalActive and not na(i_sw_line)
 // (low > high[2]). Bearish is the mirror.
 // Lifecycle: gaps are NOT wiped on BOS/SOS — the impulse leg that breaks structure
 // is exactly what leaves the gaps, and the retracement back into them is the fib
-// entry confluence. A gap is deleted only when price fully fills it; chart clutter
+// entry confluence. A gap is deleted the moment price taps it; chart clutter
 // is bounded by the Max Active FVGs cap (oldest dropped first). The optional
 // directional filter hides (not deletes) gaps that oppose the current external
 // structure direction, so they reappear if direction flips back.
@@ -1802,15 +1810,17 @@ if not showFVG and array.size(fvgBoxes) > 0
     f_fvgClearAll()
 
 // ── Detection (confirmed bars only, so live wicks can't paint phantom gaps) ──
-// Clean displacement required: all three candles must close in the displacement
-// direction with progressively higher (bullish) or lower (bearish) closes. A gap
-// left by a mixed or choppy sequence is ignored — only clear one-way impulses count.
+// The FVG is the 3-candle imbalance itself (LuxAlgo definition): bar A and bar C
+// never overlap and the middle bar's close cleared the gap. No "clean impulse"
+// body/colour rule — any 3 bars that leave a big-enough gap qualify.
+// Threshold is the user-set %-of-price floor (see fvgThreshPct input above).
+float fvgThreshold = fvgThreshPct
 if showFVG and barstate.isconfirmed and bar_index >= 2
-    float fvgMinSize = fvgMinTicks * syminfo.mintick
-    bool bullCleanImpulse = close > open and close[1] > open[1] and close[2] > open[2] and close > close[1] and close[1] > close[2]
-    bool bearCleanImpulse = close < open and close[1] < open[1] and close[2] < open[2] and close < close[1] and close[1] < close[2]
-    // Bullish: gap between two bars ago's high and this bar's low
-    if bullCleanImpulse and low > high[2] and (low - high[2]) >= fvgMinSize
+    // Bullish: gap between two bars ago's high and this bar's low; middle bar closed above it
+    bool bullFvg = low > high[2] and close[1] > high[2] and (low - high[2]) / high[2] * 100 > fvgThreshold
+    // Bearish: mirror
+    bool bearFvg = high < low[2] and close[1] < low[2] and (low[2] - high) / low[2] * 100 > fvgThreshold
+    if bullFvg
         box b = box.new(bar_index - 1, low, bar_index, high[2], bgcolor = fvgBullColor, border_color = color(na), text = "FVG", text_color = color.new(color.gray, 30), text_size = size.tiny, text_halign = text.align_right)
         array.push(fvgBoxes, b)
         array.push(fvgTops, low)
@@ -1818,7 +1828,7 @@ if showFVG and barstate.isconfirmed and bar_index >= 2
         array.push(fvgIsBull, true)
         array.push(fvgBorn, bar_index)
     // Bearish: gap between two bars ago's low and this bar's high
-    if bearCleanImpulse and high < low[2] and (low[2] - high) >= fvgMinSize
+    if bearFvg
         box b = box.new(bar_index - 1, low[2], bar_index, high, bgcolor = fvgBearColor, border_color = color(na), text = "FVG", text_color = color.new(color.gray, 30), text_size = size.tiny, text_halign = text.align_right)
         array.push(fvgBoxes, b)
         array.push(fvgTops, low[2])
@@ -1839,11 +1849,14 @@ if showFVG and array.size(fvgBoxes) > 0
         bool  isBull = array.get(fvgIsBull, i)
         float gTop   = array.get(fvgTops, i)
         float gBot   = array.get(fvgBots, i)
-        // Mitigated = price tapped the gap at all (touched its near edge).
+        // Kill condition depends on the "keep until broken" toggle:
+        //   OFF (default) → tap-delete: dies the moment price touches the near edge.
+        //   ON            → survives taps; dies only when a candle CLOSES fully past
+        //                   the FAR edge (broken through the opposite side).
         // Skipped on the creation bar itself: a bullish gap's top IS that bar's
         // low, so without this guard every gap would self-delete instantly.
-        bool tapped = bar_index > array.get(fvgBorn, i) and (isBull ? low <= gTop : high >= gBot)
-        if tapped
+        bool killed = bar_index > array.get(fvgBorn, i) and (fvgKeepUntilBroken ? (isBull ? close <= gBot : close >= gTop) : (isBull ? low <= gTop : high >= gBot))
+        if killed
             box.delete(array.get(fvgBoxes, i))
             array.remove(fvgBoxes, i)
             array.remove(fvgTops, i)
@@ -4149,10 +4162,16 @@ bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = 
 bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
 bool  execArmDiv   = input.bool(true, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
 bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
+bool  execFvgDeepOnly = input.bool(false, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
 bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
-bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade.")
+bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade. (Loss-mitigation test #2 — an opposite SOS is early proof the reversal failed, so exit there instead of riding to the fib-1.0 stop.)")
+bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1 (the big lever). Blocks a reversal that fights a FRESH higher-timeframe breakout, while still allowing one that fades an exhaustion sweep. A short fades a high, so it is blocked when the HTF just CLOSED above its prior high (Close > Prev High = a real breakout up). A long is blocked when the HTF just closed below its prior low. A swept-high/low (exhaustion) never blocks — that is exactly the state the setup is meant to fade. Off = current behaviour (no HTF filter). Use with the source dropdown below.")
+string execHtfSource = input.string("Weekly", "HTF exhaustion source", options = ["Weekly", "Daily", "Either"], group = GRP_EXEC, tooltip = "Which higher timeframe the breakout block reads. Weekly = only a weekly breakout blocks (widest, fewest blocks). Daily = only a daily breakout blocks. Either = a breakout on Weekly OR Daily blocks (strictest, most trades removed). Only used when 'Only fade HTF exhaustion' is on.")
+string execHtfWeekly = input.string("Ignore", "Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, WEEKLY leg. Judged against the trade's direction (a long wants Bullish). Ignore = no gate. Must agree = Weekly must be Bullish for a long / Bearish for a short. Must not oppose = only blocks if Weekly is actively against the trade (Neutral passes). Must oppose (reversal) = Weekly must be AGAINST the trade — this is the 'Weekly still in the old trend' half of a reversal. Combine with the Daily setting below: Weekly 'Must oppose' + Daily 'Must agree' = only fade when the Daily has flipped against a still-opposing Weekly (a forming reversal).")
+string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, DAILY leg. Same four choices as Weekly, judged against the trade direction. For your reversal idea set this to 'Must agree' (Daily has turned in the trade's direction) while Weekly is 'Must oppose (reversal)'. Set both to 'Must agree' for full Daily+Weekly trend alignment. Ignore = no gate.")
 float execRiskPct = input.float(1.0,  "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 10, step = 0.1)
-float execSlBufTk = input.float(0.0,  "SL buffer beyond 1.0 (ticks)",  group = GRP_EXEC, minval = 0)
+string execSlLevel = input.string("1.0", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib level on the DEEP side of 0.5. Default 1.0 = the leg origin (the level the engine also uses to invalidate the leg). Pick a shallower level (0.618-0.886) for a tighter stop. The buffer below is then measured beyond THIS level, not 1.0. If the chosen level lands at or inside the entry price, the trade's SL distance is <= 0 and that setup simply won't fire — no bad trade is taken.")
+float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
 float execTp1Pct  = input.float(30,   "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
 float execTp2Pct  = input.float(30,   "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The stats table below re-counts those honestly.")
@@ -4229,6 +4248,17 @@ type TradeLbl
 var TradeLbl tlbl = TradeLbl.new()
 
 float execSlBuf = execSlBufTk * syminfo.mintick
+
+// Stop anchor — the fib price the SL is placed at, per the "SL fib level" input.
+// All choices sit on the deep side of 0.5, so the stop is always beyond the entry
+// band. 1.0 (default) = the leg origin.
+f_slAnchor() =>
+    switch execSlLevel
+        "0.618" => fiboP3
+        "0.702" => fiboP4
+        "0.786" => fiboP5
+        "0.886" => fiboP6
+        => fiboP10
 bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
 
 // ── Entry EDGE — the exact price a resting limit sits at ───────────────────
@@ -4246,10 +4276,14 @@ if fibsReady and array.size(fvgTops) > 0
         float _gT = array.get(fvgTops, _i)
         float _gB = array.get(fvgBots, _i)
         bool  _gBull = array.get(fvgIsBull, _i)
-        if _gBull and fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6
+        // Deep-only gate: when on, the WHOLE gap must sit past the 0.5 line —
+        // long: gap top at/below 0.5; short: gap bottom at/above 0.5 (no straddle).
+        bool _lDeepOk = not execFvgDeepOnly or _gT <= fiboP2
+        bool _sDeepOk = not execFvgDeepOnly or _gB >= fiboP2
+        if _gBull and fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6 and _lDeepOk
             float _e = math.min(_gT, fiboP2)                       // shallowest touch inside band
             longEdge := na(longEdge) ? _e : math.max(longEdge, _e) // first one price reaches
-        if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6
+        if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6 and _sDeepOk
             float _e = math.max(_gB, fiboP2)
             shortEdge := na(shortEdge) ? _e : math.min(shortEdge, _e)
 if not execReqFVG and fibsReady
@@ -4357,8 +4391,42 @@ f_conf(bool isLong, bool swp, bool div, string swpName, int sosAge, bool fvg, bo
 //    flat, and this leg not already traded ──
 // Final-hour block: no new entries 16:00-17:00 NY (gold closes 17:00, reopens 18:00).
 bool lateDayBlock = execNoLateDay and nyHour >= 16 and nyHour < 18
-bool longArmed  = execLongs  and armOkL and not lateDayBlock and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVeto  or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
-bool shortArmed = execShorts and armOkS and not lateDayBlock and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVeto or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+
+// ── HTF exhaustion filter (loss-mitigation test #1) ──────────────────────────
+// The engine already grades each HTF bias as a breakout CLOSURE ("Close > Prev
+// High" / "Close < Prev Low") or an exhaustion SWEEP ("Swept High" / "Swept
+// Low"). We only ever want to fade the sweep, never fight a fresh breakout: a
+// short (fading a high) is blocked when the HTF just closed ABOVE its prior high;
+// a long (fading a low) when it just closed BELOW its prior low. Swept states
+// never block. Read the desc strings so a sweep and a closure are told apart.
+bool wBreakUp   = str.contains(wEstDesc, "Close >")
+bool wBreakDown = str.contains(wEstDesc, "Close <")
+bool dBreakUp   = str.contains(dEstDesc, "Close >")
+bool dBreakDown = str.contains(dEstDesc, "Close <")
+bool htfBreakUp   = execHtfSource == "Daily" ? dBreakUp   : execHtfSource == "Either" ? (wBreakUp   or dBreakUp)   : wBreakUp
+bool htfBreakDown = execHtfSource == "Daily" ? dBreakDown : execHtfSource == "Either" ? (wBreakDown or dBreakDown) : wBreakDown
+bool htfBlockLong  = execHtfExhaustOnly and htfBreakDown   // long fades a low → blocked by a fresh breakdown
+bool htfBlockShort = execHtfExhaustOnly and htfBreakUp     // short fades a high → blocked by a fresh breakout up
+
+// ── HTF-bias confluence (Daily + Weekly working TOGETHER) ────────────────────
+// Each timeframe carries a requirement judged against the trade's direction.
+// "agree" = the TF bias matches the trade (Bullish for a long, Bearish for a
+// short); "oppose" = the TF bias is against it. Returns TRUE = this TF blocks
+// the trade. Neutral satisfies only "Must not oppose". Combine the two legs to
+// express a forming reversal (Weekly opposes, Daily agrees) or full alignment
+// (both agree) — the relationship between the two, not either one alone.
+f_htfReqBlock(string req, string state, bool isLong) =>
+    bool agreeDir  = isLong ? (state == "Bullish") : (state == "Bearish")
+    bool opposeDir = isLong ? (state == "Bearish") : (state == "Bullish")
+    req == "Must agree"              ? not agreeDir  :
+     req == "Must not oppose"        ? opposeDir     :
+     req == "Must oppose (reversal)" ? not opposeDir : false
+
+bool htfBiasBlockLong  = f_htfReqBlock(execHtfWeekly, wEstState, true)  or f_htfReqBlock(execHtfDaily, dEstState, true)
+bool htfBiasBlockShort = f_htfReqBlock(execHtfWeekly, wEstState, false) or f_htfReqBlock(execHtfDaily, dEstState, false)
+
+bool longArmed  = execLongs  and armOkL and not lateDayBlock and not htfBlockLong  and not htfBiasBlockLong  and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVeto  or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+bool shortArmed = execShorts and armOkS and not lateDayBlock and not htfBlockShort and not htfBiasBlockShort and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVeto or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
 
 // ── MISSED-DUE-TO-NO-FVG counter ──────────────────────────────────────────────
 // A "missed" setup = every trade gate is satisfiable EXCEPT the FVG. Same
@@ -4383,7 +4451,7 @@ if aplusL_fvgMiss and (not na(longEdge) or (not na(tradedSosL) and aplusL_sosBar
 if aplusL_fvgMiss and na(aplusL_sosBar)
     missedNoFvgL := missedNoFvgL + 1
     if debugMarkNoFvg
-        label.new(aplusL_fvgMissBar, low - _dbgOff * 2, "NO FVG\nlong missed", color = color.new(#FF9800, 15), textcolor = color.new(#FF9800, 0), style = label.style_label_up, size = size.small)
+        label.new(aplusL_fvgMissBar, low - _dbgOff * 2, "NO FVG\nlong missed", color = color.new(#FF9800, 15), textcolor = color.new(#0a0a14, 0), style = label.style_label_up, size = size.small)
     aplusL_fvgMiss := false, aplusL_fvgMissBar := na
 
 if shortReadyNoFvg
@@ -4394,7 +4462,7 @@ if aplusS_fvgMiss and (not na(shortEdge) or (not na(tradedSosS) and aplusS_sosBa
 if aplusS_fvgMiss and na(aplusS_sosBar)
     missedNoFvgS := missedNoFvgS + 1
     if debugMarkNoFvg
-        label.new(aplusS_fvgMissBar, high + _dbgOff * 2, "NO FVG\nshort missed", color = color.new(#FF9800, 15), textcolor = color.new(#FF9800, 0), style = label.style_label_down, size = size.small)
+        label.new(aplusS_fvgMissBar, high + _dbgOff * 2, "NO FVG\nshort missed", color = color.new(#FF9800, 15), textcolor = color.new(#0a0a14, 0), style = label.style_label_down, size = size.small)
     aplusS_fvgMiss := false, aplusS_fvgMissBar := na
 
 // ── Ladder select — which rungs this trade gets depends on how DEEP the resting
@@ -4408,7 +4476,7 @@ bool shortDeep = not na(shortEdge) and shortEdge >= fiboP3
 
 // ── Long: rest / refresh a buy-limit at the edge (cancel when disarmed) ──
 if longArmed
-    lSL  := fiboP10 - execSlBuf
+    lSL  := f_slAnchor() - execSlBuf
     float slDist = longEdge - lSL
     lTP1 := longDeep ? fiboP2 : fiboP1   // deep → 0.5, shallow → 0.382
     lTP2 := longDeep ? fiboP1 : fiboP7   // deep → 0.382, shallow → 0.0 (swing extreme)
@@ -4424,7 +4492,7 @@ else if strategy.position_size == 0
 
 // ── Short: rest / refresh a sell-limit at the edge ──
 if shortArmed
-    sSL  := fiboP10 + execSlBuf
+    sSL  := f_slAnchor() + execSlBuf
     float slDist = sSL - shortEdge
     sTP1 := shortDeep ? fiboP2 : fiboP1
     sTP2 := shortDeep ? fiboP1 : fiboP7
