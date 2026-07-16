@@ -11,8 +11,13 @@ Endpoints — Step 1 (this build):
     GET  /health                         → ping; running_jobs count
     GET  /status                         → MT5 connection + account info
     GET  /historical_data                → M1–M30/H1/H4/daily OHLC bars
+    GET  /ticks                          → real bid/ask tick history (the A2 fill model's feed)
     GET  /files/strategies               → list .mq5/.ex5 in MT5 Experts folder
     GET  /agent-log                      → agent log tail
+
+Timestamps: every timestamp this agent returns is TRUE UTC. MT5 reports broker-server local time
+(EET/EEST, UTC+2/+3); `broker_clock.py` converts. Do not reintroduce `utcfromtimestamp` on an MT5
+`time` field — that was the 2-3h bug that silently misplaced every session/liquidity boundary.
 
 Endpoints — Step 7 (MT5 Strategy Tester driver):
     POST /backtests                      → trigger a backtest run
@@ -43,6 +48,8 @@ import json
 import sys
 import threading
 import time
+
+import broker_clock
 import os
 import re
 import subprocess
@@ -142,6 +149,12 @@ def _alog(msg: str):
 # ── MT5 connection ─────────────────────────────────────────────────────────────
 
 _mt5_lock = threading.Lock()
+
+# Max tick rows /ticks will serialise in one response. Gold runs ~100-230k ticks/day, so this is
+# roughly a fortnight of gold — comfortably under the point where the JSON response itself becomes
+# the bottleneck. Over the cap the endpoint refuses (413) instead of truncating: a silently short
+# tick window yields fills that look real and aren't.
+_TICK_ROW_CAP = 3_000_000
 
 
 def _ensure_mt5() -> tuple[bool, Optional[str]]:
@@ -362,12 +375,19 @@ def historical_data():
     if root and root != symbol:
         candidates.append(root)
 
+    # Query a day wider on each side, then filter in TRUE UTC below. The range we hand MT5 is
+    # matched against its BROKER-local stamps, but our contract is "bars whose true-UTC time is in
+    # [start_date, end_date]" — and those differ by 2-3h. Without the pad, converting to true UTC
+    # would silently drop the last 2-3h of end_date while the data layer recorded the full range as
+    # fetched (a cache-coverage hole that never re-fetches). Pad + filter makes the contract exact.
     rates = None
     used  = symbol
     with _mt5_lock:
         for cand in candidates:
             mt5.symbol_select(cand, True)
-            r = mt5.copy_rates_range(cand, tf, dt_from, dt_to)
+            r = mt5.copy_rates_range(cand, tf,
+                                     dt_from - datetime.timedelta(days=1),
+                                     dt_to + datetime.timedelta(days=1))
             if r is not None and len(r) > 0:
                 rates, used = r, cand
                 break
@@ -379,16 +399,21 @@ def historical_data():
             "mt5_error": str(err_info),
         }), 404
 
-    bars = _rates_to_bars(rates)
+    bars = [b for b in _rates_to_bars(rates) if start_date <= b["time"][:10] <= end_date]
     _alog(f"historical_data: {used} {timeframe} [{start_date}, {end_date}] -> {len(bars)} bars")
     return jsonify({"bars": bars, "symbol": used, "timeframe": timeframe, "count": len(bars)})
 
 
 def _rates_to_bars(rates) -> list[dict]:
-    """Convert MT5 rates structured array to a list of bar dicts."""
+    """Convert MT5 rates structured array to a list of bar dicts.
+
+    `time` is TRUE UTC. MT5's `time` field is broker-server local (EET/EEST, UTC+2/+3), so it
+    goes through `broker_clock.to_utc` — stamping it as UTC directly is the bug compare_feeds.py
+    caught (every bar 2-3h off, silently wrecking every time-driven engine). See broker_clock.py.
+    """
     bars = []
     for r in rates:
-        ts = datetime.datetime.utcfromtimestamp(int(r["time"]))
+        ts = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(r["time"]))
         bars.append({
             "time":  ts.isoformat(),
             "open":  float(r["open"]),
@@ -397,6 +422,87 @@ def _rates_to_bars(rates) -> list[dict]:
             "close": float(r["close"]),
         })
     return bars
+
+
+@app.route("/ticks")
+def ticks():
+    """Real bid/ask tick history — the honest intrabar path for the fill model (A2).
+
+    Query: symbol, start_date, end_date (YYYY-MM-DD, inclusive).
+    Response: {"ticks": [{"time": ISO-true-UTC, "bid": f, "ask": f}, ...], "symbol": s, "count": n}
+
+    `time` is TRUE UTC (via broker_clock), same as /historical_data — tick stamps come off the same
+    broker-local clock. Tick timestamps carry milliseconds (`time_msc`); we use that, not the
+    second-resolution `time` field, because two ticks in one second are exactly what decides whether
+    a limit or a stop fills first.
+
+    Volume warning: gold runs ~100-230k ticks/DAY. A month is millions of rows, so this endpoint is
+    deliberately per-window and the caller (backtest.data) is expected to fetch lazily and cache. A
+    range that would exceed `_TICK_ROW_CAP` is refused with 413 rather than being silently truncated
+    — a truncated tick window would produce fills that look real and are not.
+    """
+    symbol     = request.args.get("symbol", "").strip()
+    start_date = request.args.get("start_date", "")
+    end_date   = request.args.get("end_date", "")
+
+    if not symbol:
+        return jsonify({"error": "symbol required"}), 400
+    if not start_date or not end_date:
+        return jsonify({"error": "start_date and end_date required (YYYY-MM-DD)"}), 400
+
+    ok, err = _ensure_mt5()
+    if not ok:
+        return jsonify({"error": err}), 503
+
+    try:
+        dt_from = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+        dt_to   = datetime.datetime.strptime(end_date, "%Y-%m-%d") + datetime.timedelta(days=1)
+    except ValueError as exc:
+        return jsonify({"error": f"Invalid date: {exc}"}), 400
+
+    candidates = [symbol]
+    root = symbol.split(".")[0]
+    if root and root != symbol:
+        candidates.append(root)
+
+    raw  = None
+    used = symbol
+    with _mt5_lock:
+        for cand in candidates:
+            mt5.symbol_select(cand, True)
+            # COPY_TICKS_ALL — every tick, not just those that moved the bid or the ask.
+            t = mt5.copy_ticks_range(cand, dt_from - datetime.timedelta(days=1),
+                                     dt_to + datetime.timedelta(days=1), mt5.COPY_TICKS_ALL)
+            if t is not None and len(t) > 0:
+                raw, used = t, cand
+                break
+
+    if raw is None or len(raw) == 0:
+        # A genuinely empty window is normal (weekend/holiday) and is NOT an error — the caller
+        # must be able to tell "no ticks here" from "the pull failed". Phase-0 found tick history
+        # is deep but patchy, so a 404 here would make a thin day look like a broken symbol.
+        _alog(f"ticks: {symbol} [{start_date}, {end_date}] -> 0 (empty window)")
+        return jsonify({"ticks": [], "symbol": symbol, "count": 0})
+
+    if len(raw) > _TICK_ROW_CAP:
+        return jsonify({
+            "error": f"tick window too large: {len(raw)} rows > cap {_TICK_ROW_CAP}. "
+                     f"Request a shorter date range.",
+            "rows": int(len(raw)),
+            "cap": _TICK_ROW_CAP,
+        }), 413
+
+    ticks_out = []
+    for t in raw:
+        naive = broker_clock.broker_naive_from_epoch(int(t["time_msc"]) // 1000)
+        ts = broker_clock.to_utc(naive).replace(microsecond=(int(t["time_msc"]) % 1000) * 1000)
+        iso = ts.isoformat()
+        if not (start_date <= iso[:10] <= end_date):
+            continue
+        ticks_out.append({"time": iso, "bid": float(t["bid"]), "ask": float(t["ask"])})
+
+    _alog(f"ticks: {used} [{start_date}, {end_date}] -> {len(ticks_out)} ticks")
+    return jsonify({"ticks": ticks_out, "symbol": used, "count": len(ticks_out)})
 
 
 @app.route("/files/strategies")

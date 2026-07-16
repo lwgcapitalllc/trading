@@ -4,8 +4,9 @@
 **Scope:** This package only — the data layer, replay loop, fill/cost model, output adapter, and
 local optimizer. It does NOT cover the engines it replays (`engines/`), the strategies it runs
 (`strategies/python/`), or the lab that consumes it (`command-center/`).
-**Status:** In build. A0 (data layer) + A1 (replay loop) landed 2026-07-15; A2–A4 pending. See `docs/MPC_APLUS_BUILD_PLAN.md`.
-**Last reviewed:** 2026-07-15
+**Status:** In build. A0 (data layer) + A1 (replay loop) landed 2026-07-15; A3 (output adapter)
+landed 2026-07-16; A2 (fill & cost model) + A4 (local optimizer) pending. See `docs/MPC_APLUS_BUILD_PLAN.md`.
+**Last reviewed:** 2026-07-16
 
 ---
 
@@ -35,7 +36,18 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   (`i_confirmed_*` / `ifib_seed_*`) so the Structure fib does not adopt an internal-swing anchor. The
   mpc_aplus bot pins it False; the engine parity harnesses keep it True (they validated internal ON).
 - **A2 — Fill & cost model** *(pending)*. Real-tick intrabar limit fills + spread/commission/slippage.
-- **A3 — Output adapter** *(pending)*. Emit the lab's `{equity_curve, daily_pnl, kpis, engine_trades}`.
+  Until this lands, fills come from the strategy's own bar-level intrabar-path GUESS
+  (`mpc_aplus/execution.py`) — good enough for Pine parity (the Pine assumes the same), NOT good
+  enough to trust a P&L number. **A3's output is only as honest as A2.**
+- **A3 — Output adapter** *(done 2026-07-16)*. `backtest/output.py`. `build_results(trades, …)` →
+  the lab's `{equity_curve, daily_pnl, kpis, engine_trades}`. Strategy-agnostic: it consumes any
+  trade object carrying the reporting fields (`execution.Trade` satisfies it) and owns no strategy
+  or fill logic — pure reporting arithmetic. It deliberately does NOT compute `sharpe`/`cagr`: the
+  lab stamps canonical Sharpe from `daily_pnl` at completion (`metrics.apply_canonical_sharpe`) and
+  a second definition here is exactly the duplicate-definition bug that doc warns about. The two lab
+  contracts it mirrors by hand (the equity-curve point; `sizing_engine.RawTrade`) are locked by
+  `tests/test_output.py` (26 tests) — including one that builds the REAL `RawTrade` from our rows, so
+  the contract can't silently drift. Not yet wired into the lab (`runner="python"` adapter = next).
 - **A4 — Local optimizer** *(pending)*. In-memory parameter sweep, no VPS lock.
 
 ## Tools

@@ -57,7 +57,16 @@ class Decision:
 
 @dataclass
 class Trade:
-    """A completed trade — entry to full close, with the R it made."""
+    """A completed trade — entry to full close, with the R it made.
+
+    The reporting fields (`*_ms`, `exit_price`, `stop_distance`, `exit_reason`) carry
+    no decision weight — they exist so `backtest.output` can build the lab's
+    equity_curve / engine_trades without re-deriving them. `exit_price` is the
+    qty-weighted mean of the ladder's partial exits, so
+    `(exit_price - entry_price) * dir * qty * point_value` reproduces `pnl_usd`.
+    `stop_distance` is entry→the stop frozen at PLACEMENT, i.e. the 1R the trade was
+    sized against — not the trailed stop it may have exited on.
+    """
 
     dir: int
     entry_index: int
@@ -67,6 +76,11 @@ class Trade:
     risk_usd: float
     pnl_usd: float
     r: float
+    entry_ms: int = 0
+    exit_ms: int = 0
+    exit_price: float = 0.0
+    stop_distance: float = 0.0
+    exit_reason: str = ""
 
 
 # ── the resting-order + position model ──────────────────────────────────────────
@@ -101,6 +115,13 @@ class Execution:
         self._entry = 0.0
         self._entry_index = 0
         self._sl = 0.0                     # frozen entry stop (1R yardstick)
+        # reporting-only accumulators (see Trade) — never read by a decision
+        self._entry_ms = 0
+        self._exit_ms = 0
+        self._init_stop = 0.0
+        self._exit_notional = 0.0
+        self._exit_qty = 0.0
+        self._exit_reason = ""
         self._tp1 = 0.0
         self._tp2 = 0.0
         self._stage = 0                    # 0 full-stop, 1 BE, 2 stop->TP1 + runner ratchet
@@ -267,19 +288,25 @@ class Execution:
                 continue
             if pend.dir > 0 and sig.low <= pend.edge:
                 fill = pend.edge if sig.open > pend.edge else sig.open  # gap = better fill
-                self._open_position(pend, fill, sig.index, dec)
+                self._open_position(pend, fill, sig, dec)
                 return True
             if pend.dir < 0 and sig.high >= pend.edge:
                 fill = pend.edge if sig.open < pend.edge else sig.open
-                self._open_position(pend, fill, sig.index, dec)
+                self._open_position(pend, fill, sig, dec)
                 return True
         return False
 
-    def _open_position(self, pend, fill_price, index, dec) -> None:
+    def _open_position(self, pend, fill_price, sig, dec) -> None:
         self._pos_dir = pend.dir
         self._qty = pend.qty
         self._entry = fill_price
-        self._entry_index = index
+        self._entry_index = sig.index
+        self._entry_ms = sig.time_ms
+        self._init_stop = pend.sl
+        self._exit_notional = 0.0       # Σ price×qty of this trade's partial exits
+        self._exit_qty = 0.0
+        self._exit_ms = sig.time_ms
+        self._exit_reason = ""
         self._sl = pend.sl
         self._tp1 = pend.tp1
         self._tp2 = pend.tp2
@@ -322,7 +349,7 @@ class Execution:
                 take_target = hit_target
             level = target if take_target else stop
             price = self._fill_price(level, sig.open, take_target)
-            self._exit_portion(oid, price, qty, sig.index, dec)
+            self._exit_portion(oid, price, qty, sig, dec)
             if self._pos_dir == 0:
                 return
 
@@ -363,29 +390,36 @@ class Execution:
             gapped = open_ <= level if d > 0 else open_ >= level
         return open_ if gapped else level
 
-    def _exit_portion(self, oid, price, qty, index, dec) -> None:
+    def _exit_portion(self, oid, price, qty, sig, dec) -> None:
         d = self._pos_dir
         pnl = (price - self._entry) * d * qty * self._cfg.point_value
         self._equity_realized += pnl
         self._filled_qty += qty
+        self._exit_notional += price * qty
+        self._exit_qty += qty
+        self._exit_ms = sig.time_ms
+        self._exit_reason = oid
         dec.fills.append(Fill("exit", oid, price, qty, d))
         if self._filled_qty >= self._qty - 1e-9:
-            self._finalise_trade(index, dec)
+            self._finalise_trade(sig, dec)
 
     def _close_at(self, sig, price, _reason, dec) -> None:
         remaining = self._qty - self._filled_qty
         if remaining <= 1e-12:
             return
         prefix = "L" if self._pos_dir > 0 else "S"
-        self._exit_portion(f"{prefix}-CLOSE", price, remaining, sig.index, dec)
+        self._exit_portion(f"{prefix}-CLOSE", price, remaining, sig, dec)
 
-    def _finalise_trade(self, index, dec) -> None:
+    def _finalise_trade(self, sig, dec) -> None:
         # net pnl of the whole trade = equity moved since entry; R against 1R risk
         pnl = self._equity_at_entry_delta()
         r = pnl / self._risk_usd if self._risk_usd > 0 else 0.0
+        avg_exit = (self._exit_notional / self._exit_qty) if self._exit_qty > 1e-12 else self._entry
         self.trades.append(Trade(
             dir=self._pos_dir, entry_index=self._entry_index, entry_price=self._entry,
-            exit_index=index, qty=self._qty, risk_usd=self._risk_usd, pnl_usd=pnl, r=r))
+            exit_index=sig.index, qty=self._qty, risk_usd=self._risk_usd, pnl_usd=pnl, r=r,
+            entry_ms=self._entry_ms, exit_ms=self._exit_ms, exit_price=avg_exit,
+            stop_distance=abs(self._entry - self._init_stop), exit_reason=self._exit_reason))
         dec.closed_r = r
         self._pos_dir = 0
         self._qty = 0.0
