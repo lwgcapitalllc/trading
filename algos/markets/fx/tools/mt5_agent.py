@@ -424,12 +424,32 @@ def _rates_to_bars(rates) -> list[dict]:
     return bars
 
 
+def _parse_bound(token: str, *, end: bool) -> tuple[datetime.datetime, bool]:
+    """Parse a /ticks bound: a bare date (whole-day semantics) or a full ISO datetime.
+
+    Returns (instant, was_date_only). A bare `end` date means "through the end of that day", so it
+    resolves to the following midnight — keeping the endpoint's original inclusive-date contract
+    while the datetime form is exact and end-exclusive.
+    """
+    token = token.strip()
+    if len(token) == 10:
+        d = datetime.datetime.strptime(token, "%Y-%m-%d")
+        return (d + datetime.timedelta(days=1) if end else d), True
+    return datetime.datetime.fromisoformat(token), False
+
+
 @app.route("/ticks")
 def ticks():
     """Real bid/ask tick history — the honest intrabar path for the fill model (A2).
 
-    Query: symbol, start_date, end_date (YYYY-MM-DD, inclusive).
+    Query: symbol, start_date, end_date — each either YYYY-MM-DD (whole day, inclusive) or a full
+    ISO datetime "YYYY-MM-DDTHH:MM:SS" (exact instant; end is EXCLUSIVE) in TRUE UTC.
     Response: {"ticks": [{"time": ISO-true-UTC, "bid": f, "ask": f}, ...], "symbol": s, "count": n}
+
+    **Always prefer the datetime form.** Gold runs ~690k ticks/day = ~43MB of JSON and ~90s on the
+    wire (measured 2026-07-14); a whole-day pull to resolve one ambiguous 5-minute bar is ~99.6%
+    waste. The fill model needs ticks only for the few bars where a target and a stop are both in
+    range, so it asks for those windows and nothing else (~2k ticks, well under a second).
 
     `time` is TRUE UTC (via broker_clock), same as /historical_data — tick stamps come off the same
     broker-local clock. Tick timestamps carry milliseconds (`time_msc`); we use that, not the
@@ -455,24 +475,28 @@ def ticks():
         return jsonify({"error": err}), 503
 
     try:
-        dt_from = datetime.datetime.strptime(start_date, "%Y-%m-%d")
-        dt_to   = datetime.datetime.strptime(end_date, "%Y-%m-%d") + datetime.timedelta(days=1)
+        dt_from, _ = _parse_bound(start_date, end=False)
+        dt_to, _   = _parse_bound(end_date, end=True)
     except ValueError as exc:
         return jsonify({"error": f"Invalid date: {exc}"}), 400
+    if dt_to <= dt_from:
+        return jsonify({"error": "end must be after start"}), 400
 
     candidates = [symbol]
     root = symbol.split(".")[0]
     if root and root != symbol:
         candidates.append(root)
 
+    # The bounds above are TRUE UTC, but copy_ticks_range matches BROKER-local stamps. Pad by more
+    # than the largest possible offset so the window can't be clipped, then filter exactly below.
+    pad = datetime.timedelta(hours=max(broker_clock.STD_OFFSET, broker_clock.DST_OFFSET) + 1)
     raw  = None
     used = symbol
     with _mt5_lock:
         for cand in candidates:
             mt5.symbol_select(cand, True)
             # COPY_TICKS_ALL — every tick, not just those that moved the bid or the ask.
-            t = mt5.copy_ticks_range(cand, dt_from - datetime.timedelta(days=1),
-                                     dt_to + datetime.timedelta(days=1), mt5.COPY_TICKS_ALL)
+            t = mt5.copy_ticks_range(cand, dt_from - pad, dt_to + pad, mt5.COPY_TICKS_ALL)
             if t is not None and len(t) > 0:
                 raw, used = t, cand
                 break
@@ -494,14 +518,14 @@ def ticks():
 
     ticks_out = []
     for t in raw:
-        naive = broker_clock.broker_naive_from_epoch(int(t["time_msc"]) // 1000)
-        ts = broker_clock.to_utc(naive).replace(microsecond=(int(t["time_msc"]) % 1000) * 1000)
-        iso = ts.isoformat()
-        if not (start_date <= iso[:10] <= end_date):
+        msc = int(t["time_msc"])
+        ts = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(msc // 1000)) \
+            .replace(microsecond=(msc % 1000) * 1000)
+        if not (dt_from <= ts < dt_to):     # half-open, in TRUE UTC
             continue
-        ticks_out.append({"time": iso, "bid": float(t["bid"]), "ask": float(t["ask"])})
+        ticks_out.append({"time": ts.isoformat(), "bid": float(t["bid"]), "ask": float(t["ask"])})
 
-    _alog(f"ticks: {used} [{start_date}, {end_date}] -> {len(ticks_out)} ticks")
+    _alog(f"ticks: {used} [{start_date}, {end_date}) -> {len(ticks_out)} ticks")
     return jsonify({"ticks": ticks_out, "symbol": used, "count": len(ticks_out)})
 
 
