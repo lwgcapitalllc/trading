@@ -184,6 +184,15 @@ Internal fib's seed). Both are additive exposures of state the structure engine 
 detection logic changed (structure parity re-confirmed exit 0). If you need a new field from structure,
 add a read property/event there (as was done for these) — do not reach into `_ext`/`_int`.
 
+**Gotcha — the internal-swing adoption is Pine-gated by `showInternal`.** The Structure fib adopts a
+more-extreme `i_confirmed_low/high` ONLY when the snapshot carries it. In the Pine, the whole internal
+block sits behind `internalActive = showInternal`, so when a consumer's chart has "Show Internal
+Structure" OFF, `i_confirmed_*` is never set and the fib keeps its external anchor. Python's
+`market_structure` engine ALWAYS computes internal structure, so a consumer that runs internal-OFF (the
+mpc_aplus bot does) must suppress those snapshot fields — `EngineStack(EngineConfig(show_internal=False))`
+blanks `i_confirmed_*` + `ifib_seed_*` for exactly this reason. This engine was validated with internal
+ON (`fib_export.pine`), so its default behaviour is correct; the gate lives in the stack, not here.
+
 The Macro fib also reads `last_confirmed_high/low` (+ locs) and needs the current bar index and
 close, so its signature is `macro.update(bar_index, high, low, close, snap)` — the others take only
 `(high, low, snap)`.

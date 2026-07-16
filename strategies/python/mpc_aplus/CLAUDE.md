@@ -5,9 +5,10 @@ execution layer in `indicators/mpc_strategy.pine` (Aaron's brother's "MPC-JARVIS
 the canonical engine stack's per-bar output and turns the A+ sequence into trades.
 **Scope:** This strategy only — its state machine, order logic, config, and parity harness. It does
 NOT own the engines (`engines/`), the replay runner (`backtest/`), or the lab (`command-center/`).
-**Status:** Built + unit-tested 2026-07-15 (18 offline tests). Logic-parity NOT yet run against a
-real TradingView export — that is the gate before any result is trusted.
-**Last reviewed:** 2026-07-15
+**Status:** Built + unit-tested + **logic-parity GREEN (exit 0) 2026-07-16** on a full-history
+`VANTAGE_XAUUSD, 5m` export (20,076 bars, `compare_strategy.py` with no warmup — the export starts at
+bar 0). Bar-for-bar identical decision stream vs `mpc_strategy.pine`. 82 offline tests green.
+**Last reviewed:** 2026-07-16
 
 ---
 
@@ -62,6 +63,35 @@ Both OFF for the parity check (to match the Pine), ON for real runs:
 2. **Sizing** — the parity check uses the manual %-risk (matches the Pine's fixed-% sizing); real runs
    swap in the dynamic sizing engine under a ruleset.
 
+## Engine-construction pins (`MpcAplusStrategy.engine_config`)
+
+Two engine inputs are NOT in the decision stream, so the bot pins them to the Pine STRATEGY's own
+input defaults rather than the shared engine defaults — miss either and the fib the bot reads drifts:
+1. **`fvg_max_count=7`** — `mpc_strategy.pine` sets Max Active FVGs to 7 (the FVG engine default is 6);
+   a smaller cap evicts the oldest gap one bar sooner and drops an entry edge Pine still holds.
+2. **`show_internal=False`** — the Pine's "Show Internal Structure" input defaults OFF, and Pine gates
+   the ENTIRE internal block behind it (`internalActive = showInternal`), so `i_confirmed_*` is never
+   set and the **Structure fib never adopts a more-extreme internal swing** as its anchor. The
+   `market_structure` engine ALWAYS computes internal structure, so the `EngineStack` must be told to
+   suppress the internal-derived snapshot fields (it blanks `i_confirmed_*` + `ifib_seed_*` when this
+   is off). This is a real "a drawing toggle changes trade logic" coupling in the Pine — do not drop it.
+
+## The three parity fixes (2026-07-16) — read before touching signals/fib
+
+The port went green after fixing three faithful-translation gaps; each is a class of bug to watch for:
+1. **Internal-swing adoption** (the `show_internal` pin above) — the engine's always-on internal
+   structure fed the fib an anchor the Pine strategy never had (internal display off).
+2. **Sweep double-count at the daily/session rollover** — Pine records a sweep on `d_lMit and not
+   d_lMit[1]` (a bar-to-bar edge of a persistent VARIABLE). When a daily/session/H4 level rolls at
+   18:00 and is re-taken on its own creation bar, `d_lMit[1]` (the old level, already swept) is still
+   true, so no edge fires. The engine models levels (create / mitigate / EVICT) and the naive
+   reconstruction latched on every `mitigated` event, re-recording the rollover sweep — which made a
+   stale sweep look fresh and armed a trade Pine didn't. `signals.py` now reconstructs the Pine
+   variable: reset on `created`, set on `mitigated`, **left alone on `evicted`**, edge vs the prior bar.
+3. **The forming last bar** — TradingView exports the final (still-forming) bar's plotted series as
+   NaN. `compare_strategy.py` now marks that bar `_px_present=False` and skips it, instead of reading
+   `fillna(0)` as a real "stage 0" and flagging a phantom mismatch.
+
 ## The parity gate — `tools/compare_strategy.py` + `/audit-strategy`
 
 The standing regression harness (same pattern as the engines' `compare_*.py`). `mpc_strategy_export.pine`
@@ -77,6 +107,12 @@ command-center/backend/.venv/bin/python strategies/python/mpc_aplus/tools/compar
 **When the Pine changes:** brother re-pastes `mpc_strategy.pine` → regenerate `mpc_strategy_export.pine`
 (re-copy + re-append the parity block) → re-export → re-run until exit 0. A new trade-affecting input =
 a new `config.py` field + a new `cfg_*` plot + a new `compare_strategy._TOGGLE_COLS` entry.
+
+**One-shot sync check:** `backtest/tools/verify_parity.py <export.csv> [more.csv ...]` runs EVERY parity
+check (all nine engines + this strategy) whose columns are present in the CSV(s) and prints one
+GREEN/RED/SKIP table with auto-detected cold-start warmup. It is the "is everything in sync?" command
+to run after any re-paste; it reports drift, it does not fix it (a real logic change is still a hand
+port). Engines are the foundation — sync them first (`/audit-engines`), then this strategy.
 
 ## Tests
 

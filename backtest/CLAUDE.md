@@ -29,12 +29,25 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   `ReplayBar`s (0-based index + epoch-ms UTC time); `EngineStack.step(bar)` drives the canonical
   engines in Pine order (structure → fib{structure/sniper/macro/internal} → FVG → RSI-divergence →
   liquidity → sessions) and returns a `BarState`; `run(df, warmup=…)` is the convenience iterator.
+  `EngineConfig` carries the engine-construction knobs; note `show_internal` (default True): the
+  `market_structure` engine always computes internal structure, but a consumer whose Pine has
+  "Show Internal Structure" OFF sets this False, which blanks the snapshot's internal-derived fields
+  (`i_confirmed_*` / `ifib_seed_*`) so the Structure fib does not adopt an internal-swing anchor. The
+  mpc_aplus bot pins it False; the engine parity harnesses keep it True (they validated internal ON).
 - **A2 — Fill & cost model** *(pending)*. Real-tick intrabar limit fills + spread/commission/slippage.
 - **A3 — Output adapter** *(pending)*. Emit the lab's `{equity_curve, daily_pnl, kpis, engine_trades}`.
 - **A4 — Local optimizer** *(pending)*. In-memory parameter sweep, no VPS lock.
 
 ## Tools
 
+- **`tools/verify_parity.py`** — the one "is everything in sync?" command. Point it at the TradingView
+  export CSV(s) you just pulled; it runs every parity check (all nine engine `compare_*.py` + the
+  mpc_aplus `compare_strategy.py`) whose MARKER column is present in the CSV, and prints one
+  GREEN/RED/SKIP table. Cold-start warmup is auto-detected by walking a capped ladder (≤25% of the
+  file), so a genuine LATE drift can never be skipped away as warmup. It reports drift; it does not fix
+  it (a real logic change is still a hand port, per drift). Run it after any `mpc_assistant.pine` /
+  `mpc_strategy.pine` re-paste + re-export. Stdlib only. `verify_parity.py <csv> [csv ...]`, or no args
+  = newest CSV in `backtest/`.
 - **`tools/compare_feeds.py`** — feed-parity check: MT5 pull vs a TradingView export of the same
   symbol/TF/window. Reports **clock offset** (0 = aligned; non-zero = the broker-server-time bug
   that shifts every session — fix before demo), coverage, and OHLC drift. This is *data* parity, not
