@@ -48,7 +48,15 @@ class BarSource:
         self, symbol: str, base_tf: str, start_date: str, end_date: str
     ) -> pd.DataFrame:
         """Cache-first base-bar load. Refetches [start, end] from the agent when
-        that window isn't already recorded as fetched, then merges and persists."""
+        that window isn't already recorded as fetched, then merges and persists.
+
+        A stale FEED_VERSION forces a refetch and DROPS the recorded coverage. Both halves are
+        required: `cache.load` already refuses to read a stale file, so honouring the old coverage
+        would return an empty frame forever instead of re-pulling — the coverage says "we have
+        this" while the cache says "not in a form you can use", and the caller gets nothing.
+        """
+        if self.cache.is_stale(symbol, base_tf):
+            self.coverage.reset(symbol, base_tf)
         if self.coverage.covered(symbol, base_tf, start_date, end_date):
             return self.cache.load(symbol, base_tf)
         fetched = self.agent.bars(symbol, base_tf, start_date, end_date)

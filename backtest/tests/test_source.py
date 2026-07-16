@@ -85,3 +85,34 @@ def test_slice_excludes_out_of_range_cached_bars(tmp_path):
     assert narrow.index.min() >= pd.Timestamp("2026-01-10 00:00")
     assert narrow.index.max() < pd.Timestamp("2026-01-12 00:00")
     assert len(agent.calls) == 1  # wide fetch covered the narrow ask
+
+
+# ── FEED_VERSION invalidation through the source ──────────────────────────────
+
+def test_stale_cache_forces_a_refetch_and_does_not_strand_the_caller(tmp_path):
+    """The 2026-07-16 trap, end to end. `cache.load` refuses a stale file, so if the recorded
+    coverage were still honoured the caller would get an EMPTY frame forever instead of a
+    re-pull. Coverage must be dropped alongside the cache."""
+    import json
+
+    from backtest.data.cache import FEED_VERSION
+
+    agent = FakeAgent()
+    cache = BarCache(tmp_path)
+    source = BarSource(agent, cache)
+
+    first = source.load("XAUUSD.s", "M5", "2026-01-05", "2026-01-06")
+    assert not first.empty
+    assert len(agent.calls) == 1
+
+    # Second call is served from cache — no refetch.
+    source.load("XAUUSD.s", "M5", "2026-01-05", "2026-01-06")
+    assert len(agent.calls) == 1
+
+    # Age the cache: same bars, older meaning.
+    cache.meta_path("XAUUSD.s", "M5").write_text(json.dumps({"feed_version": FEED_VERSION - 1}))
+
+    again = source.load("XAUUSD.s", "M5", "2026-01-05", "2026-01-06")
+    assert len(agent.calls) == 2, "stale cache must trigger a refetch"
+    assert not again.empty, "stale cache must not strand the caller with an empty frame"
+    assert not cache.is_stale("XAUUSD.s", "M5"), "refetch must restamp the cache as current"

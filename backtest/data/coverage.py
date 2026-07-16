@@ -46,6 +46,15 @@ class RangeCoverage:
                 return True
         return False
 
+    def reset(self, symbol: str, tf_name: str) -> None:
+        """Forget every fetched interval for (symbol, tf).
+
+        Called when the cache's FEED_VERSION no longer matches — the bars those intervals refer
+        to are unreadable, so claiming to have fetched them would strand the caller with an empty
+        frame instead of a re-pull. Absent file = already reset.
+        """
+        self.path(symbol, tf_name).unlink(missing_ok=True)
+
     def record(self, symbol: str, tf_name: str, start_date: str, end_date: str) -> None:
         """Add [start_date, end_date] to the coverage and merge overlapping/adjacent
         intervals, then persist."""
