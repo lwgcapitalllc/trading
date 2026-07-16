@@ -5,6 +5,7 @@ metadata for the strategies table.
 Supported runners:
   ninjatrader — .cs files (NinjaScript / C#)
   mt5         — .mq5 files (MQL5)
+  python      — packages under strategies/python/ that declare LAB_STRATEGY
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -488,8 +490,119 @@ def _parse_mql5_file(mq5_path: Path, monorepo_root: Path, source: str) -> Option
     }
 
 
+# ── Python strategies (runner="python") ──────────────────────────────────────────
+# Type map for dataclass fields. Anything not here is treated as a string, which is safe:
+# the param editor renders a text box rather than guessing a widget it can't validate.
+_PY_TYPES = {bool: "bool", int: "int", float: "double", str: "string"}
+
+# Fields that are instrument/plumbing facts rather than strategy choices. They are real inputs
+# (the bot reads them), so they are exposed — but as "foundational", which keeps them out of the
+# Essentials card and out of the optimizer's tuning surface, the same split the .cs/.mq5 paths use.
+_PY_FOUNDATIONAL = {"mintick", "point_value", "daily_close_hour_ny",
+                    "fill_model", "account_profile", "symbol"}
+
+
+def _py_param_schema(config_cls) -> list[dict]:
+    """Build the lab's param schema from a strategy's config dataclass.
+
+    Read via dataclasses.fields() rather than by parsing source: the form is then generated from
+    the SAME object the bot constructs, so a renamed or retyped field cannot leave a stale control
+    behind in the UI. The dataclass IS the schema.
+    """
+    import dataclasses
+
+    params: list[dict] = []
+    for order, f in enumerate(dataclasses.fields(config_cls)):
+        ptype = _PY_TYPES.get(f.type if not isinstance(f.type, str) else _resolve_hint(f.type))
+        if ptype is None:
+            ptype = "string"
+        category = "foundational" if f.name in _PY_FOUNDATIONAL else "strategy_logic"
+        param = {
+            "name":         f.name,
+            "type":         ptype,
+            "display_name": f.name.replace("_", " "),
+            "category":     category,
+            "group":        "Foundational" if category == "foundational" else "Strategy Logic",
+            "order":        order,
+        }
+        default = f.default if f.default is not dataclasses.MISSING else None
+        if default is not None:
+            param["default"] = default
+        params.append(param)
+    return params
+
+
+def _resolve_hint(hint: str):
+    """`from __future__ import annotations` makes every field type a STRING, so the dataclass's
+    own types arrive as 'bool'/'int'/'float'/'str' rather than the classes. Map them back."""
+    return {"bool": bool, "int": int, "float": float, "str": str}.get(hint.strip())
+
+
+def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> Optional[dict]:
+    """Import a Python strategy package and build its strategy row, or None if it doesn't opt in.
+
+    Opting in means declaring LAB_STRATEGY (see strategies/python/mpc_aplus/__init__.py). Import
+    failures are swallowed to None: a half-finished package under strategies/python/ must not be
+    able to take the whole scan down — every other strategy would vanish from the UI.
+    """
+    import importlib
+
+    sys_path_added = str(monorepo_root) not in sys.path
+    if sys_path_added:
+        sys.path.insert(0, str(monorepo_root))
+    try:
+        mod = importlib.import_module(f"strategies.python.{pkg_dir.name}")
+    except Exception:
+        return None
+    spec = getattr(mod, "LAB_STRATEGY", None)
+    if not isinstance(spec, dict) or "config" not in spec:
+        return None
+
+    params = _py_param_schema(spec["config"])
+    if not params:
+        return None
+    meta_path = pkg_dir / f"{pkg_dir.name}.meta.json"
+    params = _apply_param_meta(params, meta_path)
+    overview = _read_strategy_overview(meta_path)
+
+    strategy_id = pkg_dir.name.lower()
+    rel_path = str(pkg_dir.relative_to(monorepo_root)).replace("\\", "/")
+    return {
+        "id":                   strategy_id,
+        "name":                 spec.get("name", pkg_dir.name),
+        "class_name":           spec["strategy"].__name__,
+        "source_path":          rel_path,
+        "category":             spec.get("category") or _infer_category(strategy_id),
+        "suggested_instrument": spec.get("suggested_instrument"),
+        "default_params":       {p["name"]: p["default"] for p in params if "default" in p},
+        "param_schema":         params,
+        "scanned_at":           int(time.time()),
+        "source_hash":          _python_source_hash(pkg_dir),
+        "runner":               "python",
+        "edge":                 overview.get("edge"),
+        "steps":                overview.get("steps", []),
+        "avoid_news":           overview.get("avoid_news", False),
+    }
+
+
+def _python_source_hash(pkg_dir: Path) -> str:
+    """Hash of every .py in the package, so ANY module's change re-scans it.
+
+    A package is many files — hashing only __init__.py would miss a config field added in
+    config.py, which is exactly the change the param form needs to pick up. Sorted for stability;
+    the name is hashed alongside the body so a rename registers as a change.
+    """
+    h = hashlib.md5()
+    for py in sorted(pkg_dir.rglob("*.py")):
+        if "tests" in py.parts:          # test edits don't change what the strategy DOES
+            continue
+        h.update(py.name.encode("utf-8"))
+        h.update(py.read_bytes())
+    return h.hexdigest()
+
+
 def scan_strategies() -> dict:
-    """Scan strategies/**/*.cs and **/*.mq5; upsert changed strategies."""
+    """Scan strategies/**/*.cs, **/*.mq5, and python/*/; upsert changed strategies."""
     monorepo_root  = Path(cfg.MONOREPO_ROOT)
     strategies_dir = monorepo_root / "strategies"
 
@@ -553,6 +666,36 @@ def scan_strategies() -> dict:
         # carries no source hash (it must not trigger needs-deploy), so detect its
         # edits by mtime vs the last scan time.
         meta_p = meta_path_for(mq5_path)
+        meta_mtime = meta_p.stat().st_mtime if meta_p.exists() else 0
+        existing = lab_db.get_strategy(strategy_id)
+        if (existing and existing.get("source_hash") == current_hash
+                and meta_mtime <= (existing.get("scanned_at") or 0)):
+            skipped += 1
+            continue
+
+        is_new = existing is None
+        lab_db.upsert_strategy(data)
+        if is_new:
+            added += 1
+        else:
+            updated += 1
+
+    # ── Python (packages under strategies/python/ declaring LAB_STRATEGY) ──────
+    python_dir = strategies_dir / "python"
+    for pkg_dir in sorted(p for p in python_dir.glob("*") if p.is_dir()) if python_dir.exists() else []:
+        if not (pkg_dir / "__init__.py").exists():
+            continue
+
+        data = _parse_python_package(pkg_dir, monorepo_root)
+        if data is None:
+            continue  # doesn't declare LAB_STRATEGY, or failed to import — not a lab strategy
+
+        strategy_count += 1
+        strategy_id = data["id"]
+        current_hash = data["source_hash"]
+        lab_db.ensure_strategy_version(strategy_id, current_hash, len(current_hash))
+
+        meta_p = pkg_dir / f"{pkg_dir.name}.meta.json"
         meta_mtime = meta_p.stat().st_mtime if meta_p.exists() else 0
         existing = lab_db.get_strategy(strategy_id)
         if (existing and existing.get("source_hash") == current_hash

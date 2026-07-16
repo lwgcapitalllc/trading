@@ -1666,20 +1666,46 @@ def has_running_job(runner: str) -> bool:
     one job — backtest, sweep, or optimization — at a time. The two platforms are
     fully independent: an MT5 job never blocks an NT8 job and vice versa.
 
-    `runner` is 'mt5' or anything else (treated as NT8 / 'ninjatrader')."""
-    return has_running_mt5_job() if runner == "mt5" else has_running_nt8_job()
+    `python` is a THIRD independent scope. It has no physical terminal at all — it runs in this
+    process against cached broker data — so it must neither block NT8/MT5 nor be blocked by them.
+    It still serialises against itself: concurrent Python runs would contend for the same tick
+    cache and CPU. Note the scopes must partition: 'python' rows are excluded from the NT8 count
+    below, or a Python backtest would silently hold the NinjaTrader lock.
+
+    `runner` is 'mt5', 'python', or anything else (treated as NT8 / 'ninjatrader')."""
+    if runner == "mt5":
+        return has_running_mt5_job()
+    if runner == "python":
+        return has_running_python_job()
+    return has_running_nt8_job()
 
 
 def has_running_nt8_job() -> bool:
     """True if any NT8 job (backtest, sweep, or optimization) is currently running."""
     with _connect() as conn:
         run_count = conn.execute(
-            "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running' AND COALESCE(runner, 'ninjatrader') != 'mt5'",
+            "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running' "
+            "AND COALESCE(runner, 'ninjatrader') NOT IN ('mt5', 'python')",
         ).fetchone()[0]
         opt_count = conn.execute("""
             SELECT COUNT(*) FROM optimizations o
             LEFT JOIN strategies s ON s.id = o.strategy_id
-            WHERE o.status = 'running' AND COALESCE(s.runner, 'ninjatrader') != 'mt5'
+            WHERE o.status = 'running'
+              AND COALESCE(s.runner, 'ninjatrader') NOT IN ('mt5', 'python')
+        """).fetchone()[0]
+    return (run_count + opt_count) > 0
+
+
+def has_running_python_job() -> bool:
+    """True if any Python job (backtest or optimization) is currently running."""
+    with _connect() as conn:
+        run_count = conn.execute(
+            "SELECT COUNT(*) FROM backtest_runs WHERE status = 'running' AND runner = 'python'",
+        ).fetchone()[0]
+        opt_count = conn.execute("""
+            SELECT COUNT(*) FROM optimizations o
+            LEFT JOIN strategies s ON s.id = o.strategy_id
+            WHERE o.status = 'running' AND s.runner = 'python'
         """).fetchone()[0]
     return (run_count + opt_count) > 0
 

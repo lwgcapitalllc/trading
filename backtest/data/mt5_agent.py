@@ -12,6 +12,7 @@ has no /ticks endpoint yet; adding one is A2 work, not A0.
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -21,6 +22,15 @@ import pandas as pd
 from .cache import _normalize
 
 _DEFAULT_BASE_URL = "http://localhost:8766"
+
+# A tick-mode backtest makes thousands of sequential calls over an SSH tunnel, so a transient drop
+# is a matter of WHEN, not IF — one was observed ~5 months into a year-long run ("Remote end closed
+# connection without response"), killing 40 minutes of work. Retrying is not papering over an
+# error: a dropped connection is a statement about the tunnel, not about the data, and the honest
+# response is to ask again. Only CONNECTION failures retry — an HTTP error is the agent answering,
+# and asking a refused question again just gets refused again.
+_RETRIES = 4
+_BACKOFF_S = 1.5
 
 
 class Mt5AgentError(RuntimeError):
@@ -33,6 +43,24 @@ class Mt5Agent:
     def __init__(self, base_url: str = _DEFAULT_BASE_URL, timeout: float = 60.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+
+    def _fetch(self, url: str, what: str) -> dict:
+        """GET + parse JSON, retrying transient connection failures with linear backoff."""
+        last: Exception | None = None
+        for attempt in range(_RETRIES):
+            try:
+                with urllib.request.urlopen(url, timeout=self.timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError:
+                raise                                    # the agent answered — not transient
+            except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+                last = exc
+                if attempt < _RETRIES - 1:
+                    time.sleep(_BACKOFF_S * (attempt + 1))
+        raise Mt5AgentError(
+            f"MT5 agent unreachable at {self.base_url} after {_RETRIES} attempts "
+            f"({what}; is the SSH tunnel up?): {last}"
+        ) from last
 
     def bars(
         self, symbol: str, tf_name: str, start_date: str, end_date: str
@@ -52,18 +80,12 @@ class Mt5Agent:
         )
         url = f"{self.base_url}/historical_data?{query}"
         try:
-            with urllib.request.urlopen(url, timeout=self.timeout) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
+            payload = self._fetch(url, f"{symbol} {tf_name} [{start_date}, {end_date}]")
         except urllib.error.HTTPError as exc:
             detail = _read_error(exc)
             raise Mt5AgentError(
                 f"MT5 agent {exc.code} for {symbol} {tf_name} "
                 f"[{start_date}, {end_date}]: {detail}"
-            ) from exc
-        except (urllib.error.URLError, OSError) as exc:
-            raise Mt5AgentError(
-                f"MT5 agent unreachable at {self.base_url} "
-                f"(is the SSH tunnel up?): {exc}"
             ) from exc
 
         if "error" in payload:
@@ -92,15 +114,10 @@ class Mt5Agent:
         query = urllib.parse.urlencode({"symbol": symbol, "start_date": start, "end_date": end})
         url = f"{self.base_url}/ticks?{query}"
         try:
-            with urllib.request.urlopen(url, timeout=self.timeout) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
+            payload = self._fetch(url, f"{symbol} ticks [{start}, {end})")
         except urllib.error.HTTPError as exc:
             raise Mt5AgentError(
                 f"MT5 agent {exc.code} for {symbol} ticks [{start}, {end}): {_read_error(exc)}"
-            ) from exc
-        except (urllib.error.URLError, OSError) as exc:
-            raise Mt5AgentError(
-                f"MT5 agent unreachable at {self.base_url} (is the SSH tunnel up?): {exc}"
             ) from exc
 
         if "error" in payload and payload["error"]:

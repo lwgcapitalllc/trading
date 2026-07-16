@@ -15,8 +15,11 @@ from fastapi import HTTPException
 from services import lab_db
 
 
+_LABELS = {"mt5": "MT5", "python": "Python"}
+
+
 def ensure_platform_idle(runner: str) -> None:
     """Raise 409 if the platform for `runner` already has a job running."""
     if lab_db.has_running_job(runner):
-        label = "MT5" if runner == "mt5" else "NT8"
+        label = _LABELS.get(runner, "NT8")
         raise HTTPException(409, f"An {label} job is already running — wait for it to finish.")

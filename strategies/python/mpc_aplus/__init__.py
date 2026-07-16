@@ -25,9 +25,26 @@ __all__ = [
     "Decision",
     "Execution",
     "Fill",
+    "LAB_STRATEGY",
     "MpcAplusStrategy",
     "SeqState",
     "SignalAdapter",
     "Signals",
     "Trade",
 ]
+
+# ── Lab registration (runner="python") ───────────────────────────────────────────
+# The command-center scanner discovers a Python strategy by importing its package and
+# reading this dict — a package OPTS IN by declaring it. Explicit rather than inferred:
+# `strategies/python/` also holds test packages and helpers, and a scanner that registered
+# every package it could import would put non-strategies in front of the user.
+#
+# `config` is read with dataclasses.fields() to build the lab's param form, so the form is
+# generated from the SAME dataclass the bot runs on and cannot drift from it.
+LAB_STRATEGY = {
+    "name": "MPC A+ (Python)",
+    "config": AplusConfig,
+    "strategy": MpcAplusStrategy,
+    "suggested_instrument": "XAUUSD.s",
+    "category": "reversal",
+}

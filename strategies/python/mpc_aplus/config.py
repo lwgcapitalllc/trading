@@ -73,3 +73,14 @@ class AplusConfig:
     flat_by_close: bool = False
     flat_by_close_min: int = 15
     daily_close_hour_ny: int = 17      # gold closes 17:00 New York
+
+    # ── Fill & cost model (A2) — the other deliberate deviation ──────────────────
+    # "bar"  = the Pine's own intrabar GUESS, zero costs. The parity harness MUST run this:
+    #          compare_strategy.py is only meaningful when both sides see the same information.
+    # "tick" = real bid/ask fills (spread + measured slippage) + commission + swap from
+    #          `account_profile`. This is what a real backtest runs, and it WILL disagree with
+    #          the Pine on ambiguous bars — that is the model improving, not drifting.
+    # See backtest/fills.py's module docstring for why both must exist.
+    fill_model: str = "bar"            # ∈ {"bar", "tick"}
+    account_profile: str = ""          # a key of backtest.fills.PROFILES; required for "tick"
+    symbol: str = ""                   # broker symbol for the tick pull (e.g. "XAUUSD.s")

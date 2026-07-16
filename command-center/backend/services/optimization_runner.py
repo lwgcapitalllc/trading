@@ -444,7 +444,9 @@ async def run_native_optimization(optimization_id: str) -> None:
     # parameters the EA doesn't declare. MT5 then treats the set file as mismatched
     # and silently runs a single backtest instead of the optimization (no
     # opt_results.csv). Mirror trigger_backtest, which forces no injection for mt5.
-    if firm and runner_str != "mt5":
+    # `python` is excluded alongside mt5: a Python strategy's config is a dataclass with a fixed
+    # field set, so an injected NT8 param is a TypeError at construction, not a spare input.
+    if firm and runner_str not in ("mt5", "python"):
         fixed_params.update(runner_dispatch.build_foundational_params(firm))
 
     opt_job_id = f"nopt_{optimization_id}"

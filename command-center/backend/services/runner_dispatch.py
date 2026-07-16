@@ -25,7 +25,7 @@ import json
 
 import config as cfg
 from services import lab_db
-from services import mt5_agent_client
+from services import mt5_agent_client, python_runner
 
 _TIMEOUT = 10  # seconds for all agent calls
 
@@ -300,11 +300,15 @@ def native_wf_results(job_id: str, runner: str = "ninjatrader") -> dict:
 
 
 def start_backtest(job_spec: dict, runner: str = "ninjatrader") -> dict:
-    """Submit a backtest job. Routes to the NT8 or MT5 agent based on runner."""
+    """Submit a backtest job. Routes to the NT8 agent, the MT5 agent, or the in-process Python
+    runner based on runner. Python needs no spec translation — it reads the NT8-shaped spec
+    directly, which is why there is no `_nt8_to_python_spec`."""
     if runner == "ninjatrader":
         return _post("/backtest", job_spec, timeout=30)
     elif runner == "mt5":
         return mt5_agent_client.start_backtest(_nt8_to_mt5_spec(job_spec))
+    elif runner == "python":
+        return python_runner.start_backtest(job_spec)
     else:
         raise ValueError(f"Unknown runner: {runner!r}")
 
@@ -334,8 +338,11 @@ def _normalize_mt5_status(raw: dict) -> dict:
 
 
 def job_status(job_id: str, runner: Optional[str] = None) -> dict:
-    if _resolve_runner(job_id, runner) == "mt5":
+    resolved = _resolve_runner(job_id, runner)
+    if resolved == "mt5":
         return _normalize_mt5_status(mt5_agent_client.job_status(job_id))
+    if resolved == "python":
+        return python_runner.job_status(job_id)   # already the NT8 status shape
     return _get(f"/jobs/{job_id}/status")
 
 
@@ -415,13 +422,21 @@ def _normalize_mt5_results(raw: dict) -> dict:
 
 
 def job_results(job_id: str, runner: Optional[str] = None) -> dict:
-    if _resolve_runner(job_id, runner) == "mt5":
+    resolved = _resolve_runner(job_id, runner)
+    if resolved == "mt5":
         return _normalize_mt5_results(mt5_agent_client.job_results(job_id))
+    if resolved == "python":
+        # backtest.output already emits the lab's {equity_curve, daily_pnl, kpis, engine_trades}
+        # shape, so there is deliberately no _normalize_python_results — nothing to translate.
+        return python_runner.job_results(job_id)
     return _get(f"/jobs/{job_id}/results")
 
 
 def job_log(job_id: str, lines: int = 200, runner: Optional[str] = None) -> str:
-    if _resolve_runner(job_id, runner) == "mt5":
+    resolved = _resolve_runner(job_id, runner)
+    if resolved == "python":
+        return python_runner.job_log(job_id, lines)
+    if resolved == "mt5":
         return mt5_agent_client.job_log(job_id, lines)
     try:
         data = _get(f"/jobs/{job_id}/log?lines={lines}")
@@ -431,8 +446,11 @@ def job_log(job_id: str, lines: int = 200, runner: Optional[str] = None) -> str:
 
 
 def cancel_job(job_id: str, runner: Optional[str] = None) -> dict:
-    if _resolve_runner(job_id, runner) == "mt5":
+    resolved = _resolve_runner(job_id, runner)
+    if resolved == "mt5":
         return mt5_agent_client.cancel_job(job_id)
+    if resolved == "python":
+        return python_runner.cancel_job(job_id)
     return _post(f"/jobs/{job_id}/cancel")
 
 

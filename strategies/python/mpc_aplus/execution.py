@@ -17,12 +17,28 @@ two TradingView fill assumptions logic-parity depends on:
 Sizing is the Pine's fixed %-risk (`qty = equity·risk% / stopDistance`); R — the unit
 the decision stream is graded in — is invariant to account size, so the initial
 capital only scales the equity curve, never the parity check.
+
+**A2 (fill & cost model).** Both assumptions above describe BAR mode, which stays the
+default and stays exactly as written — it is what `compare_strategy.py` diffs against the
+Pine. Passing a `resolver` + `profile` switches to TICK mode: real bid/ask fills (spread
+and slippage measured off the tape) plus commission and swap. Tick mode is an added branch
+at each fill site, never a rewrite of the bar path, so parity cannot be collateral damage.
+See `backtest/fills.py` for why both models must exist.
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional, Tuple
+
+# repo-root on path so `backtest.fills` imports standalone, matching strategy.py's shim.
+_ROOT = Path(__file__).resolve().parents[3]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from backtest import fills as _fills
 
 
 @dataclass
@@ -78,6 +94,10 @@ class Trade:
     r: float
     entry_ms: int = 0
     exit_ms: int = 0
+    # Commission + swap charged to this trade. `pnl_usd` is already NET of it; this field
+    # exists so a run can report what the costs actually were. Always 0.0 in bar mode, which
+    # charges nothing — an honest zero, not a claim that trading was free.
+    costs_usd: float = 0.0
     exit_price: float = 0.0
     stop_distance: float = 0.0
     exit_reason: str = ""
@@ -105,9 +125,24 @@ def _intrabar_targets_first(o: float, h: float, l: float) -> bool:
 
 
 class Execution:
-    def __init__(self, config, initial_capital: float = 1_000_000.0) -> None:
+    """The order layer + a small broker emulator.
+
+    `resolver`/`profile` are the A2 seam and BOTH default to None, which is bar mode: the Pine's
+    own intrabar guess with zero costs, i.e. every code path below behaves exactly as it did before
+    A2 existed. That default is load-bearing — `compare_strategy.py`'s exit 0 rests on it, so the
+    bar paths are never routed through the resolver. Tick mode is an added branch, never a rewrite.
+    """
+
+    def __init__(self, config, initial_capital: float = 1_000_000.0,
+                 resolver=None, profile=None, bar_ms: int = 300_000) -> None:
         self._cfg = config
         self._equity_realized = initial_capital  # equity = initial + closed pnl
+        # A2: None ⇒ bar mode (the Pine guess, no costs). See the class docstring.
+        self._resolver = resolver
+        self._profile = profile
+        self.bar_ms = bar_ms                # bar duration; only tick mode reads it
+        self._costs_usd = 0.0               # this trade's commission + swap so far
+        self._last_roll_ms: Optional[int] = None   # last rollover already charged
 
         # position state
         self._pos_dir = 0                  # 0 flat, +1 long, -1 short
@@ -156,6 +191,10 @@ class Execution:
         dec.long_edge, dec.short_edge = long_edge, short_edge
         dec.l_stage, dec.s_stage = seq.l_stage, seq.s_stage
         dec.long_veto, dec.short_veto = sig.long_veto, sig.short_veto
+
+        # Financing for any rollover crossed while still holding — charged before this bar's
+        # exits, since the night was already carried by the time the bar trades. No-op in bar mode.
+        self._charge_swap(sig)
 
         # ── Phase A: fill resting orders against THIS bar (placed last bar) ──
         opened = False
@@ -277,6 +316,28 @@ class Execution:
 
     # ── entry fill (Phase A) ─────────────────────────────────────────────────────
     def _try_entry_fill(self, sig, dec) -> bool:
+        if self._resolver is not None:
+            return self._try_entry_fill_ticks(sig, dec)
+        return self._try_entry_fill_bar(sig, dec)
+
+    def _try_entry_fill_ticks(self, sig, dec) -> bool:
+        """Real-tick entry. An entry limit transacts on the side that actually trades: a long
+        BUYS the ask, a short SELLS the bid — so the spread is paid here by construction rather
+        than modelled. A limit never slips against you; it fills at its price or better."""
+        for pend in (self._pend_long, self._pend_short):
+            if pend is None:
+                continue
+            buying = pend.dir > 0
+            # A long's limit sits BELOW price (price must fall to it); a short's sits above.
+            level = _fills.Level(pend.edge, falling=buying)
+            fill = self._resolver.first_touch(
+                self._bar_of(sig), {"entry": level}, buying=buying)
+            if fill is not None:
+                self._open_position(pend, fill.price, sig, dec)
+                return True
+        return False
+
+    def _try_entry_fill_bar(self, sig, dec) -> bool:
         # A long and short limit can't both rest into a fill in the same bar in
         # practice (opposite directions), but resolve deterministically: whichever the
         # bar's path reaches first. We check the one the path favors first.
@@ -315,6 +376,11 @@ class Execution:
         self._sos_bar_open = pend.sos_bar
         self._risk_usd = abs(pend.qty) * abs(fill_price - pend.sl) * self._cfg.point_value
         self._entry_equity = self._equity_realized      # R yardstick baseline
+        # Costs are charged AFTER the R baseline is snapshotted, so they land inside the trade's
+        # own P&L (and its R) rather than being quietly excluded from it.
+        self._costs_usd = 0.0
+        self._last_roll_ms = None
+        self._charge_commission(pend.qty)
         self._max_fav = None                            # _advance_stage seeds it
         if pend.dir > 0:
             self._traded_sos_l = pend.sos_bar
@@ -326,6 +392,44 @@ class Execution:
 
     # ── open-trade management (Phase A exits + Phase B staging) ───────────────────
     def _manage_open(self, sig, dec) -> None:
+        if self._resolver is not None:
+            return self._manage_open_ticks(sig, dec)
+        return self._manage_open_bar(sig, dec)
+
+    def _manage_open_ticks(self, sig, dec) -> None:
+        """Real-tick exits. Exiting transacts on the OPPOSITE side of the book from entering —
+        a long exits by SELLING the bid, a short by BUYING the ask — which is why `buying` here
+        is `d < 0` and not the position's direction.
+
+        The stop is frozen from last bar's close (same as bar mode), so it is constant across the
+        bar and the ladder resolves in TP1→TP2→runner order. That ordering is safe with ticks:
+        TP2 lies beyond TP1 in the same direction, so any tick reaching TP2 has already passed
+        TP1. Unlike bar mode, a stop fill reports the price that ACTUALLY existed next, so its
+        slippage is measured rather than assumed away.
+        """
+        stop = self._current_stop()
+        d = self._pos_dir
+        buying = d < 0
+        bar = self._bar_of(sig)
+        for oid, target, qty in self._remaining_brackets():
+            levels = {"stop": _fills.Level(stop, falling=d > 0)}
+            if target is not None:
+                levels[oid] = _fills.Level(target, falling=d < 0)
+            fill = self._resolver.first_touch(bar, levels, buying=buying)
+            if fill is None:
+                return
+            if fill.key == "stop":
+                self._close_at(sig, fill.price, "stop", dec)
+                return
+            self._exit_portion(oid, fill.price, qty, sig, dec)
+            if self._pos_dir == 0:
+                return
+
+    def _bar_of(self, sig) -> "_fills.Bar":
+        return _fills.Bar(time_ms=sig.time_ms, open=sig.open, high=sig.high, low=sig.low,
+                          close=sig.close, duration_ms=self.bar_ms)
+
+    def _manage_open_bar(self, sig, dec) -> None:
         """Fill the TP1/TP2/runner brackets against this bar using the frozen stop
         (from last bar's close) and the intrabar path."""
         stop = self._current_stop()
@@ -394,6 +498,7 @@ class Execution:
         d = self._pos_dir
         pnl = (price - self._entry) * d * qty * self._cfg.point_value
         self._equity_realized += pnl
+        self._charge_commission(qty)        # commission is per SIDE — each ladder leg pays
         self._filled_qty += qty
         self._exit_notional += price * qty
         self._exit_qty += qty
@@ -419,6 +524,7 @@ class Execution:
             dir=self._pos_dir, entry_index=self._entry_index, entry_price=self._entry,
             exit_index=sig.index, qty=self._qty, risk_usd=self._risk_usd, pnl_usd=pnl, r=r,
             entry_ms=self._entry_ms, exit_ms=self._exit_ms, exit_price=avg_exit,
+            costs_usd=self._costs_usd,
             stop_distance=abs(self._entry - self._init_stop), exit_reason=self._exit_reason))
         dec.closed_r = r
         self._pos_dir = 0
@@ -430,6 +536,59 @@ class Execution:
     def _equity_at_entry_delta(self) -> float:
         # this trade's net = equity moved since its entry snapshot.
         return self._equity_realized - (self._entry_equity or self._equity_realized)
+
+    # ── costs (A2) — no-ops without a profile, which is what bar mode runs ────────
+    def _charge(self, amount: float) -> None:
+        """Book a cost against equity. `amount` is signed the way the broker books it:
+        negative = charged, positive = credited (a short's gold swap is a real credit)."""
+        self._equity_realized += amount
+        self._costs_usd += amount
+
+    def _charge_commission(self, qty: float) -> None:
+        if self._profile is None:
+            return
+        self._charge(-self._profile.commission(qty))
+
+    def _charge_swap(self, sig) -> None:
+        """Charge financing for every rollover this bar crosses while a position is open.
+
+        Fires at most once per rollover (`_last_roll_ms` latches it), so a bar that spans the
+        boundary cannot double-book — the same edge-vs-level distinction that caused the sweep
+        double-count bug in signals.py. Swap is why holding matters: it hits longs and shorts in
+        OPPOSITE directions, so omitting it flatters every long and understates every short.
+        """
+        if self._profile is None or self._profile.swap is None or self._pos_dir == 0:
+            return
+        roll = self._last_rollover_before(sig.time_ms)
+        if roll is None or roll[0] == self._last_roll_ms:
+            return
+        roll_ms, roll_date = roll
+        if roll_ms <= self._entry_ms:      # the rollover predates this position
+            self._last_roll_ms = roll_ms
+            return
+        self._last_roll_ms = roll_ms
+        remaining = self._qty - self._filled_qty
+        self._charge(self._profile.swap_charge(self._pos_dir, remaining, roll_date))
+
+    def _last_rollover_before(self, time_ms: int):
+        """(epoch-ms, date) of the most recent daily rollover at/before `time_ms`, or None.
+
+        The rollover is the broker's day boundary — the same 17:00-NY instant the daily close
+        uses. Saturday is skipped: the market is shut, so no night is booked there (the weekend
+        is carried by the triple-swap weekday instead).
+        """
+        from datetime import datetime, time, timedelta, timezone
+        from zoneinfo import ZoneInfo
+        ny = ZoneInfo("America/New_York")
+        now = datetime.fromtimestamp(time_ms / 1000.0, tz=timezone.utc).astimezone(ny)
+        day = now.date() if now.hour >= self._cfg.daily_close_hour_ny else \
+            (now - timedelta(days=1)).date()
+        for _ in range(4):                 # step back over any shut days
+            if day.weekday() != 5:         # Saturday books nothing
+                roll = datetime.combine(day, time(self._cfg.daily_close_hour_ny), tzinfo=ny)
+                return int(roll.timestamp() * 1000), day
+            day -= timedelta(days=1)
+        return None
 
     # ── stop staging + trail (Pine 4674-4719) ────────────────────────────────────
     def _advance_stage(self, sig) -> None:
@@ -511,10 +670,11 @@ class Execution:
     # ── flat-by-close deviation window ───────────────────────────────────────────
     def _in_flat_window(self, sig) -> bool:
         cfg = self._cfg
-        # minutes until the daily close (gold 17:00 NY). Reads NY hour only (bar TF
-        # granularity is enough for the 15/60-min windows we use).
+        # Minutes until the daily close (gold 17:00 NY). The minute-of-hour is read off the
+        # UTC timestamp directly: every NY offset is a whole number of hours, so minutes past
+        # the hour are the same in both zones and need no tz conversion.
         close_h = cfg.daily_close_hour_ny
         if sig.ny_hour >= close_h:
             return False
-        mins_left = (close_h - sig.ny_hour) * 60
-        return mins_left <= cfg.flat_by_close_min
+        mins_left = (close_h - sig.ny_hour) * 60 - (sig.time_ms // 60_000) % 60
+        return 0 < mins_left <= cfg.flat_by_close_min

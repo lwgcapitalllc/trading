@@ -267,9 +267,12 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     # NinjaScript-only: foundational params map to [Category("Foundational")] properties
     # that MT5/MQL5 strategies don't have, so never inject for the mt5 runner — a forex run
     # now carries a (personal) ruleset for evaluation, but its config must not be injected.
+    # `python` is excluded for the same reason: a Python strategy's config is a dataclass with
+    # a fixed field set, so an injected AccountSize/EarliestEntryTimeET is not a field it has —
+    # it would be a TypeError at construction, not a silently ignored input.
     primary_ruleset = (
         lab_db.get_ruleset(ruleset_ids[0])
-        if ruleset_ids and runner != "mt5"
+        if ruleset_ids and runner not in ("mt5", "python")
         else None
     )
     merged_params = runner_dispatch.inject_foundational(req.params, primary_ruleset)

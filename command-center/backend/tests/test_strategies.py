@@ -3,14 +3,15 @@ Strategy scanning — current contract.
 
 The scanner reads from `<MONOREPO_ROOT>/strategies/**` : 1 NinjaTrader .cs (ORB; VWAP_MR
 and Momentum deleted 2026-06-21) + 1 MT5 .mq5 (LondonBreakout; MeanReversion deleted
-2026-06-22) = 2 strategies. NT8 strategies get an inferred suggested_instrument; MT5 does
-not. Param types span int/double/bool (NT8) and string (MT5).
+2026-06-22) + 1 Python package (mpc_aplus, declaring LAB_STRATEGY; added 2026-07-16)
+= 3 strategies. NT8 and Python strategies get a suggested_instrument; MT5 does not. Param
+types span int/double/bool (NT8), string (MT5), and all four off a dataclass (Python).
 """
 
 import textwrap
 import pytest
 
-EXPECTED_CLASS_NAMES = {"ORB", "LondonBreakout"}
+EXPECTED_CLASS_NAMES = {"ORB", "LondonBreakout", "MpcAplusStrategy"}
 
 SYNTHETIC_CS = textwrap.dedent("""\
     public class SyntheticStrat : Strategy
@@ -34,18 +35,18 @@ SYNTHETIC_CS = textwrap.dedent("""\
 
 # ── Cold start ─────────────────────────────────────────────────────────────────
 
-def test_scan_adds_two_strategies(client):
+def test_scan_adds_every_strategy(client):
     r = client.post("/strategies/scan")
     assert r.status_code == 200
     data = r.json()
-    assert data["added"] == 2
+    assert data["added"] == 3
     assert data["updated"] == 0
 
 
 def test_scan_returns_correct_class_names(client):
     client.post("/strategies/scan")
     strategies = client.get("/strategies").json()
-    assert len(strategies) == 2
+    assert len(strategies) == 3
     assert {s["class_name"] for s in strategies} == EXPECTED_CLASS_NAMES
 
 
@@ -79,7 +80,7 @@ def test_second_scan_is_idempotent(client):
     data = r.json()
     assert data["added"] == 0
     assert data["updated"] == 0
-    assert data["skipped"] == 2
+    assert data["skipped"] == 3
 
 
 # ── Param-schema + hash update on source change ───────────────────────────────
