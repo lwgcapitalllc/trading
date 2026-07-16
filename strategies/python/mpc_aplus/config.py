@@ -1,0 +1,75 @@
+"""AplusConfig — every input toggle the A+ strategy trades on, with the SAME name
+and SAME default as `indicators/mpc_strategy.pine`.
+
+**Toggle parity is a hard requirement** (see docs/MPC_APLUS_SPEC.md): the regression
+harness reads the toggle columns out of a TradingView export and configures this
+dataclass to the exact settings the Pine ran under, so any config you and your
+brother pick reproduces bar-for-bar. A new toggle in the Pine is a new field here.
+
+Scope: this carries the toggles that change a TRADE DECISION or the divergence
+veto/active state — the execution group (`GRP_EXEC`), the divergence group
+(`GRP_DIV`) that feeds the veto, and the A+ staleness window (`GRP_APLUS`). Purely
+cosmetic Pine inputs (debug labels, position boxes, the stats table styling) do not
+touch the decision stream and are deliberately not declared. `exec_scratch_r` is the
+one Result-Stats input kept, because it classifies a closed trade's R as WIN / LOSS
+/ SCRATCH — part of the decision stream the parity check diffs.
+
+Instrument facts (mintick, point value, the daily-close time) are Layer-B injections,
+not Pine inputs — they live here too so the strategy stays instrument-agnostic.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class AplusConfig:
+    # ── GRP_EXEC — Strategy Execution (mpc_strategy.pine 4159-4183) ──────────────
+    exec_longs: bool = True            # "Trade Longs"
+    exec_shorts: bool = True           # "Trade Shorts"
+    exec_arm_sweep: bool = False       # "Arm on liquidity sweep"  (Stage-1 trigger)
+    exec_arm_div: bool = True          # "Arm on RSI divergence"   (Stage-1 trigger)
+    exec_req_fvg: bool = True          # "Require FVG overlap in zone"
+    exec_fvg_deep_only: bool = False   # "Entry: FVG must sit fully past 0.5"
+    exec_respect_veto: bool = True     # "Respect divergence/extreme veto"
+    exec_close_opp_sos: bool = False   # "Close on opposite SOS"
+    exec_htf_exhaust_only: bool = False  # "Only fade HTF exhaustion, not breakouts"
+    exec_htf_source: str = "Weekly"    # "HTF exhaustion source"  ∈ {Weekly, Daily, Either}
+    exec_htf_weekly: str = "Ignore"    # "Weekly bias requirement"
+    exec_htf_daily: str = "Ignore"     # "Daily bias requirement"
+    #   HTF-bias options: Ignore | Must agree | Must not oppose | Must oppose (reversal)
+    exec_risk_pct: float = 10.0        # "Risk % per trade"
+    exec_sl_level: str = "1.0"         # "SL fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0}
+    exec_sl_buf_tk: float = 0.0        # "SL buffer beyond chosen level (ticks)"
+    exec_tp1_pct: float = 30.0         # "TP1 size %"
+    exec_tp2_pct: float = 40.0         # "TP2 size %"
+    exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
+    exec_trail_step: float = 5.0       # "Runner trail step ($ of price)"
+    exec_no_late_day: bool = True      # "No entries in final hour (16:00-17:00 NY)"
+
+    # ── GRP_STATS — the one decision-affecting stats input (4194) ───────────────
+    exec_scratch_r: float = 0.15       # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH
+
+    # ── GRP_APLUS — A+ sequence (156) ───────────────────────────────────────────
+    aplus_window: int = 4320           # "Max Time: Sweep → SOS (minutes)" — staleness backstop
+
+    # ── GRP_DIV — RSI divergence: feeds the veto + the live DIV confluence (169-180) ─
+    show_div: bool = True              # "Track RSI Divergence" (showDivInput; marketStructureOnly off)
+    div_rsi_len: int = 14              # "RSI Length"
+    div_pivot_len: int = 5             # "Pivot Width (bars)"
+    div_valid_bars: int = 100          # "Divergence Valid For (bars)"
+    div_veto: bool = True              # "Veto Setups on Extreme/Divergence"
+    div_extreme_ob: int = 80           # "Extreme Overbought"
+    div_extreme_os: int = 20           # "Extreme Oversold"
+
+    # ── Instrument facts (Layer-B injection, not Pine inputs) ───────────────────
+    mintick: float = 0.01              # syminfo.mintick — XAUUSD price tick
+    point_value: float = 1.0           # 1.0 of price = 1 unit quote/contract (XAUUSD/most CFDs)
+
+    # ── Deliberate deviations from the Pine (docs/MPC_APLUS_SPEC.md) ─────────────
+    # OFF for the parity check (to match the Pine, which holds the runner overnight);
+    # ON for real runs. Force-flat all trades `flat_by_close_min` before the daily close.
+    flat_by_close: bool = False
+    flat_by_close_min: int = 15
+    daily_close_hour_ny: int = 17      # gold closes 17:00 New York

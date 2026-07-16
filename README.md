@@ -13,7 +13,10 @@ trading/
 ├── algos/               ← Algo trading suite (Windows VPS, PU Prime demo — no live bots, rebuilding backtest-first)
 ├── smart-money/         ← Crypto/forex trader scanner and copy-trading candidate pool
 ├── command-center/      ← Local ops platform: bot monitor, smart money UI, backtests lab
-├── strategies/          ← Generic strategy source files organized by runner platform
+├── strategies/          ← Generic strategy source files organized by runner platform (incl. python/ for the Python runner)
+│
+│  ── BACKTEST (Python runner — shared infra, like engines/) ────────
+├── backtest/            ← Python bar-replay backtest runner: data layer, replay, fills, optimizer (consumed by the lab as runner="python")
 │
 │  ── ENGINES (canonical shared libraries — the growing group) ─────
 ├── engines/

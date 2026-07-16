@@ -1,0 +1,3 @@
+# Cached broker bars — pulled once, reused. Never committed (broker data, large-ish).
+*
+!.gitignore

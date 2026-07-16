@@ -1,0 +1,3 @@
+# TradingView "Export chart data" CSVs dropped here for tools/compare_feeds.py.
+# Broker data, large, transient — kept on disk for re-runs, never committed.
+/*.csv
