@@ -4,8 +4,9 @@
 **Scope:** This package only — the data layer, replay loop, fill/cost model, output adapter, and
 local optimizer. It does NOT cover the engines it replays (`engines/`), the strategies it runs
 (`strategies/python/`), or the lab that consumes it (`command-center/`).
-**Status:** In build. A0 (data layer) + A1 (replay loop) landed 2026-07-15; A3 (output adapter)
-landed 2026-07-16; A2 (fill & cost model) + A4 (local optimizer) pending. See `docs/MPC_APLUS_BUILD_PLAN.md`.
+**Status:** In build. A0 (data layer) + A1 (replay loop) landed 2026-07-15; A2 (fill & cost model) +
+A3 (output adapter) landed 2026-07-16, and the lab's `runner="python"` adapter with them; A4 (local
+optimizer) pending. See `docs/MPC_APLUS_BUILD_PLAN.md`.
 **Last reviewed:** 2026-07-16
 
 ---
@@ -35,10 +36,16 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   "Show Internal Structure" OFF sets this False, which blanks the snapshot's internal-derived fields
   (`i_confirmed_*` / `ifib_seed_*`) so the Structure fib does not adopt an internal-swing anchor. The
   mpc_aplus bot pins it False; the engine parity harnesses keep it True (they validated internal ON).
-- **A2 — Fill & cost model** *(pending)*. Real-tick intrabar limit fills + spread/commission/slippage.
-  Until this lands, fills come from the strategy's own bar-level intrabar-path GUESS
-  (`mpc_aplus/execution.py`) — good enough for Pine parity (the Pine assumes the same), NOT good
-  enough to trust a P&L number. **A3's output is only as honest as A2.**
+- **A2 — Fill & cost model** *(done 2026-07-16)*. `backtest/fills.py` + the tick seam in
+  `mpc_aplus/execution.py`. **Two fill models, and the distinction is load-bearing:**
+  `fill_model="bar"` (default) is the strategy's own bar-level intrabar-path GUESS with zero costs —
+  it matches what the Pine assumes, so it is the ONLY model `compare_strategy.py` may diff.
+  `fill_model="tick"` resolves every level against real bid/ask ticks (long enters on the ask, exits
+  on the bid), measures stop slippage off the actual next tick rather than assuming a constant, and
+  charges commission + swap into the trade's own P&L. **Tick mode is expected to DISAGREE with the
+  Pine on ambiguous bars — that is the improvement, not drift.** Bar mode must stay bit-identical
+  forever; `test_execution_ticks.py::test_bar_mode_is_untouched_by_a2` is the guard.
+  Measured on the 365d 15m XAUUSD run: real fills cost 1.3% of net, 0 bars fell back to the guess.
 - **A3 — Output adapter** *(done 2026-07-16)*. `backtest/output.py`. `build_results(trades, …)` →
   the lab's `{equity_curve, daily_pnl, kpis, engine_trades}`. Strategy-agnostic: it consumes any
   trade object carrying the reporting fields (`execution.Trade` satisfies it) and owns no strategy
@@ -47,7 +54,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   a second definition here is exactly the duplicate-definition bug that doc warns about. The two lab
   contracts it mirrors by hand (the equity-curve point; `sizing_engine.RawTrade`) are locked by
   `tests/test_output.py` (26 tests) — including one that builds the REAL `RawTrade` from our rows, so
-  the contract can't silently drift. Not yet wired into the lab (`runner="python"` adapter = next).
+  the contract can't silently drift. Wired into the lab 2026-07-16 as `runner="python"`.
 - **A4 — Local optimizer** *(pending)*. In-memory parameter sweep, no VPS lock.
 
 ## Tools

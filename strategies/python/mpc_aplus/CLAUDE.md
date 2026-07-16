@@ -7,7 +7,12 @@ the canonical engine stack's per-bar output and turns the A+ sequence into trade
 NOT own the engines (`engines/`), the replay runner (`backtest/`), or the lab (`command-center/`).
 **Status:** Built + unit-tested + **logic-parity GREEN (exit 0) 2026-07-16** on a full-history
 `VANTAGE_XAUUSD, 5m` export (20,076 bars, `compare_strategy.py` with no warmup — the export starts at
-bar 0). Bar-for-bar identical decision stream vs `mpc_strategy.pine`. 82 offline tests green.
+bar 0). Bar-for-bar identical decision stream vs `mpc_strategy.pine`. Runs real-tick fills + costs
+(`fill_model="tick"`), and is registered in the command-center lab as `runner="python"` (see
+`LAB_STRATEGY` in `__init__.py`) — risk % is editable in the Run modal. 102 offline tests green.
+**Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades, and 8
+of them (the ones that reached the runner) made 110% of the net. Read `## The 2026-07-16 year run`
+below before trusting any tuning done against it.
 **Last reviewed:** 2026-07-16
 
 ---
@@ -58,10 +63,19 @@ BarState  --SignalAdapter-->  Signals  --AplusSequence-->  SeqState  --Execution
 
 ## Deliberate deviations from the Pine (per the framework)
 
-Both OFF for the parity check (to match the Pine), ON for real runs:
+All OFF for the parity check (to match the Pine); each is a real-run choice:
 1. **Flat-by-close** — force-flat + no new entries N minutes before the daily close (`flat_by_close`).
+   **Default False, and measured 2026-07-16: leave it that way.** A/B over 6.5 months: OFF $39,454 /
+   PF 1.444 vs ON $19,813 / PF 1.253 on the same 32 trades. Only 4 trades ever held overnight, they
+   were all winners, and they made 70% of the profit; total swap for the period was −$36.80. Flatting
+   early buys a smaller drawdown for half the profit. (This param was DEAD CODE until 2026-07-16 —
+   `_in_flat_window` read only `sig.ny_hour`, so "minutes left" was always a multiple of 60 and never
+   hit the ≤15 window. Any A/B run before that date compared a flag against itself.)
 2. **Sizing** — the parity check uses the manual %-risk (matches the Pine's fixed-% sizing); real runs
    swap in the dynamic sizing engine under a ruleset.
+3. **Fill model** — parity REQUIRES `fill_model="bar"` (the Pine's own intrabar guess, zero costs).
+   Real runs set `fill_model="tick"` + `account_profile` + `symbol` for real bid/ask fills and costs.
+   See `backtest/CLAUDE.md` A2 — tick mode disagreeing with the Pine is correct, not drift.
 
 ## Engine-construction pins (`MpcAplusStrategy.engine_config`)
 
@@ -113,6 +127,41 @@ check (all nine engines + this strategy) whose columns are present in the CSV(s)
 GREEN/RED/SKIP table with auto-detected cold-start warmup. It is the "is everything in sync?" command
 to run after any re-paste; it reports drift, it does not fix it (a real logic change is still a hand
 port). Engines are the foundation — sync them first (`/audit-engines`), then this strategy.
+
+## The 2026-07-16 year run — what the numbers actually say
+
+365d, 15m, XAUUSD.s, `exec_risk_pct=10`, $10k start. Both fill models, same 22 trades:
+
+| | bar (Pine guess, no costs) | tick (real bid/ask + costs) |
+|---|---|---|
+| net | $11,525.41 (115.25%) | **$11,374.78 (113.75%)** |
+| PF | 4.426 | 4.228 |
+| win% | 72.73% | 72.73% |
+
+Real fills cost 1.3%; **0 bars fell back to the guess**, so every fill is a real tick. TradingView's
+110.19% on the same setup is slightly PESSIMISTIC, not optimistic — TV charges a flat 25 ticks of
+slippage on every fill, and the real broker is better than that (the entry is a resting limit, which
+never slips; only stops pay).
+
+**TradingView's 66 trades = our 22.** Each `strategy.exit` leg (TP1/TP2/runner) is a separate closed
+trade in TV's stats: 22 × 3 = 66 exactly, and the filtered 16 winners × 3 = 48 exactly. Net / return /
+drawdown mean the same thing in both; **profit factor and average-trade do NOT** — splitting one
+winner into three legs changes the ratio (TV 4.155 vs the real 4.426). Don't compare those two.
+
+**The distribution is the real story** (`|R| < 0.25` = scratch):
+
+| outcome | n | $ pnl | % of net | avg R |
+|---|---|---|---|---|
+| reached the runner (TP1+TP2 banked) | 8 | +12,510 | **110%** | 1.19 |
+| TP1 only, rest stopped at BE | 8 | +2,389 | 21% | 0.19 |
+| never reached TP1 | 6 | −3,524 | −31% | −0.42 |
+
+The 72.73% win rate is arithmetically right and analytically misleading: **10 of the 22 trades are
+near-scratch** (together +$749), six of the eight "TP1 only" winners made under $300, only 2 trades
+lost a full R (the stop→BE rule converts most losses to scratches), and the **top 3 trades are 57% of
+net**. The edge is the runner. Treat the win rate as a byproduct of the BE stop, not as the edge.
+Two open threads: whether stop→BE on TP1 is capping runners, and a 2-year run (broker has 2yr of
+ticks) to get the sample past ~45 trades.
 
 ## Tests
 
