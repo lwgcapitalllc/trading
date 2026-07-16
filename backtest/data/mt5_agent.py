@@ -78,6 +78,35 @@ class Mt5Agent:
             )
         return _normalize(pd.DataFrame(bars))
 
+    def ticks(self, symbol: str, start: str, end: str) -> list[dict]:
+        """Fetch real bid/ask ticks in [start, end) — ISO datetimes in TRUE UTC.
+
+        Returns a list of {"time", "bid", "ask"} dicts (the agent's wire shape); `backtest.data.ticks`
+        owns the typed conversion. Pass the SMALLEST window that answers your question: gold is ~690k
+        ticks/day, so a whole day is ~43MB and ~90s while a 5-minute bar is ~260KB and under a second.
+
+        Unlike `bars`, an EMPTY result is not an error — weekends, holidays and the 17:00-NY gold
+        break genuinely have no ticks, and raising there would make a real market gap look like a
+        broken symbol.
+        """
+        query = urllib.parse.urlencode({"symbol": symbol, "start_date": start, "end_date": end})
+        url = f"{self.base_url}/ticks?{query}"
+        try:
+            with urllib.request.urlopen(url, timeout=self.timeout) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise Mt5AgentError(
+                f"MT5 agent {exc.code} for {symbol} ticks [{start}, {end}): {_read_error(exc)}"
+            ) from exc
+        except (urllib.error.URLError, OSError) as exc:
+            raise Mt5AgentError(
+                f"MT5 agent unreachable at {self.base_url} (is the SSH tunnel up?): {exc}"
+            ) from exc
+
+        if "error" in payload and payload["error"]:
+            raise Mt5AgentError(f"MT5 agent error for {symbol} ticks: {payload['error']}")
+        return payload.get("ticks", [])
+
 
 def _read_error(exc: urllib.error.HTTPError) -> str:
     try:
