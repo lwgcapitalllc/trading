@@ -610,8 +610,31 @@ function setBoolPref(key: string, v: boolean) {
   try { localStorage.setItem(key, String(v)) } catch { /* quota */ }
 }
 const _HIST_KEY = 'equity_histogram_enabled'
+const _RUD_KEY  = 'equity_runup_drawdown_enabled'
 
 interface RegimeBand { x1: number; x2: number; regime: string }
+
+// Run-ups & drawdowns ribbon: each point is a "run-up" (equity at/above its running peak — green)
+// or a "drawdown" (below the prior peak — red). Contiguous same-state points merge into one band;
+// TradingView draws this as a thin colour strip along the bottom of the equity panel.
+interface RudBand { x1: number; x2: number; up: boolean }
+function computeRunupDrawdownBands(data: EquityPoint[]): RudBand[] {
+  const bands: RudBand[] = []
+  let peak = -Infinity
+  let cur: RudBand | null = null
+  for (const pt of data) {
+    const up = pt.equity >= peak
+    if (up) peak = pt.equity
+    if (!cur || cur.up !== up) {
+      cur = { x1: pt.index, x2: pt.index, up }
+      bands.push(cur)
+    } else {
+      cur.x2 = pt.index
+    }
+  }
+  for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
+  return bands
+}
 
 function computeRegimeBands(equity: EquityPoint[], dailyPnl: DailyPnlPoint[]): RegimeBand[] {
   const dateToRegime = new Map<string, string>()
@@ -685,17 +708,29 @@ function niceStep(raw: number): number {
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag
 }
 
-function EquityCurveChart({ data, bands = [], showHistogram = false, height = 300 }: {
+function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDrawdown = false, height = 300 }: {
   data: EquityPoint[]; bands?: RegimeBand[]
-  showHistogram?: boolean; height?: number
+  showHistogram?: boolean; showRunupDrawdown?: boolean; height?: number
 }) {
   if (!data.length) return null
+
+  // Runs from the Python runner carry per-trade excursion (favorable/adverse). When present, the
+  // bottom-bar toggle draws the combined TradingView-style excursion bar; otherwise plain profit bars.
+  const hasExc = data.some(d => d.favorable != null || d.adverse != null)
+  const showExcursions = showHistogram && hasExc
+  const showProfitBars = showHistogram && !hasExc
 
   // Break-even = the STARTING BALANCE, not the first trade's equity. The curve is anchored on the
   // account's opening balance and the first point already includes trade #1's P&L, so subtract it
   // back out: startEq = opening balance. Green above it, red below, and the flip lands exactly on
   // this horizontal line — regardless of what the starting balance is.
   const startEq    = (data[0]?.equity ?? 0) - (data[0]?.profit ?? 0)
+  // Anchor the curve on the STARTING BALANCE: prepend a synthetic point at the opening balance so
+  // the line visibly leaves the start line (TradingView does this). The anchor carries no trade —
+  // it draws no dot, no histogram bar, and its tooltip just reports the starting balance.
+  const firstIdx   = data[0]?.index ?? 1
+  const chartData: (EquityPoint & { _anchor?: boolean })[] =
+    [{ index: firstIdx - 1, equity: startEq, _anchor: true }, ...data]
   const allValues  = data.map(d => d.equity)
   const min = Math.min(...allValues)
   const max = Math.max(...allValues)
@@ -719,13 +754,20 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, height = 30
 
   // Profit histogram rides its own hidden axis, scaled to a bottom strip: domain [-barMax, 6×barMax]
   // puts the zero baseline ~14% up so green bars rise and red bars drop within the bottom band.
-  const barMax = showHistogram
+  const barMax = showProfitBars
     ? Math.max(1, ...data.map(d => Math.abs(d.profit ?? 0)))
     : 1
 
+  // Run-up / drawdown ribbon segments, and a thin band at the very bottom of the plot to draw it in.
+  // Pull the first segment left to the anchor so the ribbon spans the full axis (the curve starts at
+  // the anchor point, one step left of the first trade).
+  const rudBands = showRunupDrawdown ? computeRunupDrawdownBands(data) : []
+  if (rudBands.length) rudBands[0].x1 = firstIdx - 1
+  const rudY2 = yMin + (yMax - yMin) * 0.025
+
   return (
-    <ResponsiveContainer key={`${bands.length}-${showHistogram}`} width="100%" height={height}>
-      <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+    <ResponsiveContainer key={`${bands.length}-${showHistogram}-${showExcursions}-${showRunupDrawdown}`} width="100%" height={height}>
+      <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           {/* Line stroke: green above break-even, red below, hard edge at the start-balance offset. */}
           <linearGradient id="eqStroke" x1="0" y1="0" x2="0" y2="1">
@@ -742,14 +784,19 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, height = 30
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-        {/* Regime context as faint background bands — skip UNKNOWN so the chart shows exactly the
-            regimes in the legend (a run tags only the regimes it actually saw). */}
+        {/* Regime context as faint full-height background bands — skip UNKNOWN so the chart shows
+            exactly the regimes in the legend (a run tags only the regimes it actually saw). */}
         {bands.filter(b => b.regime !== 'UNKNOWN').map((b, i) => (
           <ReferenceArea key={`r${i}`} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
         ))}
         <XAxis
           dataKey="index"
           ticks={eqTicks}
+          // Point scale keeps the line flush to the axis whether or not the histogram bars are on —
+          // a bar series otherwise switches the axis to band scale, which pads both sides and shifts
+          // the curve right, opening a gap between the y-axis and the starting balance.
+          scale="point"
+          padding={{ left: 0, right: 0 }}
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
@@ -775,14 +822,23 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, height = 30
         />
         {/* Hidden axis for the bottom bar strip: zero baseline ~14% up so bars hug the bottom. */}
         <YAxis yAxisId="bars" hide domain={[-barMax, barMax * 6]} />
+        {/* Hidden axis for excursion bars: the balance axis shifted so its zero lands exactly on the
+            starting-balance line, in real dollars — the bars sit on the same baseline as the curve. */}
+        <YAxis yAxisId="exc" hide domain={[yMin - startEq, yMax - startEq]} />
         {/* Custom tooltip: equity + (when present) favorable/adverse excursion for the trade. */}
         <Tooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null
             const eq = payload.find((p: { dataKey?: string | number }) => p.dataKey === 'equity') ?? payload[0]
             if (!eq) return null
-            const pt = (eq as { payload?: EquityPoint }).payload
+            const pt = (eq as { payload?: EquityPoint & { _anchor?: boolean } }).payload
             const v  = ((eq as { value?: number }).value ?? 0)
+            if (pt?._anchor) return (
+              <div style={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}>
+                <p style={{ color: C.axisTick, marginBottom: 4 }}>Starting balance</p>
+                <p style={{ color: '#e5e7eb' }}>${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+              </div>
+            )
             const dateStr = pt?.date ? ` · ${fmtChartDate(pt.date)}` : ''
             const dirStr  = pt?.direction ? ` · ${pt.direction}` : ''
             const hasFav = pt?.favorable != null || pt?.adverse != null
@@ -806,27 +862,75 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, height = 30
           }}
         />
         <ReferenceLine y={startEq} stroke={C.refLine} strokeDasharray="4 4" />
-        {/* Per-trade realised profit histogram. */}
-        {showHistogram && (
-          <Bar yAxisId="bars" dataKey="profit" isAnimationActive={false} maxBarSize={9}>
-            {data.map((d, i) => <Cell key={i} fill={(d.profit ?? 0) >= 0 ? C.pos : C.neg} />)}
+        {/* Run-ups & drawdowns ribbon: a thin strip along the very bottom, green while the equity is
+            making new highs, red while it sits under a prior peak. */}
+        {rudBands.map((b, i) => (
+          <ReferenceArea key={`rud${i}`} x1={b.x1} x2={b.x2} y1={yMin} y2={rudY2}
+            fill={b.up ? C.pos : C.neg} fillOpacity={0.85} stroke="none" />
+        ))}
+        {/* Per-trade realised profit histogram (runs without excursion data) — muted so the line reads on top. */}
+        {showProfitBars && (
+          <Bar yAxisId="bars" dataKey="profit" isAnimationActive={false} maxBarSize={28}>
+            {chartData.map((d, i) => <Cell key={i} fill={(d.profit ?? 0) >= 0 ? C.pos : C.neg} fillOpacity={0.35} />)}
           </Bar>
+        )}
+        {/* Combined trade-excursion bar (TradingView-style): translucent green halo up to the favorable
+            excursion, translucent red halo down to the adverse, and a solid net-result core between —
+            one bar per trade, in true dollars anchored on the starting-balance line so the bars sit on
+            the same baseline as the equity curve. Driven off a hidden bar (exc axis, base 0 = the
+            starting-balance line) whose pixel height gives the $-per-pixel scale for the custom shape. */}
+        {showExcursions && (
+          <Bar yAxisId="exc" dataKey={(d: EquityPoint) => Math.max(d.favorable ?? 0, -(d.adverse ?? 0), 0)}
+            isAnimationActive={false} maxBarSize={28}
+            shape={(props: { x?: number; y?: number; width?: number; height?: number; payload?: EquityPoint & { _anchor?: boolean } }) => {
+              const { x = 0, y = 0, width = 0, height = 0, payload } = props
+              const fav = payload?.favorable ?? 0
+              const adv = payload?.adverse ?? 0
+              const profit = payload?.profit ?? 0
+              const scale = Math.max(fav, -adv, 0)
+              if (payload?._anchor || scale <= 0 || height <= 0) return <g />
+              const ppd   = height / scale        // pixels per dollar (bar spans startEq → startEq+scale)
+              const zeroY = y + height             // pixel of the starting-balance line
+              const w  = width                     // fill the category slot (Recharts already sized it)
+              const bx = x
+              const favY  = zeroY - fav * ppd
+              const advY  = zeroY - adv * ppd      // adv ≤ 0 → below the line
+              const profY = zeroY - profit * ppd
+              return (
+                <g>
+                  {fav > 0 && <rect x={bx} y={favY} width={w} height={zeroY - favY} fill={C.pos} fillOpacity={0.28} />}
+                  {adv < 0 && <rect x={bx} y={zeroY} width={w} height={advY - zeroY} fill={C.neg} fillOpacity={0.28} />}
+                  {profit >= 0
+                    ? <rect x={bx} y={profY} width={w} height={Math.max(0, zeroY - profY)} fill={C.pos} fillOpacity={0.6} />
+                    : <rect x={bx} y={zeroY} width={w} height={Math.max(0, profY - zeroY)} fill={C.neg} fillOpacity={0.6} />}
+                </g>
+              )
+            }}
+          />
         )}
         <Area
           type="monotone"
           dataKey="equity"
           stroke="url(#eqStroke)"
-          strokeWidth={1.5}
+          strokeWidth={2.5}
           fill="url(#eqFillSplit)"
-          // A dot on every trade point (TradingView-style), coloured green/red by whether that
-          // point sits above or below the starting balance — hover any dot for the excursions.
-          dot={(props: { cx?: number; cy?: number; index?: number; payload?: EquityPoint }) => {
+          // A dot on every trade point (TradingView-style), coloured green/red by whether that point
+          // sits above or below the starting balance. A dark stroke ring lifts each dot off the
+          // histogram bars so the line takes visual precedence — hover any dot for the excursions.
+          dot={(props: { cx?: number; cy?: number; index?: number; payload?: EquityPoint & { _anchor?: boolean } }) => {
             const { cx, cy, payload, index } = props
-            if (cx == null || cy == null) return <g key={index} />
+            if (cx == null || cy == null || payload?._anchor) return <g key={index} />
             const up = (payload?.equity ?? 0) >= startEq
-            return <circle key={index} cx={cx} cy={cy} r={2.5} fill={up ? C.pos : C.neg} stroke="none" />
+            return <circle key={index} cx={cx} cy={cy} r={3} fill={up ? C.pos : C.neg} stroke={C.tooltipBg} strokeWidth={1} />
           }}
-          activeDot={{ r: 4, stroke: 'transparent' }}
+          // Hover dot must match the point's own colour (red below the start line, green above) —
+          // a fixed colour showed green even on underwater points.
+          activeDot={(props: { cx?: number; cy?: number; index?: number; payload?: EquityPoint & { _anchor?: boolean } }) => {
+            const { cx, cy, payload, index } = props
+            if (cx == null || cy == null || payload?._anchor) return <g key={index} />
+            const up = (payload?.equity ?? 0) >= startEq
+            return <circle key={index} cx={cx} cy={cy} r={4.5} fill={up ? C.pos : C.neg} stroke={C.tooltipBg} strokeWidth={1.5} />
+          }}
           baseValue={startEq}
           isAnimationActive={false}
         />
@@ -2561,8 +2665,17 @@ export function BacktestDetail() {
   const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
   // Equity-chart series toggles (TradingView-style panel): profit histogram, trade excursions,
   // run-up/drawdown period shading. Each persists across runs.
+  // One bottom-bar toggle (like TradingView). On runs with per-trade excursion (Python runner) it
+  // shows the combined trade-excursion bar — solid net result + translucent favorable/adverse halo;
+  // on other runs it falls back to plain per-trade profit bars. Run-ups & drawdowns is its own thing.
   const [histOn, setHistOn] = useState(() => getBoolPref(_HIST_KEY))
   const toggleHist = useCallback((v: boolean) => { setHistOn(v); setBoolPref(_HIST_KEY, v) }, [])
+  const [rudOn, setRudOn] = useState(() => getBoolPref(_RUD_KEY))
+  const toggleRud = useCallback((v: boolean) => { setRudOn(v); setBoolPref(_RUD_KEY, v) }, [])
+  const hasExcursionData = useMemo(
+    () => run?.equity_curve.some(p => p.favorable != null || p.adverse != null) ?? false,
+    [run?.equity_curve],
+  )
   // Primary chart tab (the big charts) + secondary tab (supporting charts). Price lazy-loads.
   const [primaryTab, setPrimaryTab] = useState<'equity' | 'sized' | 'price' | 'breakdown'>('equity')
   const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
@@ -3047,6 +3160,7 @@ export function BacktestDetail() {
                         data={run.equity_curve}
                         bands={regimeBands}
                         showHistogram={histOn}
+                        showRunupDrawdown={rudOn}
                         height={h}
                       />
                       {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
@@ -3151,7 +3265,10 @@ export function BacktestDetail() {
                       render={renderChart}
                       right={<>
                         {primaryTab === 'equity' && (
-                          <SeriesToggle label="Histogram" on={histOn} onChange={toggleHist} />
+                          <SeriesToggle label={hasExcursionData ? 'Trade excursions' : 'Histogram'} on={histOn} onChange={toggleHist} />
+                        )}
+                        {primaryTab === 'equity' && (
+                          <SeriesToggle label="Run-ups & drawdowns" on={rudOn} onChange={toggleRud} />
                         )}
                         {(primaryTab === 'equity' || primaryTab === 'sized') && hasRealRegimeTags && (
                           <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
