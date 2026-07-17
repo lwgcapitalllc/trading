@@ -601,6 +601,18 @@ function setOverlayPref(v: boolean) {
   try { localStorage.setItem(_OVERLAY_KEY, String(v)) } catch { /* quota */ }
 }
 
+// Per-series equity-chart toggles (histogram / excursions / run-ups & drawdowns). Default OFF so the
+// chart stays clean until the user opts in; each persists like the regime overlay.
+function getBoolPref(key: string): boolean {
+  try { return localStorage.getItem(key) === 'true' } catch { return false }
+}
+function setBoolPref(key: string, v: boolean) {
+  try { localStorage.setItem(key, String(v)) } catch { /* quota */ }
+}
+const _HIST_KEY = 'equity_histogram_enabled'
+const _EXC_KEY  = 'equity_excursions_enabled'
+const _RUD_KEY  = 'equity_runups_enabled'
+
 interface RegimeBand { x1: number; x2: number; regime: string }
 
 function computeRegimeBands(equity: EquityPoint[], dailyPnl: DailyPnlPoint[]): RegimeBand[] {
@@ -619,6 +631,31 @@ function computeRegimeBands(equity: EquityPoint[], dailyPnl: DailyPnlPoint[]): R
     }
   }
   // Tile the bands so they're contiguous (no gaps between regimes) — matches the tune page.
+  for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
+  return bands
+}
+
+// Run-up vs drawdown periods of the equity curve itself: a point is "underwater" (drawdown) while
+// equity sits below its running peak, and "runup" while it's making/holding new highs. Contiguous
+// stretches become faint bands — the "giving back gains" stretches show red, the climbs show green.
+// Derived purely from the equity we already store, so it works on every run with no re-run.
+interface ExcursionBand { x1: number; x2: number; kind: 'runup' | 'drawdown' }
+
+function computeRunupDrawdownBands(equity: EquityPoint[]): ExcursionBand[] {
+  if (equity.length < 2) return []
+  let peak = equity[0].equity
+  const bands: ExcursionBand[] = []
+  let cur: ExcursionBand | null = null
+  for (const pt of equity) {
+    if (pt.equity >= peak) peak = pt.equity
+    const kind: ExcursionBand['kind'] = pt.equity >= peak ? 'runup' : 'drawdown'
+    if (!cur || cur.kind !== kind) {
+      cur = { x1: pt.index, x2: pt.index, kind }
+      bands.push(cur)
+    } else {
+      cur.x2 = pt.index
+    }
+  }
   for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
   return bands
 }
@@ -665,7 +702,12 @@ function fmtChartDate(d?: string): string {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` '${yr}`
 }
 
-function EquityCurveChart({ data, bands = [], height = 300 }: { data: EquityPoint[]; bands?: RegimeBand[]; height?: number }) {
+const _money0 = (v: number) => `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+
+function EquityCurveChart({ data, bands = [], runupBands = [], showExcursions = false, showHistogram = false, height = 300 }: {
+  data: EquityPoint[]; bands?: RegimeBand[]; runupBands?: ExcursionBand[]
+  showExcursions?: boolean; showHistogram?: boolean; height?: number
+}) {
   if (!data.length) return null
 
   const startEq    = data[0]?.equity ?? 0
@@ -678,26 +720,47 @@ function EquityCurveChart({ data, bands = [], height = 300 }: { data: EquityPoin
   const yMin = Math.min(startEq, min) - pad
   const yMax = max + pad
 
-  const curveColor = profitable ? C.pos : C.neg
+  // The vertical fraction (0 = top, 1 = bottom) where the starting equity sits. Green above it,
+  // red below — the gradients hard-stop here so the line/fill switch colour exactly at break-even,
+  // showing the stretches that ran underwater even on an overall-winning run.
+  const startOffset = Math.min(1, Math.max(0, (yMax - startEq) / (yMax - yMin)))
   const eqTicks    = calIndexTicks(data)
 
+  // Bars (profit histogram + excursions) live on their own hidden axis, scaled so they occupy only
+  // the bottom band and never fight the equity line for space.
+  const hasBars = showHistogram || showExcursions
+  const barMax = hasBars
+    ? Math.max(1, ...data.map(d => Math.max(
+        showHistogram ? Math.abs(d.profit ?? 0) : 0,
+        showExcursions ? Math.max(Math.abs(d.favorable ?? 0), Math.abs(d.adverse ?? 0)) : 0,
+      )))
+    : 1
+
   return (
-    <ResponsiveContainer key={bands.length ? 'regime' : 'base'} width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+    <ResponsiveContainer key={`${bands.length}-${runupBands.length}-${showExcursions}-${showHistogram}`} width="100%" height={height}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
-          <linearGradient id="eqPos" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={C.pos} stopOpacity={0.22} />
-            <stop offset="95%" stopColor={C.pos} stopOpacity={0.02} />
+          {/* Line stroke: green above break-even, red below, hard edge at the start-equity offset. */}
+          <linearGradient id="eqStroke" x1="0" y1="0" x2="0" y2="1">
+            <stop offset={startOffset} stopColor={C.pos} />
+            <stop offset={startOffset} stopColor={C.neg} />
           </linearGradient>
-          <linearGradient id="eqNeg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={C.neg} stopOpacity={0.05} />
-            <stop offset="95%" stopColor={C.neg} stopOpacity={0.22} />
+          {/* Fill: same split, translucent (area is drawn between the line and the start line). */}
+          <linearGradient id="eqFillSplit" x1="0" y1="0" x2="0" y2="1">
+            <stop offset={0}            stopColor={C.pos} stopOpacity={0.20} />
+            <stop offset={startOffset}  stopColor={C.pos} stopOpacity={0.04} />
+            <stop offset={startOffset}  stopColor={C.neg} stopOpacity={0.04} />
+            <stop offset={1}            stopColor={C.neg} stopOpacity={0.20} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
         {/* Regime context as faint background bands — same treatment as the tune page. */}
         {bands.map((b, i) => (
-          <ReferenceArea key={i} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
+          <ReferenceArea key={`r${i}`} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
+        ))}
+        {/* Run-up (green) vs drawdown (red) periods of the equity curve itself. */}
+        {runupBands.map((b, i) => (
+          <ReferenceArea key={`d${i}`} x1={b.x1} x2={b.x2} fill={b.kind === 'drawdown' ? C.neg : C.pos} fillOpacity={0.07} stroke="none" />
         ))}
         <XAxis
           dataKey="index"
@@ -723,7 +786,9 @@ function EquityCurveChart({ data, bands = [], height = 300 }: { data: EquityPoin
           }}
           width={56}
         />
-        {/* Custom tooltip: always shows the 'equity' entry, ignores _sN segment keys */}
+        {/* Hidden axis for the bottom bar strip: top = 3.2× the tallest bar so bars sit low. */}
+        <YAxis yAxisId="bars" hide domain={[-barMax * 1.15, barMax * 3.2]} />
+        {/* Custom tooltip: equity + (when present) favorable/adverse excursion for the trade. */}
         <Tooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null
@@ -732,30 +797,49 @@ function EquityCurveChart({ data, bands = [], height = 300 }: { data: EquityPoin
             const pt = (eq as { payload?: EquityPoint }).payload
             const v  = ((eq as { value?: number }).value ?? 0)
             const dateStr = pt?.date ? ` · ${fmtChartDate(pt.date)}` : ''
+            const hasFav = pt?.favorable != null || pt?.adverse != null
             return (
               <div style={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}>
                 <p style={{ color: C.axisTick, marginBottom: 4 }}>Trade #{pt?.index}{dateStr}</p>
                 <p style={{ color: '#e5e7eb' }}>
-                  {pt?.direction ? `Equity (${pt.direction})` : 'Equity'}&nbsp;
-                  {v >= 0 ? '+' : ''}${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  {pt?.direction ? `Cumulative P&L (${pt.direction})` : 'Cumulative P&L'}&nbsp;{_money0(v)}
                 </p>
+                {pt?.profit != null && (
+                  <p style={{ color: (pt.profit ?? 0) >= 0 ? C.pos : C.neg }}>This trade&nbsp;{_money0(pt.profit)}</p>
+                )}
+                {hasFav && (
+                  <>
+                    <p style={{ color: C.pos }}>Favorable&nbsp;{_money0(pt?.favorable ?? 0)}</p>
+                    <p style={{ color: C.neg }}>Adverse&nbsp;{_money0(pt?.adverse ?? 0)}</p>
+                  </>
+                )}
               </div>
             )
           }}
         />
         <ReferenceLine y={startEq} stroke={C.refLine} strokeDasharray="4 4" />
         {startEq !== 0 && <ReferenceLine y={0} stroke={C.refLineDim} />}
+        {/* Excursion bars (behind the profit bar): favorable up, adverse down. */}
+        {showExcursions && <Bar yAxisId="bars" dataKey="favorable" fill={C.pos} fillOpacity={0.35} isAnimationActive={false} maxBarSize={9} />}
+        {showExcursions && <Bar yAxisId="bars" dataKey="adverse"   fill={C.neg} fillOpacity={0.35} isAnimationActive={false} maxBarSize={9} />}
+        {/* Per-trade realised profit histogram. */}
+        {showHistogram && (
+          <Bar yAxisId="bars" dataKey="profit" isAnimationActive={false} maxBarSize={9}>
+            {data.map((d, i) => <Cell key={i} fill={(d.profit ?? 0) >= 0 ? C.pos : C.neg} />)}
+          </Bar>
+        )}
         <Area
           type="monotone"
           dataKey="equity"
-          stroke={curveColor}
+          stroke="url(#eqStroke)"
           strokeWidth={1.5}
-          fill={profitable ? 'url(#eqPos)' : 'url(#eqNeg)'}
+          fill="url(#eqFillSplit)"
           dot={false}
-          activeDot={{ r: 4, fill: curveColor, stroke: 'transparent' }}
+          activeDot={{ r: 4, fill: profitable ? C.pos : C.neg, stroke: 'transparent' }}
           baseValue={startEq}
+          isAnimationActive={false}
         />
-      </AreaChart>
+      </ComposedChart>
     </ResponsiveContainer>
   )
 }
@@ -1030,6 +1114,22 @@ function RegimeOverlayToggle({ on, onChange }: { on: boolean; onChange: (v: bool
     >
       <Layers size={11} />
       Regimes
+    </button>
+  )
+}
+
+// Generic on/off pill for an equity-chart series (histogram / excursions / run-ups & drawdowns).
+function SeriesToggle({ label, on, onChange }: { label: string; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      className={`flex items-center gap-1.5 px-2 py-[4px] rounded text-[11px] transition-colors ${
+        on
+          ? 'text-accent bg-accent/10 border border-accent/25'
+          : 'text-text-tertiary hover:text-text-secondary border border-border-subtle'
+      }`}
+    >
+      {label}
     </button>
   )
 }
@@ -2468,6 +2568,14 @@ export function BacktestDetail() {
   const [showEvalPicker, setShowEvalPicker] = useState(false)
   const [overlayOn, setOverlayOn] = useState(getOverlayPref)
   const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
+  // Equity-chart series toggles (TradingView-style panel): profit histogram, trade excursions,
+  // run-up/drawdown period shading. Each persists across runs.
+  const [histOn, setHistOn] = useState(() => getBoolPref(_HIST_KEY))
+  const [excOn, setExcOn]   = useState(() => getBoolPref(_EXC_KEY))
+  const [rudOn, setRudOn]   = useState(() => getBoolPref(_RUD_KEY))
+  const toggleHist = useCallback((v: boolean) => { setHistOn(v); setBoolPref(_HIST_KEY, v) }, [])
+  const toggleExc  = useCallback((v: boolean) => { setExcOn(v);  setBoolPref(_EXC_KEY, v) }, [])
+  const toggleRud  = useCallback((v: boolean) => { setRudOn(v);  setBoolPref(_RUD_KEY, v) }, [])
   // Primary chart tab (the big charts) + secondary tab (supporting charts). Price lazy-loads.
   const [primaryTab, setPrimaryTab] = useState<'equity' | 'sized' | 'price' | 'breakdown'>('equity')
   const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
@@ -2550,6 +2658,18 @@ export function BacktestDetail() {
       ? computeRegimeBands(run.equity_curve, run.daily_pnl)
       : [],
     [overlayOn, hasRealRegimeTags, run?.equity_curve, run?.daily_pnl],
+  )
+
+  const runupBands = useMemo(
+    () => (rudOn && run) ? computeRunupDrawdownBands(run.equity_curve) : [],
+    [rudOn, run?.equity_curve],
+  )
+
+  // Excursion data is Python-runner only for now — offer the toggle only when the run actually
+  // carries it, so MT5/NT8 runs don't show a dead control.
+  const hasExcursionData = useMemo(
+    () => run?.equity_curve.some(p => p.favorable != null || p.adverse != null) ?? false,
+    [run?.equity_curve],
   )
 
   // Regime is a market property (same calendar days for every firm), so tag lookup uses the
@@ -2948,7 +3068,14 @@ export function BacktestDetail() {
                 case 'equity':
                   return (
                     <>
-                      <EquityCurveChart data={run.equity_curve} bands={regimeBands} height={h} />
+                      <EquityCurveChart
+                        data={run.equity_curve}
+                        bands={regimeBands}
+                        runupBands={runupBands}
+                        showExcursions={excOn && hasExcursionData}
+                        showHistogram={histOn}
+                        height={h}
+                      />
                       {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
                     </>
                   )
@@ -3050,6 +3177,15 @@ export function BacktestDetail() {
                       onExpand={() => setFullscreenChart(primaryTab)}
                       render={renderChart}
                       right={<>
+                        {primaryTab === 'equity' && (
+                          <SeriesToggle label="Run-ups & drawdowns" on={rudOn} onChange={toggleRud} />
+                        )}
+                        {primaryTab === 'equity' && hasExcursionData && (
+                          <SeriesToggle label="Excursions" on={excOn} onChange={toggleExc} />
+                        )}
+                        {primaryTab === 'equity' && (
+                          <SeriesToggle label="Histogram" on={histOn} onChange={toggleHist} />
+                        )}
                         {(primaryTab === 'equity' || primaryTab === 'sized') && hasRealRegimeTags && (
                           <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
                         )}

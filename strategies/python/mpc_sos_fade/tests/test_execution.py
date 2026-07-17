@@ -127,6 +127,25 @@ def test_stop_out_is_minus_one_r():
     assert abs(ex.trades[0].r - (-1.0)) < 1e-6     # full -1R
 
 
+def test_trade_records_favorable_and_adverse_excursion():
+    """Excursion = how far the trade ran each way before closing, across the whole hold.
+
+    Long filled @103.82; the hold's highest high is bar 2's 107.0 (favorable) and its lowest low is
+    the 103.5 the entry bar dipped to (adverse). Both are measured vs entry with the same point value,
+    so their ratio is price-only — free of qty/point_value.
+    """
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())     # place
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())     # fill @103.82, low 103.5
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())           # high 107.0
+    ex.step(_sig(3, 106.0, 106.2, 104.9, 105.0), _seq_flat())           # runner stops @105
+
+    t = ex.trades[0]
+    assert t.mfe_usd > 0 and t.mae_usd < 0
+    expected_ratio = (107.0 - t.entry_price) / (103.5 - t.entry_price)   # favorable vs adverse, signed
+    assert abs(t.mfe_usd / t.mae_usd - expected_ratio) < 1e-3   # 2dp rounding on the stored $ values
+
+
 def test_late_day_block_stops_new_entries():
     ex = Execution(_cfg())
     dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())

@@ -101,6 +101,12 @@ class Trade:
     exit_price: float = 0.0
     stop_distance: float = 0.0
     exit_reason: str = ""
+    # Reporting-only excursion (no decision weight): the most this trade was ever showing in
+    # profit (`mfe_usd` ≥ 0, favorable) and the deepest it sat against us (`mae_usd` ≤ 0, adverse)
+    # before it closed — measured across the full hold on bar high/low, the same intrabar
+    # approximation the trail's `_max_fav` uses. Feeds the equity chart's excursion overlay.
+    mfe_usd: float = 0.0
+    mae_usd: float = 0.0
 
 
 # ── the resting-order + position model ──────────────────────────────────────────
@@ -161,6 +167,9 @@ class Execution:
         self._tp2 = 0.0
         self._stage = 0                    # 0 full-stop, 1 BE, 2 stop->TP1 + runner ratchet
         self._max_fav = 0.0
+        # excursion extremes across the whole hold (reporting only — see Trade.mfe_usd)
+        self._ext_high = 0.0
+        self._ext_low = 0.0
         self._risk_usd = 0.0
         self._filled_qty = 0.0             # how much of the position has exited
         self._sos_bar_open: Optional[int] = None
@@ -382,6 +391,8 @@ class Execution:
         self._last_roll_ms = None
         self._charge_commission(pend.qty)
         self._max_fav = None                            # _advance_stage seeds it
+        self._ext_high = sig.high                       # excursion (reporting) — seed on entry bar
+        self._ext_low = sig.low
         if pend.dir > 0:
             self._traded_sos_l = pend.sos_bar
         else:
@@ -392,6 +403,10 @@ class Execution:
 
     # ── open-trade management (Phase A exits + Phase B staging) ───────────────────
     def _manage_open(self, sig, dec) -> None:
+        # Excursion (reporting only): widen the hold's high/low before this bar's exits resolve,
+        # so the closing bar's extreme counts too. Never read by a decision.
+        self._ext_high = max(self._ext_high, sig.high)
+        self._ext_low = min(self._ext_low, sig.low)
         if self._resolver is not None:
             return self._manage_open_ticks(sig, dec)
         return self._manage_open_bar(sig, dec)
@@ -520,12 +535,18 @@ class Execution:
         pnl = self._equity_at_entry_delta()
         r = pnl / self._risk_usd if self._risk_usd > 0 else 0.0
         avg_exit = (self._exit_notional / self._exit_qty) if self._exit_qty > 1e-12 else self._entry
+        d, pv = self._pos_dir, self._cfg.point_value
+        mfe_price = self._ext_high if d > 0 else self._ext_low
+        mae_price = self._ext_low if d > 0 else self._ext_high
+        mfe_usd = (mfe_price - self._entry) * d * self._qty * pv
+        mae_usd = (mae_price - self._entry) * d * self._qty * pv
         self.trades.append(Trade(
             dir=self._pos_dir, entry_index=self._entry_index, entry_price=self._entry,
             exit_index=sig.index, qty=self._qty, risk_usd=self._risk_usd, pnl_usd=pnl, r=r,
             entry_ms=self._entry_ms, exit_ms=self._exit_ms, exit_price=avg_exit,
             costs_usd=self._costs_usd,
-            stop_distance=abs(self._entry - self._init_stop), exit_reason=self._exit_reason))
+            stop_distance=abs(self._entry - self._init_stop), exit_reason=self._exit_reason,
+            mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2)))
         dec.closed_r = r
         self._pos_dir = 0
         self._qty = 0.0

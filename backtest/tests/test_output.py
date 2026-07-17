@@ -40,14 +40,17 @@ class FakeTrade:
     exit_price: float
     stop_distance: float
     exit_reason: str
+    mfe_usd: float = 0.0
+    mae_usd: float = 0.0
 
 
 def _t(pnl, *, day=1, dir=1, entry=100.0, exit=110.0, qty=1.0, reason="L-TP1",
-       stop=5.0, hour=12) -> FakeTrade:
+       stop=5.0, hour=12, mfe=0.0, mae=0.0) -> FakeTrade:
     return FakeTrade(dir=dir, entry_index=0, entry_price=entry, exit_index=1, qty=qty,
                      risk_usd=5.0, pnl_usd=pnl, r=pnl / 5.0,
                      entry_ms=_ms(2026, 1, day, hour), exit_ms=_ms(2026, 1, day, hour + 1),
-                     exit_price=exit, stop_distance=stop, exit_reason=reason)
+                     exit_price=exit, stop_distance=stop, exit_reason=reason,
+                     mfe_usd=mfe, mae_usd=mae)
 
 
 # ── equity curve ──────────────────────────────────────────────────────────────
@@ -82,7 +85,20 @@ def test_long_plus_short_equals_trade_count():
 def test_equity_curve_point_has_exactly_the_lab_contract_keys():
     p = build_equity_curve([_t(100.0)])[0]
     assert set(p) == {"index", "equity", "date", "entry_ms", "direction",
-                      "profit", "exit_name", "size"}
+                      "profit", "exit_name", "size", "favorable", "adverse"}
+
+
+def test_equity_curve_carries_trade_excursion():
+    curve = build_equity_curve([_t(100.0, mfe=250.0, mae=-40.0)])
+    assert curve[0]["favorable"] == 250.0
+    assert curve[0]["adverse"] == -40.0
+
+
+def test_equity_curve_excursion_defaults_to_zero_when_trade_lacks_it():
+    """`output` consumes any trade duck-type; one without mfe/mae reads a clean 0.0, not a crash."""
+    curve = build_equity_curve([_t(100.0)])
+    assert curve[0]["favorable"] == 0.0
+    assert curve[0]["adverse"] == 0.0
 
 
 def test_entry_ms_is_present_for_the_news_filter():

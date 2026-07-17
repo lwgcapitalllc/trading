@@ -80,6 +80,11 @@ BarState  --SignalAdapter-->  Signals  --SosFadeSequence-->  SeqState  --Executi
      extremes decides which fills first (open nearer high ⇒ price travels open→high→low→close ⇒
      targets first; nearer low ⇒ stop first). **This is the single most parity-sensitive assumption
      — it is a GUESS until `compare_strategy.py` is exit 0.**
+  Each closed `Trade` also carries **reporting-only excursion** — `mfe_usd` (favorable: the most it
+  ever showed in profit) and `mae_usd` (adverse: the deepest it sat against us), tracked across the
+  whole hold on bar high/low (`_ext_high`/`_ext_low`) and converted to USD at close. NO decision
+  reads them, so they are parity-safe (`compare_strategy.py` diffs the `px_*` decision stream, not
+  `Trade`); they flow through `backtest/output.py` to the lab's equity-chart excursion overlay.
 - **`strategy.py`** — `MpcSosFadeStrategy`: the driver. `run(df, warmup=…)` replays a canonical frame
   end-to-end; `step(bar_state)` does one bar. Collects `.decisions` (the per-bar stream) and
   `.execution.trades`.

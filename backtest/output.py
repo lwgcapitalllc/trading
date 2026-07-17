@@ -75,6 +75,8 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
             "profit":    _round(t.pnl_usd),
             "exit_name": t.exit_reason or None,
             "size":      t.qty,
+            "favorable": _round(getattr(t, "mfe_usd", 0.0)),
+            "adverse":   _round(getattr(t, "mae_usd", 0.0)),
         })
     return curve
 

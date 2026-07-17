@@ -19,6 +19,8 @@ export interface EquityPoint {
   direction?: 'Long' | 'Short'
   profit?: number
   exit_name?: string
+  favorable?: number   // most this trade was ever showing in profit before it closed (≥0)
+  adverse?: number     // deepest it sat against us before it closed (≤0)
 }
 
 // Post-run news/holiday tagging of a run's trades (GET /backtests/runs/{id}/news).

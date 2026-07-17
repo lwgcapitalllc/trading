@@ -53,8 +53,11 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   lab stamps canonical Sharpe from `daily_pnl` at completion (`metrics.apply_canonical_sharpe`) and
   a second definition here is exactly the duplicate-definition bug that doc warns about. The two lab
   contracts it mirrors by hand (the equity-curve point; `sizing_engine.RawTrade`) are locked by
-  `tests/test_output.py` (26 tests) — including one that builds the REAL `RawTrade` from our rows, so
-  the contract can't silently drift. Wired into the lab 2026-07-16 as `runner="python"`.
+  `tests/test_output.py` — including one that builds the REAL `RawTrade` from our rows, so the
+  contract can't silently drift. Each equity-curve point also carries `favorable`/`adverse` (the
+  trade's excursion, read from `Trade.mfe_usd`/`mae_usd` via `getattr` default 0.0, so a trade
+  duck-type lacking them is fine) — the lab's TradingView-style equity chart reads them. Wired into
+  the lab 2026-07-16 as `runner="python"`.
 - **A4 — Local optimizer** *(done 2026-07-16)*. `backtest/optimizer.py`. `run_sweep(module_path, df,
   combos, …)` replays one strategy over N parameter sets with the bars loaded ONCE and combos fanned
   across cores — no VPS, no terminal lock, no deploy/compile (4 combos over 3 months = 9s).
