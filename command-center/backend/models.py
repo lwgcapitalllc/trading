@@ -29,6 +29,11 @@ class EquityPoint(BaseModel):
     direction: Optional[str] = None   # 'Long' | 'Short'
     profit: Optional[float] = None
     exit_name: Optional[str] = None
+    # Per-trade excursion (Python runner only for now): the most the trade ever showed in profit
+    # (favorable, ≥0) and the deepest it sat against us (adverse, ≤0). Absent on runs without it —
+    # this model drops any field it doesn't declare, so these MUST be here to reach the equity chart.
+    favorable: Optional[float] = None
+    adverse: Optional[float] = None
 
 
 class SizedTimelineDay(BaseModel):
