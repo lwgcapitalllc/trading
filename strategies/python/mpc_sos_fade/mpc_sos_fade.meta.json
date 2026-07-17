@@ -1,0 +1,404 @@
+{
+  "_comment": "Editor UI metadata for MPC SOS Fade — labels, groups, plain-English descriptions, the 'essentials' (core) flag, conditional visibility (show_if), toggle option labels, and tuning guides. Read by the command-center scanner (strategies/python/<pkg>/<pkg>.meta.json) and overlaid onto the schema built from SosFadeConfig. UI ONLY: it never touches a trade decision or the source hash, so editing it needs no re-parity — but DO click Scan Strategies after editing. Param order here is the canonical UI order. Every show_if below was verified against the code, not assumed: exec_fvg_deep_only deliberately has NO condition (it still filters which FVGs qualify when Require FVG is off), and div_rsi_len/div_pivot_len have none either (they drive the divergence that ARMS the setup, which show_div does not gate — show_div only gates the veto and the live DIV flag).",
+  "edge": "It fades exhaustion, but only after structure agrees. A momentum divergence at an extreme says the move is tiring; a shift of structure (SOS) confirms the tide actually turned; then it waits for the pullback into the fib zone and buys/sells the imbalance left behind. Nothing is chased — every entry is a resting limit into a retracement. Where the tuning really lives: the ARM SOURCE. Divergence-only (the default) took 40 trades at PF 3.27 over 2 years of gold; adding sweeps took 79 at PF 1.87 — same engine, nearly half the profit factor. The other lever is the HTF bias filter, which currently does nothing (both set to Ignore): this bot shorted a +75% bull market and won, so shorts carry 89% of its profit. That concentration, not the direction split, is the open question.",
+  "steps": [
+    {
+      "label": "01 · Arm",
+      "title": "Something looks exhausted",
+      "detail": "An RSI divergence prints at an overbought/oversold extreme — price made a new high, momentum didn't. (A liquidity sweep can arm it too, but that's off by default.)"
+    },
+    {
+      "label": "02 · SOS",
+      "title": "Structure confirms it",
+      "detail": "A shift of structure breaks the other way within the staleness window. Without this the setup is just a guess and it never arms."
+    },
+    {
+      "label": "03 · Zone",
+      "title": "Wait for the pullback",
+      "detail": "Price retraces into the 0.5–0.886 fib band of the SOS leg and a live fair-value gap overlaps it. Entry is a resting limit at the gap's near edge — never a chase."
+    },
+    {
+      "label": "04 · Manage",
+      "title": "Ladder out",
+      "detail": "Take 30% at TP1 and move the stop to breakeven, 40% at TP2 and move the stop to TP1, then trail the runner. The runner is where the money is made."
+    }
+  ],
+  "params": [
+    {
+      "name": "exec_arm_div",
+      "group": "What arms a setup",
+      "core": true,
+      "widget": "toggle",
+      "label": "Arm on divergence",
+      "options": {
+        "off": "Ignore divergences",
+        "on": "Divergence arms it"
+      },
+      "desc": "Let an RSI divergence start a setup. This is the single most important switch in the bot. Measured over 2 years of gold: divergence-only took 40 trades at profit factor 3.27. It is also why ~83% of trades are short — in a rising market, sell divergences outnumber buy divergences about 2 to 1."
+    },
+    {
+      "name": "exec_arm_sweep",
+      "group": "What arms a setup",
+      "core": true,
+      "widget": "toggle",
+      "label": "Arm on liquidity sweep",
+      "options": {
+        "off": "Ignore sweeps",
+        "on": "Sweep arms it"
+      },
+      "desc": "Let a liquidity sweep (price running stops past a known high/low) start a setup. Off by default, and the measurement says leave it off: turning it on took the same 2 years from 40 trades at PF 3.27 to 79 at PF 1.87 — it adds 39 trades that lose money together. Every divergence-armed trade is also sweep-armed, so 'both on' is identical to 'sweep only'."
+    },
+    {
+      "name": "aplus_window",
+      "group": "What arms a setup",
+      "label": "Arm → SOS timeout",
+      "unit": "minutes",
+      "desc": "How long an armed setup waits for structure to confirm before it gives up. Default is 4320 minutes — 3 days. This is a staleness backstop, not a trigger: it only throws away setups whose confirmation never came.",
+      "guide": [
+        "Only fresh confirmations count — fewer setups",
+        "Stale exhaustion can still trigger days later"
+      ]
+    },
+    {
+      "name": "exec_req_fvg",
+      "group": "Entry zone",
+      "core": true,
+      "widget": "toggle",
+      "label": "Require an FVG",
+      "options": {
+        "off": "Enter at 0.618",
+        "on": "Need a gap in the zone"
+      },
+      "desc": "Whether a fair-value gap must overlap the fib zone for an entry to exist. On, the resting limit goes at the gap's near edge. Off, it falls back to a plain 0.618 limit — more trades, less confluence behind each one."
+    },
+    {
+      "name": "exec_fvg_deep_only",
+      "group": "Entry zone",
+      "widget": "toggle",
+      "label": "Deep gaps only",
+      "options": {
+        "off": "Any gap in the zone",
+        "on": "Gap must clear 0.5"
+      },
+      "desc": "Only count a gap that sits fully beyond the 0.5 retracement. Demands a deeper pullback, so you get a better price on fewer fills. Note this still filters gaps even when 'Require an FVG' is off — it changes which gap becomes the entry price."
+    },
+    {
+      "name": "exec_htf_weekly",
+      "group": "Higher-timeframe filter",
+      "core": true,
+      "label": "Weekly bias rule",
+      "desc": "Require the weekly trend to agree, not oppose, or oppose the trade. One of: Ignore · Must agree · Must not oppose · Must oppose (reversal). Default Ignore, which means the bot has NO trend filter at all — that's why it happily shorted a bull market.",
+      "guide": [
+        "Ignore = no filter, trade every setup",
+        "Must agree = only with the weekly trend"
+      ],
+      "choices": [
+        "Ignore",
+        "Must agree",
+        "Must not oppose",
+        "Must oppose (reversal)"
+      ]
+    },
+    {
+      "name": "exec_htf_daily",
+      "group": "Higher-timeframe filter",
+      "label": "Daily bias rule",
+      "desc": "Same four options as the weekly rule, applied to the daily trend: Ignore · Must agree · Must not oppose · Must oppose (reversal). Both rules are checked, so a setup must satisfy each one that isn't set to Ignore.",
+      "choices": [
+        "Ignore",
+        "Must agree",
+        "Must not oppose",
+        "Must oppose (reversal)"
+      ]
+    },
+    {
+      "name": "exec_htf_exhaust_only",
+      "group": "Higher-timeframe filter",
+      "widget": "toggle",
+      "label": "Fade exhaustion only",
+      "options": {
+        "off": "Trade any setup",
+        "on": "Skip fresh breakouts"
+      },
+      "desc": "Block a trade that would fade a FRESH higher-timeframe breakout — the theory being an exhausted move is worth fading but a breaking one isn't. Blocks longs into a fresh breakdown and shorts into a fresh breakout."
+    },
+    {
+      "name": "exec_htf_source",
+      "group": "Higher-timeframe filter",
+      "label": "Exhaustion timeframe",
+      "desc": "Which timeframe counts as a fresh breakout for the rule above: Weekly · Daily · Either. 'Either' is the strictest — a breakout on either timeframe blocks the trade.",
+      "show_if": {
+        "exec_htf_exhaust_only": true
+      },
+      "choices": [
+        "Weekly",
+        "Daily",
+        "Either"
+      ]
+    },
+    {
+      "name": "exec_risk_pct",
+      "group": "Risk & stop",
+      "core": true,
+      "label": "Risk per trade",
+      "unit": "% of balance",
+      "step": 0.5,
+      "desc": "How much of the account balance each trade risks — this bot sizes ITSELF, so this is the sizing knob and the lab's Sizing Mode does not apply to it. It compounds: 5% means 5% of the balance at that trade. The default of 10% is the Pine's own and is aggressive; it's what makes the raw backtest numbers look enormous.",
+      "guide": [
+        "Smaller swings, slower growth",
+        "Bigger swings — 10% is already aggressive"
+      ]
+    },
+    {
+      "name": "exec_sl_level",
+      "group": "Risk & stop",
+      "core": true,
+      "label": "Stop level",
+      "desc": "Which fib level the stop sits at, as a retracement of the SOS leg: 0.618 · 0.702 · 0.786 · 0.886 · 1.0. Default 1.0 = the leg's origin, the widest and safest — the setup is only wrong once price takes out the level that created it. Tighter levels risk less per trade but get stopped out of trades that would have worked.",
+      "choices": [
+        "0.618",
+        "0.702",
+        "0.786",
+        "0.886",
+        "1.0"
+      ]
+    },
+    {
+      "name": "exec_sl_buf_tk",
+      "group": "Risk & stop",
+      "label": "Stop buffer",
+      "unit": "ticks",
+      "desc": "Extra room beyond the chosen stop level, so a wick that grazes the level doesn't take you out. 1 tick = $0.01 on gold.",
+      "guide": [
+        "Stop sits exactly on the level",
+        "More room for wicks, wider risk per trade"
+      ]
+    },
+    {
+      "name": "exec_tp1_pct",
+      "group": "Exit ladder",
+      "label": "TP1 size",
+      "unit": "% of position",
+      "desc": "How much of the position comes off at the first target. Taking TP1 also moves the stop to breakeven, so this is the trade-off: bank early and de-risk, or keep size on for the runner.",
+      "guide": [
+        "More size left for the runner",
+        "Bank more early, smaller runner"
+      ]
+    },
+    {
+      "name": "exec_tp2_pct",
+      "group": "Exit ladder",
+      "label": "TP2 size",
+      "unit": "% of position",
+      "desc": "How much comes off at the second target, which also drags the stop up to TP1. Whatever is left after TP1 and TP2 is the runner — and the runner makes more than 100% of this bot's net profit, so shrinking it is not free.",
+      "guide": [
+        "Bigger runner",
+        "Bank more at TP2, smaller runner"
+      ]
+    },
+    {
+      "name": "exec_be_buf_tk",
+      "group": "Exit ladder",
+      "label": "Breakeven buffer",
+      "unit": "ticks",
+      "desc": "How far past entry the stop goes when TP1 moves it to breakeven. A buffer means a 'breakeven' stop actually banks a little instead of scratching.",
+      "guide": [
+        "True breakeven",
+        "Locks in more, stopped out sooner"
+      ]
+    },
+    {
+      "name": "exec_trail_step",
+      "group": "Exit ladder",
+      "label": "Runner trail step",
+      "unit": "$ of price",
+      "step": 0.5,
+      "desc": "How tightly the runner's stop ratchets behind price once TP2 is done. The runner carries this strategy, so this is one of the highest-leverage numbers here.",
+      "guide": [
+        "Tighter trail — banks sooner, cuts runners short",
+        "Looser trail — lets winners breathe, gives back more"
+      ]
+    },
+    {
+      "name": "exec_close_opp_sos",
+      "group": "Exit ladder",
+      "widget": "toggle",
+      "label": "Close on opposite SOS",
+      "options": {
+        "off": "Hold to stop or target",
+        "on": "Exit when structure flips"
+      },
+      "desc": "Close an open trade early if structure shifts against it. Off by default — the ladder and the stop already manage the trade, and exiting on every structure flip cuts runners short."
+    },
+    {
+      "name": "show_div",
+      "group": "RSI divergence",
+      "widget": "toggle",
+      "label": "Track divergence",
+      "options": {
+        "off": "Off",
+        "on": "Track it"
+      },
+      "desc": "Master switch for the divergence veto and the live DIV confluence flag. Careful: turning this OFF does not stop divergences from arming setups — it only silences the veto and the flag."
+    },
+    {
+      "name": "div_rsi_len",
+      "group": "RSI divergence",
+      "label": "RSI length",
+      "unit": "bars",
+      "desc": "Lookback for the RSI that finds divergences. 14 is the standard Wilder setting.",
+      "guide": [
+        "Twitchier RSI, more divergences",
+        "Smoother RSI, fewer but cleaner"
+      ]
+    },
+    {
+      "name": "div_pivot_len",
+      "group": "RSI divergence",
+      "label": "Pivot width",
+      "unit": "bars",
+      "desc": "How many bars either side of a high/low are needed to confirm it as a pivot. This is also the lag: a divergence can only be confirmed this many bars after the fact — by design, so it never repaints.",
+      "guide": [
+        "Confirms sooner, more noise",
+        "Confirms later, only real pivots"
+      ]
+    },
+    {
+      "name": "div_valid_bars",
+      "group": "RSI divergence",
+      "label": "Divergence shelf life",
+      "unit": "bars",
+      "desc": "How long a confirmed divergence keeps the veto/DIV flag alive before it's considered stale.",
+      "show_if": {
+        "show_div": true
+      },
+      "guide": [
+        "Expires fast",
+        "Stays live longer"
+      ]
+    },
+    {
+      "name": "div_veto",
+      "group": "RSI divergence",
+      "widget": "toggle",
+      "label": "Veto on extremes",
+      "options": {
+        "off": "No veto",
+        "on": "Veto risky setups"
+      },
+      "desc": "Block a setup when the opposite divergence is live, or when RSI is at an extreme — i.e. don't buy into a live sell-divergence.",
+      "show_if": {
+        "show_div": true
+      }
+    },
+    {
+      "name": "exec_respect_veto",
+      "group": "RSI divergence",
+      "widget": "toggle",
+      "label": "Obey the veto",
+      "options": {
+        "off": "Trade anyway",
+        "on": "Obey it"
+      },
+      "desc": "Whether execution actually honours the veto above. Two switches because the veto can be computed and shown while you test trading through it."
+    },
+    {
+      "name": "div_extreme_ob",
+      "group": "RSI divergence",
+      "label": "Overbought line",
+      "desc": "RSI at or above this counts as an extreme and vetoes longs.",
+      "show_if": {
+        "show_div": true,
+        "div_veto": true
+      },
+      "guide": [
+        "Vetoes longs more often",
+        "Only vetoes at a true extreme"
+      ]
+    },
+    {
+      "name": "div_extreme_os",
+      "group": "RSI divergence",
+      "label": "Oversold line",
+      "desc": "RSI at or below this counts as an extreme and vetoes shorts.",
+      "show_if": {
+        "show_div": true,
+        "div_veto": true
+      },
+      "guide": [
+        "Only vetoes at a true extreme",
+        "Vetoes shorts more often"
+      ]
+    },
+    {
+      "name": "exec_longs",
+      "group": "Direction & sessions",
+      "widget": "toggle",
+      "label": "Trade longs",
+      "options": {
+        "off": "Shorts only",
+        "on": "Longs allowed"
+      },
+      "desc": "Allow long trades. Longs are rare here (7 of 40 over 2 years) but they win 86% of the time — they aren't broken, there just aren't many buy divergences in a rising market."
+    },
+    {
+      "name": "exec_shorts",
+      "group": "Direction & sessions",
+      "widget": "toggle",
+      "label": "Trade shorts",
+      "options": {
+        "off": "Longs only",
+        "on": "Shorts allowed"
+      },
+      "desc": "Allow short trades. Shorts are ~83% of this bot's trades and carry 89% of its profit."
+    },
+    {
+      "name": "exec_no_late_day",
+      "group": "Direction & sessions",
+      "widget": "toggle",
+      "label": "No late-day entries",
+      "options": {
+        "off": "Enter any hour",
+        "on": "Skip 16:00–18:00 NY"
+      },
+      "desc": "Refuse new entries in the last hours before the gold close, when liquidity thins out and spreads widen."
+    },
+    {
+      "name": "flat_by_close",
+      "group": "Direction & sessions",
+      "widget": "toggle",
+      "label": "Flat by close",
+      "options": {
+        "off": "Hold overnight",
+        "on": "Force flat"
+      },
+      "desc": "Close everything before the daily close instead of holding overnight. Off by default, and that was measured: over 6.5 months, OFF made $39,454 (PF 1.44) and ON made $19,813 (PF 1.25). Only 4 trades ever held overnight — all winners, making 70% of the profit — against $36.80 of total swap. Flatting early buys a smaller drawdown for half the profit."
+    },
+    {
+      "name": "flat_by_close_min",
+      "group": "Direction & sessions",
+      "label": "Flatten this early",
+      "unit": "minutes before close",
+      "desc": "How many minutes before the daily close to force everything flat.",
+      "show_if": {
+        "flat_by_close": true
+      },
+      "guide": [
+        "Hold closer to the bell",
+        "Exit earlier, more of the close avoided"
+      ]
+    },
+    {
+      "name": "exec_scratch_r",
+      "group": "Reporting",
+      "label": "Scratch band",
+      "unit": "R",
+      "step": 0.05,
+      "desc": "Reporting only — it never changes a trade. A closed trade landing within this much of breakeven is graded SCRATCH instead of a win or a loss. It matters because this bot scratches a lot: 17 of 40 trades finished near breakeven.",
+      "guide": [
+        "Fewer trades called scratch",
+        "More near-breakeven trades called scratch"
+      ]
+    }
+  ]
+}

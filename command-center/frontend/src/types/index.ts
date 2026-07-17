@@ -280,6 +280,9 @@ export interface ParamSchemaEntry {
   display_name: string
   description?: string
   category?: 'strategy_logic' | 'foundational'
+  // Closed set of legal values for a string param → renders a dropdown, never free text.
+  // From the companion meta.json. Wins over `widget`.
+  choices?: string[]
   // Editor metadata overlaid from a strategy's companion <Strategy>.meta.json (optional).
   label?: string            // friendly label, preferred over display_name
   desc?: string             // plain-English explanation for the explainer panel

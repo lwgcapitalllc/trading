@@ -376,7 +376,11 @@ def _mql5_display_name(stem: str, source: str) -> str:
 # UI metadata keys overlaid from a companion <Strategy>.meta.json onto each param.
 # These drive the editor UI only — never the compiled strategy or the source hash.
 _PARAM_META_KEYS = ("label", "desc", "unit", "core", "widget",
-                    "options", "show_if", "guide", "group", "step", "min", "max")
+                    "options", "show_if", "guide", "group", "step", "min", "max",
+                    # Closed set of legal values for a string param → the editor renders a
+                    # dropdown. Strategies match enums exactly and no-op on anything else,
+                    # so a free-text typo silently disables the setting.
+                    "choices")
 
 
 def meta_path_for(source_path: Path) -> Path:

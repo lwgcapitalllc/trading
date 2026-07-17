@@ -38,13 +38,17 @@ interface Props {
   onFocusChange?: (name: string) => void
 }
 
-type Widget = 'toggle' | 'switch' | 'time' | 'number' | 'text'
+type Widget = 'toggle' | 'switch' | 'time' | 'number' | 'text' | 'select'
 
 const labelOf = (p: ParamSchemaEntry) => p.label || p.display_name || p.name
 const descOf = (p: ParamSchemaEntry) => p.desc || p.description || ''
 const fmt = (v: unknown) => (v === true ? 'on' : v === false ? 'off' : String(v ?? ''))
 
 function widgetOf(p: ParamSchemaEntry, value: ParamValue): Widget {
+  // `choices` wins over an explicit widget: a param with a closed set of legal values must never
+  // be a free-text box. Several strategies read enums by exact string match and fall back to a
+  // silent no-op on anything unrecognised, so a typo would disable a filter without saying so.
+  if (p.choices?.length) return 'select'
   if (p.widget) return p.widget
   if (p.type === 'bool') return p.options ? 'toggle' : 'switch'
   if (p.type === 'string') return /^\d{1,2}:\d{2}$/.test(String(value ?? '')) ? 'time' : 'text'
@@ -299,6 +303,22 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
             </button>
           ))}
         </div>
+        {tuneTag}
+      </>
+    )
+  }
+
+  if (widget === 'select' && p.choices?.length) {
+    return (
+      <>
+        <select
+          value={String(v ?? '')}
+          onFocus={onFocus}
+          onChange={e => { onFocus(); onChange?.(p.name, e.target.value) }}
+          className="bg-bg-sunken border border-border-default rounded-md px-2.5 py-[6px] text-[12px] text-text-primary focus:outline-none focus:border-accent transition-colors min-w-[150px]"
+        >
+          {p.choices.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
         {tuneTag}
       </>
     )

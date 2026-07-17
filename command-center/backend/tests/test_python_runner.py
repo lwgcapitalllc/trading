@@ -128,3 +128,61 @@ def test_status_reports_combo_counts_for_a_sweep():
 def test_health_is_always_up():
     """It is this process — there is no agent to be down."""
     assert python_runner.health()["status"] == "ok"
+
+
+# ── meta.json ↔ config agreement ─────────────────────────────────────────────
+
+def test_meta_json_matches_the_config_dataclass():
+    """The meta file is hand-written while the schema is generated from the dataclass, so they
+    drift silently: a renamed field leaves a stale entry that simply stops applying, and the
+    param quietly loses its label/description. Assert every meta param still exists."""
+    import json
+    from pathlib import Path
+    import config as cfg
+    from strategies.python.mpc_sos_fade import SosFadeConfig
+
+    meta_path = (Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_sos_fade"
+                 / "mpc_sos_fade.meta.json")
+    meta = json.loads(meta_path.read_text())
+    fields = {f.name for f in __import__("dataclasses").fields(SosFadeConfig)}
+
+    named = [p["name"] for p in meta["params"]]
+    assert not (set(named) - fields), f"meta names a param the config doesn't have: {set(named) - fields}"
+    assert len(named) == len(set(named)), "a param is listed twice in meta.json"
+
+
+def test_every_tunable_param_is_documented():
+    """A param with no description renders as '—' on the strategy page. The foundational ones
+    (instrument facts, fill model) are deliberately not user-facing and are excluded."""
+    from services import strategy_scanner
+    from strategies.python.mpc_sos_fade import SosFadeConfig
+    import config as cfg
+    from pathlib import Path
+
+    schema = strategy_scanner._py_param_schema(SosFadeConfig)
+    meta_path = (Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_sos_fade"
+                 / "mpc_sos_fade.meta.json")
+    schema = strategy_scanner._apply_param_meta(schema, meta_path)
+
+    undocumented = [p["name"] for p in schema
+                    if p.get("category") != "foundational" and not p.get("desc")]
+    assert not undocumented, f"params with no description: {undocumented}"
+
+
+def test_enum_defaults_are_legal_choices():
+    """A `choices` list renders a dropdown. If the config's default isn't in it, the select has
+    no matching option and silently shows/sends a DIFFERENT value than the strategy's default."""
+    import json
+    from pathlib import Path
+    import config as cfg
+    from strategies.python.mpc_sos_fade import SosFadeConfig
+
+    meta_path = (Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_sos_fade"
+                 / "mpc_sos_fade.meta.json")
+    meta = json.loads(meta_path.read_text())
+    defaults = SosFadeConfig()
+    for p in meta["params"]:
+        if "choices" in p:
+            actual = getattr(defaults, p["name"])
+            assert actual in p["choices"], (
+                f"{p['name']}: default {actual!r} is not one of {p['choices']}")
