@@ -541,7 +541,7 @@ def _resolve_hint(hint: str):
 def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> Optional[dict]:
     """Import a Python strategy package and build its strategy row, or None if it doesn't opt in.
 
-    Opting in means declaring LAB_STRATEGY (see strategies/python/mpc_aplus/__init__.py). Import
+    Opting in means declaring LAB_STRATEGY (see strategies/python/mpc_sos_fade/__init__.py). Import
     failures are swallowed to None: a half-finished package under strategies/python/ must not be
     able to take the whole scan down — every other strategy would vanish from the UI.
     """
@@ -760,6 +760,11 @@ def remove_strategy(strategy_id: str, *, delete_vps_file: bool = True) -> dict:
     best-effort — an unreachable agent or an already-absent file never blocks the
     DB removal (the source is gone, so the strategy is conceptually deleted).
     Returns {removed, vps_deleted, vps_error}.
+
+    A `python` strategy is never deployed — it is a package that runs in this process — so
+    there is no VPS file to delete and the agent is not called. Without this the agent is asked
+    to delete a directory name and answers "Only .cs files are allowed", surfacing a scary
+    warning for a file that was never supposed to exist.
     """
     row = lab_db.get_strategy(strategy_id)
     if not row:
@@ -767,7 +772,7 @@ def remove_strategy(strategy_id: str, *, delete_vps_file: bool = True) -> dict:
 
     vps_deleted = False
     vps_error: Optional[str] = None
-    if delete_vps_file:
+    if delete_vps_file and row.get("runner") != "python":
         sp = row.get("source_path")
         filename = Path(sp).name if sp else None
         if filename:

@@ -15,14 +15,14 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_ROOT / "strategies" / "python"))
 
-from mpc_aplus import AplusConfig, Execution, SeqState  # noqa: E402
-from mpc_aplus.signals import Signals  # noqa: E402
+from mpc_sos_fade import SosFadeConfig, Execution, SeqState  # noqa: E402
+from mpc_sos_fade.signals import Signals  # noqa: E402
 
 
 def _cfg(**kw):
     base = dict(exec_req_fvg=False, exec_be_buf_tk=0.0, exec_risk_pct=10.0)
     base.update(kw)
-    return AplusConfig(**base)
+    return SosFadeConfig(**base)
 
 
 def _sig(index, o, h, l, c, dir=1, ny_hour=8, **kw):

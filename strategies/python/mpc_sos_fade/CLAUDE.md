@@ -1,6 +1,6 @@
-# CLAUDE.md — strategies/python/mpc_aplus/ (the MPC A+ bot)
+# CLAUDE.md — strategies/python/mpc_sos_fade/ (the MPC SOS Fade bot)
 
-**Purpose:** The MPC A+ reversal strategy in Python — a line-for-line port of the A+ block +
+**Purpose:** The MPC SOS Fade strategy in Python — a line-for-line port of the A+ block +
 execution layer in `indicators/mpc_strategy.pine` (Aaron's brother's "MPC-JARVIS" script). It reads
 the canonical engine stack's per-bar output and turns the A+ sequence into trades.
 **Scope:** This strategy only — its state machine, order logic, config, and parity harness. It does
@@ -17,6 +17,20 @@ below before trusting any tuning done against it.
 
 ---
 
+## The name (renamed 2026-07-16 — was `mpc_aplus` / `MpcAplusStrategy`)
+
+`MPC` = Mental Peak Consulting (Aaron's brother's company) and prefixes every strategy in the
+house. The suffix names the **narrative** the strategy trades off the shared `engines/` — here:
+a **shift of structure (SOS)**, faded. The old name described the *grade filter* it happens to
+use, not what it does, and "A+" would collide the moment a second MPC bot also traded A+ setups.
+
+**"A+" is still correct vocabulary and is deliberately kept** wherever it names the brother's own
+Pine concept — the A+/B/C/D grade dropdown, the "A+ SETUP SEQUENCE" block this ports, and the
+`aplus_window` config field (which mirrors the Pine input "Max Time: Sweep → SOS (minutes)" and is
+a lab param-grid key). Renaming those would break the line-for-line traceability to the Pine, and
+`aplus_window` is also an optimizer grid key. The Pine files themselves are NEVER renamed: they are
+the brother's source and the parity reference.
+
 ## What it is (one paragraph)
 
 A counter-trend reversal that fades exhaustion at HTF liquidity. Three-stage A+ sequence: **Arm**
@@ -24,16 +38,16 @@ A counter-trend reversal that fades exhaustion at HTF liquidity. Three-stage A+ 
 the trade direction, inside a staleness window) → **Zone+FVG** (price retraces into the 0.5–0.886 fib
 band and a live FVG overlaps it). Entry is a resting limit at the FVG's near edge, clamped into the
 band; stop = fib 1.0 (leg origin) + buffer; exit = the fib TP ladder (30/40/runner) with stop→BE on
-TP1, stop→TP1 on TP2, and a ratcheting trail on the runner. Full rules: `docs/MPC_APLUS_SPEC.md`.
+TP1, stop→TP1 on TP2, and a ratcheting trail on the runner. Full rules: `docs/MPC_SOS_FADE_SPEC.md`.
 
 ## The five modules (the data flow)
 
 ```
-BarState  --SignalAdapter-->  Signals  --AplusSequence-->  SeqState  --Execution-->  Decision
+BarState  --SignalAdapter-->  Signals  --SosFadeSequence-->  SeqState  --Execution-->  Decision
 (backtest.replay)             (Pine-named inputs)          (A+ stages)               (orders + fills + R)
 ```
 
-- **`config.py`** — `AplusConfig`: every trade-affecting Pine input toggle, same name + default
+- **`config.py`** — `SosFadeConfig`: every trade-affecting Pine input toggle, same name + default
   (**toggle parity is a hard requirement**). Instrument facts (mintick, point value, close time) are
   Layer-B injections, also here. Cosmetic Pine inputs (debug labels, boxes, table styling) are
   deliberately absent — they don't touch a trade decision.
@@ -45,7 +59,7 @@ BarState  --SignalAdapter-->  Signals  --AplusSequence-->  SeqState  --Execution
   2. `bullDivActive` / `longVeto` — recomputed WITH the structure-break staleness (`lastExtBreakBar`)
      the standalone RSI engine can't see. **Do NOT use the RSI engine's convenience `bull_active`** —
      it omits the stale check and would diverge from the Pine.
-- **`sequence.py`** — `AplusSequence`: the Stage 1→4 state machine, retro-link (a late-confirming
+- **`sequence.py`** — `SosFadeSequence`: the Stage 1→4 state machine, retro-link (a late-confirming
   divergence adopting an SOS that already fired), sequence death (opposite SOS / TP3 / invalidation /
   continuation BOS), and the arm-source snapshot (which Stage-1 source was live at the SOS).
 - **`execution.py`** — `Execution`: entry edge → resting limit → TP1/TP2/runner ladder → staged stop
@@ -57,7 +71,7 @@ BarState  --SignalAdapter-->  Signals  --AplusSequence-->  SeqState  --Execution
      extremes decides which fills first (open nearer high ⇒ price travels open→high→low→close ⇒
      targets first; nearer low ⇒ stop first). **This is the single most parity-sensitive assumption
      — it is a GUESS until `compare_strategy.py` is exit 0.**
-- **`strategy.py`** — `MpcAplusStrategy`: the driver. `run(df, warmup=…)` replays a canonical frame
+- **`strategy.py`** — `MpcSosFadeStrategy`: the driver. `run(df, warmup=…)` replays a canonical frame
   end-to-end; `step(bar_state)` does one bar. Collects `.decisions` (the per-bar stream) and
   `.execution.trades`.
 
@@ -77,7 +91,7 @@ All OFF for the parity check (to match the Pine); each is a real-run choice:
    Real runs set `fill_model="tick"` + `account_profile` + `symbol` for real bid/ask fills and costs.
    See `backtest/CLAUDE.md` A2 — tick mode disagreeing with the Pine is correct, not drift.
 
-## Engine-construction pins (`MpcAplusStrategy.engine_config`)
+## Engine-construction pins (`MpcSosFadeStrategy.engine_config`)
 
 Two engine inputs are NOT in the decision stream, so the bot pins them to the Pine STRATEGY's own
 input defaults rather than the shared engine defaults — miss either and the fib the bot reads drifts:
@@ -115,7 +129,7 @@ the toggles, configures the bot identically, replays the same bars, and diffs th
 0 = bar-for-bar identical. On a mismatch it names the first diverging bar + field. Run it via
 `/audit-strategy`, or:
 ```
-command-center/backend/.venv/bin/python strategies/python/mpc_aplus/tools/compare_strategy.py <export.csv> --warmup N
+command-center/backend/.venv/bin/python strategies/python/mpc_sos_fade/tools/compare_strategy.py <export.csv> --warmup N
 ```
 
 **When the Pine changes:** brother re-pastes `mpc_strategy.pine` → regenerate `mpc_strategy_export.pine`
@@ -213,7 +227,7 @@ input default, so changing it breaks `compare_strategy.py` parity; tune it per-r
 ## Tests
 
 ```
-command-center/backend/.venv/bin/python -m pytest strategies/python/mpc_aplus/tests/ -q
+command-center/backend/.venv/bin/python -m pytest strategies/python/mpc_sos_fade/tests/ -q
 ```
 Offline, no network, no TradingView. `test_sequence.py` (state machine on the real engine stack +
 hand-checked Pine rules), `test_execution.py` (fills / ladder / stop-out / sizing, hand-checked),
@@ -231,6 +245,6 @@ own output). These prove the plumbing; the Pine diff is the live gate.
 
 ## References
 
-- Spec: `docs/MPC_APLUS_SPEC.md`; build plan + order: `docs/MPC_APLUS_BUILD_PLAN.md`.
+- Spec: `docs/MPC_SOS_FADE_SPEC.md`; build plan + order: `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
 - Pine source of truth: `indicators/mpc_strategy.pine` (A+ block ~3708-3972, execution ~4112-4735).
 - Upstream runner: `backtest/CLAUDE.md`; engines: `engines/*/CLAUDE.md`.

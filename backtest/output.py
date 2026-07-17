@@ -7,7 +7,7 @@ reads a Python run without knowing it is one.
 
 Strategy-agnostic by design: the input is a sequence of any object carrying the
 `backtest`-wide trade attributes (dir, entry/exit index+ms+price, qty, pnl_usd,
-stop_distance, exit_reason) — `strategies.python.mpc_aplus.execution.Trade` satisfies it,
+stop_distance, exit_reason) — `strategies.python.mpc_sos_fade.execution.Trade` satisfies it,
 and so must any future Python strategy. This module owns NO strategy logic and no fill
 logic; it is pure reporting arithmetic over trades someone else already produced.
 

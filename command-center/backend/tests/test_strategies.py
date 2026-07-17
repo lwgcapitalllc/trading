@@ -3,7 +3,7 @@ Strategy scanning — current contract.
 
 The scanner reads from `<MONOREPO_ROOT>/strategies/**` : 1 NinjaTrader .cs (ORB; VWAP_MR
 and Momentum deleted 2026-06-21) + 1 MT5 .mq5 (LondonBreakout; MeanReversion deleted
-2026-06-22) + 1 Python package (mpc_aplus, declaring LAB_STRATEGY; added 2026-07-16)
+2026-06-22) + 1 Python package (mpc_sos_fade, declaring LAB_STRATEGY; added 2026-07-16)
 = 3 strategies. NT8 and Python strategies get a suggested_instrument; MT5 does not. Param
 types span int/double/bool (NT8), string (MT5), and all four off a dataclass (Python).
 """
@@ -11,7 +11,7 @@ types span int/double/bool (NT8), string (MT5), and all four off a dataclass (Py
 import textwrap
 import pytest
 
-EXPECTED_CLASS_NAMES = {"ORB", "LondonBreakout", "MpcAplusStrategy"}
+EXPECTED_CLASS_NAMES = {"ORB", "LondonBreakout", "MpcSosFadeStrategy"}
 
 SYNTHETIC_CS = textwrap.dedent("""\
     public class SyntheticStrat : Strategy
@@ -129,3 +129,50 @@ def test_source_hash_updates_on_change(fresh_db, monkeypatch, tmp_path):
     strategy_scanner.scan_strategies()
     hash_v2 = lab_db.get_strategy_hash("syntheticstrat")
     assert hash_v1 != hash_v2
+
+
+# ── remove_strategy: the VPS delete must skip local-only runners ──────────────
+
+def test_remove_python_strategy_never_calls_the_vps(fresh_db, monkeypatch):
+    """A python strategy is a package that runs in-process — it is never deployed, so removing
+    it must not ask the agent to delete a file. Regression: reconcile passed the package DIR
+    name to the NT8 agent, which replied "Only .cs files are allowed" and surfaced a warning
+    about a file that never existed."""
+    import time
+    from services import lab_db, strategy_scanner
+
+    lab_db.upsert_strategy({
+        "id": "pystrat", "name": "Py", "class_name": "PyStrategy",
+        "source_path": "strategies/python/pystrat", "scanned_at": int(time.time()),
+        "runner": "python",
+    })
+
+    def _boom(_filename):
+        raise AssertionError("the VPS agent must not be called for a python strategy")
+
+    monkeypatch.setattr(strategy_scanner.runner_dispatch, "delete_strategy_file", _boom)
+
+    res = strategy_scanner.remove_strategy("pystrat")
+    assert res["removed"] is True
+    assert res["vps_error"] is None
+    assert lab_db.get_strategy("pystrat") is None
+
+
+def test_remove_nt8_strategy_still_deletes_the_vps_file(fresh_db, monkeypatch):
+    """The python skip must not disarm the delete for runners that DO deploy."""
+    import time
+    from services import lab_db, strategy_scanner
+
+    lab_db.upsert_strategy({
+        "id": "orbtest", "name": "ORB", "class_name": "ORB",
+        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
+        "runner": "ninjatrader",
+    })
+
+    called = []
+    monkeypatch.setattr(strategy_scanner.runner_dispatch, "delete_strategy_file",
+                        lambda fn: called.append(fn))
+
+    res = strategy_scanner.remove_strategy("orbtest")
+    assert called == ["ORB.cs"]          # the filename, not the path
+    assert res["vps_deleted"] is True

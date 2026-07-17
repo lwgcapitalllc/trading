@@ -1,15 +1,15 @@
-"""MpcAplusStrategy — the top-level driver.
+"""MpcSosFadeStrategy — the top-level driver.
 
 Wires the three layers together over a replay `BarState` stream:
 
-    BarState --SignalAdapter--> Signals --AplusSequence--> SeqState --Execution--> Decision
+    BarState --SignalAdapter--> Signals --SosFadeSequence--> SeqState --Execution--> Decision
 
 and collects the per-bar decision stream + the completed trade list. This is the one
 object a backtest run (or the parity harness) drives: build it, feed `run(df)` or call
 `step(bar_state)` per bar, then read `.decisions` and `.execution.trades`.
 
 It owns nothing the engines own — it consumes `backtest.replay` output. Timeframe and
-symbol facts arrive via `AplusConfig` (mintick, point value, close time); the engine
+symbol facts arrive via `SosFadeConfig` (mintick, point value, close time); the engine
 construction params live in the replay `EngineConfig`, not here.
 """
 
@@ -25,18 +25,18 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from .config import AplusConfig
+from .config import SosFadeConfig
 from .execution import Decision, Execution
-from .sequence import AplusSequence
+from .sequence import SosFadeSequence
 from .signals import SignalAdapter
 
 
-class MpcAplusStrategy:
-    def __init__(self, config: Optional[AplusConfig] = None,
+class MpcSosFadeStrategy:
+    def __init__(self, config: Optional[SosFadeConfig] = None,
                  initial_capital: float = 1_000_000.0, tick_source=None) -> None:
-        self.config = config or AplusConfig()
+        self.config = config or SosFadeConfig()
         self.signals = SignalAdapter(self.config)
-        self.sequence = AplusSequence(self.config)
+        self.sequence = SosFadeSequence(self.config)
         resolver, profile = self._fill_model(tick_source)
         self.execution = Execution(self.config, initial_capital=initial_capital,
                                    resolver=resolver, profile=profile)
@@ -89,7 +89,7 @@ class MpcAplusStrategy:
         from backtest.replay import EngineConfig
         return EngineConfig(fvg_max_count=7, show_internal=False)
 
-    def run(self, df, engine_config=None, warmup: int = 0) -> "MpcAplusStrategy":
+    def run(self, df, engine_config=None, warmup: int = 0) -> "MpcSosFadeStrategy":
         """Replay a canonical bar frame end-to-end. Engines warm on every bar; the
         strategy only records decisions from `warmup` on (same convention as the
         parity harnesses — the engines need history before their output is real)."""

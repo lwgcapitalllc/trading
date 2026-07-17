@@ -1,14 +1,14 @@
-# MPC A+ — Build Plan
+# MPC SOS Fade — Build Plan
 
-**Goal:** port the MPC A+ strategy (`indicators/mpc_strategy.pine`) to a Python bot, backtest it
+**Goal:** port the MPC SOS Fade strategy (`indicators/mpc_strategy.pine`) to a Python bot, backtest it
 in the command-center lab against XAUUSD (and any market/timeframe), and forward-test it on an MT5
 demo account.
 **Method:** S.Y.S.T.E.M. (`docs/BOT_DEVELOPMENT_METHOD.md`) under the strategy framework
 (`docs/LWG_Strategy_Framework.md`).
 **Status:** building — spec approved, Phase-0 probe done, **A0 (data layer) + A1 (replay loop) landed
-2026-07-15**, **B-Y (the A+ strategy) landed 2026-07-15** (`strategies/python/mpc_aplus/`, 18 offline
+2026-07-15**, **B-Y (the A+ strategy) landed 2026-07-15** (`strategies/python/mpc_sos_fade/`, 18 offline
 tests). **Parity harness BUILT 2026-07-15** — `indicators/mpc_strategy_export.pine` (strategy +
-appended decision-stream plot block), `strategies/python/mpc_aplus/tools/compare_strategy.py` (the
+appended decision-stream plot block), `strategies/python/mpc_sos_fade/tools/compare_strategy.py` (the
 diff tool, round-trip-tested), and the `/audit-strategy` slash command. **Next: RUN the parity gate —
 BLOCKED on a TradingView CSV export** of `mpc_strategy_export.pine` (5m XAUUSD) from Aaron/brother.
 Only that run confirms the intrabar fill assumption. See build order.
@@ -61,7 +61,7 @@ Account #700119432 (PUPrime-Demo). Broker symbol is `XAUUSD.s` (`.s` suffix).
   infra, same character as `engines/`; importable standalone (CLI, the `/audit-strategy` parity
   harness, CI) without the FastAPI app. The lab consumes it through a thin `runner="python"` adapter
   in `runner_dispatch` — the same thin-shim pattern engines already use.
-- **Strategy logic** → **`strategies/python/mpc_aplus/`**, fitting the existing "strategies organized
+- **Strategy logic** → **`strategies/python/mpc_sos_fade/`**, fitting the existing "strategies organized
   by platform" convention. One copy, imported by both the runner (backtest) and the future live bot.
 
 ---
@@ -70,25 +70,25 @@ Account #700119432 (PUPrime-Demo). Broker symbol is `XAUUSD.s` (`.s` suffix).
 
 **A — The Python runner** (shared backtest infra — instrument- and strategy-agnostic; every future
 Python strategy reuses it).
-**B — The MPC A+ bot** (the strategy logic on top of the canonical engines).
+**B — The MPC SOS Fade bot** (the strategy logic on top of the canonical engines).
 
 The runner is built once. The bot is one of many that will run on it.
 
-### B-Y build (landed 2026-07-15) — `strategies/python/mpc_aplus/`
+### B-Y build (landed 2026-07-15) — `strategies/python/mpc_sos_fade/`
 Five modules, a line-for-line port of `mpc_strategy.pine`'s A+ block + execution layer:
-- `config.py` — `AplusConfig`: every trade-affecting Pine input toggle, same name + default (toggle parity).
+- `config.py` — `SosFadeConfig`: every trade-affecting Pine input toggle, same name + default (toggle parity).
 - `signals.py` — `SignalAdapter`: replay `BarState` → the Pine-named per-bar inputs. Two non-trivial
   reconstructions: `recentSSL`/`recentBSL` (H4>Day>session priority off the liquidity sweep events) and
   `bullDivActive`/`longVeto` (recomputed WITH the structure-break staleness the standalone RSI engine can't
   see — do NOT use the engine's convenience `bull_active`).
-- `sequence.py` — `AplusSequence`: the Stage 1→4 state machine + retro-link + sequence-death + arm-source snapshot.
+- `sequence.py` — `SosFadeSequence`: the Stage 1→4 state machine + retro-link + sequence-death + arm-source snapshot.
 - `execution.py` — `Execution`: entry edge → resting limit → TP1/TP2/runner ladder → staged stop + ratchet →
   %-risk sizing → graded R, on a broker emulator that reproduces TradingView's calc-on-close one-bar delay and
   its intrabar path assumption (open nearer high ⇒ targets fill before stop). **The intrabar assumption is the
   #1 parity risk — only `compare_strategy.py` confirms it.**
-- `strategy.py` — `MpcAplusStrategy`: the driver (`run(df, warmup=…)` / `step(bar_state)`), collects the
+- `strategy.py` — `MpcSosFadeStrategy`: the driver (`run(df, warmup=…)` / `step(bar_state)`), collects the
   per-bar decision stream + trade list.
-15 offline tests green: `command-center/backend/.venv/bin/python -m pytest strategies/python/mpc_aplus/tests/`.
+15 offline tests green: `command-center/backend/.venv/bin/python -m pytest strategies/python/mpc_sos_fade/tests/`.
 **No `algos/shared/` shims were needed** — the strategy reads `backtest.replay` output, which already imports
 the engines by bare name.
 
@@ -124,7 +124,7 @@ lab's existing lens.
 
 ---
 
-## Deliverable B — The MPC A+ bot (S.Y.S.T.E.M.)
+## Deliverable B — The MPC SOS Fade bot (S.Y.S.T.E.M.)
 
 - **S — Spec.** One page of exact, machine-followable rules for the A+ sequence, stop, TP ladder,
   sizing, and the flat-by-close rule. *Sign-off gate — nothing is built until this is approved.*

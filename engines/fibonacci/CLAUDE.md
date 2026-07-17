@@ -189,7 +189,7 @@ more-extreme `i_confirmed_low/high` ONLY when the snapshot carries it. In the Pi
 block sits behind `internalActive = showInternal`, so when a consumer's chart has "Show Internal
 Structure" OFF, `i_confirmed_*` is never set and the fib keeps its external anchor. Python's
 `market_structure` engine ALWAYS computes internal structure, so a consumer that runs internal-OFF (the
-mpc_aplus bot does) must suppress those snapshot fields — `EngineStack(EngineConfig(show_internal=False))`
+mpc_sos_fade bot does) must suppress those snapshot fields — `EngineStack(EngineConfig(show_internal=False))`
 blanks `i_confirmed_*` + `ifib_seed_*` for exactly this reason. This engine was validated with internal
 ON (`fib_export.pine`), so its default behaviour is correct; the gate lives in the stack, not here.
 

@@ -5,7 +5,7 @@ returns bar/tick timestamps in the BROKER SERVER's local time, but the agent sta
 `datetime.utcfromtimestamp()`, which labels that local time as UTC. Every bar we pulled was
 2–3h off. Nothing downstream could see it — the number looked like a valid UTC timestamp — but
 every time-driven engine (sessions, liquidity, VWAP, SVP, news) would fire hours out of place,
-and those are exactly the engines the MPC A+ strategy trades on.
+and those are exactly the engines the MPC SOS Fade strategy trades on.
 
 **Why not a constant offset:** the server runs MetaTrader's standard EET/EEST clock — UTC+2 in
 winter, UTC+3 in summer — so any single number is wrong for half the year, and wrong in a way

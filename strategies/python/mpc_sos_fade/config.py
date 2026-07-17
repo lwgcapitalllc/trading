@@ -1,7 +1,7 @@
-"""AplusConfig — every input toggle the A+ strategy trades on, with the SAME name
+"""SosFadeConfig — every input toggle the A+ strategy trades on, with the SAME name
 and SAME default as `indicators/mpc_strategy.pine`.
 
-**Toggle parity is a hard requirement** (see docs/MPC_APLUS_SPEC.md): the regression
+**Toggle parity is a hard requirement** (see docs/MPC_SOS_FADE_SPEC.md): the regression
 harness reads the toggle columns out of a TradingView export and configures this
 dataclass to the exact settings the Pine ran under, so any config you and your
 brother pick reproduces bar-for-bar. A new toggle in the Pine is a new field here.
@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class AplusConfig:
+class SosFadeConfig:
     # ── GRP_EXEC — Strategy Execution (mpc_strategy.pine 4159-4183) ──────────────
     exec_longs: bool = True            # "Trade Longs"
     exec_shorts: bool = True           # "Trade Shorts"
@@ -67,7 +67,7 @@ class AplusConfig:
     mintick: float = 0.01              # syminfo.mintick — XAUUSD price tick
     point_value: float = 1.0           # 1.0 of price = 1 unit quote/contract (XAUUSD/most CFDs)
 
-    # ── Deliberate deviations from the Pine (docs/MPC_APLUS_SPEC.md) ─────────────
+    # ── Deliberate deviations from the Pine (docs/MPC_SOS_FADE_SPEC.md) ─────────────
     # OFF for the parity check (to match the Pine, which holds the runner overnight);
     # ON for real runs. Force-flat all trades `flat_by_close_min` before the daily close.
     flat_by_close: bool = False

@@ -18,11 +18,11 @@ import pandas as pd
 _ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "strategies" / "python"))
-sys.path.insert(0, str(_ROOT / "strategies" / "python" / "mpc_aplus" / "tools"))
+sys.path.insert(0, str(_ROOT / "strategies" / "python" / "mpc_sos_fade" / "tools"))
 sys.path.insert(0, str(_ROOT / "backtest" / "tests"))
 
 from _synth import synth_bars  # noqa: E402
-from mpc_aplus import AplusConfig, MpcAplusStrategy  # noqa: E402
+from mpc_sos_fade import SosFadeConfig, MpcSosFadeStrategy  # noqa: E402
 import compare_strategy as cs  # noqa: E402
 
 # reverse of the tool's string decoders, so the fake export encodes toggles the way the
@@ -32,8 +32,8 @@ _SRC = {v: k for k, v in cs._HTF_SRC.items()}
 _REQ = {v: k for k, v in cs._HTF_REQ.items()}
 
 
-def _encode_cfg(cfg: AplusConfig) -> dict:
-    """Pack an AplusConfig the way mpc_strategy_export.pine's cfg_* plots do."""
+def _encode_cfg(cfg: SosFadeConfig) -> dict:
+    """Pack an SosFadeConfig the way mpc_strategy_export.pine's cfg_* plots do."""
     b = (int(cfg.exec_longs) + int(cfg.exec_shorts) * 2 + int(cfg.exec_arm_sweep) * 4
          + int(cfg.exec_arm_div) * 8 + int(cfg.exec_req_fvg) * 16
          + int(cfg.exec_fvg_deep_only) * 32 + int(cfg.exec_respect_veto) * 64
@@ -81,9 +81,9 @@ def _fake_export(df, decisions, cfg) -> pd.DataFrame:
 
 
 def _write(tmp_path, cfg=None):
-    cfg = cfg or AplusConfig()
+    cfg = cfg or SosFadeConfig()
     df = synth_bars(10)
-    strat = MpcAplusStrategy(cfg).run(df, warmup=0)
+    strat = MpcSosFadeStrategy(cfg).run(df, warmup=0)
     export = _fake_export(df, strat.decisions, cfg)
     p = tmp_path / "export.csv"
     export.to_csv(p, index=False)
@@ -98,7 +98,7 @@ def test_roundtrip_is_parity(tmp_path):
 
 def test_roundtrip_parity_under_nondefault_toggles(tmp_path):
     # a different config must still round-trip (proves cfg_* decode drives the bot)
-    cfg = AplusConfig(exec_arm_sweep=True, exec_req_fvg=False, exec_risk_pct=1.0,
+    cfg = SosFadeConfig(exec_arm_sweep=True, exec_req_fvg=False, exec_risk_pct=1.0,
                       exec_sl_level="0.786", div_valid_bars=250, aplus_window=1440)
     p, _ = _write(tmp_path, cfg)
     msgs = cs.run_parity(p, warmup=100)
@@ -106,7 +106,7 @@ def test_roundtrip_parity_under_nondefault_toggles(tmp_path):
 
 
 def test_config_decode_roundtrips():
-    cfg = AplusConfig(exec_arm_sweep=True, exec_close_opp_sos=True, exec_sl_level="0.886",
+    cfg = SosFadeConfig(exec_arm_sweep=True, exec_close_opp_sos=True, exec_sl_level="0.886",
                       exec_htf_source="Either", exec_htf_weekly="Must agree",
                       div_extreme_ob=85, div_extreme_os=15, div_rsi_len=21,
                       div_pivot_len=7, div_valid_bars=300, aplus_window=720, exec_risk_pct=2.5)

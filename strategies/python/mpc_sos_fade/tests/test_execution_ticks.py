@@ -19,8 +19,8 @@ if str(_ROOT) not in sys.path:
 
 from backtest.fills import AccountProfile, SwapModel, TickPathResolver
 from backtest.data.ticks import Tick
-from strategies.python.mpc_aplus.config import AplusConfig
-from strategies.python.mpc_aplus.execution import Execution, _Pending
+from strategies.python.mpc_sos_fade.config import SosFadeConfig
+from strategies.python.mpc_sos_fade.execution import Execution, _Pending
 
 
 class FakeTicks:
@@ -65,7 +65,7 @@ class Dec:
 
 def test_bar_mode_is_untouched_by_a2():
     """No resolver + no profile ⇒ the pre-A2 behaviour, exactly. compare_strategy.py rests on it."""
-    ex = Execution(AplusConfig(), initial_capital=10_000.0)
+    ex = Execution(SosFadeConfig(), initial_capital=10_000.0)
     assert ex._resolver is None and ex._profile is None
     ex._pend_long = _pend(1, 99.5, 99.0, 100.5, 101.0)
     sig, dec = Sig(o=100.0, h=101.0, l=99.2), Dec()
@@ -76,7 +76,7 @@ def test_bar_mode_is_untouched_by_a2():
 
 def test_bar_mode_charges_no_costs_even_overnight():
     """Bar mode has no profile, so the swap hook is a no-op — an honest zero."""
-    ex = Execution(AplusConfig(), initial_capital=10_000.0)
+    ex = Execution(SosFadeConfig(), initial_capital=10_000.0)
     ex._pend_long = _pend(1, 99.5, 99.0, 100.5, 101.0)
     ex._try_entry_fill(Sig(o=100.0, h=101.0, l=99.2), Dec())
     ex._charge_swap(Sig(time_ms=_ms("2026-03-11 23:00")))
@@ -89,7 +89,7 @@ def test_long_entry_buys_the_ask_so_the_spread_is_paid():
     """A long entering lifts the ask. The limit is on the BID's journey down, but the fill price
     is the ask — that difference IS the spread, paid by construction rather than modelled."""
     ticks = [Tick(0, bid=100.0, ask=100.33), Tick(100, bid=99.4, ask=99.50)]
-    ex = Execution(AplusConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
+    ex = Execution(SosFadeConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
     ex.bar_ms = 300_000
     ex._pend_long = _pend(1, 99.5, 99.0, 100.5, 101.0)
     assert ex._try_entry_fill(Sig(o=100.0, h=101.0, l=99.2), Dec()) is True
@@ -98,7 +98,7 @@ def test_long_entry_buys_the_ask_so_the_spread_is_paid():
 
 def test_short_entry_sells_the_bid():
     ticks = [Tick(0, bid=100.0, ask=100.33), Tick(100, bid=100.6, ask=100.93)]
-    ex = Execution(AplusConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
+    ex = Execution(SosFadeConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
     ex.bar_ms = 300_000
     ex._pend_short = _pend(-1, 100.6, 101.0, 100.0, 99.5)
     assert ex._try_entry_fill(Sig(o=100.0, h=101.0, l=99.2), Dec()) is True
@@ -108,7 +108,7 @@ def test_short_entry_sells_the_bid():
 def test_long_exit_sells_the_bid_not_the_ask():
     """The conflation this guards: a long's ENTRY buys, but its EXIT sells. Testing the exit
     against the ask would refund part of the spread on every one of the ladder's legs."""
-    ex = Execution(AplusConfig(), 10_000.0, profile=_profile())
+    ex = Execution(SosFadeConfig(), 10_000.0, profile=_profile())
     ex._resolver = _resolver([Tick(0, bid=100.5, ask=100.83)])
     ex.bar_ms = 300_000
     ex._pos_dir, ex._qty, ex._entry = 1, 100.0, 99.5
@@ -127,7 +127,7 @@ def test_stop_fills_at_the_next_real_price_so_slippage_is_measured():
     the fill would erase exactly the cost the tick model was built to measure."""
     # bid jumps 99.10 -> 98.60, straight through a stop at 99.00
     ticks = [Tick(0, bid=99.10, ask=99.43), Tick(50, bid=98.60, ask=98.93)]
-    ex = Execution(AplusConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
+    ex = Execution(SosFadeConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
     ex.bar_ms = 300_000
     ex._pos_dir, ex._qty, ex._entry = 1, 100.0, 99.5
     ex._sl, ex._tp1, ex._tp2 = 99.0, 100.5, 101.0
@@ -140,7 +140,7 @@ def test_stop_fills_at_the_next_real_price_so_slippage_is_measured():
 
 def test_limit_exit_does_not_slip_against_you():
     ticks = [Tick(0, bid=100.7, ask=101.03)]      # gapped past TP1 in our favour
-    ex = Execution(AplusConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
+    ex = Execution(SosFadeConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
     ex.bar_ms = 300_000
     ex._pos_dir, ex._qty, ex._entry = 1, 100.0, 99.5
     ex._sl, ex._tp1, ex._tp2 = 99.0, 100.5, 101.0
@@ -155,7 +155,7 @@ def test_limit_exit_does_not_slip_against_you():
 def test_commission_is_charged_per_side_and_scaled_to_lots():
     """qty is in OUNCES; commission is quoted per LOT. Skipping the conversion is a 100x error."""
     ticks = [Tick(0, bid=99.4, ask=99.50)]
-    ex = Execution(AplusConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile(3.50))
+    ex = Execution(SosFadeConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile(3.50))
     ex.bar_ms = 300_000
     ex._pend_long = _pend(1, 99.5, 99.0, 100.5, 101.0, qty=100.0)   # 100 oz = 1.0 lot
     ex._try_entry_fill(Sig(o=100.0, h=101.0, l=99.2), Dec())
@@ -167,7 +167,7 @@ def test_costs_land_inside_the_trades_own_pnl():
     """Costs are charged AFTER the R baseline snapshot, so the trade's P&L (and its R) carry
     them. Charging before would quietly exclude them from the number being judged."""
     ticks = [Tick(0, bid=99.4, ask=99.50)]
-    ex = Execution(AplusConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile(3.50))
+    ex = Execution(SosFadeConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile(3.50))
     ex.bar_ms = 300_000
     ex._pend_long = _pend(1, 99.5, 99.0, 100.5, 101.0)
     ex._try_entry_fill(Sig(o=100.0, h=101.0, l=99.2), Dec())
@@ -187,7 +187,7 @@ _SWAP = SwapModel(swap_long_points=-78.29, swap_short_points=29.49,
 
 
 def _open_at(direction, entry_text, commission=0.0):
-    ex = Execution(AplusConfig(), 10_000.0, resolver=_resolver([]),
+    ex = Execution(SosFadeConfig(), 10_000.0, resolver=_resolver([]),
                    profile=_profile(commission, swap=_SWAP))
     ex._pos_dir, ex._qty, ex._filled_qty = direction, 100.0, 0.0   # 1.0 lot
     ex._entry_ms = _ms(entry_text)
@@ -252,30 +252,30 @@ def test_saturday_books_nothing():
 
 def test_tick_mode_refuses_an_unknown_account():
     """Tick mode prices real costs, so it must name a real account rather than default to free."""
-    from strategies.python.mpc_aplus.strategy import MpcAplusStrategy
-    cfg = dataclasses.replace(AplusConfig(), fill_model="tick",
+    from strategies.python.mpc_sos_fade.strategy import MpcSosFadeStrategy
+    cfg = dataclasses.replace(SosFadeConfig(), fill_model="tick",
                               account_profile="nope", symbol="XAUUSD.s")
     with pytest.raises(ValueError, match="unknown"):
-        MpcAplusStrategy(cfg)
+        MpcSosFadeStrategy(cfg)
 
 
 def test_tick_mode_requires_a_symbol():
-    from strategies.python.mpc_aplus.strategy import MpcAplusStrategy
-    cfg = dataclasses.replace(AplusConfig(), fill_model="tick",
+    from strategies.python.mpc_sos_fade.strategy import MpcSosFadeStrategy
+    cfg = dataclasses.replace(SosFadeConfig(), fill_model="tick",
                               account_profile="puprime_standard", symbol="")
     with pytest.raises(ValueError, match="symbol"):
-        MpcAplusStrategy(cfg)
+        MpcSosFadeStrategy(cfg)
 
 
 def test_bad_fill_model_is_rejected():
-    from strategies.python.mpc_aplus.strategy import MpcAplusStrategy
+    from strategies.python.mpc_sos_fade.strategy import MpcSosFadeStrategy
     with pytest.raises(ValueError, match="fill_model"):
-        MpcAplusStrategy(dataclasses.replace(AplusConfig(), fill_model="ticks"))
+        MpcSosFadeStrategy(dataclasses.replace(SosFadeConfig(), fill_model="ticks"))
 
 
 def test_default_config_is_bar_mode():
     """The default must stay the Pine-faithful one — parity is the default obligation."""
-    from strategies.python.mpc_aplus.strategy import MpcAplusStrategy
-    s = MpcAplusStrategy(AplusConfig())
-    assert AplusConfig().fill_model == "bar"
+    from strategies.python.mpc_sos_fade.strategy import MpcSosFadeStrategy
+    s = MpcSosFadeStrategy(SosFadeConfig())
+    assert SosFadeConfig().fill_model == "bar"
     assert s.execution._resolver is None and s.execution._profile is None

@@ -108,7 +108,7 @@ def run_sweep(
 ) -> List[dict]:
     """Replay `df` once per combo and return [{params, kpis}] — one row per combo, in combo order.
 
-    `module_path` is the strategy package (e.g. "strategies.python.mpc_aplus"); workers read its
+    `module_path` is the strategy package (e.g. "strategies.python.mpc_sos_fade"); workers read its
     `LAB_STRATEGY` for the strategy class. `progress(done, total)` is called from the collecting
     thread only. `should_cancel()` is polled between completions — a cancelled sweep returns the
     rows finished so far rather than raising, because a partial grid is still a real answer.

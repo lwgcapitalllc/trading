@@ -35,8 +35,8 @@ for p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from mpc_aplus import AplusConfig, MpcAplusStrategy  # noqa: E402
-from mpc_aplus.execution import Decision  # noqa: E402
+from mpc_sos_fade import SosFadeConfig, MpcSosFadeStrategy  # noqa: E402
+from mpc_sos_fade.execution import Decision  # noqa: E402
 
 
 # ── packed-column decoders — MUST match mpc_strategy_export.pine's plot scheme ──
@@ -54,14 +54,14 @@ _DEC_PRICE = ["px_edge", "px_stop", "px_entry_price",
               "px_exit_tp1", "px_exit_tp2", "px_exit_run"]
 
 
-def config_from_export(df: pd.DataFrame, base: Optional[AplusConfig] = None) -> AplusConfig:
-    """Build an AplusConfig from the export's packed cfg_* columns (constant per run —
+def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None) -> SosFadeConfig:
+    """Build an SosFadeConfig from the export's packed cfg_* columns (constant per run —
     read from the first row). Columns absent from the export keep the base default, so
     the numeric toggles the Pine doesn't export (tp %, buffers, trail, scratch) stay at
     their shared defaults."""
-    vals = dict(base.__dict__) if base else dict(AplusConfig().__dict__)
+    vals = dict(base.__dict__) if base else dict(SosFadeConfig().__dict__)
     if len(df) == 0:
-        return AplusConfig(**vals)
+        return SosFadeConfig(**vals)
     row = df.iloc[0]
 
     def get(col):
@@ -98,7 +98,7 @@ def config_from_export(df: pd.DataFrame, base: Optional[AplusConfig] = None) -> 
     r = get("cfg_risk_pct")
     if r is not None:
         vals["exec_risk_pct"] = float(r)
-    return AplusConfig(**vals)
+    return SosFadeConfig(**vals)
 
 
 def _expand_packed(df: pd.DataFrame) -> pd.DataFrame:
@@ -242,12 +242,12 @@ def _num_match(a: Optional[float], b: Optional[float], tol: float) -> bool:
 
 
 def run_parity(path: Path, warmup: int = 0, price_tol: float = 0.01,
-               r_tol: float = 0.02, base_config: Optional[AplusConfig] = None) -> List[str]:
+               r_tol: float = 0.02, base_config: Optional[SosFadeConfig] = None) -> List[str]:
     """Load, configure, replay, diff. Returns the mismatch list (empty = exit 0)."""
     df = load_export(path)
     cfg = config_from_export(df, base_config)
     bars = df[["open", "high", "low", "close"]].copy()
-    strat = MpcAplusStrategy(cfg).run(bars, warmup=0)   # keep all bars aligned to CSV rows
+    strat = MpcSosFadeStrategy(cfg).run(bars, warmup=0)   # keep all bars aligned to CSV rows
     return compare(df, strat.decisions, warmup, price_tol, r_tol)
 
 
@@ -283,7 +283,7 @@ def _decode_dbg(row) -> Optional[Dict[str, int]]:
     return None
 
 
-def _capture_arm(df: pd.DataFrame, cfg: AplusConfig) -> List[Dict[str, int]]:
+def _capture_arm(df: pd.DataFrame, cfg: SosFadeConfig) -> List[Dict[str, int]]:
     """Replay the bot capturing each bar's arming INPUTS + post-update arm-state, in the
     same encoding _decode_dbg produces for the Pine side (-1 = none/na)."""
     import sys as _sys
@@ -294,7 +294,7 @@ def _capture_arm(df: pd.DataFrame, cfg: AplusConfig) -> List[Dict[str, int]]:
     from backtest.replay import EngineStack, iter_bars
 
     bars = df[["open", "high", "low", "close"]].copy()
-    strat = MpcAplusStrategy(cfg)
+    strat = MpcSosFadeStrategy(cfg)
     stack = EngineStack(strat.engine_config())   # same fvgMaxCount=7 the bot runs with
     seq = strat.sequence
     rows: List[Dict[str, int]] = []
@@ -341,7 +341,7 @@ def export_truncation(df: pd.DataFrame) -> int:
 
 
 def debug_arm(path: Path, warmup: int = 0,
-              base_config: Optional[AplusConfig] = None) -> List[str]:
+              base_config: Optional[SosFadeConfig] = None) -> List[str]:
     """Diff the arming INPUTS + arm-state (Python vs the export's dbg_* columns) from
     `warmup` on. Returns messages; the first names the earliest diverging bar + field
     with a small context window so the liquidity/gap reconstruction gap is pinpointed."""

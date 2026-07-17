@@ -46,7 +46,7 @@ _CHECKS: List[Tuple[str, str, str, List[str]]] = [
     ("sessions",         "engines/sessions/tools/compare_sessions.py",            "px_in_asia", []),
     ("vwap",             "engines/vwap/tools/compare_vwap.py",                    "px_vwap", []),
     ("session_volume_profile", "engines/session_volume_profile/tools/compare_svp.py", "px_svp_poc", []),
-    ("strategy (bot)",   "strategies/python/mpc_aplus/tools/compare_strategy.py", "px_stages", []),
+    ("strategy (bot)",   "strategies/python/mpc_sos_fade/tools/compare_strategy.py", "px_stages", []),
 ]
 
 def _header(csv_path: Path) -> set:

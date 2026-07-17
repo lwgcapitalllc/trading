@@ -128,7 +128,7 @@ def _execute(job_id: str, spec: dict) -> None:
 def _replay(job_id: str, strategy, df, total: int) -> None:
     """Drive the strategy bar-by-bar, reporting progress and honouring cancellation.
 
-    `MpcAplusStrategy.run()` is the normal entry point, but it is a closed loop with no seam for
+    `MpcSosFadeStrategy.run()` is the normal entry point, but it is a closed loop with no seam for
     either — so the loop is reproduced here over the same public API it uses. A long tick-mode run
     is minutes of work; a progress bar frozen at 15% and a Stop button that does nothing are not
     acceptable for that.

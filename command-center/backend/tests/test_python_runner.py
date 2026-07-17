@@ -20,11 +20,11 @@ from services import python_runner, strategy_scanner
 # every real Run.
 
 def test_resolves_a_strategy_by_its_class_name():
-    found = python_runner._resolve("MpcAplusStrategy")
+    found = python_runner._resolve("MpcSosFadeStrategy")
     assert found is not None, "the class name the routers send must resolve"
     pkg_name, entry = found
-    assert pkg_name == "mpc_aplus"
-    assert entry["strategy"].__name__ == "MpcAplusStrategy"
+    assert pkg_name == "mpc_sos_fade"
+    assert entry["strategy"].__name__ == "MpcSosFadeStrategy"
 
 
 def test_the_scanner_and_the_runner_agree_on_the_name():
@@ -34,16 +34,16 @@ def test_the_scanner_and_the_runner_agree_on_the_name():
     from pathlib import Path
     import config as cfg
 
-    pkg_dir = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_aplus"
+    pkg_dir = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_sos_fade"
     row = strategy_scanner._parse_python_package(pkg_dir, Path(cfg.MONOREPO_ROOT))
     assert row is not None
     assert python_runner._resolve(row["class_name"]) is not None
 
 
 def test_the_package_id_is_not_the_contract():
-    """"mpc_aplus" is the lab id, not the class name — resolving it would mean accepting a key the
+    """"mpc_sos_fade" is the lab id, not the class name — resolving it would mean accepting a key the
     dispatcher never sends and re-opening the original bug from the other side."""
-    assert python_runner._resolve("mpc_aplus") is None
+    assert python_runner._resolve("mpc_sos_fade") is None
 
 
 @pytest.mark.parametrize("name", ["", None, "NoSuchStrategy"])
@@ -57,28 +57,28 @@ def test_unknown_params_are_dropped_not_passed_through():
     """The lab's stored params can carry leftovers from an older schema or another runner. A
     dataclass raises TypeError on an unexpected keyword, which would fail the run over a param the
     strategy doesn't even read."""
-    from strategies.python.mpc_aplus.config import AplusConfig
+    from strategies.python.mpc_sos_fade.config import SosFadeConfig
 
     config = python_runner._build_config(
-        AplusConfig, {"exec_risk_pct": 3.0, "AccountSize": 50000, "NotAParam": "x"}, "XAUUSD.s")
+        SosFadeConfig, {"exec_risk_pct": 3.0, "AccountSize": 50000, "NotAParam": "x"}, "XAUUSD.s")
     assert config.exec_risk_pct == 3.0
 
 
 def test_json_types_are_coerced_to_the_field_types():
     """Params round-trip through JSON, where every number is a float and a bool may be 0/1."""
-    from strategies.python.mpc_aplus.config import AplusConfig
+    from strategies.python.mpc_sos_fade.config import SosFadeConfig
 
     config = python_runner._build_config(
-        AplusConfig, {"exec_risk_pct": "2.5", "flat_by_close": 1}, "XAUUSD.s")
+        SosFadeConfig, {"exec_risk_pct": "2.5", "flat_by_close": 1}, "XAUUSD.s")
     assert config.exec_risk_pct == 2.5
     assert config.flat_by_close is True
 
 
 def test_the_symbol_comes_from_the_run_not_the_param_form():
     """The lab already knows the instrument; tick mode shouldn't need it typed in twice."""
-    from strategies.python.mpc_aplus.config import AplusConfig
+    from strategies.python.mpc_sos_fade.config import SosFadeConfig
 
-    assert python_runner._build_config(AplusConfig, {}, "XAUUSD.s").symbol == "XAUUSD.s"
+    assert python_runner._build_config(SosFadeConfig, {}, "XAUUSD.s").symbol == "XAUUSD.s"
 
 
 # ── job bookkeeping ───────────────────────────────────────────────────────────

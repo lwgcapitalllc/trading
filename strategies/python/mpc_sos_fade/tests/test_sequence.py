@@ -1,6 +1,6 @@
 """Sequence + signal-adapter tests — offline, no network.
 
-They prove the A+ front half (SignalAdapter -> AplusSequence) (a) wires onto the real
+They prove the A+ front half (SignalAdapter -> SosFadeSequence) (a) wires onto the real
 engine stack without error, (b) is a proper streaming state machine that produces the
 staged output the Pine does, and (c) reproduces two hand-checkable Pine rules in
 isolation: the Stage-1 -> Stage-2 -> death progression and the arm-source snapshot.
@@ -18,22 +18,22 @@ import pandas as pd
 
 _ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_ROOT))                       # repo root -> `import backtest`
-sys.path.insert(0, str(_ROOT / "strategies" / "python"))  # -> `import mpc_aplus`
+sys.path.insert(0, str(_ROOT / "strategies" / "python"))  # -> `import mpc_sos_fade`
 sys.path.insert(0, str(_ROOT / "backtest" / "tests"))     # -> `import _synth`
 
 from _synth import synth_bars  # noqa: E402
 from backtest.replay import EngineStack, iter_bars  # noqa: E402
-from mpc_aplus import AplusConfig, AplusSequence, SignalAdapter  # noqa: E402
-from mpc_aplus.signals import Signals  # noqa: E402
+from mpc_sos_fade import SosFadeConfig, SosFadeSequence, SignalAdapter  # noqa: E402
+from mpc_sos_fade.signals import Signals  # noqa: E402
 
 
 def _run(df, config=None):
     """Drive the stack + adapter + sequence over a frame, returning the list of
     (Signals, SeqState) pairs."""
-    cfg = config or AplusConfig()
+    cfg = config or SosFadeConfig()
     stack = EngineStack()
     adapter = SignalAdapter(cfg)
-    seq = AplusSequence(cfg)
+    seq = SosFadeSequence(cfg)
     out = []
     for bar in iter_bars(df):
         state = stack.step(bar)
@@ -91,7 +91,7 @@ def _sig(**kw):
 
 
 def test_sweep_then_sos_advances_to_stage_2():
-    seq = AplusSequence(AplusConfig())
+    seq = SosFadeSequence(SosFadeConfig())
     # bar 0: a new SSL sweep arms Stage 1 (long)
     st = seq.update(_sig(index=0, time_ms=0, recent_ssl="Asia Low", recent_ssl_bar=0))
     assert st.l_stage == 1 and st.l_sos_bar is None
@@ -103,7 +103,7 @@ def test_sweep_then_sos_advances_to_stage_2():
 
 
 def test_opposite_sos_kills_the_long():
-    seq = AplusSequence(AplusConfig())
+    seq = SosFadeSequence(SosFadeConfig())
     seq.update(_sig(index=0, time_ms=0, recent_ssl="Asia Low", recent_ssl_bar=0))
     seq.update(_sig(index=1, time_ms=60_000, bull_sos=True,
                     recent_ssl="Asia Low", recent_ssl_bar=0))
@@ -113,8 +113,8 @@ def test_opposite_sos_kills_the_long():
 
 
 def test_stale_arm_clears_after_window():
-    cfg = AplusConfig()  # window 4320 min
-    seq = AplusSequence(cfg)
+    cfg = SosFadeConfig()  # window 4320 min
+    seq = SosFadeSequence(cfg)
     st = seq.update(_sig(index=0, time_ms=0, recent_ssl="Asia Low", recent_ssl_bar=0))
     assert st.l_stage == 1
     # far beyond the window, no SOS -> arm cleared

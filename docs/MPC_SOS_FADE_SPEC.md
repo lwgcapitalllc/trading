@@ -1,4 +1,4 @@
-# MPC A+ — Strategy Spec (Step S)
+# MPC SOS Fade — Strategy Spec (Step S)
 
 **Source of truth:** `indicators/mpc_strategy.pine` (the execution layer, lines ~3640–4735).
 **Purpose:** the exact, machine-followable rules the Python port reproduces. The parity check

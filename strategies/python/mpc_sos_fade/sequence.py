@@ -1,4 +1,4 @@
-"""AplusSequence — the A+ setup state machine.
+"""SosFadeSequence — the A+ setup state machine.
 
 A line-for-line port of the A+ SETUP SEQUENCE block in `indicators/mpc_strategy.pine`
 (3708-3972) plus the execution layer's arm-source snapshot (4309-4355). It is a
@@ -58,7 +58,7 @@ class SeqState:
 _DAY_MS = 86_400_000
 
 
-class AplusSequence:
+class SosFadeSequence:
     def __init__(self, config) -> None:
         self._cfg = config
         self._window_ms = config.aplus_window * 60_000

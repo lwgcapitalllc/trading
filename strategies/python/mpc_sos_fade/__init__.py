@@ -3,9 +3,9 @@
 Reads the canonical engine stack's per-bar `BarState` (backtest.replay) and turns the
 A+ sequence into orders. Public API grows as Deliverable B lands:
 
-    AplusConfig      — every Pine input toggle (toggle parity), with Pine defaults
+    SosFadeConfig      — every Pine input toggle (toggle parity), with Pine defaults
     Signals          — one bar's Pine-named inputs; SignalAdapter builds them
-    SeqState         — the A+ sequence's per-bar output; AplusSequence runs it
+    SeqState         — the A+ sequence's per-bar output; SosFadeSequence runs it
 
 Build status: config + signal adapter + sequence state machine landed. Execution
 (orders / fills / stop-staging) and the top-level driver are next.
@@ -13,20 +13,20 @@ Build status: config + signal adapter + sequence state machine landed. Execution
 
 from __future__ import annotations
 
-from .config import AplusConfig
+from .config import SosFadeConfig
 from .execution import Decision, Execution, Fill, Trade
-from .sequence import AplusSequence, SeqState
+from .sequence import SosFadeSequence, SeqState
 from .signals import SignalAdapter, Signals
-from .strategy import MpcAplusStrategy
+from .strategy import MpcSosFadeStrategy
 
 __all__ = [
-    "AplusConfig",
-    "AplusSequence",
+    "SosFadeConfig",
+    "SosFadeSequence",
     "Decision",
     "Execution",
     "Fill",
     "LAB_STRATEGY",
-    "MpcAplusStrategy",
+    "MpcSosFadeStrategy",
     "SeqState",
     "SignalAdapter",
     "Signals",
@@ -42,9 +42,9 @@ __all__ = [
 # `config` is read with dataclasses.fields() to build the lab's param form, so the form is
 # generated from the SAME dataclass the bot runs on and cannot drift from it.
 LAB_STRATEGY = {
-    "name": "MPC A+ (Python)",
-    "config": AplusConfig,
-    "strategy": MpcAplusStrategy,
+    "name": "MPC SOS Fade (Python)",
+    "config": SosFadeConfig,
+    "strategy": MpcSosFadeStrategy,
     "suggested_instrument": "XAUUSD.s",
     "category": "reversal",
 }

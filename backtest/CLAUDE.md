@@ -6,7 +6,7 @@ local optimizer. It does NOT cover the engines it replays (`engines/`), the stra
 (`strategies/python/`), or the lab that consumes it (`command-center/`).
 **Status:** **Deliverable A COMPLETE 2026-07-16.** A0 (data layer) + A1 (replay loop) landed
 2026-07-15; A2 (fill & cost model), A3 (output adapter), the lab's `runner="python"` adapter, and A4
-(local optimizer) all landed 2026-07-16. See `docs/MPC_APLUS_BUILD_PLAN.md`.
+(local optimizer) all landed 2026-07-16. See `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
 **Last reviewed:** 2026-07-16
 
 ---
@@ -35,9 +35,9 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   `market_structure` engine always computes internal structure, but a consumer whose Pine has
   "Show Internal Structure" OFF sets this False, which blanks the snapshot's internal-derived fields
   (`i_confirmed_*` / `ifib_seed_*`) so the Structure fib does not adopt an internal-swing anchor. The
-  mpc_aplus bot pins it False; the engine parity harnesses keep it True (they validated internal ON).
+  mpc_sos_fade bot pins it False; the engine parity harnesses keep it True (they validated internal ON).
 - **A2 — Fill & cost model** *(done 2026-07-16)*. `backtest/fills.py` + the tick seam in
-  `mpc_aplus/execution.py`. **Two fill models, and the distinction is load-bearing:**
+  `mpc_sos_fade/execution.py`. **Two fill models, and the distinction is load-bearing:**
   `fill_model="bar"` (default) is the strategy's own bar-level intrabar-path GUESS with zero costs —
   it matches what the Pine assumes, so it is the ONLY model `compare_strategy.py` may diff.
   `fill_model="tick"` resolves every level against real bid/ask ticks (long enters on the ask, exits
@@ -74,7 +74,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 - **`tools/verify_parity.py`** — the one "is everything in sync?" command. Point it at the TradingView
   export CSV(s) you just pulled; it runs every parity check (all nine engine `compare_*.py` + the
-  mpc_aplus `compare_strategy.py`) whose MARKER column is present in the CSV, and prints one
+  mpc_sos_fade `compare_strategy.py`) whose MARKER column is present in the CSV, and prints one
   GREEN/RED/SKIP table. Cold-start warmup is auto-detected by walking a capped ladder (≤25% of the
   file), so a genuine LATE drift can never be skipped away as warmup. It reports drift; it does not fix
   it (a real logic change is still a hand port, per drift). Run it after any `mpc_assistant.pine` /
@@ -87,7 +87,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   feeds and never match exactly; the tool measures the gap. **Not a per-backtest check.** Run it:
   once as a baseline, whenever the agent's time handling or the broker/terminal changes, at the start
   of each demo campaign then ~monthly, and any time trades look off vs the chart. Needs the MT5 agent
-  + tunnel; the alignment math is unit-tested offline. Full rationale + cadence: `docs/MPC_APLUS_BUILD_PLAN.md`.
+  + tunnel; the alignment math is unit-tested offline. Full rationale + cadence: `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
 
 ## Data layer (A0) — how it works
 

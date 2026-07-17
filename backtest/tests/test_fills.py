@@ -128,7 +128,7 @@ def test_profile_without_swap_charges_nothing():
 # ── BarPathResolver: must stay exactly as dumb as the Pine ────────────────────
 
 def test_bar_resolver_ties_resolve_to_targets_first():
-    """Byte-for-byte with mpc_aplus.execution._intrabar_targets_first, which uses <=. A strict <
+    """Byte-for-byte with mpc_sos_fade.execution._intrabar_targets_first, which uses <=. A strict <
     flips every doji-ish bar and silently breaks compare_strategy.py's exit 0."""
     assert BarPathResolver.targets_first(100.0, 101.0, 99.0) is True    # exact tie
     assert BarPathResolver.targets_first(100.9, 101.0, 99.0) is True    # open near high
