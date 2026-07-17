@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Trash2, ArrowLeft, RefreshCw, Info, Check } from 'lucide-react'
+import { Trash2, ArrowLeft, RefreshCw, Check } from 'lucide-react'
 import { useStressTest, useDeleteStressTest } from '@/hooks/useStressTests'
 import { useRulesets, useBacktestRun } from '@/hooks/useLab'
 import MonteCarloFan from '@/components/MonteCarloFan'
@@ -9,20 +9,8 @@ import WalkForwardChart from '@/components/WalkForwardChart'
 import SensitivityRadar from '@/components/SensitivityRadar'
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import StickyHeader from '@/components/StickyHeader'
+import InfoTip from '@/components/InfoTip'
 
-
-// ── InfoTip ───────────────────────────────────────────────────────────────────
-
-function InfoTip({ text }: { text: string }) {
-  return (
-    <span className="relative group/tip inline-flex items-center ml-[5px] cursor-help flex-shrink-0">
-      <Info size={9} className="text-text-tertiary/50 group-hover/tip:text-accent transition-colors" />
-      <span className="absolute bottom-[calc(100%+8px)] left-0 z-50 hidden group-hover/tip:block w-52 rounded-lg bg-bg-base border border-border-default px-3 py-2.5 text-[11px] text-text-secondary shadow-2xl pointer-events-none leading-relaxed normal-case tracking-normal font-normal">
-        {text}
-      </span>
-    </span>
-  )
-}
 
 // ── MetricCard ────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,4 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
@@ -12,6 +11,7 @@ import {
   ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
 } from 'recharts'
 import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunNews } from '@/hooks/useLab'
+import InfoTip from '@/components/InfoTip'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag, SizingMode } from '@/types'
@@ -395,38 +395,6 @@ function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
   }
 
   return { worstDay, worstStreak: maxStreak, sharpe }
-}
-
-// ── InfoTip ───────────────────────────────────────────────────────────────────
-
-// Tooltip is portalled to <body> with fixed positioning so the KPI card's overflow-hidden
-// (needed for the collapse/height clipping) can't crop it.
-function InfoTip({ text }: { text: string }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  const [tip, setTip] = useState<{ top: number; left: number } | null>(null)
-  const show = () => {
-    const r = ref.current?.getBoundingClientRect()
-    if (r) setTip({ top: r.top - 8, left: r.left })
-  }
-  return (
-    <span
-      ref={ref}
-      onMouseEnter={show}
-      onMouseLeave={() => setTip(null)}
-      className="relative inline-flex items-center ml-[5px] cursor-help flex-shrink-0"
-    >
-      <Info size={9} className="text-text-tertiary/50 hover:text-accent transition-colors" />
-      {tip && createPortal(
-        <span
-          style={{ position: 'fixed', top: tip.top, left: tip.left, transform: 'translateY(-100%)' }}
-          className="z-[100] w-48 rounded-lg bg-bg-base border border-border-default px-3 py-2.5 text-[11px] text-text-secondary shadow-2xl pointer-events-none leading-relaxed normal-case tracking-normal font-normal"
-        >
-          {text}
-        </span>,
-        document.body,
-      )}
-    </span>
-  )
 }
 
 // ── KPI grid ──────────────────────────────────────────────────────────────────

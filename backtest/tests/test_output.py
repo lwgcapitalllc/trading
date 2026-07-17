@@ -128,7 +128,7 @@ def test_kpis_hand_computed():
     assert k["profit_factor"] == 3.0
     assert k["trade_count"] == 4
     assert k["win_count"] == 2
-    assert k["win_rate"] == 50.0
+    assert k["win_rate"] == 0.5   # fraction, not percent — lab-wide convention
     assert k["avg_win"] == 75.0
     assert k["avg_loss"] == -25.0
 

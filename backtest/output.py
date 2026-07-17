@@ -17,6 +17,10 @@ importable without the FastAPI app, per backtest/CLAUDE.md):
   * `engine_trades` rows   — `sizing_engine.RawTrade` (the runner→engine contract)
 Both are locked by `tests/test_output.py`; if the lab's shape moves, that test fails.
 
+**Units:** `win_rate` is a FRACTION (0.0-1.0), matching `sizing_pipeline` and the lab's
+regime rows — the frontend's `pct()` multiplies by 100 to display it. It shipped as a
+percent once and rendered as "7273.0%".
+
 **Not computed here:** `sharpe` / `platform_sharpe` / `sharpe_low_sample`. The lab owns the
 canonical Sharpe (`metrics.apply_canonical_sharpe`) and applies it at run completion from
 `daily_pnl`; computing a second one here would be the duplicate-definition bug that doc
@@ -149,7 +153,9 @@ def build_kpis(trades: Sequence[Any], *, initial_capital: float = 0.0,
         "trade_count":          n,
         "win_count":            len(wins),
         "loss_count":           len(losses),
-        "win_rate":             _round(100.0 * len(wins) / n, 2) if n else 0.0,
+        # FRACTION (0.0-1.0), not a percent — the lab-wide convention (sizing_pipeline,
+        # metrics regime rows) that every consumer and the frontend's pct() assume.
+        "win_rate":             _round(len(wins) / n, 4) if n else 0.0,
         "avg_win":              _round(gross_profit / len(wins)) if wins else 0.0,
         "avg_loss":             _round(-gross_loss / len(losses)) if losses else 0.0,
         "max_drawdown":         _max_drawdown(curve, initial_capital),
