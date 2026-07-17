@@ -157,6 +157,13 @@ def sync_status():
     monorepo_root = Path(cfg.MONOREPO_ROOT)
     result = []
     for s in strategies:
+        # A python strategy is never deployed — it runs in this process — so it has no VPS file
+        # to be in or out of sync with, and no row here. The UI reads a missing row as "nothing
+        # to deploy or compile" and offers Run directly. Including it also CRASHED the endpoint:
+        # its source_path is the package directory, and the hash read below does read_text() on
+        # it (IsADirectoryError → 500), which took the sync status of EVERY strategy down with it.
+        if s.get("runner") == "python":
+            continue
         class_name = s.get("class_name") or s.get("id", "")
         strategy_id = s["id"]
         is_mt5 = s.get("runner") == "mt5"

@@ -176,3 +176,58 @@ def test_remove_nt8_strategy_still_deletes_the_vps_file(fresh_db, monkeypatch):
     res = strategy_scanner.remove_strategy("orbtest")
     assert called == ["ORB.cs"]          # the filename, not the path
     assert res["vps_deleted"] is True
+
+
+# ── A python strategy's source_path is a DIRECTORY, not a file ────────────────
+# Both endpoints below assumed a file and called read_text() on the package dir
+# (IsADirectoryError → 500). sync-status took every OTHER strategy down with it.
+
+def _add_python_strategy(tmp_path, monkeypatch):
+    import time
+    import config as cfg
+    from services import lab_db
+
+    pkg = tmp_path / "strategies" / "python" / "pystrat"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
+    lab_db.upsert_strategy({
+        "id": "pystrat", "name": "Py Strat", "class_name": "PyStrategy",
+        "source_path": "strategies/python/pystrat", "scanned_at": int(time.time()),
+        "runner": "python",
+        "param_schema": [
+            {"name": "lookback", "type": "int", "default": 5},
+            {"name": "risk_pct", "type": "float", "default": 1.0},
+            {"name": "enabled", "type": "bool", "default": True},
+            {"name": "mode", "type": "str", "default": "a"},
+        ],
+    })
+
+
+def test_param_types_reads_the_schema_for_python(client, tmp_path, monkeypatch):
+    """No source file to parse — the scanner already typed these off the config dataclass.
+    Only int/float are returned: the optimizer's grid can only sweep numbers."""
+    _add_python_strategy(tmp_path, monkeypatch)
+    r = client.get("/strategies/pystrat/param-types")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"lookback": "int", "risk_pct": "double"}
+
+
+def test_sync_status_skips_python_and_still_reports_the_others(client, tmp_path, monkeypatch):
+    """A python strategy has no deployed file, so it gets no row — and its presence must not
+    break the report for NT8/MT5 strategies."""
+    import time
+    from services import lab_db
+
+    _add_python_strategy(tmp_path, monkeypatch)
+    lab_db.upsert_strategy({
+        "id": "orbtest", "name": "ORB", "class_name": "ORB",
+        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
+        "runner": "ninjatrader",
+    })
+
+    r = client.get("/strategy-files/sync-status")
+    assert r.status_code == 200, r.text
+    ids = {row["strategy_id"] for row in r.json()}
+    assert "pystrat" not in ids
+    assert "orbtest" in ids

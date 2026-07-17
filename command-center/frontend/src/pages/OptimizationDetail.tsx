@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { runningJobFor, runnerScope } from '@/lib/runner'
 import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown, Copy, Check, SlidersHorizontal } from 'lucide-react'
 import { useOptimization, useCancelOptimization, useRetryOptimization, useRerunOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog, useBacktestRuns } from '@/hooks/useLab'
-import { runningJobFor } from '@/lib/runner'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 import StickyHeader from '@/components/StickyHeader'
@@ -195,7 +195,9 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
               <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
               <p className="text-[12px] text-warn-text">
                 {failedCount} run{failedCount !== 1 ? 's are' : ' is'} failing.
-                {opt.runner === 'mt5'
+                {runnerScope(opt.runner) === 'python'
+                  ? ' Check the run logs — a local sweep needs the broker data cache and enough memory.'
+                  : runnerScope(opt.runner) === 'mt5'
                   ? ' Check that the MT5 agent is running and the MT5_Lab terminal is available on the VPS.'
                   : ' Check that NT8 is open with the Strategy Analyzer window active on the VPS.'}
                 {' '}You can cancel now and retry once the platform is ready.
@@ -205,7 +207,9 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
 
           {!failingBadly && isRunning && (
             <p className="text-[11px] text-text-tertiary mt-3 pt-3 border-t border-border-subtle">
-              {opt.runner === 'mt5'
+              {runnerScope(opt.runner) === 'python'
+                ? 'Replaying all combinations locally across CPU cores. Results appear here when the full grid completes.'
+                : runnerScope(opt.runner) === 'mt5'
                 ? 'MT5 Strategy Tester is running all combinations. Results appear here when the full grid completes.'
                 : 'NT8 is running all combinations in one job using its native optimizer. Results appear here when the full grid completes.'}
             </p>

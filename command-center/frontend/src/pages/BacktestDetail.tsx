@@ -1604,12 +1604,15 @@ function getFailureGuidance(status: string, runner: string): string {
   if (status === 'failed_strategy_not_found') {
     return 'NT8 could not find the strategy in the Strategy Analyzer dropdown. Open NinjaScript Editor and press F5 to recompile, then retry.'
   }
+  const scope = runnerScope(runner)
   if (status === 'failed_timeout') {
-    return runner === 'mt5'
+    if (scope === 'python') return 'The local run stopped making progress. Check the run logs below, then re-run.'
+    return scope === 'mt5'
       ? 'The MT5 agent stopped responding mid-run. Check the MT5 agent log on the VPS, then re-run.'
       : 'The NT8 agent stopped responding mid-run. Verify NT8 is running and the Strategy Analyzer is open in the RDP session, then re-run.'
   }
-  return runner === 'mt5'
+  if (scope === 'python') return 'An unexpected error occurred. Check the run logs below for details.'
+  return scope === 'mt5'
     ? 'An unexpected error occurred. Check the run logs below and the MT5 agent log for details.'
     : 'An unexpected error occurred. Check the run logs below and the NT8 agent log for details.'
 }

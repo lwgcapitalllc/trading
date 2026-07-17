@@ -42,16 +42,33 @@ def reconcile_strategies():
 
 @router.get("/{strategy_id}/param-types")
 def get_param_types(strategy_id: str):
-    """Return {paramName: 'int'|'double'} parsed from the strategy source file."""
+    """Return {paramName: 'int'|'double'} — the optimizer uses it to reject decimal ranges on
+    an integer param.
+
+    NT8/MT5 are parsed out of the source FILE. A python strategy has no single source file —
+    its `source_path` is the package DIRECTORY — and it needs no parsing anyway: the scanner
+    already read the real types off the config dataclass into `param_schema`. Reading them back
+    is both correct and cheaper than re-deriving them. (Before this, `read_text()` was called on
+    the directory and raised IsADirectoryError → 500 on every python strategy.)
+    """
     import re
     row = lab_db.get_strategy(strategy_id)
     if not row:
         raise HTTPException(404, f"Strategy '{strategy_id}' not found")
+
+    if row.get("runner") == "python":
+        out: dict[str, str] = {}
+        for p in row.get("param_schema") or []:
+            t = p.get("type")
+            if t in ("int", "float"):
+                out[p["name"]] = "int" if t == "int" else "double"
+        return out
+
     source_path = (row.get("source_path") or "") if isinstance(row, dict) else (getattr(row, "source_path", "") or "")
     if not source_path:
         return {}
     full_path = Path(cfg.MONOREPO_ROOT) / source_path
-    if not full_path.exists():
+    if not full_path.is_file():
         return {}
     content = full_path.read_text(encoding="utf-8", errors="ignore")
     # Match: public int|double|float PropertyName { get; set; }

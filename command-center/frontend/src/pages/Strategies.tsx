@@ -16,6 +16,7 @@ import { RunBacktestModal } from '@/components/RunBacktestModal'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { useStrategyBestGrades } from '@/hooks/useStressTests'
 import { RunnerBadge } from '@/components/RunnerBadge'
+import { runnerScope, runnerMarket, RUNNER_LABEL } from '@/lib/runner'
 import StickyHeader from '@/components/StickyHeader'
 import { toast } from 'sonner'
 import type { Strategy, StrategyFile, StrategyFileSyncStatus } from '@/types'
@@ -92,9 +93,7 @@ function MarketFilterBar({ value, onChange }: { value: MarketFilter; onChange: (
 
 type MarketFilter = 'all' | 'futures' | 'forex'
 
-function strategyMarket(runner: string): 'futures' | 'forex' {
-  return runner === 'mt5' ? 'forex' : 'futures'
-}
+const strategyMarket = runnerMarket   // MT5 and Python are both forex; only NT8 is futures
 
 function StrategiesTab() {
   const navigate = useNavigate()
@@ -130,9 +129,10 @@ function StrategiesTab() {
 
   const sorted = useMemo(() =>
     [...visible].sort((a, b) => {
-      const pa = a.runner === 'mt5' ? 'MT5' : 'NT8'
-      const pb = b.runner === 'mt5' ? 'MT5' : 'NT8'
-      return pa.localeCompare(pb) || a.class_name.localeCompare(b.class_name)
+      // Group by platform, then by the name actually shown in the row.
+      const pa = RUNNER_LABEL[runnerScope(a.runner)]
+      const pb = RUNNER_LABEL[runnerScope(b.runner)]
+      return pa.localeCompare(pb) || (a.name || a.class_name).localeCompare(b.name || b.class_name)
     }),
     [visible]
   )
@@ -296,7 +296,9 @@ function StrategyRow({
     <tr onClick={onView} className="hover:bg-bg-hover cursor-pointer transition-colors">
       <td className="px-4 py-3 font-medium">
         <div className="flex items-center gap-1">
-          {s.class_name}
+          {/* The strategy's NAME — matches StrategyDetail's heading. Showing class_name here
+              meant the list said "MpcSosFadeStrategy" while the detail page said "MPC SOS Fade". */}
+          {s.name || s.class_name}
           <ChevronRight size={13} className="text-text-tertiary opacity-60" />
         </div>
       </td>

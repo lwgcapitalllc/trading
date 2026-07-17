@@ -42,7 +42,7 @@ __all__ = [
 # `config` is read with dataclasses.fields() to build the lab's param form, so the form is
 # generated from the SAME dataclass the bot runs on and cannot drift from it.
 LAB_STRATEGY = {
-    "name": "MPC SOS Fade (Python)",
+    "name": "MPC SOS Fade",   # display name; the Platform column already says it's Python
     "config": SosFadeConfig,
     "strategy": MpcSosFadeStrategy,
     "suggested_instrument": "XAUUSD.s",

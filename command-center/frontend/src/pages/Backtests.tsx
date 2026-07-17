@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, Fragment, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { runningJobFor, runnerScope, RUNNER_LABEL } from '@/lib/runner'
+import { runningJobFor, runnerScope, runnerMarket, RUNNER_LABEL } from '@/lib/runner'
 import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2, Activity, X } from 'lucide-react'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import {
@@ -23,9 +23,7 @@ type MarketFilter = 'all' | 'futures' | 'forex'
 // Market is derived from the runner, not the instrument name: MT5 = forex, NinjaTrader = futures.
 // Name-matching broke on broker suffixes (e.g. "GBPJPY.s" isn't 6 bare uppercase letters) and on
 // futures contract months ("MYM 06-26"), so forex runs were silently bucketed as futures.
-function runMarket(runner: string | undefined): 'futures' | 'forex' {
-  return runner === 'mt5' ? 'forex' : 'futures'
-}
+const runMarket = runnerMarket   // MT5 and Python are both forex; only NT8 is futures
 
 function MarketFilterBar({ value, onChange }: { value: MarketFilter; onChange: (v: MarketFilter) => void }) {
   const opts: Array<{ id: MarketFilter; label: string }> = [
