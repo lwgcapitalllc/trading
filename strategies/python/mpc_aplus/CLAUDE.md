@@ -178,15 +178,37 @@ What the second year of data changed, and what it didn't:
 - **Still 17 of 40 near-scratch**, and still exactly the runner carrying everything (123% of net).
 - **Full-R losses scale with the sample** (2 → 5), i.e. the stop→BE rule keeps converting most losses
   to scratches; that behaviour is stable, not a one-year artifact.
-- **NEW, unexplained: the strategy is ~83% short** (33 shorts / 7 longs), and the single worst trade
-  is a long (−$2,929, −1.01R). Over a window where gold trended up. A counter-trend fade shorting a
-  bull market and winning deserves a look before it is trusted — either the arm conditions are
-  asymmetric, or two years of gold is one regime wearing a disguise.
+- **The ~83% short skew (33 shorts / 7 longs) is EXPLAINED as of 2026-07-16 — it is not a bug.**
+  The port is parity-green, so the Pine skews identically. Measured per-side over the same 2yr
+  window (48,246 bars, gold +75%):
+  - **Root cause — the arm-source filter.** The sequence arms on a sweep OR a divergence, but
+    `exec_arm_sweep` defaults **False**: only DIVERGENCE-armed setups may enter. Bearish
+    divergences outnumber bullish **142:73 (66%)** in an uptrend — price keeps making higher
+    highs on weakening RSI, while bullish divergences need lower lows a bull market rarely gives.
+    The skew is inherited almost entirely from that 2:1. Sweeps, by contrast, are near-symmetric
+    (1,505 S / 1,308 L), and the raw structure is *dead even* — external SOS is **125/125**. So
+    nothing upstream of the arm filter is asymmetric.
+  - **Amplified by fib geometry.** Episodes reaching Stage 4 READY: **37 L vs 67 S**. After a bull
+    SOS a long waits for a retrace to 0.5/0.618 — in a strong uptrend the pullback is too shallow
+    to reach it (51 long episodes die at peak stage 2, vs 25 short), while the deep counter-trend
+    rallies a short setup needs arrive reliably.
+  - **The default filter is the profitable subset, and it is a strict SUBSET.** Every
+    divergence-armed trade is also sweep-armed, so `both` is bit-identical to `sweep only`.
+    Arm source → trades / short% / net / PF (bar mode, 2yr, no costs):
+    divergence-only (default) 40 / 82.5% / +190% / **3.27** · sweep-only (= both) 79 / 69.6% /
+    +144% / **1.87**. Enabling sweeps adds 39 trades that lose money net and drags PF down ~43%.
+  - **Longs are not broken, just rare** — 7 trades, **86% win**, profitable (+21% of capital).
+    Nothing is blocking longs incorrectly; there simply are few bullish divergences up here.
+  - **What to actually worry about is concentration, not the count.** Shorts carry **89% of net**.
+    Every HTF bias filter is `Ignore` (`exec_htf_weekly`/`exec_htf_daily`), so this is an
+    unfiltered counter-trend fade that shorted a +75% bull market and won at 70%. That is the
+    claim needing a second regime to confirm — the direction split itself is now accounted for.
 
-Open threads (Aaron is on the edge work as of 2026-07-16): whether stop→BE on TP1 caps runners; the
-direction skew above; and why 15m is reportedly the only winning timeframe (a real edge usually
-survives on neighbouring timeframes — if 5m and 30m lose, suspect luck). 40 trades is still a thin
-sample; treat the KPIs as directional, not settled.
+Open threads (Aaron is on the edge work as of 2026-07-16): whether stop→BE on TP1 caps runners; and
+why 15m is reportedly the only winning timeframe (a real edge usually survives on neighbouring
+timeframes — if 5m and 30m lose, suspect luck). 40 trades is still a thin sample; treat the KPIs as
+directional, not settled. **Do not "fix" the skew by flipping `exec_arm_sweep`** — it is a Pine
+input default, so changing it breaks `compare_strategy.py` parity; tune it per-run instead.
 
 ## Tests
 
