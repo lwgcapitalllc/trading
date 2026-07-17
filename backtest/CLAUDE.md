@@ -4,9 +4,9 @@
 **Scope:** This package only — the data layer, replay loop, fill/cost model, output adapter, and
 local optimizer. It does NOT cover the engines it replays (`engines/`), the strategies it runs
 (`strategies/python/`), or the lab that consumes it (`command-center/`).
-**Status:** In build. A0 (data layer) + A1 (replay loop) landed 2026-07-15; A2 (fill & cost model) +
-A3 (output adapter) landed 2026-07-16, and the lab's `runner="python"` adapter with them; A4 (local
-optimizer) pending. See `docs/MPC_APLUS_BUILD_PLAN.md`.
+**Status:** **Deliverable A COMPLETE 2026-07-16.** A0 (data layer) + A1 (replay loop) landed
+2026-07-15; A2 (fill & cost model), A3 (output adapter), the lab's `runner="python"` adapter, and A4
+(local optimizer) all landed 2026-07-16. See `docs/MPC_APLUS_BUILD_PLAN.md`.
 **Last reviewed:** 2026-07-16
 
 ---
@@ -55,7 +55,20 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   contracts it mirrors by hand (the equity-curve point; `sizing_engine.RawTrade`) are locked by
   `tests/test_output.py` (26 tests) — including one that builds the REAL `RawTrade` from our rows, so
   the contract can't silently drift. Wired into the lab 2026-07-16 as `runner="python"`.
-- **A4 — Local optimizer** *(pending)*. In-memory parameter sweep, no VPS lock.
+- **A4 — Local optimizer** *(done 2026-07-16)*. `backtest/optimizer.py`. `run_sweep(module_path, df,
+  combos, …)` replays one strategy over N parameter sets with the bars loaded ONCE and combos fanned
+  across cores — no VPS, no terminal lock, no deploy/compile (4 combos over 3 months = 9s).
+  **It owns only "replay fast."** The LAB still expands the grid (min/max/step is the lab's contract,
+  shared with NT8/MT5 — `optimization_runner.expand_grid`) and still scores/ranks/picks the winner
+  (`objectives.py`, `_pick_best_run`), so nothing above the seam has a Python-specific branch.
+  Configs arrive **fully built** (`Combo.config`), so exactly one place knows how a lab param dict
+  becomes a strategy config. Each combo gets a fresh strategy + engine stack — sharing either would
+  make results a function of grid order. **Sweep in bar mode, validate the winner in tick mode:** a
+  tick pass is ~1,100s vs ~10s for the 365d 15m run, so a 100-combo grid is ~31h vs ~2min, and real
+  fills only moved that run's net by 1.3%. Reached from the lab via `runner="python"` on the existing
+  native-optimizer contract (`python_runner.start_native_optimization` / `native_opt_results`).
+  **Callers must be import-safe** — the pool spawns workers, which re-import the calling module; a
+  script needs an `if __name__ == "__main__"` guard (`python_runner` is a module, so it is safe).
 
 ## Tools
 
@@ -89,7 +102,9 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 **PU Prime demo facts (probed 2026-07-15, XAUUSD.s):** bars pull directly — M1 ~30d, M5 ~240d,
 M15 ~2yr; real ticks go back 2+ years. Broker symbol carries a `.s` suffix. See the plan's Phase-0
-findings. The agent has **no /ticks endpoint yet** — adding one is A2, not A0.
+findings. The agent's `/ticks` endpoint landed with A2; `Mt5Agent.ticks()` reads it, and
+`backtest/data/ticks.py` caches by hour. Pull the SMALLEST window that answers the question — gold is
+~690k ticks/day (~43MB, ~90s), while one 5m bar is ~260KB and under a second.
 
 ## Rules
 

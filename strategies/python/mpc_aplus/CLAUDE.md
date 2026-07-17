@@ -10,8 +10,8 @@ NOT own the engines (`engines/`), the replay runner (`backtest/`), or the lab (`
 bar 0). Bar-for-bar identical decision stream vs `mpc_strategy.pine`. Runs real-tick fills + costs
 (`fill_model="tick"`), and is registered in the command-center lab as `runner="python"` (see
 `LAB_STRATEGY` in `__init__.py`) — risk % is editable in the Run modal. 102 offline tests green.
-**Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades, and 8
-of them (the ones that reached the runner) made 110% of the net. Read `## The 2026-07-16 year run`
+**Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
+40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
 **Last reviewed:** 2026-07-16
 
@@ -160,8 +160,33 @@ The 72.73% win rate is arithmetically right and analytically misleading: **10 of
 near-scratch** (together +$749), six of the eight "TP1 only" winners made under $300, only 2 trades
 lost a full R (the stop→BE rule converts most losses to scratches), and the **top 3 trades are 57% of
 net**. The edge is the runner. Treat the win rate as a byproduct of the BE stop, not as the edge.
-Two open threads: whether stop→BE on TP1 is capping runners, and a 2-year run (broker has 2yr of
-ticks) to get the sample past ~45 trades.
+
+### The 2-year run (2024-07-16 → 2026-07-16, tick mode) — the shape HOLDS
+
+40 trades, net **$21,536.60** on $10k. The distribution is the same story with a bigger sample:
+
+| outcome | n | $ pnl | % of net | avg R |
+|---|---|---|---|---|
+| reached the runner | 15 | +26,565 | **123%** | 1.13 |
+| TP1 only | 12 | +4,032 | 19% | 0.16 |
+| never reached TP1 | 13 | −9,060 | −42% | −0.45 |
+
+What the second year of data changed, and what it didn't:
+- **Win rate fell 72.73% → 67.5%** (27/40) and losers went 6→13 — the 1-year window was the kinder half.
+- **Concentration improved**: top 3 = 45% of net (was 57%) — still above the framework's <60% floor
+  but no longer resting on three trades.
+- **Still 17 of 40 near-scratch**, and still exactly the runner carrying everything (123% of net).
+- **Full-R losses scale with the sample** (2 → 5), i.e. the stop→BE rule keeps converting most losses
+  to scratches; that behaviour is stable, not a one-year artifact.
+- **NEW, unexplained: the strategy is ~83% short** (33 shorts / 7 longs), and the single worst trade
+  is a long (−$2,929, −1.01R). Over a window where gold trended up. A counter-trend fade shorting a
+  bull market and winning deserves a look before it is trusted — either the arm conditions are
+  asymmetric, or two years of gold is one regime wearing a disguise.
+
+Open threads (Aaron is on the edge work as of 2026-07-16): whether stop→BE on TP1 caps runners; the
+direction skew above; and why 15m is reportedly the only winning timeframe (a real edge usually
+survives on neighbouring timeframes — if 5m and 30m lose, suspect luck). 40 trades is still a thin
+sample; treat the KPIs as directional, not settled.
 
 ## Tests
 
