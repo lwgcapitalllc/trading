@@ -41,6 +41,14 @@ interface Props {
 type Widget = 'toggle' | 'switch' | 'time' | 'number' | 'text' | 'select'
 
 const labelOf = (p: ParamSchemaEntry) => p.label || p.display_name || p.name
+// Every control renders at this width so the right column aligns across widget types, and
+// every control is this tall so a row's height never depends on its label. A toggle whose
+// label wrapped used to grow its row and break the rhythm of the whole list.
+// 264px: a toggle half is then ~105px of text room, which fits the longest state label in the
+// repo ("Market on close", ~97px at 12px semibold). At the old 240px even that truncated.
+const CONTROL_W = 'w-[264px]'
+const CONTROL_H = 'h-[34px]'
+
 const descOf = (p: ParamSchemaEntry) => p.desc || p.description || ''
 const fmt = (v: unknown) => (v === true ? 'on' : v === false ? 'off' : String(v ?? ''))
 
@@ -288,20 +296,26 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
     const on = v === true
     return (
       <>
-        <div className="inline-flex bg-bg-sunken border border-border-default rounded-lg p-[3px] w-[240px]">
-          {([false, true] as const).map(state => (
-            <button
-              key={String(state)}
-              type="button"
-              onClick={() => { onFocus(); onChange?.(p.name, state) }}
-              className={`flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold py-[6px] rounded-md transition-colors ${
-                on === state ? 'bg-accent text-bg-base' : 'text-text-tertiary hover:text-text-secondary'
-              }`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${on === state ? 'bg-bg-base' : 'bg-text-tertiary/50'}`} />
-              {state ? p.options?.on : p.options?.off}
-            </button>
-          ))}
+        <div className={`inline-flex bg-bg-sunken border border-border-default rounded-lg p-[3px] ${CONTROL_W} ${CONTROL_H}`}>
+          {([false, true] as const).map(state => {
+            const label = String((state ? p.options?.on : p.options?.off) ?? (state ? 'On' : 'Off'))
+            return (
+              <button
+                key={String(state)}
+                type="button"
+                onClick={() => { onFocus(); onChange?.(p.name, state) }}
+                // min-w-0 lets the label truncate instead of forcing the flex child wider than
+                // its half; title keeps a clipped label readable.
+                title={label}
+                className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-1.5 text-[12px] font-semibold rounded-md transition-colors ${
+                  on === state ? 'bg-accent text-bg-base' : 'text-text-tertiary hover:text-text-secondary'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${on === state ? 'bg-bg-base' : 'bg-text-tertiary/50'}`} />
+                <span className="truncate">{label}</span>
+              </button>
+            )
+          })}
         </div>
         {tuneTag}
       </>
@@ -315,7 +329,7 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
           value={String(v ?? '')}
           onFocus={onFocus}
           onChange={e => { onFocus(); onChange?.(p.name, e.target.value) }}
-          className="bg-bg-sunken border border-border-default rounded-md px-2.5 py-[6px] text-[12px] text-text-primary focus:outline-none focus:border-accent transition-colors min-w-[150px]"
+          className={`bg-bg-sunken border border-border-default rounded-lg px-2.5 text-[12px] text-text-primary focus:outline-none focus:border-accent transition-colors ${CONTROL_W} ${CONTROL_H}`}
         >
           {p.choices.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -328,7 +342,8 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
     const on = v === true
     return (
       <>
-        <button type="button" onClick={() => { onFocus(); onChange?.(p.name, !on) }} className="inline-flex items-center gap-2.5">
+        <button type="button" onClick={() => { onFocus(); onChange?.(p.name, !on) }}
+                className={`inline-flex items-center gap-2.5 ${CONTROL_W} ${CONTROL_H}`}>
           <span className={`w-10 h-[23px] rounded-full relative transition-colors ${on ? 'bg-accent' : 'bg-border-default'}`}>
             <span className={`absolute top-[3px] w-[17px] h-[17px] rounded-full transition-all ${on ? 'left-[20px] bg-bg-base' : 'left-[3px] bg-text-secondary'}`} />
           </span>
@@ -361,7 +376,7 @@ function NumberBox(props: {
 }) {
   const { value, text, disabled, readOnly, dim, step, unit, onFocus, onInput } = props
   return (
-    <span className={`inline-flex items-center bg-bg-sunken border border-border-default rounded-lg overflow-hidden w-[170px] ${dim ? 'opacity-40' : ''}`}>
+    <span className={`inline-flex items-center bg-bg-sunken border border-border-default rounded-lg overflow-hidden ${CONTROL_W} ${CONTROL_H} ${dim ? 'opacity-40' : ''}`}>
       <input
         type={text ? 'text' : 'number'}
         step={text ? undefined : (step ?? 'any')}
@@ -370,7 +385,7 @@ function NumberBox(props: {
         readOnly={readOnly}
         onFocus={onFocus}
         onChange={e => onInput(e.target.value)}
-        className="flex-1 w-full min-w-0 bg-transparent px-2.5 py-2 text-[13px] font-mono tabular-nums text-text-primary outline-none"
+        className="flex-1 w-full min-w-0 bg-transparent px-2.5 self-stretch text-[13px] font-mono tabular-nums text-text-primary outline-none"
       />
       {unit && <span className="text-[11px] text-text-tertiary px-2.5 self-stretch flex items-center border-l border-border-subtle">{unit}</span>}
     </span>

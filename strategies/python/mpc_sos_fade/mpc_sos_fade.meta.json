@@ -31,8 +31,8 @@
       "widget": "toggle",
       "label": "Arm on divergence",
       "options": {
-        "off": "Ignore divergences",
-        "on": "Divergence arms it"
+        "off": "Ignore",
+        "on": "Arms setups"
       },
       "desc": "Let an RSI divergence start a setup. This is the single most important switch in the bot. Measured over 2 years of gold: divergence-only took 40 trades at profit factor 3.27. It is also why ~83% of trades are short — in a rising market, sell divergences outnumber buy divergences about 2 to 1."
     },
@@ -43,8 +43,8 @@
       "widget": "toggle",
       "label": "Arm on liquidity sweep",
       "options": {
-        "off": "Ignore sweeps",
-        "on": "Sweep arms it"
+        "off": "Ignore",
+        "on": "Arms setups"
       },
       "desc": "Let a liquidity sweep (price running stops past a known high/low) start a setup. Off by default, and the measurement says leave it off: turning it on took the same 2 years from 40 trades at PF 3.27 to 79 at PF 1.87 — it adds 39 trades that lose money together. Every divergence-armed trade is also sweep-armed, so 'both on' is identical to 'sweep only'."
     },
@@ -66,8 +66,8 @@
       "widget": "toggle",
       "label": "Require an FVG",
       "options": {
-        "off": "Enter at 0.618",
-        "on": "Need a gap in the zone"
+        "off": "0.618 limit",
+        "on": "Gap required"
       },
       "desc": "Whether a fair-value gap must overlap the fib zone for an entry to exist. On, the resting limit goes at the gap's near edge. Off, it falls back to a plain 0.618 limit — more trades, less confluence behind each one."
     },
@@ -77,8 +77,8 @@
       "widget": "toggle",
       "label": "Deep gaps only",
       "options": {
-        "off": "Any gap in the zone",
-        "on": "Gap must clear 0.5"
+        "off": "Any gap",
+        "on": "Past 0.5 only"
       },
       "desc": "Only count a gap that sits fully beyond the 0.5 retracement. Demands a deeper pullback, so you get a better price on fewer fills. Note this still filters gaps even when 'Require an FVG' is off — it changes which gap becomes the entry price."
     },
@@ -117,8 +117,8 @@
       "widget": "toggle",
       "label": "Fade exhaustion only",
       "options": {
-        "off": "Trade any setup",
-        "on": "Skip fresh breakouts"
+        "off": "Any setup",
+        "on": "Exhaustion"
       },
       "desc": "Block a trade that would fade a FRESH higher-timeframe breakout — the theory being an exhausted move is worth fading but a breaking one isn't. Blocks longs into a fresh breakdown and shorts into a fresh breakout."
     },
@@ -225,8 +225,8 @@
       "widget": "toggle",
       "label": "Close on opposite SOS",
       "options": {
-        "off": "Hold to stop or target",
-        "on": "Exit when structure flips"
+        "off": "Hold",
+        "on": "Exit on flip"
       },
       "desc": "Close an open trade early if structure shifts against it. Off by default — the ladder and the stop already manage the trade, and exiting on every structure flip cuts runners short."
     },
@@ -237,7 +237,7 @@
       "label": "Track divergence",
       "options": {
         "off": "Off",
-        "on": "Track it"
+        "on": "Track"
       },
       "desc": "Master switch for the divergence veto and the live DIV confluence flag. Careful: turning this OFF does not stop divergences from arming setups — it only silences the veto and the flag."
     },
@@ -284,7 +284,7 @@
       "label": "Veto on extremes",
       "options": {
         "off": "No veto",
-        "on": "Veto risky setups"
+        "on": "Veto"
       },
       "desc": "Block a setup when the opposite divergence is live, or when RSI is at an extreme — i.e. don't buy into a live sell-divergence.",
       "show_if": {
@@ -297,8 +297,8 @@
       "widget": "toggle",
       "label": "Obey the veto",
       "options": {
-        "off": "Trade anyway",
-        "on": "Obey it"
+        "off": "Ignore veto",
+        "on": "Obey veto"
       },
       "desc": "Whether execution actually honours the veto above. Two switches because the veto can be computed and shown while you test trading through it."
     },
@@ -336,8 +336,8 @@
       "widget": "toggle",
       "label": "Trade longs",
       "options": {
-        "off": "Shorts only",
-        "on": "Longs allowed"
+        "off": "No longs",
+        "on": "Longs on"
       },
       "desc": "Allow long trades. Longs are rare here (7 of 40 over 2 years) but they win 86% of the time — they aren't broken, there just aren't many buy divergences in a rising market."
     },
@@ -347,8 +347,8 @@
       "widget": "toggle",
       "label": "Trade shorts",
       "options": {
-        "off": "Longs only",
-        "on": "Shorts allowed"
+        "off": "No shorts",
+        "on": "Shorts on"
       },
       "desc": "Allow short trades. Shorts are ~83% of this bot's trades and carry 89% of its profit."
     },
@@ -358,8 +358,8 @@
       "widget": "toggle",
       "label": "No late-day entries",
       "options": {
-        "off": "Enter any hour",
-        "on": "Skip 16:00–18:00 NY"
+        "off": "Any hour",
+        "on": "Skip 16–18 NY"
       },
       "desc": "Refuse new entries in the last hours before the gold close, when liquidity thins out and spreads widen."
     },
@@ -369,7 +369,7 @@
       "widget": "toggle",
       "label": "Flat by close",
       "options": {
-        "off": "Hold overnight",
+        "off": "Overnight",
         "on": "Force flat"
       },
       "desc": "Close everything before the daily close instead of holding overnight. Off by default, and that was measured: over 6.5 months, OFF made $39,454 (PF 1.44) and ON made $19,813 (PF 1.25). Only 4 trades ever held overnight — all winners, making 70% of the profit — against $36.80 of total swap. Flatting early buys a smaller drawdown for half the profit."
