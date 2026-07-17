@@ -289,7 +289,10 @@ def init_db() -> None:
                 end_date            TEXT NOT NULL,
                 commission_per_side REAL NOT NULL,
                 slippage_ticks      INTEGER NOT NULL,
-                ruleset_id          TEXT NOT NULL REFERENCES rulesets(id),
+                -- Nullable: MT5/Python optimizations carry no ruleset. A fresh DB must be born
+                -- this way, or _migrate_optimizations_nullable_ruleset() rebuilds the table on
+                -- first init and drops every column added by the migrations above it.
+                ruleset_id          TEXT REFERENCES rulesets(id),
                 mode                TEXT NOT NULL,
                 search_method       TEXT NOT NULL,
                 param_grid          TEXT NOT NULL,
@@ -548,6 +551,9 @@ def _migrate_optimizations_nullable_ruleset() -> None:
             return  # Already nullable or column missing
         # Use explicit column list so column ordering in the old table never causes
         # data to shift into wrong columns (SELECT * maps by position, not name).
+        # EVERY current column must be listed here AND in the CREATE below: this rebuild
+        # replaces the table, so any column omitted is silently DROPPED — which is how
+        # bar_type/bar_value/grid_sensitivity_* went missing on fresh DBs.
         existing_cols = {c[1] for c in info}
         col_list = ", ".join(
             c for c in [
@@ -555,7 +561,8 @@ def _migrate_optimizations_nullable_ruleset() -> None:
                 "end_date", "commission_per_side", "slippage_ticks", "ruleset_id",
                 "mode", "search_method", "param_grid", "status", "estimated_runs",
                 "completed_runs", "best_run_id", "source_run_id", "created_at",
-                "completed_at", "regime_filter",
+                "completed_at", "regime_filter", "bar_type", "bar_value",
+                "grid_sensitivity_score", "grid_sensitivity_summary",
             ]
             if c in existing_cols
         )
@@ -580,7 +587,11 @@ def _migrate_optimizations_nullable_ruleset() -> None:
                 source_run_id       TEXT,
                 created_at          INTEGER NOT NULL,
                 completed_at        INTEGER,
-                regime_filter       TEXT
+                regime_filter       TEXT,
+                bar_type            TEXT NOT NULL DEFAULT 'Minute',
+                bar_value           INTEGER NOT NULL DEFAULT 5,
+                grid_sensitivity_score   REAL,
+                grid_sensitivity_summary TEXT
             );
             INSERT INTO optimizations_new ({col_list}) SELECT {col_list} FROM optimizations;
             DROP TABLE optimizations;
@@ -1660,6 +1671,16 @@ def delete_sweep(sweep_id: str) -> tuple[bool, list[str]]:
     return len(child_ids) > 0, child_ids
 
 
+# Runner predicate per lock scope, as a SQL fragment over a runner column ({col}).
+# These must PARTITION the rows: every runner value lands in exactly one scope. NULL and any
+# unknown runner fall to nt8, matching the 'ninjatrader' default the rest of the lab assumes.
+_SCOPE_RUNNER_SQL = {
+    "nt8": "COALESCE({col}, 'ninjatrader') NOT IN ('mt5', 'python')",
+    "mt5": "{col} = 'mt5'",
+    "python": "{col} = 'python'",
+}
+
+
 def has_running_job(runner: str) -> bool:
     """Canonical platform-scoped lock check. One physical terminal per platform
     (one NT8 Strategy Analyzer, one MT5 Strategy Tester), so a platform runs at most
@@ -1730,89 +1751,49 @@ def delete_run_evaluations(run_id: str) -> None:
 
 
 def get_running_job() -> dict:
-    """Returns info about any running NT8 and MT5 jobs separately."""
-    result = {"nt8": {"running": False}, "mt5": {"running": False}}
+    """Returns info about the running job in each independent lock scope (nt8/mt5/python).
+
+    The scopes must partition — see has_running_job(). A row that matched two scopes would
+    report one job as blocking two platforms; a row that matched none would run unreported.
+    Within a scope the first hit wins, in the order backtest → sweep → optimization."""
+    result = {scope: {"running": False} for scope in _SCOPE_RUNNER_SQL}
     with _connect() as conn:
-        # NT8 standalone backtest
-        row = conn.execute("""
-            SELECT 'backtest' AS job_type, r.run_id AS job_id,
-                   COALESCE(s.name, r.strategy_id) || ' on ' || r.instrument AS description
-            FROM backtest_runs r
-            LEFT JOIN strategies s ON s.id = r.strategy_id
-            WHERE r.status = 'running' AND r.sweep_id IS NULL AND r.optimization_id IS NULL
-              AND COALESCE(r.runner, 'ninjatrader') != 'mt5'
-            LIMIT 1
-        """).fetchone()
-        if row:
-            result["nt8"] = {"running": True, **dict(row)}
-
-        # MT5 standalone backtest
-        row = conn.execute("""
-            SELECT 'backtest' AS job_type, r.run_id AS job_id,
-                   COALESCE(s.name, r.strategy_id) || ' on ' || r.instrument AS description
-            FROM backtest_runs r
-            LEFT JOIN strategies s ON s.id = r.strategy_id
-            WHERE r.status = 'running' AND r.runner = 'mt5'
-            LIMIT 1
-        """).fetchone()
-        if row:
-            result["mt5"] = {"running": True, **dict(row)}
-
-        # NT8 sweep
-        if not result["nt8"]["running"]:
-            row = conn.execute("""
+        for scope, predicate in _SCOPE_RUNNER_SQL.items():
+            queries = (
+                f"""
+                SELECT 'backtest' AS job_type, r.run_id AS job_id,
+                       COALESCE(s.name, r.strategy_id) || ' on ' || r.instrument AS description
+                FROM backtest_runs r
+                LEFT JOIN strategies s ON s.id = r.strategy_id
+                WHERE r.status = 'running' AND r.sweep_id IS NULL AND r.optimization_id IS NULL
+                  AND {predicate.format(col='r.runner')}
+                LIMIT 1
+                """,
+                f"""
                 SELECT 'sweep' AS job_type, r.sweep_id AS job_id,
                        COALESCE(s.name, r.strategy_id) || ' sweep' AS description
                 FROM backtest_runs r
                 LEFT JOIN strategies s ON s.id = r.strategy_id
                 WHERE r.status = 'running' AND r.sweep_id IS NOT NULL
-                  AND COALESCE(r.runner, 'ninjatrader') != 'mt5'
+                  AND {predicate.format(col='r.runner')}
                 LIMIT 1
-            """).fetchone()
-            if row:
-                result["nt8"] = {"running": True, **dict(row)}
-
-        # MT5 sweep
-        if not result["mt5"]["running"]:
-            row = conn.execute("""
-                SELECT 'sweep' AS job_type, r.sweep_id AS job_id,
-                       COALESCE(s.name, r.strategy_id) || ' sweep' AS description
-                FROM backtest_runs r
-                LEFT JOIN strategies s ON s.id = r.strategy_id
-                WHERE r.status = 'running' AND r.sweep_id IS NOT NULL
-                  AND r.runner = 'mt5'
-                LIMIT 1
-            """).fetchone()
-            if row:
-                result["mt5"] = {"running": True, **dict(row)}
-
-        # NT8 optimization
-        if not result["nt8"]["running"]:
-            row = conn.execute("""
+                """,
+                # optimizations has no runner column — the scope comes from the strategy.
+                f"""
                 SELECT 'optimization' AS job_type, o.optimization_id AS job_id,
                        COALESCE(s.name, o.strategy_id) || ' optimization on ' || o.instrument
                        || ' (' || o.completed_runs || '/' || o.estimated_runs || ')' AS description
                 FROM optimizations o
                 LEFT JOIN strategies s ON s.id = o.strategy_id
-                WHERE o.status = 'running' AND COALESCE(s.runner, 'ninjatrader') != 'mt5'
+                WHERE o.status = 'running' AND {predicate.format(col='s.runner')}
                 LIMIT 1
-            """).fetchone()
-            if row:
-                result["nt8"] = {"running": True, **dict(row)}
-
-        # MT5 optimization
-        if not result["mt5"]["running"]:
-            row = conn.execute("""
-                SELECT 'optimization' AS job_type, o.optimization_id AS job_id,
-                       COALESCE(s.name, o.strategy_id) || ' optimization on ' || o.instrument
-                       || ' (' || o.completed_runs || '/' || o.estimated_runs || ')' AS description
-                FROM optimizations o
-                LEFT JOIN strategies s ON s.id = o.strategy_id
-                WHERE o.status = 'running' AND s.runner = 'mt5'
-                LIMIT 1
-            """).fetchone()
-            if row:
-                result["mt5"] = {"running": True, **dict(row)}
+                """,
+            )
+            for sql in queries:
+                row = conn.execute(sql).fetchone()
+                if row:
+                    result[scope] = {"running": True, **dict(row)}
+                    break
 
     return result
 

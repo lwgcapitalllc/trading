@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Sq
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import StickyHeader from '@/components/StickyHeader'
 import { useSweep, useDeleteSweep, useRetrySweep, useCancelSweep, useRetryBacktest, useRunningVpsJob, useFirms, useReevaluateSweep } from '@/hooks/useLab'
+import { runningJobFor } from '@/lib/runner'
 import type { BacktestSummary, SweepDetail as Sweep } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -343,7 +344,8 @@ export function SweepDetail() {
   const reevalSweep    = useReevaluateSweep()
   const { data: firms }          = useFirms()
   const { data: runningJob }     = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.nt8?.running
+  // SweepDetail carries no runner of its own — every child run of a sweep shares one.
+  const jobBlocked = !!runningJobFor(runningJob, sweep?.runs[0]?.runner)?.running
 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [evalFirmId, setEvalFirmId]       = useState('')

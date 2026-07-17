@@ -672,6 +672,7 @@ class RunningJobInfo(BaseModel):
 class RunningJobStatus(BaseModel):
     nt8: RunningJobInfo = RunningJobInfo(running=False)
     mt5: RunningJobInfo = RunningJobInfo(running=False)
+    python: RunningJobInfo = RunningJobInfo(running=False)
 
 
 # ── Lab — sweeps ──────────────────────────────────────────────────────────────

@@ -806,6 +806,7 @@ export interface RunningJobInfo {
 export interface RunningJobStatus {
   nt8: RunningJobInfo
   mt5: RunningJobInfo
+  python: RunningJobInfo
 }
 
 // ── Strategy files (Pass 2 — deployment manager) ─────────────────────────────

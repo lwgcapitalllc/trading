@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, Fragment, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { runningJobFor, runnerScope, RUNNER_LABEL } from '@/lib/runner'
 import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2, Activity, X } from 'lucide-react'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import {
@@ -752,8 +753,7 @@ function RunRow({
   const navigate = useNavigate()
   const retry = useRetryBacktest()
   const { data: runningJob } = useRunningVpsJob()
-  const isMt5 = run.runner === 'mt5'
-  const platformLocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
+  const platformLocked = !!runningJobFor(runningJob, run.runner)?.running
   const pnlClass = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
   const isOptChild   = !!run.optimization_id
   const isSweepChild = !!run.sweep_id
@@ -828,7 +828,7 @@ function RunRow({
             onClick={e => { e.stopPropagation(); retry.mutate(run.run_id) }}
             disabled={retry.isPending || platformLocked}
             className="p-[5px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
-            title={platformLocked ? `${isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry' : 'Rerun'}
+            title={platformLocked ? `${RUNNER_LABEL[runnerScope(run.runner)]} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry' : 'Rerun'}
           >
             <Play size={13} />
           </button>

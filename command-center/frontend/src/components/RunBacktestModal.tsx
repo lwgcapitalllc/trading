@@ -4,6 +4,7 @@ import { X, Play, Info } from 'lucide-react'
 import { AlertTriangle } from 'lucide-react'
 import { useFirms, useTriggerBacktest, useRunningVpsJob } from '@/hooks/useLab'
 import { ParamEditor } from '@/components/ParamEditor'
+import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
 import type { Strategy, Firm } from '@/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -89,7 +90,7 @@ function lookupInstrumentName(sym: string): string {
   return ''
 }
 
-const MT5_SYMBOLS = ['EURUSD.s', 'GBPUSD.s', 'USDJPY.s', 'XAUUSD.s', 'GBPJPY.s', 'AUDUSD.s', 'USDCAD.s', 'EURGBP.s', 'AUDJPY.s', 'CADJPY.s']
+const BROKER_SYMBOLS = ['EURUSD.s', 'GBPUSD.s', 'USDJPY.s', 'XAUUSD.s', 'GBPJPY.s', 'AUDUSD.s', 'USDCAD.s', 'EURGBP.s', 'AUDJPY.s', 'CADJPY.s']
 
 function getAllowedSymbols(firms: Firm[]): string[] {
   const set = new Set<string>()
@@ -164,7 +165,11 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const { data: firms = [], isLoading: firmsLoading } = useFirms()
   const { data: runningJob } = useRunningVpsJob()
 
-  const isMt5 = strategy.runner === 'mt5'
+  // NT8 is the only futures platform: contract months, prop-challenge rulesets, and injected
+  // foundational params are all NT8-only. MT5 and Python both trade the broker's spot symbols.
+  const scope     = runnerScope(strategy.runner)
+  const isNt8     = isNt8Runner(strategy.runner)
+  const isFutures = runnerMarket(strategy.runner) === 'futures'
 
   const inputCls = 'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
   const dateCls  = `${inputCls} [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:cursor-pointer`
@@ -182,20 +187,20 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   )
 
   const [instrumentSymbol, setInstrumentSymbol] = useState(
-    isMt5 ? 'EURUSD.s' : parsed.symbol
+    isNt8 ? parsed.symbol : scope === 'python' ? (parsed.symbol || 'XAUUSD.s') : 'EURUSD.s'
   )
   const [contractMonth, setContractMonth] = useState(parsed.month)
 
   // NT8 only: once firms load, ensure symbol is in allowed list
   useEffect(() => {
-    if (isMt5) return
+    if (!isNt8) return
     if (allowedSymbols.length === 0) return
     if (!instrumentSymbol || !allowedSymbols.includes(instrumentSymbol)) {
       setInstrumentSymbol(allowedSymbols[0])
     }
   }, [allowedSymbols]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const instrument = isMt5
+  const instrument = !isNt8
     ? instrumentSymbol
     : contractMonth.trim()
       ? `${instrumentSymbol} ${contractMonth.trim()}`
@@ -219,8 +224,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   }, [presets, startDate, endDate])
 
   // ── Bar size ─────────────────────────────────────────────────────────────────
-  const BAR_PRESETS = isMt5 ? [5, 15, 30, 60, 240] : [1, 3, 5, 15, 30]
-  const [barValue, setBarValue] = useState(isMt5 ? 60 : 5)
+  const BAR_PRESETS = isNt8 ? [1, 3, 5, 15, 30] : [5, 15, 30, 60, 240]
+  const [barValue, setBarValue] = useState(isNt8 ? 5 : scope === 'python' ? 15 : 60)
 
   // ── Sizing mode — how the engine sizes each trade from the room left ───────────
   const [sizingMode, setSizingMode] = useState<'consistent' | 'bullet'>('consistent')
@@ -309,12 +314,13 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   }, [primaryRuleset?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Validation ───────────────────────────────────────────────────────────────
-  const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
+  const blockingJob = runningJobFor(runningJob, strategy.runner)
+  const jobBlocked  = !!blockingJob?.running
   // Forex runs evaluate against the personal forex ruleset(s); futures against prop
   // challenges. Both require ≥1 selection, but never block when none exist for the platform.
-  const evalRequiredMet = isMt5
-    ? (selectedFirms.size > 0 || forexFirms.length === 0)
-    : selectedFirms.size > 0
+  const evalRequiredMet = isNt8
+    ? selectedFirms.size > 0
+    : (selectedFirms.size > 0 || forexFirms.length === 0)
   const canSubmit =
     instrumentSymbol !== '' &&
     startDate !== '' && endDate !== '' && startDate < endDate &&
@@ -369,11 +375,11 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div className="flex items-center gap-2">
             <div className="text-[15px] font-semibold">Run Backtest</div>
             <span className={`text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border ${
-              isMt5
-                ? 'bg-warn-muted text-warn-text border-warn-text/30'
-                : 'bg-accent/10 text-accent border-accent/20'
+              isFutures
+                ? 'bg-accent/10 text-accent border-accent/20'
+                : 'bg-warn-muted text-warn-text border-warn-text/30'
             }`}>
-              {isMt5 ? 'Forex' : 'Futures'}
+              {isFutures ? 'Futures' : 'Forex'}
             </span>
           </div>
           <button onClick={onClose} className="text-text-tertiary hover:text-text-primary transition-colors">
@@ -386,7 +392,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
             <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
             <p className="text-[12px] text-warn-text leading-snug">
-              <span className="font-semibold">{isMt5 ? 'MT5' : 'NT8'} is busy:</span> {(isMt5 ? runningJob?.mt5 : runningJob?.nt8)?.description} — wait for it to finish before starting a new run.
+              <span className="font-semibold">{RUNNER_LABEL[scope]} is busy:</span> {blockingJob?.description} — wait for it to finish before starting a new run.
             </p>
           </div>
         )}
@@ -405,7 +411,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           {/* Instrument */}
           <div>
             <SectionHead label="Instrument" />
-            {isMt5 ? (
+            {!isNt8 ? (
               <>
                 <input
                   type="text"
@@ -415,7 +421,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   className={inputCls}
                 />
                 <div className="flex gap-1.5 mt-2 flex-wrap">
-                  {MT5_SYMBOLS.map(sym => (
+                  {BROKER_SYMBOLS.map(sym => (
                     <PresetBtn
                       key={sym}
                       label={sym}
@@ -517,8 +523,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div>
             <SectionHead
               label="Bar Size"
-              tooltip={isMt5
-                ? "Candle interval for the MT5 Strategy Tester. Strategy parameters (e.g. lookback periods) are in bar-counts — retune them when changing bar size."
+              tooltip={!isNt8
+                ? "Candle interval the strategy is replayed on. Strategy parameters (e.g. lookback periods) are in bar-counts — retune them when changing bar size."
                 : "Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size."}
             />
             <div className="flex gap-2">
@@ -563,7 +569,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           {/* Evaluate Against — prop firm challenges for futures, personal ruleset(s) for forex */}
           <div>
             <SectionHead label="Evaluate Against" />
-            {isMt5 ? (
+            {!isNt8 ? (
               firmsLoading ? (
                 <div className="text-[12px] text-text-tertiary">Loading rulesets…</div>
               ) : forexFirms.length === 0 ? (
@@ -656,7 +662,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 </div>
               </div>
             )}
-            {!isMt5 && !firmsLoading && selectedFirms.size === 0 && (
+            {isNt8 && !firmsLoading && selectedFirms.size === 0 && (
               <p className="text-[11px] text-neg-text mt-2">Select at least one challenge.</p>
             )}
           </div>
@@ -678,7 +684,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           )}
 
           {/* Foundational config — NT8 only (NinjaScript injection, not applicable to MT5) */}
-          {!isMt5 && primaryRuleset && (
+          {isNt8 && primaryRuleset && (
             <>
               <Divider />
               <div>
@@ -726,7 +732,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <div className="flex items-center mb-1">
                   <label className={labelCls.replace(' mb-1', '')}>Commission / side ($)</label>
-                  <InfoTooltip content={isMt5 ? "Commission per side in account currency. Applied to every fill by the MT5 Strategy Tester." : "Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill."} />
+                  <InfoTooltip content={!isNt8 ? "Commission per side in account currency. Applied to every fill." : "Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill."} />
                 </div>
                 <input
                   type="number" step="0.01" min="0" value={commPerSide}
@@ -737,7 +743,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <div className="flex items-center mb-1">
                   <label className={labelCls.replace(' mb-1', '')}>Slippage (ticks)</label>
-                  <InfoTooltip content={isMt5 ? "Additional points deducted per fill to model spread and slippage. Conservative backtests use 1–3 points for major forex pairs." : "Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks."} side="left" />
+                  <InfoTooltip content={!isNt8 ? "Additional points deducted per fill to model spread and slippage. Conservative backtests use 1–3 points for major forex pairs." : "Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks."} side="left" />
                 </div>
                 <input
                   type="number" step="1" min="0" value={slippageTicks}

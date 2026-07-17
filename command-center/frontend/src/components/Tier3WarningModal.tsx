@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Layers, ChevronDown, ChevronRight } from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { useInstrumentSummary, useTriggerSweep, useRunningVpsJob } from '@/hooks/useLab'
+import { runnerScope, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import type { BacktestDetail, SweepRequest } from '@/types'
 
 interface Props {
@@ -32,7 +33,9 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
 
   const triggerSweep = useTriggerSweep()
   const { data: runningJob } = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.nt8?.running
+  // A sweep spawned here inherits the source run's runner, so it takes that runner's lock.
+  const blockingJob = runningJobFor(runningJob, run.runner)
+  const jobBlocked  = !!blockingJob?.running
   // Untested instruments are the long tail — collapsed by default so tested results stay the focus.
   const [showUntested, setShowUntested] = useState(false)
 
@@ -222,7 +225,7 @@ export function Tier3WarningModal({ run, onClose, onOptimizeAnyway }: Props) {
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20 mb-3">
               <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
               <p className="text-[12px] text-warn-text leading-snug">
-                <span className="font-semibold">NT8 is busy:</span> {runningJob?.nt8?.description} — wait for it to finish.
+                <span className="font-semibold">{RUNNER_LABEL[runnerScope(run.runner)]} is busy:</span> {blockingJob?.description} — wait for it to finish.
               </p>
             </div>
           )}

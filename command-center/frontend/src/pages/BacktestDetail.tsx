@@ -12,6 +12,7 @@ import {
   ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
 } from 'recharts'
 import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunNews } from '@/hooks/useLab'
+import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag } from '@/types'
 import { C } from '@/themes/chart'
@@ -1395,6 +1396,12 @@ const NT8_RUN_STEPS = [
   { label: 'Tagging',   startPct: 97 },
 ]
 
+const PYTHON_RUN_STEPS = [
+  { label: 'Load bars', startPct: 0  },
+  { label: 'Replay',    startPct: 15 },
+  { label: 'Results',   startPct: 95 },
+]
+
 const MT5_RUN_STEPS = [
   { label: 'Launch',  startPct: 0  },
   { label: 'Testing', startPct: 10 },
@@ -2073,11 +2080,11 @@ function FullBacktestEvalModal({ run, busy, onConfirm, onClose }: {
   onClose: () => void
 }) {
   const { data: rulesets = [] } = useRulesets()
-  const isMt5 = run.runner === 'mt5'
-  // Forex (MT5) runs evaluate against forex rulesets; futures (NT8) against the prop/futures rows.
+  // Forex (MT5/Python) runs evaluate against forex rulesets; futures (NT8) against the prop rows.
+  const isFutures = runnerMarket(run.runner) === 'futures'
   const options = useMemo(
-    () => rulesets.filter(r => (isMt5 ? r.market === 'forex' : r.market !== 'forex')),
-    [rulesets, isMt5],
+    () => rulesets.filter(r => (isFutures ? r.market !== 'forex' : r.market === 'forex')),
+    [rulesets, isFutures],
   )
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setSelected(prev => {
@@ -2092,13 +2099,13 @@ function FullBacktestEvalModal({ run, busy, onConfirm, onClose }: {
         <div>
           <h2 className="text-base font-semibold text-text-primary">Run Full Backtest</h2>
           <p className="text-xs text-text-secondary mt-1">
-            This optimizer parameter set has no ruleset attached. Pick which {isMt5 ? 'forex' : 'futures'} ruleset(s)
+            This optimizer parameter set has no ruleset attached. Pick which {isFutures ? 'futures' : 'forex'} ruleset(s)
             to score it against.
           </p>
         </div>
 
         {options.length === 0 ? (
-          <p className="text-xs text-text-tertiary">No {isMt5 ? 'forex' : 'futures'} rulesets available.</p>
+          <p className="text-xs text-text-tertiary">No {isFutures ? 'futures' : 'forex'} rulesets available.</p>
         ) : (
           <div className="space-y-1.5 max-h-[40vh] overflow-y-auto">
             {options.map(r => (
@@ -2589,11 +2596,14 @@ export function BacktestDetail() {
   const isRunning  = run?.status === 'running'
   const isFailed   = run?.status.startsWith('failed') ?? false
   const isComplete    = run?.status === 'complete'
-  const isMt5         = run?.runner === 'mt5'
+  const scope         = runnerScope(run?.runner)
+  const isNt8         = isNt8Runner(run?.runner)
   // Optimization combo run: exists in the grid export but has never been fully backtested
   const isOptCombo    = !!run?.optimization_id && !run?.equity_curve?.length && isComplete
-  const stressBlocked = isMt5 ? (stressLock?.forex ?? false) : (stressLock?.futures ?? false)
-  const jobBusy       = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
+  const stressBlocked = runnerMarket(run?.runner) === 'futures'
+    ? (stressLock?.futures ?? false)
+    : (stressLock?.forex ?? false)
+  const jobBusy       = !!runningJobFor(runningJob, run?.runner)?.running
 
   // Rerun / full-backtest. For an optimizer combo with no inheritable ruleset the backend replies
   // status="needs_ruleset" instead of starting — we then open a picker and re-fire with the choice.
@@ -2748,7 +2758,7 @@ export function BacktestDetail() {
                     onClick={runFullBacktest}
                     disabled={retryBacktest.isPending || jobBusy}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40"
-                    title={(isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running) ? `${isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry this backtest' : run.optimization_id && !run.equity_curve?.length ? 'Run a full backtest on this parameter set to get charts and trade data' : 'Rerun this backtest'}
+                    title={jobBusy ? `${RUNNER_LABEL[scope]} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry this backtest' : run.optimization_id && !run.equity_curve?.length ? 'Run a full backtest on this parameter set to get charts and trade data' : 'Rerun this backtest'}
                   >
                     {retryBacktest.isPending
                       ? <RefreshCw size={14} className="animate-spin" />
@@ -2786,7 +2796,7 @@ export function BacktestDetail() {
                       title={
                         tooFewForStress
                           ? `Needs ≥${MIN_TRADES_FOR_STRESS} trades to stress test — this run has ${tc}. Get more trades from more data first (longer period, more instruments, or a smaller timeframe).`
-                          : stressBlocked ? `A ${isMt5 ? 'forex' : 'futures'} stress test is already running` : undefined
+                          : stressBlocked ? `A ${runnerMarket(run?.runner)} stress test is already running` : undefined
                       }
                       className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
                     >
@@ -2829,7 +2839,7 @@ export function BacktestDetail() {
           <div className="flex-1 min-w-0 px-[22px] pb-[22px] space-y-8">
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
-          {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={isMt5 ? MT5_RUN_STEPS : NT8_RUN_STEPS} />}
+          {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={scope === 'mt5' ? MT5_RUN_STEPS : scope === 'python' ? PYTHON_RUN_STEPS : NT8_RUN_STEPS} />}
           {isFailed && <FailureBanner run={run} />}
           {/* ── Evaluations + Performance (side by side) ──────────────────── */}
           {isComplete && (
@@ -3026,7 +3036,7 @@ export function BacktestDetail() {
               <div className="space-y-4">
                 <div className="flex items-start justify-between">
                   <SectionLabel>Charts</SectionLabel>
-                  {!hasCharts && !isMt5 && (
+                  {!hasCharts && isNt8 && (
                     <button
                       onClick={() => runId && reloadCharts.mutate(runId)}
                       disabled={reloadCharts.isPending}
@@ -3042,8 +3052,10 @@ export function BacktestDetail() {
                   <div className="bg-bg-surface border border-border-subtle rounded-lg flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
                     <div className="text-text-secondary text-[13px] font-medium">No chart data yet</div>
                     <div className="text-text-tertiary text-[11px] leading-relaxed max-w-xs">
-                      {isMt5
+                      {scope === 'mt5'
                         ? 'Chart data is parsed from the MT5 report at completion. If empty, the report may not have included trade data.'
+                        : scope === 'python'
+                        ? 'Chart data is built locally at completion from the same cached bars the run replayed. If empty, the run made no trades.'
                         : 'Click "Load chart data from NT8" — requires NT8 Strategy Analyzer open with this run\'s results loaded.'}
                     </div>
                   </div>
@@ -3062,7 +3074,7 @@ export function BacktestDetail() {
                         {(primaryTab === 'equity' || primaryTab === 'sized') && hasRealRegimeTags && (
                           <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
                         )}
-                        {!isMt5 && (
+                        {isNt8 && (
                           <button
                             onClick={() => runId && reloadCharts.mutate(runId)}
                             disabled={reloadCharts.isPending}
@@ -3072,7 +3084,7 @@ export function BacktestDetail() {
                             Refresh
                           </button>
                         )}
-                        {isMt5 && primaryTab === 'price' && (
+                        {!isNt8 && primaryTab === 'price' && (
                           <button
                             onClick={() => runId && refreshChartSpec.mutate(runId)}
                             disabled={refreshChartSpec.isPending}

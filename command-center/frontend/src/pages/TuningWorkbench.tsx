@@ -11,6 +11,7 @@ import { useStickyBanner } from '@/components/StickyHeader'
 import { api } from '@/api/client'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL, REGIME_ORDER } from '@/lib/regime'
+import { runnerScope, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import type { BacktestDetail, BacktestSummary, DailyPnlPoint, ParamSchemaEntry } from '@/types'
 
 // ── Param helpers ───────────────────────────────────────────────────────────────
@@ -224,8 +225,7 @@ export function TuningWorkbench() {
     return <div className="text-[13px] text-text-tertiary py-20 text-center">Loading run…</div>
   }
 
-  const isMt5 = baseline.runner === 'mt5'
-  const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
+  const jobBlocked = !!runningJobFor(runningJob, baseline.runner)?.running
   const rulesetIds = baseline.evaluations.map(e => e.ruleset_id)
 
   const baseParams = baseline.params as Record<string, unknown>
@@ -407,7 +407,7 @@ export function TuningWorkbench() {
                   {jobBlocked && (
                     <div className="flex items-start gap-2 mb-2 px-2.5 py-2 rounded-md bg-warn-muted/40 border border-warn-text/20">
                       <AlertTriangle size={12} className="text-warn-text flex-shrink-0 mt-[1px]" />
-                      <p className="text-[11px] text-warn-text leading-snug">{isMt5 ? 'MT5' : 'NT8'} is busy — wait for the current job to finish.</p>
+                      <p className="text-[11px] text-warn-text leading-snug">{RUNNER_LABEL[runnerScope(baseline.runner)]} is busy — wait for the current job to finish.</p>
                     </div>
                   )}
                   <button

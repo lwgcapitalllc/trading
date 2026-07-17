@@ -262,17 +262,21 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
 
     runner = row.get("runner") or "ninjatrader"
     instrument = row["instrument"]
-    # NT8 only has daily bars today; MT5 ideally has intraday from the agent. Cap the candle
-    # volume by stepping the TF up for long spans (a 5yr run → H1, not ~125k M15 candles).
-    base_tf = _base_timeframe(row.get("bar_type"), row.get("bar_value")) if runner == "mt5" else "D1"
-    if runner == "mt5":
+    # NT8 only has daily bars today; MT5 ideally has intraday from the agent, and a Python run
+    # has intraday in the backtest cache it replayed. Cap the candle volume by stepping the TF up
+    # for long spans (a 5yr run → H1, not ~125k M15 candles).
+    intraday = runner in ("mt5", "python")
+    base_tf = _base_timeframe(row.get("bar_type"), row.get("bar_value")) if intraday else "D1"
+    if intraday:
         base_tf = _fit_timeframe(base_tf, row["start_date"], row["end_date"])
 
     candles = _build_candles(instrument, row["start_date"], row["end_date"], base_tf, runner)
     # Fallback: the MT5 agent can't always serve intraday history (symbol not selected, or the
     # run's sub-hour TF unsupported). Daily bars come from yfinance via the D1 path — coarse, but
     # a real price chart beats none. baseTimeframe reflects what actually loaded.
-    if not candles and base_tf != "D1":
+    # Python is deliberately excluded: its bars come from the cache the run itself replayed, so a
+    # fallback to a different feed would silently draw a chart the run never traded.
+    if not candles and base_tf != "D1" and runner != "python":
         candles = _build_candles(instrument, row["start_date"], row["end_date"], "D1", runner)
         if candles:
             base_tf = "D1"

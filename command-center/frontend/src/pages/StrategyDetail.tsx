@@ -4,6 +4,8 @@ import { ArrowLeft, Play, Pencil, Check, X, ArrowRight, ChevronRight } from 'luc
 import { useStrategy, useBacktestRuns, useUpdateStrategyDescription } from '@/hooks/useLab'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { EmptyState } from '@/components/EmptyState'
+import { RunnerBadge } from '@/components/RunnerBadge'
+import { runnerScope, runnerMarket, RUNNER_FULL_LABEL } from '@/lib/runner'
 import type { ParamSchemaEntry, StrategyStep } from '@/types'
 
 const CORRELATED_PAIRS: [string, string][] = [
@@ -237,8 +239,7 @@ export function StrategyDetail() {
     )
   }
 
-  const isMt5 = strategy.runner === 'mt5'
-  const market: 'forex' | 'futures' = isMt5 ? 'forex' : 'futures'
+  const market = runnerMarket(strategy.runner)
   const visibleParams = strategy.param_schema.filter(p => p.category !== 'foundational')
   const essentialCount = visibleParams.filter(p => p.core).length
   const essentials = visibleParams.filter(p => p.core)
@@ -287,8 +288,8 @@ export function StrategyDetail() {
         )}
         <span className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface rounded-md px-2.5 py-1 text-[12px]">
           <span className="text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">Runs on</span>
-          <img src={isMt5 ? '/mt5-icon.png' : '/nt8-icon.png'} alt="" className="w-[15px] h-[15px] rounded object-cover" />
-          <span className="font-semibold">{isMt5 ? 'MetaTrader 5' : 'NinjaTrader 8'}</span>
+          <RunnerBadge runner={strategy.runner} size={15} className="rounded" />
+          <span className="font-semibold">{RUNNER_FULL_LABEL[runnerScope(strategy.runner)]}</span>
         </span>
         <span className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface rounded-md px-2.5 py-1 text-[12px]">
           <span className="text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">Market</span>

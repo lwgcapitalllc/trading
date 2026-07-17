@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
 import { ParamEditor, type ParamValue } from '@/components/ParamEditor'
 import { useTriggerOptimization, useFirms, useRunningVpsJob, useOptimizations, useParamTypes, useStrategy } from '@/hooks/useLab'
+import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import type { BacktestDetail, ParamAxisSpec } from '@/types'
 
 interface Props {
@@ -42,8 +43,12 @@ function OptimizerModal({
   const { data: runningJob } = useRunningVpsJob()
   const { data: paramTypes } = useParamTypes(run.strategy_id)
   const { data: strategy } = useStrategy(run.strategy_id)
-  const isMt5 = run.runner === 'mt5'
-  const jobBlocked = isMt5 ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
+  // Ruleset/mode/regime are NT8-only (they drive injected foundational params); MT5 and
+  // Python both run raw. The lock, separately, is per-runner.
+  const isNt8       = isNt8Runner(run.runner)
+  const blockingJob = runningJobFor(runningJob, run.runner)
+  const jobBlocked  = !!blockingJob?.running
+  const runnerLabel = RUNNER_LABEL[runnerScope(run.runner)]
 
   const evalFirm = run.evaluations[0]
   const [firmId, setFirmId]         = useState(evalFirm?.ruleset_id ?? '')
@@ -137,7 +142,7 @@ function OptimizerModal({
   }
 
   const handleGo = () => {
-    if (!isMt5 && !firmId) { toast.error('Select a ruleset'); return }
+    if (isNt8 && !firmId) { toast.error('Select a ruleset'); return }
 
     const param_grid: Record<string, ParamAxisSpec> = {}
     for (const [k, ax] of Object.entries(axes)) {
@@ -164,11 +169,11 @@ function OptimizerModal({
       end_date:           run.end_date,
       commission_per_side: run.commission_per_side,
       slippage_ticks:     run.slippage_ticks,
-      ruleset_id:         isMt5 ? null : firmId,
-      mode:               isMt5 ? 'raw' : isPropFirm ? mode : 'raw',
+      ruleset_id:         isNt8 ? firmId : null,
+      mode:               isNt8 && isPropFirm ? mode : 'raw',
       search_method:      'native',
       param_grid,
-      regime_filter:      isMt5 ? null : (regimeFilter || null),
+      regime_filter:      isNt8 ? (regimeFilter || null) : null,
       source_run_id:      run.run_id,
     }, {
       onSuccess: (data) => {
@@ -197,7 +202,7 @@ function OptimizerModal({
           <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
             <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
             <p className="text-[12px] text-warn-text leading-snug">
-              <span className="font-semibold">{isMt5 ? 'MT5' : 'NT8'} is busy:</span> {(isMt5 ? runningJob?.mt5 : runningJob?.nt8)?.description} — wait for it to finish.
+              <span className="font-semibold">{runnerLabel} is busy:</span> {blockingJob?.description} — wait for it to finish.
             </p>
           </div>
         )}
@@ -206,7 +211,7 @@ function OptimizerModal({
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           {/* Config — NT8 shows ruleset/mode/regime; MT5 shows nothing above the param grid */}
           <div className="grid grid-cols-3 gap-3">
-            {!isMt5 && (
+            {isNt8 && (
               <>
                 <div className={isPropFirm ? '' : 'col-span-3'}>
                   <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Ruleset</label>
@@ -234,7 +239,7 @@ function OptimizerModal({
                 )}
               </>
             )}
-            {!isMt5 && (
+            {isNt8 && (
               <div className="col-span-3">
                 <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">
                   Regime Filter <span className="normal-case font-normal">(optional — score only trades in this regime)</span>
@@ -386,8 +391,8 @@ export function OptimizeButton({ run }: Props) {
   const navigate = useNavigate()
   const { data: runningJob } = useRunningVpsJob()
   const { data: optimizations } = useOptimizations(run.strategy_id)
-  const isMt5Platform = run.runner === 'mt5'
-  const jobBlocked = isMt5Platform ? !!runningJob?.mt5?.running : !!runningJob?.nt8?.running
+  const blockingJob = runningJobFor(runningJob, run.runner)
+  const jobBlocked  = !!blockingJob?.running
 
   const runningOpt = optimizations?.find(
     o => o.source_run_id === run.run_id &&
@@ -428,7 +433,7 @@ export function OptimizeButton({ run }: Props) {
       <button
         onClick={handleClick}
         disabled={jobBlocked}
-        title={jobBlocked ? `${isMt5Platform ? 'MT5' : 'NT8'} is busy: ${(isMt5Platform ? runningJob?.mt5 : runningJob?.nt8)?.description}` : undefined}
+        title={jobBlocked ? `${RUNNER_LABEL[runnerScope(run.runner)]} is busy: ${blockingJob?.description}` : undefined}
         className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <Sliders size={12} />

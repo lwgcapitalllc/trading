@@ -309,10 +309,38 @@ def get_ohlc(
     runner="mt5" — fetches H1/H4/daily bars from the MT5 agent via SSH tunnel;
         caches in instrument_intraday_ohlc. Falls back to yfinance daily if the
         agent is unreachable and timeframe is daily/D1. No yfinance fallback for H1/H4.
+    runner="python" — reads backtest.data.BarSource, the SAME disk cache the run itself
+        replayed. A Python run's chart must show the bars it actually traded, so this path
+        never falls back to another feed: a mismatch would be invisible drift on the chart.
 
-    Cache freshness (both paths): bars older than 5 days are cached once and never
-    refetched. Bars within the last 5 days are always refetched.
+    Cache freshness (yfinance/mt5 paths): bars older than 5 days are fetched once and never
+    refetched. Bars within the last 5 days are always refetched. The python path defers
+    entirely to BarSource's own cache + coverage tracking.
     """
     if runner == "mt5":
         return _get_ohlc_mt5(instrument, start_date, end_date, timeframe)
+    if runner == "python":
+        return _get_ohlc_backtest_cache(instrument, start_date, end_date, timeframe)
     return _get_ohlc_yfinance(instrument, start_date, end_date)
+
+
+def _get_ohlc_backtest_cache(
+    instrument: str, start_date: str, end_date: str, timeframe: str,
+) -> pd.DataFrame:
+    """Bars for a Python run, straight from the backtest package's own cache.
+
+    Imported lazily: the backend must start (and every non-Python runner must work) even if the
+    backtest package or its cache is unavailable.
+    """
+    import sys
+
+    from config import MONOREPO_ROOT
+
+    if str(MONOREPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(MONOREPO_ROOT))
+    from backtest.data import BarSource
+
+    df = BarSource().load(instrument, timeframe, start_date, end_date)
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["open", "high", "low", "close"])
+    return df[["open", "high", "low", "close"]].sort_index()

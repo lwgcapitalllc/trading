@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown, Copy, Check, SlidersHorizontal } from 'lucide-react'
 import { useOptimization, useCancelOptimization, useRetryOptimization, useRerunOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog, useBacktestRuns } from '@/hooks/useLab'
+import { runningJobFor } from '@/lib/runner'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 import StickyHeader from '@/components/StickyHeader'
@@ -598,7 +599,7 @@ export function OptimizationDetail() {
   const deleteOpt  = useDeleteOptimization()
   const retryRun   = useRetryBacktest()
   const { data: runningJob } = useRunningVpsJob()
-  const jobBlocked = !!runningJob?.nt8?.running
+  const jobBlocked = !!runningJobFor(runningJob, opt?.runner)?.running
 
   const { data: stressLock } = useRunningStressLock()
   const stressRunIds = useMemo(() => new Set(stressLock?.run_ids ?? []), [stressLock])
