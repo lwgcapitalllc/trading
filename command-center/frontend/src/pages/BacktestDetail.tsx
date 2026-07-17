@@ -610,7 +610,6 @@ function setBoolPref(key: string, v: boolean) {
   try { localStorage.setItem(key, String(v)) } catch { /* quota */ }
 }
 const _HIST_KEY = 'equity_histogram_enabled'
-const _EXC_KEY  = 'equity_excursions_enabled'
 
 interface RegimeBand { x1: number; x2: number; regime: string }
 
@@ -678,9 +677,17 @@ function fmtChartDate(d?: string): string {
 
 const _money0 = (v: number) => `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
-function EquityCurveChart({ data, bands = [], showExcursions = false, showHistogram = false, height = 300 }: {
+// A "nice" round tick step (1/2/5 × 10ⁿ) near the requested size.
+function niceStep(raw: number): number {
+  if (raw <= 0) return 1
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)))
+  const n = raw / mag
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag
+}
+
+function EquityCurveChart({ data, bands = [], showHistogram = false, height = 300 }: {
   data: EquityPoint[]; bands?: RegimeBand[]
-  showExcursions?: boolean; showHistogram?: boolean; height?: number
+  showHistogram?: boolean; height?: number
 }) {
   if (!data.length) return null
 
@@ -696,24 +703,28 @@ function EquityCurveChart({ data, bands = [], showExcursions = false, showHistog
   const yMin = Math.min(startEq, min) - pad
   const yMax = max + pad
 
-  // The vertical fraction (0 = top, 1 = bottom) where the starting balance sits. The gradients
-  // hard-stop here so the line/fill switch colour exactly at break-even.
-  const startOffset = Math.min(1, Math.max(0, (yMax - startEq) / (yMax - yMin)))
+  // The colour-split offset must map to the FILLED SHAPE's bounding box — the data extremes incl.
+  // startEq, NOT the padded axis domain. Using the padded domain drifts the green/red boundary off
+  // the start line and bleeds a faint red tint into the positive region.
+  const dMin = Math.min(startEq, min)
+  const dMax = Math.max(startEq, max)
+  const startOffset = Math.min(1, Math.max(0, (dMax - startEq) / ((dMax - dMin) || 1)))
   const eqTicks    = calIndexTicks(data)
 
-  // Bars (profit histogram + excursions) ride their own hidden axis, scaled so they sit as a strip
-  // along the BOTTOM: domain [-barMax, 6×barMax] puts the zero baseline ~14% up, so green bars rise
-  // and red bars drop within the bottom band and never float across the equity line.
-  const hasBars = showHistogram || showExcursions
-  const barMax = hasBars
-    ? Math.max(1, ...data.map(d => Math.max(
-        showHistogram ? Math.abs(d.profit ?? 0) : 0,
-        showExcursions ? Math.max(Math.abs(d.favorable ?? 0), Math.abs(d.adverse ?? 0)) : 0,
-      )))
+  // Y ticks anchored ON the starting balance so it's always labelled, evenly spaced around it.
+  const step = niceStep((yMax - yMin) / 5)
+  const yTicks: number[] = [startEq]
+  for (let t = startEq + step; t <= yMax; t += step) yTicks.push(t)
+  for (let t = startEq - step; t >= yMin; t -= step) yTicks.unshift(t)
+
+  // Profit histogram rides its own hidden axis, scaled to a bottom strip: domain [-barMax, 6×barMax]
+  // puts the zero baseline ~14% up so green bars rise and red bars drop within the bottom band.
+  const barMax = showHistogram
+    ? Math.max(1, ...data.map(d => Math.abs(d.profit ?? 0)))
     : 1
 
   return (
-    <ResponsiveContainer key={`${bands.length}-${showExcursions}-${showHistogram}`} width="100%" height={height}>
+    <ResponsiveContainer key={`${bands.length}-${showHistogram}`} width="100%" height={height}>
       <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           {/* Line stroke: green above break-even, red below, hard edge at the start-balance offset. */}
@@ -721,17 +732,19 @@ function EquityCurveChart({ data, bands = [], showExcursions = false, showHistog
             <stop offset={startOffset} stopColor={C.pos} />
             <stop offset={startOffset} stopColor={C.neg} />
           </linearGradient>
-          {/* Fill: same split, translucent (area is drawn between the line and the start line). */}
+          {/* Fill: green above the start line, red below, hard edge at the same offset. Kept out of
+              the positive region above the split so there's no red tint where the account is up. */}
           <linearGradient id="eqFillSplit" x1="0" y1="0" x2="0" y2="1">
-            <stop offset={0}            stopColor={C.pos} stopOpacity={0.20} />
-            <stop offset={startOffset}  stopColor={C.pos} stopOpacity={0.04} />
-            <stop offset={startOffset}  stopColor={C.neg} stopOpacity={0.04} />
-            <stop offset={1}            stopColor={C.neg} stopOpacity={0.20} />
+            <stop offset={0}                     stopColor={C.pos} stopOpacity={0.22} />
+            <stop offset={Math.max(0, startOffset - 0.0001)} stopColor={C.pos} stopOpacity={0.03} />
+            <stop offset={startOffset}           stopColor={C.neg} stopOpacity={0.03} />
+            <stop offset={1}                     stopColor={C.neg} stopOpacity={0.20} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-        {/* Regime context as faint background bands — same treatment as the tune page. */}
-        {bands.map((b, i) => (
+        {/* Regime context as faint background bands — skip UNKNOWN so the chart shows exactly the
+            regimes in the legend (a run tags only the regimes it actually saw). */}
+        {bands.filter(b => b.regime !== 'UNKNOWN').map((b, i) => (
           <ReferenceArea key={`r${i}`} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
         ))}
         <XAxis
@@ -748,13 +761,15 @@ function EquityCurveChart({ data, bands = [], showExcursions = false, showHistog
         />
         <YAxis
           domain={[yMin, yMax]}
+          ticks={yTicks}
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
+          // Account balance, not a gain — no "+" prefix. The starting balance is always one of these.
           tickFormatter={(v: number) => {
-            if (v === 0) return '$0'
+            if (Math.abs(v) < 1000) return `$${Math.round(v)}`
             const k = v / 1000
-            return `${v >= 0 ? '+' : ''}$${Number.isInteger(k) ? k : k.toFixed(1)}k`
+            return `$${Number.isInteger(k) ? k : k.toFixed(1)}k`
           }}
           width={56}
         />
@@ -769,12 +784,13 @@ function EquityCurveChart({ data, bands = [], showExcursions = false, showHistog
             const pt = (eq as { payload?: EquityPoint }).payload
             const v  = ((eq as { value?: number }).value ?? 0)
             const dateStr = pt?.date ? ` · ${fmtChartDate(pt.date)}` : ''
+            const dirStr  = pt?.direction ? ` · ${pt.direction}` : ''
             const hasFav = pt?.favorable != null || pt?.adverse != null
             return (
               <div style={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}>
-                <p style={{ color: C.axisTick, marginBottom: 4 }}>Trade #{pt?.index}{dateStr}</p>
+                <p style={{ color: C.axisTick, marginBottom: 4 }}>Trade #{pt?.index}{dateStr}{dirStr}</p>
                 <p style={{ color: '#e5e7eb' }}>
-                  {pt?.direction ? `Cumulative P&L (${pt.direction})` : 'Cumulative P&L'}&nbsp;{_money0(v)}
+                  Balance&nbsp;${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </p>
                 {pt?.profit != null && (
                   <p style={{ color: (pt.profit ?? 0) >= 0 ? C.pos : C.neg }}>This trade&nbsp;{_money0(pt.profit)}</p>
@@ -790,10 +806,6 @@ function EquityCurveChart({ data, bands = [], showExcursions = false, showHistog
           }}
         />
         <ReferenceLine y={startEq} stroke={C.refLine} strokeDasharray="4 4" />
-        {startEq !== 0 && <ReferenceLine y={0} stroke={C.refLineDim} />}
-        {/* Excursion bars (behind the profit bar): favorable up, adverse down. */}
-        {showExcursions && <Bar yAxisId="bars" dataKey="favorable" fill={C.pos} fillOpacity={0.35} isAnimationActive={false} maxBarSize={9} />}
-        {showExcursions && <Bar yAxisId="bars" dataKey="adverse"   fill={C.neg} fillOpacity={0.35} isAnimationActive={false} maxBarSize={9} />}
         {/* Per-trade realised profit histogram. */}
         {showHistogram && (
           <Bar yAxisId="bars" dataKey="profit" isAnimationActive={false} maxBarSize={9}>
@@ -2550,9 +2562,7 @@ export function BacktestDetail() {
   // Equity-chart series toggles (TradingView-style panel): profit histogram, trade excursions,
   // run-up/drawdown period shading. Each persists across runs.
   const [histOn, setHistOn] = useState(() => getBoolPref(_HIST_KEY))
-  const [excOn, setExcOn]   = useState(() => getBoolPref(_EXC_KEY))
   const toggleHist = useCallback((v: boolean) => { setHistOn(v); setBoolPref(_HIST_KEY, v) }, [])
-  const toggleExc  = useCallback((v: boolean) => { setExcOn(v);  setBoolPref(_EXC_KEY, v) }, [])
   // Primary chart tab (the big charts) + secondary tab (supporting charts). Price lazy-loads.
   const [primaryTab, setPrimaryTab] = useState<'equity' | 'sized' | 'price' | 'breakdown'>('equity')
   const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
@@ -2635,13 +2645,6 @@ export function BacktestDetail() {
       ? computeRegimeBands(run.equity_curve, run.daily_pnl)
       : [],
     [overlayOn, hasRealRegimeTags, run?.equity_curve, run?.daily_pnl],
-  )
-
-  // Excursion data is Python-runner only for now — offer the toggle only when the run actually
-  // carries it, so MT5/NT8 runs don't show a dead control.
-  const hasExcursionData = useMemo(
-    () => run?.equity_curve.some(p => p.favorable != null || p.adverse != null) ?? false,
-    [run?.equity_curve],
   )
 
   // Regime is a market property (same calendar days for every firm), so tag lookup uses the
@@ -3043,7 +3046,6 @@ export function BacktestDetail() {
                       <EquityCurveChart
                         data={run.equity_curve}
                         bands={regimeBands}
-                        showExcursions={excOn && hasExcursionData}
                         showHistogram={histOn}
                         height={h}
                       />
@@ -3148,9 +3150,6 @@ export function BacktestDetail() {
                       onExpand={() => setFullscreenChart(primaryTab)}
                       render={renderChart}
                       right={<>
-                        {primaryTab === 'equity' && hasExcursionData && (
-                          <SeriesToggle label="Excursions" on={excOn} onChange={toggleExc} />
-                        )}
                         {primaryTab === 'equity' && (
                           <SeriesToggle label="Histogram" on={histOn} onChange={toggleHist} />
                         )}
