@@ -183,6 +183,7 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         source_run_id=row.get("source_run_id"),
         runner=row.get("runner", "ninjatrader"),
         sizing_mode=row.get("sizing_mode", "consistent"),
+        manual_risk_pct=row.get("manual_risk_pct"),
         sized=bool(sized_timeline),
         sized_timeline=sized_timeline,
     )
@@ -294,6 +295,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "runner":             runner,
         "source_run_id":      req.source_run_id,
         "sizing_mode":        req.sizing_mode,
+        "manual_risk_pct":    req.manual_risk_pct,
     })
 
     job_spec = {

@@ -582,6 +582,10 @@ def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> Optional[dict]:
         "edge":                 overview.get("edge"),
         "steps":                overview.get("steps", []),
         "avoid_news":           overview.get("avoid_news", False),
+        # Only a python package may declare this. NT8/MT5 strategies are unit-size BY RULE —
+        # the gated-layer rule forbids them from baking risk management in — so they are always
+        # sized by the engine and there is deliberately no meta.json escape hatch for it.
+        "self_sizing":          bool(spec.get("self_sizing", False)),
     }
 
 

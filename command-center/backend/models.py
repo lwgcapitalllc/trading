@@ -312,6 +312,10 @@ class Strategy(BaseModel):
     # News-filter default (UI only): 1/true = the News toggle on BacktestDetail starts on "Removed"
     # (this strategy avoids high-impact news); false = starts "Included". From meta.json "avoid_news".
     avoid_news: bool = False
+    # Who sizes this strategy. False (default) = it proposes UNIT-size trades and the dynamic
+    # sizing engine sizes them per ruleset. True = it sizes itself off its own risk % param, so
+    # the engine must not re-size it and the UI hides SIZING MODE (there is nothing to choose).
+    self_sizing: bool = False
 
     @field_validator("steps", mode="before")
     @classmethod
@@ -472,7 +476,17 @@ class BacktestRunRequest(BaseModel):
     evaluate_rulesets: list[str] = []   # ruleset_ids to evaluate against
     evaluate_firms: list[str] = []      # backward-compat alias; prefer evaluate_rulesets
     source_run_id: Optional[str] = None # run this was derived from (e.g. a tuning iteration)
-    sizing_mode: str = "consistent"     # dynamic-sizing mode: 'consistent' (room÷7) | 'bullet' (max ladder)
+    # Dynamic-sizing mode: 'consistent' (room÷7) | 'bullet' (max ladder) | 'manual' (a fixed
+    # risk % you set). Ignored entirely for a self-sizing strategy — it sizes its own trades.
+    sizing_mode: str = "consistent"
+    manual_risk_pct: Optional[float] = None   # required when sizing_mode == 'manual'
+
+    @field_validator("manual_risk_pct")
+    @classmethod
+    def _manual_pct_sane(cls, v):
+        if v is not None and not (0 < v <= 100):
+            raise ValueError("manual_risk_pct must be between 0 and 100")
+        return v
 
     @property
     def ruleset_ids(self) -> list[str]:
@@ -604,7 +618,8 @@ class BacktestDetail(BaseModel):
     optimization_id: Optional[str] = None
     source_run_id: Optional[str] = None
     runner: str = "ninjatrader"
-    sizing_mode: str = "consistent"   # 'consistent' | 'bullet' — engine sizing mode this run used
+    sizing_mode: str = "consistent"   # 'consistent' | 'bullet' | 'manual' — mode this run used
+    manual_risk_pct: Optional[float] = None   # the risk % used, when sizing_mode == 'manual'
     sized: bool = False               # True once a reshaped strategy emitted engine_trades and the engine sized the run
     sized_timeline: list[SizedTimelineDay] = []   # the engine's day-by-day record (sized runs only) — sized equity curve + timeline
 

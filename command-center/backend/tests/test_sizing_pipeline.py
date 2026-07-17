@@ -141,3 +141,110 @@ def test_kpis_no_losses_profit_factor_is_finite():
     k = engine_result_to_kpis(res)
     assert k["profit_factor"] == 150.0           # finite stand-in, not inf
     assert "avg_loss" not in k
+
+
+# ── Self-sizing strategies must NOT be re-sized ──────────────────────────────
+
+def test_self_sizing_strategy_keeps_its_own_pnl(fresh_db, monkeypatch, tmp_path):
+    """A self-sizing strategy already applied its own risk % to every trade. If the engine
+    re-sizes it, the KPI cards (engine-sized) disagree with the equity chart (strategy-sized)
+    on the same page, and the strategy's real risk % is silently discarded.
+
+    Drives the real completion path, so the guard can't be bypassed by a caller.
+    """
+    import asyncio
+    import time
+    from services import lab_db, backtest_runner
+
+    lab_db.upsert_strategy({
+        "id": "selfsizer", "name": "Self", "class_name": "SelfStrategy",
+        "source_path": "strategies/python/selfsizer", "scanned_at": int(time.time()),
+        "runner": "python", "self_sizing": True,
+    })
+    lab_db.insert_run({
+        "run_id": "r1", "strategy_id": "selfsizer", "instrument": "XAUUSD.s", "params": {},
+        "bar_type": "Minute", "bar_value": 15, "start_date": "2026-01-01",
+        "end_date": "2026-02-01", "commission_per_side": 0.0, "slippage_ticks": 0,
+        "status": "running", "created_at": int(time.time()), "runner": "python",
+        "evaluate_rulesets": ["unconstrained"],
+    })
+
+    # The strategy's OWN numbers — engine_trades present, so the old code would have re-sized.
+    STRATEGY_NET = 4242.0
+    results = {
+        "kpis": {"net_pnl": STRATEGY_NET, "trade_count": 1, "win_trades": 1},
+        "equity_curve": [{"index": 1, "equity": STRATEGY_NET, "date": "2026-01-05",
+                          "direction": "Long", "profit": STRATEGY_NET}],
+        "daily_pnl": [{"date": "2026-01-05", "pnl": STRATEGY_NET}],
+        "engine_trades": [{
+            "index": 1, "entry_time": "2026-01-05T10:00:00+00:00",
+            "exit_time": "2026-01-05T12:00:00+00:00", "direction": 1,
+            "entry_price": 2000.0, "exit_price": 2010.0, "stop_distance": 5.0,
+            "point_value": 100.0, "commission_per_side": 0.0, "exit_reason": "tp",
+        }],
+    }
+    monkeypatch.setattr(backtest_runner.runner_dispatch, "job_results", lambda _j: results)
+    monkeypatch.setattr(backtest_runner, "_tag_daily_pnl_with_regime",
+                        lambda *a, **k: results["daily_pnl"])
+    monkeypatch.setattr(backtest_runner, "_LAB_RESULTS_DIR", tmp_path)
+
+    asyncio.run(backtest_runner._handle_complete("r1", "j1", "selfsizer", "XAUUSD.s",
+                                                 ["unconstrained"]))
+
+    row = lab_db.get_run("r1")
+    assert row["status"] == "complete", row.get("error_message")
+    assert row["net_pnl"] == STRATEGY_NET, "the engine re-sized a self-sizing strategy"
+
+
+def test_unit_size_strategy_is_still_sized_by_the_engine(fresh_db, monkeypatch, tmp_path):
+    """The guard must not disarm sizing for the strategies that genuinely need it.
+
+    Doubles as the end-to-end proof of manual mode: run row (sizing_mode=manual,
+    manual_risk_pct=50) → _handle_complete → pipeline → engine.
+    """
+    import asyncio
+    import time
+    from services import lab_db, backtest_runner
+
+    lab_db.upsert_strategy({
+        "id": "unitsizer", "name": "Unit", "class_name": "ORB",
+        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
+        "runner": "ninjatrader", "self_sizing": False,
+    })
+    lab_db.insert_run({
+        "run_id": "r2", "strategy_id": "unitsizer", "instrument": "MES 03-26", "params": {},
+        "bar_type": "Minute", "bar_value": 5, "start_date": "2026-01-01",
+        "end_date": "2026-02-01", "commission_per_side": 0.0, "slippage_ticks": 0,
+        "status": "running", "created_at": int(time.time()), "runner": "ninjatrader",
+        "evaluate_rulesets": ["unconstrained"],
+        "sizing_mode": "manual", "manual_risk_pct": 50.0,
+    })
+
+    UNIT_NET = 1000.0
+    results = {
+        "kpis": {"net_pnl": UNIT_NET, "trade_count": 1, "win_trades": 1},
+        "equity_curve": [{"index": 1, "equity": UNIT_NET, "date": "2026-01-05",
+                          "direction": "Long", "profit": UNIT_NET}],
+        "daily_pnl": [{"date": "2026-01-05", "pnl": UNIT_NET}],
+        "engine_trades": [{
+            "index": 1, "entry_time": "2026-01-05T10:00:00+00:00",
+            "exit_time": "2026-01-05T12:00:00+00:00", "direction": 1,
+            "entry_price": 2000.0, "exit_price": 2010.0, "stop_distance": 5.0,
+            "point_value": 100.0, "commission_per_side": 0.0, "exit_reason": "tp",
+        }],
+    }
+    monkeypatch.setattr(backtest_runner.runner_dispatch, "job_results", lambda _j: results)
+    monkeypatch.setattr(backtest_runner, "_tag_daily_pnl_with_regime",
+                        lambda *a, **k: results["daily_pnl"])
+    monkeypatch.setattr(backtest_runner, "_LAB_RESULTS_DIR", tmp_path)
+
+    asyncio.run(backtest_runner._handle_complete("r2", "j2", "unitsizer", "MES 03-26",
+                                                 ["unconstrained"]))
+
+    row = lab_db.get_run("r2")
+    assert row["status"] == "complete", row.get("error_message")
+    # Unconstrained: 50% of 10,000 = 5,000 budget; 5.0pt stop x $100 = $500/contract ⇒ 10
+    # contracts. The trade made 10 points ⇒ 10 x 100 x 10 = $10,000, vs the $1,000 unit
+    # reference. So the engine both RAN and used the manual % it was handed.
+    assert row["net_pnl"] == UNIT_NET * 10, (
+        f"expected the engine to size to 10 contracts, got net={row['net_pnl']}")

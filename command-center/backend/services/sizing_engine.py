@@ -48,6 +48,13 @@ _CONSISTENT_DIVISOR = 7
 
 MODE_BULLET = "bullet"
 MODE_CONSISTENT = "consistent"
+# Manual: YOU set the risk % per trade and it does not move — no room÷7, no goal-driven base.
+# The account's HARD caps still clamp it (a stop can't punch through the drawdown floor, and the
+# contract ladder is still a rule), so on a ruleset WITH limits manual is a request, not a
+# guarantee. On a no-limits ruleset there are no clamps and X% means exactly X%.
+MODE_MANUAL = "manual"
+
+MODES = (MODE_BULLET, MODE_CONSISTENT, MODE_MANUAL)
 
 
 # ── The runner→engine contract: one raw trade ─────────────────────────────────
@@ -262,16 +269,23 @@ class EngineResult:
 # ── The sizing waterfall (each step can only shrink) ──────────────────────────
 
 def _base_contracts(mode: str, trade: RawTrade, rs: EngineRuleset,
-                    balance: float, available_room: Optional[float]) -> tuple[float, str]:
+                    balance: float, available_room: Optional[float],
+                    manual_risk_pct: Optional[float] = None) -> tuple[float, str]:
     """Step 1 — the base size, set by the account's GOAL.
 
     bullet     → ∞ here; the ladder / drawdown / open-risk clamps cap it to the max legal size.
     consistent → risk a fixed fraction of the room left: room ÷ 7, recomputed every trade.
                  With no drawdown limit at all, fall back to a small % of balance.
+    manual     → risk exactly `manual_risk_pct` of the CURRENT balance, every trade. Compounds
+                 with the balance (that is what "5% per trade" means); ignores the room entirely
+                 here — the hard clamps below still apply.
     """
     rpc = trade.risk_per_contract()
     if rpc <= 0:
         return 0.0, "no_stop"
+    if mode == MODE_MANUAL:
+        pct = manual_risk_pct if manual_risk_pct is not None else rs.risk_pct()
+        return (balance * (pct / 100.0)) / rpc, "manual_pct"
     if mode == MODE_BULLET:
         return math.inf, "bullet_max"
     if available_room is None:
@@ -285,10 +299,10 @@ def _base_contracts(mode: str, trade: RawTrade, rs: EngineRuleset,
 
 def size_trade(mode: str, trade: RawTrade, rs: EngineRuleset, balance: float,
                available_room: Optional[float], simulated_profit: float,
-               day_profit: float) -> tuple[int, str]:
+               day_profit: float, manual_risk_pct: Optional[float] = None) -> tuple[int, str]:
     """Run the full waterfall for one trade. Returns (contracts, bound_by)."""
     rpc = trade.risk_per_contract()
-    base, base_label = _base_contracts(mode, trade, rs, balance, available_room)
+    base, base_label = _base_contracts(mode, trade, rs, balance, available_room, manual_risk_pct)
     clamps: dict[str, float] = {base_label: base}
 
     # Drawdown / open-risk ceiling — one stop can't punch through the room left.
@@ -335,18 +349,22 @@ def _iso(t: datetime) -> str:
 
 def run_engine(trades: list[RawTrade], ruleset: dict, *, is_micro: bool,
                mode: str = MODE_CONSISTENT, ruleset_id: Optional[str] = None,
-               instrument: str = "", account_id: str = "", strategy: str = "") -> EngineResult:
+               instrument: str = "", account_id: str = "", strategy: str = "",
+               manual_risk_pct: Optional[float] = None) -> EngineResult:
     """Size every trade and walk the account forward, reserving risk for open trades and
     detecting breaches. Returns an EngineResult whose ``daily_pnl`` feeds
     services.evaluator.evaluate_run and whose ``decisions`` are the audit log."""
-    if mode not in (MODE_BULLET, MODE_CONSISTENT):
-        raise ValueError(f"mode must be {MODE_BULLET!r} or {MODE_CONSISTENT!r}, got {mode!r}")
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
+    if mode == MODE_MANUAL and (manual_risk_pct is None or manual_risk_pct <= 0):
+        raise ValueError("manual mode needs a positive manual_risk_pct")
 
     rs = EngineRuleset.from_ruleset(ruleset, is_micro)
     result = EngineResult(ruleset_id=ruleset_id, mode=mode)
     result.risk_budget_note = (
         f"mode={mode}; "
-        + ("bullet = max size the rules allow" if mode == MODE_BULLET
+        + (f"manual = {manual_risk_pct}% of balance per trade" if mode == MODE_MANUAL
+           else "bullet = max size the rules allow" if mode == MODE_BULLET
            else f"consistent = room ÷ {_CONSISTENT_DIVISOR} per trade")
     )
 
@@ -435,7 +453,8 @@ def run_engine(trades: list[RawTrade], ruleset: dict, *, is_micro: bool,
                     dec.gate("insufficient_room", True, "room available after open reservations")
 
                 contracts, bound = size_trade(
-                    mode, t, rs, balance, available, sim_profit_into_day, day_pnl)
+                    mode, t, rs, balance, available, sim_profit_into_day, day_pnl,
+                    manual_risk_pct=manual_risk_pct)
 
                 consistency_room = None
                 if rs.consistency_pct and rs.profit_target > 0:

@@ -14,7 +14,7 @@ import {
 import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunNews } from '@/hooks/useLab'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
-import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag } from '@/types'
+import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag, SizingMode } from '@/types'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
 
@@ -919,7 +919,14 @@ function SizedEquityCurveChart({ data, bands = [], height = 300 }: {
   )
 }
 
-function SizedCurveLegend({ mode, profitable = true }: { mode: 'consistent' | 'bullet'; profitable?: boolean }) {
+// The sized-run label, in one place — three surfaces show it and they must agree.
+function sizingModeLabel(mode: SizingMode, manualPct?: number | null): string {
+  if (mode === 'manual') return `Manual ${manualPct ?? '?'}%`
+  return mode === 'bullet' ? 'Bullet' : 'Consistent'
+}
+
+function SizedCurveLegend({ mode, manualPct, profitable = true }:
+    { mode: SizingMode; manualPct?: number | null; profitable?: boolean }) {
   return (
     <div className="flex items-center gap-4 mt-2 text-[11px] text-text-tertiary">
       <span className="flex items-center gap-1.5">
@@ -931,7 +938,7 @@ function SizedCurveLegend({ mode, profitable = true }: { mode: 'consistent' | 'b
         Trailing risk floor (breach = fail)
       </span>
       <span className="ml-auto font-medium text-text-secondary">
-        Engine-sized · {mode === 'bullet' ? 'Bullet' : 'Consistent'}
+        Engine-sized · {sizingModeLabel(mode, manualPct)}
       </span>
     </div>
   )
@@ -2700,9 +2707,9 @@ export function BacktestDetail() {
                   {run.sized && (
                     <span
                       className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20 flex-shrink-0 max-[1100px]:hidden"
-                      title="Sizing engine set contract size from the ruleset's ladder and room left."
+                      title="Sizing engine set contract size for this run."
                     >
-                      Sized · {run.sizing_mode === 'bullet' ? 'Bullet' : 'Consistent'}
+                      Sized · {sizingModeLabel(run.sizing_mode, run.manual_risk_pct)}
                     </span>
                   )}
                 </div>
@@ -2732,7 +2739,7 @@ export function BacktestDetail() {
                       className="inline-flex items-center gap-1 px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20"
                       title="The sizing engine set contract size from each ruleset's contract ladder and room left — this run reflects real prop-firm sizing, not unit size."
                     >
-                      Engine-sized · {run.sizing_mode === 'bullet' ? 'Bullet' : 'Consistent'}
+                      Engine-sized · {sizingModeLabel(run.sizing_mode, run.manual_risk_pct)}
                     </span>
                   )}
                   {isTuneIteration && (
@@ -2984,6 +2991,7 @@ export function BacktestDetail() {
                       <SizedEquityCurveChart data={effRun!.sized_timeline} bands={sizedRegimeBands} height={h} />
                       <SizedCurveLegend
                         mode={run.sizing_mode}
+                        manualPct={run.manual_risk_pct}
                         profitable={effRun!.sized_timeline[effRun!.sized_timeline.length - 1].eod_balance >= effRun!.sized_timeline[0].eod_balance}
                       />
                       {overlayOn && sizedRegimeBands.length > 0 && <RegimeLegend bands={sizedRegimeBands} />}

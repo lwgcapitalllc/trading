@@ -69,6 +69,13 @@ strategies/
 2. The lab identifies the strategy by the **class's `__name__`** (stored as `class_name` by the scanner, sent as `strategy_class` in every job spec) — the package folder name is NOT the contract.
 3. Click "Scan Strategies" to register it. No deploy, no compile — it runs in the backend process via the top-level `backtest/` package.
 4. Strategy logic must consume the canonical `engines/` through `backtest/replay` — never a second engine implementation.
+5. **Declare who sizes it.** Default (omit) = the strategy proposes UNIT-size trades and the lab's
+   dynamic sizing engine sizes them per ruleset — the gated-layer rule that NT8/MT5 strategies
+   follow. Add `"self_sizing": True` ONLY if the strategy computes its own position size from its
+   own risk % (like `mpc_sos_fade`'s `exec_risk_pct`). It makes the lab leave the results alone;
+   without it the engine re-sizes the run, throwing the strategy's real size away and leaving the
+   KPI cards disagreeing with the equity chart. A self-sizing strategy's risk knob is a normal
+   strategy param, so it stays editable per run and sweepable in the optimizer.
 
 ---
 

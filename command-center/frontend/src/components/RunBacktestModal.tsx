@@ -5,7 +5,7 @@ import { AlertTriangle } from 'lucide-react'
 import { useFirms, useTriggerBacktest, useRunningVpsJob } from '@/hooks/useLab'
 import { ParamEditor } from '@/components/ParamEditor'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
-import type { Strategy, Firm } from '@/types'
+import type { Strategy, Firm, SizingMode } from '@/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -228,7 +228,13 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const [barValue, setBarValue] = useState(isNt8 ? 5 : scope === 'python' ? 15 : 60)
 
   // ── Sizing mode — how the engine sizes each trade from the room left ───────────
-  const [sizingMode, setSizingMode] = useState<'consistent' | 'bullet'>('consistent')
+  // A self-sizing strategy sizes its own trades off its own risk % param — the engine never
+  // touches it, so there is no mode to pick and the whole section is hidden.
+  const selfSizing = strategy.self_sizing === true
+  const [sizingMode, setSizingMode] = useState<SizingMode>('consistent')
+  const [manualPct, setManualPct]   = useState('1.0')
+  const manualPctNum = parseFloat(manualPct)
+  const manualPctValid = sizingMode !== 'manual' || (!isNaN(manualPctNum) && manualPctNum > 0 && manualPctNum <= 100)
 
   function barLabel(v: number) {
     if (v < 60) return `${v}m`
@@ -325,6 +331,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     instrumentSymbol !== '' &&
     startDate !== '' && endDate !== '' && startDate < endDate &&
     evalRequiredMet &&
+    manualPctValid &&
     !trigger.isPending &&
     !jobBlocked
 
@@ -345,6 +352,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         slippage_ticks:      slippageTicks,
         evaluate_rulesets:   Array.from(selectedFirms),
         sizing_mode:         sizingMode,
+        manual_risk_pct:     sizingMode === 'manual' ? manualPctNum : null,
       },
       {
         onSuccess: (data) => {
@@ -539,32 +547,73 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             </div>
           </div>
 
-          {/* Sizing Mode — how the engine sizes each trade from the room left to the floor */}
-          <div>
-            <SectionHead
-              label="Sizing Mode"
-              tooltip="How the sizing engine turns the strategy's unit-size signals into real contracts. Applies only to strategies reshaped for the engine (e.g. ORB); ignored otherwise."
-            />
-            <div className="flex gap-2">
-              <PresetBtn
-                label="Consistent"
-                active={sizingMode === 'consistent'}
-                onClick={() => setSizingMode('consistent')}
+          {/* Sizing Mode — who decides the size. Hidden when the strategy decides. */}
+          {!selfSizing && (
+            <div>
+              <SectionHead
+                label="Sizing Mode"
+                tooltip="Who decides how big each trade is. Automatic = the ruleset's rules decide. Manual = you set the risk % and it doesn't move. Applies to strategies that trade unit size and let the engine size them (e.g. ORB)."
               />
-              <PresetBtn
-                label="Bullet"
-                active={sizingMode === 'bullet'}
-                onClick={() => setSizingMode('bullet')}
-              />
-            </div>
-            <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
-              {sizingMode === 'consistent'
-                ? 'Sizes each trade off room ÷ 7 — steady, spreads risk across trades. Best for clearing a consistency rule.'
-                : 'Sizes each trade to the most the firm’s contract ladder allows — fastest to target, higher variance.'}
-            </p>
-          </div>
+              <div className="flex gap-2">
+                <PresetBtn
+                  label="Automatic"
+                  active={sizingMode !== 'manual'}
+                  onClick={() => setSizingMode('consistent')}
+                />
+                <PresetBtn
+                  label="Manual"
+                  active={sizingMode === 'manual'}
+                  onClick={() => setSizingMode('manual')}
+                />
+              </div>
 
-          <Divider />
+              {sizingMode === 'manual' ? (
+                <div className="mt-2.5">
+                  <label className={labelCls}>Risk % per trade</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" step="0.1" min="0.1" max="100"
+                      value={manualPct}
+                      onChange={e => setManualPct(e.target.value)}
+                      className={`${inputCls} max-w-[120px]`}
+                    />
+                    <span className="text-[12px] text-text-tertiary">% of balance, every trade</span>
+                  </div>
+                  {!manualPctValid && (
+                    <p className="text-[11px] text-neg-text mt-1.5">Enter a risk % between 0 and 100.</p>
+                  )}
+                  <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
+                    Risks exactly this much of the balance on every trade. The account's hard rules still
+                    clamp it — on a ruleset with a drawdown floor or contract ladder you may get less.
+                    Pair with <span className="text-text-secondary">Unconstrained (No Limits)</span> for
+                    no clamps at all.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex gap-2 mt-2.5">
+                    <PresetBtn
+                      label="Consistent"
+                      active={sizingMode === 'consistent'}
+                      onClick={() => setSizingMode('consistent')}
+                    />
+                    <PresetBtn
+                      label="Bullet"
+                      active={sizingMode === 'bullet'}
+                      onClick={() => setSizingMode('bullet')}
+                    />
+                  </div>
+                  <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
+                    {sizingMode === 'consistent'
+                      ? 'Sizes each trade off room ÷ 7 — steady, spreads risk across trades. Best for clearing a consistency rule.'
+                      : 'Sizes each trade to the most the firm’s contract ladder allows — fastest to target, higher variance.'}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
+          {!selfSizing && <Divider />}
 
           {/* Evaluate Against — prop firm challenges for futures, personal ruleset(s) for forex */}
           <div>

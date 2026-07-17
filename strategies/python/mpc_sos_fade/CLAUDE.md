@@ -31,6 +31,15 @@ a lab param-grid key). Renaming those would break the line-for-line traceability
 `aplus_window` is also an optimizer grid key. The Pine files themselves are NEVER renamed: they are
 the brother's source and the parity reference.
 
+## Sizing — this bot sizes ITSELF
+
+`LAB_STRATEGY` declares `self_sizing: True`, so the command-center lab does NOT run its dynamic
+sizing engine over this bot's trades. `exec_risk_pct` (Pine default **10%** per trade) IS the risk
+knob: it is a normal strategy param, so it is editable in the Run modal and sweepable in the
+optimizer grid — that is the "manual %" for this strategy, and the SIZING MODE control is hidden
+because there is nothing for it to decide. Pair a run with the **Unconstrained (No Limits)**
+ruleset to see the raw behaviour with no halts and no drawdown floor cutting a day short.
+
 ## What it is (one paragraph)
 
 A counter-trend reversal that fades exhaustion at HTF liquidity. Three-stage A+ sequence: **Arm**
@@ -85,8 +94,10 @@ All OFF for the parity check (to match the Pine); each is a real-run choice:
    early buys a smaller drawdown for half the profit. (This param was DEAD CODE until 2026-07-16 —
    `_in_flat_window` read only `sig.ny_hour`, so "minutes left" was always a multiple of 60 and never
    hit the ≤15 window. Any A/B run before that date compared a flag against itself.)
-2. **Sizing** — the parity check uses the manual %-risk (matches the Pine's fixed-% sizing); real runs
-   swap in the dynamic sizing engine under a ruleset.
+2. ~~**Sizing** — real runs swap in the dynamic sizing engine under a ruleset.~~ **No longer true
+   as of 2026-07-16:** the bot declares `self_sizing: True`, so real runs keep the Pine's own fixed-%
+   sizing (`exec_risk_pct`) and the engine never re-sizes them — this is NOT a deviation any more,
+   parity and real runs size identically. See `## Sizing — this bot sizes ITSELF` above.
 3. **Fill model** — parity REQUIRES `fill_model="bar"` (the Pine's own intrabar guess, zero costs).
    Real runs set `fill_model="tick"` + `account_profile` + `symbol` for real bid/ask fills and costs.
    See `backtest/CLAUDE.md` A2 — tick mode disagreeing with the Pine is correct, not drift.

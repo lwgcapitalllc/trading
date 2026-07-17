@@ -192,6 +192,9 @@ def init_db() -> None:
             # engine export ('consistent' = room÷7 per trade, 'bullet' = max the ladder allows).
             # Inert for unit-size runs (no engine_trades). Default keeps existing runs consistent.
             "ALTER TABLE backtest_runs ADD COLUMN sizing_mode TEXT NOT NULL DEFAULT 'consistent'",
+            # Risk % per trade for sizing_mode='manual'. NULL for the automatic modes, which
+            # derive the size from the ruleset instead of being told it.
+            "ALTER TABLE backtest_runs ADD COLUMN manual_risk_pct REAL",
             # rulesets new columns (existing DBs had them as firms)
             "ALTER TABLE rulesets ADD COLUMN eval_cost_usd INTEGER",
             "ALTER TABLE rulesets ADD COLUMN activation_fee_usd INTEGER",
@@ -223,6 +226,12 @@ def init_db() -> None:
             # trades removed (this strategy avoids news), 0 = start included. Overlaid from
             # <Strategy>.meta.json "avoid_news"; NOT NULL default 0 so existing rows start included.
             "ALTER TABLE strategies ADD COLUMN avoid_news INTEGER NOT NULL DEFAULT 0",
+            # Who decides position size. 0 (default) = the strategy proposes UNIT-size trades and
+            # the dynamic sizing engine sizes them per ruleset (ORB, LondonBreakout — the gated
+            # layer). 1 = the strategy sizes itself off its own risk % (mpc_sos_fade), so the
+            # engine must NOT re-size it: doing so throws the strategy's real size away and leaves
+            # the KPI cards disagreeing with the equity chart on the same page.
+            "ALTER TABLE strategies ADD COLUMN self_sizing INTEGER NOT NULL DEFAULT 0",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
             # Strategy version registry — content-addressed (source_hash → monotonic version).
@@ -838,6 +847,37 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             now, now,
         ))
 
+    # ── Unconstrained: measure the strategy, not an account ──────────────────────
+    # Every limit is deliberately absent. This exists so a run can answer "what does the
+    # strategy actually do?" without an account's rules rewriting the answer:
+    #   max_loss_eod 0 + max_drawdown_from_peak_pct NULL → current_floor() is None → room is
+    #   None → NO drawdown clamp, so a manual risk % means exactly that risk %.
+    #   daily_loss_cap / daily_profit_target NULL → no halts, so no day is cut short.
+    #   profit_target 0, consistency_pct NULL, max_contracts NULL → no target, throttle, ladder.
+    # Do NOT add limits here. Anything with a limit belongs in its own ruleset — the point of
+    # this row is that it has none.
+    if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("unconstrained",)).fetchone():
+        conn.execute(_PERSONAL_DEMO_SQL, (
+            "unconstrained",
+            "Unconstrained (No Limits)",
+            10000, 0, 0, None,                  # profit_target 0, max_loss_eod 0 = no floor
+            "static", None, None, None,         # no consistency, no min days, no force-flat
+            json.dumps(sorted(set(json.loads(_FX_INSTRUMENTS)) | {"MES", "MNQ", "MGC", "MCL"})),
+            None,                               # max_contracts null — no ladder
+            json.dumps(["MT5", "NinjaTrader", "Python"]),
+            "demo", "personal", "forex", "usd",
+            None, None, None,                   # daily_loss_cap / weekly / daily_profit_target
+            None, 1.0, None,                    # no lock %, 1% risk fallback, no loss streak cap
+            None, None,                         # entry hours null — no session gate
+            _FX_DAYS,
+            0.0, 1, None,                       # no daily halt fraction
+            None, None,                         # NO peak drawdown, NO consecutive-loss-day cap
+            "No limits: no daily loss cap, no profit target, no drawdown floor, no contract "
+            "ladder, no halts. Measures the strategy's raw behaviour — not whether it would "
+            "pass an account's rules. Pair with manual sizing to make X% mean exactly X%.",
+            now, now,
+        ))
+
     if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_futures_demo",)).fetchone():
         conn.execute(_PERSONAL_DEMO_SQL, (
             "personal_futures_demo",
@@ -989,8 +1029,8 @@ def upsert_strategy(data: dict) -> None:
             INSERT INTO strategies
                 (id, name, class_name, source_path, category, suggested_instrument,
                  default_params, param_schema, scanned_at, source_hash, runner, edge, steps,
-                 avoid_news)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 avoid_news, self_sizing)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -1004,7 +1044,8 @@ def upsert_strategy(data: dict) -> None:
                 runner=excluded.runner,
                 edge=excluded.edge,
                 steps=excluded.steps,
-                avoid_news=excluded.avoid_news
+                avoid_news=excluded.avoid_news,
+                self_sizing=excluded.self_sizing
         """, (
             data["id"], data["name"], data["class_name"], data["source_path"],
             data.get("category"), data.get("suggested_instrument"),
@@ -1015,6 +1056,7 @@ def upsert_strategy(data: dict) -> None:
             data.get("edge"),
             json.dumps(data.get("steps", [])),
             1 if data.get("avoid_news") else 0,
+            1 if data.get("self_sizing") else 0,
         ))
 
 
@@ -1351,8 +1393,8 @@ def insert_run(data: dict) -> None:
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, evaluate_firms, runner, optimization_id,
-                 source_run_id, sizing_mode)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 source_run_id, sizing_mode, manual_risk_pct)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
@@ -1364,6 +1406,7 @@ def insert_run(data: dict) -> None:
             data.get("optimization_id"),
             data.get("source_run_id"),
             data.get("sizing_mode", "consistent"),
+            data.get("manual_risk_pct"),
         ))
 
 

@@ -22,10 +22,12 @@ def test_cold_start_seeds_all_four_firms(client):
     r = client.get("/rulesets")
     assert r.status_code == 200
     rulesets = r.json()
-    assert len(rulesets) == 16
+    # 14 prop + personal forex/futures demo + unconstrained (added 2026-07-16).
+    assert len(rulesets) == 17
     firms = {r["id"].split("_")[0] for r in _prop_rows(rulesets)}
     assert firms == set(PROP_FIRM_PREFIXES)
     assert LUCIDFLEX_IDS.issubset({r["id"] for r in rulesets})
+    assert "unconstrained" in {r["id"] for r in rulesets}
 
 
 def test_all_prop_rows_have_docs_url(client):
@@ -131,9 +133,10 @@ def test_patch_empty_body_rejected(client):
 
 
 def test_seeding_is_idempotent(fresh_db):
-    """init_db() called twice doesn't duplicate rulesets."""
+    """init_db() called twice doesn't duplicate rulesets. The count is a canary against
+    losing a row; `before == after` is the property under test."""
     from services import lab_db
     before = len(lab_db.list_rulesets())
     lab_db.init_db()
     after = len(lab_db.list_rulesets())
-    assert before == after == 16
+    assert before == after == 17

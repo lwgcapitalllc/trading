@@ -265,6 +265,11 @@ export interface BotConfigUpdate {
 
 // ── Lab — Strategies ─────────────────────────────────────────────────────────
 
+// How a run's position size is decided. 'consistent'/'bullet' are AUTOMATIC — the ruleset's
+// rules decide. 'manual' means you set the risk % and it doesn't move. Mirrors the backend's
+// sizing_engine.MODES. Irrelevant for a self_sizing strategy, which sizes its own trades.
+export type SizingMode = 'consistent' | 'bullet' | 'manual'
+
 export interface ParamSchemaEntry {
   name: string
   type: string
@@ -304,6 +309,9 @@ export interface Strategy {
   edge?: string | null
   steps?: StrategyStep[]
   avoid_news?: boolean   // News toggle starts on "Removed" when true (strategy avoids high-impact news)
+  // True = the strategy sizes its own trades off its own risk % param, so the sizing engine
+  // must not re-size it and SIZING MODE is hidden (there is nothing to choose).
+  self_sizing?: boolean
 }
 
 export interface StrategyStep {
@@ -409,7 +417,8 @@ export interface BacktestRunRequest {
   slippage_ticks?: number
   evaluate_rulesets: string[]
   source_run_id?: string | null
-  sizing_mode?: 'consistent' | 'bullet'
+  sizing_mode?: SizingMode
+  manual_risk_pct?: number | null   // required when sizing_mode === 'manual'
 }
 
 export interface VerdictSummary {
@@ -545,7 +554,8 @@ export interface BacktestDetail {
   optimization_id: string | null
   source_run_id: string | null
   runner: string
-  sizing_mode: 'consistent' | 'bullet'   // engine sizing mode this run used
+  sizing_mode: SizingMode              // engine sizing mode this run used
+  manual_risk_pct?: number | null      // the risk % used, when sizing_mode === 'manual'
   sized: boolean                          // true once the engine sized the run (reshaped strategy emitted engine_trades)
   sized_timeline: SizedTimelineDay[]      // the engine's day-by-day record (sized runs only)
 }

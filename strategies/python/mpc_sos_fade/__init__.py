@@ -47,4 +47,9 @@ LAB_STRATEGY = {
     "strategy": MpcSosFadeStrategy,
     "suggested_instrument": "XAUUSD.s",
     "category": "reversal",
+    # This bot sizes ITSELF: qty = equity * exec_risk_pct / stop_distance, every trade (the Pine
+    # does the same). So the lab's dynamic sizing engine must not re-size it — `exec_risk_pct` IS
+    # the risk knob, editable per run and sweepable in the optimizer. Contrast ORB/LondonBreakout,
+    # which propose unit-size trades and let the engine size them against a firm's ladder.
+    "self_sizing": True,
 }

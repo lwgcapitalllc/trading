@@ -15,7 +15,7 @@ from datetime import datetime
 import pytest
 
 from services.sizing_engine import (
-    RawTrade, ContractLadder, run_engine, MODE_BULLET, MODE_CONSISTENT,
+    RawTrade, ContractLadder, run_engine, MODE_BULLET, MODE_CONSISTENT, MODE_MANUAL,
 )
 
 
@@ -249,3 +249,90 @@ def test_trades_processed_in_day_order():
 def test_invalid_mode_raises():
     with pytest.raises(ValueError):
         run_engine([], ruleset(), is_micro=True, mode="turbo")
+
+
+# ── Manual mode ───────────────────────────────────────────────────────────────
+# You set the risk % and it does not move. The account's HARD caps still clamp it —
+# manual is a request, not a licence to breach the floor or the ladder.
+
+def test_manual_risks_exactly_the_pct_of_balance():
+    """5% of a 50,000 balance = 2,500 budget; 500 risk/contract ⇒ 5 contracts.
+    Not room÷7 (2000/7=285 ⇒ 0), not bullet (ladder max 4) — manual's own number."""
+    t = mk_trade(1, 5000, 5010, stop_distance=5.0, pv=100.0)
+    rs = ruleset(max_loss_eod=None, max_contracts=None)   # no floor, no ladder ⇒ no clamps
+    res = run_engine([t], rs, is_micro=False, mode=MODE_MANUAL, manual_risk_pct=5.0)
+    assert res.sized_trades[0].contracts == 5
+    assert res.sized_trades[0].bound_by == "manual_pct"
+
+
+def test_manual_compounds_with_the_balance():
+    """"5% per trade" means 5% of the balance AT THAT TRADE, so a win grows the next size."""
+    a = mk_trade(1, 5000, 5100, stop_distance=5.0, pv=100.0, day="2024-01-02")
+    b = mk_trade(2, 5000, 5010, stop_distance=5.0, pv=100.0, day="2024-01-03")
+    rs = ruleset(max_loss_eod=None, max_contracts=None)
+    res = run_engine([a, b], rs, is_micro=False, mode=MODE_MANUAL, manual_risk_pct=5.0)
+    # Trade 1: 5% of 50,000 = 2,500 ⇒ 5 contracts, +100pts x 100 x 5 = +50,000 ⇒ balance 100,000.
+    # Trade 2: 5% of 100,000 = 5,000 ⇒ 10 contracts.
+    assert res.sized_trades[0].contracts == 5
+    assert res.sized_trades[1].contracts == 10
+
+
+def test_manual_still_obeys_the_hard_drawdown_clamp():
+    """A big manual % cannot punch through the room to the floor — one stop must not breach."""
+    t = mk_trade(1, 5000, 5010, stop_distance=5.0, pv=100.0)
+    # room = 2,000 ⇒ at 500/contract the hard clamp is 4 contracts, below manual's 5.
+    res = run_engine([t], ruleset(max_contracts=None), is_micro=False,
+                     mode=MODE_MANUAL, manual_risk_pct=5.0)
+    assert res.sized_trades[0].contracts == 4
+    assert res.sized_trades[0].bound_by == "drawdown_clamp"
+
+
+def test_manual_still_obeys_the_contract_ladder():
+    t = mk_trade(1, 5000, 5010, stop_distance=5.0, pv=100.0)
+    res = run_engine([t], ruleset(max_loss_eod=None), is_micro=False,
+                     mode=MODE_MANUAL, manual_risk_pct=50.0)
+    assert res.sized_trades[0].contracts == 4          # mini_max
+    assert res.sized_trades[0].bound_by == "contract_ladder"
+
+
+def test_manual_without_a_pct_is_refused():
+    """Silently falling back to some other size would misreport what the run did."""
+    t = mk_trade(1, 5000, 5010)
+    for bad in (None, 0):
+        with pytest.raises(ValueError, match="manual_risk_pct"):
+            run_engine([t], ruleset(), is_micro=False, mode=MODE_MANUAL, manual_risk_pct=bad)
+
+
+def test_unknown_mode_is_refused():
+    t = mk_trade(1, 5000, 5010)
+    with pytest.raises(ValueError, match="mode must be"):
+        run_engine([t], ruleset(), is_micro=False, mode="yolo")
+
+
+# ── The "Unconstrained (No Limits)" ruleset ──────────────────────────────────
+
+def test_unconstrained_ruleset_has_no_limits(fresh_db):
+    """The seeded row's whole purpose is that nothing clamps. If a limit ever gets added to
+    it, manual sizing silently stops meaning what it says — so assert each one is absent."""
+    from services import lab_db
+    rs = lab_db.get_ruleset("unconstrained")
+    assert rs is not None, "the unconstrained ruleset must be seeded"
+    assert not rs["max_loss_eod"]                       # no trailing floor
+    assert rs["max_drawdown_from_peak_pct"] is None     # no peak floor
+    assert rs["daily_loss_cap"] is None                 # no daily halt
+    assert rs["daily_profit_target"] is None            # no profit halt
+    assert not rs["profit_target"]                      # no target
+    assert rs["consistency_pct"] is None                # no throttle
+    assert rs["max_contracts"] is None                  # no ladder
+
+
+def test_unconstrained_plus_manual_means_exactly_that_pct(fresh_db):
+    """The pairing the UI recommends: no clamps, so the manual % binds and nothing else does."""
+    from services import lab_db
+    rs = lab_db.get_ruleset("unconstrained")
+    t = mk_trade(1, 2000, 2010, stop_distance=5.0, pv=100.0)
+    # 5% of 10,000 = 500 budget; 5.0 x 100 = 500/contract ⇒ exactly 1.
+    res = run_engine([t], rs, is_micro=False, mode=MODE_MANUAL, manual_risk_pct=5.0)
+    assert res.sized_trades[0].contracts == 1
+    assert res.sized_trades[0].bound_by == "manual_pct"   # nothing else bound it
+    assert res.breach_day is None                         # nothing to breach

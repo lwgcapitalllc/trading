@@ -21,7 +21,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
-from services.sizing_engine import RawTrade, run_engine, EngineResult, MODE_CONSISTENT, MODE_BULLET
+from services.sizing_engine import (RawTrade, run_engine, EngineResult, MODE_CONSISTENT,
+                                    MODE_BULLET, MODE_MANUAL, MODES)
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 
@@ -106,31 +107,34 @@ def is_micro_instrument(instrument: str) -> bool:
 
 
 def _size(run_id: str, trade_records: list[dict], ruleset: dict, *,
-          mode: str, instrument: str, strategy: str) -> EngineResult:
+          mode: str, instrument: str, strategy: str,
+          manual_risk_pct: Optional[float] = None) -> EngineResult:
     """Build RawTrades from the export and run the pure engine — no persistence."""
     trades = [RawTrade.from_record(r) for r in trade_records]
     return run_engine(
         trades, ruleset, is_micro=is_micro_instrument(instrument), mode=mode,
         instrument=instrument, account_id=run_id, strategy=strategy,
-        ruleset_id=ruleset.get("id"))
+        ruleset_id=ruleset.get("id"), manual_risk_pct=manual_risk_pct)
 
 
 def run_sizing_engine(run_id: str, trade_records: list[dict], ruleset: dict, *,
                       mode: str = MODE_CONSISTENT, instrument: str = "", strategy: str = "",
-                      results_dir: Optional[str | Path] = None) -> EngineResult:
+                      results_dir: Optional[str | Path] = None,
+                      manual_risk_pct: Optional[float] = None) -> EngineResult:
     """Build RawTrades from the export, run the engine, persist artifacts, return the result.
 
     The caller then feeds ``result.daily_pnl`` to ``evaluator.evaluate_run`` for the verdict.
     """
     result = _size(run_id, trade_records, ruleset, mode=mode,
-                   instrument=instrument, strategy=strategy)
+                   instrument=instrument, strategy=strategy, manual_risk_pct=manual_risk_pct)
     _persist(run_id, result, results_dir)
     return result
 
 
 def size_run_for_rulesets(run_id: str, trade_records: list[dict], rulesets: list[dict], *,
                           mode: str = MODE_CONSISTENT, instrument: str = "", strategy: str = "",
-                          results_dir: Optional[str | Path] = None) -> dict:
+                          results_dir: Optional[str | Path] = None,
+                          manual_risk_pct: Optional[float] = None) -> dict:
     """Size the run once PER ruleset and return grade-ready outputs for each.
 
     Each prop firm has its own contract ladder and drawdown floor, so the correct
@@ -151,9 +155,9 @@ def size_run_for_rulesets(run_id: str, trade_records: list[dict], rulesets: list
         if i == 0:
             res = run_sizing_engine(run_id, trade_records, ruleset, mode=mode,
                                     instrument=instrument, strategy=strategy,
-                                    results_dir=results_dir)
+                                    results_dir=results_dir, manual_risk_pct=manual_risk_pct)
         else:
-            res = _size(run_id, trade_records, ruleset, mode=mode,
+            res = _size(run_id, trade_records, ruleset, mode=mode, manual_risk_pct=manual_risk_pct,
                         instrument=instrument, strategy=strategy)
         out[rid] = {"kpis": engine_result_to_kpis(res), "daily_pnl": res.daily_pnl, "result": res}
 

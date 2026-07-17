@@ -384,18 +384,34 @@ async def _handle_complete(
     # contract ladder is enforced and the run is sized per ruleset (each firm's ladder/
     # floor differ). The first ruleset is the headline; each ruleset is graded against its
     # OWN sized P&L below. Native (unit-size) runs carry no engine_trades → unchanged.
+    # A SELF-SIZING strategy already applied its own risk % to every trade, so its results ARE
+    # the real run. Re-sizing it would throw that away and, worse, leave the KPI cards (engine-
+    # sized) disagreeing with the equity chart (strategy-sized) on the same page. Its risk knob
+    # is a strategy param — editable per run and sweepable in the optimizer — not a lab mode.
+    strategy_row = lab_db.get_strategy(strategy_id) or {}
+    self_sizing = bool(strategy_row.get("self_sizing"))
+
     sized_by_ruleset = None
     engine_trades = result.get("engine_trades") or []
-    if engine_trades and firm_ids:
+    if engine_trades and firm_ids and not self_sizing:
         rulesets = [r for r in (lab_db.get_ruleset(fid) for fid in firm_ids) if r]
         if rulesets:
             # Per-run mode chosen at run creation; fall back to consistent for old/invalid rows.
-            mode = (lab_db.get_run(run_id) or {}).get("sizing_mode") or sizing_pipeline.MODE_CONSISTENT
-            if mode not in (sizing_pipeline.MODE_BULLET, sizing_pipeline.MODE_CONSISTENT):
+            run_row = lab_db.get_run(run_id) or {}
+            mode = run_row.get("sizing_mode") or sizing_pipeline.MODE_CONSISTENT
+            manual_pct = run_row.get("manual_risk_pct")
+            if mode not in sizing_pipeline.MODES:
+                mode = sizing_pipeline.MODE_CONSISTENT
+            # Manual with no % is a broken row, not a reason to crash the run: fall back to the
+            # automatic mode rather than raise out of the completion path.
+            if mode == sizing_pipeline.MODE_MANUAL and not manual_pct:
+                log.warning("run %s: sizing_mode=manual with no manual_risk_pct — using consistent",
+                            run_id)
                 mode = sizing_pipeline.MODE_CONSISTENT
             sized_by_ruleset = sizing_pipeline.size_run_for_rulesets(
                 run_id, engine_trades, rulesets, mode=mode,
                 instrument=instrument, strategy=strategy_id,
+                manual_risk_pct=manual_pct,
             )
             primary = rulesets[0]["id"]
             kpis      = dict(sized_by_ruleset[primary]["kpis"])
