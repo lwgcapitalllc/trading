@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 import numpy as np
@@ -10,7 +10,10 @@ import numpy as np
 # Annualization factor: trading days per year.
 TRADING_DAYS_PER_YEAR = 252
 
-# Below this many trading days the daily Sharpe is statistically noisy — flag, don't suppress.
+# Below this many ACTIVE trading days (days that actually closed a trade) the daily Sharpe is
+# statistically noisy — flag, don't suppress. This MUST count active days, not the length of the
+# Sharpe input series: that series is zero-filled (see zero_filled_daily_values), so measuring it
+# would read a 3-trade year as ~250 well-sampled days and the flag would never fire.
 SHARPE_LOW_SAMPLE_DAYS = 10
 
 
@@ -44,6 +47,12 @@ def daily_sharpe_from_values(daily_values: list[float]) -> float:
     cancel in the mean/std ratio, so Sharpe is capital-independent — daily P&L is used
     directly. Sample std (ddof=1), annualized by sqrt(252). Returns 0.0 when there are
     fewer than two days or zero variance.
+
+    Takes bare values, so it CANNOT zero-fill (no dates). The caller owns that: pass a series
+    that already represents every day in the population. `daily_sharpe()` below is the dated
+    entry point and is what run-completion paths want. This one stays for callers whose day
+    population is genuinely sparse by definition (e.g. the optimizer's regime-filtered scoring,
+    where non-matching-regime days are NOT part of the population and must not become zeros).
     """
     if not daily_values or len(daily_values) < 2:
         return 0.0
@@ -54,9 +63,56 @@ def daily_sharpe_from_values(daily_values: list[float]) -> float:
     return float((arr.mean() / sd) * np.sqrt(TRADING_DAYS_PER_YEAR))
 
 
+def zero_filled_daily_values(daily_pnl: list[dict]) -> list[float]:
+    """
+    Per-day P&L for EVERY weekday spanned by `daily_pnl`, flat days included as 0.0.
+
+    `build_daily_pnl` (and the NT8/MT5 parsers) emit only days that closed a trade — flat days
+    are absent by design, because the trailing-drawdown engine walks the days that exist. That
+    series is wrong for Sharpe: a strategy trading 22 days out of a 225-day span would be scored
+    as if every day earned the active-day mean, then annualized by sqrt(252). Measured on a real
+    run that read 7.80 against a true ~2.2 (and TradingView's own monthly Sharpe, annualized,
+    agreed at ~2.0). A flat day is a real observation and belongs in the series.
+
+    Weekends are skipped to match TRADING_DAYS_PER_YEAR=252 — but any date PRESENT in the input
+    is always kept, even on a weekend, so a Sunday-open forex fill is never silently dropped.
+    """
+    dated: dict[str, float] = {}
+    for d in daily_pnl:
+        key = d.get("date")
+        if not key:
+            continue
+        dated[key] = dated.get(key, 0.0) + (d.get("pnl", 0.0) or 0.0)
+    if len(dated) < 2:
+        return list(dated.values())
+
+    days = sorted(date.fromisoformat(k) for k in dated)
+    out: list[float] = []
+    cur, last = days[0], days[-1]
+    while cur <= last:
+        key = cur.isoformat()
+        if key in dated or cur.weekday() < 5:
+            out.append(dated.get(key, 0.0))
+        cur += timedelta(days=1)
+    return out
+
+
+def active_day_count(daily_pnl: list[dict]) -> int:
+    """Days that actually closed a trade — the real sample size behind a Sharpe.
+
+    Counts non-zero days, so it reads the same whether it's handed a raw (sparse) daily_pnl or an
+    already-zero-filled one. A day netting exactly $0.00 is treated as flat; with commissions that
+    is vanishingly rare, and undercounting by one is harmless for a >=10 threshold.
+    """
+    return sum(1 for d in daily_pnl if (d.get("pnl", 0.0) or 0.0) != 0.0)
+
+
 def daily_sharpe(daily_pnl: list[dict]) -> float:
-    """Annualized daily Sharpe from a daily_pnl list of {'date', 'pnl'} dicts."""
-    return daily_sharpe_from_values([d.get("pnl", 0.0) or 0.0 for d in daily_pnl])
+    """Annualized daily Sharpe from a daily_pnl list of {'date', 'pnl'} dicts.
+
+    Zero-fills flat days first — see zero_filled_daily_values for why.
+    """
+    return daily_sharpe_from_values(zero_filled_daily_values(daily_pnl))
 
 
 def apply_canonical_sharpe(kpis: dict, daily_pnl: list[dict]) -> dict:
@@ -70,7 +126,7 @@ def apply_canonical_sharpe(kpis: dict, daily_pnl: list[dict]) -> dict:
     """
     kpis["platform_sharpe"]   = kpis.get("sharpe")
     kpis["sharpe"]            = daily_sharpe(daily_pnl)
-    kpis["sharpe_low_sample"] = len(daily_pnl) < SHARPE_LOW_SAMPLE_DAYS
+    kpis["sharpe_low_sample"] = active_day_count(daily_pnl) < SHARPE_LOW_SAMPLE_DAYS
     return kpis
 
 

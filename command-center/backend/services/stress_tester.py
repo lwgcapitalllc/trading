@@ -18,7 +18,7 @@ import numpy as np
 
 from services import lab_db
 from services import notify
-from services.metrics import daily_sharpe_from_values, apply_canonical_sharpe, effective_dd_limit_usd
+from services.metrics import daily_sharpe, apply_canonical_sharpe, effective_dd_limit_usd
 
 log = logging.getLogger("stress_tester")
 
@@ -178,7 +178,10 @@ def _compute_sharpe(equity_curve_data: list[dict]) -> float:
         if not d:
             continue
         daily[d] = daily.get(d, 0.0) + (t.get("profit", 0.0) or 0.0)
-    return daily_sharpe_from_values(list(daily.values()))
+    # Dated path — go through daily_sharpe so flat days inside the window are zero-filled, the
+    # same canonical definition every run-completion path uses. A walk-forward window is a
+    # contiguous calendar span, so its flat days are real observations.
+    return daily_sharpe([{"date": d, "pnl": v} for d, v in daily.items()])
 
 
 def _is_foundational(p: dict) -> bool:

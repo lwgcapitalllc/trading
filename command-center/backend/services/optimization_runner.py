@@ -81,7 +81,11 @@ def _regime_filtered_score(
         if dd > max_dd:
             max_dd = dd
 
-    # Daily-regime pnl for Sharpe (requires ≥2 distinct days)
+    # Daily-regime pnl for Sharpe (requires ≥2 distinct days).
+    # Deliberately the UNDATED helper: this scores a regime-FILTERED population, so the days in
+    # between are other regimes, not flat days of this one. Zero-filling them (as the canonical
+    # daily_sharpe does) would answer the wrong question — "how does it do overall" instead of
+    # "how does it do in this regime". Sparse-by-definition, so it stays sparse.
     daily: dict[str, float] = {}
     for t in regime_trades:
         d = t.get("date") or ""
