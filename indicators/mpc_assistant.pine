@@ -14,7 +14,8 @@ bool showConfTable = input.bool(true, "Show Confirmation Table", group = GRP_TAB
 // let the individual feature toggles declutter the chart (the table may then show
 // fewer rows). Purely-visual tools (Order Blocks, VWAP, MV, Sessions, Kill Zones)
 // are never forced — they don't feed the table.
-bool tableForceFeeds = input.bool(true, "Table Priority (force-enable required inputs)", group = GRP_TABLE, tooltip = "ON (default): the confirmation table's five feeder inputs — External Fib, FVG, Sniper Zone, Liquidity, RSI Divergence — are forced on so every table row works, even if their own toggles are off. OFF: the individual toggles win, so turning a feature off can blank the rows that depend on it. Order Blocks / VWAP / MV / Sessions / Kill Zones are visual-only and never forced.", display = display.none)
+// Baked ON for the beta build — the table's feeders are always forced so no row can be starved.
+bool tableForceFeeds = true
 string tablePositionInput = input.string("Top Right", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
 string tableSizeInput = input.string("Tiny", "Table Text Size", group = GRP_TABLE, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 
@@ -121,44 +122,43 @@ method extendOBs(array<OrderBlock> arr) =>
 var GRP_FVG = "Fair Value Gaps"
 bool  showFVGInput      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps: any 3-candle imbalance where bar A and bar C never overlap and the middle bar closed past the gap (the LuxAlgo definition). Gaps below the size threshold are ignored. A gap is removed only when a candle CLOSES fully past it.", display = display.none)
 bool showFVG = showTradeTools and showFVGInput or tableForceFeeds
-bool  fvgDirOnly   = input.bool(false, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
+bool  fvgDirOnly   = false
 color fvgBullColor = input.color(color.new(color.gray, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVGInput, display = display.none)
 color fvgBearColor = input.color(color.new(color.gray, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVGInput, display = display.none)
 // Minimum gap size — tunable, split by timeframe so 1m can catch tiny gaps while
 // higher timeframes keep only clean ones. Sub-15m default 0.01%; 15m-and-above 0.1%.
 // The drawn boxes use whichever matches the CHART timeframe; the 1m REV SETUP entry
 // feed ALWAYS uses the sub-15m value (it runs on 1m no matter what chart you're on).
-float fvgThreshLTF = input.float(0.0, "Min FVG Size — Sub-15m (%)", minval = 0.0, maxval = 1.0, step = 0.005, group = GRP_FVG, active = showFVGInput, tooltip = "Minimum gap size on timeframes below 15m (1m/5m). Also the size used for the 1m REV SETUP entry feed on ANY chart. Lower = catch smaller gaps. 0.01% ≈ 0.43 points on gold at ~4300.", display = display.none)
-float fvgThreshHTF = input.float(0.04,  "Min FVG Size — 15m & Above (%)", minval = 0.0, maxval = 1.0, step = 0.01, group = GRP_FVG, active = showFVGInput, tooltip = "Minimum gap size on 15m-and-higher charts. 0.1% ≈ 4.3 points on gold at ~4300.", display = display.none)
+float fvgThreshLTF = 0.0
+float fvgThreshHTF = 0.04
 float fvgThreshPct = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF
 // The 3-candle rule strictness. OFF (default) = the classic FVG — candle A and
 // candle C simply don't overlap; captures the most gaps and matches most indicators.
 // ON = ALSO require the middle displacement candle to CLOSE past the gap (stricter,
 // fewer gaps). Leave OFF to catch the 1m gaps other indicators show that yours misses.
-bool fvgRequireClose = input.bool(false, "Require Displacement Close", group = GRP_FVG, active = showFVGInput, tooltip = "OFF = classic 3-candle FVG (A and C don't overlap) — captures more gaps. ON = also require the middle candle to close past the gap — stricter, fewer gaps.", display = display.none)
-int   fvgMaxCount  = input.int(10, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
+bool fvgRequireClose = false
+int   fvgMaxCount  = input.int(10, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "How many fair value gaps to keep on the chart. Only the newest gaps up to this count are kept; the oldest are dropped first.", display = display.none)
 
 //============================================================
 //  EQUAL HIGHS / LOWS (EQH / EQL) — liquidity pools
 //============================================================
 var GRP_EQ = "Equal Highs/Lows"
 bool  eqShowInput = input.bool(true, "Show Equal Highs/Lows", group = GRP_EQ, tooltip = "Marks EQH (two swing highs at nearly the same price = buy-side liquidity resting above) and EQL (equal lows = sell-side liquidity below), each drawn as a horizontal line until a candle CLOSES through it. Part of the trade-tools master switch.", display = display.none)
-int   eqPivotLen  = input.int(2, "EQ Pivot Length", minval = 1, maxval = 20, group = GRP_EQ, active = eqShowInput, tooltip = "Bars either side that define each swing pivot the EQ check compares. Smaller = more/faster pivots; larger = only major swings.", display = display.none)
-float eqAtrMult   = input.float(0.1, "EQ Tolerance (× ATR)", minval = 0.0, maxval = 2.0, step = 0.05, group = GRP_EQ, active = eqShowInput, tooltip = "How close two pivots must be to count as 'equal', as a multiple of ATR(50). Lower = stricter (pivots must line up tighter, fewer EQ levels); higher = looser/more. Dial this to match the overlay you're comparing to.", display = display.none)
-int   eqMax       = input.int(6, "Max Active EQ Levels (per side)", minval = 1, maxval = 20, group = GRP_EQ, active = eqShowInput, tooltip = "Newest EQH/EQL levels kept per side; oldest dropped.", display = display.none)
-bool  eqExemptFvg = input.bool(true, "Keep FVGs behind EQH/EQL until mitigated", group = GRP_EQ, active = eqShowInput, tooltip = "When ON, an FVG overlapping (or within the EQ tolerance of) an active EQH/EQL is exempt from the Max Active FVGs cap AND the directional-only hide — so a gap sitting behind liquidity stays on the chart until a candle closes through it.", display = display.none)
-color eqhColor    = input.color(color.new(#ff4444, 0), "EQH", group = GRP_EQ, inline = "eqc", active = eqShowInput, display = display.none)
-color eqlColor    = input.color(color.new(#00cc66, 0), "EQL", group = GRP_EQ, inline = "eqc", active = eqShowInput, display = display.none)
+int   eqPivotLen  = 2
+float eqAtrMult   = 0.1
+int   eqMax       = 6
+bool  eqExemptFvg = true
+color eqhColor    = input.color(color.new(color.black, 0), "EQH", group = GRP_EQ, inline = "eqc", active = eqShowInput, display = display.none)
+color eqlColor    = input.color(color.new(color.black, 0), "EQL", group = GRP_EQ, inline = "eqc", active = eqShowInput, display = display.none)
 
 //============================================================
 //  A+ SETUP SEQUENCE INPUTS
 //============================================================
 var GRP_APLUS = "A+ Setup"
-bool aplusDivOnly  = input.bool(true, "A+ Stage 1: Divergence Only (ignore sweeps)", group = GRP_APLUS, tooltip = "When ON, the A+ sequence arms Stage 1 ONLY on an RSI divergence — liquidity sweeps no longer start a setup. Requires 'Track RSI Divergence' to also be enabled, otherwise no divergences are detected and the A+ row stays on 'Pass'. When OFF (default), either a sweep or a divergence arms Stage 1, exactly as before.", display = display.none)
-bool aplusHtfWarn  = input.bool(true,  "Warn When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Shows a caution note on the A+ row when Weekly/Daily bias opposes the trade direction (e.g. a short while Weekly is Bullish). The setup still displays — it's an educational flag, not a block.", display = display.none)
-bool aplusHtfBlock = input.bool(false, "Block A+ When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Stronger version: if on, an A+ whose direction opposes HTF bias is suppressed entirely instead of just warned. Off by default.", display = display.none)
-bool aplusIgnoreWindow = input.bool(true, "A+: Ignore Sweep→SOS Time Window (sequence only)", group = GRP_APLUS, tooltip = "When ON, the Max Time window below is ignored entirely — the A+ sequence cares only about ORDER: once Stage 1 arms (a divergence in Div-Only mode, or a sweep/divergence otherwise), the NEXT same-side SOS advances it to 2/3 no matter how much time has passed. The arm never expires on time; it only clears on a real death (opposite-direction SOS, close past the fib 1.0, or TP3). Trade-off: if a same-side SOS never comes, that side stays at 1/3 until an opposite SOS or invalidation clears it, and won't hand off to CONT meanwhile.", display = display.none)
-int aplusWindow = input.int(1440, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop, measured in TIME rather than bars — a bar count is fragile across timeframes (300 bars is 5 hours on 1m but 12.5 days on 4H). The SOS must fire within this many minutes of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
+// A+ sequence logic baked for the beta build (Div-Only arming, order-only sequence).
+bool aplusDivOnly  = true
+bool aplusIgnoreWindow = true
+int aplusWindow = 4320
 
 //============================================================
 //  RSI DIVERGENCE (locked defaults — not user-tunable)
@@ -1502,10 +1502,13 @@ f_rev15() =>
     bool newBearDiv = not na(bearDivBar) and bearDivBar != bearDivBar[1]
 
     var int lastBullSos = na, var int lastBearSos = na
+    var int lastSosCloseT = na   // close time of the latest 15m SOS candle — the 1m fib must anchor to a SOS AFTER this
     if mtf.bull_sos
         lastBullSos := bar_index
+        lastSosCloseT := time_close
     if mtf.bear_sos
         lastBearSos := bar_index
+        lastSosCloseT := time_close
 
     // LONG state
     var int   L_arm = na, var int L_sos = na
@@ -1514,7 +1517,6 @@ f_rev15() =>
     var int   L_deep = 0
     var bool  L_tp50 = false, var bool L_tp382 = false, var bool L_tp0 = false
     var bool  L_scaled = false   // a TP was banked on this leg — survives the pullback re-entry reset
-    var bool  L_reentry = false  // came back past 0.5 after a TP → hold RE-ENTRY, no backward SCALE
     // SHORT state
     var int   S_arm = na, var int S_sos = na
     var float S_low = na, var float S_high = na
@@ -1522,7 +1524,6 @@ f_rev15() =>
     var int   S_deep = 0
     var bool  S_tp50 = false, var bool S_tp382 = false, var bool S_tp0 = false
     var bool  S_scaled = false
-    var bool  S_reentry = false
 
     // ── LONG ── death first: opposite SOS or close below the leg low (fib 1.0)
     if mtf.bear_sos or (not na(L_low) and close < L_low)
@@ -1530,7 +1531,6 @@ f_rev15() =>
         L_half := false, L_618 := false, L_deep := 0
         L_tp50 := false, L_tp382 := false, L_tp0 := false
         L_scaled := false
-        L_reentry := false
     if newBullDiv and na(L_arm) and na(L_sos)
         L_arm := bullDivBar
     if mtf.bull_sos and not na(L_arm) and na(L_sos)
@@ -1560,7 +1560,6 @@ f_rev15() =>
         // row flips RE-ENTRY → SCALE (a fresh re-entry scale). Fully cleared on leg death.
         if (L_tp50 or L_tp382 or L_tp0) and low <= p50
             L_tp50 := false, L_tp382 := false, L_tp0 := false
-            L_reentry := true
         if L_618[1] or L_half[1]
             if L_618 and high >= p50
                 L_tp50 := true
@@ -1579,7 +1578,6 @@ f_rev15() =>
         S_half := false, S_618 := false, S_deep := 0
         S_tp50 := false, S_tp382 := false, S_tp0 := false
         S_scaled := false
-        S_reentry := false
     if newBearDiv and na(S_arm) and na(S_sos)
         S_arm := bearDivBar
     if mtf.bear_sos and not na(S_arm) and na(S_sos)
@@ -1607,7 +1605,6 @@ f_rev15() =>
         // ungated TP-set re-fires on a return to 0.5/0.382 and flips RE-ENTRY → SCALE.
         if (S_tp50 or S_tp382 or S_tp0) and high >= p50
             S_tp50 := false, S_tp382 := false, S_tp0 := false
-            S_reentry := true
         if S_618[1] or S_half[1]
             if S_618 and low <= p50
                 S_tp50 := true
@@ -1641,9 +1638,9 @@ f_rev15() =>
             if not na(S_high) and not na(S_low) and S_high > S_low
                 float rng = S_high - S_low
                 rZoneLo := S_low + rng*0.5, rZoneHi := S_low + rng*0.886
-    [rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeep, rScaled]
+    [rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeep, rScaled, lastSosCloseT]
 
-[rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeepCode, rScaled] = request.security(syminfo.tickerid, "15", f_rev15())
+[rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeepCode, rScaled, m15SosCloseT] = request.security(syminfo.tickerid, "15", f_rev15())
 
 // ── Chart-side 1m confirmation for the 15m REV SETUP (works on any timeframe) ──
 // The 15m engine gives the setup skeleton; the entry trigger is combined here from the 1m
@@ -1816,34 +1813,42 @@ if showOBs
     activeBullOBs.extendOBs()
     activeBearOBs.extendOBs()
 
+// Order-block candle finder — the last OPPOSING candle at the swing that the very
+// next bar ENGULFS. Scanning from the swing extreme back toward older bars, it takes
+// the first opposing candle (nearest the swing / the impulse origin) whose following
+// bar is an engulfing candle: for a bullish OB (dir 1) the last down candle that a
+// bullish candle engulfs; for a bearish OB (dir -1) the last up candle a bearish
+// candle engulfs. The engulf test is body-based (the next bar's body fully covers the
+// opposing bar's body). Returns the bars-back offset of that OB candle, or na — an
+// unengulfed opposing candle no longer qualifies, so no box is drawn.
+f_obCandle(int swingLoc, int dir) =>
+    int found = na
+    int startBack = bar_index - swingLoc
+    if startBack >= 1 and startBack < 500
+        for i = startBack to math.min(startBack + 20, bar_index)
+            bool opp = dir == 1 ? close[i] < open[i] : close[i] > open[i]
+            bool eng = dir == 1 ? (close[i - 1] > open[i - 1] and close[i - 1] >= open[i] and open[i - 1] <= close[i]) : (close[i - 1] < open[i - 1] and close[i - 1] <= open[i] and open[i - 1] >= close[i])
+            if opp and eng
+                found := i
+                break
+    found
+
 // Process OB creation on External breaks
 if showOBs and (st.bull_bos or st.bull_sos) and showBullOB
-    int lookbackIdx = bar_index - st.bull_bos_l_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] < open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
-            activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
+    int obIdx = f_obCandle(st.bull_bos_l_loc, 1)
+    if not na(obIdx)
+        float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
+        float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
+        box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
+        activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
 
 if showOBs and (st.bear_bos or st.bear_sos) and showBearOB
-    int lookbackIdx = bar_index - st.bear_bos_h_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] > open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
-            activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
+    int obIdx = f_obCandle(st.bear_bos_h_loc, -1)
+    if not na(obIdx)
+        float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
+        float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
+        box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
+        activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
 
 // Internal structure — Step 2: pullback tracking to confirm iSH / iSL
 
@@ -2295,32 +2300,20 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
 
 // ── Internal Structure OB Creation ──
 if showOBs and showBullOB and int_bull_break and not na(int_break_origin_loc)
-    int lookbackIdx = bar_index - int_break_origin_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] < open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
-            activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
+    int obIdx = f_obCandle(int_break_origin_loc, 1)
+    if not na(obIdx)
+        float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
+        float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
+        box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
+        activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
 
 if showOBs and showBearOB and int_bear_break and not na(int_break_origin_loc)
-    int lookbackIdx = bar_index - int_break_origin_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] > open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
-            activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
+    int obIdx = f_obCandle(int_break_origin_loc, -1)
+    if not na(obIdx)
+        float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
+        float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
+        box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
+        activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
 
 
 // ── Update last_mode when mode changes ───────────────────
@@ -3243,7 +3236,15 @@ bool _fibOneMin = timeframe.in_seconds() == 60
 // SOS bar and got knocked off by every countering break — leaving a bearish-and-aligned 1m
 // showing nothing. A BOS leg must NOT draw a fib (user); only the aligned SOS leg does.
 bool _m15Retraced = rStage >= 3 and rDir == m15Dir
-bool fiboShowAligned = not _fibOneMin or (stMtfEv == 1 and fibo_dir == m15Dir and _m15Retraced)
+// The 1m SOS the fib rides must have CONFIRMED after the 15m SOS candle closed — so the
+// fib never anchors to the impulse 1m SOS that mirrors (is the SAME move as) the 15m SOS.
+// oneMinSosT = time of the latest 1m SOS on the chart; m15SosCloseT = close time of the
+// latest 15m SOS from the security engine. Only a retrace SOS clears m15SosCloseT.
+var int oneMinSosT = na
+if _fibOneMin and (st.bull_sos or st.bear_sos)
+    oneMinSosT := time
+bool _1mAfter15 = not na(oneMinSosT) and not na(m15SosCloseT) and oneMinSosT > m15SosCloseT
+bool fiboShowAligned = not _fibOneMin or (stMtfEv == 1 and fibo_dir == m15Dir and _m15Retraced and _1mAfter15)
 
 if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     fiboRange      = fibo_ash - fibo_asl
@@ -3321,6 +3322,16 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     fiboPrevAsh := fibo_ash
     fiboPrevAsl := fibo_asl
 
+    // Retire the 1m fib once its ENTRY job is done — whichever comes first:
+    //   • fibo7Touched — price returned to the 1m 0.0/TP3 (the entry played out to the
+    //     1m target), OR
+    //   • rTp50 — the 15m reached its own 0.5/TP1 (the "bigger 1m fib" case: the entry
+    //     window is closed, the 15m take-profits now own the trade).
+    // fiboResetActive suppresses all 8 fib levels; it resets to false on a new leg
+    // (origin change) above, so a fresh 1m SOS re-draws for a re-entry.
+    if _fibOneMin and (fibo7Touched or rTp50)
+        fiboResetActive := true
+
     color c1 = fibo1Touched ? fibo1Color : FIBO_GREY
     string tx1 = f_fiboLabel(fibo1Value, "TP2", "TP2") + str.tostring(fiboP1, format.mintick) + ")"
     [l1, lb1] = f_fibLevel(isFibo1ToShow and not fiboResetActive and fiboShowAligned, fibo1Line, fibo1Label, fiboStartIndex, fiboP1, bar_index + fiboLineExtend, c1, f_fiboLineStyle(fibo1Style), tx1)
@@ -3381,7 +3392,7 @@ f_fvg1mZone() =>
         // Only band the gaps while the aligned fib is actually showing; if it's
         // canceled (countering SOS / no aligned SOS yet) the band stays na and every
         // 1m gap is hidden — the chart stays clean until the next aligned setup.
-        if fiboShowAligned and not na(fiboP1) and not na(fiboP10) and not na(fiboP7)
+        if fiboShowAligned and not fiboResetActive and not na(fiboP1) and not na(fiboP10) and not na(fiboP7)
             float _fzShallow = fiboP1 + (fiboP7 - fiboP1) * 0.25
             _fzLo := math.min(_fzShallow, fiboP10)
             _fzHi := math.max(_fzShallow, fiboP10)
@@ -3740,7 +3751,7 @@ f_sniperExtend() =>
             // countering SOS or a 15m flip turns fiboShowAligned off, so the zone hides
             // (by color, not deleted) and reappears if alignment returns. Other timeframes
             // always show it.
-            bool  _snHide = _sn1m and not fiboShowAligned
+            bool  _snHide = _sn1m and (not fiboShowAligned or fiboResetActive)
             color _snBoxC = _snHide ? color(na) : (sz_bullish ? color.new(#4caf50, 75) : color.new(#ff4444, 75))
             color _snLnC  = _snHide ? color(na) : (sz_bullish ? color.new(#4caf50, 0)  : color.new(#ff4444, 0))
             for _sni = 0 to array.size(sniperBoxArr) - 1
@@ -4106,7 +4117,6 @@ var bool aplusL_tp50      = false   // reached 0.5 going OUT (a TP only for a de
 var bool aplusL_tp382     = false   // reached 0.382 going OUT
 var bool aplusL_tp0       = false   // reached 0.0 / TP3 going OUT
 var bool aplusL_scaled    = false   // a TP was banked on this leg — survives the pullback re-entry
-var bool aplusL_reentry   = false   // came back past 0.5 after banking a TP → hold RE-ENTRY, block a backward SCALE, until leg death
 var bool aplusS_1mSawOpp = false
 var bool aplusS_1mShift   = false
 var bool aplusS_deepFvg   = false
@@ -4114,7 +4124,6 @@ var bool aplusS_tp50      = false
 var bool aplusS_tp382     = false
 var bool aplusS_tp0       = false
 var bool aplusS_scaled    = false
-var bool aplusS_reentry   = false
 
 // (HTF-POI latch removed to save compile tokens — it was computed but never displayed.)
 
@@ -4340,7 +4349,6 @@ if not na(aplusL_sosBar)
     if (aplusL_tp50 or aplusL_tp382 or aplusL_tp0) and not na(fiboP2) and low <= fiboP2
         aplusL_tp50 := false, aplusL_tp382 := false, aplusL_tp0 := false
         aplusL_1mSawOpp := false, aplusL_1mShift := false, aplusL_deepFvg := false
-        aplusL_reentry := true
     if aplusL_618                                         // price reached the deep zone
         if mtf1Dir == -1
             aplusL_1mSawOpp := true                       // saw the 1m still bearish
@@ -4367,13 +4375,11 @@ else
     aplusL_1mSawOpp := false, aplusL_1mShift := false, aplusL_deepFvg := false
     aplusL_tp50 := false, aplusL_tp382 := false, aplusL_tp0 := false
     aplusL_scaled := false
-    aplusL_reentry := false
 if not na(aplusS_sosBar)
     // Re-entry (mirror of LONG): came back to 0.5 → clear TP flags + re-arm deep-FVG watch.
     if (aplusS_tp50 or aplusS_tp382 or aplusS_tp0) and not na(fiboP2) and high >= fiboP2
         aplusS_tp50 := false, aplusS_tp382 := false, aplusS_tp0 := false
         aplusS_1mSawOpp := false, aplusS_1mShift := false, aplusS_deepFvg := false
-        aplusS_reentry := true
     if aplusS_618
         if mtf1Dir == 1
             aplusS_1mSawOpp := true
@@ -4394,7 +4400,6 @@ else
     aplusS_1mSawOpp := false, aplusS_1mShift := false, aplusS_deepFvg := false
     aplusS_tp50 := false, aplusS_tp382 := false, aplusS_tp0 := false
     aplusS_scaled := false
-    aplusS_reentry := false
 
 // Stage 2+ is defined by SOS presence alone (not fibo_dir, which flickers at
 // the daily rollover and was resetting live setups back to 1/3 at the gap).
@@ -4495,34 +4500,27 @@ if showConfTable and barstate.islast
             uDeepFvg  := revDeepFvg
             uEarlyFvg := revEarlyFvg
             uScaled   := rScaled
-        if uStage > 0
+        // REV SETUP row only draws on the 15m and 1m — the only timeframes it's used. On any
+        // other chart the whole row (stage AND Pass) is skipped so the table stays compact.
+        if (revOn15 or revOn1m) and uStage > 0
             color  uCol = uLong ? JARVIS_SSL : JARVIS_BSL
             string uSide = uLong ? "LONG" : "SHORT"
             string uArrow = uLong ? "▲ " : "▼ "
             bool   uDeep = uStage == 4
             bool   uScale = uTp50 or uTp382 or uTp0
+            // Confluence present in the entry zone right now: a tapped 1m FVG and/or the
+            // aligned Sniper Zone. Appended to the "watch 1m for SOS" AWAIT source so the
+            // student sees WHICH confluence sits at the fib level while the 1m is watched.
+            bool   uSz = not na(sniperZoneTop) and (sz_bullish == uLong)
+            string uConf = (uEarlyFvg ? " +FVG" : "") + (uSz ? " +SZ" : "")
             // Scale names the deepest TP reached; "stop profit" (move stop to lock in) is
             // stated at the FIRST TP of the entry type — 0.5 for a deep entry, 0.382 for an
             // early 0.5 entry. The sequence gate above guarantees 0.5 prints before 0.382.
             string uScaleDetail = uTp0 ? "TP3 close" : uTp382 ? (uDeep ? "0.382 scale" : "0.382 scale+stop") : "0.5 scale+stop"
-            if revOn1m
-                // 1m chart: REV SETUP states WHERE the 15m sits in its fib and hands the
-                // entry to the 1m ENTRY row below. TWO syncs with the 15m: (1) the scale-
-                // profit section — when price reaches 0.5 / 0.382 / TP3 it shows the SAME
-                // SCALE line the 15m does; (2) after that TP is banked and price pulls BACK
-                // off it, RE-ENTRY — early profits taken, now watching the 1m for the next
-                // entry retrace. Everything before a scale stays "watch 1m".
-                if uScale
-                    f_jRow3(jarvisTable, r, "REV SETUP", "SCALE " + uSide, uCol, uScaleDetail)
-                else if uScaled
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "RE-ENTRY " + uSide, uCol, "TP1/2 ✓ · watch 1m")
-                else if uStage >= 3
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + uSide + " " + uDeepLvl, uCol, "15m fib · watch 1m")
-                else if uStage == 2
-                    f_jRow3(jarvisTable, r, "REV SETUP", "2/3 " + uSide, uCol, "SOS ✓ retrace")
-                else
-                    f_jRow3(jarvisTable, r, "REV SETUP", "1/3 " + uSide, JARVIS_NEUTRAL, "Div ✓ await SOS")
-            else if uScale
+            // REV SETUP is the SAME on every chart — it is the 15m thesis. The 1m chart
+            // shows this identical row (driven by the 15m security skeleton + the chart-side
+            // 1m confirmation flags) and hands the granular entry to the 1m ENTRY row below.
+            if uScale
                 f_jRow3(jarvisTable, r, "REV SETUP", "SCALE " + uSide, uCol, uScaleDetail)
             else if uScaled
                 // Banked TP1/TP2 on this leg, then price pulled back — a fresh re-entry
@@ -4536,14 +4534,14 @@ if showConfTable and barstate.islast
                     f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "RE-ENTRY " + uSide, JARVIS_YELLOW, "TP✓ wait 1m re-entry")
             else if uDeep
                 if uDeepFvg
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "READY " + uSide, uCol, uDeepLvl + " READY +FVG")
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "1m CONFIRMED " + uSide, uCol, uDeepLvl + " entry ✓ → TP1")
                 else if u1mShift
                     f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "AWAIT " + uSide, JARVIS_YELLOW, uDeepLvl + " 1m shift ✓ wait FVG")
                 else
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "AWAIT " + uSide, JARVIS_YELLOW, uDeepLvl + " wait 1m shift")
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "AWAIT " + uSide, JARVIS_YELLOW, uDeepLvl + uConf + " · watch 1m SOS")
             else if uStage == 3
                 if uEarlyFvg
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "READY " + uSide, uCol, "0.5 +FVG")
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "1m CONFIRMED " + uSide, uCol, "0.5 entry ✓ → TP1")
                 else
                     f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "EARLY " + uSide, JARVIS_YELLOW, "0.5 wait FVG")
             else if uStage == 2
@@ -4551,7 +4549,7 @@ if showConfTable and barstate.islast
             else
                 f_jRow3(jarvisTable, r, "REV SETUP", "1/3 " + uSide, JARVIS_NEUTRAL, "Div ✓ await SOS")
             r := r + 1
-        else
+        else if revOn15 or revOn1m
             f_jRow3(jarvisTable, r, "REV SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
             r := r + 1
 
@@ -4562,7 +4560,14 @@ if showConfTable and barstate.islast
         // NOT scale here; the 15m REV SETUP owns all take-profits/scaling. It then clears
         // at 0.382 / TP2 (fibo1Touched). The "· valid" tag on an entered state means price
         // has NOT closed past the fib 1.0; a close past 1.0 flips it to ✗ INVALID.
-        if revOn1m and fibo_dir != 0 and fiboShowAligned and not fibo1Touched
+        // Row lives from RETRACE through to ✓ CONFIRMED. It clears entirely once the 15m
+        // reaches its own 0.5/TP1 (not rTp50) — past there the 15m scale owns the trade.
+        // Otherwise it stays until the fib retires (fiboResetActive), EXCEPT the confirmed
+        // state, which is shown precisely so the student sees the entry paid off.
+        //   rev1mConfirmed = price returned to the 1m 0.0/TP3 AFTER a real (FVG) entry —
+        //   the 1m trade played out to its target. This is the moment the 1m fib retires.
+        bool rev1mConfirmed = revOn1m and fibo7Touched and rev1mEntryFvg
+        if revOn1m and fibo_dir != 0 and fiboShowAligned and not rTp50 and (not fiboResetActive or rev1mConfirmed)
             bool   e1Long  = fibo_dir == 1
             color  e1Col   = e1Long ? JARVIS_SSL : JARVIS_BSL
             string e1Side  = e1Long ? "LONG" : "SHORT"
@@ -4579,7 +4584,9 @@ if showConfTable and barstate.islast
             // Stop-protect: price reached 0.5/TP1 AFTER a real (FVG) entry → move stop to
             // profit (protect vs a 1m reversal). NO scale here — the 15m owns TPs.
             bool   e1Safety = fibo2Touched and rev1mEntryFvg
-            if e1Broken
+            if rev1mConfirmed
+                f_jRow3(jarvisTable, r, "1m ENTRY", "✓ CONFIRMED " + e1Side, e1Col, "1m target ✓ · 15m runs")
+            else if e1Broken
                 f_jRow3(jarvisTable, r, "1m ENTRY", "✗ INVALID " + e1Side, JARVIS_NEUTRAL, "1.0 broken")
             else if e1Safety
                 f_jRow3(jarvisTable, r, "1m ENTRY", "STOP→PROFIT " + e1Side, e1Col, "TP1 · protect · 15m scales")
