@@ -1,9 +1,9 @@
 # CLAUDE.md — Strategies
 
 **Purpose:** Generic trading strategy implementations, organized by runner platform.
-**Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5, `.pine` for TradingView). Does NOT cover backtest infrastructure (see `command-center/`), live bot runtime logic (see `algos/`), or regime classification (see `engines/regime/`).
-**Status:** Production. NT8 has one strategy (ORB.cs), deployed via the command center. MT5 has one strategy (LondonBreakout.mq5). `tradingview/` holds Pine research strategies tested in the TradingView Strategy Tester only (NOT scanned/deployed by the command center).
-**Last reviewed:** 2026-07-06
+**Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5, `.pine` for TradingView, Python packages for the local Python runner). Does NOT cover backtest infrastructure (see `command-center/` and top-level `backtest/`), live bot runtime logic (see `algos/`), or regime classification (see `engines/regime/`).
+**Status:** Production. NT8 has one strategy (ORB.cs), deployed via the command center. MT5 has one strategy (LondonBreakout.mq5). Python has one strategy (`python/mpc_aplus/`, run locally — no deploy). `tradingview/` holds Pine research strategies tested in the TradingView Strategy Tester only (NOT scanned/deployed by the command center).
+**Last reviewed:** 2026-07-16
 
 ---
 
@@ -15,6 +15,8 @@ strategies/
 │   └── ORB.cs            (VWAP_MR.cs, Momentum.cs deleted 2026-06-21 — see below)
 ├── mt5/            ← MT5 expert advisors (.mq5, MQL5)
 │   └── LondonBreakout.mq5
+├── python/         ← Python strategy packages — run LOCALLY by the lab's python runner (no VPS)
+│   └── mpc_aplus/        (MPC A+ setup bot; own CLAUDE.md inside)
 └── tradingview/    ← Pine v6 research strategies (.pine) — TV Strategy Tester only
     ├── london_breakout.pine
     └── ny_orb.pine
@@ -61,6 +63,13 @@ strategies/
 7. Run a backtest to verify (requires MT5 terminal running on VPS; strategy Tester ini+set approach)
 8. **(Optional) Add a `<Strategy>.meta.json` next to the `.mq5`** to drive the friendly lab param editor (`ParamEditor`). It overlays editor metadata onto the scanned `param_schema`: per-param `label`, `desc`, `unit`, `group`, `core` (shown in the Essentials card), `widget` (`toggle`/`switch`/`time`), `options` `{off,on}` for bool toggles, `show_if` `{param: value}` for conditional visibility, `guide` `[lower, higher]`, and `step`. Param order in the file = UI order. Two **top-level** keys also drive the StrategyDetail overview: `edge` (one-paragraph "where the edge is") and `steps` (`[{label, title, detail}]` flow diagram). Both are optional and UI-only (stored on `strategies.edge`/`steps`); the page falls back to the editable description alone when absent. It affects the lab UI only — never the compiled `.ex5` or `source_hash`, so editing it needs no redeploy. The scanner re-reads it when its mtime is newer than the last scan, so **click Scan Strategies after editing it**. Missing meta = graceful fallback to the raw scanned schema. See `mt5/LondonBreakout.meta.json` for the reference.
 
+## Adding a new Python strategy
+
+1. Create a package `strategies/python/<name>/` with an `__init__.py` that declares `LAB_STRATEGY = {"strategy": <StrategyClass>, "config": <ConfigDataclass>, ...}` — declaring it is how a package opts in to the lab (see `python/mpc_aplus/__init__.py` for the reference).
+2. The lab identifies the strategy by the **class's `__name__`** (stored as `class_name` by the scanner, sent as `strategy_class` in every job spec) — the package folder name is NOT the contract.
+3. Click "Scan Strategies" to register it. No deploy, no compile — it runs in the backend process via the top-level `backtest/` package.
+4. Strategy logic must consume the canonical `engines/` through `backtest/replay` — never a second engine implementation.
+
 ---
 
 ## Current strategies
@@ -77,6 +86,7 @@ lingering DB rows/runs clear on the next **Scan Strategies** (the scanner warns 
 |---|---|---|---|
 | `ORB.cs` | ORB | ninjatrader | Opening Range Breakout — entry on ORB high/low break. The only live NT8 strategy. **Reshaped to the gated-layer rules 2026-06-21:** trades unit size (1 contract), self-policing halts removed (moved to the engine), keeps only signal + stop/target + time rules; emits the per-trade record to `engine_trades.csv` (the runner→engine contract). Needs VPS compile + backtest to verify. |
 | `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range → London breakout, instrument-agnostic. Reshaped to the gated-layer rules 2026-06-22 (v3). Needs VPS compile + backtest to verify — cannot be tested locally. See `mt5/LONDON_BREAKOUT.md` for design + reshape detail and backtest record. |
+| `python/mpc_aplus/` | MpcAplusStrategy | python | MPC A+ setup bot (XAUUSD 15m) — Python port of the brother's MPC-JARVIS A+ grade, replaying the canonical `engines/` via `backtest/`. **Logic-parity GREEN vs the Pine 2026-07-16** (bar-for-bar, exit 0). Runs locally in the lab (backtests + optimizer). Full rules in `python/mpc_aplus/CLAUDE.md`. |
 | `ny_orb.pine` | — | tradingview | **In TradingView research/tuning (2026-06-20), not yet promoted.** NY Opening Range Breakout, instrument-agnostic (FX + futures). Built on `london_breakout.pine`'s skeleton. Range = wick-to-wick high/low of the opening window; sessions anchored to `America/New_York` (DST-safe). Entry = break candle (excluded from count) + N direction-filtered confirmation closes (`confirmCloses`, 0 = enter on the break candle itself; bullish closes for longs, bearish for shorts). Two entry methods: **Breakout Close** (market) and **Retest** (limit at the broken box edge). Far-side stop, RR target, optional partial + step-trail. Win/loss boxes recolour like London Breakout (no labels). Guards: forced `orderQty` (futures otherwise round to 0 contracts — see notes), weekend skip, and a volume-based thin/holiday-day filter (Pine has no calendar; OR volume < % of lookback average ⇒ skip). |
 
 ---

@@ -32,7 +32,10 @@ Automated trading on PU Prime demo accounts (Windows VPS via Task Scheduler). No
 Scans and profiles consistent crypto/forex traders for copy trading candidate pool construction. Runs locally on Mac. Stages 1–2 and 5 live; Stages 3–4 need API keys. Full rules in `smart-money/CLAUDE.md`.
 
 ### command-center/
-React + FastAPI local operations platform. Monitors bots via SSH, surfaces Smart Money pipeline output, runs and evaluates NinjaTrader and MT5 backtests. Full rules in `command-center/CLAUDE.md`.
+React + FastAPI local operations platform. Monitors bots via SSH, surfaces Smart Money pipeline output, runs and evaluates NinjaTrader, MT5, and local Python backtests. Full rules in `command-center/CLAUDE.md`.
+
+### backtest/
+Top-level Python backtest runner — strategy- and instrument-agnostic shared infrastructure (same character as `engines/`): broker-data layer with disk cache, bar-replay loop over the canonical engines, tick-level fill & cost model, lab output adapter, and a local multi-core optimizer. Consumed by `strategies/python/` bots and by the command-center lab as `runner="python"`. **Deliverable A complete 2026-07-16.** Full rules in `backtest/CLAUDE.md`.
 
 ### engines/regime/
 Shared market regime classifier. Imported by the live bots (via `algos/shared/shared_regime.py` thin shim) and by the command-center backtest lab. Single output set: 5 labels (TRENDING, TRANSITIONING, RANGING, HIGH_VOLATILITY, LOW_VOLATILITY). Each bot owns its own `REGIME_RISK_TABLE` mapping labels to trade decisions. Full rules in `engines/regime/CLAUDE.md`. Algorithm documented in `engines/regime/REGIME_CLASSIFIER.md`.
@@ -68,7 +71,7 @@ Canonical RSI-divergence engine — turns the bar stream into RSI-DIVERGENCE EVE
 Canonical economic-calendar (news) engine — **off the extraction roadmap and NOT a Pine port**. Standalone and time-driven: turns each bar's UTC timestamp into trade-BLACKOUT events around scheduled macro releases plus bank-holiday reporting; the engine reports, the bot decides via its own `NewsPolicy`. **Honest-coverage by Aaron's decision (2026-07-05): the filter is inert before the cache's earliest fetched date; `coverage_start_ms` marks the boundary.** Validated by 29 unit tests + live checks (no Pine source to diff). Full rules in `engines/news/CLAUDE.md`.
 
 ### strategies/
-Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the only live NinjaScript strategy, `ORB.cs` (VWAP_MR and Momentum were deleted 2026-06-21 — they baked risk management into the strategy, against the gated-layer rules). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS (NT8 or MT5 folder by extension). `strategies/mt5/` holds one MQL5 strategy: `LondonBreakout.mq5` (instrument-agnostic Asian-range → London breakout). Full rules in `strategies/CLAUDE.md`.
+Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the only live NinjaScript strategy, `ORB.cs` (VWAP_MR and Momentum were deleted 2026-06-21 — they baked risk management into the strategy, against the gated-layer rules). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS (NT8 or MT5 folder by extension). `strategies/mt5/` holds one MQL5 strategy: `LondonBreakout.mq5` (instrument-agnostic Asian-range → London breakout). `strategies/python/` holds Python strategy packages run locally by the lab's python runner (no deploy) — currently `mpc_aplus/`, the MPC A+ bot, Pine-logic-parity green. Full rules in `strategies/CLAUDE.md`.
 
 ### scripts/
 Cross-subsystem VPS bootstrap and full-recovery scripts (`bootstrap_vps.ps1` for the MT5/algos side, `bootstrap_ninjatrader.ps1` for the NT8 side). Idempotent, run on a wiped or new VPS. Full run order in `scripts/README.md`.
