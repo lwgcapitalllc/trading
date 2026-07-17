@@ -90,10 +90,11 @@ def _execute(job_id: str, spec: dict) -> None:
     from backtest.data.source import BarSource
     from backtest.output import build_results
 
-    strategy_id = spec.get("strategy")
-    entry = _lab_strategy(strategy_id)
-    if entry is None:
-        raise ValueError(f"no Python strategy registered as {strategy_id!r}")
+    class_name = spec.get("strategy_class")
+    found = _resolve(class_name)
+    if found is None:
+        raise ValueError(f"no Python strategy class named {class_name!r}")
+    _, entry = found
 
     symbol = spec.get("instrument")
     if not symbol:
@@ -149,18 +150,38 @@ def _replay(job_id: str, strategy, df, total: int) -> None:
         strategy.step(stack.step(bar))
 
 
-def _lab_strategy(strategy_id: str) -> Optional[dict]:
-    """Look up a registered Python strategy's LAB_STRATEGY dict by its lab id."""
+def _resolve(class_name: str) -> Optional[tuple]:
+    """Find the Python strategy package declaring `class_name` → (package_name, LAB_STRATEGY).
+
+    The job contract every runner is handed identifies a strategy by `strategy_class` — the NT8
+    class, the MQL5 class, and here the strategy class's `__name__`, which is exactly what
+    `strategy_scanner._parse_python_package` stored as `class_name`. So resolution is by class name,
+    not by package id: the dispatcher must not need to know that Python strategies happen to also
+    have a package.
+
+    Import failures are skipped rather than raised — the same rule the scanner follows, so one
+    half-finished package under strategies/python/ cannot break runs for every other strategy.
+    """
     import importlib
 
-    if not strategy_id:
+    if not class_name:
         return None
-    try:
-        mod = importlib.import_module(f"strategies.python.{strategy_id}")
-    except Exception:
+    pkg_root = _MONOREPO / "strategies" / "python"
+    if not pkg_root.is_dir():
         return None
-    spec = getattr(mod, "LAB_STRATEGY", None)
-    return spec if isinstance(spec, dict) and "config" in spec else None
+    for pkg_dir in sorted(pkg_root.iterdir()):
+        if not (pkg_dir / "__init__.py").is_file():
+            continue
+        try:
+            mod = importlib.import_module(f"strategies.python.{pkg_dir.name}")
+        except Exception:
+            continue
+        spec = getattr(mod, "LAB_STRATEGY", None)
+        if not isinstance(spec, dict) or "config" not in spec or "strategy" not in spec:
+            continue
+        if spec["strategy"].__name__ == class_name:
+            return pkg_dir.name, spec
+    return None
 
 
 def _build_config(config_cls, params: dict, symbol: str) -> Any:
@@ -210,8 +231,14 @@ def job_status(job_id: str) -> dict:
         if job is None:
             return {"status": "failed_error", "pct": 100,
                     "message": f"unknown python job {job_id}", "updated_at": time.time()}
-        return {"status": job["status"], "pct": job["pct"], "message": job["message"],
-                "updated_at": job["updated_at"], "error": job["error"]}
+        out = {"status": job["status"], "pct": job["pct"], "message": job["message"],
+               "updated_at": job["updated_at"], "error": job["error"]}
+        # Sweep jobs only: drives the optimizer's live completed_runs. Absent on single
+        # backtests, which have no combo count — the poller skips a missing key.
+        if job.get("total_count"):
+            out["completed_count"] = job["completed_count"]
+            out["total_count"] = job["total_count"]
+        return out
 
 
 def job_results(job_id: str) -> dict:
@@ -248,3 +275,93 @@ def health() -> dict:
     with _LOCK:
         running = sum(1 for j in _JOBS.values() if j["status"] == "running")
     return {"status": "ok", "running_jobs": running}
+
+
+# ── native optimization (A4) ──────────────────────────────────────────────────
+#
+# The NT8/MT5 optimizers are remote jobs: submit a spec, poll, then harvest a combo grid. There is
+# no terminal here, so "native" means `backtest.optimizer.run_sweep` on this box's cores. The job
+# contract is identical either way, so `optimization_runner` needs no Python-specific branch.
+
+def start_native_optimization(opt_spec: dict) -> dict:
+    """Submit a Python grid sweep. Same contract as the agents' /native-optimize."""
+    job_id = opt_spec.get("job_id") or f"pyopt_{int(time.time() * 1000)}"
+    with _LOCK:
+        _JOBS[job_id] = {
+            "job_id": job_id, "status": "running", "pct": 1,
+            "message": "expanding grid…", "created_at": time.time(), "updated_at": time.time(),
+            "results": None, "error": None, "cancelled": False, "log": [],
+            "combos": None, "completed_count": 0, "total_count": 0,
+        }
+    threading.Thread(target=_run_opt, args=(job_id, opt_spec), daemon=True).start()
+    return {"job_id": job_id, "status": "running"}
+
+
+def _run_opt(job_id: str, spec: dict) -> None:
+    try:
+        _execute_opt(job_id, spec)
+    except Exception as exc:                       # noqa: BLE001 — a worker thread must never die silently
+        _set(job_id, status="failed_error", pct=100, message=str(exc),
+             error=f"{exc}\n{traceback.format_exc()}")
+
+
+def _execute_opt(job_id: str, spec: dict) -> None:
+    from backtest.data.source import BarSource
+    from backtest.optimizer import Combo, run_sweep
+
+    # The lab owns what a grid IS (min/max/step), and expands it the same way for every runner.
+    # Imported lazily: optimization_runner imports runner_dispatch, which imports this module.
+    from services.optimization_runner import expand_grid
+
+    class_name = spec.get("strategy_class")
+    found = _resolve(class_name)
+    if found is None:
+        raise ValueError(f"no Python strategy class named {class_name!r}")
+    pkg_name, entry = found
+
+    symbol = spec.get("instrument")
+    if not symbol:
+        raise ValueError("opt_spec.instrument is required")
+    tf = _timeframe_minutes(spec)
+
+    param_sets = expand_grid(spec.get("param_ranges") or {})
+    if not param_sets:
+        raise ValueError("param_ranges expanded to no combinations")
+
+    _set(job_id, total_count=len(param_sets),
+         message=f"loading {symbol} {tf}m bars for {len(param_sets)} combos…", pct=5)
+    df = BarSource().load(symbol, tf, spec["start_date"], spec["end_date"])
+    if df.empty:
+        raise ValueError(f"no bars for {symbol} {tf}m over "
+                         f"[{spec['start_date']}, {spec['end_date']}]")
+
+    fixed = spec.get("fixed_params") or {}
+    capital = float(spec.get("deposit") or 10_000)
+    combos = [Combo(params=ps, config=_build_config(entry["config"], {**fixed, **ps}, symbol))
+              for ps in param_sets]
+
+    def _progress(done: int, total: int) -> None:
+        _set(job_id, completed_count=done, total_count=total,
+             pct=min(95, 5 + int(done / total * 90)), message=f"combo {done} / {total}")
+
+    _set(job_id, pct=8, message=f"sweeping {len(combos)} combos…")
+    rows = run_sweep(module_path=f"strategies.python.{pkg_name}", df=df, combos=combos,
+                     initial_capital=capital, monorepo_root=str(_MONOREPO),
+                     progress=_progress, should_cancel=lambda: _cancelled(job_id))
+
+    if _cancelled(job_id):
+        _set(job_id, status="failed_cancelled", pct=100, message="cancelled")
+        return
+    _set(job_id, status="complete", pct=100, combos=rows,
+         message=f"{len(rows)} combos complete")
+
+
+def native_opt_results(job_id: str) -> dict:
+    """The finished combo grid — {combos: [{params, kpis}]}, the agents' shape."""
+    with _LOCK:
+        job = _JOBS.get(job_id)
+    if job is None:
+        raise RuntimeError(f"unknown python job {job_id}")
+    if job["status"] != "complete" or job["combos"] is None:
+        raise RuntimeError(f"python opt {job_id} has no combos (status={job['status']})")
+    return {"combos": job["combos"]}

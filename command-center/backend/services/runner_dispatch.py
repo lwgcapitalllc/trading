@@ -249,6 +249,8 @@ def start_native_optimization(opt_spec: dict, runner: str = "ninjatrader") -> di
     opt_spec must include: job_id, strategy_class, instrument, start_date, end_date,
     param_ranges ({name: {min, max, step} | [val, ...]}) and fixed_params ({name: value}).
     """
+    if runner == "python":
+        return python_runner.start_native_optimization(opt_spec)
     if runner == "mt5":
         return mt5_agent_client.start_native_optimization(_nt8_opt_to_mt5_opt_spec(opt_spec))
     return _post("/native-optimize", opt_spec, timeout=30)
@@ -256,6 +258,8 @@ def start_native_optimization(opt_spec: dict, runner: str = "ninjatrader") -> di
 
 def native_opt_results(job_id: str, runner: str = "ninjatrader") -> dict:
     """Fetch the native optimizer result grid (combos + KPIs) after job completes."""
+    if runner == "python":
+        return python_runner.native_opt_results(job_id)
     if runner == "mt5":
         return mt5_agent_client.native_opt_results(job_id)
     return _get(f"/jobs/{job_id}/native-opt-results")
