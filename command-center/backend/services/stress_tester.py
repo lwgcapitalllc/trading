@@ -210,8 +210,10 @@ def _estimate_wf_duration_min(n_windows: int) -> int:
 
 
 def _estimate_sens_duration_min(n_params: int, runner: str = "ninjatrader") -> int:
-    mins_per_job = 1.5 if runner == "mt5" else 5
-    return int(n_params * sensitivity_shift_count(runner) * mins_per_job)
+    # Python replays locally off a warm cache — a job is seconds, not minutes. Quoting it the
+    # NT8 estimate told the user to expect ~30x the real wait.
+    mins_per_job = 0.2 if runner == "python" else 1.5 if runner == "mt5" else 5
+    return max(1, int(n_params * sensitivity_shift_count(runner) * mins_per_job))
 
 
 # ── VPS child-run helper (mirrors sweep_runner._run_one) ──────────────────────

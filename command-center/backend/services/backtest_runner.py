@@ -185,19 +185,28 @@ def _fetch_regime_dfs(
 
     ninjatrader — daily via yfinance; same df passed for both short and long.
     mt5         — H1 for short, H4 for long; fetched from MT5 agent via tunnel.
+    python      — H1/H4 from the backtest cache: the SAME bars the run replayed.
 
-    50 calendar days of warmup gives ~214 H4 bars for MT5 (>> 34 needed) so
-    both paths produce real labels from day 1 of the backtest.
+    50 calendar days of warmup gives ~214 H4 bars for the intraday paths (>> 34 needed) so
+    every path produces real labels from day 1 of the backtest.
+
+    Why python does NOT fall back to yfinance: the yfinance path maps XAUUSD.s → GC=F, i.e. it
+    would label a spot-gold run's regimes off Yahoo's gold FUTURES daily bars — a different
+    instrument on a different feed at a coarser resolution than the run traded. Wrong labels
+    are worse than honest UNKNOWNs, since they silently drive the regime filter and overlays.
     """
-    if runner == "mt5":
+    if runner in ("mt5", "python"):
         try:
-            h1 = get_ohlc(instrument, warmup_start, end_date, timeframe="H1", runner="mt5")
-            h4 = get_ohlc(instrument, warmup_start, end_date, timeframe="H4", runner="mt5")
+            h1 = get_ohlc(instrument, warmup_start, end_date, timeframe="H1", runner=runner)
+            h4 = get_ohlc(instrument, warmup_start, end_date, timeframe="H4", runner=runner)
             if not h1.empty and not h4.empty:
                 return h1, h4
         except Exception as exc:
-            log.warning("MT5 H1/H4 fetch failed for %s, falling back to yfinance daily: %s", instrument, exc)
-        # Fall back to yfinance daily (same path as ninjatrader) — works for all
+            log.warning("%s H1/H4 fetch failed for %s: %s", runner, instrument, exc)
+        if runner == "python":
+            empty = pd.DataFrame(columns=["open", "high", "low", "close"])
+            return empty, empty
+        # MT5 falls back to yfinance daily (same path as ninjatrader) — works for all
         # forex symbols now that INSTRUMENT_YFINANCE_MAP covers XAUUSD, EURUSD, etc.
     daily = get_ohlc(instrument, warmup_start, end_date)
     return daily, daily
@@ -231,11 +240,12 @@ def _tag_daily_pnl_with_regime(
 
     runner="ninjatrader" — daily OHLC via yfinance; classify_regime(daily, daily).
     runner="mt5"         — H1 + H4 via MT5 agent; classify_regime(h1, h4).
+    runner="python"      — H1 + H4 from the backtest cache (the bars the run replayed).
     """
     warmup_start = (
         date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)
     ).isoformat()
-    intraday = runner == "mt5"
+    intraday = runner in ("mt5", "python")   # both fetch H1/H4, not daily bars
 
     try:
         df_short, df_long = _fetch_regime_dfs(instrument, warmup_start, end_date, runner)
@@ -299,7 +309,7 @@ def build_date_regime_map(
     warmup_start = (
         date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)
     ).isoformat()
-    intraday = runner == "mt5"
+    intraday = runner in ("mt5", "python")   # both fetch H1/H4, not daily bars
 
     try:
         df_short, df_long = _fetch_regime_dfs(instrument, warmup_start, end_date, runner)
@@ -496,7 +506,8 @@ async def run_backtest_job(
         "strategy_id":          strategy_id,
         "instrument":           instrument,
         "pct":                  0,
-        "message":              "Waiting for VPS…",
+        # Python runs in this process — there is no VPS to wait for.
+        "message":              "Starting…" if runner == "python" else "Waiting for VPS…",
         "started_at":           str(started_at),
         "updated_at":           str(started_at),
         "heartbeat_age_seconds": 0.0,
