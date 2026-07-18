@@ -1,0 +1,1158 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:05.040
+In this episode, I just wanted to walk you through a very simply spread and
+
+2
+00:00:05.040 --> 00:00:07.990
+slippage, pretty much just want to kind of help you understand spread and slipp
+
+3
+00:00:07.990 --> 00:00:08.160
+age.
+
+4
+00:00:08.160 --> 00:00:12.160
+Obviously, again, most of you probably already know about spread and slippage,
+
+5
+00:00:12.160 --> 00:00:14.880
+but I'm going to give it to you in a way that maybe you didn't actually know
+
+6
+00:00:14.880 --> 00:00:15.520
+about it before,
+
+7
+00:00:15.520 --> 00:00:18.560
+kind of give you the overview of market makers and how market makers operate,
+
+8
+00:00:18.560 --> 00:00:21.510
+which again, you probably didn't know, understanding spread widening and things
+
+9
+00:00:21.510 --> 00:00:21.920
+like that.
+
+10
+00:00:21.920 --> 00:00:24.080
+Let's very simply start with spread.
+
+11
+00:00:24.080 --> 00:00:28.480
+So spread is pretty much the difference between the bid and ask price.
+
+12
+00:00:28.480 --> 00:00:33.680
+So anytime you open up your trading pool or be a meta trader or a sea trader or
+
+13
+00:00:33.680 --> 00:00:37.120
+whatever broker or whatever you're trading with, your trading portfolio,
+
+14
+00:00:37.120 --> 00:00:40.560
+you'll be quoted and you'll get quoted a bid and an ask.
+
+15
+00:00:40.560 --> 00:00:46.800
+And your bid and your ask is what you're being quoted as,
+
+16
+00:00:46.800 --> 00:00:49.360
+this is where you can buy from and this is where you can sell from, right?
+
+17
+00:00:49.360 --> 00:00:52.320
+The larger the gap between your bid and your ask,
+
+18
+00:00:52.320 --> 00:00:57.840
+meaning you go to execute on a position and it will get filled
+
+19
+00:00:57.840 --> 00:01:01.600
+at either the bid or the ask and that bid or ask will be different to the
+
+20
+00:01:01.600 --> 00:01:02.080
+current price.
+
+21
+00:01:02.080 --> 00:01:05.700
+So for example, if you open up, let's just for simple terms, open up meta
+
+22
+00:01:05.700 --> 00:01:06.880
+trader on the mobile
+
+23
+00:01:06.880 --> 00:01:10.320
+and I kind of open it up and go to one minute timeframe, you'll always see two
+
+24
+00:01:10.320 --> 00:01:10.800
+lines
+
+25
+00:01:10.800 --> 00:01:14.800
+and one is bid and one is ask and you'll notice that they are different.
+
+26
+00:01:14.800 --> 00:01:17.040
+You want to buy euro dollar at this point, for example,
+
+27
+00:01:17.040 --> 00:01:22.960
+you won't get filled unless you have zero spread, which you probably don't.
+
+28
+00:01:22.960 --> 00:01:26.770
+And if you do, you should be looking at what you're paying in fees because that
+
+29
+00:01:26.770 --> 00:01:27.360
+won't be good.
+
+30
+00:01:27.360 --> 00:01:30.560
+But you're not going to be getting filled at that exact price point.
+
+31
+00:01:30.560 --> 00:01:34.880
+You're going to be getting filled a little bit higher or a little bit lower
+
+32
+00:01:34.880 --> 00:01:37.640
+than you want to depending on whether you're buying or selling as well, of
+
+33
+00:01:37.640 --> 00:01:38.000
+course.
+
+34
+00:01:38.000 --> 00:01:43.360
+And that little difference between the actual price and the quoted price
+
+35
+00:01:43.360 --> 00:01:50.030
+is called your spread and spread exists so that there is an incentive for a
+
+36
+00:01:50.030 --> 00:01:50.800
+market maker.
+
+37
+00:01:50.800 --> 00:01:54.560
+The job of a market maker is to provide liquidity at all points in price.
+
+38
+00:01:54.560 --> 00:01:58.240
+So if you look at price now, right, there's buyers and sellers coming in
+
+39
+00:01:58.240 --> 00:02:04.140
+and not all of the time is there an active trader willing to take the other
+
+40
+00:02:04.140 --> 00:02:05.040
+side of that trader,
+
+41
+00:02:05.040 --> 00:02:07.840
+that specific price point with that amount of lots.
+
+42
+00:02:07.840 --> 00:02:10.240
+That's what we'll get into in a minute when we talk about slippage.
+
+43
+00:02:10.240 --> 00:02:16.140
+But to make the market more efficient and to operate better, we have market
+
+44
+00:02:16.140 --> 00:02:16.560
+makers.
+
+45
+00:02:16.560 --> 00:02:22.460
+A market maker is someone who is willing to take the other side of your
+
+46
+00:02:22.460 --> 00:02:22.880
+position.
+
+47
+00:02:22.880 --> 00:02:26.400
+If there's nobody else there to provide that liquidity.
+
+48
+00:02:26.400 --> 00:02:29.200
+So let's say for simple, simple terms,
+
+49
+00:02:29.200 --> 00:02:33.040
+you want to buy 10 lots of euro dollar at this specific price point.
+
+50
+00:02:33.040 --> 00:02:38.990
+But there were no sellers for euro dollar 10 lots anywhere below this price in
+
+51
+00:02:38.990 --> 00:02:39.280
+here.
+
+52
+00:02:39.280 --> 00:02:43.440
+You want to buy here for 10 lots, but the next available block of liquidity
+
+53
+00:02:43.440 --> 00:02:43.840
+from
+
+54
+00:02:43.840 --> 00:02:46.560
+a normal trader or something is all the way up here.
+
+55
+00:02:46.560 --> 00:02:48.160
+Well, that's where a market maker comes in.
+
+56
+00:02:48.160 --> 00:02:50.240
+A market maker will make a market.
+
+57
+00:02:50.240 --> 00:02:52.480
+And so he will be like, I'll take that off you.
+
+58
+00:02:52.480 --> 00:02:54.960
+But I'll take it off you at this price.
+
+59
+00:02:54.960 --> 00:03:00.000
+And he will net the difference in what it actually could have been versus what
+
+60
+00:03:00.000 --> 00:03:00.160
+it was.
+
+61
+00:03:00.160 --> 00:03:03.360
+And then he'll quickly try to match that sell with someone else.
+
+62
+00:03:03.360 --> 00:03:05.280
+And so he's making the market.
+
+63
+00:03:05.280 --> 00:03:08.080
+I know that that explanation explains it really well.
+
+64
+00:03:08.080 --> 00:03:13.120
+But their goal is to net the difference between the bid and the ask.
+
+65
+00:03:13.120 --> 00:03:14.800
+And they do that by providing liquidity.
+
+66
+00:03:14.800 --> 00:03:18.530
+So they're trying to take on everybody's orders and then sell everybody's
+
+67
+00:03:18.530 --> 00:03:19.280
+orders at the same time.
+
+68
+00:03:19.280 --> 00:03:22.880
+And they do this now algorithmically with very smart intelligence engines.
+
+69
+00:03:22.880 --> 00:03:26.800
+But essentially what they're trying to do is provide liquidity for everyone.
+
+70
+00:03:26.800 --> 00:03:30.530
+And then they have risk departments, which manage risk to make sure that they
+
+71
+00:03:30.530 --> 00:03:30.720
+are
+
+72
+00:03:30.720 --> 00:03:33.920
+essentially making a profit when they buy and sell to everyone.
+
+73
+00:03:33.920 --> 00:03:38.880
+Because they're buying it for cheaper than what it's actually worth.
+
+74
+00:03:38.880 --> 00:03:39.840
+That's what the spread is.
+
+75
+00:03:39.840 --> 00:03:41.440
+And so that's how they operate.
+
+76
+00:03:41.440 --> 00:03:42.480
+And that's a good thing.
+
+77
+00:03:42.480 --> 00:03:45.600
+Spread is a good thing because it actually provides a market maker.
+
+78
+00:03:45.600 --> 00:03:51.760
+Very simply, but spread is a little bit that gets added on between where you
+
+79
+00:03:51.760 --> 00:03:52.400
+want to buy
+
+80
+00:03:52.400 --> 00:03:55.120
+and where you actually get filled on your position.
+
+81
+00:03:55.120 --> 00:03:58.880
+And on the sell side where you actually wanted to sell and where you get filled
+
+82
+00:03:58.880 --> 00:03:59.440
+on your position.
+
+83
+00:03:59.440 --> 00:04:01.440
+Now sometimes spread can actually work in your favor.
+
+84
+00:04:01.440 --> 00:04:03.600
+And sometimes it might not work in your favor.
+
+85
+00:04:03.600 --> 00:04:06.000
+It literally all depends on the context of the scenarios.
+
+86
+00:04:06.000 --> 00:04:10.530
+I've had time where because of spread, I have been saved from being taken out
+
+87
+00:04:10.530 --> 00:04:11.120
+of a
+
+88
+00:04:11.120 --> 00:04:15.190
+position, for example, or got into a position that technically would have left
+
+89
+00:04:15.190 --> 00:04:15.440
+without me.
+
+90
+00:04:15.760 --> 00:04:19.280
+And then there's obviously other times where spread doesn't really help.
+
+91
+00:04:19.280 --> 00:04:22.640
+But regardless, spread operates in the exact same way all the time.
+
+92
+00:04:22.640 --> 00:04:24.640
+It's pretty much just an add-on fee.
+
+93
+00:04:24.640 --> 00:04:29.950
+And that market maker is rewarded for making the market with that extra
+
+94
+00:04:29.950 --> 00:04:31.600
+differentiation.
+
+95
+00:04:31.600 --> 00:04:34.800
+And it wants to pair all of those transactions as quick as possible.
+
+96
+00:04:34.800 --> 00:04:38.630
+So they can buy off you right now and then sell that exact same order to
+
+97
+00:04:38.630 --> 00:04:39.600
+someone at the
+
+98
+00:04:39.600 --> 00:04:44.960
+exact same price point, but it nets off both of you a little bit of spread.
+
+99
+00:04:44.960 --> 00:04:48.480
+That's how a market maker makes their money, which is why there was a spread.
+
+100
+00:04:48.480 --> 00:04:49.520
+Some brokers are different.
+
+101
+00:04:49.520 --> 00:04:51.040
+Some brokers have larger spreads.
+
+102
+00:04:51.040 --> 00:04:52.480
+Some brokers have smaller spreads.
+
+103
+00:04:52.480 --> 00:04:57.360
+Typically what you'll find is a broker that has a lot of liquidity will be able
+
+104
+00:04:57.360 --> 00:04:57.840
+to have
+
+105
+00:04:57.840 --> 00:05:01.360
+smaller spreads because it makes sense for that market maker to want to operate
+
+106
+00:05:01.360 --> 00:05:02.160
+in that market.
+
+107
+00:05:02.160 --> 00:05:03.600
+It's just supply and demand, right?
+
+108
+00:05:03.600 --> 00:05:08.400
+So the market maker would be fine with having so much liquidity so that you can
+
+109
+00:05:08.400 --> 00:05:09.280
+buy and sell
+
+110
+00:05:09.280 --> 00:05:14.800
+all of the positions and make very small amounts of profit, but many, many,
+
+111
+00:05:14.800 --> 00:05:16.000
+many, many times,
+
+112
+00:05:16.000 --> 00:05:19.730
+as opposed to if you have a broker with a lot lower liquidity, therefore they
+
+113
+00:05:19.730 --> 00:05:20.400
+usually have higher
+
+114
+00:05:20.400 --> 00:05:25.930
+spreads, it's going to be off the basis of they make more money, but less
+
+115
+00:05:25.930 --> 00:05:27.360
+frequently, right?
+
+116
+00:05:27.360 --> 00:05:29.280
+That's typically how it works.
+
+117
+00:05:29.280 --> 00:05:33.810
+Bread is essentially the difference in the present price of the quote of the
+
+118
+00:05:33.810 --> 00:05:34.480
+bid and the ask.
+
+119
+00:05:34.480 --> 00:05:35.520
+And then you have slippage.
+
+120
+00:05:35.520 --> 00:05:39.760
+A slippage occurs essentially where you don't get triggered at the price you
+
+121
+00:05:39.760 --> 00:05:40.160
+want it to get
+
+122
+00:05:40.160 --> 00:05:44.230
+triggered. So if you have a position open to you want to go short in this area,
+
+123
+00:05:44.230 --> 00:05:45.920
+you could incur
+
+124
+00:05:45.920 --> 00:05:50.480
+slippage by not getting filled at the price that you wanted, or on the other
+
+125
+00:05:50.480 --> 00:05:51.120
+end of the spectrum,
+
+126
+00:05:51.120 --> 00:05:53.360
+you could get taken out at a higher price than what you wanted.
+
+127
+00:05:53.360 --> 00:05:57.520
+So slippage occurs where you wanted to execute a short position here, you
+
+128
+00:05:57.520 --> 00:05:58.320
+wanted to take your
+
+129
+00:05:58.320 --> 00:06:02.890
+profit here, and you wanted to close your position at a loss if it hit this
+
+130
+00:06:02.890 --> 00:06:03.600
+level.
+
+131
+00:06:03.600 --> 00:06:07.900
+Well, what can happen is slippage is the difference between where you wanted to
+
+132
+00:06:07.900 --> 00:06:08.080
+get
+
+133
+00:06:08.080 --> 00:06:09.360
+in and where you actually got in.
+
+134
+00:06:09.360 --> 00:06:10.880
+That's the slippage, right?
+
+135
+00:06:10.880 --> 00:06:11.840
+Pretty selfish, I'm sorry.
+
+136
+00:06:11.840 --> 00:06:14.790
+So let's say you get into a position and price comes up into this level, and
+
+137
+00:06:14.790 --> 00:06:15.920
+now price hits your
+
+138
+00:06:15.920 --> 00:06:19.990
+stop loss. But all of a sudden, let's say it's a news event, and what happens
+
+139
+00:06:19.990 --> 00:06:21.440
+is the market makers,
+
+140
+00:06:21.440 --> 00:06:27.600
+they will have liquidity at all of these price points ready to buy and sell or
+
+141
+00:06:27.600 --> 00:06:28.720
+all price levels.
+
+142
+00:06:28.720 --> 00:06:33.770
+But what they can do is when there's something like an NFP or a CPI or
+
+143
+00:06:33.770 --> 00:06:34.400
+something big like that,
+
+144
+00:06:34.400 --> 00:06:38.320
+they actually have the right to remove all of their orders from the market.
+
+145
+00:06:38.320 --> 00:06:42.390
+Now, what that does is that cleans out the order book, which essentially then
+
+146
+00:06:42.390 --> 00:06:42.960
+means there's
+
+147
+00:06:42.960 --> 00:06:47.490
+a lot less liquidity in the market, which means you may not get filled in this
+
+148
+00:06:47.490 --> 00:06:47.840
+position.
+
+149
+00:06:47.840 --> 00:06:50.970
+Now, that doesn't mean that there isn't someone at that price level who is
+
+150
+00:06:50.970 --> 00:06:52.480
+willing to sell that
+
+151
+00:06:52.480 --> 00:06:54.960
+position to you for you to buy out of this position.
+
+152
+00:06:54.960 --> 00:06:57.120
+It just may mean that you are at the back of the queue.
+
+153
+00:06:57.120 --> 00:07:01.360
+There is a ranking system most brokers typically operate with a kind of like
+
+154
+00:07:01.360 --> 00:07:01.680
+first
+
+155
+00:07:01.680 --> 00:07:04.400
+converse of mentality of stacking in the order book.
+
+156
+00:07:04.400 --> 00:07:07.520
+So if there's, for example, we want to buy out of this position, and these are
+
+157
+00:07:07.520 --> 00:07:07.920
+the people that
+
+158
+00:07:07.920 --> 00:07:12.160
+are selling, right? But let's say there was only one person who was available
+
+159
+00:07:12.160 --> 00:07:13.360
+at this price point,
+
+160
+00:07:13.360 --> 00:07:17.720
+whoever tried to sell first, so that could be, for example, if you have a stop
+
+161
+00:07:17.720 --> 00:07:18.640
+loss in place,
+
+162
+00:07:18.640 --> 00:07:23.920
+that is actually a passive order, you may get outdone by an active trader at
+
+163
+00:07:23.920 --> 00:07:24.480
+that price point,
+
+164
+00:07:24.480 --> 00:07:27.040
+because they're willing to pay the difference in the spread.
+
+165
+00:07:27.040 --> 00:07:31.570
+Maybe they get ahead of you, or maybe someone who put their order in at this
+
+166
+00:07:31.570 --> 00:07:32.240
+specific price
+
+167
+00:07:32.240 --> 00:07:33.760
+point before you get filled in.
+
+168
+00:07:33.760 --> 00:07:36.800
+Let's say there's 50 lots of liquidity available at this price point.
+
+169
+00:07:36.800 --> 00:07:40.400
+You want to buy 50 lots at this price point to get you out of this short
+
+170
+00:07:40.400 --> 00:07:41.120
+position.
+
+171
+00:07:41.120 --> 00:07:46.170
+But let's say Harry set an order at the exact same price point three seconds
+
+172
+00:07:46.170 --> 00:07:46.640
+before you,
+
+173
+00:07:46.640 --> 00:07:50.640
+or it got to the servers three seconds before you have that same 50.
+
+174
+00:07:50.640 --> 00:07:55.440
+When price hits that level and that 50 is available, Harry gets that 50 and not
+
+175
+00:07:55.440 --> 00:07:55.920
+you.
+
+176
+00:07:55.920 --> 00:08:00.000
+And then what might happen to you is that you might now need to go to the next
+
+177
+00:08:00.000 --> 00:08:00.800
+available block
+
+178
+00:08:00.800 --> 00:08:02.560
+of liquidity, you get triggered out in there.
+
+179
+00:08:02.560 --> 00:08:06.430
+And so people increase the price with, we go to the next block of passive
+
+180
+00:08:06.430 --> 00:08:07.040
+liquidity,
+
+181
+00:08:07.040 --> 00:08:10.880
+where your order may then get triggered at that specific price point.
+
+182
+00:08:10.880 --> 00:08:14.080
+And you would experience that as slippage, wanting to get out of your position
+
+183
+00:08:14.080 --> 00:08:14.320
+here,
+
+184
+00:08:14.320 --> 00:08:16.960
+but you actually got filled here.
+
+185
+00:08:16.960 --> 00:08:20.080
+And that difference is what we refer to as slippage.
+
+186
+00:08:20.080 --> 00:08:22.560
+Now here's the thing, slippage occurs.
+
+187
+00:08:22.560 --> 00:08:26.080
+Typically you might get it more often than not in news events when market
+
+188
+00:08:26.080 --> 00:08:26.720
+makers
+
+189
+00:08:26.720 --> 00:08:29.360
+pull out their orders from the order book and the order book gets a lot thinner
+
+190
+00:08:29.360 --> 00:08:29.360
+,
+
+191
+00:08:29.360 --> 00:08:31.520
+which means it's a lot harder to fill orders.
+
+192
+00:08:31.520 --> 00:08:34.800
+A lot of slippage happens then spread widening happens then.
+
+193
+00:08:34.800 --> 00:08:36.880
+And spread widening can also give you slippage.
+
+194
+00:08:36.880 --> 00:08:38.560
+You know, for example, you wanted to get in here,
+
+195
+00:08:38.560 --> 00:08:44.460
+but the spread was a lot higher because of less available liquidity spreads
+
+196
+00:08:44.460 --> 00:08:44.800
+open.
+
+197
+00:08:44.800 --> 00:08:46.240
+And actually you wanted to get out of here,
+
+198
+00:08:46.240 --> 00:08:48.320
+but you actually get taken out at this level.
+
+199
+00:08:48.320 --> 00:08:49.680
+You would experience slippage.
+
+200
+00:08:49.680 --> 00:08:53.120
+You tried to fill your order here and your order got filled here
+
+201
+00:08:53.120 --> 00:08:55.440
+because of high spreads, right, spread widening.
+
+202
+00:08:55.440 --> 00:08:58.640
+That right there would give you slippage, right?
+
+203
+00:08:58.640 --> 00:09:00.080
+Again, hypothetical scenario.
+
+204
+00:09:00.080 --> 00:09:03.440
+So you usually get slippage and it could be on buy side as well.
+
+205
+00:09:03.440 --> 00:09:05.600
+It's completely contextual to buy side or sell side,
+
+206
+00:09:05.600 --> 00:09:07.760
+depending on whether in what direction you get your slippage.
+
+207
+00:09:07.760 --> 00:09:13.520
+In a nutshell, your spread is the differential quote between bid and ask.
+
+208
+00:09:13.520 --> 00:09:19.040
+And it's usually there as a profit-making tool for market makers,
+
+209
+00:09:19.040 --> 00:09:23.280
+which is a good thing for us because it provides liquidity at prices
+
+210
+00:09:23.280 --> 00:09:27.040
+where there may not have been liquidity or we may not have got filled.
+
+211
+00:09:27.040 --> 00:09:29.680
+So they give us ease of access to fill our orders.
+
+212
+00:09:29.680 --> 00:09:31.120
+That's the problem they sell for us.
+
+213
+00:09:31.120 --> 00:09:34.000
+And in return, we pay a premium and they net the difference.
+
+214
+00:09:34.000 --> 00:09:35.280
+That is why market maker does.
+
+215
+00:09:35.280 --> 00:09:36.960
+And that is why you see spreads.
+
+216
+00:09:36.960 --> 00:09:41.200
+Spreads widen when either market makers step out of the market
+
+217
+00:09:41.200 --> 00:09:45.040
+because the risk parameter doesn't make sense to try to fill orders
+
+218
+00:09:45.040 --> 00:09:47.600
+when you've got an NFP coming where you're expecting prices to shoot in both
+
+219
+00:09:47.600 --> 00:09:47.920
+ways,
+
+220
+00:09:47.920 --> 00:09:51.120
+that they will lose money because they have to match sellers and buyers.
+
+221
+00:09:51.120 --> 00:09:55.520
+Their whole purpose is of making a market is matching the buyers and sellers
+
+222
+00:09:55.520 --> 00:09:56.880
+at the best possible prices.
+
+223
+00:09:56.880 --> 00:09:59.440
+What he wants to do is he wants to buy all the orders from me right now
+
+224
+00:09:59.440 --> 00:10:02.420
+and sell them to someone else at the same price point so he can net the
+
+225
+00:10:02.420 --> 00:10:03.120
+difference.
+
+226
+00:10:03.120 --> 00:10:07.360
+The more orders they have or the more lots they have on one side of the market
+
+227
+00:10:07.360 --> 00:10:10.430
+that they're not able to sell at a better price, for example, they also lose
+
+228
+00:10:10.430 --> 00:10:10.880
+money.
+
+229
+00:10:10.880 --> 00:10:14.000
+So they want to create the best market environment
+
+230
+00:10:14.000 --> 00:10:16.720
+because they are rewarded most in the best market environment.
+
+231
+00:10:16.720 --> 00:10:21.440
+Sometimes they will remove their intention to buy or sell at any one price
+
+232
+00:10:21.440 --> 00:10:21.840
+point
+
+233
+00:10:21.840 --> 00:10:25.120
+because of something like an NFP or something like a CPI,
+
+234
+00:10:25.120 --> 00:10:27.520
+or maybe an interest rate decision or whatever it may be.
+
+235
+00:10:27.520 --> 00:10:30.480
+They have the full right to remove their orders from the order book.
+
+236
+00:10:30.480 --> 00:10:34.550
+And in those times, you see a lot of slippage and you see a lot of spread wide
+
+237
+00:10:34.550 --> 00:10:34.720
+name.
+
+238
+00:10:34.720 --> 00:10:38.560
+Slippage is essentially the difference between where you would have liked
+
+239
+00:10:38.560 --> 00:10:42.080
+to have triggered a position versus where the position was triggered.
+
+240
+00:10:42.080 --> 00:10:46.560
+And that will occur because of lack of liquidity.
+
+241
+00:10:46.560 --> 00:10:51.360
+Spread widening, which also occurs because of lack of liquidity,
+
+242
+00:10:51.360 --> 00:10:54.720
+or your liquidity wasn't filled at that specific price point,
+
+243
+00:10:54.720 --> 00:10:56.960
+which is also really just comes out to lack of liquidity.
+
+244
+00:10:56.960 --> 00:11:02.020
+So lack of liquidity is really the answer as to why you get slippage and why
+
+245
+00:11:02.020 --> 00:11:03.920
+spreads larger.
+
+246
+00:11:03.920 --> 00:11:06.800
+There is other scenarios as well where you could get slippage
+
+247
+00:11:06.800 --> 00:11:10.240
+because an active person wrenched the market, for example,
+
+248
+00:11:10.240 --> 00:11:13.970
+not allowing you to get out of your position or buy or sell out of your
+
+249
+00:11:13.970 --> 00:11:14.320
+position.
+
+250
+00:11:14.320 --> 00:11:17.680
+Other scenarios, but it all does come down to a lack of liquidity
+
+251
+00:11:17.680 --> 00:11:20.240
+on at least one side, so an imbalanced market,
+
+252
+00:11:20.240 --> 00:11:22.560
+which is why their goal is to always create an efficient market,
+
+253
+00:11:22.560 --> 00:11:24.400
+because an efficient market condition,
+
+254
+00:11:24.400 --> 00:11:27.040
+that is when they essentially make their most money.
+
+255
+00:11:27.040 --> 00:11:28.000
+Hopefully that explains it.
+
+256
+00:11:28.000 --> 00:11:31.120
+I know I kind of side tracked and kind of waffled on,
+
+257
+00:11:31.120 --> 00:11:36.480
+spread, slippage, and pretty much be aware of market conditions when you have
+
+258
+00:11:36.480 --> 00:11:38.480
+high impact news events or bank holidays.
+
+259
+00:11:38.480 --> 00:11:42.720
+Expect that those are the days that you will get slipped or you will get high
+
+260
+00:11:42.720 --> 00:11:43.120
+spreads.
+
+261
+00:11:43.120 --> 00:11:44.720
+And what does that mean as well, by the way?
+
+262
+00:11:44.720 --> 00:11:46.560
+Because this is why it can really affect you.
+
+263
+00:11:46.560 --> 00:11:50.320
+If you're a trader who trades, you know, liquidity hunter SMC or for example,
+
+264
+00:11:50.320 --> 00:11:55.480
+and your average stop size is, you know, let's just say for maths like eight p
+
+265
+00:11:55.480 --> 00:11:55.760
+ips,
+
+266
+00:11:55.760 --> 00:11:59.680
+but now all of a sudden spread is two pips.
+
+267
+00:11:59.680 --> 00:12:06.560
+And so you essentially end up adding an extra layer of risk.
+
+268
+00:12:06.560 --> 00:12:11.120
+You get slipped out of your position by two pips and you have only an eight-pip
+
+269
+00:12:11.120 --> 00:12:11.680
+stop.
+
+270
+00:12:11.680 --> 00:12:16.240
+You have just added an extra 25% of risk onto position.
+
+271
+00:12:16.240 --> 00:12:20.960
+So if you had a 100k account, you're risking 1%, and you had an eight-pip stop,
+
+272
+00:12:20.960 --> 00:12:22.160
+and then you got slipped.
+
+273
+00:12:22.160 --> 00:12:26.160
+Your stop loss got slipped by two pips, which can happen.
+
+274
+00:12:26.160 --> 00:12:30.880
+Then you will actually end up taking a $1250 loss.
+
+275
+00:12:30.880 --> 00:12:32.960
+Instead of 1%, you'll take a 1.25%.
+
+276
+00:12:32.960 --> 00:12:35.920
+That's why it's important, especially if you're trading small stop losses,
+
+277
+00:12:35.920 --> 00:12:40.640
+is a big reason why to avoid news events unless it really makes sense,
+
+278
+00:12:40.640 --> 00:12:42.800
+which I've already covered in a little bit of context.
+
+279
+00:12:42.800 --> 00:12:45.870
+It's not just about your stop loss, even like you can get triggered into a
+
+280
+00:12:45.870 --> 00:12:46.160
+position
+
+281
+00:12:46.160 --> 00:12:50.720
+with an unfavorable feel because of slippage or because of spread.
+
+282
+00:12:50.720 --> 00:12:52.400
+That is pretty much understanding slippage and spread.
+
+283
+00:12:52.400 --> 00:12:55.200
+The reason I wanted to create this is because you obviously already understand
+
+284
+00:12:55.200 --> 00:12:55.760
+slippage.
+
+285
+00:12:55.760 --> 00:12:59.200
+Probably already understand spread, obviously, but maybe you didn't understand
+
+286
+00:12:59.200 --> 00:13:02.720
+what creates high spreads, what creates high slippage,
+
+287
+00:13:02.720 --> 00:13:05.440
+and the role of the market maker in that process.
+
+288
+00:13:05.440 --> 00:13:08.240
+Hopefully that helps, and any questions, do let me know.
+
+289
+00:13:08.240 --> 00:13:11.680
+Catch you in the next one.
+

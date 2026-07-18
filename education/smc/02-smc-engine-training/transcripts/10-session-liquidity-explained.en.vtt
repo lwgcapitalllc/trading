@@ -1,0 +1,361 @@
+WEBVTT
+
+1
+00:00:00.011 --> 00:00:02.919
+<v 0>Hey everyone, hope you're all doing well.</v>
+
+2
+00:00:03.029 --> 00:00:05.889
+Just jumping on for the fourth module,
+
+3
+00:00:05.889 --> 00:00:08.088
+which is Session Liquidity. Okay,
+
+4
+00:00:08.146 --> 00:00:10.958
+again, super simple. It's gonna be a real fast,
+
+5
+00:00:10.958 --> 00:00:14.310
+uh, module. Session Liquidity is drawn out for you,
+
+6
+00:00:14.310 --> 00:00:18.177
+right? Essentially we have three modules. Three different areas that we're focused on.
+
+7
+00:00:18.269 --> 00:00:20.362
+We have Asia, we have London,
+
+8
+00:00:20.742 --> 00:00:24.658
+and we have New York. Okay? These are just killzone times.
+
+9
+00:00:24.675 --> 00:00:27.033
+It's a period throughout Asia,
+
+10
+00:00:27.033 --> 00:00:32.016
+London, and New York where most of the institutions and banks are trading.
+
+11
+00:00:32.016 --> 00:00:35.342
+That's where most of the liquidity is. Okay? It's pretty simple.
+
+12
+00:00:35.384 --> 00:00:38.433
+Like, it's already marked up for you.
+
+13
+00:00:38.476 --> 00:00:40.672
+You don't really need to know anything about the liquidity, right?
+
+14
+00:00:40.959 --> 00:00:45.213
+I suppose, really, we'll just explain which ones are which.
+
+15
+00:00:45.756 --> 00:00:48.011
+Now, I have mine as,
+
+16
+00:00:48.011 --> 00:00:51.336
+If you look, UTC minus 4,
+
+17
+00:00:51.336 --> 00:00:55.963
+Asia started at 8pm and ends at 12am,
+
+18
+00:00:55.963 --> 00:01:00.866
+okay? And it's in blue. London starts at 2am
+
+19
+00:01:00.866 --> 00:01:03.019
+and ends at 5,
+
+20
+00:01:03.019 --> 00:01:07.459
+and it's in green. New Zealand. New York starts at 7am and ends at
+
+21
+00:01:07.459 --> 00:01:09.532
+10am, and it's in orange, okay?
+
+22
+00:01:10.237 --> 00:01:14.424
+There are session liquidity zones. Now how can you use this to your favor,
+
+23
+00:01:14.522 --> 00:01:17.217
+okay? Now, go test this.
+
+24
+00:01:17.485 --> 00:01:20.011
+Go look for it, right? We have, so,
+
+25
+00:01:20.011 --> 00:01:22.744
+and setups, and, you know,
+
+26
+00:01:23.076 --> 00:01:25.351
+we have a strategy called session liquidity that we use,
+
+27
+00:01:25.351 --> 00:01:28.160
+right, to, to use these kill zones,
+
+28
+00:01:28.160 --> 00:01:30.510
+which is why we have them on the indicator, you know, you've probably seen
+
+29
+00:01:30.510 --> 00:01:32.312
+on Lewis' YouTube channel and things many times, like, Lewis has these session, uh,
+
+30
+00:01:32.322 --> 00:01:36.171
+areas marked up, everyone's on those,
+
+31
+00:01:36.171 --> 00:01:38.290
+ask him how we got them. This is how they're here.
+
+32
+00:01:38.581 --> 00:01:41.431
+Okay. You don't need to do anything that already turned on. Settings should already
+
+33
+00:01:41.431 --> 00:01:45.730
+be correct. If not, just check. Just turn your time to UTC minus four
+
+34
+00:01:46.640 --> 00:01:49.127
+and make sure that you have the same times as me. The one times
+
+35
+00:01:49.127 --> 00:01:52.011
+that I just took you over. How can you use this to your advantage?
+
+36
+00:01:52.011 --> 00:01:54.692
+Well, I'll just give you a little clue,
+
+37
+00:01:54.692 --> 00:01:58.500
+right? Which you can go test. We don't trade Asia.
+
+38
+00:01:58.846 --> 00:02:01.239
+We trade in London and New York, right?
+
+39
+00:02:01.521 --> 00:02:04.003
+For London. Let's just see how this looks,
+
+40
+00:02:04.003 --> 00:02:06.292
+right? How can you use these? Well,
+
+41
+00:02:06.361 --> 00:02:09.455
+we use the highs and the lows as little liquidity as an area to
+
+42
+00:02:09.455 --> 00:02:12.013
+target. So I know that when London opens,
+
+43
+00:02:12.013 --> 00:02:16.391
+right, the Asia's low and high are areas to target.
+
+44
+00:02:16.557 --> 00:02:19.256
+They're areas with liquidity. Now,
+
+45
+00:02:19.256 --> 00:02:22.808
+if we take the low first, For the rest of the session,
+
+46
+00:02:22.932 --> 00:02:26.073
+from London going into New York. Because we've already took Asia's low,
+
+47
+00:02:26.297 --> 00:02:30.822
+that liquidity is gone. The only liquidity that is left is the
+
+48
+00:02:30.822 --> 00:02:33.290
+high. So we could look to target that high.
+
+49
+00:02:33.556 --> 00:02:35.880
+Okay. What happened the day before?
+
+50
+00:02:36.488 --> 00:02:40.011
+Asia's high was taken first. Liquidity of the high was gone.
+
+51
+00:02:40.011 --> 00:02:42.377
+Now the liquidity of the low is what's left. So we look to target
+
+52
+00:02:42.377 --> 00:02:45.713
+that. Asia's low was taken first.
+
+53
+00:02:46.268 --> 00:02:48.709
+Only the high is left. So we look to target that.
+
+54
+00:02:48.954 --> 00:02:51.395
+Okay. We're trying to get in positions in here on a lower time frame.
+
+55
+00:02:51.651 --> 00:02:54.081
+Okay. Around these points, we're looking for positions.
+
+56
+00:02:55.329 --> 00:02:57.823
+You can do the same one. Also with New York. If New York then
+
+57
+00:02:57.823 --> 00:03:00.078
+trades at London's high, you can look to short.
+
+58
+00:03:00.407 --> 00:03:03.851
+Okay. What happened on the day before here?
+
+59
+00:03:03.946 --> 00:03:05.951
+We took Asia's low first. Only the high is left.
+
+60
+00:03:06.622 --> 00:03:09.021
+So we're looking to get in, longs to the upside.
+
+61
+00:03:09.436 --> 00:03:12.011
+Now it doesn't always work like this. You know, you can't always get in.
+
+62
+00:03:12.011 --> 00:03:14.718
+You can't everything right. You can't be a hundred percent perfect.
+
+63
+00:03:15.166 --> 00:03:18.876
+So you can see here we had the low taken, price mounted.
+
+64
+00:03:19.014 --> 00:03:23.608
+We just continue, continue from London. Here you can see it didn't even
+
+65
+00:03:23.608 --> 00:03:26.694
+happen in London, right? In Frank, before London opened,
+
+66
+00:03:26.694 --> 00:03:29.184
+we actually swept the low. Then we went and targeted the highs.
+
+67
+00:03:30.526 --> 00:03:33.629
+We took the highs, then we targeted the lows. Okay?
+
+68
+00:03:33.883 --> 00:03:36.006
+We took the low in Frank, we targeted the high.
+
+69
+00:03:36.527 --> 00:03:39.033
+You can see it plays out all the time.
+
+70
+00:03:39.267 --> 00:03:42.257
+We take the low first, in Frank. We then take the high.
+
+71
+00:03:42.257 --> 00:03:44.869
+We take the high, we take the low. We take the low,
+
+72
+00:03:44.869 --> 00:03:48.902
+we take the high. So that's how you use session liquidity.
+
+73
+00:03:49.033 --> 00:03:52.645
+We know that there's always going to be liquidity in these highs and lows
+
+74
+00:03:52.645 --> 00:03:55.543
+to target. So if the low's gone first,
+
+75
+00:03:55.908 --> 00:03:58.687
+the high's left. That's how we're going to use session liquidity.
+
+76
+00:03:59.149 --> 00:04:01.273
+Now there's more about that in the master key.
+
+77
+00:04:01.925 --> 00:04:05.788
+You've probably seen it. We give you one of our strategies and our set
+
+78
+00:04:05.788 --> 00:04:09.225
+ups, which teaches you how to actually get involved in these,
+
+79
+00:04:09.461 --> 00:04:13.094
+in these areas. But that's a little walkthrough.
+
+80
+00:04:13.928 --> 00:04:16.011
+There's not much to go over. You know, there's not much information there.
+
+81
+00:04:17.540 --> 00:04:20.136
+It's just that simple, right? It's just a killzone. You know,
+
+82
+00:04:20.136 --> 00:04:22.188
+you have your killzone in Asia, you have your killzone in London,
+
+83
+00:04:22.188 --> 00:04:25.322
+you have your killzone in New York. The times are,
+
+84
+00:04:25.567 --> 00:04:27.683
+as I said, UTC minus 4,
+
+85
+00:04:27.683 --> 00:04:30.408
+8pm till 12am,
+
+86
+00:04:30.408 --> 00:04:34.000
+2am till 5pm. And then 7am till 10am.
+
+87
+00:04:34.000 --> 00:04:36.527
+It's pretty simple. That's it.
+
+88
+00:04:37.033 --> 00:04:40.447
+And we want to use the highs and lows. You can go test something
+
+89
+00:04:40.447 --> 00:04:43.370
+around that, I just gave you some good clues. Any questions?
+
+90
+00:04:43.450 --> 00:04:44.012
+Let me know.

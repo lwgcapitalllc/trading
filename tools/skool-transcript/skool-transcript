@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+#
+# skool-transcript — rip a clean transcript off a Skool video into the SMC course library.
+#
+# Usage:
+#   skool-transcript -m "Start Here" "Video Title"        # module + title, URL from clipboard
+#   skool-transcript -m "Start Here" "Video Title" "<url>" # module + title + URL
+#   skool-transcript "Video Title"                        # no module -> 00-unsorted/
+#   skool-transcript -d ~/some/folder ...                 # dump to a plain folder (no library)
+#
+# Files land in  <repo>/education/<course>/<NN-module>/  (course defaults to "smc"):
+#   .../01-start-here/transcripts/NN-slug.txt     clean readable transcript
+#   .../01-start-here/transcripts/NN-slug.en.vtt  raw captions with timings
+#   .../01-start-here/summaries/NN-slug.md        summary stub, ready to fill in
+# The module folder's NN comes from its position in the course's modules.txt
+# (course order); the video's NN is its rip order within that module; slug is
+# made from the title. Skool-player and Loom-hosted videos are both handled.
+# The library index (education/smc/README.md) is regenerated after every rip.
+# Use -c to target a different course folder (e.g. -c ict), -m for the module.
+#
+# How to get the URL: on the Skool video page open DevTools (Cmd+Opt+I) ->
+# Network tab -> type "m3u8" in the filter -> press play -> right-click the
+# stream.video.skool.com row -> Copy -> Copy link address. Then run this.
+
+set -euo pipefail
+
+# --- locate the repo through the (possibly symlinked) script path ----------
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"   # <repo>/tools/skool-transcript
+REPO="$(cd "$SCRIPT_DIR/../.." && pwd)"
+TEMPLATE="$SCRIPT_DIR/templates/summary.md"
+
+TITLE=""
+COURSE="smc"     # which folder under education/
+MODULE=""        # set by -m; which course module the video belongs to
+CUSTOM_DIR=""    # set by -d; turns off library mode
+
+# --- parse args -------------------------------------------------------------
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o|--title)  TITLE="$2"; shift 2 ;;
+    -c|--course) COURSE="$2"; shift 2 ;;
+    -m|--module) MODULE="$2"; shift 2 ;;
+    -d|--dir)    CUSTOM_DIR="$2"; shift 2 ;;
+    -h|--help)   sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *)           ARGS+=("$1"); shift ;;
+  esac
+done
+
+LIBRARY="$REPO/education/$COURSE"
+
+# Positional args: a title (no "m3u8" in it) and/or a URL (has "m3u8").
+URL=""
+for a in "${ARGS[@]:-}"; do
+  [[ -z "$a" ]] && continue
+  if [[ "$a" == *"m3u8"* ]]; then URL="$a"; else TITLE="$a"; fi
+done
+
+# URL: fall back to the clipboard.
+if [[ -z "$URL" ]]; then
+  clip="$(pbpaste 2>/dev/null || true)"
+  if [[ "$clip" == *"m3u8"* ]]; then
+    URL="$clip"; echo "Using m3u8 URL from clipboard."
+  else
+    echo "No m3u8 URL given, and the clipboard doesn't have one." >&2
+    echo "Copy the stream.video.skool.com ...m3u8?token=... URL first, then re-run." >&2
+    exit 1
+  fi
+fi
+
+# Title: ask for it if we still don't have one (and we can prompt).
+if [[ -z "$TITLE" ]]; then
+  if [[ -t 0 ]]; then
+    read -r -p "Video title (as shown on Skool): " TITLE
+  fi
+fi
+
+# --- decide output folder and file name ------------------------------------
+slugify() { printf '%s' "$1" | python3 -c 'import sys,re; s=re.sub(r"[^a-z0-9]+","-",sys.stdin.read().strip().lower()).strip("-"); print(s or "untitled")'; }
+
+# Resolve a module name to its "NN-slug" folder name using the course's
+# modules.txt manifest (the single source of course order). NN = the module's
+# 1-based position in the manifest. A module not yet listed is appended, so it
+# still lands after the known ones. Prints the folder name on stdout.
+resolve_module() {  # $1 = library path, $2 = module name
+  MODULES_FILE="$1/modules.txt" MODNAME="$2" python3 <<'PY'
+import os, re
+from pathlib import Path
+f = Path(os.environ["MODULES_FILE"])
+want = re.sub(r"[^a-z0-9]+", "-", os.environ["MODNAME"].strip().lower()).strip("-")
+names = []
+if f.exists():
+    for ln in f.read_text(encoding="utf-8").splitlines():
+        ln = ln.strip()
+        if ln and not ln.startswith("#"):
+            names.append(ln)
+slugs = [re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-") for n in names]
+if want in slugs:
+    pos = slugs.index(want) + 1
+else:
+    # append the new module to the manifest and use its new position
+    with f.open("a", encoding="utf-8") as fh:
+        fh.write(os.environ["MODNAME"].strip() + "\n")
+    pos = len(names) + 1
+print(f"{pos:02d}-{want}")
+PY
+}
+
+if [[ -n "$CUSTOM_DIR" ]]; then
+  # plain mode: no numbering, no library wiring
+  LIBMODE=0
+  OUTDIR="$CUSTOM_DIR"
+  slug="$(slugify "${TITLE:-transcript}")"
+  base="${slug}_$(date +%Y%m%d_%H%M%S)"
+else
+  LIBMODE=1
+  slug="$(slugify "${TITLE:-untitled}")"
+  if [[ -n "$MODULE" ]]; then
+    modfolder="$(resolve_module "$LIBRARY" "$MODULE")"
+    MODROOT="$LIBRARY/$modfolder"
+  else
+    # no module given: fall back to an "unsorted" bucket rather than the root,
+    # so nothing pollutes a real module. Pass -m to file it properly.
+    MODROOT="$LIBRARY/00-unsorted"
+  fi
+  OUTDIR="$MODROOT/transcripts"
+  SUMMDIR="$MODROOT/summaries"
+  mkdir -p "$OUTDIR" "$SUMMDIR"
+  # next number = highest NN- prefix already in THIS module's transcripts, + 1
+  last="$(ls "$OUTDIR" 2>/dev/null | grep -oE '^[0-9]+' | sort -n | tail -1 || true)"
+  num=$(( 10#${last:-0} + 1 ))
+  base="$(printf '%02d' "$num")-${slug}"
+fi
+mkdir -p "$OUTDIR"
+
+# --- clean a .vtt into plain text ------------------------------------------
+clean_vtt() {  # $1 = vtt path, $2 = txt path
+  python3 - "$1" "$2" <<'PY'
+import re, sys
+src, dst = sys.argv[1], sys.argv[2]
+raw = open(src, encoding="utf-8", errors="replace").read()
+out = []
+for ln in raw.splitlines():
+    ln = ln.strip()
+    if not ln or ln == "WEBVTT": continue
+    if ln.startswith(("X-TIMESTAMP", "NOTE", "Kind:", "Language:")): continue
+    if "-->" in ln: continue
+    if re.fullmatch(r"\d+", ln): continue
+    ln = re.sub(r"<[^>]+>", "", ln)          # strip inline caption tags
+    if not out or out[-1] != ln:             # drop consecutive duplicates
+        out.append(ln)
+text = re.sub(r"\s+", " ", " ".join(out)).strip()
+open(dst, "w", encoding="utf-8").write(text + "\n")
+print(f"  {len(text.split())} words -> {dst}")
+PY
+}
+
+# --- download + clean -------------------------------------------------------
+echo "Ripping: ${TITLE:-(untitled)}"
+vtt=""
+
+if [[ "$URL" == *"loom.com"* ]]; then
+  # Loom host: captions are NOT in the HLS stream. Loom serves them as a
+  # separate signed CDN .vtt, fetched by video id via its GraphQL endpoint.
+  # The id is the path segment after /id/ in the luna.loom.com URL.
+  vid="$(printf '%s' "$URL" | python3 -c 'import sys,re; m=re.search(r"/id/([0-9a-f]+)", sys.stdin.read()); print(m.group(1) if m else "")')"
+  if [[ -z "$vid" ]]; then
+    echo "  Could not read the Loom video id out of that URL." >&2
+    exit 1
+  fi
+  cap="$(curl -s "https://www.loom.com/graphql" -H 'content-type: application/json' \
+    --data "{\"operationName\":\"FetchVideoTranscript\",\"variables\":{\"videoId\":\"${vid}\"},\"query\":\"query FetchVideoTranscript(\$videoId: ID!) { fetchVideoTranscript(videoId: \$videoId) { ... on VideoTranscriptDetails { captions_source_url __typename } __typename } }\"}" \
+    | python3 -c 'import sys,json;
+try:
+    print(json.load(sys.stdin)["data"]["fetchVideoTranscript"]["captions_source_url"] or "")
+except Exception:
+    print("")')"
+  if [[ -z "$cap" ]]; then
+    echo "  Loom returned no caption track for this video — nothing to transcribe." >&2
+    exit 1
+  fi
+  vtt="${OUTDIR}/${base}.en.vtt"
+  curl -s "$cap" -o "$vtt"
+else
+  # Skool host: captions ride inside the HLS manifest. The Referer/Origin
+  # headers are load-bearing — without them the CDN returns 403.
+  yt-dlp --no-update -q --no-warnings \
+    --add-header "Referer:https://www.skool.com/" \
+    --add-header "Origin:https://www.skool.com" \
+    --user-agent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36" \
+    --write-subs --write-auto-subs --sub-langs "en.*,en" --skip-download \
+    -o "${OUTDIR}/${base}.%(ext)s" "$URL" || {
+      echo "  FAILED. The token in the URL may have expired (they last ~a day) — copy a fresh m3u8 URL and retry." >&2
+      exit 1
+    }
+  vtt="$(ls -t "${OUTDIR}/${base}".*.vtt 2>/dev/null | head -1 || true)"
+fi
+
+if [[ -z "$vtt" || ! -s "$vtt" ]]; then
+  echo "  No subtitle track found for this video — nothing to transcribe." >&2
+  exit 1
+fi
+clean_vtt "$vtt" "${OUTDIR}/${base}.txt"
+
+# --- library wiring: summary stub + regenerate the index -------------------
+if [[ "$LIBMODE" == "1" ]]; then
+  STUB="$SUMMDIR/${base}.md"
+  if [[ ! -f "$STUB" && -f "$TEMPLATE" ]]; then
+    TITLE="${TITLE:-$slug}" BASE="$base" TEMPLATE="$TEMPLATE" STUB="$STUB" python3 -c '
+import os
+t = open(os.environ["TEMPLATE"]).read()
+t = t.replace("{{TITLE}}", os.environ["TITLE"]).replace("{{BASE}}", os.environ["BASE"])
+open(os.environ["STUB"], "w").write(t)'
+    echo "  summary stub -> $STUB"
+  fi
+  python3 "$SCRIPT_DIR/lib_index.py" "$LIBRARY" >/dev/null && echo "  library index updated"
+fi
+
+echo "Done."

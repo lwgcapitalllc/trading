@@ -1,0 +1,4694 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:01.520
+Welcome, ladies and gents,
+
+2
+00:00:01.520 --> 00:00:04.040
+to the much anticipated modules.
+
+3
+00:00:04.040 --> 00:00:08.120
+Now we're going deep into actually understanding our playbook,
+
+4
+00:00:08.120 --> 00:00:09.880
+understanding how to backtest,
+
+5
+00:00:09.880 --> 00:00:12.520
+how to test the system, how to collect the data,
+
+6
+00:00:12.520 --> 00:00:15.520
+how to essentially split tests across variables
+
+7
+00:00:15.520 --> 00:00:17.160
+that are inside of your system
+
+8
+00:00:17.160 --> 00:00:20.160
+and start really treating trading like a business
+
+9
+00:00:20.160 --> 00:00:22.040
+and like a data analyst.
+
+10
+00:00:22.040 --> 00:00:22.880
+So in this video,
+
+11
+00:00:22.880 --> 00:00:25.760
+I'm gonna kinda just walk you through my playbook,
+
+12
+00:00:25.760 --> 00:00:28.440
+walk you through the rules of the playbook,
+
+13
+00:00:28.440 --> 00:00:30.960
+and then walk you through my tagging system.
+
+14
+00:00:30.960 --> 00:00:33.840
+So without further ado, let's kinda go and get started.
+
+15
+00:00:33.840 --> 00:00:35.720
+Now, here we are in Zella,
+
+16
+00:00:35.720 --> 00:00:38.200
+I've got a fresh account going,
+
+17
+00:00:38.200 --> 00:00:40.920
+and I have here my playbook, right?
+
+18
+00:00:40.920 --> 00:00:42.720
+The specific playbook that we're gonna be looking at
+
+19
+00:00:42.720 --> 00:00:44.040
+in this module,
+
+20
+00:00:44.040 --> 00:00:47.640
+which is the M15 Intraday Bias model.
+
+21
+00:00:47.640 --> 00:00:49.920
+For you guys, most commonly known as, you know,
+
+22
+00:00:49.920 --> 00:00:51.840
+pro-trained M15,
+
+23
+00:00:51.840 --> 00:00:52.960
+lower time frame confirmation,
+
+24
+00:00:52.960 --> 00:00:54.840
+that model that we trade.
+
+25
+00:00:54.840 --> 00:00:56.840
+So if we kinda just go in here,
+
+26
+00:00:56.840 --> 00:00:58.960
+essentially if you come into trade Zella
+
+27
+00:00:58.960 --> 00:01:01.120
+and you wanted to create a playbook, right?
+
+28
+00:01:01.120 --> 00:01:03.920
+You can just open this little area in here
+
+29
+00:01:03.920 --> 00:01:07.720
+that is called create playbook, click this little icon,
+
+30
+00:01:07.720 --> 00:01:11.760
+and then here you will kinda see general information,
+
+31
+00:01:11.760 --> 00:01:12.920
+it's where you can kind of add an icon
+
+32
+00:01:12.920 --> 00:01:14.120
+or choose a color, whatever it is,
+
+33
+00:01:14.120 --> 00:01:15.400
+and then name your playbook.
+
+34
+00:01:15.400 --> 00:01:17.560
+Now, there's no such thing as, you know,
+
+35
+00:01:17.560 --> 00:01:18.960
+the right name for a playbook,
+
+36
+00:01:18.960 --> 00:01:21.800
+it's just whatever name that you decide to give it.
+
+37
+00:01:21.800 --> 00:01:25.480
+This is more so just for you to, you know,
+
+38
+00:01:25.480 --> 00:01:26.840
+know what playbook it is.
+
+39
+00:01:26.840 --> 00:01:29.440
+And so there's no right or wrong name for a strategy,
+
+40
+00:01:29.440 --> 00:01:30.880
+you don't need to name your playbook
+
+41
+00:01:30.880 --> 00:01:33.560
+the same as my playbook if you don't want to.
+
+42
+00:01:33.560 --> 00:01:34.920
+So you can name your playbook,
+
+43
+00:01:34.920 --> 00:01:37.400
+and then you can give it a little bit of a description.
+
+44
+00:01:37.400 --> 00:01:38.880
+And then once you've done this, right,
+
+45
+00:01:38.880 --> 00:01:41.640
+so let's just say we're gonna call it Intraday,
+
+46
+00:01:41.640 --> 00:01:45.240
+and then let's just say this is basically M15 Bias.
+
+47
+00:01:45.240 --> 00:01:48.160
+Once you've kind of created your overall name
+
+48
+00:01:48.160 --> 00:01:49.520
+and description of your playbook,
+
+49
+00:01:49.520 --> 00:01:50.400
+then this is where you're gonna go
+
+50
+00:01:50.400 --> 00:01:52.840
+into your trading playbook rules.
+
+51
+00:01:52.840 --> 00:01:56.120
+Now, one thing here that you can do is you can go
+
+52
+00:01:56.120 --> 00:01:59.920
+and watch the actual, you can go in here
+
+53
+00:01:59.920 --> 00:02:05.000
+and look at how trades are explained the playbook,
+
+54
+00:02:05.000 --> 00:02:08.480
+but for me personally, it's just not necessary.
+
+55
+00:02:08.480 --> 00:02:10.120
+It's just not necessary.
+
+56
+00:02:10.120 --> 00:02:11.040
+It's very simple.
+
+57
+00:02:11.040 --> 00:02:12.960
+Obviously here, we have entry criteria,
+
+58
+00:02:12.960 --> 00:02:14.560
+exit criteria, market conditions.
+
+59
+00:02:14.560 --> 00:02:17.000
+You don't necessarily have to have these.
+
+60
+00:02:17.000 --> 00:02:19.120
+You can essentially create a new group yourself.
+
+61
+00:02:19.120 --> 00:02:20.800
+And so for example, you know,
+
+62
+00:02:20.800 --> 00:02:22.240
+you want to be, when you create a playbook,
+
+63
+00:02:22.240 --> 00:02:25.800
+you want to just be looking at what are the groups of rules, right?
+
+64
+00:02:25.800 --> 00:02:29.800
+So for example, one of them is we have Bias, right?
+
+65
+00:02:29.800 --> 00:02:32.200
+Now, one of the rule group is Bias.
+
+66
+00:02:32.200 --> 00:02:34.320
+Another rule group could be entry criteria,
+
+67
+00:02:34.320 --> 00:02:36.480
+another could be exit criteria, right?
+
+68
+00:02:36.480 --> 00:02:38.600
+That's essentially how you create your kind
+
+69
+00:02:38.600 --> 00:02:40.200
+of overarching rule groups.
+
+70
+00:02:40.200 --> 00:02:43.040
+And then inside of each one, you can create rules.
+
+71
+00:02:43.040 --> 00:02:45.720
+And so for example, here you have the name of the rule.
+
+72
+00:02:45.720 --> 00:02:47.760
+And so for a Bias rule, for me,
+
+73
+00:02:47.760 --> 00:02:52.120
+I need to be pro-trend M15 for this model.
+
+74
+00:02:52.120 --> 00:02:55.280
+And the pro-trend M15 is relative to the external swing points
+
+75
+00:02:55.280 --> 00:02:59.320
+of structure following the three-candle pullback model.
+
+76
+00:02:59.320 --> 00:03:02.080
+And so we can see this is the rule.
+
+77
+00:03:02.080 --> 00:03:06.240
+The rule for my bias is that the trend,
+
+78
+00:03:06.240 --> 00:03:10.360
+I must be trading in alignment with the trend on the M15.
+
+79
+00:03:10.360 --> 00:03:14.360
+And then this rule should be applicable when?
+
+80
+00:03:14.360 --> 00:03:15.720
+Is this rule available?
+
+81
+00:03:15.720 --> 00:03:17.760
+Should this rule be followed always, regardless,
+
+82
+00:03:17.760 --> 00:03:19.840
+no matter what, when it's a winner,
+
+83
+00:03:19.840 --> 00:03:22.000
+when it's a loser, when the trade is a breakeven.
+
+84
+00:03:22.000 --> 00:03:25.480
+So for a bias, it's always required.
+
+85
+00:03:25.480 --> 00:03:27.160
+So that becomes an always, right?
+
+86
+00:03:27.160 --> 00:03:29.400
+Versus, let's say, an exit criteria.
+
+87
+00:03:29.400 --> 00:03:33.400
+Now in an exit criteria, what you might have is a, you know,
+
+88
+00:03:33.400 --> 00:03:38.560
+50% partial at five risk to reward, right?
+
+89
+00:03:38.560 --> 00:03:39.560
+And so that's your rule.
+
+90
+00:03:39.560 --> 00:03:42.680
+Your rule is that you take off 50% of your open position
+
+91
+00:03:42.680 --> 00:03:45.640
+at five R, and then do you do that always?
+
+92
+00:03:45.640 --> 00:03:48.120
+Oh no, because not every single trade runs to five R.
+
+93
+00:03:48.120 --> 00:03:50.640
+So you only do that when the trade is a winner.
+
+94
+00:03:50.640 --> 00:03:55.640
+So now you have a rule that is close 50% of the position
+
+95
+00:03:55.640 --> 00:03:59.240
+at five R, if that trade is a winner.
+
+96
+00:03:59.240 --> 00:04:00.680
+Another one, you can have, you know,
+
+97
+00:04:00.680 --> 00:04:02.240
+when a trade is a breakeven.
+
+98
+00:04:02.240 --> 00:04:07.240
+So a trade is breakeven when the one minute timeframe,
+
+99
+00:04:07.240 --> 00:04:13.080
+break structure, right, after an entry,
+
+100
+00:04:13.080 --> 00:04:18.080
+and there's no reason for price to return.
+
+101
+00:04:20.880 --> 00:04:23.400
+All right, that's the, that's the rule.
+
+102
+00:04:23.400 --> 00:04:24.760
+So when you get a one minute break of structure,
+
+103
+00:04:24.760 --> 00:04:27.000
+after your entry, so a one minute continuation,
+
+104
+00:04:27.000 --> 00:04:28.440
+and there's no reason for price to return
+
+105
+00:04:28.440 --> 00:04:31.120
+to your entry level, meaning there's no five minute order
+
+106
+00:04:31.120 --> 00:04:32.880
+block or five minute fair value gap at that,
+
+107
+00:04:32.880 --> 00:04:35.240
+at that absolute price level where you've entered,
+
+108
+00:04:35.240 --> 00:04:37.360
+there's no reason for price to return.
+
+109
+00:04:37.360 --> 00:04:40.040
+Therefore, if this happens, then we go to breakeven.
+
+110
+00:04:40.040 --> 00:04:41.560
+And so now we've created a new rule.
+
+111
+00:04:41.560 --> 00:04:43.960
+If the one minute break structure, once we're in the trade,
+
+112
+00:04:43.960 --> 00:04:46.200
+and there's no reason for price to return to that level,
+
+113
+00:04:46.200 --> 00:04:49.280
+we can actually move that trade to breakeven, right?
+
+114
+00:04:49.280 --> 00:04:50.800
+It's as simple as that.
+
+115
+00:04:50.800 --> 00:04:52.000
+And so that becomes a rule.
+
+116
+00:04:52.000 --> 00:04:54.160
+And so that is essentially how you create rules.
+
+117
+00:04:54.160 --> 00:04:57.360
+Now your playbook isn't some really in-depth,
+
+118
+00:04:57.360 --> 00:05:01.160
+detailed system.
+
+119
+00:05:01.160 --> 00:05:05.960
+It's an overarching collection of principles
+
+120
+00:05:05.960 --> 00:05:08.600
+that you follow, and you go deeper
+
+121
+00:05:08.600 --> 00:05:10.760
+with what we have as our tagging system.
+
+122
+00:05:10.760 --> 00:05:11.960
+So I'll cancel this one for now,
+
+123
+00:05:11.960 --> 00:05:14.160
+and we'll go into the actual playbook that we have,
+
+124
+00:05:14.160 --> 00:05:15.280
+and I'll show you the rules.
+
+125
+00:05:15.280 --> 00:05:17.800
+So again, you can see completely fresh account,
+
+126
+00:05:17.800 --> 00:05:20.880
+completely fresh playbook,
+
+127
+00:05:20.880 --> 00:05:24.720
+and now we can go into the rules of this playbook.
+
+128
+00:05:24.720 --> 00:05:26.720
+And you can just find playbooks in here,
+
+129
+00:05:26.720 --> 00:05:30.160
+in the backtest and feature, playbooks, is where it'll be.
+
+130
+00:05:30.160 --> 00:05:31.760
+So for me, these are the rules I have.
+
+131
+00:05:31.760 --> 00:05:33.440
+I have a rule for bias,
+
+132
+00:05:33.440 --> 00:05:38.440
+and that rule is that the M15 must be pro-trend always.
+
+133
+00:05:38.440 --> 00:05:39.880
+Plain and simple.
+
+134
+00:05:39.880 --> 00:05:42.160
+Then I have another rule for my area of interest.
+
+135
+00:05:42.160 --> 00:05:46.160
+My area of interest is tied to the area of price,
+
+136
+00:05:46.160 --> 00:05:49.000
+but I would look at potentially getting into the market
+
+137
+00:05:49.000 --> 00:05:50.880
+if I get the confirmation.
+
+138
+00:05:50.880 --> 00:05:55.920
+So that area of interest is either a strong point of interest
+
+139
+00:05:55.920 --> 00:05:58.880
+or a liquidity sweep, right?
+
+140
+00:05:58.880 --> 00:06:00.840
+A strong point of interest or liquidity sweep.
+
+141
+00:06:00.840 --> 00:06:03.240
+And again, the difference between strong and weak
+
+142
+00:06:03.240 --> 00:06:04.880
+and a lot of sorts of points of interest,
+
+143
+00:06:04.880 --> 00:06:07.360
+that would be kind of clarified later.
+
+144
+00:06:07.360 --> 00:06:10.920
+But I always need to have either a strong point of interest
+
+145
+00:06:10.920 --> 00:06:13.560
+or a liquidity sweep, right?
+
+146
+00:06:13.560 --> 00:06:15.920
+For me to get involved in market
+
+147
+00:06:15.920 --> 00:06:17.320
+and I should actually be more specific here,
+
+148
+00:06:17.320 --> 00:06:20.920
+or session liquidity sweep.
+
+149
+00:06:20.920 --> 00:06:23.000
+So in Asia or London, right?
+
+150
+00:06:23.000 --> 00:06:25.000
+That is my rules.
+
+151
+00:06:25.000 --> 00:06:26.600
+Anytime that I need to enter the market
+
+152
+00:06:26.600 --> 00:06:29.000
+or I'm getting ready to enter a trade,
+
+153
+00:06:29.000 --> 00:06:31.840
+I first have to make sure that I'm in a strong point
+
+154
+00:06:31.840 --> 00:06:35.760
+of interest or I've had a sweep of session liquidity.
+
+155
+00:06:35.760 --> 00:06:37.720
+Then we have entry criteria.
+
+156
+00:06:37.720 --> 00:06:40.160
+So this is the criteria that I will use
+
+157
+00:06:40.160 --> 00:06:41.960
+to enter into a trade.
+
+158
+00:06:41.960 --> 00:06:45.240
+And so always, every trade that I take
+
+159
+00:06:45.240 --> 00:06:49.520
+must be an M1 change of character or break of structure,
+
+160
+00:06:49.520 --> 00:06:53.760
+a line of M15, right?
+
+161
+00:06:53.760 --> 00:06:58.280
+So the M15 is bullish and that's the first one by us.
+
+162
+00:06:58.280 --> 00:06:59.840
+I'm looking for longs.
+
+163
+00:06:59.840 --> 00:07:02.200
+Then if we enter an area of interest,
+
+164
+00:07:02.200 --> 00:07:03.480
+which is either a strong POI
+
+165
+00:07:03.480 --> 00:07:05.480
+or a session sweep of liquidity,
+
+166
+00:07:05.480 --> 00:07:07.320
+then I can look at my entry.
+
+167
+00:07:07.320 --> 00:07:10.320
+But to enter, I would need to see a one minute change
+
+168
+00:07:10.320 --> 00:07:13.560
+of character or break of structure aligned with the M15.
+
+169
+00:07:13.560 --> 00:07:16.080
+So usually if the M15 is trading higher,
+
+170
+00:07:16.080 --> 00:07:18.600
+then as price comes back down to sweep of session liquidity
+
+171
+00:07:18.600 --> 00:07:19.640
+or into a point of interest,
+
+172
+00:07:19.640 --> 00:07:22.040
+the one minute timeframe is usually going to be bearish.
+
+173
+00:07:22.040 --> 00:07:23.320
+In that case where it's bearish,
+
+174
+00:07:23.320 --> 00:07:24.920
+once we get to my area of interest,
+
+175
+00:07:24.920 --> 00:07:27.840
+my job is to wait for the price to shift
+
+176
+00:07:27.840 --> 00:07:31.800
+from bearish to bullish inside of that area.
+
+177
+00:07:31.800 --> 00:07:35.600
+And if it is already shifted to bullish,
+
+178
+00:07:35.600 --> 00:07:37.040
+then there could be an instance
+
+179
+00:07:37.040 --> 00:07:39.400
+where I can't trade the first change of character.
+
+180
+00:07:39.400 --> 00:07:40.880
+I have to wait for a break of structure.
+
+181
+00:07:40.880 --> 00:07:43.080
+And again, those are the specific details
+
+182
+00:07:43.080 --> 00:07:48.080
+that will be outlined and made clear in our tagging system.
+
+183
+00:07:48.080 --> 00:07:51.000
+So that is the first entry rule.
+
+184
+00:07:51.000 --> 00:07:56.000
+The second entry criteria is what I use to enter the market.
+
+185
+00:07:56.000 --> 00:08:01.760
+So I'm always using anything between M1 and M5,
+
+186
+00:08:01.760 --> 00:08:06.320
+either an order block or fevaiga, M1, M2, M3, M5,
+
+187
+00:08:06.320 --> 00:08:07.880
+order block or fevaiga.
+
+188
+00:08:07.880 --> 00:08:10.000
+I know it's a little bit vague and a little bit broad,
+
+189
+00:08:10.000 --> 00:08:11.360
+but the reality is,
+
+190
+00:08:11.360 --> 00:08:14.200
+is what you use, whether it be a fair value gap
+
+191
+00:08:14.200 --> 00:08:15.520
+or whether it be in the order block,
+
+192
+00:08:15.520 --> 00:08:20.520
+is contextual to the actual price feed itself.
+
+193
+00:08:20.520 --> 00:08:23.160
+So there'll be some instances where we use order block.
+
+194
+00:08:23.160 --> 00:08:24.960
+There'll be some instances where we use a fair value gap.
+
+195
+00:08:24.960 --> 00:08:26.400
+And it's our job in the moment
+
+196
+00:08:26.400 --> 00:08:27.880
+to decipher which one we should use.
+
+197
+00:08:27.880 --> 00:08:30.160
+And most importantly, why we decided to use that one,
+
+198
+00:08:30.160 --> 00:08:32.480
+which again will be highlighted in much more detail
+
+199
+00:08:32.480 --> 00:08:35.200
+when we're kind of running through the tests.
+
+200
+00:08:35.200 --> 00:08:36.360
+Then we have the management.
+
+201
+00:08:36.360 --> 00:08:39.040
+So at this point, I've already got a bias
+
+202
+00:08:39.040 --> 00:08:40.920
+and I only trade if I'm with that bias.
+
+203
+00:08:40.920 --> 00:08:45.440
+So it goes like this, bias, pro trend, yes.
+
+204
+00:08:45.440 --> 00:08:48.840
+Okay, now you can move on, pro trend, no, don't do anything.
+
+205
+00:08:48.840 --> 00:08:51.480
+So always pro trend, area of interest.
+
+206
+00:08:51.480 --> 00:08:54.160
+Okay, with pro trend, cool, I'm looking for lungs,
+
+207
+00:08:54.160 --> 00:08:57.080
+area of interest, question mark, yes, great.
+
+208
+00:08:57.080 --> 00:09:00.880
+Strong POI or session equality, no, do nothing, right?
+
+209
+00:09:00.880 --> 00:09:01.720
+That's simple.
+
+210
+00:09:01.720 --> 00:09:04.520
+Okay, your pro trend, you're in an area of interest.
+
+211
+00:09:04.520 --> 00:09:07.040
+Okay, M1, change of character or break of structure?
+
+212
+00:09:07.040 --> 00:09:09.480
+Yes, okay, now you can look at entering the trade.
+
+213
+00:09:09.480 --> 00:09:11.400
+No, don't do anything.
+
+214
+00:09:11.400 --> 00:09:13.280
+Okay, now you're looking to enter the trade.
+
+215
+00:09:13.280 --> 00:09:18.240
+Do you have a M1 or M5, M1, M3, M5 in that region
+
+216
+00:09:18.240 --> 00:09:21.720
+order block or fair value gap to trade from, right?
+
+217
+00:09:21.720 --> 00:09:23.720
+Yes, okay, great, go for it.
+
+218
+00:09:23.720 --> 00:09:26.480
+No, okay, hold your horses, wait for a second,
+
+219
+00:09:26.480 --> 00:09:28.280
+let's get more confirmation.
+
+220
+00:09:28.280 --> 00:09:30.160
+Now we're going to management.
+
+221
+00:09:30.160 --> 00:09:33.120
+So one time in the trade, these first three principles
+
+222
+00:09:33.120 --> 00:09:35.000
+are essentially what get me into the trade.
+
+223
+00:09:35.000 --> 00:09:38.360
+Then the management is how I'm getting out of the trade.
+
+224
+00:09:38.360 --> 00:09:42.320
+So the management, the first one, this is when a trade
+
+225
+00:09:42.320 --> 00:09:46.120
+is break even, the M1 will break structure after the entry
+
+226
+00:09:46.120 --> 00:09:48.600
+and there's no need for a return, right?
+
+227
+00:09:48.600 --> 00:09:53.600
+So my break even rule is, and this is management, right?
+
+228
+00:09:53.600 --> 00:09:58.120
+I should close my trade at break even if the one minute
+
+229
+00:09:58.120 --> 00:10:00.320
+break structure after I've already entered
+
+230
+00:10:00.320 --> 00:10:02.000
+and there's no need for return.
+
+231
+00:10:02.000 --> 00:10:04.600
+If that happens, stop loss goes to break even.
+
+232
+00:10:04.600 --> 00:10:07.200
+If that trade gets closed, I follow my rules, right?
+
+233
+00:10:07.200 --> 00:10:08.040
+So that's simple.
+
+234
+00:10:08.040 --> 00:10:13.000
+So then we have for a stop loss.
+
+235
+00:10:13.000 --> 00:10:16.320
+So when I trade is a loser, it will be a break
+
+236
+00:10:16.320 --> 00:10:19.640
+of the protected structural low that I entered from.
+
+237
+00:10:19.640 --> 00:10:21.840
+So if I'm waiting for a M1 change of character
+
+238
+00:10:21.840 --> 00:10:24.640
+to get involved in the market, then I'm basically trading
+
+239
+00:10:24.640 --> 00:10:28.200
+that new bullish price leg or bearish price leg on the M1.
+
+240
+00:10:28.200 --> 00:10:31.320
+And so my stop loss is always going below the structured,
+
+241
+00:10:31.320 --> 00:10:34.680
+below the protected structural low for longs
+
+242
+00:10:34.680 --> 00:10:38.000
+and above the protected structural high for short.
+
+243
+00:10:38.000 --> 00:10:40.240
+And so if that area gets traded through,
+
+244
+00:10:40.240 --> 00:10:41.720
+then I get stop loss.
+
+245
+00:10:41.720 --> 00:10:43.200
+And so that's very simple.
+
+246
+00:10:43.200 --> 00:10:46.720
+Now this is the management rule, right?
+
+247
+00:10:46.720 --> 00:10:49.760
+When I trade is a winner, I will close half the position
+
+248
+00:10:49.760 --> 00:10:51.320
+at five restore award.
+
+249
+00:10:51.320 --> 00:10:53.960
+So if I'm in this trade and it's going in my favor,
+
+250
+00:10:53.960 --> 00:10:57.160
+if it hits five restore award, I close half of my position.
+
+251
+00:10:57.160 --> 00:10:59.240
+That is my rule, right?
+
+252
+00:10:59.240 --> 00:11:01.280
+And then this is how I kind of scale out the rest
+
+253
+00:11:01.280 --> 00:11:04.400
+of the position, which can be a little bit more subjective
+
+254
+00:11:04.400 --> 00:11:05.240
+in the moment.
+
+255
+00:11:05.240 --> 00:11:07.240
+But again, you're going to be seeing me do this time
+
+256
+00:11:07.240 --> 00:11:10.840
+and time again over this next kind of year-long backtest
+
+257
+00:11:10.840 --> 00:11:13.440
+and you'll understand how I'm scaling up my positions.
+
+258
+00:11:13.440 --> 00:11:17.760
+So the principle is that I scale out at structural levels
+
+259
+00:11:17.760 --> 00:11:20.400
+and I close half of the position each time.
+
+260
+00:11:20.400 --> 00:11:23.160
+So let's say we take five R, right?
+
+261
+00:11:23.160 --> 00:11:28.120
+And let's say the N target, which is the M15 swing high,
+
+262
+00:11:28.120 --> 00:11:31.200
+is 15 R because we're in a huge price lake.
+
+263
+00:11:31.200 --> 00:11:34.000
+I don't want to hold that entire 15 R
+
+264
+00:11:34.000 --> 00:11:36.160
+and hope that price trades straight through it.
+
+265
+00:11:36.160 --> 00:11:38.800
+There may be some instances where that's the case.
+
+266
+00:11:38.800 --> 00:11:41.080
+But what I'm looking for is on the way there,
+
+267
+00:11:41.080 --> 00:11:42.960
+do we have an old Asia session high?
+
+268
+00:11:42.960 --> 00:11:44.560
+Do we have an old New York high?
+
+269
+00:11:44.560 --> 00:11:46.080
+Do we have an old London high?
+
+270
+00:11:46.080 --> 00:11:49.720
+An old weak high that we can use as liquidity
+
+271
+00:11:49.720 --> 00:11:51.280
+to exit our position.
+
+272
+00:11:51.280 --> 00:11:53.520
+And each time I close my position,
+
+273
+00:11:53.520 --> 00:11:56.000
+I'm closing half of what's left open.
+
+274
+00:11:56.000 --> 00:11:58.520
+So if I close half at five R,
+
+275
+00:11:58.520 --> 00:12:01.040
+now I have 50% of my total risk left open,
+
+276
+00:12:01.040 --> 00:12:02.640
+which is 0.5%.
+
+277
+00:12:02.640 --> 00:12:04.080
+Then if we get to 10 R,
+
+278
+00:12:04.080 --> 00:12:06.200
+then I'm going to close half of what's open.
+
+279
+00:12:06.200 --> 00:12:09.160
+So I'm going to close 0.25% at 10 R,
+
+280
+00:12:09.160 --> 00:12:11.120
+which is going to net me another 2.5.
+
+281
+00:12:11.120 --> 00:12:13.640
+And then maybe have another target, right?
+
+282
+00:12:13.640 --> 00:12:15.880
+And then eventually, let's say I have only three targets,
+
+283
+00:12:15.880 --> 00:12:20.040
+it's going to be five R, I close half at let's say 10 R,
+
+284
+00:12:20.040 --> 00:12:22.160
+that's the target at 10 R,
+
+285
+00:12:22.160 --> 00:12:24.880
+then I close another half, which is 0.25%.
+
+286
+00:12:24.880 --> 00:12:27.200
+And then let's say the end target is 15 R,
+
+287
+00:12:27.200 --> 00:12:30.600
+then I close the final 0.25% because it's half,
+
+288
+00:12:30.600 --> 00:12:34.080
+because you don't half it on the end one,
+
+289
+00:12:34.080 --> 00:12:35.560
+you need to close in full, right?
+
+290
+00:12:35.560 --> 00:12:37.880
+If there was another target, then it would just be half.
+
+291
+00:12:37.880 --> 00:12:39.160
+Hopefully that makes sense.
+
+292
+00:12:39.160 --> 00:12:40.600
+So that's the management system.
+
+293
+00:12:40.600 --> 00:12:42.720
+And again, you'll see all of this play out in real time.
+
+294
+00:12:42.720 --> 00:12:47.480
+And then I have two rules to follow for news.
+
+295
+00:12:47.480 --> 00:12:50.760
+So I always need to follow this rule.
+
+296
+00:12:50.760 --> 00:12:54.600
+No trading on a session with CPI NFP or FMC.
+
+297
+00:12:54.600 --> 00:12:56.440
+So it's always going to be obviously New York session.
+
+298
+00:12:56.440 --> 00:12:58.280
+So if I know that there's CPI that day,
+
+299
+00:12:58.280 --> 00:12:59.520
+if I know there's NFP that day,
+
+300
+00:12:59.520 --> 00:13:01.440
+or if I know that there's FOMC that day,
+
+301
+00:13:01.440 --> 00:13:04.600
+I'm not to trade that specific New York session,
+
+302
+00:13:04.600 --> 00:13:05.920
+point blank period.
+
+303
+00:13:05.920 --> 00:13:08.600
+Now, this is a little bit of a,
+
+304
+00:13:08.600 --> 00:13:11.920
+well, it's still just important.
+
+305
+00:13:11.920 --> 00:13:13.400
+I always need to follow this rule.
+
+306
+00:13:13.400 --> 00:13:15.760
+And that is don't enter a trade
+
+307
+00:13:15.760 --> 00:13:20.440
+before we get retail sales or core PC, right?
+
+308
+00:13:20.440 --> 00:13:24.200
+Those are two news events that occur at 830 AM EST,
+
+309
+00:13:24.200 --> 00:13:26.560
+smack bang in the middle of my trading window,
+
+310
+00:13:26.560 --> 00:13:29.200
+that I don't want to be in a trade
+
+311
+00:13:29.200 --> 00:13:32.520
+when those news events get released,
+
+312
+00:13:32.520 --> 00:13:35.720
+because we could see significant price spikes,
+
+313
+00:13:35.720 --> 00:13:40.720
+and that could lead to very much the deflation of my edge.
+
+314
+00:13:40.720 --> 00:13:45.520
+So don't enter before retail sales and core PC.
+
+315
+00:13:45.520 --> 00:13:47.280
+Now, that's my playbook, right?
+
+316
+00:13:47.280 --> 00:13:48.120
+Those are my rules.
+
+317
+00:13:48.120 --> 00:13:49.000
+Every time I take a trade,
+
+318
+00:13:49.000 --> 00:13:51.120
+I have to checklist those things.
+
+319
+00:13:51.120 --> 00:13:54.120
+But we can go deeper into tags,
+
+320
+00:13:54.120 --> 00:13:56.040
+and this is where we really organize the data.
+
+321
+00:13:56.040 --> 00:13:57.000
+So this is the playbook.
+
+322
+00:13:57.000 --> 00:13:59.760
+This is the system that gets followed no matter what.
+
+323
+00:13:59.760 --> 00:14:01.240
+But then within this system,
+
+324
+00:14:01.240 --> 00:14:04.840
+there are many different variables that occur
+
+325
+00:14:04.840 --> 00:14:06.880
+that are slightly different.
+
+326
+00:14:06.880 --> 00:14:09.680
+So kind of layer one of building an edge
+
+327
+00:14:09.680 --> 00:14:11.400
+is building just a simple playbook like this,
+
+328
+00:14:11.400 --> 00:14:14.960
+and then taking everything that fit in alignment with that.
+
+329
+00:14:14.960 --> 00:14:16.840
+No, nothing wrong with that.
+
+330
+00:14:16.840 --> 00:14:17.840
+Totally fine.
+
+331
+00:14:17.840 --> 00:14:20.440
+Can totally build a great profitable edge.
+
+332
+00:14:20.440 --> 00:14:22.320
+But if you want to take it to a new level,
+
+333
+00:14:22.320 --> 00:14:25.600
+and this is where refining your edge comes into things,
+
+334
+00:14:25.600 --> 00:14:27.320
+what you want to do is you want to look
+
+335
+00:14:27.320 --> 00:14:30.760
+at every different portion of the puzzle,
+
+336
+00:14:30.760 --> 00:14:33.280
+and then try to start breaking them down
+
+337
+00:14:33.280 --> 00:14:36.360
+into different variables, right?
+
+338
+00:14:36.360 --> 00:14:39.200
+And then start tagging the variables,
+
+339
+00:14:39.200 --> 00:14:41.160
+because at the end of all the testing,
+
+340
+00:14:41.160 --> 00:14:43.240
+along as you tag everything correctly,
+
+341
+00:14:43.240 --> 00:14:45.040
+now when you go and view the data,
+
+342
+00:14:45.040 --> 00:14:49.120
+you're not just viewing the success of the playbook itself.
+
+343
+00:14:49.120 --> 00:14:51.400
+You also get to view the success
+
+344
+00:14:51.400 --> 00:14:53.280
+of the details of the playbook.
+
+345
+00:14:53.280 --> 00:14:56.840
+And what you might find is some of the little variables
+
+346
+00:14:56.840 --> 00:14:59.800
+that you've put inside because you want to test them,
+
+347
+00:14:59.800 --> 00:15:04.800
+you may find substantial differences in the results.
+
+348
+00:15:04.800 --> 00:15:07.400
+And so if I walk through the kind of tagging system
+
+349
+00:15:07.400 --> 00:15:10.200
+that we're going to be using for this hypothesis,
+
+350
+00:15:10.200 --> 00:15:12.520
+then you'll begin to understand what I'm saying.
+
+351
+00:15:12.520 --> 00:15:14.000
+And at the end, when we review all the data,
+
+352
+00:15:14.000 --> 00:15:15.920
+you'll be able to see everything full picture.
+
+353
+00:15:15.920 --> 00:15:17.840
+So don't worry if you're a little bit confused right now.
+
+354
+00:15:17.840 --> 00:15:19.680
+Everything will start to make sense.
+
+355
+00:15:19.680 --> 00:15:21.160
+And then final part of the playbook
+
+356
+00:15:21.160 --> 00:15:23.720
+is this little note section in here.
+
+357
+00:15:23.720 --> 00:15:26.200
+Now, this is the note section for the playbook.
+
+358
+00:15:26.200 --> 00:15:27.640
+So the way that you can use this,
+
+359
+00:15:27.640 --> 00:15:31.840
+I won't really be using it in this specific module,
+
+360
+00:15:31.840 --> 00:15:34.760
+but the way you can use this is if you have a playbook
+
+361
+00:15:34.760 --> 00:15:39.360
+and you're testing and you start noticing things,
+
+362
+00:15:39.360 --> 00:15:41.760
+but you don't want to just completely disrupt the test
+
+363
+00:15:41.760 --> 00:15:44.560
+and just, okay, I've noticed this thing three times now.
+
+364
+00:15:44.560 --> 00:15:47.120
+So I'm going to go read the test and it's like, no,
+
+365
+00:15:47.120 --> 00:15:49.280
+you can call yourself a lot of havoc.
+
+366
+00:15:49.280 --> 00:15:52.000
+So what you want to do is you want to use this note system
+
+367
+00:15:52.000 --> 00:15:53.440
+in your playbook, use this note system
+
+368
+00:15:53.440 --> 00:15:57.200
+and then start adding things that you may find, right?
+
+369
+00:15:57.200 --> 00:16:00.800
+And so if there's a specific something that happened
+
+370
+00:16:00.800 --> 00:16:03.880
+and it kind of captures your attention.
+
+371
+00:16:03.880 --> 00:16:05.120
+You're like, hey, that happened.
+
+372
+00:16:05.120 --> 00:16:07.280
+I don't want to forget that happened
+
+373
+00:16:07.280 --> 00:16:10.520
+because I may want to come back to that at a later date
+
+374
+00:16:10.520 --> 00:16:13.920
+and start running some kind of hypothetical test,
+
+375
+00:16:13.920 --> 00:16:15.800
+including this thing that I realize.
+
+376
+00:16:15.800 --> 00:16:19.080
+Maybe what you realize is that when Asia High
+
+377
+00:16:19.080 --> 00:16:22.880
+is a swing and the internal structure is aligned with M15,
+
+378
+00:16:22.880 --> 00:16:25.080
+the Asia High doesn't get swept.
+
+379
+00:16:25.080 --> 00:16:27.520
+And so on those days, you can't take a trade
+
+380
+00:16:27.520 --> 00:16:31.040
+because you need that Asia session high to have been swept.
+
+381
+00:16:31.040 --> 00:16:34.160
+And so you might want to note that down
+
+382
+00:16:34.160 --> 00:16:35.600
+and then you might want to add some details.
+
+383
+00:16:35.600 --> 00:16:38.400
+And so you might want to categorize your note as like,
+
+384
+00:16:46.800 --> 00:16:49.600
+you might want to give it a little heading
+
+385
+00:16:49.600 --> 00:16:51.360
+and then you want to go into context, right?
+
+386
+00:16:51.360 --> 00:16:52.840
+You can upload some things.
+
+387
+00:16:52.840 --> 00:16:56.000
+Maybe you want to upload images or anything like that.
+
+388
+00:16:56.000 --> 00:16:58.680
+You can basically use this as an organizational area
+
+389
+00:16:58.680 --> 00:17:00.760
+to take notes for this specific playbook
+
+390
+00:17:00.760 --> 00:17:02.800
+so that you can come back constantly
+
+391
+00:17:02.800 --> 00:17:05.120
+and you can kind of just look at all your notes
+
+392
+00:17:05.120 --> 00:17:06.640
+and then decide what you want to do with them, right?
+
+393
+00:17:06.640 --> 00:17:07.760
+Maybe you took a bunch of notes
+
+394
+00:17:07.760 --> 00:17:09.360
+and at the end of it, you realized that
+
+395
+00:17:09.360 --> 00:17:11.480
+I don't really, you know,
+
+396
+00:17:11.480 --> 00:17:12.800
+I've seen that thing a couple of times
+
+397
+00:17:12.800 --> 00:17:14.320
+but it didn't really have that big of an impact.
+
+398
+00:17:14.320 --> 00:17:16.720
+And the edge is really good and, you know,
+
+399
+00:17:16.720 --> 00:17:18.120
+there's nothing I really need to do with that.
+
+400
+00:17:18.120 --> 00:17:19.400
+Or maybe you need to come back and you look at that
+
+401
+00:17:19.400 --> 00:17:20.600
+and you're like, yeah,
+
+402
+00:17:20.600 --> 00:17:21.920
+that's something that I definitely need
+
+403
+00:17:21.920 --> 00:17:23.480
+to understand a little bit more.
+
+404
+00:17:23.480 --> 00:17:24.480
+And that's something that I definitely need
+
+405
+00:17:24.480 --> 00:17:25.560
+to run some tests on.
+
+406
+00:17:25.560 --> 00:17:27.960
+And so now you have that instead of just writing it down
+
+407
+00:17:27.960 --> 00:17:31.280
+on a piece of pen and paper or just identifying it
+
+408
+00:17:31.280 --> 00:17:33.240
+and just hoping that you see it.
+
+409
+00:17:33.240 --> 00:17:36.200
+What this does is again, it's your operating system, right?
+
+410
+00:17:36.200 --> 00:17:38.040
+You want to be taking everything
+
+411
+00:17:38.040 --> 00:17:40.360
+and kind of comprising it into the specific area
+
+412
+00:17:40.360 --> 00:17:43.720
+that it needs to be so that no stone gets left unturned.
+
+413
+00:17:44.320 --> 00:17:47.200
+And so that is essentially the playbook in itself.
+
+414
+00:17:47.200 --> 00:17:50.320
+Then you actually have your tags.
+
+415
+00:17:50.320 --> 00:17:53.400
+So if you go into settings and you go into tags management,
+
+416
+00:17:53.400 --> 00:17:55.680
+this is where you can add tags, right?
+
+417
+00:17:55.680 --> 00:18:00.320
+And tags are a really essential part of your trading
+
+418
+00:18:00.320 --> 00:18:02.320
+and the way I look at tags personally,
+
+419
+00:18:02.320 --> 00:18:03.520
+some people may look at it differently.
+
+420
+00:18:03.520 --> 00:18:06.440
+Here's how I personally look at tags and use tags.
+
+421
+00:18:06.440 --> 00:18:10.120
+I want to use categories of tags
+
+422
+00:18:10.120 --> 00:18:14.080
+to look at specific, deeper layer details.
+
+423
+00:18:14.080 --> 00:18:16.920
+And so for example, we have our playbook.
+
+424
+00:18:16.920 --> 00:18:18.440
+That's our trading strategy.
+
+425
+00:18:18.440 --> 00:18:23.120
+But there are a variety of different setups.
+
+426
+00:18:23.120 --> 00:18:26.720
+So here you can see I have a category that is named setups.
+
+427
+00:18:26.720 --> 00:18:29.000
+And if I go into my actual tags
+
+428
+00:18:29.000 --> 00:18:32.320
+and then I filter by setups,
+
+429
+00:18:32.320 --> 00:18:35.080
+what you'll see here is that these are all
+
+430
+00:18:35.080 --> 00:18:39.200
+of the different setups that can occur inside of that playbook.
+
+431
+00:18:39.200 --> 00:18:41.680
+So it's no longer just follow these rules
+
+432
+00:18:41.680 --> 00:18:44.400
+and take this trade, it's yes, follow these rules
+
+433
+00:18:44.400 --> 00:18:45.640
+every single time.
+
+434
+00:18:45.640 --> 00:18:50.520
+But now let's start looking at categorizing them.
+
+435
+00:18:50.520 --> 00:18:52.160
+So these are the setups.
+
+436
+00:18:52.160 --> 00:18:53.960
+So now every time I take a trade,
+
+437
+00:18:53.960 --> 00:18:57.320
+I'm not just collecting the data on the playbook's performance.
+
+438
+00:18:57.320 --> 00:19:00.120
+I'm also simultaneously collecting the data
+
+439
+00:19:00.120 --> 00:19:03.120
+on the intricate details of the playbook.
+
+440
+00:19:03.120 --> 00:19:06.680
+So I can come in and if I have all of the different setups
+
+441
+00:19:06.680 --> 00:19:11.040
+at the end when I have my finalized data for my playbook,
+
+442
+00:19:11.040 --> 00:19:12.680
+now I can start to understand,
+
+443
+00:19:12.680 --> 00:19:15.080
+okay, well, what's my best setup, right?
+
+444
+00:19:15.080 --> 00:19:18.080
+Maybe the London sweep on Asia is my best setup.
+
+445
+00:19:18.080 --> 00:19:21.280
+Maybe when Frankfurt sweeps Asia
+
+446
+00:19:21.280 --> 00:19:22.920
+and then gives me the reversal,
+
+447
+00:19:22.920 --> 00:19:25.720
+that's actually my worst quality of setup.
+
+448
+00:19:25.720 --> 00:19:28.480
+So what I've done is I've taken all the different setup types
+
+449
+00:19:28.480 --> 00:19:31.920
+that I so commonly see and would be willing to test
+
+450
+00:19:31.920 --> 00:19:35.080
+and put them into a category called setups.
+
+451
+00:19:35.080 --> 00:19:36.440
+And then every trade I take,
+
+452
+00:19:36.440 --> 00:19:40.760
+I will tag that trade with what setup it is.
+
+453
+00:19:40.760 --> 00:19:43.200
+And so at the end again, I can go and filter for the data
+
+454
+00:19:43.200 --> 00:19:44.960
+and my playbook may say one thing,
+
+455
+00:19:44.960 --> 00:19:46.440
+but now if I go and zoom in
+
+456
+00:19:46.440 --> 00:19:48.280
+and I see all of the different setups,
+
+457
+00:19:48.280 --> 00:19:50.000
+I'll be able to see the trading performance
+
+458
+00:19:50.000 --> 00:19:51.640
+of all of those setups individually.
+
+459
+00:19:51.640 --> 00:19:53.720
+And what you'll find is that maybe your playbook
+
+460
+00:19:53.720 --> 00:19:57.160
+has a 40% win rate, but when you go into setups,
+
+461
+00:19:57.160 --> 00:20:00.040
+maybe one of your setups has a 70% win rate,
+
+462
+00:20:00.040 --> 00:20:02.240
+maybe one of your setups has a 20% win rate.
+
+463
+00:20:02.240 --> 00:20:03.800
+And that's how it kind of averages out
+
+464
+00:20:03.800 --> 00:20:05.840
+and you get your overall forks and win rate.
+
+465
+00:20:05.840 --> 00:20:10.280
+Now what you do with that data is totally up to you.
+
+466
+00:20:10.280 --> 00:20:12.080
+You can do whatever you want with that data.
+
+467
+00:20:12.080 --> 00:20:13.120
+That is on you.
+
+468
+00:20:13.120 --> 00:20:15.680
+I can't tell you what to do with your data.
+
+469
+00:20:15.680 --> 00:20:18.080
+I can just show you how to truly operate
+
+470
+00:20:18.080 --> 00:20:20.720
+like a professional trader,
+
+471
+00:20:20.720 --> 00:20:22.600
+like a proper data analyst
+
+472
+00:20:22.600 --> 00:20:24.320
+and ultimately treating trading
+
+473
+00:20:24.320 --> 00:20:26.560
+like it is the business that it is.
+
+474
+00:20:26.560 --> 00:20:28.040
+And so what I'll do now is I'll walk you
+
+475
+00:20:28.040 --> 00:20:30.840
+through the different setups very briefly
+
+476
+00:20:30.840 --> 00:20:35.600
+and you'll get a decent level understanding of them.
+
+477
+00:20:35.600 --> 00:20:36.800
+But again, like I said,
+
+478
+00:20:36.800 --> 00:20:38.680
+when we're actually running this properly
+
+479
+00:20:38.680 --> 00:20:41.640
+day in day out in the testing period,
+
+480
+00:20:41.640 --> 00:20:43.240
+you'll very quickly come to terms
+
+481
+00:20:43.240 --> 00:20:44.120
+and understand what they are.
+
+482
+00:20:44.120 --> 00:20:46.680
+So we have our setup types.
+
+483
+00:20:46.680 --> 00:20:50.440
+Now there are essentially three different setups
+
+484
+00:20:50.440 --> 00:20:52.240
+for London session that I've characterized
+
+485
+00:20:52.240 --> 00:20:53.480
+that we're going to be testing.
+
+486
+00:20:53.480 --> 00:20:55.360
+And there are five different setups
+
+487
+00:20:55.360 --> 00:20:57.660
+for New York session that I've categorized
+
+488
+00:20:57.660 --> 00:20:59.200
+and that we're going to be testing.
+
+489
+00:20:59.200 --> 00:21:01.000
+So we can kind of jump straight in.
+
+490
+00:21:01.000 --> 00:21:04.040
+Let's start with the first New York session.
+
+491
+00:21:04.040 --> 00:21:07.840
+So the first New York session variation
+
+492
+00:21:07.840 --> 00:21:12.440
+of setup is the New York continuation
+
+493
+00:21:12.440 --> 00:21:15.120
+from London point of interest.
+
+494
+00:21:15.120 --> 00:21:16.880
+Very simple setup, right?
+
+495
+00:21:16.880 --> 00:21:20.160
+This is trading from a point of interest
+
+496
+00:21:20.160 --> 00:21:25.160
+created between London Open and New York Open.
+
+497
+00:21:25.160 --> 00:21:28.000
+So if we're trending like so
+
+498
+00:21:28.000 --> 00:21:30.440
+and the swing low or somewhere in the region
+
+499
+00:21:30.440 --> 00:21:33.360
+of the swing low is, you know, London session
+
+500
+00:21:33.360 --> 00:21:36.560
+and we give a break of structure and we trade higher.
+
+501
+00:21:36.560 --> 00:21:39.400
+And New York comes back down to that area of interest
+
+502
+00:21:39.400 --> 00:21:42.240
+created from that London volatility,
+
+503
+00:21:42.240 --> 00:21:44.000
+then we trade from that.
+
+504
+00:21:44.000 --> 00:21:45.520
+And obviously we trade with the same entry model
+
+505
+00:21:45.520 --> 00:21:47.760
+every single time, which is the change of character.
+
+506
+00:21:47.760 --> 00:21:48.920
+And then we trade that.
+
+507
+00:21:48.920 --> 00:21:52.200
+The second model is the New York sweep of London.
+
+508
+00:21:52.200 --> 00:21:54.280
+So again, you can see here with pro trend,
+
+509
+00:21:54.280 --> 00:21:57.240
+swing low, swing high, we have a London session low.
+
+510
+00:21:57.240 --> 00:21:59.920
+Now, if New York sweeps that London session low,
+
+511
+00:21:59.920 --> 00:22:03.720
+we don't need to be in a area of interest, right?
+
+512
+00:22:03.720 --> 00:22:05.240
+It could be an extra confluence.
+
+513
+00:22:05.240 --> 00:22:07.000
+This is what the tagging system is all about.
+
+514
+00:22:07.000 --> 00:22:10.280
+But it doesn't need to be from an area of interest.
+
+515
+00:22:10.280 --> 00:22:12.560
+Does it need to be from a fair value gap or an order block?
+
+516
+00:22:12.560 --> 00:22:15.080
+It just needs to be able to sweep that London session
+
+517
+00:22:15.080 --> 00:22:18.960
+and give us our entry confirmation from New York session, right?
+
+518
+00:22:18.960 --> 00:22:22.760
+The third setup is the New York sweep of Asia.
+
+519
+00:22:22.760 --> 00:22:24.440
+Again, very simple thing.
+
+520
+00:22:24.440 --> 00:22:25.360
+We're bearish, right?
+
+521
+00:22:25.360 --> 00:22:27.360
+Swing high goes to swing low.
+
+522
+00:22:27.360 --> 00:22:29.360
+And we have Asia session high in here.
+
+523
+00:22:29.360 --> 00:22:31.960
+New York opens and sweeps above that Asia session.
+
+524
+00:22:31.960 --> 00:22:33.480
+Again, don't need to be in an order block
+
+525
+00:22:33.480 --> 00:22:34.760
+or a fair value gap.
+
+526
+00:22:34.760 --> 00:22:38.040
+We could be and we'll tag that, but we don't need to be.
+
+527
+00:22:38.040 --> 00:22:39.440
+And we get a lower time frame shift.
+
+528
+00:22:39.440 --> 00:22:42.560
+We enter and it's the same rules again that apply.
+
+529
+00:22:42.560 --> 00:22:46.920
+Then you have the low sweep London New York continuation.
+
+530
+00:22:46.920 --> 00:22:48.640
+So this is when the low area of price
+
+531
+00:22:48.640 --> 00:22:51.800
+and low pretty much stands for an area of a gap
+
+532
+00:22:51.800 --> 00:22:54.520
+or an area of inactivity or calm,
+
+533
+00:22:54.520 --> 00:22:56.360
+which for us is our inactive window
+
+534
+00:22:56.360 --> 00:22:58.480
+between London and New York session.
+
+535
+00:22:58.480 --> 00:23:02.160
+So this typically occurs from 5 a.m. till 7 a.m.
+
+536
+00:23:02.160 --> 00:23:03.520
+So that's two hour window.
+
+537
+00:23:03.520 --> 00:23:05.240
+If in that to our window,
+
+538
+00:23:05.240 --> 00:23:07.960
+we get a sweep of London's high
+
+539
+00:23:07.960 --> 00:23:12.040
+and then we get a change of character in that window,
+
+540
+00:23:12.040 --> 00:23:13.800
+right on the woman time frame.
+
+541
+00:23:13.800 --> 00:23:15.200
+Then when New York session opens,
+
+542
+00:23:15.200 --> 00:23:18.680
+we wait for another break of structure to the downside
+
+543
+00:23:18.680 --> 00:23:19.680
+and then we can enter.
+
+544
+00:23:19.680 --> 00:23:22.320
+So that requires us to have a continuation.
+
+545
+00:23:22.320 --> 00:23:26.640
+Then we also have the low sweep London New York reversal.
+
+546
+00:23:26.640 --> 00:23:28.480
+And this is essentially pretty similar,
+
+547
+00:23:28.480 --> 00:23:32.440
+but it's the low period between 5 and 7 a.m.
+
+548
+00:23:32.440 --> 00:23:34.240
+that sweeps London,
+
+549
+00:23:34.240 --> 00:23:39.240
+but the change of character for our entry occurs in New York.
+
+550
+00:23:39.240 --> 00:23:42.600
+So we sweep London in the low session,
+
+551
+00:23:42.600 --> 00:23:44.360
+but we actually change character
+
+552
+00:23:44.360 --> 00:23:46.680
+and confirm our entry in the New York window.
+
+553
+00:23:46.680 --> 00:23:48.520
+When that happens, you don't need to wait for a continuation.
+
+554
+00:23:48.520 --> 00:23:51.120
+You can just trade straight from the reversal, right?
+
+555
+00:23:51.120 --> 00:23:55.840
+So those are our New York session setups.
+
+556
+00:23:55.840 --> 00:23:58.080
+Then we have our London setups.
+
+557
+00:23:58.080 --> 00:24:01.280
+And so the first one is the London sweeps Asia model, right?
+
+558
+00:24:01.280 --> 00:24:03.480
+Some of you are obviously already very familiar with this model.
+
+559
+00:24:03.480 --> 00:24:04.600
+This is very simple.
+
+560
+00:24:04.600 --> 00:24:06.600
+We're in a pro trend, swing low, swing high,
+
+561
+00:24:06.600 --> 00:24:10.560
+we have Asia session low and London session sweeps Asia low
+
+562
+00:24:10.560 --> 00:24:12.040
+and then we have a reversal.
+
+563
+00:24:12.040 --> 00:24:13.440
+Does it need to be from an area of interest?
+
+564
+00:24:13.440 --> 00:24:14.920
+Does it need to be in premium discount?
+
+565
+00:24:14.920 --> 00:24:16.280
+All of those are variables
+
+566
+00:24:16.280 --> 00:24:18.400
+and that's what we're gonna be testing separately
+
+567
+00:24:18.400 --> 00:24:21.360
+so that at the end we can collect all the independent variables
+
+568
+00:24:21.360 --> 00:24:23.960
+and then essentially make our playbook better, right?
+
+569
+00:24:23.960 --> 00:24:25.480
+That's the entire purpose of this video.
+
+570
+00:24:25.480 --> 00:24:26.720
+The entire purpose of this video
+
+571
+00:24:26.720 --> 00:24:28.960
+isn't and this entire series, to be honest with you,
+
+572
+00:24:28.960 --> 00:24:31.520
+isn't just to give you a crystal clear,
+
+573
+00:24:31.520 --> 00:24:34.720
+already fully refined edge.
+
+574
+00:24:34.720 --> 00:24:36.080
+Although that's what you will essentially get
+
+575
+00:24:36.080 --> 00:24:37.320
+at the end of it.
+
+576
+00:24:37.320 --> 00:24:42.320
+It's really about showing you how to be a trading operator
+
+577
+00:24:42.320 --> 00:24:46.280
+so that, you know, God forbid, I disappear tomorrow
+
+578
+00:24:46.280 --> 00:24:49.240
+and let's say, you know, all of this was removed.
+
+579
+00:24:49.240 --> 00:24:51.000
+If you have this information,
+
+580
+00:24:51.000 --> 00:24:54.120
+you could go and build a playbook yourself
+
+581
+00:24:54.120 --> 00:24:54.960
+with any trading concept.
+
+582
+00:24:54.960 --> 00:24:55.800
+That's what I always say.
+
+583
+00:24:55.800 --> 00:25:00.000
+I believe, truly, that I could take any concepts
+
+584
+00:25:00.000 --> 00:25:02.520
+and somehow turn them into a profitable edge
+
+585
+00:25:02.520 --> 00:25:05.480
+because I understand how to organize data,
+
+586
+00:25:05.480 --> 00:25:08.080
+how to test, how to review that data
+
+587
+00:25:08.080 --> 00:25:10.240
+and then try to make changes according to that data.
+
+588
+00:25:10.240 --> 00:25:11.960
+So that's the London Sweeps Asia.
+
+589
+00:25:11.960 --> 00:25:14.480
+Then you have the Frankfurt sweep of London.
+
+590
+00:25:14.480 --> 00:25:16.320
+So the Frankfurt session essentially occurs
+
+591
+00:25:16.320 --> 00:25:18.880
+between Asia's session and London's session open.
+
+592
+00:25:18.880 --> 00:25:21.320
+So there's this two-hour window between midnight,
+
+593
+00:25:21.320 --> 00:25:23.480
+which is Asia's session and this is all EST,
+
+594
+00:25:23.480 --> 00:25:24.960
+so in midnight and two AM.
+
+595
+00:25:24.960 --> 00:25:28.000
+That two-hour window is our Frankfurt session.
+
+596
+00:25:28.000 --> 00:25:30.720
+So if Frankfurt sweeps Asia, right,
+
+597
+00:25:30.720 --> 00:25:33.040
+and changes character on the one minute timeframe,
+
+598
+00:25:33.040 --> 00:25:34.520
+so give us a confirmation,
+
+599
+00:25:34.520 --> 00:25:37.480
+then in the London session,
+
+600
+00:25:37.480 --> 00:25:39.600
+we need to see a continual break of structure
+
+601
+00:25:39.600 --> 00:25:40.920
+on the one minute timeframe.
+
+602
+00:25:40.920 --> 00:25:44.120
+And if we get that continuation,
+
+603
+00:25:44.120 --> 00:25:47.440
+then we can look at entering into the market, right?
+
+604
+00:25:47.440 --> 00:25:50.920
+And then finally, we have the Frankfurt sweeps Asia,
+
+605
+00:25:50.920 --> 00:25:52.000
+London continuation,
+
+606
+00:25:52.000 --> 00:25:54.760
+which is essentially just Frankfurt sweeps Asia,
+
+607
+00:25:54.760 --> 00:25:57.520
+but the change of character occurs in London
+
+608
+00:25:57.520 --> 00:25:58.960
+and you can also trade that model.
+
+609
+00:25:58.960 --> 00:26:00.160
+And we're gonna be seeing, you know,
+
+610
+00:26:00.160 --> 00:26:02.360
+do what of these models work,
+
+611
+00:26:02.360 --> 00:26:03.600
+what are these models that don't work?
+
+612
+00:26:03.600 --> 00:26:05.200
+If there's something that doesn't work,
+
+613
+00:26:05.200 --> 00:26:06.560
+we're gonna disregard it.
+
+614
+00:26:06.560 --> 00:26:07.560
+If something does work,
+
+615
+00:26:07.560 --> 00:26:08.920
+we're gonna understand and look at it
+
+616
+00:26:08.920 --> 00:26:10.600
+and then we're gonna go deeper into the details
+
+617
+00:26:10.600 --> 00:26:12.240
+and understand what makes it better,
+
+618
+00:26:12.240 --> 00:26:14.120
+what makes an A+ set up, right?
+
+619
+00:26:14.120 --> 00:26:17.000
+This is how you truly build a playbook
+
+620
+00:26:17.000 --> 00:26:20.320
+and truly understand your edge at the deepest of levels.
+
+621
+00:26:20.320 --> 00:26:25.320
+And so that is essentially the different setup variables.
+
+622
+00:26:25.320 --> 00:26:28.200
+Now, back to the playbook for a minute
+
+623
+00:26:28.200 --> 00:26:29.560
+because I wanna explain something
+
+624
+00:26:29.560 --> 00:26:31.040
+and this is something that you'll obviously come
+
+625
+00:26:31.040 --> 00:26:33.120
+to a lot more clarity and understanding
+
+626
+00:26:33.120 --> 00:26:34.120
+when we're running the back test,
+
+627
+00:26:34.120 --> 00:26:35.520
+but for this specific model, right?
+
+628
+00:26:35.520 --> 00:26:38.040
+Let's say the M15 is bullish
+
+629
+00:26:38.040 --> 00:26:41.280
+and price comes back into an area of interest
+
+630
+00:26:41.280 --> 00:26:43.000
+where we're with the sweep or the order block
+
+631
+00:26:43.000 --> 00:26:44.840
+that's pro trend, right?
+
+632
+00:26:44.840 --> 00:26:47.080
+We come into an area of interest
+
+633
+00:26:47.080 --> 00:26:49.400
+and in that area of interest,
+
+634
+00:26:49.400 --> 00:26:50.720
+we get a one minute change of character
+
+635
+00:26:50.720 --> 00:26:53.760
+and then price moves aggressively, bullish, right?
+
+636
+00:26:53.760 --> 00:26:55.800
+And it leaves behind a very nice five minute
+
+637
+00:26:55.800 --> 00:26:57.280
+fair value gap and a five minute order block.
+
+638
+00:26:57.280 --> 00:26:58.760
+That's what we're gonna take our entry from.
+
+639
+00:26:58.760 --> 00:27:00.920
+Now, if the one minute timeframe pulls back,
+
+640
+00:27:00.920 --> 00:27:03.520
+gives a little free kind of pullback and then continues,
+
+641
+00:27:03.520 --> 00:27:07.240
+we still keep our entry at that point, right?
+
+642
+00:27:07.240 --> 00:27:08.680
+One of the biggest inefficiencies
+
+643
+00:27:08.680 --> 00:27:12.200
+that I used to have in the SMC system specifically
+
+644
+00:27:12.200 --> 00:27:13.680
+is that specific thing.
+
+645
+00:27:13.680 --> 00:27:16.080
+The reality is, there was an inefficiency
+
+646
+00:27:16.080 --> 00:27:19.920
+which was a lot of times price would change character,
+
+647
+00:27:19.920 --> 00:27:21.520
+but then the one minute would continue going,
+
+648
+00:27:21.520 --> 00:27:23.120
+it would have a little pullback, it would continue going
+
+649
+00:27:23.120 --> 00:27:24.720
+and then it would also come back down
+
+650
+00:27:24.720 --> 00:27:26.240
+and now the area that I wanted to get into,
+
+651
+00:27:26.240 --> 00:27:28.840
+my rule said that I can't get into the area until
+
+652
+00:27:28.840 --> 00:27:30.960
+we continue a game and change character.
+
+653
+00:27:30.960 --> 00:27:33.400
+By that time, I'd pretty much already missed the trade.
+
+654
+00:27:33.400 --> 00:27:35.480
+And so through collection of data
+
+655
+00:27:35.480 --> 00:27:38.720
+and kind of understanding what's going on
+
+656
+00:27:38.720 --> 00:27:40.400
+and the variables of the edge,
+
+657
+00:27:40.400 --> 00:27:41.440
+that's something that I added in,
+
+658
+00:27:41.440 --> 00:27:42.800
+which again, you're gonna understand
+
+659
+00:27:42.800 --> 00:27:44.360
+because we're gonna be testing this day in and day out
+
+660
+00:27:44.360 --> 00:27:45.360
+consistently
+
+661
+00:27:45.360 --> 00:27:47.520
+and collecting the data, the final thing.
+
+662
+00:27:47.520 --> 00:27:48.800
+Okay, back into tags.
+
+663
+00:27:48.800 --> 00:27:52.800
+So we have the different kinds of setups.
+
+664
+00:27:52.800 --> 00:27:55.080
+We also have a bunch of other things as well.
+
+665
+00:27:55.080 --> 00:27:56.840
+So I also have execution window.
+
+666
+00:27:56.840 --> 00:27:58.840
+This is a variable that I wanna test.
+
+667
+00:27:58.840 --> 00:28:01.040
+I wanna essentially look,
+
+668
+00:28:01.040 --> 00:28:04.240
+what does the data look like inside of each execution window?
+
+669
+00:28:04.240 --> 00:28:08.000
+So we have our two to three AM, two to three AM window.
+
+670
+00:28:08.000 --> 00:28:09.880
+And again, these are one hour windows.
+
+671
+00:28:09.880 --> 00:28:14.880
+So the two to three AM is the beginning of my London window,
+
+672
+00:28:14.880 --> 00:28:17.280
+the first hour of my London window.
+
+673
+00:28:17.280 --> 00:28:20.440
+If I execute a position in that period,
+
+674
+00:28:20.440 --> 00:28:24.040
+that gets tagged as a two to three AM execution.
+
+675
+00:28:24.040 --> 00:28:25.920
+Three to four AM, four to five AM, right?
+
+676
+00:28:25.920 --> 00:28:29.000
+Those are the three different tags
+
+677
+00:28:29.000 --> 00:28:30.680
+that could occur for my London tabs.
+
+678
+00:28:30.680 --> 00:28:31.760
+Then we have the New York sales,
+
+679
+00:28:31.760 --> 00:28:33.840
+which is seven to eight AM, eight to nine AM
+
+680
+00:28:33.840 --> 00:28:36.200
+or nine to 10 AM in those windows.
+
+681
+00:28:36.200 --> 00:28:38.920
+Again, I just wanna be lucky in the different variables
+
+682
+00:28:38.920 --> 00:28:40.280
+of data because who knows?
+
+683
+00:28:40.280 --> 00:28:41.720
+Maybe at the end of the testing,
+
+684
+00:28:41.720 --> 00:28:43.760
+I end up coming all the way back,
+
+685
+00:28:43.760 --> 00:28:46.360
+looking at this data and realizing, huh, you know what?
+
+686
+00:28:46.360 --> 00:28:49.920
+Like, every time I execute a trade
+
+687
+00:28:49.920 --> 00:28:53.240
+in that nine to 10 AM window for New York session,
+
+688
+00:28:53.240 --> 00:28:57.560
+I only have a 20% hit rate or I'm actually unprofitable.
+
+689
+00:28:57.560 --> 00:28:59.040
+And if you have that, well,
+
+690
+00:28:59.040 --> 00:29:02.000
+you can remove an inefficiency there and there.
+
+691
+00:29:02.000 --> 00:29:03.040
+Again, so this is what I mean.
+
+692
+00:29:03.040 --> 00:29:05.840
+Like these are the, we wanna be looking at the details
+
+693
+00:29:05.840 --> 00:29:07.640
+so that at the end, we can start filtering
+
+694
+00:29:07.640 --> 00:29:09.880
+for the different data and looking at different data views
+
+695
+00:29:09.880 --> 00:29:13.640
+and start to understand how to actually refine
+
+696
+00:29:13.640 --> 00:29:15.920
+and remove inefficiencies from the edge
+
+697
+00:29:15.920 --> 00:29:17.840
+to overall make the performance better.
+
+698
+00:29:17.840 --> 00:29:19.560
+Because a lot of the time,
+
+699
+00:29:19.560 --> 00:29:21.880
+this is what a lot of traders get wrong,
+
+700
+00:29:21.880 --> 00:29:26.680
+is they think that making an edge better is adding things.
+
+701
+00:29:26.680 --> 00:29:29.920
+Sometimes yes, but sometimes no, it's really contextual.
+
+702
+00:29:29.920 --> 00:29:31.880
+And so before you go adding everything,
+
+703
+00:29:31.880 --> 00:29:34.040
+you first might wanna look at inefficiencies
+
+704
+00:29:34.040 --> 00:29:37.080
+because inefficiencies are the fastest way
+
+705
+00:29:37.080 --> 00:29:39.680
+to unlock, you know, extra profitability.
+
+706
+00:29:39.680 --> 00:29:41.840
+If you can remove the things that don't work
+
+707
+00:29:41.840 --> 00:29:43.400
+and just leave the things that do,
+
+708
+00:29:43.400 --> 00:29:45.560
+you've already unlocked more profitability.
+
+709
+00:29:45.560 --> 00:29:47.840
+It's the easiest thing and fastest thing to do
+
+710
+00:29:47.840 --> 00:29:49.200
+to increase your edge.
+
+711
+00:29:49.200 --> 00:29:52.880
+So we have execution window, we have news, right?
+
+712
+00:29:52.880 --> 00:29:55.880
+And the way that I tag news is very simple.
+
+713
+00:29:55.880 --> 00:29:59.160
+Either I close the trade due to a high impact news event.
+
+714
+00:29:59.160 --> 00:30:01.200
+So for example, I'm trading the London session,
+
+715
+00:30:01.200 --> 00:30:03.600
+it's NFP day today or a CPI day today.
+
+716
+00:30:03.600 --> 00:30:06.560
+And I'm in the trade and, you know, New York session opens
+
+717
+00:30:06.560 --> 00:30:08.800
+and I'm looking to close that trade
+
+718
+00:30:08.800 --> 00:30:10.600
+before that high impact news event hits
+
+719
+00:30:10.600 --> 00:30:11.840
+are gonna be out the market.
+
+720
+00:30:11.840 --> 00:30:15.360
+So sometimes you might see me close that trade.
+
+721
+00:30:15.360 --> 00:30:17.720
+Now, entered after news.
+
+722
+00:30:17.720 --> 00:30:21.360
+So if I tag this, this means that I've entered
+
+723
+00:30:21.360 --> 00:30:24.840
+into a position after usually an 8.30 a.m.
+
+724
+00:30:24.840 --> 00:30:27.800
+moderately impactful event.
+
+725
+00:30:27.800 --> 00:30:29.440
+So I think retail sales, right?
+
+726
+00:30:29.440 --> 00:30:33.800
+Or core PCE, or ADP has just rolled out
+
+727
+00:30:33.800 --> 00:30:36.340
+and I'm entering a trade off the back of that.
+
+728
+00:30:36.340 --> 00:30:38.960
+I wanna tag that because again, at the end,
+
+729
+00:30:38.960 --> 00:30:39.960
+I can come in and be like, okay,
+
+730
+00:30:39.960 --> 00:30:43.560
+how do my understander of news play a part?
+
+731
+00:30:43.560 --> 00:30:47.320
+I might find that I'm way more profitable
+
+732
+00:30:47.320 --> 00:30:51.160
+by simply just not trading any day that has news, right?
+
+733
+00:30:51.160 --> 00:30:53.960
+I might find that some of my best setups
+
+734
+00:30:53.960 --> 00:30:56.480
+are actually when I enter off the back
+
+735
+00:30:56.480 --> 00:30:58.040
+of these moderately impactful news events
+
+736
+00:30:58.040 --> 00:31:00.640
+because they give the directional clarity.
+
+737
+00:31:00.640 --> 00:31:02.480
+So again, this is it.
+
+738
+00:31:02.480 --> 00:31:06.000
+I have an ever tag which is I held that trade
+
+739
+00:31:06.000 --> 00:31:08.080
+through moderate news, right?
+
+740
+00:31:08.080 --> 00:31:10.440
+So this is if I hold a trade
+
+741
+00:31:10.440 --> 00:31:13.360
+through a new session that is moderately impactful.
+
+742
+00:31:13.360 --> 00:31:14.640
+So if I'm in a position
+
+743
+00:31:14.640 --> 00:31:16.360
+and that position is running in profit,
+
+744
+00:31:16.360 --> 00:31:19.280
+I might decide to keep that position open,
+
+745
+00:31:19.280 --> 00:31:22.160
+especially if we're like 3R in profit or something like that,
+
+746
+00:31:22.160 --> 00:31:25.480
+I may decide, depending on the context of where I am,
+
+747
+00:31:25.480 --> 00:31:28.160
+to keep that position open.
+
+748
+00:31:28.160 --> 00:31:31.160
+And if I do that, I need to be tagging that variable
+
+749
+00:31:31.160 --> 00:31:34.640
+because I need to see how that plays out at the end.
+
+750
+00:31:34.640 --> 00:31:36.080
+When I'm collecting that data,
+
+751
+00:31:36.080 --> 00:31:37.360
+I wanna be seeing these things
+
+752
+00:31:37.360 --> 00:31:40.520
+because this was gonna enable me
+
+753
+00:31:40.520 --> 00:31:42.440
+to be able to spot inefficiencies.
+
+754
+00:31:42.440 --> 00:31:43.920
+And then finally, no news, right?
+
+755
+00:31:43.920 --> 00:31:45.040
+So this is just very simple
+
+756
+00:31:45.040 --> 00:31:47.440
+but there is no high impact news that's in this day.
+
+757
+00:31:47.440 --> 00:31:48.960
+There's no reform news.
+
+758
+00:31:48.960 --> 00:31:52.880
+So yeah, that's kind of how I'm organizing news,
+
+759
+00:31:52.880 --> 00:31:54.040
+points of interest.
+
+760
+00:31:54.040 --> 00:31:55.920
+So again, I wanna get into the intricacies
+
+761
+00:31:55.920 --> 00:31:58.960
+because not every single setup is the same.
+
+762
+00:31:58.960 --> 00:32:00.800
+We have different points of interest.
+
+763
+00:32:00.800 --> 00:32:05.080
+So here, there's four different types of points of interest.
+
+764
+00:32:06.120 --> 00:32:08.320
+And in fact, I'll move back up to here
+
+765
+00:32:08.320 --> 00:32:11.240
+to try and just show you these points of interest.
+
+766
+00:32:11.240 --> 00:32:13.240
+So we have a weak point of interest, right?
+
+767
+00:32:13.240 --> 00:32:14.120
+That's our first one.
+
+768
+00:32:14.120 --> 00:32:16.720
+A weak point of interest, very simply put,
+
+769
+00:32:16.720 --> 00:32:20.960
+is a point of interest that has no impact, right?
+
+770
+00:32:20.960 --> 00:32:23.640
+So you have an order block or a fair value gap that's created
+
+771
+00:32:23.640 --> 00:32:24.760
+but it doesn't have an impact.
+
+772
+00:32:24.760 --> 00:32:26.920
+Now, how do you define impact?
+
+773
+00:32:26.920 --> 00:32:28.560
+The definition of impact for me
+
+774
+00:32:28.560 --> 00:32:31.360
+is a break of an important structural level.
+
+775
+00:32:31.360 --> 00:32:34.120
+So as you can see here, we are, let's say we're bullish, right?
+
+776
+00:32:34.120 --> 00:32:36.320
+We have a low to a high, we come back
+
+777
+00:32:36.320 --> 00:32:39.000
+and this low begins to put in a high like this.
+
+778
+00:32:39.000 --> 00:32:39.880
+It begins attacking this high.
+
+779
+00:32:39.880 --> 00:32:41.240
+It fails to break this high
+
+780
+00:32:41.240 --> 00:32:42.880
+and price starts coming back towards it.
+
+781
+00:32:42.880 --> 00:32:44.720
+Well, to me, that's a weak point of interest
+
+782
+00:32:44.720 --> 00:32:47.720
+because this area of interest failed to break this high.
+
+783
+00:32:47.720 --> 00:32:48.720
+And if you just look at it simply
+
+784
+00:32:48.720 --> 00:32:50.800
+from a supply and demand perspective, right?
+
+785
+00:32:50.800 --> 00:32:52.960
+Supply steps into the market here,
+
+786
+00:32:52.960 --> 00:32:54.960
+demand steps into the market here,
+
+787
+00:32:54.960 --> 00:32:57.120
+not steps in but kind of outweighs.
+
+788
+00:32:57.120 --> 00:32:57.960
+And price is going down,
+
+789
+00:32:57.960 --> 00:32:59.360
+there is more supply than the most demand.
+
+790
+00:32:59.360 --> 00:33:00.560
+If price is coming up, there's more demand
+
+791
+00:33:00.560 --> 00:33:01.560
+than there is supply.
+
+792
+00:33:01.560 --> 00:33:03.680
+So supply is in control as price goes down
+
+793
+00:33:03.680 --> 00:33:05.480
+and then demand starts taking over control.
+
+794
+00:33:05.480 --> 00:33:07.120
+But we enter back to the old area
+
+795
+00:33:07.120 --> 00:33:09.160
+where supply was gaining control
+
+796
+00:33:09.160 --> 00:33:12.600
+and supply regains control does push in price lower.
+
+797
+00:33:12.600 --> 00:33:15.120
+This makes me question whether the demand interest
+
+798
+00:33:15.120 --> 00:33:17.040
+in this area is strong.
+
+799
+00:33:17.040 --> 00:33:19.360
+And the answer for me is, no, it's not.
+
+800
+00:33:19.360 --> 00:33:20.880
+That doesn't mean I'm not gonna trade from it.
+
+801
+00:33:20.880 --> 00:33:22.640
+That simply just means that that is a variable
+
+802
+00:33:22.640 --> 00:33:23.480
+that I want to look at.
+
+803
+00:33:23.480 --> 00:33:25.280
+Actually, it may become a thing
+
+804
+00:33:25.280 --> 00:33:26.800
+where a weak point of interest
+
+805
+00:33:26.800 --> 00:33:28.840
+is my most profitable point of interest, right?
+
+806
+00:33:28.840 --> 00:33:31.640
+There's no right or wrong just 'cause it's weak and strong
+
+807
+00:33:31.640 --> 00:33:33.800
+doesn't mean that one is better than the other.
+
+808
+00:33:33.800 --> 00:33:36.360
+What's gonna tell you what's better than one of the other
+
+809
+00:33:36.360 --> 00:33:38.280
+is the data and that's what we're after.
+
+810
+00:33:38.280 --> 00:33:40.160
+And this is why we have to understand this.
+
+811
+00:33:40.160 --> 00:33:43.240
+And the second version is essentially the same thing
+
+812
+00:33:43.240 --> 00:33:44.400
+but it's more internal.
+
+813
+00:33:44.400 --> 00:33:48.440
+So we're bullish, internal structures start trading bearish
+
+814
+00:33:48.440 --> 00:33:50.600
+and then we have an internal reaction.
+
+815
+00:33:50.600 --> 00:33:52.440
+From here, that creates a point of interest
+
+816
+00:33:52.440 --> 00:33:54.440
+that I may want to trade from
+
+817
+00:33:54.440 --> 00:33:57.040
+and that point of interest fails to break that high.
+
+818
+00:33:57.040 --> 00:33:59.480
+That's considered a weak point of interest, right?
+
+819
+00:33:59.480 --> 00:34:00.880
+And then versus a strong point of interest,
+
+820
+00:34:00.880 --> 00:34:02.920
+very different thing, a strong point of interest
+
+821
+00:34:02.920 --> 00:34:05.280
+is an area that has an impact, thus breaks something.
+
+822
+00:34:05.280 --> 00:34:07.240
+So this point of interest, this demand zone,
+
+823
+00:34:07.240 --> 00:34:09.360
+this further you go, ends up leading
+
+824
+00:34:09.360 --> 00:34:11.880
+to the break of this previous high, strong.
+
+825
+00:34:11.880 --> 00:34:13.160
+This one is internal, right?
+
+826
+00:34:13.160 --> 00:34:16.080
+Let's say we're bullish, price coming down bearish internally
+
+827
+00:34:16.080 --> 00:34:17.440
+and then we shift bullish internally,
+
+828
+00:34:17.440 --> 00:34:19.520
+we have a break of a significant structural level,
+
+829
+00:34:19.520 --> 00:34:22.560
+that for me is a strong point of interest, right?
+
+830
+00:34:22.560 --> 00:34:24.600
+Then we have a broad point of interest.
+
+831
+00:34:24.600 --> 00:34:27.800
+So a broad point of interest is essentially
+
+832
+00:34:27.800 --> 00:34:32.800
+a larger range of orders, right?
+
+833
+00:34:32.800 --> 00:34:35.000
+So I've got it here as a previous cluster.
+
+834
+00:34:35.000 --> 00:34:37.320
+And again, you'll see this in more detail
+
+835
+00:34:37.320 --> 00:34:39.280
+when we go into the backtest.
+
+836
+00:34:39.280 --> 00:34:41.200
+But you can have a really nice point of interest, right?
+
+837
+00:34:41.200 --> 00:34:43.800
+This kind of final area in here, right?
+
+838
+00:34:43.800 --> 00:34:45.360
+Where you have a nice sell to buy
+
+839
+00:34:45.360 --> 00:34:46.440
+that leaves a fair value gap
+
+840
+00:34:46.440 --> 00:34:50.280
+and this might be your refined point of interest.
+
+841
+00:34:50.280 --> 00:34:54.400
+But you can't, you can't not consider the fact
+
+842
+00:34:54.400 --> 00:34:58.520
+that we may have this broad area of interest in here, right?
+
+843
+00:34:58.520 --> 00:35:00.360
+From this high to this low down here,
+
+844
+00:35:00.360 --> 00:35:02.280
+there's this broad area of interest
+
+845
+00:35:02.280 --> 00:35:05.880
+where the previous kind of auction range is taking place.
+
+846
+00:35:05.880 --> 00:35:08.400
+And so there's still a lot of orders in this level,
+
+847
+00:35:08.400 --> 00:35:10.240
+maybe on the 15 minute timeframe,
+
+848
+00:35:10.240 --> 00:35:12.280
+this is, you know, order block down here for value gap.
+
+849
+00:35:12.280 --> 00:35:15.200
+But maybe if you go up to an hourly or, you know,
+
+850
+00:35:15.200 --> 00:35:16.600
+three hour, four hour,
+
+851
+00:35:16.600 --> 00:35:18.400
+maybe you find that this is the order block
+
+852
+00:35:18.400 --> 00:35:19.320
+on the four hour timeframe.
+
+853
+00:35:19.320 --> 00:35:20.760
+Maybe you find that, you know,
+
+854
+00:35:20.760 --> 00:35:23.280
+this is a four hour value gap, right?
+
+855
+00:35:23.280 --> 00:35:24.640
+And so those things are still important,
+
+856
+00:35:24.640 --> 00:35:26.800
+but I've labeled and categorized that area
+
+857
+00:35:26.800 --> 00:35:28.360
+as a broad point of interest.
+
+858
+00:35:28.360 --> 00:35:30.320
+Now, know that you will only have a trade
+
+859
+00:35:30.320 --> 00:35:31.800
+from a broad point of interest,
+
+860
+00:35:31.800 --> 00:35:35.440
+typically speaking, after a sweep of liquidity.
+
+861
+00:35:35.440 --> 00:35:36.880
+So it's, again, just an add-up.
+
+862
+00:35:36.880 --> 00:35:39.560
+And then you have no point of interest.
+
+863
+00:35:39.560 --> 00:35:42.880
+So a no POI is something that I, you know,
+
+864
+00:35:42.880 --> 00:35:46.000
+kind of never used to factor in
+
+865
+00:35:46.000 --> 00:35:48.840
+until, you know, understanding things deeper
+
+866
+00:35:48.840 --> 00:35:51.240
+and understanding liquidity at a deeper level.
+
+867
+00:35:51.240 --> 00:35:54.520
+So if, for me, if there was no point of interest,
+
+868
+00:35:54.520 --> 00:35:55.480
+it just doesn't matter.
+
+869
+00:35:55.480 --> 00:36:00.120
+But then continuously I see the eliquidation occurs.
+
+870
+00:36:00.120 --> 00:36:02.040
+And we're in the middle of kind of no man's land,
+
+871
+00:36:02.040 --> 00:36:02.920
+is why I call it, right?
+
+872
+00:36:02.920 --> 00:36:04.960
+Which is where you have this kind of previous cluster range
+
+873
+00:36:04.960 --> 00:36:07.800
+in here, price goes into this expansion phase,
+
+874
+00:36:07.800 --> 00:36:10.080
+comes back down and then trades from here.
+
+875
+00:36:10.080 --> 00:36:11.360
+And you're kind of in this no man's land.
+
+876
+00:36:11.360 --> 00:36:13.760
+So the area from that high to this,
+
+877
+00:36:13.760 --> 00:36:15.680
+from where price is right now, essentially,
+
+878
+00:36:15.680 --> 00:36:18.280
+that's kind of, you know, no point of interest.
+
+879
+00:36:18.280 --> 00:36:21.600
+And again, no POI doesn't necessarily mean that it's bad thing.
+
+880
+00:36:21.600 --> 00:36:23.640
+Again, no POI could be the most profitable model.
+
+881
+00:36:23.640 --> 00:36:24.800
+We don't actually not.
+
+882
+00:36:24.800 --> 00:36:28.320
+And so again, it's just a variable inside of a set-up.
+
+883
+00:36:28.320 --> 00:36:33.320
+So any set-up could also include some of these, right?
+
+884
+00:36:33.320 --> 00:36:36.040
+Any of these set-ups that we have here,
+
+885
+00:36:36.040 --> 00:36:39.800
+any of these set-ups could include these areas.
+
+886
+00:36:39.800 --> 00:36:41.800
+And so now what we're starting to get
+
+887
+00:36:41.800 --> 00:36:43.640
+is kind of a formulation,
+
+888
+00:36:43.640 --> 00:36:45.320
+because now what you can look at is,
+
+889
+00:36:45.320 --> 00:36:46.840
+you don't have to just look at the quality
+
+890
+00:36:46.840 --> 00:36:48.120
+of the set-up itself.
+
+891
+00:36:48.120 --> 00:36:51.080
+Maybe you find that the London Sweep Asia session
+
+892
+00:36:51.080 --> 00:36:54.280
+has a 50% win rate, right?
+
+893
+00:36:54.280 --> 00:36:56.640
+That's your highest win rate system.
+
+894
+00:36:56.640 --> 00:36:58.920
+Maybe you find that your New York continuation
+
+895
+00:36:58.920 --> 00:37:01.480
+from London POI has a 30% win rate.
+
+896
+00:37:01.480 --> 00:37:03.640
+Now, if you go deeper into the details
+
+897
+00:37:03.640 --> 00:37:06.120
+and then you start looking at, okay, well,
+
+898
+00:37:06.120 --> 00:37:09.240
+what about when I took London Sweep of Asia
+
+899
+00:37:09.240 --> 00:37:13.720
+with a strong POI or with a weak POI or no POI or broad POI?
+
+900
+00:37:13.720 --> 00:37:16.080
+You're gonna get a different data cluster.
+
+901
+00:37:16.080 --> 00:37:18.240
+And that data cluster is gonna tell you a different thing.
+
+902
+00:37:18.240 --> 00:37:22.360
+And so the data depends on how you want to look at it.
+
+903
+00:37:22.360 --> 00:37:24.240
+And so this is a game where you can start looking at,
+
+904
+00:37:24.240 --> 00:37:27.640
+okay, so what I noticed was my London Sweep Asia
+
+905
+00:37:27.640 --> 00:37:29.600
+for the entire year of back dusting
+
+906
+00:37:29.600 --> 00:37:31.080
+that had a 50% win rate.
+
+907
+00:37:31.080 --> 00:37:35.000
+But when I paired that London Sweep Asia
+
+908
+00:37:35.000 --> 00:37:39.360
+with a strong POI, it had a 65% win rate.
+
+909
+00:37:39.360 --> 00:37:41.000
+Now all of a sudden I'm starting to understand
+
+910
+00:37:41.000 --> 00:37:42.720
+my A-plus set-ups.
+
+911
+00:37:42.720 --> 00:37:44.880
+And then that takes me into the next tagging system, right?
+
+912
+00:37:44.880 --> 00:37:46.880
+Which is usually trend phase.
+
+913
+00:37:46.880 --> 00:37:50.680
+And so you'll see in here, we have point of interest.
+
+914
+00:37:50.680 --> 00:37:53.920
+And then we have the trend, right?
+
+915
+00:37:53.920 --> 00:37:56.080
+This is the phases of the trend.
+
+916
+00:37:56.080 --> 00:37:59.280
+And for me, there are three main ones that I want to test.
+
+917
+00:37:59.280 --> 00:38:00.800
+That is the change of character.
+
+918
+00:38:00.800 --> 00:38:03.680
+And then this is essentially when the M15 swing range
+
+919
+00:38:03.680 --> 00:38:05.480
+is formed, in fact, I'll just show you them.
+
+920
+00:38:05.480 --> 00:38:08.480
+So you have the first phase of a trend,
+
+921
+00:38:08.480 --> 00:38:10.200
+which is just a change of character.
+
+922
+00:38:10.200 --> 00:38:15.200
+So we're always trading with the directional bias of the M15.
+
+923
+00:38:15.200 --> 00:38:18.200
+But we can understand what phase of structure
+
+924
+00:38:18.200 --> 00:38:19.400
+is that M15 net?
+
+925
+00:38:19.400 --> 00:38:22.000
+Because if we've just had a change of character
+
+926
+00:38:22.000 --> 00:38:24.000
+and the leg we're trading inside of
+
+927
+00:38:24.000 --> 00:38:25.240
+is come from a change of character,
+
+928
+00:38:25.240 --> 00:38:26.440
+then that's gonna be the categorization
+
+929
+00:38:26.440 --> 00:38:27.960
+of a change of character.
+
+930
+00:38:27.960 --> 00:38:29.680
+If it's gonna be a trend confirmation,
+
+931
+00:38:29.680 --> 00:38:32.080
+which is essentially a change of character
+
+932
+00:38:32.080 --> 00:38:33.800
+and another break of structure,
+
+933
+00:38:33.800 --> 00:38:35.960
+this becomes a confirmed trend.
+
+934
+00:38:35.960 --> 00:38:39.000
+Then that's in of itself, a structural leg, right?
+
+935
+00:38:39.000 --> 00:38:42.280
+And then you have what I consider a trending market,
+
+936
+00:38:42.280 --> 00:38:44.760
+which is anything over the second break of structure.
+
+937
+00:38:44.760 --> 00:38:46.360
+So if you have a change of character,
+
+938
+00:38:46.360 --> 00:38:48.120
+then a break of structure, you confirm trend,
+
+939
+00:38:48.120 --> 00:38:49.040
+third break of structure,
+
+940
+00:38:49.040 --> 00:38:50.560
+anything after that you're trending.
+
+941
+00:38:50.560 --> 00:38:52.360
+You're in a trending market, right?
+
+942
+00:38:52.360 --> 00:38:56.280
+And again, there may be no statistical differentiation
+
+943
+00:38:56.280 --> 00:38:58.600
+by looking at these tags,
+
+944
+00:38:58.600 --> 00:39:01.360
+but we don't know that until we have the data.
+
+945
+00:39:01.360 --> 00:39:03.000
+You already have, again,
+
+946
+00:39:03.000 --> 00:39:05.000
+especially if you kind of understand things,
+
+947
+00:39:05.000 --> 00:39:08.120
+you already have an idea of a hypothesis,
+
+948
+00:39:08.120 --> 00:39:11.360
+of the things you think will have the biggest difference.
+
+949
+00:39:11.360 --> 00:39:13.360
+But the reality is,
+
+950
+00:39:13.360 --> 00:39:16.960
+I'm a huge advocate for let the data decide.
+
+951
+00:39:16.960 --> 00:39:18.040
+I see a lot of traders,
+
+952
+00:39:18.040 --> 00:39:20.720
+and we'll probably go through to some point.
+
+953
+00:39:20.720 --> 00:39:23.440
+A lot of traders will come into the community
+
+954
+00:39:23.440 --> 00:39:27.040
+and they'll come into the community area
+
+955
+00:39:27.040 --> 00:39:28.280
+and they'll ask a question like,
+
+956
+00:39:28.280 --> 00:39:31.840
+"Hey, I'm thinking of one to three risk reward fixed
+
+957
+00:39:31.840 --> 00:39:33.200
+instead of one to five risk reward."
+
+958
+00:39:33.200 --> 00:39:35.800
+Or, "Hey, I'm thinking about going to break even
+
+959
+00:39:35.800 --> 00:39:37.320
+after this happens instead of this.
+
+960
+00:39:37.320 --> 00:39:39.160
+What do you guys think?"
+
+961
+00:39:39.160 --> 00:39:40.240
+And the reality is,
+
+962
+00:39:40.240 --> 00:39:42.120
+is any answer that you're going to get
+
+963
+00:39:42.120 --> 00:39:44.480
+is inaccurate relative to data.
+
+964
+00:39:44.480 --> 00:39:45.680
+Because I can sit there and tell you,
+
+965
+00:39:45.680 --> 00:39:47.440
+"You know what, yeah, I mean, hypothetically,
+
+966
+00:39:47.440 --> 00:39:48.280
+that makes sense.
+
+967
+00:39:48.280 --> 00:39:49.600
+I can see where you're coming from.
+
+968
+00:39:49.600 --> 00:39:50.800
+It's understandable.
+
+969
+00:39:50.800 --> 00:39:52.480
+I can see the logic,
+
+970
+00:39:52.480 --> 00:39:55.720
+but does the market deal in hypotheticals?"
+
+971
+00:39:55.720 --> 00:39:57.080
+No, it deals in data.
+
+972
+00:39:57.080 --> 00:39:58.760
+And so people have a question.
+
+973
+00:39:58.760 --> 00:40:00.680
+My answer is always, "I don't know.
+
+974
+00:40:00.680 --> 00:40:02.040
+Let the data decide."
+
+975
+00:40:02.040 --> 00:40:03.160
+I don't know.
+
+976
+00:40:03.160 --> 00:40:06.320
+If I haven't ran that test, I can't tell you.
+
+977
+00:40:06.320 --> 00:40:08.640
+And a lot of mentors, gurus, people out there,
+
+978
+00:40:08.640 --> 00:40:10.760
+if you ask them a question like,
+
+979
+00:40:10.760 --> 00:40:11.800
+"Hey, you know, what about this?"
+
+980
+00:40:11.800 --> 00:40:13.120
+They'll be like, "Oh, no, no, no.
+
+981
+00:40:13.120 --> 00:40:13.960
+Don't worry about that.
+
+982
+00:40:13.960 --> 00:40:14.880
+That doesn't work."
+
+983
+00:40:14.880 --> 00:40:15.720
+"Oh, what about this?"
+
+984
+00:40:15.720 --> 00:40:17.360
+They're like, "Yeah, yeah, that will make everything better.
+
+985
+00:40:17.360 --> 00:40:18.400
+That's definitely the one.
+
+986
+00:40:18.400 --> 00:40:19.520
+Go for that."
+
+987
+00:40:19.520 --> 00:40:22.760
+And it's like, "How do you know?"
+
+988
+00:40:22.760 --> 00:40:23.600
+You don't.
+
+989
+00:40:23.600 --> 00:40:27.000
+You don't know anything until you've tested it.
+
+990
+00:40:27.000 --> 00:40:29.800
+And so again, let the data decide.
+
+991
+00:40:29.800 --> 00:40:31.120
+So that's trend phase.
+
+992
+00:40:31.120 --> 00:40:32.560
+And we have structural flow.
+
+993
+00:40:32.560 --> 00:40:35.920
+Structural flow is pretty simple.
+
+994
+00:40:35.920 --> 00:40:37.040
+There are three different types.
+
+995
+00:40:37.040 --> 00:40:38.520
+There is pro-trend only.
+
+996
+00:40:38.520 --> 00:40:42.840
+So pro-trend only is when there is no internal structure.
+
+997
+00:40:42.840 --> 00:40:46.080
+You are bullish and there's no internal structure.
+
+998
+00:40:46.080 --> 00:40:47.840
+You're bearish and there's no internal structure.
+
+999
+00:40:47.840 --> 00:40:51.600
+So when you're tagging a trade, its own is pro-trend only.
+
+1000
+00:40:51.600 --> 00:40:55.320
+Now you may have counter-internal.
+
+1001
+00:40:55.320 --> 00:40:56.760
+Counter-internal is your bullish,
+
+1002
+00:40:56.760 --> 00:40:58.520
+but the internal structure is bearish
+
+1003
+00:40:58.520 --> 00:41:00.480
+and now you take a long position.
+
+1004
+00:41:00.480 --> 00:41:03.480
+And then obviously pro-internal is when you're bullish
+
+1005
+00:41:03.480 --> 00:41:05.240
+and the internal was bearish
+
+1006
+00:41:05.240 --> 00:41:06.280
+and then it shifts bullish.
+
+1007
+00:41:06.280 --> 00:41:09.800
+And so now you have a bullish external and bullish internal
+
+1008
+00:41:09.800 --> 00:41:12.120
+or bearish external and bearish internal.
+
+1009
+00:41:12.120 --> 00:41:13.120
+And this is a really interesting one
+
+1010
+00:41:13.120 --> 00:41:14.920
+because by understanding this,
+
+1011
+00:41:14.920 --> 00:41:19.680
+what you might again see potentially who knows is again,
+
+1012
+00:41:19.680 --> 00:41:23.520
+it's all part of being a scientist in some sense.
+
+1013
+00:41:23.520 --> 00:41:25.000
+As you may come back in here and you may be like,
+
+1014
+00:41:25.000 --> 00:41:26.960
+"Hey, you know what I find?
+
+1015
+00:41:26.960 --> 00:41:30.440
+When I take my Frank Sweep London continuation model,
+
+1016
+00:41:30.440 --> 00:41:32.280
+it has a 30% win rate.
+
+1017
+00:41:32.280 --> 00:41:36.680
+But if I take that model when we're also pro-internal,
+
+1018
+00:41:36.680 --> 00:41:38.840
+it has a 60% win rate.
+
+1019
+00:41:38.840 --> 00:41:39.680
+Or maybe you come in there
+
+1020
+00:41:39.680 --> 00:41:42.160
+and you're like, the Frank Sweep London,
+
+1021
+00:41:42.160 --> 00:41:45.200
+the Frank Sweep Asia continuation model
+
+1022
+00:41:45.200 --> 00:41:48.880
+has a negative profit expectancy.
+
+1023
+00:41:48.880 --> 00:41:50.840
+I mean, it's actually unprofitable.
+
+1024
+00:41:50.840 --> 00:41:53.920
+But then you add in a data filtration,
+
+1025
+00:41:53.920 --> 00:41:56.920
+which is looking at if you take that trade,
+
+1026
+00:41:56.920 --> 00:41:59.800
+what about if we're pro-internal?
+
+1027
+00:41:59.800 --> 00:42:04.800
+What about if we're working from a strong point of interest?
+
+1028
+00:42:04.800 --> 00:42:06.960
+And as long as you have enough examples of that trade,
+
+1029
+00:42:06.960 --> 00:42:07.960
+you don't want to just be running off
+
+1030
+00:42:07.960 --> 00:42:10.160
+one or two different examples,
+
+1031
+00:42:10.160 --> 00:42:12.440
+then what you may find is that actually no,
+
+1032
+00:42:12.440 --> 00:42:14.000
+you do have a model there.
+
+1033
+00:42:14.000 --> 00:42:16.440
+And now you kind of come to redefine it
+
+1034
+00:42:16.440 --> 00:42:18.600
+and this is the refinement process.
+
+1035
+00:42:18.600 --> 00:42:20.600
+So you're premium in discount, right?
+
+1036
+00:42:20.600 --> 00:42:24.960
+Premium in discount isn't something that you must follow.
+
+1037
+00:42:24.960 --> 00:42:27.720
+It's something that could add an additional layer
+
+1038
+00:42:27.720 --> 00:42:29.800
+of confluence to your setups.
+
+1039
+00:42:29.800 --> 00:42:33.840
+But I've always told people like premium in discount
+
+1040
+00:42:33.840 --> 00:42:36.120
+is a extra confluence, right?
+
+1041
+00:42:36.120 --> 00:42:37.880
+That's what I tell people.
+
+1042
+00:42:37.880 --> 00:42:39.440
+But is it?
+
+1043
+00:42:39.440 --> 00:42:40.680
+Like I don't know.
+
+1044
+00:42:40.680 --> 00:42:41.880
+So let's test it, right?
+
+1045
+00:42:41.880 --> 00:42:43.080
+From my personal experience,
+
+1046
+00:42:43.080 --> 00:42:46.560
+I found that I do have a better experience
+
+1047
+00:42:46.560 --> 00:42:49.120
+when I'm longing from an area of discounting price
+
+1048
+00:42:49.120 --> 00:42:51.960
+or when I'm sure from an area of premium price, for sure.
+
+1049
+00:42:51.960 --> 00:42:53.760
+But what about in the context
+
+1050
+00:42:53.760 --> 00:42:56.840
+of the different types of setups that we have
+
+1051
+00:42:56.840 --> 00:42:58.720
+that may not necessarily be true?
+
+1052
+00:42:58.720 --> 00:43:00.640
+And so again, just like it's pretty simple,
+
+1053
+00:43:00.640 --> 00:43:03.440
+there's a tag, it's premium in discount.
+
+1054
+00:43:03.440 --> 00:43:04.280
+Is it premium in discount?
+
+1055
+00:43:04.280 --> 00:43:05.120
+Yes or no?
+
+1056
+00:43:05.120 --> 00:43:07.040
+If it's in premium in discount,
+
+1057
+00:43:07.040 --> 00:43:09.440
+that simply just means that if we are long,
+
+1058
+00:43:09.440 --> 00:43:11.960
+then we are longing from an area of discount.
+
+1059
+00:43:11.960 --> 00:43:13.120
+And if we are short,
+
+1060
+00:43:13.120 --> 00:43:14.720
+we are shorting from an area of premium.
+
+1061
+00:43:14.720 --> 00:43:17.760
+If it's no, then it's we're long
+
+1062
+00:43:17.760 --> 00:43:19.920
+and we're longing from an area of premium.
+
+1063
+00:43:19.920 --> 00:43:21.040
+And if we are short,
+
+1064
+00:43:21.040 --> 00:43:24.520
+we are shorting from an area of discount, right?
+
+1065
+00:43:24.520 --> 00:43:29.280
+And so those are the real main kind of contextual understanding
+
+1066
+00:43:29.280 --> 00:43:30.920
+that I have to give you to show you what they are.
+
+1067
+00:43:30.920 --> 00:43:33.120
+Again, if this is all going over your head,
+
+1068
+00:43:33.120 --> 00:43:34.040
+don't worry about it.
+
+1069
+00:43:34.040 --> 00:43:36.800
+Like we're gonna be going for this consistently
+
+1070
+00:43:36.800 --> 00:43:38.720
+and you'll see everything come back full circle.
+
+1071
+00:43:38.720 --> 00:43:39.720
+If you have to watch it more times,
+
+1072
+00:43:39.720 --> 00:43:41.640
+you have to watch it more times, don't worry about it.
+
+1073
+00:43:41.640 --> 00:43:44.760
+So, and then finally, we have the session.
+
+1074
+00:43:44.760 --> 00:43:47.240
+So we have London session and we have New York session.
+
+1075
+00:43:47.240 --> 00:43:52.240
+Now this is really a much more unnecessary tag.
+
+1076
+00:43:52.720 --> 00:43:54.520
+Can we tell the answer to you?
+
+1077
+00:43:54.520 --> 00:43:57.880
+Because trade seller will give me the data anyway
+
+1078
+00:43:57.880 --> 00:44:01.320
+of my trade times, but I just wanna tag it.
+
+1079
+00:44:01.320 --> 00:44:04.360
+This is execution, executed in London session,
+
+1080
+00:44:04.360 --> 00:44:05.680
+executed in New York session.
+
+1081
+00:44:05.680 --> 00:44:07.040
+That's it.
+
+1082
+00:44:07.040 --> 00:44:10.360
+And that pretty much brings us full circle, right?
+
+1083
+00:44:10.360 --> 00:44:13.360
+We have the trend, we have the structure flow,
+
+1084
+00:44:13.360 --> 00:44:15.440
+internal pro, internal counter.
+
+1085
+00:44:15.440 --> 00:44:17.400
+We have the different types of setups of the sessions.
+
+1086
+00:44:17.400 --> 00:44:19.360
+We have our premium discount, yes or no.
+
+1087
+00:44:19.360 --> 00:44:20.520
+Point of interest, is it strong?
+
+1088
+00:44:20.520 --> 00:44:22.840
+Is it weak? Is it broad? Is it no POI?
+
+1089
+00:44:22.840 --> 00:44:24.760
+We have the news, right?
+
+1090
+00:44:24.760 --> 00:44:26.680
+And we have the execution window.
+
+1091
+00:44:26.680 --> 00:44:28.880
+And so now we have the playbook.
+
+1092
+00:44:28.880 --> 00:44:30.320
+So these are the rules that we're gonna be following
+
+1093
+00:44:30.320 --> 00:44:34.560
+regardless, but we're gonna be filtering that playbook
+
+1094
+00:44:34.560 --> 00:44:38.000
+with these different variants, right?
+
+1095
+00:44:38.000 --> 00:44:39.840
+Which are tags.
+
+1096
+00:44:39.840 --> 00:44:42.280
+And so now everything in that playbook
+
+1097
+00:44:42.280 --> 00:44:44.640
+is gonna be broken down into most importantly,
+
+1098
+00:44:44.640 --> 00:44:46.400
+the different quality of setups.
+
+1099
+00:44:46.400 --> 00:44:49.080
+I might go in there and find that actually, you know,
+
+1100
+00:44:49.080 --> 00:44:52.440
+I've got seven different types of setups I could take,
+
+1101
+00:44:52.440 --> 00:44:54.680
+but only three of them are profitable.
+
+1102
+00:44:54.680 --> 00:44:56.560
+And if I've achieved, you know,
+
+1103
+00:44:56.560 --> 00:44:59.040
+a hundred percent return year to date,
+
+1104
+00:44:59.040 --> 00:45:02.760
+and only three of those setups are actually profitable,
+
+1105
+00:45:02.760 --> 00:45:04.160
+the others are unprofitable,
+
+1106
+00:45:04.160 --> 00:45:07.440
+simply just by removing those setups.
+
+1107
+00:45:07.440 --> 00:45:10.160
+I will spend less time on the market
+
+1108
+00:45:10.160 --> 00:45:11.720
+because I will take less trades.
+
+1109
+00:45:11.720 --> 00:45:12.840
+And by the way, you know,
+
+1110
+00:45:12.840 --> 00:45:13.680
+a lot of people are like,
+
+1111
+00:45:13.680 --> 00:45:14.520
+"Oh, I don't want to take less trades."
+
+1112
+00:45:14.520 --> 00:45:16.160
+It's like, "Do you want to take less losing trades?"
+
+1113
+00:45:16.160 --> 00:45:17.000
+Of course you do.
+
+1114
+00:45:17.000 --> 00:45:20.200
+My ideal life is like,
+
+1115
+00:45:20.200 --> 00:45:22.520
+get as much as I can with as little as I need to do.
+
+1116
+00:45:22.520 --> 00:45:23.440
+It's pretty simple.
+
+1117
+00:45:23.440 --> 00:45:25.280
+So I don't want to trade every single day.
+
+1118
+00:45:25.280 --> 00:45:28.280
+If you come to me and you said, "Hey, you know,
+
+1119
+00:45:28.280 --> 00:45:29.480
+"here are two systems."
+
+1120
+00:45:29.480 --> 00:45:34.120
+One system takes, one system you'll have, you know,
+
+1121
+00:45:34.120 --> 00:45:36.000
+two trades a week, right?
+
+1122
+00:45:36.000 --> 00:45:37.960
+Between these periods of time,
+
+1123
+00:45:37.960 --> 00:45:40.680
+and you just need to be able to essentially understand
+
+1124
+00:45:40.680 --> 00:45:44.160
+and mark out your levels, set alerts, and, you know,
+
+1125
+00:45:44.160 --> 00:45:45.000
+trade this.
+
+1126
+00:45:45.000 --> 00:45:47.040
+You don't have to be sitting there all day, every day,
+
+1127
+00:45:47.040 --> 00:45:48.360
+two setups a week.
+
+1128
+00:45:48.360 --> 00:45:50.160
+And those two setups,
+
+1129
+00:45:50.160 --> 00:45:53.480
+they're going to return you, you know, 50% for the year.
+
+1130
+00:45:53.480 --> 00:45:56.240
+And someone else says, "Hey, here's a system."
+
+1131
+00:45:56.240 --> 00:45:57.080
+You're going to have,
+
+1132
+00:45:57.080 --> 00:45:59.440
+you're going to be able to take, you know,
+
+1133
+00:45:59.440 --> 00:46:04.040
+two trades a day in the same time window.
+
+1134
+00:46:04.040 --> 00:46:06.480
+But you're going to have to be there way more focused,
+
+1135
+00:46:06.480 --> 00:46:09.200
+locked in because it could happen at any time.
+
+1136
+00:46:09.200 --> 00:46:11.760
+So I'm spending more time taking more trades,
+
+1137
+00:46:11.760 --> 00:46:16.080
+which is essentially the higher probability of failure, right?
+
+1138
+00:46:16.080 --> 00:46:17.720
+The more trades I take,
+
+1139
+00:46:17.720 --> 00:46:21.040
+the higher the probability that I'm going to make a mistake,
+
+1140
+00:46:21.040 --> 00:46:22.200
+essentially, right?
+
+1141
+00:46:22.200 --> 00:46:24.880
+Because I have more shots to miss, right?
+
+1142
+00:46:24.880 --> 00:46:26.960
+There's more chances for me to make, you know,
+
+1143
+00:46:26.960 --> 00:46:28.280
+the more chances for me to be emotional,
+
+1144
+00:46:28.280 --> 00:46:29.600
+especially the more trades are taken.
+
+1145
+00:46:29.600 --> 00:46:31.000
+So for me, an ideal world,
+
+1146
+00:46:31.000 --> 00:46:33.720
+like if you said to me, one trade a year,
+
+1147
+00:46:33.720 --> 00:46:36.680
+and you're going to do, you know, X amount of a percent,
+
+1148
+00:46:36.680 --> 00:46:37.720
+maybe I'm being a little bit extreme,
+
+1149
+00:46:37.720 --> 00:46:40.000
+but I think you kind of get the purpose
+
+1150
+00:46:40.000 --> 00:46:43.160
+and the importance of what I'm trying to get at.
+
+1151
+00:46:43.160 --> 00:46:45.840
+So I believe that, you know,
+
+1152
+00:46:45.840 --> 00:46:48.360
+I don't believe that more is better or less is better.
+
+1153
+00:46:48.360 --> 00:46:50.760
+I believe that more could be better and less could be better,
+
+1154
+00:46:50.760 --> 00:46:52.520
+but I believe in the data side.
+
+1155
+00:46:52.520 --> 00:46:55.200
+So that is pretty much my playbook.
+
+1156
+00:46:55.200 --> 00:46:57.480
+Those, this is how we're going to be running the test.
+
+1157
+00:46:57.480 --> 00:46:59.960
+This is how we're going to be organizing the data.
+
+1158
+00:46:59.960 --> 00:47:01.880
+Those are the specifics of all of that.
+
+1159
+00:47:01.880 --> 00:47:03.320
+Now we're going to take all that information.
+
+1160
+00:47:03.320 --> 00:47:06.920
+We're going to go and back test this specific model
+
+1161
+00:47:06.920 --> 00:47:08.920
+for the entirety of 2024
+
+1162
+00:47:08.920 --> 00:47:13.160
+and probably get also the year to date 2025 done as well.
+
+1163
+00:47:13.160 --> 00:47:14.560
+And we'll see how everything plays out.
+
+1164
+00:47:14.560 --> 00:47:15.840
+I'll be with you step by step,
+
+1165
+00:47:15.840 --> 00:47:17.240
+taking every single trade
+
+1166
+00:47:17.240 --> 00:47:19.200
+and we'll be reviewing the data together
+
+1167
+00:47:19.200 --> 00:47:20.880
+and kind of making sense of everything.
+
+1168
+00:47:20.880 --> 00:47:23.200
+And again, this entire purpose is number one, yes,
+
+1169
+00:47:23.200 --> 00:47:25.640
+give you an edge that works, obviously.
+
+1170
+00:47:25.640 --> 00:47:29.040
+But number two is to show you how
+
+1171
+00:47:29.040 --> 00:47:32.040
+to really think, behave, move, act,
+
+1172
+00:47:32.040 --> 00:47:35.520
+be a professional trading operator.
+
+1173
+00:47:35.520 --> 00:47:37.600
+So I'll see you guys in the next episode.
+

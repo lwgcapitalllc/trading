@@ -1,0 +1,886 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:05.440
+Ladies and gents, welcome to TradeZeller. TradeZeller is the all-in-one
+
+2
+00:00:05.440 --> 00:00:07.120
+platform that I currently use
+
+3
+00:00:07.120 --> 00:00:12.320
+to do everything from my back testing to my journaling to all of my processes,
+
+4
+00:00:12.320 --> 00:00:13.600
+right? My before day
+
+5
+00:00:13.600 --> 00:00:18.480
+processes, my midday processes, my end-of-day processes. TradeZeller is really
+
+6
+00:00:18.480 --> 00:00:20.080
+my primary means
+
+7
+00:00:20.080 --> 00:00:25.100
+of operating. So TradeZeller is my main operating system, or it's the biggest
+
+8
+00:00:25.100 --> 00:00:26.160
+component of my
+
+9
+00:00:26.160 --> 00:00:30.720
+operating system. I have another system, a self-built system inside of Notion,
+
+10
+00:00:30.720 --> 00:00:32.640
+which is more psychological
+
+11
+00:00:32.640 --> 00:00:37.680
+and kind of behavioral based, but we'll get to that later point. But for
+
+12
+00:00:37.680 --> 00:00:38.640
+everything trading and
+
+13
+00:00:38.640 --> 00:00:44.000
+all trading data, TradeZeller is by far the best that's currently on the market
+
+14
+00:00:44.000 --> 00:00:44.880
+, who knows maybe
+
+15
+00:00:44.880 --> 00:00:49.100
+I'll be developing my own in the not-so-distant future. But as of right now,
+
+16
+00:00:49.100 --> 00:00:50.560
+TradeZeller is the
+
+17
+00:00:50.560 --> 00:00:54.250
+is the go-to. What I'll do is instead of walking you through it just all on my
+
+18
+00:00:54.250 --> 00:00:54.880
+own, I'm actually
+
+19
+00:00:54.880 --> 00:00:58.640
+going to guide you to the university section, which does actually a much better
+
+20
+00:00:58.640 --> 00:00:59.680
+job than I can do in
+
+21
+00:00:59.680 --> 00:01:03.370
+this episode, and that's what I'll kind of walk you through. So real quick,
+
+22
+00:01:03.370 --> 00:01:04.640
+obviously I have your
+
+23
+00:01:04.640 --> 00:01:10.320
+dashboard. I have a account plugged in right now that's an old 200k phase one
+
+24
+00:01:10.320 --> 00:01:11.280
+and phase two
+
+25
+00:01:11.280 --> 00:01:14.310
+that I did with Alpha Capital, but this is what the dashboard interface looks
+
+26
+00:01:14.310 --> 00:01:14.720
+like when
+
+27
+00:01:14.720 --> 00:01:17.640
+your last kind of trades that were taken were in December. This is what it
+
+28
+00:01:17.640 --> 00:01:18.480
+looks like, so when
+
+29
+00:01:18.480 --> 00:01:22.170
+you take a trade, it will come up in your calendar. You'll be able to go into
+
+30
+00:01:22.170 --> 00:01:22.560
+these, each of these
+
+31
+00:01:22.560 --> 00:01:26.640
+positions, look at the trades taken, wins, losses, it's going to give you all
+
+32
+00:01:26.640 --> 00:01:27.920
+of the important data
+
+33
+00:01:27.920 --> 00:01:32.770
+for your trading. This dashboard interface layout itself, this can be edited. I
+
+34
+00:01:32.770 --> 00:01:33.600
+have a couple different
+
+35
+00:01:33.600 --> 00:01:36.660
+ones. I have main data and I have minimalistic data, so you can see main data
+
+36
+00:01:36.660 --> 00:01:37.440
+is going to give
+
+37
+00:01:37.440 --> 00:01:41.500
+me more data points that I may want to look at on a week-to-week basis, for
+
+38
+00:01:41.500 --> 00:01:42.560
+example, but my
+
+39
+00:01:42.560 --> 00:01:46.400
+minimalist data dashboard is what I focus on on a day-to-day. You have your
+
+40
+00:01:46.400 --> 00:01:47.200
+daily journal,
+
+41
+00:01:47.200 --> 00:01:49.980
+you're all of the trades you've taken, your notebook for all of the notes that
+
+42
+00:01:49.980 --> 00:01:50.960
+you've taken,
+
+43
+00:01:50.960 --> 00:01:54.270
+your reports, this is actually a really, really valuable feature. I'll give you
+
+44
+00:01:54.270 --> 00:01:55.760
+a quick brief overview.
+
+45
+00:01:55.760 --> 00:01:59.840
+All of your KPIs are pretty much in here, your average daily P&L, your average
+
+46
+00:01:59.840 --> 00:02:00.400
+winning day,
+
+47
+00:02:00.400 --> 00:02:04.080
+your average losing day. What do I make on an average winning day? What do I
+
+48
+00:02:04.080 --> 00:02:04.560
+make on an average
+
+49
+00:02:04.560 --> 00:02:09.370
+losing day? My largest profitable day, my largest losing day, right? All of
+
+50
+00:02:09.370 --> 00:02:11.360
+these KPIs,
+
+51
+00:02:11.360 --> 00:02:15.800
+and this is where the biggest part of your growth comes in, is because you look
+
+52
+00:02:15.800 --> 00:02:16.720
+at all your data,
+
+53
+00:02:16.720 --> 00:02:20.460
+you organize it all, and it's organized pretty well here, and then the key is
+
+54
+00:02:20.460 --> 00:02:21.680
+looking at one to two
+
+55
+00:02:21.680 --> 00:02:26.810
+things that you want to improve on, and then building a hypothesis on how you
+
+56
+00:02:26.810 --> 00:02:28.560
+'re going to improve that.
+
+57
+00:02:28.560 --> 00:02:34.240
+So you find the biggest part on X, maybe your average losing trade is larger
+
+58
+00:02:34.240 --> 00:02:34.880
+than your average
+
+59
+00:02:34.880 --> 00:02:37.740
+winning trade, for example. You may be still profitable, but if that's the case
+
+60
+00:02:37.740 --> 00:02:40.640
+, then that's a big red flag,
+
+61
+00:02:40.640 --> 00:02:43.690
+and so you can look at that piece of data and be like, "Okay, let's dive deeper
+
+62
+00:02:43.690 --> 00:02:44.400
+into it." That's
+
+63
+00:02:44.400 --> 00:02:47.440
+definitely one KPI that I'm going to look to increase. Now you're going to look
+
+64
+00:02:47.440 --> 00:02:47.760
+at all the
+
+65
+00:02:47.760 --> 00:02:51.450
+ways. Am I risking too much on losing trades? Am I taking profits too early?
+
+66
+00:02:51.450 --> 00:02:52.240
+All of these different
+
+67
+00:02:52.240 --> 00:02:56.790
+things that could be the deep-rooted issue. Then you go into that, and then you
+
+68
+00:02:56.790 --> 00:02:58.000
+dissect it even
+
+69
+00:02:58.000 --> 00:03:02.130
+deeper. You just go layers and layers and layers until you finally identify the
+
+70
+00:03:02.130 --> 00:03:03.360
+one to three core
+
+71
+00:03:03.360 --> 00:03:08.560
+problems that is the cause of your low score of your KPI, and then you work on
+
+72
+00:03:08.560 --> 00:03:09.600
+a plan to increase
+
+73
+00:03:09.600 --> 00:03:13.340
+it, and then you track that plan. It becomes a hypothesis. You're literally
+
+74
+00:03:13.340 --> 00:03:14.400
+like a data scientist
+
+75
+00:03:14.400 --> 00:03:16.930
+at that point. All of these things are things that will go into a lot more
+
+76
+00:03:16.930 --> 00:03:17.840
+detail later. You have
+
+77
+00:03:17.840 --> 00:03:20.680
+your playbooks, you have your progress tracker, you have your trade replay, you
+
+78
+00:03:20.680 --> 00:03:21.520
+have your resource
+
+79
+00:03:21.520 --> 00:03:25.580
+center. These are all the features on the tracking. Then you have your back
+
+80
+00:03:25.580 --> 00:03:26.640
+testing, you have your
+
+81
+00:03:26.640 --> 00:03:30.330
+mental mode, which is something we'll talk about at a later date. Then you have
+
+82
+00:03:30.330 --> 00:03:30.880
+university. Instead
+
+83
+00:03:30.880 --> 00:03:34.580
+of going through all the features myself, I'll just go through the university
+
+84
+00:03:34.580 --> 00:03:35.520
+because inside of this
+
+85
+00:03:35.520 --> 00:03:40.330
+university, it pretty much gives you everything you need to know on how to use
+
+86
+00:03:40.330 --> 00:03:41.760
+trade seller,
+
+87
+00:03:41.760 --> 00:03:47.580
+and there's so much value in here that really just makes you an incredible,
+
+88
+00:03:47.580 --> 00:03:48.800
+incredible trader.
+
+89
+00:03:48.800 --> 00:03:54.160
+I've been using trade seller for a while now, and even I took so much value
+
+90
+00:03:54.160 --> 00:03:55.120
+from this university
+
+91
+00:03:55.120 --> 00:04:00.400
+section to get this level of value from just a back testing and journal.
+
+92
+00:04:00.400 --> 00:04:01.680
+Software is ridiculous.
+
+93
+00:04:01.680 --> 00:04:05.370
+The university alone is more valuable than the price you're paying your
+
+94
+00:04:05.370 --> 00:04:06.880
+subscription. That's
+
+95
+00:04:06.880 --> 00:04:10.190
+hands down. There is not a single trader who's watching this video that shouldn
+
+96
+00:04:10.190 --> 00:04:10.880
+'t have trade
+
+97
+00:04:10.880 --> 00:04:15.260
+seller, and because you're a member of our community, you also get either your
+
+98
+00:04:15.260 --> 00:04:16.560
+first month free,
+
+99
+00:04:16.560 --> 00:04:20.880
+if there's space available for that, or you'll anyway get at least a discount
+
+100
+00:04:20.880 --> 00:04:21.600
+just by using a
+
+101
+00:04:21.600 --> 00:04:25.390
+select 20% or something. It's literally a no-brainer. If you're serious about
+
+102
+00:04:25.390 --> 00:04:27.040
+becoming a profitable trader
+
+103
+00:04:27.040 --> 00:04:31.270
+and you don't have trade seller, then you're obviously not serious because it
+
+104
+00:04:31.270 --> 00:04:31.840
+has everything.
+
+105
+00:04:31.840 --> 00:04:35.520
+So what I would like to do is I'll kind of walk you through the most valuable
+
+106
+00:04:35.520 --> 00:04:39.410
+areas of the university. How to take control of your mind? It's okay, but there
+
+107
+00:04:39.410 --> 00:04:40.400
+'s a lot of fluff
+
+108
+00:04:40.400 --> 00:04:47.680
+in this. This doesn't even come close to the inner edge. So there's some good
+
+109
+00:04:47.680 --> 00:04:48.320
+detail on it.
+
+110
+00:04:48.320 --> 00:04:55.050
+You can watch it, sorry, but yeah. This here is impeccable. So how to analyze
+
+111
+00:04:55.050 --> 00:04:56.320
+your data like a pro.
+
+112
+00:04:56.320 --> 00:05:00.550
+So understanding your key metrics, collecting, organizing your data. This here,
+
+113
+00:05:00.550 --> 00:05:01.360
+which you shouldn't
+
+114
+00:05:01.360 --> 00:05:04.470
+have to worry about, but you still watch it. Anyway, how to properly analyze
+
+115
+00:05:04.470 --> 00:05:05.280
+trade expectancy.
+
+116
+00:05:05.280 --> 00:05:10.090
+Understand that in utilizing trading KPIs, this is extremely valuable. These
+
+117
+00:05:10.090 --> 00:05:11.200
+three videos are
+
+118
+00:05:11.200 --> 00:05:16.290
+extremely valuable. Successful playbooks. Build your trading playbook. This was
+
+119
+00:05:16.290 --> 00:05:17.280
+really valuable,
+
+120
+00:05:17.280 --> 00:05:21.480
+but breaking down when Umar comes in and kind of breaks down some of his play
+
+121
+00:05:21.480 --> 00:05:22.480
+books, I'll be real.
+
+122
+00:05:22.480 --> 00:05:26.160
+I don't think he's given everything in his playbooks. Just going to be fully
+
+123
+00:05:26.160 --> 00:05:26.320
+transparent.
+
+124
+00:05:26.320 --> 00:05:30.010
+This building a trading playbook is super cool. Stopped for option traders, not
+
+125
+00:05:30.010 --> 00:05:30.560
+important,
+
+126
+00:05:30.560 --> 00:05:34.550
+how to scale up correctly, not important, not too important, how to analyze
+
+127
+00:05:34.550 --> 00:05:35.840
+your position size data.
+
+128
+00:05:35.840 --> 00:05:44.720
+It all can be valuable, risk management. Again, a lot of this is surface level
+
+129
+00:05:44.720 --> 00:05:45.600
+and a lot of just
+
+130
+00:05:45.600 --> 00:05:49.290
+chatter with risk management. You're not going to get much more from this risk
+
+131
+00:05:49.290 --> 00:05:50.080
+management than
+
+132
+00:05:50.080 --> 00:05:53.040
+you would have gotten just a basic couple of episodes that we went through, but
+
+133
+00:05:53.040 --> 00:05:54.400
+you can still
+
+134
+00:05:54.400 --> 00:05:59.280
+go for it. This is super valuable. This entire area, honestly, is really
+
+135
+00:05:59.280 --> 00:06:00.400
+valuable. Trade recap,
+
+136
+00:06:00.400 --> 00:06:04.640
+workflow, journaling, your trades, importance of game plans and recaps. This
+
+137
+00:06:04.640 --> 00:06:05.280
+area, this how to
+
+138
+00:06:05.280 --> 00:06:09.360
+journal your trades like a pro area is super valuable. How to manage risk like
+
+139
+00:06:09.360 --> 00:06:10.400
+a pro is decent.
+
+140
+00:06:10.400 --> 00:06:14.580
+This one building your playbook is decent. How to analyze your data like a pro
+
+141
+00:06:14.580 --> 00:06:15.120
+is decent,
+
+142
+00:06:15.120 --> 00:06:18.810
+how to take control of your mind. For me personally, I didn't get that much
+
+143
+00:06:18.810 --> 00:06:19.360
+value from it.
+
+144
+00:06:20.080 --> 00:06:23.770
+How to back test like a pro. I guess it's valuable. I haven't watched this one.
+
+145
+00:06:23.770 --> 00:06:24.400
+Haven't watched
+
+146
+00:06:24.400 --> 00:06:28.480
+this one. I watched the 2.0 launch. I want to understand the features of it.
+
+147
+00:06:28.480 --> 00:06:34.880
+Traded development webinar. This wasn't the most valuable to me personally, but
+
+148
+00:06:34.880 --> 00:06:35.360
+it all depends
+
+149
+00:06:35.360 --> 00:06:39.290
+where you are as well, like in your journey. Q&A is I didn't go for any of them
+
+150
+00:06:39.290 --> 00:06:39.920
+. I'm not really
+
+151
+00:06:39.920 --> 00:06:43.280
+interested in the Q&A. It's probably some value in there for you guys. I had to
+
+152
+00:06:43.280 --> 00:06:43.680
+review a trade like
+
+153
+00:06:43.680 --> 00:06:47.860
+a pro that was valuable. And then this is just obviously getting started. This
+
+154
+00:06:47.860 --> 00:06:49.120
+is just what you
+
+155
+00:06:49.120 --> 00:06:51.820
+really need. So you watch these and it's going to break down the entire
+
+156
+00:06:51.820 --> 00:06:53.200
+platform. It makes it
+
+157
+00:06:53.200 --> 00:06:56.510
+really simple. That's what I would look at. Part-time to full-time trading.
+
+158
+00:06:56.510 --> 00:06:57.520
+That's pretty cool.
+
+159
+00:06:57.520 --> 00:07:01.490
+I haven't watched it, but sounds pretty cool. I guess these are new. Struct
+
+160
+00:07:01.490 --> 00:07:02.080
+uring your day for
+
+161
+00:07:02.080 --> 00:07:05.510
+success. Also pretty cool. Introduction to order flow. I would leave that for
+
+162
+00:07:05.510 --> 00:07:06.160
+now. Anything that's
+
+163
+00:07:06.160 --> 00:07:09.900
+just kind of overwhelm you. I'll be totally honest with you. I would more be
+
+164
+00:07:09.900 --> 00:07:11.120
+focused on how to use
+
+165
+00:07:11.120 --> 00:07:15.530
+the platform and then features like how to be better at using the platform,
+
+166
+00:07:15.530 --> 00:07:16.720
+like how to journal
+
+167
+00:07:16.720 --> 00:07:21.530
+like a pro. And I can recreate all of these episodes for you, but I just don't
+
+168
+00:07:21.530 --> 00:07:22.400
+have to do the point if
+
+169
+00:07:22.400 --> 00:07:27.340
+you can just grab them from Zella's University. So honestly, what Umar's built
+
+170
+00:07:27.340 --> 00:07:28.320
+hands down, like
+
+171
+00:07:28.320 --> 00:07:34.140
+very, very impressed. Huge advocate for this, for the value that it produces. I
+
+172
+00:07:34.140 --> 00:07:34.560
+would love to
+
+173
+00:07:34.560 --> 00:07:38.410
+build my own at some point. That's the goal. Highly recommend it. Like non-neg
+
+174
+00:07:38.410 --> 00:07:39.120
+otiable if I'm
+
+175
+00:07:39.120 --> 00:07:42.240
+going to be totally honest with you. There is nothing in it for me. Like I'm
+
+176
+00:07:42.240 --> 00:07:42.960
+going to give you a 20%
+
+177
+00:07:42.960 --> 00:07:46.700
+discount. I'm going to make like 10% in affiliate commissions for transparen
+
+178
+00:07:46.700 --> 00:07:47.760
+cies. Like I asked them
+
+179
+00:07:47.760 --> 00:07:52.570
+give as much of a discount with as little possible commission to me, but the
+
+180
+00:07:52.570 --> 00:07:53.600
+important part is
+
+181
+00:07:53.600 --> 00:07:57.360
+getting you guys the discount and getting you on here. More importantly, like
+
+182
+00:07:57.360 --> 00:07:58.400
+it's, it's non-negotiable.
+
+183
+00:07:58.400 --> 00:08:02.800
+I'm just going to give you the best chance of becoming consistently profitable.
+
+184
+00:08:02.800 --> 00:08:07.610
+So highly, highly, highly, highly recommend it. There's so many features that I
+
+185
+00:08:07.610 --> 00:08:08.160
+could walk you
+
+186
+00:08:08.160 --> 00:08:10.970
+through, but you'll go through it all and probably better going through it in
+
+187
+00:08:10.970 --> 00:08:11.840
+university instead of
+
+188
+00:08:11.840 --> 00:08:17.400
+me walking you through it, because I can waffle a lot. These modules are just
+
+189
+00:08:17.400 --> 00:08:17.760
+straight to the
+
+190
+00:08:17.760 --> 00:08:20.740
+point on how to use it. If you have any questions, do feel free to put them in
+
+191
+00:08:20.740 --> 00:08:21.520
+the community. I
+
+192
+00:08:21.520 --> 00:08:25.500
+understand this platform pretty much inside and out. So yeah, if you do have
+
+193
+00:08:25.500 --> 00:08:26.320
+any questions,
+
+194
+00:08:26.320 --> 00:08:31.520
+don't hesitate. But if you're watching this, you should be on TradeZilla if you
+
+195
+00:08:31.520 --> 00:08:32.080
+aren't already,
+
+196
+00:08:32.080 --> 00:08:35.770
+obviously, or maybe using an FX replay or something, which I used to use for
+
+197
+00:08:35.770 --> 00:08:36.240
+backtesting.
+
+198
+00:08:36.240 --> 00:08:38.960
+But soon as TradeZilla released their backtesting, although at the beginning,
+
+199
+00:08:38.960 --> 00:08:40.240
+it wasn't as comprehensive
+
+200
+00:08:40.240 --> 00:08:43.670
+as FX replay. I had both of the subscriptions running, but I would say now they
+
+201
+00:08:43.670 --> 00:08:44.880
+'re at a point where
+
+202
+00:08:44.880 --> 00:08:49.170
+they're on par with FX replay. If not better, it has some better functionality,
+
+203
+00:08:49.170 --> 00:08:50.400
+like the reporting
+
+204
+00:08:50.400 --> 00:08:55.960
+system, but I know FX replay are also working on a lot of updates as well. So
+
+205
+00:08:55.960 --> 00:08:57.760
+competition is always
+
+206
+00:08:57.760 --> 00:09:01.610
+good, right? Competition is always good for innovation. It's always good for
+
+207
+00:09:01.610 --> 00:09:02.640
+the end consumer.
+
+208
+00:09:02.640 --> 00:09:07.080
+But yeah, that is pretty much TradeZilla. I implore you to go take a look. I
+
+209
+00:09:07.080 --> 00:09:07.840
+will leave links
+
+210
+00:09:07.840 --> 00:09:12.640
+down in the description of either a free month or a discount. Even if you get
+
+211
+00:09:12.640 --> 00:09:13.040
+the free month,
+
+212
+00:09:13.040 --> 00:09:16.360
+you can still apply the discount after. They don't do any free trials. They don
+
+213
+00:09:16.360 --> 00:09:16.880
+'t do anything
+
+214
+00:09:16.880 --> 00:09:21.080
+like that. But what they have done for our community specifically and what I've
+
+215
+00:09:21.080 --> 00:09:21.840
+got for you guys
+
+216
+00:09:21.840 --> 00:09:27.130
+is them to give, I think it's 100 accounts a month that has access to a free
+
+217
+00:09:27.130 --> 00:09:27.760
+account.
+
+218
+00:09:27.760 --> 00:09:31.840
+Information to that will be down in the description of this if they are still.
+
+219
+00:09:31.840 --> 00:09:33.120
+But yeah, guys,
+
+220
+00:09:33.120 --> 00:09:37.100
+That's Trey Zeller. Get on there and if you have any questions, don't hesitate
+
+221
+00:09:37.100 --> 00:09:38.000
+to let me know.
+

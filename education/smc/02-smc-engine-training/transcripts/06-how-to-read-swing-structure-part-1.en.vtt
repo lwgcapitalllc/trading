@@ -1,0 +1,885 @@
+WEBVTT
+
+1
+00:00:00.011 --> 00:00:04.749
+<v 0>Hey everyone, I'm just going to take you over the first module of</v>
+
+2
+00:00:04.898 --> 00:00:07.104
+the Marquee Structured Training for the Indicator.
+
+3
+00:00:07.339 --> 00:00:09.364
+Now the first module is Swing Structure.
+
+4
+00:00:09.994 --> 00:00:13.916
+Now, honestly, when it comes to the education behind this,
+
+5
+00:00:14.289 --> 00:00:18.441
+you know, I don't need to go too in-depth on what Swing Structure is.
+
+6
+00:00:18.441 --> 00:00:19.774
+You've all come from YouTube videos, you know, you have a very clear understanding
+
+7
+00:00:19.774 --> 00:00:24.405
+of what Swing Structure is, and we've built this into an Indicator.
+
+8
+00:00:24.405 --> 00:00:27.907
+So, the Indicator is going to do the work for you.
+
+9
+00:00:27.907 --> 00:00:28.594
+But what I'm going to do is I'm just going to quickly explain it,
+
+10
+00:00:28.594 --> 00:00:33.050
+just so you have a clear understanding. And then I'll take you over to
+
+11
+00:00:33.050 --> 00:00:38.058
+the Indicator, and I'll explain the Swing Structure while on the Indicator,
+
+12
+00:00:38.125 --> 00:00:40.757
+because the Indicator is what you're going to be using. Now,
+
+13
+00:00:40.757 --> 00:00:43.225
+it's pretty simple. You know, I'm sure you're all aware of this,
+
+14
+00:00:43.225 --> 00:00:47.888
+right? We, Swing Structure is the swing points of your
+
+15
+00:00:47.888 --> 00:00:51.816
+video. You know, it's the points that are either strong or weak.
+
+16
+00:00:51.816 --> 00:00:54.665
+You know, we want to follow these points. Very simple.
+
+17
+00:00:54.724 --> 00:00:57.042
+We have a low. We have a high.
+
+18
+00:00:57.271 --> 00:00:59.752
+Then we have a high-low. Why is that a high-low? Because it's higher than
+
+19
+00:00:59.752 --> 00:01:03.256
+the previous low, okay? This is a very basic feature here.
+
+20
+00:01:03.464 --> 00:01:06.383
+Then we have a high-up. Why? Because it's higher than the previous high.
+
+21
+00:01:07.490 --> 00:01:10.001
+Then we have a high-low, high-high, high-low,
+
+22
+00:01:10.001 --> 00:01:12.629
+high-high, low-low. Why is this a low-low?
+
+23
+00:01:12.724 --> 00:01:16.637
+Because it's lower than the previous low. This here is what we would call
+
+24
+00:01:16.637 --> 00:01:19.046
+a change of character. Okay,
+
+25
+00:01:19.046 --> 00:01:22.276
+so if you was to mark that up, on there, it would be a
+
+26
+00:01:22.276 --> 00:01:25.353
+change of character. Very simple.
+
+27
+00:01:26.000 --> 00:01:28.764
+Alright? So.
+
+28
+00:01:31.799 --> 00:01:33.884
+And then, once we had a change of character, the downside here,
+
+29
+00:01:33.884 --> 00:01:37.125
+you can see that price then had a price of a pullback into this
+
+30
+00:01:37.125 --> 00:01:39.495
+range, right? At this point, after this change of character,
+
+31
+00:01:40.266 --> 00:01:44.387
+we only have two swing points that we'd be paying attention to.
+
+32
+00:01:44.604 --> 00:01:47.553
+So, we'd have a swing high, and we'd have a swing low.
+
+33
+00:01:47.685 --> 00:01:51.339
+But this swing low, we only know is a swing low once we've had
+
+34
+00:01:51.339 --> 00:01:55.150
+a valid pullback. And that's what the indicator does for you.
+
+35
+00:01:55.150 --> 00:01:58.747
+It gives you a pullback rule. The reason most people mess up structure,
+
+36
+00:01:58.833 --> 00:02:03.384
+and why so many others don't have a clear
+
+37
+00:02:04.131 --> 00:02:08.581
+understanding of how to restructure, is because they don't know they don't have a
+
+38
+00:02:08.581 --> 00:02:10.839
+rule to tell them what a pullback is.
+
+39
+00:02:11.248 --> 00:02:13.804
+So if you don't have a rule for pullback, you aren't going to know
+
+40
+00:02:13.804 --> 00:02:15.936
+if it's a valid highs or a valid lows. And every time it's going
+
+41
+00:02:15.936 --> 00:02:19.486
+to be completely random. So what we've done is we've put that rule into
+
+42
+00:02:19.486 --> 00:02:24.016
+the indicator. The indicator will know if it's a pullback because of the rule.
+
+43
+00:02:24.016 --> 00:02:27.795
+So we have a low, and then we have price pullback into this range
+
+44
+00:02:27.795 --> 00:02:33.311
+and then continue to the downside, okay? Once
+
+45
+00:02:33.311 --> 00:02:37.835
+price then breaks this low, this then becomes our valid swing high.
+
+46
+00:02:38.381 --> 00:02:42.009
+Now, remember, until price breaks this low,
+
+47
+00:02:42.009 --> 00:02:44.301
+because this is the swing low, you know,
+
+48
+00:02:44.301 --> 00:02:48.351
+we've had a pullback, this becomes a swing low. Until price breaks this low,
+
+49
+00:02:48.897 --> 00:02:52.887
+we don't have a confirmed high. So this wouldn't just become a swing high
+
+50
+00:02:52.887 --> 00:02:56.544
+just because it pulls back, because you could have a situation where price would
+
+51
+00:02:56.544 --> 00:03:01.122
+pull back, and then continue. And then this is where people
+
+52
+00:03:01.122 --> 00:03:04.449
+start to mess up, this is where people get structure wrong.
+
+53
+00:03:04.449 --> 00:03:06.500
+They class this as a high, this then becomes a higher low because it's
+
+54
+00:03:06.500 --> 00:03:09.559
+higher than this low, this becomes a higher high, then they start looking for
+
+55
+00:03:09.559 --> 00:03:11.728
+buys, and before you know it,
+
+56
+00:03:11.728 --> 00:03:13.809
+price is going to come straight through. Why?
+
+57
+00:03:14.188 --> 00:03:16.493
+Because this is what we call internal structure, which is what I'm going to
+
+58
+00:03:16.493 --> 00:03:18.627
+walk you through in the next module. It's quite simple.
+
+59
+00:03:19.944 --> 00:03:22.262
+So this swing high is only confirmed when this low goes.
+
+60
+00:03:22.855 --> 00:03:24.989
+So when price trades up and it trades down,
+
+61
+00:03:24.989 --> 00:03:28.011
+I'm taking this low, causing a break in structure.
+
+62
+00:03:28.011 --> 00:03:30.927
+We look at the highest point before this break.
+
+63
+00:03:31.170 --> 00:03:33.639
+That's how you can always use it, right? Always look for the highest point
+
+64
+00:03:33.639 --> 00:03:36.108
+before the break. And that would be this high here.
+
+65
+00:03:37.118 --> 00:03:40.158
+And then again, you can see price then reverses from here.
+
+66
+00:03:41.957 --> 00:03:44.011
+At this point, it's this high.
+
+67
+00:03:44.011 --> 00:03:46.213
+And this low, right?
+
+68
+00:03:46.840 --> 00:03:48.728
+This high is meant to be strong. You know, we've had a change of
+
+69
+00:03:48.728 --> 00:03:50.929
+character to the downside, we've been at bear strength. This high is the one
+
+70
+00:03:50.929 --> 00:03:53.131
+we want to stay strong. But, you know,
+
+71
+00:03:53.278 --> 00:03:57.181
+that isn't always the case, right? What you can see happens is we have
+
+72
+00:03:57.181 --> 00:03:59.495
+a change of character to the upside.
+
+73
+00:03:59.589 --> 00:04:02.950
+So price reverses. Purchase shifts from bearish to bullish.
+
+74
+00:04:03.328 --> 00:04:07.300
+Okay. And then after this change of character,
+
+75
+00:04:07.656 --> 00:04:11.020
+we had a pullback confirming the high.
+
+76
+00:04:12.037 --> 00:04:16.618
+And then we had a shift in here when we but this does
+
+77
+00:04:16.618 --> 00:04:19.684
+not get confirmed yet until this high goes, the high has to go.
+
+78
+00:04:20.065 --> 00:04:24.865
+Once this high is then taken again, this is now confirmed our new
+
+79
+00:04:26.216 --> 00:04:26.784
+higher low.
+
+80
+00:04:32.000 --> 00:04:34.819
+So it's that simple.
+
+81
+00:04:34.969 --> 00:04:38.933
+Okay. Quick walkthrough of that. We have a low,
+
+82
+00:04:38.933 --> 00:04:41.001
+we have a high, we have a higher low, higher high,
+
+83
+00:04:41.237 --> 00:04:43.592
+higher low, higher high, Change of character,
+
+84
+00:04:43.592 --> 00:04:45.644
+lower low. And we have a lower high,
+
+85
+00:04:45.644 --> 00:04:48.016
+because it's lower than the previous high, and a lower low.
+
+86
+00:04:48.016 --> 00:04:50.452
+Very simple. That's how it works, right? I don't want to bore you too
+
+87
+00:04:50.452 --> 00:04:52.152
+much. I don't want to bore you for that. It's very basic. If you
+
+88
+00:04:52.152 --> 00:04:56.678
+have any questions, just let me know in the community.
+
+89
+00:04:57.070 --> 00:05:00.136
+If not, cool. We'll just move into the indicator,
+
+90
+00:05:00.136 --> 00:05:02.700
+because this is the important part, right? We need to be able to follow
+
+91
+00:05:02.859 --> 00:05:07.107
+the indicator. Now, imagine the indicator wasn't here,
+
+92
+00:05:07.107 --> 00:05:11.357
+right? Imagine the indicator wasn't here.
+
+93
+00:05:11.716 --> 00:05:14.373
+This would look very messy. And some people would,
+
+94
+00:05:14.871 --> 00:05:18.008
+if I gave this chart to 100 people,
+
+95
+00:05:18.730 --> 00:05:23.843
+without a pullback rule, so many of yous would mark
+
+96
+00:05:23.843 --> 00:05:26.835
+this up completely different. You'd all have different highs and lows.
+
+97
+00:05:27.268 --> 00:05:30.001
+Okay? So, when we turn this on,
+
+98
+00:05:30.380 --> 00:05:33.330
+it's very basic. You know, it's not difficult to understand.
+
+99
+00:05:33.330 --> 00:05:36.016
+Swing structure is going to be the external points.
+
+100
+00:05:36.016 --> 00:05:39.523
+Okay? Now, it will be marked out also.
+
+101
+00:05:39.523 --> 00:05:41.993
+You can see HH, which is higher high.
+
+102
+00:05:42.809 --> 00:05:45.532
+HL, which is higher low. Okay?
+
+103
+00:05:45.532 --> 00:05:48.463
+Then, if we take this high,
+
+104
+00:05:48.960 --> 00:05:52.011
+you see here we whipped it, right? This wasn't break structure.
+
+105
+00:05:52.011 --> 00:05:55.230
+Because, we, we only whipped it,
+
+106
+00:05:55.230 --> 00:05:57.266
+we didn't close. We have to close with a candle.
+
+107
+00:05:57.266 --> 00:05:59.509
+That's an important thing with the rule that we have, right?
+
+108
+00:06:00.140 --> 00:06:02.600
+That's how, that's why this stays the low,
+
+109
+00:06:02.698 --> 00:06:05.233
+this doesn't. Okay? Some people would get that wrong.
+
+110
+00:06:05.885 --> 00:06:08.011
+Now, we have our high. We have a higher high.
+
+111
+00:06:08.011 --> 00:06:10.480
+We have And then we actually have a breaker structure to the upside.
+
+112
+00:06:10.732 --> 00:06:12.740
+Where's the lowest point that caused that breaker structure?
+
+113
+00:06:13.802 --> 00:06:16.002
+It's here. So this was our swing point.
+
+114
+00:06:17.575 --> 00:06:19.584
+Okay? This is our swing bar.
+
+115
+00:06:20.326 --> 00:06:24.011
+Now, if I was to take this back,
+
+116
+00:06:24.011 --> 00:06:29.011
+This
+
+117
+00:06:31.163 --> 00:06:33.824
+would be our internal low-low. Why is that?
+
+118
+00:06:36.135 --> 00:06:40.011
+Does anyone have- Does anyone understand that? Because right now,
+
+119
+00:06:40.011 --> 00:06:42.734
+This is still internal structure. Remember what I said earlier,
+
+120
+00:06:42.734 --> 00:06:46.599
+this is where you can't get too confused. Until this high goes,
+
+121
+00:06:46.917 --> 00:06:49.040
+we will not know the swing point yet.
+
+122
+00:06:49.326 --> 00:06:52.253
+So this stays internal. This is how we then use internal,
+
+123
+00:06:52.253 --> 00:06:55.792
+right? You can see anything that's marked up internal, it will be I in
+
+124
+00:06:55.792 --> 00:07:00.932
+front of it. Now, we know that the swing structure here is
+
+125
+00:07:01.355 --> 00:07:03.531
+bullish, right? We know that this is the swing low,
+
+126
+00:07:03.531 --> 00:07:07.253
+because this was the lowest point before the break structure to the outside,
+
+127
+00:07:07.420 --> 00:07:09.619
+and then this was the highest point before a valid pullback,
+
+128
+00:07:09.722 --> 00:07:12.645
+okay? Valid pullback onto there. So the range of the swing this low to
+
+129
+00:07:12.645 --> 00:07:16.083
+this high. We know we're bullish, so we're expecting high prices.
+
+130
+00:07:16.157 --> 00:07:19.430
+How can we use the internal here? Well,
+
+131
+00:07:19.430 --> 00:07:23.288
+we can see we had an internal change of character. Now that internal change
+
+132
+00:07:23.288 --> 00:07:25.890
+of character after this pullback, you know, we've pulled back,
+
+133
+00:07:26.731 --> 00:07:31.684
+That internal change of character shows me that we're likely to realign
+
+134
+00:07:31.980 --> 00:07:34.637
+internal with swing.
+
+135
+00:07:35.487 --> 00:07:39.402
+So then you can start to look to take the swing high.
+
+136
+00:07:39.900 --> 00:07:41.932
+Okay, and you could play that out.
+
+137
+00:07:41.932 --> 00:07:44.011
+I don't want to take too much time.
+
+138
+00:07:44.011 --> 00:07:46.872
+How can I skip this first?
+
+139
+00:07:47.982 --> 00:07:52.532
+Yeah. And you can see,
+
+140
+00:07:52.576 --> 00:07:56.412
+just like that, right? We knew this was an internal change of character.
+
+141
+00:07:56.915 --> 00:07:58.939
+Also, as you've just seen, right?
+
+142
+00:07:58.939 --> 00:08:01.492
+When we really look and move, when we,
+
+143
+00:08:01.492 --> 00:08:04.051
+uh, actually break a high, the internal structure disappears.
+
+144
+00:08:04.051 --> 00:08:06.337
+And so you will only see internal structure as it's playing out.
+
+145
+00:08:06.870 --> 00:08:10.292
+You know, once the swing points have changed,
+
+146
+00:08:10.292 --> 00:08:12.573
+swing structure changed, we could have used that,
+
+147
+00:08:12.701 --> 00:08:15.083
+you know, if we was to go into an area,
+
+148
+00:08:15.083 --> 00:08:18.201
+find an area of. Demand, find an oil block or a fair value gap,
+
+149
+00:08:18.564 --> 00:08:22.609
+we could have used this internal change of character as our shift to then
+
+150
+00:08:22.609 --> 00:08:25.503
+target a high and then trade to the upside. Okay.
+
+151
+00:08:25.780 --> 00:08:29.447
+But now what happened? When I said earlier,
+
+152
+00:08:29.447 --> 00:08:32.016
+this is the swing low, right? What happened was.
+
+153
+00:08:32.016 --> 00:08:36.880
+When price actually broke this high with a candle close,
+
+154
+00:08:37.524 --> 00:08:40.440
+this then became a swing low. Because this was the lowest point,
+
+155
+00:08:40.914 --> 00:08:45.173
+this area here was the lowest point before we had the breaker structure.
+
+156
+00:08:46.563 --> 00:08:48.944
+So that becomes our swing point. Okay?
+
+157
+00:08:50.126 --> 00:08:53.218
+So that's how it works. It's pretty simple. Then you can play it out
+
+158
+00:08:53.218 --> 00:08:56.043
+again. We'll do swing structure together.
+
+159
+00:08:56.724 --> 00:09:01.186
+Let me delete that. Play it out,
+
+160
+00:09:01.186 --> 00:09:03.670
+swing structure. We have a new swing high.
+
+161
+00:09:03.670 --> 00:09:06.066
+Why? Because we've had a valid pullback.
+
+162
+00:09:06.517 --> 00:09:08.706
+Based on the rule that we have, we know that we've had a pullback,
+
+163
+00:09:08.706 --> 00:09:13.311
+so this can become a swing high. This becomes a swing
+
+164
+00:09:13.311 --> 00:09:15.479
+low, because we then broke that high to the upside.
+
+165
+00:09:16.047 --> 00:09:18.465
+So now you have this as a swing low. So now everything that happened
+
+166
+00:09:18.465 --> 00:09:21.098
+here, forget about it. This is now your swing low.
+
+167
+00:09:21.098 --> 00:09:24.157
+We're bullish at this point, okay? So your swing low is here.
+
+168
+00:09:24.510 --> 00:09:27.179
+We haven't got a swing high yet, that's why it's dashed, because we haven't
+
+169
+00:09:27.179 --> 00:09:30.893
+had a valid pullback. Now we've had a valid pullback.
+
+170
+00:09:31.182 --> 00:09:33.772
+So now the range that we're trading within is this high and this low.
+
+171
+00:09:34.903 --> 00:09:39.881
+Okay? You can do the box method that's like we've taught on YouTube,
+
+172
+00:09:39.881 --> 00:09:44.659
+go from the low to the high. Anything within this box now
+
+173
+00:09:44.659 --> 00:09:47.843
+is internal. As you can see,
+
+174
+00:09:47.843 --> 00:09:52.496
+we have an internal low, then we have an internal break structure. We have
+
+175
+00:09:52.496 --> 00:09:55.391
+an internal high put in place, we have a chock,
+
+176
+00:09:58.203 --> 00:10:00.362
+we're going to have a liquidity sweep, then we have a change of character
+
+177
+00:10:00.362 --> 00:10:04.664
+to the downside, and then we have a change of character on the 15
+
+178
+00:10:04.664 --> 00:10:08.011
+minute. So now what's just happened? We've just gone from bullish to bullish.
+
+179
+00:10:08.011 --> 00:10:11.379
+Swing structure on the 15 minute to bearish,
+
+180
+00:10:11.379 --> 00:10:14.326
+we've had a change of character. Where's the swing high?
+
+181
+00:10:14.326 --> 00:10:16.531
+Let me take this back just so you don't get too confused.
+
+182
+00:10:17.494 --> 00:10:19.590
+There's a valid pullback in here, which is why that changed.
+
+183
+00:10:19.615 --> 00:10:23.623
+But at this point here, okay,
+
+184
+00:10:23.623 --> 00:10:25.855
+we had this. The high, right,
+
+185
+00:10:27.326 --> 00:10:30.087
+the highest point, and then we had this low.
+
+186
+00:10:30.694 --> 00:10:33.562
+This low gets taken, that's our change of character. That's us going from bullish
+
+187
+00:10:33.562 --> 00:10:37.362
+to bearish. Now, we are able to pull all the way back up into
+
+188
+00:10:37.362 --> 00:10:40.011
+here, before we continue low. But what actually happens is.
+
+189
+00:10:40.011 --> 00:10:42.361
+It's because of the rule that we have for a pullback,
+
+190
+00:10:43.065 --> 00:10:47.606
+if we play it out, you can see the
+
+191
+00:10:47.606 --> 00:10:51.278
+range changes very quickly. Because it goes from a break structure,
+
+192
+00:10:51.278 --> 00:10:53.730
+pullback, a change of character, pullback,
+
+193
+00:10:53.730 --> 00:10:56.005
+to a break structure. So now this is our swing high.
+
+194
+00:10:56.005 --> 00:10:58.052
+We haven't yet to confirm a low yet, which is why it dashed,
+
+195
+00:10:58.052 --> 00:11:02.063
+because we haven't had a pullback yet. So we continue.
+
+196
+00:11:02.185 --> 00:11:06.540
+Boom. We've had a valid pullback. Then the swing low shifts.
+
+197
+00:11:07.003 --> 00:11:12.011
+Same again. Okay? It's this markout structure as we go.
+
+198
+00:11:12.011 --> 00:11:14.526
+Now, how to change a character here to the upside. So we've gone from
+
+199
+00:11:14.526 --> 00:11:16.768
+Bearish, Swing,
+
+200
+00:11:17.060 --> 00:11:18.794
+to Bullish. How to change a character.
+
+201
+00:11:23.327 --> 00:11:25.490
+We've had a valid pullback. This becomes our swing high.
+
+202
+00:11:25.490 --> 00:11:28.011
+This is our swing low. Okay?
+
+203
+00:11:28.011 --> 00:11:32.029
+Now, bear in mind, I'm right now just sitting on a 15-minute time frame.
+
+204
+00:11:32.456 --> 00:11:35.510
+You know, when we're using more time frames, you've got your 4-hour,
+
+205
+00:11:35.510 --> 00:11:37.780
+you've got your 15-minute, you've got your daily, you've got your 1-minute,
+
+206
+00:11:37.929 --> 00:11:41.388
+which is the 1-minute is where we always enter. You could then use these
+
+207
+00:11:41.527 --> 00:11:44.011
+together, which is something I'm going to show you in another module.
+
+208
+00:11:44.011 --> 00:11:46.551
+And how you would do that, right? So,
+
+209
+00:11:46.768 --> 00:11:50.506
+let's just play this out. Break structure to the outside,
+
+210
+00:11:50.506 --> 00:11:52.778
+15-minute structure. Remember, you will always see it,
+
+211
+00:11:52.778 --> 00:11:54.258
+because it's always going to play itself out.
+
+212
+00:11:58.984 --> 00:12:03.544
+Don't know how to change a character. Now, what
+
+213
+00:12:03.544 --> 00:12:07.723
+are we expecting to happen? Something that's important here is what you've got to
+
+214
+00:12:07.723 --> 00:12:10.947
+remember is, like I said,
+
+215
+00:12:10.947 --> 00:12:14.354
+about the different time zones, about the different time frames.
+
+216
+00:12:14.640 --> 00:12:18.025
+We know that we've just shifted. We know bearish during London,
+
+217
+00:12:18.025 --> 00:12:22.367
+right, London session shifted bearish. That means the 50 minute is now bearish.
+
+218
+00:12:23.693 --> 00:12:25.817
+What you want to do then is we know we want to look for
+
+219
+00:12:25.817 --> 00:12:29.053
+shorts. So when we're in the one, when we're in New York and we're
+
+220
+00:12:29.053 --> 00:12:32.011
+on a lower time frame, like the one minute, for instance.
+
+221
+00:12:32.011 --> 00:12:34.732
+You then look for a shift on the one minute

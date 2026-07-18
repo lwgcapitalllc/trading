@@ -1,0 +1,578 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:04.640
+Whilst this may seem very simple and honestly I'm assuming that almost all of
+
+2
+00:00:04.640 --> 00:00:05.840
+you understand this,
+
+3
+00:00:05.840 --> 00:00:09.530
+but I'm still going to say anyway because it's important, there was recently a
+
+4
+00:00:09.530 --> 00:00:10.720
+member who passed
+
+5
+00:00:10.720 --> 00:00:18.480
+his prop firm account, got to a payout and then was asked to perform an action
+
+6
+00:00:18.480 --> 00:00:19.360
+that implied that
+
+7
+00:00:19.360 --> 00:00:23.500
+he understood his risk because I think his trading was a little bit erratic. He
+
+8
+00:00:23.500 --> 00:00:24.400
+was asked by the
+
+9
+00:00:24.400 --> 00:00:29.870
+risk department of this prop firm to take an action to show that he understood
+
+10
+00:00:29.870 --> 00:00:30.880
+risk and he
+
+11
+00:00:30.880 --> 00:00:34.970
+actually failed to do so which resulted in him losing the account. So as much
+
+12
+00:00:34.970 --> 00:00:36.000
+as you obviously
+
+13
+00:00:36.000 --> 00:00:39.000
+probably already understand position sizing, it's really important this episode
+
+14
+00:00:39.000 --> 00:00:39.520
+. So this is going
+
+15
+00:00:39.520 --> 00:00:42.700
+to be specifically about forex and CFDs, so we're going to be looking at lot
+
+16
+00:00:42.700 --> 00:00:43.840
+sizes. Position sizing
+
+17
+00:00:43.840 --> 00:00:46.520
+when you're entering a trade, you'll be asked how many lots that you're willing
+
+18
+00:00:46.520 --> 00:00:47.120
+to place on this
+
+19
+00:00:47.120 --> 00:00:51.540
+trade. Your lots are actually basically your units of risk. Now whilst many of
+
+20
+00:00:51.540 --> 00:00:52.800
+you probably just use
+
+21
+00:00:52.800 --> 00:00:56.650
+a standard calculator, like I do myself, you can use something like, you know,
+
+22
+00:00:56.650 --> 00:00:57.920
+baby pips which gives
+
+23
+00:00:57.920 --> 00:01:01.120
+you a digitized calculator, you just enter your details and it will give you
+
+24
+00:01:01.120 --> 00:01:02.480
+how many lots to
+
+25
+00:01:02.480 --> 00:01:05.450
+place on that position. You can also use something like a magic keys that's
+
+26
+00:01:05.450 --> 00:01:06.480
+already integrated and
+
+27
+00:01:06.480 --> 00:01:09.570
+can automate a lot of that decision-making process to make sure that your risk
+
+28
+00:01:09.570 --> 00:01:10.400
+is on point which is
+
+29
+00:01:10.400 --> 00:01:13.520
+what I recommend to do mostly to be honest with you. What you need to
+
+30
+00:01:13.520 --> 00:01:15.280
+understand is how to actually
+
+31
+00:01:15.280 --> 00:01:21.710
+determine your lot size. And the way that you do that is by your account
+
+32
+00:01:21.710 --> 00:01:23.600
+balance times risk.
+
+33
+00:01:23.600 --> 00:01:28.310
+So if your account balance was let's say $200,000 times your risk, I obviously
+
+34
+00:01:28.310 --> 00:01:29.440
+recommend everyone
+
+35
+00:01:29.440 --> 00:01:32.800
+doesn't really go over 1% risk per trade unless you're trading a personal
+
+36
+00:01:32.800 --> 00:01:34.320
+account. Even then 2%
+
+37
+00:01:34.320 --> 00:01:37.440
+it is aggressive but I don't think it's too bad on a personal account. You have
+
+38
+00:01:37.440 --> 00:01:38.080
+to also think like
+
+39
+00:01:38.080 --> 00:01:42.720
+if you have a max drawdown of 10% on a prop firm, your 1% risk isn't actually 1
+
+40
+00:01:42.720 --> 00:01:44.000
+%. It's actually 10%
+
+41
+00:01:44.000 --> 00:01:47.850
+because you only have 10% of that account. So many people think okay I have a $
+
+42
+00:01:47.850 --> 00:01:48.160
+200,000
+
+43
+00:01:48.160 --> 00:01:53.220
+prop firm account really you only have $20,000 of actual firepower because if
+
+44
+00:01:53.220 --> 00:01:54.880
+you go below that $20,000
+
+45
+00:01:54.880 --> 00:01:58.770
+drawdown it's game over for you. So when you're risking 1%, you're actually
+
+46
+00:01:58.770 --> 00:02:00.560
+risking 10% of your
+
+47
+00:02:00.560 --> 00:02:05.310
+total available capital. So 1% is very aggressive on a prop firm but I think it
+
+48
+00:02:05.310 --> 00:02:06.320
+definitely makes
+
+49
+00:02:06.320 --> 00:02:11.960
+sense to use 1% in the challenge phase as well. Your account balance times risk
+
+50
+00:02:11.960 --> 00:02:12.960
+divided by the
+
+51
+00:02:12.960 --> 00:02:19.390
+stop loss in PIPs and then the actual PIP value per lot of that pair that's why
+
+52
+00:02:19.390 --> 00:02:20.080
+ask you for your
+
+53
+00:02:20.080 --> 00:02:24.630
+currency pair. So your dollar will have a risk value per lot and then you type
+
+54
+00:02:24.630 --> 00:02:25.600
+that in. So let's
+
+55
+00:02:25.600 --> 00:02:30.480
+say you have a 200k account, your risk percentage is 1% and let's say your stop
+
+56
+00:02:30.480 --> 00:02:31.840
+loss is 10 PIPs right
+
+57
+00:02:31.840 --> 00:02:36.990
+just for easy math sake. Well your lots will be 20. So it's account balance
+
+58
+00:02:36.990 --> 00:02:39.120
+times risk divided by
+
+59
+00:02:39.120 --> 00:02:44.800
+stop loss in PIPs times the actual PIP value of that pair. That's going to give
+
+60
+00:02:44.800 --> 00:02:45.680
+you your lot size.
+
+61
+00:02:45.680 --> 00:02:50.000
+Now here's the problem. The person was tasked with I think it was if I remember
+
+62
+00:02:50.000 --> 00:02:50.240
+correctly,
+
+63
+00:02:50.240 --> 00:02:56.130
+sub the along the lines of place a trade for X amounts of lots representing a
+
+64
+00:02:56.130 --> 00:02:58.000
+certain percentage
+
+65
+00:02:58.000 --> 00:03:03.420
+amount. So automatically what that guy is for is okay he just wants me to place
+
+66
+00:03:03.420 --> 00:03:04.640
+a trade on
+
+67
+00:03:04.640 --> 00:03:08.950
+five lots to show that I know how to place lots right and so he's placed five
+
+68
+00:03:08.950 --> 00:03:10.720
+lots but he hasn't
+
+69
+00:03:10.720 --> 00:03:14.640
+taken a moment to think about where his stop losses and where his entry is
+
+70
+00:03:14.640 --> 00:03:16.880
+because that PIP range
+
+71
+00:03:16.880 --> 00:03:22.350
+is going to indicate how much risk that five lots make up. If you've got a 50 P
+
+72
+00:03:22.350 --> 00:03:23.440
+IP stop loss
+
+73
+00:03:23.440 --> 00:03:28.520
+that five lots is going to be 10 times larger than if you have a five PIP stop
+
+74
+00:03:28.520 --> 00:03:29.920
+loss. The same amount
+
+75
+00:03:29.920 --> 00:03:34.960
+of lots equal 10 times the amount of risk. That's why I'm ultimately creating
+
+76
+00:03:34.960 --> 00:03:36.240
+this video is because
+
+77
+00:03:36.240 --> 00:03:39.760
+of course all of you understand how to use a lot size calculator for example.
+
+78
+00:03:39.760 --> 00:03:40.400
+But if you pass a
+
+79
+00:03:40.400 --> 00:03:43.050
+prop firm account and they're going to ask you hey can you demonstrate this
+
+80
+00:03:43.050 --> 00:03:43.920
+honestly you could just
+
+81
+00:03:43.920 --> 00:03:46.700
+ask Google or check tip zero just run it through a calculator but you want to
+
+82
+00:03:46.700 --> 00:03:47.360
+be understanding
+
+83
+00:03:47.360 --> 00:03:50.180
+on the call with you as well because you get a call from the risk department of
+
+84
+00:03:50.180 --> 00:03:50.720
+some of these
+
+85
+00:03:50.720 --> 00:03:55.140
+prop firms. So you want to understand account balance risk percentage stop loss
+
+86
+00:03:55.140 --> 00:03:55.520
+in PIPs
+
+87
+00:03:56.160 --> 00:04:02.590
+current sphere. So for example if he said to me hey I need you to risk for me
+
+88
+00:04:02.590 --> 00:04:03.520
+five lots representing
+
+89
+00:04:03.520 --> 00:04:08.660
+1% I can't just go play to five lots I have to make those five lots equal 1% so
+
+90
+00:04:08.660 --> 00:04:09.760
+I need to
+
+91
+00:04:09.760 --> 00:04:12.970
+look at this and I need to understand okay well I've got 200k my risk
+
+92
+00:04:12.970 --> 00:04:13.920
+percentage that he wants
+
+93
+00:04:13.920 --> 00:04:18.630
+to put on his is 1% I need to make sure that the stop size from entry to yeah
+
+94
+00:04:18.630 --> 00:04:19.680
+stop loss point is
+
+95
+00:04:19.680 --> 00:04:24.960
+the amount of PIPs that would make sense to give me the lots that equal to 1%
+
+96
+00:04:24.960 --> 00:04:26.080
+if he wanted
+
+97
+00:04:26.080 --> 00:04:33.600
+five lots 1% risk then I need to make sure that my PIP size is going to be 40
+
+98
+00:04:33.600 --> 00:04:34.240
+so that when I
+
+99
+00:04:34.240 --> 00:04:39.660
+place that trade I'm placing it with a 40 PIP stop loss and five lots that's
+
+100
+00:04:39.660 --> 00:04:41.600
+going to open 1%
+
+101
+00:04:41.600 --> 00:04:45.690
+of risk if my account balance was $200,000. So you need to understand just the
+
+102
+00:04:45.690 --> 00:04:46.720
+actual calculation
+
+103
+00:04:46.720 --> 00:04:52.410
+formula at least so it's your account balance times your risk divided by your
+
+104
+00:04:52.410 --> 00:04:54.240
+stop loss in PIPs
+
+105
+00:04:54.240 --> 00:04:58.880
+times your value per PIP of what it instrument is you're trading the obvious
+
+106
+00:04:58.880 --> 00:04:59.600
+easiest way to do
+
+107
+00:04:59.600 --> 00:05:03.560
+that is just to use these position size calculators or magic keys pretty much
+
+108
+00:05:03.560 --> 00:05:05.120
+what I already explained
+
+109
+00:05:05.120 --> 00:05:08.290
+but yeah I just wanted to make that because it's super important to make sure
+
+110
+00:05:08.290 --> 00:05:09.440
+that you're always
+
+111
+00:05:09.440 --> 00:05:13.130
+consistent with your risk and not just placing random lot sizes on your
+
+112
+00:05:13.130 --> 00:05:14.240
+accounts and stuff because
+
+113
+00:05:14.240 --> 00:05:17.930
+it will flag problems if you're just putting in ideas of what risk is just
+
+114
+00:05:17.930 --> 00:05:18.960
+follow the process
+
+115
+00:05:18.960 --> 00:05:21.960
+and make sure you're actually doing things correctly I know that sometimes when
+
+116
+00:05:21.960 --> 00:05:23.040
+a trade starts moving
+
+117
+00:05:23.040 --> 00:05:26.890
+you want to get in fast if you need faster execution speeds then look at
+
+118
+00:05:26.890 --> 00:05:27.440
+something like
+
+119
+00:05:27.440 --> 00:05:32.480
+a magic keys instead of just trying to erratically place trades on meta trader
+
+120
+00:05:32.480 --> 00:05:33.200
+and then trying to make
+
+121
+00:05:33.200 --> 00:05:36.380
+them make sense because it will save you a lot of hassle but also save your
+
+122
+00:05:36.380 --> 00:05:37.200
+data you don't want
+
+123
+00:05:37.200 --> 00:05:41.040
+your data to be skewed you want to become obsessed and you'll hear me say this
+
+124
+00:05:41.040 --> 00:05:41.760
+a million times
+
+125
+00:05:41.760 --> 00:05:44.730
+throughout this program but you want to become obsessed with process and you
+
+126
+00:05:44.730 --> 00:05:46.080
+want to become borderline
+
+127
+00:05:46.080 --> 00:05:51.630
+psychopath on your attention to detail with your processing of data forget
+
+128
+00:05:51.630 --> 00:05:53.200
+about the amount of
+
+129
+00:05:53.200 --> 00:05:58.240
+money you make you want to become obsessed with how well you're able to follow
+
+130
+00:05:58.240 --> 00:05:59.120
+the process and
+
+131
+00:05:59.120 --> 00:06:02.380
+do the stuff that you know that you're able to do and then look at the data and
+
+132
+00:06:02.380 --> 00:06:02.960
+refine your
+
+133
+00:06:02.960 --> 00:06:06.150
+action space and the data that's what you want to become obsessed over if you
+
+134
+00:06:06.150 --> 00:06:07.280
+become obsessed over
+
+135
+00:06:07.280 --> 00:06:12.320
+that the money will literally just come as a byproduct of your obsession over
+
+136
+00:06:12.320 --> 00:06:13.120
+mastering the
+
+137
+00:06:13.120 --> 00:06:17.430
+process when you just focus on the outcome and you don't put enough attention
+
+138
+00:06:17.430 --> 00:06:17.920
+on the on the process
+
+139
+00:06:17.920 --> 00:06:22.960
+the process gets skewed and therefore your outcome gets skewed so it's always
+
+140
+00:06:22.960 --> 00:06:24.240
+process focused because
+
+141
+00:06:24.240 --> 00:06:28.530
+it's the process the actions that you take that determine the outcomes if you
+
+142
+00:06:28.530 --> 00:06:29.440
+just focus on the
+
+143
+00:06:29.440 --> 00:06:34.500
+outcomes and not the actions to get the outcomes you will make a mess so yeah
+
+144
+00:06:34.500 --> 00:06:36.080
+hopefully that helps
+

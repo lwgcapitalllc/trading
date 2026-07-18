@@ -1,0 +1,3402 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:06.360
+Ladies and gentlemen, we come to the end of a very extensive back test over two
+
+2
+00:00:06.360 --> 00:00:10.000
+and a half years of data for one playbook for one model.
+
+3
+00:00:10.000 --> 00:00:14.200
+And basically, I'm going to be doing this live. So I'm going to be running
+
+4
+00:00:14.200 --> 00:00:18.200
+through the data and taking away kind of the key lessons, the important things,
+
+5
+00:00:18.200 --> 00:00:22.160
+things that I may want to look to improve, things that I want to completely
+
+6
+00:00:22.160 --> 00:00:26.000
+avoid and just overall, you know, just looking at everything.
+
+7
+00:00:27.000 --> 00:00:32.760
+All in all, what I will say is I'm extremely happy with this model, even as it
+
+8
+00:00:32.760 --> 00:00:38.160
+is right now. Right. So I'm also going to be taking notes on my candle. So
+
+9
+00:00:38.160 --> 00:00:43.000
+again, like I said, this is just raw life, me doing what I would do. But just
+
+10
+00:00:43.000 --> 00:00:46.000
+instead of, you know, doing it on my own.
+
+11
+00:00:46.000 --> 00:00:50.860
+I'm just doing it basically on record. Right. So do bear with me if I'm writing
+
+12
+00:00:50.860 --> 00:00:53.580
+or something like that. But I want to walk you through kind of this entire
+
+13
+00:00:53.580 --> 00:00:54.000
+process.
+
+14
+00:00:54.000 --> 00:00:58.930
+Again, just documentation as opposed to creation. So I'm looking at, you know,
+
+15
+00:00:58.930 --> 00:01:01.000
+really the main kind of takeaway lessons.
+
+16
+00:01:01.000 --> 00:01:07.240
+So let's start off. So I'm not sure what that is as a percentage in total
+
+17
+00:01:07.240 --> 00:01:13.070
+without kind of butchering it. So what I want to do first and foremost is I
+
+18
+00:01:13.070 --> 00:01:16.000
+want to just find out what the percentage is.
+
+19
+00:01:16.000 --> 00:01:21.740
+So also, actually, what I should let you know is I had to redo the entirety of
+
+20
+00:01:21.740 --> 00:01:23.000
+2024.
+
+21
+00:01:23.000 --> 00:01:28.730
+If you remember in 2024, I was risking 1% of current balance. So I was comp
+
+22
+00:01:28.730 --> 00:01:33.000
+ounding. The problem, however, with that is that it makes the data accurate.
+
+23
+00:01:33.000 --> 00:01:38.810
+For example, what you'll find is that one specific setup, right, may only have,
+
+24
+00:01:38.810 --> 00:01:44.000
+you know, on the lower end of the scale, may only have, you know, 12, 15 trades
+
+25
+00:01:44.000 --> 00:01:45.000
+for that specific setup.
+
+26
+00:01:45.000 --> 00:01:51.000
+So it's a rare occurrence setup. And some are a lot more frequent.
+
+27
+00:01:51.000 --> 00:01:55.960
+But the problem is is when you're not doing initial balance, so 1% of 1 million
+
+28
+00:01:55.960 --> 00:01:59.000
+every single time, that can heavily get skewed.
+
+29
+00:01:59.000 --> 00:02:03.160
+Because if, for example, you took, you know, five of those trades in 2024, at
+
+30
+00:02:03.160 --> 00:02:07.800
+the end of 2024, back to back, for example, and you're risking 1% of current
+
+31
+00:02:07.800 --> 00:02:09.000
+balance and you're already a 100%.
+
+32
+00:02:09.000 --> 00:02:14.270
+And you're basically risking 2% of start imbalance on that setup. And so that
+
+33
+00:02:14.270 --> 00:02:17.000
+can heavily skew the data. And that was something I was aware of.
+
+34
+00:02:17.000 --> 00:02:21.270
+And again, instead of being lazy, I was proactive and decided that it's the
+
+35
+00:02:21.270 --> 00:02:25.300
+best thing and the right thing to do for the data to go and risk adjust that
+
+36
+00:02:25.300 --> 00:02:26.000
+setup.
+
+37
+00:02:26.000 --> 00:02:30.200
+So what you can see here is if we select all the sessions, right, if we go all
+
+38
+00:02:30.200 --> 00:02:34.000
+sessions, you'll see that it's obviously the return is drastically higher.
+
+39
+00:02:34.000 --> 00:02:38.960
+Right, profit factor actually lowers a little bit. But you can see the Zella
+
+40
+00:02:38.960 --> 00:02:40.000
+score is extremely high.
+
+41
+00:02:40.000 --> 00:02:44.010
+You know, and it ends up being 3.5 million. That's because 2024 is also done.
+
+42
+00:02:44.010 --> 00:02:49.000
+So you'll see here, I have 2023, 2024, and then 2024 risk adjusted.
+
+43
+00:02:49.000 --> 00:02:52.000
+So I adjusted risk and went and took every single trade again.
+
+44
+00:02:52.000 --> 00:02:56.960
+What I noticed whilst I did it again every single time is that there were
+
+45
+00:02:56.960 --> 00:03:01.590
+actually a couple of trades that were a little bit, you know, maybe shouldn't
+
+46
+00:03:01.590 --> 00:03:02.000
+have taken.
+
+47
+00:03:02.000 --> 00:03:06.200
+Or a couple of trades that I didn't take that should have taken right so it
+
+48
+00:03:06.200 --> 00:03:09.000
+ends up doing the difference ends up being.
+
+49
+00:03:09.000 --> 00:03:13.000
+If we compare them kind of both.
+
+50
+00:03:13.000 --> 00:03:17.160
+So 2024 when I in fact let's go into let's start with this one. So it would
+
+51
+00:03:17.160 --> 00:03:26.000
+have been 137% return right 108 trades taken and 137% return.
+
+52
+00:03:26.000 --> 00:03:33.280
+A 35% win rate and a 2.78 profit factor. That's on that's on risk in current
+
+53
+00:03:33.280 --> 00:03:35.000
+balance, right?
+
+54
+00:03:35.000 --> 00:03:41.000
+You can see the equity curve is still decent, very, very positive equity curve.
+
+55
+00:03:41.000 --> 00:03:46.000
+But now if we look at, for example, risk adjusted, right?
+
+56
+00:03:46.000 --> 00:03:51.730
+You can see we actually have a 3.09 profit factor. So we have a higher profit
+
+57
+00:03:51.730 --> 00:03:52.000
+factor.
+
+58
+00:03:52.000 --> 00:03:59.000
+The trade win rate is 34.9%. We end up taking 107 trades. So one trade less.
+
+59
+00:03:59.000 --> 00:04:03.000
+We still have a really high zealous score, a higher profit factor.
+
+60
+00:04:03.000 --> 00:04:07.000
+And yeah, still a very healthy equity curve.
+
+61
+00:04:07.000 --> 00:04:11.960
+But I decided to go back and risk adjust. So instead of 137%, it actually is 94
+
+62
+00:04:11.960 --> 00:04:16.000
+%, which is the accurate return, risking 1% per trade.
+
+63
+00:04:16.000 --> 00:04:18.000
+Of course, you can compound your account.
+
+64
+00:04:18.000 --> 00:04:21.340
+But the reality is is that most of you are probably going to trade prop firms
+
+65
+00:04:21.340 --> 00:04:24.700
+and you're probably going to take 1% of your current balance and you're going
+
+66
+00:04:24.700 --> 00:04:27.000
+to take payouts and reset the account and go again.
+
+67
+00:04:27.000 --> 00:04:30.000
+And so, you know, we just want to get the data of the edge.
+
+68
+00:04:30.000 --> 00:04:34.240
+When it comes to whether you're going to compound accounts, whether you're
+
+69
+00:04:34.240 --> 00:04:37.000
+going to risk incrementally, that is on you.
+
+70
+00:04:37.000 --> 00:04:40.390
+But obviously you can see that risking incrementally and risking on current
+
+71
+00:04:40.390 --> 00:04:43.250
+balance and compounding the account obviously is more profitable because you
+
+72
+00:04:43.250 --> 00:04:45.000
+get to a point where you're risking more.
+
+73
+00:04:45.000 --> 00:04:48.400
+And the reality is, if I would have risked 2% per trade, if I don't 1% per
+
+74
+00:04:48.400 --> 00:04:50.000
+trade, this would be double.
+
+75
+00:04:50.000 --> 00:04:54.000
+So, of course, the problem is, is that there are all down periods, right?
+
+76
+00:04:54.000 --> 00:04:56.000
+So that's something we have to be obviously aware of.
+
+77
+00:04:56.000 --> 00:05:01.000
+So to be clear, I went and did everything with a 1% fixed risk.
+
+78
+00:05:01.000 --> 00:05:04.000
+So that is why you're kind of seeing that.
+
+79
+00:05:04.000 --> 00:05:08.860
+So if we go in here now and we look at everything risk adjusted, we can see
+
+80
+00:05:08.860 --> 00:05:11.000
+again, I just want to make sure.
+
+81
+00:05:11.000 --> 00:05:17.000
+So we have.
+
+82
+00:05:17.000 --> 00:05:20.000
+I started with $1 million.
+
+83
+00:05:20.000 --> 00:05:29.000
+My net P and L was $2,168,636.43.
+
+84
+00:05:29.000 --> 00:05:31.000
+What is the percentage return?
+
+85
+00:05:31.000 --> 00:05:37.000
+So it's actually a 216.86% return over two and a half years.
+
+86
+00:05:37.000 --> 00:05:47.000
+So 216.8% over 2.5 years, meaning that's an average of 86% return per year.
+
+87
+00:05:47.000 --> 00:05:50.000
+And then adjusted for the amount of months that we traded, which was 10.
+
+88
+00:05:50.000 --> 00:05:54.000
+That's an average of 8.6% return each month, right?
+
+89
+00:05:54.000 --> 00:05:56.000
+So 8.6 are average per month.
+
+90
+00:05:56.000 --> 00:05:58.000
+Very, very good.
+
+91
+00:05:58.000 --> 00:05:59.000
+So that's what we can say.
+
+92
+00:05:59.000 --> 00:06:04.000
+So we understand that we had a 216% return.
+
+93
+00:06:04.000 --> 00:06:09.000
+Which is average at around 8.6% a month.
+
+94
+00:06:09.000 --> 00:06:12.000
+Really good numbers.
+
+95
+00:06:12.000 --> 00:06:15.000
+A 3.07 profit factor.
+
+96
+00:06:15.000 --> 00:06:18.000
+Very good.
+
+97
+00:06:18.000 --> 00:06:19.000
+That's very good.
+
+98
+00:06:19.000 --> 00:06:22.000
+We have a 33% win rate.
+
+99
+00:06:22.000 --> 00:06:26.410
+Which is also really good considering the fact that our average win to lose in
+
+100
+00:06:26.410 --> 00:06:28.000
+trade is a 6.23.
+
+101
+00:06:28.000 --> 00:06:36.000
+So that means for every $1 that we lose when we lose, we return $6 when we win.
+
+102
+00:06:36.000 --> 00:06:38.000
+So 6.23.
+
+103
+00:06:38.000 --> 00:06:39.000
+That's great.
+
+104
+00:06:39.000 --> 00:06:45.000
+So you can see that our average loss is lower than 1% because of management.
+
+105
+00:06:45.000 --> 00:06:50.000
+And that average win is over 5% because of management.
+
+106
+00:06:50.000 --> 00:06:54.000
+So you can see that management as a principal really, really works well.
+
+107
+00:06:54.000 --> 00:07:01.000
+So now what we can do, we're going to a little bit deeper on our data, right?
+
+108
+00:07:01.000 --> 00:07:02.000
+So we'll go to reports.
+
+109
+00:07:02.000 --> 00:07:04.000
+Now also Zella have made an update.
+
+110
+00:07:04.000 --> 00:07:08.000
+So the reports have changed as the first time I'm seeing it myself.
+
+111
+00:07:08.000 --> 00:07:11.000
+So let's just go in as I usually would, right?
+
+112
+00:07:11.000 --> 00:07:14.000
+So let's take a little look at overview here.
+
+113
+00:07:14.000 --> 00:07:19.740
+What we can see is our best month was April of 2024, returning almost 25% in a
+
+114
+00:07:19.740 --> 00:07:21.000
+single month.
+
+115
+00:07:21.000 --> 00:07:28.000
+The lowest month was June of 2073, where we had a drawdown period of 3.7%.
+
+116
+00:07:28.000 --> 00:07:35.000
+Our average is, you know, 9% per month.
+
+117
+00:07:35.000 --> 00:07:36.000
+Really, really nice.
+
+118
+00:07:36.000 --> 00:07:42.000
+So you can see here we have a total of 230 trades.
+
+119
+00:07:42.000 --> 00:07:45.000
+That's an adequate amount of data.
+
+120
+00:07:45.000 --> 00:07:49.000
+It's an adequate sample size to prove that we have an edge.
+
+121
+00:07:49.000 --> 00:07:51.000
+We can see we won 62 trades.
+
+122
+00:07:51.000 --> 00:07:55.000
+We lose 126 trades and we break even on 42 of those trades.
+
+123
+00:07:55.000 --> 00:07:57.000
+Our max consecutive wins are 4.
+
+124
+00:07:57.000 --> 00:07:59.000
+Our max consecutive losses are 7.
+
+125
+00:07:59.000 --> 00:08:02.000
+So again, that drawdown period.
+
+126
+00:08:02.000 --> 00:08:04.000
+No comms, no fees, no swap.
+
+127
+00:08:04.000 --> 00:08:09.000
+Our largest profit on any one given trade was 9.4%.
+
+128
+00:08:09.000 --> 00:08:15.000
+And our largest loss ended up being 1.5, 1.05 somehow.
+
+129
+00:08:15.000 --> 00:08:19.000
+Our average hold time is around 4 hours.
+
+130
+00:08:19.000 --> 00:08:23.000
+Average hold time for winning trades is around 12 hours.
+
+131
+00:08:23.000 --> 00:08:26.000
+Our average hold time for losing trades is around 39 minutes.
+
+132
+00:08:26.000 --> 00:08:30.000
+And our average hold time in square trades is 3 hours.
+
+133
+00:08:30.000 --> 00:08:33.000
+Our average trade, P and L is 4,000.
+
+134
+00:08:33.000 --> 00:08:36.000
+Our profit factor is 4.
+
+135
+00:08:36.000 --> 00:08:40.000
+Um, dumb, dumb, dumb, dumb, dumb.
+
+136
+00:08:40.000 --> 00:08:42.000
+Largest profitable day.
+
+137
+00:08:42.000 --> 00:08:45.000
+Largest profitable day was 11%.
+
+138
+00:08:45.000 --> 00:08:48.000
+Largest losing day is 3% of the day.
+
+139
+00:08:48.000 --> 00:08:51.000
+Average planned our multiple is 41.
+
+140
+00:08:51.000 --> 00:08:53.000
+Average realized our multiple is 12.
+
+141
+00:08:53.000 --> 00:08:55.000
+That is inaccurate.
+
+142
+00:08:55.000 --> 00:09:00.000
+Our multiple for some reason is, I don't know, just doesn't.
+
+143
+00:09:00.000 --> 00:09:03.000
+Um, I don't know, it doesn't really go well.
+
+144
+00:09:03.000 --> 00:09:08.000
+For some reason, I don't actually recall what it is, but it's fine.
+
+145
+00:09:08.000 --> 00:09:13.000
+Um, again, I'm not really sure if that's accurate,
+
+146
+00:09:13.000 --> 00:09:16.000
+but max drawdown is 6%.
+
+147
+00:09:16.000 --> 00:09:20.000
+Um, average drawdown is 2%.
+
+148
+00:09:20.000 --> 00:09:21.000
+Cool.
+
+149
+00:09:21.000 --> 00:09:23.000
+Really healthy equity curve.
+
+150
+00:09:23.000 --> 00:09:25.000
+That's exactly what you want to see, right?
+
+151
+00:09:25.000 --> 00:09:28.000
+The problem is when you have an edge that's up and then it's down for drawdown
+
+152
+00:09:28.000 --> 00:09:28.000
+periods
+
+153
+00:09:28.000 --> 00:09:33.000
+for a longer accelerated time, this is like really just a very, very, very good
+
+154
+00:09:33.000 --> 00:09:34.000
+equity curve.
+
+155
+00:09:34.000 --> 00:09:38.960
+Okay, look how deep it into returns, so what I've noticed is that they've
+
+156
+00:09:38.960 --> 00:09:40.000
+actually, um, changed,
+
+157
+00:09:40.000 --> 00:09:44.000
+so you could have had setups here before, but now you have to go to tags.
+
+158
+00:09:44.000 --> 00:09:46.000
+And you look at each tag individually.
+
+159
+00:09:46.000 --> 00:09:51.000
+So what I'm really most interested in is the setups, right?
+
+160
+00:09:51.000 --> 00:09:53.000
+So let's take a look in general here.
+
+161
+00:09:53.000 --> 00:09:58.000
+You can see here, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11.
+
+162
+00:09:58.000 --> 00:10:04.000
+So what we can see here is the overall out of all the setups we have,
+
+163
+00:10:04.000 --> 00:10:09.000
+there was only one setup that doesn't work and it's practically breaking.
+
+164
+00:10:09.000 --> 00:10:17.030
+I mean, 0.6% loss overall, which means quite frankly, we don't need to trade
+
+165
+00:10:17.030 --> 00:10:18.000
+that setup.
+
+166
+00:10:18.000 --> 00:10:20.000
+So that would be the New York sweep Asia.
+
+167
+00:10:20.000 --> 00:10:32.000
+So only losing setup is when New York sweeps Asia.
+
+168
+00:10:32.000 --> 00:10:38.150
+But what we can also note is that with this setup, we have a 23% win rate, so
+
+169
+00:10:38.150 --> 00:10:40.000
+apparently it's profitable.
+
+170
+00:10:40.000 --> 00:10:47.000
+How does it have a positive profit factor then?
+
+171
+00:10:47.000 --> 00:10:49.000
+No, no, no, that's New York sweep London.
+
+172
+00:10:49.000 --> 00:10:51.000
+We're not looking at you, New York sweep London.
+
+173
+00:10:51.000 --> 00:10:54.000
+I don't know why that's.
+
+174
+00:10:54.000 --> 00:11:02.000
+Okay, let's go back.
+
+175
+00:11:02.000 --> 00:11:05.000
+Okay, New York sweep Asia.
+
+176
+00:11:05.000 --> 00:11:06.000
+Thank you.
+
+177
+00:11:06.000 --> 00:11:09.000
+So what we can see here is that we took three trades with this setup.
+
+178
+00:11:09.000 --> 00:11:13.960
+So in two and a half years, only three trades met the criteria of a New York
+
+179
+00:11:13.960 --> 00:11:14.000
+sweep.
+
+180
+00:11:14.000 --> 00:11:18.260
+It's two in and of itself, but this setup basically doesn't really show up
+
+181
+00:11:18.260 --> 00:11:19.000
+anyway.
+
+182
+00:11:19.000 --> 00:11:25.000
+So three trades taken in 2.5 years.
+
+183
+00:11:25.000 --> 00:11:27.000
+That's fine.
+
+184
+00:11:27.000 --> 00:11:33.000
+Let's see what else we've got.
+
+185
+00:11:33.000 --> 00:11:40.000
+So what's our most profitable?
+
+186
+00:11:40.000 --> 00:11:47.000
+Our most profitable is New York sweep Lull and discretion.
+
+187
+00:11:47.000 --> 00:11:54.840
+Now, here's what you should understand that with discretion, great profit
+
+188
+00:11:54.840 --> 00:11:59.000
+factor, great win rate on discretion.
+
+189
+00:11:59.000 --> 00:12:09.990
+Now, discretion actually isn't something where discretion isn't something that
+
+190
+00:12:09.990 --> 00:12:13.000
+is actually like fully discretionary.
+
+191
+00:12:13.000 --> 00:12:15.000
+It's principled.
+
+192
+00:12:15.000 --> 00:12:23.000
+So the only two discretionary factors there are is number one.
+
+193
+00:12:23.000 --> 00:12:31.000
+When the M1 is bearish and the M15 is bearish, but the M1 is extremely large.
+
+194
+00:12:31.000 --> 00:12:35.000
+So that could be a large news event or it could be a small trading range.
+
+195
+00:12:35.000 --> 00:12:37.000
+So for example, the M1 is the same as M15.
+
+196
+00:12:37.000 --> 00:12:43.750
+Instead, instead of using the external market structure for the M1, we just go
+
+197
+00:12:43.750 --> 00:12:49.000
+to internal and we trade based off of the internal.
+
+198
+00:12:49.000 --> 00:12:54.000
+So that is obviously something that can be done.
+
+199
+00:12:54.000 --> 00:12:56.000
+So now what I can do is I can make that a principle.
+
+200
+00:12:56.000 --> 00:13:01.540
+But you'll notice that every discretionary trade also has another setup within
+
+201
+00:13:01.540 --> 00:13:02.000
+it.
+
+202
+00:13:02.000 --> 00:13:06.000
+You can see, for example, this is a New York sweep Lull, that's discretion.
+
+203
+00:13:06.000 --> 00:13:09.000
+This is a Frankfurt sweep continuation.
+
+204
+00:13:09.000 --> 00:13:11.000
+So that will also count as those.
+
+205
+00:13:11.000 --> 00:13:13.000
+That just tells me two things.
+
+206
+00:13:13.000 --> 00:13:17.000
+Number one, both discretionary principles.
+
+207
+00:13:17.000 --> 00:13:27.000
+The first is that the obviously M1 internal.
+
+208
+00:13:27.000 --> 00:13:31.000
+The second is M15 discretion.
+
+209
+00:13:31.000 --> 00:13:36.000
+And that M15 discretion was only used a couple of times.
+
+210
+00:13:36.000 --> 00:13:40.960
+Now, unfortunately, I will have to go through every one of these trades to find
+
+211
+00:13:40.960 --> 00:13:42.000
+out which was what.
+
+212
+00:13:42.000 --> 00:13:47.000
+You can see here, we only take nine, 16, 25.
+
+213
+00:13:47.000 --> 00:13:55.000
+So we take 25 trades with this.
+
+214
+00:13:55.000 --> 00:13:56.000
+So it's not huge.
+
+215
+00:13:56.000 --> 00:14:01.000
+It's around about 11%.
+
+216
+00:14:01.000 --> 00:14:05.000
+So 11% of all of our trades were discretion.
+
+217
+00:14:05.000 --> 00:14:09.590
+But that discretion is simply just even M1 internal, which isn't discretion at
+
+218
+00:14:09.590 --> 00:14:12.000
+all, or M15 market structure.
+
+219
+00:14:12.000 --> 00:14:14.000
+Now that can be discretionary.
+
+220
+00:14:14.000 --> 00:14:19.230
+However, the M15 structure, I think there's like three or four trades that are
+
+221
+00:14:19.230 --> 00:14:20.000
+part of the M15.
+
+222
+00:14:20.000 --> 00:14:25.740
+And what that principle is, is basically just not using, for example, like Asia
+
+223
+00:14:25.740 --> 00:14:33.100
+session, Asia session, Asia's high or Asia low as a swing point, especially in
+
+224
+00:14:33.100 --> 00:14:34.000
+a confined range.
+
+225
+00:14:34.000 --> 00:14:38.000
+So, for example, let's have a look.
+
+226
+00:14:38.000 --> 00:14:40.000
+So here we are.
+
+227
+00:14:40.000 --> 00:14:46.000
+So, for example, let's say, you know, let's use this.
+
+228
+00:14:46.000 --> 00:14:49.000
+So let's say, for example, price is trading lower like this.
+
+229
+00:14:49.000 --> 00:14:52.000
+And then let's say there's a little bit of a pullback the next day.
+
+230
+00:14:52.000 --> 00:14:54.000
+And then price is lower like this.
+
+231
+00:14:54.000 --> 00:14:56.000
+And let's say Asia session highs here.
+
+232
+00:14:56.000 --> 00:14:59.870
+And then price shifts above these highs like this and technically on the M15 is
+
+233
+00:14:59.870 --> 00:15:01.000
+a change of character.
+
+234
+00:15:01.000 --> 00:15:05.000
+Then it shifts on the one minute, and then we trade lower like this.
+
+235
+00:15:05.000 --> 00:15:06.000
+That for me is fine.
+
+236
+00:15:06.000 --> 00:15:09.390
+I don't need to consider that as a change of character, because for me, this
+
+237
+00:15:09.390 --> 00:15:12.000
+kind of this pullback here on Asia session high is irrelevant.
+
+238
+00:15:12.000 --> 00:15:14.000
+I see that as liquidity.
+
+239
+00:15:14.000 --> 00:15:17.390
+So that is when you'll see me, you'll see in the back test and go and find them
+
+240
+00:15:17.390 --> 00:15:18.000
+yourself.
+
+241
+00:15:18.000 --> 00:15:20.000
+You'll see me use discretion for the M15.
+
+242
+00:15:20.000 --> 00:15:27.000
+And I think I use that on roughly like four trades, five is maximum.
+
+243
+00:15:27.000 --> 00:15:28.000
+So, yeah.
+
+244
+00:15:28.000 --> 00:15:29.000
+Okay.
+
+245
+00:15:29.000 --> 00:15:35.000
+So we have these two tags and the tags are discretion.
+
+246
+00:15:35.000 --> 00:15:39.000
+And yeah, actually just discretion.
+
+247
+00:15:39.000 --> 00:15:43.000
+So you can see here that.
+
+248
+00:15:43.000 --> 00:15:44.000
+Okay.
+
+249
+00:15:44.000 --> 00:15:45.000
+Is this also included in discretion?
+
+250
+00:15:45.000 --> 00:15:46.000
+Yeah.
+
+251
+00:15:46.000 --> 00:15:47.000
+So this is also included in discretion.
+
+252
+00:15:47.000 --> 00:15:51.960
+So you can see here that the least performing tag is Frankfurt sweep
+
+253
+00:15:51.960 --> 00:15:53.000
+continuation.
+
+254
+00:15:53.000 --> 00:15:58.780
+I'm pretty sure that when Frankfurt and again, it's only two trades, very small
+
+255
+00:15:58.780 --> 00:16:00.000
+sample size.
+
+256
+00:16:00.000 --> 00:16:04.000
+We lose 1.5% and we only take two trades.
+
+257
+00:16:04.000 --> 00:16:09.730
+So when I use the internal structure or the M15 don't apply for the Frankfurt
+
+258
+00:16:09.730 --> 00:16:11.000
+sweep continuation.
+
+259
+00:16:11.000 --> 00:16:14.000
+There's a minus 1.5% return and it's only two trades.
+
+260
+00:16:14.000 --> 00:16:19.730
+So it's not, it's not really something that I have to care about avoiding or
+
+261
+00:16:19.730 --> 00:16:21.000
+trying to work on again.
+
+262
+00:16:21.000 --> 00:16:24.390
+But when it comes to testing your goal isn't to try to refine every single
+
+263
+00:16:24.390 --> 00:16:25.000
+piece of data.
+
+264
+00:16:25.000 --> 00:16:32.380
+It's a look for the big, clear, obvious, you know, yeah, the big, clear and
+
+265
+00:16:32.380 --> 00:16:33.000
+obvious things
+
+266
+00:16:33.000 --> 00:16:36.000
+that you can work on to make your training better.
+
+267
+00:16:36.000 --> 00:16:39.000
+So, yeah.
+
+268
+00:16:39.000 --> 00:16:43.250
+Again, discretion being one of the most profitable, but all discretion is using
+
+269
+00:16:43.250 --> 00:16:44.000
+the M1 internal,
+
+270
+00:16:44.000 --> 00:16:46.000
+which say something.
+
+271
+00:16:46.000 --> 00:16:50.960
+So what we can see here is we know that the least performing tag is New York
+
+272
+00:16:50.960 --> 00:16:51.000
+sweep.
+
+273
+00:16:51.000 --> 00:16:54.000
+We can see here that our highest win rate trade.
+
+274
+00:16:54.000 --> 00:17:00.000
+So New York continuation from London has 19 trades with a 63% win rate.
+
+275
+00:17:00.000 --> 00:17:06.000
+So by, we can already see that that is our, that's an A plus set up, right?
+
+276
+00:17:06.000 --> 00:17:08.000
+That's how it becomes categorized.
+
+277
+00:17:08.000 --> 00:17:10.000
+That's an A plus set up.
+
+278
+00:17:10.000 --> 00:17:12.000
+So this is filtration based off of win rate.
+
+279
+00:17:12.000 --> 00:17:14.500
+So you can see here that the New York continuation from London, which we've
+
+280
+00:17:14.500 --> 00:17:15.000
+already gone over,
+
+281
+00:17:15.000 --> 00:17:19.000
+but that's essentially where, you know, let's say, for example, two scenarios.
+
+282
+00:17:19.000 --> 00:17:24.000
+So scenario number one is we are trending lower, right?
+
+283
+00:17:24.000 --> 00:17:27.000
+And then London's going to open here, right?
+
+284
+00:17:27.000 --> 00:17:31.000
+So then London, London opens and we have a break of structure with London.
+
+285
+00:17:31.000 --> 00:17:35.000
+And then New York comes back up into the point of interest, kind of created
+
+286
+00:17:35.000 --> 00:17:37.000
+between even London or the law.
+
+287
+00:17:37.000 --> 00:17:40.000
+And then trading out of that area in that direction.
+
+288
+00:17:40.000 --> 00:17:45.000
+The second scenario, which I think I took like one trade with this.
+
+289
+00:17:45.000 --> 00:17:52.490
+And I flagged it for review is the, essentially when we're bearish, for example
+
+290
+00:17:52.490 --> 00:17:53.000
+, right?
+
+291
+00:17:53.000 --> 00:17:55.000
+So we're obviously bearish like this.
+
+292
+00:17:55.000 --> 00:17:57.000
+And prices in here, right?
+
+293
+00:17:57.000 --> 00:18:00.000
+And we've, you know, we're in a very important area of interest.
+
+294
+00:18:00.000 --> 00:18:03.000
+Price London sweeps the highest, for example, and then start trading away.
+
+295
+00:18:03.000 --> 00:18:07.270
+Now we don't necessarily break structure, but we're in a really interested area
+
+296
+00:18:07.270 --> 00:18:08.000
+of price.
+
+297
+00:18:08.000 --> 00:18:13.000
+And then New York opens from like here and then trading this, right?
+
+298
+00:18:13.000 --> 00:18:19.000
+Again, that happened like once or twice, but that was a great setup.
+
+299
+00:18:19.000 --> 00:18:25.000
+So New York continuation from London, 20 trades in total.
+
+300
+00:18:25.000 --> 00:18:28.390
+We know that when that setup comes around, which it doesn't come around often,
+
+301
+00:18:28.390 --> 00:18:29.000
+right?
+
+302
+00:18:29.000 --> 00:18:34.000
+It comes up maybe, I don't know, what is that?
+
+303
+00:18:34.000 --> 00:18:37.760
+We're like a little bit less than once a month. So we'll get this set up, you
+
+304
+00:18:37.760 --> 00:18:40.000
+know, on average, maybe once a month.
+
+305
+00:18:40.000 --> 00:18:44.000
+But we know that when that, that's set up because that's an A plus set up.
+
+306
+00:18:44.000 --> 00:18:47.000
+And what you do with that information is completely on you.
+
+307
+00:18:47.000 --> 00:18:51.000
+But that's just what the data is telling us.
+
+308
+00:18:51.000 --> 00:18:56.230
+We also see that over a 50% win rate comes from the New York sweep of law,
+
+309
+00:18:56.230 --> 00:18:57.000
+right?
+
+310
+00:18:57.000 --> 00:19:02.740
+So when New York sweeps the kind of price, and that's probably something to do
+
+311
+00:19:02.740 --> 00:19:04.000
+with the kind of mean reversion.
+
+312
+00:19:04.000 --> 00:19:07.000
+So when price is trading in the same direction, for example, bearish.
+
+313
+00:19:07.000 --> 00:19:12.000
+And then London is in here and then London finishes and New York begins here.
+
+314
+00:19:12.000 --> 00:19:16.030
+In this period, there's a law, right? And then New York opens and New York
+
+315
+00:19:16.030 --> 00:19:18.000
+sweeps that law and then trades.
+
+316
+00:19:18.000 --> 00:19:21.000
+That set up has a 55% win rate.
+
+317
+00:19:21.000 --> 00:19:26.000
+And the reality is that that's probably based somewhat of mean reversion.
+
+318
+00:19:26.000 --> 00:19:33.280
+Because if New York sweeps law, that very much likely means that law swept
+
+319
+00:19:33.280 --> 00:19:36.000
+London and New York sweeps law.
+
+320
+00:19:36.000 --> 00:19:39.530
+So we are much higher in the price like, meaning there's a higher probability
+
+321
+00:19:39.530 --> 00:19:41.000
+of at least a mean reversion.
+
+322
+00:19:41.000 --> 00:19:45.260
+So an expansion out back into at least, you know, kind of like a 50% retr
+
+323
+00:19:45.260 --> 00:19:47.000
+acement, right?
+
+324
+00:19:47.000 --> 00:19:51.000
+That's the standard deviation from expansion and then continuation.
+
+325
+00:19:51.000 --> 00:19:55.000
+So at least this phase of price here, which is why it has a high win rate.
+
+326
+00:19:55.000 --> 00:19:58.390
+Doesn't necessarily mean that it's the most profitable it could be, but not
+
+327
+00:19:58.390 --> 00:19:59.000
+necessarily.
+
+328
+00:19:59.000 --> 00:20:03.000
+So, yeah.
+
+329
+00:20:03.000 --> 00:20:04.000
+It's what else we've got.
+
+330
+00:20:04.000 --> 00:20:08.000
+So let's look at our setups then.
+
+331
+00:20:08.000 --> 00:20:09.000
+Okay.
+
+332
+00:20:09.000 --> 00:20:10.000
+So what was the most traded?
+
+333
+00:20:10.000 --> 00:20:14.960
+So the most traded was London sweep of Frankfurt, but it only has a 28% win
+
+334
+00:20:14.960 --> 00:20:15.000
+rate.
+
+335
+00:20:15.000 --> 00:20:17.000
+And it's the highest traded.
+
+336
+00:20:17.000 --> 00:20:21.000
+So 85 trades, right?
+
+337
+00:20:21.000 --> 00:20:25.000
+Okay. Average win to loss is good.
+
+338
+00:20:25.000 --> 00:20:26.000
+85 trades.
+
+339
+00:20:26.000 --> 00:20:34.000
+That's a large book of our trades and 40% of the 216% come from that.
+
+340
+00:20:34.000 --> 00:20:40.000
+So that is our kind of most that's our highest occurring setup.
+
+341
+00:20:40.000 --> 00:20:44.000
+So now that I know that, for example, let's see.
+
+342
+00:20:44.000 --> 00:20:51.000
+So London, London sweep, Frank.
+
+343
+00:20:51.000 --> 00:20:55.000
+Right.
+
+344
+00:20:55.000 --> 00:21:01.000
+Highest occurring.
+
+345
+00:20:59.000 --> 00:21:01.000
+Highest occurring.
+
+346
+00:21:01.000 --> 00:21:05.000
+85 trades.
+
+347
+00:21:05.000 --> 00:21:10.000
+That has a 26% win rate.
+
+348
+00:21:10.000 --> 00:21:15.000
+Which again is electrically profitable because it has an average of over.
+
+349
+00:21:15.000 --> 00:21:22.000
+It has a 5.5 times average win to lose in trade.
+
+350
+00:21:22.000 --> 00:21:31.000
+So that is a setup and again, 39% return.
+
+351
+00:21:31.000 --> 00:21:34.000
+So 39% profit.
+
+352
+00:21:34.000 --> 00:21:37.610
+So that's something that I'm going to want to optimize because I believe that I
+
+353
+00:21:37.610 --> 00:21:39.000
+can probably optimize the win rate.
+
+354
+00:21:39.000 --> 00:21:43.000
+Right?
+
+355
+00:21:43.000 --> 00:21:48.000
+Yeah, I believe I can probably optimize the win rate of that system.
+
+356
+00:21:48.000 --> 00:21:55.000
+That means I may take fewer trades, but it's going to be more profitable.
+
+357
+00:21:55.000 --> 00:21:57.000
+That's another thing as well.
+
+358
+00:21:57.000 --> 00:22:01.060
+Sometimes, you know, if I optimize the win rate, it doesn't necessarily mean
+
+359
+00:22:01.060 --> 00:22:02.000
+that it's going to be more profitable.
+
+360
+00:22:02.000 --> 00:22:07.720
+Because if I optimize the win rate, but in the process of doing so, I also wipe
+
+361
+00:22:07.720 --> 00:22:12.970
+out a lot of winning trades, then, you know, it also may not be profitable as
+
+362
+00:22:12.970 --> 00:22:14.000
+profitable.
+
+363
+00:22:14.000 --> 00:22:16.710
+So it doesn't, just because it's a low win rate, doesn't mean that you're going
+
+364
+00:22:16.710 --> 00:22:18.000
+to make it more profitable with a higher win rate.
+
+365
+00:22:18.000 --> 00:22:21.000
+Could mean a lot fewer trades.
+
+366
+00:22:21.000 --> 00:22:27.260
+For example, but I still believe that I can increase both the win rate and the
+
+367
+00:22:27.260 --> 00:22:29.000
+overall return.
+
+368
+00:22:29.000 --> 00:22:32.000
+So that's something that I basically want to focus on.
+
+369
+00:22:32.000 --> 00:22:35.000
+One set up that I definitely want to optimize is London sweep rank.
+
+370
+00:22:35.000 --> 00:22:38.000
+So then I want to basically go deeper into the data of that.
+
+371
+00:22:38.000 --> 00:22:41.000
+We have again, London sweep Asia.
+
+372
+00:22:41.000 --> 00:22:44.000
+That returned 51%.
+
+373
+00:22:44.000 --> 00:22:50.000
+So that's again, close to being our, it's our second most frequent.
+
+374
+00:22:50.000 --> 00:22:56.030
+So these two, these two setups between them, make up over half of all of the
+
+375
+00:22:56.030 --> 00:22:59.000
+trades taken in a two year period.
+
+376
+00:22:59.000 --> 00:23:00.000
+Right.
+
+377
+00:23:00.000 --> 00:23:04.120
+And now the good thing is, is that they are obviously very profitable, which is
+
+378
+00:23:04.120 --> 00:23:05.000
+a good thing.
+
+379
+00:23:05.000 --> 00:23:08.000
+Oh, wait, I didn't see this one. That's our most profitable.
+
+380
+00:23:08.000 --> 00:23:12.000
+76% comes from that set up with only 19 trades.
+
+381
+00:23:12.000 --> 00:23:18.000
+So that's the trade that you look at, and you're like, that's my a plus set up.
+
+382
+00:23:18.000 --> 00:23:20.000
+If that set up occurs.
+
+383
+00:23:20.000 --> 00:23:22.000
+Oh, wait.
+
+384
+00:23:22.000 --> 00:23:25.000
+Sorry, guys.
+
+385
+00:23:25.000 --> 00:23:29.000
+I'm reading data.
+
+386
+00:23:29.000 --> 00:23:33.000
+That is irrelevant.
+
+387
+00:23:33.000 --> 00:23:37.000
+I'm going to have to go back now, because that isn't necessarily.
+
+388
+00:23:37.000 --> 00:23:40.000
+Accurate. Okay.
+
+389
+00:23:40.000 --> 00:23:42.000
+Very important. You select your data, right?
+
+390
+00:23:42.000 --> 00:23:45.000
+I'm actually going to remove that 2024.
+
+391
+00:23:45.000 --> 00:23:47.000
+I only have it there because I wanted to show you it.
+
+392
+00:23:47.000 --> 00:23:49.000
+So sessions.
+
+393
+00:23:49.000 --> 00:23:53.000
+2024.
+
+394
+00:23:53.000 --> 00:23:56.000
+I don't need this.
+
+395
+00:23:56.000 --> 00:24:00.000
+Can I.
+
+396
+00:24:00.000 --> 00:24:07.000
+Can I archive it?
+
+397
+00:24:07.000 --> 00:24:12.000
+No problem.
+
+398
+00:24:12.000 --> 00:24:17.000
+Cool. That's gone. That one is filled with my data now.
+
+399
+00:24:17.000 --> 00:24:19.000
+Okay. Let's show that again.
+
+400
+00:24:19.000 --> 00:24:26.000
+So I need to grab that off because that's not necessarily correct.
+
+401
+00:24:26.000 --> 00:24:29.000
+But was everything else correct?
+
+402
+00:24:29.000 --> 00:24:34.000
+I'm sorry, subs discretion.
+
+403
+00:24:34.000 --> 00:24:37.000
+40%. Yeah.
+
+404
+00:24:37.000 --> 00:24:43.000
+40.
+
+405
+00:24:43.000 --> 00:24:46.000
+Okay. Good. Everything is now accurate.
+
+406
+00:24:46.000 --> 00:24:48.000
+Cool. Let's look at that again, then shall we?
+
+407
+00:24:48.000 --> 00:24:50.000
+So again, still the same thing.
+
+408
+00:24:50.000 --> 00:24:53.000
+Actually, a little bit of higher percentage win rate.
+
+409
+00:24:53.000 --> 00:24:55.000
+Pretty much averages itself.
+
+410
+00:24:55.000 --> 00:24:58.000
+Actually, 26% 60 trades.
+
+411
+00:24:58.000 --> 00:25:02.000
+So not 85.
+
+412
+00:25:02.000 --> 00:25:06.000
+So 60 trades.
+
+413
+00:25:06.000 --> 00:25:11.000
+30 30.
+
+414
+00:25:11.000 --> 00:25:13.000
+30.8% return or 30.85.
+
+415
+00:25:13.000 --> 00:25:18.000
+So we'll call it 31% return.
+
+416
+00:25:18.000 --> 00:25:21.000
+So what 31% return?
+
+417
+00:25:21.000 --> 00:25:24.000
+60 trades with a 26% win rate.
+
+418
+00:25:24.000 --> 00:25:25.000
+Okay.
+
+419
+00:25:25.000 --> 00:25:31.000
+Again, that still has a, what is that as a mobile player?
+
+420
+00:25:31.000 --> 00:25:44.660
+As a multiplier, that is what we can do is we can go to dashboard, go to filter
+
+421
+00:25:44.660 --> 00:25:45.000
+.
+
+422
+00:25:45.000 --> 00:25:47.000
+We can go to tags.
+
+423
+00:25:47.000 --> 00:25:50.000
+We can go to setups.
+
+424
+00:25:50.000 --> 00:25:58.000
+And it was London sweep Frank.
+
+425
+00:25:58.000 --> 00:26:01.000
+Yeah.
+
+426
+00:26:01.000 --> 00:26:05.000
+Cool. So this is the data for that, that system.
+
+427
+00:26:05.000 --> 00:26:14.000
+You see, we have a 5.85 times more player.
+
+428
+00:26:14.000 --> 00:26:19.000
+So that's solid.
+
+429
+00:26:19.000 --> 00:26:22.840
+So that's obviously still definitely one that we want to look at because it's
+
+430
+00:26:22.840 --> 00:26:27.000
+our most highest frequently occurring setup.
+
+431
+00:26:27.000 --> 00:26:28.000
+So we're going to take this trade the most.
+
+432
+00:26:28.000 --> 00:26:32.000
+So it makes sense to try to optimize that the most.
+
+433
+00:26:32.000 --> 00:26:33.000
+Right.
+
+434
+00:26:33.000 --> 00:26:38.000
+Let's see what else we have to remove this for now.
+
+435
+00:26:38.000 --> 00:26:40.910
+Again, there's so much that you can do with this data as long as you know how
+
+436
+00:26:40.910 --> 00:26:42.000
+to look at it properly.
+
+437
+00:26:42.000 --> 00:26:45.020
+And honestly, like what I'm doing in this video, I'm probably going to end up
+
+438
+00:26:45.020 --> 00:26:48.000
+going away and doing more data synopsis.
+
+439
+00:26:48.000 --> 00:26:52.000
+But again, we're going to be just looking at the most important ones for now.
+
+440
+00:26:52.000 --> 00:27:01.000
+Let's see what else. So we have London sweep Asia.
+
+441
+00:27:01.000 --> 00:27:06.000
+And just before we move on, we want to increase win rate.
+
+442
+00:27:06.000 --> 00:27:10.260
+Of the London sweep Frank. And just so you know, the way that I'm going to do
+
+443
+00:27:10.260 --> 00:27:12.000
+that is basically.
+
+444
+00:27:12.000 --> 00:27:15.000
+If we come in here, right, I'm going to go to compare.
+
+445
+00:27:15.000 --> 00:27:22.000
+What we're going to do here is obviously your dollar, and we're going to do.
+
+446
+00:27:22.000 --> 00:27:25.000
+It is London sweep Frank.
+
+447
+00:27:25.000 --> 00:27:28.000
+So London sweep Frank.
+
+448
+00:27:28.000 --> 00:27:37.000
+All sides all be now start date.
+
+449
+00:27:37.000 --> 00:27:44.000
+First affair until, you know, here, I'm going to your dollar tags.
+
+450
+00:27:44.000 --> 00:27:46.000
+London.
+
+451
+00:27:46.000 --> 00:27:54.000
+London sweep Frank.
+
+452
+00:27:54.000 --> 00:27:58.000
+Side all sides trade P and L all.
+
+453
+00:27:58.000 --> 00:27:59.000
+Start date.
+
+454
+00:27:59.000 --> 00:28:04.000
+2023 fair, but the beginning and then up until pretty much present day.
+
+455
+00:28:04.000 --> 00:28:06.000
+Okay. Now we can look at other tags as well.
+
+456
+00:28:06.000 --> 00:28:10.000
+So for example, London sweep Frank is just one thing.
+
+457
+00:28:10.000 --> 00:28:15.740
+But what happens when we have, let's say, for example, London sweep Frank comes
+
+458
+00:28:15.740 --> 00:28:18.000
+from a.
+
+459
+00:28:18.000 --> 00:28:23.000
+A strong point of interest versus when it comes from a.
+
+460
+00:28:23.000 --> 00:28:27.000
+Weak points of interest, and I can generate that report.
+
+461
+00:28:27.000 --> 00:28:30.000
+And now it's going to tell me the following.
+
+462
+00:28:30.000 --> 00:28:36.000
+So what we can see here is the.
+
+463
+00:28:36.000 --> 00:28:42.000
+So we can see here is that when we use a strong point of interest, the win rate
+
+464
+00:28:42.000 --> 00:28:44.000
+increases to 33%.
+
+465
+00:28:44.000 --> 00:28:49.290
+When we use a weak point of interest, the win rate is 29%, which means that
+
+466
+00:28:49.290 --> 00:28:52.000
+they're both still profitable.
+
+467
+00:28:52.000 --> 00:29:05.000
+But the reality is, is that one of these setups is obviously better.
+
+468
+00:29:05.000 --> 00:29:08.000
+Like objectively speaking, most likely.
+
+469
+00:29:08.000 --> 00:29:12.000
+Total P and L 100% total P and L 58%.
+
+470
+00:29:12.000 --> 00:29:14.000
+So still very much profitable.
+
+471
+00:29:14.000 --> 00:29:16.000
+So that doesn't really give us much of a difference.
+
+472
+00:29:16.000 --> 00:29:19.000
+But then what you can do is you can go, okay, well, that was weak.
+
+473
+00:29:19.000 --> 00:29:27.240
+What about if it's weak and then the phase of the trend, for example, or if
+
+474
+00:29:27.240 --> 00:29:30.000
+there was news or if there was no news, right?
+
+475
+00:29:30.000 --> 00:29:32.000
+You can start playing around with your tags and starting to understand.
+
+476
+00:29:32.000 --> 00:29:33.000
+Okay.
+
+477
+00:29:33.000 --> 00:29:39.000
+Well, the setup itself is London sweeps Frank, but then what are the variables?
+
+478
+00:29:39.000 --> 00:29:41.000
+Well, what phase of price will be in?
+
+479
+00:29:41.000 --> 00:29:42.000
+Will we trending?
+
+480
+00:29:42.000 --> 00:29:44.000
+Have we just had a change of character?
+
+481
+00:29:44.000 --> 00:29:45.000
+Right?
+
+482
+00:29:45.000 --> 00:29:47.000
+Was there any levels of discretion used?
+
+483
+00:29:47.000 --> 00:29:49.870
+So that's another thing we can do as well is we can look at remove weak and
+
+484
+00:29:49.870 --> 00:29:51.000
+remove strong for now.
+
+485
+00:29:51.000 --> 00:30:01.000
+And then let's also add in discretion.
+
+486
+00:30:01.000 --> 00:30:08.000
+So what happens when we use discretion versus non discretion?
+
+487
+00:30:08.000 --> 00:30:17.380
+So we can see here that the discretionary ones and again, the discretion ones
+
+488
+00:30:17.380 --> 00:30:20.000
+are really just about.
+
+489
+00:30:20.000 --> 00:30:22.000
+Okay, that's also a factor in that.
+
+490
+00:30:22.000 --> 00:30:30.000
+So discretion is helpful as well.
+
+491
+00:30:30.000 --> 00:30:44.000
+How about when we go, for example, to empty leg versus broad.
+
+492
+00:30:44.000 --> 00:30:47.000
+To leg versus broad.
+
+493
+00:30:47.000 --> 00:30:55.560
+So you can see here that the empty, the broad point of interest is again more
+
+494
+00:30:55.560 --> 00:31:02.770
+profitable than the empty leg point of interest, but still both very profitable
+
+495
+00:31:02.770 --> 00:31:03.000
+.
+
+496
+00:31:03.000 --> 00:31:06.000
+So there's not really much that we can do there.
+
+497
+00:31:06.000 --> 00:31:07.000
+That's what I mean.
+
+498
+00:31:07.000 --> 00:31:11.260
+But if we removed this, right, we could remove this and it would increase our
+
+499
+00:31:11.260 --> 00:31:12.000
+win rate.
+
+500
+00:31:12.000 --> 00:31:16.270
+If we didn't take anything that was in this scenario, we could increase the win
+
+501
+00:31:16.270 --> 00:31:20.000
+rate, but we'd also cut off 55 set return.
+
+502
+00:31:20.000 --> 00:31:26.380
+So it's a very important thing to understand that the win rate alone is
+
+503
+00:31:26.380 --> 00:31:28.000
+meaningless.
+
+504
+00:31:28.000 --> 00:31:29.000
+Right.
+
+505
+00:31:29.000 --> 00:31:31.000
+The win rate alone is literally meaningless.
+
+506
+00:31:31.000 --> 00:31:34.880
+It's going to be difficult to look at refinements that we can make for this
+
+507
+00:31:34.880 --> 00:31:36.000
+specific set up.
+
+508
+00:31:36.000 --> 00:31:42.000
+I still do think that I can find things if I dig deeper.
+
+509
+00:31:42.000 --> 00:31:45.000
+I don't know whether these.
+
+510
+00:31:45.000 --> 00:31:50.000
+I have to edit these.
+
+511
+00:31:50.000 --> 00:31:59.000
+I'm not sure.
+
+512
+00:31:59.000 --> 00:32:06.000
+Yes, well.
+
+513
+00:32:29.000 --> 00:32:37.000
+168 trades matched.
+
+514
+00:32:37.000 --> 00:32:39.000
+Yeah, this is inaccurate.
+
+515
+00:32:39.000 --> 00:32:43.000
+I don't know whether this is the right yes or not.
+
+516
+00:33:00.000 --> 00:33:07.000
+Okay.
+
+518
+00:33:07.000 --> 00:33:15.000
+I need to look deeper into how to compare properly because at the moment.
+
+519
+00:33:15.000 --> 00:33:22.000
+I can do it based off of obviously setups, for example, so London.
+
+520
+00:33:22.000 --> 00:33:32.000
+That's still inaccurate.
+
+521
+00:33:32.000 --> 00:33:39.000
+85, 33.
+
+522
+00:33:39.000 --> 00:33:53.000
+Could be New York.
+
+523
+00:33:53.000 --> 00:33:58.040
+So we can see there, for example, one thing we obviously can look at that is
+
+524
+00:33:58.040 --> 00:34:02.000
+objectively and the data reads properly.
+
+525
+00:34:02.000 --> 00:34:03.000
+It doesn't have a thing as well.
+
+526
+00:34:03.000 --> 00:34:06.430
+It's important to be able to understand how to speak to the data and how to
+
+527
+00:34:06.430 --> 00:34:08.000
+have the data speak to you.
+
+528
+00:34:08.000 --> 00:34:10.720
+Another thing you can do as well, which I'm not doing right now, but I will
+
+529
+00:34:10.720 --> 00:34:16.000
+when I'm alone, is using AI using chat sheet to help you with your data.
+
+530
+00:34:16.000 --> 00:34:23.690
+Massively important, but again, that's that's something that you'll have to do
+
+531
+00:34:23.690 --> 00:34:25.000
+yourself.
+
+532
+00:34:25.000 --> 00:34:29.000
+But what we can see is New York and London.
+
+533
+00:34:29.000 --> 00:34:30.000
+This is a differentiation.
+
+534
+00:34:30.000 --> 00:34:35.000
+So New York has a higher win rate than London.
+
+535
+00:34:35.000 --> 00:34:37.000
+London has a lower win rate.
+
+536
+00:34:37.000 --> 00:34:39.000
+New York is more profitable.
+
+537
+00:34:39.000 --> 00:34:44.730
+They are both relatively equal in terms of what they overall return, but for
+
+538
+00:34:44.730 --> 00:34:52.000
+New York setups, you get less, less frequency, but higher quality.
+
+539
+00:34:52.000 --> 00:35:12.000
+So you can see that 105% is returned in New York and 93% is returned in London.
+
+540
+00:35:12.000 --> 00:35:21.560
+Now, that means there's probably some trades that aren't tagged, because that's
+
+541
+00:35:21.560 --> 00:35:23.000
+another thing that has to do as well.
+
+542
+00:35:23.000 --> 00:35:25.000
+In 2024, I realized that was actually some trades not tagged.
+
+543
+00:35:25.000 --> 00:35:38.000
+So I'll have to also go and find out which trades aren't tagged.
+
+544
+00:35:38.000 --> 00:35:45.000
+Let's go to tags.
+
+545
+00:35:45.000 --> 00:36:01.000
+That's for you.
+
+546
+00:36:01.000 --> 00:36:12.000
+Okay.
+
+547
+00:36:12.000 --> 00:36:18.000
+New York continuation from London, because we're reading the data incredibly.
+
+548
+00:36:18.000 --> 00:36:27.000
+Okay, the data was on 2024, not risk adjusted as well.
+
+549
+00:36:27.000 --> 00:36:30.000
+So just to be clear, this is the accurate data.
+
+550
+00:36:30.000 --> 00:36:32.000
+Now that we've removed that.
+
+551
+00:36:32.000 --> 00:36:40.000
+So we can see that the actual most profitable, I believe.
+
+552
+00:36:40.000 --> 00:36:47.000
+Yeah, the actual most profitable setup is the London sweep Asia.
+
+553
+00:36:47.000 --> 00:36:52.000
+It's also the most traded.
+
+554
+00:36:52.000 --> 00:36:58.000
+A three profit factor and a 30% win rate and a 6.8.
+
+555
+00:36:58.000 --> 00:37:02.000
+Average win to lose an average winter loss ratio, which is insane.
+
+556
+00:37:02.000 --> 00:37:09.500
+We can look at these other things as well, and we can look at point of interest
+
+557
+00:37:09.500 --> 00:37:10.000
+.
+
+558
+00:37:10.000 --> 00:37:19.000
+So what we can see is remove this and go only.
+
+559
+00:37:19.000 --> 00:37:24.360
+You can see again, every single point of interest, every single type of point
+
+560
+00:37:24.360 --> 00:37:30.000
+of interest is profitable, but strong points of interest.
+
+561
+00:37:30.000 --> 00:37:34.000
+Are number one, a much higher win rate.
+
+562
+00:37:34.000 --> 00:37:38.110
+So when you have a strong point of interest, again, this is where you can start
+
+563
+00:37:38.110 --> 00:37:40.000
+differentiating a plus b plus.
+
+564
+00:37:40.000 --> 00:37:45.000
+For example, you know that if I tag if I have a.
+
+565
+00:37:45.000 --> 00:37:50.070
+If I have a, in fact, let's do it right now and see if this will tell us if the
+
+566
+00:37:50.070 --> 00:37:53.000
+accurate, if the data is reading accurate.
+
+567
+00:37:53.000 --> 00:37:55.000
+So let's say we have.
+
+568
+00:37:55.000 --> 00:37:59.000
+London sweep Asia.
+
+569
+00:37:59.000 --> 00:38:04.420
+London sweep Asia, because the logic on this should be if both are tagged, then
+
+570
+00:38:04.420 --> 00:38:05.000
+yes.
+
+571
+00:38:05.000 --> 00:38:12.000
+So London sweep Asia from.
+
+572
+00:38:12.000 --> 00:38:22.000
+Strong and London sweep Asia from.
+
+573
+00:38:22.000 --> 00:38:38.230
+Week, broad or empty leg, if it gives me every single trade as a part of the
+
+574
+00:38:38.230 --> 00:38:46.000
+empty leg, then it's a big problem.
+
+575
+00:38:46.000 --> 00:38:51.000
+It's not the day is not really properly, which is the other thing.
+
+576
+00:38:51.000 --> 00:38:58.000
+I know that I will be able to go and get the accurate data on.
+
+577
+00:38:58.000 --> 00:39:01.720
+From chat, because right now, again, it's very important how your data
+
+578
+00:39:01.720 --> 00:39:03.000
+communicates to you.
+
+579
+00:39:03.000 --> 00:39:08.420
+So, for example, we have right here is 115 trades that have matched, but there
+
+580
+00:39:08.420 --> 00:39:11.870
+aren't 115 trades that were both London sweep Asia and strong point of interest
+
+581
+00:39:11.870 --> 00:39:12.000
+.
+
+582
+00:39:12.000 --> 00:39:17.000
+So the logic isn't correct, in my opinion, on how the tags should be run.
+
+583
+00:39:17.000 --> 00:39:21.960
+So what I'm better off doing is input in the data into chat GPT and letting
+
+584
+00:39:21.960 --> 00:39:25.000
+chat GPT communicate with me on the data.
+
+585
+00:39:25.000 --> 00:39:32.460
+Because, for example, I will be able to know by going into dashboard and
+
+586
+00:39:32.460 --> 00:39:41.000
+filtering off of tags and doing setups.
+
+587
+00:39:41.000 --> 00:39:46.000
+Set up London sweep Asia.
+
+588
+00:39:46.000 --> 00:39:50.000
+And point of interest.
+
+589
+00:39:50.000 --> 00:39:52.000
+Strong.
+
+590
+00:39:52.000 --> 00:39:55.000
+So this is should take both of them together.
+
+591
+00:39:55.000 --> 00:39:57.000
+So you can see here.
+
+592
+00:39:57.000 --> 00:40:01.000
+For London sweep Asia.
+
+593
+00:40:01.000 --> 00:40:04.000
+From a strong point of interest.
+
+594
+00:40:04.000 --> 00:40:07.000
+It has a 50% win rate.
+
+595
+00:40:07.000 --> 00:40:10.530
+So, when the model is like this, which again, I already had my intonations and
+
+596
+00:40:10.530 --> 00:40:16.000
+said that this is an A plus out, but now the data confirms that prices bearish.
+
+597
+00:40:16.000 --> 00:40:18.000
+Asia session is in here.
+
+598
+00:40:18.000 --> 00:40:21.390
+We have a strong point of interest up here, which is a point of interest
+
+599
+00:40:21.390 --> 00:40:23.000
+responsible for breaking structure.
+
+600
+00:40:23.000 --> 00:40:28.740
+London sweeps Asia into this point of interest, lower timeframe shift, entry in
+
+601
+00:40:28.740 --> 00:40:29.000
+here.
+
+602
+00:40:29.000 --> 00:40:35.000
+Five are down here, boom, boom, boom, boom. That has a 50 over a 50% win rate.
+
+603
+00:40:35.000 --> 00:40:41.000
+Right. So it has over, it has over a 50% win rate.
+
+604
+00:40:41.000 --> 00:40:46.900
+It has a total of 20 trades taken. So on average, once a month, you'll get a
+
+605
+00:40:46.900 --> 00:40:51.000
+London sweeps Asia into a strong point of interest.
+
+606
+00:40:51.000 --> 00:40:52.000
+Right.
+
+607
+00:40:52.000 --> 00:40:56.000
+Pretty sure these are all the old trades taken.
+
+608
+00:40:56.000 --> 00:41:02.000
+Right. And now if you look at, for example, London sweep interest London.
+
+609
+00:41:02.000 --> 00:41:05.000
+And then you look at, let's say, week, for example, right.
+
+610
+00:41:05.000 --> 00:41:07.000
+That has a 25% win rate.
+
+611
+00:41:07.000 --> 00:41:12.000
+So you can see we have six, 10, 12 trades in total.
+
+612
+00:41:12.000 --> 00:41:15.000
+And again, still a 9% return.
+
+613
+00:41:15.000 --> 00:41:19.000
+So it still makes sense to trade it. It's a very profitable model.
+
+614
+00:41:19.000 --> 00:41:23.000
+And with good management, this has a nine times multiplier.
+
+615
+00:41:23.000 --> 00:41:26.950
+So again, there's not really anything you can do. Like, yes, the drawdown is an
+
+616
+00:41:26.950 --> 00:41:29.000
+ideal on it, which is why you manage risk appropriately.
+
+617
+00:41:29.000 --> 00:41:35.000
+The win rate of that is not great, but the profitability is there.
+
+618
+00:41:35.000 --> 00:41:39.960
+Right. It returns 9%. So if you take that set up every time it returns over a
+
+619
+00:41:39.960 --> 00:41:43.000
+long enough period of time, you will make money.
+
+620
+00:41:43.000 --> 00:41:44.000
+Right.
+
+621
+00:41:44.000 --> 00:41:47.000
+But you can see that it's half in terms of win rate.
+
+622
+00:41:47.000 --> 00:41:50.980
+So if you look at that week, and then you look at it with a strong, for example
+
+623
+00:41:50.980 --> 00:41:57.000
+, return 9%, with a strong turn 43%, a six profit factor.
+
+624
+00:41:57.000 --> 00:42:03.700
+A 5.5 win rate. So you know, that is without a shadow of a doubt, an A plus set
+
+625
+00:42:03.700 --> 00:42:04.000
+up.
+
+626
+00:42:04.000 --> 00:42:07.000
+And then again, you can just note these things down, right.
+
+627
+00:42:07.000 --> 00:42:11.400
+And you go through everything and you decode all the data and you know, okay,
+
+628
+00:42:11.400 --> 00:42:13.000
+here are my A plus cells.
+
+629
+00:42:13.000 --> 00:42:14.000
+Right.
+
+630
+00:42:14.000 --> 00:42:16.000
+And then you start understanding.
+
+631
+00:42:16.000 --> 00:42:20.190
+And again, depends on how you're going to manage it, but for me personally, I
+
+632
+00:42:20.190 --> 00:42:21.000
+can block.
+
+633
+00:42:21.000 --> 00:42:26.000
+I have, I have a 4% buffer on my friend and account.
+
+634
+00:42:26.000 --> 00:42:29.000
+And my A plus set up is now showing itself.
+
+635
+00:42:29.000 --> 00:42:33.390
+Well, maybe instead of risking, you know, my standard is 0.5% or 1%, maybe I
+
+636
+00:42:33.390 --> 00:42:35.000
+risk 1.5% or 2%.
+
+637
+00:42:35.000 --> 00:42:39.460
+Right. That's dynamic, dynamic scaling of risk because you understand the setup
+
+638
+00:42:39.460 --> 00:42:41.000
+that you're dealing with.
+
+639
+00:42:41.000 --> 00:42:43.000
+Right. Very important thing.
+
+640
+00:42:43.000 --> 00:42:47.000
+And doubling down on what you know works and works well.
+
+641
+00:42:47.000 --> 00:42:50.000
+Again, if we go back into dashboard.
+
+642
+00:42:50.000 --> 00:42:56.000
+Because all part of the same playbook, the playbook itself is m15 pro trend.
+
+643
+00:42:56.000 --> 00:42:57.000
+Right.
+
+644
+00:42:57.000 --> 00:43:00.400
+Wait for a sweep of some type of liquidity or trade from a strong point of
+
+645
+00:43:00.400 --> 00:43:01.000
+interest.
+
+646
+00:43:01.000 --> 00:43:03.000
+Lower timeframe shift trade.
+
+647
+00:43:03.000 --> 00:43:05.000
+That's the, that's the strategy.
+
+648
+00:43:05.000 --> 00:43:09.960
+But the strategy can be compressed down into different types of setups that
+
+649
+00:43:09.960 --> 00:43:12.000
+occur inside of that strategy.
+
+650
+00:43:12.000 --> 00:43:16.000
+And then that's how you can differentiate whether it's an A plus set up or not.
+
+651
+00:43:16.000 --> 00:43:19.000
+Because there's a difference between a playbook and a setup.
+
+652
+00:43:19.000 --> 00:43:22.530
+You can have a variation of a trade that meets all the same criteria as another
+
+653
+00:43:22.530 --> 00:43:23.000
+trade.
+
+654
+00:43:23.000 --> 00:43:27.000
+But they are different trades and they return differently.
+
+655
+00:43:27.000 --> 00:43:29.000
+They behave differently.
+
+656
+00:43:29.000 --> 00:43:30.000
+Right.
+
+657
+00:43:30.000 --> 00:43:35.370
+So again, honestly, after governing enough data, what we have found is that
+
+658
+00:43:35.370 --> 00:43:39.000
+there isn't a single variation bar.
+
+659
+00:43:39.000 --> 00:43:51.000
+The bar, the.
+
+660
+00:43:51.000 --> 00:43:54.000
+There's an a single variation.
+
+661
+00:43:54.000 --> 00:43:57.000
+Bar the New York sweep in Asia.
+
+662
+00:43:57.000 --> 00:44:01.000
+That is unprofitable.
+
+663
+00:44:01.000 --> 00:44:04.000
+But I'm still going to play with this data deeper.
+
+664
+00:44:04.000 --> 00:44:09.000
+But it may end up being that I don't necessarily change anything.
+
+665
+00:44:09.000 --> 00:44:12.000
+Maybe I change how I approach certain things.
+
+666
+00:44:12.000 --> 00:44:13.000
+Right.
+
+667
+00:44:13.000 --> 00:44:19.000
+Maybe I change how I risk on each setup.
+
+668
+00:44:19.000 --> 00:44:21.000
+Right.
+
+669
+00:44:21.000 --> 00:44:23.000
+Those are some other things.
+
+670
+00:44:23.000 --> 00:44:24.000
+There's a couple of other things as well.
+
+671
+00:44:24.000 --> 00:44:26.000
+Like, for example, flag for review.
+
+672
+00:44:26.000 --> 00:44:27.000
+Right.
+
+673
+00:44:27.000 --> 00:44:31.410
+You can see here that there are, you know, 29 trades that I flagged that I want
+
+674
+00:44:31.410 --> 00:44:33.000
+to go in and look at.
+
+675
+00:44:33.000 --> 00:44:36.000
+And they may have their different reasons.
+
+676
+00:44:36.000 --> 00:44:42.080
+Because although there are many profitable trades in here, there are some that
+
+677
+00:44:42.080 --> 00:44:45.000
+if I go in here, for example, it's only a 30% win rate.
+
+678
+00:44:45.000 --> 00:44:48.000
+If I go in here, I might be able to start understanding something.
+
+679
+00:44:48.000 --> 00:44:51.840
+For example, there was one thing that I, I know that I kept on seeing from a
+
+680
+00:44:51.840 --> 00:44:53.000
+specific setup.
+
+681
+00:44:53.000 --> 00:44:56.000
+That was, I don't know why it's so bright green.
+
+682
+00:44:56.000 --> 00:44:58.000
+It's unreadable, but.
+
+683
+00:44:58.000 --> 00:45:02.000
+There was New York.
+
+684
+00:45:02.000 --> 00:45:06.000
+Low sweep continuation.
+
+685
+00:45:06.000 --> 00:45:11.000
+So low sweep continuation.
+
+686
+00:45:11.000 --> 00:45:15.000
+Low sweep.
+
+687
+00:45:15.000 --> 00:45:18.000
+Low continuation.
+
+688
+00:45:18.000 --> 00:45:21.000
+If I fail.
+
+689
+00:45:21.000 --> 00:45:23.000
+This is a 33% win rate.
+
+690
+00:45:23.000 --> 00:45:25.000
+It returned 15%.
+
+691
+00:45:25.000 --> 00:45:33.000
+But what I know for sure is that if I now go in here and I go flag for review.
+
+692
+00:45:33.000 --> 00:45:34.000
+Yes.
+
+693
+00:45:34.000 --> 00:45:36.000
+And I put it in here.
+
+694
+00:45:36.000 --> 00:45:38.000
+Here's what I can see.
+
+695
+00:45:38.000 --> 00:45:43.000
+I can see that these trades, which is one specific principle that I have.
+
+696
+00:45:43.000 --> 00:45:49.000
+There are some trades that I probably should avoid.
+
+697
+00:45:49.000 --> 00:45:54.000
+Now, although this has a 20% win rate and is profitable.
+
+698
+00:45:54.000 --> 00:46:00.000
+It's probably not great that I trade this, this setup.
+
+699
+00:46:00.000 --> 00:46:03.000
+There aren't a lot of trades, so it doesn't occur frequently.
+
+700
+00:46:03.000 --> 00:46:06.000
+But with a, with such a low win rate.
+
+701
+00:46:06.000 --> 00:46:09.840
+The reality is, even if it is profitable, the likelihood that you're going to
+
+702
+00:46:09.840 --> 00:46:14.000
+get a profitable trade at a certain period of time is.
+
+703
+00:46:14.000 --> 00:46:17.000
+It is too far in between.
+
+704
+00:46:17.000 --> 00:46:22.000
+Because I want setups that are quite frequent that I can play with.
+
+705
+00:46:22.000 --> 00:46:25.000
+So I would rather not take this.
+
+706
+00:46:25.000 --> 00:46:26.000
+Right.
+
+707
+00:46:26.000 --> 00:46:29.000
+And lose that it's 1.1% is what it returns.
+
+708
+00:46:29.000 --> 00:46:34.000
+So it's basically a waste of time taking those trades.
+
+709
+00:46:34.000 --> 00:46:36.000
+That's how I read it.
+
+710
+00:46:36.000 --> 00:46:38.000
+So, yeah.
+
+711
+00:46:38.000 --> 00:46:40.000
+There's like one winner.
+
+712
+00:46:40.000 --> 00:46:45.000
+One winner for losers one break even.
+
+713
+00:46:45.000 --> 00:46:49.000
+So I know, for example, there's something in there that I want to remove.
+
+714
+00:46:49.000 --> 00:46:53.960
+And it's about refinement as well, because the more you have to do, the more
+
+715
+00:46:53.960 --> 00:46:57.000
+likely error is to occur.
+
+716
+00:46:57.000 --> 00:47:02.000
+So again, this video is really mainly purpose, mainly purpose.
+
+717
+00:47:02.000 --> 00:47:05.390
+Let's have a quick look points of interest, all points of interest are
+
+718
+00:47:05.390 --> 00:47:06.000
+profitable.
+
+719
+00:47:06.000 --> 00:47:08.000
+But you can start into relating them.
+
+720
+00:47:08.000 --> 00:47:12.000
+For example, what happens if I take this set up with this point of interest.
+
+721
+00:47:12.000 --> 00:47:16.960
+And maybe what you find is though, even though some of them are profitable,
+
+722
+00:47:16.960 --> 00:47:20.000
+return 1%, it returned 3%, but the win rate was super low.
+
+723
+00:47:20.000 --> 00:47:25.160
+Maybe you don't want to even bother taking those types of trades purely out of
+
+724
+00:47:25.160 --> 00:47:29.000
+the basis of, you know, if you're, if you've got a proper count, for example,
+
+725
+00:47:29.000 --> 00:47:33.200
+you know, your, your really performance is based off kind of month to month or
+
+726
+00:47:33.200 --> 00:47:34.000
+by weekly.
+
+727
+00:47:34.000 --> 00:47:37.900
+And so do you want to be spending your time taking trades that, that I've got,
+
+728
+00:47:37.900 --> 00:47:41.000
+like a 20% win rate and you maybe hit one here and there.
+
+729
+00:47:41.000 --> 00:47:43.000
+Not really.
+
+730
+00:47:43.000 --> 00:47:47.300
+It's my personal opinion, especially with like a 20% win rate and your average
+
+731
+00:47:47.300 --> 00:47:49.000
+ratio would like one to five.
+
+732
+00:47:49.000 --> 00:47:51.000
+It's basically break even because there's no point.
+
+733
+00:47:51.000 --> 00:47:54.980
+And the reality is is, even though it's basically break even, you're trading a
+
+734
+00:47:54.980 --> 00:47:56.000
+proper count.
+
+735
+00:47:56.000 --> 00:47:59.390
+So the reality is, there is a very high likelihood that that trade is going to
+
+736
+00:47:59.390 --> 00:48:00.000
+be at a loss.
+
+737
+00:48:00.000 --> 00:48:03.390
+And because it's not something that occurs every single day, if it occurs every
+
+738
+00:48:03.390 --> 00:48:07.000
+single day and it has like a 20%, it's profitable, then you trade it.
+
+739
+00:48:07.000 --> 00:48:13.450
+Or when it occurs so, you know, infrequently, if that's even a word, then there
+
+740
+00:48:13.450 --> 00:48:16.560
+'s no point because the reality is when you take that trade, it's probably going
+
+741
+00:48:16.560 --> 00:48:17.000
+to be a loss.
+
+742
+00:48:17.000 --> 00:48:20.000
+And so you're better off just focusing on the high probability set ups.
+
+743
+00:48:20.000 --> 00:48:21.000
+Right.
+
+744
+00:48:21.000 --> 00:48:23.000
+It's about how you read into your data.
+
+745
+00:48:25.000 --> 00:48:29.000
+Every single structure flow is profitable.
+
+746
+00:48:29.000 --> 00:48:32.000
+Every trend phase is profitable.
+
+747
+00:48:32.000 --> 00:48:37.000
+High premium discount.
+
+748
+00:48:37.000 --> 00:48:40.000
+They're both profitable, but it's more profitable in premium.
+
+749
+00:48:40.000 --> 00:48:43.710
+But again, that doesn't mean that, for example, if I removed, if I didn't take,
+
+750
+00:48:43.710 --> 00:48:47.210
+which is, I did at one point, I'm not going to take any trades that aren't
+
+751
+00:48:47.210 --> 00:48:48.000
+premium and discount.
+
+752
+00:48:48.000 --> 00:48:54.500
+Okay, great. You increase your win rate, but you also just missed out on 70%,
+
+753
+00:48:54.500 --> 00:48:55.000
+77% profit.
+
+754
+00:48:55.000 --> 00:48:59.260
+So, well done, like you increase your win rate, but that doesn't mean you're
+
+755
+00:48:59.260 --> 00:49:01.000
+going to make more money.
+
+756
+00:49:01.000 --> 00:49:09.000
+News gain every fragment of news is profitable.
+
+757
+00:49:10.000 --> 00:49:19.000
+Execution window. Every execution window is going to be profitable. Our most
+
+758
+00:49:19.000 --> 00:49:19.000
+profitable execution window, you can see it's pretty evenly correlated between
+
+759
+00:49:19.000 --> 00:49:19.000
+every hour.
+
+760
+00:49:19.000 --> 00:49:23.960
+Right. There's no drastic. The highest is 40%, the lowest is 20%, everything
+
+761
+00:49:23.960 --> 00:49:25.000
+else is in the middle.
+
+762
+00:49:25.000 --> 00:49:28.980
+So there's nothing to do there and then flag for review, which is just trades
+
+763
+00:49:28.980 --> 00:49:33.000
+that I want to look at and see if I can understand what's going on in there.
+
+764
+00:49:33.000 --> 00:49:37.000
+So you can see every setup is profitable pretty much by this one.
+
+765
+00:49:38.000 --> 00:49:48.580
+The low reversal return 10%, but has a 40% win rate, just not so frequently
+
+766
+00:49:48.580 --> 00:49:51.000
+traded, which is fine.
+
+767
+00:49:51.000 --> 00:49:56.000
+So what I really want to obviously look at is the trades that are the most
+
+768
+00:49:56.000 --> 00:49:57.000
+frequent.
+
+769
+00:49:57.000 --> 00:50:03.000
+But the reality is, is I want to take every trade that means that criteria.
+
+770
+00:50:07.000 --> 00:50:11.890
+I want to take every trade that's in that playbook. However, maybe on certain
+
+771
+00:50:11.890 --> 00:50:14.000
+trades, I actually risk more because that's what's going on.
+
+772
+00:50:14.000 --> 00:50:20.000
+At the end of the year when that P&L comes in, that one principle alone could
+
+773
+00:50:20.000 --> 00:50:25.000
+be worth a fortune, just doubling up on my A+ subs.
+
+774
+00:50:25.000 --> 00:50:30.970
+Right. Having that, I could double my year's P&L comfortably without the excess
+
+775
+00:50:30.970 --> 00:50:36.000
+risk and stress and drawdown because I understand what my A+ subs are.
+
+776
+00:50:36.000 --> 00:50:41.800
+So that kind of concludes again, I'm going to go in kind of consult with chat G
+
+777
+00:50:41.800 --> 00:50:45.490
+PT more and feed it my data, but I don't really think they're going to be much
+
+778
+00:50:45.490 --> 00:50:47.000
+changes.
+
+779
+00:50:47.000 --> 00:50:51.470
+To be honest with you, I know that throughout the back test, I said, I think I
+
+780
+00:50:51.470 --> 00:50:54.300
+can get the win rate higher and so on and so forth, but again, I'm now
+
+781
+00:50:54.300 --> 00:50:56.000
+finishing it with a 33% win rate.
+
+782
+00:50:56.000 --> 00:50:59.760
+So the periods with this might have been 25% and I was like, I'm going to get
+
+783
+00:50:59.760 --> 00:51:04.030
+this win rate higher and yeah, that could have been reality, but 33% win rate
+
+784
+00:51:04.030 --> 00:51:10.000
+with an average risk reward of 6.2 with a three profit factor.
+
+785
+00:51:10.000 --> 00:51:14.000
+And I'm winning on 40% of my days. I don't really need to do much of this edge.
+
+786
+00:51:14.000 --> 00:51:16.000
+This edge is already absolutely solid.
+
+787
+00:51:16.000 --> 00:51:18.320
+There are a couple of little things I could do which aren't going to make a
+
+788
+00:51:18.320 --> 00:51:19.000
+huge difference.
+
+789
+00:51:19.000 --> 00:51:24.000
+I think the biggest takeaway I'll have here is knowing when to double now.
+
+790
+00:51:24.000 --> 00:51:27.940
+Right, especially when I have buffers and things like that, knowing when, okay,
+
+791
+00:51:27.940 --> 00:51:29.000
+that's the setup.
+
+792
+00:51:29.000 --> 00:51:34.000
+This is the setup that I'm most confident in. Maybe I risk a little bit more.
+
+793
+00:51:34.000 --> 00:51:36.000
+Right.
+
+794
+00:51:36.000 --> 00:51:39.390
+But yeah, still going to go for the data, but the purpose of this video, again,
+
+795
+00:51:39.390 --> 00:51:41.730
+obviously I wanted to give you some changes, but honestly, there isn't really
+
+796
+00:51:41.730 --> 00:51:42.000
+anything to change.
+
+797
+00:51:42.000 --> 00:51:49.610
+The model is exceptional, but the key takeaway here is for you to be able to do
+
+798
+00:51:49.610 --> 00:51:51.000
+this yourself.
+
+799
+00:51:51.000 --> 00:51:55.400
+I've given you a model. The model is exceptionally profitable. There's two and
+
+800
+00:51:55.400 --> 00:51:58.000
+a half years of data, over 200 trades.
+
+801
+00:51:58.000 --> 00:52:01.000
+It's a large number of sample size.
+
+802
+00:52:01.000 --> 00:52:06.000
+Now, the main purpose is, you know, great, you've got a model. Amazing.
+
+803
+00:52:06.000 --> 00:52:10.000
+That's not going to make you profitable. You need to deal with your psychology.
+
+804
+00:52:10.000 --> 00:52:16.000
+But the key here is that I've taught you how to fish.
+
+805
+00:52:16.000 --> 00:52:20.960
+I'm not giving you fish, although I kind of have given you fish in the process,
+
+806
+00:52:20.960 --> 00:52:22.000
+which is the model.
+
+807
+00:52:22.000 --> 00:52:26.870
+But they have this old proverb, which is like, you know, give him out of fish,
+
+808
+00:52:26.870 --> 00:52:30.000
+he'll eat for the day, teach him out of fish, he'll eat for life.
+
+809
+00:52:30.000 --> 00:52:34.980
+And the purpose of this, to be clear, was not to give you fish, not to give you
+
+810
+00:52:34.980 --> 00:52:38.000
+a model, not to prove to you that it works.
+
+811
+00:52:38.000 --> 00:52:40.000
+I don't need to do that.
+
+812
+00:52:40.000 --> 00:52:45.070
+The purpose of this is to show you how to build an edge, how to collect data,
+
+813
+00:52:45.070 --> 00:52:48.000
+how to read data, how to make changes.
+
+814
+00:52:48.000 --> 00:52:51.690
+Right? Because the reality is, this is a model that I've been working on for
+
+815
+00:52:51.690 --> 00:52:53.000
+five years, pretty much.
+
+816
+00:52:53.000 --> 00:52:57.000
+I've refined it over the years. So I already know that it's 80% optimized,
+
+817
+00:52:57.000 --> 00:53:01.000
+which is what I've already said, you know, the 80/20 rule.
+
+818
+00:53:01.000 --> 00:53:03.000
+I already know that it's 80% optimized.
+
+819
+00:53:03.000 --> 00:53:07.960
+So this is more about, you know, there may become a time where you want to
+
+820
+00:53:07.960 --> 00:53:11.000
+build your own edge, or you've seen some things, you want to build an edge.
+
+821
+00:53:11.000 --> 00:53:16.240
+And when you're building an edge from scratch, for example, you're going to
+
+822
+00:53:16.240 --> 00:53:18.000
+need huge changes.
+
+823
+00:53:18.000 --> 00:53:20.680
+You're going to see your data and you're like, whoa, that set up really doesn't
+
+824
+00:53:20.680 --> 00:53:21.000
+work.
+
+825
+00:53:21.000 --> 00:53:26.000
+Let me remove that, right? You're going to see actual real discrepancies.
+
+826
+00:53:26.000 --> 00:53:28.780
+This is an edge that I've been working on for five years. So of course, there's
+
+827
+00:53:28.780 --> 00:53:30.000
+not that many inefficiencies.
+
+828
+00:53:30.000 --> 00:53:33.670
+It's kind of expected. I still think there's a couple, but again, it's also
+
+829
+00:53:33.670 --> 00:53:35.000
+about leverage of time.
+
+830
+00:53:35.000 --> 00:53:38.000
+You're going to spend your time trying to get very small minor inefficiencies
+
+831
+00:53:38.000 --> 00:53:42.420
+when you could spend the exact same time doing something with a far higher
+
+832
+00:53:42.420 --> 00:53:46.000
+output, like building a new edge or doing something else, right?
+
+833
+00:53:46.000 --> 00:53:49.620
+For example, I could spend my time trying to refine this edge and craft it more
+
+834
+00:53:49.620 --> 00:53:51.000
+and more blah, blah, blah.
+
+835
+00:53:51.000 --> 00:53:56.250
+Or I could build a world-class product like what I'm doing right now. This is
+
+836
+00:53:56.250 --> 00:53:59.630
+part of a world-class product that I'm building, that enables me to monetize
+
+837
+00:53:59.630 --> 00:54:02.000
+this edge and my knowledge even further, right?
+
+838
+00:54:02.000 --> 00:54:06.000
+That's a higher leverage plate than just trying to refine this inefficiency.
+
+839
+00:54:06.000 --> 00:54:10.000
+Again, that's just my two cents. That's how I see the world.
+
+840
+00:54:10.000 --> 00:54:12.000
+But yeah, hopefully you took a lot of value.
+
+841
+00:54:12.000 --> 00:54:15.000
+Really, really enjoyed creating this.
+
+842
+00:54:15.000 --> 00:54:20.000
+This is by far the most valuable program that I've ever built.
+
+843
+00:54:20.000 --> 00:54:24.150
+And I'm pretty sure you probably said a similar thing you would have ever seen
+
+844
+00:54:24.150 --> 00:54:27.000
+a program with this level of detail at it before.
+
+845
+00:54:27.000 --> 00:54:28.000
+I never have.
+
+846
+00:54:28.000 --> 00:54:31.680
+I wish I did when I was in the beginning. That's why I built this, because it's
+
+847
+00:54:31.680 --> 00:54:34.000
+everything that I wish I had to start off.
+
+848
+00:54:34.000 --> 00:54:38.950
+I would have drastically decreased my time to success, even though it was
+
+849
+00:54:38.950 --> 00:54:40.000
+pretty fast anyway.
+
+850
+00:54:40.000 --> 00:54:42.000
+But yeah, I hope you guys enjoyed.
+
+851
+00:54:42.000 --> 00:54:45.000
+Thank you for being here, and I'll see you in the next one.
+

@@ -1,0 +1,12 @@
+# SMC Engine course modules, in course order — one per line.
+# This file is the single source of truth for module ORDER. The transcript tool
+# numbers each module's folder by its position here, and the library index lists
+# modules in this order. Reorder lines to reorder the library. Blank lines and
+# lines starting with # are ignored. Match is by slug (case/space-insensitive),
+# so "The Master Key" and "the-master-key" are the same module.
+Start Here
+SMC Engine Training
+Risk Management
+The Master Key
+My Full Trading Strategy
+The Inner Edge

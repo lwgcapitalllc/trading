@@ -1,0 +1,1706 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:03.280
+okay ladies gents let's take a look at market structure so first things first
+
+2
+00:00:03.280 --> 00:00:09.310
+what i'll do is kind of remove everything that isn't structure so we'll remove
+
+3
+00:00:09.310 --> 00:00:09.600
+sessions
+
+4
+00:00:09.600 --> 00:00:17.920
+we'll remove liquidity that's already removed we'll remove all the blocks
+
+5
+00:00:17.920 --> 00:00:21.760
+remove feathery gaps so inside the indicator in general we have structure we
+
+6
+00:00:21.760 --> 00:00:22.560
+have sessions
+
+7
+00:00:22.560 --> 00:00:28.590
+we have some customizable features we have the dashboard i'll actually keep
+
+8
+00:00:28.590 --> 00:00:29.280
+that on there
+
+9
+00:00:30.560 --> 00:00:32.640
+we have
+
+10
+00:00:32.640 --> 00:00:39.910
+liquidity order blocks and feathery gaps we have again some customization so we
+
+11
+00:00:39.910 --> 00:00:40.320
+'re
+
+12
+00:00:40.320 --> 00:00:44.740
+going to be diving into structure so this is what it would look like if you had
+
+13
+00:00:44.740 --> 00:00:46.000
+only the structure
+
+14
+00:00:46.000 --> 00:00:54.880
+selected you'll notice there are many highs lows internal highs internal lows
+
+15
+00:00:54.880 --> 00:00:55.600
+break
+
+16
+00:00:55.600 --> 00:00:55.780
+changes of character whatever it is but we're going to go through each thing
+
+17
+00:00:55.780 --> 00:00:59.920
+individually
+
+18
+00:00:59.920 --> 00:01:03.760
+so you can open up your indicator and the first thing and the most important
+
+19
+00:01:03.760 --> 00:01:04.320
+thing that i want to
+
+20
+00:01:04.320 --> 00:01:08.760
+talk about is swing structure so we're going to remove for now internal
+
+21
+00:01:08.760 --> 00:01:10.400
+structure because to be
+
+22
+00:01:10.400 --> 00:01:14.350
+quite frank with you internal structure isn't something that i need as an
+
+23
+00:01:14.350 --> 00:01:15.440
+indicator it's not
+
+24
+00:01:15.440 --> 00:01:19.550
+something that i really use to be totally honest with you but it is something
+
+25
+00:01:19.550 --> 00:01:20.400
+that helps other
+
+26
+00:01:20.400 --> 00:01:24.160
+people as i've noticed and i will still talk about it and at the end i'll also
+
+27
+00:01:24.160 --> 00:01:24.960
+walk through
+
+28
+00:01:24.960 --> 00:01:28.430
+my personal settings as i told you but for now we'll just look at swing
+
+29
+00:01:28.430 --> 00:01:29.680
+structure so we have
+
+30
+00:01:29.680 --> 00:01:36.160
+show swing structure we have the breaker structure labels the changer character
+
+31
+00:01:36.160 --> 00:01:37.200
+labels the swing
+
+32
+00:01:37.200 --> 00:01:44.700
+point labels we'll actually remove the swing point of labels so those are the
+
+33
+00:01:44.700 --> 00:01:46.080
+higher highs
+
+34
+00:01:46.080 --> 00:01:51.720
+i don't need them swing level lines we definitely want to see those and unconf
+
+35
+00:01:51.720 --> 00:01:52.560
+irmed levels those
+
+36
+00:01:52.560 --> 00:01:57.800
+are also important so if you just have just those things selected what you will
+
+37
+00:01:57.800 --> 00:01:59.120
+see in here is
+
+38
+00:01:59.840 --> 00:02:08.430
+your actual trend your actual structure now why this is important first and
+
+39
+00:02:08.430 --> 00:02:09.680
+foremost
+
+40
+00:02:09.680 --> 00:02:14.910
+this is built specifically on a set of rules that i have personally developed
+
+41
+00:02:14.910 --> 00:02:15.120
+myself
+
+42
+00:02:15.120 --> 00:02:19.720
+over a extended period of time the big question that comes with something like
+
+43
+00:02:19.720 --> 00:02:20.880
+market structure
+
+44
+00:02:20.880 --> 00:02:24.950
+is how do you make it objective and repeatable and rule-based which is
+
+45
+00:02:24.950 --> 00:02:26.560
+objectively repeatable
+
+46
+00:02:26.560 --> 00:02:31.200
+so many people get market structure wrong such a powerful concept and yet so
+
+47
+00:02:31.200 --> 00:02:32.320
+few people actually
+
+48
+00:02:32.320 --> 00:02:38.860
+get it right and the market and the industry is flooded with indicators on
+
+49
+00:02:38.860 --> 00:02:40.560
+market structure
+
+50
+00:02:40.560 --> 00:02:46.880
+all i have to do is type market structure and you will see probably thousands
+
+51
+00:02:46.880 --> 00:02:48.320
+of market
+
+52
+00:02:48.320 --> 00:02:53.960
+structure indicators so why is ours different why is it not just the same why
+
+53
+00:02:53.960 --> 00:02:54.480
+don't i just
+
+54
+00:02:54.480 --> 00:03:00.570
+use somebody else's and the answer to that let's say i turn this indicator on
+
+55
+00:03:00.570 --> 00:03:01.360
+right here
+
+56
+00:03:01.360 --> 00:03:08.720
+the answer to that is quite simple if we turn mine off this is the type of
+
+57
+00:03:08.720 --> 00:03:12.480
+market structure indicators that are out there on the market
+
+58
+00:03:14.080 --> 00:03:21.060
+indicators that simply put make absolutely no sense whatsoever this indicator
+
+59
+00:03:21.060 --> 00:03:21.600
+here
+
+60
+00:03:21.600 --> 00:03:28.580
+makes absolutely no sense whatsoever i mean this is a market structure break
+
+61
+00:03:28.580 --> 00:03:29.040
+what does that
+
+62
+00:03:29.040 --> 00:03:33.370
+even mean how is it a market structure break when there is a high and low in
+
+63
+00:03:33.370 --> 00:03:35.920
+here what constitutes
+
+64
+00:03:35.920 --> 00:03:39.220
+a marketer break okay well why is this a market structure break why isn't this
+
+65
+00:03:39.220 --> 00:03:39.840
+a market structure
+
+66
+00:03:39.840 --> 00:03:45.280
+break then why why is this not a marketer break why is this a marketer break
+
+67
+00:03:45.280 --> 00:03:45.840
+and this isn't
+
+68
+00:03:45.840 --> 00:03:51.150
+why is this a marketer break why is this not one why is this not one why is
+
+69
+00:03:51.150 --> 00:03:52.160
+this not one
+
+70
+00:03:52.160 --> 00:03:59.360
+these are the swing points it makes no sense and that's what you'll find with
+
+71
+00:03:59.360 --> 00:04:01.440
+probably every
+
+72
+00:04:01.440 --> 00:04:04.230
+market structure indicator you'll find out there let's take a look at this
+
+73
+00:04:04.230 --> 00:04:04.560
+person's
+
+74
+00:04:06.240 --> 00:04:11.480
+these are the most common ones so now we'll remove yours and we'll look at this
+
+75
+00:04:11.480 --> 00:04:11.520
+guys
+
+76
+00:04:11.520 --> 00:04:18.240
+so again another indicator okay break a structure change of character how in
+
+77
+00:04:18.240 --> 00:04:18.960
+the world is that a
+
+78
+00:04:18.960 --> 00:04:24.190
+change of character and then that's a change of character and so what you'll
+
+79
+00:04:24.190 --> 00:04:25.360
+quickly find and
+
+80
+00:04:25.360 --> 00:04:29.470
+unfortunately we're talking about indicators that thousands of people are using
+
+81
+00:04:29.470 --> 00:04:30.320
+that is completely
+
+82
+00:04:30.320 --> 00:04:33.970
+ruining their trading and the main reason for that is because these indicators
+
+83
+00:04:33.970 --> 00:04:36.160
+are simply built by
+
+84
+00:04:36.160 --> 00:04:42.190
+non traders who want to sell a product and hey that's fine each to their own
+
+85
+00:04:42.190 --> 00:04:43.280
+but as i said at
+
+86
+00:04:43.280 --> 00:04:48.460
+the beginning this is an indicator i've built for myself for my own trading it
+
+87
+00:04:48.460 --> 00:04:50.240
+was only agreed upon
+
+88
+00:04:50.240 --> 00:04:54.040
+to share it with you guys when thinking it through i've been using this
+
+89
+00:04:54.040 --> 00:04:55.200
+indicator before it was
+
+90
+00:04:55.200 --> 00:05:03.430
+published to you guys because it helps my analysis and so what's different it
+
+91
+00:05:03.430 --> 00:05:04.800
+actually has rules
+
+92
+00:05:04.800 --> 00:05:08.480
+in place it doesn't just randomly break highs and lows that give you some
+
+93
+00:05:08.480 --> 00:05:10.080
+theoretical change of
+
+94
+00:05:10.080 --> 00:05:13.150
+character that simply make no sense that will just lead you astray you are
+
+95
+00:05:13.150 --> 00:05:14.320
+better off just flipping
+
+96
+00:05:14.320 --> 00:05:19.040
+a coin genuinely you would be better off flipping up coin if it lands on tails
+
+97
+00:05:19.040 --> 00:05:20.080
+my bias is bearish if
+
+98
+00:05:20.080 --> 00:05:22.870
+it lands on heads my bias is bullish and trading based off of that you'd
+
+99
+00:05:22.870 --> 00:05:24.080
+probably put more accurate
+
+100
+00:05:24.720 --> 00:05:28.070
+that's not even an exaggeration like that's genuine because it's just
+
+101
+00:05:28.070 --> 00:05:28.640
+probabilities
+
+102
+00:05:28.640 --> 00:05:33.880
+those types of indicators they aren't built by traders for traders they're just
+
+103
+00:05:33.880 --> 00:05:33.920
+not
+
+104
+00:05:33.920 --> 00:05:37.600
+no one is using that and if they are they are immensely unprofitable i'll tell
+
+105
+00:05:37.600 --> 00:05:38.240
+you that for free
+
+106
+00:05:38.240 --> 00:05:44.720
+and so this indicator is my indicator that's built by myself for myself now why
+
+107
+00:05:44.720 --> 00:05:45.280
+why have an
+
+108
+00:05:45.280 --> 00:05:50.460
+indicator why do i decide to use one why don't i just do it myself the time
+
+109
+00:05:50.460 --> 00:05:51.840
+involved and the
+
+110
+00:05:51.840 --> 00:05:56.020
+potential for human error and so i developed a very specific set of repeatable
+
+111
+00:05:56.020 --> 00:05:56.560
+rules that
+
+112
+00:05:56.560 --> 00:06:00.070
+define whether something is a high a low a break a not break a change of
+
+113
+00:06:00.070 --> 00:06:01.680
+character etc etc
+
+114
+00:06:01.680 --> 00:06:07.760
+and those rules have helped me and countless of my students make multiple
+
+115
+00:06:07.760 --> 00:06:08.560
+hundreds of thousands
+
+116
+00:06:08.560 --> 00:06:14.780
+of dollars in verified trading profits because the indicator itself isn't the
+
+117
+00:06:14.780 --> 00:06:15.840
+edge the edge is
+
+118
+00:06:15.840 --> 00:06:23.570
+the edge the indicator is simply just a way to automate the analysis of the
+
+119
+00:06:23.570 --> 00:06:25.280
+edge which is primarily
+
+120
+00:06:25.280 --> 00:06:29.280
+structural based and so every break of structure you see in here every change
+
+121
+00:06:29.280 --> 00:06:30.320
+of character you see
+
+122
+00:06:30.320 --> 00:06:35.000
+in here follows a specific set of rules that i personally use that that has
+
+123
+00:06:35.000 --> 00:06:37.280
+data built into them
+
+124
+00:06:37.280 --> 00:06:43.920
+that i use that my edge is built upon and this is being years of development so
+
+125
+00:06:43.920 --> 00:06:44.480
+we'll get into
+
+126
+00:06:44.480 --> 00:06:47.950
+the kind of nitty-gritty details as you can see in here if you're looking at
+
+127
+00:06:47.950 --> 00:06:48.880
+this price action
+
+128
+00:06:48.880 --> 00:06:57.060
+you i mean undoubtedly there are an infinite number of swing points on this
+
+129
+00:06:57.060 --> 00:06:58.160
+price chart
+
+130
+00:06:58.160 --> 00:07:02.960
+but not all swing points are the same right why are not all of these levels
+
+131
+00:07:02.960 --> 00:07:07.600
+highs and all of these levels levels because it follows a specific set of rules
+
+132
+00:07:07.600 --> 00:07:08.240
+as i've explained
+
+133
+00:07:08.240 --> 00:07:12.950
+to you that i have tested over years and years of data they're very high degree
+
+134
+00:07:12.950 --> 00:07:13.760
+of accuracy
+
+135
+00:07:15.120 --> 00:07:17.520
+and so most swing points are completely inefficient
+
+136
+00:07:17.520 --> 00:07:23.550
+and the question for you is just if you trust me then you trust me and this
+
+137
+00:07:23.550 --> 00:07:25.200
+indicator literally
+
+138
+00:07:25.200 --> 00:07:30.130
+tells you your swing points period if i was to turn this off for example and
+
+139
+00:07:30.130 --> 00:07:31.440
+you looked at this
+
+140
+00:07:31.440 --> 00:07:36.730
+naked chart first and foremost where do you start i don't know maybe you look
+
+141
+00:07:36.730 --> 00:07:38.000
+at this and maybe
+
+142
+00:07:38.000 --> 00:07:44.030
+you say okay high low high high low low low low low low low low low low low
+
+143
+00:07:44.030 --> 00:07:45.520
+maybe that would be
+
+144
+00:07:45.520 --> 00:07:54.710
+your structure right because how else would you define your structure you'd be
+
+145
+00:07:54.710 --> 00:07:56.000
+looking at all
+
+146
+00:07:56.000 --> 00:07:59.660
+these different swing points the problem is is none of them are repeatable they
+
+147
+00:07:59.660 --> 00:08:00.240
+'re all just
+
+148
+00:08:00.240 --> 00:08:04.420
+trying to find some external high and then the doubt comes in because then you
+
+149
+00:08:04.420 --> 00:08:06.160
+start asking yourself
+
+150
+00:08:06.160 --> 00:08:11.670
+well what makes this a high and this not a high what makes this a high and this
+
+151
+00:08:11.670 --> 00:08:12.480
+not a high
+
+152
+00:08:12.480 --> 00:08:16.300
+what makes this a high and this not a high is this a high is this a high well
+
+153
+00:08:16.300 --> 00:08:17.280
+isn't this a high what
+
+154
+00:08:17.280 --> 00:08:21.570
+about this one you don't know because you don't have a repeatable rule in place
+
+155
+00:08:21.570 --> 00:08:22.560
+that tells you
+
+156
+00:08:22.560 --> 00:08:26.560
+what is it high and what is it a lot and so you're just left with ultimately
+
+157
+00:08:26.560 --> 00:08:27.840
+random analysis
+
+158
+00:08:27.840 --> 00:08:31.330
+that's what it ends up being in the end in the end it just ends up random
+
+159
+00:08:31.330 --> 00:08:31.920
+analysis
+
+160
+00:08:31.920 --> 00:08:35.280
+and there are too many times that you get stuck in a situation where you don't
+
+161
+00:08:35.280 --> 00:08:36.160
+know if something is
+
+162
+00:08:36.160 --> 00:08:41.390
+actually a break of structure or actually a change of character right for
+
+163
+00:08:41.390 --> 00:08:42.160
+example let's
+
+164
+00:08:42.160 --> 00:08:46.960
+just look here if you were to look at this here right this is a high this is a
+
+165
+00:08:46.960 --> 00:08:48.080
+low we break structure
+
+166
+00:08:48.080 --> 00:08:53.660
+would you then not conclude that okay well then that's a break of structure
+
+167
+00:08:53.660 --> 00:08:54.240
+then that's a change
+
+168
+00:08:54.240 --> 00:08:58.160
+of character so now we're bearish now we're looking for shorts and obviously
+
+169
+00:08:58.160 --> 00:08:59.840
+that wouldn't play out
+
+170
+00:08:59.840 --> 00:09:02.480
+because this entire time we were actually bullish
+
+171
+00:09:02.480 --> 00:09:10.220
+and then you may conclude all this is a low maybe this is the high maybe we're
+
+172
+00:09:10.220 --> 00:09:10.720
+bullish maybe
+
+173
+00:09:10.720 --> 00:09:15.700
+you're along in here no we changed character down here so we were actually bear
+
+174
+00:09:15.700 --> 00:09:16.480
+ish so this is your
+
+175
+00:09:16.480 --> 00:09:23.460
+entry point this is your area to look for shorts okay well aren't they breaks
+
+176
+00:09:23.460 --> 00:09:24.960
+of structure no they're
+
+177
+00:09:24.960 --> 00:09:30.580
+not plain and simply they're not and then we change character and so now the
+
+178
+00:09:30.580 --> 00:09:31.360
+play is longs
+
+179
+00:09:31.360 --> 00:09:36.040
+and then we break structure and we change character again and so again in many
+
+180
+00:09:36.040 --> 00:09:36.560
+cases
+
+181
+00:09:36.560 --> 00:09:41.920
+maybe you look at this and you go okay swing low swing high change of character
+
+182
+00:09:41.920 --> 00:09:42.480
+we're bullish
+
+183
+00:09:42.480 --> 00:09:49.210
+okay we're bullish i'll try to long from here fail long from here fail long
+
+184
+00:09:49.210 --> 00:09:50.080
+from here
+
+185
+00:09:50.720 --> 00:09:57.840
+great fail long from here great fail this entire time the play was always
+
+186
+00:09:57.840 --> 00:09:58.240
+shorts
+
+187
+00:09:58.240 --> 00:10:06.480
+shorts shorts break of structure shorts again still the high in here price
+
+188
+00:10:06.480 --> 00:10:07.280
+comes up
+
+189
+00:10:07.280 --> 00:10:11.750
+these are entry these are entry triggers to go short and then we change
+
+190
+00:10:11.750 --> 00:10:12.400
+character
+
+191
+00:10:12.400 --> 00:10:17.050
+no longer is the bias short the bias is no long called change character we pull
+
+192
+00:10:17.050 --> 00:10:17.280
+back
+
+193
+00:10:17.920 --> 00:10:26.960
+fair value gap longs pull back longs this becomes the high and again
+
+194
+00:10:26.960 --> 00:10:33.680
+the rules tell you this is the high not this one now what happens to a lot of
+
+195
+00:10:33.680 --> 00:10:33.920
+people
+
+196
+00:10:33.920 --> 00:10:40.400
+a lot of people see this random low in here and they define it as they change a
+
+197
+00:10:40.400 --> 00:10:40.800
+character
+
+198
+00:10:40.800 --> 00:10:45.600
+so what would you be doing well simply put that's a change of character i'm
+
+199
+00:10:45.600 --> 00:10:46.000
+going to short
+
+200
+00:10:46.000 --> 00:10:51.510
+the market fail short the market fail when this entire time the real move was
+
+201
+00:10:51.510 --> 00:10:52.080
+after we break
+
+202
+00:10:52.080 --> 00:10:56.310
+structure into fair value up we're longing from here that's how you get caught
+
+203
+00:10:56.310 --> 00:10:57.120
+on the wrong side
+
+204
+00:10:57.120 --> 00:11:00.960
+of the market and then many people would be looking at the same thing again let
+
+205
+00:11:00.960 --> 00:11:02.800
+'s say price
+
+206
+00:11:02.800 --> 00:11:09.910
+pushes up to the highs right we're bullish so i should long in here fail
+
+207
+00:11:09.910 --> 00:11:11.680
+longing here fail
+
+208
+00:11:13.200 --> 00:11:17.440
+the change of character comes here the shorts are here
+
+209
+00:11:17.440 --> 00:11:26.040
+we break structure shorts are here we break structure shorts are here we break
+
+210
+00:11:26.040 --> 00:11:26.720
+structure
+
+211
+00:11:26.720 --> 00:11:31.980
+yes you would try and short and you would lose which is completely a part of
+
+212
+00:11:31.980 --> 00:11:32.720
+the game
+
+213
+00:11:32.720 --> 00:11:36.400
+obviously that is the whole point of an edge and edge is nothing more than a
+
+214
+00:11:36.400 --> 00:11:37.040
+statistical
+
+215
+00:11:37.680 --> 00:11:43.710
+expectancy over a period of time period but the only way you can develop an
+
+216
+00:11:43.710 --> 00:11:44.800
+edge and statistical
+
+217
+00:11:44.800 --> 00:11:50.830
+expectancy is by having concrete rules that give you expectancy expectancy can
+
+218
+00:11:50.830 --> 00:11:52.160
+only be created out
+
+219
+00:11:52.160 --> 00:11:57.340
+of predictability something must be predictable for it to be long-term
+
+220
+00:11:57.340 --> 00:11:59.920
+profitable if it's random
+
+221
+00:11:59.920 --> 00:12:04.400
+random highs random lows no logic you can't ever create expectancy you will
+
+222
+00:12:04.400 --> 00:12:05.440
+just get literally
+
+223
+00:12:05.440 --> 00:12:14.560
+random sheer random results and so we change character the pullback is the long
+
+224
+00:12:14.560 --> 00:12:15.280
+we break
+
+225
+00:12:15.280 --> 00:12:18.800
+structure the pullbacks let's go along we break structure the pullbacks let's
+
+226
+00:12:18.800 --> 00:12:19.280
+go along
+
+227
+00:12:19.280 --> 00:12:26.080
+we break structure which leads us up to where we are right now which is a
+
+228
+00:12:26.080 --> 00:12:27.040
+pretty large range and
+
+229
+00:12:27.040 --> 00:12:32.560
+sometimes it happens this is the low we wick the low not a change of character
+
+230
+00:12:32.560 --> 00:12:33.680
+we wick the low
+
+231
+00:12:33.680 --> 00:12:36.560
+and it's very simple some people would look at this they'd see that it wicks
+
+232
+00:12:36.560 --> 00:12:37.520
+the lows down here
+
+233
+00:12:37.520 --> 00:12:42.760
+and they would put it as a change of character right but that's pattern
+
+234
+00:12:42.760 --> 00:12:44.400
+recognition that's not
+
+235
+00:12:44.400 --> 00:12:49.640
+logic at all if something wicks below a level it simply means that price did
+
+236
+00:12:49.640 --> 00:12:50.800
+not accept lower
+
+237
+00:12:50.800 --> 00:12:57.470
+prices it's plain and simple it's just it's just logic it's common sense if i'm
+
+238
+00:12:57.470 --> 00:12:58.400
+the only buyer in
+
+239
+00:12:58.400 --> 00:13:03.280
+the market and you're the only seller in the market and i simply do not accept
+
+240
+00:13:03.280 --> 00:13:04.800
+to buy at your price
+
+241
+00:13:04.800 --> 00:13:09.170
+i either cannot buy or you cannot sell period if price does not accept lower
+
+242
+00:13:09.170 --> 00:13:10.720
+than a level right
+
+243
+00:13:10.720 --> 00:13:16.000
+price does not accept lower it's not going to go lower and you can see in here
+
+244
+00:13:16.000 --> 00:13:16.800
+we reach the level
+
+245
+00:13:16.800 --> 00:13:23.360
+we wick below failed we'll try again failed we'll try again failed we'll try
+
+246
+00:13:23.360 --> 00:13:24.160
+again failed
+
+247
+00:13:26.080 --> 00:13:29.360
+how could you categorize that as a change and try to then short the market
+
+248
+00:13:29.360 --> 00:13:38.400
+wrong wrong wrong right price was always expected to trade higher from the back
+
+249
+00:13:38.400 --> 00:13:38.800
+of this
+
+250
+00:13:38.800 --> 00:13:43.030
+that's why a wick should never be a breakup structure or change of character
+
+251
+00:13:43.030 --> 00:13:44.480
+because a wick is literal
+
+252
+00:13:44.480 --> 00:13:51.680
+literally implying a failed acceptance and so that structure structure is
+
+253
+00:13:51.680 --> 00:13:52.480
+simply the external
+
+254
+00:13:52.480 --> 00:13:57.040
+swing points of price coded on specific set of rules that will tell you where
+
+255
+00:13:57.040 --> 00:13:57.600
+is a low where
+
+256
+00:13:57.600 --> 00:14:03.770
+is a high and what the bias is this little thing in here tells you gives you
+
+257
+00:14:03.770 --> 00:14:04.960
+the idea of it on
+
+258
+00:14:04.960 --> 00:14:09.190
+more per time frames so you can see here the h4 is bearish the m15 is bullish
+
+259
+00:14:09.190 --> 00:14:10.400
+the m1 is bearish
+
+260
+00:14:10.400 --> 00:14:13.200
+now maybe you don't use a 15 minute time frame maybe use a 30 minute time frame
+
+261
+00:14:13.200 --> 00:14:19.840
+doesn't change anything maybe use a one hour time frame doesn't change anything
+
+262
+00:14:21.200 --> 00:14:27.200
+right it's the same rules on different time frames consistency you can see in
+
+263
+00:14:27.200 --> 00:14:27.760
+here in the hourly
+
+264
+00:14:27.760 --> 00:14:34.060
+time frame you can see break structure change character change character change
+
+265
+00:14:34.060 --> 00:14:34.400
+character
+
+266
+00:14:34.400 --> 00:14:43.120
+now this is a textbook manipulation reversal model when price barely breaks and
+
+267
+00:14:43.120 --> 00:14:43.680
+then barely
+
+268
+00:14:43.680 --> 00:14:48.490
+breaks and then rallies through and then rallies through this is an indication
+
+269
+00:14:48.490 --> 00:14:48.720
+of
+
+270
+00:14:48.720 --> 00:14:53.380
+liquidation the good thing about this is the that's why we use multiple time
+
+271
+00:14:53.380 --> 00:14:54.000
+frame analysis
+
+272
+00:14:54.000 --> 00:15:00.080
+because again plain and simple let's say we were to we change character in here
+
+273
+00:15:00.080 --> 00:15:00.640
+right so now we
+
+274
+00:15:00.640 --> 00:15:04.640
+bearish there's your bearish waterblock for example and we absolutely rally
+
+275
+00:15:04.640 --> 00:15:05.760
+straight through price
+
+276
+00:15:05.760 --> 00:15:12.240
+do you think there is any way to get short in this move unless you're a fool of
+
+277
+00:15:12.240 --> 00:15:12.640
+course there
+
+278
+00:15:12.640 --> 00:15:16.160
+isn't there's no lower time frame confirmation price run straight through it
+
+279
+00:15:16.160 --> 00:15:17.680
+and then we change
+
+280
+00:15:17.680 --> 00:15:22.640
+character now we're bullish do you think there is any way on a lower time frame
+
+281
+00:15:22.640 --> 00:15:23.360
+for you to get along
+
+282
+00:15:23.360 --> 00:15:26.390
+in this area now of course price just run straight through it that's the
+
+283
+00:15:26.390 --> 00:15:27.760
+important of multi time frame
+
+284
+00:15:27.760 --> 00:15:33.120
+analysis so we might be bearish on the one hour and when price gets to a level
+
+285
+00:15:33.120 --> 00:15:34.240
+we drop to a lower
+
+286
+00:15:34.240 --> 00:15:41.210
+time frame to look for structure on that time frame to tell us that yes price
+
+287
+00:15:41.210 --> 00:15:42.400
+does accept this
+
+288
+00:15:43.520 --> 00:15:47.440
+and now we will continue lower and so when we just run through and run through
+
+289
+00:15:47.440 --> 00:15:48.480
+you won't see it now
+
+290
+00:15:48.480 --> 00:15:52.850
+take this for example we change character we come back up what happens here
+
+291
+00:15:52.850 --> 00:15:55.200
+acceptance price reaches
+
+292
+00:15:55.200 --> 00:16:02.370
+a level right bearish we reach a level we begin accepting the price we shift as
+
+293
+00:16:02.370 --> 00:16:03.680
+you can see the
+
+294
+00:16:03.680 --> 00:16:12.960
+highs to the lows the entry is right here and we continue to the low and so
+
+295
+00:16:12.960 --> 00:16:14.880
+that's all that is
+
+296
+00:16:14.880 --> 00:16:18.350
+this is always the same thing again here you can see some people maybe look at
+
+297
+00:16:18.350 --> 00:16:18.880
+okay price
+
+298
+00:16:18.880 --> 00:16:24.910
+shift bearish here we got stopped out okay no problem price is now shifted
+
+299
+00:16:24.910 --> 00:16:27.680
+bullish right we got
+
+300
+00:16:27.680 --> 00:16:34.120
+in oh great it worked we're bullish again oh wait no now we're bearish oh wait
+
+301
+00:16:34.120 --> 00:16:34.880
+now we're bullish
+
+302
+00:16:34.880 --> 00:16:39.750
+again you missed all the moves the real move was here this was the high these
+
+303
+00:16:39.750 --> 00:16:40.800
+are your longs
+
+304
+00:16:40.800 --> 00:16:46.040
+right you probably got out of here you'd wait after this reversal you don't
+
+305
+00:16:46.040 --> 00:16:46.640
+then try and change
+
+306
+00:16:46.640 --> 00:16:53.400
+anything price breaks we're bullish you still go long in here this just becomes
+
+307
+00:16:53.400 --> 00:16:54.640
+a liquidation
+
+308
+00:16:54.640 --> 00:17:00.690
+this is your move out these are your levels and you're gone because price was
+
+309
+00:17:00.690 --> 00:17:01.840
+always bullish
+
+310
+00:17:01.840 --> 00:17:07.110
+and then this is a textbook reversal we've been bullish for a very long period
+
+311
+00:17:07.110 --> 00:17:07.680
+of time
+
+312
+00:17:07.680 --> 00:17:12.130
+when price gets into price goes from expansion which is what this is to
+
+313
+00:17:12.130 --> 00:17:14.000
+contraction which usually
+
+314
+00:17:14.000 --> 00:17:19.350
+looks something like this typical reversal indication and then we get the sell
+
+315
+00:17:19.350 --> 00:17:19.680
+now
+
+316
+00:17:20.480 --> 00:17:24.720
+which is usually a lot more smoother simply again we break structure in here
+
+317
+00:17:24.720 --> 00:17:30.160
+sell opportunities price comes back what do we get acceptance
+
+318
+00:17:30.160 --> 00:17:42.560
+confirmation acceptance confirmation pull back and go to target
+
+319
+00:17:42.560 --> 00:17:46.880
+so that's what you'll find what this structure indicator will do for you
+
+320
+00:17:48.160 --> 00:17:54.190
+it will basically give you your bias and realistically how i use it it's i
+
+321
+00:17:54.190 --> 00:17:55.200
+trade in direction of the
+
+322
+00:17:55.200 --> 00:18:01.440
+bias 98 percent of the time if structure is bullish like this we have a break
+
+323
+00:18:01.440 --> 00:18:02.560
+of structure
+
+324
+00:18:02.560 --> 00:18:08.880
+we have a low down here i'm trying to be a buyer after we get some type of
+
+325
+00:18:08.880 --> 00:18:09.600
+lower time frame
+
+326
+00:18:09.600 --> 00:18:14.480
+confirmation and i just want to play the bullish continuation that i know
+
+327
+00:18:15.680 --> 00:18:20.080
+are probable to continue in fact let's just take a look at this let's go to the
+
+328
+00:18:20.080 --> 00:18:20.880
+one hour time frame
+
+329
+00:18:20.880 --> 00:18:29.200
+all right let's map out let's say 10 levels so what we're seeing here is we
+
+330
+00:18:29.200 --> 00:18:30.080
+have a high
+
+331
+00:18:30.080 --> 00:18:33.360
+to a low and we have a right change of character sorry so now we're bullish
+
+332
+00:18:33.360 --> 00:18:40.430
+so the first one from high to low gets a continuation so we're bullish and we
+
+333
+00:18:40.430 --> 00:18:40.880
+continue
+
+334
+00:18:41.600 --> 00:18:52.080
+there's one for pro trend we break structure we pull back and we continue
+
+335
+00:18:52.080 --> 00:19:00.240
+there's another one pro trend right we pull back we get a break of structure in
+
+336
+00:19:00.240 --> 00:19:00.800
+the direction of
+
+337
+00:19:00.800 --> 00:19:04.980
+the trend pro trend then we get a change of character and we don't follow
+
+338
+00:19:04.980 --> 00:19:05.600
+through
+
+339
+00:19:05.600 --> 00:19:08.080
+then we get another change of character we don't follow through
+
+340
+00:19:08.720 --> 00:19:13.920
+so that's two in favor for price takes a level and doesn't continue however
+
+341
+00:19:13.920 --> 00:19:18.480
+this is where you must be contextually aware in understanding what's happening
+
+342
+00:19:18.480 --> 00:19:18.800
+here
+
+343
+00:19:18.800 --> 00:19:23.200
+when price runs through aggressively like this and like this there was no way
+
+344
+00:19:23.200 --> 00:19:23.600
+you was ever
+
+345
+00:19:23.600 --> 00:19:27.280
+going to trade in direction of that change of character price changed character
+
+346
+00:19:27.280 --> 00:19:27.840
+to bearish
+
+347
+00:19:27.840 --> 00:19:32.400
+you was never going to be able to gain alongs there in shorts price just would
+
+348
+00:19:32.400 --> 00:19:32.800
+not give you
+
+349
+00:19:32.800 --> 00:19:36.890
+an opportunity so those are the incidences where you will find reversals no
+
+350
+00:19:36.890 --> 00:19:37.440
+problem
+
+351
+00:19:37.440 --> 00:19:43.920
+we change character with bearish does price continue yes this is just the most
+
+352
+00:19:43.920 --> 00:19:44.400
+recent price
+
+353
+00:19:44.400 --> 00:19:52.330
+action okay we're bearish do we pull back and continue yes we pull back and
+
+354
+00:19:52.330 --> 00:19:53.360
+continue okay
+
+355
+00:19:53.920 --> 00:20:00.090
+another one now we're bearish do we pull back and continue no we change
+
+356
+00:20:00.090 --> 00:20:00.560
+character
+
+357
+00:20:00.560 --> 00:20:08.160
+and by the way even still the change of character itself is the reversal period
+
+358
+00:20:08.160 --> 00:20:15.040
+we change character we become bullish do we pull back do we continue yes
+
+359
+00:20:15.040 --> 00:20:22.080
+so it's just probabilities we can see here there are a total of nine instances
+
+360
+00:20:22.080 --> 00:20:23.520
+where
+
+361
+00:20:23.520 --> 00:20:32.560
+structure was broken six out of nine which is more than 60 percent around 63 66
+
+362
+00:20:32.560 --> 00:20:32.880
+percent
+
+363
+00:20:32.880 --> 00:20:40.080
+of the time after price broke structure in a certain direction it continued in
+
+364
+00:20:40.080 --> 00:20:40.640
+that direction
+
+365
+00:20:41.200 --> 00:20:48.000
+giving you potential tradable setups and even the situations where it didn't
+
+366
+00:20:48.000 --> 00:20:48.480
+play out
+
+367
+00:20:48.480 --> 00:20:56.470
+still untradeable situations that's what this market structure indicator is
+
+368
+00:20:56.470 --> 00:20:57.360
+here to do for you
+
+369
+00:20:57.360 --> 00:21:04.630
+that's its job and when you understand the statistical probability you
+
+370
+00:21:04.630 --> 00:21:05.040
+understand that
+
+371
+00:21:05.040 --> 00:21:09.810
+there's a 70 percent chance that we will probably get a continuation or that
+
+372
+00:21:09.810 --> 00:21:10.560
+price will probably
+
+373
+00:21:10.560 --> 00:21:15.680
+shift from here well now that's something that you can build a trader model of
+
+374
+00:21:15.680 --> 00:21:19.280
+that's something that you can build expectancy of because it's the same set of
+
+375
+00:21:19.280 --> 00:21:19.840
+rules the same
+
+376
+00:21:19.840 --> 00:21:28.430
+principles that are re-occurring not random left to chance models that you
+
+377
+00:21:28.430 --> 00:21:29.280
+choose a high
+
+378
+00:21:29.280 --> 00:21:31.930
+and you choose a low you're not randomly choosing a high and randomly choosing
+
+379
+00:21:31.930 --> 00:21:32.240
+a low
+
+380
+00:21:32.240 --> 00:21:36.800
+if you were to do something like that it would look something more along the
+
+381
+00:21:36.800 --> 00:21:37.600
+lines of this
+
+382
+00:21:39.040 --> 00:21:46.800
+so you would choose a low cool you would choose a high cool so we break the low
+
+383
+00:21:46.800 --> 00:21:47.520
+and we come up with
+
+384
+00:21:47.520 --> 00:21:53.550
+a high and then we continue and then for example after that we would come put
+
+385
+00:21:53.550 --> 00:21:55.760
+in a low in here
+
+386
+00:21:55.760 --> 00:22:01.790
+we would put in a low in here we would put in a high in here these are just
+
+387
+00:22:01.790 --> 00:22:02.720
+random highs and lows
+
+388
+00:22:04.240 --> 00:22:09.600
+and then price would break the highs give you a reversal break the lows give
+
+389
+00:22:09.600 --> 00:22:10.720
+you a reversal
+
+390
+00:22:10.720 --> 00:22:16.280
+break the highs then you'd have a new high a new low we'd break the highs we'd
+
+391
+00:22:16.280 --> 00:22:17.040
+break the lows
+
+392
+00:22:17.040 --> 00:22:21.710
+you'd have a new high and new low you'd break the lows so you won't be able to
+
+393
+00:22:21.710 --> 00:22:22.880
+trade the highs
+
+394
+00:22:22.880 --> 00:22:28.110
+this is all you could do just to identify the swings far less accurate not
+
+395
+00:22:28.110 --> 00:22:29.600
+repeatable
+
+396
+00:22:29.600 --> 00:22:34.780
+so it's completely left down to random chance and everything just becomes messy
+
+397
+00:22:34.780 --> 00:22:36.640
+and most of these
+
+398
+00:22:36.640 --> 00:22:40.930
+even these micro moves they're untradable for the most part because there's not
+
+399
+00:22:40.930 --> 00:22:41.600
+enough substance
+
+400
+00:22:41.600 --> 00:22:44.850
+in their distances or their pullbacks and so that's the swing structure that's
+
+401
+00:22:44.850 --> 00:22:46.080
+predominantly
+
+402
+00:22:46.080 --> 00:22:51.320
+what's important in this structure indicator you can also use the internal and
+
+403
+00:22:51.320 --> 00:22:51.600
+this will
+
+404
+00:22:51.600 --> 00:22:54.890
+basically show you the internal structure and like i said this isn't something
+
+405
+00:22:54.890 --> 00:22:55.600
+that i personally
+
+406
+00:22:55.600 --> 00:23:00.960
+keep toggled i'll be honest with you but for some people it's you know valuable
+
+407
+00:23:00.960 --> 00:23:03.440
+and so if we were for its load
+
+408
+00:23:03.440 --> 00:23:10.160
+you can see something in here for example like we have a it's still based on
+
+409
+00:23:10.160 --> 00:23:11.840
+repeatable principles
+
+410
+00:23:11.840 --> 00:23:16.300
+as well we have a low any high everything inside is internal so we put in a low
+
+411
+00:23:16.300 --> 00:23:18.000
+we put any high
+
+412
+00:23:18.000 --> 00:23:23.280
+we get an internal break of structure so bearish internally until we eventually
+
+413
+00:23:23.280 --> 00:23:23.920
+reach the target
+
+414
+00:23:24.880 --> 00:23:28.800
+but we're still bullish so we still say bullish then we have an internal change
+
+415
+00:23:28.800 --> 00:23:29.760
+of character
+
+416
+00:23:29.760 --> 00:23:33.990
+and so for some people maybe that's their confirmation in an external price leg
+
+417
+00:23:33.990 --> 00:23:34.880
+that you're
+
+418
+00:23:34.880 --> 00:23:38.820
+bullish you wait for internal price movement i prefer lower time frame
+
+419
+00:23:38.820 --> 00:23:40.160
+confirmation as opposed
+
+420
+00:23:40.160 --> 00:23:46.190
+to internal but hey whatever kind of floats your boat you know i added it in
+
+421
+00:23:46.190 --> 00:23:46.720
+there because
+
+422
+00:23:46.720 --> 00:23:50.100
+it's still something that people find valuable it's still something that can
+
+423
+00:23:50.100 --> 00:23:51.760
+help you to be honest
+
+424
+00:23:51.760 --> 00:23:57.120
+with you but to be frank not something that i personally use but play around
+
+425
+00:23:57.120 --> 00:23:57.760
+with it see if
+
+426
+00:23:57.760 --> 00:24:00.320
+it's something that you like so now we'll look at sessions
+
