@@ -520,20 +520,10 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_intraday_ohlc_instrument
                 ON instrument_intraday_ohlc(instrument, timeframe);
-
-            CREATE TABLE IF NOT EXISTS job_queue (
-                queue_id    TEXT PRIMARY KEY,
-                job_type    TEXT NOT NULL,
-                payload     TEXT NOT NULL,
-                status      TEXT NOT NULL DEFAULT 'pending',
-                position    INTEGER NOT NULL,
-                created_at  INTEGER NOT NULL,
-                started_at  INTEGER,
-                finished_at INTEGER,
-                error       TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_queue_status ON job_queue(status, position);
         """)
+
+        # Drop the retired job_queue table left on older DBs (queue feature removed).
+        conn.execute("DROP TABLE IF EXISTS job_queue")
 
         # Converge display names on existing DBs (fresh seeds already use these).
         for _rid, _rname in _RULESET_DISPLAY_NAMES.items():
@@ -2369,92 +2359,3 @@ def insert_run_stress_test_child(data: dict) -> None:
             data["stress_test_id"], data.get("walk_forward_window_id"),
             data.get("runner", "ninjatrader"),
         ))
-
-
-# ── Job queue ──────────────────────────────────────────────────────────────────
-
-def queue_enqueue(queue_id: str, job_type: str, payload: dict) -> dict:
-    """Append a job to the end of the queue. Returns the new row."""
-    now = int(time.time())
-    with _connect() as conn:
-        max_pos = conn.execute(
-            "SELECT COALESCE(MAX(position), 0) FROM job_queue WHERE status IN ('pending', 'running')"
-        ).fetchone()[0]
-        pos = max_pos + 1
-        conn.execute(
-            "INSERT INTO job_queue (queue_id, job_type, payload, status, position, created_at) "
-            "VALUES (?, ?, ?, 'pending', ?, ?)",
-            (queue_id, job_type, json.dumps(payload), pos, now),
-        )
-    return queue_get(queue_id)  # type: ignore[return-value]
-
-
-def queue_list() -> list[dict]:
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM job_queue ORDER BY position ASC"
-        ).fetchall()
-    return [_parse_json_fields(dict(r), ["payload"]) for r in rows]
-
-
-def queue_get(queue_id: str) -> Optional[dict]:
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM job_queue WHERE queue_id = ?", (queue_id,)
-        ).fetchone()
-    if not row:
-        return None
-    return _parse_json_fields(dict(row), ["payload"])
-
-
-def queue_next_pending() -> Optional[dict]:
-    """Return the lowest-position pending job, or None if the queue is empty."""
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM job_queue WHERE status = 'pending' ORDER BY position ASC LIMIT 1"
-        ).fetchone()
-    if not row:
-        return None
-    return _parse_json_fields(dict(row), ["payload"])
-
-
-def queue_set_running(queue_id: str) -> None:
-    with _connect() as conn:
-        conn.execute(
-            "UPDATE job_queue SET status = 'running', started_at = ? WHERE queue_id = ?",
-            (int(time.time()), queue_id),
-        )
-
-
-def queue_set_done(queue_id: str) -> None:
-    with _connect() as conn:
-        conn.execute(
-            "UPDATE job_queue SET status = 'done', finished_at = ? WHERE queue_id = ?",
-            (int(time.time()), queue_id),
-        )
-
-
-def queue_set_failed(queue_id: str, error: str) -> None:
-    with _connect() as conn:
-        conn.execute(
-            "UPDATE job_queue SET status = 'failed', finished_at = ?, error = ? WHERE queue_id = ?",
-            (int(time.time()), error, queue_id),
-        )
-
-
-def queue_delete(queue_id: str) -> bool:
-    """Remove a job. Only pending jobs can be deleted. Returns True if deleted."""
-    with _connect() as conn:
-        n = conn.execute(
-            "DELETE FROM job_queue WHERE queue_id = ? AND status = 'pending'",
-            (queue_id,),
-        ).rowcount
-    return n > 0
-
-
-def queue_has_running() -> bool:
-    with _connect() as conn:
-        n = conn.execute(
-            "SELECT COUNT(*) FROM job_queue WHERE status = 'running'"
-        ).fetchone()[0]
-    return n > 0

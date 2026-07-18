@@ -869,16 +869,26 @@ export interface CompileJobStatus {
   completed_at: number | null
 }
 
-// ── Job queue (Step 6) ────────────────────────────────────────────────────────
+// ── News calendar (live tab) ──────────────────────────────────────────────────
 
-export interface QueueItem {
-  queue_id: string
-  job_type: 'optimization' | 'stress_test'
-  payload: Record<string, unknown>
-  status: 'pending' | 'running' | 'done' | 'failed'
-  position: number
-  created_at: number
-  started_at: number | null
-  finished_at: number | null
-  error: string | null
+export type Impact = 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE'
+export type Surprise = 'beat' | 'miss' | 'inline'
+
+export interface CalendarEvent {
+  timestamp_ms: number       // event time, UTC epoch ms
+  currency: string           // ISO currency the event moves (USD/EUR/…)
+  impact: Impact
+  title: string
+  category: string | null    // grouping label (Labor, Prices, …) for the categories dropdown
+  forecast: string | null
+  previous: string | null
+  actual: string | null
+  surprise: Surprise | null  // backend's beat/miss call once actual is out
+}
+
+export interface CalendarResponse {
+  events: CalendarEvent[]
+  server_now_ms: number      // drive the "now" line + countdown off server time, not the browser clock
+  from_ms: number
+  to_ms: number
 }

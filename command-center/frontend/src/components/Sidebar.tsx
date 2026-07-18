@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Radar, Bot, BookOpen, ClipboardList, BarChart2, Sliders,
-  Activity, ListOrdered, Settings, ChevronsLeft, ChevronsRight,
+  LayoutDashboard, Radar, Bot, CalendarDays, BookOpen, ClipboardList, BarChart2, Sliders,
+  Activity, Settings, ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { SystemHealthStrip } from '@/components/SystemHealthStrip'
@@ -13,6 +13,7 @@ const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[
   { to: '/',            label: 'Overview',    icon: LayoutDashboard, live: true  },
   { to: '/smart-money', label: 'Smart Money', icon: Radar,           live: true  },
   { to: '/bots',        label: 'Bots',        icon: Bot,             live: true  },
+  { to: '/calendar',    label: 'Calendar',    icon: CalendarDays,    live: true  },
 ]
 
 const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
@@ -21,7 +22,6 @@ const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[]
   { to: '/backtests',     label: 'Backtests',     icon: BarChart2,     live: true  },
   { to: '/optimizations', label: 'Optimizations', icon: Sliders,     live: true  },
   { to: '/stress-tests',  label: 'Stress Tests',  icon: Activity,    live: true  },
-  { to: '/queue',         label: 'Queue',         icon: ListOrdered, live: true  },
 ]
 
 // Pulsing dot meaning "a job is running under this item". Anchored to the icon's top-right

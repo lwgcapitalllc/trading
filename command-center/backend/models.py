@@ -932,3 +932,36 @@ class CompileJobStatus(BaseModel):
     warnings: list[str] = []
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
+
+
+# ── News calendar (live tab) ────────────────────────────────────────────────────
+
+class CalendarEvent(BaseModel):
+    """One economic-calendar row for the live News Calendar tab. `forecast`/`previous`/`actual` are
+    the source's display strings (e.g. "2.6%", "$125.62"), null until published. `impact` is the
+    Impact enum name (HIGH/MEDIUM/LOW/NONE). `category` is TradingView's grouping label (Labor,
+    Prices, …) for the categories dropdown. `surprise` is the backend's beat/miss call once actual
+    is out: "beat" | "miss" | "inline" | null (null = not enough data / not released) — the frontend
+    colours the actual green/red from it, so the currency-lower-is-better polarity stays server-side.
+
+    The endpoint returns the WHOLE week unfiltered; the frontend does the currency/impact/category/day
+    filtering client-side (a week is only a few hundred rows), so filter changes are instant and the
+    day-summary counts stay consistent with the list."""
+    timestamp_ms: int          # event time, UTC epoch ms
+    currency: str              # ISO currency the event moves (USD/EUR/…)
+    impact: str                # "HIGH" | "MEDIUM" | "LOW" | "NONE"
+    title: str
+    category: Optional[str] = None
+    forecast: Optional[str] = None
+    previous: Optional[str] = None
+    actual: Optional[str] = None
+    surprise: Optional[str] = None   # "beat" | "miss" | "inline" | None
+
+
+class CalendarResponse(BaseModel):
+    """The /calendar payload: the window's events plus server time (so the frontend "now" line and
+    countdown run off the server clock, not a possibly-wrong browser clock)."""
+    events: list[CalendarEvent] = []
+    server_now_ms: int
+    from_ms: int
+    to_ms: int

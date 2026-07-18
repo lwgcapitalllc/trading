@@ -5,6 +5,7 @@ import { TopBar } from '@/components/TopBar'
 import { Overview } from '@/pages/Overview'
 import { SmartMoney } from '@/pages/SmartMoney'
 import { Bots } from '@/pages/Bots'
+import { Calendar } from '@/pages/Calendar'
 import { Strategies } from '@/pages/Strategies'
 import { Rulesets } from '@/pages/Rulesets'
 import { Backtests } from '@/pages/Backtests'
@@ -16,7 +17,6 @@ import { OptimizationDetail } from '@/pages/OptimizationDetail'
 import { TuningWorkbench } from '@/pages/TuningWorkbench'
 import { StressTests } from '@/pages/StressTests'
 import StressTestDetail from '@/pages/StressTestDetail'
-import { Queue } from '@/pages/Queue'
 import { Settings } from '@/pages/Settings'
 
 export default function App() {
@@ -38,6 +38,7 @@ export default function App() {
               <Route path="/smart-money"              element={<SmartMoney />} />
               <Route path="/smart-money/:runId/candidates/:id" element={<SmartMoney />} />
               <Route path="/bots"                     element={<Bots />} />
+              <Route path="/calendar"                 element={<Calendar />} />
               <Route path="/strategies"                             element={<Strategies />} />
               <Route path="/rulesets"                               element={<Rulesets />} />
               <Route path="/backtests"                              element={<Backtests />} />
@@ -50,7 +51,6 @@ export default function App() {
               <Route path="/backtests/stress-tests/:stressTestId" element={<StressTestDetail />} />
               <Route path="/stress-tests"                       element={<StressTests />} />
               <Route path="/stress-tests/:stressTestId"         element={<StressTestDetail />} />
-              <Route path="/queue"                              element={<Queue />} />
               <Route path="/settings"                 element={<Settings />} />
             </Routes>
           </main>

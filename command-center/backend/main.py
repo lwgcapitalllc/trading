@@ -1,14 +1,12 @@
-import asyncio
 import threading
 import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import smart_money, bots, backtests, stress_tests, settings, strategies, rulesets, system, sweeps, optimizations, strategy_files, queue
+from routers import smart_money, bots, backtests, stress_tests, settings, strategies, rulesets, system, sweeps, optimizations, strategy_files, calendar
 from services import lab_db, runner_dispatch, mt5_agent_client
 from services.backtest_runner import read_progress, clear_progress
-from services import queue_runner
 
 app = FastAPI(title="LWG Capital Command Center API", version="1.0.0")
 
@@ -31,7 +29,7 @@ app.include_router(strategies.router)
 app.include_router(rulesets.router)
 app.include_router(system.router)
 app.include_router(strategy_files.router)
-app.include_router(queue.router)
+app.include_router(calendar.router)
 
 
 def _auto_start_agents():
@@ -70,7 +68,6 @@ async def startup():
         import logging
         logging.getLogger(__name__).warning("Reset %d stale backtest/optimization run(s) from previous run", m)
     threading.Thread(target=_auto_start_agents, daemon=True).start()
-    asyncio.create_task(queue_runner.run_queue_loop())
 
 
 @app.get("/health")

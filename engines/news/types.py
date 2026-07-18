@@ -72,6 +72,8 @@ class NewsEvent:
     previous: Optional[str] = None
     actual: Optional[str] = None
     is_holiday: bool = False  # a bank holiday (all-day, market thin/closed) — gated whole-day, not ±window
+    category: Optional[str] = None  # display-only grouping label (e.g. "Labor", "Prices"); a source
+    #                                 sets it if it has one, else None. The engine never reads it.
 
     def key(self) -> Tuple[int, str, str]:
         """Stable identity for de-duping across fetches: (time, currency, title). A later fetch of
@@ -88,6 +90,7 @@ class NewsEvent:
             "previous": self.previous,
             "actual": self.actual,
             "is_holiday": self.is_holiday,
+            "category": self.category,
         }
 
     @classmethod
@@ -101,6 +104,7 @@ class NewsEvent:
             previous=d.get("previous"),
             actual=d.get("actual"),
             is_holiday=bool(d.get("is_holiday", False)),
+            category=d.get("category"),
         )
 
 

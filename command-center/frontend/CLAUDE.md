@@ -2,7 +2,7 @@
 
 **Purpose:** React + Vite + TypeScript app (`:5173`) — the UI for the command center; all server state via TanStack Query against the FastAPI backend.
 **Scope:** This covers frontend hook/component/page conventions, the theme system, and routing. It does NOT cover the backend (see `../backend/CLAUDE.md`) or `algos/`/`smart-money/`.
-**Status:** Live — all pages shipped (Overview, Smart Money, Bots, Strategies, Rulesets, Backtests lab, Optimizations, Tuning workbench, Stress Tests, Queue, Settings).
+**Status:** Live — all pages shipped (Overview, Smart Money, Bots, Strategies, Rulesets, Backtests lab, Optimizations, Tuning workbench, Stress Tests, Settings).
 **Last reviewed:** 2026-06-12
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
@@ -41,7 +41,7 @@ frontend/src/
 │   ├── useBots.ts
 │   ├── useSmartMoney.ts
 │   ├── useStressTests.ts    stress tests — useStressTests, useStressTest, useRunStressTest, useDeleteStressTest, useRunningStressLock, useStrategyBestGrades
-│   └── useQueue.ts          job queue — useQueue, useEnqueueOptimization, useEnqueueStressTest, useDeleteQueueItem
+│   └── useCalendar.ts       live News Calendar — useCalendar(fromMs, toMs) → GET /calendar?from&to, 45s poll, placeholderData keeps the prev week while paging
 ├── components/              reusable, dumb components
 │   ├── Sidebar.tsx
 │   ├── TopBar.tsx
@@ -93,7 +93,7 @@ frontend/src/
     ├── TuningWorkbench.tsx   /backtests/runs/:runId/tune — param editor + iteration leaderboard + regime overlay
     ├── StressTests.tsx       stress test list — grade badge, prob breach/pass
     ├── StressTestDetail.tsx  stress test detail — grade card + tabbed Monte Carlo / Walk-Forward / Sensitivity workspace
-    ├── Queue.tsx             job queue list — position, status, timestamps
+    ├── Calendar.tsx          live News Calendar (WORKSPACE) — Forex-Factory-style economic calendar. Day-summary strip (Mon–Sun counts, click-to-filter, Today), "now" line + live countdown off the server clock, actual/forecast/previous with beat/miss colour. Filters (currency chips w/ country flags, independent High/Medium/Low impact toggles, category dropdown) + week offset + selected day all live in the URL. Fetches the whole week; filters CLIENT-SIDE so changes are instant and the strip counts stay in sync
     └── Settings.tsx
 ```
 
@@ -366,7 +366,7 @@ Full implementation detail (exact card set, fixed-height math, per-metric fallba
 | Stress test market lock | ✅ Live | One futures + one forex test at a time; button disabled when blocked |
 | Running stress indicators | ✅ Live | Pulsing chips/banners on Runs, BacktestDetail, OptimizationDetail |
 | Strategy best grades | ✅ Live | Best Grade column on Strategies tab; links to the grading test |
-| Queue page (Speed Step 6) | ✅ Live | `/queue` route + sidebar item; position, label, status, timestamps, delete |
+| News Calendar (WORKSPACE) | ✅ Live | `pages/Calendar.tsx` (`/calendar`) — Forex-Factory-style economic calendar off the free TradingView feed. Day-summary strip, server-clock "now" line + countdown, actual/forecast/previous w/ beat-miss colour, currency chips (country flags), independent High/Medium/Low toggles, category dropdown. Whole week fetched, filtered client-side; all filter/week/day state in the URL |
 | Settings | ✅ Live | Config read/write; `nt8_agent_tunnel` + `mt5_agent_tunnel` |
 | Sidebar health strip | ✅ Live | 4 dots: API, SSH, NT8 (3-state), MT5 Agent |
 | Price-chart panel | ✅ Live | Lazy klinecharts candlestick panel on BacktestDetail (`components/ChartPanel/`, own CLAUDE.md): TF switch, sessions, trades, generic overlays, indicators, day breaks. Real spec via `useChartSpec`; overlays/indicators (strategy structure) still pending (Step 7b) |

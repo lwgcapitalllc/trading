@@ -45,14 +45,17 @@ engines/news/
 ├── sources/
 │   ├── base.py                 ← CalendarSource interface + FetchResult (events + covered ranges)
 │   ├── forex_factory.py        ← ForexFactorySource: free faireconomy JSON feed (current week, no dep)
-│   └── forex_factory_history.py← ForexFactoryHistorySource: scrapes the FF WEBSITE for any month
-│                                  (past Cloudflare via curl_cffi) — historical backfill
+│   ├── forex_factory_history.py← ForexFactoryHistorySource: scrapes the FF WEBSITE for any month
+│   │                              (past Cloudflare via curl_cffi) — historical backfill
+│   └── tradingview.py          ← TradingViewSource: free TradingView calendar API, arbitrary date
+│                                  window + `actual` results + a `category` label — powers the live tab
 ├── data/           ← the cache (events.json) — GIT-IGNORED (fetched data, not source)
 ├── tools/
 │   ├── refresh.py      ← live pipeline: pull the free weekly feed + upsert the cache (schedule it)
 │   ├── backfill.py     ← history: fetch missing months from the website into the cache (curl_cffi)
 │   └── fetch_smoke.py  ← manual live-feed sanity check (stands in for the Pine parity harness)
-├── tests/          ← test_engine.py, test_store.py, test_forex_factory.py, test_history_parser.py
+├── tests/          ← test_engine.py, test_store.py, test_forex_factory.py, test_history_parser.py,
+│                     test_tradingview.py (offline parser tests on a saved sample)
 ├── __init__.py     ← public API
 └── CLAUDE.md       ← this file
 ```
@@ -69,16 +72,24 @@ package dir puts `engines/news/` on `sys.path[0]`, and `news/types.py` would the
    `NewsEvent` list + a bot-owned `NewsPolicy` (+ optional covered ranges) and answers each bar.
    Deterministic and testable, and a **backtest feeds it a historical list exactly as live feeds it a
    fetched one** — that is the whole reason fetch is kept out of it.
-2. **Sources — `sources/` (`CalendarSource`).** Two implementations feed the same cache; both
+2. **Sources — `sources/` (`CalendarSource`).** Three implementations feed the same shape; all
    normalise to plain `NewsEvent`s (UTC epoch-ms, currency code, `Impact` enum):
    - `ForexFactorySource` — the **free faireconomy JSON feed**, current week only, **zero deps**.
-     For live/forward gating (`tools/refresh.py`).
+     For live/forward gating (`tools/refresh.py`). Carries bank holidays (the blackout filter needs
+     them); no per-event `actual`.
    - `ForexFactoryHistorySource` — scrapes the **FF website** for any month (parses the embedded
      `calendarComponentStates`, using each event's `dateline` = UTC unix seconds). The site is
      behind Cloudflare, so it needs `curl_cffi` (browser impersonation) — **lazy-imported and
      isolated here**, so the core + live feed stay pure-stdlib. For historical backfill
      (`tools/backfill.py`).
-   Swap in a paid provider later as a third file; nothing downstream changes.
+   - `TradingViewSource` — the **free TradingView calendar API** (`economic-calendar.tradingview.com`,
+     needs an `Origin` header, no key). Unlike FF it takes an **arbitrary date window**, carries the
+     released **`actual`** result, and tags each row with a **`category`** (Labor, Prices, …). No bank
+     holidays. `fetch()` = current week (the parameterless interface); `fetch_window(from,to)` = the
+     range the live tab asks for. **The live News Calendar tab's source** — it does NOT write the
+     shared cache (`store.py`), it's read fresh per request. Parser is pure/stdlib (`parse_result`),
+     tested offline on a saved sample.
+   Swap in a paid provider later as a fourth file; nothing downstream changes.
 3. **Cache — `EventStore` (store.py).** A local JSON cache of everything fetched, de-duped by
    `(time, currency, title)`, tracking the date ranges covered. Historical events are static, so a
    month is fetched **once** and read forever; `backfill.py` skips months already cached. The
@@ -172,6 +183,13 @@ rebuilt).
 
 **First consumer — the command-center backtest lab** (2026-07-05). `command-center/backend/services/news_filter.py` composes this engine (imports it by bare name; **not** a second impl) to tag a finished run's trades as `in_news` / `in_holiday` for the BacktestDetail "News & Holiday Filter" card — the lab runs backtests raw, then removes news/holiday trades as a post-run view. Lab policy: high-impact USD, window **15 min before / 30 min after**, **holidays always excluded** (the bot/UI still owns the policy — the engine only reports). Consumer detail lives in `command-center/backend/CLAUDE.md` ("News filter (post-run)"). **Only NT8 (UTC) is wired; the MT5/forex path is TODO #3** — it needs its own `entry_ms` capture and non-UTC broker-clock handling before this engine can veto forex backtests.
 
+**Second consumer — the command-center live News Calendar tab** (2026-07-17).
+`command-center/backend/services/calendar_service.py` calls `TradingViewSource.fetch_window()` for a
+live, read-only calendar view (a whole week fetched, filtered client-side). It is a **separate path
+from the blackout filter**: it does NOT touch `store.py` / the shared cache, and its source is
+TradingView (not FF) because the tab needs `actual` results + categories, not holidays. Consumer
+detail: `command-center/backend/CLAUDE.md` ("Live calendar tab").
+
 ---
 
 ## Do
@@ -201,10 +219,15 @@ rebuilt).
 
 ## Validation (no Pine parity — tests + live checks)
 
-**Unit tests — GREEN:** `PYTHONPATH=engines python3 -m pytest engines/news/tests/ -q` (29 tests:
+**Unit tests — GREEN:** `PYTHONPATH=engines python3 -m pytest engines/news/tests/ -q` (35 tests:
 blackout window inclusivity + merging, the three coverage modes, next/active/last phases, edges,
-policy filtering, whole-day bank-holiday blackout + the `block_holidays`/currency switches, the two
-parsers on saved samples, and the cache store).
+policy filtering, whole-day bank-holiday blackout + the `block_holidays`/currency switches, the three
+parsers on saved samples — incl. the TradingView `actual`/unit/category parse — and the cache store).
+
+**`NewsEvent.category`** (added 2026-07-17) is a display-only grouping label (Labor, Prices, …) a
+source sets if it has one, else `None`. It rides through `to_dict`/`from_dict` but the engine core
+**never reads it** — same character as the display-string `forecast`/`actual` fields. It exists for
+the live tab's category dropdown; the FF sources leave it `None`.
 
 **Live checks — GREEN (2026-07-05):**
 - `python3 engines/news/tools/fetch_smoke.py` reached the free feed (74 events this week), parsed the
