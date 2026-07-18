@@ -40,6 +40,19 @@ optimizer grid — that is the "manual %" for this strategy, and the SIZING MODE
 because there is nothing for it to decide. Pair a run with the **Unconstrained (No Limits)**
 ruleset to see the raw behaviour with no halts and no drawdown floor cutting a day short.
 
+## The portfolio-account seam (2026-07-17)
+
+`Execution.__init__` takes an injected `account` (default `SoloAccount`) and a `leg` name — the seam
+for stacking this bot with others on ONE shared account (`backtest/portfolio/`). What changed:
+`self.equity` now reads `account.balance` (the shared balance the bot sizes against); the leg-local
+`_equity_realized` is kept for R. The fill gate in `_open_position` calls `account.request_fill`,
+which **scales** the bot's own desired qty to the shared room (solo → full size); partial exits and
+costs `book_pnl` onto the shared balance; the full close frees the reservation; each bar reports the
+live stop via `update_stop`. **Parity is unchanged:** a `SoloAccount` grants full size always, so
+`compare_strategy.py` stays exit 0 — re-verified on the 20,076-bar export after the seam landed. The
+account scales the bot's qty rather than recomputing it precisely so parity holds (the bot sizes off
+the limit price at placement, not the fill). Do not route qty computation through the account.
+
 ## What it is (one paragraph)
 
 A counter-trend reversal that fades exhaustion at HTF liquidity. Three-stage A+ sequence: **Arm**

@@ -92,6 +92,35 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   of each demo campaign then ~monthly, and any time trades look off vs the chart. Needs the MT5 agent
   + tunnel; the alignment math is unit-tested offline. Full rationale + cadence: `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
 
+## Portfolio stacking (`backtest/portfolio/`)
+
+Stack several strategies onto ONE shared account — one balance, one live risk budget the legs
+compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, offline, app-agnostic
+(same discipline as `output.py`). Phase 0 + Phase 1 built 2026-07-17; lab wiring (Phase 2+) is future.
+
+- **`combine.py`** — the cheap SCREEN. `combine_runs(legs)` adds up finished STANDALONE runs (their
+  stored `daily_pnl`): combined curve, daily-return correlation, diversification drawdown, per-leg
+  contribution. Idealized UPPER BOUND — it assumes every leg trades a full account and never gets
+  blocked, so it OVERSTATES the stack. A candidate screen, not the demo result.
+- **`account.py`** — `PortfolioAccount` (the broker): one balance; open trades RESERVE risk measured
+  to their CURRENT stop (→ 0 at breakeven, freeing room); cap = % of live balance; `request_fill`
+  **scales the leg's own desired qty** to the room (shrink-to-floor) — it never re-derives the qty,
+  which is what preserves strategy parity (the bot sized off the limit price at placement).
+  `request_fills` batch-splits same-bar ties by weight. `book_pnl`/`close_position` (or `on_close`),
+  `update_stop`, a `contention` log stamped with `now`. **`SoloAccount`** = one leg, no cap, always
+  full size = standalone behaviour, and the parity anchor.
+- **`clock.py`** — `merge_streams`: k-way merge of the legs' bar streams into time-ordered `Tick`s,
+  co-timed bars grouped, stable leg order.
+- **`simulator.py`** — `simulate(legs, account)`: steps the legs on the clock, orders
+  **holders-before-flat legs** each tick so freed room is released before entries (release-before-entry
+  without splitting the strategy's monolithic step), returns combined + per-leg trades + contention log.
+  **v1 limit:** two flat legs filling on the EXACT same tick are first-come, not split-by-weight (the
+  weighted split needs the strategy step split into decide/commit; `request_fills` is ready for it).
+
+The strategy seam lives in the strategy (`mpc_sos_fade/execution.py` takes an injected `account`,
+default `SoloAccount`) — see that package's CLAUDE.md. `compare_strategy.py` staying exit 0 with the
+SoloAccount is the gate that the seam didn't move standalone behaviour.
+
 ## Data layer (A0) — how it works
 
 `backtest.data.BarSource.load(symbol, timeframe, start_date, end_date)` is the one entry point:

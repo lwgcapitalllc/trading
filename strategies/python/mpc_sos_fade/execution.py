@@ -39,6 +39,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from backtest import fills as _fills
+from backtest.portfolio.account import SoloAccount
 
 
 @dataclass
@@ -140,9 +141,15 @@ class Execution:
     """
 
     def __init__(self, config, initial_capital: float = 1_000_000.0,
-                 resolver=None, profile=None, bar_ms: int = 300_000) -> None:
+                 resolver=None, profile=None, bar_ms: int = 300_000,
+                 account=None, leg: str = "strat") -> None:
         self._cfg = config
-        self._equity_realized = initial_capital  # equity = initial + closed pnl
+        self._equity_realized = initial_capital  # LEG-LOCAL ledger — R is measured against this
+        # The shared account owns the budget and sizes entries. Default = a SoloAccount (no cap,
+        # always grants full size), so a bot run alone is byte-identical to before the seam existed;
+        # a shared PortfolioAccount contends this leg against the others. See backtest/portfolio/.
+        self._account = account if account is not None else SoloAccount(balance=initial_capital)
+        self._leg = leg
         # A2: None ⇒ bar mode (the Pine guess, no costs). See the class docstring.
         self._resolver = resolver
         self._profile = profile
@@ -188,7 +195,9 @@ class Execution:
     # ── public equity read ──
     @property
     def equity(self) -> float:
-        return self._equity_realized
+        # The SHARED balance the leg sizes against. In solo mode this equals the leg-local
+        # ledger; in a portfolio it is the account all legs share, so every leg scales together.
+        return self._account.balance
 
     # ── main step ───────────────────────────────────────────────────────────────
     def step(self, sig, seq) -> Decision:
@@ -218,6 +227,9 @@ class Execution:
         if self._pos_dir != 0:
             self._advance_stage(sig)
             dec.stop = self._current_stop()
+            # tell the account this leg's live stop + remaining size, so its reservation is
+            # current for any other leg sizing on the next tick (drops to 0 once stop = BE).
+            self._account.update_stop(self._leg, dec.stop, self._qty - self._filled_qty)
             # optional force-close on an opposite SOS (Pine execCloseOppSOS)
             if self._cfg.exec_close_opp_sos and (
                 (self._pos_dir > 0 and sig.bear_sos) or (self._pos_dir < 0 and sig.bull_sos)
@@ -342,8 +354,8 @@ class Execution:
             fill = self._resolver.first_touch(
                 self._bar_of(sig), {"entry": level}, buying=buying)
             if fill is not None:
-                self._open_position(pend, fill.price, sig, dec)
-                return True
+                if self._open_position(pend, fill.price, sig, dec):
+                    return True
         return False
 
     def _try_entry_fill_bar(self, sig, dec) -> bool:
@@ -358,17 +370,29 @@ class Execution:
                 continue
             if pend.dir > 0 and sig.low <= pend.edge:
                 fill = pend.edge if sig.open > pend.edge else sig.open  # gap = better fill
-                self._open_position(pend, fill, sig, dec)
-                return True
+                if self._open_position(pend, fill, sig, dec):
+                    return True
             if pend.dir < 0 and sig.high >= pend.edge:
                 fill = pend.edge if sig.open < pend.edge else sig.open
-                self._open_position(pend, fill, sig, dec)
-                return True
+                if self._open_position(pend, fill, sig, dec):
+                    return True
         return False
 
-    def _open_position(self, pend, fill_price, sig, dec) -> None:
+    def _open_position(self, pend, fill_price, sig, dec) -> bool:
+        # The gate runs HERE, at the fill — a resting limit reserves nothing until it fills.
+        # The account scales the leg's own desired size (pend.qty) to the room; solo → full size.
+        granted = self._account.request_fill(
+            self._leg, pend.dir, fill_price, pend.sl, pend.qty, self._cfg.point_value)
+        if granted <= 0.0:
+            # refused (no room / below floor): don't open, drop this order, let the strategy
+            # re-arm next bar if the setup still holds. No traded-SOS latch is set (see below).
+            if pend.dir > 0:
+                self._pend_long = None
+            else:
+                self._pend_short = None
+            return False
         self._pos_dir = pend.dir
-        self._qty = pend.qty
+        self._qty = granted
         self._entry = fill_price
         self._entry_index = sig.index
         self._entry_ms = sig.time_ms
@@ -383,7 +407,7 @@ class Execution:
         self._stage = 0
         self._filled_qty = 0.0
         self._sos_bar_open = pend.sos_bar
-        self._risk_usd = abs(pend.qty) * abs(fill_price - pend.sl) * self._cfg.point_value
+        self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._cfg.point_value
         self._entry_equity = self._equity_realized      # R yardstick baseline
         # Costs are charged AFTER the R baseline is snapshotted, so they land inside the trade's
         # own P&L (and its R) rather than being quietly excluded from it.
@@ -399,7 +423,8 @@ class Execution:
             self._traded_sos_s = pend.sos_bar
         self._pend_long = self._pend_short = None
         dec.fills.append(Fill("entry", "Long" if pend.dir > 0 else "Short",
-                              fill_price, pend.qty, pend.dir))
+                              fill_price, granted, pend.dir))
+        return True
 
     # ── open-trade management (Phase A exits + Phase B staging) ───────────────────
     def _manage_open(self, sig, dec) -> None:
@@ -513,6 +538,7 @@ class Execution:
         d = self._pos_dir
         pnl = (price - self._entry) * d * qty * self._cfg.point_value
         self._equity_realized += pnl
+        self._account.book_pnl(self._leg, pnl)   # realize onto the shared balance as it happens
         self._charge_commission(qty)        # commission is per SIDE — each ladder leg pays
         self._filled_qty += qty
         self._exit_notional += price * qty
@@ -548,6 +574,7 @@ class Execution:
             stop_distance=abs(self._entry - self._init_stop), exit_reason=self._exit_reason,
             mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2)))
         dec.closed_r = r
+        self._account.close_position(self._leg)   # P&L already booked; free the reservation
         self._pos_dir = 0
         self._qty = 0.0
         self._filled_qty = 0.0
@@ -563,6 +590,7 @@ class Execution:
         """Book a cost against equity. `amount` is signed the way the broker books it:
         negative = charged, positive = credited (a short's gold swap is a real credit)."""
         self._equity_realized += amount
+        self._account.book_pnl(self._leg, amount)   # costs hit the shared balance too
         self._costs_usd += amount
 
     def _charge_commission(self, qty: float) -> None:
