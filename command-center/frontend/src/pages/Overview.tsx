@@ -1,14 +1,19 @@
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bot, Radar, FlaskConical, BookOpen, ClipboardList, BarChart2, Sliders, Activity, ChevronRight, Loader2 } from 'lucide-react'
+import { Bot, Radar, FlaskConical, BookOpen, ClipboardList, BarChart2, Sliders, Activity, CalendarDays, ChevronRight, Loader2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import { useBacktestRuns, useStrategies, useOptimizations, useRulesets } from '@/hooks/useLab'
 import { useStressTests } from '@/hooks/useStressTests'
+import { useCalendar } from '@/hooks/useCalendar'
+import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown } from '@/lib/calendar'
 import { StatCard } from '@/components/StatCard'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import type { BotStatus } from '@/types'
+
+const DAY_MS = 86_400_000
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -196,6 +201,21 @@ export function Overview() {
   const accountType  = snapshot?.bots[0]?.account_type ?? 'demo'
 
   const pipelineRunning = progress?.status === 'running'
+
+  // Economic calendar — a preview of what's still to come this week (whole week fetched, filtered here)
+  const calWindow = useMemo(() => {
+    const d = new Date()
+    const mondayIdx = (d.getDay() + 6) % 7
+    d.setHours(0, 0, 0, 0)
+    d.setDate(d.getDate() - mondayIdx)
+    const from = d.getTime()
+    return { from, to: from + 7 * DAY_MS }
+  }, [])
+  const { data: calendar } = useCalendar(calWindow.from, calWindow.to)
+  const calNow = calendar?.server_now_ms ?? Date.now()
+  const upcoming = (calendar?.events ?? []).filter(e => e.timestamp_ms > calNow)
+  const nextHigh = upcoming.find(e => e.impact === 'HIGH') ?? null
+  const upcomingList = upcoming.filter(e => e !== nextHigh).slice(0, 6)
 
   return (
     <div>
@@ -481,6 +501,61 @@ export function Overview() {
           </div>
         </div>
 
+      </div>
+
+      {/* ── Economic Calendar preview ─────────────────────────────────────────── */}
+      <div className="mt-[14px] bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+
+        <button
+          onClick={() => navigate('/calendar')}
+          className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
+        >
+          <div className="flex items-center gap-[8px]">
+            <CalendarDays size={14} className="text-accent" style={{ opacity: 0.85 }} />
+            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+              Economic Calendar
+            </span>
+          </div>
+          <div className="flex items-center gap-[6px] text-[11px] text-text-tertiary group-hover:text-text-secondary transition-colors">
+            <span>View calendar</span>
+            <ChevronRight size={12} />
+          </div>
+        </button>
+
+        <div className="px-[15px] py-[12px]">
+          {nextHigh && (
+            <button
+              onClick={() => navigate('/calendar')}
+              className="w-full flex items-center gap-[8px] mb-[10px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-left hover:bg-accent/10 transition-colors"
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-[0.5px] text-accent flex-shrink-0">Next high-impact</span>
+              <span className="text-base leading-none flex-shrink-0" title={nextHigh.currency}>{flagOf(nextHigh.currency)}</span>
+              <span className="text-[12px] text-text-primary truncate flex-1 min-w-0">{nextHigh.title}</span>
+              <span className="text-[11px] font-mono tabular-nums text-accent flex-shrink-0">in {fmtCountdown(nextHigh.timestamp_ms - calNow)}</span>
+            </button>
+          )}
+
+          {!calendar ? (
+            <p className="text-[12px] text-text-tertiary py-2 text-center">Loading…</p>
+          ) : upcoming.length === 0 ? (
+            <p className="text-[12px] text-text-tertiary py-2 text-center">No more events this week</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-6 gap-y-[2px]">
+              {upcomingList.map(e => (
+                <button
+                  key={e.timestamp_ms + e.currency + e.title}
+                  onClick={() => navigate('/calendar')}
+                  className="flex items-center gap-[8px] py-[5px] px-[6px] -mx-[6px] rounded-md hover:bg-bg-hover transition-colors text-left group"
+                >
+                  <span className="text-[11px] font-mono tabular-nums text-text-tertiary w-[42px] flex-shrink-0">{fmtTime(e.timestamp_ms)}</span>
+                  <span className="text-sm leading-none flex-shrink-0" title={e.currency}>{flagOf(e.currency)}</span>
+                  <span className={`inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 ${IMPACT_DOT[e.impact]}`} title={`${IMPACT_LABEL[e.impact]} impact`} />
+                  <span className="text-[12px] text-text-secondary group-hover:text-text-primary transition-colors truncate flex-1 min-w-0">{e.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

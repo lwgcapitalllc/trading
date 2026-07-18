@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { CalendarDays, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { useCalendar } from '@/hooks/useCalendar'
+import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown } from '@/lib/calendar'
 import type { CalendarEvent, Impact, Surprise } from '@/types'
 
 const DAY_MS = 86_400_000
@@ -12,26 +13,6 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 // selected = all.
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'NZD', 'CHF', 'CNY']
 const IMPACTS: Impact[] = ['HIGH', 'MEDIUM', 'LOW']
-
-// Country flag per currency (regional-indicator emoji). Shown instead of the ISO code.
-const CURRENCY_FLAG: Record<string, string> = {
-  USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', CAD: '🇨🇦',
-  AUD: '🇦🇺', NZD: '🇳🇿', CHF: '🇨🇭', CNY: '🇨🇳',
-}
-const flagOf = (currency: string) => CURRENCY_FLAG[currency] ?? currency
-
-const IMPACT_DOT: Record<Impact, string> = {
-  HIGH: 'bg-neg-text',
-  MEDIUM: 'bg-warn-text',
-  LOW: 'bg-text-tertiary',
-  NONE: 'bg-text-tertiary/50',
-}
-const IMPACT_LABEL: Record<Impact, string> = {
-  HIGH: 'High',
-  MEDIUM: 'Medium',
-  LOW: 'Low',
-  NONE: 'None',
-}
 
 // ── time helpers (all display in the browser's local timezone) ──────────────────
 
@@ -43,9 +24,6 @@ function localWeekStart(offset: number): number {
   return d.getTime()
 }
 
-const fmtTime = (ms: number) =>
-  new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-
 const fmtDay = (ms: number) =>
   new Date(ms).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })
 
@@ -54,15 +32,6 @@ const fmtWeekRange = (fromMs: number) => {
   const end = new Date(fromMs)
   end.setDate(end.getDate() + 6)
   return `${new Date(fromMs).toLocaleDateString([], opts)} – ${end.toLocaleDateString([], opts)}`
-}
-
-function fmtCountdown(deltaMs: number): string {
-  const s = Math.max(0, Math.floor(deltaMs / 1000))
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  if (h > 0) return `${h}h ${m}m`
-  if (m > 0) return `${m}m ${s % 60}s`
-  return `${s}s`
 }
 
 function actualCls(s: Surprise | null): string {
@@ -198,7 +167,8 @@ export function Calendar() {
     [allEvents],
   )
 
-  const todayIdx = weekOffset === 0 ? dayIndexOf(nowMs) : -1
+  const todayWeekdayIdx = (new Date().getDay() + 6) % 7 // 0 = Mon — today's weekday, any week
+  const todayIdx = weekOffset === 0 ? todayWeekdayIdx : -1
 
   // ── URL setters ──
   const patch = (kv: Record<string, string | null>) => {
@@ -220,7 +190,17 @@ export function Calendar() {
     patch({ imp: set.size === IMPACTS.length ? null : Array.from(set).join(',') })
   }
   const selectDay = (i: number) => patch({ day: selectedDay === i ? null : String(i) })
-  const goToday = () => patch({ week: null, day: null })
+  const goToday = () => patch({ week: null, day: String(todayWeekdayIdx) })
+
+  // Open on today: on first mount, if we're on the current week with no explicit day, select today.
+  // Runs once — deselecting today (→ whole week) afterwards sticks.
+  const didDefaultDay = useRef(false)
+  useEffect(() => {
+    if (didDefaultDay.current) return
+    didDefaultDay.current = true
+    if (weekOffset === 0 && sp.get('day') === null) patch({ day: String(todayWeekdayIdx) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   let flatIdx = -1
 
@@ -239,7 +219,7 @@ export function Calendar() {
             className="p-1.5 rounded text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors" title="Next week">
             <ChevronRight size={16} />
           </button>
-          {(weekOffset !== 0 || selectedDay !== null) && (
+          {(weekOffset !== 0 || selectedDay !== todayIdx) && (
             <button onClick={goToday}
               className="ml-1 text-[11px] px-2 py-1 rounded border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors">
               Today

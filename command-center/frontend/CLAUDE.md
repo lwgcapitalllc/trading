@@ -93,7 +93,7 @@ frontend/src/
     ├── TuningWorkbench.tsx   /backtests/runs/:runId/tune — param editor + iteration leaderboard + regime overlay
     ├── StressTests.tsx       stress test list — grade badge, prob breach/pass
     ├── StressTestDetail.tsx  stress test detail — grade card + tabbed Monte Carlo / Walk-Forward / Sensitivity workspace
-    ├── Calendar.tsx          live News Calendar (WORKSPACE) — Forex-Factory-style economic calendar. Day-summary strip (Mon–Sun counts, click-to-filter, Today), "now" line + live countdown off the server clock, actual/forecast/previous with beat/miss colour. Filters (currency chips w/ country flags, independent High/Medium/Low impact toggles, category dropdown) + week offset + selected day all live in the URL. Fetches the whole week; filters CLIENT-SIDE so changes are instant and the strip counts stay in sync
+    ├── Calendar.tsx          live News Calendar (WORKSPACE) — Forex-Factory-style economic calendar. **Opens on today** (first mount selects today's day when on the current week with no explicit day; deselecting → whole week sticks). Day-summary strip (Mon–Sun counts, click-to-filter, Today button), "now" line + live countdown off the server clock, actual/forecast/previous with beat/miss colour. Filters (currency chips w/ country flags, independent High/Medium/Low impact toggles, category dropdown) + week offset + selected day all live in the URL. Fetches the whole week; filters CLIENT-SIDE so changes are instant and the strip counts stay in sync. Shared display helpers (flag map, impact colours, time/countdown formatters) live in `lib/calendar.ts` — reused by the Overview preview
     └── Settings.tsx
 ```
 
@@ -366,7 +366,8 @@ Full implementation detail (exact card set, fixed-height math, per-metric fallba
 | Stress test market lock | ✅ Live | One futures + one forex test at a time; button disabled when blocked |
 | Running stress indicators | ✅ Live | Pulsing chips/banners on Runs, BacktestDetail, OptimizationDetail |
 | Strategy best grades | ✅ Live | Best Grade column on Strategies tab; links to the grading test |
-| News Calendar (WORKSPACE) | ✅ Live | `pages/Calendar.tsx` (`/calendar`) — Forex-Factory-style economic calendar off the free TradingView feed. Day-summary strip, server-clock "now" line + countdown, actual/forecast/previous w/ beat-miss colour, currency chips (country flags), independent High/Medium/Low toggles, category dropdown. Whole week fetched, filtered client-side; all filter/week/day state in the URL |
+| News Calendar (WORKSPACE) | ✅ Live | `pages/Calendar.tsx` (`/calendar`) — Forex-Factory-style economic calendar off the free TradingView feed. Opens on today; day-summary strip, server-clock "now" line + countdown, actual/forecast/previous w/ beat-miss colour, currency chips (country flags), independent High/Medium/Low toggles, category dropdown. Whole week fetched, filtered client-side; all filter/week/day state in the URL. Shared helpers in `lib/calendar.ts` |
+| Overview calendar preview | ✅ Live | `pages/Overview.tsx` — full-width "Economic Calendar" card below the module grid: next high-impact callout (flag + countdown) + a 2-col list of the next upcoming events this week; whole card navigates to `/calendar`. Reuses `useCalendar` + `lib/calendar.ts` |
 | Settings | ✅ Live | Config read/write; `nt8_agent_tunnel` + `mt5_agent_tunnel` |
 | Sidebar health strip | ✅ Live | 4 dots: API, SSH, NT8 (3-state), MT5 Agent |
 | Price-chart panel | ✅ Live | Lazy klinecharts candlestick panel on BacktestDetail (`components/ChartPanel/`, own CLAUDE.md): TF switch, sessions, trades, generic overlays, indicators, day breaks. Real spec via `useChartSpec`; overlays/indicators (strategy structure) still pending (Step 7b) |
