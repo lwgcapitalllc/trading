@@ -28,8 +28,9 @@ education/smc/
 │   └── summaries/         ← NN-<slug>.md — one summary per video
 ├── 02-smc-engine-training/
 │   └── …
-└── 05-my-full-trading-strategy/
-    └── …
+├── 05-my-full-trading-strategy/
+│   └── …
+└── playbooks/                 ← visual playbook — one PNG per entry play (see below)
 ```
 
 - Module folder `NN` = the module's position in `modules.txt` (course order),
@@ -46,6 +47,16 @@ video's m3u8 URL from Chrome DevTools, run `skool-transcript -m "<Module>"`, typ
 the title. The tool writes the transcript into that module's folder, creates a
 summary stub, and updates the index. Videos on Skool's player and on Loom are
 both handled automatically. Without `-m`, a video lands in `00-unsorted/`.
+
+## Playbooks
+
+`playbooks/` holds the course's visual entry playbook — the setup diagrams from
+the course Miro board, cropped so each play is its own PNG. It is NOT ripped by
+the transcript tool and does NOT appear in the auto-generated `README.md`; it has
+its own `playbooks/README.md` index. Grouped by category, one folder each:
+`01-setups` (session plays), `02-points-of-interest`, `03-trend-phase`,
+`04-structure-flow`, `05-premium-discount`. To add or re-cut plays, save the
+full page screenshots and crop per play — filenames are the play name, slugified.
 
 ## Summaries
 
