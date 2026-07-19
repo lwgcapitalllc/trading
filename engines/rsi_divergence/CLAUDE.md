@@ -20,13 +20,18 @@ bars): `compare_rsi_div.py --warmup 8762` → exit 0**, every field matching and
 matching from bar 16. The larger warm-up (vs the 1,630 at 30/70) is benign and verified: the `bull/bear_age`
 columns cold-start against an off-window divergence Pine carries in from before the export, and at the
 stricter 25/75 gate the first mutually-agreed in-window divergence that resets the bear-age counter lands
-near bar 8761; plus four isolated RSI-pivot float-ties (bars 1639/2179/3561/8761, RSI equal to a neighbour
-to ~1e-14) that Pine's strict `ta.pivothigh` confirms and Python skips — the documented Wilder float-tie,
-zero pulse impact. Detection formula unchanged (parameterized threshold); only the default constant moved.
+near bar 8761. **Pivot-tie fix (2026-07-19):** the earlier RSI-pivot "float-ties" (RSI equal to a
+neighbour to ~1e-14, which Pine's `ta.pivothigh` confirmed and the old strict-both-sides Python skipped)
+were NOT an inherent limitation — they were the same real pivot bug found in the `equal_highs_lows`
+engine. Pine's `ta.pivothigh`/`pivotlow` allow an EQUAL bar on the LEFT of the centre but require a
+STRICT extreme on the RIGHT (the last bar of an equal run is the pivot); this engine now matches that
+(`_pivot_high_rsi` rejects if any LEFT bar is strictly higher OR any RIGHT bar is `>=` it, mirror for
+lows). Re-validated exit 0 on the 2026-07-19 16,639-bar grand export with ZERO tie exceptions remaining.
+Detection formula unchanged (parameterized threshold); only the default constant moved.
 **Pine:** ported from `indicators/mpc_assistant.pine`'s RSI DIVERGENCE block (+ the `GRP_DIV`
 inputs); parity harness is `indicators/rsi_div_export.pine`, diffed against this Python by
 `tools/compare_rsi_div.py`.
-**Last reviewed:** 2026-07-11 (built + unit-tested + Pine-parity-validated, exit 0)
+**Last reviewed:** 2026-07-19 (built + unit-tested + Pine-parity-validated exit 0; pivot-tie bug fixed).
 
 ---
 
@@ -73,9 +78,10 @@ from the chart:
 1. **Wilder's RSI**, not a simple average of gains — `ta.rma`-smoothed up/down, seeded by the SMA of
    the first `rsi_len` changes. `_RsiState`/`_Rma` reproduce `ta.rma` (SMA seed → recursion) exactly;
    RSI is `None` (Pine na) until bar `rsi_len`.
-2. **Strict pivots** — the candidate must be strictly less/greater than *every* other bar in the
-   `(2·pivot_len + 1)`-bar window centred on it (the same semantics the validated
-   `market_structure` engine ports), only resolvable `pivot_len` bars after the fact.
+2. **Pivots with Pine's tie rule** — over the `(2·pivot_len + 1)`-bar window centred on the candidate,
+   the centre may EQUAL bars to its LEFT but must be STRICTLY beyond every bar to its RIGHT (so the last
+   bar of an equal run is the pivot — Pine's `ta.pivothigh`/`pivotlow` behaviour, NOT strict-both-sides).
+   Only resolvable `pivot_len` bars after the fact.
 3. **The price anchor is `low[pivot_len]` / `high[pivot_len]`** — the price extreme at the RSI-pivot
    bar (which IS `pivot_len` bars back), not an independent price pivot.
 

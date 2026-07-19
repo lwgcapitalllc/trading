@@ -1,0 +1,98 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// ============================================================================
+//  EQUAL HIGHS / LOWS EXPORT — parity harness for engines/equal_highs_lows/
+// ============================================================================
+// Instrumented copy of the "EQUAL HIGHS / LOWS (EQH / EQL)" block from
+// mpc_assistant.pine, with ALL drawing removed (no dotted lines, no labels, no
+// line arrays — those are visuals) and the price-level STATE kept (the eqhPx /
+// eqlPx float arrays). It adds px_eq* plot columns so a TradingView CSV export
+// can be diffed bar-by-bar against the Python EqualHighsLowsEngine by
+// engines/equal_highs_lows/tools/compare_eq.py.
+//
+// Keep the ATR + pivot + formation + mitigation logic byte-identical to
+// mpc_assistant.pine's EQ block. Do not let it drift.
+//
+// The FVG-persistence exemption (f_fvgNearEq / eqExemptFvg) lives on the FVG
+// side and is intentionally NOT reproduced here — this harness validates the EQ
+// state machine only. eqMax default is 6, so six active-level slots per side.
+// ============================================================================
+// overlay=false: its own pane, so the transparent parity plots (mixing prices and
+// small counts) don't drag the price chart's scale. All drawing is removed anyway.
+indicator("Equal Highs/Lows Export", overlay = false, max_bars_back = 2000)
+
+// ── GRP_EQ inputs (defaults == mpc_assistant.pine) ──
+bool  showEq     = input.bool(true, "Show Equal Highs/Lows")
+int   eqPivotLen = input.int(2,   "EQ Pivot Length",       minval = 1, maxval = 20)
+float eqAtrMult  = input.float(0.1, "EQ Tolerance (x ATR)", minval = 0.0, maxval = 2.0, step = 0.05)
+int   eqMax      = input.int(6,   "Max Active EQ (per side)", minval = 1, maxval = 20)
+
+// ── ATR tolerance + pivots (byte-identical to mpc) ──
+float eqAtr = ta.atr(50)
+float eqTol = na(eqAtr) ? 0.0 : eqAtr * eqAtrMult
+
+var array<float> eqhPx = array.new<float>()
+var array<float> eqlPx = array.new<float>()
+
+float eqPh = ta.pivothigh(high, eqPivotLen, eqPivotLen)
+float eqPl = ta.pivotlow(low,  eqPivotLen, eqPivotLen)
+var float eqPrevPh = na
+var float eqPrevPl = na
+
+// This-bar formation pulses (the level price that printed, else na)
+float eqhNew = na
+float eqlNew = na
+
+if showEq and not na(eqPh)
+    if not na(eqPrevPh) and math.abs(eqPh - eqPrevPh) <= eqTol
+        float lvl = math.max(eqPh, eqPrevPh)
+        array.push(eqhPx, lvl)
+        eqhNew := lvl
+        while array.size(eqhPx) > eqMax
+            array.shift(eqhPx)
+    eqPrevPh := eqPh
+
+if showEq and not na(eqPl)
+    if not na(eqPrevPl) and math.abs(eqPl - eqPrevPl) <= eqTol
+        float lvl = math.min(eqPl, eqPrevPl)
+        array.push(eqlPx, lvl)
+        eqlNew := lvl
+        while array.size(eqlPx) > eqMax
+            array.shift(eqlPx)
+    eqPrevPl := eqPl
+
+// Mitigation each bar: EQH taken on a close ABOVE it, EQL on a close BELOW it.
+if array.size(eqhPx) > 0
+    for i = array.size(eqhPx) - 1 to 0
+        if close > array.get(eqhPx, i)
+            array.remove(eqhPx, i)
+if array.size(eqlPx) > 0
+    for i = array.size(eqlPx) - 1 to 0
+        if close < array.get(eqlPx, i)
+            array.remove(eqlPx, i)
+
+// ── Parity columns ──
+// NOTE: use a fully-transparent COLOUR (alpha 100), NOT `display = display.none`.
+// TradingView's "Export chart data" excludes display.none plots from the CSV; transparent
+// plots stay invisible on the chart but DO export (the same trick rsi_div_export.pine uses).
+f_slot(array<float> a, int i) => array.size(a) > i ? array.get(a, i) : na
+
+plot(eqTol,  "px_eq_tol", color = color.new(color.gray, 100))
+plot(eqPh,   "px_eq_ph",  color = color.new(color.red, 100))
+plot(eqPl,   "px_eq_pl",  color = color.new(color.green, 100))
+plot(eqhNew, "px_eqh_new", color = color.new(color.red, 100))
+plot(eqlNew, "px_eql_new", color = color.new(color.green, 100))
+plot(array.size(eqhPx), "px_eqh_cnt", color = color.new(color.gray, 100))
+plot(array.size(eqlPx), "px_eql_cnt", color = color.new(color.gray, 100))
+plot(f_slot(eqhPx, 0), "px_eqh_0", color = color.new(color.red, 100))
+plot(f_slot(eqhPx, 1), "px_eqh_1", color = color.new(color.red, 100))
+plot(f_slot(eqhPx, 2), "px_eqh_2", color = color.new(color.red, 100))
+plot(f_slot(eqhPx, 3), "px_eqh_3", color = color.new(color.red, 100))
+plot(f_slot(eqhPx, 4), "px_eqh_4", color = color.new(color.red, 100))
+plot(f_slot(eqhPx, 5), "px_eqh_5", color = color.new(color.red, 100))
+plot(f_slot(eqlPx, 0), "px_eql_0", color = color.new(color.green, 100))
+plot(f_slot(eqlPx, 1), "px_eql_1", color = color.new(color.green, 100))
+plot(f_slot(eqlPx, 2), "px_eql_2", color = color.new(color.green, 100))
+plot(f_slot(eqlPx, 3), "px_eql_3", color = color.new(color.green, 100))
+plot(f_slot(eqlPx, 4), "px_eql_4", color = color.new(color.green, 100))
+plot(f_slot(eqlPx, 5), "px_eql_5", color = color.new(color.green, 100))

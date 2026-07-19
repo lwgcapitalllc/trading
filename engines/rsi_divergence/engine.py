@@ -213,7 +213,13 @@ class RsiDivergenceEngine:
         return events
 
     # ------------------------------------------------------------------
-    # Pivot detection on the RSI series — ta.pivotlow / ta.pivothigh (strict, both sides).
+    # Pivot detection on the RSI series — ta.pivotlow / ta.pivothigh.
+    # Pine's `ta.pivothigh` tie rule (verified against real XAUUSD exports, same as the
+    # equal_highs_lows engine): the centre may EQUAL bars to its LEFT but must be
+    # STRICTLY beyond every bar to its RIGHT — the LAST bar of an equal run is the
+    # pivot. RSI ties to ~1e-14 are rare, but when they occur Pine confirms the pivot
+    # and a strict-both-sides rule would silently skip it. A `None` (na) anywhere in the
+    # window still disqualifies.
     # ------------------------------------------------------------------
     def _pivot_low_rsi(self) -> Optional[float]:
         cand = self._centred_candidate()
@@ -223,10 +229,14 @@ class RsiDivergenceEngine:
         window = self._window
         c = cand.rsi
         for i, b in enumerate(window):
-            if i == L:
-                continue
-            if b.rsi is None or c >= b.rsi:      # strictly lower than every other bar
+            if b.rsi is None:
                 return None
+            if i < L:
+                if b.rsi < c:                    # left: an equal low is allowed, a lower one disqualifies
+                    return None
+            elif i > L:
+                if b.rsi <= c:                   # right: an equal (or lower) bar disqualifies — later bar wins ties
+                    return None
         return c
 
     def _pivot_high_rsi(self) -> Optional[float]:
@@ -237,10 +247,14 @@ class RsiDivergenceEngine:
         window = self._window
         c = cand.rsi
         for i, b in enumerate(window):
-            if i == L:
-                continue
-            if b.rsi is None or c <= b.rsi:      # strictly higher than every other bar
+            if b.rsi is None:
                 return None
+            if i < L:
+                if b.rsi > c:                    # left: an equal high is allowed, a higher one disqualifies
+                    return None
+            elif i > L:
+                if b.rsi >= c:                   # right: an equal (or higher) bar disqualifies — later bar wins ties
+                    return None
         return c
 
     def _centred_candidate(self) -> Optional[_Bar]:

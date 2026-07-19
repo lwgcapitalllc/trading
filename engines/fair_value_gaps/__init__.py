@@ -14,9 +14,11 @@ reproduced here; each emitted gap carries its `is_bullish` flag and the consumer
 Public API:
     from fair_value_gaps import FairValueGapEngine
 
-    fvg = FairValueGapEngine()          # max_count=6, threshold_pct=0.1 — the Pine defaults
+    fvg = FairValueGapEngine()          # max_count=10, threshold_pct=0.0, require_close=False — the Pine defaults
     # each closed bar, in order:
     ev = fvg.update(bar.index, bar.open, bar.high, bar.low, bar.close)
+    # …or, to model the mpc eqExemptFvg coupling, run the EQ engine first and pass its state in:
+    #   ev = fvg.update(i, o, h, l, c, eq_levels=eq_ev.active_eqh + eq_ev.active_eql, eq_tol=eq_ev.tolerance)
     for g in ev.formed:                 # gaps created THIS bar
         g.top, g.bottom, g.is_bullish
     for g in ev.mitigated:              # gaps closed fully past (mitigated) THIS bar

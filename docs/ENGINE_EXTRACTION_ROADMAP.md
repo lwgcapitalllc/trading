@@ -30,6 +30,8 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 - **`engines/liquidity/`** — the prices price runs toward and grabs: prev day/week/month H/L (PDH/PDL/PWH/PWL/PMH/PML), previous-week-close (PWC), the H4 sweep (SSH/BSL), and Asia/London/NY session H/L, with mitigation (sweep vs break) tracking. Consumes `engines/sessions/` for session H/L (composes it); reconstructs the day/week/month/H4 levels from the bar stream. **Non-repainting by Aaron's explicit decision (2026-07-05): every HTF level uses the PREVIOUS completed period only — the engine never forecasts the current period's high/low.** Ported, 15 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (11,457 bars; all 33 fields — 15 level prices, their mitigation flags, 4 boundary-roll pulses — match, `--htf-rollover 18 --warmup 4653`, exit 0; harness: `indicators/liquidity_export.pine` + `engines/liquidity/tools/compare_liquidity.py`). Calibrated boundary: XAUUSD session opens 18:00 NY (baked in as the default).
 - **`engines/vwap/`** — the session VWAP: a volume-weighted running mean of `hlc3` (`ta.vwap(hlc3)`), re-anchored each trading day, plus a derived close-vs-line cross. First engine to need a **volume** column in the feed (XAUUSD tick volume — what the Pine `ta.vwap` already reads). Time-driven; reconstructs the trading-day anchor directly (the **same** 18:00-NY boundary the liquidity daily level uses), so it does not compose the sessions engine. Ported line-by-line from `mpc_assistant.pine` line 852, 13 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (6,973 bars; both fields — VWAP value + trading-day anchor pulse — match, `--htf-rollover 18 --warmup 90`, exit 0; harness: `indicators/vwap_export.pine` + `engines/vwap/tools/compare_vwap.py`). Uses a **relative** tolerance (1e-6) because the value is a cumulative sum that drifts at float-rounding level — unlike the copied-value level engines' exact match.
 - **`engines/session_volume_profile/`** — the Session Volume Profile: on each **Asia** session close, a 50-row volume profile over the session range whose highest-volume row gives the **POC** (the "MV" line), plus the MV confirmation (price straddling the POC). Composes `engines/sessions/` for the Asia window/edges (like liquidity) and needs the **volume** feed (like VWAP). Two Pine quirks ported exactly: the session-close bar is folded into the profile, and the bull/bear two-array newest-first summation is kept (float addition is not associative — collapsing it could flip a near-tie POC row). Ported from `mpc_assistant.pine` (SVP block 2554, MV slot 2772), 12 unit tests, **100% Pine parity**. The row count was re-synced **100 → 50** on 2026-07-09 (mpc line 317) and re-validated on a fresh `VANTAGE_XAUUSD, 5m` export (13,147 bars; all 3 fields — POC price + form pulse + sweep state — match, `--warmup 251`, exit 0; harness: `indicators/svp_export.pine` + `engines/session_volume_profile/tools/compare_svp.py`). The POC uses an **exact** (1e-6) tolerance — it is a deterministic formula on the copied session H/L + integer volume, so it is bit-identical, unlike VWAP's cumulative value.
+- **`engines/rsi_divergence/`** — Wilder-RSI regular-divergence detector (standalone; sibling of FVG). Ported line-by-line, 9 tests, **100% Pine parity** (`compare_rsi_div.py --warmup 1630`, exit 0). Feeds the A+ setup "+ DIV" tag.
+- **`engines/equal_highs_lows/`** — EQH/EQL liquidity-level detector (standalone; sibling of FVG + RSI-divergence). Two consecutive same-side strict price pivots within an ATR(50)×mult band → a level (EQH `max` / EQL `min`), FIFO cap per side, close-through mitigation. Ported line-by-line from the mpc EQ block, **7 unit tests green (built 2026-07-18)**. **Pine-parity VALIDATED 2026-07-19 (exit 0)** on a 16,639-bar `VANTAGE_XAUUSD, 5m` grand export — the run caught + fixed a real pivot-tie bug (Pine allows a LEFT tie / strict RIGHT; the last bar of an equal run is the pivot). The Pine's `eqExemptFvg` FVG↔EQ coupling is MODELLED (FVG `update()` takes `eq_levels`/`eq_tol`; consumer runs EQ→FVG) — see the 2026-07-18/07-19 notes.
 
 ---
 
@@ -119,6 +121,81 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 Everything else is ported. The other forward work is *consumption*, not extraction: give each engine
 an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest
 lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
+
+---
+
+## 2026-07-19 — grand-export parity GREEN; real EQ/RSI pivot-tie bug found + fixed ✅
+
+Aaron exported ONE grand CSV with all 10 engine export indicators + the strategy on a single 5m
+XAUUSD chart, to prove every engine matches mpc exactly in one shot (`verify_parity.py` runs all 11
+checks off the one file). Two rounds:
+
+1. **First export (9,469 bars) — surfaced the "pre-window ghost" limit.** structure/OB/fib/liquidity/
+   sessions/vwap/svp green; FVG/EQ red. Root cause was NOT a bug: the window's highest bar was 4541 but
+   Pine held EQH levels + an FVG up at 4733 — created by a spike BEFORE bar 0 that never mitigates
+   (price never returns), so the cold-started Python engine can't reproduce or shed them. Every
+   in-window level matched. Fix = a wider re-export.
+
+2. **Wider export (16,639 bars, high 4773) — cleared the ghosts AND exposed a REAL bug.** FVG went
+   green. EQ stayed red with in-window pivot misses: **Pine's `ta.pivothigh`/`pivotlow` are NOT
+   symmetric-strict** — the centre may EQUAL a bar to its LEFT but must be STRICTLY beyond every bar to
+   its RIGHT (the last bar of an equal-price run is the pivot). The EQ engine used strict-both-sides and
+   dropped the frequent raw-price ties on gold. Fixed (`_pivot_high`/`_pivot_low`). **The `rsi_divergence`
+   engine had the identical latent bug** (same pivot code; ties on RSI values are just rare, so it only
+   ever showed as a couple of diagnostic-column misses the notes had written off as "float-ties"). Same
+   fix applied there.
+
+**Result — ALL 10 ENGINES GREEN (exit 0)** on the grand export: EQ `--warmup 3500`, RSI `--warmup 2000`,
+FVG `--warmup 250`, plus structure/OB/fib/liquidity/sessions/vwap/svp. 7 EQ + 9 RSI + 17 FVG unit tests
+green. EQ / FVG / RSI are now the canonical validated implementations (committed 2026-07-19). The
+**strategy (bot)** check is still red — not a mismatch: the tool detected the export omitted ~3,863 of
+the chart's oldest bars (TradingView wasn't scrolled fully left), and the strategy needs the true first
+bar (engines tolerate the cold-start, the A+ sequence state does not). A full-left re-export closes it.
+
+**Lesson:** a persistent-level engine (EQ/FVG) can't be parity-checked on a window whose price never
+revisits the pre-window extreme — the ghost levels never mitigate. And a narrow window can HIDE a real
+pivot bug; the wider export is what made the tie failures visible.
+
+---
+
+## 2026-07-18 — EQ engine built + FVG `requireClose` drift fixed + defaults reconciled
+
+Triggered by Aaron: "make every mpc input an engine, and bring the Python defaults in line with the
+Pine." Two things landed (NOT yet committed; EQ + FVG Pine-parity re-runs PENDING a fresh export):
+
+1. **`engines/equal_highs_lows/` BUILT** — the last mpc feature block with no engine. Standalone
+   EQH/EQL detector (ATR(50) tolerance + strict len-2 price pivots + `max`/`min` level + FIFO cap +
+   close-through mitigation), ported line-by-line from the mpc EQ block. 7 unit tests green. Harness
+   `indicators/eq_export.pine` + `engines/equal_highs_lows/tools/compare_eq.py` built and
+   self-consistency-checked; wired into `verify_parity.py` (marker `px_eq_tol`). Full detail in
+   `engines/equal_highs_lows/CLAUDE.md`.
+
+2. **`engines/fair_value_gaps/` REAL DRIFT FIXED.** The `fvgRequireClose` gate
+   `(not fvgRequireClose or close[1] > high[2])` landed in `mpc_assistant.pine` on **2026-07-17**
+   (commit `a0b8e1d`, "Implement feature X…"), AFTER the last FVG validation (07-14). So the Python
+   engine AND `fvg_export.pine` had silently gone stale: both HARDCODED the middle-bar close check,
+   while the mpc DEFAULT (`fvgRequireClose = false`) SKIPS it — i.e. on a default mpc chart the engine
+   was rejecting gaps mpc keeps. This is why a single-commit `/audit-engines` (which diffs only the
+   latest commit) missed it. **Fix:** the close check is now the OPTIONAL `require_close` engine flag
+   (default False = mpc default); defaults reconciled `max_count` 6→10 and `threshold_pct` 0.1→0.0
+   (the sub-15m value; 15m+ passes 0.04). `fvg_export.pine` now carries `cfg_fvg_*` columns and
+   `compare_fvg.py` configures the engine FROM the export (Aaron's "let the file carry the settings"
+   call) — parity now survives any Pine input tweak. 15 unit tests green.
+
+**RESOLVED — the FVG↔EQ coupling (`eqExemptFvg`, default ON) is now WIRED (Aaron's exact-match call):**
+mpc's FVG cap eviction skips a gap sitting behind an active EQ level (it persists until mitigated).
+Modelled via the public-output pattern (NOT by FVG reaching into EQ): `FairValueGapEngine.update()`
+takes `eq_levels` + `eq_tol`, and the CONSUMER runs EQ→FVG (the Pine order) and passes EQ's active
+levels + tolerance. `fvg_export.pine` now EMBEDS the EQ compute + `f_fvgNearEq` + the exempt-eviction
+(byte-for-byte mpc) and carries `cfg_eq_*` columns; `compare_fvg.py` runs the Python EQ engine from
+those cfg columns and feeds the FVG cap — so the coupling is validated against mpc, not just asserted.
+2 new FVG unit tests pin the exemption (and that no-EQ stays plain FIFO). **Follow-up:**
+`backtest/replay/EngineStack` does not yet wire EQ→FVG (exemption off there); the mpc_sos_fade strategy
+parity is unaffected while it stays off.
+
+**Lesson:** a single-commit audit can miss a drift that entered in an earlier, vaguely-messaged commit.
+When proving parity, run `verify_parity.py` on a fresh export — the machine catches what the eyeball
+diff of one commit does not.
 
 ---
 

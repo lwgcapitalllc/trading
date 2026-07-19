@@ -36,6 +36,8 @@ trading/
 │  ── TOOLING / SOURCE ────────────────────────────────────────────
 ├── indicators/          ← Pine Script market-structure indicator rebuild + parity-export harnesses
 ├── scripts/             ← Cross-subsystem VPS recovery and bootstrap scripts
+├── tools/               ← Standalone utilities (e.g. skool-transcript — rips course video transcripts)
+├── education/           ← Course libraries: transcripts, summaries + visual playbooks (e.g. smc/ — the source material behind the engines)
 │
 │  ── DOCS ─────────────────────────────────────────────────────────
 └── docs/                ← Cross-subsystem reference docs and audit tools

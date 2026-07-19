@@ -3,9 +3,11 @@ Hand-traced tests for the fair-value-gap state machine.
 
 These pin the ported Pine behaviour (mpc_assistant.pine FVG block, "FAIR VALUE GAPS — persist until
 mitigated"): a 3-candle imbalance (LuxAlgo definition) — the two outer candles don't overlap
-(`low > high[2]` bull / `high < low[2]` bear), the middle bar's close cleared the gap
-(`close[1] > high[2]` bull / `close[1] < low[2]` bear), and the gap is at least `threshold_pct`% of
-price — forms a gap spanning that void; there is NO clean-impulse / progressive-close requirement. A
+(`low > high[2]` bull / `high < low[2]` bear) and the gap is at least `threshold_pct`% of price —
+forms a gap spanning that void; the middle-bar close-cleared check (`close[1] > high[2]` bull /
+`close[1] < low[2]` bear) is OPTIONAL, gated by `require_close` (Pine `fvgRequireClose`, default
+False). There is NO clean-impulse / progressive-close requirement. Defaults match the Pine:
+max_count=10, threshold_pct=0.0, require_close=False. A
 gap is never mitigated on its own creation bar; it is mitigated only when a candle CLOSES fully past
 its far edge (bull `close <= bottom`, bear `close >= top`) — a wick into the gap leaves it alive; the
 list is capped at max_count with oldest-first (FIFO) eviction. Full Pine<->Python parity is validated
@@ -118,18 +120,26 @@ def test_gap_forms_even_when_closes_not_progressive():
     assert len(ev.formed) == 1
 
 
-def test_no_gap_when_middle_close_does_not_clear():
-    # Void exists (bar2 low 105.5 > bar0 high 105) but the middle bar closed at 104, BELOW the gap
-    # top — the LuxAlgo middle-bar-close condition fails, so no gap.
-    eng = FairValueGapEngine()
-    bars = [
-        (0, 100.0, 105.0, 99.0, 100.0),
-        (1, 101.0, 106.0, 100.0, 104.0),   # close 104 <= bar0 high 105 -> middle didn't clear
-        (2, 106.0, 108.0, 105.5, 107.0),
-    ]
-    ev = _run(eng, bars)
+_MIDDLE_NO_CLEAR = [
+    (0, 100.0, 105.0, 99.0, 100.0),
+    (1, 101.0, 106.0, 100.0, 104.0),   # close 104 <= bar0 high 105 -> middle didn't clear the gap
+    (2, 106.0, 108.0, 105.5, 107.0),   # void: bar2 low 105.5 > bar0 high 105
+]
+
+
+def test_no_gap_when_middle_close_does_not_clear_with_require_close():
+    # With require_close=True the middle-bar-close condition is enforced: it fails here, so no gap.
+    ev = _run(FairValueGapEngine(require_close=True), _MIDDLE_NO_CLEAR)
     assert ev.formed == []
     assert ev.active == []
+
+
+def test_gap_forms_by_default_even_when_middle_close_does_not_clear():
+    # The Pine DEFAULT is require_close=False (classic FVG): the same void forms a gap regardless of
+    # where the middle bar closed. This is the mpc-default behaviour the engine now matches.
+    ev = _run(FairValueGapEngine(), _MIDDLE_NO_CLEAR)
+    assert len(ev.formed) == 1
+    assert ev.formed[0].top == 105.5 and ev.formed[0].bottom == 105.0
 
 
 def test_no_detection_before_two_bars_of_history():
@@ -200,8 +210,9 @@ def test_oldest_gap_evicted_past_max_count():
 # ── size threshold (% of price) ──
 
 def test_threshold_rejects_small_gap():
-    # A tiny 0.04-wide gap on ~100 price = 0.04% < the default 0.1% floor -> rejected.
-    eng = FairValueGapEngine()
+    # A tiny 0.04-wide gap on ~100 price = 0.04% < a 0.1% floor -> rejected. (Default threshold is now
+    # 0.0 = no floor, so this passes an explicit 0.1 like the Pine's 15m+ setting.)
+    eng = FairValueGapEngine(threshold_pct=0.1)
     bars = [
         (0, 99.90, 100.00, 99.80, 99.95),
         (1, 100.05, 100.10, 100.02, 100.08),   # middle close 100.08 > bar0 high 100.00
@@ -216,3 +227,31 @@ def test_custom_threshold_rejects_and_allows():
     # The _BULL gap is 4.5 wide on ~101 price = ~4.46%. A 5% threshold rejects it; 4% accepts it.
     assert _run(FairValueGapEngine(threshold_pct=5.0), _BULL).formed == []
     assert len(_run(FairValueGapEngine(threshold_pct=4.0), _BULL).formed) == 1
+
+
+# ── EQ-exemption coupling (Pine eqExemptFvg) ──
+
+def test_eq_exemption_protects_oldest_gap_from_cap():
+    # cap=2. Ascending staircase (o=100,110,120,...): bars 2,3,4 each form a bull gap. The bar-2 gap
+    # spans [106, 120]; an EQ level at 110 sits inside it. When bar 4's gap pushes over the cap, the
+    # exempt bar-2 gap is KEPT and the next non-exempt (bar 3, span [116,130]) is dropped instead.
+    eng = FairValueGapEngine(max_count=2)
+    eq_behind_first_gap = [110.0]     # inside the bar-2 gap span [106, 120] only
+    ev = None
+    for k in range(5):
+        o = 100.0 + 10 * k
+        ev = eng.update(k, o, o + 6.0, o, o + 5.0, eq_levels=eq_behind_first_gap, eq_tol=0.0)
+    born = [g.born_index for g in ev.active]
+    assert born == [2, 4], f"exempt bar-2 gap kept, bar-3 dropped instead; got {born}"
+    assert len(ev.evicted) == 1 and ev.evicted[0].born_index == 3
+
+
+def test_no_eq_levels_is_plain_fifo():
+    # Same staircase, but no EQ state passed -> plain drop-oldest (bar 2 evicted), unchanged behaviour.
+    eng = FairValueGapEngine(max_count=2)
+    ev = None
+    for k in range(5):
+        o = 100.0 + 10 * k
+        ev = eng.update(k, o, o + 6.0, o, o + 5.0)
+    assert [g.born_index for g in ev.active] == [3, 4]
+    assert ev.evicted[0].born_index == 2

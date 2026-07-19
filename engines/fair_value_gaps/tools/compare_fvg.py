@@ -164,11 +164,43 @@ def _load_rows(path, cols):
     return rows
 
 
+def _read_cfg(header, rows):
+    """Read the export's cfg_fvg_* settings (thresh / maxcount / requireclose) from the first data row.
+
+    These plot columns are constant every bar, so one read is enough. Returns {} if the export carries
+    no cfg columns (an older export) — the caller then falls back to CLI args. Matches column names by
+    endswith so the TradingView-prefixed header ("Equal... : cfg_fvg_thresh") still resolves.
+    """
+    norm = {h.strip().lower(): h for h in header}
+
+    def find(suffix):
+        for low, orig in norm.items():
+            if low.endswith(suffix):
+                return orig
+        return None
+
+    out = {}
+    for key, suffix in (("thresh", "cfg_fvg_thresh"), ("maxcount", "cfg_fvg_maxcount"),
+                        ("requireclose", "cfg_fvg_requireclose"),
+                        ("eq_pivotlen", "cfg_eq_pivotlen"), ("eq_atrmult", "cfg_eq_atrmult"),
+                        ("eq_max", "cfg_eq_max"), ("eq_exempt", "cfg_eq_exempt")):
+        col = find(suffix)
+        if col is None:
+            continue
+        for r in rows:
+            v = _num(r.get(col))
+            if v is not None:
+                out[key] = v
+                break
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with fvg_export.pine on the chart")
-    ap.add_argument("--max-count", type=int, default=6, help="must match the Pine fvgMaxCount (default 6)")
-    ap.add_argument("--threshold-pct", type=float, default=0.1, help="must match the Pine fvgThreshPct (default 0.1 = 0.1%% of price)")
+    ap.add_argument("--max-count", type=int, default=10, help="fallback if the export has no cfg_fvg_maxcount column (Pine default 10)")
+    ap.add_argument("--threshold-pct", type=float, default=0.0, help="fallback if the export has no cfg_fvg_thresh column (Pine sub-15m default 0.0)")
+    ap.add_argument("--require-close", action="store_true", help="fallback if the export has no cfg_fvg_requireclose column (Pine default off)")
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
@@ -183,7 +215,28 @@ def main(argv=None):
     cols = _resolve_columns(header)
     rows = _load_rows(path, cols)
 
-    fvg = FairValueGapEngine(max_count=args.max_count, threshold_pct=args.threshold_pct)
+    # The export carries its own settings as cfg_* columns (constant every bar) so parity survives any
+    # Pine input tweak — never a hardcoded guess. Read them when present; else fall back to the CLI.
+    cfg = _read_cfg(header, rows)
+    max_count = int(cfg["maxcount"]) if cfg.get("maxcount") is not None else args.max_count
+    threshold_pct = cfg["thresh"] if cfg.get("thresh") is not None else args.threshold_pct
+    require_close = bool(round(cfg["requireclose"])) if cfg.get("requireclose") is not None else args.require_close
+    cfg_src = "export cfg_* columns" if cfg else "CLI args (no cfg_* columns in export)"
+
+    # EQ coupling (mpc eqExemptFvg): when the export carries the cfg_eq_* columns AND the exemption is
+    # on, run the EQ engine alongside and feed its active levels + tolerance into the FVG cap each bar.
+    eq_exempt = cfg.get("eq_exempt") is not None and bool(round(cfg["eq_exempt"]))
+    eq = None
+    if eq_exempt:
+        from equal_highs_lows import EqualHighsLowsEngine
+        eq = EqualHighsLowsEngine(
+            pivot_len=int(cfg.get("eq_pivotlen") or 2),
+            atr_mult=cfg.get("eq_atrmult") if cfg.get("eq_atrmult") is not None else 0.1,
+            max_levels=int(cfg.get("eq_max") or 6),
+        )
+    eq_note = f", EQ-exempt ON (pivot={int(cfg.get('eq_pivotlen') or 2)}, mult={cfg.get('eq_atrmult')})" if eq_exempt else ""
+
+    fvg = FairValueGapEngine(max_count=max_count, threshold_pct=threshold_pct, require_close=require_close)
 
     total = 0
     per_field_mismatch = {fld: 0 for fld in ALL_FIELDS}
@@ -198,7 +251,14 @@ def main(argv=None):
         if None in (o, h, l, c):
             continue
 
-        ev = fvg.update(i, o, h, l, c)
+        # Run EQ BEFORE FVG (the mpc order) and pass its post-update levels + tolerance into the cap.
+        eq_levels = None
+        eq_tol = 0.0
+        if eq is not None:
+            eq_ev = eq.update(i, h, l, c)
+            eq_levels = eq_ev.active_eqh + eq_ev.active_eql
+            eq_tol = eq_ev.tolerance
+        ev = fvg.update(i, o, h, l, c, eq_levels=eq_levels, eq_tol=eq_tol)
         py = _python_row(ev)
         total += 1
 
@@ -219,7 +279,8 @@ def main(argv=None):
                 detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
-    print(f"\nCompared {total} bars from {path.name}  (max_count={args.max_count}, threshold_pct={args.threshold_pct}, tol={args.tolerance})")
+    print(f"\nCompared {total} bars from {path.name}  (max_count={max_count}, threshold_pct={threshold_pct}, "
+          f"require_close={require_close}{eq_note}, tol={args.tolerance})  [config from {cfg_src}]")
     print("-" * 72)
     if not any(per_field_mismatch.values()):
         print("✓ FVG PARITY: every compared field matched on every bar. Python FVG engine == Pine source.")

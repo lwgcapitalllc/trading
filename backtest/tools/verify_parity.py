@@ -42,6 +42,7 @@ _CHECKS: List[Tuple[str, str, str, List[str]]] = [
     ("fibonacci",        "engines/fibonacci/tools/compare_fib.py",                "px_fib_active", []),
     ("fair_value_gaps",  "engines/fair_value_gaps/tools/compare_fvg.py",          "px_fvg_count", []),
     ("rsi_divergence",   "engines/rsi_divergence/tools/compare_rsi_div.py",       "px_div_rsi", []),
+    ("equal_highs_lows", "engines/equal_highs_lows/tools/compare_eq.py",          "px_eq_tol", []),
     ("liquidity",        "engines/liquidity/tools/compare_liquidity.py",          "px_pdh", []),
     ("sessions",         "engines/sessions/tools/compare_sessions.py",            "px_in_asia", []),
     ("vwap",             "engines/vwap/tools/compare_vwap.py",                    "px_vwap", []),

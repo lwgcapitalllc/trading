@@ -7,19 +7,23 @@ signal is the event ("a bull FVG formed at 101–105.5", "a candle closed past i
 No trading decisions, no structure detection (this engine is standalone — it reads price patterns
 directly), no MT5 ops, no UI, no chart rendering (no boxes, no colours, no directional-visibility
 filter — that filter is drawing-only in the Pine and is deliberately not reproduced).
-**Status:** BUILT + PARITY-VALIDATED. Re-synced 2026-07-14 to the mpc FVG rewrite (LuxAlgo imbalance
-+ 0.1%-of-price floor + close-past-far-edge mitigation + max_count 6); unit-tested (14 hand-traced
-tests, green) and **100% Pine parity re-confirmed** on a fresh `VANTAGE_XAUUSD, 5m` export
-(`compare_fvg.py --max-count 6 --threshold-pct 0.1 --warmup 886`, exit 0, 10,364 bars — the
-886-bar warm-up is the cold-start: Pine opens holding 3 pre-window gaps in its oldest slots that the
-cold Python engine can't know, which flush by bar 886). The one canonical implementation — no
+**Status:** BUILT + **Pine-parity RE-VALIDATED 2026-07-19 (exit 0).** Re-synced 2026-07-18 to a mpc
+default drift + defaults reconciled: the middle-bar close-cleared check is now the OPTIONAL
+`require_close` flag (Pine `fvgRequireClose`, default False): the gate `(not fvgRequireClose or
+close[1] > high[2])` landed in mpc on 2026-07-17, AFTER the last (07-14) validation, so the engine and
+`fvg_export.pine` had silently gone stale — both hardcoded the close check while the mpc DEFAULT skips
+it. Defaults also reconciled to the Pine: `max_count` 6→10, `threshold_pct` 0.1→0.0 (the sub-15m value;
+15m+ uses 0.04). `fvg_export.pine` now carries `cfg_fvg_*` columns and `compare_fvg.py` reads them, so
+parity survives any Pine input tweak. Unit-tested (17 hand-traced tests, green). Re-validated at the new
+behaviour on a fresh 16,639-bar `VANTAGE_XAUUSD, 5m` grand export — `compare_fvg.py` exit 0 (config +
+EQ-exemption coupling read from the CSV's `cfg_*` columns). The one canonical implementation — no
 consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine` FVG block ("FAIR VALUE GAPS — persist until
 mitigated", + the `GRP_FVG` inputs); parity harness is `indicators/fvg_export.pine`, diffed against
 this Python by `tools/compare_fvg.py`.
-**Last reviewed:** 2026-07-14 (re-synced to the mpc FVG rewrite — LuxAlgo imbalance detection,
-0.1%-of-price floor, close-past-far-edge mitigation, max_count 6; unit tests green; Pine-parity
-re-run PENDING a fresh export)
+**Last reviewed:** 2026-07-19 (re-synced to the mpc FVG default drift — optional `require_close`,
+reconciled defaults, EQ-exemption coupling; unit tests green; Pine-parity re-validated exit 0 on a fresh
+grand export)
 
 ---
 
@@ -45,12 +49,14 @@ Parity export build: `indicators/fvg_export.pine`.
 ## What a fair value gap is (ported semantics)
 
 A **bullish FVG** is the 3-candle imbalance the LuxAlgo definition describes: the two outer candles
-never overlap (`low > high[2]`), the middle displacement bar's close cleared the gap
-(`close[1] > high[2]`), and the gap is at least `threshold_pct`% of price (`(low - high[2]) / high[2]
-* 100 > threshold_pct`). There is **no** clean-impulse or progressive-close requirement — any three
-bars that meet those three conditions qualify. The gap spans `bottom = high[2]` up to `top = low`. A
-**bearish FVG** mirrors it (`high < low[2]`; `close[1] < low[2]`; `top = low[2]`, `bottom = high`).
-Either way `top > bottom`.
+never overlap (`low > high[2]`) and the gap is at least `threshold_pct`% of price (`(low - high[2]) /
+high[2] * 100 > threshold_pct`). The middle displacement bar's close clearing the gap
+(`close[1] > high[2]`) is **OPTIONAL** — gated by `require_close` (Pine `fvgRequireClose`, default
+False), i.e. `(not require_close or close[1] > high[2])`. At the default the close check is skipped =
+the classic FVG. There is **no** clean-impulse or progressive-close requirement — any bars that meet
+the conditions qualify. The gap spans `bottom = high[2]` up to `top = low`. A **bearish FVG** mirrors
+it (`high < low[2]`; optional `close[1] < low[2]`; `top = low[2]`, `bottom = high`). Either way
+`top > bottom`.
 
 Two things end a gap:
 
@@ -59,9 +65,11 @@ Two things end a gap:
   was consumed. Emitted as `mitigated`. **Skipped on the gap's own creation bar** (`bar_index >
   born`), so a fresh gap can't self-mitigate. (Pine also gates this on `barstate.isconfirmed`; the
   engine only ever sees closed bars, so that is always true here.)
-- **Eviction** — the total list already holds `max_count` (default 6) gaps, so the oldest is dropped
-  FIFO when a newer one forms. Pine `array.shift`s it silently; **not** a trading signal. Emitted
-  separately as `evicted` so a consumer never confuses the two.
+- **Eviction** — the total list already holds `max_count` (default 10) gaps, so the OLDEST **not
+  exempt by the EQ coupling** is dropped when a newer one forms (Pine scans for the oldest non-EQ gap).
+  With no `eq_levels` passed the first gap is never exempt → a plain drop-oldest, unchanged. **Not** a
+  trading signal — emitted separately as `evicted`. An FVG behind an active EQH/EQL (`eqExemptFvg`,
+  default ON in mpc) is kept until mitigated; if every gap is exempt, none are dropped.
 
 Gaps are **not** wiped on a BOS/SOS — the impulse leg that breaks structure is exactly what leaves
 the gaps, and the retracement back into them is the entry confluence (this is why the A+ setup reads
@@ -106,10 +114,15 @@ with its `is_bullish` flag; a consumer (e.g. the A+ setup) decides alignment aga
 ```python
 from fair_value_gaps import FairValueGapEngine
 
-fvg = FairValueGapEngine()   # max_count=6, threshold_pct=0.1 — the Pine defaults
+fvg = FairValueGapEngine()   # max_count=10, threshold_pct=0.0, require_close=False — the Pine defaults
 
 # Each closed bar, in order:
 ev = fvg.update(bar.index, bar.open, bar.high, bar.low, bar.close)
+# To model the mpc `eqExemptFvg` coupling (a gap behind an EQH/EQL survives the cap), run the EQ
+# engine FIRST and pass its state — the public-output pattern, so FVG never imports EQ:
+#   eq_ev = eq.update(i, h, l, c)
+#   ev = fvg.update(i, o, h, l, c, eq_levels=eq_ev.active_eqh + eq_ev.active_eql, eq_tol=eq_ev.tolerance)
+# Omit eq_levels for the standalone, exemption-off behaviour (plain FIFO) — nothing else changes.
 
 for g in ev.formed:      # gaps formed THIS bar (event)
     g.top, g.bottom, g.is_bullish
@@ -127,10 +140,11 @@ ev.active                # live gaps, oldest-first (state) — mirrors the Pine 
 ## Do
 
 - Port any change to `mpc_assistant.pine`'s FVG block back here line-by-line. Keep the per-bar order
-  (detect+cap → mitigate), the imbalance conditions (void `low > high[2]` / `high < low[2]` +
-  middle-close-cleared `close[1] > high[2]` / `close[1] < low[2]` + `%`-of-price threshold), the
-  close-past-far-edge mitigation, the `bar_index > born` guard and the FIFO cap exact — do not "clean
-  up" or reorder them.
+  (detect+cap → mitigate), the imbalance conditions (void `low > high[2]` / `high < low[2]` + the
+  OPTIONAL middle-close-cleared gate `(not fvgRequireClose or close[1] > high[2])` / `(... < low[2])` +
+  `%`-of-price threshold), the close-past-far-edge mitigation, the `bar_index > born` guard and the
+  FIFO cap exact — do not "clean up" or reorder them. Mirror any new `GRP_FVG` input as a constructor
+  arg AND a `cfg_fvg_*` column in `fvg_export.pine` (read by `compare_fvg.py`).
 - When adding a new event or field, update this file's Public API and the tests in the same commit.
 
 ## Never do
@@ -146,22 +160,26 @@ ev.active                # live gaps, oldest-first (state) — mirrors the Pine 
 
 ## Validation (Pine ↔ Python parity)
 
-**Unit tests — GREEN:** `python3 -m pytest engines/fair_value_gaps/tests/ -q` (14 hand-traced tests
-pinning formation, the void + middle-close-cleared conditions, that a non-clean / non-progressive
+**Unit tests — GREEN:** `python3 -m pytest engines/fair_value_gaps/tests/ -q` (17 hand-traced tests
+pinning formation, the void + optional middle-close-cleared conditions, that a non-clean / non-progressive
 sequence now DOES form a gap, the two-bar warm-up, close-past-far-edge mitigation on both sides, that
-a wick no longer mitigates, the creation-bar guard, FIFO eviction, and the %-of-price threshold).
+a wick no longer mitigates, the creation-bar guard, FIFO eviction, the %-of-price threshold, and the
+EQ-exemption cap behaviour).
 
-**Full Pine↔Python parity — GREEN (exit 0), re-confirmed 2026-07-14.** On a fresh combined
-`VANTAGE_XAUUSD, 5m` export (10,364 bars):
-`python3 engines/fair_value_gaps/tools/compare_fvg.py "<that.csv>" --max-count 6 --threshold-pct 0.1
---warmup 886` matched every compared field (all 6 gap slots × top/bottom/is-bull, the count, and the
-formed/mitigated pulses) on every warm bar. The 886-bar warm-up is the cold-start (Pine opens
-holding 3 pre-window gaps in its oldest slots; they flush by bar 886). The harness:
+**Full Pine↔Python parity — GREEN (exit 0), 2026-07-19.** Re-validated at the new behaviour
+(`require_close` gate + reconciled defaults 10/0.0 + EQ-exemption coupling) on a fresh 16,639-bar
+`VANTAGE_XAUUSD, 5m` grand export. The tool reads the settings from the export's `cfg_fvg_*` /
+`cfg_eq_*` columns — run it with NO config flags:
+`python3 engines/fair_value_gaps/tools/compare_fvg.py "<that.csv>" --warmup N`. The harness:
 
 1. `indicators/fvg_export.pine` — the FVG compute block from `mpc_assistant.pine` (drawing removed,
    the four `fvgTops/fvgBots/fvgIsBull/fvgBorn` arrays kept) + `plot()` columns for the active gap
-   arrays (6 slots × top/bottom/is-bull), the count, and the formed/mitigated pulses. Put it on a
-   chart, Export chart data → CSV, drop it in `engines/fair_value_gaps/exports/` (git-ignored).
+   arrays (6 slots × top/bottom/is-bull), the count, the formed/mitigated pulses, the `cfg_fvg_*`
+   settings columns (thresh / maxcount / requireclose), AND — to reproduce the `eqExemptFvg` coupling —
+   the EQ compute block + `f_fvgNearEq` + the exempt eviction, plus `cfg_eq_*` columns (pivotlen /
+   atrmult / max / exempt). `compare_fvg.py` reads `cfg_eq_*`, runs the Python EqualHighsLowsEngine, and
+   feeds its active levels + tolerance into the FVG cap — so the coupling is validated, not assumed. Put
+   it on a chart, Export chart data → CSV, drop it in `engines/fair_value_gaps/exports/` (git-ignored).
    **Gotcha (fixed 2026-07-10):** the parity plots MUST use a fully-transparent colour
    (`color = color.new(..., 100)`), NOT `display = display.none` — TradingView's "Export chart data"
    silently excludes `display.none` plots from the CSV, so the FVG columns never exported the first
