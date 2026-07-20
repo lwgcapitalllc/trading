@@ -27,33 +27,10 @@
 // freely, it never affects trade firing.
 // ============================================================================
 strategy("MPC A+ Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0)
-var GRP_TABLE = "Confirmation Table"
-bool showConfTable = input.bool(false, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
-string tablePositionInput = input.string("Top Center", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
-string tableSizeInput = input.string("Tiny", "Table Text Size", group = GRP_TABLE, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
-
-f_tablePosition(string opt) =>
-    switch opt
-        "Top Left"      => position.top_left
-        "Top Center"    => position.top_center
-        "Top Right"     => position.top_right
-        "Middle Left"   => position.middle_left
-        "Middle Center" => position.middle_center
-        "Middle Right"  => position.middle_right
-        "Bottom Left"   => position.bottom_left
-        "Bottom Center" => position.bottom_center
-        "Bottom Right"  => position.bottom_right
-        => position.top_right
-
-f_tableSize(string opt) =>
-    switch opt
-        "Tiny"   => size.tiny
-        "Small"  => size.small
-        "Normal" => size.normal
-        "Large"  => size.large
-        "Huge"   => size.huge
-        => size.tiny
-
+// (Removed 2026-07-19: the MPC-JARVIS Confirmation Table and its position/size
+// inputs + f_tablePosition/f_tableSize helpers, to fit under the compiled-token
+// limit — CE10117. The A+ status it showed is visible in the strategy tester +
+// the per-trade confluence labels; git has the full table if it's ever restored.)
 
 //============================================================
 //  SMC SETTINGS (hardcoded)
@@ -433,8 +410,30 @@ showNYRange    := marketStructureOnly ? false : showNYRange
 //============================================================
 //  SMC STRUCTURE TYPE
 //============================================================
+// Draw event — process() records what to draw as data (no drawing built-ins),
+// so it is legal to run through request.security() on a lower timeframe.
+// flush_draw() replays these into real lines/labels on the chart. Each event
+// snapshots its coordinates at the exact moment process() computed them, so the
+// replayed chart is pixel-identical to the old inline drawing.
+//   k: "ln" line | "lb" label | "delLnA/delLbA/delLnL/delLbL" delete active
+//      handle | "solA/solL" solidify+detach active line (on-break persist)
+//   slot: 1 ash_line  2 ash_lbl  3 asl_line  4 asl_lbl  0 transient (discard)
+type SEv
+    string k
+    int    x1    = na
+    float  y1    = na
+    string txt   = ""
+    color  col   = na
+    color  tcol  = na
+    bool   solid = false
+    bool   up    = false
+    string sz    = ""
+    int    slot  = 0
+
 type SMCStructure
     int    length
+    bool   draw            = true   // false on the 1m instance — skips event recording
+    array<SEv> ev          = na     // per-bar draw events, replayed by flush_draw()
     float  ash             = na
     int    ash_loc         = na
     string ash_type        = ""
@@ -481,31 +480,33 @@ type SMCStructure
     bool   bull_sos       = false
     bool   bear_sos       = false
 
+// Record one draw event (no drawing built-ins here — safe under request.security).
+// Guarded by st.draw so the 1m instance does zero recording work.
+method emit(SMCStructure st, SEv e) =>
+    if st.draw
+        if na(st.ev)
+            st.ev := array.new<SEv>()
+        array.push(st.ev, e)
+
 // prefix: "" for external, "i" for internal
 // bull_col / bear_col allow per-instance colors
 method create_ash(SMCStructure st, float val, int loc, color col, bool solid, string prefix) =>
-    if not na(st.ash_line)
-        line.delete(st.ash_line)
-    if not na(st.ash_lbl)
-        label.delete(st.ash_lbl)
-        st.ash_lbl := na
+    st.emit(SEv.new("delLnA"))
+    st.emit(SEv.new("delLbA"))
     st.ash      := val
     st.ash_loc  := loc
     st.ash_type := ""
-    st.ash_lbl  := label.new(loc, val, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(col), style=label.style_label_down, size=f_structSize())
-    st.ash_line := line.new(loc, val, bar_index, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
+    st.emit(SEv.new("lb", x1=loc, y1=val, txt=prefix + "ASH\n", tcol=f_swingCol(col), up=false, sz=f_structSize(), slot=2))
+    st.emit(SEv.new("ln", x1=loc, y1=val, col=col, solid=solid, slot=1))
 
 method create_asl(SMCStructure st, float val, int loc, color col, bool solid, string prefix) =>
-    if not na(st.asl_line)
-        line.delete(st.asl_line)
-    if not na(st.asl_lbl)
-        label.delete(st.asl_lbl)
-        st.asl_lbl := na
+    st.emit(SEv.new("delLnL"))
+    st.emit(SEv.new("delLbL"))
     st.asl      := val
     st.asl_loc  := loc
     st.asl_type := ""
-    st.asl_lbl  := label.new(loc, val, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(col), style=label.style_label_up, size=f_structSize())
-    st.asl_line := line.new(loc, val, bar_index, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
+    st.emit(SEv.new("lb", x1=loc, y1=val, txt="\n" + prefix + "ASL", tcol=f_swingCol(col), up=true, sz=f_structSize(), slot=4))
+    st.emit(SEv.new("ln", x1=loc, y1=val, col=col, solid=solid, slot=3))
 
 // process() now accepts prefix + bull/bear colors so both instances share one method
 method process(SMCStructure st, float ph_val, float pl_val, string prefix, color bull_col, color bear_col) =>
@@ -555,15 +556,13 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                     st.pb_last_qualify_close := close
                     st.pb_last_qualify_high  := low
             if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
-                if not na(st.ash_line)
-                    line.delete(st.ash_line)
-                if not na(st.ash_lbl)
-                    label.delete(st.ash_lbl)
+                st.emit(SEv.new("delLnA"))
+                st.emit(SEv.new("delLbA"))
                 st.ash      := st.pb_extreme
                 st.ash_loc  := st.pb_extreme_loc
                 st.ash_type := "LOCKED"
-                st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
-                st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
+                st.emit(SEv.new("ln", x1=st.pb_extreme_loc, y1=st.pb_extreme, col=bear_col, solid=true, slot=1))
+                st.emit(SEv.new("lb", x1=st.pb_extreme_loc, y1=st.pb_extreme, txt=prefix + "ASH\n", tcol=f_swingCol(bear_col), up=false, sz=f_structSize(), slot=2))
                 st.new_swing_high := true
                 st.pb_mode    := 0
                 st.pb_count   := 0
@@ -597,15 +596,13 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                     st.pb_last_qualify_close := close
                     st.pb_last_qualify_high  := high
             if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
-                if not na(st.asl_line)
-                    line.delete(st.asl_line)
-                if not na(st.asl_lbl)
-                    label.delete(st.asl_lbl)
+                st.emit(SEv.new("delLnL"))
+                st.emit(SEv.new("delLbL"))
                 st.asl      := st.pb_extreme
                 st.asl_loc  := st.pb_extreme_loc
                 st.asl_type := "LOCKED"
-                st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
-                st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
+                st.emit(SEv.new("ln", x1=st.pb_extreme_loc, y1=st.pb_extreme, col=bull_col, solid=true, slot=3))
+                st.emit(SEv.new("lb", x1=st.pb_extreme_loc, y1=st.pb_extreme, txt="\n" + prefix + "ASL", tcol=f_swingCol(bull_col), up=true, sz=f_structSize(), slot=4))
                 st.new_swing_low := true
                 st.pb_mode    := 0
                 st.pb_count   := 0
@@ -636,8 +633,8 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                 st.asl      := seed_low
                 st.asl_loc  := seed_loc
                 st.asl_type := ""
-                st.asl_line := line.new(seed_loc, seed_low, bar_index, seed_low, color=bull_col, style=line.style_dashed, width=1)
-                st.asl_lbl  := label.new(seed_loc, seed_low, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
+                st.emit(SEv.new("ln", x1=seed_loc, y1=seed_low, col=bull_col, solid=false, slot=3))
+                st.emit(SEv.new("lb", x1=seed_loc, y1=seed_low, txt="\n" + prefix + "ASL", tcol=f_swingCol(bull_col), up=true, sz=f_structSize(), slot=4))
                 st.seeded := true
         else if not na(st.asl) and na(st.ash)
             float seed_high = high
@@ -651,8 +648,8 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                 st.ash      := seed_high
                 st.ash_loc  := seed_loc
                 st.ash_type := ""
-                st.ash_line := line.new(seed_loc, seed_high, bar_index, seed_high, color=bear_col, style=line.style_dashed, width=1)
-                st.ash_lbl  := label.new(seed_loc, seed_high, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
+                st.emit(SEv.new("ln", x1=seed_loc, y1=seed_high, col=bear_col, solid=false, slot=1))
+                st.emit(SEv.new("lb", x1=seed_loc, y1=seed_high, txt=prefix + "ASH\n", tcol=f_swingCol(bear_col), up=false, sz=f_structSize(), slot=2))
                 st.seeded := true
         else if not na(st.ash) and not na(st.asl)
             st.seeded := true
@@ -682,40 +679,31 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
         if is_choch
             st.bull_sos := true
         int    mid_x       = math.round((st.ash_loc + bar_index) / 2)
-        label.new(mid_x, st.ash, "\n" + brk_lbl_txt, color=color(na), textcolor=bull_col, style=label.style_label_down, size=size.tiny)
+        st.emit(SEv.new("lb", x1=mid_x, y1=st.ash, txt="\n" + brk_lbl_txt, tcol=bull_col, up=false, sz=size.tiny, slot=0))
 
         if is_choch
             st.choch_lock := true
 
         bool brk_already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
-        if not na(st.ash_lbl)
-            label.delete(st.ash_lbl)
+        st.emit(SEv.new("delLbA"))
         if not brk_already_conf_high
             bool   brk_is_hh  = na(st.last_conf_high) or st.ash >= st.last_conf_high
             string brk_high_t = brk_is_hh ? prefix + "HH" : prefix + "LH"
             color  brk_high_c = brk_is_hh ? bull_col : bear_col
-            label.new(st.ash_loc, st.ash, brk_high_t + "\n", color=color(na), textcolor=f_swingCol(brk_high_c), style=label.style_label_down, size=f_structSize())
+            st.emit(SEv.new("lb", x1=st.ash_loc, y1=st.ash, txt=brk_high_t + "\n", tcol=f_swingCol(brk_high_c), up=false, sz=f_structSize(), slot=0))
 
-        if not na(st.ash_line)
-            line.set_style(st.ash_line, line.style_solid)
-            line.set_color(st.ash_line, bull_col)
-            line.set_width(st.ash_line, 2)
-            line.set_x2(st.ash_line, bar_index)
-            st.ash_line := na
+        st.emit(SEv.new("solA", col=bull_col))
 
         st.last_conf_high     := st.ash
         st.last_conf_high_loc := st.ash_loc
-        st.ash_lbl            := na
         st.ash                := na
         st.dir                := 1
 
         if was_in_bear_pb
             st.bull_bos_low   := st.pb_extreme
             st.bull_bos_l_loc := st.pb_extreme_loc
-            if not na(st.asl_line)
-                line.delete(st.asl_line)
-            if not na(st.asl_lbl)
-                label.delete(st.asl_lbl)
+            st.emit(SEv.new("delLnL"))
+            st.emit(SEv.new("delLbL"))
             bool   pb_is_hl = is_choch ? false : (na(st.last_conf_low) or st.pb_extreme >= st.last_conf_low)
             // On an SOS (fast reversal) the extreme is only the ACTIVE swing low —
             // it prints as ASL and is confirmed to HL/LL by the NEXT bullish break.
@@ -724,8 +712,8 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             st.asl      := st.pb_extreme
             st.asl_loc  := st.pb_extreme_loc
             st.asl_type := "LOCKED"
-            st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
-            st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + pb_low_t, color=color(na), textcolor=f_swingCol(pb_low_c), style=label.style_label_up, size=f_structSize())
+            st.emit(SEv.new("ln", x1=st.pb_extreme_loc, y1=st.pb_extreme, col=bull_col, solid=true, slot=3))
+            st.emit(SEv.new("lb", x1=st.pb_extreme_loc, y1=st.pb_extreme, txt="\n" + pb_low_t, tcol=f_swingCol(pb_low_c), up=true, sz=f_structSize(), slot=4))
             if not is_choch
                 st.last_conf_low     := st.pb_extreme
                 st.last_conf_low_loc := st.pb_extreme_loc
@@ -746,18 +734,13 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                     bool   old_is_hl = is_choch ? false : (na(st.last_conf_low) or st.asl >= st.last_conf_low)
                     string old_low_t = old_is_hl ? prefix + "HL" : prefix + "LL"
                     color  old_low_c = old_is_hl ? bull_col : bear_col
-                    if not na(st.asl_lbl)
-                        label.delete(st.asl_lbl)
-                    label.new(st.asl_loc, st.asl, "\n" + old_low_t, color=color(na), textcolor=f_swingCol(old_low_c), style=label.style_label_up, size=f_structSize())
+                    st.emit(SEv.new("delLbL"))
+                    st.emit(SEv.new("lb", x1=st.asl_loc, y1=st.asl, txt="\n" + old_low_t, tcol=f_swingCol(old_low_c), up=true, sz=f_structSize(), slot=0))
                     st.last_conf_low     := st.asl
                     st.last_conf_low_loc := st.asl_loc
                 else
-                    if not na(st.asl_lbl)
-                        label.delete(st.asl_lbl)
-                if not na(st.asl_line)
-                    line.delete(st.asl_line)
-                st.asl_line := na
-                st.asl_lbl  := na
+                    st.emit(SEv.new("delLbL"))
+                st.emit(SEv.new("delLnL"))
                 st.asl      := na
 
             float lowest_val = low
@@ -776,11 +759,9 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             st.asl      := lowest_val
             st.asl_loc  := lowest_loc
             st.asl_type := ""
-            st.asl_line := line.new(lowest_loc, lowest_val, bar_index, lowest_val, color=bull_col, style=line.style_solid, width=1)
+            st.emit(SEv.new("ln", x1=lowest_loc, y1=lowest_val, col=bull_col, solid=true, slot=3))
             if lowest_val != st.last_conf_low
-                st.asl_lbl := label.new(lowest_loc, lowest_val, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
-            else
-                st.asl_lbl := na
+                st.emit(SEv.new("lb", x1=lowest_loc, y1=lowest_val, txt="\n" + prefix + "ASL", tcol=f_swingCol(bull_col), up=true, sz=f_structSize(), slot=4))
 
             st.pb_mode               := 1
             st.pb_count              := 0
@@ -806,39 +787,30 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
         if is_choch
             st.bear_sos := true
         int    mid_x       = math.round((st.asl_loc + bar_index) / 2)
-        label.new(mid_x, st.asl, brk_lbl_txt + "\n", color=color(na), textcolor=bear_col, style=label.style_label_up, size=size.tiny)
+        st.emit(SEv.new("lb", x1=mid_x, y1=st.asl, txt=brk_lbl_txt + "\n", tcol=bear_col, up=true, sz=size.tiny, slot=0))
 
         if is_choch
             st.choch_lock := true
 
         bool brk_already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
-        if not na(st.asl_lbl)
-            label.delete(st.asl_lbl)
+        st.emit(SEv.new("delLbL"))
         if not brk_already_conf_low
             bool   brk_is_hl = na(st.last_conf_low) or st.asl >= st.last_conf_low
             string brk_low_t = brk_is_hl ? prefix + "HL" : prefix + "LL"
-            label.new(st.asl_loc, st.asl, "\n" + brk_low_t, color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_up, size=f_structSize())
+            st.emit(SEv.new("lb", x1=st.asl_loc, y1=st.asl, txt="\n" + brk_low_t, tcol=f_swingCol(bear_col), up=true, sz=f_structSize(), slot=0))
 
-        if not na(st.asl_line)
-            line.set_style(st.asl_line, line.style_solid)
-            line.set_color(st.asl_line, bear_col)
-            line.set_width(st.asl_line, 2)
-            line.set_x2(st.asl_line, bar_index)
-            st.asl_line := na
+        st.emit(SEv.new("solL", col=bear_col))
 
         st.last_conf_low     := st.asl
         st.last_conf_low_loc := st.asl_loc
-        st.asl_lbl           := na
         st.asl               := na
         st.dir               := -1
 
         if was_in_bull_pb
             st.bear_bos_high  := st.pb_extreme
             st.bear_bos_h_loc := st.pb_extreme_loc
-            if not na(st.ash_line)
-                line.delete(st.ash_line)
-            if not na(st.ash_lbl)
-                label.delete(st.ash_lbl)
+            st.emit(SEv.new("delLnA"))
+            st.emit(SEv.new("delLbA"))
             bool   pb_is_hh  = na(st.last_conf_high) or st.pb_extreme >= st.last_conf_high
             // On an SOS (fast reversal) the extreme is only the ACTIVE swing high —
             // it prints as ASH and is confirmed to HH/LH by the NEXT bearish break.
@@ -847,8 +819,8 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             st.ash      := st.pb_extreme
             st.ash_loc  := st.pb_extreme_loc
             st.ash_type := "LOCKED"
-            st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
-            st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, pb_high_t + "\n", color=color(na), textcolor=f_swingCol(pb_high_c), style=label.style_label_down, size=f_structSize())
+            st.emit(SEv.new("ln", x1=st.pb_extreme_loc, y1=st.pb_extreme, col=bear_col, solid=true, slot=1))
+            st.emit(SEv.new("lb", x1=st.pb_extreme_loc, y1=st.pb_extreme, txt=pb_high_t + "\n", tcol=f_swingCol(pb_high_c), up=false, sz=f_structSize(), slot=2))
             if not is_choch
                 st.last_conf_high     := st.pb_extreme
                 st.last_conf_high_loc := st.pb_extreme_loc
@@ -879,18 +851,13 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                     bool   old_is_hh  = is_choch ? true : (na(st.last_conf_high) or st.ash >= st.last_conf_high)
                     string old_high_t = old_is_hh ? prefix + "HH" : prefix + "LH"
                     color  old_high_c = old_is_hh ? bull_col : bear_col
-                    if not na(st.ash_lbl)
-                        label.delete(st.ash_lbl)
-                    label.new(st.ash_loc, st.ash, old_high_t + "\n", color=color(na), textcolor=f_swingCol(old_high_c), style=label.style_label_down, size=f_structSize())
+                    st.emit(SEv.new("delLbA"))
+                    st.emit(SEv.new("lb", x1=st.ash_loc, y1=st.ash, txt=old_high_t + "\n", tcol=f_swingCol(old_high_c), up=false, sz=f_structSize(), slot=0))
                     st.last_conf_high     := st.ash
                     st.last_conf_high_loc := st.ash_loc
                 else
-                    if not na(st.ash_lbl)
-                        label.delete(st.ash_lbl)
-                if not na(st.ash_line)
-                    line.delete(st.ash_line)
-                st.ash_line := na
-                st.ash_lbl  := na
+                    st.emit(SEv.new("delLbA"))
+                st.emit(SEv.new("delLnA"))
                 st.ash      := na
             else
                 // Neither an active pullback high nor a confirmed ASH was available to
@@ -900,7 +867,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                 string fallback_high_t = fallback_is_hh ? prefix + "HH" : prefix + "LH"
                 color  fallback_high_c = fallback_is_hh ? bull_col : bear_col
                 if highest_val != st.last_conf_high
-                    label.new(highest_loc, highest_val, fallback_high_t + "\n", color=color(na), textcolor=f_swingCol(fallback_high_c), style=label.style_label_down, size=f_structSize())
+                    st.emit(SEv.new("lb", x1=highest_loc, y1=highest_val, txt=fallback_high_t + "\n", tcol=f_swingCol(fallback_high_c), up=false, sz=f_structSize(), slot=0))
                     st.last_conf_high     := highest_val
                     st.last_conf_high_loc := highest_loc
 
@@ -910,11 +877,9 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             st.ash      := highest_val
             st.ash_loc  := highest_loc
             st.ash_type := ""
-            st.ash_line := line.new(highest_loc, highest_val, bar_index, highest_val, color=bear_col, style=line.style_solid, width=1)
+            st.emit(SEv.new("ln", x1=highest_loc, y1=highest_val, col=bear_col, solid=true, slot=1))
             if highest_val != st.last_conf_high
-                st.ash_lbl := label.new(highest_loc, highest_val, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
-            else
-                st.ash_lbl := na
+                st.emit(SEv.new("lb", x1=highest_loc, y1=highest_val, txt=prefix + "ASH\n", tcol=f_swingCol(bear_col), up=false, sz=f_structSize(), slot=2))
 
             st.pb_mode               := -1
             st.pb_count              := 0
@@ -925,6 +890,59 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             st.pb_last_qualify_close := na
             st.pb_last_qualify_high  := na
             st.pb_started            := true
+
+// flush_draw() — replay the events process() recorded into real lines/labels,
+// then do the per-bar active-line extend + hide (the old tail of process()).
+// Only the drawn (15m chart) instance calls this. The 1m instance never does,
+// and since it runs with draw=false its event list is always empty anyway.
+method flush_draw(SMCStructure st) =>
+    if not na(st.ev) and array.size(st.ev) > 0
+        for i = 0 to array.size(st.ev) - 1
+            SEv e = array.get(st.ev, i)
+            switch e.k
+                "ln" =>
+                    line ln = line.new(e.x1, e.y1, bar_index, e.y1, color = e.col, style = e.solid ? line.style_solid : line.style_dashed, width = 1)
+                    if e.slot == 1
+                        st.ash_line := ln
+                    else
+                        st.asl_line := ln
+                "lb" =>
+                    label lb = label.new(e.x1, e.y1, e.txt, color = color(na), textcolor = e.tcol, style = e.up ? label.style_label_up : label.style_label_down, size = e.sz)
+                    if e.slot == 2
+                        st.ash_lbl := lb
+                    else if e.slot == 4
+                        st.asl_lbl := lb
+                "delLnA" =>
+                    if not na(st.ash_line)
+                        line.delete(st.ash_line)
+                        st.ash_line := na
+                "delLbA" =>
+                    if not na(st.ash_lbl)
+                        label.delete(st.ash_lbl)
+                        st.ash_lbl := na
+                "delLnL" =>
+                    if not na(st.asl_line)
+                        line.delete(st.asl_line)
+                        st.asl_line := na
+                "delLbL" =>
+                    if not na(st.asl_lbl)
+                        label.delete(st.asl_lbl)
+                        st.asl_lbl := na
+                "solA" =>
+                    if not na(st.ash_line)
+                        line.set_style(st.ash_line, line.style_solid)
+                        line.set_color(st.ash_line, e.col)
+                        line.set_width(st.ash_line, 2)
+                        line.set_x2(st.ash_line, bar_index)
+                        st.ash_line := na
+                "solL" =>
+                    if not na(st.asl_line)
+                        line.set_style(st.asl_line, line.style_solid)
+                        line.set_color(st.asl_line, e.col)
+                        line.set_width(st.asl_line, 2)
+                        line.set_x2(st.asl_line, bar_index)
+                        st.asl_line := na
+        array.clear(st.ev)
 
     if not na(st.ash_line)
         line.set_x2(st.ash_line, bar_index)
@@ -1156,6 +1174,7 @@ pl = ta.pivotlow(low,  majorLength, majorLength)
 color extBullCol = showExternal ? (showExternal ? bullColor : color(na)) : color(na)
 color extBearCol = showExternal ? (showExternal ? bearColor : color(na)) : color(na)
 st.process(ph, pl, "", extBullCol, extBearCol)
+st.flush_draw()   // replay the events process() recorded into real lines/labels (15m chart only)
 
 // After process runs — restore line colors when labels are hidden but structure is visible
 if not na(st.ash_line)
@@ -1170,6 +1189,44 @@ if not na(st.ash_lbl)
     label.set_textcolor(st.ash_lbl, showExternal ? f_swingCol(bearColor) : color(na))
 if not na(st.asl_lbl)
     label.set_textcolor(st.asl_lbl, showExternal ? f_swingCol(bullColor) : color(na))
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  1-MINUTE STRUCTURE  — the SAME engine, run on 1m for the secondary-trade
+//  trigger. process() is drawing-free, so it is legal inside request.security().
+//  We read its state back only as scalars — nothing is ever drawn on the 1m feed.
+//  (Sampled at each 15m close; the secondary-trade block latches the leg it
+//  needs. Debug markers below prove the 1m engine actually ran.)
+// ─────────────────────────────────────────────────────────────────────────────
+// Returns LATCHED 1m state (not one-bar pulses): the bar of the most recent 1m
+// bull/bear SOS and the swing leg (high/low) that SOS broke. Latching means the
+// 15m sample can detect a 1m SOS that fired anywhere inside the 15m bar — by
+// noticing the latched bar advanced — instead of only catching SOS bars that
+// happen to align with the 15m close. The leg is what the 1m fib is built from.
+f_struct1m() =>
+    var SMCStructure st1 = SMCStructure.new(length = majorLength, draw = false)
+    var int   lastBullSosBar = na
+    var int   lastBearSosBar = na
+    var float bullLegHi = na, var float bullLegLo = na
+    var float bearLegHi = na, var float bearLegLo = na
+    float ph1 = ta.pivothigh(high, majorLength, majorLength)
+    float pl1 = ta.pivotlow(low,  majorLength, majorLength)
+    st1.process(ph1, pl1, "", color(na), color(na))
+    if st1.bull_sos
+        lastBullSosBar := bar_index
+        bullLegHi := st1.bull_bos_high
+        bullLegLo := st1.bull_bos_low
+    if st1.bear_sos
+        lastBearSosBar := bar_index
+        bearLegHi := st1.bear_bos_high
+        bearLegLo := st1.bear_bos_low
+    [lastBullSosBar, lastBearSosBar, bullLegHi, bullLegLo, bearLegHi, bearLegLo, st1.dir]
+
+[m1BullSosBar, m1BearSosBar, m1BullLegHi, m1BullLegLo, m1BearLegHi, m1BearLegLo, m1Dir] = request.security(syminfo.tickerid, "1", f_struct1m(), lookahead = barmerge.lookahead_off)
+
+// A 1m SOS occurred within THIS 15m bar iff the latched 1m SOS bar advanced.
+// These feed the secondary-trade re-entry trigger (below) — not drawn.
+bool m1NewBullSos = not na(m1BullSosBar) and (na(m1BullSosBar[1]) or m1BullSosBar != m1BullSosBar[1])
+bool m1NewBearSos = not na(m1BearSosBar) and (na(m1BearSosBar[1]) or m1BearSosBar != m1BearSosBar[1])
 
 // Extend and clean OBs every bar
 if showOBs
@@ -3310,15 +3367,10 @@ plot(array.get(a_lastHighs, 1), "WH", color.new(i_weeklyColor,  100), editable =
 plot(array.get(a_lastLows,  1), "WL", color.new(i_weeklyColor,  100), editable = false, display = display.none)
 
 //============================================================
-//  MPC - JARVIS CONFIRMATION TABLE
+//  LIQUIDITY / STRUCTURE STATE  (fed the removed Confirmation Table; kept
+//  because recentBSL/recentSSL and the A+ stage vars also feed the strategy's
+//  per-trade confluence labels and arm-source filter)
 //============================================================
-color JARVIS_YELLOW = #fbe35e
-color JARVIS_BLUE   = #17578e
-color JARVIS_WHITE  = #ffffff
-color JARVIS_BLACK  = #000000
-color JARVIS_BSL    = color.new(#ff4444, 0)
-color JARVIS_SSL    = color.new(#00cc66, 0)
-color JARVIS_NEUTRAL = color.new(#888888, 0)
 
 // ── 1. LIQUIDITY slots ──
 var string liq_h4h = "", var string liq_h4l = ""
@@ -3561,47 +3613,9 @@ if not na(sniperZoneTop) and not na(sniperZoneBot)
 if _snBearBOS or _snBullBOS
     sz_status := ""
 
-// ── Draw table ──
-var table jarvisTable = table.new(f_tablePosition(tablePositionInput), 3, 18,
-  bgcolor      = color.new(#0a0a14, 5),
-  border_color = color.new(JARVIS_BLUE, 50),
-  border_width = 1,
-  frame_color  = JARVIS_YELLOW,
-  frame_width  = 2)
-
-f_jRow3(table t, int row, string sec, string val, color vc, string detail) =>
-    table.cell(t, 0, row, sec,
-      text_color  = color.new(JARVIS_WHITE, 20),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_left)
-    table.cell(t, 1, row, val,
-      text_color  = vc,
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_center)
-    table.cell(t, 2, row, detail,
-      text_color  = color.new(JARVIS_WHITE, 40),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_center)
-
-f_jBlank3(table t, int row, string sec) =>
-    table.cell(t, 0, row, sec,
-      text_color  = color.new(JARVIS_WHITE, 20),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_left)
-    table.cell(t, 1, row, "—",
-      text_color  = color.new(JARVIS_WHITE, 75),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_center)
-    table.cell(t, 2, row, "—",
-      text_color  = color.new(JARVIS_WHITE, 75),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_center)
+// (Removed 2026-07-19: jarvisTable + f_jRow3/f_jBlank3 — the Confirmation Table
+// render, dropped to fit the compiled-token limit CE10117. Everything it read is
+// computed above/below and still feeds the strategy; git has the full table.)
 
 // Most recent BSL/SSL source — priority: NY > London > Asia > Daily > H4
 bool showSessH = liq_dh == ""
@@ -3971,142 +3985,6 @@ if array.size(fvgBoxes) > 0 and not na(fiboP2) and not na(fiboP6)
             if fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6
                 aplusS_fvg := true
 
-// The whole render lives in a function, including its own barstate gate, so the
-// main body pays for exactly ONE statement instead of ~60. Pine caps how many
-// statements the main body may hold (CE10295: "The main body of the script is
-// too long"), and this table is by far the largest block in it. Same trick as
-// f_drawStats / f_posBox below. Everything it reads is a global declared above.
-f_drawTable() =>
-    if showConfTable and barstate.islast
-        // Header
-        table.cell(jarvisTable, 0, 0, "MPC- JARVIS",
-          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
-          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
-        table.cell(jarvisTable, 1, 0, "STATUS",
-          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
-          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
-        table.cell(jarvisTable, 2, 0, "SOURCE",
-          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
-          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
-
-        int r = 1
-
-        // Everything below (A+ SETUP, CONT, Weekly, Daily, LIQ BSL/SSL) is hidden in
-        // Market Structure mode — only EXT/INT print then.
-        if not marketStructureOnly
-            // A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
-            // completes, this row goes back to Pass; what tracks afterward is the CONT
-            // row below — a different trade type, displayed separately so the two can
-            // never be confused. Divergence/extreme-RSI veto: a side with live opposing
-            // divergence or an extreme RSI reading is suppressed and flagged instead of
-            // displayed as a tradeable setup, even if the entry zone is reached.
-            // FVG is a REQUIRED confirmation for READY (not just a tag) — reaching 0.618
-            // without a live matching FVG holds the row at "awaiting FVG" instead of
-            // declaring the setup ready. POI (Cycle Fib discount/premium) is a separate,
-            // optional confirmation — it does not substitute for the FVG requirement.
-            bool aplusL_ok = aplusL_stage > 0 and not longVeto
-            bool aplusS_ok = aplusS_stage > 0 and not shortVeto
-            bool aplusL_blocked = aplusL_stage > 0 and longVeto
-            bool aplusS_blocked = aplusS_stage > 0 and shortVeto
-            if aplusL_ok or aplusS_ok
-                bool seqIsLong = aplusL_ok and (not aplusS_ok or aplusL_stage >= aplusS_stage)
-                int  seqStage  = seqIsLong ? aplusL_stage : aplusS_stage
-                color seqCol = seqIsLong ? JARVIS_SSL : JARVIS_BSL
-                string seqSide = seqIsLong ? "LONG" : "SHORT"
-                bool  seqFvg  = seqIsLong ? aplusL_fvg : aplusS_fvg
-                bool  seqPoi  = seqIsLong ? aplusL_poi : aplusS_poi
-                bool  seqDiv  = seqIsLong ? bullDivActive : bearDivActive
-                string poiTag = seqPoi ? " + POI" : ""
-                string divTag = seqDiv ? " + DIV" : ""
-                if seqStage == 4 and seqFvg
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, "E1 zone + FVG" + poiTag + divTag)
-                else if seqStage == 4
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT FVG " + seqSide, JARVIS_YELLOW, "E1 zone, no FVG yet" + poiTag + divTag)
-                else if seqStage == 3
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + (seqFvg ? " + FVG" : "") + poiTag + divTag)
-                else if seqStage == 2
-                    f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag)
-                else
-                    f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag)
-                r := r + 1
-            else if aplusL_blocked or aplusS_blocked
-                f_jRow3(jarvisTable, r, "A+ SETUP", "EXTREME", JARVIS_YELLOW, aplusL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
-                r := r + 1
-            else
-                f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
-                r := r + 1
-
-            // CONT — the continuation trade type: BOS, await retrace, entry at E1-E4
-            // where an FVG or Sniper Zone sits. Only appears while a leg is tracked.
-            // Same veto rule applies.
-            bool contL_ok = contL_stage > 0 and not longVeto
-            bool contS_ok = contS_stage > 0 and not shortVeto
-            bool contL_blocked = contL_stage > 0 and longVeto
-            bool contS_blocked = contS_stage > 0 and shortVeto
-            if contL_ok or contS_ok
-                bool contIsLong = contL_ok and (not contS_ok or contL_stage >= contS_stage)
-                int  contStage  = contIsLong ? contL_stage : contS_stage
-                color contCol = contIsLong ? JARVIS_SSL : JARVIS_BSL
-                string contSide = contIsLong ? "LONG" : "SHORT"
-                bool  contFvg  = contIsLong ? aplusL_fvg : aplusS_fvg
-                bool  contSz   = not na(sniperZoneTop) and (contIsLong ? sz_bullish : not sz_bullish)
-                bool  contDiv  = contIsLong ? bullDivActive : bearDivActive
-                string cFvgTag = contFvg ? " + FVG" : ""
-                string cSzTag  = contSz ? " + SZ" : ""
-                string cDivTag = contDiv ? " + DIV" : ""
-                if contStage == 4
-                    f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + "READY " + contSide, contCol, "E1-E4 zone" + cFvgTag + cSzTag + cDivTag)
-                else
-                    f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + contSide, contCol, "BOS ✓ await retrace" + cFvgTag + cSzTag)
-                r := r + 1
-            else if contL_blocked or contS_blocked
-                f_jRow3(jarvisTable, r, "CONT", "EXTREME", JARVIS_YELLOW, contL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
-                r := r + 1
-
-            // WEEKLY — Established Context (last closed week vs the one before)
-            f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
-            r := r + 1
-
-            // DAILY — Established Context (last closed day vs the one before)
-            f_jRow3(jarvisTable, r, "Daily", dEstState, dEstState == "Bullish" ? JARVIS_SSL : dEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, dEstDesc)
-            r := r + 1
-
-            // LIQ BSL
-            if recentBSL != ""
-                f_jRow3(jarvisTable, r, "LIQ BSL", "BSL", JARVIS_BSL, recentBSL)
-                r := r + 1
-
-            // LIQ SSL
-            if recentSSL != ""
-                f_jRow3(jarvisTable, r, "LIQ SSL", "SSL", JARVIS_SSL, recentSSL)
-                r := r + 1
-
-        // STRUCTURE — EXT always, INT only if within current fib range
-        if ext_struct != ""
-            f_jRow3(jarvisTable, r, "EXT", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "External")
-            r := r + 1
-        if int_struct_valid
-            f_jRow3(jarvisTable, r, "INT", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "Internal")
-            r := r + 1
-
-        // Wipe any leftover cells below the last drawn row. Without this, a tick
-        // that draws FEWER rows than the previous one leaves the old rows visible
-        // (e.g. a ghost duplicate of the final row after a row above disappears).
-        if r <= 17
-            table.clear(jarvisTable, 0, r, 2, 17)
-
-f_drawTable()
-
-//============================================================
-//  MPC- JARVIS WATERMARK
-//============================================================
-var table watermark = table.new(position.bottom_center, 1, 1)
-if barstate.islast
-    table.cell(watermark, 0, 0, "MPC- JARVIS",
-      text_color  = color.new(#17578e, 20),
-      text_size   = size.normal,
-      bgcolor     = color.new(JARVIS_BLACK, 100),
-      text_halign = text.align_center)
 
 
 //============================================================
@@ -4177,6 +4055,7 @@ float execTp2Pct  = input.float(40,   "TP2 size %",                    group = G
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The stats table below re-counts those honestly.")
 float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
 bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
+bool  execSecondary = input.bool(false, "Secondary re-entries (1m SOS)", group = GRP_EXEC, tooltip = "OFF (default) = one entry per 15m A+ leg (the primary only). ON = also take RE-ENTRIES on the same leg — but ONLY after the primary on that leg has already traded and closed (came back to breakeven); a re-entry is never the first trade on a leg. While the 15m divergence + SOS are STILL live and price is back inside the 0.618-0.886 zone of the 15m fib, drop to the 1-minute chart (same structure engine), wait for a 1m shift of structure in the trade direction, then enter once price retraces >= 38.2% of that 1m leg. Stop = the 1m leg origin (1m 100%); TP1/TP2 = the 15m fib 0.5 / 0.382; TP3 = runner. Multiple re-entries per leg allowed, always flat first. NOTE: the 15m chart only reads the 1m engine once per 15m bar, so re-entry timing is approximate here — the exact version is the Python port.")
 bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints a label at each entry listing ONLY the confluences that trade actually used — an arm source you disabled never appears, even if one was sitting there. When the trade closes the label is rewritten with the result: green ✓ WIN, red ✗ LOSS, orange • SCRATCH, plus the R it made. Lets you audit every losing trade against what armed it.")
 bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the furthest price the trade was ACTUALLY FILLED at; RED from entry to the stop fill if it was stopped for a loss; ORANGE line at entry if it only scratched to breakeven. Replaces TradingView's built-in trade markers.")
 bool  execShowExitLines = input.bool(true, "Show exit fill lines (TP1/TP2/RUN)", group = GRP_EXEC, tooltip = "Draws a line at the REAL fill price of every partial exit — TP1, TP2 and the runner — from the entry bar to the bar it filled, labelled with which leg it was. These are the prices the engine actually got, not the fib levels it aimed at. The runner has no target: it exits ONLY when the trailing stop is hit, so its line shows where the trail caught it.")
@@ -4190,8 +4069,7 @@ bool  execShowExitLines = input.bool(true, "Show exit fill lines (TP1/TP2/RUN)",
 // any trade that finishes inside +/- the scratch band is reported as a SCRATCH,
 // not a win and not a loss.
 var GRP_STATS = "Result Stats"
-bool  execShowStats = input.bool(true,  "Show W / L / Scratch table",  group = GRP_STATS)
-float execScratchR  = input.float(0.15, "Scratch band (R)",            group = GRP_STATS, minval = 0, step = 0.05, tooltip = "A closed trade whose net result lands inside +/- this many R counts as a SCRATCH. 0.15R on a 1%-risk account is +/- 0.15% of equity — small enough that it is noise, not an outcome.")
+float execScratchR  = input.float(0.15, "Scratch band (R)",            group = GRP_STATS, minval = 0, step = 0.05, tooltip = "A closed trade whose net result lands inside +/- this many R is graded a SCRATCH (not a win) on its entry label. 0.15R on a 1%-risk account is +/- 0.15% of equity — noise, not an outcome.")
 
 // Frozen trade levels — snapshotted while armed so live fib recomputation on
 // later bars cannot drag the stop/targets of an open trade (the leg's fib is
@@ -4206,14 +4084,32 @@ var float lEntry = na, var float sEntry = na   // fill price of the open trade (
 var float lMaxFav = na, var float sMaxFav = na // high-water mark of the open trade, drives the runner ratchet
 var int   lStage = 0,  var int   sStage = 0    // 0 = full stop, 1 = BE trigger reached (stop->BE), 2 = TP2 hit (stop->TP1, then runner ratchet)
 
-// Honest result accounting — see the "Result Stats" input group.
-// The six counters live in ONE array rather than six separate vars, and are
-// mutated inside f_grade() below. Pine caps how many statements the script's MAIN
-// BODY may contain (CE10295); arrays are passed by reference, so keeping the
-// tallying inside a function keeps this whole feature to a couple of main-body
-// statements instead of a dozen.
-//   slots: 0 = wins  1 = losses  2 = scratches  3 = sum win R  4 = sum loss R  5 = total R
-var array<float> stats = array.from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+// ── Secondary (re-entry) state ────────────────────────────────────────────────
+// While a 15m A+ leg stays alive we keep re-entering on it: price back in the
+// 0.618-0.886 zone of the 15m fib, 15m div + SOS STILL live, a 1m shift of
+// structure fires in the trade direction, then price retraces >= 38.2% of that
+// 1m leg. The 1m leg (hi=fib 0.0, lo=fib 1.0=SL) is latched here; each distinct
+// 1m leg fires at most one re-entry (dedupe key = its 1m SOS bar).
+// All secondary state lives on ONE object so the latch/arm logic can fold into a
+// single function call (f_secArm) — the main body pays for one statement, not a
+// dozen (CE10295, same reason as f_drawTable / f_diag). l* = long, s* = short.
+type SecState
+    int   lLeg    = na   // 1m SOS bar of the latched long leg (dedupe key)
+    float lHi     = na   // 1m leg high (fib 0.0)
+    float lLo     = na   // 1m leg low  (fib 1.0 = SL anchor)
+    int   lTraded = na   // 1m leg that has already re-entered (retire it)
+    int   lPend   = na   // 1m leg riding on a resting limit (set on fill)
+    float lEdge   = na   // resting buy-limit price (38.2% retrace of the 1m leg)
+    bool  lArmed  = false
+    int   sLeg    = na
+    float sHi     = na
+    float sLo     = na
+    int   sTraded = na
+    int   sPend   = na
+    float sEdge   = na
+    bool  sArmed  = false
+var SecState sec = SecState.new()
+
 var float openRiskUsd = na   // $ at risk on the open trade = 1R, used to grade the result
 var float netAtEntry  = na   // strategy.netprofit the moment the trade opened
 var string pendConfL = "", var string pendConfS = ""   // confluence summary snapshotted while armed, drawn on fill
@@ -4474,6 +4370,36 @@ if aplusS_fvgMiss and na(aplusS_sosBar)
 bool longDeep  = not na(longEdge)  and longEdge  <= fiboP3
 bool shortDeep = not na(shortEdge) and shortEdge >= fiboP3
 
+// ── Secondary re-entry: latch + arm ───────────────────────────────────────────
+// The whole latch + arm lives in ONE function so the main body pays for a single
+// call (CE10295 — same reason as f_drawTable / f_diag). It mutates the passed
+// SecState by reference and reads only globals declared above.
+//   Latch: while a 15m A+ leg lives (aplus*_sosBar non-na) and price is inside the
+//   0.618-0.886 zone (fiboP3..fiboP6), a 1m shift of structure in the trade
+//   direction records its leg (hi=fib 0.0, lo=fib 1.0=SL). Cleared the instant the
+//   15m leg dies, so a stale 1m leg can never arm a fresh one.
+//   Arm: only when flat, the 15m signal (div + SOS) still live, tradedSos* ==
+//   aplus*_sosBar (the PRIMARY on this leg already traded AND — with size 0 —
+//   closed at breakeven; a secondary is never the first trade on a leg), this 1m
+//   leg hasn't already re-entered, and the veto (if respected) is off. The resting
+//   buy/sell limit sits at a 38.2% retrace of the 1m leg.
+f_secArm(SecState s) =>
+    if na(aplusL_sosBar)
+        s.lLeg := na, s.lHi := na, s.lLo := na
+    if na(aplusS_sosBar)
+        s.sLeg := na, s.sHi := na, s.sLo := na
+    bool zoneL = fibo_dir == 1  and not na(fiboP3) and not na(fiboP6) and close <= fiboP3 and close >= fiboP6
+    bool zoneS = fibo_dir == -1 and not na(fiboP3) and not na(fiboP6) and close >= fiboP3 and close <= fiboP6
+    if execSecondary and m1NewBullSos and not na(aplusL_sosBar) and bullDivActive and zoneL and m1BullLegHi > m1BullLegLo
+        s.lLeg := m1BullSosBar, s.lHi := m1BullLegHi, s.lLo := m1BullLegLo
+    if execSecondary and m1NewBearSos and not na(aplusS_sosBar) and bearDivActive and zoneS and m1BearLegHi > m1BearLegLo
+        s.sLeg := m1BearSosBar, s.sHi := m1BearLegHi, s.sLo := m1BearLegLo
+    s.lArmed := execSecondary and execLongs  and strategy.position_size == 0 and not na(aplusL_sosBar) and tradedSosL == aplusL_sosBar and bullDivActive and fibo_dir == 1  and fibsReady and not na(s.lHi) and not na(s.lLo) and s.lHi > s.lLo and (na(s.lTraded) or s.lLeg != s.lTraded) and not lateDayBlock and (not longVeto  or not execRespectVeto)
+    s.sArmed := execSecondary and execShorts and strategy.position_size == 0 and not na(aplusS_sosBar) and tradedSosS == aplusS_sosBar and bearDivActive and fibo_dir == -1 and fibsReady and not na(s.sHi) and not na(s.sLo) and s.sHi > s.sLo and (na(s.sTraded) or s.sLeg != s.sTraded) and not lateDayBlock and (not shortVeto or not execRespectVeto)
+    s.lEdge := s.lArmed ? s.lHi - (s.lHi - s.lLo) * 0.382 : na
+    s.sEdge := s.sArmed ? s.sLo + (s.sHi - s.sLo) * 0.382 : na
+f_secArm(sec)
+
 // ── Long: rest / refresh a buy-limit at the edge (cancel when disarmed) ──
 if longArmed
     lSL  := f_slAnchor() - execSlBuf
@@ -4483,8 +4409,22 @@ if longArmed
     if slDist > 0
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosL := aplusL_sosBar
+        sec.lPend := na
         pendConfL := f_conf(true, useSwpL, useDivL, recentSSL, bar_index - aplusL_sosBar, aplusL_fvg, aplusL_poi, bullDivActive, longDeep)
         strategy.entry("Long", strategy.long, qty = qty, limit = longEdge)
+    else
+        strategy.cancel("Long")
+else if sec.lArmed
+    lSL  := sec.lLo - execSlBuf      // 1m leg origin (1m 100%)
+    float slDist = sec.lEdge - lSL
+    lTP1 := fiboP2                   // 15m 0.5
+    lTP2 := fiboP1                   // 15m 0.382 (TP3 = runner)
+    if slDist > 0
+        float qty = (strategy.equity * execRiskPct / 100.0) / slDist
+        pendSosL := aplusL_sosBar
+        sec.lPend := sec.lLeg
+        pendConfL := "↺ RE-ENTRY (1m)\n" + f_conf(true, false, true, "", bar_index - aplusL_sosBar, false, aplusL_poi, bullDivActive, true)
+        strategy.entry("Long", strategy.long, qty = qty, limit = sec.lEdge)
     else
         strategy.cancel("Long")
 else if strategy.position_size == 0
@@ -4499,8 +4439,22 @@ if shortArmed
     if slDist > 0
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosS := aplusS_sosBar
+        sec.sPend := na
         pendConfS := f_conf(false, useSwpS, useDivS, recentBSL, bar_index - aplusS_sosBar, aplusS_fvg, aplusS_poi, bearDivActive, shortDeep)
         strategy.entry("Short", strategy.short, qty = qty, limit = shortEdge)
+    else
+        strategy.cancel("Short")
+else if sec.sArmed
+    sSL  := sec.sHi + execSlBuf      // 1m leg origin (1m 100%)
+    float slDist = sSL - sec.sEdge
+    sTP1 := fiboP2                   // 15m 0.5
+    sTP2 := fiboP1                   // 15m 0.382 (TP3 = runner)
+    if slDist > 0
+        float qty = (strategy.equity * execRiskPct / 100.0) / slDist
+        pendSosS := aplusS_sosBar
+        sec.sPend := sec.sLeg
+        pendConfS := "↺ RE-ENTRY (1m)\n" + f_conf(false, false, true, "", bar_index - aplusS_sosBar, false, aplusS_poi, bearDivActive, true)
+        strategy.entry("Short", strategy.short, qty = qty, limit = sec.sEdge)
     else
         strategy.cancel("Short")
 else if strategy.position_size == 0
@@ -4538,6 +4492,8 @@ f_confClose(TradeLbl t, float tradeR, float band) =>
 
 if strategy.position_size > 0 and strategy.position_size[1] <= 0
     tradedSosL := pendSosL
+    if not na(sec.lPend)
+        sec.lTraded := sec.lPend   // this fill was a 1m re-entry — retire that 1m leg
     lEntry     := strategy.position_avg_price
     lStage     := 0
     lMaxFav    := high
@@ -4546,6 +4502,8 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     f_confOpen(tlbl, 1, lEntry, _cOff, pendConfL)
 if strategy.position_size < 0 and strategy.position_size[1] >= 0
     tradedSosS := pendSosS
+    if not na(sec.sPend)
+        sec.sTraded := sec.sPend
     sEntry     := strategy.position_avg_price
     sStage     := 0
     sMaxFav    := low
@@ -4556,23 +4514,11 @@ if strategy.position_size == 0
     lStage := 0
     sStage := 0
 
-// ── Grade the trade the bar it closes: WIN / LOSS / SCRATCH in R, not in cents ──
-f_grade(array<float> s, float tradeR, float band) =>
-    array.set(s, 5, array.get(s, 5) + tradeR)
-    if math.abs(tradeR) <= band
-        array.set(s, 2, array.get(s, 2) + 1)
-    else if tradeR > 0
-        array.set(s, 0, array.get(s, 0) + 1)
-        array.set(s, 3, array.get(s, 3) + tradeR)
-    else
-        array.set(s, 1, array.get(s, 1) + 1)
-        array.set(s, 4, array.get(s, 4) + tradeR)
-
-// Graded ONCE, then handed to both consumers — the stats table and the entry
-// label — so the two can never tell different stories about the same trade.
+// ── Grade the trade the bar it closes: WIN / LOSS / SCRATCH in R, drawn on the
+//    entry label. (The old W/L/Scratch summary table was removed — the strategy
+//    tester already reports totals; this grade only feeds the per-trade label.)
 float closedR = strategy.position_size == 0 and strategy.position_size[1] != 0 and not na(openRiskUsd) and openRiskUsd > 0 ? (strategy.netprofit - netAtEntry) / openRiskUsd : na
 if not na(closedR)
-    f_grade(stats, closedR, execScratchR)
     f_confClose(tlbl, closedR, execScratchR)
     openRiskUsd := na
 
@@ -4734,132 +4680,6 @@ if strategy.position_size < 0
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
 
-// ── Result table — the win rate TradingView will not show you ─────────────────
-// TradingView counts a breakeven scratch as a WIN, because our BE stop sits a few
-// ticks past entry. This table splits the three real outcomes apart and reports
-// everything in R, so a "win" has to actually be worth something to count as one.
-var table statsTbl = table.new(position.top_right, 2, 9, bgcolor = color.new(#0a0a14, 15), border_color = color.new(#2a2a3a, 0), border_width = 1)
+// (Removed: the W/L/Scratch summary table. The strategy tester already reports
+// trade totals; the honest per-trade grade now lives only on each entry label.)
 
-f_statRow(int r, string k, string v, color c) =>
-    table.cell(statsTbl, 0, r, k, text_color = color.new(#8a8a9a, 0), text_size = size.small, text_halign = text.align_left)
-    table.cell(statsTbl, 1, r, v, text_color = c, text_size = size.small, text_halign = text.align_right)
-
-// Whole render lives in a function (including its own barstate gate) so the main
-// body pays for exactly one call — see the CE10295 note on the stats array above.
-f_drawStats(array<float> s) =>
-    if execShowStats and barstate.islast
-        float w   = array.get(s, 0), float l = array.get(s, 1), float sc = array.get(s, 2)
-        float swR = array.get(s, 3), float slR = array.get(s, 4), float tR = array.get(s, 5)
-        float tot = w + l + sc
-        float dec = w + l
-        f_statRow(0, "Trades",            str.tostring(tot, "#"), color.new(#d0d0e0, 0))
-        f_statRow(1, "Wins",              str.tostring(w,   "#"), color.new(#26A69A, 0))
-        f_statRow(2, "Losses",            str.tostring(l,   "#"), color.new(#EF5350, 0))
-        f_statRow(3, "Scratches",         str.tostring(sc,  "#"), color.new(#FFA726, 0))
-        f_statRow(4, "Win % (real)",      str.tostring(dec > 0 ? w / dec * 100 : na, "#.#") + "%", color.new(#d0d0e0, 0))
-        f_statRow(5, "Win % (TV counts)", str.tostring(tot > 0 ? (w + sc) / tot * 100 : na, "#.#") + "%", color.new(#6a6a7a, 0))
-        f_statRow(6, "Avg win / loss",    str.tostring(w > 0 ? swR / w : na, "#.##") + "R / " + str.tostring(l > 0 ? slR / l : na, "#.##") + "R", color.new(#d0d0e0, 0))
-        f_statRow(7, "Total R  |  PF",    str.tostring(tR, "#.#") + "R  |  " + str.tostring(slR < 0 ? swR / math.abs(slR) : na, "#.##"), tR >= 0 ? color.new(#26A69A, 0) : color.new(#EF5350, 0))
-        f_statRow(8, "Missed (no FVG)",   str.tostring(missedNoFvgL + missedNoFvgS, "#") + "  (L " + str.tostring(missedNoFvgL, "#") + " / S " + str.tostring(missedNoFvgS, "#") + ")", color.new(#FFA726, 0))
-
-f_drawStats(stats)
-
-//============================================================
-//  DIAGNOSTIC LOG — full text trace for off-chart debugging
-//============================================================
-// Turns everything the strategy DOES into copy-pasteable text in TradingView's
-// Pine Logs tab (open it from the "⋮" menu on the Pine editor, or the Pine Logs
-// button at the bottom of the Strategy Tester). Select-all in that pane, paste
-// it to Claude, and the whole trade history is legible with no screenshot: every
-// entry with the exact confluences that armed it, every partial exit at its REAL
-// fill price and bar, the graded result in R, and every MISS — no-FVG, veto /
-// late-day block, and 2-of-3 death — each with its context. It reads engine +
-// execution state ONLY: it places no orders, draws nothing, touches no counter,
-// and cannot change a single trade or stat. Toggle off for a clean run.
-//
-// This is the one place built specifically so Claude can "see what you see" on
-// the chart as plain text. When a trade looks wrong on the chart, turn this on,
-// bar-replay (or run) across it, and paste the log lines for that trade.
-//
-// Line grammar (so a paste is self-describing):
-//   [ENTRY @bar]  a position opened, with its frozen SL/TP ladder + confluences
-//   [EXIT #i]     one partial leg (TP1/TP2/RUN) filled, at its true price + bar
-//   [RESULT]      the trade closed — WIN / LOSS / SCRATCH graded in R
-//   [MISS-NOFVG]  reached the entry band but no FVG overlapped it — no fill
-//   [MISS-2of3]   Arm + SOS confirmed, but the leg died before the zone retrace
-//   [BLOCK]       entry zone reached with a live edge, killed by veto / late-day
-//
-// The known "all three legs, same price, same bar, 1-bar duration" phantom-exit
-// bug (see BUG_exit_fill_price_mismatch.md) shows up directly here: three [EXIT]
-// lines sharing one fill price and one bar is exactly that shape.
-
-var GRP_DIAG = "Diagnostic Log"
-bool execDiagLog = input.bool(true, "Log every trade + miss to Pine Logs", group = GRP_DIAG, tooltip = "Writes one text line per event to the Pine Logs tab: entries (with the confluences that armed them), each partial exit at its true fill price, results in R, and every miss (no-FVG, veto/late-day block, 2-of-3 death). Copy the pane and paste it to Claude for a full off-chart trade audit. No effect on trades, stats or drawings.")
-
-// slot 0 = closed-trades already logged · slot 1/2 = last blocked long/short SOS bar (dedupe)
-var array<int> diagState = array.from(0, -1, -1)
-
-f_diagNum(float v) => na(v) ? "na" : str.tostring(v, format.mintick)
-
-// Whole trace lives in one function (its own toggle gate included) so the main
-// body pays for a single call — same CE10295 reason as f_drawTable / f_drawStats.
-// Everything it reads is a global declared above; the only state it writes is the
-// passed diagState array (mutated by reference, never a global reassignment).
-f_diag(array<int> ds) =>
-    if execDiagLog
-        // ── ENTRY — a position opened this bar. pendConf* already holds the arm
-        //    source, sweep name, SOS age, FVG/POI/DIV and deep/shallow snapshot. ──
-        if strategy.position_size != 0 and strategy.position_size[1] == 0
-            bool   isL  = strategy.position_size > 0
-            string conf = str.replace_all(isL ? pendConfL : pendConfS, "\n", " · ")
-            log.info("[ENTRY @" + str.tostring(bar_index) + "] " + (isL ? "LONG" : "SHORT") +
-              "  entry=" + f_diagNum(isL ? lEntry : sEntry) + " SL=" + f_diagNum(isL ? lSL : sSL) +
-              " TP1=" + f_diagNum(isL ? lTP1 : sTP1) + " TP2=" + f_diagNum(isL ? lTP2 : sTP2) +
-              " qty=" + str.tostring(math.abs(strategy.position_size), "#.###") + "  | " + conf)
-        // ── EXITS — drain every partial leg that filled since the last bar, each
-        //    at the price the engine REALLY got (from the closed-trades log, not
-        //    the fib level it aimed at). ──
-        if strategy.closedtrades > array.get(ds, 0)
-            for i = array.get(ds, 0) to strategy.closedtrades - 1
-                int   eBar = strategy.closedtrades.entry_bar_index(i)
-                int   xBar = strategy.closedtrades.exit_bar_index(i)
-                log.info("[EXIT #" + str.tostring(i) + "] " + strategy.closedtrades.exit_id(i) +
-                  "  fill=" + f_diagNum(strategy.closedtrades.exit_price(i)) +
-                  "  (entry " + f_diagNum(strategy.closedtrades.entry_price(i)) + " @" + str.tostring(eBar) +
-                  " → exit @" + str.tostring(xBar) + ", " + str.tostring(xBar - eBar) + " bars)" +
-                  "  pnl=$" + str.tostring(strategy.closedtrades.profit(i), "#.##"))
-            array.set(ds, 0, strategy.closedtrades)
-        // ── RESULT — the trade closed this bar (closedR is the execution layer's
-        //    own R grade, against the SAME scratch band the stats table uses). ──
-        if not na(closedR)
-            string verdict = math.abs(closedR) <= execScratchR ? "SCRATCH" : closedR > 0 ? "WIN" : "LOSS"
-            log.info("[RESULT] " + (strategy.position_size[1] > 0 ? "LONG " : "SHORT ") + verdict + "  " +
-              (closedR >= 0 ? "+" : "") + str.tostring(closedR, "#.##") + "R  | equity=$" + str.tostring(strategy.equity, "#.##"))
-        // ── MISS: no FVG — the execution layer just booked one (counter ticked). ──
-        if missedNoFvgL != missedNoFvgL[1]
-            log.info("[MISS-NOFVG] LONG @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
-        if missedNoFvgS != missedNoFvgS[1]
-            log.info("[MISS-NOFVG] SHORT @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
-        // ── MISS: 2-of-3 death — the watch flag cleared with the stage still below
-        //    2 (Arm + SOS were in, the zone retrace never came). ──
-        if aplusL_watch23[1] and not aplusL_watch23 and aplusL_stage < 2
-            log.info("[MISS-2of3] LONG — Arm(" + aplusL_armSnapSrc + ") ✓ + SOS ✓ (arm@" + str.tostring(aplusL_armSnapBar) + " sos@" + str.tostring(aplusL_sosSnapBar) + "), died before the zone/FVG retrace ever arrived.")
-        if aplusS_watch23[1] and not aplusS_watch23 and aplusS_stage < 2
-            log.info("[MISS-2of3] SHORT — Arm(" + aplusS_armSnapSrc + ") ✓ + SOS ✓ (arm@" + str.tostring(aplusS_armSnapBar) + " sos@" + str.tostring(aplusS_sosSnapBar) + "), died before the zone/FVG retrace ever arrived.")
-        // ── MISS: blocked at the entry zone — everything for a fill was satisfiable
-        //    EXCEPT a live veto or the final-hour rule. Deduped by SOS bar (via the
-        //    diagState array) so each blocked setup logs exactly once. ──
-        bool lReadyBase = execLongs and armOkL and not na(aplusL_sosBar) and fibo_dir == 1 and not na(longEdge) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
-        bool lBlkVeto = lReadyBase and not lateDayBlock and longVeto and execRespectVeto
-        bool lBlkLate = lReadyBase and lateDayBlock
-        if (lBlkVeto or lBlkLate) and aplusL_sosBar != array.get(ds, 1)
-            array.set(ds, 1, aplusL_sosBar)
-            log.info("[BLOCK] LONG @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (lBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
-        bool sReadyBase = execShorts and armOkS and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
-        bool sBlkVeto = sReadyBase and not lateDayBlock and shortVeto and execRespectVeto
-        bool sBlkLate = sReadyBase and lateDayBlock
-        if (sBlkVeto or sBlkLate) and aplusS_sosBar != array.get(ds, 2)
-            array.set(ds, 2, aplusS_sosBar)
-            log.info("[BLOCK] SHORT @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (sBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
-
-f_diag(diagState)
