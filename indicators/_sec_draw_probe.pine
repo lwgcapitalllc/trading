@@ -1,0 +1,30 @@
+//@version=6
+// THROWAWAY PROBE — tests one thing only: can an engine that DRAWS run on the
+// 1-minute timeframe through request.security()? If this compiles and the grey
+// ▲ marks appear below the bars, the "same engine on 1m" plan is green.
+indicator("SEC DRAW PROBE", overlay = true)
+
+type T
+    bool draw  = true    // per-instance drawing switch
+    bool fired = false
+
+// a method that BOTH mutates state AND draws (mirrors our real engine)
+method step(T t) =>
+    t.fired := close > open
+    if t.draw
+        label.new(bar_index, high, "•", color = color(na), textcolor = color.gray, style = label.style_label_down, size = size.tiny)
+    t.fired
+
+// (1) chart-timeframe instance — draws normally
+var T a = T.new()
+bool chartFired = a.step()
+
+// (2) 1-minute instance via request.security — drawing switched OFF
+f_oneMin() =>
+    var T b = T.new(draw = false)
+    b.step()
+bool oneMinFired = request.security(syminfo.tickerid, "1", f_oneMin())
+
+// if the security call worked, this prints a marker on every 15m bar whose last
+// 1m sub-bar closed up
+plotchar(oneMinFired, "1m fired", "▲", location.belowbar, color.gray, size = size.tiny)

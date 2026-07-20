@@ -1,0 +1,115 @@
+// ============================================================================
+//  DIAGNOSTIC LOG — extracted from mpc_strategy.pine on 2026-07-19
+// ============================================================================
+// WHY IT'S HERE: the engine split (drawing-free process() + flush_draw(), so the
+// same structure engine can run on 1m via request.security) pushed the strategy
+// over TradingView's hard code-size limit (CE10117, ~100k tokens). This block is
+// debug-only (Pine Logs text dump — toggle off for real runs) and the largest
+// non-essential piece, so it was lifted out to make room.
+//
+// TO RESTORE: paste everything below this header back at the END of
+// mpc_strategy.pine. It depends on nothing but engine/execution state that is
+// already declared above it, and it writes only its own diagState array — it can
+// never change a trade, stat, or drawing. (Only re-add it if the file is under
+// the token limit; otherwise it will just fail to compile again.)
+// ============================================================================
+
+//============================================================
+//  DIAGNOSTIC LOG — full text trace for off-chart debugging
+//============================================================
+// Turns everything the strategy DOES into copy-pasteable text in TradingView's
+// Pine Logs tab (open it from the "⋮" menu on the Pine editor, or the Pine Logs
+// button at the bottom of the Strategy Tester). Select-all in that pane, paste
+// it to Claude, and the whole trade history is legible with no screenshot: every
+// entry with the exact confluences that armed it, every partial exit at its REAL
+// fill price and bar, the graded result in R, and every MISS — no-FVG, veto /
+// late-day block, and 2-of-3 death — each with its context. It reads engine +
+// execution state ONLY: it places no orders, draws nothing, touches no counter,
+// and cannot change a single trade or stat. Toggle off for a clean run.
+//
+// This is the one place built specifically so Claude can "see what you see" on
+// the chart as plain text. When a trade looks wrong on the chart, turn this on,
+// bar-replay (or run) across it, and paste the log lines for that trade.
+//
+// Line grammar (so a paste is self-describing):
+//   [ENTRY @bar]  a position opened, with its frozen SL/TP ladder + confluences
+//   [EXIT #i]     one partial leg (TP1/TP2/RUN) filled, at its true price + bar
+//   [RESULT]      the trade closed — WIN / LOSS / SCRATCH graded in R
+//   [MISS-NOFVG]  reached the entry band but no FVG overlapped it — no fill
+//   [MISS-2of3]   Arm + SOS confirmed, but the leg died before the zone retrace
+//   [BLOCK]       entry zone reached with a live edge, killed by veto / late-day
+//
+// The known "all three legs, same price, same bar, 1-bar duration" phantom-exit
+// bug (see BUG_exit_fill_price_mismatch.md) shows up directly here: three [EXIT]
+// lines sharing one fill price and one bar is exactly that shape.
+
+var GRP_DIAG = "Diagnostic Log"
+bool execDiagLog = input.bool(true, "Log every trade + miss to Pine Logs", group = GRP_DIAG, tooltip = "Writes one text line per event to the Pine Logs tab: entries (with the confluences that armed them), each partial exit at its true fill price, results in R, and every miss (no-FVG, veto/late-day block, 2-of-3 death). Copy the pane and paste it to Claude for a full off-chart trade audit. No effect on trades, stats or drawings.")
+
+// slot 0 = closed-trades already logged · slot 1/2 = last blocked long/short SOS bar (dedupe)
+var array<int> diagState = array.from(0, -1, -1)
+
+f_diagNum(float v) => na(v) ? "na" : str.tostring(v, format.mintick)
+
+// Whole trace lives in one function (its own toggle gate included) so the main
+// body pays for a single call — same CE10295 reason as f_drawTable / f_drawStats.
+// Everything it reads is a global declared above; the only state it writes is the
+// passed diagState array (mutated by reference, never a global reassignment).
+f_diag(array<int> ds) =>
+    if execDiagLog
+        // ── ENTRY — a position opened this bar. pendConf* already holds the arm
+        //    source, sweep name, SOS age, FVG/POI/DIV and deep/shallow snapshot. ──
+        if strategy.position_size != 0 and strategy.position_size[1] == 0
+            bool   isL  = strategy.position_size > 0
+            string conf = str.replace_all(isL ? pendConfL : pendConfS, "\n", " · ")
+            log.info("[ENTRY @" + str.tostring(bar_index) + "] " + (isL ? "LONG" : "SHORT") +
+              "  entry=" + f_diagNum(isL ? lEntry : sEntry) + " SL=" + f_diagNum(isL ? lSL : sSL) +
+              " TP1=" + f_diagNum(isL ? lTP1 : sTP1) + " TP2=" + f_diagNum(isL ? lTP2 : sTP2) +
+              " qty=" + str.tostring(math.abs(strategy.position_size), "#.###") + "  | " + conf)
+        // ── EXITS — drain every partial leg that filled since the last bar, each
+        //    at the price the engine REALLY got (from the closed-trades log, not
+        //    the fib level it aimed at). ──
+        if strategy.closedtrades > array.get(ds, 0)
+            for i = array.get(ds, 0) to strategy.closedtrades - 1
+                int   eBar = strategy.closedtrades.entry_bar_index(i)
+                int   xBar = strategy.closedtrades.exit_bar_index(i)
+                log.info("[EXIT #" + str.tostring(i) + "] " + strategy.closedtrades.exit_id(i) +
+                  "  fill=" + f_diagNum(strategy.closedtrades.exit_price(i)) +
+                  "  (entry " + f_diagNum(strategy.closedtrades.entry_price(i)) + " @" + str.tostring(eBar) +
+                  " → exit @" + str.tostring(xBar) + ", " + str.tostring(xBar - eBar) + " bars)" +
+                  "  pnl=$" + str.tostring(strategy.closedtrades.profit(i), "#.##"))
+            array.set(ds, 0, strategy.closedtrades)
+        // ── RESULT — the trade closed this bar (closedR is the execution layer's
+        //    own R grade, against the SAME scratch band the stats table uses). ──
+        if not na(closedR)
+            string verdict = math.abs(closedR) <= execScratchR ? "SCRATCH" : closedR > 0 ? "WIN" : "LOSS"
+            log.info("[RESULT] " + (strategy.position_size[1] > 0 ? "LONG " : "SHORT ") + verdict + "  " +
+              (closedR >= 0 ? "+" : "") + str.tostring(closedR, "#.##") + "R  | equity=$" + str.tostring(strategy.equity, "#.##"))
+        // ── MISS: no FVG — the execution layer just booked one (counter ticked). ──
+        if missedNoFvgL != missedNoFvgL[1]
+            log.info("[MISS-NOFVG] LONG @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
+        if missedNoFvgS != missedNoFvgS[1]
+            log.info("[MISS-NOFVG] SHORT @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
+        // ── MISS: 2-of-3 death — the watch flag cleared with the stage still below
+        //    2 (Arm + SOS were in, the zone retrace never came). ──
+        if aplusL_watch23[1] and not aplusL_watch23 and aplusL_stage < 2
+            log.info("[MISS-2of3] LONG — Arm(" + aplusL_armSnapSrc + ") ✓ + SOS ✓ (arm@" + str.tostring(aplusL_armSnapBar) + " sos@" + str.tostring(aplusL_sosSnapBar) + "), died before the zone/FVG retrace ever arrived.")
+        if aplusS_watch23[1] and not aplusS_watch23 and aplusS_stage < 2
+            log.info("[MISS-2of3] SHORT — Arm(" + aplusS_armSnapSrc + ") ✓ + SOS ✓ (arm@" + str.tostring(aplusS_armSnapBar) + " sos@" + str.tostring(aplusS_sosSnapBar) + "), died before the zone/FVG retrace ever arrived.")
+        // ── MISS: blocked at the entry zone — everything for a fill was satisfiable
+        //    EXCEPT a live veto or the final-hour rule. Deduped by SOS bar (via the
+        //    diagState array) so each blocked setup logs exactly once. ──
+        bool lReadyBase = execLongs and armOkL and not na(aplusL_sosBar) and fibo_dir == 1 and not na(longEdge) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+        bool lBlkVeto = lReadyBase and not lateDayBlock and longVeto and execRespectVeto
+        bool lBlkLate = lReadyBase and lateDayBlock
+        if (lBlkVeto or lBlkLate) and aplusL_sosBar != array.get(ds, 1)
+            array.set(ds, 1, aplusL_sosBar)
+            log.info("[BLOCK] LONG @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (lBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
+        bool sReadyBase = execShorts and armOkS and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+        bool sBlkVeto = sReadyBase and not lateDayBlock and shortVeto and execRespectVeto
+        bool sBlkLate = sReadyBase and lateDayBlock
+        if (sBlkVeto or sBlkLate) and aplusS_sosBar != array.get(ds, 2)
+            array.set(ds, 2, aplusS_sosBar)
+            log.info("[BLOCK] SHORT @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (sBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
+
+f_diag(diagState)
