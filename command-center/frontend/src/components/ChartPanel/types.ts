@@ -33,7 +33,19 @@ export interface ChartSession {
 
 export type TradeDir = 'long' | 'short'
 
-/** One round-trip trade: entry → exit. */
+/** One profit-take rung: the price it banked at + a display label (TP1/TP2/TP3/Exit). */
+export interface ChartProfitLeg {
+  price: number
+  label: string
+}
+
+/** One round-trip trade: entry → exit, drawn as a profit-depth view.
+ *
+ *  Two shades of green show how far price went in the trade's favour: SOLID from entry to where
+ *  profit was actually banked (`profitLegs` / the exit), FAINT from there to the deepest point it
+ *  ran (`mfePrice`) without banking. A green line marks each real profit-take. A loser also draws
+ *  red toward its worst adverse price (`maePrice`). The rich fields are OPTIONAL — a trade without
+ *  them degrades to the plain entry→exit box (any runner, any strategy). */
 export interface ChartTrade {
   id: string
   dir: TradeDir
@@ -41,7 +53,15 @@ export interface ChartTrade {
   entryPrice: number
   exitTime: EpochMs
   exitPrice: number
-  exitReason?: string  // carried in data; never drawn on the chart
+  pnl: number           // trade net P&L — sign picks the outcome colour (win green / loss red)
+  kind?: 'primary' | 'secondary'  // 15m primary vs 1m sniper re-entry; solid vs dashed border
+  exitReason?: string   // carried in data; never drawn on the chart
+  // Profit-depth fields — all optional; absent ⇒ the trade falls back to the plain box.
+  mfePrice?: number             // deepest FAVOURABLE price the hold reached (bottom of the green for a short)
+  maePrice?: number             // deepest ADVERSE price the hold reached (drives a loser's red depth)
+  profitLegs?: ChartProfitLeg[] // where profit was actually taken → one labelled dotted line each
+  stopPrice?: number            // initial 1R stop → a bubble + dotted risk line
+  tpTargets?: number[]          // TP target ladder (nearest→furthest); first UNHIT one drawn faintly
 }
 
 /** Generic styling hints shared by overlays. All optional — the panel has defaults. */
@@ -82,7 +102,20 @@ export interface VLineOverlay {
   style?: OverlayStyle
 }
 
-export type ChartOverlay = BoxOverlay | HLineOverlay | VLineOverlay
+/** A text label pinned at a single (time, price) point — e.g. a BOS/CHoCH break tag or an
+ *  HH/HL/LH/LL swing-point label from the market-structure engine. `placement` nudges it above /
+ *  below the anchor (a high label sits above the price, a low label below). */
+export interface LabelOverlay {
+  type: 'label'
+  group: string
+  t: EpochMs
+  price: number
+  text: string
+  placement?: 'above' | 'below' | 'center'
+  style?: OverlayStyle
+}
+
+export type ChartOverlay = BoxOverlay | HLineOverlay | VLineOverlay | LabelOverlay
 
 /**
  * An indicator series shipped FROM the run — not recomputed in the browser, so the

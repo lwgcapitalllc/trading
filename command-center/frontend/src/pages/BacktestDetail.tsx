@@ -3,14 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
   CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Layers, Play,
-  Copy, Check, SlidersHorizontal, X, Newspaper,
+  Copy, Check, SlidersHorizontal, Minimize2, Newspaper,
 } from 'lucide-react'
 import {
   AreaChart, Area, ComposedChart, Line, BarChart, Bar, PieChart, Pie, Label,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunNews } from '@/hooks/useLab'
+import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunCandles, useRunNews } from '@/hooks/useLab'
 import InfoTip from '@/components/InfoTip'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
@@ -1944,6 +1944,7 @@ function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscre
   onFullscreenClose?: () => void
 }) {
   const { data: spec, isLoading, isError } = useChartSpec(runId)
+  const requestCandles = useRunCandles(runId)
   const fsBodyRef = useRef<HTMLDivElement>(null)
   const [fsBodyH, setFsBodyH] = useState(0)
 
@@ -1967,11 +1968,12 @@ function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscre
     return () => window.removeEventListener('keydown', onKey)
   }, [isFullscreen, onFullscreenClose])
 
-  // When fullscreen: body clientHeight minus py-4 padding (32px), the ChartPanel
-  // header row (~36px including mb-2), and a small buffer. Without subtracting the
-  // header the chart overflows and overflow-hidden clips the klinecharts x-axis.
+  // When fullscreen: body clientHeight minus its padding (pt-2/pb-2 ~16px), the ChartPanel header
+  // row (now the single top bar — TF/Layers/Copy + the injected Price title & exit X, ~40px with its
+  // border-b), and a small safety buffer. Without subtracting the header the chart overflows and
+  // overflow-hidden clips the klinecharts x-axis.
   const effectiveH = isFullscreen
-    ? (fsBodyH > 0 ? Math.max(200, fsBodyH - 80) : Math.max(200, window.innerHeight - 140))
+    ? (fsBodyH > 0 ? Math.max(200, fsBodyH - 64) : Math.max(200, window.innerHeight - 120))
     : height
 
   const box = (msg: string, cls = 'text-text-tertiary') => (
@@ -1991,22 +1993,34 @@ function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscre
           </div>
         )}
         <Suspense fallback={<ChartLoadingSkeleton height={effectiveH} />}>
-          <ChartPanel spec={spec} height={effectiveH} />
+          {/* Drill-down (1m/5m) only for intraday runs — a D1 (NT8 daily) run has no sub-base bars.
+              Fullscreen: fold the "Price" title + exit X onto the panel's own top row (header
+              slots), so TF/Layers/Copy and the exit all share one bar instead of stacking two. */}
+          <ChartPanel
+            spec={spec}
+            height={effectiveH}
+            onRequestCandles={spec.baseTimeframe !== 'D1' ? requestCandles : undefined}
+            headerClassName={isFullscreen ? 'border-b border-border-subtle pb-2' : undefined}
+            headerLeading={isFullscreen
+              ? <span className="text-[15px] font-bold uppercase tracking-wide text-text-primary ml-1 mr-2">{spec.instrument}</span>
+              : undefined}
+            headerTrailing={isFullscreen
+              ? (
+                <button onClick={onFullscreenClose} title="Minimize (Esc)" className="text-text-tertiary hover:text-text-primary">
+                  <Minimize2 size={18} />
+                </button>
+              )
+              : undefined}
+          />
         </Suspense>
       </>
     )
 
   return (
     <div className={isFullscreen ? 'fixed inset-0 z-[90] bg-bg-base flex flex-col' : ''}>
-      {isFullscreen && (
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0">
-          <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Price</span>
-          <button onClick={onFullscreenClose} title="Close (Esc)" className="text-text-tertiary hover:text-text-primary">
-            <X size={18} />
-          </button>
-        </div>
-      )}
-      <div ref={fsBodyRef} className={isFullscreen ? 'flex-1 min-h-0 overflow-hidden px-5 py-4' : ''}>
+      {/* Minimal left/right padding in fullscreen to maximise chart space (the price gets its own
+          small inset via headerLeading's ml-1; the tool strip sits just inside the edge). */}
+      <div ref={fsBodyRef} className={isFullscreen ? 'flex-1 min-h-0 overflow-hidden pl-2 pr-2 pt-2 pb-2' : ''}>
         {chartBody}
       </div>
     </div>

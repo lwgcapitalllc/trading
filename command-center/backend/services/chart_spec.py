@@ -31,12 +31,14 @@ from __future__ import annotations
 import bisect
 import json
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from services import lab_db, ohlc_fetcher
 from services.backtest_runner import LAB_RESULTS_DIR
+from services.structure_overlays import build_market_structure_overlays
 
 log = logging.getLogger("CHARTSPEC")
 
@@ -59,9 +61,17 @@ def _base_timeframe(bar_type: Optional[str], bar_value: Optional[int]) -> str:
     return f"M{v}"
 
 
-_TF_MIN = {"M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
+_TF_MIN = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
 _TF_LADDER = ["M5", "M15", "M30", "H1", "H4", "D1"]
 _CANDLE_CAP = 35_000  # keeps ~1yr at M15; a 5yr run steps up to H1 instead of ~125k M15 candles
+# Drill-down loads the broker's FULL sub-base depth in one shot (M5's ~240d ≈ 49k candles). It sits
+# ABOVE the base-chart cap on purpose: the render cap must never be the binding limit for a drill-down,
+# so the ONLY left edge the user hits is the broker's real data boundary (the red "no earlier data"
+# line), never our own clip.
+_DRILL_CANDLE_CAP = 60_000
+# A left edge shorter than what was requested is the broker's TRUE limit only when the gap exceeds a
+# long weekend / holiday (bars are absent then too, but that isn't a data boundary).
+_HARD_EDGE_SLOP_MS = 4 * 24 * 60 * 60 * 1000
 
 
 def _fit_timeframe(base_tf: str, start_date: str, end_date: str) -> str:
@@ -122,40 +132,93 @@ def _build_candles(instrument: str, start_date: str, end_date: str, base_tf: str
     return candles
 
 
-def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
-    """Pair the equity curve's deal points (entry, exit) into trades. Prices are read off the
-    candles at the deal times (the run doesn't store fill prices). Needs candles for prices."""
-    if not candles:
-        return []
-    times = [c["time"] for c in candles]
+def _leg_label(reason: str) -> str:
+    """A generic display label for a profit-take rung, from its exit-order id. `*-TP1/2/3` →
+    `TP1/2/3`; anything else (a runner/trail/close) → `Exit`. Strategy-agnostic — the chart
+    only ever shows TP1…TP3 / Exit, never a strategy's raw order names."""
+    m = re.search(r"TP\s*([123])", (reason or "").upper())
+    return f"TP{m.group(1)}" if m else "Exit"
 
-    def price_at(epoch: int) -> Optional[float]:
+
+def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
+    """One trade per equity-curve point — every runner emits one point per CLOSED trade
+    (NT8 `parse_trades_csv`, MT5 `_normalize_mt5_results`, Python `build_equity_curve`), so
+    each point already carries the whole round trip: `entry_ms` (open), `date`/`exit_ms`
+    (close), `direction`, `profit` (win/loss), `exit_name`, and — on Python runs — the exact
+    `entry_price`/`exit_price` and `kind` (primary/secondary).
+
+    Prices and the exit time come straight off the point when present; otherwise they fall
+    back to the candle CLOSE at the trade's time (NT8/MT5 don't store fill prices, and older
+    Python runs predate the extra fields). `pnl` drives the chart's green (win) / red (loss)
+    box; `kind` lets it tell a primary trade from a 1m secondary re-entry.
+
+    Profit-depth fields (`mfePrice`/`maePrice`/`profitLegs`/`stopPrice`) drive the chart's
+    profit-depth trade view — how far price ran vs where each rung actually banked. They are
+    OPTIONAL and only present on runs that carry them (Python runs today); a trade without them
+    degrades to the plain entry→exit box. All generic — no strategy or runner names here.
+    """
+    times = [c["time"] for c in candles] if candles else []
+
+    def price_at(epoch: Optional[int]) -> Optional[float]:
+        if epoch is None or not candles:
+            return None
         i = bisect.bisect_right(times, epoch) - 1
         if i < 0:
             i = 0
         return candles[i]["close"]
 
-    # Skip the opening-balance point (no direction); pair the rest entry→exit.
-    pts = [p for p in equity_curve if p.get("direction")]
     trades: list[dict] = []
-    for k in range(0, len(pts) - 1, 2):
-        entry, exit_ = pts[k], pts[k + 1]
-        et = _iso_to_epoch_ms(entry.get("date", ""))
-        xt = _iso_to_epoch_ms(exit_.get("date", ""))
+    n = 0
+    for p in equity_curve:
+        if not p.get("direction"):        # skip any opening-balance / no-direction point
+            continue
+        entry_ms = p.get("entry_ms")
+        exit_ms = p.get("exit_ms")
+        et = int(entry_ms) if entry_ms else _iso_to_epoch_ms(p.get("date", ""))
+        xt = int(exit_ms) if exit_ms else _iso_to_epoch_ms(p.get("date", ""))
         if et is None or xt is None:
             continue
-        ep, xp = price_at(et), price_at(xt)
+        ep = p.get("entry_price") or price_at(et)
+        xp = p.get("exit_price") or price_at(xt)
         if ep is None or xp is None:
             continue
-        direction = "short" if (entry.get("direction") or "").strip().lower().startswith("s") else "long"
+        direction = "short" if (p.get("direction") or "").strip().lower().startswith("s") else "long"
+        n += 1
+        # Profit-depth fields (optional; a real price is never 0, so `or None` == "absent").
+        dir_sign = -1.0 if direction == "short" else 1.0
+        mfe_price = p.get("mfe_price") or None
+        mae_price = p.get("mae_price") or None
+        stop_price = p.get("stop_price") or None
+        # A rung BANKED profit only if it closed favorably beyond a scratch band (0.1R). A rung that
+        # filled at the stop / breakeven (≈ entry) is not a profit-take and gets no green line —
+        # this is what keeps a breakeven exit from being drawn as if it took profit.
+        scratch = 0.1 * abs(ep - stop_price) if stop_price else 0.0
+        profit_legs = [
+            {"price": round(float(lg["price"]), 5), "label": _leg_label(str(lg.get("reason") or ""))}
+            for lg in (p.get("legs") or [])
+            if isinstance(lg.get("price"), (int, float))
+            and (float(lg["price"]) - ep) * dir_sign > max(scratch, 1e-9)
+        ]
         trades.append({
-            "id": f"T{k // 2 + 1}",
+            "id": f"T{n}",
             "dir": direction,
             "entryTime": et,
             "entryPrice": ep,
             "exitTime": xt,
             "exitPrice": xp,
-            "exitReason": exit_.get("exit_name") or "",
+            "pnl": float(p.get("profit") or 0.0),
+            "kind": p.get("kind") or "primary",
+            "exitReason": p.get("exit_name") or "",
+            "mfePrice": mfe_price,
+            "maePrice": mae_price,
+            "stopPrice": stop_price,
+            "profitLegs": profit_legs,
+            # TP TARGET ladder (nearest→furthest) — the chart draws the first UNHIT one faintly so a
+            # runner's near-miss of the next TP is visible. Empty for a trade carrying no targets.
+            "tpTargets": [
+                round(float(t), 5) for t in (p.get("tp_targets") or [])
+                if isinstance(t, (int, float)) and t
+            ],
         })
     return trades
 
@@ -300,6 +363,11 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
         daily = _build_candles(instrument, warmup_start, row["end_date"], "D1", runner)
         overlays, indicators = _build_structure(candles, trades, daily, params)
 
+    # Market-structure overlays (BOS/CHoCH/swings) from the CANONICAL engine, computed on the
+    # displayed candles. Generic — runs for every run that has candles, tagged into the four
+    # structure Layers groups (default OFF in the panel). Best-effort: [] on any failure.
+    overlays = overlays + build_market_structure_overlays(candles)
+
     spec = {
         "instrument": instrument,
         "baseTimeframe": base_tf,
@@ -316,3 +384,60 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     log.info("chart_spec: built for %s — %d candles, %d trades, %d overlays, %d indicators (%s)",
              run_id, len(candles), len(trades), len(overlays), len(indicators), base_tf)
     return spec
+
+
+def build_run_candles(
+    run_id: str, timeframe: str, from_ms: int, to_ms: int,
+) -> Optional[dict]:
+    """Candles for a bounded [from_ms, to_ms] window of a run at an ARBITRARY timeframe — the
+    drill-down data path (e.g. 1m under a 15m run, to see a trade's exact entry).
+
+    Reuses the run's OWN feed + runner (`get_ohlc` via `_build_candles`), so a zoom shows the
+    same bars the run traded, never a different feed. Not cached — it is a live, per-window pull.
+
+    Returns:
+      - None if the run is unknown (router → 404).
+      - {instrument, timeframe, candles, available, data_start_ms, hard_edge} otherwise. `available`
+        is False (candles empty) when the feed can't serve that window at all — most often the MT5
+        agent being offline. `hard_edge` is True when the oldest bar returned is the broker's TRUE
+        data limit (the feed has nothing older), with `data_start_ms` marking it — the frontend
+        draws its red "no earlier data" line there. It is False when the feed simply has more than
+        our render cap could ship (then the edge is ours, not the broker's — no line).
+    """
+    row = lab_db.get_run(run_id)
+    if not row:
+        return None
+    runner = row.get("runner") or "ninjatrader"
+    instrument = row["instrument"]
+
+    if from_ms > to_ms:
+        from_ms, to_ms = to_ms, from_ms
+    # Guard the fetch volume: clamp the span to the newest slice that stays under the DRILL cap for
+    # this timeframe (a floor so a pathological request can't pull years of 1m). Keeps the most-recent
+    # edge. The cap sits above the broker's real M1/M5 depth, so for a normal drill-down it never
+    # binds — which is what keeps `hard_edge` honest (a clipped request could fake a boundary).
+    tf_min = _TF_MIN.get(timeframe.upper(), 15)
+    max_span_ms = int(_DRILL_CANDLE_CAP * tf_min * 60_000 / (5 / 7))  # ~forex: 5 trading days/week
+    clamped = (to_ms - from_ms) > max_span_ms
+    if clamped:
+        from_ms = to_ms - max_span_ms
+
+    # The fetch is day-granular; widen to whole UTC days, then slice back to the exact window.
+    start_date = datetime.fromtimestamp(from_ms / 1000, tz=timezone.utc).date().isoformat()
+    end_date = datetime.fromtimestamp(to_ms / 1000, tz=timezone.utc).date().isoformat()
+    candles = _build_candles(instrument, start_date, end_date, timeframe, runner)
+    candles = [c for c in candles if from_ms <= c["time"] <= to_ms]
+    data_start_ms = candles[0]["time"] if candles else None
+    # True broker limit ⇔ data exists, its oldest bar is well past what we asked for (beyond a
+    # weekend/holiday gap), and OUR cap didn't clip the request.
+    hard_edge = bool(candles) and not clamped and (data_start_ms - from_ms) > _HARD_EDGE_SLOP_MS
+    log.info("run_candles: %s %s [%s, %s] -> %d candles (hard_edge=%s)",
+             run_id, timeframe, start_date, end_date, len(candles), hard_edge)
+    return {
+        "instrument": instrument,
+        "timeframe": timeframe.upper(),
+        "candles": candles,
+        "available": bool(candles),
+        "data_start_ms": data_start_ms,
+        "hard_edge": hard_edge,
+    }

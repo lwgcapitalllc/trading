@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
@@ -11,7 +12,7 @@ import type {
   InstrumentSummary, RunningJobStatus,
   StrategyFile, StrategyFileSyncStatus, CompileJobStatus,
 } from '@/types'
-import type { ChartSpec } from '@/components/ChartPanel/types'
+import type { ChartSpec, ChartCandle } from '@/components/ChartPanel/types'
 
 // ── Strategies ─────────────────────────────────────────────────────────────────
 
@@ -229,6 +230,21 @@ export function useRefreshChartSpec() {
       qc.setQueryData(['lab', 'chart-spec', runId], data)
     },
   })
+}
+
+// Drill-down candles: an imperative fetcher (not a query) the ChartPanel calls to pull a
+// finer-than-base TF (1m/5m) for the currently-visible window. `available: false` = the feed
+// can't serve that window (1m older than the broker's ~35-day 1m history).
+export function useRunCandles(runId: string | null) {
+  return useCallback(
+    async (tf: string, fromMs: number, toMs: number): Promise<{ candles: ChartCandle[]; available: boolean; dataStartMs: number | null; hardEdge: boolean }> => {
+      if (!runId) return { candles: [], available: false, dataStartMs: null, hardEdge: false }
+      const q = `tf=${encodeURIComponent(tf)}&from_ms=${Math.round(fromMs)}&to_ms=${Math.round(toMs)}`
+      const res = await api.get<{ candles: ChartCandle[]; available: boolean; data_start_ms: number | null; hard_edge: boolean }>(`/backtests/runs/${runId}/candles?${q}`)
+      return { candles: res.candles ?? [], available: !!res.available, dataStartMs: res.data_start_ms ?? null, hardEdge: !!res.hard_edge }
+    },
+    [runId],
+  )
 }
 
 export function useRunLog(runId: string | null, lines = 200, live = false) {

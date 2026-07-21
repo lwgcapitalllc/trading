@@ -74,15 +74,41 @@ const INDICATORS: ChartIndicator[] = [
 ]
 
 // Trades anchored to real candles so entry/exit prices sit on the price (indices are M5 bars).
+// Profit-depth fields (mfe/mae/legs/stop) are synthesised from the candles in the hold so the
+// fixture exercises the rich trade view: a winner banks in two rungs and runs a touch further; a
+// loser banks nothing but still shows how far it ran into profit before the stop.
 function tradeAt(i0: number, i1: number, dir: 'long' | 'short', id: string, exitReason: string) {
+  const slice = CANDLES.slice(i0, i1 + 1)
+  const entryPrice = CANDLES[i0].close
+  const exitPrice = CANDLES[i1].close
+  const isLong = dir === 'long'
+  const won = exitReason !== 'stop'
+  const r3 = (v: number) => +v.toFixed(3)
+  const mfePrice = r3(isLong ? Math.max(...slice.map(c => c.high)) : Math.min(...slice.map(c => c.low)))
+  const maePrice = r3(isLong ? Math.min(...slice.map(c => c.low)) : Math.max(...slice.map(c => c.high)))
+  const stopPrice = r3(entryPrice - (isLong ? 1 : -1) * Math.max(Math.abs(exitPrice - entryPrice), 0.05))
+  // Winner banks two rungs partway to the favourable extreme; loser banks nothing.
+  const profitLegs = won
+    ? [
+        { price: r3(entryPrice + (mfePrice - entryPrice) * 0.45), label: 'TP1' },
+        { price: r3(entryPrice + (mfePrice - entryPrice) * 0.8), label: 'TP2' },
+      ]
+    : []
+  // TP target ladder (nearest→furthest): TP1 at 45% of the fav run, TP2 just PAST the extreme, so
+  // the chart's "next unhit TP" near-miss line has something to draw on a winner.
+  const tpTargets = [
+    r3(entryPrice + (mfePrice - entryPrice) * 0.45),
+    r3(entryPrice + (mfePrice - entryPrice) * 1.15),
+  ]
   return {
-    id,
-    dir,
+    id, dir,
     entryTime: CANDLES[i0].time,
-    entryPrice: CANDLES[i0].close,
+    entryPrice,
     exitTime: CANDLES[i1].time,
-    exitPrice: CANDLES[i1].close,
+    exitPrice,
+    pnl: won ? 1 : -1,   // sign drives the win/loss colour in the fixture
     exitReason,
+    mfePrice, maePrice, stopPrice, profitLegs, tpTargets,
   }
 }
 
