@@ -401,6 +401,13 @@ string macro100Style     = input.string("─",   "",              group = GRP_MA
 var GRP_SNIPER    = "Sniper Fib"
 bool showSniperFib = input.bool(false, "Sniper Zone", group = GRP_SNIPER, active = showFiboInput, display = display.none)
 
+// Entry-confirmation toggle, declared HERE (not down in the Strategy Execution
+// block where it belongs by group) because the Sniper Fib engine a few hundred
+// lines below has to read it, and Pine needs the declaration first. It still
+// appears under "Strategy Execution" in the panel — group placement is by the
+// group string, not by position in the file.
+bool execConfSZ = input.bool(false, "Allow Sniper Zone as entry confirmation", group = "Strategy Execution", tooltip = "Adds the Sniper Zone as a SECOND accepted entry confirmation alongside the FVG. The SZ is the 0.5-0.618 pocket of the break leg, so it already sits inside the 0.5-0.886 entry band. FVG always wins: the SZ is used only on a leg where no qualifying gap exists, which means every trade the current settings already take is unchanged and any new trade is one that previously logged 'NO FVG missed'. The limit rests at the FAR side of the pocket (~0.618), so price must retrace the whole band to fill. Turning this on also makes the SZ engine track even when 'Sniper Zone' drawing is off.")
+
 //============================================================
 //  SESSION VOLUME PROFILE (SVP) INPUTS
 //============================================================
@@ -2478,6 +2485,7 @@ var float        sniperZoneBot    = na
 var bool         sniperZoneActive = false
 var bool         sz_bullish       = true
 var string       sz_status        = ""
+var int          sz_bar           = na   // bar the current zone was anchored on
 
 var float fibo_ash     = na
 var float fibo_asl     = na
@@ -3139,8 +3147,12 @@ if showFibo and showIFib and iFib_dir != 0 and not na(iFib_asl) and not na(iFib_
 //============================================================
 //  SNIPER FIB
 //============================================================
-bool _snBearBOS = barstate.isconfirmed and showFibo and showSniperFib and st.bear_bos
-bool _snBullBOS = barstate.isconfirmed and showFibo and showSniperFib and st.bull_bos
+// The zone must be TRACKED whenever it can confirm a trade, even if its drawing
+// is switched off — otherwise sniperZoneTop/Bot stay na and the confirmation
+// silently never fires. Drawing stays gated on showSniperFib alone.
+bool _snTrack   = showSniperFib or execConfSZ
+bool _snBearBOS = barstate.isconfirmed and showFibo and _snTrack and st.bear_bos
+bool _snBullBOS = barstate.isconfirmed and showFibo and _snTrack and st.bull_bos
 
 if _snBearBOS or _snBullBOS
     float _snh   = _snBullBOS ? st.bull_bos_high : st.bear_bos_high
@@ -3168,15 +3180,17 @@ if _snBearBOS or _snBullBOS
     color _snColor = _snBullBOS ? color.new(#4caf50, 75) : color.new(#ff4444, 75)
     color _snLineColor = _snBullBOS ? color.new(#4caf50, 0) : color.new(#ff4444, 0)
 
-    array.push(sniperBoxArr,    box.new(_snS, _zTop, _snE, _zBot, bgcolor = _snColor, border_color = color(na)))
-    array.push(sniper382Arr,    line.new(_snS, _sn382, _snE, _sn382, color = _snLineColor, style = line.style_dotted, width = 1))
-    array.push(sniper50Arr,     line.new(_snS, _sn50,  _snE, _sn50,  color = _snLineColor, style = line.style_dotted, width = 1))
-    array.push(sniperLbl382Arr, label.new(_snE + 2, (_sn382 + _sn50) / 2, "SZ", style = label.style_none, textcolor = _snLineColor, size = size.small, textalign = text.align_center))
+    if showSniperFib
+        array.push(sniperBoxArr,    box.new(_snS, _zTop, _snE, _zBot, bgcolor = _snColor, border_color = color(na)))
+        array.push(sniper382Arr,    line.new(_snS, _sn382, _snE, _sn382, color = _snLineColor, style = line.style_dotted, width = 1))
+        array.push(sniper50Arr,     line.new(_snS, _sn50,  _snE, _sn50,  color = _snLineColor, style = line.style_dotted, width = 1))
+        array.push(sniperLbl382Arr, label.new(_snE + 2, (_sn382 + _sn50) / 2, "SZ", style = label.style_none, textcolor = _snLineColor, size = size.small, textalign = text.align_center))
     sniperZoneTop    := _zTop
     sniperZoneBot    := _zBot
     sniperZoneActive := false
     sz_status        := ""   // reset status on new zone
     sz_bullish       := _snBullBOS
+    sz_bar           := bar_index
 
 if showFibo and showSniperFib and array.size(sniperBoxArr) > 0
     for _sni = 0 to array.size(sniperBoxArr) - 1
@@ -4234,6 +4248,31 @@ if fibsReady and array.size(fvgTops) > 0
         if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6 and _sDeepOk
             float _e = math.max(_gB, fiboP2)
             shortEdge := na(shortEdge) ? _e : math.min(shortEdge, _e)
+// ── SNIPER ZONE — the SECOND accepted confirmation ─────────────────────────
+// The SZ is the break leg's 0.5-0.618 pocket, so it already lives inside the
+// 0.5-0.886 entry band. It is a FALLBACK only: the loop above runs first, so a
+// leg that has a qualifying FVG is priced off that gap exactly as before and no
+// existing result moves. The SZ only fills in on a leg that had no gap at all —
+// the legs the "NO FVG missed" counter has been booking.
+// The limit rests at the FAR side of the pocket (the deep end of the retrace),
+// clamped so it can never sit shallower than 0.5, and the zone is ignored if it
+// falls past 0.886 or belongs to a different direction. The sz_bar guard stops a
+// zone left over from an earlier leg pricing this trade: it must have been
+// anchored at or after the SOS this setup is riding.
+bool longEdgeSz  = false
+bool shortEdgeSz = false
+if execConfSZ and fibsReady and not na(sniperZoneTop) and not na(sniperZoneBot) and not na(sz_bar)
+    if na(longEdge) and fibo_dir == 1 and sz_bullish and not na(aplusL_sosBar) and sz_bar >= aplusL_sosBar
+        float _e = math.min(sniperZoneBot, fiboP2)   // far side of the pocket
+        if _e >= fiboP6
+            longEdge   := _e
+            longEdgeSz := true
+    if na(shortEdge) and fibo_dir == -1 and not sz_bullish and not na(aplusS_sosBar) and sz_bar >= aplusS_sosBar
+        float _e = math.max(sniperZoneTop, fiboP2)
+        if _e <= fiboP6
+            shortEdge   := _e
+            shortEdgeSz := true
+
 if not execReqFVG and fibsReady
     if na(longEdge)  and fibo_dir == 1
         longEdge  := fiboP3
@@ -4324,12 +4363,14 @@ if aplusS_watch23 and aplusS_stage < 2
 // Confluence text — every line is printed because ITS OWN flag is true on the bar
 // the order was placed, never because the feature exists in the script. Nothing
 // in here is a fixed template.
-f_conf(bool isLong, bool swp, bool div, string swpName, int sosAge, bool fvg, bool poi, bool liveDiv, bool deep) =>
+f_conf(bool isLong, bool swp, bool div, string swpName, int sosAge, bool fvg, bool poi, bool liveDiv, bool deep, bool sz) =>
     string s = (isLong ? "▲ LONG" : "▼ SHORT") + "\nArm: " + (swp and div ? "Sweep + Div" : swp ? "Sweep" : "Div")
     if swp and swpName != ""
         s := s + "\nSweep: " + swpName
     s := s + "\nSOS " + str.tostring(sosAge) + " bars ago"
-    s := s + (fvg ? "\nFVG ✓" : "\nFVG ✗")
+    // Which confirmation actually PRICED this entry — SZ only appears when the
+    // limit was placed off the Sniper Zone because no gap qualified.
+    s := s + (sz ? "\nConfirm: SZ ✓ (no FVG)" : fvg ? "\nFVG ✓" : "\nFVG ✗")
     s := s + (poi ? "\nPOI ✓" : "")
     s := s + (liveDiv ? "\nDIV ✓" : "")
     s := s + (deep ? "\nEntry: deep (0.618+)\nTP 0.5 → 0.382 → run" : "\nEntry: shallow (0.5)\nTP 0.382 → 0.0 → run")
@@ -4431,7 +4472,7 @@ if longArmed
     if slDist > 0
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosL := aplusL_sosBar
-        pendConfL := f_conf(true, useSwpL, useDivL, recentSSL, bar_index - aplusL_sosBar, aplusL_fvg, aplusL_poi, bullDivActive, longDeep)
+        pendConfL := f_conf(true, useSwpL, useDivL, recentSSL, bar_index - aplusL_sosBar, aplusL_fvg, aplusL_poi, bullDivActive, longDeep, longEdgeSz)
         strategy.entry("Long", strategy.long, qty = qty, limit = longEdge)
     else
         strategy.cancel("Long")
@@ -4447,7 +4488,7 @@ if shortArmed
     if slDist > 0
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosS := aplusS_sosBar
-        pendConfS := f_conf(false, useSwpS, useDivS, recentBSL, bar_index - aplusS_sosBar, aplusS_fvg, aplusS_poi, bearDivActive, shortDeep)
+        pendConfS := f_conf(false, useSwpS, useDivS, recentBSL, bar_index - aplusS_sosBar, aplusS_fvg, aplusS_poi, bearDivActive, shortDeep, shortEdgeSz)
         strategy.entry("Short", strategy.short, qty = qty, limit = shortEdge)
     else
         strategy.cancel("Short")
