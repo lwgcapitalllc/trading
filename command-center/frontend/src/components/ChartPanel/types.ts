@@ -102,7 +102,7 @@ export interface VLineOverlay {
   style?: OverlayStyle
 }
 
-/** A text label pinned at a single (time, price) point — e.g. a BOS/CHoCH break tag or an
+/** A text label pinned at a single (time, price) point — e.g. a BOS/SOS break tag or an
  *  HH/HL/LH/LL swing-point label from the market-structure engine. `placement` nudges it above /
  *  below the anchor (a high label sits above the price, a low label below). */
 export interface LabelOverlay {

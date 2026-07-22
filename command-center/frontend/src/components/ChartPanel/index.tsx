@@ -310,7 +310,7 @@ export default function ChartPanel({
   }, [spec.overlays])
 
   // Every overlay group defaults ON, EXCEPT the market-structure groups — those are opt-in (a chart
-  // would be unreadable with all of BOS/CHoCH/swings/internal drawn by default), toggled from Layers.
+  // would be unreadable with all of BOS/SOS/swings/internal drawn by default), toggled from Layers.
   const groupDefault = (name: string): boolean => !STRUCTURE_GROUPS.includes(name as typeof STRUCTURE_GROUPS[number])
   const [groupsOn, setGroupsOn] = useState<Record<string, boolean>>(
     () => Object.fromEntries(overlayGroups.map(g => [g.name, groupDefault(g.name)] as [string, boolean])) as Record<string, boolean>,

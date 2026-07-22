@@ -16,7 +16,7 @@ export const BOX = 'lwgBox'
 export const HLINE = 'lwgHline'
 export const VLINE = 'lwgVline'
 
-/** Point-anchored text label (Step 7c) — market-structure break tags (BOS/CHoCH/iBOS) and
+/** Point-anchored text label (Step 7c) — market-structure break tags (BOS/SOS/iBOS) and
  *  swing-point labels (HH/HL/LH/LL/ASH/ASL + internal iSH…). */
 export const LABEL = 'lwgLabel'
 
@@ -564,7 +564,9 @@ export function registerChartOverlays(): void {
         const w = it.text.length * CHAR_W + PAD
         if (c.x < -w || c.x > bounding.width + w) continue // off-screen — skip (don't pile at the edge)
         const up = it.placement !== 'below'
-        const y0 = c.y + (it.placement === 'above' ? -9 : it.placement === 'below' ? 9 : 0)
+        // Initial nudge OFF the anchor (wick tip / break line), ~ chip half-height + margin so the
+        // chip clears the candle instead of resting on it — the pixel echo of Pine's newline offset.
+        const y0 = c.y + (it.placement === 'above' ? -13 : it.placement === 'below' ? 13 : 0)
         boxes.push({ x: c.x, y: y0, half: w / 2, text: it.text, color: it.color ?? '#888888', up })
       }
       // Greedy left→right packing: each chip slides away from its anchor until it clears every
@@ -586,14 +588,17 @@ export function registerChartOverlays(): void {
         }
         placed.push(b)
       }
+      // Flat text — no chip/box/border/background (Aaron's call; also matches the Pine, which uses
+      // color(na) for the label background). klinecharts' DEFAULT overlay-text style has a BLUE
+      // backgroundColor + borderColor (#1677FF), and omitting those fields falls back to it — so they
+      // must be set transparent (and borderSize 0) explicitly to leave just the coloured text.
       return placed.map((b): OverlayFigure => ({
         type: 'text',
         attrs: { x: b.x, y: b.y, text: b.text, align: 'center', baseline: 'middle' },
         styles: {
-          style: 'stroke_fill', color: b.color, size: 10, weight: 'bold',
-          backgroundColor: withAlpha('#0d0d1a', 0.78), borderColor: withAlpha(b.color, 0.45), borderSize: 1,
-          borderStyle: 'solid', borderRadius: 3,
-          paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+          color: b.color, size: 10, weight: 'bold',
+          backgroundColor: 'transparent', borderColor: 'transparent', borderSize: 0,
+          paddingLeft: 0, paddingRight: 0, paddingTop: 0, paddingBottom: 0,
         },
         ignoreEvent: true,
       }))

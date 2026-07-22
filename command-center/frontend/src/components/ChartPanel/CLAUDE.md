@@ -146,7 +146,8 @@ here**, so the chart shows exactly what the strategy saw.
   them. Style (`color`/`fillColor`/`lineStyle`/`lineWidth`) + `label` come from the spec via
   `extendData`. `vline` spans the pane height (`bounding.height`); its point `value` is a dummy
   (only `x`/timestamp matters).
-- **Point labels** (`LABEL`): compact rounded text chips for market-structure tags. **All visible
+- **Point labels** (`LABEL`): flat coloured text tags for market structure (no box/border/background —
+  Aaron's call, and it matches the Pine's `color(na)` label background). **All visible
   structure labels live in ONE `LABEL` overlay** — its `points` are the anchors and `extendData.items`
   the parallel `{text,color,placement}` array — because klinecharts maps every point to a coordinate,
   so the callback sees them together and **de-collides them in pixel space** (greedy left→right: a chip
@@ -158,8 +159,8 @@ here**, so the chart shows exactly what the strategy saw.
 - **Market-structure overlays (Step 7c).** The canonical `engines/market_structure/` engine is replayed
   over the run's candles **server-side** (`backend/services/structure_overlays.py`, imported by bare
   name — never a second engine) and emitted as generic `hline` + `label` overlays in **four groups that
-  are the four TradingView toggles**: `External Structure` (BOS/CHoCH break lines + tags, and the active
-  unbroken swing rays), `Internal Structure` (iBOS/iCHoCH for the current external leg), `Internal
+  are the four TradingView toggles**: `External Structure` (BOS/SOS break lines + tags, and the active
+  unbroken swing rays), `Internal Structure` (iBOS/iSOS for the current external leg), `Internal
   (Historic)` (the same for older legs), `Swing Point Labels` (HH/HL/LH/LL/ASH/ASL + internal iSH/iSL/…).
   The group names are pinned in `STRUCTURE_GROUPS` (`overlays.ts`) so the panel can (a) default them
   **OFF** — a chart with all structure drawn is unreadable — while every other group defaults ON, and
@@ -172,8 +173,14 @@ here**, so the chart shows exactly what the strategy saw.
   the line price — verified). Internal lines use the engine's `ifib_seed_ash/asl` + `_loc` (the internal
   leg anchors, which land exactly on the wick), NOT `int_break_origin_loc` — that's the order-block scan
   origin and floats off the wick (the bug that made internal lines miss their candles).
+  **Label coordinates mirror the Pine** so the chart reads like TradingView: a **break tag**
+  (BOS/SOS/iBOS/iSOS) anchors at the **horizontal midpoint of its break line** (`_mid` =
+  Pine's `mid_x`), which lands in the gap the impulse leg left — clear of the candle cluster at the
+  break bar (the fix for tags sitting on top of the bars); a **swing tag** anchors AT its swing bar,
+  above a high / below a low. The frontend's `LABEL` nudge (~13px, ≈ chip half-height) is the pixel
+  echo of Pine's newline offset, then pixel de-collision keeps dense clusters legible.
   Current-vs-historic split boundaries on the **second-to-last external break** (a leg starts at a
-  BOS/CHoCH) — robust to the pivot-confirmation cluster that piles swings at the data's end; an empty
+  BOS/SOS) — robust to the pivot-confirmation cluster that piles swings at the data's end; an empty
   "current" is honest (no internal has printed since the last break). Per-group overlay count is capped
   (`_MAX_PER_GROUP` 1200, newest kept) so a very long run can't spawn tens of thousands of overlays.
   **Existing runs need a chart refresh** to pick up structure (the `chart_spec.json` is cached).
