@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import time
 import uuid
@@ -31,6 +32,9 @@ from services.optimization_runner import retry_single_optimization_run, resolve_
 from routers._locks import ensure_platform_idle
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
+
+# Backtest window dates are plain ISO days everywhere (DB, job specs, both agents)
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -357,6 +361,22 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
     strategy = lab_db.get_strategy(row["strategy_id"])
     runner = row.get("runner") or (strategy or {}).get("runner", "ninjatrader")
 
+    # Optional period override (standalone runs only — see below)
+    new_start = (body.start_date or "").strip() if body else ""
+    new_end = (body.end_date or "").strip() if body else ""
+    period_override = bool(new_start or new_end)
+    if period_override:
+        if not (new_start and new_end):
+            raise HTTPException(400, "Both start_date and end_date are required to change the period")
+        if not (_DATE_RE.match(new_start) and _DATE_RE.match(new_end)):
+            raise HTTPException(400, "Dates must be YYYY-MM-DD")
+        if new_start >= new_end:
+            raise HTTPException(400, "start_date must be before end_date")
+        # A sweep/optimization child shares one period with every sibling in its set — moving
+        # one of them would make the comparison meaningless. Reject rather than silently ignore.
+        if row.get("sweep_id") or row.get("optimization_id"):
+            raise HTTPException(400, "The period can only be changed on a standalone run")
+
     # Sweep run — reset in place and re-fire via sweep runner
     if row.get("sweep_id"):
         ensure_platform_idle(runner)
@@ -391,6 +411,12 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
     ensure_platform_idle(runner)
 
     evaluate_rulesets = row.get("evaluate_firms") or []
+
+    # A rerun over a new window: persist it before firing so the row (and the detail page's
+    # period chip) describes the result the runner is about to produce.
+    if period_override:
+        lab_db.update_run_period(run_id, new_start, new_end)
+        row["start_date"], row["end_date"] = new_start, new_end
 
     # Reset the existing row (clears status, error, completed_at, worthiness)
     lab_db.reset_run_for_retry(run_id)

@@ -503,6 +503,11 @@ class RetryRunRequest(BaseModel):
     # backtest. None = let the backend inherit from the optimization (and prompt the
     # user if nothing is inheritable); a list (even empty) = the user's explicit choice.
     evaluate_rulesets: Optional[list[str]] = None
+    # Optional new period for the rerun (YYYY-MM-DD). None = keep the run's stored dates.
+    # Standalone runs only — a sweep/optimization child shares its period with its siblings,
+    # so the router rejects an override there rather than silently desyncing the set.
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class BacktestSummary(BaseModel):

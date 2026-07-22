@@ -4,20 +4,11 @@ import { X, Play, Info } from 'lucide-react'
 import { AlertTriangle } from 'lucide-react'
 import { useFirms, useTriggerBacktest, useRunningVpsJob } from '@/hooks/useLab'
 import { ParamEditor } from '@/components/ParamEditor'
+import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
 import type { Strategy, Firm, SizingMode } from '@/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
-
-function today(): string {
-  return new Date().toISOString().split('T')[0]
-}
-
-function yearsAgo(n: number): string {
-  const d = new Date()
-  d.setFullYear(d.getFullYear() - n)
-  return d.toISOString().split('T')[0]
-}
 
 // Quarterly futures roll months: Mar (3), Jun (6), Sep (9), Dec (12)
 function currentFrontMonth(): string {
@@ -134,22 +125,6 @@ function Divider() {
   return <div className="border-t border-border-subtle" />
 }
 
-function PresetBtn({ label, active, onClick }: { label: string; active?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-[10px] py-[3px] rounded text-[11px] border transition-colors ${
-        active
-          ? 'text-accent bg-accent/10 border-accent/50'
-          : 'text-text-tertiary hover:text-accent hover:bg-accent/10 border-border-subtle hover:border-accent/30'
-      }`}
-    >
-      {label}
-    </button>
-  )
-}
-
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -172,7 +147,6 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const isFutures = runnerMarket(strategy.runner) === 'futures'
 
   const inputCls = 'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
-  const dateCls  = `${inputCls} [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:cursor-pointer`
   const labelCls = 'block text-[11px] text-text-secondary mb-1'
 
   // ── Instrument ───────────────────────────────────────────────────────────────
@@ -207,21 +181,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
       : instrumentSymbol
 
   // ── Period ───────────────────────────────────────────────────────────────────
-  const todayStr = useMemo(() => today(), [])
-  const presets = useMemo(() => [
-    { label: '1Y',  start: yearsAgo(1),    end: todayStr },
-    { label: '3Y',  start: yearsAgo(3),    end: todayStr },
-    { label: '5Y',  start: yearsAgo(5),    end: todayStr },
-    { label: 'All', start: '2019-01-01',   end: todayStr },
-  ], [todayStr])
-
   const [startDate, setStartDate] = useState(() => yearsAgo(1))
   const [endDate, setEndDate]     = useState(() => today())
-
-  const activePreset = useMemo(() => {
-    const match = presets.find(p => p.start === startDate && p.end === endDate)
-    return match?.label ?? null
-  }, [presets, startDate, endDate])
 
   // ── Bar size ─────────────────────────────────────────────────────────────────
   const BAR_PRESETS = isNt8 ? [1, 3, 5, 15, 30] : [5, 15, 30, 60, 240]
@@ -499,32 +460,11 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               label="Period"
               tooltip="Data availability varies by contract. Specific contracts (e.g. MNQ 06-26) only have data from when that contract opened — typically 3–6 months before expiry. For multi-year backtests, use a NinjaTrader continuous contract (e.g. @MNQ #C) and adjust the symbol above."
             />
-            <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1 mb-2">
-              <input
-                type="date" value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className={dateCls}
-              />
-              <span className="text-text-tertiary text-center text-[12px]">→</span>
-              <input
-                type="date" value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className={dateCls}
-              />
-            </div>
-            {startDate && endDate && startDate >= endDate && (
-              <p className="text-[11px] text-neg-text mb-2">Start must be before end.</p>
-            )}
-            <div className="flex gap-2">
-              {presets.map(p => (
-                <PresetBtn
-                  key={p.label}
-                  label={p.label}
-                  active={activePreset === p.label}
-                  onClick={() => { setStartDate(p.start); setEndDate(p.end) }}
-                />
-              ))}
-            </div>
+            <PeriodPicker
+              start={startDate}
+              end={endDate}
+              onChange={(s, e) => { setStartDate(s); setEndDate(e) }}
+            />
           </div>
 
           {/* Bar Size */}

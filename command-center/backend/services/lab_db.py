@@ -1995,6 +1995,17 @@ def reset_run_for_retry(run_id: str) -> None:
         )
 
 
+def update_run_period(run_id: str, start_date: str, end_date: str) -> None:
+    """Move a run's backtest window. Used when a rerun is fired over a different period —
+    the row must carry the dates the result was actually produced over, or the detail page
+    would label the new result with the old window."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE backtest_runs SET start_date=?, end_date=? WHERE run_id=?",
+            (start_date, end_date, run_id),
+        )
+
+
 def decrement_optimization_completed(optimization_id: str, count: int, set_running: bool = True) -> None:
     if set_running:
         sql = "UPDATE optimizations SET completed_runs = MAX(0, completed_runs - ?), status='running', completed_at=NULL WHERE optimization_id=?"

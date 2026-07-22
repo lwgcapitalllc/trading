@@ -12,6 +12,7 @@ import {
 } from 'recharts'
 import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunCandles, useRunNews } from '@/hooks/useLab'
 import InfoTip from '@/components/InfoTip'
+import { PeriodPicker } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag, SizingMode } from '@/types'
@@ -54,30 +55,41 @@ function dollarShort(n: number | null | undefined, signed = false): string {
   return `${sign}$${abs.toFixed(0)}`
 }
 
-// Renders a dollar amount at full precision when it fits its cell, abbreviating to $3.2k only when
-// the full string would overflow (the big KPI numbers crop in a narrow card). A hidden full-width
-// copy is measured against the cell, so it switches back to full whenever space returns — e.g. when
-// the grid expands and the value font shrinks. Observes both the cell and the copy to catch either.
+// Renders a dollar amount at full precision when it fits its cell, abbreviating to $11.5k only when
+// the full string would overflow (the big KPI numbers crop in a narrow card). It never rounds harder
+// than one decimal — $12k for $11,525 reads as a different number. A hidden copy of each form is
+// measured against the cell, so it switches back to full whenever space returns — e.g. when the grid
+// expands and the value font shrinks. Observes the cell and both copies.
+// FIT_SLACK keeps the last glyph off the card's padding edge instead of touching the border. The
+// headline money card also gets a wider grid column (KPI_COLS) so the exact figure fits at 34px.
+const FIT_SLACK = 2
+
 function FitMoney({ n, signed = false }: { n: number | null | undefined; signed?: boolean }) {
   const wrapRef = useRef<HTMLSpanElement>(null)
   const fullRef = useRef<HTMLSpanElement>(null)
+  const abbrRef = useRef<HTMLSpanElement>(null)
   const [short, setShort] = useState(false)
   const full = dollar(n, signed)
   const abbr = dollarShort(n, signed)
   useEffect(() => {
     const wrap = wrapRef.current, fullEl = fullRef.current
     if (!wrap || !fullEl) return
-    const measure = () => setShort(fullEl.offsetWidth > wrap.offsetWidth + 1)
+    const measure = () => {
+      const cell = wrap.getBoundingClientRect().width - FIT_SLACK
+      setShort(fullEl.getBoundingClientRect().width > cell)
+    }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(wrap)
     ro.observe(fullEl)
+    if (abbrRef.current) ro.observe(abbrRef.current)
     return () => ro.disconnect()
-  }, [full])
+  }, [full, abbr])
   if (n == null) return <span>—</span>
   return (
     <span ref={wrapRef} className="block relative whitespace-nowrap">
       <span ref={fullRef} aria-hidden className="invisible absolute left-0 top-0 whitespace-nowrap pointer-events-none">{full}</span>
+      <span ref={abbrRef} aria-hidden className="invisible absolute left-0 top-0 whitespace-nowrap pointer-events-none">{abbr}</span>
       <span title={short ? full : undefined}>{short ? abbr : full}</span>
     </span>
   )
@@ -423,6 +435,13 @@ function kpiTone(valueCls?: string): KpiTone {
   return 'neutral'
 }
 
+// Six KPI columns, but the first is wider. Column one carries the money values (Net P&L, and Profit
+// Concentration/Expectancy on the second row) — a 5-figure "+$11,525" needs ~30% more room than a
+// "72.7%" to render at the collapsed row's 34px without running into the card's padding. Widening
+// the column is what buys that room; the type stays the same size in every card. Both rows use this
+// template so the two grids stay aligned.
+const KPI_COLS = 'grid-cols-[1.4fr_repeat(5,minmax(0,1fr))]'
+
 function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false, fixedHeight = null }: {
   run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
   showMore?: boolean; fixedHeight?: number | null
@@ -545,13 +564,13 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
     return (
       <div className="flex flex-col" style={{ height: fh }}>
         <div
-          className="grid grid-cols-6 gap-x-3 shrink-0"
+          className={`grid ${KPI_COLS} gap-x-3 shrink-0`}
           style={{ height: showMore ? half : fh, transition: 'height 0.3s ease' }}
         >
           {core.map(m => card(m, true, showMore ? 'text-[26px]' : 'text-[34px]'))}
         </div>
         <div
-          className="grid grid-cols-6 gap-x-3 shrink-0 overflow-hidden"
+          className={`grid ${KPI_COLS} gap-x-3 shrink-0 overflow-hidden`}
           style={{ height: showMore ? half : 0, marginTop: showMore ? gap : 0, transition: 'height 0.3s ease, margin-top 0.3s ease' }}
         >
           {more.map(m => card(m, true, 'text-[26px]'))}
@@ -2327,6 +2346,61 @@ function FullBacktestEvalModal({ run, busy, onConfirm, onClose }: {
   )
 }
 
+// Rerun a standalone run, with the option to move the backtest window first (the common reason to
+// rerun is "same setup, more history"). Pre-filled with the run's current period, so straight
+// Enter/click reruns exactly what it says on the header chip. The run is reset and refilled IN
+// PLACE — same run_id, its old result is replaced — which is what Rerun has always done; the new
+// period is persisted with it so the record never describes a window it wasn't run over.
+// Sweep children and optimizer combos share one period across the whole set, so they never get
+// here (the backend rejects a period override on them too).
+function RerunModal({ run, busy, onConfirm, onClose }: {
+  run: Run
+  busy: boolean
+  onConfirm: (start: string, end: string) => void
+  onClose: () => void
+}) {
+  const [start, setStart] = useState(run.start_date)
+  const [end, setEnd]     = useState(run.end_date)
+  const valid = !!start && !!end && start < end
+  const moved = start !== run.start_date || end !== run.end_date
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+        <div>
+          <h2 className="text-base font-semibold text-text-primary">Rerun Backtest</h2>
+          <p className="text-xs text-text-secondary mt-1">
+            {run.strategy_name} · {run.instrument} — same parameters, same rulesets. Adjust the period to
+            test over more (or less) history.
+          </p>
+        </div>
+
+        <div>
+          <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">Period</div>
+          <PeriodPicker start={start} end={end} onChange={(s, e) => { setStart(s); setEnd(e) }} />
+        </div>
+
+        {moved && (
+          <p className="text-[11px] text-warn-text">
+            This replaces the existing result for {fmtDate(run.start_date)} → {fmtDate(run.end_date)}.
+          </p>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={() => onConfirm(start, end)}
+            disabled={busy || !valid}
+            className="flex-1 py-1.5 text-sm bg-accent text-bg-base rounded font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy ? 'Starting…' : 'Rerun'}
+          </button>
+          <button onClick={onClose} className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover">Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Parameters side panel ─────────────────────────────────────────────────────
 
 function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle, balance, defaultBalance, onBalanceChange, headerH = 0 }: {
@@ -2675,6 +2749,7 @@ export function BacktestDetail() {
   const latestStress             = stressTests?.[0]
   const [showStressModal, setShowStressModal] = useState(false)
   const [showEvalPicker, setShowEvalPicker] = useState(false)
+  const [showRerun, setShowRerun] = useState(false)
   const [overlayOn, setOverlayOn] = useState(getOverlayPref)
   const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
   // Equity-chart series toggles (TradingView-style panel): profit histogram, trade excursions,
@@ -2822,6 +2897,17 @@ export function BacktestDetail() {
     )
   }, [run, retryBacktest])
 
+  // A standalone run owns its own period, so its rerun goes through the modal (pick the window
+  // first). Sweep children and optimizer combos inherit the set's period — they re-fire directly.
+  const ownsPeriod = !!run && !run.sweep_id && !run.optimization_id
+  const confirmRerun = useCallback((start: string, end: string) => {
+    if (!run) return
+    retryBacktest.mutate(
+      { runId: run.run_id, startDate: start, endDate: end },
+      { onSuccess: () => setShowRerun(false) },
+    )
+  }, [run, retryBacktest])
+
   // The eval card and KPI grid share ONE fixed height on lg so paging through evaluations never
   // grows or shrinks the row. Was JS-measured off the eval card, but each verdict has a different
   // number of rule lines (PASS = 1, DISCARD = 2–3), so the grid stretched/squished per verdict.
@@ -2955,10 +3041,14 @@ export function BacktestDetail() {
               <div className="flex items-center gap-2 flex-shrink-0">
                 {!isRunning && (
                   <button
-                    onClick={runFullBacktest}
+                    onClick={() => ownsPeriod ? setShowRerun(true) : runFullBacktest()}
                     disabled={retryBacktest.isPending || jobBusy}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40"
-                    title={jobBusy ? `${RUNNER_LABEL[scope]} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry this backtest' : run.optimization_id && !run.equity_curve?.length ? 'Run a full backtest on this parameter set to get charts and trade data' : 'Rerun this backtest'}
+                    title={jobBusy
+                      ? `${RUNNER_LABEL[scope]} is busy — wait for the current job to finish`
+                      : run.optimization_id && !run.equity_curve?.length
+                        ? 'Run a full backtest on this parameter set to get charts and trade data'
+                        : `${run.status.startsWith('failed') ? 'Retry' : 'Rerun'} this backtest${ownsPeriod ? ' — pick the period first' : ''}`}
                   >
                     {retryBacktest.isPending
                       ? <RefreshCw size={14} className="animate-spin" />
@@ -3015,6 +3105,14 @@ export function BacktestDetail() {
                   busy={retryBacktest.isPending}
                   onConfirm={confirmFullBacktest}
                   onClose={() => setShowEvalPicker(false)}
+                />
+              )}
+              {showRerun && run && (
+                <RerunModal
+                  run={run}
+                  busy={retryBacktest.isPending}
+                  onConfirm={confirmRerun}
+                  onClose={() => setShowRerun(false)}
                 />
               )}
             </div>

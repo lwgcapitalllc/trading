@@ -335,18 +335,22 @@ export function useStopBacktest() {
   })
 }
 
-type RetryVars = { runId: string; evaluateRulesets?: string[] }
+type RetryVars = { runId: string; evaluateRulesets?: string[]; startDate?: string; endDate?: string }
 
 export function useRetryBacktest() {
   const qc = useQueryClient()
   return useMutation({
-    // Accepts a plain run_id (most callers) or { runId, evaluateRulesets } when re-firing an
-    // optimizer combo with an explicit scoring choice. `evaluateRulesets: undefined` sends no body,
-    // letting the backend inherit-or-prompt.
+    // Accepts a plain run_id (most callers) or a RetryVars object: `evaluateRulesets` when
+    // re-firing an optimizer combo with an explicit scoring choice, `startDate`/`endDate` when
+    // rerunning a standalone run over a different period. Anything left undefined is omitted from
+    // the body, so the backend keeps the run's stored value (and inherit-or-prompts for rulesets).
     mutationFn: (vars: string | RetryVars) => {
-      const { runId, evaluateRulesets } = typeof vars === 'string' ? { runId: vars, evaluateRulesets: undefined } : vars
-      const bodyData = evaluateRulesets !== undefined ? { evaluate_rulesets: evaluateRulesets } : undefined
-      return api.post<{ run_id: string; status: string }>(`/backtests/runs/${runId}/retry`, bodyData)
+      const v: RetryVars = typeof vars === 'string' ? { runId: vars } : vars
+      const bodyData: Record<string, unknown> = {}
+      if (v.evaluateRulesets !== undefined) bodyData.evaluate_rulesets = v.evaluateRulesets
+      if (v.startDate && v.endDate) { bodyData.start_date = v.startDate; bodyData.end_date = v.endDate }
+      const body = Object.keys(bodyData).length > 0 ? bodyData : undefined
+      return api.post<{ run_id: string; status: string }>(`/backtests/runs/${v.runId}/retry`, body)
     },
     onSuccess: (data) => {
       // The backend wants a ruleset choice before it can score this combo — the caller opens a

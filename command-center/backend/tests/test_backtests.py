@@ -102,3 +102,46 @@ def test_delete_run(client, seeded_run):
 
 def test_delete_run_404_unknown(client):
     assert client.delete("/backtests/runs/doesnotexist").status_code == 404
+
+
+# ── Retry / rerun ──────────────────────────────────────────────────────────────
+
+def test_retry_keeps_the_window_when_no_period_sent(client, seeded_run):
+    """A plain rerun is unchanged — it re-fires over the run's stored dates."""
+    r = client.post(f"/backtests/runs/{seeded_run}/retry")
+    assert r.status_code == 202
+    detail = client.get(f"/backtests/runs/{seeded_run}").json()
+    assert (detail["start_date"], detail["end_date"]) == ("2024-01-01", "2024-12-31")
+
+
+def test_retry_with_new_period_moves_the_window(client, seeded_run):
+    """Rerunning over a longer span persists the new window on the run itself, so the
+    stored record never describes a period the result wasn't produced over."""
+    r = client.post(f"/backtests/runs/{seeded_run}/retry", json={
+        "start_date": "2022-01-01",
+        "end_date": "2025-06-30",
+    })
+    assert r.status_code == 202
+    detail = client.get(f"/backtests/runs/{seeded_run}").json()
+    assert (detail["start_date"], detail["end_date"]) == ("2022-01-01", "2025-06-30")
+
+
+def test_retry_rejects_half_a_period(client, seeded_run):
+    r = client.post(f"/backtests/runs/{seeded_run}/retry", json={"start_date": "2022-01-01"})
+    assert r.status_code == 400
+
+
+def test_retry_rejects_inverted_period(client, seeded_run):
+    r = client.post(f"/backtests/runs/{seeded_run}/retry", json={
+        "start_date": "2025-06-30",
+        "end_date": "2022-01-01",
+    })
+    assert r.status_code == 400
+
+
+def test_retry_rejects_malformed_dates(client, seeded_run):
+    r = client.post(f"/backtests/runs/{seeded_run}/retry", json={
+        "start_date": "01/01/2022",
+        "end_date": "30/06/2025",
+    })
+    assert r.status_code == 400
