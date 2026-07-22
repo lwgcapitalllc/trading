@@ -10,11 +10,23 @@ This is NOT a second structure engine. It imports the one in `engines/market_str
 name (same `sys.path` shim as regime/news) and only reads its public events — never re-implements
 BOS/SOS/swing detection.
 
-Four overlay groups, each a Layers checkbox, mapping 1:1 to the TradingView toggles:
-  - "External Structure"   — BOS/SOS break lines + labels, and the active (unbroken) swing rays.
-  - "Internal Structure"   — iBOS/iSOS break lines + labels, for the CURRENT swing range.
-  - "Internal (Historic)"  — the same internal content from PREVIOUS swing ranges.
-  - "Swing Point Labels"   — every swing-point text label (HH/HL/LH/LL/ASH/ASL + internal iSH/…).
+Four overlay groups, each a Layers checkbox, mapping 1:1 to the four TradingView toggles in
+`indicators/structure_engine.pine` (Show External / Internal / Historic Internal Structure /
+Swing Point Labels):
+  - "External Structure"          — BOS/SOS break lines + labels, and the active (unbroken) swing rays.
+  - "Internal Structure"          — iBOS/iSOS break lines + labels, for the CURRENT swing range.
+  - "Historic Internal Structure" — the same internal content from PREVIOUS swing ranges.
+  - "Swing Point Labels"          — every swing-point text label (HH/HL/LH/LL/ASH/ASL + internal iSH/…).
+
+The Pine's toggles NEST, and so do ours, via the overlay's `requires` list (every named group must
+also be ON for the overlay to draw):
+  - a swing-point tag needs its OWNING structure on too — Pine hides ASH/ASL with `showExternal`
+    and runs the whole internal engine only when `showInternal`, so "Swing Point Labels" alone
+    can't resurrect a layer you switched off;
+  - "Historic Internal Structure" is a SUB-filter of "Internal Structure" (Pine: internal history is
+    kept or wiped, but only while the internal engine is running), never a peer layer.
+So: external swing tag ⇒ requires External; internal swing tag ⇒ requires Internal (+ Historic if
+it's from an older leg); historic internal break ⇒ requires Internal.
 
 TF: computed on whatever candles the spec ships (the displayed/base TF), so the lines align 1:1
 with the bars on screen. Drill-down (M1/M5) is base-TF only for now — no per-window recompute.
@@ -47,7 +59,7 @@ if str(_ENGINES) not in sys.path:
 # Group names — MUST match STRUCTURE_GROUPS in the frontend overlays.ts (drives default-off + order).
 GROUP_EXTERNAL = "External Structure"
 GROUP_INTERNAL = "Internal Structure"
-GROUP_INTERNAL_HISTORIC = "Internal (Historic)"
+GROUP_INTERNAL_HISTORIC = "Historic Internal Structure"
 GROUP_SWING_LABELS = "Swing Point Labels"
 
 # Direction colours (raw hex — chart_spec emits hex, the panel consumes it).
@@ -61,18 +73,26 @@ _INT_BEAR = "#ef9a9a"
 _MAX_PER_GROUP = 1200
 
 
-def _hline(group: str, t0: int, t1: int, price: float, color: str, *, dashed: bool = False, width: float = 1) -> dict:
-    return {
+def _hline(group: str, t0: int, t1: int, price: float, color: str, *, dashed: bool = False, width: float = 1,
+           requires: list[str] | None = None) -> dict:
+    ov = {
         "type": "hline", "group": group, "t0": t0, "t1": t1, "price": round(price, 5),
         "style": {"color": color, "lineStyle": "dashed" if dashed else "solid", "lineWidth": width},
     }
+    if requires:
+        ov["requires"] = requires
+    return ov
 
 
-def _label(group: str, t: int, price: float, text: str, color: str, placement: str) -> dict:
-    return {
+def _label(group: str, t: int, price: float, text: str, color: str, placement: str,
+           requires: list[str] | None = None) -> dict:
+    ov = {
         "type": "label", "group": group, "t": t, "price": round(price, 5), "text": text,
         "placement": placement, "style": {"color": color},
     }
+    if requires:
+        ov["requires"] = requires
+    return ov
 
 
 def _mid(a: int, b: int) -> int:
@@ -133,8 +153,10 @@ def build_market_structure_overlays(candles: list[dict], major_length: int = 15)
     ext_overlays: list[dict] = []
     swing_overlays: list[dict] = []
     # Internal overlays collected with their anchor bar index, so current-vs-historic can be
-    # decided AFTER the walk against the final "most recent external swing" boundary.
-    int_pending: list[tuple[int, dict]] = []
+    # decided AFTER the walk against the final "most recent external swing" boundary. The third
+    # element marks a swing-point TAG (it lives in the Swing Point Labels group and only takes the
+    # historic flag through `requires`) versus an internal break line/tag (which IS the group).
+    int_pending: list[tuple[int, dict, bool]] = []
 
     active_high: tuple[float, int] | None = None   # (price, bar) unbroken swing high
     active_low: tuple[float, int] | None = None
@@ -175,20 +197,24 @@ def build_market_structure_overlays(candles: list[dict], major_length: int = 15)
                 ext_break_bars.append(i)
 
             # ── External swing-point labels (final classification, fired at the break) ──
+            # `requires` External: Pine paints ASH/ASL/HH/HL/LH/LL transparent when showExternal is
+            # off, whatever the swing-label toggle says.
             if ext.broken_high_label and ext.broken_high_price is not None:
-                swing_overlays.append(_label(GROUP_SWING_LABELS, t(ext.broken_high_index), ext.broken_high_price, ext.broken_high_label, _BEAR, "above"))
+                swing_overlays.append(_label(GROUP_SWING_LABELS, t(ext.broken_high_index), ext.broken_high_price, ext.broken_high_label, _BEAR, "above", [GROUP_EXTERNAL]))
             if ext.broken_low_label and ext.broken_low_price is not None:
-                swing_overlays.append(_label(GROUP_SWING_LABELS, t(ext.broken_low_index), ext.broken_low_price, ext.broken_low_label, _BULL, "below"))
+                swing_overlays.append(_label(GROUP_SWING_LABELS, t(ext.broken_low_index), ext.broken_low_price, ext.broken_low_label, _BULL, "below", [GROUP_EXTERNAL]))
 
             # ── Internal swing-point labels (iSH/iHH, iSL/iLL, and the iHL/iLH demotions) ──
+            # Pending like the internal breaks: they belong to a swing range, so they take the same
+            # current-vs-historic split (Pine wipes a past range's internal LABELS and lines together).
             if intl.new_swing_high and intl.new_swing_high_price is not None and intl.swing_high_label:
-                swing_overlays.append(_label(GROUP_SWING_LABELS, t(intl.new_swing_high_index), intl.new_swing_high_price, intl.swing_high_label, _INT_BEAR, "above"))
+                int_pending.append((i, _label(GROUP_SWING_LABELS, t(intl.new_swing_high_index), intl.new_swing_high_price, intl.swing_high_label, _INT_BEAR, "above"), True))
             if intl.new_swing_low and intl.new_swing_low_price is not None and intl.swing_low_label:
-                swing_overlays.append(_label(GROUP_SWING_LABELS, t(intl.new_swing_low_index), intl.new_swing_low_price, intl.swing_low_label, _INT_BULL, "below"))
+                int_pending.append((i, _label(GROUP_SWING_LABELS, t(intl.new_swing_low_index), intl.new_swing_low_price, intl.swing_low_label, _INT_BULL, "below"), True))
             if intl.demoted_high_label and intl.demoted_high_price is not None:
-                swing_overlays.append(_label(GROUP_SWING_LABELS, t(intl.demoted_high_index), intl.demoted_high_price, intl.demoted_high_label, _INT_BEAR, "above"))
+                int_pending.append((i, _label(GROUP_SWING_LABELS, t(intl.demoted_high_index), intl.demoted_high_price, intl.demoted_high_label, _INT_BEAR, "above"), True))
             if intl.demoted_low_label and intl.demoted_low_price is not None:
-                swing_overlays.append(_label(GROUP_SWING_LABELS, t(intl.demoted_low_index), intl.demoted_low_price, intl.demoted_low_label, _INT_BULL, "below"))
+                int_pending.append((i, _label(GROUP_SWING_LABELS, t(intl.demoted_low_index), intl.demoted_low_price, intl.demoted_low_label, _INT_BULL, "below"), True))
 
             # ── Internal breaks: iBOS / iSOS. Anchor the line at the internal swing WICK that broke
             # — the ifib_seed leg anchors (ash for an up-break, asl for a down-break) land exactly on
@@ -197,22 +223,22 @@ def build_market_structure_overlays(candles: list[dict], major_length: int = 15)
             # after the walk. ──
             if (intl.bull_bos or intl.bull_sos) and intl.ifib_seed_ash is not None and intl.ifib_seed_ash_loc is not None:
                 price, loc, sos = intl.ifib_seed_ash, intl.ifib_seed_ash_loc, bool(intl.bull_sos)
-                int_pending.append((i, _hline("", t(loc), t(i), price, _INT_BULL, dashed=sos)))
-                int_pending.append((i, _label("", t(_mid(loc, i)), price, "iSOS" if sos else "iBOS", _INT_BULL, "above")))
+                int_pending.append((i, _hline("", t(loc), t(i), price, _INT_BULL, dashed=sos), False))
+                int_pending.append((i, _label("", t(_mid(loc, i)), price, "iSOS" if sos else "iBOS", _INT_BULL, "above"), False))
             if (intl.bear_bos or intl.bear_sos) and intl.ifib_seed_asl is not None and intl.ifib_seed_asl_loc is not None:
                 price, loc, sos = intl.ifib_seed_asl, intl.ifib_seed_asl_loc, bool(intl.bear_sos)
-                int_pending.append((i, _hline("", t(loc), t(i), price, _INT_BEAR, dashed=sos)))
-                int_pending.append((i, _label("", t(_mid(loc, i)), price, "iSOS" if sos else "iBOS", _INT_BEAR, "below")))
+                int_pending.append((i, _hline("", t(loc), t(i), price, _INT_BEAR, dashed=sos), False))
+                int_pending.append((i, _label("", t(_mid(loc, i)), price, "iSOS" if sos else "iBOS", _INT_BEAR, "below"), False))
 
         # Active (unbroken) external swings → a ray to the last bar + its ASH/ASL label.
         if active_high is not None:
             price, bar = active_high
             ext_overlays.append(_hline(GROUP_EXTERNAL, t(bar), times[-1], price, _BEAR, dashed=True))
-            swing_overlays.append(_label(GROUP_SWING_LABELS, t(bar), price, "ASH", _BEAR, "above"))
+            swing_overlays.append(_label(GROUP_SWING_LABELS, t(bar), price, "ASH", _BEAR, "above", [GROUP_EXTERNAL]))
         if active_low is not None:
             price, bar = active_low
             ext_overlays.append(_hline(GROUP_EXTERNAL, t(bar), times[-1], price, _BULL, dashed=True))
-            swing_overlays.append(_label(GROUP_SWING_LABELS, t(bar), price, "ASL", _BULL, "below"))
+            swing_overlays.append(_label(GROUP_SWING_LABELS, t(bar), price, "ASL", _BULL, "below", [GROUP_EXTERNAL]))
 
         # Current vs historic internal: the "current swing range" is the latest external LEG. A leg
         # starts at a BOS/SOS, so the boundary is the second-to-last external break (the developing
@@ -226,13 +252,21 @@ def build_market_structure_overlays(candles: list[dict], major_length: int = 15)
             boundary = ext_break_bars[-1]
         else:
             boundary = 0
-        for bar, ov in int_pending:
-            ov["group"] = GROUP_INTERNAL if bar >= boundary else GROUP_INTERNAL_HISTORIC
+        for bar, ov, is_swing_tag in int_pending:
+            historic = bar < boundary
+            if is_swing_tag:
+                # Stays in the Swing Point Labels group; the internal (and historic) dependency
+                # rides on `requires` so all three toggles gate it exactly like the Pine.
+                ov["requires"] = [GROUP_INTERNAL, GROUP_INTERNAL_HISTORIC] if historic else [GROUP_INTERNAL]
+            else:
+                ov["group"] = GROUP_INTERNAL_HISTORIC if historic else GROUP_INTERNAL
+                if historic:
+                    ov["requires"] = [GROUP_INTERNAL]
     except Exception as exc:  # noqa: BLE001 — never let a structure hiccup break the whole chart
         log.warning("structure overlays: replay failed at build time: %s", exc)
         return []
 
-    overlays = ext_overlays + swing_overlays + [ov for _, ov in int_pending]
+    overlays = ext_overlays + swing_overlays + [ov for _, ov, _ in int_pending]
     overlays = _cap_by_group(overlays)
     log.info("structure overlays: %d bars -> %d overlays (%d ext, %d swing-labels, %d internal)",
              n, len(overlays), len(ext_overlays), len(swing_overlays), len(int_pending))

@@ -15,7 +15,7 @@ import { DomPosition, IndicatorSeries, dispose, init, type Chart, type KLineData
 import type { ChartCandle, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
-import { BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, SESSION_BOX, STRUCTURE_GROUPS, TRADE, VLINE, registerChartOverlays } from './overlays'
+import { BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
 import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
 import theme from '@/themes/electric-indigo'
@@ -298,6 +298,13 @@ export default function ChartPanel({
     const seen = new Map<string, string>() // group → representative (first) color
     for (const ov of spec.overlays) {
       if (!seen.has(ov.group)) seen.set(ov.group, ov.style?.color ?? DEFAULT_OVERLAY_COLOR)
+    }
+    // Market structure always shows ALL FOUR toggles once the run carries any structure at all —
+    // they're the Pine's four checkboxes, and a checkbox that vanishes when its layer happens to be
+    // empty reads as a missing feature. "Internal Structure" is the one this bites: it holds only the
+    // CURRENT external leg, which is legitimately empty on most runs (everything older is Historic).
+    if (STRUCTURE_GROUPS.some(g => seen.has(g))) {
+      for (const g of STRUCTURE_GROUPS) if (!seen.has(g)) seen.set(g, STRUCTURE_GROUP_COLOR[g])
     }
     // Non-structure groups first (in first-seen order), then the market-structure groups in their
     // fixed canonical order so the four Layers toggles always read External → Internal → Historic →
@@ -610,6 +617,11 @@ export default function ChartPanel({
     const labelItems: LabelItem[] = []
     for (const ov of spec.overlays) {
       if (!groupsOn[ov.group]) continue
+      // Nested layers: an overlay can also depend on OTHER groups being on (see `requires` in
+      // types.ts). This is what makes the four market-structure toggles nest exactly like the
+      // TradingView ones — e.g. swing tags vanish with the structure that owns them, and historic
+      // internal content needs "Internal Structure" on as well as its own toggle.
+      if (ov.requires?.some(g => groupsOn[g] === false)) continue
       // Skip any structure overlay outside the loaded candles (no-data region).
       if (loadedLoTs == null || loadedHiTs == null) break
       const oStart = ov.type === 'vline' || ov.type === 'label' ? ov.t : ov.t0

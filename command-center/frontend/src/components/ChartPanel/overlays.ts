@@ -20,15 +20,27 @@ export const VLINE = 'lwgVline'
  *  swing-point labels (HH/HL/LH/LL/ASH/ASL + internal iSH…). */
 export const LABEL = 'lwgLabel'
 
-/** Market-structure overlay groups (emitted by backend `structure_overlays.py`). Kept in one place
- *  so the panel can (a) default them OFF — unlike other overlay groups — and (b) order them together
- *  in the Layers menu. MUST match the GROUP_* names in the backend module. */
+/** Market-structure overlay groups (emitted by backend `structure_overlays.py`) — the four
+ *  TradingView toggles from `indicators/structure_engine.pine`, same names, same order. Kept in one
+ *  place so the panel can (a) default them OFF — unlike other overlay groups — and (b) order them
+ *  together in the Layers menu. MUST match the GROUP_* names in the backend module.
+ *  They NEST like the Pine's: the dependencies ride on each overlay's `requires` list, not here. */
 export const STRUCTURE_GROUPS = [
   'External Structure',
   'Internal Structure',
-  'Internal (Historic)',
+  'Historic Internal Structure',
   'Swing Point Labels',
 ] as const
+
+/** Layers-menu dot colour for a structure group that the current run emitted NOTHING into — so all
+ *  four toggles can still be listed. Matches the backend's per-group colours (external = the strong
+ *  bull/bear pair, internal = the muted pair). */
+export const STRUCTURE_GROUP_COLOR: Record<typeof STRUCTURE_GROUPS[number], string> = {
+  'External Structure': '#26a69a',
+  'Internal Structure': '#80cbc4',
+  'Historic Internal Structure': '#80cbc4',
+  'Swing Point Labels': '#26a69a',
+}
 
 /** Daily session-break marker (Step 6) — a vline drawn under a separate name so the generic
  *  vline group and the day breaks can be removed/toggled independently. */

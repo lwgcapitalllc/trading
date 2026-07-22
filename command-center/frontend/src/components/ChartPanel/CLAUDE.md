@@ -159,12 +159,24 @@ here**, so the chart shows exactly what the strategy saw.
 - **Market-structure overlays (Step 7c).** The canonical `engines/market_structure/` engine is replayed
   over the run's candles **server-side** (`backend/services/structure_overlays.py`, imported by bare
   name — never a second engine) and emitted as generic `hline` + `label` overlays in **four groups that
-  are the four TradingView toggles**: `External Structure` (BOS/SOS break lines + tags, and the active
-  unbroken swing rays), `Internal Structure` (iBOS/iSOS for the current external leg), `Internal
-  (Historic)` (the same for older legs), `Swing Point Labels` (HH/HL/LH/LL/ASH/ASL + internal iSH/iSL/…).
+  are the four TradingView toggles**, same names and order as `indicators/structure_engine.pine`:
+  `External Structure` (BOS/SOS break lines + tags, and the active unbroken swing rays),
+  `Internal Structure` (iBOS/iSOS for the current external leg), `Historic Internal Structure` (the
+  same for older legs), `Swing Point Labels` (HH/HL/LH/LL/ASH/ASL + internal iSH/iSL/…).
   The group names are pinned in `STRUCTURE_GROUPS` (`overlays.ts`) so the panel can (a) default them
   **OFF** — a chart with all structure drawn is unreadable — while every other group defaults ON, and
-  (b) order the four together at the end of the Layers menu. Computed on the **displayed/base TF** (v1):
+  (b) order the four together at the end of the Layers menu. **All four are listed whenever a run
+  carries any structure at all, even when a group is EMPTY** — they're the Pine's four checkboxes, and
+  one that vanishes reads as a missing feature. `Internal Structure` is the one this bites: it holds
+  only the CURRENT external leg, so it's legitimately empty on most finished runs (everything older is
+  Historic). Empty groups get their dot colour from `STRUCTURE_GROUP_COLOR`.
+  **The four toggles NEST exactly like the Pine's**, via each overlay's optional `requires` list (a
+  generic `ChartOverlay` field: every named group must ALSO be on for the overlay to draw). Pine hides
+  ASH/ASL/HH/HL with `showExternal` regardless of the swing-label toggle, runs the whole internal
+  engine only under `showInternal`, and treats internal history as a SUB-filter of it — so an external
+  swing tag `requires` External, an internal swing tag `requires` Internal (+ Historic when it belongs
+  to an older leg), and a historic internal break `requires` Internal. Switching a structure off can
+  therefore never leave its swing tags floating, and Historic is not a peer layer. Computed on the **displayed/base TF** (v1):
   the lines align 1:1 with the bars on screen, and drill-down (M1/M5) shows price only — no per-window
   structure recompute yet. Colour convention follows the source Pine: a swing-HIGH label is bearish-red
   (resting sell-side liquidity), a swing-LOW label bullish-teal; a break takes its direction's colour.

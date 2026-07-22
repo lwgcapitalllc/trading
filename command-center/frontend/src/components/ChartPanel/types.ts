@@ -72,8 +72,15 @@ export interface OverlayStyle {
   lineWidth?: number
 }
 
+/** Extra groups that must ALSO be toggled on for this overlay to draw — the emitter's way of
+ *  expressing a NESTED layer without inventing a second toggle. The market-structure overlays use
+ *  it to mirror the TradingView toggles: a swing-point tag needs its owning structure on
+ *  ("External Structure" / "Internal Structure"), and historic internal content needs
+ *  "Internal Structure" on top of its own group. Absent = the overlay's own group is the only gate. */
+type OverlayRequires = { requires?: string[] }
+
 /** A filled rectangle spanning a time and price range (e.g. a range box). */
-export interface BoxOverlay {
+export interface BoxOverlay extends OverlayRequires {
   type: 'box'
   group: string
   t0: EpochMs
@@ -84,7 +91,7 @@ export interface BoxOverlay {
 }
 
 /** A horizontal price level over a time span (e.g. a buy/sell level). */
-export interface HLineOverlay {
+export interface HLineOverlay extends OverlayRequires {
   type: 'hline'
   group: string
   t0: EpochMs
@@ -95,7 +102,7 @@ export interface HLineOverlay {
 }
 
 /** A vertical time marker (e.g. a session break). */
-export interface VLineOverlay {
+export interface VLineOverlay extends OverlayRequires {
   type: 'vline'
   group: string
   t: EpochMs
@@ -105,7 +112,7 @@ export interface VLineOverlay {
 /** A text label pinned at a single (time, price) point — e.g. a BOS/SOS break tag or an
  *  HH/HL/LH/LL swing-point label from the market-structure engine. `placement` nudges it above /
  *  below the anchor (a high label sits above the price, a low label below). */
-export interface LabelOverlay {
+export interface LabelOverlay extends OverlayRequires {
   type: 'label'
   group: string
   t: EpochMs
