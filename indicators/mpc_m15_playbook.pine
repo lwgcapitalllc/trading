@@ -1,6 +1,6 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
-indicator("MPC- JARVIS", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000)
+indicator("MPC M15 PLAYBOOK", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000)
 
 var GRP_MASTER = "Display"
 bool showTradeTools = input.bool(true, "Show FVG, Order Blocks, Sessions & Liquidity", group = GRP_MASTER, tooltip = "Master switch for the discretionary tools: Fair Value Gaps, Order Blocks, Trading Sessions, Kill Zones and Liquidity Levels. Off by default for a clean market-structure-only chart.", display = display.none)
@@ -15,7 +15,6 @@ bool showConfTable = input.bool(true, "Show Confirmation Table", group = GRP_TAB
 // fewer rows). Purely-visual tools (Order Blocks, VWAP, MV, Sessions, Kill Zones)
 // are never forced — they don't feed the table.
 bool tableForceFeeds = input.bool(true, "Table Priority (force-enable required inputs)", group = GRP_TABLE, tooltip = "ON (default): the confirmation table's five feeder inputs — External Fib, FVG, Sniper Zone, Liquidity, RSI Divergence — are forced on so every table row works, even if their own toggles are off. OFF: the individual toggles win, so turning a feature off can blank the rows that depend on it. Order Blocks / VWAP / MV / Sessions / Kill Zones are visual-only and never forced.", display = display.none)
-bool showBLeg = input.bool(true, "Show B LEG row", group = GRP_TABLE, tooltip = "The B LEG setup: an SOS that expanded and printed a continuation BOS BEFORE it retraced, so the REV row died reading 'no retracement'. The B leg keeps watching the Sniper Zone band frozen at that original SOS — the retrace usually comes back to it, just later. Tracks in parallel: it never changes what the REV or CONT rows do. 15m only.", display = display.none)
 string tablePositionInput = input.string("Top Right", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
 string tableSizeInput = input.string("Tiny", "Table Text Size", group = GRP_TABLE, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 
@@ -151,14 +150,12 @@ color eqlColor    = input.color(color.new(color.black, 0), "EQL", group = GRP_EQ
 //============================================================
 //  A+ SETUP SEQUENCE INPUTS
 //============================================================
-// A+ SETUP logic is LOCKED to the tuned defaults — the inputs were removed so the
-// sequence can't be altered from the panel (matches the FVG/EQ detection lock). Values
-// are exactly the screenshot defaults: sweeps allowed to arm, SOS time-window ignored,
-// divergence arm valid 3 days, sweep arm valid 1 day.
-bool aplusDivOnly      = false
-bool aplusIgnoreWindow = true
-int  aplusWindow       = 4320
-int  aplusSweepWindow  = 1440
+var GRP_APLUS = "A+ Setup"
+bool aplusDivOnly  = input.bool(false, "A+ Stage 1: Divergence Only (ignore sweeps)", group = GRP_APLUS, tooltip = "When ON, the A+ sequence arms Stage 1 ONLY on an RSI divergence — liquidity sweeps no longer start a setup. Requires 'Track RSI Divergence' to also be enabled, otherwise no divergences are detected and the A+ row stays on 'Pass'. When OFF (default), either a sweep or a divergence arms Stage 1, and the 1/3 row states which fired (Sweep / Div / Sweep+Div).", display = display.none)
+bool aplusIgnoreWindow = input.bool(true, "A+: Ignore Sweep→SOS Time Window (sequence only)", group = GRP_APLUS, tooltip = "When ON, the SOS-order check ignores time — the NEXT same-side SOS advances Stage 1 to 2/3 no matter how long after. NOTE: the per-source staleness caps below (Div and Sweep) are ALWAYS enforced regardless of this toggle — a Stage-1 arm still expires once BOTH its sources age out. This toggle only relaxes the forward SOS-must-be-within-window gate.", display = display.none)
+int aplusWindow = input.int(4320, "Max Time: Divergence → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness cap for a DIVERGENCE-armed Stage 1, measured in TIME (a bar count is fragile across timeframes). A divergence stays a valid arm for this many minutes waiting for its SOS. Default 4320 = 3 days. Structural, so it lives longer than a sweep.", display = display.none)
+int aplusSweepWindow = input.int(1440, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness cap for a SWEEP-armed Stage 1. A liquidity sweep is short-lived fuel, so it stays a valid arm for only this many minutes waiting for its SOS. Default 1440 = 1 day. Shorter than the divergence window on purpose — a day-old grab is stale.", display = display.none)
+bool contGate4H = input.bool(true, "CONT: require 4H trend agreement", group = GRP_APLUS, tooltip = "The CONTINUATION setup (trend-aligned BOS → retrace → 1m FVG entry) is 15m-locked. ON (default): a 15m continuation is only tracked when the 4H agrees — a long needs the 4H not bearish, a short needs it not bullish — so a 15m pullback that fights the higher trend never arms. OFF: pure 15m — CONT arms on any trend-aligned 15m BOS regardless of the 4H, so you can see how it behaves without the higher-timeframe filter. Either way CONT never tracks a counter-trend side: a bull BOS only fires while 15m is bullish (a bull break in a bear 15m trend is an SOS, which belongs to the REV setup).", display = display.none)
 
 //============================================================
 //  RSI DIVERGENCE (locked defaults — not user-tunable)
@@ -182,6 +179,10 @@ bool showSessions = showTradeTools and showSessionsInput
 bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessionsInput, display = display.none)
 bool showHistoricSessions = input.bool(true,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions as far back as possible.", display = display.none)
 
+bool showSessionOC        = false
+bool showSessionTickRange = false
+bool showSessionAverage   = false
+
 const string TZ_TOOLTIP_TEXT = "The session's time zone, specified in either GMT notation (e.g., 'GMT-5') or as an IANA time zone database name (e.g., 'America/New_York')."
  + " We recommend the latter since it includes other time-related changes, such as daylight savings."
 
@@ -202,7 +203,7 @@ secondSessionColor = input.color(color.new(#2962FF, 92),     "Session color",   
 const string THIRD_SESSION_GROUP = "Third Session"
 showThird         = input.bool(true,                         "Show session",     group = THIRD_SESSION_GROUP, display = display.none)
 thirdSessionName  = input.string("New York",                 "Displayed name",   group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
-thirdSessionTime  = input.session("0900-1800",               "Session time",     group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
+thirdSessionTime  = input.session("0900-1700",               "Session time",     group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
 thirdSessionTZ    = input.string("GMT-4",                    "Session timezone", group = THIRD_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showThird)
 thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",    group = THIRD_SESSION_GROUP, active = showThird)
 
@@ -368,15 +369,6 @@ string macro100Style     = input.string("─",   "",              group = GRP_MA
 var GRP_SNIPER    = "Sniper Fib"
 bool showSniperFib = input.bool(true, "Sniper Zone", group = GRP_SNIPER, active = showFiboInput, display = display.none)
 
-//============================================================
-//  SESSION VOLUME PROFILE (SVP) INPUTS
-//============================================================
-var GRP_SVP   = "MV"
-bool  showSVPInput     = input.bool(true, "MV", group = GRP_SVP, display = display.none)
-bool showSVP = showTradeTools and showSVPInput
-int   svpHistory  = input.int(2,     "Days back", group = GRP_SVP, minval = 1, maxval = 500, active = showSVPInput, display = display.none)
-int   svpRows     = 50
-color svpPOCCol   = #9C27B0
 
 //============================================================
 //  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
@@ -909,12 +901,14 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
 //============================================================
 //  TRADING SESSIONS TYPES & METHODS
 //============================================================
-// The session open/close and average lines were removed — their three toggles were
-// hardcoded false, so the code was unreachable. Freed compile tokens for the B LEG
-// tracker below. The session BOX and its name label are untouched.
 type SessionDisplay
     box   sessionBox
     label sessionLabel
+    line  openLine
+    line  avgLine
+    line  closeLine
+    float sumClose
+    int   numOfBars
 
 type SessionInfo
     color  color
@@ -924,25 +918,56 @@ type SessionInfo
     SessionDisplay active = na
 
 method setName(SessionDisplay this, string name) =>
-    this.sessionLabel.set_y(this.sessionBox.get_bottom())
-    this.sessionLabel.set_text(showSessionNames ? name : "")
+    sessionLabel = this.sessionLabel
+    sessionBox   = this.sessionBox
+    boxText      = array.new<string>()
+    if showSessionTickRange
+        boxText.push("Range: " + str.tostring((sessionBox.get_top() - sessionBox.get_bottom()) / syminfo.mintick, format.mintick))
+    if showSessionAverage
+        boxText.push("Avg: " + str.tostring(this.sumClose / this.numOfBars, format.mintick))
+    if showSessionNames
+        boxText.push(name)
+    sessionLabel.set_y(sessionBox.get_bottom())
+    sessionLabel.set_text(array.join(boxText, "\n"))
 
 method createSessionDisplay(SessionInfo this) =>
     boxColor    = this.color
     opaqueColor = color.new(boxColor, 0)
     dis = SessionDisplay.new(
       sessionBox   = box.new(bar_index, high, bar_index, low, bgcolor = boxColor, border_color = color.new(boxColor, 40), border_width = 1, border_style = line.style_dotted),
-      sessionLabel = label.new(bar_index + 2, low, "", style = label.style_label_upper_left, textalign = text.align_left, textcolor = opaqueColor, color = color(na)))
+      sessionLabel = label.new(bar_index + 2, low, "", style = label.style_label_upper_left, textalign = text.align_left, textcolor = opaqueColor, color = color(na)),
+      openLine     = showSessionOC      ? line.new(bar_index, open,  bar_index, open,  color = opaqueColor, style = line.style_dashed, width = 1) : na,
+      closeLine    = showSessionOC      ? line.new(bar_index, close, bar_index, close, color = opaqueColor, style = line.style_dashed, width = 1) : na,
+      avgLine      = showSessionAverage ? line.new(bar_index, close, bar_index, close, style = line.style_dotted, width = 2, color = opaqueColor) : na,
+      sumClose     = close,
+      numOfBars    = 1)
+    if showSessionOC
+        linefill.new(dis.openLine, dis.closeLine, boxColor)
     dis.setName(this.name)
     this.active := dis
 
 method updateSessionDisplay(SessionInfo this) =>
     sessionDisp = this.active
     sessionBox  = sessionDisp.sessionBox
+    openLine    = sessionDisp.openLine
+    closeLine   = sessionDisp.closeLine
+    avgLine     = sessionDisp.avgLine
+    sessionDisp.sumClose  += close
+    sessionDisp.numOfBars += 1
     sessionBox.set_top(math.max(sessionBox.get_top(), high))
     sessionBox.set_bottom(math.min(sessionBox.get_bottom(), low))
     sessionBox.set_right(bar_index)
     sessionDisp.setName(this.name)
+    if showSessionOC
+        openLine.set_x2(bar_index)
+        closeLine.set_x2(bar_index)
+        closeLine.set_y1(close)
+        closeLine.set_y2(close)
+    if showSessionAverage
+        avgLine.set_x2(bar_index)
+        avg = sessionDisp.sumClose / sessionDisp.numOfBars
+        avgLine.set_y1(avg)
+        avgLine.set_y2(avg)
     sessionDisp
 
 method update(SessionInfo this) =>
@@ -1479,14 +1504,14 @@ f_rev15() =>
     var bool  L_half = false, var bool L_618 = false
     var int   L_deep = 0
     var bool  L_tp50 = false, var bool L_tp382 = false, var bool L_tp0 = false
-    var int   L_deepSeen = 0
+    var bool  L_scaled = false   // a TP was banked on this leg — survives the pullback re-entry reset
     // SHORT state
     var int   S_arm = na, var int S_sos = na
     var float S_low = na, var float S_high = na
     var bool  S_half = false, var bool S_618 = false
     var int   S_deep = 0
     var bool  S_tp50 = false, var bool S_tp382 = false, var bool S_tp0 = false
-    var int   S_deepSeen = 0
+    var bool  S_scaled = false
 
     // ── LONG ── death first: opposite SOS, a same-dir continuation BOS once the SOS
     // leg exists (hand off to CONT — a BOS pullback is NOT a reversal entry), or a close
@@ -1496,7 +1521,7 @@ f_rev15() =>
         L_arm := na, L_sos := na, L_low := na, L_high := na
         L_half := false, L_618 := false, L_deep := 0
         L_tp50 := false, L_tp382 := false, L_tp0 := false
-        L_deepSeen := 0
+        L_scaled := false
     if newBullDiv and na(L_arm) and na(L_sos)
         L_arm := bullDivBar
     if mtf.bull_sos and not na(L_arm) and na(L_sos)
@@ -1520,9 +1545,12 @@ f_rev15() =>
             L_deep := math.max(L_deep, 3)
         if low <= p886
             L_deep := math.max(L_deep, 4)
-        // TP flags are ONE-DIRECTIONAL: once banked they stay banked for the life of the
-        // leg. A pullback to 0.5 after TP1/TP2 is NOT a fresh scale — the trade only reads
-        // forward (entry → 0.5 → 0.382 → TP3). They clear only on leg death, above.
+        // Re-entry: price fell back to 0.5 after banking a TP → clear the TP flags so the row
+        // shows RE-ENTRY (banked, no live TP) while it waits for the come-back. The TP-set
+        // below is NOT gated on re-entry, so a return to 0.5/0.382 re-fires the flags and the
+        // row flips RE-ENTRY → SCALE (a fresh re-entry scale). Fully cleared on leg death.
+        if (L_tp50 or L_tp382 or L_tp0) and low <= p50
+            L_tp50 := false, L_tp382 := false, L_tp0 := false
         if L_618[1] or L_half[1]
             if L_618 and high >= p50
                 L_tp50 := true
@@ -1532,6 +1560,8 @@ f_rev15() =>
                 L_tp382 := true
             if high >= p0 and L_tp382[1]
                 L_tp0 := true
+        if L_tp50 or L_tp382 or L_tp0
+            L_scaled := true
 
     // ── SHORT ── death first: opposite SOS, a same-dir continuation BOS once the SOS
     // leg exists (hand off to CONT), or a close above the leg high (fib 1.0). A stage-1
@@ -1540,7 +1570,7 @@ f_rev15() =>
         S_arm := na, S_sos := na, S_low := na, S_high := na
         S_half := false, S_618 := false, S_deep := 0
         S_tp50 := false, S_tp382 := false, S_tp0 := false
-        S_deepSeen := 0
+        S_scaled := false
     if newBearDiv and na(S_arm) and na(S_sos)
         S_arm := bearDivBar
     if mtf.bear_sos and not na(S_arm) and na(S_sos)
@@ -1564,7 +1594,10 @@ f_rev15() =>
             S_deep := math.max(S_deep, 3)
         if high >= p886
             S_deep := math.max(S_deep, 4)
-        // One-directional, mirror of LONG — banked TPs never clear on a pullback.
+        // Re-entry (mirror of LONG): came back to 0.5 → clear the TP flags → RE-ENTRY; the
+        // ungated TP-set re-fires on a return to 0.5/0.382 and flips RE-ENTRY → SCALE.
+        if (S_tp50 or S_tp382 or S_tp0) and high >= p50
+            S_tp50 := false, S_tp382 := false, S_tp0 := false
         if S_618[1] or S_half[1]
             if S_618 and low <= p50
                 S_tp50 := true
@@ -1572,21 +1605,8 @@ f_rev15() =>
                 S_tp382 := true
             if low <= p0 and S_tp382[1]
                 S_tp0 := true
-
-    // RE-ENTRY reset, mirroring the chart-side rule (see the aplus block): a retrace
-    // DEEPER than any tier this leg has reached, while a TP is banked, clears the TPs so
-    // the row stops reading SCALE and goes back to awaiting entry. deepNow: 1 = 0.5,
-    // 2 = 0.618, 3 = 0.702, 4 = 0.786, 5 = 0.886 (L_deep is 1-based from 0.618).
-    int L_deepNow = L_618 ? L_deep + 1 : L_half ? 1 : 0
-    if not na(L_sos) and L_deepNow > L_deepSeen
-        if L_tp50 or L_tp382 or L_tp0
-            L_tp50 := false, L_tp382 := false, L_tp0 := false
-        L_deepSeen := L_deepNow
-    int S_deepNow = S_618 ? S_deep + 1 : S_half ? 1 : 0
-    if not na(S_sos) and S_deepNow > S_deepSeen
         if S_tp50 or S_tp382 or S_tp0
-            S_tp50 := false, S_tp382 := false, S_tp0 := false
-        S_deepSeen := S_deepNow
+            S_scaled := true
 
     int L_stage = not na(L_sos) ? (L_618 ? 4 : L_half ? 3 : 2) : not na(L_arm) ? 1 : 0
     int S_stage = not na(S_sos) ? (S_618 ? 4 : S_half ? 3 : 2) : not na(S_arm) ? 1 : 0
@@ -1594,17 +1614,20 @@ f_rev15() =>
     bool isLong = L_ok and (not S_ok or L_stage >= S_stage)
     int   rStage = 0, int rDir = 0, int rDeep = 0
     bool  rTp50 = false, bool rTp382 = false, bool rTp0 = false
+    bool  rScaled = false
     float rZoneLo = na, float rZoneHi = na
     if L_ok or S_ok
         if isLong
             rStage := L_stage, rDir := 1, rDeep := L_deep
             rTp50 := L_tp50, rTp382 := L_tp382, rTp0 := L_tp0
+            rScaled := L_scaled
             if not na(L_high) and not na(L_low) and L_high > L_low
                 float rng = L_high - L_low
                 rZoneLo := L_high - rng*0.886, rZoneHi := L_high - rng*0.5
         else
             rStage := S_stage, rDir := -1, rDeep := S_deep
             rTp50 := S_tp50, rTp382 := S_tp382, rTp0 := S_tp0
+            rScaled := S_scaled
             if not na(S_high) and not na(S_low) and S_high > S_low
                 float rng = S_high - S_low
                 rZoneLo := S_low + rng*0.5, rZoneHi := S_low + rng*0.886
@@ -1659,9 +1682,9 @@ f_rev15() =>
         if not na(cS_hi) and not na(cS_lo) and cS_hi > cS_lo
             float czRngS = cS_hi - cS_lo
             rContZoneLo := cS_lo + czRngS * 0.5, rContZoneHi := cS_lo + czRngS * 0.886
-    [rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeep, lastSosCloseT, rContStage, rContDir, rContZoneLo, rContZoneHi]
+    [rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeep, rScaled, lastSosCloseT, rContStage, rContDir, rContZoneLo, rContZoneHi]
 
-[rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeepCode, m15SosCloseT, rContStage, rContDir, rContZoneLo, rContZoneHi] = request.security(syminfo.tickerid, "15", f_rev15())
+[rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeepCode, rScaled, m15SosCloseT, rContStage, rContDir, rContZoneLo, rContZoneHi] = request.security(syminfo.tickerid, "15", f_rev15())
 
 // ── Chart-side 1m confirmation for the 15m REV SETUP (works on any timeframe) ──
 // The 15m engine gives the setup skeleton; the entry trigger is combined here from the 1m
@@ -1670,10 +1693,13 @@ var bool rev1mSawOpp = false
 var bool rev1mShift  = false
 var bool revDeepFvg  = false
 var bool revEarlyFvg = false
+var bool _revAnyTpPrev = false
+bool _revAnyTp = rTp50 or rTp382 or rTp0
+bool _revReentry = _revAnyTpPrev and not _revAnyTp
 // 1m FVG tapping the 15m entry zone right now (chart price taps the 1m gap in-zone)
 bool _revFvgTapNow = rDir == 1 ? (not na(fvg1BullTop) and not na(rZoneLo) and fvg1BullBot <= rZoneHi and fvg1BullTop >= rZoneLo and low <= fvg1BullTop and high >= fvg1BullBot) : rDir == -1 ? (not na(fvg1BearTop) and not na(rZoneLo) and fvg1BearBot <= rZoneHi and fvg1BearTop >= rZoneLo and low <= fvg1BearTop and high >= fvg1BearBot) : false
-// Reset deep confirmations when out of the deep stage.
-if rStage < 4
+// Reset deep confirmations when out of the deep stage, or on a re-entry after a scale.
+if rStage < 4 or _revReentry
     rev1mSawOpp := false, rev1mShift := false, revDeepFvg := false
 if rStage == 4
     if rDir == 1
@@ -1693,6 +1719,7 @@ if rStage == 3 or rStage == 4
     revEarlyFvg := revEarlyFvg or _revFvgTapNow
 else
     revEarlyFvg := false
+_revAnyTpPrev := _revAnyTp
 
 // ── 1m FVG confirmation for the 15m CONT mirror (mirror of the REV FVG gate above) ──
 // A real 1m gap tapping the 15m CONT entry zone (0.5–0.886) confirms the continuation
@@ -1712,10 +1739,6 @@ var a_lastLows  = array.new_float(2)
 
 f_labelText(string txt) => i_showLabels and i_showLiquidity ? txt : ""
 
-// How far back a liquidity line's origin candle may be searched — and, below, how
-// far back its x1 is allowed to sit. Declared here because f_liqMitigate clamps to it.
-int LIQ_ORIGIN_CAP = 1500
-
 // Shared by Daily/Weekly/Monthly/Asia/London/NY liquidity levels: checks for
 // mitigation, updates the line/label color+style+extent in place, and returns
 // the (possibly updated) mitigated/mitigatedBar state.
@@ -1727,24 +1750,11 @@ f_liqMitigate(line lineId, label lblId, bool mit, int mitBar, int barOrigin, boo
         newMitBar := bar_index
     // Live levels always show (if enabled); broken levels show only when showMit is on.
     bool showLvl = (not newMit or showMit) and i_showLiquidity and enabledFlag
-    // A broken level is frozen at its break bar. Once THAT bar ages past the buffer the
-    // line can't be addressed at all, so hide it rather than drag it forward — a swept
-    // line must never creep right, that would read as a level still being live.
-    if newMit and showMit and bar_index - newMitBar > LIQ_ORIGIN_CAP
-        showLvl := false
     if showLvl
-        // Live → extend right from the origin candle; broken → freeze at the break bar (dotted).
-        int x2 = newMit ? newMitBar : bar_index + i_lineExtend
-        // Re-anchor x1 within a bounded lookback, and never past x2. A weekly/daily level
-        // is redrawn only when its PRICE changes, so on a low timeframe its origin candle
-        // ends up many thousands of bars behind. Once x1 falls outside Pine's historical
-        // buffer, ANY coordinate write on the line throws "requested historical offset ...
-        // beyond the historical buffer's limit". This must run BEFORE set_x2, so the stale
-        // x1 is overwritten first. The level's PRICE and mitigation are untouched — only
-        // the stub back to its forming candle is trimmed, and only once it is that old.
-        line.set_x1(lineId, math.min(x2, math.max(barOrigin, bar_index - LIQ_ORIGIN_CAP)))
         line.set_color(lineId, newMit ? MITIGATED_COLOR : baseColor)
         line.set_style(lineId, newMit ? line.style_dotted : line.style_solid)
+        // Live → extend right from the origin candle; broken → freeze at the break bar (dotted).
+        int x2 = newMit ? newMitBar : bar_index + i_lineExtend
         line.set_x2(lineId, x2)
         // Broken levels keep a DIMMED label (was hidden, which made "Show Mitigated
         // Liquidity Lines" look like it did nothing — just a faint unlabeled segment).
@@ -1758,6 +1768,7 @@ f_liqMitigate(line lineId, label lblId, bool mit, int mitBar, int barOrigin, boo
 
 // Origin-candle finder — scans back for the most recent bar that reached a level, so a
 // liquidity line can start from the candle that formed it instead of the detection bar.
+int LIQ_ORIGIN_CAP = 1500
 f_originHigh(float lvl, int cap) =>
     int ob = bar_index
     if bar_index >= 1
@@ -1778,6 +1789,21 @@ f_originLow(float lvl, int cap) =>
 inAsia   = not na(time("", firstSessionTime,  firstSessionTZ))
 inLondon = not na(time("", secondSessionTime, secondSessionTZ))
 inNY     = not na(time("", thirdSessionTime,  thirdSessionTZ))
+
+// ── M15 PLAYBOOK session — primary read is YOUR configured session boxes (inAsia /
+// inLondon / inNY above), so the SESSION row and play names line up with the boxes on
+// your chart (Asia 20:00-05:00, London 04:00-13:00, NY 09:00-17:00, on your GMT-4 tz).
+// Priority NY > London > Asia on the overlaps (the later-opening session wins).
+// PLUS the two course sub-sessions layered INSIDE your boxes when the toggle is on:
+//   Frankfurt 00:00-02:00 (inside Asia)   — the pre-London sweep of Asia
+//   Lull      05:00-07:00 (inside London) — the quiet gap that can sweep London before NY
+// They refine the label only where they apply; everything else stays on your boxes.
+bool m15SubSess = input.bool(true, "M15: Frankfurt & Lull sub-sessions", group = GRP_TABLE, tooltip = "ON: the SESSION row refines to Frankfurt (00:00-02:00, inside your Asia box) and the Lull (05:00-07:00, inside your London box) — the two extra windows the M15 playbook names. OFF: the SESSION row shows only your three session boxes (Asia / London / New York). Uses the same GMT-4 timezone as your Asia session.", display = display.none)
+bool inFrank = m15SubSess and not na(time("", "0000-0200", firstSessionTZ))
+bool inLull  = m15SubSess and not na(time("", "0500-0700", firstSessionTZ))
+string m15Sess     = inNY ? "New York" : inLull ? "Lull" : inLondon ? "London" : inFrank ? "Frankfurt" : inAsia ? "Asia" : "—"
+string m15SessTag  = inNY ? "NY" : inLull ? "Lull" : inLondon ? "LDN" : inFrank ? "Frank" : inAsia ? "Asia" : "OFF"
+bool   m15TradeWin = inLondon or inNY   // London + NY are the trade windows (Lull sits inside London)
 
 inSession5 = not na(time("5", "0930-0935", "America/New_York"))
 inExtend5  = not na(time("5", "0935-1600", "America/New_York"))
@@ -2381,11 +2407,9 @@ float eqTol  = na(eqAtr) ? 0.0 : eqAtr * eqAtrMult
 var array<line>  eqhLines = array.new<line>()
 var array<label> eqhLbls  = array.new<label>()
 var array<float> eqhPx    = array.new<float>()
-var array<int>   eqhBar   = array.new<int>()
 var array<line>  eqlLines = array.new<line>()
 var array<label> eqlLbls  = array.new<label>()
 var array<float> eqlPx    = array.new<float>()
-var array<int>   eqlBar   = array.new<int>()
 
 // True when an FVG (gTop..gBot) overlaps, or sits within `prox` of, any active EQ level.
 f_fvgNearEq(float gTop, float gBot, float prox) =>
@@ -2410,8 +2434,8 @@ if not eqShow and (array.size(eqhLines) > 0 or array.size(eqlLines) > 0)
     if array.size(eqlLines) > 0
         for i = 0 to array.size(eqlLines) - 1
             line.delete(array.get(eqlLines, i)), label.delete(array.get(eqlLbls, i))
-    array.clear(eqhLines), array.clear(eqhLbls), array.clear(eqhPx), array.clear(eqhBar)
-    array.clear(eqlLines), array.clear(eqlLbls), array.clear(eqlPx), array.clear(eqlBar)
+    array.clear(eqhLines), array.clear(eqhLbls), array.clear(eqhPx)
+    array.clear(eqlLines), array.clear(eqlLbls), array.clear(eqlPx)
 
 f_processEq() =>
     float eqPh = ta.pivothigh(high, eqPivotLen, eqPivotLen)
@@ -2425,9 +2449,9 @@ f_processEq() =>
             float lvl = math.max(eqPh, eqPrevPh)
             line ln = line.new(eqPrevPhBar, lvl, bar_index + i_lineExtend, lvl, color = eqhColor, style = line.style_dotted, width = 1)
             label lb = label.new(bar_index + i_lineExtend, lvl, "EQH", style = label.style_none, textcolor = eqhColor, size = size.tiny, textalign = text.align_left)
-            array.push(eqhLines, ln), array.push(eqhLbls, lb), array.push(eqhPx, lvl), array.push(eqhBar, eqPrevPhBar)
+            array.push(eqhLines, ln), array.push(eqhLbls, lb), array.push(eqhPx, lvl)
             while array.size(eqhLines) > eqMax
-                line.delete(array.shift(eqhLines)), label.delete(array.shift(eqhLbls)), array.shift(eqhPx), array.shift(eqhBar)
+                line.delete(array.shift(eqhLines)), label.delete(array.shift(eqhLbls)), array.shift(eqhPx)
         eqPrevPh := eqPh, eqPrevPhBar := phBar
 
     if eqShow and not na(eqPl)
@@ -2436,9 +2460,9 @@ f_processEq() =>
             float lvl = math.min(eqPl, eqPrevPl)
             line ln = line.new(eqPrevPlBar, lvl, bar_index + i_lineExtend, lvl, color = eqlColor, style = line.style_dotted, width = 1)
             label lb = label.new(bar_index + i_lineExtend, lvl, "EQL", style = label.style_none, textcolor = eqlColor, size = size.tiny, textalign = text.align_left)
-            array.push(eqlLines, ln), array.push(eqlLbls, lb), array.push(eqlPx, lvl), array.push(eqlBar, eqPrevPlBar)
+            array.push(eqlLines, ln), array.push(eqlLbls, lb), array.push(eqlPx, lvl)
             while array.size(eqlLines) > eqMax
-                line.delete(array.shift(eqlLines)), label.delete(array.shift(eqlLbls)), array.shift(eqlPx), array.shift(eqlBar)
+                line.delete(array.shift(eqlLines)), label.delete(array.shift(eqlLbls)), array.shift(eqlPx)
         eqPrevPl := eqPl, eqPrevPlBar := plBar
 
     // Mitigation + right-extend each bar: EQH taken on a close above, EQL on a close below.
@@ -2447,26 +2471,18 @@ f_processEq() =>
             float lvl = array.get(eqhPx, i)
             if close > lvl
                 line.delete(array.get(eqhLines, i)), label.delete(array.get(eqhLbls, i))
-                array.remove(eqhLines, i), array.remove(eqhLbls, i), array.remove(eqhPx, i), array.remove(eqhBar, i)
+                array.remove(eqhLines, i), array.remove(eqhLbls, i), array.remove(eqhPx, i)
             else
-                line ehl = array.get(eqhLines, i)
-                // x1 clamp — an unmitigated EQ level can outlive its pivot by thousands
-                // of bars; keep its origin inside the buffer (see f_liqMitigate). Read the
-                // origin from eqhBar, NOT line.get_x1 — querying an already-aged line is
-                // the very thing that can throw.
-                line.set_x1(ehl, math.max(array.get(eqhBar, i), bar_index - LIQ_ORIGIN_CAP))
-                line.set_x2(ehl, bar_index + i_lineExtend)
+                line.set_x2(array.get(eqhLines, i), bar_index + i_lineExtend)
                 label.set_x(array.get(eqhLbls, i), bar_index + i_lineExtend)
     if eqShow and array.size(eqlLines) > 0
         for i = array.size(eqlLines) - 1 to 0
             float lvl = array.get(eqlPx, i)
             if close < lvl
                 line.delete(array.get(eqlLines, i)), label.delete(array.get(eqlLbls, i))
-                array.remove(eqlLines, i), array.remove(eqlLbls, i), array.remove(eqlPx, i), array.remove(eqlBar, i)
+                array.remove(eqlLines, i), array.remove(eqlLbls, i), array.remove(eqlPx, i)
             else
-                line ell = array.get(eqlLines, i)
-                line.set_x1(ell, math.max(array.get(eqlBar, i), bar_index - LIQ_ORIGIN_CAP))
-                line.set_x2(ell, bar_index + i_lineExtend)
+                line.set_x2(array.get(eqlLines, i), bar_index + i_lineExtend)
                 label.set_x(array.get(eqlLbls, i), bar_index + i_lineExtend)
     int _ret = 0
 f_processEq()
@@ -2650,14 +2666,8 @@ var int lastExtBreakBar = na
 if extBreakThisBar
     lastExtBreakBar := bar_index
 
-// A divergence stays LIVE only until the next external break after it fired, with a
-// bar count as an outer cap. Read by the CONT setup ONLY: on a with-trend continuation
-// a fresh OPPOSING divergence is real reversal risk, so it vetoes the entry. The REV
-// setup deliberately NEVER reads these — a divergence at a reversal is part of that
-// trade's own confirmation, not a reason to distrust it, so an opposing div can never
-// block, warn on, or kill a REV setup at any stage.
-bool bullDivActive = not na(lastBullDivBar) and (na(lastExtBreakBar) or lastExtBreakBar <= lastBullDivBar) and bar_index - lastBullDivBar <= 300
-bool bearDivActive = not na(lastBearDivBar) and (na(lastExtBreakBar) or lastExtBreakBar <= lastBearDivBar) and bar_index - lastBearDivBar <= 300
+// (RSI-divergence veto + live-active flags removed to save compile tokens — they fed
+// only the CONT rows, which are currently disabled.)
 
 
 var array<SessionInfo> sessionInfos = getSessionInfos()
@@ -2776,10 +2786,6 @@ if i_showPWC and i_showLiquidity and not na(pwcSecurity) and barstate.isconfirme
 
 if not na(pwc_line) and i_showPWC and i_showLiquidity
     pwcCol = close >= pwc_price ? color.blue : color.red
-    // Same x1 clamp as f_liqMitigate — PWC is redrawn only once a week, so on a low
-    // timeframe its origin bar ages out of the historical buffer and any coordinate
-    // write on the line would throw. See the note in f_liqMitigate.
-    line.set_x1(pwc_line, math.max(pwc_bar, bar_index - LIQ_ORIGIN_CAP))
     line.set_color(pwc_line, pwcCol)
     line.set_x2(pwc_line, bar_index + i_lineExtend)
     label.set_textcolor(pwc_lbl, pwcCol)
@@ -3829,114 +3835,6 @@ f_sniperExtend() =>
     int _ret = 0
 f_sniperExtend()
 
-//============================================================
-//  SESSION VOLUME PROFILE — ASIA POC / MV LINE
-//============================================================
-f_processSvp() =>
-    string SVP_SESSION = "2000-0500"
-    string SVP_TZ      = "GMT-4"
-
-    var array<line>  svp_poc      = array.new<line>()
-    var array<label> svp_poc_lbl  = array.new<label>()
-    var array<float> svp_poc_px   = array.new<float>()
-
-    var float svp_hi       = na
-    var float svp_lo       = na
-    var int   svp_startBar = na
-    var bool  svp_inSess   = false
-
-    var float svp_range    = na
-    var float svp_bHi      = na
-    var float svp_bLo      = na
-    var float svp_bVol     = na
-    var bool  svp_bull     = false
-    var int   svp_rLo      = 0
-    var int   svp_rHi      = 0
-    var int   svp_span     = 0
-    var float svp_perRow   = na
-    var float svp_rv       = na
-    var float svp_total    = 0.0
-    var float svp_maxVol   = 0.0
-    var int   svp_pocRow   = 0
-    var float svp_pocPx    = na
-    var int   svp_sLen     = 0
-    var int   svp_sBar     = 0
-    var array<float> svp_rowUp = array.new<float>()
-    var array<float> svp_rowDn = array.new<float>()
-
-    bool inSVP  = not na(time(timeframe.period, SVP_SESSION, SVP_TZ))
-    bool svpNew = inSVP and not inSVP[1]
-    bool svpEnd = not inSVP and inSVP[1]
-
-    if svpNew and showSVP and timeframe.isintraday
-        svp_hi       := high
-        svp_lo       := low
-        svp_startBar := bar_index
-        svp_inSess   := true
-
-    if svp_inSess and inSVP and showSVP and timeframe.isintraday
-        if high > svp_hi
-            svp_hi := high
-        if low < svp_lo
-            svp_lo := low
-
-    if svpEnd and svp_inSess and showSVP and timeframe.isintraday and not na(svp_hi) and not na(svp_lo)
-        svp_inSess := false
-        svp_range  := svp_hi - svp_lo
-        if svp_range > 0
-            svp_sLen := bar_index - svp_startBar + 1
-            array.clear(svp_rowUp)
-            array.clear(svp_rowDn)
-            for r = 0 to svpRows - 1
-                array.push(svp_rowUp, 0.0)
-                array.push(svp_rowDn, 0.0)
-            for b = 0 to math.min(svp_sLen - 1, 1490)
-                svp_bHi  := high[b]
-                svp_bLo  := low[b]
-                svp_bVol := volume[b]
-                svp_bull := close[b] >= open[b]
-                svp_rLo  := math.max(0, math.min(math.floor((svp_bLo - svp_lo) / svp_range * svpRows), svpRows - 1))
-                svp_rHi  := math.max(0, math.min(math.ceil( (svp_bHi - svp_lo) / svp_range * svpRows) - 1, svpRows - 1))
-                svp_span := math.max(1, svp_rHi - svp_rLo + 1)
-                svp_perRow := svp_bVol / svp_span
-                for r = svp_rLo to svp_rHi
-                    if svp_bull
-                        array.set(svp_rowUp, r, array.get(svp_rowUp, r) + svp_perRow)
-                    else
-                        array.set(svp_rowDn, r, array.get(svp_rowDn, r) + svp_perRow)
-
-            svp_total  := 0.0
-            svp_maxVol := 0.0
-            svp_pocRow := 0
-            for r = 0 to svpRows - 1
-                svp_rv = array.get(svp_rowUp, r) + array.get(svp_rowDn, r)
-                svp_total += svp_rv
-                if svp_rv > svp_maxVol
-                    svp_maxVol := svp_rv
-                    svp_pocRow := r
-
-            svp_pocPx := svp_lo + (svp_pocRow + 0.5) * (svp_range / svpRows)
-            svp_sBar  := svp_startBar
-
-            if array.size(svp_poc) >= svpHistory
-                line.delete(array.shift(svp_poc))
-                label.delete(array.shift(svp_poc_lbl))
-                array.shift(svp_poc_px)
-
-            array.push(svp_poc,     line.new(svp_sBar, svp_pocPx, bar_index + i_lineExtend, svp_pocPx, color = svpPOCCol, style = line.style_solid, width = 1))
-            array.push(svp_poc_lbl, label.new(bar_index + i_lineExtend, svp_pocPx + lblOff, "MV", style = label.style_none, textcolor = svpPOCCol, size = f_liqSize(), textalign = text.align_left))
-            array.push(svp_poc_px,  svp_pocPx)
-
-    var line  svp_ln = na
-    var label svp_lb = na
-    if showSVP and timeframe.isintraday and array.size(svp_poc) > 0
-        for idx = 0 to array.size(svp_poc) - 1
-            svp_ln := array.get(svp_poc, idx)
-            svp_lb := array.get(svp_poc_lbl, idx)
-            line.set_x2(svp_ln, bar_index + i_lineExtend)
-            label.set_x(svp_lb, bar_index + i_lineExtend)
-    int _ret = 0
-f_processSvp()
 
 //============================================================
 //  PLOTTING
@@ -3973,11 +3871,6 @@ var string liq_nyh = "", var string liq_nyl = ""
 // Bar timestamps for each sweep — used to find most recent BSL/SSL
 var int liq_h4h_bar = na, var int liq_h4l_bar = na
 var int liq_dh_bar  = na, var int liq_dl_bar  = na
-// Timestamp of the DAILY sweep, captured when it fires. The staleness check below
-// compares times directly instead of walking back `time[bar_index - sweepBar]` — that
-// dynamic offset is unbounded and blows Pine's historical buffer once the sweep is a
-// few thousand bars old ("requested historical offset ... beyond the buffer's limit").
-var int liq_dh_t    = na, var int liq_dl_t    = na
 var int liq_ash_bar = na, var int liq_asl_bar = na
 var int liq_ldh_bar = na, var int liq_ldl_bar = na
 var int liq_nyh_bar = na, var int liq_nyl_bar = na
@@ -3992,8 +3885,8 @@ var int liq_nyh_bar = na, var int liq_nyl_bar = na
 //   Daily pool rolls at the exchange daily open (hasDailyTimeChanged), NOT NY
 //   midnight — for gold that's ~17:00-18:00 NY.
 if hasDailyTimeChanged
-    liq_dh := "", liq_dh_bar := na, liq_dh_t := na
-    liq_dl := "", liq_dl_bar := na, liq_dl_t := na
+    liq_dh := "", liq_dh_bar := na
+    liq_dl := "", liq_dl_bar := na
 //   Each session pool rolls when its NEW high/low is established, i.e. on the
 //   bar that session closes and the next range starts being tracked.
 if not inAsia and inAsia[1]
@@ -4015,9 +3908,9 @@ if barstate.isconfirmed
             liq_h4l := "SSL", liq_h4l_bar := bar_index
     if i_isDailyEnabled and i_showLiquidity
         if d_hMit and not d_hMit[1]
-            liq_dh := "BSL", liq_dh_bar := bar_index, liq_dh_t := time
+            liq_dh := "BSL", liq_dh_bar := bar_index
         if d_lMit and not d_lMit[1]
-            liq_dl := "SSL", liq_dl_bar := bar_index, liq_dl_t := time
+            liq_dl := "SSL", liq_dl_bar := bar_index
     if i_showAsiaHL and i_showLiquidity
         if asiaHMit and not asiaHMit[1]
             liq_ash := "BSL", liq_ash_bar := bar_index
@@ -4192,19 +4085,14 @@ var bool aplusL_deepFvg   = false
 var bool aplusL_tp50      = false   // reached 0.5 going OUT (a TP only for a deep entry)
 var bool aplusL_tp382     = false   // reached 0.382 going OUT
 var bool aplusL_tp0       = false   // reached 0.0 / TP3 going OUT
+var bool aplusL_scaled    = false   // a TP was banked on this leg — survives the pullback re-entry
 var bool aplusS_1mSawOpp = false
 var bool aplusS_1mShift   = false
 var bool aplusS_deepFvg   = false
 var bool aplusS_tp50      = false
 var bool aplusS_tp382     = false
 var bool aplusS_tp0       = false
-
-// RE-ENTRY state. _deepSeen = the deepest entry tier reached SO FAR on this leg
-// (0 none, 1 = 0.5, 2 = 0.618, 3 = 0.702, 4 = 0.786, 5 = 0.886). _reentry = the leg
-// has been reset by a deeper retrace and is waiting for a fresh 1m SOS. See the
-// reset block below the TP tracking for the rule.
-var int  aplusL_deepSeen = 0, var bool aplusL_reentry = false
-var int  aplusS_deepSeen = 0, var bool aplusS_reentry = false
+var bool aplusS_scaled    = false
 
 // (HTF-POI latch removed to save compile tokens — it was computed but never displayed.)
 
@@ -4237,7 +4125,7 @@ bool newDivL   = not na(lastBullDivBar) and lastBullDivBar != lastBullDivBar[1]
 // is no longer meaningful fuel for a fresh setup. Only the PREVIOUS day's sweep
 // (or newer) counts; H4/session sweeps are inherently short-lived already and
 // aren't capped here.
-bool dailySweepTooOldL = newSweepL and recentSSL == "Day Low" and not na(liq_dl_t) and time - liq_dl_t > 86400000
+bool dailySweepTooOldL = newSweepL and recentSSL == "Day Low" and not na(time[bar_index - recentSSL_bar]) and (time - time[bar_index - recentSSL_bar]) > 86400000
 if dailySweepTooOldL
     newSweepL := false
 
@@ -4273,7 +4161,7 @@ if newDivL and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(lastBull
 bool newSweepS = recentBSL != "" and recentBSL_bar != recentBSL_bar[1] and not sessionGapBar
 bool newDivS   = not na(lastBearDivBar) and lastBearDivBar != lastBearDivBar[1]
 
-bool dailySweepTooOldS = newSweepS and recentBSL == "Day High" and not na(liq_dh_t) and time - liq_dh_t > 86400000
+bool dailySweepTooOldS = newSweepS and recentBSL == "Day High" and not na(time[bar_index - recentBSL_bar]) and (time - time[bar_index - recentBSL_bar]) > 86400000
 if dailySweepTooOldS
     newSweepS := false
 
@@ -4358,13 +4246,6 @@ if st.bull_sos and not sessionGapBar
 // OWN bar: your structure engine flags bull_bos = true on every bull_sos bar
 // too (they're not mutually exclusive), so without "not st.bull_sos" here, the
 // very bar that arms stage 2 would immediately kill itself.
-// B LEG capture — this is the EXACT case the B LEG tracker below owns: the REV is
-// about to die on a continuation BOS while still at 2/3 (no retrace yet — neither
-// the 0.5 nor the 0.618 latch is set). Must be read HERE, before the death block
-// clears aplusL_sosBar/aplusS_sosBar and the latches. A death for any other reason
-// (TP3 done, fib flipped, 1.0 broken) is a real failure and does NOT arm a B leg.
-bool bLegArmL = not na(aplusL_sosBar) and not sessionGapBar and st.bull_bos and not st.bull_sos and not aplusL_half and not aplusL_618 and fibo_dir == 1 and not fibo7Touched
-bool bLegArmS = not na(aplusS_sosBar) and not sessionGapBar and st.bear_bos and not st.bear_sos and not aplusS_half and not aplusS_618 and fibo_dir == -1 and not fibo7Touched
 if not na(aplusL_sosBar) and not sessionGapBar
     if (fibo_dir == 1 and fibo7Touched) or fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10) or (st.bull_bos and not st.bull_sos)
         aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_armTime := na, aplusL_swpArmT := na, aplusL_divArmT := na
@@ -4460,10 +4341,16 @@ else
 
 // Deep-entry confirmation (0.618+): a genuine 1m shift IN the trade direction, then a
 // matching FVG retest. Plus multi-level take-profit / scale tracking. Latches clear when
-// the leg dies (else branch). TP/scale tracking is ONE-DIRECTIONAL: once 0.5 / 0.382 /
-// TP3 are banked they stay banked for the life of the leg. A pullback to 0.5 after TP1 or
-// TP2 is NOT a new entry and NOT a new scale — the row only ever reads forward.
+// the leg dies (else branch). A pull BACK into the zone after a scale (price returns to
+// 0.5) resets the deep confirmation + TP latches, so a fresh deeper entry re-runs the
+// whole "wait 1m shift → FVG → READY → scale" sequence — the table follows every move.
 if not na(aplusL_sosBar)
+    // Re-entry: price fell back to 0.5 after banking a TP → clear the TP flags (→ RE-ENTRY)
+    // and re-arm the deep-FVG watch so a fresh come-back re-runs the entry. The TP-set below
+    // is ungated, so a return to 0.5/0.382 re-fires the flags and flips RE-ENTRY → SCALE.
+    if (aplusL_tp50 or aplusL_tp382 or aplusL_tp0) and not na(fiboP2) and low <= fiboP2
+        aplusL_tp50 := false, aplusL_tp382 := false, aplusL_tp0 := false
+        aplusL_1mSawOpp := false, aplusL_1mShift := false, aplusL_deepFvg := false
     if aplusL_618                                         // price reached the deep zone
         if mtf1Dir == -1
             aplusL_1mSawOpp := true                       // saw the 1m still bearish
@@ -4484,12 +4371,17 @@ if not na(aplusL_sosBar)
             aplusL_tp382 := true
         if not na(fiboP7) and high >= fiboP7 and aplusL_tp382[1]
             aplusL_tp0 := true
+    if aplusL_tp50 or aplusL_tp382 or aplusL_tp0
+        aplusL_scaled := true
 else
     aplusL_1mSawOpp := false, aplusL_1mShift := false, aplusL_deepFvg := false
     aplusL_tp50 := false, aplusL_tp382 := false, aplusL_tp0 := false
-    aplusL_deepSeen := 0, aplusL_reentry := false
+    aplusL_scaled := false
 if not na(aplusS_sosBar)
-    // One-directional, mirror of LONG — banked TPs never clear on a pullback.
+    // Re-entry (mirror of LONG): came back to 0.5 → clear TP flags + re-arm deep-FVG watch.
+    if (aplusS_tp50 or aplusS_tp382 or aplusS_tp0) and not na(fiboP2) and high >= fiboP2
+        aplusS_tp50 := false, aplusS_tp382 := false, aplusS_tp0 := false
+        aplusS_1mSawOpp := false, aplusS_1mShift := false, aplusS_deepFvg := false
     if aplusS_618
         if mtf1Dir == 1
             aplusS_1mSawOpp := true
@@ -4504,38 +4396,12 @@ if not na(aplusS_sosBar)
             aplusS_tp382 := true
         if not na(fiboP7) and low <= fiboP7 and aplusS_tp382[1]
             aplusS_tp0 := true
+    if aplusS_tp50 or aplusS_tp382 or aplusS_tp0
+        aplusS_scaled := true
 else
     aplusS_1mSawOpp := false, aplusS_1mShift := false, aplusS_deepFvg := false
     aplusS_tp50 := false, aplusS_tp382 := false, aplusS_tp0 := false
-    aplusS_deepSeen := 0, aplusS_reentry := false
-
-// ── RE-ENTRY reset ──
-// The case: an EARLY 0.5 entry banks its TP at 0.382, and then price comes back and
-// goes DEEPER than it has ever been on this leg — into 0.618 / 0.702 / 0.786 / 0.886.
-// That is NOT the shallow pullback the one-directional TP rule exists to ignore; it is
-// the market handing back a better entry than the one already taken. So the leg RESETS:
-// the banked TPs and the 1m entry confirmations clear, and the row goes back to waiting
-// for a fresh 1m SOS — tagged RE-ENTRY so it reads as a second bite, not a first one.
-// When price then works back out to 0.5 it prints "0.5 scale+stop" again, exactly as a
-// normal deep entry would. Fires on EVERY new deepest tier, so 0.618 → TP → 0.786 resets
-// a second time. The trigger is the tier DEEPENING, which is why a plain pullback to a
-// tier already visited can never trip it.
-int aplusL_deepNow = aplusL_886 ? 5 : aplusL_786 ? 4 : aplusL_702 ? 3 : aplusL_618 ? 2 : aplusL_half ? 1 : 0
-int aplusS_deepNow = aplusS_886 ? 5 : aplusS_786 ? 4 : aplusS_702 ? 3 : aplusS_618 ? 2 : aplusS_half ? 1 : 0
-if not na(aplusL_sosBar) and aplusL_deepNow > aplusL_deepSeen
-    if aplusL_tp50 or aplusL_tp382 or aplusL_tp0
-        aplusL_tp50 := false, aplusL_tp382 := false, aplusL_tp0 := false
-        aplusL_1mSawOpp := false, aplusL_1mShift := false, aplusL_deepFvg := false
-        aplusL_fvgTap := false
-        aplusL_reentry := true
-    aplusL_deepSeen := aplusL_deepNow
-if not na(aplusS_sosBar) and aplusS_deepNow > aplusS_deepSeen
-    if aplusS_tp50 or aplusS_tp382 or aplusS_tp0
-        aplusS_tp50 := false, aplusS_tp382 := false, aplusS_tp0 := false
-        aplusS_1mSawOpp := false, aplusS_1mShift := false, aplusS_deepFvg := false
-        aplusS_fvgTap := false
-        aplusS_reentry := true
-    aplusS_deepSeen := aplusS_deepNow
+    aplusS_scaled := false
 
 // Stage 2+ is defined by SOS presence alone (not fibo_dir, which flickers at
 // the daily rollover and was resetting live setups back to 1/3 at the gap).
@@ -4559,8 +4425,8 @@ else if not na(aplusS_sweepBar)
 // NOT an SOS (those belong to REV) — retraces into that leg's 0.5–0.886, and enters on
 // the SAME 1m FVG trigger as REV. Only ONE side can ever arm: a bull BOS only fires
 // while 15m is bullish (a bull break in a bear 15m trend is an SOS → REV), so direction
-// is self-locking — that is the ONLY direction filter. The 4H does NOT gate or annotate
-// this trade: the first continuation BOS tracks on its own merit.
+// is self-locking. The optional 4H gate (contGate4H) additionally blocks a 15m
+// continuation that fights the 4H — a long needs 4H not bearish, a short not bullish.
 // 15m-locked, like the REV engine's chart side (aplusL_*/aplusS_*).
 var int  contL_bosBar = na
 var bool contL_half   = false
@@ -4571,13 +4437,16 @@ var bool contS_half   = false
 var bool contS_618    = false
 var bool contS_fvgTap = false
 
+bool contAlignL = not contGate4H or m240Dir != -1
+bool contAlignS = not contGate4H or m240Dir != 1
+
 // Arm / re-anchor on each trend-aligned continuation BOS (clears the retrace latches so
 // CONT follows the newest leg, exactly as the drawn fib re-anchors). An SOS bar never
 // arms it (not st.bull_sos / not st.bear_sos) — that is a REV shift, not a continuation.
-if st.bull_bos and not st.bull_sos
+if st.bull_bos and not st.bull_sos and contAlignL
     contL_bosBar := bar_index
     contL_half := false, contL_618 := false, contL_fvgTap := false
-if st.bear_bos and not st.bear_sos
+if st.bear_bos and not st.bear_sos and contAlignS
     contS_bosBar := bar_index
     contS_half := false, contS_618 := false, contS_fvgTap := false
 
@@ -4601,171 +4470,6 @@ if not na(contS_bosBar)
 int contL_stage = na(contL_bosBar) ? 0 : contL_618 ? 3 : contL_half ? 2 : 1
 int contS_stage = na(contS_bosBar) ? 0 : contS_618 ? 3 : contS_half ? 2 : 1
 
-//============================================================
-//  B LEG SETUP — the SOS whose retrace arrived late
-//============================================================
-// The instance this captures: an SOS fires, price expands and prints a continuation
-// BOS BEFORE it ever retraces, so the REV row dies reading "no retracement" and the
-// trade looks like a failure. On a higher timeframe that same move is ONE clean leg
-// and the retrace DOES arrive — just later.
-// The anchor that survives is the SNIPER ZONE drawn at the ORIGINAL SOS (its
-// 0.382-0.5 band). The drawn fib re-anchors on the BOS; the SZ band does not. So the
-// B leg freezes that band at the SOS and waits for price to trade back into it —
-// which is where the retrace lands most of the time.
-// Runs fully PARALLEL: it READS the REV/CONT state and never writes to it. Neither
-// row changes behaviour — this only adds its own row.
-var float bLegL_top = na, var float bLegL_bot = na, var float bLegL_inv = na, var float bLegL_tgt = na
-var bool  bLegL_on = false, var bool bLegL_tap = false, var bool bLegL_tp = false
-var int   bLegL_bar = na, var int bLegL_sosBar = na
-var float bLegS_top = na, var float bLegS_bot = na, var float bLegS_inv = na, var float bLegS_tgt = na
-var bool  bLegS_on = false, var bool bLegS_tap = false, var bool bLegS_tp = false
-var int   bLegS_bar = na, var int bLegS_sosBar = na
-
-// Freeze the SZ band on every SOS — the SAME 0.382/0.5 maths the drawn Sniper Zone
-// uses, so the band IS the box on your chart. inv = the leg origin (fib 1.0): a close
-// past it means the reversal failed outright.
-// DEEPEST BAND WINS. When a fresh same-side SOS fires while a B leg is live and still
-// UNTAPPED, the two candidate bands are compared by how far price has to travel to
-// reach them, and the FARTHER one is kept. Distance is measured to the edge price meets
-// first — the 0.5 edge either way (price falls into it on a long, rises into it on a
-// short).
-// This deliberately reads backwards, so the reasoning matters. The B leg exists to wait
-// for a retrace that has NOT happened yet. In a downtrend every new bear SOS prints its
-// band lower than the last, so a "keep the nearest band" rule walks the level down the
-// chart in step with price and it is tapped immediately by the move already in progress
-// — a tap that confirms nothing. The band worth watching is the one price has to travel
-// BACK to: the premium the move originated from. That is the deeper one, and normally
-// the one frozen at the first SOS of the sequence. A later SOS only takes over when it
-// prints a band even further away — a bigger retrace target, never a smaller one.
-// The unreachable-band risk this creates is handled by the bar cap below, not here.
-// When the new band wins while a leg was live, the WATCH MIGRATES rather than resetting:
-// bLegX_on carries over so there is no dormant gap, the tap/TP latches clear because
-// this is a different band, and the staleness clock restarts from this bar. The target
-// (the expansion extreme = the TP reference) is EXTENDED, never rewound — the move's
-// true extreme is still the right take-profit no matter which band is being watched.
-// A TAPPED leg has already given its entry, so it never blocks a replacement.
-if st.bull_sos and not na(st.bull_bos_high) and not na(st.bull_bos_low) and st.bull_bos_high > st.bull_bos_low
-    float _bLR   = st.bull_bos_high - st.bull_bos_low
-    float _bLnew = st.bull_bos_low + _bLR * 0.5          // near edge of the candidate band
-    bool  _bLwas = bLegL_on and not bLegL_tap            // a live watch is in progress
-    // Keep the existing band only if it is live, untapped AND FARTHER from price than
-    // the candidate — i.e. it is still the deeper retrace target of the two.
-    bool  _bLkeep = _bLwas and not na(bLegL_top) and math.abs(_bLnew - close) <= math.abs(bLegL_top - close)
-    if not _bLkeep
-        bLegL_bot := st.bull_bos_low + _bLR * 0.382
-        bLegL_top := _bLnew
-        bLegL_inv := st.bull_bos_low
-        bLegL_tgt := _bLwas ? math.max(nz(bLegL_tgt, high), high) : high
-        bLegL_sosBar := bar_index
-        bLegL_tap := false, bLegL_tp := false
-        bLegL_on  := _bLwas
-        bLegL_bar := _bLwas ? bar_index : na
-if st.bear_sos and not na(st.bear_bos_high) and not na(st.bear_bos_low) and st.bear_bos_high > st.bear_bos_low
-    float _bSR   = st.bear_bos_high - st.bear_bos_low
-    float _bSnew = st.bear_bos_high - _bSR * 0.5
-    bool  _bSwas = bLegS_on and not bLegS_tap
-    bool  _bSkeep = _bSwas and not na(bLegS_bot) and math.abs(_bSnew - close) <= math.abs(bLegS_bot - close)
-    if not _bSkeep
-        bLegS_top := st.bear_bos_high - _bSR * 0.382
-        bLegS_bot := _bSnew
-        bLegS_inv := st.bear_bos_high
-        bLegS_tgt := _bSwas ? math.min(nz(bLegS_tgt, low), low) : low
-        bLegS_sosBar := bar_index
-        bLegS_tap := false, bLegS_tp := false
-        bLegS_on  := _bSwas
-        bLegS_bar := _bSwas ? bar_index : na
-
-// Target = how far the expansion ran before the retrace started. Tracked only until
-// the B leg arms, then frozen — that extreme is the take-profit reference.
-if not na(bLegL_top) and not bLegL_on
-    bLegL_tgt := math.max(nz(bLegL_tgt, high), high)
-if not na(bLegS_top) and not bLegS_on
-    bLegS_tgt := math.min(nz(bLegS_tgt, low), low)
-
-// Arm on the REV's death-by-continuation-BOS (captured above, before the death ran).
-if bLegArmL and not na(bLegL_top)
-    bLegL_on := true, bLegL_bar := bar_index
-if bLegArmS and not na(bLegS_top)
-    bLegS_on := true, bLegS_bar := bar_index
-
-// Progress, then death. The SZ TAP *IS* the entry — no FVG, no 1m shift, nothing else
-// to wait for. Price trading back into the frozen band is the whole trigger, so the row
-// goes straight from ACTIVE to ENTRY on the tap. (REV and CONT still require their 1m
-// FVG; the B leg deliberately does not — the band itself is the confirmation.)
-// Death is ONLY: a close past the leg origin (1.0), or the staleness cap. NO SOS in
-// either direction kills an untapped leg. Not the opposite one — on a short B leg the
-// retrace UP into the band is frequently the very move that prints a bullish SOS, so
-// killing on it would cancel the leg with what it is waiting for. And not a same-side
-// one either — that can only ever MIGRATE the watch to a DEEPER band (see the capture
-// block above), it never ends it.
-// That leaves the bar cap as the PRIMARY way an unfilled leg ends, not a backstop, so
-// it is set deliberately rather than generously: 120 bars = 30 hours of 15m trading,
-// about a day and a half. Long enough for the late retrace this setup exists to catch
-// (the case that motivated it resolved inside one session), short enough that a band
-// price has ignored for two full days stops being presented as a live watch level.
-// Kept in BARS, not minutes, so weekends and the daily close don't burn the clock —
-// what matters is how much TRADING has passed without the retrace arriving.
-int BLEG_MAX = 120
-if bLegL_on
-    if low <= bLegL_top
-        bLegL_tap := true
-    if bLegL_tap and not na(bLegL_tgt) and high >= bLegL_tgt
-        bLegL_tp := true
-    if close < bLegL_inv or bar_index - bLegL_bar > BLEG_MAX
-        bLegL_on := false
-if bLegS_on
-    if high >= bLegS_bot
-        bLegS_tap := true
-    if bLegS_tap and not na(bLegS_tgt) and low <= bLegS_tgt
-        bLegS_tp := true
-    if close > bLegS_inv or bar_index - bLegS_bar > BLEG_MAX
-        bLegS_on := false
-
-// 1 = active, awaiting the tap · 2 = tapped, ENTRY confirmed · 3 = target reached.
-int bLegL_st = not bLegL_on ? 0 : bLegL_tp ? 3 : bLegL_tap ? 2 : 1
-int bLegS_st = not bLegS_on ? 0 : bLegS_tp ? 3 : bLegS_tap ? 2 : 1
-
-// ── BLEG SZ on the chart ──
-// The frozen band, drawn so it can actually be watched instead of living only in the
-// table. It appears the moment the B leg ARMS — before that the level is just the
-// normal Sniper Zone, which already draws itself — starts back at the SOS bar that
-// froze it, and extends right every bar for the leg's whole life. Deleted when the
-// leg dies or a fresh SOS replaces the band, so a dead level never lingers.
-// Box is grey (it is a watch level, not a signal); the LABEL carries the direction —
-// green for a long, red for a short. 15m only, matching the row.
-bool  bLegDraw = showBLeg and timeframe.in_seconds() == 900
-color BLEG_FILL = color.new(#888888, 82)
-color BLEG_EDGE = color.new(#888888, 45)
-var box   bLegL_box = na, var label bLegL_lbl = na
-var box   bLegS_box = na, var label bLegS_lbl = na
-
-f_bLegDraw(box bx, label lb, bool live, float top, float bot, int fromBar, bool isLong) =>
-    box   oB = bx
-    label oL = lb
-    if live
-        if na(oB)
-            oB := box.new(fromBar, top, bar_index + i_lineExtend, bot, bgcolor = BLEG_FILL, border_color = BLEG_EDGE, border_width = 1)
-            oL := label.new(bar_index + i_lineExtend, (top + bot) / 2, "BLEG SZ", style = label.style_none, textcolor = isLong ? JARVIS_SSL : JARVIS_BSL, size = size.small, textalign = text.align_left)
-        else
-            // Re-state the band's price bounds and left edge every bar, not just the
-            // right edge. Under the nearest-band-wins rule a live watch can MIGRATE to a
-            // different band mid-leg; extending rightward alone would leave the box
-            // frozen on the abandoned band's prices and its old SOS bar.
-            box.set_top(oB, top)
-            box.set_bottom(oB, bot)
-            box.set_left(oB, fromBar)
-            box.set_right(oB, bar_index + i_lineExtend)
-            label.set_xy(oL, bar_index + i_lineExtend, (top + bot) / 2)
-    else if not na(oB)
-        box.delete(oB), label.delete(oL)
-        oB := na, oL := na
-    [oB, oL]
-
-[_bLB, _bLL] = f_bLegDraw(bLegL_box, bLegL_lbl, bLegDraw and bLegL_on, bLegL_top, bLegL_bot, nz(bLegL_sosBar, bar_index), true)
-bLegL_box := _bLB, bLegL_lbl := _bLL
-[_bSB, _bSL] = f_bLegDraw(bLegS_box, bLegS_lbl, bLegDraw and bLegS_on, bLegS_top, bLegS_bot, nz(bLegS_sosBar, bar_index), false)
-bLegS_box := _bSB, bLegS_lbl := _bSL
-
 // ── REV SETUP alert — READY (entry FVG confirmed) ──
 // Fires once when the setup reaches READY: the 1m entry FVG has tapped in-zone —
 // for a deep (0.618+) entry that's after the 1m shift, for an early 0.5 entry it's
@@ -4785,9 +4489,29 @@ if barstate.isconfirmed and timeframe.in_seconds() == 900 and aplusS_ready and n
 f_aplusEntryLvl(bool half, bool e618, bool e702, bool e786, bool e886) =>
     e886 ? "0.886" : e786 ? "0.786" : e702 ? "0.702" : e618 ? "0.618" : half ? "0.5" : "entry"
 
+// ── M15 PLAYBOOK — play name + A+ grade (reuse the setup / bias / liquidity reads) ──
+// Short tag for the session a swept level belongs to, read off recentSSL / recentBSL.
+f_m15SweptTag(string src) =>
+    str.contains(src, "Asia") ? "Asia" : str.contains(src, "Ldn") ? "LDN" : str.contains(src, "NY") ? "NY" : str.contains(src, "Day") ? "PD" : str.contains(src, "H4") ? "H4" : src
+// A+ grade from the confluences the course stacks on its "scales": daily bias aligned,
+// weekly bias aligned, and buy-in-discount / sell-in-premium off the Cycle-fib midpoint.
+//   3/3 = A+ , 2/3 = A , 1/3 = B , 0 = C.
+f_m15Grade(bool isLong) =>
+    int sc = 0
+    if dEstState == (isLong ? "Bullish" : "Bearish")
+        sc += 1
+    if wEstState == (isLong ? "Bullish" : "Bearish")
+        sc += 1
+    if macro_visible and not na(macro_origin) and not na(macro_extreme) and macro_extreme > macro_origin
+        float mid  = (macro_origin + macro_extreme) / 2
+        bool  disc = isLong ? close <= mid : close >= mid
+        if disc
+            sc += 1
+    sc == 3 ? "A+" : sc == 2 ? "A" : sc == 1 ? "B" : "C"
+
 if showConfTable and barstate.islast
     // Header
-    table.cell(jarvisTable, 0, 0, "MPC- JARVIS",
+    table.cell(jarvisTable, 0, 0, "MPC M15",
       text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
       bgcolor = JARVIS_BLUE, text_halign = text.align_center)
     table.cell(jarvisTable, 1, 0, "STATUS",
@@ -4802,6 +4526,24 @@ if showConfTable and barstate.islast
     // Everything below (A+ SETUP, CONT, Weekly, Daily, LIQ BSL/SSL) is hidden in
     // Market Structure mode — only EXT/INT print then.
     if not marketStructureOnly
+        // ── M15 PLAYBOOK headline rows ──
+        // SESSION — which course window we're in (context; always shows). Yellow while a
+        // trade window (London/Lull/NY) is open, neutral during the Asia/Frank build.
+        f_jRow3(jarvisTable, r, "SESSION", m15Sess, m15TradeWin ? JARVIS_YELLOW : JARVIS_NEUTRAL, m15TradeWin ? "trade window" : inAsia ? "Asia build" : "off-hours")
+        r := r + 1
+        // M15 PLAY — the live setup as ONE playbook line: direction · play · A+ grade.
+        // Reversal (REV) takes display priority over continuation (CONT). The play name
+        // falls out of {current session} × {swept liquidity source} for a reversal, or is
+        // a continuation. Only prints while a setup is actually live.
+        bool m15RevLive  = aplusL_stage > 0 or aplusS_stage > 0
+        bool m15ContLive = contL_stage > 0 or contS_stage > 0
+        if m15RevLive or m15ContLive
+            bool   m15Long = m15RevLive ? (aplusL_stage > 0 and (aplusS_stage == 0 or aplusL_stage >= aplusS_stage)) : (contL_stage > 0 and (contS_stage == 0 or contL_stage >= contS_stage))
+            string m15Src  = m15Long ? recentSSL : recentBSL
+            string m15Play = m15RevLive ? (m15Src == "" ? (m15SessTag + " reversal") : (m15SessTag + " sweep " + f_m15SweptTag(m15Src))) : (m15SessTag + " continuation")
+            string m15Grd  = f_m15Grade(m15Long)
+            f_jRow3(jarvisTable, r, "M15 PLAY", (m15Long ? "▲ " : "▼ ") + m15Play, m15Long ? JARVIS_SSL : JARVIS_BSL, m15Grd + " grade · " + m15Sess)
+            r := r + 1
         // A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
         // completes, this row goes back to Pass; what tracks afterward is the CONT
         // row below — a different trade type, displayed separately so the two can
@@ -4820,23 +4562,6 @@ if showConfTable and barstate.islast
         // falls back to the 15m security skeleton (rStage/rDir) for observation only.
         bool   revOn15 = timeframe.in_seconds() == 900
         bool   revOn1m = timeframe.in_seconds() == 60
-
-        // CONT stage is resolved FIRST because the REV row defers to it (see the
-        // hand-off rule below). Display of the CONT row itself happens further down.
-        bool   cL      = true
-        int    cStage  = 0
-        bool   cFvg    = false
-        if revOn15
-            cL      := contL_stage > 0 and (contS_stage == 0 or contL_stage >= contS_stage)
-            cStage  := cL ? contL_stage : contS_stage
-            cFvg    := cL ? contL_fvgTap : contS_fvgTap
-        else if revOn1m
-            // 1m mirror — the 15m CONT thesis via the security engine. Entry FVG is the
-            // real 1m gap (revContFvg), same as the REV mirror.
-            cStage  := rContStage
-            cL      := rContDir == 1
-            cFvg    := revContFvg
-
         int    uStage = 0
         bool   uLong = true
         bool   uTp50 = false
@@ -4846,14 +4571,12 @@ if showConfTable and barstate.islast
         bool   u1mShift = false
         bool   uDeepFvg = false
         bool   uEarlyFvg = false
+        bool   uScaled = false
         // Which source(s) armed the winning side's Stage 1 — drives the 1/3 text
         // (Sweep / Div / Sweep+Div). Only meaningful on the 15m chart, where the real
         // A+ engine (aplusL_*/aplusS_*) drives the row.
         bool   uArmSwp = false
         bool   uArmDiv = false
-        // True once a deeper retrace has RESET this leg — the row says RE-ENTRY instead
-        // of AWAIT so it's clear this is a second bite, not the original entry.
-        bool   uReentry = false
         if revOn15
             bool cLong = aplusL_stage > 0 and (aplusS_stage == 0 or aplusL_stage >= aplusS_stage)
             uStage    := cLong ? aplusL_stage : aplusS_stage
@@ -4865,9 +4588,9 @@ if showConfTable and barstate.islast
             u1mShift  := cLong ? aplusL_1mShift : aplusS_1mShift
             uDeepFvg  := cLong ? aplusL_deepFvg : aplusS_deepFvg
             uEarlyFvg := cLong ? aplusL_fvgTap  : aplusS_fvgTap
+            uScaled   := cLong ? aplusL_scaled  : aplusS_scaled
             uArmSwp   := cLong ? not na(aplusL_swpArmT) : not na(aplusS_swpArmT)
             uArmDiv   := cLong ? not na(aplusL_divArmT) : not na(aplusS_divArmT)
-            uReentry  := cLong ? aplusL_reentry : aplusS_reentry
         else
             uStage    := rStage
             uLong     := rDir == 1
@@ -4876,14 +4599,7 @@ if showConfTable and barstate.islast
             u1mShift  := rev1mShift
             uDeepFvg  := revDeepFvg
             uEarlyFvg := revEarlyFvg
-        // HAND-OFF — once a REV finishes, the FIRST continuation BOS owns the table for its
-        // WHOLE lifetime. While a CONT is live the REV row is hard-suppressed at every
-        // stage: exactly one setup tracks at a time. The REV row shows Pass and returns
-        // only when that CONT completes or dies. (In practice a REV rarely gets past its
-        // arm here anyway — reaching stage 2 needs an SOS, and an SOS kills the live CONT
-        // in the death logic above, which frees the row on the same bar.)
-        if cStage > 0
-            uStage := 0
+            uScaled   := rScaled
         // REV SETUP row only draws on the 15m and 1m — the only timeframes it's used. On any
         // other chart the whole row (stage AND Pass) is skipped so the table stays compact.
         if (revOn15 or revOn1m) and uStage > 0
@@ -4906,13 +4622,23 @@ if showConfTable and barstate.islast
             // 1m confirmation flags) and hands the granular entry to the 1m ENTRY row below.
             if uScale
                 f_jRow3(jarvisTable, r, "REV SETUP", "SCALE " + uSide, uCol, uScaleDetail)
+            else if uScaled
+                // Banked TP1/TP2 on this leg, then price pulled back — a fresh re-entry
+                // attempt in the SAME leg (the deep latches reset on the pullback). State
+                // it as RE-ENTRY so it's clear early profits were already taken.
+                if uDeepFvg
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "RE-ENTRY " + uSide, uCol, uDeepLvl + " +FVG (TP✓)")
+                else if u1mShift
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "RE-ENTRY " + uSide, JARVIS_YELLOW, "TP✓ 1m shift ✓ wait FVG")
+                else
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "RE-ENTRY " + uSide, JARVIS_YELLOW, "TP✓ wait 1m re-entry")
             else if uDeep
                 if uDeepFvg
                     f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "1m CONFIRMED " + uSide, uCol, uDeepLvl + " entry ✓ → TP1")
                 else if u1mShift
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + (uReentry ? "RE-ENTRY " : "AWAIT ") + uSide, JARVIS_YELLOW, uDeepLvl + " 1m shift ✓ wait FVG")
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "AWAIT " + uSide, JARVIS_YELLOW, uDeepLvl + " 1m shift ✓ wait FVG")
                 else
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + (uReentry ? "RE-ENTRY " : "AWAIT ") + uSide, JARVIS_YELLOW, uDeepLvl + uConf + " · wait 1m SOS")
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "AWAIT " + uSide, JARVIS_YELLOW, uDeepLvl + uConf + " · watch 1m SOS")
             else if uStage == 3
                 if uEarlyFvg
                     f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "1m CONFIRMED " + uSide, uCol, "0.5 entry ✓ → TP1")
@@ -4935,42 +4661,35 @@ if showConfTable and barstate.islast
         // display IS the proof it never tracks counter-trend. No Pass row (keeps it
         // compact): the row appears only while a continuation is actually live.
         if revOn15 or revOn1m
+            bool   cL     = true
+            int    cStage = 0
+            bool   cFvg   = false
+            if revOn15
+                cL     := contL_stage > 0 and (contS_stage == 0 or contL_stage >= contS_stage)
+                cStage := cL ? contL_stage : contS_stage
+                cFvg   := cL ? contL_fvgTap : contS_fvgTap
+            else
+                // 1m mirror — the 15m CONT thesis via the security engine, with the 4H
+                // gate applied here (the security stays gate-agnostic). Entry FVG is the
+                // real 1m gap (revContFvg), same as the REV mirror.
+                bool cGate = not contGate4H or (rContDir == 1 ? m240Dir != -1 : rContDir == -1 ? m240Dir != 1 : true)
+                cStage := cGate ? rContStage : 0
+                cL     := rContDir == 1
+                cFvg   := revContFvg
             if cStage > 0
                 color  cCol   = cL ? JARVIS_SSL : JARVIS_BSL
                 string cSide  = cL ? "LONG" : "SHORT"
                 string cArrow = cL ? "▲ " : "▼ "
-                // VETO — a live OPPOSING divergence on a with-trend continuation is
-                // reversal risk: hold the row at EXTREME and never print the entry while
-                // it stands. It clears on the next external break (the div goes stale) and
-                // the row resumes at whatever stage the retrace has reached. CONT only —
-                // the REV row above never applies this.
-                bool cVeto = cL ? bearDivActive : bullDivActive
-                if cVeto
-                    f_jRow3(jarvisTable, r, "CONT SETUP", "EXTREME " + cSide, JARVIS_YELLOW, (cL ? "Bear" : "Bull") + " div · reversal risk")
-                else if cStage == 3 and cFvg
+                string cBias  = not contGate4H ? "15m only" : (m240Dir == 1 ? "4H bull" : m240Dir == -1 ? "4H bear" : "4H flat")
+                if cStage == 3 and cFvg
                     f_jRow3(jarvisTable, r, "CONT SETUP", cArrow + "ENTRY " + cSide, cCol, "0.618 +FVG ✓ → TP1")
                 else if cStage == 3
                     f_jRow3(jarvisTable, r, "CONT SETUP", cArrow + "3/3 " + cSide, JARVIS_YELLOW, "0.618 wait FVG")
                 else if cStage == 2
-                    f_jRow3(jarvisTable, r, "CONT SETUP", "2/3 " + cSide, cCol, "0.5 retrace")
+                    f_jRow3(jarvisTable, r, "CONT SETUP", "2/3 " + cSide, cCol, "0.5 retrace · " + cBias)
                 else
-                    f_jRow3(jarvisTable, r, "CONT SETUP", "1/3 " + cSide, JARVIS_NEUTRAL, "BOS ✓ await retrace")
+                    f_jRow3(jarvisTable, r, "CONT SETUP", "1/3 " + cSide, JARVIS_NEUTRAL, "BOS ✓ · " + cBias + " · await retrace")
                 r := r + 1
-
-        // B LEG — the late-retrace SOS the REV row gives up on. Appears only while one
-        // is actually live, so it stays out of the way the rest of the time. 15m only.
-        if showBLeg and revOn15 and (bLegL_st > 0 or bLegS_st > 0)
-            bool   bL     = bLegL_st > 0
-            int    bStage = bL ? bLegL_st : bLegS_st
-            color  bCol   = bL ? JARVIS_SSL : JARVIS_BSL
-            string bSide  = bL ? "LONG" : "SHORT"
-            if bStage == 3
-                f_jRow3(jarvisTable, r, "B LEG", "TP " + bSide, bCol, "prior extreme ✓")
-            else if bStage == 2
-                f_jRow3(jarvisTable, r, "B LEG", (bL ? "▲ " : "▼ ") + "ENTRY " + bSide, bCol, "SZ tap ✓ → TP")
-            else
-                f_jRow3(jarvisTable, r, "B LEG", "ACTIVE " + bSide, JARVIS_YELLOW, "await SZ tap")
-            r := r + 1
 
         // ── 1m ENTRY — the granular entry + a 1m stop-protect (NO scale on the 1m).
         // The 1m can print several SOS before it truly aligns with the 15m, so the moment
@@ -5019,6 +4738,35 @@ if showConfTable and barstate.islast
                 f_jRow3(jarvisTable, r, "1m ENTRY", "RETRACE " + e1Side, JARVIS_NEUTRAL, "SOS ✓ awaiting zone")
             r := r + 1
 
+        // CONT rows temporarily hidden while the continuation trade type is being
+        // reworked — the CONT tracking logic still runs above, only the table
+        // display is suppressed. Uncomment this block to bring the rows back.
+        // // CONT — the continuation trade type: BOS, await retrace, entry at E1-E4
+        // // where an FVG or Sniper Zone sits. Only appears while a leg is tracked.
+        // // Same veto rule applies.
+        // bool contL_ok = contL_stage > 0 and not longVeto
+        // bool contS_ok = contS_stage > 0 and not shortVeto
+        // bool contL_blocked = contL_stage > 0 and longVeto
+        // bool contS_blocked = contS_stage > 0 and shortVeto
+        // if contL_ok or contS_ok
+        //     bool contIsLong = contL_ok and (not contS_ok or contL_stage >= contS_stage)
+        //     int  contStage  = contIsLong ? contL_stage : contS_stage
+        //     color contCol = contIsLong ? JARVIS_SSL : JARVIS_BSL
+        //     string contSide = contIsLong ? "LONG" : "SHORT"
+        //     bool  contFvg  = contIsLong ? aplusL_fvg : aplusS_fvg
+        //     bool  contSz   = not na(sniperZoneTop) and (contIsLong ? sz_bullish : not sz_bullish)
+        //     bool  contDiv  = contIsLong ? bullDivActive : bearDivActive
+        //     string cFvgTag = contFvg ? " + FVG" : ""
+        //     string cSzTag  = contSz ? " + SZ" : ""
+        //     string cDivTag = contDiv ? " + DIV" : ""
+        //     if contStage == 4
+        //         f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + "READY " + contSide, contCol, "E1-E4 zone" + cFvgTag + cSzTag + cDivTag)
+        //     else
+        //         f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + contSide, contCol, "BOS ✓ await retrace" + cFvgTag + cSzTag)
+        //     r := r + 1
+        // else if contL_blocked or contS_blocked
+        //     f_jRow3(jarvisTable, r, "CONT", "EXTREME", JARVIS_YELLOW, contL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
+        //     r := r + 1
 
         // WEEKLY — Established Context (last closed week vs the one before)
         f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
@@ -5078,7 +4826,7 @@ if showConfTable and barstate.islast
 //============================================================
 var table watermark = table.new(position.bottom_center, 1, 1)
 if barstate.islast
-    table.cell(watermark, 0, 0, "MPC- JARVIS",
+    table.cell(watermark, 0, 0, "MPC M15 PLAYBOOK",
       text_color  = color.new(#17578e, 20),
       text_size   = size.normal,
       bgcolor     = color.new(JARVIS_BLACK, 100),

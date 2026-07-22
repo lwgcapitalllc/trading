@@ -148,11 +148,11 @@ bool  fvgKeepUntilBroken = input.bool(true, "FVG: keep until broken through (not
 //  A+ SETUP SEQUENCE INPUTS
 //============================================================
 var GRP_APLUS = "A+ Setup"
-bool aplusDivOnly  = input.bool(true, "A+ Stage 1: Divergence Only (ignore sweeps)", group = GRP_APLUS, tooltip = "When ON, the A+ sequence arms Stage 1 ONLY on an RSI divergence — liquidity sweeps no longer start a setup. Requires 'Track RSI Divergence' to also be enabled, otherwise no divergences are detected and the A+ row stays on 'Pass'. When OFF (default), either a sweep or a divergence arms Stage 1, exactly as before.", display = display.none)
-bool aplusHtfWarn  = input.bool(true,  "Warn When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Shows a caution note on the A+ row when Weekly/Daily bias opposes the trade direction (e.g. a short while Weekly is Bullish). The setup still displays — it's an educational flag, not a block.", display = display.none)
-bool aplusHtfBlock = input.bool(false, "Block A+ When HTF Bias Disagrees", group = GRP_APLUS, tooltip = "Stronger version: if on, an A+ whose direction opposes HTF bias is suppressed entirely instead of just warned. Off by default.", display = display.none)
-bool aplusReqInt   = input.bool(false, "Require INT Confirmation for READY", group = GRP_APLUS, tooltip = "Holds the A+ at 'AWAIT ENTRY' until an iSOS/iBOS confirms in the trade direction inside the entry zone — a lower-timeframe structure trigger. Tighter, higher-probability entries at the cost of some fills. Off by default.", display = display.none)
-bool aplusIgnoreWindow = input.bool(false, "A+: Ignore Sweep→SOS Time Window (sequence only)", group = GRP_APLUS, tooltip = "When ON, the Max Time window below is ignored entirely — the A+ sequence cares only about ORDER: once Stage 1 arms (a divergence in Div-Only mode, or a sweep/divergence otherwise), the NEXT same-side SOS advances it to 2/3 no matter how much time has passed. The arm never expires on time; it only clears on a real death (opposite-direction SOS, close past the fib 1.0, or TP3). Trade-off: if a same-side SOS never comes, that side stays at 1/3 until an opposite SOS or invalidation clears it, and won't hand off to CONT meanwhile.", display = display.none)
+// (5 dead A+ inputs removed 2026-07-21 — aplusDivOnly / aplusHtfWarn /
+//  aplusHtfBlock / aplusReqInt / aplusIgnoreWindow were declared but never
+//  read anywhere in this file. Deleted to buy compile tokens for the
+//  post-SOS divergence veto exemption. Arming is controlled by the
+//  execArmSweep / execArmDiv toggles in the Execution group instead.)
 int aplusWindow = input.int(4320, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop, measured in TIME rather than bars — a bar count is fragile across timeframes (300 bars is 5 hours on 1m but 12.5 days on 4H). The SOS must fire within this many minutes of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
 
 //============================================================
@@ -1948,10 +1948,8 @@ bool bearDivStale = (not na(lastExtBreakBar) and not na(lastBearDivBar) and last
 bool bullDivActive = showDiv and not na(lastBullDivBar) and not bullDivStale and bar_index - lastBullDivBar <= divValidBars
 bool bearDivActive = showDiv and not na(lastBearDivBar) and not bearDivStale and bar_index - lastBearDivBar <= divValidBars
 
-// Veto: suppress LONG setups on live bearish divergence or extreme overbought;
-// suppress SHORT setups on live bullish divergence or extreme oversold.
-bool longVeto  = showDiv and divVeto and (bearDivActive or divRsi >= divExtremeOB)
-bool shortVeto = showDiv and divVeto and (bullDivActive or divRsi <= divExtremeOS)
+// (The veto itself — longVetoA / shortVetoA — is built further down, next to
+//  the A+ stage machine, because it needs the SOS bar. See the note there.)
 
 
 var array<SessionInfo> sessionInfos = getSessionInfos()
@@ -3657,14 +3655,12 @@ var bool aplusL_poi      = false
 var int  aplusL_armTime  = na    // timestamp the sweep/div arm fired — window is measured in TIME, not bars
 var bool aplusL_half     = false // A+-owned 0.5 latch — survives fib redraw at session gap
 var bool aplusL_618      = false // A+-owned 0.618 latch
-var int  contL_bosBar    = na    // CONT trade trigger: external BOS with no A+ tracked on that side
 var int  aplusS_sweepBar = na
 var int  aplusS_sosBar   = na
 var bool aplusS_poi      = false
 var int  aplusS_armTime  = na
 var bool aplusS_half     = false
 var bool aplusS_618      = false
-var int  contS_bosBar    = na
 
 // Debug only — remembers WHICH source currently holds the Stage-1 slot on each
 // side, so the 2-of-3 debug marker can label the arm correctly. Read-only
@@ -3826,28 +3822,20 @@ if not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not n
     armHolderS := ""
 
 // Sequence death. Opposite SOS kills the A+ tracking on that side — the trend
-// it was riding just reversed. ANY SOS (either direction) also clears CONT on
-// BOTH sides — an SOS is, by definition, a fresh reversal event, never a
-// continuation. Without this, a stale CONT armed from an earlier BOS could
-// keep showing even after a brand new SOS has since fired on that very side —
-// backwards, since once an SOS prints we're back in A+ (reversal) territory
-// until a genuine new BOS re-arms CONT on the far side of that fresh leg.
+// it was riding just reversed.
 if st.bear_sos and not sessionGapBar
     aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false, aplusL_armTime := na
     armHolderL := ""
 if st.bull_sos and not sessionGapBar
     aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false, aplusS_armTime := na
     armHolderS := ""
-if (st.bull_sos or st.bear_sos) and not sessionGapBar
-    contL_bosBar := na
-    contS_bosBar := na
 
 // A+ leg resolution: completion (TP3), invalidation (close past 1.0 or fib
 // flipped), or a CONTINUATION BOS once the SOS stage was already reached. That
 // last case is the one you're describing: the SOS fires, price never completes
 // the retrace, and instead breaks structure again in the same direction — the
 // leg has moved on without ever giving the fib entry, so the A+'s premise is
-// over and tracking hands off to CONT. Critically this must exclude the SOS's
+// over and the leg is dropped. Critically this must exclude the SOS's
 // OWN bar: your structure engine flags bull_bos = true on every bull_sos bar
 // too (they're not mutually exclusive), so without "not st.bull_sos" here, the
 // very bar that arms stage 2 would immediately kill itself.
@@ -3860,27 +3848,11 @@ if not na(aplusS_sosBar) and not sessionGapBar
         aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false, aplusS_armTime := na
         armHolderS := ""
 
-// CONT trigger — simply the BOS, but ONLY when no A+ is currently tracked on
-// that side (not even sweep-armed). Runs AFTER A+ resolution above so a BOS
-// that both completes an A+ and starts a continuation arms CONT the same bar.
-// A small "CONT" marker is drawn at the exact arming bar so this is directly
-// verifiable on the chart, rather than having to spot it inside a cluster of
-// regular BOS/SOS labels.
-if st.bull_bos and na(aplusL_sweepBar)
-    contL_bosBar := bar_index
-    label.new(bar_index, low, "\nCONT", color = color(na), textcolor = color.new(#2196F3, 0), style = label.style_label_up, size = size.tiny)
-if st.bear_bos and na(aplusS_sweepBar)
-    contS_bosBar := bar_index
-    label.new(bar_index, high, "CONT\n", color = color(na), textcolor = color.new(#2196F3, 0), style = label.style_label_down, size = size.tiny)
-
-// CONT leg resolution: completion (TP3) or invalidation clears it; the next
-// BOS arms a fresh one on its own leg.
-if not na(contL_bosBar)
-    if (fibo_dir == 1 and fibo7Touched) or fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10)
-        contL_bosBar := na
-if not na(contS_bosBar)
-    if (fibo_dir == -1 and fibo7Touched) or fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10)
-        contS_bosBar := na
+// (CONT — the continuation trade type — was removed from this file 2026-07-21.
+//  It was display-only here: nothing in the execution layer ever read
+//  contL_bosBar / contS_bosBar / contL_stage / contS_stage, so deleting it
+//  changes no trade, fill or stat. Removed to free compile tokens. The
+//  standalone CONT backtest lives in indicators/mpc_cont_strategy.pine.)
 
 // Stage 3 — entry zone progress on the SOS leg's fib
 // EARLY = 0.5 tapped inbound, READY = 0.618 reached (E1-E3 zone live)
@@ -3911,6 +3883,18 @@ if not na(aplusS_sosBar)
     aplusS_stage := aplusS_618 ? 4 : aplusS_half ? 3 : 2
 else if not na(aplusS_sweepBar)
     aplusS_stage := 1
+
+// ── A+ veto, SOS-aware ────────────────────────────────────────────────────
+// A divergence that prints AFTER the SOS does NOT veto its own setup. Once
+// stage 2 is live the setup is deliberately waiting on a retrace, and an
+// opposing divergence formed during that retrace is the pullback itself —
+// weakness in the counter-move, not a reversal of the leg we just broke with.
+// (Real case: bullish SOS, bear div fires on the pull back into the fib band,
+// entry blocked.) Only a divergence already live at or before the SOS bar
+// still blocks the side; before stage 2 (no SOS yet) nothing changes.
+// Extreme RSI keeps blocking LIVE — this exemption covers divergence only.
+bool longVetoA  = showDiv and divVeto and (divRsi >= divExtremeOB or (bearDivActive and (na(aplusL_sosBar) or lastBearDivBar <= aplusL_sosBar)))
+bool shortVetoA = showDiv and divVeto and (divRsi <= divExtremeOS or (bullDivActive and (na(aplusS_sosBar) or lastBullDivBar <= aplusS_sosBar)))
 
 // ── 2-of-3 confluence watch — catches a setup that confirmed Arm + SOS but
 // died before ever reaching the 3rd and final stage (Zone/FVG retrace).
@@ -3943,17 +3927,6 @@ if aplusS_stage == 2 and aplusS_stage[1] != 2
     aplusS_armSnapSrc := armHolderS
 if aplusS_watch23 and aplusS_stage >= 3
     aplusS_watch23 := false
-
-// CONT stages — BOS, await retrace, then READY when price reaches the E1-E4
-// entry zone (0.618+). No 0.5 early tier for continuations. Suppressed entirely
-// while an A+ is active on that side (covers the case CONT armed just before
-// a fresh A+ sweep started tracking).
-int contL_stage = 0
-if not na(contL_bosBar) and fibo_dir == 1 and aplusL_stage == 0
-    contL_stage := fibo618EverReached ? 4 : 2
-int contS_stage = 0
-if not na(contS_bosBar) and fibo_dir == -1 and aplusS_stage == 0
-    contS_stage := fibo618EverReached ? 4 : 2
 
 // FVG confluence — a live clean gap overlapping the entry zone (0.5 to 0.886)
 bool aplusL_fvg = false
@@ -4004,10 +3977,10 @@ f_drawTable() =>
             // without a live matching FVG holds the row at "awaiting FVG" instead of
             // declaring the setup ready. POI (Cycle Fib discount/premium) is a separate,
             // optional confirmation — it does not substitute for the FVG requirement.
-            bool aplusL_ok = aplusL_stage > 0 and not longVeto
-            bool aplusS_ok = aplusS_stage > 0 and not shortVeto
-            bool aplusL_blocked = aplusL_stage > 0 and longVeto
-            bool aplusS_blocked = aplusS_stage > 0 and shortVeto
+            bool aplusL_ok = aplusL_stage > 0 and not longVetoA
+            bool aplusS_ok = aplusS_stage > 0 and not shortVetoA
+            bool aplusL_blocked = aplusL_stage > 0 and longVetoA
+            bool aplusS_blocked = aplusS_stage > 0 and shortVetoA
             if aplusL_ok or aplusS_ok
                 bool seqIsLong = aplusL_ok and (not aplusS_ok or aplusL_stage >= aplusS_stage)
                 int  seqStage  = seqIsLong ? aplusL_stage : aplusS_stage
@@ -4034,33 +4007,6 @@ f_drawTable() =>
                 r := r + 1
             else
                 f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
-                r := r + 1
-
-            // CONT — the continuation trade type: BOS, await retrace, entry at E1-E4
-            // where an FVG or Sniper Zone sits. Only appears while a leg is tracked.
-            // Same veto rule applies.
-            bool contL_ok = contL_stage > 0 and not longVeto
-            bool contS_ok = contS_stage > 0 and not shortVeto
-            bool contL_blocked = contL_stage > 0 and longVeto
-            bool contS_blocked = contS_stage > 0 and shortVeto
-            if contL_ok or contS_ok
-                bool contIsLong = contL_ok and (not contS_ok or contL_stage >= contS_stage)
-                int  contStage  = contIsLong ? contL_stage : contS_stage
-                color contCol = contIsLong ? JARVIS_SSL : JARVIS_BSL
-                string contSide = contIsLong ? "LONG" : "SHORT"
-                bool  contFvg  = contIsLong ? aplusL_fvg : aplusS_fvg
-                bool  contSz   = not na(sniperZoneTop) and (contIsLong ? sz_bullish : not sz_bullish)
-                bool  contDiv  = contIsLong ? bullDivActive : bearDivActive
-                string cFvgTag = contFvg ? " + FVG" : ""
-                string cSzTag  = contSz ? " + SZ" : ""
-                string cDivTag = contDiv ? " + DIV" : ""
-                if contStage == 4
-                    f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + "READY " + contSide, contCol, "E1-E4 zone" + cFvgTag + cSzTag + cDivTag)
-                else
-                    f_jRow3(jarvisTable, r, "CONT", (contIsLong ? "▲ " : "▼ ") + contSide, contCol, "BOS ✓ await retrace" + cFvgTag + cSzTag)
-                r := r + 1
-            else if contL_blocked or contS_blocked
-                f_jRow3(jarvisTable, r, "CONT", "EXTREME", JARVIS_YELLOW, contL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
                 r := r + 1
 
             // WEEKLY — Established Context (last closed week vs the one before)
@@ -4119,7 +4065,9 @@ if barstate.islast
 // (aplus*_sosBar set = sweep-or-div THEN shift of structure), the fib must
 // point the same way (fibo_dir), price must be trading inside the 0.5-0.886
 // retrace band, and a live FVG must overlap that band (aplus*_fvg). The RSI
-// divergence/extreme veto (longVeto/shortVeto) blocks the side when active.
+// divergence/extreme veto (longVetoA/shortVetoA) blocks the side when active —
+// but a divergence that printed AFTER the SOS does not veto its own setup
+// (that's the retrace, not a reversal); extreme RSI still blocks live.
 //
 // The Stage-1 trigger is SPLIT by two toggles — "Arm on liquidity sweep" and
 // "Arm on RSI divergence" — so the same stack can be backtested with either
@@ -4425,8 +4373,8 @@ f_htfReqBlock(string req, string state, bool isLong) =>
 bool htfBiasBlockLong  = f_htfReqBlock(execHtfWeekly, wEstState, true)  or f_htfReqBlock(execHtfDaily, dEstState, true)
 bool htfBiasBlockShort = f_htfReqBlock(execHtfWeekly, wEstState, false) or f_htfReqBlock(execHtfDaily, dEstState, false)
 
-bool longArmed  = execLongs  and armOkL and not lateDayBlock and not htfBlockLong  and not htfBiasBlockLong  and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVeto  or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
-bool shortArmed = execShorts and armOkS and not lateDayBlock and not htfBlockShort and not htfBiasBlockShort and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVeto or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+bool longArmed  = execLongs  and armOkL and not lateDayBlock and not htfBlockLong  and not htfBiasBlockLong  and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+bool shortArmed = execShorts and armOkS and not lateDayBlock and not htfBlockShort and not htfBiasBlockShort and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
 
 // ── MISSED-DUE-TO-NO-FVG counter ──────────────────────────────────────────────
 // A "missed" setup = every trade gate is satisfiable EXCEPT the FVG. Same
@@ -4440,8 +4388,8 @@ var int  missedNoFvgL = 0,       var int  missedNoFvgS = 0
 var bool aplusL_fvgMiss = false, var bool aplusS_fvgMiss = false
 var int  aplusL_fvgMissBar = na, var int  aplusS_fvgMissBar = na
 
-bool longReadyNoFvg  = execLongs  and armOkL and not lateDayBlock and not na(aplusL_sosBar) and fibo_dir == 1  and na(longEdge)  and aplusL_half and (not longVeto  or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
-bool shortReadyNoFvg = execShorts and armOkS and not lateDayBlock and not na(aplusS_sosBar) and fibo_dir == -1 and na(shortEdge) and aplusS_half and (not shortVeto or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+bool longReadyNoFvg  = execLongs  and armOkL and not lateDayBlock and not na(aplusL_sosBar) and fibo_dir == 1  and na(longEdge)  and aplusL_half and (not longVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+bool shortReadyNoFvg = execShorts and armOkS and not lateDayBlock and not na(aplusS_sosBar) and fibo_dir == -1 and na(shortEdge) and aplusS_half and (not shortVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
 
 if longReadyNoFvg
     aplusL_fvgMiss := true
@@ -4850,13 +4798,13 @@ f_diag(array<int> ds) =>
         //    EXCEPT a live veto or the final-hour rule. Deduped by SOS bar (via the
         //    diagState array) so each blocked setup logs exactly once. ──
         bool lReadyBase = execLongs and armOkL and not na(aplusL_sosBar) and fibo_dir == 1 and not na(longEdge) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
-        bool lBlkVeto = lReadyBase and not lateDayBlock and longVeto and execRespectVeto
+        bool lBlkVeto = lReadyBase and not lateDayBlock and longVetoA and execRespectVeto
         bool lBlkLate = lReadyBase and lateDayBlock
         if (lBlkVeto or lBlkLate) and aplusL_sosBar != array.get(ds, 1)
             array.set(ds, 1, aplusL_sosBar)
             log.info("[BLOCK] LONG @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (lBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
         bool sReadyBase = execShorts and armOkS and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
-        bool sBlkVeto = sReadyBase and not lateDayBlock and shortVeto and execRespectVeto
+        bool sBlkVeto = sReadyBase and not lateDayBlock and shortVetoA and execRespectVeto
         bool sBlkLate = sReadyBase and lateDayBlock
         if (sBlkVeto or sBlkLate) and aplusS_sosBar != array.get(ds, 2)
             array.set(ds, 2, aplusS_sosBar)

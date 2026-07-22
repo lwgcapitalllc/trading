@@ -1,0 +1,2084 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+indicator("MPC JARVIS v1", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000)
+
+var GRP_MASTER = "Display"
+bool showTradeTools = input.bool(true, "Show FVG, Order Blocks, Sessions & Liquidity", group = GRP_MASTER, tooltip = "Master switch for the discretionary tools: Fair Value Gaps, Order Blocks, Trading Sessions, Kill Zones and Liquidity Levels. Off by default for a clean market-structure-only chart.", display = display.none)
+
+//============================================================
+//  SMC SETTINGS (hardcoded)
+//============================================================
+int   majorLength = 15
+color bullColor   = color.blue
+color bearColor   = color.red
+color iBullColor  = bullColor
+color iBearColor  = bearColor
+
+//============================================================
+//  MARKET STRUCTURE LABEL SIZE
+//============================================================
+var GRP_STRUCT = "Market Structure"
+bool   marketStructureOnly = not showTradeTools
+string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
+bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
+bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
+bool   showHistoricalInternal = input.bool(false, "Show Historic Internal Structure", group = GRP_STRUCT, tooltip = "Keep internal structure labels and lines from previous swing ranges on the chart. Off = only show current swing range internals.", display = display.none)
+bool   showSwingLabels  = input.bool(false, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off = hide ASH/ASL, HH/HL, LH/LL and the internal swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart. The structure engine keeps running exactly as before — fibs, order blocks and the confirmation table are unaffected.", display = display.none)
+int    internalLength   = 5
+float  pbBuffer         = 0.0
+
+f_structSize() =>
+    not showExternal ? size.auto : structLabelSize == "Tiny" ? size.tiny : structLabelSize == "Normal" ? size.normal : structLabelSize == "Large" ? size.large : structLabelSize == "Huge" ? size.huge : size.small
+
+// Swing-point labels are hidden by making their text transparent, not by skipping
+// their creation. The label objects still exist and the engine's state is untouched,
+// so structure tracking, fibs, OBs and the table behave identically either way.
+f_swingCol(color c) =>
+    showSwingLabels ? c : color(na)
+
+//============================================================
+//  FAIR VALUE GAPS (FVG) INPUTS
+//============================================================
+var GRP_FVG = "Fair Value Gaps"
+bool  showFVGInput      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps: any 3-candle imbalance where bar A and bar C never overlap and the middle bar closed past the gap (the LuxAlgo definition). Gaps below the size threshold are ignored. A gap is removed only when a candle CLOSES fully past it.", display = display.none)
+bool showFVG = showTradeTools and showFVGInput
+// Logic settings LOCKED to tuned defaults — hidden from the panel so students can't alter detection.
+bool  fvgDirOnly      = false
+color fvgBullColor    = color.new(color.gray, 80)
+color fvgBearColor    = color.new(color.gray, 80)
+float fvgThreshLTF    = 0.0
+float fvgThreshHTF    = 0.04
+float fvgThreshPct    = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF
+bool  fvgRequireClose = false
+int   fvgMaxCount     = 10
+
+//============================================================
+//  EQUAL HIGHS / LOWS (EQH / EQL) — liquidity pools
+//============================================================
+var GRP_EQ = "Equal Highs/Lows"
+bool  eqShowInput = input.bool(true, "Show Equal Highs/Lows", group = GRP_EQ, tooltip = "Marks EQH (two swing highs at nearly the same price = buy-side liquidity resting above) and EQL (equal lows = sell-side liquidity below), each drawn as a horizontal line until a candle CLOSES through it. Part of the trade-tools master switch.", display = display.none)
+// Logic settings LOCKED to tuned defaults — hidden from the panel so students can't alter detection.
+int   eqPivotLen  = 2
+float eqAtrMult   = 0.1
+int   eqMax       = 6
+bool  eqExemptFvg = true
+color eqhColor    = color.new(color.black, 0)
+color eqlColor    = color.new(color.black, 0)
+
+//============================================================
+//  TRADING SESSIONS INPUTS
+//============================================================
+var GRP_SESS = "Trading Sessions"
+bool showSessionsInput         = input.bool(true,   "Show Sessions",      group = GRP_SESS, display = display.none)
+bool showSessions = showTradeTools and showSessionsInput
+bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessionsInput, display = display.none)
+bool showHistoricSessions = input.bool(true,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions as far back as possible.", display = display.none)
+
+bool showSessionOC        = false
+bool showSessionTickRange = false
+bool showSessionAverage   = false
+
+const string TZ_TOOLTIP_TEXT = "The session's time zone, specified in either GMT notation (e.g., 'GMT-5') or as an IANA time zone database name (e.g., 'America/New_York')."
+ + " We recommend the latter since it includes other time-related changes, such as daylight savings."
+
+const string FIRST_SESSION_GROUP = "First Session"
+showFirst         = input.bool(true,                         "Show session",     group = FIRST_SESSION_GROUP, display = display.none)
+firstSessionName  = input.string("Tokyo",                    "Displayed name",   group = FIRST_SESSION_GROUP, display = display.none, active = showFirst)
+firstSessionTime  = input.session("2000-0500",               "Session time",     group = FIRST_SESSION_GROUP, display = display.none, active = showFirst)
+firstSessionTZ    = input.string("GMT-4",                    "Session timezone", group = FIRST_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showFirst)
+firstSessionColor = input.color(color.new(#FF5252, 92),      "Session color",    group = FIRST_SESSION_GROUP, active = showFirst)
+
+const string SECOND_SESSION_GROUP = "Second Session"
+showSecond         = input.bool(true,                        "Show session",     group = SECOND_SESSION_GROUP, display = display.none)
+secondSessionName  = input.string("London",                  "Displayed name",   group = SECOND_SESSION_GROUP, display = display.none, active = showSecond)
+secondSessionTime  = input.session("0400-1300",              "Session time",     group = SECOND_SESSION_GROUP, display = display.none, active = showSecond)
+secondSessionTZ    = input.string("GMT-4",                   "Session timezone", group = SECOND_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showSecond)
+secondSessionColor = input.color(color.new(#2962FF, 92),     "Session color",    group = SECOND_SESSION_GROUP, active = showSecond)
+
+const string THIRD_SESSION_GROUP = "Third Session"
+showThird         = input.bool(true,                         "Show session",     group = THIRD_SESSION_GROUP, display = display.none)
+thirdSessionName  = input.string("New York",                 "Displayed name",   group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
+thirdSessionTime  = input.session("0900-1800",               "Session time",     group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
+thirdSessionTZ    = input.string("GMT-4",                    "Session timezone", group = THIRD_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showThird)
+thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",    group = THIRD_SESSION_GROUP, active = showThird)
+
+//============================================================
+//  KILL ZONES & NY RANGE INPUTS (single toggle)
+//============================================================
+var GRP_KZ = "Kill Zones & NY Range"
+bool showKZandNYRInput   = input.bool(true, "Show Kill Zones & NY Range", group = GRP_KZ, display = display.none)
+bool showKZandNYR = showTradeTools and showKZandNYRInput
+bool showKZHistoric = input.bool(false, "Show All History", group = GRP_KZ, active = showKZandNYRInput, tooltip = "Off = current day only. On = show as far back as possible.", display = display.none)
+
+bool showKillZones = showKZandNYR
+bool showNYRange   = showKZandNYR
+
+//============================================================
+//  VWAP INPUTS
+//============================================================
+var GRP_VWAP = "VWAP Settings"
+bool  showVwapInput  = input.bool(false,                 "Show VWAP",       group = GRP_VWAP, display = display.none)
+bool showVwap = showTradeTools and showVwapInput
+color vwapColor = input.color(color.rgb(5, 5, 0), "VWAP Color",      group = GRP_VWAP, active = showVwapInput, display = display.none)
+int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1, maxval = 5, group = GRP_VWAP, active = showVwapInput, display = display.none)
+
+//============================================================
+//  LIQUIDITY LEVELS INPUTS
+//============================================================
+var GRP_LIQ = "Liquidity Levels"
+var i_showLiquidityInput    = input.bool(true,  "Show All Liquidity Levels",  group = GRP_LIQ, display = display.none)
+bool i_showLiquidity = showTradeTools and i_showLiquidityInput
+bool i_showLabels      = true
+string liqLabelSize    = input.string("Tiny", "Liquidity Label Size",   group = GRP_LIQ, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = i_showLiquidityInput, display = display.none)
+bool i_currentDayOnly  = true   // always hide mitigated on new day
+
+f_liqSize() =>
+    liqLabelSize == "Tiny" ? size.tiny : liqLabelSize == "Normal" ? size.normal : liqLabelSize == "Large" ? size.large : liqLabelSize == "Huge" ? size.huge : size.small
+
+var i_isDailyEnabled   = input.bool(true,  "Previous Day H/L",            group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+var i_isWeeklyEnabled  = input.bool(true,  "Previous Week H/L",           group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+var i_showSessionHL    = input.bool(true,  "Sessions H/L",                group = GRP_LIQ, active = i_showLiquidityInput, tooltip = "Shows Asia, London and New York session highs and lows.", display = display.none)
+
+// Single toggle drives all three session H/L sets — kept as separate internal
+// flags so the drawing/mitigation logic below stays unchanged.
+bool i_showAsiaHL      = i_showSessionHL
+bool i_showLondonHL    = i_showSessionHL
+bool i_showNYHL        = i_showSessionHL
+var i_showPWC          = input.bool(true,  "Previous Week Close (PWC)",   group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+var i_showH4Sweep      = input.bool(true,  "H4 High/Low Sweep (SSH/BSL)", group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
+bool showMitLiq        = true   // LOCKED ON — mitigated liquidity lines always shown
+var i_lblOffset        = input.int(300,    "Label Y Offset (ticks)",       group = GRP_LIQ, minval = 0, maxval = 5000, step = 50, tooltip = "Moves HIGH labels up and LOW labels down by this many ticks to reduce overlap", display = display.none)
+var i_lineExtend       = input.int(50,     "Line Extension (bars)",         group = GRP_LIQ, minval = 5, maxval = 200, display = display.none)
+
+color i_dailyColor    = color.black
+color i_weeklyColor   = color.black
+color i_asiaHLColor   = color.black
+color i_londonHLColor = color.black
+color i_nyHLColor     = color.black
+
+//============================================================
+//  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
+//  declared, before anything downstream uses them. When marketStructureOnly is
+//  on, every non-structure feature is force-disabled regardless of its own
+//  checkbox, so the chart shows only external/internal BOS/SOS/iBOS/iSOS.
+//============================================================
+//============================================================
+//  MARKET STRUCTURE OVERRIDE (remaining flags) — Kill Zones and NY Range have no
+//  "active=" dependents elsewhere, so a plain override is safe here.
+showKillZones  := showTradeTools ? showKillZones : false
+showNYRange    := showTradeTools ? showNYRange : false
+
+//============================================================
+//  SMC STRUCTURE TYPE
+//============================================================
+type SMCStructure
+    int    length
+    float  ash             = na
+    int    ash_loc         = na
+    string ash_type        = ""
+    line   ash_line        = na
+    label  ash_lbl         = na
+    float  asl             = na
+    int    asl_loc         = na
+    string asl_type        = ""
+    line   asl_line        = na
+    label  asl_lbl         = na
+    float  last_conf_high     = na
+    int    last_conf_high_loc = na
+    float  last_conf_low      = na
+    int    last_conf_low_loc  = na
+    int    dir            = 0
+    bool   choch_lock     = false
+    line   choch_ref      = na
+    int    pb_mode        = 0
+    int    pb_count       = 0
+    float  pb_level       = na
+    float  pb_extreme     = na
+    int    pb_extreme_loc = na
+    line   pb_line        = na
+    bool   pb_started     = false
+    float  pb_last_qualify_close = na
+    float  pb_last_qualify_high  = na
+    float  pb_extreme_close      = na
+    float  prev_close     = na
+    float  prev_high      = na
+    float  prev_low       = na
+    bool   seeded         = false
+    bool   bull_bos       = false
+    float  bull_bos_high  = na
+    int    bull_bos_h_loc = na
+    float  bull_bos_low   = na
+    int    bull_bos_l_loc = na
+    bool   bear_bos       = false
+    float  bear_bos_high  = na
+    int    bear_bos_h_loc = na
+    float  bear_bos_low   = na
+    int    bear_bos_l_loc = na
+    bool   new_swing_high = false
+    bool   new_swing_low  = false
+    bool   bull_sos       = false
+    bool   bear_sos       = false
+
+// prefix: "" for external, "i" for internal
+// bull_col / bear_col allow per-instance colors
+method create_ash(SMCStructure st, float val, int loc, color col, bool solid, string prefix) =>
+    if not na(st.ash_line)
+        line.delete(st.ash_line)
+    if not na(st.ash_lbl)
+        label.delete(st.ash_lbl)
+        st.ash_lbl := na
+    st.ash      := val
+    st.ash_loc  := loc
+    st.ash_type := ""
+    st.ash_lbl  := label.new(loc, val, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(col), style=label.style_label_down, size=f_structSize())
+    st.ash_line := line.new(loc, val, bar_index, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
+
+method create_asl(SMCStructure st, float val, int loc, color col, bool solid, string prefix) =>
+    if not na(st.asl_line)
+        line.delete(st.asl_line)
+    if not na(st.asl_lbl)
+        label.delete(st.asl_lbl)
+        st.asl_lbl := na
+    st.asl      := val
+    st.asl_loc  := loc
+    st.asl_type := ""
+    st.asl_lbl  := label.new(loc, val, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(col), style=label.style_label_up, size=f_structSize())
+    st.asl_line := line.new(loc, val, bar_index, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
+
+// process() now accepts prefix + bull/bear colors so both instances share one method
+method process(SMCStructure st, float ph_val, float pl_val, string prefix, color bull_col, color bear_col) =>
+
+    st.bull_bos := false
+    st.bear_bos := false
+    st.new_swing_high := false
+    st.new_swing_low  := false
+    st.bull_sos := false
+    st.bear_sos := false
+
+    bool is_inside = false
+    if not na(st.prev_high) and not na(st.prev_low)
+        is_inside := high < st.prev_high and low > st.prev_low
+
+    if st.choch_lock
+        if st.dir == 1 and not na(pl_val)
+            st.choch_lock := false
+        else if st.dir == -1 and not na(ph_val)
+            st.choch_lock := false
+
+    if st.pb_mode == 1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_1 = false
+            if na(st.pb_extreme) or high > st.pb_extreme
+                st.pb_extreme            := high
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_1        := true
+            bool extreme_is_bearish_1 = extreme_updated_1 and close < open
+            bool is_candle1_1 = na(st.pb_last_qualify_close) and not extreme_updated_1
+            if (not is_inside or is_candle1_1) and (not extreme_updated_1 or extreme_is_bearish_1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close < threshold - pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := low
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                if not na(st.ash_line)
+                    line.delete(st.ash_line)
+                if not na(st.ash_lbl)
+                    label.delete(st.ash_lbl)
+                st.ash      := st.pb_extreme
+                st.ash_loc  := st.pb_extreme_loc
+                st.ash_type := "LOCKED"
+                st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
+                st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
+                st.new_swing_high := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    else if st.pb_mode == -1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_m1 = false
+            if na(st.pb_extreme) or low < st.pb_extreme
+                st.pb_extreme            := low
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_m1       := true
+            bool extreme_is_bullish_m1 = extreme_updated_m1 and close > open
+            bool is_candle1_m1 = na(st.pb_last_qualify_close) and not extreme_updated_m1
+            if (not is_inside or is_candle1_m1) and (not extreme_updated_m1 or extreme_is_bullish_m1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close > threshold + pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := high
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                if not na(st.asl_line)
+                    line.delete(st.asl_line)
+                if not na(st.asl_lbl)
+                    label.delete(st.asl_lbl)
+                st.asl      := st.pb_extreme
+                st.asl_loc  := st.pb_extreme_loc
+                st.asl_type := "LOCKED"
+                st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
+                st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
+                st.new_swing_low := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    st.prev_close := close
+    st.prev_high  := high
+    st.prev_low   := low
+
+    if na(st.ash) and na(st.asl) and not st.seeded
+        if not na(ph_val)
+            st.create_ash(ph_val, bar_index[st.length], bear_col, false, prefix)
+            st.dir := -1
+        else if not na(pl_val)
+            st.create_asl(pl_val, bar_index[st.length], bull_col, false, prefix)
+            st.dir := 1
+
+    if not st.seeded
+        if not na(st.ash) and na(st.asl)
+            float seed_low = low
+            int   seed_loc = bar_index
+            int   lb       = math.min(bar_index, 500)
+            for i = 0 to lb
+                if low[i] < seed_low
+                    seed_low := low[i]
+                    seed_loc := bar_index - i
+            if seed_low < st.ash
+                st.asl      := seed_low
+                st.asl_loc  := seed_loc
+                st.asl_type := ""
+                st.asl_line := line.new(seed_loc, seed_low, bar_index, seed_low, color=bull_col, style=line.style_dashed, width=1)
+                st.asl_lbl  := label.new(seed_loc, seed_low, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
+                st.seeded := true
+        else if not na(st.asl) and na(st.ash)
+            float seed_high = high
+            int   seed_loc  = bar_index
+            int   lb        = math.min(bar_index, 500)
+            for i = 0 to lb
+                if high[i] > seed_high
+                    seed_high := high[i]
+                    seed_loc  := bar_index - i
+            if seed_high > st.asl
+                st.ash      := seed_high
+                st.ash_loc  := seed_loc
+                st.ash_type := ""
+                st.ash_line := line.new(seed_loc, seed_high, bar_index, seed_high, color=bear_col, style=line.style_dashed, width=1)
+                st.ash_lbl  := label.new(seed_loc, seed_high, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
+                st.seeded := true
+        else if not na(st.ash) and not na(st.asl)
+            st.seeded := true
+
+    if na(st.last_conf_high) and na(st.last_conf_low)
+        if not na(ph_val) and not na(st.ash) and st.ash_type == "" and st.pb_mode == 0
+            if ph_val > st.ash
+                st.create_ash(ph_val, bar_index[st.length], bear_col, false, prefix)
+        if not na(pl_val) and not na(st.asl) and st.asl_type == "" and st.pb_mode == 0
+            if pl_val < st.asl
+                st.create_asl(pl_val, bar_index[st.length], bull_col, false, prefix)
+
+    bool ash_broken = not na(st.ash) and close > st.ash
+    bool asl_broken = not na(st.asl) and close < st.asl
+
+    if ash_broken
+        st.bull_bos := true
+        st.bull_bos_high  := st.ash
+        st.bull_bos_h_loc := st.ash_loc
+
+        bool was_in_bear_pb = st.pb_mode == -1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool   is_choch    = st.dir == -1
+        string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
+        if is_choch
+            st.bull_sos := true
+        int    mid_x       = math.round((st.ash_loc + bar_index) / 2)
+        label.new(mid_x, st.ash, "\n" + brk_lbl_txt, color=color(na), textcolor=bull_col, style=label.style_label_down, size=size.tiny)
+
+        if is_choch
+            st.choch_lock := true
+
+        bool brk_already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
+        if not na(st.ash_lbl)
+            label.delete(st.ash_lbl)
+        if not brk_already_conf_high
+            bool   brk_is_hh  = na(st.last_conf_high) or st.ash >= st.last_conf_high
+            string brk_high_t = brk_is_hh ? prefix + "HH" : prefix + "LH"
+            color  brk_high_c = brk_is_hh ? bull_col : bear_col
+            label.new(st.ash_loc, st.ash, brk_high_t + "\n", color=color(na), textcolor=f_swingCol(brk_high_c), style=label.style_label_down, size=f_structSize())
+
+        if not na(st.ash_line)
+            line.set_style(st.ash_line, line.style_solid)
+            line.set_color(st.ash_line, bull_col)
+            line.set_width(st.ash_line, 2)
+            line.set_x2(st.ash_line, bar_index)
+            st.ash_line := na
+
+        st.last_conf_high     := st.ash
+        st.last_conf_high_loc := st.ash_loc
+        st.ash_lbl            := na
+        st.ash                := na
+        st.dir                := 1
+
+        if was_in_bear_pb
+            st.bull_bos_low   := st.pb_extreme
+            st.bull_bos_l_loc := st.pb_extreme_loc
+            if not na(st.asl_line)
+                line.delete(st.asl_line)
+            if not na(st.asl_lbl)
+                label.delete(st.asl_lbl)
+            bool   pb_is_hl = is_choch ? false : (na(st.last_conf_low) or st.pb_extreme >= st.last_conf_low)
+            // On an SOS (fast reversal) the extreme is only the ACTIVE swing low —
+            // it prints as ASL and is confirmed to HL/LL by the NEXT bullish break.
+            string pb_low_t = is_choch ? prefix + "ASL" : (pb_is_hl ? prefix + "HL" : prefix + "LL")
+            color  pb_low_c = is_choch ? bull_col : (pb_is_hl ? bull_col : bear_col)
+            st.asl      := st.pb_extreme
+            st.asl_loc  := st.pb_extreme_loc
+            st.asl_type := "LOCKED"
+            st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
+            st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + pb_low_t, color=color(na), textcolor=f_swingCol(pb_low_c), style=label.style_label_up, size=f_structSize())
+            if not is_choch
+                st.last_conf_low     := st.pb_extreme
+                st.last_conf_low_loc := st.pb_extreme_loc
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := 1
+            st.pb_started            := true
+        else
+            if not na(st.asl)
+                bool already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
+                if not already_conf_low
+                    bool   old_is_hl = is_choch ? false : (na(st.last_conf_low) or st.asl >= st.last_conf_low)
+                    string old_low_t = old_is_hl ? prefix + "HL" : prefix + "LL"
+                    color  old_low_c = old_is_hl ? bull_col : bear_col
+                    if not na(st.asl_lbl)
+                        label.delete(st.asl_lbl)
+                    label.new(st.asl_loc, st.asl, "\n" + old_low_t, color=color(na), textcolor=f_swingCol(old_low_c), style=label.style_label_up, size=f_structSize())
+                    st.last_conf_low     := st.asl
+                    st.last_conf_low_loc := st.asl_loc
+                else
+                    if not na(st.asl_lbl)
+                        label.delete(st.asl_lbl)
+                if not na(st.asl_line)
+                    line.delete(st.asl_line)
+                st.asl_line := na
+                st.asl_lbl  := na
+                st.asl      := na
+
+            float lowest_val = low
+            int   lowest_loc = bar_index
+            int   bars_back  = na(st.last_conf_high_loc) ? bar_index : bar_index - st.last_conf_high_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if low[i] < lowest_val
+                        lowest_val := low[i]
+                        lowest_loc := bar_index - i
+
+            st.bull_bos_low   := lowest_val
+            st.bull_bos_l_loc := lowest_loc
+
+            st.asl      := lowest_val
+            st.asl_loc  := lowest_loc
+            st.asl_type := ""
+            st.asl_line := line.new(lowest_loc, lowest_val, bar_index, lowest_val, color=bull_col, style=line.style_solid, width=1)
+            if lowest_val != st.last_conf_low
+                st.asl_lbl := label.new(lowest_loc, lowest_val, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
+            else
+                st.asl_lbl := na
+
+            st.pb_mode               := 1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+    else if asl_broken
+        st.bear_bos := true
+        st.bear_bos_low   := st.asl
+        st.bear_bos_l_loc := st.asl_loc
+
+        bool was_in_bull_pb = st.pb_mode == 1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool   is_choch    = st.dir == 1
+        string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
+        if is_choch
+            st.bear_sos := true
+        int    mid_x       = math.round((st.asl_loc + bar_index) / 2)
+        label.new(mid_x, st.asl, brk_lbl_txt + "\n", color=color(na), textcolor=bear_col, style=label.style_label_up, size=size.tiny)
+
+        if is_choch
+            st.choch_lock := true
+
+        bool brk_already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
+        if not na(st.asl_lbl)
+            label.delete(st.asl_lbl)
+        if not brk_already_conf_low
+            bool   brk_is_hl = na(st.last_conf_low) or st.asl >= st.last_conf_low
+            string brk_low_t = brk_is_hl ? prefix + "HL" : prefix + "LL"
+            label.new(st.asl_loc, st.asl, "\n" + brk_low_t, color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_up, size=f_structSize())
+
+        if not na(st.asl_line)
+            line.set_style(st.asl_line, line.style_solid)
+            line.set_color(st.asl_line, bear_col)
+            line.set_width(st.asl_line, 2)
+            line.set_x2(st.asl_line, bar_index)
+            st.asl_line := na
+
+        st.last_conf_low     := st.asl
+        st.last_conf_low_loc := st.asl_loc
+        st.asl_lbl           := na
+        st.asl               := na
+        st.dir               := -1
+
+        if was_in_bull_pb
+            st.bear_bos_high  := st.pb_extreme
+            st.bear_bos_h_loc := st.pb_extreme_loc
+            if not na(st.ash_line)
+                line.delete(st.ash_line)
+            if not na(st.ash_lbl)
+                label.delete(st.ash_lbl)
+            bool   pb_is_hh  = na(st.last_conf_high) or st.pb_extreme >= st.last_conf_high
+            // On an SOS (fast reversal) the extreme is only the ACTIVE swing high —
+            // it prints as ASH and is confirmed to HH/LH by the NEXT bearish break.
+            string pb_high_t = is_choch ? prefix + "ASH" : (pb_is_hh ? prefix + "HH" : prefix + "LH")
+            color  pb_high_c = is_choch ? bear_col : (pb_is_hh ? bull_col : bear_col)
+            st.ash      := st.pb_extreme
+            st.ash_loc  := st.pb_extreme_loc
+            st.ash_type := "LOCKED"
+            st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
+            st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, pb_high_t + "\n", color=color(na), textcolor=f_swingCol(pb_high_c), style=label.style_label_down, size=f_structSize())
+            if not is_choch
+                st.last_conf_high     := st.pb_extreme
+                st.last_conf_high_loc := st.pb_extreme_loc
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := -1
+            st.pb_started            := true
+        else
+            float highest_val = high
+            int   highest_loc = bar_index
+            int   bars_back   = na(st.last_conf_low_loc) ? bar_index : bar_index - st.last_conf_low_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if high[i] > highest_val
+                        highest_val := high[i]
+                        highest_loc := bar_index - i
+
+            if not na(st.ash)
+                bool already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
+                if not already_conf_high
+                    bool   old_is_hh  = is_choch ? true : (na(st.last_conf_high) or st.ash >= st.last_conf_high)
+                    string old_high_t = old_is_hh ? prefix + "HH" : prefix + "LH"
+                    color  old_high_c = old_is_hh ? bull_col : bear_col
+                    if not na(st.ash_lbl)
+                        label.delete(st.ash_lbl)
+                    label.new(st.ash_loc, st.ash, old_high_t + "\n", color=color(na), textcolor=f_swingCol(old_high_c), style=label.style_label_down, size=f_structSize())
+                    st.last_conf_high     := st.ash
+                    st.last_conf_high_loc := st.ash_loc
+                else
+                    if not na(st.ash_lbl)
+                        label.delete(st.ash_lbl)
+                if not na(st.ash_line)
+                    line.delete(st.ash_line)
+                st.ash_line := na
+                st.ash_lbl  := na
+                st.ash      := na
+            else
+                // Neither an active pullback high nor a confirmed ASH was available to
+                // promote — use the actual highest point since the last confirmed low so
+                // a genuine swing high still gets confirmed instead of silently vanishing.
+                bool   fallback_is_hh  = na(st.last_conf_high) or highest_val >= st.last_conf_high
+                string fallback_high_t = fallback_is_hh ? prefix + "HH" : prefix + "LH"
+                color  fallback_high_c = fallback_is_hh ? bull_col : bear_col
+                if highest_val != st.last_conf_high
+                    label.new(highest_loc, highest_val, fallback_high_t + "\n", color=color(na), textcolor=f_swingCol(fallback_high_c), style=label.style_label_down, size=f_structSize())
+                    st.last_conf_high     := highest_val
+                    st.last_conf_high_loc := highest_loc
+
+            st.bear_bos_high  := highest_val
+            st.bear_bos_h_loc := highest_loc
+
+            st.ash      := highest_val
+            st.ash_loc  := highest_loc
+            st.ash_type := ""
+            st.ash_line := line.new(highest_loc, highest_val, bar_index, highest_val, color=bear_col, style=line.style_solid, width=1)
+            if highest_val != st.last_conf_high
+                st.ash_lbl := label.new(highest_loc, highest_val, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
+            else
+                st.ash_lbl := na
+
+            st.pb_mode               := -1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+    if not na(st.ash_line)
+        line.set_x2(st.ash_line, bar_index)
+        if not showExternal
+            line.set_color(st.ash_line, color(na))
+    if not na(st.asl_line)
+        line.set_x2(st.asl_line, bar_index)
+        if not showExternal
+            line.set_color(st.asl_line, color(na))
+    if not showExternal
+        if not na(st.ash_lbl)
+            label.set_textcolor(st.ash_lbl, color(na))
+        if not na(st.asl_lbl)
+            label.set_textcolor(st.asl_lbl, color(na))
+
+//============================================================
+//  TRADING SESSIONS TYPES & METHODS
+//============================================================
+type SessionDisplay
+    box   sessionBox
+    label sessionLabel
+    line  openLine
+    line  avgLine
+    line  closeLine
+    float sumClose
+    int   numOfBars
+
+type SessionInfo
+    color  color
+    string name
+    string session
+    string timezone
+    SessionDisplay active = na
+
+method setName(SessionDisplay this, string name) =>
+    sessionLabel = this.sessionLabel
+    sessionBox   = this.sessionBox
+    boxText      = array.new<string>()
+    if showSessionTickRange
+        boxText.push("Range: " + str.tostring((sessionBox.get_top() - sessionBox.get_bottom()) / syminfo.mintick, format.mintick))
+    if showSessionAverage
+        boxText.push("Avg: " + str.tostring(this.sumClose / this.numOfBars, format.mintick))
+    if showSessionNames
+        boxText.push(name)
+    sessionLabel.set_y(sessionBox.get_bottom())
+    sessionLabel.set_text(array.join(boxText, "\n"))
+
+method createSessionDisplay(SessionInfo this) =>
+    boxColor    = this.color
+    opaqueColor = color.new(boxColor, 0)
+    dis = SessionDisplay.new(
+      sessionBox   = box.new(bar_index, high, bar_index, low, bgcolor = boxColor, border_color = color.new(boxColor, 40), border_width = 1, border_style = line.style_dotted),
+      sessionLabel = label.new(bar_index + 2, low, "", style = label.style_label_upper_left, textalign = text.align_left, textcolor = opaqueColor, color = color(na)),
+      openLine     = showSessionOC      ? line.new(bar_index, open,  bar_index, open,  color = opaqueColor, style = line.style_dashed, width = 1) : na,
+      closeLine    = showSessionOC      ? line.new(bar_index, close, bar_index, close, color = opaqueColor, style = line.style_dashed, width = 1) : na,
+      avgLine      = showSessionAverage ? line.new(bar_index, close, bar_index, close, style = line.style_dotted, width = 2, color = opaqueColor) : na,
+      sumClose     = close,
+      numOfBars    = 1)
+    if showSessionOC
+        linefill.new(dis.openLine, dis.closeLine, boxColor)
+    dis.setName(this.name)
+    this.active := dis
+
+method updateSessionDisplay(SessionInfo this) =>
+    sessionDisp = this.active
+    sessionBox  = sessionDisp.sessionBox
+    openLine    = sessionDisp.openLine
+    closeLine   = sessionDisp.closeLine
+    avgLine     = sessionDisp.avgLine
+    sessionDisp.sumClose  += close
+    sessionDisp.numOfBars += 1
+    sessionBox.set_top(math.max(sessionBox.get_top(), high))
+    sessionBox.set_bottom(math.min(sessionBox.get_bottom(), low))
+    sessionBox.set_right(bar_index)
+    sessionDisp.setName(this.name)
+    if showSessionOC
+        openLine.set_x2(bar_index)
+        closeLine.set_x2(bar_index)
+        closeLine.set_y1(close)
+        closeLine.set_y2(close)
+    if showSessionAverage
+        avgLine.set_x2(bar_index)
+        avg = sessionDisp.sumClose / sessionDisp.numOfBars
+        avgLine.set_y1(avg)
+        avgLine.set_y2(avg)
+    sessionDisp
+
+method update(SessionInfo this) =>
+    bool isChange = timeframe.change("1D")
+    if not na(time("", this.session, this.timezone))
+        if na(this.active) or isChange
+            this.createSessionDisplay()
+        else
+            this.updateSessionDisplay()
+    else if not na(this.active)
+        this.active := na
+
+getSessionInfos() =>
+    array<SessionInfo> sessionInfos = array.new<SessionInfo>()
+    if showFirst and showSessions
+        sessionInfos.push(SessionInfo.new(firstSessionColor, firstSessionName, firstSessionTime, firstSessionTZ))
+    if showSecond and showSessions
+        sessionInfos.push(SessionInfo.new(secondSessionColor, secondSessionName, secondSessionTime, secondSessionTZ))
+    if showThird and showSessions
+        sessionInfos.push(SessionInfo.new(thirdSessionColor, thirdSessionName, thirdSessionTime, thirdSessionTZ))
+    sessionInfos
+
+//============================================================
+//  SHARED CONSTANTS & SECURITY CALLS
+//============================================================
+isMondayToFriday = dayofweek(time, "America/New_York") >= dayofweek.monday and dayofweek(time, "America/New_York") <= dayofweek.friday
+newDay           = dayofweek(time, "America/New_York") != dayofweek(time[1], "America/New_York")
+
+[dailyTime,   dailyHigh,   dailyLow]   = request.security(syminfo.tickerid, "D", [time, high, low], lookahead = barmerge.lookahead_on)
+[pdhOn, pdlOn]   = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[pdhOff, pdlOff] = request.security(syminfo.tickerid, "D", [high, low], lookahead = barmerge.lookahead_off)
+bool  _pdDayChart = timeframe.isdaily or timeframe.isweekly or timeframe.ismonthly
+float pdh = _pdDayChart ? pdhOff : pdhOn
+float pdl = _pdDayChart ? pdlOff : pdlOn
+[pwhOn, pwlOn]   = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[pwhOff, pwlOff] = request.security(syminfo.tickerid, "W", [high, low], lookahead = barmerge.lookahead_off)
+bool  _pwWkChart = timeframe.isweekly or timeframe.ismonthly
+float pwh = _pwWkChart ? pwhOff : pwhOn
+float pwl = _pwWkChart ? pwlOff : pwlOn
+pwcSecurity = timeframe.isweekly or timeframe.ismonthly ? request.security(syminfo.tickerid, "W", close, lookahead = barmerge.lookahead_off) : request.security(syminfo.tickerid, "W", close[1], lookahead = barmerge.lookahead_on)
+[h4Time, h4PrevHigh, h4PrevLow] = request.security(syminfo.tickerid, "240", [time, high[1], low[1]], lookahead = barmerge.lookahead_on)
+h4BarChanged = ta.change(h4Time) != 0
+
+hasDailyTimeChanged   = dailyTime   != dailyTime[1]
+
+var canShowDaily   = i_isDailyEnabled   and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily)
+var canShowWeekly  = i_isWeeklyEnabled  and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily or timeframe.isweekly)
+
+color  MITIGATED_COLOR = color.new(#666666, 25)
+float  lblOff          = syminfo.mintick * i_lblOffset
+
+var a_lastHighs = array.new_float(2)
+var a_lastLows  = array.new_float(2)
+
+f_labelText(string txt) => i_showLabels and i_showLiquidity ? txt : ""
+
+// Shared by Daily/Weekly/Monthly/Asia/London/NY liquidity levels: checks for
+// mitigation, updates the line/label color+style+extent in place, and returns
+// the (possibly updated) mitigated/mitigatedBar state.
+f_liqMitigate(line lineId, label lblId, bool mit, int mitBar, int barOrigin, bool breachCond, color baseColor, bool enabledFlag, bool showMit) =>
+    bool newMit    = mit
+    int  newMitBar = mitBar
+    if not newMit and breachCond
+        newMit    := true
+        newMitBar := bar_index
+    // Live levels always show (if enabled); broken levels show only when showMit is on.
+    bool showLvl = (not newMit or showMit) and i_showLiquidity and enabledFlag
+    if showLvl
+        line.set_color(lineId, newMit ? MITIGATED_COLOR : baseColor)
+        line.set_style(lineId, newMit ? line.style_dotted : line.style_solid)
+        // Live → extend right from the origin candle; broken → freeze at the break bar (dotted).
+        int x2 = newMit ? newMitBar : bar_index + i_lineExtend
+        line.set_x2(lineId, x2)
+        label.set_textcolor(lblId, newMit ? color(na) : baseColor)
+        label.set_x(lblId, x2)
+    else
+        line.set_color(lineId, color(na))
+        label.set_textcolor(lblId, color(na))
+    [newMit, newMitBar]
+
+// Origin-candle finder — scans back for the most recent bar that reached a level, so a
+// liquidity line can start from the candle that formed it instead of the detection bar.
+int LIQ_ORIGIN_CAP = 1500
+f_originHigh(float lvl, int cap) =>
+    int ob = bar_index
+    if bar_index >= 1
+        for i = 1 to math.min(cap, bar_index)
+            if high[i] >= lvl
+                ob := bar_index - i
+                break
+    ob
+f_originLow(float lvl, int cap) =>
+    int ob = bar_index
+    if bar_index >= 1
+        for i = 1 to math.min(cap, bar_index)
+            if low[i] <= lvl
+                ob := bar_index - i
+                break
+    ob
+
+inAsia   = not na(time("", firstSessionTime,  firstSessionTZ))
+inLondon = not na(time("", secondSessionTime, secondSessionTZ))
+inNY     = not na(time("", thirdSessionTime,  thirdSessionTZ))
+
+inSession5 = not na(time("5", "0930-0935", "America/New_York"))
+inExtend5  = not na(time("5", "0935-1600", "America/New_York"))
+[startTime5, high5, low5] = request.security(syminfo.tickerid, "5", [time, high, low], lookahead = barmerge.lookahead_on)
+
+var int nyr_startTime = 0
+nyr_startTime := inSession5 and not inSession5[1] and isMondayToFriday ? startTime5 : nyr_startTime[1]
+
+nyMidnightToday   = timestamp("America/New_York", year(timenow, "America/New_York"), month(timenow, "America/New_York"), dayofmonth(timenow, "America/New_York"), 0, 0)
+
+// Kill Zones & NY Range: current NY day only by default (keeps the chart clean),
+// or unlimited history when Show All History is enabled.
+withinKZDays      = showKZHistoric or time >= nyMidnightToday
+withinNYRangeDays = showKZHistoric or time >= nyMidnightToday
+
+// Sessions: current week only by default (from Sunday 00:00 New York), or
+// unlimited history when Show All History is on. Anchored to the calendar week
+// rather than a rolling 7 days, so mid-week it doesn't bleed into last week.
+int  nyDayOfWeek       = dayofweek(timenow, "America/New_York")
+int  daysSinceSunday   = nyDayOfWeek - dayofweek.sunday
+int  weekStartTime     = nyMidnightToday - daysSinceSunday * 86400000
+bool withinSessionDays = showHistoricSessions or time >= weekStartTime
+
+vwapValue = ta.vwap(hlc3)
+
+//============================================================
+//  EXECUTION — EXTERNAL + INTERNAL STRUCTURE
+//============================================================
+// External structure engine always runs — fib, macro fib, OBs all depend on it
+var st = SMCStructure.new(majorLength)
+ph = ta.pivothigh(high, majorLength, majorLength)
+pl = ta.pivotlow(low,  majorLength, majorLength)
+// showExternal off → pass color(na) so ALL lines and labels hidden inside process
+// showExternal off but showExternal on → pass color(na) for labels only — handled via ASH/ASL override below
+color extBullCol = showExternal ? (showExternal ? bullColor : color(na)) : color(na)
+color extBearCol = showExternal ? (showExternal ? bearColor : color(na)) : color(na)
+st.process(ph, pl, "", extBullCol, extBearCol)
+
+// After process runs — restore line colors when labels are hidden but structure is visible
+if not na(st.ash_line)
+    line.set_x2(st.ash_line, bar_index)
+    if showExternal and not showExternal
+        line.set_color(st.ash_line, bullColor)
+if not na(st.asl_line)
+    line.set_x2(st.asl_line, bar_index)
+    if showExternal and not showExternal
+        line.set_color(st.asl_line, bearColor)
+if not na(st.ash_lbl)
+    label.set_textcolor(st.ash_lbl, showExternal ? f_swingCol(bearColor) : color(na))
+if not na(st.asl_lbl)
+    label.set_textcolor(st.asl_lbl, showExternal ? f_swingCol(bullColor) : color(na))
+
+// Internal structure — Step 2: pullback tracking to confirm iSH / iSL
+
+// ── State ─────────────────────────────────────────────────
+var int   i_mode           = 0
+var bool  i_seeded         = false
+
+// Pullback tracking
+var float i_pb_extreme     = na
+var int   i_pb_extreme_loc = na
+var int   i_pb_count       = 0
+var bool  i_pb_started     = false
+var float i_pb_lqc         = na
+var float i_pb_lqh         = na
+var float i_prev_high      = na
+var float i_prev_low       = na
+
+// Active swing level (iSH or iSL)
+var float i_sw_price       = na
+var int   i_sw_loc         = na
+var line  i_sw_line        = na
+var label i_sw_lbl         = na
+
+// Pre-declared locals (Pine v6)
+var bool  i_ext_chg        = false
+var bool  i_is_inside      = false
+var bool  i_ext_dir        = false
+var bool  i_is_c1          = false
+var float i_thresh         = na
+
+var float i_tracked_ext     = na
+var int   i_tracked_ext_loc = na
+var int   i_last_mode       = 0   // remembers what mode confirmed the swing
+var bool  i_had_bos         = false
+var string i_h_lbl          = ""
+var color  i_h_col          = color.black
+var string i_l_lbl          = ""
+var color  i_l_col          = color.black
+var int   i_mid             = 0
+var int   i_mid2            = 0
+var float i_last_hl         = na   // last confirmed iHL price (for iSOS in bullish cycle)
+
+// Captures the latest confirmed internal swing point (price + location), so the
+// External Fib can adopt it as its anchor if it's more extreme than the external
+// structure's own point — used only for the fib pull, nothing else.
+var float i_confirmed_low_price  = na
+var int   i_confirmed_low_loc    = na
+var float i_confirmed_high_price = na
+var int   i_confirmed_high_loc   = na
+var float i_last_lh         = na   // last confirmed iLH price (for iSOS in bearish cycle)
+var int   i_last_hl_loc     = na
+var int   i_last_lh_loc     = na
+
+var float i_sos_watch_hh    = na
+var int   i_sos_watch_hh_loc= na
+var float i_sos_watch_ll    = na
+var int   i_sos_watch_ll_loc= na
+
+// (Internal Fib anchor + touched-tracking vars removed — feature deleted.)
+
+float i_lbl_y_offset = syminfo.mintick * 20   // vertical offset for iBOS/iSOS (smaller number = closer to the line)
+
+// Internal structure is naturally scoped to the current active external swing —
+// it resets on every external SOS/CHoCH (see block right below).
+bool internalActive = showInternal
+
+// Tracks every internal-structure label/line drawn during the current external
+// swing, so they can be wiped when a new swing starts (unless showHistoricalInternal is on).
+var array<label> intHistLabels = array.new<label>()
+var array<line>  intHistLines  = array.new<line>()
+
+// ── Stop internal tracking on external SOS ───────────────
+// True on any bar where the external structure breaks — the current internal
+// swing is finished. Used further down to clear the table's INT row so it can
+// never show an iBOS/iSOS whose drawing has already been wiped from the chart.
+bool extBreakThisBar = st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos
+
+if internalActive and (st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos)
+    if not na(i_sw_line)
+        line.set_x2(i_sw_line, bar_index)
+        i_sw_line := na
+    i_sw_lbl          := na
+    i_sw_price        := na
+    i_mode            := 0
+    i_seeded          := false
+    i_pb_count        := 0
+    i_pb_started      := false
+    i_tracked_ext     := na
+    i_tracked_ext_loc := na
+    i_last_hl         := na
+    i_last_lh         := na
+    i_had_bos         := false
+    i_sos_watch_hh    := na
+    i_sos_watch_ll    := na
+    // Past swing just ended — wipe its internal structure unless history is enabled
+    if not showHistoricalInternal
+        if array.size(intHistLabels) > 0
+            for i = 0 to array.size(intHistLabels) - 1
+                label.delete(array.get(intHistLabels, i))
+        if array.size(intHistLines) > 0
+            for i = 0 to array.size(intHistLines) - 1
+                line.delete(array.get(intHistLines, i))
+    array.clear(intHistLabels)
+    array.clear(intHistLines)
+
+// ── Track prev bar ────────────────────────────────────────
+if internalActive
+    i_prev_high := high
+    i_prev_low  := low
+
+
+// ── Seed on new external swing ────────────────────────────
+if internalActive
+    if st.new_swing_low and not st.bull_sos and not st.bear_sos
+        i_mode            := 1
+        i_seeded          := true
+        i_had_bos         := false
+        i_pb_started      := false
+        i_pb_extreme      := na
+        i_pb_count        := 0
+        i_pb_lqc          := na
+        i_pb_lqh          := na
+        i_tracked_ext     := na
+        i_tracked_ext_loc := na
+        i_last_mode       := 1
+        i_last_hl         := na
+        i_last_lh         := na
+        i_sos_watch_hh    := na
+        i_sos_watch_ll    := na
+    else if st.new_swing_high and not st.bull_sos and not st.bear_sos
+        i_mode            := -1
+        i_seeded          := true
+        i_had_bos         := false
+        i_pb_started      := false
+        i_pb_extreme      := na
+        i_pb_count        := 0
+        i_pb_lqc          := na
+        i_pb_lqh          := na
+        i_tracked_ext     := na
+        i_tracked_ext_loc := na
+        i_last_mode       := -1
+        i_last_hl         := na
+        i_last_lh         := na
+        i_sos_watch_hh    := na
+        i_sos_watch_ll    := na
+
+// ── Mode 1: track upward move → confirm iSH ──────────────
+if internalActive and i_seeded and i_mode == 1
+    if not i_pb_started
+        i_pb_started     := true
+        i_pb_extreme     := high
+        i_pb_extreme_loc := bar_index
+        i_pb_count       := 0
+        i_pb_lqc         := na
+        i_pb_lqh         := na
+    else
+        // Update extreme if new high
+        i_ext_chg := false
+        if high > i_pb_extreme
+            i_pb_extreme     := high
+            i_pb_extreme_loc := bar_index
+            i_pb_count       := 0
+            i_pb_lqc         := na
+            i_pb_lqh         := na
+            i_ext_chg        := true
+        // is_inside and qualifying bar checks (exact external rule)
+        i_is_inside := not na(i_prev_high) and not na(i_prev_low) and high < i_prev_high and low > i_prev_low
+        i_ext_dir   := i_ext_chg and close < open
+        i_is_c1     := na(i_pb_lqc) and not i_ext_chg
+        if (not i_is_inside or i_is_c1) and (not i_ext_chg or i_ext_dir)
+            i_thresh := na(i_pb_lqh) ? i_pb_extreme : i_pb_lqh
+            if close < i_thresh - pbBuffer
+                i_pb_count += 1
+                i_pb_lqc   := close
+                i_pb_lqh   := low
+        // 3 bars confirmed → iSH
+        if i_pb_count >= 3 and not na(i_pb_extreme)
+            if not na(i_sw_line)
+                line.set_x2(i_sw_line, bar_index)
+            i_sw_line  := na
+            i_sw_lbl   := na
+            i_sw_price := i_pb_extreme
+            i_sw_loc   := i_pb_extreme_loc
+            // Label: iSH if first swing, iHH if higher than last, iLH if lower
+            i_h_lbl := not i_had_bos ? "iSH" : "iHH"
+            i_h_col := not i_had_bos ? iBearColor : iBullColor
+            i_confirmed_high_price := i_sw_price
+            i_confirmed_high_loc   := i_sw_loc
+            i_sw_line  := line.new(i_sw_loc, i_sw_price, bar_index, i_sw_price, color = showInternal ? color.new(i_h_col, 15) : color(na), style = line.style_dotted, width = 1)
+            i_sw_lbl   := label.new(i_sw_loc, i_sw_price, i_h_lbl + "\n", color = color(na), textcolor=f_swingCol(color.new(i_h_col, 15)), style = label.style_label_down, size = size.tiny)
+            array.push(intHistLines, i_sw_line)
+            array.push(intHistLabels, i_sw_lbl)
+            i_mode       := 0
+            i_pb_count   := 0
+            i_pb_started := false
+
+// ── Mode -1: track downward move → confirm iSL ───────────
+if internalActive and i_seeded and i_mode == -1
+    if not i_pb_started
+        i_pb_started     := true
+        i_pb_extreme     := low
+        i_pb_extreme_loc := bar_index
+        i_pb_count       := 0
+        i_pb_lqc         := na
+        i_pb_lqh         := na
+    else
+        // Update extreme if new low
+        i_ext_chg := false
+        if low < i_pb_extreme
+            i_pb_extreme     := low
+            i_pb_extreme_loc := bar_index
+            i_pb_count       := 0
+            i_pb_lqc         := na
+            i_pb_lqh         := na
+            i_ext_chg        := true
+        // is_inside and qualifying bar checks
+        i_is_inside := not na(i_prev_high) and not na(i_prev_low) and high < i_prev_high and low > i_prev_low
+        i_ext_dir   := i_ext_chg and close > open
+        i_is_c1     := na(i_pb_lqc) and not i_ext_chg
+        if (not i_is_inside or i_is_c1) and (not i_ext_chg or i_ext_dir)
+            i_thresh := na(i_pb_lqh) ? i_pb_extreme : i_pb_lqh
+            if close > i_thresh + pbBuffer
+                i_pb_count += 1
+                i_pb_lqc   := close
+                i_pb_lqh   := high
+        // 3 bars confirmed → iSL
+        if i_pb_count >= 3 and not na(i_pb_extreme)
+            if not na(i_sw_line)
+                line.set_x2(i_sw_line, bar_index)
+            i_sw_line  := na
+            i_sw_lbl   := na
+            i_sw_price := i_pb_extreme
+            i_sw_loc   := i_pb_extreme_loc
+            // Label: iSL if first swing, iLL if lower than last, iHL if higher
+            i_l_lbl := not i_had_bos ? "iSL" : "iLL"
+            i_l_col := not i_had_bos ? iBullColor : iBearColor
+            i_confirmed_low_price := i_sw_price
+            i_confirmed_low_loc   := i_sw_loc
+            i_sw_line  := line.new(i_sw_loc, i_sw_price, bar_index, i_sw_price, color = showInternal ? color.new(i_l_col, 15) : color(na), style = line.style_dotted, width = 1)
+            i_sw_lbl   := label.new(i_sw_loc, i_sw_price, "\n" + i_l_lbl, color = color(na), textcolor=f_swingCol(color.new(i_l_col, 15)), style = label.style_label_up, size = size.tiny)
+            array.push(intHistLines, i_sw_line)
+            array.push(intHistLabels, i_sw_lbl)
+            i_mode       := 0
+            i_pb_count   := 0
+            i_pb_started := false
+
+// ── Track extreme while watching (mode 0) ────────────────
+if internalActive and i_seeded and i_mode == 0
+    if i_last_mode == 1
+        if na(i_tracked_ext) or low < i_tracked_ext
+            i_tracked_ext     := low
+            i_tracked_ext_loc := bar_index
+    else if i_last_mode == -1
+        if na(i_tracked_ext) or high > i_tracked_ext
+            i_tracked_ext     := high
+            i_tracked_ext_loc := bar_index
+
+// ── iBOS / iSOS detection ────────────────────────────────
+bool int_bull_break = false
+bool int_bear_break = false
+bool int_bull_bos   = false
+bool int_bull_sos   = false
+bool int_bear_bos   = false
+bool int_bear_sos   = false
+int  int_break_origin_loc = na
+
+if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barstate.isconfirmed
+    if close > i_sw_price and i_last_mode == 1
+        i_mid := math.round((i_sw_loc + bar_index) / 2)
+        label iBullBOSLbl = label.new(i_mid, i_sw_price + i_lbl_y_offset, "iBOS", color = color(na), textcolor = showInternal ? iBullColor : color(na), style = label.style_none, size = size.tiny, textalign = text.align_center)
+        array.push(intHistLabels, iBullBOSLbl)
+        if not na(i_sw_line)
+            line.set_x2(i_sw_line, bar_index)
+            i_sw_line := na
+        i_sw_lbl := na
+        if not na(i_tracked_ext)
+            line  iHLLine = line.new(i_tracked_ext_loc, i_tracked_ext, bar_index, i_tracked_ext, color = showInternal ? color.new(iBullColor, 15) : color(na), style = line.style_dotted, width = 1)
+            label iHLLbl  = label.new(i_tracked_ext_loc, i_tracked_ext, "\niHL", color = color(na), textcolor=f_swingCol(color.new(iBullColor, 15)), style = label.style_label_up, size = size.tiny)
+            array.push(intHistLines, iHLLine)
+            array.push(intHistLabels, iHLLbl)
+            i_last_hl     := i_tracked_ext
+            i_last_hl_loc := i_tracked_ext_loc
+        
+        int_bull_break := true
+        int_bull_bos   := true
+        int_break_origin_loc := i_tracked_ext_loc
+        i_sw_price       := na
+        i_tracked_ext    := na
+        i_tracked_ext_loc := na
+        i_pb_count       := 0
+        i_pb_started     := false
+        i_pb_lqc         := na
+        i_pb_lqh         := na
+        i_had_bos        := true
+        i_last_mode      := 1
+        i_mode           := 1
+        i_sos_watch_ll   := na
+
+    else if close < i_sw_price and i_last_mode == -1
+        i_mid2 := math.round((i_sw_loc + bar_index) / 2)
+        label iBearBOSLbl = label.new(i_mid2, i_sw_price, "iBOS", color = color(na), textcolor = showInternal ? iBearColor : color(na), style = label.style_label_up, size = size.tiny, textalign = text.align_center)
+        array.push(intHistLabels, iBearBOSLbl)
+        if not na(i_sw_line)
+            line.set_x2(i_sw_line, bar_index)
+            i_sw_line := na
+        i_sw_lbl := na
+        if not na(i_tracked_ext)
+            line  iLHLine = line.new(i_tracked_ext_loc, i_tracked_ext, bar_index, i_tracked_ext, color = showInternal ? color.new(iBearColor, 15) : color(na), style = line.style_dotted, width = 1)
+            label iLHLbl  = label.new(i_tracked_ext_loc, i_tracked_ext, "iLH\n", color = color(na), textcolor=f_swingCol(color.new(iBearColor, 15)), style = label.style_label_down, size = size.tiny)
+            array.push(intHistLines, iLHLine)
+            array.push(intHistLabels, iLHLbl)
+            i_last_lh     := i_tracked_ext
+            i_last_lh_loc := i_tracked_ext_loc
+            
+        int_bear_break := true
+        int_bear_bos   := true
+        int_break_origin_loc := i_tracked_ext_loc
+        i_sw_price        := na
+        i_tracked_ext     := na
+        i_tracked_ext_loc := na
+        i_pb_count        := 0
+        i_pb_started      := false
+        i_pb_lqc          := na
+        i_pb_lqh          := na
+        i_had_bos         := true
+        i_last_mode       := -1
+        i_mode            := -1
+        i_sos_watch_hh    := na
+
+
+
+// ── iSOS detection (watches last iHL / iLH) ──────────────
+if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
+    if i_last_mode == 1 and not na(i_last_hl) and close < i_last_hl and i_mode == 0
+        i_mid2 := math.round((i_last_hl_loc + bar_index) / 2)
+        label iSOS1Lbl = label.new(i_mid2, i_last_hl, "iSOS", color = color(na), textcolor = showInternal ? iBearColor : color(na), style = label.style_label_up, size = size.tiny, textalign = text.align_center)
+        line  iSOS1Line = line.new(i_last_hl_loc, i_last_hl, bar_index, i_last_hl, color = showInternal ? color.new(iBearColor, 15) : color(na), style = line.style_dotted, width = 1)
+        array.push(intHistLabels, iSOS1Lbl)
+        array.push(intHistLines, iSOS1Line)
+        if not na(i_sw_line)
+            line.set_x2(i_sw_line, bar_index)
+            i_sw_line := na
+        
+        i_sos_watch_hh     := i_sw_price
+        i_sos_watch_hh_loc := i_sw_loc
+        i_sos_watch_ll     := na
+        
+        int_bear_break := true
+        int_bear_sos   := true
+        int_break_origin_loc := i_sw_loc
+        i_sw_lbl          := na
+        i_sw_price        := na
+        i_tracked_ext     := na
+        i_tracked_ext_loc := na
+        i_last_hl         := na
+        i_pb_count        := 0
+        i_pb_started      := false
+        i_pb_lqc          := na
+        i_pb_lqh          := na
+        i_last_mode       := -1
+        i_mode            := -1
+
+    else if i_last_mode == -1 and not na(i_last_lh) and close > i_last_lh and i_mode == 0
+        i_mid := math.round((i_last_lh_loc + bar_index) / 2)
+        label iSOS2Lbl = label.new(i_mid, i_last_lh + i_lbl_y_offset, "iSOS", color = color(na), textcolor = showInternal ? iBullColor : color(na), style = label.style_none, size = size.tiny, textalign = text.align_center)
+        line  iSOS2Line = line.new(i_last_lh_loc, i_last_lh, bar_index, i_last_lh, color = showInternal ? color.new(iBullColor, 15) : color(na), style = line.style_dotted, width = 1)
+        array.push(intHistLabels, iSOS2Lbl)
+        array.push(intHistLines, iSOS2Line)
+        if not na(i_sw_line)
+            line.set_x2(i_sw_line, bar_index)
+            i_sw_line := na
+            
+        i_sos_watch_ll     := i_sw_price
+        i_sos_watch_ll_loc := i_sw_loc
+        i_sos_watch_hh     := na
+        
+        int_bull_break := true
+        int_bull_sos   := true
+        int_break_origin_loc := i_sw_loc
+        i_sw_lbl          := na
+        i_sw_price        := na
+        i_tracked_ext     := na
+        i_tracked_ext_loc := na
+        i_last_lh         := na
+        i_pb_count        := 0
+        i_pb_started      := false
+        i_pb_lqc          := na
+        i_pb_lqh          := na
+        i_last_mode       := 1
+        i_mode            := 1
+
+    else if i_last_mode == -1 and not na(i_sos_watch_hh) and close > i_sos_watch_hh and i_mode == 0
+        i_mid := math.round((i_sos_watch_hh_loc + bar_index) / 2)
+        label iSOS3Lbl = label.new(i_mid, i_sos_watch_hh + i_lbl_y_offset, "iSOS", color = color(na), textcolor = showInternal ? iBullColor : color(na), style = label.style_none, size = size.tiny, textalign = text.align_center)
+        line  iSOS3Line = line.new(i_sos_watch_hh_loc, i_sos_watch_hh, bar_index, i_sos_watch_hh, color = showInternal ? color.new(iBullColor, 15) : color(na), style = line.style_dotted, width = 1)
+        array.push(intHistLabels, iSOS3Lbl)
+        array.push(intHistLines, iSOS3Line)
+        if not na(i_sw_line)
+            line.set_x2(i_sw_line, bar_index)
+            i_sw_line := na
+            
+        i_sos_watch_ll     := i_sw_price
+        i_sos_watch_ll_loc := i_sw_loc
+        
+        int_bull_break := true
+        int_bull_sos   := true
+        int_break_origin_loc := i_sw_loc
+        i_sw_lbl          := na
+        i_sw_price        := na
+        i_tracked_ext     := na
+        i_tracked_ext_loc := na
+        i_last_lh         := na
+        i_pb_count        := 0
+        i_pb_started      := false
+        i_pb_lqc          := na
+        i_pb_lqh          := na
+        i_last_mode       := 1
+        i_mode            := 1
+        i_sos_watch_hh    := na
+
+    else if i_last_mode == 1 and not na(i_sos_watch_ll) and close < i_sos_watch_ll and i_mode == 0
+        i_mid2 := math.round((i_sos_watch_ll_loc + bar_index) / 2)
+        label iSOS4Lbl = label.new(i_mid2, i_sos_watch_ll, "iSOS", color = color(na), textcolor = showInternal ? iBearColor : color(na), style = label.style_label_up, size = size.tiny, textalign = text.align_center)
+        line  iSOS4Line = line.new(i_sos_watch_ll_loc, i_sos_watch_ll, bar_index, i_sos_watch_ll, color = showInternal ? color.new(iBearColor, 15) : color(na), style = line.style_dotted, width = 1)
+        array.push(intHistLabels, iSOS4Lbl)
+        array.push(intHistLines, iSOS4Line)
+        if not na(i_sw_line)
+            line.set_x2(i_sw_line, bar_index)
+            i_sw_line := na
+            
+        i_sos_watch_hh     := i_sw_price
+        i_sos_watch_hh_loc := i_sw_loc
+        
+        int_bear_break := true
+        int_bear_sos   := true
+        int_break_origin_loc := i_sw_loc
+        i_sw_lbl          := na
+        i_sw_price        := na
+        i_tracked_ext     := na
+        i_tracked_ext_loc := na
+        i_last_hl         := na
+        i_pb_count        := 0
+        i_pb_started      := false
+        i_pb_lqc          := na
+        i_pb_lqh          := na
+        i_last_mode       := -1
+        i_mode            := -1
+        i_sos_watch_ll    := na
+
+// ── Update last_mode when mode changes ───────────────────
+if internalActive and i_mode != 0
+    i_last_mode := i_mode
+
+// ── Extend active swing line every bar ────────────────────
+if internalActive and not na(i_sw_line)
+    line.set_x2(i_sw_line, bar_index)
+
+//============================================================
+//  EQUAL HIGHS / LOWS (EQH / EQL)
+//============================================================
+// EQH = two consecutive swing highs within a tolerance of each other = a stacked
+// pool of buy-side liquidity resting just above; EQL is the mirror below. Drawn as a
+// horizontal line from the first pivot, extended right, until price CLOSES through it
+// (liquidity taken). Their prices also feed the FVG-persistence exemption below.
+bool  eqShow = showTradeTools and eqShowInput
+float eqAtr  = ta.atr(50)
+float eqTol  = na(eqAtr) ? 0.0 : eqAtr * eqAtrMult
+
+var array<line>  eqhLines = array.new<line>()
+var array<label> eqhLbls  = array.new<label>()
+var array<float> eqhPx    = array.new<float>()
+var array<line>  eqlLines = array.new<line>()
+var array<label> eqlLbls  = array.new<label>()
+var array<float> eqlPx    = array.new<float>()
+
+// True when an FVG (gTop..gBot) overlaps, or sits within `prox` of, any active EQ level.
+f_fvgNearEq(float gTop, float gBot, float prox) =>
+    bool near = false
+    if array.size(eqhPx) > 0
+        for i = 0 to array.size(eqhPx) - 1
+            float lvl = array.get(eqhPx, i)
+            if lvl >= gBot - prox and lvl <= gTop + prox
+                near := true
+    if array.size(eqlPx) > 0
+        for i = 0 to array.size(eqlPx) - 1
+            float lvl = array.get(eqlPx, i)
+            if lvl >= gBot - prox and lvl <= gTop + prox
+                near := true
+    near
+
+// Toggled off → clear anything drawn
+if not eqShow and (array.size(eqhLines) > 0 or array.size(eqlLines) > 0)
+    if array.size(eqhLines) > 0
+        for i = 0 to array.size(eqhLines) - 1
+            line.delete(array.get(eqhLines, i)), label.delete(array.get(eqhLbls, i))
+    if array.size(eqlLines) > 0
+        for i = 0 to array.size(eqlLines) - 1
+            line.delete(array.get(eqlLines, i)), label.delete(array.get(eqlLbls, i))
+    array.clear(eqhLines), array.clear(eqhLbls), array.clear(eqhPx)
+    array.clear(eqlLines), array.clear(eqlLbls), array.clear(eqlPx)
+
+f_processEq() =>
+    float eqPh = ta.pivothigh(high, eqPivotLen, eqPivotLen)
+    float eqPl = ta.pivotlow(low,  eqPivotLen, eqPivotLen)
+    var float eqPrevPh = na, var int eqPrevPhBar = na
+    var float eqPrevPl = na, var int eqPrevPlBar = na
+
+    if eqShow and not na(eqPh)
+        int phBar = bar_index - eqPivotLen
+        if not na(eqPrevPh) and math.abs(eqPh - eqPrevPh) <= eqTol
+            float lvl = math.max(eqPh, eqPrevPh)
+            line ln = line.new(eqPrevPhBar, lvl, bar_index + i_lineExtend, lvl, color = eqhColor, style = line.style_dotted, width = 1)
+            label lb = label.new(bar_index + i_lineExtend, lvl, "EQH", style = label.style_none, textcolor = eqhColor, size = size.tiny, textalign = text.align_left)
+            array.push(eqhLines, ln), array.push(eqhLbls, lb), array.push(eqhPx, lvl)
+            while array.size(eqhLines) > eqMax
+                line.delete(array.shift(eqhLines)), label.delete(array.shift(eqhLbls)), array.shift(eqhPx)
+        eqPrevPh := eqPh, eqPrevPhBar := phBar
+
+    if eqShow and not na(eqPl)
+        int plBar = bar_index - eqPivotLen
+        if not na(eqPrevPl) and math.abs(eqPl - eqPrevPl) <= eqTol
+            float lvl = math.min(eqPl, eqPrevPl)
+            line ln = line.new(eqPrevPlBar, lvl, bar_index + i_lineExtend, lvl, color = eqlColor, style = line.style_dotted, width = 1)
+            label lb = label.new(bar_index + i_lineExtend, lvl, "EQL", style = label.style_none, textcolor = eqlColor, size = size.tiny, textalign = text.align_left)
+            array.push(eqlLines, ln), array.push(eqlLbls, lb), array.push(eqlPx, lvl)
+            while array.size(eqlLines) > eqMax
+                line.delete(array.shift(eqlLines)), label.delete(array.shift(eqlLbls)), array.shift(eqlPx)
+        eqPrevPl := eqPl, eqPrevPlBar := plBar
+
+    // Mitigation + right-extend each bar: EQH taken on a close above, EQL on a close below.
+    if eqShow and array.size(eqhLines) > 0
+        for i = array.size(eqhLines) - 1 to 0
+            float lvl = array.get(eqhPx, i)
+            if close > lvl
+                line.delete(array.get(eqhLines, i)), label.delete(array.get(eqhLbls, i))
+                array.remove(eqhLines, i), array.remove(eqhLbls, i), array.remove(eqhPx, i)
+            else
+                line.set_x2(array.get(eqhLines, i), bar_index + i_lineExtend)
+                label.set_x(array.get(eqhLbls, i), bar_index + i_lineExtend)
+    if eqShow and array.size(eqlLines) > 0
+        for i = array.size(eqlLines) - 1 to 0
+            float lvl = array.get(eqlPx, i)
+            if close < lvl
+                line.delete(array.get(eqlLines, i)), label.delete(array.get(eqlLbls, i))
+                array.remove(eqlLines, i), array.remove(eqlLbls, i), array.remove(eqlPx, i)
+            else
+                line.set_x2(array.get(eqlLines, i), bar_index + i_lineExtend)
+                label.set_x(array.get(eqlLbls, i), bar_index + i_lineExtend)
+    int _ret = 0
+f_processEq()
+
+//============================================================
+//  FAIR VALUE GAPS — persist until mitigated
+//============================================================
+// A bullish FVG is the void between candle A's high and candle C's low when the
+// displacement candle B between them was strong enough that the two never overlap
+// (low > high[2]). Bearish is the mirror.
+// Lifecycle: gaps are NOT wiped on BOS/SOS — the impulse leg that breaks structure
+// is exactly what leaves the gaps, and the retracement back into them is the fib
+// entry confluence. A gap is deleted only when a candle CLOSES fully past it (a
+// wick into the gap leaves it alive); chart clutter
+// is bounded by the Max Active FVGs cap (oldest dropped first). The optional
+// directional filter hides (not deletes) gaps that oppose the current external
+// structure direction, so they reappear if direction flips back.
+var array<box>   fvgBoxes  = array.new<box>()
+var array<float> fvgTops   = array.new<float>()
+var array<float> fvgBots   = array.new<float>()
+var array<bool>  fvgIsBull = array.new<bool>()
+var array<int>   fvgBorn   = array.new<int>()
+
+f_fvgClearAll() =>
+    if array.size(fvgBoxes) > 0
+        for i = 0 to array.size(fvgBoxes) - 1
+            box.delete(array.get(fvgBoxes, i))
+        array.clear(fvgBoxes)
+        array.clear(fvgTops)
+        array.clear(fvgBots)
+        array.clear(fvgIsBull)
+        array.clear(fvgBorn)
+
+// Toggled off → remove anything on the chart
+if not showFVG and array.size(fvgBoxes) > 0
+    f_fvgClearAll()
+
+// ── Detection (confirmed bars only, so live wicks can't paint phantom gaps) ──
+// The FVG is the 3-candle imbalance itself (LuxAlgo definition): bar A and bar C
+// never overlap and the middle bar's close cleared the gap. No "clean impulse"
+// body/colour rule — any 3 bars that leave a big-enough gap qualify.
+// Threshold is the hardcoded 0.1%-of-price floor (see fvgThreshPct above).
+f_processFvg() =>
+    float fvgThreshold = fvgThreshPct
+    if showFVG and barstate.isconfirmed and bar_index >= 2
+        // Bullish: gap between two bars ago's high and this bar's low; middle bar closed above it
+        bool bullFvg = low > high[2] and (not fvgRequireClose or close[1] > high[2]) and (low - high[2]) / high[2] * 100 > fvgThreshold
+        // Bearish: mirror
+        bool bearFvg = high < low[2] and (not fvgRequireClose or close[1] < low[2]) and (low[2] - high) / low[2] * 100 > fvgThreshold
+        if bullFvg
+            box b = box.new(bar_index - 1, low, bar_index, high[2], bgcolor = fvgBullColor, border_color = color(na), text = "FVG", text_color = color.new(color.green, 0), text_size = size.tiny, text_halign = text.align_right)
+            array.push(fvgBoxes, b)
+            array.push(fvgTops, low)
+            array.push(fvgBots, high[2])
+            array.push(fvgIsBull, true)
+            array.push(fvgBorn, bar_index)
+        // Bearish: gap between two bars ago's low and this bar's high
+        if bearFvg
+            box b = box.new(bar_index - 1, low[2], bar_index, high, bgcolor = fvgBearColor, border_color = color(na), text = "FVG", text_color = color.new(color.red, 0), text_size = size.tiny, text_halign = text.align_right)
+            array.push(fvgBoxes, b)
+            array.push(fvgTops, low[2])
+            array.push(fvgBots, high)
+            array.push(fvgIsBull, false)
+            array.push(fvgBorn, bar_index)
+        // Cap: drop the oldest NON-EQ gap beyond the limit. A gap behind an EQH/EQL
+        // (liquidity) is exempt when eqExemptFvg is on, so it persists until mitigated.
+        while array.size(fvgBoxes) > fvgMaxCount
+            int _dropIdx = -1
+            for _di = 0 to array.size(fvgBoxes) - 1
+                if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
+                    _dropIdx := _di
+                    break
+            if _dropIdx == -1
+                break
+            box.delete(array.get(fvgBoxes, _dropIdx))
+            array.remove(fvgBoxes, _dropIdx)
+            array.remove(fvgTops, _dropIdx)
+            array.remove(fvgBots, _dropIdx)
+            array.remove(fvgIsBull, _dropIdx)
+            array.remove(fvgBorn, _dropIdx)
+
+    // ── Extend live gaps, delete tapped ones, apply directional visibility ──
+    if showFVG and array.size(fvgBoxes) > 0
+        for i = array.size(fvgBoxes) - 1 to 0
+            bool  isBull = array.get(fvgIsBull, i)
+            float gTop   = array.get(fvgTops, i)
+            float gBot   = array.get(fvgBots, i)
+            // Mitigated = a candle CLOSES fully past the gap (through its far edge):
+            // a bull gap dies only on a close at/below its bottom, a bear gap on a
+            // close at/above its top — a mere wick into the gap no longer removes it.
+            // Decided on the confirmed close so a live intrabar print can't delete it,
+            // and skipped on the creation bar itself.
+            bool closedPast = barstate.isconfirmed and bar_index > array.get(fvgBorn, i) and (isBull ? close <= gBot : close >= gTop)
+            if closedPast
+                box.delete(array.get(fvgBoxes, i))
+                array.remove(fvgBoxes, i)
+                array.remove(fvgTops, i)
+                array.remove(fvgBots, i)
+                array.remove(fvgIsBull, i)
+                array.remove(fvgBorn, i)
+            else
+                box fb = array.get(fvgBoxes, i)
+                box.set_right(fb, bar_index)
+                // Directional filter: hide misaligned gaps (st.dir 0 = undecided, show all).
+                // A gap behind an EQH/EQL is exempt — kept visible as liquidity confluence.
+                bool nearEq  = eqExemptFvg and f_fvgNearEq(gTop, gBot, eqTol)
+                bool visible = nearEq or not fvgDirOnly or st.dir == 0 or (isBull ? st.dir == 1 : st.dir == -1)
+                box.set_bgcolor(fb, visible ? (isBull ? fvgBullColor : fvgBearColor) : color(na))
+                box.set_text_color(fb, visible ? (isBull ? color.new(color.green, 0) : color.new(color.red, 0)) : color(na))
+    int _ret = 0
+f_processFvg()
+
+var array<SessionInfo> sessionInfos = getSessionInfos()
+if showSessions and timeframe.isintraday and withinSessionDays
+    for info in sessionInfos
+        info.update()
+
+//============================================================
+//  DAILY LEVELS
+//============================================================
+var line  d_hLine  = na, var line  d_lLine  = na
+var label d_hLbl   = na, var label d_lLbl   = na
+var float d_hPrice = na, var float d_lPrice = na
+var bool  d_hMit   = false, var bool  d_lMit = false
+var int   d_hMitBar = na, var int  d_lMitBar = na
+var int   d_hBar   = na, var int   d_lBar   = na
+
+if newDay and i_currentDayOnly and i_showLiquidity and not showMitLiq
+    if d_hMit
+        line.delete(d_hLine), label.delete(d_hLbl)
+        d_hLine := na, d_hLbl := na
+    if d_lMit
+        line.delete(d_lLine), label.delete(d_lLbl)
+        d_lLine := na, d_lLbl := na
+
+if canShowDaily and hasDailyTimeChanged and (not _pdDayChart or barstate.isconfirmed)
+    line.delete(d_hLine), line.delete(d_lLine)
+    label.delete(d_hLbl), label.delete(d_lLbl)
+    d_hBar   := _pdDayChart ? bar_index : f_originHigh(pdh, LIQ_ORIGIN_CAP)
+    d_lBar   := _pdDayChart ? bar_index : f_originLow(pdl, LIQ_ORIGIN_CAP)
+    d_hLine  := line.new(d_hBar, pdh, bar_index + i_lineExtend, pdh, color = i_dailyColor, style = line.style_solid, width = 1)
+    d_lLine  := line.new(d_lBar, pdl,  bar_index + i_lineExtend, pdl,  color = i_dailyColor, style = line.style_solid, width = 1)
+    d_hLbl   := label.new(bar_index + i_lineExtend, pdh + lblOff, f_labelText("PDH"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
+    d_lLbl   := label.new(bar_index + i_lineExtend, pdl  - lblOff, f_labelText("PDL"), style = label.style_none, textcolor = i_dailyColor, size = f_liqSize(), textalign = text.align_left)
+    d_hPrice := pdh
+    d_lPrice := pdl
+    d_hMit   := false
+    d_lMit   := false
+    array.set(a_lastHighs, 0, pdh)
+    array.set(a_lastLows,  0, pdl)
+
+if not na(d_hLine)
+    [newd_hMit, newd_hMitBar] = f_liqMitigate(d_hLine, d_hLbl, d_hMit, d_hMitBar, d_hBar, high > d_hPrice, i_dailyColor, i_isDailyEnabled, showMitLiq)
+    d_hMit := newd_hMit
+    d_hMitBar := newd_hMitBar
+
+if not na(d_lLine)
+    [newd_lMit, newd_lMitBar] = f_liqMitigate(d_lLine, d_lLbl, d_lMit, d_lMitBar, d_lBar, low < d_lPrice, i_dailyColor, i_isDailyEnabled, showMitLiq)
+    d_lMit := newd_lMit
+    d_lMitBar := newd_lMitBar
+
+//============================================================
+//  WEEKLY LEVELS
+//============================================================
+var line  w_hLine  = na, var line  w_lLine  = na
+var label w_hLbl   = na, var label w_lLbl   = na
+var float w_hPrice = na, var float w_lPrice = na
+var bool  w_hMit   = false, var bool  w_lMit = false
+var int   w_hMitBar = na, var int  w_lMitBar = na
+var int   w_hBar   = na, var int   w_lBar   = na
+
+if newDay and i_currentDayOnly and i_showLiquidity and not showMitLiq
+    if w_hMit
+        line.delete(w_hLine), label.delete(w_hLbl)
+        w_hLine := na, w_hLbl := na
+    if w_lMit
+        line.delete(w_lLine), label.delete(w_lLbl)
+        w_lLine := na, w_lLbl := na
+
+if canShowWeekly and not na(pwh) and not na(pwl) and (not _pwWkChart or barstate.isconfirmed)
+    if na(w_hPrice) or pwh != w_hPrice or pwl != w_lPrice
+        line.delete(w_hLine), line.delete(w_lLine)
+        label.delete(w_hLbl), label.delete(w_lLbl)
+        w_hBar   := _pwWkChart ? bar_index : f_originHigh(pwh, LIQ_ORIGIN_CAP)
+        w_lBar   := _pwWkChart ? bar_index : f_originLow(pwl, LIQ_ORIGIN_CAP)
+        w_hLine  := line.new(w_hBar, pwh, bar_index + i_lineExtend, pwh, color = i_weeklyColor, style = line.style_solid, width = 1)
+        w_lLine  := line.new(w_lBar, pwl,  bar_index + i_lineExtend, pwl,  color = i_weeklyColor, style = line.style_solid, width = 1)
+        w_hLbl   := label.new(bar_index + i_lineExtend, pwh + lblOff, f_labelText("PWH"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
+        w_lLbl   := label.new(bar_index + i_lineExtend, pwl  - lblOff, f_labelText("PWL"), style = label.style_none, textcolor = i_weeklyColor, size = f_liqSize(), textalign = text.align_left)
+        w_hPrice := pwh
+        w_lPrice := pwl
+        w_hMit   := false
+        w_lMit   := false
+        array.set(a_lastHighs, 1, pwh)
+        array.set(a_lastLows,  1, pwl)
+
+if not na(w_hLine)
+    [neww_hMit, neww_hMitBar] = f_liqMitigate(w_hLine, w_hLbl, w_hMit, w_hMitBar, w_hBar, close > w_hPrice, i_weeklyColor, i_isWeeklyEnabled, showMitLiq)
+    w_hMit := neww_hMit
+    w_hMitBar := neww_hMitBar
+
+if not na(w_lLine)
+    [neww_lMit, neww_lMitBar] = f_liqMitigate(w_lLine, w_lLbl, w_lMit, w_lMitBar, w_lBar, close < w_lPrice, i_weeklyColor, i_isWeeklyEnabled, showMitLiq)
+    w_lMit := neww_lMit
+    w_lMitBar := neww_lMitBar
+
+//============================================================
+//  PREVIOUS WEEKLY CLOSE (PWC)
+//============================================================
+var line  pwc_line  = na
+var label pwc_lbl   = na
+var float pwc_price = na
+var int   pwc_bar   = na
+
+if i_showPWC and i_showLiquidity and not na(pwcSecurity) and barstate.isconfirmed
+    if na(pwc_price) or pwcSecurity != pwc_price
+        if not na(pwc_line)
+            line.delete(pwc_line)
+        if not na(pwc_lbl)
+            label.delete(pwc_lbl)
+        pwc_price := pwcSecurity
+        pwc_bar   := bar_index
+        pwcCol    = close >= pwc_price ? color.blue : color.red
+        pwc_line  := line.new(pwc_bar, pwc_price, pwc_bar + i_lineExtend, pwc_price, color = pwcCol, style = line.style_solid, width = 1)
+        pwc_lbl   := label.new(pwc_bar + i_lineExtend, pwc_price + lblOff, f_labelText("PWC"), style = label.style_none, textcolor = pwcCol, size = f_liqSize(), textalign = text.align_left)
+
+if not na(pwc_line) and i_showPWC and i_showLiquidity
+    pwcCol = close >= pwc_price ? color.blue : color.red
+    line.set_color(pwc_line, pwcCol)
+    line.set_x2(pwc_line, bar_index + i_lineExtend)
+    label.set_textcolor(pwc_lbl, pwcCol)
+    label.set_x(pwc_lbl, bar_index + i_lineExtend)
+
+//============================================================
+//  H4 LIQUIDITY SWEEP TRACKER
+//============================================================
+color H4_ACTIVE_COLOR = #FF6B35
+color H4_SWEPT_COLOR  = color.new(#999999, 45)
+
+var float h4TrackHigh    = na
+var float h4TrackLow     = na
+var int   h4TrackHighBar = na
+var int   h4TrackLowBar  = na
+var line  h4HighLine     = na
+var label h4HighLbl      = na
+var line  h4LowLine      = na
+var label h4LowLbl       = na
+var bool  h4HighSwept    = false
+var bool  h4LowSwept     = false
+var label h4SSHLbl       = na
+var label h4BSLLbl       = na
+
+if i_showH4Sweep and i_showLiquidity and h4BarChanged and not na(h4PrevHigh) and not na(h4PrevLow)
+    line.delete(h4HighLine),  line.delete(h4LowLine)
+    label.delete(h4HighLbl), label.delete(h4LowLbl)
+    label.delete(h4SSHLbl),  label.delete(h4BSLLbl)
+    h4SSHLbl       := na
+    h4BSLLbl       := na
+    h4TrackHigh    := h4PrevHigh
+    h4TrackLow     := h4PrevLow
+    h4TrackHighBar := bar_index
+    h4TrackLowBar  := bar_index
+    h4HighSwept    := false
+    h4LowSwept     := false
+    h4HighLine := line.new(h4TrackHighBar, h4TrackHigh, bar_index + i_lineExtend, h4TrackHigh, color = H4_ACTIVE_COLOR, style = line.style_solid, width = 1)
+    h4HighLbl  := label.new(bar_index + i_lineExtend, h4TrackHigh + lblOff, f_labelText("H4 H"), style = label.style_none, textcolor = H4_ACTIVE_COLOR, size = f_liqSize(), textalign = text.align_left)
+    h4LowLine  := line.new(h4TrackLowBar,  h4TrackLow,  bar_index + i_lineExtend, h4TrackLow,  color = H4_ACTIVE_COLOR, style = line.style_solid, width = 1)
+    h4LowLbl   := label.new(bar_index + i_lineExtend, h4TrackLow  - lblOff, f_labelText("H4 L"), style = label.style_none, textcolor = H4_ACTIVE_COLOR, size = f_liqSize(), textalign = text.align_left)
+
+if not na(h4HighLine) and i_showH4Sweep and i_showLiquidity
+    if not h4HighSwept and high > h4TrackHigh and barstate.isconfirmed
+        h4HighSwept := true
+        h4SSHLbl    := na
+    h4HCol = h4HighSwept ? H4_SWEPT_COLOR : H4_ACTIVE_COLOR
+    line.set_color(h4HighLine, h4HCol)
+    line.set_style(h4HighLine, h4HighSwept ? line.style_dotted : line.style_solid)
+    line.set_x2(h4HighLine, bar_index + i_lineExtend)
+    label.set_textcolor(h4HighLbl, h4HCol)
+    label.set_x(h4HighLbl, bar_index + i_lineExtend)
+
+if not na(h4LowLine) and i_showH4Sweep and i_showLiquidity
+    if not h4LowSwept and low < h4TrackLow and barstate.isconfirmed
+        h4LowSwept := true
+        h4BSLLbl   := na
+    h4LCol = h4LowSwept ? H4_SWEPT_COLOR : H4_ACTIVE_COLOR
+    line.set_color(h4LowLine, h4LCol)
+    line.set_style(h4LowLine, h4LowSwept ? line.style_dotted : line.style_solid)
+    line.set_x2(h4LowLine, bar_index + i_lineExtend)
+    label.set_textcolor(h4LowLbl, h4LCol)
+    label.set_x(h4LowLbl, bar_index + i_lineExtend)
+
+//============================================================
+//  SESSION H/L TRACKING
+//============================================================
+var float asiaHigh = na, var float asiaLow = na
+var float londonHigh = na, var float londonLow = na
+var float nyHigh = na, var float nyLow = na
+var line  asiaHLine = na, var line  asiaLLine = na
+var label asiaHLbl  = na, var label asiaLLbl  = na
+var bool  asiaHMit = false, var bool  asiaLMit = false
+var int   asiaHMitBar = na, var int  asiaLMitBar = na
+var float asiaHPrice = na, var float asiaLPrice = na
+var int   asiaHBar = na, var int   asiaLBar = na
+var line  londonHLine = na, var line  londonLLine = na
+var label londonHLbl  = na, var label londonLLbl  = na
+var bool  londonHMit = false, var bool  londonLMit = false
+var int   londonHMitBar = na, var int  londonLMitBar = na
+var float londonHPrice = na, var float londonLPrice = na
+var int   londonHBar = na, var int   londonLBar = na
+var line  nyHLine = na, var line  nyLLine = na
+var label nyHLbl  = na, var label nyLLbl  = na
+var bool  nyHMit = false, var bool  nyLMit = false
+var int   nyHMitBar = na, var int  nyLMitBar = na
+var float nyHPrice = na, var float nyLPrice = na
+var int   nyHBar = na, var int   nyLBar = na
+
+if newDay and i_currentDayOnly and i_showLiquidity and not showMitLiq
+    if asiaHMit
+        line.delete(asiaHLine), label.delete(asiaHLbl)
+        asiaHLine := na, asiaHLbl := na
+    if asiaLMit
+        line.delete(asiaLLine), label.delete(asiaLLbl)
+        asiaLLine := na, asiaLLbl := na
+    if londonHMit
+        line.delete(londonHLine), label.delete(londonHLbl)
+        londonHLine := na, londonHLbl := na
+    if londonLMit
+        line.delete(londonLLine), label.delete(londonLLbl)
+        londonLLine := na, londonLLbl := na
+    if nyHMit
+        line.delete(nyHLine), label.delete(nyHLbl)
+        nyHLine := na, nyHLbl := na
+    if nyLMit
+        line.delete(nyLLine), label.delete(nyLLbl)
+        nyLLine := na, nyLLbl := na
+
+if inAsia
+    asiaHigh := (not inAsia[1]) ? high : math.max(asiaHigh, high)
+    asiaLow  := (not inAsia[1]) ? low  : math.min(asiaLow,  low)
+if inLondon
+    londonHigh := (not inLondon[1]) ? high : math.max(londonHigh, high)
+    londonLow  := (not inLondon[1]) ? low  : math.min(londonLow,  low)
+if inNY
+    nyHigh := (not inNY[1]) ? high : math.max(nyHigh, high)
+    nyLow  := (not inNY[1]) ? low  : math.min(nyLow,  low)
+
+if not inAsia and inAsia[1] and i_showAsiaHL and i_showLiquidity and not na(asiaHigh)
+    line.delete(asiaHLine), line.delete(asiaLLine)
+    label.delete(asiaHLbl), label.delete(asiaLLbl)
+    asiaHBar   := f_originHigh(asiaHigh, LIQ_ORIGIN_CAP)
+    asiaLBar   := f_originLow(asiaLow, LIQ_ORIGIN_CAP)
+    asiaHLine  := line.new(asiaHBar, asiaHigh, bar_index + i_lineExtend, asiaHigh, color = i_asiaHLColor, style = line.style_solid, width = 1)
+    asiaLLine  := line.new(asiaLBar, asiaLow,  bar_index + i_lineExtend, asiaLow,  color = i_asiaHLColor, style = line.style_solid, width = 1)
+    asiaHLbl   := label.new(bar_index + i_lineExtend, asiaHigh + lblOff, f_labelText("Asia H"), style = label.style_none, textcolor = i_asiaHLColor, size = f_liqSize(), textalign = text.align_left)
+    asiaLLbl   := label.new(bar_index + i_lineExtend, asiaLow  - lblOff, f_labelText("Asia L"), style = label.style_none, textcolor = i_asiaHLColor, size = f_liqSize(), textalign = text.align_left)
+    asiaHPrice := asiaHigh
+    asiaLPrice := asiaLow
+    asiaHMit   := false
+    asiaLMit   := false
+
+if not inLondon and inLondon[1] and i_showLondonHL and i_showLiquidity and not na(londonHigh)
+    line.delete(londonHLine), line.delete(londonLLine)
+    label.delete(londonHLbl), label.delete(londonLLbl)
+    londonHBar   := f_originHigh(londonHigh, LIQ_ORIGIN_CAP)
+    londonLBar   := f_originLow(londonLow, LIQ_ORIGIN_CAP)
+    londonHLine  := line.new(londonHBar, londonHigh, bar_index + i_lineExtend, londonHigh, color = i_londonHLColor, style = line.style_solid, width = 1)
+    londonLLine  := line.new(londonLBar, londonLow,  bar_index + i_lineExtend, londonLow,  color = i_londonHLColor, style = line.style_solid, width = 1)
+    londonHLbl   := label.new(bar_index + i_lineExtend, londonHigh + lblOff, f_labelText("Ldn H"), style = label.style_none, textcolor = i_londonHLColor, size = f_liqSize(), textalign = text.align_left)
+    londonLLbl   := label.new(bar_index + i_lineExtend, londonLow  - lblOff, f_labelText("Ldn L"), style = label.style_none, textcolor = i_londonHLColor, size = f_liqSize(), textalign = text.align_left)
+    londonHPrice := londonHigh
+    londonLPrice := londonLow
+    londonHMit   := false
+    londonLMit   := false
+
+if not inNY and inNY[1] and i_showNYHL and i_showLiquidity and not na(nyHigh)
+    line.delete(nyHLine), line.delete(nyLLine)
+    label.delete(nyHLbl), label.delete(nyLLbl)
+    nyHBar   := f_originHigh(nyHigh, LIQ_ORIGIN_CAP)
+    nyLBar   := f_originLow(nyLow, LIQ_ORIGIN_CAP)
+    nyHLine  := line.new(nyHBar, nyHigh, bar_index + i_lineExtend, nyHigh, color = i_nyHLColor, style = line.style_solid, width = 1)
+    nyLLine  := line.new(nyLBar, nyLow,  bar_index + i_lineExtend, nyLow,  color = i_nyHLColor, style = line.style_solid, width = 1)
+    nyHLbl   := label.new(bar_index + i_lineExtend, nyHigh + lblOff, f_labelText("NY H"), style = label.style_none, textcolor = i_nyHLColor, size = f_liqSize(), textalign = text.align_left)
+    nyLLbl   := label.new(bar_index + i_lineExtend, nyLow  - lblOff, f_labelText("NY L"), style = label.style_none, textcolor = i_nyHLColor, size = f_liqSize(), textalign = text.align_left)
+    nyHPrice := nyHigh
+    nyLPrice := nyLow
+    nyHMit   := false
+    nyLMit   := false
+
+if not na(asiaHLine)
+    [newasiaHMit, newasiaHMitBar] = f_liqMitigate(asiaHLine, asiaHLbl, asiaHMit, asiaHMitBar, asiaHBar, high > asiaHPrice, i_asiaHLColor, i_showAsiaHL, showMitLiq)
+    asiaHMit := newasiaHMit
+    asiaHMitBar := newasiaHMitBar
+
+if not na(asiaLLine)
+    [newasiaLMit, newasiaLMitBar] = f_liqMitigate(asiaLLine, asiaLLbl, asiaLMit, asiaLMitBar, asiaLBar, low < asiaLPrice, i_asiaHLColor, i_showAsiaHL, showMitLiq)
+    asiaLMit := newasiaLMit
+    asiaLMitBar := newasiaLMitBar
+
+if not na(londonHLine)
+    [newlondonHMit, newlondonHMitBar] = f_liqMitigate(londonHLine, londonHLbl, londonHMit, londonHMitBar, londonHBar, high > londonHPrice, i_londonHLColor, i_showLondonHL, showMitLiq)
+    londonHMit := newlondonHMit
+    londonHMitBar := newlondonHMitBar
+
+if not na(londonLLine)
+    [newlondonLMit, newlondonLMitBar] = f_liqMitigate(londonLLine, londonLLbl, londonLMit, londonLMitBar, londonLBar, low < londonLPrice, i_londonHLColor, i_showLondonHL, showMitLiq)
+    londonLMit := newlondonLMit
+    londonLMitBar := newlondonLMitBar
+
+if not na(nyHLine)
+    [newnyHMit, newnyHMitBar] = f_liqMitigate(nyHLine, nyHLbl, nyHMit, nyHMitBar, nyHBar, high > nyHPrice, i_nyHLColor, i_showNYHL, showMitLiq)
+    nyHMit := newnyHMit
+    nyHMitBar := newnyHMitBar
+
+if not na(nyLLine)
+    [newnyLMit, newnyLMitBar] = f_liqMitigate(nyLLine, nyLLbl, nyLMit, nyLMitBar, nyLBar, low < nyLPrice, i_nyHLColor, i_showNYHL, showMitLiq)
+    nyLMit := newnyLMit
+    nyLMitBar := newnyLMitBar
+
+//============================================================
+//  LABEL COLLISION DETECTION
+//============================================================
+if i_showLiquidity and i_showLabels
+    liq_y   = array.new_float()
+    liq_lbl = array.new_label()
+
+    if not na(d_hLbl)     and i_isDailyEnabled
+        array.push(liq_y, d_hPrice + lblOff),    array.push(liq_lbl, d_hLbl)
+    if not na(w_hLbl)     and i_isWeeklyEnabled
+        array.push(liq_y, w_hPrice + lblOff),    array.push(liq_lbl, w_hLbl)
+    if not na(pwc_lbl)    and i_showPWC
+        array.push(liq_y, pwc_price + lblOff),   array.push(liq_lbl, pwc_lbl)
+    if not na(h4HighLbl)  and i_showH4Sweep
+        array.push(liq_y, h4TrackHigh + lblOff), array.push(liq_lbl, h4HighLbl)
+    if not na(asiaHLbl)   and i_showAsiaHL
+        array.push(liq_y, asiaHPrice + lblOff),  array.push(liq_lbl, asiaHLbl)
+    if not na(londonHLbl) and i_showLondonHL
+        array.push(liq_y, londonHPrice + lblOff),array.push(liq_lbl, londonHLbl)
+    if not na(nyHLbl)     and i_showNYHL
+        array.push(liq_y, nyHPrice + lblOff),    array.push(liq_lbl, nyHLbl)
+
+    if not na(d_lLbl)     and i_isDailyEnabled
+        array.push(liq_y, d_lPrice - lblOff),    array.push(liq_lbl, d_lLbl)
+    if not na(w_lLbl)     and i_isWeeklyEnabled
+        array.push(liq_y, w_lPrice - lblOff),    array.push(liq_lbl, w_lLbl)
+    if not na(h4LowLbl)   and i_showH4Sweep
+        array.push(liq_y, h4TrackLow - lblOff),  array.push(liq_lbl, h4LowLbl)
+    if not na(asiaLLbl)   and i_showAsiaHL
+        array.push(liq_y, asiaLPrice - lblOff),  array.push(liq_lbl, asiaLLbl)
+    if not na(londonLLbl) and i_showLondonHL
+        array.push(liq_y, londonLPrice - lblOff),array.push(liq_lbl, londonLLbl)
+    if not na(nyLLbl)     and i_showNYHL
+        array.push(liq_y, nyLPrice - lblOff),    array.push(liq_lbl, nyLLbl)
+
+    n = array.size(liq_y)
+    if n > 1
+        sortIdx = array.sort_indices(liq_y, order.ascending)
+        float prevY = array.get(liq_y, array.get(sortIdx, 0))
+        label.set_y(array.get(liq_lbl, array.get(sortIdx, 0)), prevY)
+        for i = 1 to n - 1
+            idx   = array.get(sortIdx, i)
+            baseY = array.get(liq_y, idx)
+            adjY  = math.max(baseY, prevY + lblOff)
+            label.set_y(array.get(liq_lbl, idx), adjY)
+            prevY := adjY
+    else if n == 1
+        label.set_y(array.get(liq_lbl, 0), array.get(liq_y, 0))
+
+//============================================================
+//  NY RANGE BOX
+//============================================================
+f_processNyRange() =>
+    var line  nyr_lowHLine = na, var line  nyr_topHLine = na
+    var line  nyr_leftVLine = na, var line  nyr_rightVLine = na
+    var line  nyr_middleHLine = na
+    var box   nyr_bgBox = na
+    var float nyr_low_val = na, var float nyr_high_val = na
+
+    if showNYRange
+        if inSession5 and not inSession5[1] and isMondayToFriday and withinNYRangeDays
+            nyr_low_val  := low5
+            nyr_high_val := high5
+        if inSession5 and isMondayToFriday and withinNYRangeDays
+            if inSession5[1]
+                line.delete(nyr_lowHLine),  line.delete(nyr_topHLine)
+                line.delete(nyr_leftVLine), line.delete(nyr_rightVLine)
+                line.delete(nyr_middleHLine)
+                box.delete(nyr_bgBox)
+            if low5 < nyr_low_val
+                nyr_low_val := low5
+            if high5 > nyr_high_val
+                nyr_high_val := high5
+            nyr_bgBox       := box.new(left = nyr_startTime, top = nyr_high_val, right = time, bottom = nyr_low_val, xloc = xloc.bar_time, bgcolor = color.new(color.blue, 80), border_color = color.blue, border_width = 2, border_style = line.style_solid)
+            nyr_lowHLine    := line.new(nyr_startTime, nyr_low_val,  time, nyr_low_val,  xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
+            nyr_topHLine    := line.new(nyr_startTime, nyr_high_val, time, nyr_high_val, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
+            nyr_leftVLine   := line.new(nyr_startTime, nyr_high_val, nyr_startTime, nyr_low_val, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
+            nyr_rightVLine  := line.new(time, nyr_high_val, time, nyr_low_val, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
+            nyr_middleHLine := line.new(nyr_startTime, (nyr_high_val + nyr_low_val) / 2, time, (nyr_high_val + nyr_low_val) / 2, xloc = xloc.bar_time, color = color.red, style = line.style_dotted, width = 2)
+        if inExtend5 and not inSession5 and isMondayToFriday and withinNYRangeDays
+            if not na(nyr_lowHLine)
+                t1 = line.get_x1(nyr_lowHLine), p = line.get_y1(nyr_lowHLine)
+                line.delete(nyr_lowHLine)
+                nyr_lowHLine := line.new(t1, p, time, p, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
+            if not na(nyr_topHLine)
+                t1 = line.get_x1(nyr_topHLine), p = line.get_y1(nyr_topHLine)
+                line.delete(nyr_topHLine)
+                nyr_topHLine := line.new(t1, p, time, p, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
+            if not na(nyr_middleHLine)
+                t1 = line.get_x1(nyr_middleHLine), p = line.get_y1(nyr_middleHLine)
+                line.delete(nyr_middleHLine)
+                nyr_middleHLine := line.new(t1, p, time, p, xloc = xloc.bar_time, color = color.red, style = line.style_dotted, width = 2)
+    int _ret = 0
+f_processNyRange()
+
+//============================================================
+//  KILL ZONES
+//============================================================
+nyHour   = hour(time,   "America/New_York")
+nyMinute = minute(time, "America/New_York")
+
+inKZ1 = nyHour == 10
+inKZ2 = (nyHour == 11 and nyMinute >= 45) or (nyHour == 12 and nyMinute <= 14)
+inKZ3 = nyHour == 13 and nyMinute <= 30
+
+f_processKillZones() =>
+    isToday = year(time,       "America/New_York") == year(timenow,       "America/New_York") and
+              month(time,      "America/New_York") == month(timenow,      "America/New_York") and
+              dayofmonth(time, "America/New_York") == dayofmonth(timenow, "America/New_York")
+
+    var box[] kz1Boxes = array.new_box()
+    var box[] kz2Boxes = array.new_box()
+    var box[] kz3Boxes = array.new_box()
+    var bool  kz1Started = false, var bool  kz2Started = false, var bool  kz3Started = false
+
+    var box  kz1TodayBox = na
+    var box  kz2TodayBox = na
+    var box  kz3TodayBox = na
+
+    var bool kz1TodayDeleted = false
+    var bool kz2TodayDeleted = false
+    var bool kz3TodayDeleted = false
+
+    if newDay
+        kz1Started        := false
+        kz2Started        := false
+        kz3Started        := false
+        kz1TodayDeleted   := false
+        kz2TodayDeleted   := false
+        kz3TodayDeleted   := false
+        kz1TodayBox       := na
+        kz2TodayBox       := na
+        kz3TodayBox       := na
+
+    kzBgColor     = color.new(color.green, 90)
+    kzBorderColor = color.new(color.green, 70)
+
+    if showKillZones
+        if inKZ1 and withinKZDays and not kz1Started
+            kz1Started := true
+            newKZ1 = box.new(bar_index, dailyHigh, bar_index + 1, dailyLow, bgcolor = kzBgColor, border_color = kzBorderColor)
+            array.push(kz1Boxes, newKZ1)
+            if isToday
+                kz1TodayBox := newKZ1
+        if inKZ1 and withinKZDays and array.size(kz1Boxes) > 0
+            box.set_right(array.last(kz1Boxes), bar_index + 1)
+
+        if inKZ2 and withinKZDays and not kz2Started
+            kz2Started := true
+            newKZ2 = box.new(bar_index, dailyHigh, bar_index + 1, dailyLow, bgcolor = kzBgColor, border_color = kzBorderColor)
+            array.push(kz2Boxes, newKZ2)
+            if isToday
+                kz2TodayBox := newKZ2
+        if inKZ2 and withinKZDays and array.size(kz2Boxes) > 0
+            box.set_right(array.last(kz2Boxes), bar_index + 1)
+
+        if inKZ3 and withinKZDays and not kz3Started
+            kz3Started := true
+            newKZ3 = box.new(bar_index, dailyHigh, bar_index + 1, dailyLow, bgcolor = kzBgColor, border_color = kzBorderColor)
+            array.push(kz3Boxes, newKZ3)
+            if isToday
+                kz3TodayBox := newKZ3
+        if inKZ3 and withinKZDays and array.size(kz3Boxes) > 0
+            box.set_right(array.last(kz3Boxes), bar_index + 1)
+
+    if isToday and not kz1TodayDeleted and showKillZones
+        if nyHour > 11 or (nyHour == 11 and nyMinute >= 5)
+            if not na(kz1TodayBox)
+                box.delete(kz1TodayBox)
+                kz1TodayBox := na
+            kz1TodayDeleted := true
+
+    if isToday and not kz2TodayDeleted and showKillZones
+        if nyHour > 12 or (nyHour == 12 and nyMinute >= 20)
+            if not na(kz2TodayBox)
+                box.delete(kz2TodayBox)
+                kz2TodayBox := na
+            kz2TodayDeleted := true
+
+    if isToday and not kz3TodayDeleted and showKillZones
+        if nyHour > 13 or (nyHour == 13 and nyMinute >= 35)
+            if not na(kz3TodayBox)
+                box.delete(kz3TodayBox)
+                kz3TodayBox := na
+            kz3TodayDeleted := true
+    int _ret = 0
+f_processKillZones()
+
+plotshape(showKillZones and inKZ1 and not inKZ1[1] and withinKZDays, style = shape.triangledown, location = location.abovebar, color = color.green, size = size.tiny)
+plotshape(showKillZones and inKZ2 and not inKZ2[1] and withinKZDays, style = shape.triangledown, location = location.abovebar, color = color.green, size = size.tiny)
+plotshape(showKillZones and inKZ3 and not inKZ3[1] and withinKZDays, style = shape.triangledown, location = location.abovebar, color = color.green, size = size.tiny)
+
+//============================================================
+//  PLOTTING
+//============================================================
+// VWAP is drawn with plot() rather than a polyline. The old approach rebuilt the
+// whole day's polyline on every bar (O(n^2) over the session); plot is O(1) per bar.
+// ta.vwap already resets each session, so the line breaks at the day boundary on its own.
+plot(showVwap ? vwapValue : na, title = "VWAP", color = vwapColor, linewidth = vwapWidth)
+
+
+plot(array.get(a_lastHighs, 0), "DH", color.new(i_dailyColor,   100), editable = false, display = display.none)
+plot(array.get(a_lastLows,  0), "DL", color.new(i_dailyColor,   100), editable = false, display = display.none)
+plot(array.get(a_lastHighs, 1), "WH", color.new(i_weeklyColor,  100), editable = false, display = display.none)
+plot(array.get(a_lastLows,  1), "WL", color.new(i_weeklyColor,  100), editable = false, display = display.none)
+//============================================================
+//  MPC- JARVIS WATERMARK
+//============================================================
+var table watermark = table.new(position.bottom_center, 1, 1)
+if barstate.islast
+    table.cell(watermark, 0, 0, "MPC JARVIS v1",
+      text_color  = color.new(#17578e, 20),
+      text_size   = size.normal,
+      bgcolor     = color.new(color.black, 100),
+      text_halign = text.align_center)
