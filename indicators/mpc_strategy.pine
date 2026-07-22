@@ -74,7 +74,6 @@ bool   showExternal     = input.bool(true,      "Show External Structure", group
 bool   showInternal     = input.bool(false,     "Show Internal Structure", group = GRP_STRUCT, display = display.none)
 bool   showHistoricalInternal = input.bool(false, "Show Historic Internal Structure", group = GRP_STRUCT, tooltip = "Keep internal structure labels and lines from previous swing ranges on the chart. Off = only show current swing range internals.", display = display.none)
 bool   showSwingLabels  = input.bool(false, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off = hide ASH/ASL, HH/HL, LH/LL and the internal swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart. The structure engine keeps running exactly as before — fibs, order blocks and the confirmation table are unaffected.", display = display.none)
-int    internalLength   = 5
 float  pbBuffer         = 0.0
 
 f_structSize() =>
@@ -416,7 +415,6 @@ bool  showSVPInput     = input.bool(false, "MV", group = GRP_SVP, display = disp
 bool showSVP = marketStructureOnly ? false : showSVPInput
 int   svpHistory  = input.int(2,     "Days back", group = GRP_SVP, minval = 1, maxval = 500, active = showSVPInput, display = display.none)
 int   svpRows     = 50
-float svpVAvolPct = 68.0
 color svpPOCCol   = #9C27B0
 
 //============================================================
@@ -2661,8 +2659,6 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     fiboPrevAsh := fibo_ash
     fiboPrevAsl := fibo_asl
 
-    int _fLblOff = bar_index + fiboLineExtend
-
     color c1 = fibo1Touched ? fibo1Color : FIBO_GREY
     string tx1 = f_fiboLabel(fibo1Value, "TP2", "TP2") + str.tostring(fiboP1, format.mintick) + ")"
     [l1, lb1] = f_fibLevel(isFibo1ToShow and not fiboResetActive, fibo1Line, fibo1Label, fiboStartIndex, fiboP1, bar_index + fiboLineExtend, c1, f_fiboLineStyle(fibo1Style), tx1)
@@ -2730,7 +2726,6 @@ var float macro_origin      = na   // fixed anchor: the extreme of the PRIOR opp
 var int   macro_origin_loc  = na
 var float macro_extreme     = na   // running extreme of the CURRENT cycle (keeps extending across multiple BOS)
 var int   macro_extreme_loc = na
-var bool  macro_locked      = false
 
 var line  macroLine0   = na, var label macroLabel0   = na
 var line  macroLine382 = na, var label macroLabel382 = na
@@ -3425,144 +3420,6 @@ else if int_bear_bos
 // could sit far enough back to let a stale internal break slip through.)
 bool int_struct_valid = int_struct != "" and not na(int_struct_bar)
 
-// ── 3. FIBONACCI slot — one-way progressive tracking ──
-var string fib_level = ""
-var int    fib_stage = 0
-
-// Reset when fib touched flags all clear (new leg drawn)
-bool fib_all_clear = not fibo3Touched and not fibo4Touched and not fibo5Touched and not fibo6Touched and not fibo2Touched and not fibo1Touched and not fibo7Touched
-if fib_all_clear and fib_stage > 0
-    fib_level := ""
-    fib_stage := 0
-
-// Stage 1: Entry zone — E levels, only while stage < 2 (before FFT)
-if fib_stage < 2
-    if fibo3Touched and not fibo3Touched[1]
-        fib_level := "E1 / 0.618", fib_stage := 1
-    if fibo4Touched and not fibo4Touched[1]
-        fib_level := "E2 / 0.702", fib_stage := 1
-    if fibo5Touched and not fibo5Touched[1]
-        fib_level := "E3 / 0.786", fib_stage := 1
-    if fibo6Touched and not fibo6Touched[1]
-        fib_level := "E4 / 0.886", fib_stage := 1
-
-// Stage 2: FFT — locks here, no going back to entry levels
-if fib_stage >= 1 and fibo2Touched and not fibo2Touched[1]
-    fib_level := "FFT", fib_stage := 2
-
-// Stage 3: TP2 — only after FFT
-if fib_stage >= 2 and fibo1Touched and not fibo1Touched[1]
-    fib_level := "TP2", fib_stage := 3
-
-// Stage 4: TP3 — only after TP2
-if fib_stage >= 3 and fibo7Touched and not fibo7Touched[1]
-    fib_level := "TP3", fib_stage := 4
-
-// Clear if price closes past the full 1.0 range (genuine invalidation) —
-// no longer clears just because TP3 was tapped; that now only clears on a
-// confirmed BOS/SOS (handled by fib_all_clear / fiboOriginChanged above).
-if fib_stage > 0
-    if fibo_dir == 1
-        if not na(fiboP10) and close < fiboP10
-            fib_level := "", fib_stage := 0
-    else if fibo_dir == -1
-        if not na(fiboP10) and close > fiboP10
-            fib_level := "", fib_stage := 0
-
-// ── 3c. INTERNAL FIB slot ──
-var string int_fib_level = ""
-var int    int_fib_stage = 0
-
-// Reset when all touched flags clear (new iBOS/iSOS)
-bool iFib_all_clear = not iFib618Touched and not iFib702Touched and not iFib786Touched and not iFib886Touched and not iFib50Touched and not iFib382Touched and not iFib0Touched
-if iFib_all_clear and int_fib_stage > 0
-    int_fib_level := ""
-    int_fib_stage := 0
-
-// Stage 1: E levels
-if int_fib_stage < 2
-    if iFib618Touched and not iFib618Touched[1]
-        int_fib_level := "E1 / 0.618", int_fib_stage := 1
-    if iFib702Touched and not iFib702Touched[1]
-        int_fib_level := "E2 / 0.702", int_fib_stage := 1
-    if iFib786Touched and not iFib786Touched[1]
-        int_fib_level := "E3 / 0.786", int_fib_stage := 1
-    if iFib886Touched and not iFib886Touched[1]
-        int_fib_level := "E4 / 0.886", int_fib_stage := 1
-
-// Stage 2: FFT — locks, no going back
-if int_fib_stage >= 1 and iFib50Touched and not iFib50Touched[1]
-    int_fib_level := "FFT", int_fib_stage := 2
-
-// Stage 3: TP2
-if int_fib_stage >= 2 and iFib382Touched and not iFib382Touched[1]
-    int_fib_level := "TP2", int_fib_stage := 3
-
-// Stage 4: TP3
-if int_fib_stage >= 3 and iFib0Touched and not iFib0Touched[1]
-    int_fib_level := "TP3", int_fib_stage := 4
-
-// Clear only when Internal Fib itself resets (confirmed external BOS/SOS) —
-// no longer clears just because TP3 was tapped
-if iFib_dir == 0
-    int_fib_level := ""
-    int_fib_stage := 0
-var string macro_fib_level = ""
-var int    macro_fib_stage = 0
-
-// Reset on new macro cycle
-if not macro_visible or not macro_origin_locked
-    macro_fib_level := ""
-    macro_fib_stage := 0
-
-// Stage 1: Entry zone
-if macro_fib_stage < 2
-    if macro618Touched and not macro618Touched[1]
-        macro_fib_level := "E1 / 0.618", macro_fib_stage := 1
-    if macro702Touched and not macro702Touched[1]
-        macro_fib_level := "E2 / 0.702", macro_fib_stage := 1
-    if macro786Touched and not macro786Touched[1]
-        macro_fib_level := "E3 / 0.786", macro_fib_stage := 1
-    if macro886Touched and not macro886Touched[1]
-        macro_fib_level := "E4 / 0.886", macro_fib_stage := 1
-
-// Stage 2: FFT — locks here
-if macro_fib_stage >= 1 and macro50Touched and not macro50Touched[1]
-    macro_fib_level := "FFT", macro_fib_stage := 2
-
-// Stage 3: TP2
-if macro_fib_stage >= 2 and macro382Touched and not macro382Touched[1]
-    macro_fib_level := "TP2", macro_fib_stage := 3
-
-// Stage 4: TP3
-if macro_fib_stage >= 3 and macro0Touched and not macro0Touched[1]
-    macro_fib_level := "TP3", macro_fib_stage := 4
-
-// Clear if macro cycle resets or new HH
-if macro_fib_stage > 0
-    if not na(macro_origin) and close < macro_origin
-        macro_fib_level := "", macro_fib_stage := 0
-    if not na(macro_extreme) and close > macro_extreme
-        macro_fib_level := "", macro_fib_stage := 0
-
-// ── 4. MV slot ──
-var string mv_status  = ""
-var float  mv_pocPrice = na
-var bool   mv_swept   = false
-
-if showSVP and array.size(svp_poc_px) > 0
-    mv_pocPrice := array.get(svp_poc_px, array.size(svp_poc_px) - 1)
-
-// MV confirms when price crosses the POC line
-if not na(mv_pocPrice)
-    if not mv_swept and (high >= mv_pocPrice and low <= mv_pocPrice)
-        mv_swept  := true
-        mv_status := "Confirmed"
-
-// Keep showing direction as long as POC exists — reset only on new Asia session
-if svpNew
-    mv_swept := false, mv_status := ""
-
 // ── 5. SNIPER ZONE slot ──
 
 if not na(sniperZoneTop) and not na(sniperZoneBot)
@@ -3594,23 +3451,6 @@ f_jRow3(table t, int row, string sec, string val, color vc, string detail) =>
       text_halign = text.align_center)
     table.cell(t, 2, row, detail,
       text_color  = color.new(JARVIS_WHITE, 40),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_center)
-
-f_jBlank3(table t, int row, string sec) =>
-    table.cell(t, 0, row, sec,
-      text_color  = color.new(JARVIS_WHITE, 20),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_left)
-    table.cell(t, 1, row, "—",
-      text_color  = color.new(JARVIS_WHITE, 75),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_center)
-    table.cell(t, 2, row, "—",
-      text_color  = color.new(JARVIS_WHITE, 75),
       text_size   = f_tableSize(tableSizeInput),
       bgcolor     = color.new(#0a0a14, 15),
       text_halign = text.align_center)
@@ -4136,23 +3976,19 @@ string execSlLevel = input.string("1.0", "SL fib level (deep side of 0.5)", opti
 float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
 float execTp1Pct  = input.float(30,   "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
 float execTp2Pct  = input.float(40,   "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
-float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The stats table below re-counts those honestly.")
+float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
 float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
 bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
 bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints a label at each entry listing ONLY the confluences that trade actually used — an arm source you disabled never appears, even if one was sitting there. When the trade closes the label is rewritten with the result: green ✓ WIN, red ✗ LOSS, orange • SCRATCH, plus the R it made. Lets you audit every losing trade against what armed it.")
 bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the furthest price the trade was ACTUALLY FILLED at; RED from entry to the stop fill if it was stopped for a loss; ORANGE line at entry if it only scratched to breakeven. Replaces TradingView's built-in trade markers.")
 bool  execShowExitLines = input.bool(true, "Show exit fill lines (TP1/TP2/RUN)", group = GRP_EXEC, tooltip = "Draws a line at the REAL fill price of every partial exit — TP1, TP2 and the runner — from the entry bar to the bar it filled, labelled with which leg it was. These are the prices the engine actually got, not the fib levels it aimed at. The runner has no target: it exits ONLY when the trailing stop is hit, so its line shows where the trail caught it.")
 
-// ── Honest result stats ───────────────────────────────────────────────────────
+// ── Scratch band ──────────────────────────────────────────────────────────────
 // TradingView's "Breakevens: 0" is an artifact: our breakeven stop sits a few
 // ticks BEYOND entry (to cover commission), so a scratched trade books a tiny
-// profit and TradingView files it as a winner. That inflates the win rate — the
-// 15m run shows 71% wins while the average win is barely larger than the average
-// loss, which is the signature of a pile of near-zero "wins". We re-count here:
-// any trade that finishes inside +/- the scratch band is reported as a SCRATCH,
-// not a win and not a loss.
+// profit and TradingView files it as a winner. The trade label and the diagnostic
+// log grade honestly instead — anything inside +/- this band is a SCRATCH.
 var GRP_STATS = "Result Stats"
-bool  execShowStats = input.bool(true,  "Show W / L / Scratch table",  group = GRP_STATS)
 float execScratchR  = input.float(0.15, "Scratch band (R)",            group = GRP_STATS, minval = 0, step = 0.05, tooltip = "A closed trade whose net result lands inside +/- this many R counts as a SCRATCH. 0.15R on a 1%-risk account is +/- 0.15% of equity — small enough that it is noise, not an outcome.")
 
 // Frozen trade levels — snapshotted while armed so live fib recomputation on
@@ -4168,14 +4004,6 @@ var float lEntry = na, var float sEntry = na   // fill price of the open trade (
 var float lMaxFav = na, var float sMaxFav = na // high-water mark of the open trade, drives the runner ratchet
 var int   lStage = 0,  var int   sStage = 0    // 0 = full stop, 1 = BE trigger reached (stop->BE), 2 = TP2 hit (stop->TP1, then runner ratchet)
 
-// Honest result accounting — see the "Result Stats" input group.
-// The six counters live in ONE array rather than six separate vars, and are
-// mutated inside f_grade() below. Pine caps how many statements the script's MAIN
-// BODY may contain (CE10295); arrays are passed by reference, so keeping the
-// tallying inside a function keeps this whole feature to a couple of main-body
-// statements instead of a dozen.
-//   slots: 0 = wins  1 = losses  2 = scratches  3 = sum win R  4 = sum loss R  5 = total R
-var array<float> stats = array.from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 var float openRiskUsd = na   // $ at risk on the open trade = 1R, used to grade the result
 var float netAtEntry  = na   // strategy.netprofit the moment the trade opened
 var string pendConfL = "", var string pendConfS = ""   // confluence summary snapshotted while armed, drawn on fill
@@ -4511,8 +4339,8 @@ f_confOpen(TradeLbl t, int dir, float px, float off, string body) =>
         t.lb   := label.new(bar_index, ly, body, color = color.new(#0a0a14, 10), textcolor = c, style = dir > 0 ? label.style_label_up : label.style_label_down, size = size.small, textalign = text.align_left)
 
 // Rewrite the label with the result on the bar the trade closes. Graded in R
-// against the SAME scratch band the stats table uses, so a label can never call
-// a trade a win that the table counts as a scratch.
+// against the SAME scratch band the diagnostic log uses, so a label can never call
+// a trade a win that the log counts as a scratch.
 f_confClose(TradeLbl t, float tradeR, float band) =>
     if not na(t.lb)
         bool   scratch = math.abs(tradeR) <= band
@@ -4546,22 +4374,10 @@ if strategy.position_size == 0
     sStage := 0
 
 // ── Grade the trade the bar it closes: WIN / LOSS / SCRATCH in R, not in cents ──
-f_grade(array<float> s, float tradeR, float band) =>
-    array.set(s, 5, array.get(s, 5) + tradeR)
-    if math.abs(tradeR) <= band
-        array.set(s, 2, array.get(s, 2) + 1)
-    else if tradeR > 0
-        array.set(s, 0, array.get(s, 0) + 1)
-        array.set(s, 3, array.get(s, 3) + tradeR)
-    else
-        array.set(s, 1, array.get(s, 1) + 1)
-        array.set(s, 4, array.get(s, 4) + tradeR)
-
-// Graded ONCE, then handed to both consumers — the stats table and the entry
-// label — so the two can never tell different stories about the same trade.
+// Graded once and handed to the entry label and the diagnostic log, so the two
+// can never tell different stories about the same trade.
 float closedR = strategy.position_size == 0 and strategy.position_size[1] != 0 and not na(openRiskUsd) and openRiskUsd > 0 ? (strategy.netprofit - netAtEntry) / openRiskUsd : na
 if not na(closedR)
-    f_grade(stats, closedR, execScratchR)
     f_confClose(tlbl, closedR, execScratchR)
     openRiskUsd := na
 
@@ -4723,36 +4539,6 @@ if strategy.position_size < 0
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
 
-// ── Result table — the win rate TradingView will not show you ─────────────────
-// TradingView counts a breakeven scratch as a WIN, because our BE stop sits a few
-// ticks past entry. This table splits the three real outcomes apart and reports
-// everything in R, so a "win" has to actually be worth something to count as one.
-var table statsTbl = table.new(position.top_right, 2, 9, bgcolor = color.new(#0a0a14, 15), border_color = color.new(#2a2a3a, 0), border_width = 1)
-
-f_statRow(int r, string k, string v, color c) =>
-    table.cell(statsTbl, 0, r, k, text_color = color.new(#8a8a9a, 0), text_size = size.small, text_halign = text.align_left)
-    table.cell(statsTbl, 1, r, v, text_color = c, text_size = size.small, text_halign = text.align_right)
-
-// Whole render lives in a function (including its own barstate gate) so the main
-// body pays for exactly one call — see the CE10295 note on the stats array above.
-f_drawStats(array<float> s) =>
-    if execShowStats and barstate.islast
-        float w   = array.get(s, 0), float l = array.get(s, 1), float sc = array.get(s, 2)
-        float swR = array.get(s, 3), float slR = array.get(s, 4), float tR = array.get(s, 5)
-        float tot = w + l + sc
-        float dec = w + l
-        f_statRow(0, "Trades",            str.tostring(tot, "#"), color.new(#d0d0e0, 0))
-        f_statRow(1, "Wins",              str.tostring(w,   "#"), color.new(#26A69A, 0))
-        f_statRow(2, "Losses",            str.tostring(l,   "#"), color.new(#EF5350, 0))
-        f_statRow(3, "Scratches",         str.tostring(sc,  "#"), color.new(#FFA726, 0))
-        f_statRow(4, "Win % (real)",      str.tostring(dec > 0 ? w / dec * 100 : na, "#.#") + "%", color.new(#d0d0e0, 0))
-        f_statRow(5, "Win % (TV counts)", str.tostring(tot > 0 ? (w + sc) / tot * 100 : na, "#.#") + "%", color.new(#6a6a7a, 0))
-        f_statRow(6, "Avg win / loss",    str.tostring(w > 0 ? swR / w : na, "#.##") + "R / " + str.tostring(l > 0 ? slR / l : na, "#.##") + "R", color.new(#d0d0e0, 0))
-        f_statRow(7, "Total R  |  PF",    str.tostring(tR, "#.#") + "R  |  " + str.tostring(slR < 0 ? swR / math.abs(slR) : na, "#.##"), tR >= 0 ? color.new(#26A69A, 0) : color.new(#EF5350, 0))
-        f_statRow(8, "Missed (no FVG)",   str.tostring(missedNoFvgL + missedNoFvgS, "#") + "  (L " + str.tostring(missedNoFvgL, "#") + " / S " + str.tostring(missedNoFvgS, "#") + ")", color.new(#FFA726, 0))
-
-f_drawStats(stats)
-
 //============================================================
 //  DIAGNOSTIC LOG — full text trace for off-chart debugging
 //============================================================
@@ -4783,7 +4569,7 @@ f_drawStats(stats)
 // lines sharing one fill price and one bar is exactly that shape.
 
 var GRP_DIAG = "Diagnostic Log"
-bool execDiagLog = input.bool(true, "Log every trade + miss to Pine Logs", group = GRP_DIAG, tooltip = "Writes one text line per event to the Pine Logs tab: entries (with the confluences that armed them), each partial exit at its true fill price, results in R, and every miss (no-FVG, veto/late-day block, 2-of-3 death). Copy the pane and paste it to Claude for a full off-chart trade audit. No effect on trades, stats or drawings.")
+bool execDiagLog = input.bool(true, "Log every trade + miss to Pine Logs", group = GRP_DIAG, tooltip = "Writes one text line per event to the Pine Logs tab: entries (with the confluences that armed them), each partial exit at its true fill price, results in R, and every miss (no-FVG, veto/late-day block, 2-of-3 death). Copy the pane and paste it to Claude for a full off-chart trade audit. No effect on trades or drawings.")
 
 // slot 0 = closed-trades already logged · slot 1/2 = last blocked long/short SOS bar (dedupe)
 var array<int> diagState = array.from(0, -1, -1)
@@ -4819,7 +4605,7 @@ f_diag(array<int> ds) =>
                   "  pnl=$" + str.tostring(strategy.closedtrades.profit(i), "#.##"))
             array.set(ds, 0, strategy.closedtrades)
         // ── RESULT — the trade closed this bar (closedR is the execution layer's
-        //    own R grade, against the SAME scratch band the stats table uses). ──
+        //    own R grade, against the SAME scratch band the entry label uses). ──
         if not na(closedR)
             string verdict = math.abs(closedR) <= execScratchR ? "SCRATCH" : closedR > 0 ? "WIN" : "LOSS"
             log.info("[RESULT] " + (strategy.position_size[1] > 0 ? "LONG " : "SHORT ") + verdict + "  " +
