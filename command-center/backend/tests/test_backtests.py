@@ -9,6 +9,8 @@ Backtest endpoint tests covering:
 lives only at the sweep level. Those tests were dropped.)
 """
 
+from unittest.mock import patch
+
 
 # ── List / detail ──────────────────────────────────────────────────────────────
 
@@ -145,3 +147,28 @@ def test_retry_rejects_malformed_dates(client, seeded_run):
         "end_date": "30/06/2025",
     })
     assert r.status_code == 400
+
+
+def test_retry_clears_the_failed_attempts_progress_entry(client, seeded_run):
+    """A retry reuses the run_id, so the failed attempt's progress entry — error text and all —
+    is still filed under it. Left there, the live banner renders the OLD error while the rerun
+    is already running (seen for ~30s on a 3-year gold rerun)."""
+    stale = {"job_id": seeded_run, "status": "failed_error", "pct": 0, "message": "MT5 agent 404"}
+    with (
+        patch("routers.backtests.read_progress", return_value=stale),
+        patch("routers.backtests.clear_progress") as cleared,
+    ):
+        assert client.post(f"/backtests/runs/{seeded_run}/retry").status_code == 202
+    cleared.assert_called_once()
+
+
+def test_retry_leaves_another_jobs_progress_alone(client, seeded_run):
+    """The progress file is shared across runners — clearing it because a DIFFERENT platform's
+    run is being retried would blank a live job's banner."""
+    other = {"job_id": "someone_elses_run", "status": "running", "pct": 42, "message": "replaying…"}
+    with (
+        patch("routers.backtests.read_progress", return_value=other),
+        patch("routers.backtests.clear_progress") as cleared,
+    ):
+        assert client.post(f"/backtests/runs/{seeded_run}/retry").status_code == 202
+    cleared.assert_not_called()

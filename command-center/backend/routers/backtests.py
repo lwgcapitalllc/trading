@@ -377,6 +377,14 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
         if row.get("sweep_id") or row.get("optimization_id"):
             raise HTTPException(400, "The period can only be changed on a standalone run")
 
+    # A retry reuses the run_id, so the failed attempt's progress entry — error text and all — is
+    # still filed under it and the live banner would render that error while the rerun ran. Wipe it
+    # here rather than waiting for the new attempt's first update. Only when the entry is OURS: the
+    # progress file is shared across runners, and this run is not running (checked above), so its
+    # entry is stale by definition while another platform's may be live.
+    if read_progress().get("job_id") == run_id:
+        clear_progress()
+
     # Sweep run — reset in place and re-fire via sweep runner
     if row.get("sweep_id"):
         ensure_platform_idle(runner)

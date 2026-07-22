@@ -356,7 +356,12 @@ export function useRetryBacktest() {
       // The backend wants a ruleset choice before it can score this combo — the caller opens a
       // picker. Don't toast "Rerun started" since nothing started.
       if (data.status === 'needs_ruleset') return
+      // A rerun is a trigger like any other: without this the progress query stays on its idle
+      // 30s cadence (the last payload was the FAILED attempt), so the running banner showed the
+      // previous run's error text for up to half a minute after the rerun had already started.
+      _lastTriggerMs = Date.now()
       toast.success('Rerun started')
+      qc.invalidateQueries({ queryKey: ['lab', 'progress'] })
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
       qc.invalidateQueries({ queryKey: ['lab', 'run', data.run_id] })
       qc.invalidateQueries({ queryKey: ['lab', 'sweep'] })
