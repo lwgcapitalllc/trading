@@ -158,8 +158,10 @@ int aplusWindow = input.int(4320, "Max Time: Sweep → SOS (minutes)", minval = 
 //  A+ DEBUG (bar-replay diagnostics — no effect on trades)
 //============================================================
 var GRP_DEBUG = "A+ Debug"
-bool debugShow23 = input.bool(true, "Show 2-of-3 Confluence Setups", group = GRP_DEBUG, tooltip = "Marks only setups that confirmed 2 of the 3 A+ stages (Arm, SOS) but died before the 3rd (Zone/FVG retrace) ever came. Three arrows per setup, each pointing at the exact bar of that stage: green = confirmed, red = the one that never happened. Purely cosmetic — never changes trade results.")
-bool debugMarkNoFvg = input.bool(true, "Mark setups missed (no FVG)", group = GRP_DEBUG, tooltip = "Drops an orange 'NO FVG' label at every setup that had EVERYTHING lined up to trade — arm source enabled, SOS confirmed, price inside the 0.5-0.886 entry band, not vetoed, not late-day, flat — but never got an entry because NO fair-value gap overlapped the band. These are the trades you're missing purely for lack of an FVG. The count also appears in the Result Stats table. Purely cosmetic — never changes trade results.")
+bool debugShow23 = input.bool(true, "Show missed setups (2 of 3 or better)", group = GRP_DEBUG, tooltip = "Drops one orange callout on every setup that reached at least 2 of the 3 A+ confluences (Arm, SOS, Zone+FVG) and never became a trade — whatever killed it. The box lists what was MET and what was MISSING, and a dashed line marks the price the entry limit would have rested at. Which confluences count is read from your own inputs, so a setup armed by a source you switched off is reported as missing that arm, not silently dropped. A setup that met all three and still did not fill is headed 'NO ENTRY' with the real blocker named. Purely cosmetic — never changes trade results.")
+bool debugShow23Disarmed = input.bool(false, "…include ones armed by a disabled source", group = GRP_DEBUG, tooltip = "Off (default) = only show missed setups whose arm source you actually have enabled. On = also show setups armed by the source you switched off, so you can see what the other arm trigger would have caught. Expect a lot more boxes with this on.")
+string debug23Filter = input.string("Near misses only", "Which misses to draw", options = ["Near misses only", "All misses", "3-of-3 only"], group = GRP_DEBUG, tooltip = "A setup that simply never came back to the entry zone is the ORDINARY outcome and there are hundreds of them — drawing every one buries the ones that matter. Near misses only (default) = the setup either reached the zone and failed on the FVG, or met all three and still did not fill. 3-of-3 only = the strictest view: setups that were fully qualified and still produced no trade. All misses = everything from 2 of 3 up, including 'price never retraced'.")
+int    debugDays = input.int(3, "Only draw debug callouts from the last N days (0 = all)", group = GRP_DEBUG, minval = 0, maxval = 365, tooltip = "Callouts older than this are not drawn. You are almost never studying a miss from three weeks ago while reading this week's price action, and the old ones are what turn the chart into a wall of boxes. Set 0 to draw the entire history. Applies ONLY to the missed-setup callouts — every real trade always gets its label, however old.")
 
 //============================================================
 //  RSI DIVERGENCE INPUTS
@@ -215,16 +217,10 @@ thirdSessionTime  = input.session("0900-1800",               "Session time",    
 thirdSessionTZ    = input.string("GMT-4",                    "Session timezone", group = THIRD_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showThird)
 thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",    group = THIRD_SESSION_GROUP, active = showThird)
 
-//============================================================
-//  KILL ZONES & NY RANGE INPUTS (single toggle)
-//============================================================
-var GRP_KZ = "Kill Zones & NY Range"
-bool showKZandNYRInput   = input.bool(false, "Show Kill Zones & NY Range", group = GRP_KZ, display = display.none)
-bool showKZandNYR = marketStructureOnly ? false : showKZandNYRInput
-bool showKZHistoric = input.bool(false, "Show All History", group = GRP_KZ, active = showKZandNYRInput, tooltip = "Off = current day only. On = show as far back as possible.", display = display.none)
-
-bool showKillZones = showKZandNYR
-bool showNYRange   = showKZandNYR
+// (Kill Zones & NY Range were REMOVED 2026-07-22 — the script had gone over
+//  Pine's compiled-token cap (CE10117) and both were purely cosmetic, default
+//  OFF, and read by nothing in the execution layer. They live on in
+//  mpc_assistant.pine if the drawing is ever wanted back.)
 
 //============================================================
 //  VWAP INPUTS
@@ -430,10 +426,8 @@ color svpPOCCol   = #9C27B0
 //  other inputs must reference a pure, never-reassigned input bool; reassigning
 //  the original variable via ":=" anywhere in the script poisons its type for
 //  every "active=" use of it, even ones textually earlier in the file. These
-//  three have no "active=" dependents elsewhere, so a plain override is safe.
+//  one has no "active=" dependents elsewhere, so a plain override is safe.
 showSniperFib  := marketStructureOnly ? false : showSniperFib
-showKillZones  := marketStructureOnly ? false : showKillZones
-showNYRange    := marketStructureOnly ? false : showNYRange
 
 //============================================================
 //  SMC STRUCTURE TYPE
@@ -1040,7 +1034,6 @@ getSessionInfos() =>
 //============================================================
 //  SHARED CONSTANTS & SECURITY CALLS
 //============================================================
-isMondayToFriday = dayofweek(time, "America/New_York") >= dayofweek.monday and dayofweek(time, "America/New_York") <= dayofweek.friday
 newDay           = dayofweek(time, "America/New_York") != dayofweek(time[1], "America/New_York")
 
 [dailyTime,   dailyHigh,   dailyLow,   isLastDaily]   = request.security(syminfo.tickerid, "D", [time, high, low, barstate.islast], lookahead = barmerge.lookahead_on)
@@ -1125,19 +1118,7 @@ inAsia   = not na(time("", firstSessionTime,  firstSessionTZ))
 inLondon = not na(time("", secondSessionTime, secondSessionTZ))
 inNY     = not na(time("", thirdSessionTime,  thirdSessionTZ))
 
-inSession5 = not na(time("5", "0930-0935", "America/New_York"))
-inExtend5  = not na(time("5", "0935-1600", "America/New_York"))
-[startTime5, high5, low5] = request.security(syminfo.tickerid, "5", [time, high, low], lookahead = barmerge.lookahead_on)
-
-var int nyr_startTime = 0
-nyr_startTime := inSession5 and not inSession5[1] and isMondayToFriday ? startTime5 : nyr_startTime[1]
-
 nyMidnightToday   = timestamp("America/New_York", year(timenow, "America/New_York"), month(timenow, "America/New_York"), dayofmonth(timenow, "America/New_York"), 0, 0)
-
-// Kill Zones & NY Range: current NY day only by default (keeps the chart clean),
-// or unlimited history when Show All History is enabled.
-withinKZDays      = showKZHistoric or time >= nyMidnightToday
-withinNYRangeDays = showKZHistoric or time >= nyMidnightToday
 
 // Sessions: current week only by default (from Sunday 00:00 New York), or
 // unlimited history when Show All History is on. Anchored to the calendar week
@@ -2320,142 +2301,9 @@ f_liqLabels() =>
 
 f_liqLabels()
 
-//============================================================
-//  NY RANGE BOX
-//============================================================
-var line  nyr_lowHLine = na, var line  nyr_topHLine = na
-var line  nyr_leftVLine = na, var line  nyr_rightVLine = na
-var line  nyr_middleHLine = na
-var box   nyr_bgBox = na
-var float nyr_low_val = na, var float nyr_high_val = na
-
-if showNYRange
-    if inSession5 and not inSession5[1] and isMondayToFriday and withinNYRangeDays
-        nyr_low_val  := low5
-        nyr_high_val := high5
-    if inSession5 and isMondayToFriday and withinNYRangeDays
-        if inSession5[1]
-            line.delete(nyr_lowHLine),  line.delete(nyr_topHLine)
-            line.delete(nyr_leftVLine), line.delete(nyr_rightVLine)
-            line.delete(nyr_middleHLine)
-            box.delete(nyr_bgBox)
-        if low5 < nyr_low_val
-            nyr_low_val := low5
-        if high5 > nyr_high_val
-            nyr_high_val := high5
-        nyr_bgBox       := box.new(left = nyr_startTime, top = nyr_high_val, right = time, bottom = nyr_low_val, xloc = xloc.bar_time, bgcolor = color.new(color.blue, 80), border_color = color.blue, border_width = 2, border_style = line.style_solid)
-        nyr_lowHLine    := line.new(nyr_startTime, nyr_low_val,  time, nyr_low_val,  xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
-        nyr_topHLine    := line.new(nyr_startTime, nyr_high_val, time, nyr_high_val, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
-        nyr_leftVLine   := line.new(nyr_startTime, nyr_high_val, nyr_startTime, nyr_low_val, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
-        nyr_rightVLine  := line.new(time, nyr_high_val, time, nyr_low_val, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
-        nyr_middleHLine := line.new(nyr_startTime, (nyr_high_val + nyr_low_val) / 2, time, (nyr_high_val + nyr_low_val) / 2, xloc = xloc.bar_time, color = color.red, style = line.style_dotted, width = 2)
-    if inExtend5 and not inSession5 and isMondayToFriday and withinNYRangeDays
-        if not na(nyr_lowHLine)
-            t1 = line.get_x1(nyr_lowHLine), p = line.get_y1(nyr_lowHLine)
-            line.delete(nyr_lowHLine)
-            nyr_lowHLine := line.new(t1, p, time, p, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
-        if not na(nyr_topHLine)
-            t1 = line.get_x1(nyr_topHLine), p = line.get_y1(nyr_topHLine)
-            line.delete(nyr_topHLine)
-            nyr_topHLine := line.new(t1, p, time, p, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
-        if not na(nyr_middleHLine)
-            t1 = line.get_x1(nyr_middleHLine), p = line.get_y1(nyr_middleHLine)
-            line.delete(nyr_middleHLine)
-            nyr_middleHLine := line.new(t1, p, time, p, xloc = xloc.bar_time, color = color.red, style = line.style_dotted, width = 2)
-
-//============================================================
-//  KILL ZONES
-//============================================================
-nyHour   = hour(time,   "America/New_York")
-nyMinute = minute(time, "America/New_York")
-
-inKZ1 = nyHour == 10
-inKZ2 = (nyHour == 11 and nyMinute >= 45) or (nyHour == 12 and nyMinute <= 14)
-inKZ3 = nyHour == 13 and nyMinute <= 30
-
-isToday = year(time,       "America/New_York") == year(timenow,       "America/New_York") and
-          month(time,      "America/New_York") == month(timenow,      "America/New_York") and
-          dayofmonth(time, "America/New_York") == dayofmonth(timenow, "America/New_York")
-
-var box[] kz1Boxes = array.new_box()
-var box[] kz2Boxes = array.new_box()
-var box[] kz3Boxes = array.new_box()
-var bool  kz1Started = false, var bool  kz2Started = false, var bool  kz3Started = false
-
-var box  kz1TodayBox = na
-var box  kz2TodayBox = na
-var box  kz3TodayBox = na
-
-var bool kz1TodayDeleted = false
-var bool kz2TodayDeleted = false
-var bool kz3TodayDeleted = false
-
-if newDay
-    kz1Started        := false
-    kz2Started        := false
-    kz3Started        := false
-    kz1TodayDeleted   := false
-    kz2TodayDeleted   := false
-    kz3TodayDeleted   := false
-    kz1TodayBox       := na
-    kz2TodayBox       := na
-    kz3TodayBox       := na
-
-kzBgColor     = color.new(color.green, 90)
-kzBorderColor = color.new(color.green, 70)
-
-if showKillZones
-    if inKZ1 and withinKZDays and not kz1Started
-        kz1Started := true
-        newKZ1 = box.new(bar_index, dailyHigh, bar_index + 1, dailyLow, bgcolor = kzBgColor, border_color = kzBorderColor)
-        array.push(kz1Boxes, newKZ1)
-        if isToday
-            kz1TodayBox := newKZ1
-    if inKZ1 and withinKZDays and array.size(kz1Boxes) > 0
-        box.set_right(array.last(kz1Boxes), bar_index + 1)
-
-    if inKZ2 and withinKZDays and not kz2Started
-        kz2Started := true
-        newKZ2 = box.new(bar_index, dailyHigh, bar_index + 1, dailyLow, bgcolor = kzBgColor, border_color = kzBorderColor)
-        array.push(kz2Boxes, newKZ2)
-        if isToday
-            kz2TodayBox := newKZ2
-    if inKZ2 and withinKZDays and array.size(kz2Boxes) > 0
-        box.set_right(array.last(kz2Boxes), bar_index + 1)
-
-    if inKZ3 and withinKZDays and not kz3Started
-        kz3Started := true
-        newKZ3 = box.new(bar_index, dailyHigh, bar_index + 1, dailyLow, bgcolor = kzBgColor, border_color = kzBorderColor)
-        array.push(kz3Boxes, newKZ3)
-        if isToday
-            kz3TodayBox := newKZ3
-    if inKZ3 and withinKZDays and array.size(kz3Boxes) > 0
-        box.set_right(array.last(kz3Boxes), bar_index + 1)
-
-if isToday and not kz1TodayDeleted and showKillZones
-    if nyHour > 11 or (nyHour == 11 and nyMinute >= 5)
-        if not na(kz1TodayBox)
-            box.delete(kz1TodayBox)
-            kz1TodayBox := na
-        kz1TodayDeleted := true
-
-if isToday and not kz2TodayDeleted and showKillZones
-    if nyHour > 12 or (nyHour == 12 and nyMinute >= 20)
-        if not na(kz2TodayBox)
-            box.delete(kz2TodayBox)
-            kz2TodayBox := na
-        kz2TodayDeleted := true
-
-if isToday and not kz3TodayDeleted and showKillZones
-    if nyHour > 13 or (nyHour == 13 and nyMinute >= 35)
-        if not na(kz3TodayBox)
-            box.delete(kz3TodayBox)
-            kz3TodayBox := na
-        kz3TodayDeleted := true
-
-plotshape(showKillZones and inKZ1 and not inKZ1[1] and withinKZDays, style = shape.triangledown, location = location.abovebar, color = color.green, size = size.tiny)
-plotshape(showKillZones and inKZ2 and not inKZ2[1] and withinKZDays, style = shape.triangledown, location = location.abovebar, color = color.green, size = size.tiny)
-plotshape(showKillZones and inKZ3 and not inKZ3[1] and withinKZDays, style = shape.triangledown, location = location.abovebar, color = color.green, size = size.tiny)
+// Kept from the deleted Kill Zones block — the execution layer's final-hour
+// rule (lateDayBlock) reads it.
+nyHour = hour(time, "America/New_York")
 
 //============================================================
 //  FIBONACCI DRAWING
@@ -3522,26 +3370,138 @@ var bool aplusS_618      = false
 var string armHolderL = ""   // "SWP" or "DIV"
 var string armHolderS = ""
 
-// Debug callout offset — keeps the box clear of price (% of price, not ATR,
-// so it stays put instead of collapsing in quiet chop).
-float _dbgOff = close * 0.006
+// One missed-setup callout = ONE SMALL ORANGE TAG. Single static colour
+// throughout — the tag, the leader lines and the would-be-entry line all match,
+// so nothing on it has to be decoded.
+//
+// The chart shows ONE LINE ("▲ 2/3"). The full MET / MISSING breakdown, the
+// blocker and the would-be entry price live in the label's TOOLTIP — hover it.
+// This is the difference between a readable chart and a wall of paragraphs: no
+// information is lost, it is just one mouse-over away (and the Pine Log still
+// carries the same text verbatim for a full off-chart audit).
+//
+// Leader lines run from the tag out to the exact bar each achieved stage
+// happened on. The dashed horizontal line marks the price the entry limit would
+// have rested at — its price is in the tooltip rather than a second label.
+// The tag is placed well clear of the candles by the caller, and consecutive
+// tags are staggered vertically so two near each other never overlap.
+f_dbg23Box(int atBar, float y, string tag, string full, int armBar, float armPx, int sosBar, float sosPx, float entryPx, int entryFrom) =>
+    color orn = color.new(#FF9800, 0)
+    label.new(atBar, y, tag, tooltip = full, color = color.new(#FF9800, 12), textcolor = color.new(#101014, 0), style = label.style_label_center, size = size.small)
+    if not na(armBar)
+        line.new(atBar, y, armBar, armPx, color = orn, style = line.style_arrow_right, width = 1)
+    if not na(sosBar)
+        line.new(atBar, y, sosBar, sosPx, color = orn, style = line.style_arrow_right, width = 1)
+    if not na(entryPx) and not na(entryFrom)
+        line.new(entryFrom, entryPx, atBar, entryPx, color = orn, style = line.style_dashed, width = 1)
 
-// One 2-of-3 debug callout = ONE dark box (same style as the existing WIN/
-// SCRATCH trade box) listing all three A+ stages, plus three individually
-// colored leader lines running from that same box out to the exact bar each
-// stage happened on — green for the two that confirmed, red for the one that
-// never came, arrowhead landing ON the bar. Mirrors the approved mockup.
-f_dbg23Box(int labelBar, float labelY, string side, string armSrc, int armBar, float armPx, int sosBar, float sosPx, int zoneBar, float zonePx) =>
-    color grn = color.new(color.green, 0)
-    color red = color.new(color.red, 0)
-    string body = "2/3 SETUP · " + side +
-      "\n① Arm: " + armSrc + " ✓" +
-      "\n② SOS ✓" +
-      "\n③ Zone/FVG ✗ never reached"
-    label.new(labelBar, labelY, body, color = color.new(#0a0a14, 10), textcolor = color.new(#d7d9e0, 0), style = label.style_label_left, size = size.small)
-    line.new(labelBar, labelY, armBar,  armPx,  color = grn, style = line.style_arrow_right, width = 1)
-    line.new(labelBar, labelY, sosBar,  sosPx,  color = grn, style = line.style_arrow_right, width = 1)
-    line.new(labelBar, labelY, zoneBar, zonePx, color = red, style = line.style_arrow_right, width = 1)
+// ── MISSED-SETUP watch state ─────────────────────────────────────────────────
+// Everything one side needs to remember about a live setup, held as a single
+// OBJECT rather than thirteen loose `var`s. Pine objects are passed by reference,
+// so the two functions below can mutate this state from inside a function — which
+// is the whole point: the tracking and the callout together are ~90 statements,
+// and the main body has a hard cap on how many it may hold (CE10295). Same
+// pattern as PosBox / TradeLbl further down.
+type MissW
+    bool   watch  = false
+    int    armBar = na    // bar the Stage-1 arm fired on
+    int    sosBar = na    // bar the SOS confirmed on
+    string armSrc = ""    // "SWP" / "DIV" — which source actually armed it
+    string swpNm  = ""    // the swept level's name, e.g. "Day Low"
+    bool   zone   = false // price reached the 0.5-0.886 retrace band
+    bool   fvg    = false // ...and an entry edge was live WHILE it was there
+    float  edge   = na    // the price a limit would have rested at
+    float  fib    = na    // 0.618 fallback, kept fresh while alive
+    int    from   = na    // first bar in the zone — where the entry line starts
+    bool   blkV   = false // a veto was live in the zone
+    bool   blkL   = false // the final-hour rule was live in the zone
+    bool   blkH   = false // an HTF filter was live in the zone
+    int    drawn  = 0     // callouts drawn on this side — drives the stagger offset
+var MissW mwL = MissW.new()
+var MissW mwS = MissW.new()
+
+// Open the watch. Called every bar; does nothing unless `fire` is true, so the
+// caller stays one statement.
+f_w23Arm(MissW m, bool fire, int sweepBar, int sosBar, string holder, string swpNm) =>
+    if fire
+        m.watch  := true
+        m.armBar := sweepBar
+        m.sosBar := sosBar
+        m.armSrc := holder
+        m.swpNm  := swpNm
+        m.zone   := false
+        m.fvg    := false
+        m.edge   := na
+        m.fib    := na
+        m.from   := na
+        m.blkV   := false
+        m.blkL   := false
+        m.blkH   := false
+
+// Track the live setup, then draw the callout when it dies without trading.
+// Returns the log line (empty string when nothing was reported), so the chart box
+// and the Pine Log can never tell different stories — they are built from one
+// string. Every gate is a PARAMETER, not a global read, so what counts as a
+// confluence is decided by the caller from the live strategy inputs.
+f_w23(MissW m, bool isLong, bool alive, bool traded, bool flat, bool zoneHit, float edge, float fib, bool blkV, bool blkL, bool blkH, bool armSwp, bool armDiv, bool reqFvg, float y, float step, bool recent) =>
+    string out = ""
+    if m.watch and alive and not traded
+        m.fib := fib
+        if na(m.edge) and not na(edge)
+            m.edge := edge
+        if zoneHit
+            m.zone := true
+            m.from := na(m.from) ? bar_index : m.from
+            m.fvg  := m.fvg or not na(edge)
+            m.blkV := m.blkV or blkV
+            m.blkL := m.blkL or blkL
+            m.blkH := m.blkH or blkH
+    else if m.watch
+        if not traded and flat
+            bool armMet  = armSwp or armDiv
+            bool zoneMet = m.zone and (m.fvg or not reqFvg)
+            int  metN    = (armMet ? 1 : 0) + 1 + (zoneMet ? 1 : 0)
+            // A NEAR miss is one worth looking at: it either met all three and still
+            // did not fill, or it got price into the zone and failed only on the FVG.
+            // "Price never retraced" is the ordinary outcome of most setups and is
+            // what floods the chart, so the default view leaves it out.
+            bool nearMiss = metN == 3 or (m.zone and not zoneMet)
+            bool passFilt = debug23Filter == "All misses" ? true : debug23Filter == "3-of-3 only" ? metN == 3 : nearMiss
+            if debugShow23 and recent and passFilt and metN >= 2 and (armMet or debugShow23Disarmed)
+                string armTxt = armSwp and armDiv ? "Sweep + RSI div" : armSwp ? "Sweep" : "RSI divergence"
+                if armSwp and m.swpNm != ""
+                    armTxt := armTxt + " · " + m.swpNm
+                string met = "MET"
+                string mss = "MISSING"
+                if armMet
+                    met := met + "\n  Arm     " + armTxt
+                else
+                    mss := mss + "\n  Arm     " + (m.armSrc == "DIV" ? "RSI divergence armed it — that arm source is OFF" : "a sweep armed it — that arm source is OFF")
+                met := met + "\n  SOS     confirmed"
+                if zoneMet
+                    met := met + "\n  Zone    0.5-0.886 tagged" + (m.fvg ? ", FVG live" : "")
+                else if not m.zone
+                    mss := mss + "\n  Zone    price never retraced to 0.5-0.886"
+                else
+                    mss := mss + "\n  FVG     no gap in the zone while price was there"
+                if metN == 3
+                    mss := mss + "\n  Entry   " + (m.blkV ? "blocked by the divergence / extreme-RSI veto" : m.blkL ? "blocked by the final-hour rule" : m.blkH ? "blocked by the HTF bias filter" : "limit rested but price never touched it")
+                float  ePx = na(m.edge) ? m.fib : m.edge
+                // On-chart TAG: one line. Everything else goes in the tooltip.
+                string tag = (isLong ? "▲ " : "▼ ") + str.tostring(metN) + "/3" + (metN == 3 ? " ✗" : "")
+                string hdr = (isLong ? "▲ LONG   " : "▼ SHORT   ") + str.tostring(metN) + " OF 3" + (metN == 3 ? "   NO ENTRY" : "")
+                string bdy = "──────────────────\n" + met + "\n" + mss + (na(ePx) ? "" : "\n──────────────────\n  Entry would rest at " + str.tostring(ePx, format.mintick))
+                int    aOff = math.min(4999, math.max(0, nz(bar_index - m.armBar, 0)))
+                int    sOff = math.min(4999, math.max(0, nz(bar_index - m.sosBar, 0)))
+                // Stagger: every third callout on this side sits back at the base
+                // height, so two that land near each other never print on top of
+                // one another even after the vertical clearance is applied.
+                float  yTag = isLong ? y - (m.drawn % 3) * step : y + (m.drawn % 3) * step
+                m.drawn := m.drawn + 1
+                f_dbg23Box(bar_index, yTag, tag, hdr + "\n" + bdy, m.armBar, isLong ? low[aOff] : high[aOff], m.sosBar, isLong ? low[sOff] : high[sOff], ePx, na(m.from) ? m.sosBar : m.from)
+                out := hdr + " — " + str.replace_all(bdy, "\n", " · ")
+        m.watch := false
+    out
 
 // HTF POI — the Cycle Fib's zones, tracked on every timeframe (drawing stays gated):
 // longs care about the DISCOUNT (0.618-0.886 of the cycle), shorts about the
@@ -3750,37 +3710,24 @@ else if not na(aplusS_sweepBar)
 bool longVetoA  = showDiv and divVeto and (divRsi >= divExtremeOB or (bearDivActive and (na(aplusL_sosBar) or lastBearDivBar <= aplusL_sosBar)))
 bool shortVetoA = showDiv and divVeto and (divRsi <= divExtremeOS or (bullDivActive and (na(aplusS_sosBar) or lastBullDivBar <= aplusS_sosBar)))
 
-// ── 2-of-3 confluence watch — catches a setup that confirmed Arm + SOS but
-// died before ever reaching the 3rd and final stage (Zone/FVG retrace).
-// Snapshot the arm/SOS bars the moment stage 2 starts: the engine clears
-// aplusL_sweepBar/aplusL_sosBar the instant the sequence dies, so by the time
-// we detect the death it's too late to ask it where those bars were.
-var bool   aplusL_watch23    = false
-var int    aplusL_armSnapBar = na
-var int    aplusL_sosSnapBar = na
-var string aplusL_armSnapSrc = ""
-if aplusL_stage == 2 and aplusL_stage[1] != 2
-    aplusL_watch23    := true
-    aplusL_armSnapBar := aplusL_sweepBar
-    aplusL_sosSnapBar := aplusL_sosBar
-    aplusL_armSnapSrc := armHolderL
-// Zone confirmed after all — not a miss, drop the watch here. The DEATH case
-// (stage fell back below 2) is fired further down, in the execution layer, so it
-// can respect the Arm-on-sweep / Arm-on-divergence toggles (declared only there).
-if aplusL_watch23 and aplusL_stage >= 3
-    aplusL_watch23 := false
-
-var bool   aplusS_watch23    = false
-var int    aplusS_armSnapBar = na
-var int    aplusS_sosSnapBar = na
-var string aplusS_armSnapSrc = ""
-if aplusS_stage == 2 and aplusS_stage[1] != 2
-    aplusS_watch23    := true
-    aplusS_armSnapBar := aplusS_sweepBar
-    aplusS_sosSnapBar := aplusS_sosBar
-    aplusS_armSnapSrc := armHolderS
-if aplusS_watch23 and aplusS_stage >= 3
-    aplusS_watch23 := false
+// ── MISSED-SETUP watch — opened the moment a setup confirms Arm + SOS, and held
+// open until that setup either BECOMES A TRADE or DIES. It is deliberately NOT
+// closed when price reaches the retrace zone any more. That was the old bug:
+// stage 3 was treated as success, so a setup that got all the way to the zone and
+// then failed to enter (no live FVG to rest a limit on, a veto, the final hour,
+// a leg that died before the limit was touched) vanished off the chart with no
+// explanation at all. Reaching the zone is only half of confluence #3 — having
+// something to enter from is the other half.
+//
+// Snapshot the arm/SOS bars here because the engine clears aplus*_sweepBar /
+// aplus*_sosBar the instant the sequence dies, so by the time we detect the death
+// it is too late to ask it where those bars were. The arm SOURCE and the sweep's
+// name are snapshotted too, so the callout can name the exact confluence.
+// Armed on the first bar the stage reaches 2 OR HIGHER — a fast leg can print the
+// SOS and tag the 0.5 on the same bar, jumping straight from stage 1 to stage 3,
+// and an "== 2" test would silently never open the watch for it.
+f_w23Arm(mwL, aplusL_stage >= 2 and aplusL_stage[1] < 2, aplusL_sweepBar, aplusL_sosBar, armHolderL, recentSSL)
+f_w23Arm(mwS, aplusS_stage >= 2 and aplusS_stage[1] < 2, aplusS_sweepBar, aplusS_sosBar, armHolderS, recentBSL)
 
 // FVG confluence — a live clean gap overlapping the entry zone (0.5 to 0.886)
 bool aplusL_fvg = false
@@ -3979,17 +3926,19 @@ float execTp2Pct  = input.float(40,   "TP2 size %",                    group = G
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
 float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
 bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
-bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints a label at each entry listing ONLY the confluences that trade actually used — an arm source you disabled never appears, even if one was sitting there. When the trade closes the label is rewritten with the result: green ✓ WIN, red ✗ LOSS, orange • SCRATCH, plus the R it made. Lets you audit every losing trade against what armed it.")
-bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the furthest price the trade was ACTUALLY FILLED at; RED from entry to the stop fill if it was stopped for a loss; ORANGE line at entry if it only scratched to breakeven. Replaces TradingView's built-in trade markers.")
-bool  execShowExitLines = input.bool(true, "Show exit fill lines (TP1/TP2/RUN)", group = GRP_EXEC, tooltip = "Draws a line at the REAL fill price of every partial exit — TP1, TP2 and the runner — from the entry bar to the bar it filled, labelled with which leg it was. These are the prices the engine actually got, not the fib levels it aimed at. The runner has no target: it exits ONLY when the trailing stop is hit, so its line shows where the trail caught it.")
+bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints one small label at each trade, carrying the full confluence breakdown in its HOVER TOOLTIP — the arm source, SOS age, FVG/POI/DIV flags, and the real entry / stop / TP prices. The on-chart text stays one line. When the trade closes it is recoloured by RESULT — green won, red lost, orange breakeven — and the R it made is appended. Use the filter below to keep only the results you care about.")
+string execLabelWhich = input.string("All", "…keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = GRP_EXEC, tooltip = "Which trades keep their hover label once the result is known. Every other trade's label is deleted on the bar it closes, so the chart keeps the coloured result box and the entry triangle but loses the annotation. Losses + breakevens is the review view — the trades worth auditing, nothing else. None removes them entirely.")
+float execLabelOff = input.float(6, "…label distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, tooltip = "How far the trade label is pushed away from the entry — below it on a long, above it on a short — measured in ATRs. TradingView draws the HOVER TOOLTIP right next to the label and gives Pine no way to place it, so this is the only lever on where that tooltip lands: park the label further out and the tooltip opens over empty space instead of over the candles. Raise it until you can read the tooltip and the trade at the same time. A thin leader line always connects the label back to the exact entry price, so pushing it out never loses you the anchor.")
+bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the furthest price the trade was ACTUALLY FILLED at; RED from entry to the stop fill if it was stopped for a loss; ORANGE line at entry if it only came back to breakeven. Replaces TradingView's built-in trade markers.")
+bool  execShowExitLines = input.bool(true, "Label the TP bands (TP1/TP2/TP3)", group = GRP_EXEC, tooltip = "Adds a faint dashed line at each partial exit's REAL fill price and tags it TP1 / TP2 / TP3 at the RIGHT edge of the trade — all three stacked on the same side, one colour, no prices in the text. Off = the coloured bands still paint, just untagged. The prices themselves are always in the trade label's tooltip.")
 
-// ── Scratch band ──────────────────────────────────────────────────────────────
+// ── Breakeven band ────────────────────────────────────────────────────────────
 // TradingView's "Breakevens: 0" is an artifact: our breakeven stop sits a few
-// ticks BEYOND entry (to cover commission), so a scratched trade books a tiny
+// ticks BEYOND entry (to cover commission), so a breakeven trade books a tiny
 // profit and TradingView files it as a winner. The trade label and the diagnostic
-// log grade honestly instead — anything inside +/- this band is a SCRATCH.
+// log grade honestly instead — anything inside +/- this band is a BREAKEVEN.
 var GRP_STATS = "Result Stats"
-float execScratchR  = input.float(0.15, "Scratch band (R)",            group = GRP_STATS, minval = 0, step = 0.05, tooltip = "A closed trade whose net result lands inside +/- this many R counts as a SCRATCH. 0.15R on a 1%-risk account is +/- 0.15% of equity — small enough that it is noise, not an outcome.")
+float execBeBandR  = input.float(0.15, "Breakeven band (R)",           group = GRP_STATS, minval = 0, step = 0.05, tooltip = "A closed trade whose net result lands inside +/- this many R counts as a BREAKEVEN — price went out, came back to entry, and the trade was closed for nothing. 0.15R on a 1%-risk account is +/- 0.15% of equity, small enough that it is noise rather than an outcome.")
 
 // Frozen trade levels — snapshotted while armed so live fib recomputation on
 // later bars cannot drag the stop/targets of an open trade (the leg's fib is
@@ -4021,19 +3970,23 @@ type PosBox
     float sl       = na
     float t1       = na   // the TP1 price — the bar a fill has to clear to count as a target
     float openNet  = na
-    int   seen     = 0    // how many closed trades we have already drawn a fill line for
-    int   fills    = 0    // fills drawn for THIS trade — staggers the labels so they never stack
-    float bestFill = na   // furthest ACTUAL fill at or beyond TP1 — what the trade was really paid
+    int   seen     = 0    // how many closed trades we have already accounted for
+    int   fills    = 0    // TARGET fills banked on THIS trade so far (0-3)
+    float f1       = na   // the REAL fill price of the 1st / 2nd / 3rd banked target.
+    float f2       = na   // Held rather than drawn as they happen, so every band and
+    float f3       = na   // tag can be drawn ON CLOSE and share one right-hand edge.
+    float worst    = na   // furthest price went AGAINST the trade while it was open
     float lastFill = na   // price of the most recent fill (the exit that closed it out)
 var PosBox pbx = PosBox.new()
 
 // The entry confluence label is kept as a HANDLE rather than fired and forgotten,
 // so the bar the trade closes can rewrite it with the outcome — a colour-coded
-// ✓ WIN / ✗ LOSS / • SCRATCH header and the R it made, on top of the confluences
+// WIN / LOSS / BREAKEVEN result and the R it made, on top of the confluences
 // that armed it. Same object-in-a-function trick as PosBox, same CE10295 reason.
 type TradeLbl
     label  lb   = na
     line   ln   = na
+    string head = ""   // "▲ LONG" / "▼ SHORT" — always the top line of the box
     string body = ""
 var TradeLbl tlbl = TradeLbl.new()
 
@@ -4169,39 +4122,40 @@ bool useDivS = execArmDiv   and sosS_div
 bool armOkL = useSwpL or useDivL
 bool armOkS = useSwpS or useDivS
 
-// ── 2-of-3 debug callout — DEATH case fired here (not where the watch is
-// snapshotted, up in the A+ section) so it obeys the SAME arm-source toggles the
-// strategy trades on. A setup whose Stage-1 arm was a SWEEP is only drawn when
-// "Arm on liquidity sweep" is on; a DIVERGENCE-armed one only when "Arm on RSI
-// divergence" is on. So with sweep off / divergence on, sweep-armed 2/3 setups
-// vanish from the chart exactly as they're excluded from trading.
-if aplusL_watch23 and aplusL_stage < 2
-    bool showL23 = debugShow23 and (aplusL_armSnapSrc == "DIV" ? execArmDiv : execArmSweep)
-    if showL23
-        f_dbg23Box(bar_index, low - _dbgOff * 2, "LONG", aplusL_armSnapSrc == "DIV" ? "Divergence" : "Sweep",
-          aplusL_armSnapBar, low[bar_index - aplusL_armSnapBar], aplusL_sosSnapBar, low[bar_index - aplusL_sosSnapBar], bar_index, low)
-    aplusL_watch23 := false
-if aplusS_watch23 and aplusS_stage < 2
-    bool showS23 = debugShow23 and (aplusS_armSnapSrc == "DIV" ? execArmDiv : execArmSweep)
-    if showS23
-        f_dbg23Box(bar_index, high + _dbgOff * 2, "SHORT", aplusS_armSnapSrc == "DIV" ? "Divergence" : "Sweep",
-          aplusS_armSnapBar, high[bar_index - aplusS_armSnapBar], aplusS_sosSnapBar, high[bar_index - aplusS_sosSnapBar], bar_index, high)
-    aplusS_watch23 := false
+// (The missed-setup callout used to fire here. It now lives further down, after
+//  the veto / late-day / HTF gates are declared, so it can name which one of them
+//  actually blocked the entry — see "MISSED-SETUP CALLOUT" below.)
 
 // Confluence text — every line is printed because ITS OWN flag is true on the bar
 // the order was placed, never because the feature exists in the script. Nothing
 // in here is a fixed template.
-f_conf(bool isLong, bool swp, bool div, string swpName, int sosAge, bool fvg, bool poi, bool liveDiv, bool deep, bool sz) =>
-    string s = (isLong ? "▲ LONG" : "▼ SHORT") + "\nArm: " + (swp and div ? "Sweep + Div" : swp ? "Sweep" : "Div")
+// Body of the entry label. The direction header is NOT part of this — it is
+// prepended by f_confOpen and rewritten with the result by f_confClose, so the
+// top line of the box is always the trade type.
+//
+// Every line is printed because ITS OWN flag is true, and every price is the
+// price this trade actually placed. Nothing here is a fixed template: the TP
+// rungs name the fib level the ladder really used (deep entries run 0.5 → 0.382,
+// shallow ones 0.382 → 0.0) and print that level's price alongside it, so the
+// label can never claim a target the ladder did not set.
+f_conf(bool isLong, bool swp, bool div, string swpName, int sosAge, bool fvg, bool poi, bool liveDiv, bool deep, bool sz, float edgePx, float slPx, float tp1Px, float tp2Px) =>
+    string arm = swp and div ? "Sweep + RSI div" : swp ? "Sweep" : "RSI divergence"
     if swp and swpName != ""
-        s := s + "\nSweep: " + swpName
-    s := s + "\nSOS " + str.tostring(sosAge) + " bars ago"
+        arm := arm + " · " + swpName
+    string s = "──────────────"
+    s := s + "\nArm     " + arm
+    s := s + "\nSOS     " + str.tostring(sosAge) + " bars ago"
     // Which confirmation actually PRICED this entry — SZ only appears when the
     // limit was placed off the Sniper Zone because no gap qualified.
-    s := s + (sz ? "\nConfirm: SZ ✓ (no FVG)" : fvg ? "\nFVG ✓" : "\nFVG ✗")
-    s := s + (poi ? "\nPOI ✓" : "")
-    s := s + (liveDiv ? "\nDIV ✓" : "")
-    s := s + (deep ? "\nEntry: deep (0.618+)\nTP 0.5 → 0.382 → run" : "\nEntry: shallow (0.5)\nTP 0.382 → 0.0 → run")
+    s := s + "\nZone    " + (sz ? "Sniper Zone (no FVG)" : fvg ? "FVG ✓" : "fib only")
+    s := s + "\nPOI     " + (poi ? "✓" : "–")
+    s := s + "\nDiv     " + (liveDiv ? "✓" : "–")
+    s := s + "\n──────────────"
+    s := s + "\nEntry   " + (deep ? "0.618+ deep" : "0.5 shallow") + "   " + str.tostring(edgePx, format.mintick)
+    s := s + "\nStop    fib " + execSlLevel + "        " + str.tostring(slPx, format.mintick)
+    s := s + "\nTP1     fib " + (deep ? "0.5" : "0.382") + "      " + str.tostring(tp1Px, format.mintick)
+    s := s + "\nTP2     fib " + (deep ? "0.382" : "0.0") + "      " + str.tostring(tp2Px, format.mintick)
+    s := s + "\nTP3     runner · trailing stop"
     s
 
 // ── Armed conditions — setup to SOS, fib aligned, an edge exists, not vetoed,
@@ -4253,34 +4207,64 @@ bool shortArmed = execShorts and armOkS and not lateDayBlock and not htfBlockSho
 // the death bar (the engine clears aplus*_sosBar / aplus*_618 the instant the
 // leg dies); the miss is booked when the leg dies still latched. If an FVG edge
 // EVER appears the latch clears — that is a no-fill, not an FVG-missing miss.
+// (The on-chart "NO FVG" labels were REMOVED 2026-07-22. They duplicated the
+//  missed-setup callout, which already names FVG as the missing confluence, and
+//  the compile-token budget is better spent on the trade bands. The COUNTERS
+//  below stay — the diagnostic log still reports every one of these misses.)
 var int  missedNoFvgL = 0,       var int  missedNoFvgS = 0
 var bool aplusL_fvgMiss = false, var bool aplusS_fvgMiss = false
-var int  aplusL_fvgMissBar = na, var int  aplusS_fvgMissBar = na
 
 bool longReadyNoFvg  = execLongs  and armOkL and not lateDayBlock and not na(aplusL_sosBar) and fibo_dir == 1  and na(longEdge)  and aplusL_half and (not longVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
 bool shortReadyNoFvg = execShorts and armOkS and not lateDayBlock and not na(aplusS_sosBar) and fibo_dir == -1 and na(shortEdge) and aplusS_half and (not shortVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
 
 if longReadyNoFvg
     aplusL_fvgMiss := true
-    aplusL_fvgMissBar := na(aplusL_fvgMissBar) ? bar_index : aplusL_fvgMissBar
 if aplusL_fvgMiss and (not na(longEdge) or (not na(tradedSosL) and aplusL_sosBar == tradedSosL))
-    aplusL_fvgMiss := false, aplusL_fvgMissBar := na
+    aplusL_fvgMiss := false
 if aplusL_fvgMiss and na(aplusL_sosBar)
     missedNoFvgL := missedNoFvgL + 1
-    if debugMarkNoFvg
-        label.new(aplusL_fvgMissBar, low - _dbgOff * 2, "NO FVG\nlong missed", color = color.new(#FF9800, 15), textcolor = color.new(#0a0a14, 0), style = label.style_label_up, size = size.small)
-    aplusL_fvgMiss := false, aplusL_fvgMissBar := na
+    aplusL_fvgMiss := false
 
 if shortReadyNoFvg
     aplusS_fvgMiss := true
-    aplusS_fvgMissBar := na(aplusS_fvgMissBar) ? bar_index : aplusS_fvgMissBar
 if aplusS_fvgMiss and (not na(shortEdge) or (not na(tradedSosS) and aplusS_sosBar == tradedSosS))
-    aplusS_fvgMiss := false, aplusS_fvgMissBar := na
+    aplusS_fvgMiss := false
 if aplusS_fvgMiss and na(aplusS_sosBar)
     missedNoFvgS := missedNoFvgS + 1
-    if debugMarkNoFvg
-        label.new(aplusS_fvgMissBar, high + _dbgOff * 2, "NO FVG\nshort missed", color = color.new(#FF9800, 15), textcolor = color.new(#0a0a14, 0), style = label.style_label_down, size = size.small)
-    aplusS_fvgMiss := false, aplusS_fvgMissBar := na
+    aplusS_fvgMiss := false
+
+// ══ MISSED-SETUP CALLOUT ══════════════════════════════════════════════════════
+// Fires when a setup that reached at least 2 of the 3 confluences dies WITHOUT
+// ever becoming a trade — for ANY reason, not just the old "never reached the
+// zone" case. What counts as a confluence is read live from the strategy inputs,
+// so the callout always describes the strategy you are actually running:
+//
+//   1 ARM   — only an ENABLED arm source counts. With "Arm on liquidity sweep"
+//             off, a sweep-armed setup lists Arm as MISSING and says exactly
+//             that; same for divergence. Both enabled and both live prints both.
+//   2 SOS   — always met here: the watch only opens once the SOS has landed.
+//   3 ZONE  — price had to retrace into the 0.5-0.886 band AND, while "Require
+//             FVG overlap" is on, a gap had to be live to rest the limit on.
+//             Turn that input off and reaching the band alone satisfies it.
+//
+// A setup that met all three and STILL did not fill is the most important case —
+// it is the one that used to vanish silently — so it is drawn too, headed
+// "3 OF 3 · NO ENTRY", with the real blocker named: the veto, the final-hour
+// rule, the HTF bias filter, or "limit rested but price never touched it".
+//
+// The would-be entry price is the FVG edge if one ever qualified, otherwise the
+// 0.618 (E1) fib — exactly where the limit would have rested either way.
+//
+// Placement: the box is pinned a clear 4 ATR beyond the recent range so it can
+// never sit on top of the candles, and the leader lines connect it back to the
+// bars that matter.
+float _dbg23Atr = ta.atr(14)
+float _dbg23Lo  = ta.lowest(low, 60)   - _dbg23Atr * 4
+float _dbg23Hi  = ta.highest(high, 60) + _dbg23Atr * 4
+bool  _dbgRecent = debugDays == 0 or time >= timenow - debugDays * 86400000
+
+string miss23L = f_w23(mwL, true,  not na(aplusL_sosBar), not na(tradedSosL) and tradedSosL == mwL.sosBar, strategy.position_size <= 0, aplusL_half or aplusL_618, longEdge,  fiboP3, longVetoA  and execRespectVeto, lateDayBlock, htfBlockLong  or htfBiasBlockLong,  execArmSweep and sosL_swp, execArmDiv and sosL_div, execReqFVG, _dbg23Lo, _dbg23Atr * 2, _dbgRecent)
+string miss23S = f_w23(mwS, false, not na(aplusS_sosBar), not na(tradedSosS) and tradedSosS == mwS.sosBar, strategy.position_size >= 0, aplusS_half or aplusS_618, shortEdge, fiboP3, shortVetoA and execRespectVeto, lateDayBlock, htfBlockShort or htfBiasBlockShort, execArmSweep and sosS_swp, execArmDiv and sosS_div, execReqFVG, _dbg23Hi, _dbg23Atr * 2, _dbgRecent)
 
 // ── Ladder select — which rungs this trade gets depends on how DEEP the resting
 //    limit sits. "Deep" = at or beyond the 0.618 fib (E1), i.e. one of the lower
@@ -4300,7 +4284,7 @@ if longArmed
     if slDist > 0
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosL := aplusL_sosBar
-        pendConfL := f_conf(true, useSwpL, useDivL, recentSSL, bar_index - aplusL_sosBar, aplusL_fvg, aplusL_poi, bullDivActive, longDeep, longEdgeSz)
+        pendConfL := f_conf(true, useSwpL, useDivL, recentSSL, bar_index - aplusL_sosBar, aplusL_fvg, aplusL_poi, bullDivActive, longDeep, longEdgeSz, longEdge, lSL, lTP1, lTP2)
         strategy.entry("Long", strategy.long, qty = qty, limit = longEdge)
     else
         strategy.cancel("Long")
@@ -4316,7 +4300,7 @@ if shortArmed
     if slDist > 0
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosS := aplusS_sosBar
-        pendConfS := f_conf(false, useSwpS, useDivS, recentBSL, bar_index - aplusS_sosBar, aplusS_fvg, aplusS_poi, bearDivActive, shortDeep, shortEdgeSz)
+        pendConfS := f_conf(false, useSwpS, useDivS, recentBSL, bar_index - aplusS_sosBar, aplusS_fvg, aplusS_poi, bearDivActive, shortDeep, shortEdgeSz, shortEdge, sSL, sTP1, sTP2)
         strategy.entry("Short", strategy.short, qty = qty, limit = shortEdge)
     else
         strategy.cancel("Short")
@@ -4327,29 +4311,47 @@ else if strategy.position_size == 0
 //    and reset the stop stage. Reset stage to 0 whenever we are flat. ──
 // Offset the confluence label well clear of the candles (longs below, shorts
 // above) and drop a thin line from the entry price to the label so it still
-// points at the exact entry without covering the price action.
-float _cOff = ta.atr(14) * 6
+// points at the exact entry without covering the price action. The multiplier is
+// an input because it is the ONLY control over where the hover tooltip opens —
+// TradingView anchors the tooltip to the label and exposes no placement API.
+float _cOff = ta.atr(14) * execLabelOff
 
-f_confOpen(TradeLbl t, int dir, float px, float off, string body) =>
-    if execShowConfLabel
-        color c  = dir > 0 ? color.new(#26A69A, 0) : color.new(#EF5350, 0)
+// While the trade is OPEN the label is grey — the result is not known yet and
+// colouring it by direction would be a claim the chart cannot back up. Direction
+// is already on the label in words ("▲ LONG") and under the candle as a triangle.
+//
+// The chart shows ONE LINE. The arm source, SOS age, FVG/POI/DIV flags and the
+// full entry / stop / TP ladder with real prices are in the label's TOOLTIP.
+f_confOpen(TradeLbl t, int dir, float px, float off, string body, bool showIt) =>
+    if execShowConfLabel and showIt
         float ly = dir > 0 ? px - off : px + off
+        t.head := dir > 0 ? "▲ LONG" : "▼ SHORT"
         t.body := body
-        t.ln   := line.new(bar_index, px, bar_index, ly, color = c, width = 1)
-        t.lb   := label.new(bar_index, ly, body, color = color.new(#0a0a14, 10), textcolor = c, style = dir > 0 ? label.style_label_up : label.style_label_down, size = size.small, textalign = text.align_left)
+        t.ln   := line.new(bar_index, px, bar_index, ly, color = color.new(#787B86, 0), width = 1)
+        t.lb   := label.new(bar_index, ly, t.head, tooltip = t.head + "\n" + body, color = color.new(#787B86, 12), textcolor = color.new(#101014, 0), style = dir > 0 ? label.style_label_up : label.style_label_down, size = size.small)
 
-// Rewrite the label with the result on the bar the trade closes. Graded in R
-// against the SAME scratch band the diagnostic log uses, so a label can never call
-// a trade a win that the log counts as a scratch.
+// On the bar the trade closes: recolour by RESULT and append the R. Green won,
+// red lost, ORANGE breakeven — a trade that went out and came back to entry is a
+// breakeven, not a win, and the colour has to say so. Graded against the SAME
+// breakeven band the diagnostic log uses, so the label and the log can never
+// disagree about the same trade.
+// The result filter is applied here rather than at entry because the result is
+// what it filters on — a label that fails it is deleted the moment it is graded.
 f_confClose(TradeLbl t, float tradeR, float band) =>
     if not na(t.lb)
-        bool   scratch = math.abs(tradeR) <= band
-        bool   won     = not scratch and tradeR > 0
-        color  c    = scratch ? color.new(#FF9800, 0) : won ? color.new(#26A69A, 0) : color.new(#EF5350, 0)
-        string head = (scratch ? "• SCRATCH " : won ? "✓ WIN " : "✗ LOSS ") + (tradeR >= 0 ? "+" : "") + str.tostring(tradeR, "#.##") + "R\n"
-        label.set_text(t.lb, head + t.body)
-        label.set_textcolor(t.lb, c)
-        line.set_color(t.ln, c)
+        bool   be   = math.abs(tradeR) <= band
+        bool   won  = not be and tradeR > 0
+        string res  = be ? "BREAKEVEN" : won ? "WIN" : "LOSS"
+        bool   keep = execLabelWhich == "All" or (execLabelWhich == "Wins only" and won) or (execLabelWhich == "Losses only" and not won and not be) or (execLabelWhich == "Losses + breakevens" and not won)
+        if keep
+            string line1 = t.head + "  ·  " + res + "  " + (tradeR >= 0 ? "+" : "") + str.tostring(tradeR, "#.##") + "R"
+            label.set_text(t.lb, line1)
+            label.set_tooltip(t.lb, line1 + "\n" + t.body)
+            label.set_color(t.lb, be ? color.new(#FF9800, 12) : won ? color.new(#26A69A, 12) : color.new(#EF5350, 12))
+            line.set_color(t.ln, be ? color.new(#FF9800, 0) : won ? color.new(#26A69A, 0) : color.new(#EF5350, 0))
+        else
+            label.delete(t.lb)
+            line.delete(t.ln)
         t.lb := na
         t.ln := na
 
@@ -4360,7 +4362,7 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     lMaxFav    := high
     openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
     netAtEntry  := strategy.netprofit
-    f_confOpen(tlbl, 1, lEntry, _cOff, pendConfL)
+    f_confOpen(tlbl, 1, lEntry, _cOff, pendConfL, execLabelWhich != "None")
 if strategy.position_size < 0 and strategy.position_size[1] >= 0
     tradedSosS := pendSosS
     sEntry     := strategy.position_avg_price
@@ -4368,39 +4370,62 @@ if strategy.position_size < 0 and strategy.position_size[1] >= 0
     sMaxFav    := low
     openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
     netAtEntry  := strategy.netprofit
-    f_confOpen(tlbl, -1, sEntry, _cOff, pendConfS)
+    f_confOpen(tlbl, -1, sEntry, _cOff, pendConfS, execLabelWhich != "None")
 if strategy.position_size == 0
     lStage := 0
     sStage := 0
 
-// ── Grade the trade the bar it closes: WIN / LOSS / SCRATCH in R, not in cents ──
+// ── Grade the trade the bar it closes: WIN / LOSS / BREAKEVEN in R, not in cents ─
 // Graded once and handed to the entry label and the diagnostic log, so the two
 // can never tell different stories about the same trade.
 float closedR = strategy.position_size == 0 and strategy.position_size[1] != 0 and not na(openRiskUsd) and openRiskUsd > 0 ? (strategy.netprofit - netAtEntry) / openRiskUsd : na
 if not na(closedR)
-    f_confClose(tlbl, closedR, execScratchR)
+    f_confClose(tlbl, closedR, execBeBandR)
     openRiskUsd := na
 
-// ── Position box + exit-fill lines ───────────────────────────────────────────
-//   fill line   at each REAL fill price, entry bar → fill bar, labelled TP1/TP2/RUN
-//   GREEN box   entry → the furthest fill at or past TP1 (what the trade was paid)
-//   RED box     entry → the closing fill, if the trade lost
-//   ORANGE line at entry, if it only scratched to breakeven
-color POS_GREEN  = color.new(#26A69A, 62)
+// ── Position box — the trade drawn as STACKED BANDS, not as loose lines ──────
+// A trade scales out in up to three pieces, so one box can never describe it. It
+// is drawn as a stack of bands, each one the slice of price a single piece was
+// actually paid for:
+//     entry → TP1 fill    darkest green    the first third, banked
+//     TP1   → TP2 fill    mid green        the second third
+//     TP2   → runner fill lightest green   what the trail squeezed out
+// Read the stack from the bottom up (top down on a short) and the gradient tells
+// you how far the trade ran before each piece came off, with no text to decode.
+// A faded RED band behind them shows how far price went AGAINST the trade first —
+// the heat you had to sit through to get paid.
+// A trade that banked nothing is a single red band, entry → the stop fill. One
+// that came back to entry is a lone orange line. Losing has one colour, winning
+// has one colour, and the shade is the only thing that varies.
+//
+// EVERY band comes from the strategy's own closed-trade log, at the price the
+// engine REALLY filled — never a fib level it merely aimed at — so the drawing
+// can never claim profit the P&L does not have. Nothing is drawn from the trade's
+// high-water mark: price spiking to a target and reversing before the limit fills
+// pays you nothing.
 color POS_RED    = color.new(#EF5350, 62)
 color POS_OPEN   = color.new(#787B86, 80)
 color POS_ORANGE = color.new(#FF9800, 0)
 color POS_GREENB = color.new(#26A69A, 0)   // solid borders so even a thin box is visible
 color POS_REDB   = color.new(#EF5350, 0)
-color EXIT_TP1   = color.new(#26A69A, 0)   // one colour per exit leg — TP2 and the runner
-color EXIT_TP2   = color.new(#2196F3, 0)   // often fill within cents of each other, so
-color EXIT_RUN   = color.new(#AB47BC, 0)   // colour is what tells them apart, not position
-// Every partial exit (TP1, TP2, runner) lands in the strategy's closed-trade log
-// the moment it fills, carrying the price the engine REALLY got. We drain that log
-// rather than re-deriving anything from the fib levels, so the drawing can never
-// disagree with the P&L. The box deliberately no longer uses the trade's high-water
-// mark: price spiking to a target and reversing before the limit fills pays you
-// nothing, and a box drawn to that spike claims profit that never existed.
+color POS_G1     = color.new(#26A69A, 55)  // one hue, three depths — the gradient IS
+color POS_G2     = color.new(#26A69A, 70)  // the legend, so nothing has to be labelled
+color POS_G3     = color.new(#26A69A, 82)  // by colour
+color POS_DD     = color.new(#EF5350, 88)  // drawdown: behind everything, barely there
+color TP_ANNOT   = color.new(#26A69A, 40)  // ONE colour for every tag and its line
+
+// One banked target: its slice of the move, a faint dashed line at the exact fill
+// price, and its tag. Every tag is anchored at the SAME x (lx = the trade's right
+// edge), so TP1/TP2/TP3 stack in one column off to the side instead of scattering
+// across the candles at the bar each happened to fill on.
+// (`from` / `to` are NOT usable as parameter names — `to` is the for-loop keyword
+//  and the parser rejects the whole declaration, blaming the first parameter.)
+f_tpBand(int x1, int x2, int lx, float yA, float yB, color c, string tag) =>
+    box.new(x1, math.max(yA, yB), x2, math.min(yA, yB), bgcolor = c, border_color = color(na))
+    if execShowExitLines
+        line.new(x1, yB, lx, yB, color = TP_ANNOT, style = line.style_dashed, width = 1)
+        label.new(lx, yB, " " + tag, color = color(na), textcolor = TP_ANNOT, style = label.style_label_left, size = size.small)
+
 f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1) =>
     if execShowPosBox
         // 1. Fresh fill → open a neutral box anchored at the entry bar
@@ -4411,62 +4436,65 @@ f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1) =
             p.sl       := p.dir > 0 ? lS : sS
             p.t1       := p.dir > 0 ? l1 : s1
             p.openNet  := strategy.netprofit
-            p.bestFill := na
             p.lastFill := na
+            p.f1       := na
+            p.f2       := na
+            p.f3       := na
             p.fills    := 0
+            p.worst    := p.dir > 0 ? low : high
             p.bx       := box.new(bar_index, math.max(p.entry, close), bar_index, math.min(p.entry, close), bgcolor = POS_OPEN, border_color = color.new(#787B86, 0), border_width = 1)
-        // 2. Drain any exits that filled, drawing each at its true price. Runs BEFORE
+        // 2. Bank any exits that filled. They are RECORDED here and DRAWN on close,
+        //    which is what lets all three tags share one right-hand edge. Runs before
         //    the paint below, so a trade that opens and closes on one bar still works.
         if strategy.closedtrades > p.seen
             for i = p.seen to strategy.closedtrades - 1
-                float  xPx  = strategy.closedtrades.exit_price(i)
-                int    xBar = strategy.closedtrades.exit_bar_index(i)
-                int    nBar = strategy.closedtrades.entry_bar_index(i)
-                int    xDir = strategy.closedtrades.size(i) > 0 ? 1 : -1
-                string xId  = strategy.closedtrades.exit_id(i)
-                // Only a fill at or beyond TP1 counts as a target. This is what stops
-                // a breakeven-stop scratch (which fills just past entry) painting green.
-                bool   atTgt = not na(p.t1) and (xDir > 0 ? xPx >= p.t1 : xPx <= p.t1)
-                if atTgt
-                    p.bestFill := na(p.bestFill) ? xPx : (xDir > 0 ? math.max(p.bestFill, xPx) : math.min(p.bestFill, xPx))
+                float xPx  = strategy.closedtrades.exit_price(i)
+                int   xDir = strategy.closedtrades.size(i) > 0 ? 1 : -1
+                // Only a fill at or beyond TP1 counts as a banked target. This is what
+                // stops a breakeven-stop exit (which fills just past entry) painting green.
+                if not na(p.t1) and (xDir > 0 ? xPx >= p.t1 : xPx <= p.t1)
+                    p.fills := p.fills + 1
+                    if p.fills == 1
+                        p.f1 := xPx
+                    else if p.fills == 2
+                        p.f2 := xPx
+                    else
+                        p.f3 := xPx
                 p.lastFill := xPx
-                p.fills    := p.fills + 1
-                if execShowExitLines
-                    // One colour per leg, so the three exits are never confused for each
-                    // other. TP2 and the runner routinely fill within cents of one another
-                    // (the runner's trail sits just behind TP2), which is exactly the case
-                    // that used to draw two identical lines on top of each other.
-                    color xc = not atTgt ? POS_REDB : str.contains(xId, "TP1") ? EXIT_TP1 : str.contains(xId, "TP2") ? EXIT_TP2 : EXIT_RUN
-                    // Fan the labels out to the right, one step further per fill, so two
-                    // fills at the same price still read as two separate lines.
-                    int xLbl = xBar + 3 + (p.fills - 1) * 9
-                    line.new(nBar, xPx, xLbl, xPx, color = xc, style = line.style_dashed, width = 1)
-                    label.new(xLbl, xPx, " " + xId + "  " + str.tostring(xPx, format.mintick), color = color(na), textcolor = xc, style = label.style_label_left, size = size.normal)
             p.seen := strategy.closedtrades
-        // 3. While open → grow the box right
+        // 3. While open → grow the box right and track the worst price seen
         if strategy.position_size != 0 and not na(p.bx)
+            p.worst := p.dir > 0 ? math.min(p.worst, low) : math.max(p.worst, high)
             box.set_right(p.bx, bar_index)
             box.set_top(p.bx, math.max(p.entry, close))
             box.set_bottom(p.bx, math.min(p.entry, close))
-        // 4. Closed this bar → paint the outcome from the FILLS, not from price action
+        // 4. Closed this bar → drop the placeholder and paint the real thing
         if strategy.position_size == 0 and strategy.position_size[1] != 0 and not na(p.bx)
-            float netPnl = strategy.netprofit - p.openNet
-            float redTo  = na(p.lastFill) ? p.sl : p.lastFill
-            box.set_right(p.bx, bar_index)
-            if not na(p.bestFill)
-                box.set_top(p.bx, math.max(p.entry, p.bestFill))
-                box.set_bottom(p.bx, math.min(p.entry, p.bestFill))
-                box.set_bgcolor(p.bx, POS_GREEN)
-                box.set_border_color(p.bx, POS_GREENB)
-            else if netPnl < 0
-                box.set_top(p.bx, math.max(p.entry, redTo))
-                box.set_bottom(p.bx, math.min(p.entry, redTo))
-                box.set_bgcolor(p.bx, POS_RED)
-                box.set_border_color(p.bx, POS_REDB)
-            else
-                box.delete(p.bx)
-                line.new(p.entryBar, p.entry, bar_index, p.entry, color = POS_ORANGE, width = 2)
+            box.delete(p.bx)
             p.bx := na
+            int   xr  = bar_index
+            int   lx  = xr + 4
+            float net = strategy.netprofit - p.openNet
+            // Drawdown first so the green bands sit on top of it
+            if p.dir > 0 ? p.worst < p.entry : p.worst > p.entry
+                box.new(p.entryBar, math.max(p.entry, p.worst), xr, math.min(p.entry, p.worst), bgcolor = POS_DD, border_color = color(na))
+            if not na(p.f1)
+                f_tpBand(p.entryBar, xr, lx, p.entry, p.f1, POS_G1, "TP1")
+                if not na(p.f2)
+                    f_tpBand(p.entryBar, xr, lx, p.f1, p.f2, POS_G2, "TP2")
+                if not na(p.f3)
+                    f_tpBand(p.entryBar, xr, lx, p.f2, p.f3, POS_G3, "TP3")
+            else if net < 0
+                float redTo = na(p.lastFill) ? p.sl : p.lastFill
+                box.new(p.entryBar, math.max(p.entry, redTo), xr, math.min(p.entry, redTo), bgcolor = POS_RED, border_color = POS_REDB)
+            else
+                line.new(p.entryBar, p.entry, xr, p.entry, color = POS_ORANGE, width = 2)
+        // A function's LAST statement is its return value, and the three branches
+        // above create a box / a box / a line — Pine refuses to pick a type for
+        // that (CE10235). This constant sits after them so the drawing chain is
+        // never the return expression. It is not busywork: remove it and the
+        // script stops compiling.
+        int _pbDone = 0
 
 f_posBox(pbx, lEntry, sEntry, lSL, sSL, lTP1, sTP1)
 
@@ -4559,9 +4587,10 @@ if strategy.position_size < 0
 // Line grammar (so a paste is self-describing):
 //   [ENTRY @bar]  a position opened, with its frozen SL/TP ladder + confluences
 //   [EXIT #i]     one partial leg (TP1/TP2/RUN) filled, at its true price + bar
-//   [RESULT]      the trade closed — WIN / LOSS / SCRATCH graded in R
+//   [RESULT]      the trade closed — WIN / LOSS / BREAKEVEN graded in R
 //   [MISS-NOFVG]  reached the entry band but no FVG overlapped it — no fill
-//   [MISS-2of3]   Arm + SOS confirmed, but the leg died before the zone retrace
+//   [MISS]        a 2-of-3-or-better setup died without ever becoming a trade,
+//                 with the met and missing confluences named
 //   [BLOCK]       entry zone reached with a live edge, killed by veto / late-day
 //
 // The known "all three legs, same price, same bar, 1-bar duration" phantom-exit
@@ -4605,9 +4634,9 @@ f_diag(array<int> ds) =>
                   "  pnl=$" + str.tostring(strategy.closedtrades.profit(i), "#.##"))
             array.set(ds, 0, strategy.closedtrades)
         // ── RESULT — the trade closed this bar (closedR is the execution layer's
-        //    own R grade, against the SAME scratch band the entry label uses). ──
+        //    own R grade, against the SAME breakeven band the entry label uses). ──
         if not na(closedR)
-            string verdict = math.abs(closedR) <= execScratchR ? "SCRATCH" : closedR > 0 ? "WIN" : "LOSS"
+            string verdict = math.abs(closedR) <= execBeBandR ? "BREAKEVEN" : closedR > 0 ? "WIN" : "LOSS"
             log.info("[RESULT] " + (strategy.position_size[1] > 0 ? "LONG " : "SHORT ") + verdict + "  " +
               (closedR >= 0 ? "+" : "") + str.tostring(closedR, "#.##") + "R  | equity=$" + str.tostring(strategy.equity, "#.##"))
         // ── MISS: no FVG — the execution layer just booked one (counter ticked). ──
@@ -4615,12 +4644,13 @@ f_diag(array<int> ds) =>
             log.info("[MISS-NOFVG] LONG @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
         if missedNoFvgS != missedNoFvgS[1]
             log.info("[MISS-NOFVG] SHORT @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
-        // ── MISS: 2-of-3 death — the watch flag cleared with the stage still below
-        //    2 (Arm + SOS were in, the zone retrace never came). ──
-        if aplusL_watch23[1] and not aplusL_watch23 and aplusL_stage < 2
-            log.info("[MISS-2of3] LONG — Arm(" + aplusL_armSnapSrc + ") ✓ + SOS ✓ (arm@" + str.tostring(aplusL_armSnapBar) + " sos@" + str.tostring(aplusL_sosSnapBar) + "), died before the zone/FVG retrace ever arrived.")
-        if aplusS_watch23[1] and not aplusS_watch23 and aplusS_stage < 2
-            log.info("[MISS-2of3] SHORT — Arm(" + aplusS_armSnapSrc + ") ✓ + SOS ✓ (arm@" + str.tostring(aplusS_armSnapBar) + " sos@" + str.tostring(aplusS_sosSnapBar) + "), died before the zone/FVG retrace ever arrived.")
+        // ── MISS: a setup with 2-of-3 or better died without becoming a trade. The
+        //    callout block already assembled the exact same text it drew on the
+        //    chart, so the log and the box can never disagree. ──
+        if miss23L != ""
+            log.info("[MISS] @" + str.tostring(bar_index) + " " + miss23L + " (arm@" + str.tostring(mwL.armBar) + " sos@" + str.tostring(mwL.sosBar) + ")")
+        if miss23S != ""
+            log.info("[MISS] @" + str.tostring(bar_index) + " " + miss23S + " (arm@" + str.tostring(mwS.armBar) + " sos@" + str.tostring(mwS.sosBar) + ")")
         // ── MISS: blocked at the entry zone — everything for a fill was satisfiable
         //    EXCEPT a live veto or the final-hour rule. Deduped by SOS bar (via the
         //    diagState array) so each blocked setup logs exactly once. ──
