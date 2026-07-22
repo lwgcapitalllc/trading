@@ -109,10 +109,28 @@ def _execute(job_id: str, spec: dict) -> None:
 
     config = _build_config(entry["config"], spec.get("params") or {}, symbol)
     capital = float(spec.get("deposit") or 10_000)
-
-    _set(job_id, pct=15, message=f"replaying {len(df):,} bars…")
     strategy = entry["strategy"](config, initial_capital=capital)
-    _replay(job_id, strategy, df, len(df))
+
+    if getattr(config, "exec_secondary", False):
+        # Secondary (1m sniper) re-entry is on → replay 15m PRIMARY + 1m SECONDARY on one clock
+        # (strategy.run_dual). Needs a 1m feed alongside the base frame; the broker serves ~35 days
+        # of M1, so a secondary run must be a recent window (an old one loads no 1m → clear error).
+        _set(job_id, pct=8, message=f"loading {symbol} 1m bars for the secondary…")
+        df1m = BarSource().load(symbol, 1, spec["start_date"], spec["end_date"])
+        if df1m.empty:
+            raise ValueError(
+                f"exec_secondary is on but no 1m bars loaded for {symbol} over "
+                f"[{spec['start_date']}, {spec['end_date']}] — the broker serves ~35 days of M1, "
+                f"so choose a more recent window (or turn the secondary off).")
+        _set(job_id, pct=15, message=f"replaying {len(df):,} × 15m + {len(df1m):,} × 1m…")
+
+        def _prog(i: int, n: int) -> None:
+            _set(job_id, pct=min(94, 15 + int(i / n * 79)), message=f"1m bar {i:,} / {n:,}")
+
+        strategy.run_dual(df, df1m, progress=_prog, should_cancel=lambda: _cancelled(job_id))
+    else:
+        _set(job_id, pct=15, message=f"replaying {len(df):,} bars…")
+        _replay(job_id, strategy, df, len(df))
 
     if _cancelled(job_id):
         _set(job_id, status="failed_cancelled", pct=100, message="cancelled")

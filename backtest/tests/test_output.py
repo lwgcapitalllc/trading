@@ -84,8 +84,10 @@ def test_long_plus_short_equals_trade_count():
 
 def test_equity_curve_point_has_exactly_the_lab_contract_keys():
     p = build_equity_curve([_t(100.0)])[0]
-    assert set(p) == {"index", "equity", "date", "entry_ms", "direction",
-                      "profit", "exit_name", "size", "favorable", "adverse"}
+    assert set(p) == {"index", "equity", "date", "entry_ms", "exit_ms", "direction",
+                      "profit", "exit_name", "size", "favorable", "adverse",
+                      "entry_price", "exit_price", "kind",
+                      "mfe_price", "mae_price", "stop_price", "legs", "tp_targets"}
 
 
 def test_equity_curve_carries_trade_excursion():
@@ -99,6 +101,35 @@ def test_equity_curve_excursion_defaults_to_zero_when_trade_lacks_it():
     curve = build_equity_curve([_t(100.0)])
     assert curve[0]["favorable"] == 0.0
     assert curve[0]["adverse"] == 0.0
+
+
+def test_stop_price_is_derived_from_distance_and_direction():
+    """The profit-depth view's risk line: long stop sits below entry, short above."""
+    long_p = build_equity_curve([_t(10.0, dir=1, entry=100.0, stop=5.0)])[0]
+    short_p = build_equity_curve([_t(10.0, dir=-1, entry=100.0, stop=5.0)])[0]
+    assert long_p["stop_price"] == 95.0
+    assert short_p["stop_price"] == 105.0
+
+
+def test_profit_depth_fields_default_cleanly_when_trade_lacks_them():
+    """A trade duck-type without mfe_price/mae_price/legs reads 0.0 / [] — never a crash."""
+    p = build_equity_curve([_t(100.0)])[0]
+    assert p["mfe_price"] == 0.0
+    assert p["mae_price"] == 0.0
+    assert p["legs"] == []
+
+
+def test_legs_pass_through_rounded():
+    """The per-rung exit ledger flows to the chart, price-rounded, order preserved."""
+    t = _t(100.0)
+    t.mfe_price = 90.123456
+    t.legs = [{"reason": "S-TP1", "price": 95.123456, "ms": 111, "qty": 0.3},
+              {"reason": "S-RUN", "price": 90.5, "ms": 222, "qty": 0.7}]
+    p = build_equity_curve([t])[0]
+    assert p["mfe_price"] == 90.12346
+    assert [lg["reason"] for lg in p["legs"]] == ["S-TP1", "S-RUN"]
+    assert p["legs"][0]["price"] == 95.12346
+    assert p["legs"][0]["ms"] == 111
 
 
 def test_entry_ms_is_present_for_the_news_filter():

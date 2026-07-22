@@ -47,6 +47,11 @@ class SosFadeConfig:
     exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
     exec_trail_step: float = 5.0       # "Runner trail step ($ of price)"
     exec_no_late_day: bool = True      # "No entries in final hour (16:00-17:00 NY)"
+    exec_secondary: bool = False       # "Secondary re-entries (1m SOS)" — the 1m sniper re-entry
+    #   OFF (default) = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
+    #   ON = also re-enter on the same 15m leg from the 1m chart (needs run_dual + a 1m feed).
+    #   Full rules: docs/MPC_SOS_FADE_SECONDARY.md. There is NO Pine parity gate for it — the Pine
+    #   is only the approximate version — so it is verified visually, not by compare_strategy.py.
 
     # ── GRP_STATS — the one decision-affecting stats input (4194) ───────────────
     exec_scratch_r: float = 0.15       # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH

@@ -101,6 +101,35 @@ BarState  --SignalAdapter-->  Signals  --SosFadeSequence-->  SeqState  --Executi
 - **`strategy.py`** — `MpcSosFadeStrategy`: the driver. `run(df, warmup=…)` replays a canonical frame
   end-to-end; `step(bar_state)` does one bar. Collects `.decisions` (the per-bar stream) and
   `.execution.trades`.
+- **`secondary.py`** — the 1m sniper re-entry (below). `Structure1m` (1m structure feed, port of Pine
+  `f_struct1m`) + `SecondaryArm` (the latch/arm, port of Pine `f_secArm`). Consumed by `run_dual`.
+
+## Secondary (1m sniper) re-entry — `exec_secondary` (built 2026-07-19, NOT committed)
+
+The 1-minute re-entry Aaron prototyped in Pine, built as the *exact* version here (Pine can only
+sample the 1m engine once per 15m bar — its own tooltip says "the exact version is the Python port").
+**Full rules + design: `docs/MPC_SOS_FADE_SECONDARY.md`.** One paragraph: after the **primary** 15m
+A+ trade on a leg has traded and gone flat, while the 15m div + SOS are still live and price is back
+in the 0.618-0.886 zone, a **1m shift of structure** in the trade direction rests a limit at a 38.2%
+retrace of that tight 1m leg (stop = 1m leg origin; TP1/TP2 = 15m 0.5/0.382; runner = TP3). One
+re-entry per 1m leg; a re-entry is never the first trade on a leg.
+
+- **`run_dual(df15, df1m)`** merges the two streams on a close-time clock: the **primary** is stepped
+  on 15m bars exactly as `run(df15)` (so parity is untouched); the **secondary** latches/arms/fills/
+  manages on real **1m** bars — the sniper "in and out fast" a 15m bar can't express.
+- **Execution** grows an `_entry_kind` tag + `step_secondary(bar1m, arm)`. A 15m bar only ever
+  touches a `primary` position; a 1m bar only a `secondary`. They share the one position slot but
+  never the same trade (the secondary arms only when flat), so the tag is all that separates them.
+  With `exec_secondary` OFF, no secondary ever opens, so `step()` is byte-identical to before.
+- **NO Pine parity gate** — the Pine is only the approximate version, so this is verified **visually**
+  (the lab price chart + the 15m→1m drill-down). The offline guard is
+  `test_run_dual_primary_is_identical_to_run_when_secondary_off` + the hand-traced arm/exec tests in
+  `tests/test_secondary.py`, and OFF parity was re-confirmed on the real M15/M1 cache (`run` ==
+  `run_dual`, 40 trades byte-identical). `compare_strategy.py` (which runs `run`, not `run_dual`)
+  stays the primary's gate.
+- **Sparse-data note:** the secondary is rare (a live leg + zone + a 1m SOS + div, all at once). Over
+  the ~4 days of local 1m cache it fired 0 times — expected, not a bug (see the arm trace). A real
+  visual verification needs a longer 1m window (broker serves ~35d direct; older via ticks).
 
 ## Deliberate deviations from the Pine (per the framework)
 

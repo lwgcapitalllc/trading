@@ -48,6 +48,17 @@ def _round(x: float, n: int = 2) -> float:
     return round(float(x), n)
 
 
+def _stop_price(t: Any) -> float:
+    """Initial 1R stop as a PRICE, from `stop_distance` + direction + entry. `stop_distance` is
+    entry→the stop frozen at placement (always ≥ 0), so a long's stop sits below entry and a
+    short's above: `entry - dir*stop_distance`. Returns 0.0 for a trade duck-type lacking either."""
+    entry = getattr(t, "entry_price", 0.0)
+    dist = getattr(t, "stop_distance", 0.0)
+    if not entry or not dist:
+        return 0.0
+    return entry - (1.0 if t.dir > 0 else -1.0) * dist
+
+
 # ── equity curve ──────────────────────────────────────────────────────────────
 
 def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -> list[dict]:
@@ -77,6 +88,31 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
             "size":      t.qty,
             "favorable": _round(getattr(t, "mfe_usd", 0.0)),
             "adverse":   _round(getattr(t, "mae_usd", 0.0)),
+            # Real fills + which layer traded — the price chart draws the trade box at the exact
+            # entry/exit price (not a candle-close guess) and tells primary from secondary. Optional
+            # for consumers that don't read them; every other equity-curve reader ignores extra keys.
+            "exit_ms":     int(t.exit_ms),
+            "entry_price": _round(getattr(t, "entry_price", 0.0), 5),
+            "exit_price":  _round(getattr(t, "exit_price", 0.0), 5),
+            "kind":        getattr(t, "kind", "primary"),
+            # Profit-depth trade view (price chart): how far price ran (mfe/mae PRICES), where each
+            # rung actually banked (`legs`), and the initial 1R stop. All optional — a runner/trade
+            # that doesn't carry them degrades to the plain entry→exit box. Reporting-only.
+            "mfe_price":   _round(getattr(t, "mfe_price", 0.0), 5),
+            "mae_price":   _round(getattr(t, "mae_price", 0.0), 5),
+            "stop_price":  _round(_stop_price(t), 5),
+            "legs":        [
+                {"reason": lg.get("reason", ""), "price": _round(lg.get("price", 0.0), 5),
+                 "ms": int(lg.get("ms", 0)), "qty": lg.get("qty", 0.0)}
+                for lg in getattr(t, "legs", []) or []
+            ],
+            # TP TARGET ladder (the levels the trade aimed at, nearest→furthest) — lets the chart show
+            # an UNHIT next target so a near-miss of the following TP is visible. Empty for a trade
+            # duck-type that carries no targets. Reporting-only.
+            "tp_targets":  [
+                _round(v, 5) for v in (getattr(t, "tp1", 0.0), getattr(t, "tp2", 0.0))
+                if isinstance(v, (int, float)) and v
+            ],
         })
     return curve
 

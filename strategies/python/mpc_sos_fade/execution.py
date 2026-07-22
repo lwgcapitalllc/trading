@@ -102,12 +102,28 @@ class Trade:
     exit_price: float = 0.0
     stop_distance: float = 0.0
     exit_reason: str = ""
+    # "primary" (the 15m A+ trade) or "secondary" (a 1m sniper re-entry). Reporting-only — no
+    # decision reads it; it lets the lab/chart tell the two apart. See secondary.py.
+    kind: str = "primary"
     # Reporting-only excursion (no decision weight): the most this trade was ever showing in
     # profit (`mfe_usd` ≥ 0, favorable) and the deepest it sat against us (`mae_usd` ≤ 0, adverse)
     # before it closed — measured across the full hold on bar high/low, the same intrabar
     # approximation the trail's `_max_fav` uses. Feeds the equity chart's excursion overlay.
     mfe_usd: float = 0.0
     mae_usd: float = 0.0
+    # Reporting-only PRICES (same parity-safety as the USD excursion above — no decision reads them):
+    # the deepest favorable price the hold ever reached (`mfe_price`) and the deepest adverse price
+    # (`mae_price`), plus the per-rung exit ledger (`legs`), each `{"reason", "price", "ms", "qty"}`.
+    # These feed the price chart's profit-depth trade view (how far price ran vs where each rung
+    # actually banked).
+    mfe_price: float = 0.0
+    mae_price: float = 0.0
+    legs: List[dict] = field(default_factory=list)
+    # Reporting-only TP TARGET ladder — the fib levels the trade AIMED at, frozen at entry (NOT
+    # where each rung actually closed; that's `legs`). Lets the chart draw an UNHIT next target so a
+    # runner's near-miss of the following TP is visible. No decision reads them (parity-safe).
+    tp1: float = 0.0
+    tp2: float = 0.0
 
 
 # ── the resting-order + position model ──────────────────────────────────────────
@@ -159,6 +175,12 @@ class Execution:
 
         # position state
         self._pos_dir = 0                  # 0 flat, +1 long, -1 short
+        # which layer opened the current position — "primary" (15m) or "secondary" (1m sniper).
+        # 15m `step()` only manages a primary; the 1m `step_secondary()` only manages a secondary.
+        # They share this one position slot but never the same trade (the secondary arms only when
+        # flat), so the tag is all that keeps each stream off the other's position. When flat it is
+        # ignored, so with `exec_secondary` OFF (no secondary ever opens) `step()` is unchanged.
+        self._entry_kind = "primary"
         self._qty = 0.0
         self._entry = 0.0
         self._entry_index = 0
@@ -177,6 +199,7 @@ class Execution:
         # excursion extremes across the whole hold (reporting only — see Trade.mfe_usd)
         self._ext_high = 0.0
         self._ext_low = 0.0
+        self._legs: List[dict] = []        # per-rung exit ledger of the OPEN trade (reporting only)
         self._risk_usd = 0.0
         self._filled_qty = 0.0             # how much of the position has exited
         self._sos_bar_open: Optional[int] = None
@@ -185,10 +208,22 @@ class Execution:
         # resting entry orders (one per side; at most one position at a time)
         self._pend_long: Optional[_Pending] = None
         self._pend_short: Optional[_Pending] = None
+        # the secondary sniper limit, placed/filled on the 1m stream (step_secondary). Its own slot
+        # so the 15m `_place_entries` can never clobber it. At most one side arms (fibo_dir is one).
+        self._pend_sec: Optional[_Pending] = None
 
         # one-trade-per-leg latches (Pine tradedSosL / tradedSosS)
         self._traded_sos_l: Optional[int] = None
         self._traded_sos_s: Optional[int] = None
+        # secondary eligibility: the 15m leg whose PRIMARY reached at least TP1 (moved to
+        # breakeven, _stage >= 1). A secondary arms only when its leg == this — a primary that
+        # opened and got stopped at its initial stop (never reached TP1) leaves no re-entry.
+        self._be_sos_l: Optional[int] = None
+        self._be_sos_s: Optional[int] = None
+        # set for one 1m step when a SECONDARY closes at its initial stop (stage 0 = never
+        # reached TP1). The driver reads it to kill that 15m leg — a stopped re-entry ends the
+        # cascade on that leg. +1/-1/None; reset at the top of every step_secondary.
+        self._sec_stop_dir: Optional[int] = None
 
         self.trades: List[Trade] = []
 
@@ -198,6 +233,93 @@ class Execution:
         # The SHARED balance the leg sizes against. In solo mode this equals the leg-local
         # ledger; in a portfolio it is the account all legs share, so every leg scales together.
         return self._account.balance
+
+    # ── reads the secondary layer needs (the 1m arm gates on these) ──
+    @property
+    def is_flat(self) -> bool:
+        return self._pos_dir == 0
+
+    @property
+    def entry_kind(self) -> str:
+        return self._entry_kind
+
+    @property
+    def traded_sos_l(self) -> Optional[int]:
+        return self._traded_sos_l
+
+    @property
+    def traded_sos_s(self) -> Optional[int]:
+        return self._traded_sos_s
+
+    @property
+    def be_sos_l(self) -> Optional[int]:
+        return self._be_sos_l
+
+    @property
+    def be_sos_s(self) -> Optional[int]:
+        return self._be_sos_s
+
+    @property
+    def sec_stop_dir(self) -> Optional[int]:
+        """+1/-1 if a secondary just closed at its initial stop this 1m step (the driver kills
+        that 15m leg), else None. Reset at the top of every step_secondary."""
+        return self._sec_stop_dir
+
+    # ── secondary (1m sniper) path — driven by the 1m stream, never a 15m bar ────────
+    def step_secondary(self, sig1m, arm) -> Optional[int]:
+        """Advance the SECONDARY on one 1m bar. Same calc-on-close/one-bar-delay + intrabar-path
+        rules as the primary, but on 1m bars, and only ever touching a secondary position:
+
+          - flat  → fill the sniper limit placed LAST 1m bar (if touched), then (re)place from
+                    this bar's arm. A fill retires its 1m leg (returned dir → driver calls
+                    `arm.mark_traded`) and stages the trade so its stop is live next bar.
+          - holding a secondary → run its TP1/TP2/runner ladder against this bar, then re-stage.
+          - holding a PRIMARY  → do nothing (the 15m stream owns it).
+
+        `sig1m` needs `index / time_ms / open / high / low / close` (a `_Bar1mSig`). Returns the
+        direction filled this bar (+1/-1) or None. Bar-mode only for now; tick-mode secondary
+        fills are a later add (the 1m tick seam isn't wired)."""
+        self._sec_stop_dir = None            # cleared each step; _finalise_trade sets it on a stop-out
+        sink = Decision(index=sig1m.index)   # throwaway — trades land in self.trades regardless
+        filled_dir: Optional[int] = None
+
+        # ── Phase A: fill / manage against THIS 1m bar ──
+        if self._pos_dir == 0 and self._pend_sec is not None:
+            pend = self._pend_sec
+            if pend.dir > 0 and sig1m.low <= pend.edge:
+                fill = pend.edge if sig1m.open > pend.edge else sig1m.open
+                if self._open_position(pend, fill, sig1m, sink, kind="secondary"):
+                    filled_dir = 1
+            elif pend.dir < 0 and sig1m.high >= pend.edge:
+                fill = pend.edge if sig1m.open < pend.edge else sig1m.open
+                if self._open_position(pend, fill, sig1m, sink, kind="secondary"):
+                    filled_dir = -1
+        elif self._pos_dir != 0 and self._entry_kind == "secondary":
+            self._manage_open(sig1m, sink)
+
+        # ── Phase B: at close, (re)place the sniper limit / stage the open trade ──
+        if self._pos_dir == 0:
+            self._pend_sec = self._secondary_pending(arm)
+        elif self._entry_kind == "secondary":
+            self._advance_stage(sig1m)
+
+        return filled_dir
+
+    def _secondary_pending(self, arm) -> Optional["_Pending"]:
+        """Turn the armed side of a `SecArm` into a resting `_Pending`, sized off the 1m-leg stop
+        distance with the same %-risk as the primary. At most one side arms (fibo_dir is one value)."""
+        cfg = self._cfg
+        if arm.l_armed and arm.l_edge is not None and arm.l_sl is not None:
+            dist = arm.l_edge - arm.l_sl
+            if dist > 0:
+                qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
+                return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg)
+        if arm.s_armed and arm.s_edge is not None and arm.s_sl is not None:
+            dist = arm.s_sl - arm.s_edge
+            if dist > 0:
+                qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
+                return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2, arm.s_leg)
+        return None
 
     # ── main step ───────────────────────────────────────────────────────────────
     def step(self, sig, seq) -> Decision:
@@ -219,12 +341,13 @@ class Execution:
         if self._pos_dir == 0:
             opened = self._try_entry_fill(sig, dec)
         # Exit orders are placed at a bar's close and active the NEXT bar, so a trade
-        # never fills an exit on the bar it opened (TradingView one-bar delay).
-        if self._pos_dir != 0 and not opened:
+        # never fills an exit on the bar it opened (TradingView one-bar delay). A secondary
+        # position is managed on the 1m stream, so a 15m bar never touches it.
+        if self._pos_dir != 0 and not opened and self._entry_kind != "secondary":
             self._manage_open(sig, dec)
 
         # ── Phase B: at close, (re)place orders for the next bar ──
-        if self._pos_dir != 0:
+        if self._pos_dir != 0 and self._entry_kind != "secondary":
             self._advance_stage(sig)
             dec.stop = self._current_stop()
             # tell the account this leg's live stop + remaining size, so its reservation is
@@ -238,8 +361,9 @@ class Execution:
             # deliberate deviation: force-flat before the daily close (real runs only)
             elif self._cfg.flat_by_close and self._in_flat_window(sig):
                 self._close_at(sig, sig.close, "flat-by-close", dec)
-        else:
+        elif self._pos_dir == 0:
             self._place_entries(sig, seq, dec, dec.long_edge, dec.short_edge)
+        # else: a secondary is open — managed on the 1m stream (step_secondary), not here.
 
         return dec
 
@@ -378,7 +502,7 @@ class Execution:
                     return True
         return False
 
-    def _open_position(self, pend, fill_price, sig, dec) -> bool:
+    def _open_position(self, pend, fill_price, sig, dec, kind: str = "primary") -> bool:
         # The gate runs HERE, at the fill — a resting limit reserves nothing until it fills.
         # The account scales the leg's own desired size (pend.qty) to the room; solo → full size.
         granted = self._account.request_fill(
@@ -386,12 +510,15 @@ class Execution:
         if granted <= 0.0:
             # refused (no room / below floor): don't open, drop this order, let the strategy
             # re-arm next bar if the setup still holds. No traded-SOS latch is set (see below).
-            if pend.dir > 0:
+            if kind == "secondary":
+                self._pend_sec = None
+            elif pend.dir > 0:
                 self._pend_long = None
             else:
                 self._pend_short = None
             return False
         self._pos_dir = pend.dir
+        self._entry_kind = kind
         self._qty = granted
         self._entry = fill_price
         self._entry_index = sig.index
@@ -417,11 +544,16 @@ class Execution:
         self._max_fav = None                            # _advance_stage seeds it
         self._ext_high = sig.high                       # excursion (reporting) — seed on entry bar
         self._ext_low = sig.low
-        if pend.dir > 0:
-            self._traded_sos_l = pend.sos_bar
-        else:
-            self._traded_sos_s = pend.sos_bar
-        self._pend_long = self._pend_short = None
+        self._legs = []                                 # per-rung exit ledger (reporting only)
+        # The traded-SOS latch is the PRIMARY's one-trade-per-15m-leg gate (and the secondary's
+        # "primary already went" precondition). A secondary fill must NOT move it — its sos_bar is
+        # a 1m leg, not the 15m A+ leg — so only a primary sets it.
+        if kind == "primary":
+            if pend.dir > 0:
+                self._traded_sos_l = pend.sos_bar
+            else:
+                self._traded_sos_s = pend.sos_bar
+        self._pend_long = self._pend_short = self._pend_sec = None
         dec.fills.append(Fill("entry", "Long" if pend.dir > 0 else "Short",
                               fill_price, granted, pend.dir))
         return True
@@ -545,6 +677,7 @@ class Execution:
         self._exit_qty += qty
         self._exit_ms = sig.time_ms
         self._exit_reason = oid
+        self._legs.append({"reason": oid, "price": price, "ms": sig.time_ms, "qty": qty})
         dec.fills.append(Fill("exit", oid, price, qty, d))
         if self._filled_qty >= self._qty - 1e-9:
             self._finalise_trade(sig, dec)
@@ -572,8 +705,16 @@ class Execution:
             entry_ms=self._entry_ms, exit_ms=self._exit_ms, exit_price=avg_exit,
             costs_usd=self._costs_usd,
             stop_distance=abs(self._entry - self._init_stop), exit_reason=self._exit_reason,
-            mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2)))
+            kind=self._entry_kind,
+            mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2),
+            mfe_price=round(mfe_price, 5), mae_price=round(mae_price, 5), legs=list(self._legs),
+            tp1=round(self._tp1, 5), tp2=round(self._tp2, 5)))
         dec.closed_r = r
+        # A secondary that closes at stage 0 never reached TP1 — it hit its initial stop ("didn't
+        # hold"). Flag its direction so the driver kills that 15m leg (a stopped re-entry ends the
+        # cascade). A secondary that reached breakeven-or-better (stage >= 1) does NOT flag.
+        if self._entry_kind == "secondary" and self._stage == 0:
+            self._sec_stop_dir = self._pos_dir
         self._account.close_position(self._leg)   # P&L already booked; free the reservation
         self._pos_dir = 0
         self._qty = 0.0
@@ -656,6 +797,14 @@ class Execution:
                 self._stage = 1
             if self._stage < 2 and sig.low <= self._tp2:
                 self._stage = 2
+        # Latch the 15m leg once its PRIMARY reaches TP1 (stage >= 1 = moved to breakeven) — the
+        # secondary's eligibility gate. Idempotent; only a primary sets it (a secondary reaching
+        # TP1 calls this too, but must not move the primary latch). No decision reads it → parity-safe.
+        if self._entry_kind == "primary" and self._stage >= 1:
+            if d > 0:
+                self._be_sos_l = self._sos_bar_open
+            else:
+                self._be_sos_s = self._sos_bar_open
 
     def _current_stop(self) -> float:
         cfg = self._cfg

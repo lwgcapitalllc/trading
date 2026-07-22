@@ -111,3 +111,93 @@ class MpcSosFadeStrategy:
             if bar.index >= warmup:
                 self.decisions.append(dec)
         return self
+
+    def run_dual(self, df15, df1m, engine_config=None, warmup: int = 0,
+                 progress=None, should_cancel=None) -> "MpcSosFadeStrategy":
+        """Replay the PRIMARY on 15m and the SECONDARY (1m sniper re-entry) on 1m, on one merged
+        clock. The primary path is byte-identical to `run(df15)` — 15m bars are stepped in the same
+        order with the same OHLC and `step_secondary` never touches a primary position — so
+        `compare_strategy.py` parity is unaffected (and with `exec_secondary` OFF this is just a
+        slower `run`). The secondary latches its 1m leg, arms off the LAST-CLOSED 15m context, and
+        fills/manages on real 1m bars. Full design: docs/MPC_SOS_FADE_SECONDARY.md.
+
+        `df15` / `df1m` are canonical frames (UTC DatetimeIndex, open/high/low/close) over the same
+        window. Bars are timestamped at OPEN; a 15m bar closes at `open + tf15`, so a 1m bar reads
+        the 15m context of the bar that has already CLOSED by its open time — non-repainting, and
+        the same `lookahead_off` semantics the Pine used.
+        """
+        from collections import namedtuple
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+
+        from backtest.replay import EngineStack, iter_bars
+        from .secondary import SecondaryArm, Structure1m
+
+        _Bar1mSig = namedtuple("_Bar1mSig", "index time_ms open high low close")
+        ny = ZoneInfo("America/New_York")
+
+        if len(df15.index) > 1:
+            tf15_ms = int(df15.index.to_series().diff().min().total_seconds() * 1000)
+            self.execution.bar_ms = tf15_ms
+        else:
+            tf15_ms = 900_000
+
+        stack = EngineStack(engine_config or self.engine_config())
+        bars15 = list(iter_bars(df15))
+        close15 = [b.timestamp_ms + tf15_ms for b in bars15]   # when each 15m bar is known
+        n15 = len(bars15)
+        struct1m = Structure1m(major_length=(engine_config or self.engine_config()).major_length)
+        arm_sm = SecondaryArm(self.config)
+
+        last_sig = last_seq = None
+        last_close15 = None     # the last-CLOSED 15m bar's close — the zone gate reads this (Pine's 15m `close`)
+        i15 = 0
+        # progress/cancel are optional hooks so a lab run keeps a live bar + a working Stop button
+        # (the 1m stream is the long one — ~50k bars over a month). Both no-ops when not supplied.
+        n1 = len(df1m.index)
+        step1 = max(1, n1 // 100)
+        for b1 in iter_bars(df1m):
+            if b1.index % step1 == 0:
+                if should_cancel is not None and should_cancel():
+                    return self
+                if progress is not None:
+                    progress(b1.index, n1)
+            # Flush every 15m bar that has CLOSED by the time this 1m bar opens — the primary path,
+            # unchanged from run(). Its output becomes the 15m context the secondary reads next.
+            while i15 < n15 and close15[i15] <= b1.timestamp_ms:
+                b15 = bars15[i15]
+                state = stack.step(b15)
+                last_sig = self.signals.update(state)
+                last_seq = self.sequence.update(last_sig)
+                dec = self.execution.step(last_sig, last_seq)
+                last_close15 = b15.close
+                if b15.index >= warmup:
+                    self.decisions.append(dec)
+                i15 += 1
+
+            m1 = struct1m.update(b1.index, b1.open, b1.high, b1.low, b1.close)
+            if self.config.exec_secondary and last_sig is not None:
+                ny_hour = datetime.fromtimestamp(b1.timestamp_ms / 1000.0, tz=timezone.utc) \
+                    .astimezone(ny).hour
+                arm = arm_sm.update(m1, last_sig, last_seq, last_close15, ny_hour,
+                                    self.execution.is_flat, self.execution.be_sos_l,
+                                    self.execution.be_sos_s)
+                sig1m = _Bar1mSig(b1.index, b1.timestamp_ms, b1.open, b1.high, b1.low, b1.close)
+                filled = self.execution.step_secondary(sig1m, arm)
+                if filled is not None:
+                    arm_sm.mark_traded(filled)   # retire the just-filled 1m leg
+                elif self.execution.sec_stop_dir is not None:
+                    # a re-entry hit its initial stop → kill this 15m leg (no more re-entries)
+                    arm_sm.mark_dead(self.execution.sec_stop_dir, last_seq)
+
+        # Flush any 15m bars after the last 1m bar (window tail).
+        while i15 < n15:
+            b15 = bars15[i15]
+            state = stack.step(b15)
+            last_sig = self.signals.update(state)
+            last_seq = self.sequence.update(last_sig)
+            dec = self.execution.step(last_sig, last_seq)
+            if b15.index >= warmup:
+                self.decisions.append(dec)
+            i15 += 1
+        return self

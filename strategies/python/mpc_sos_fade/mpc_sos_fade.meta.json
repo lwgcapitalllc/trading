@@ -353,6 +353,17 @@
       "desc": "Allow short trades. Shorts are ~83% of this bot's trades and carry 89% of its profit."
     },
     {
+      "name": "exec_secondary",
+      "group": "Direction & sessions",
+      "widget": "toggle",
+      "label": "1m re-entry",
+      "options": {
+        "off": "Primary only",
+        "on": "Secondary on"
+      },
+      "desc": "Add the 1-minute sniper re-entry: after the 15m primary reaches breakeven and price falls back into the zone, a 1m shift of structure re-enters. Needs a RECENT window (the broker serves ~35 days of 1m). Rare — ~3 fires in 2 years."
+    },
+    {
       "name": "exec_no_late_day",
       "group": "Direction & sessions",
       "widget": "toggle",
