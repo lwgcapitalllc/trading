@@ -132,8 +132,21 @@ SoloAccount is the gate that the seam didn't move standalone behaviour.
 3. `resample_up` aggregates to the target timeframe if base ≠ target — **never down**.
 4. The result is sliced to `[start_date, end_date]` inclusive.
 
-**PU Prime demo facts (probed 2026-07-15, XAUUSD.s):** bars pull directly — M1 ~30d, M5 ~240d,
-M15 ~2yr; real ticks go back 2+ years. Broker symbol carries a `.s` suffix. See the plan's Phase-0
+**One request can't exceed the terminal's bar cap — `Mt5Agent.bars()` chunks.** Past
+"Max bars in chart" (the classic 65,000) MT5 does not clamp or answer partially: it fails the whole
+call with `(-2, 'Terminal: Invalid params')`, which reaches the client as a bare 404 "no data" —
+indistinguishable from a symbol with no history. Measured 2026-07-21 on XAUUSD.s M15: 64,837 bars
+fine, ~70,000 (3 years) dead, so a 3-year backtest could not load bars at all. `bars()` now splits
+any long window into chunks sized from the timeframe against a 24h day (`_MAX_BARS_PER_REQUEST`
+60,000), fetches each, and stitches them (dropping the shared boundary bar). A window already small
+enough still makes exactly one call. **An empty chunk is not an error when others returned data** —
+broker history starts somewhere, so a 3-year request against a shallower symbol now returns the
+history that exists instead of failing; only "no chunk served anything" raises. `_read_error` also
+surfaces the agent's `mt5_error`, which is what distinguishes the two cases.
+
+**PU Prime demo facts (XAUUSD.s; depths re-probed 2026-07-21):** bars pull directly — M1 ~30d,
+M5 back to ~2025-02 (~17mo), M15 back to ~2023-07 (3yr+); real ticks go back 2+ years. Depth grows
+with wall-clock time and differs per timeframe, so probe rather than trust these numbers. Broker symbol carries a `.s` suffix. See the plan's Phase-0
 findings. The agent's `/ticks` endpoint landed with A2; `Mt5Agent.ticks()` reads it, and
 `backtest/data/ticks.py` caches by hour. Pull the SMALLEST window that answers the question — gold is
 ~690k ticks/day (~43MB, ~90s), while one 5m bar is ~260KB and under a second.

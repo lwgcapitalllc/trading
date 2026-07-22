@@ -11,6 +11,7 @@ has no /ticks endpoint yet; adding one is A2 work, not A0.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import time
 import urllib.error
@@ -20,8 +21,19 @@ import urllib.request
 import pandas as pd
 
 from .cache import _normalize
+from .timeframes import to_minutes
 
 _DEFAULT_BASE_URL = "http://localhost:8766"
+
+# ONE request can never exceed the terminal's "Max bars in chart" setting: past it MT5 does not
+# clamp or return a partial answer, it fails the whole call with (-2, 'Terminal: Invalid params'),
+# which surfaces as a bare 404 "no data" — indistinguishable from a symbol that has no history.
+# Measured on PU Prime 2026-07-21, XAUUSD.s M15: 64,837 bars OK, ~70,000 (3 years) → -2. So the cap
+# is the classic 65,000; we chunk under it with headroom rather than depend on a terminal setting
+# nobody can see from here. Chunk length is derived from the timeframe against a 24h day, so the
+# real (24/5 market) count always lands well below the budget.
+_MAX_BARS_PER_REQUEST = 60_000
+_MINUTES_PER_DAY = 1440
 
 # A tick-mode backtest makes thousands of sequential calls over an SSH tunnel, so a transient drop
 # is a matter of WHEN, not IF — one was observed ~5 months into a year-long run ("Remote end closed
@@ -67,9 +79,38 @@ class Mt5Agent:
     ) -> pd.DataFrame:
         """Fetch [start_date, end_date] (inclusive, YYYY-MM-DD) bars at tf_name.
 
-        Returns the canonical bar frame (DatetimeIndex 'time' + OHLC). Raises
-        Mt5AgentError if the agent is down or serves no data for the request.
+        Long windows are split into chunks that each stay under the terminal's bar cap
+        (see _MAX_BARS_PER_REQUEST) and stitched back together.
+
+        Returns the canonical bar frame (DatetimeIndex 'time' + OHLC). Raises Mt5AgentError if the
+        agent is down, or if the WHOLE window served no data. An individual chunk coming back empty
+        is NOT an error: broker history simply starts somewhere, and a 3-year request against a
+        2-year symbol should return the 2 years that exist rather than failing outright.
         """
+        windows = _chunk_windows(start_date, end_date, tf_name)
+        frames: list[pd.DataFrame] = []
+        for w_start, w_end in windows:
+            try:
+                frames.append(self._bars_window(symbol, tf_name, w_start, w_end))
+            except Mt5AgentError:
+                if len(windows) == 1:
+                    raise            # single-window request — the caller asked, the answer is no data
+                continue             # a gap at the edge of history; other chunks may still answer
+        if not frames:
+            raise Mt5AgentError(
+                f"MT5 agent returned no bars for {symbol} {tf_name} "
+                f"[{start_date}, {end_date}] across {len(windows)} chunk(s)"
+            )
+        if len(frames) == 1:
+            return frames[0]
+        merged = pd.concat(frames)
+        # Chunk bounds are inclusive on both ends, so adjacent chunks share their boundary day.
+        return merged[~merged.index.duplicated(keep="first")].sort_index()
+
+    def _bars_window(
+        self, symbol: str, tf_name: str, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """One /historical_data call — the window must fit the terminal's bar cap."""
         query = urllib.parse.urlencode(
             {
                 "symbol": symbol,
@@ -125,9 +166,37 @@ class Mt5Agent:
         return payload.get("ticks", [])
 
 
+def _chunk_windows(start_date: str, end_date: str, tf_name: str) -> list[tuple[str, str]]:
+    """Split [start_date, end_date] into inclusive windows that each fit the bar cap.
+
+    One window is returned for anything already small enough, so the common case makes exactly the
+    same single call it always did.
+    """
+    start = _dt.date.fromisoformat(start_date)
+    end = _dt.date.fromisoformat(end_date)
+    if end < start:
+        return [(start_date, end_date)]
+    span_days = (end - start).days + 1
+    chunk_days = max(1, (_MAX_BARS_PER_REQUEST * to_minutes(tf_name)) // _MINUTES_PER_DAY)
+    if span_days <= chunk_days:
+        return [(start_date, end_date)]
+
+    windows: list[tuple[str, str]] = []
+    cursor = start
+    while cursor <= end:
+        stop = min(cursor + _dt.timedelta(days=chunk_days - 1), end)
+        windows.append((cursor.isoformat(), stop.isoformat()))
+        cursor = stop + _dt.timedelta(days=1)
+    return windows
+
+
 def _read_error(exc: urllib.error.HTTPError) -> str:
     try:
         body = json.loads(exc.read().decode("utf-8"))
-        return body.get("error", str(body))
+        # mt5_error is the terminal's own code — the difference between "this symbol has no
+        # history" and "you asked for more bars than the terminal will serve in one call".
+        detail = body.get("error", str(body))
+        mt5_error = body.get("mt5_error")
+        return f"{detail} [mt5: {mt5_error}]" if mt5_error else detail
     except Exception:
         return exc.reason or "unknown"
