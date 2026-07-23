@@ -92,6 +92,10 @@ class SosFadeConfig:
     #          `account_profile`. This is what a real backtest runs, and it WILL disagree with
     #          the Pine on ambiguous bars — that is the model improving, not drifting.
     # See backtest/fills.py's module docstring for why both must exist.
-    fill_model: str = "bar"            # ∈ {"bar", "tick"}
-    account_profile: str = ""          # a key of backtest.fills.PROFILES; required for "tick"
-    symbol: str = ""                   # broker symbol for the tick pull (e.g. "XAUUSD.s")
+    fill_model: str = "bar"            # ∈ {"bar", "tick"}. Parity REQUIRES "bar"; real runs pick "tick".
+    # Defaults are the BACKTEST broker — Vantage demo — so a tick run matches the VANTAGE_XAUUSD
+    # TradingView feed the strategy is designed against (Aaron: backtest on Vantage, trade live on PU
+    # Prime). "vantage_demo" is zero-commission (a demo) with the account's real swap; see
+    # backtest/fills.py. The old PU Prime values were "XAUUSD.s" / "puprime_standard".
+    account_profile: str = "vantage_demo"   # a key of backtest.fills.PROFILES; used only for "tick"
+    symbol: str = "XAUUSD"                   # Vantage broker symbol for the tick pull (no ".s" suffix)

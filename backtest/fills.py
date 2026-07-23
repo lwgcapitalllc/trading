@@ -190,11 +190,24 @@ class AccountProfile:
 _XAUUSD_SWAP = SwapModel(swap_long_points=-78.29, swap_short_points=29.49,
                          contract_size=100.0, digits=2, triple_weekday=2)
 
+# Vantage demo (account 25815745, VantageMarkets-Demo) — the BACKTEST-ONLY broker, chosen so bar and
+# tick data match the VANTAGE_XAUUSD TradingView feed the strategies are designed against. Live
+# trading is always PU Prime; this profile exists purely to price backtests on the matching feed.
+# Every value below was read straight off the live terminal on 2026-07-22 via the agent's
+# /symbol_info endpoint (symbol "XAUUSD", contract 100, digits 2, swap_mode=points): swap_long
+# -74.84, swap_short +26.98, triple-swap on Wednesday (MT5 rollover3days=3 → our Monday-based 2).
+# Commission is 0.00 because it is a DEMO account — Aaron's standing fact: demos never charge
+# commission (a live Vantage RAW ECN would be $3.00/side/lot, but we never trade Vantage live).
+# Spread is NOT set here — it is measured live from the Vantage bid/ask tick stream (see module top).
+_XAUUSD_SWAP_VANTAGE = SwapModel(swap_long_points=-74.84, swap_short_points=26.98,
+                                 contract_size=100.0, digits=2, triple_weekday=2)
+
 PROFILES = {
     "puprime_standard": AccountProfile("puprime_standard", 0.00, swap=_XAUUSD_SWAP),
     "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=_XAUUSD_SWAP),
     "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=_XAUUSD_SWAP),
     "puprime_cent":     AccountProfile("puprime_cent",     0.00, swap=_XAUUSD_SWAP),
+    "vantage_demo":     AccountProfile("vantage_demo",     0.00, swap=_XAUUSD_SWAP_VANTAGE),
 }
 
 

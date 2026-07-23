@@ -410,6 +410,44 @@
         "Fewer trades called scratch",
         "More near-breakeven trades called scratch"
       ]
+    },
+    {
+      "name": "fill_model",
+      "group": "Fill & costs",
+      "label": "Fill model",
+      "desc": "How fills are priced. 'bar' = the Pine's own intrabar guess with zero costs (the parity mode). 'tick' = real Vantage bid/ask fills with measured spread, slippage, and swap — what a real backtest uses. Pick 'tick' for any number you'll trust.",
+      "choices": [
+        "bar",
+        "tick"
+      ]
+    },
+    {
+      "name": "account_profile",
+      "group": "Fill & costs",
+      "label": "Account profile",
+      "desc": "Whose costs to charge in tick mode. 'vantage_demo' is the backtest broker (zero commission, real Vantage swap) so results match the VANTAGE_XAUUSD TradingView feed. The puprime_* profiles are the live broker's tiers, kept for reference. Ignored in bar mode.",
+      "show_if": {
+        "fill_model": "tick"
+      },
+      "choices": [
+        "vantage_demo",
+        "puprime_standard",
+        "puprime_prime",
+        "puprime_ecn",
+        "puprime_cent"
+      ]
+    },
+    {
+      "name": "symbol",
+      "group": "Fill & costs",
+      "label": "Broker symbol",
+      "desc": "The MT5 symbol the tick pull requests. Vantage gold is 'XAUUSD' (no '.s' suffix — that was PU Prime). Ignored in bar mode.",
+      "show_if": {
+        "fill_model": "tick"
+      },
+      "choices": [
+        "XAUUSD"
+      ]
     }
   ]
 }

@@ -144,12 +144,36 @@ broker history starts somewhere, so a 3-year request against a shallower symbol 
 history that exists instead of failing; only "no chunk served anything" raises. `_read_error` also
 surfaces the agent's `mt5_error`, which is what distinguishes the two cases.
 
-**PU Prime demo facts (XAUUSD.s; depths re-probed 2026-07-21):** bars pull directly — M1 ~30d,
-M5 back to ~2025-02 (~17mo), M15 back to ~2023-07 (3yr+); real ticks go back 2+ years. Depth grows
-with wall-clock time and differs per timeframe, so probe rather than trust these numbers. Broker symbol carries a `.s` suffix. See the plan's Phase-0
-findings. The agent's `/ticks` endpoint landed with A2; `Mt5Agent.ticks()` reads it, and
-`backtest/data/ticks.py` caches by hour. Pull the SMALLEST window that answers the question — gold is
-~690k ticks/day (~43MB, ~90s), while one 5m bar is ~260KB and under a second.
+**Backtest broker = Vantage demo (backtest-ONLY; live trading is always PU Prime).** Chosen so bar +
+tick data match the `VANTAGE_XAUUSD` TradingView feed the strategies are designed against. MT5_Lab is
+logged into the Vantage demo (account 25815745, `VantageMarkets-Demo`); **gold symbol is `XAUUSD`, no
+`.s` suffix** (that was PU Prime). See `algos/CLAUDE.md` for the MT5_Lab pin.
+
+**Don't hand-feed broker facts — pull them.** The agent has two read-only endpoints that read the live
+terminal so spread/commission/swap/symbol and history depth never have to be typed in:
+- `GET /symbol_info?symbol=XAUUSD` → digits, point, contract size, volume steps, live spread, and
+  swap long/short straight off the symbol Specification. This is how `backtest/fills.py`'s
+  `vantage_demo` profile was built (2026-07-22): **commission 0.00** (it is a demo — demos never
+  charge), swap **−74.84 long / +26.98 short**, triple-swap Wednesday. Spread is NOT stored — it is
+  measured live from the Vantage bid/ask tick stream.
+- `GET /data_availability?symbol=XAUUSD&timeframes=M1,M5,M15,M30,H1,H4` → earliest→latest served bar
+  per timeframe (cheap: one bar from each end).
+
+**Vantage XAUUSD history depth (probed 2026-07-22 via /data_availability) — this BOUNDS a backtest
+window:** M1 from 2026-04-13 (~3mo), **M5 from 2025-02-24 (~17mo)**, M15 from 2022-04-29 (~4yr),
+M30/H1/H4 from 2007 (~19yr). So the 5m/15m SOS Fade strategy has ~17 months of native-timeframe data;
+ask for more and the client returns the history that exists (empty edge chunks aren't errors). Depth
+grows with wall-clock time and differs per timeframe, so re-probe rather than trust these numbers.
+
+**Cache isolation is by SYMBOL name, not broker** — files are keyed `(symbol, tf)` with no broker tag,
+so Vantage `XAUUSD__*.csv` and any PU Prime `XAUUSD_s__*.csv` are naturally separate. The trap: if a
+config still asked for `XAUUSD.s` the agent's suffix-strip fallback would pull Vantage bars and cache
+them under the `.s` key — mixing brokers. The stale PU Prime cache was cleared 2026-07-22 and the
+strategy default symbol is now `XAUUSD`, closing that path.
+
+The agent's `/ticks` endpoint landed with A2; `Mt5Agent.ticks()` reads it, and `backtest/data/ticks.py`
+caches by hour. Pull the SMALLEST window that answers the question — gold is ~690k ticks/day (~43MB,
+~90s), while one 5m bar is ~260KB and under a second.
 
 ## Rules
 
