@@ -619,6 +619,11 @@ class BacktestDetail(BaseModel):
     # Heavy data (loaded from JSON files on disk)
     equity_curve: list[EquityPoint] = []
     daily_pnl: list[dict] = []     # [{date: 'YYYY-MM-DD', pnl: float}]
+    # EVERY trading day in the run's window with its regime label — [{date, regime}] — not just
+    # the days that traded. This is what the equity charts band from: regime is a property of the
+    # market on a date, so two runs over the same window must agree about it. Empty on runs that
+    # completed before the timeline was introduced (charts fall back to daily_pnl's tags).
+    regime_timeline: list[dict] = []
     # Per-regime performance, computed server-side from equity_curve + tagged daily_pnl
     regime_breakdown: list[RegimeBreakdownRow] = []
     # Per-firm verdicts

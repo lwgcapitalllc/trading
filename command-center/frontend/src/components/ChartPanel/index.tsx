@@ -129,6 +129,7 @@ export default function ChartPanel({
   headerLeading,
   headerTrailing,
   headerClassName,
+  showCopy = false,
 }: {
   spec?: ChartSpec
   height?: number
@@ -149,6 +150,9 @@ export default function ChartPanel({
   headerLeading?: ReactNode
   headerTrailing?: ReactNode
   headerClassName?: string
+  /** Show the snapshot (camera) button. FULLSCREEN ONLY by convention — the whole app puts
+   *  copy-as-image on the expanded chart, never the inline one. */
+  showCopy?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<Chart | null>(null)
@@ -982,13 +986,15 @@ export default function ChartPanel({
             not over the price scale. The host's exit X (headerTrailing) is pinned to the far corner,
             beyond it. */}
         <div className="flex items-center gap-2" style={{ paddingRight: chartInset.axisW }}>
-          <button
-            onClick={copyChartImage}
-            title={copied ? 'Copied' : 'Copy chart image to clipboard'}
-            className="inline-flex items-center justify-center w-8 h-8 text-text-tertiary hover:text-text-secondary transition-colors"
-          >
-            {copied ? <Check className="w-[18px] h-[18px] text-accent" /> : <Camera className="w-[18px] h-[18px]" />}
-          </button>
+          {showCopy && (
+            <button
+              onClick={copyChartImage}
+              title={copied ? 'Copied' : 'Copy chart image to clipboard'}
+              className="inline-flex items-center justify-center w-8 h-8 text-text-tertiary hover:text-text-secondary transition-colors"
+            >
+              {copied ? <Check className="w-[18px] h-[18px] text-accent" /> : <Camera className="w-[18px] h-[18px]" />}
+            </button>
+          )}
         </div>
         {headerTrailing && (
           // Centred over the price-axis (y-axis) COLUMN on the right — the rightmost `axisW` px —

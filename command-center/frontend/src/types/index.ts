@@ -11,6 +11,11 @@ export interface RankedItem {
   win_rate?: number
 }
 
+export interface RegimeDay {
+  date: string
+  regime: string
+}
+
 export interface EquityPoint {
   index: number
   equity: number
@@ -552,6 +557,10 @@ export interface BacktestDetail {
   worst_losing_streak: number | null
   equity_curve: EquityPoint[]
   daily_pnl: DailyPnlPoint[]
+  /** EVERY trading day in the run's window with its regime label — not just the days that traded.
+   *  Regime is a property of the market on a date, so both equity charts band from this. Empty on
+   *  runs completed before it existed (charts fall back to daily_pnl's sparse tags). */
+  regime_timeline: RegimeDay[]
   regime_breakdown: RegimeBreakdownRow[]
   evaluations: EvaluationDetail[]
   worthiness: WorthinessScore | null

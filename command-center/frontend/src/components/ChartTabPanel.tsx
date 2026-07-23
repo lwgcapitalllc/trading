@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Maximize2, X } from 'lucide-react'
+import { Maximize2, Minimize2, Camera, Check } from 'lucide-react'
+import { copyChartAsPng } from '@/lib/chartImage'
 
 // ── Tabbed chart panel + fullscreen modal ────────────────────────────────────
 // Shared by BacktestDetail and StressTestDetail: a segmented tab control, optional
@@ -57,10 +58,27 @@ export function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, r
   )
 }
 
-// Full-screen overlay (portalled) that renders a chart at the measured body height. Esc / backdrop / X close it.
-export function ChartModal({ title, onClose, render }: { title: string; onClose: () => void; render: (h: number) => React.ReactNode }) {
+// Full-screen overlay (portalled) that renders a chart at the measured body height. Esc / backdrop /
+// the minimize button close it. Every fullscreen chart carries a camera (copy-as-image) button —
+// that's the point of expanding one: read it, then send it. Inline charts deliberately don't:
+// a copy of the small version isn't worth the header clutter.
+export function ChartModal({ title, onClose, render, controls }: {
+  title: string
+  onClose: () => void
+  render: (h: number) => React.ReactNode
+  /** The same per-chart controls the inline panel shows (series toggles, axis switch…). Fullscreen
+   *  is where a chart is actually READ, so anything you can change inline must be changeable here. */
+  controls?: React.ReactNode
+}) {
   const bodyRef = useRef<HTMLDivElement>(null)
   const [h, setH] = useState(0)
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    if (await copyChartAsPng(bodyRef.current)) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    }
+  }
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
@@ -81,7 +99,16 @@ export function ChartModal({ title, onClose, render }: { title: string; onClose:
     <div className="fixed inset-0 z-[90] bg-bg-base flex flex-col" onClick={onClose}>
       <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0" onClick={e => e.stopPropagation()}>
         <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">{title}</span>
-        <button onClick={onClose} title="Close (Esc)" className="text-text-tertiary hover:text-text-primary"><X size={18} /></button>
+        <div className="flex items-center gap-3">
+          {controls}
+          <button onClick={copy} title={copied ? 'Copied' : 'Copy chart image to clipboard'}
+            className="text-text-tertiary hover:text-text-primary transition-colors">
+            {copied ? <Check size={18} className="text-accent" /> : <Camera size={18} />}
+          </button>
+          <button onClick={onClose} title="Minimize (Esc)" className="text-text-tertiary hover:text-text-primary transition-colors">
+            <Minimize2 size={18} />
+          </button>
+        </div>
       </div>
       <div ref={bodyRef} className="flex-1 min-h-0 overflow-hidden px-5 py-4" onClick={e => e.stopPropagation()}>
         {h > 0 && render(Math.max(200, h - 40))}

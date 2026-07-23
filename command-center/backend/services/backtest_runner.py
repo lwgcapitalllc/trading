@@ -12,6 +12,7 @@ import json
 import logging
 import sys
 import time
+from bisect import bisect_right
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -291,6 +292,53 @@ def _tag_daily_pnl_with_regime(
     return result
 
 
+def build_regime_timeline_and_tag(
+    instrument: str,
+    start_date: str,
+    end_date: str,
+    daily_pnl: list[dict],
+    runner: str = "ninjatrader",
+) -> tuple[list[dict], list[dict]]:
+    """
+    Classify EVERY trading day in [start_date, end_date] once, then tag daily_pnl from
+    that same map. Returns (regime_timeline, tagged_daily_pnl).
+
+    Why the whole calendar and not just the traded days: regime is a property of the
+    MARKET on a date, not of a run. Tagging only the days a run happened to trade left the
+    charts with no label for every quiet stretch — so the regime bands were drawn by
+    carrying the last traded day's tag forward, and two runs of the same strategy over the
+    same window disagreed about what regime the market was in. The timeline is the honest
+    answer and both charts read it.
+
+    Cheaper than the old per-entry pass too: one classification per trading day, reused.
+    """
+    date_map = build_date_regime_map(instrument, start_date, end_date, runner)
+    if not date_map:
+        log.warning("No regime map for %s [%s, %s] — all regime_tags = UNKNOWN",
+                    instrument, start_date, end_date)
+        return [], [{**entry, "regime_tag": "UNKNOWN"} for entry in daily_pnl]
+
+    timeline = [{"date": d, "regime": r} for d, r in sorted(date_map.items())]
+    days = [t["date"] for t in timeline]
+
+    tagged = []
+    for entry in daily_pnl:
+        day = entry.get("date")
+        label = date_map.get(day) if day else None
+        if label is None and day:
+            # A P&L day the bar feed has no bar for (a Sunday-open forex fill, a broker
+            # holiday). Carry the last classified day — the same window the per-entry
+            # classifier would have built, since it looks back from that date anyway.
+            i = bisect_right(days, day) - 1
+            label = date_map[days[i]] if i >= 0 else "UNKNOWN"
+        tagged.append({**entry, "regime_tag": label or "UNKNOWN"})
+
+    tagged_n = sum(1 for r in tagged if r.get("regime_tag") != "UNKNOWN")
+    log.info("Regime classification (%s): %d calendar days, %d/%d P&L days tagged (instrument=%s)",
+             runner, len(timeline), tagged_n, len(tagged), instrument)
+    return timeline, tagged
+
+
 def build_date_regime_map(
     instrument: str,
     start_date: str,
@@ -444,8 +492,8 @@ async def _handle_complete(
             "heartbeat_age_seconds": 0.0,
             "error_message":        None,
         })
-        tagged_pnl = await asyncio.to_thread(
-            _tag_daily_pnl_with_regime,
+        regime_timeline, tagged_pnl = await asyncio.to_thread(
+            build_regime_timeline_and_tag,
             instrument,
             (run_row or {}).get("start_date", ""),
             (run_row or {}).get("end_date", ""),
@@ -453,6 +501,9 @@ async def _handle_complete(
             (run_row or {}).get("runner", "ninjatrader"),
         )
         daily_pnl_path.write_text(json.dumps(tagged_pnl, default=str))
+        # The full-calendar regime timeline — every trading day in the window, not just the
+        # days this run traded. Both equity charts draw their bands from it.
+        (run_dir / "regime_timeline.json").write_text(json.dumps(regime_timeline, default=str))
 
     # Canonical Sharpe — shared daily-√252 value (consistent across every run path),
     # preserving the platform's own value as platform_sharpe and flagging low sample.

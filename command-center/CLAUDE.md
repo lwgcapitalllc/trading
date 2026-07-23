@@ -3,7 +3,7 @@
 **Purpose:** Local operations platform for LWG Capital — a React frontend + FastAPI backend that monitors the live bots, surfaces the Smart Money pipeline, and runs/evaluates NinjaTrader + MT5 backtests.
 **Scope:** This covers the command-center app (backend + frontend). Sub-directory CLAUDE.md files cover backend and frontend internals. It does NOT cover `algos/` or `smart-money/` source — those are read-only outputs to this app.
 **Status:** Live — all modules shipped (Smart Money, Bots, Backtests lab, Sweeps, Optimizations, Stress Tests, MT5 runner, Python runner).
-**Last reviewed:** 2026-07-16
+**Last reviewed:** 2026-07-22
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
@@ -87,7 +87,7 @@ cd command-center
 | Per-platform job lock | ✅ Live | One job per platform (NT8/MT5/Python), platforms independent; DB is the single lock source (`has_running_job`) |
 | Worthiness badges | ✅ Live | Tier 1/2/3 worthiness badge auto-assigned on every completed run |
 | Stress Tests | ✅ Live | Monte Carlo, walk-forward, sensitivity, A–F grade with Telegram notification |
-| Regime tagging (M4) | ✅ Live | Each run's daily PnL auto-tagged with a regime label; regime overlays and filters |
+| Regime tagging (M4) | ✅ Live | Every trading day in a run's window classified once into `regime_timeline.json` (regime is a property of the market on a date, not of a run); daily PnL tagged from that same map; regime overlays and filters |
 | News & Holiday filter | ✅ Live (NT8) | Post-run card on BacktestDetail: removes trades in a high-impact news window (15m before/30m after, sliders) and always excludes bank holidays; KPIs + equity recompute live. Composes `engines/news/`; toggle default from the strategy's `avoid_news`. Forex/MT5 pending (TODO #3 — non-UTC broker clock) |
 | Strategy deployment | ✅ Live | Upload, delete, compile, and one-click Deploy NT8/MT5 strategy files from the UI |
 | MT5 runner | ✅ Live | MT5 agent on VPS drives Strategy Tester; backtests, optimizer, walk-forward, badges |

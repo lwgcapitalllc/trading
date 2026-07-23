@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceArea,
+  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceArea, ReferenceLine,
 } from 'recharts'
-import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, ChevronRight, Maximize2, X } from 'lucide-react'
+import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, ChevronRight, Maximize2, Minimize2, Camera, Check } from 'lucide-react'
+import { copyChartAsPng } from '@/lib/chartImage'
+import { balTick, balanceTicks, dateMs, getXMode, monthLabel, monthTicks, regimeBandsByIndex, regimeBandsFromTimeline, setXModePref, tradeTicks, type XMode } from '@/lib/chartAxis'
+import { XModeToggle } from '@/components/XModeToggle'
+import { RegimeOverlayToggle } from '@/components/RegimeOverlayToggle'
 import { useBacktestRun, useStrategy, useBacktestRuns, useTriggerBacktest, useRunningVpsJob, useLabProgress } from '@/hooks/useLab'
 import { ParamEditor, ParamCoach, type ParamValue } from '@/components/ParamEditor'
 import { useStickyBanner } from '@/components/StickyHeader'
@@ -34,33 +38,31 @@ function moneyAbs(n: number | null | undefined): string {
 function pct(n: number | null | undefined): string {
   return n == null ? '—' : `${(n * 100).toFixed(1)}%`
 }
-
 // ── Regime bands (shared timeline from the baseline's daily pnl) ────────────────
 
 interface Band { x1: number; x2: number; regime: string }
-function ts(date: string): number { return new Date(`${date}T00:00:00`).getTime() }
+const ts = (date: string): number => dateMs(date) ?? NaN
 
-function computeBands(daily: DailyPnlPoint[]): Band[] {
-  const sorted = [...daily].sort((a, b) => a.date.localeCompare(b.date))
-  const bands: Band[] = []
-  for (const d of sorted) {
-    const regime = d.regime_tag ?? 'UNKNOWN'
-    const t = ts(d.date)
-    const last = bands[bands.length - 1]
-    if (last && last.regime === regime) last.x2 = t
-    else bands.push({ x1: t, x2: t, regime })
+// Account balance after each trade, as a timestamp→balance map — straight off the run's own
+// equity_curve, the same points the BacktestDetail equity chart plots. Keyed by trade open time
+// when the runner reports it, otherwise by the trade's date (several trades closing on one date
+// collapse to that date's final balance, which is what a daily curve would have shown anyway).
+function balByTime(d: BacktestDetail): Map<number, number> {
+  const m = new Map<number, number>()
+  for (const p of d.equity_curve) {
+    const t = p.entry_ms ?? (p.date ? ts(p.date) : null)
+    if (t == null || !Number.isFinite(t)) continue
+    m.set(t, p.equity)
   }
-  // stretch each band's end to the next band's start so there are no gaps
-  for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
-  return bands
+  return m
 }
 
-// Cumulative equity-by-date for one run, as a date→cumulative map.
-function cumByDate(daily: DailyPnlPoint[]): Map<number, number> {
-  const sorted = [...daily].sort((a, b) => a.date.localeCompare(b.date))
+// The same curve keyed by TRADE NUMBER, for the Trade # axis. Two runs with different trade counts
+// share the axis by ordinal — the shorter one's line simply holds its final balance once it's out
+// of trades, which is the honest reading (it was done, the account sat there).
+function balByIndex(d: BacktestDetail): Map<number, number> {
   const m = new Map<number, number>()
-  let run = 0
-  for (const d of sorted) { run += d.pnl; m.set(ts(d.date), run) }
+  for (const p of d.equity_curve) m.set(p.index, p.equity)
   return m
 }
 
@@ -75,6 +77,19 @@ function pnlByRegime(daily: DailyPnlPoint[]): Record<string, number> {
 }
 
 const LINE_PALETTE = ['#d9a441', '#22c55e', '#ec4899', '#a855f7', '#f97316', '#3b82f6', '#14b8a6', '#eab308']
+
+// ── Chart dots ──────────────────────────────────────────────────────────────────
+
+type DotProps = { cx?: number; cy?: number; index?: number; payload?: Record<string, number | boolean> }
+
+// A dot only where the run actually traded (`<id>__pt`), coloured by which side of the starting
+// balance it closed on — the forward-filled rows in between are another run's trade days.
+function tradeDot(p: DotProps, id: string, startBal: number, r: number) {
+  const { cx, cy, payload, index } = p
+  if (cx == null || cy == null || !payload?.[`${id}__pt`]) return <g key={index} />
+  const up = ((payload[id] as number) ?? 0) >= startBal
+  return <circle key={index} cx={cx} cy={cy} r={r} fill={up ? C.pos : C.neg} stroke={C.tooltipBg} strokeWidth={r > 3 ? 1.5 : 1} />
+}
 
 // ── Delta cell ──────────────────────────────────────────────────────────────────
 
@@ -101,7 +116,12 @@ export function TuningWorkbench() {
   const [edits, setEdits] = useState<Record<string, ParamValue>>({})
   const [coachParam, setCoachParam] = useState<string | null>(null)
   const [showRegime, setShowRegime] = useState(true)
+  // Same stored preference the run page's equity chart uses, so the two never disagree.
+  const [xMode, setXMode] = useState<XMode>(getXMode)
+  const toggleXMode = (v: XMode) => { setXMode(v); setXModePref(v) }
   const [chartFs, setChartFs] = useState(false)
+  const fsChartRef = useRef<HTMLDivElement>(null)
+  const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!chartFs) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setChartFs(false) }
@@ -181,12 +201,14 @@ export function TuningWorkbench() {
     [detailQueries],
   )
 
-  // Assign each run a stable color: baseline = accent, iterations cycle the palette.
+  // Assign each run a stable color. The baseline line itself is drawn green-above /
+  // red-below the starting balance (like the equity chart), so its legend/table swatch is
+  // its overall result colour; iterations cycle the palette so they stay distinguishable.
   const colorFor = useMemo(() => {
     const m = new Map<string, string>()
     let i = 0
     for (const r of leaderboard) {
-      if (r.run_id === baseline?.run_id) m.set(r.run_id, C.accent)
+      if (r.run_id === baseline?.run_id) m.set(r.run_id, (r.net_pnl ?? 0) >= 0 ? C.pos : C.neg)
       else m.set(r.run_id, LINE_PALETTE[i++ % LINE_PALETTE.length])
     }
     return m
@@ -194,24 +216,117 @@ export function TuningWorkbench() {
 
   const labelFor = (id: string) => (id === baseline?.run_id ? 'Baseline' : `Tweak ${id.slice(0, 6)}`)
 
-  // Overlay dataset: merge each run's cumulative-by-date series, keyed by timestamp.
-  const { overlayData, bands } = useMemo(() => {
-    const series = details.map(d => ({ id: d.run_id, cum: cumByDate(d.daily_pnl) }))
+  // Overlay dataset — ACCOUNT BALANCE per run, so this chart reads exactly like the equity
+  // curve on BacktestDetail: same starting balance on the axis, same break-even reference,
+  // same green-above/red-below split on the baseline. (It used to plot cumulative P&L from
+  // $0, which meant the y-axis never showed the account's real balance, and each run's line
+  // simply began wherever it happened to take its first trade.)
+  const chart = useMemo(() => {
+    // Source = each run's OWN equity_curve — the exact points the BacktestDetail equity chart
+    // draws, balance included. (Re-deriving the curve from daily_pnl gave subtly different
+    // vertices, which is why the baseline here didn't trace the same path as on the run page.)
+    const byDate = xMode === 'date'
+    const series = details
+      .map(d => ({ id: d.run_id, bal: byDate ? balByTime(d) : balByIndex(d) }))
+      .filter(s => s.bal.size > 0)
     const allTs = new Set<number>()
-    series.forEach(s => s.cum.forEach((_, t) => allTs.add(t)))
+    series.forEach(s => s.bal.forEach((_, t) => allTs.add(t)))
+    if (!allTs.size) return null
+
+    // Starting balance, derived the same way the equity chart does it: the first trade's
+    // closing equity minus that trade's own P&L. Prefer the baseline's own curve.
+    const startOf = (d: BacktestDetail | undefined): number | null => {
+      const p = d?.equity_curve?.[0]
+      return p ? (p.equity ?? 0) - (p.profit ?? 0) : null
+    }
+    const startBal =
+      startOf(details.find(d => d.run_id === baseline?.run_id && d.equity_curve?.length))
+      ?? startOf(details.find(d => d.equity_curve?.length))
+      ?? 0
+
+    // Anchor every line on the run's start date at the starting balance, so they all leave the
+    // same point on the left edge instead of each one appearing part-way across the chart.
     const sortedTs = [...allTs].sort((a, b) => a - b)
+    // Anchor: the window opening in date mode, "trade 0" in trade mode.
+    const anchorTs = byDate ? (baseline ? ts(baseline.start_date) : NaN) : 0
+    if (Number.isFinite(anchorTs) && anchorTs < sortedTs[0]) sortedTs.unshift(anchorTs)
+
+    // Forward-fill: a run's balance HOLDS on a day it didn't trade. Leaving nulls and letting
+    // `connectNulls` bridge them drew a straight diagonal across flat stretches — a slow bleed
+    // or climb that never happened. `<id>__pt` marks the rows that are a REAL trade for that
+    // run, so only those get a dot (as on the equity chart, one dot = one trade).
+    const last = new Map<string, number>(series.map(s => [s.id, startBal]))
     const data = sortedTs.map(t => {
-      const row: Record<string, number | null> = { t }
-      for (const s of series) row[s.id] = s.cum.has(t) ? s.cum.get(t)! : null
+      const row: Record<string, number | boolean> = { t }
+      for (const s of series) {
+        const hit = s.bal.has(t)
+        if (hit) last.set(s.id, s.bal.get(t)!)
+        row[s.id] = last.get(s.id)!
+        row[`${s.id}__pt`] = hit
+      }
       return row
     })
-    // Regime timeline is instrument/date-based (shared across iterations). Prefer the
-    // baseline, but fall back to whichever run has the most daily data — optimization
-    // winners may not have been full-backtested yet and carry no daily_pnl.
-    const baseDetail = details.find(d => d.run_id === baseline?.run_id && d.daily_pnl.length)
-      ?? [...details].sort((a, b) => b.daily_pnl.length - a.daily_pnl.length)[0]
-    return { overlayData: data, bands: baseDetail ? computeBands(baseDetail.daily_pnl) : [] }
-  }, [details, baseline])
+
+    const stats = new Map<string, { min: number; max: number; end: number }>()
+    for (const s of series) {
+      const vals = data.map(r => r[s.id] as number)
+      stats.set(s.id, { min: Math.min(...vals), max: Math.max(...vals), end: vals[vals.length - 1] })
+    }
+    const lows = [...stats.values()].map(v => v.min)
+    const highs = [...stats.values()].map(v => v.max)
+    const min = Math.min(startBal, ...lows)
+    const max = Math.max(startBal, ...highs)
+    const pad = (max - min) * 0.1 || 500
+    const yMin = min - pad
+    const yMax = max + pad
+
+    // Ticks anchored ON the starting balance so it's always labelled — as on the equity chart.
+    const yTicks = balanceTicks(startBal, yMin, yMax)
+
+    // Green/red split offset — same math as BacktestDetail: mapped to the FILLED shape's
+    // bounding box (data extremes INCLUDING the starting balance, since the area is anchored
+    // there), never the padded axis domain, or the colour flip drifts off the break-even line.
+    const bStats = stats.get(baseline?.run_id ?? '')
+    const dMin = Math.min(startBal, bStats?.min ?? startBal)
+    const dMax = Math.max(startBal, bStats?.max ?? startBal)
+    const split = Math.min(1, Math.max(0, (dMax - startBal) / ((dMax - dMin) || 1)))
+
+    // Regime bands come from the FULL-CALENDAR timeline (every trading day in the window,
+    // classified server-side), not from the days a run happened to trade — regime is a property of
+    // the market on a date. The baseline's timeline is the one truth here, and it's the same list
+    // BacktestDetail bands from, which is what makes the two charts agree.
+    // Fallback for runs completed before the backend emitted a timeline: merge whatever tagged
+    // days the loaded runs do carry, so the chart isn't left blank.
+    const dateToRegime = new Map<string, string>()
+    const withTimeline = details.find(d => d.run_id === baseline?.run_id && d.regime_timeline?.length)
+      ?? details.find(d => d.regime_timeline?.length)
+    if (withTimeline) {
+      for (const d of withTimeline.regime_timeline) dateToRegime.set(d.date, d.regime)
+    } else {
+      for (const d of details) for (const p of d.daily_pnl) if (p.regime_tag) dateToRegime.set(p.date, p.regime_tag)
+    }
+    const baseCurve = details.find(d => d.run_id === baseline?.run_id)?.equity_curve ?? []
+    const bands: Band[] = byDate
+      ? regimeBandsFromTimeline([...dateToRegime.entries()].map(([date, regime]) => ({ date, regime })))
+      : regimeBandsByIndex(baseCurve, dateToRegime)
+    // Stretch the first/last band to the chart edges so there's no uncoloured margin.
+    if (bands.length) {
+      bands[0].x1 = Math.min(bands[0].x1, sortedTs[0])
+      bands[bands.length - 1].x2 = Math.max(bands[bands.length - 1].x2, sortedTs[sortedTs.length - 1])
+    }
+
+    return {
+      data, bands, startBal, split,
+      yDomain: [yMin, yMax] as [number, number],
+      yTicks,
+      byDate,
+      xTicks: byDate
+        ? monthTicks(sortedTs[0], sortedTs[sortedTs.length - 1])
+        : tradeTicks(sortedTs[sortedTs.length - 1]),
+    }
+  }, [details, baseline, xMode])
+
+  const overlayData = chart?.data ?? []
 
   // Per-regime net pnl per run.
   const regimeMatrix = useMemo(() => {
@@ -256,35 +371,79 @@ export function TuningWorkbench() {
 
   const baseMetric = (k: 'net_pnl' | 'profit_factor' | 'max_drawdown') => baselineSummary?.[k] ?? null
 
-  // Cumulative-P&L overlay chart, rendered at a given height (reused inline + fullscreen).
-  const renderOverlay = (height: number) => (
+  const copyChart = async () => {
+    if (await copyChartAsPng(fsChartRef.current)) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    }
+  }
+
+  // Equity overlay chart, rendered at a given height (reused inline + fullscreen).
+  // The baseline is drawn as the SAME object BacktestDetail draws — a monotone Area anchored on
+  // the starting balance with the split stroke + fill — so the two charts trace an identical
+  // path. Iterations ride on top as dashed lines (they need to stay tellable apart).
+  const renderOverlay = (height: number) => chart && (
     <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={overlayData} margin={{ top: 6, right: 12, bottom: 0, left: 4 }}>
-        <CartesianGrid stroke={C.grid} vertical={false} />
-        {showRegime && bands.map((b, i) => (
-          <ReferenceArea key={i} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
+      <ComposedChart data={chart.data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+        <defs>
+          {/* Baseline stroke: green above the starting balance, red below, hard edge at the split. */}
+          <linearGradient id="tuneBaseStroke" x1="0" y1="0" x2="0" y2="1">
+            <stop offset={chart.split} stopColor={C.pos} />
+            <stop offset={chart.split} stopColor={C.neg} />
+          </linearGradient>
+          {/* Fill: green above the start line, red below, hard edge at the same offset. */}
+          <linearGradient id="tuneBaseFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset={0} stopColor={C.pos} stopOpacity={0.22} />
+            <stop offset={Math.max(0, chart.split - 0.0001)} stopColor={C.pos} stopOpacity={0.03} />
+            <stop offset={chart.split} stopColor={C.neg} stopOpacity={0.03} />
+            <stop offset={1} stopColor={C.neg} stopOpacity={0.20} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke={C.grid} vertical={false} />
+        {showRegime && chart.bands.map((b, i) => (
+          <ReferenceArea key={i} x1={b.x1} x2={b.x2} ifOverflow="visible"
+            fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
         ))}
         <XAxis
-          dataKey="t" type="number" domain={['dataMin', 'dataMax']} scale="time"
-          tickFormatter={t => new Date(t).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
-          tick={{ fill: C.axisTick, fontSize: 10 }} stroke={C.grid}
+          dataKey="t" type="number" domain={['dataMin', 'dataMax']}
+          {...(chart.byDate ? { scale: 'time' as const } : {})}
+          ticks={chart.xTicks}
+          tickFormatter={(v: number) => (chart.byDate ? monthLabel(v) : `#${v}`)}
+          tick={{ fill: C.axisTick, fontSize: 10 }} axisLine={false} tickLine={false}
         />
-        <YAxis tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fill: C.axisTick, fontSize: 10 }} stroke={C.grid} width={48} />
+        <YAxis
+          domain={chart.yDomain} ticks={chart.yTicks} tickFormatter={balTick}
+          tick={{ fill: C.axisTick, fontSize: 10 }} axisLine={false} tickLine={false} width={56}
+        />
         <Tooltip
           contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 12, padding: '8px 12px' }}
           labelStyle={{ color: C.axisTick }}
           itemStyle={{ color: '#e5e7eb' }}
-          labelFormatter={t => new Date(t as number).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-          formatter={(v: number, name: string) => [money(v), labelFor(name)]}
+          labelFormatter={t => (chart.byDate
+            ? new Date(t as number).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : `Trade #${t}`)}
+          // Balance first, then the gain on the account so far — the two numbers a comparison needs.
+          formatter={(v: number, name: string) => [`${balTick(v)}  (${money(v - chart.startBal)})`, labelFor(name)]}
         />
-        {completeIds.map(id => (
+        {/* Break-even = the starting balance, same dashed reference as the equity chart. */}
+        <ReferenceLine y={chart.startBal} stroke={C.refLine} strokeDasharray="4 4" />
+        {/* Baseline first so its translucent fill can't wash out the iteration lines on top. */}
+        <Area
+          type="monotone" dataKey={baseline.run_id} isAnimationActive={false}
+          stroke="url(#tuneBaseStroke)" strokeWidth={2.5} fill="url(#tuneBaseFill)"
+          baseValue={chart.startBal}
+          // One dot per actual trade (not per forward-filled row), coloured by which side of the
+          // starting balance it landed — exactly as on the equity chart.
+          dot={(p: DotProps) => tradeDot(p, baseline.run_id, chart.startBal, 3)}
+          activeDot={(p: DotProps) => tradeDot(p, baseline.run_id, chart.startBal, 4.5)}
+        />
+        {completeIds.filter(id => id !== baseline.run_id).map(id => (
           <Line
-            key={id} type="monotone" dataKey={id} stroke={colorFor.get(id)}
-            strokeWidth={id === baseline.run_id ? 2.5 : 1.5} dot={false} connectNulls
-            strokeDasharray={id === baseline.run_id ? undefined : '4 2'}
+            key={id} type="monotone" dataKey={id} isAnimationActive={false}
+            stroke={colorFor.get(id)} strokeWidth={1.5} dot={false} strokeDasharray="4 2"
           />
         ))}
-      </LineChart>
+      </ComposedChart>
     </ResponsiveContainer>
   )
 
@@ -541,12 +700,10 @@ export function TuningWorkbench() {
           {/* Equity overlay */}
           <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
             <div className="px-[15px] py-[10px] border-b border-border-subtle flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Cumulative P&L overlay</span>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-1.5 text-[11px] text-text-tertiary cursor-pointer select-none">
-                  <input type="checkbox" checked={showRegime} onChange={e => setShowRegime(e.target.checked)} className="w-3 h-3 rounded accent-accent" />
-                  Regime overlay
-                </label>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Equity overlay</span>
+              <div className="flex items-center gap-2">
+                <XModeToggle value={xMode} onChange={toggleXMode} />
+                <RegimeOverlayToggle on={showRegime} onChange={setShowRegime} />
                 {overlayData.length > 0 && (
                   <button onClick={() => setChartFs(true)} title="Fullscreen"
                     className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors">
@@ -627,22 +784,24 @@ export function TuningWorkbench() {
           scrollTop is never clamped — that clamp is what made the condense flicker on this page. */}
       <div aria-hidden className="flex-shrink-0" style={{ height: collapse }} />
 
-      {/* Fullscreen cumulative-P&L overlay */}
+      {/* Fullscreen equity overlay */}
       {chartFs && (
         <div className="fixed inset-0 z-50 bg-bg-base flex flex-col">
           <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0">
-            <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Cumulative P&L overlay — {baseline.strategy_name} · {baseline.instrument}</span>
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-1.5 text-[11px] text-text-tertiary cursor-pointer select-none">
-                <input type="checkbox" checked={showRegime} onChange={e => setShowRegime(e.target.checked)} className="w-3 h-3 rounded accent-accent" />
-                Regime overlay
-              </label>
-              <button onClick={() => setChartFs(false)} title="Close (Esc)" className="text-text-tertiary hover:text-text-primary transition-colors">
-                <X size={18} />
+            <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Equity overlay — {baseline.strategy_name} · {baseline.instrument}</span>
+            <div className="flex items-center gap-2">
+              <XModeToggle value={xMode} onChange={toggleXMode} />
+              <RegimeOverlayToggle on={showRegime} onChange={setShowRegime} />
+              <button onClick={copyChart} title={copied ? 'Copied' : 'Copy chart image to clipboard'}
+                className="text-text-tertiary hover:text-text-primary transition-colors">
+                {copied ? <Check size={18} className="text-accent" /> : <Camera size={18} />}
+              </button>
+              <button onClick={() => setChartFs(false)} title="Minimize (Esc)" className="text-text-tertiary hover:text-text-primary transition-colors">
+                <Minimize2 size={18} />
               </button>
             </div>
           </div>
-          <div className="flex-1 min-h-0 px-5 py-4">
+          <div ref={fsChartRef} className="flex-1 min-h-0 px-5 py-4">
             {renderOverlay(Math.max(300, window.innerHeight - 120))}
           </div>
         </div>

@@ -41,12 +41,14 @@ interface Props {
 type Widget = 'toggle' | 'switch' | 'time' | 'number' | 'text' | 'select'
 
 const labelOf = (p: ParamSchemaEntry) => p.label || p.display_name || p.name
-// Every control renders at this width so the right column aligns across widget types, and
-// every control is this tall so a row's height never depends on its label. A toggle whose
-// label wrapped used to grow its row and break the rhythm of the whole list.
-// 264px: a toggle half is then ~105px of text room, which fits the longest state label in the
-// repo ("Market on close", ~97px at 12px semibold). At the old 240px even that truncated.
-const CONTROL_W = 'w-[264px]'
+// Rows are STACKED: the label (plus any tune "was X" tag) owns one line, the control owns the
+// next. Side-by-side put the label in whatever width the fixed-width control left over, so in a
+// narrow rail every label truncated to "Arm on di..." and a "was on" tag cropped it further —
+// unreadable exactly where the editing happens.
+// Every control fills the row (one shared width across toggle/select/number/switch, so the list
+// has a single straight edge), capped so a wide Run/Optimize modal doesn't stretch a toggle
+// across half the screen. Fixed height keeps a row's height independent of its label.
+const CONTROL_W = 'w-full max-w-[420px]'
 const CONTROL_H = 'h-[34px]'
 
 const descOf = (p: ParamSchemaEntry) => p.desc || p.description || ''
@@ -218,15 +220,20 @@ function Row(props: Props & {
     <>
       <div
         onClick={onFocus}
-        className={`flex items-center justify-between gap-3 px-2 -mx-2 py-2.5 rounded-lg border border-transparent cursor-pointer transition-colors ${
+        className={`px-2 -mx-2 py-2.5 rounded-lg border border-transparent cursor-pointer transition-colors ${
           focused ? 'bg-accent/10' : 'hover:bg-bg-hover'
         }`}
       >
-        <div className="flex items-center gap-2 text-[13px] font-semibold text-text-primary min-w-0">
-          {star && <span className={`text-[11px] ${starActive ? 'text-accent' : 'text-gold-text'}`}>★</span>}
-          <span className="truncate">{labelOf(p)}</span>
+        {/* line 1 — label (full row width, so it reads in full) + the tune "was X" tag */}
+        <div className="flex items-baseline justify-between gap-2 mb-1.5">
+          <span className="flex items-baseline gap-1.5 text-[13px] font-semibold text-text-primary min-w-0">
+            {star && <span className={`text-[11px] flex-shrink-0 ${starActive ? 'text-accent' : 'text-gold-text'}`}>★</span>}
+            <span className="truncate" title={labelOf(p)}>{labelOf(p)}</span>
+          </span>
+          <TuneTag {...props} />
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+        {/* line 2 — the control */}
+        <div className="flex items-center gap-2 flex-wrap">
           <Control {...props} />
         </div>
       </div>
@@ -239,9 +246,25 @@ function Row(props: Props & {
   )
 }
 
+// ── tune "was X" tag ─────────────────────────────────────────────────────────
+// Lives on the LABEL line, not beside the control: appended to the control it stole width from
+// an already-cramped row and pushed the label into an ellipsis.
+// Only rendered when the baseline actually carries this param AND it changed. (A baseline run
+// from before a param existed lacks the key — don't render a blank "was".)
+function TuneTag(props: Props & { p: ParamSchemaEntry; valueOf: (n: string) => ParamValue }) {
+  const { p, mode, baseline, valueOf } = props
+  if (mode !== 'tune' || !baseline || !Object.prototype.hasOwnProperty.call(baseline, p.name)) return null
+  if (String(valueOf(p.name)) === String(baseline[p.name])) return null
+  return (
+    <span className="text-[10.5px] text-text-tertiary flex-shrink-0">
+      was <b className="text-gold-text font-mono">{fmt(baseline[p.name])}</b>
+    </span>
+  )
+}
+
 // ── the control (mode-aware) ────────────────────────────────────────────────
 function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: () => void; valueOf: (n: string) => ParamValue }) {
-  const { p, widget, mode, onChange, baseline, axes, onToggleAxis, onUpdateAxis, intErrors, onFocus, valueOf } = props
+  const { p, widget, mode, onChange, axes, onToggleAxis, onUpdateAxis, intErrors, onFocus, valueOf } = props
   const v = valueOf(p.name)
 
   if (mode === 'optimize') {
@@ -254,18 +277,21 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
     const err = intErrors?.[p.name]
     return (
       <>
-        <NumberBox value={swept ? '' : String(v)} disabled={swept} step={p.step} onFocus={onFocus} onInput={() => {}} unit={p.unit} dim={swept} readOnly />
-        <button
-          type="button"
-          onClick={() => onToggleAxis?.(p.name)}
-          className={`text-[11px] font-semibold rounded-md px-2.5 py-[6px] border transition-colors ${
-            swept ? 'text-accent border-accent/40 bg-accent/10' : 'text-text-tertiary border-border-default bg-bg-sunken hover:text-text-secondary'
-          }`}
-        >
-          {swept ? '✓ sweep' : '⤢ sweep'}
-        </button>
+        {/* box + sweep button share the one control width, so the row edge matches every other widget */}
+        <div className={`flex items-center gap-2 ${CONTROL_W}`}>
+          <NumberBox fill value={swept ? '' : String(v)} disabled={swept} step={p.step} onFocus={onFocus} onInput={() => {}} unit={p.unit} dim={swept} readOnly />
+          <button
+            type="button"
+            onClick={() => onToggleAxis?.(p.name)}
+            className={`flex-shrink-0 text-[11px] font-semibold rounded-md px-2.5 py-[6px] border transition-colors ${
+              swept ? 'text-accent border-accent/40 bg-accent/10' : 'text-text-tertiary border-border-default bg-bg-sunken hover:text-text-secondary'
+            }`}
+          >
+            {swept ? '✓ sweep' : '⤢ sweep'}
+          </button>
+        </div>
         {swept && ax && (
-          <div className="flex items-center gap-1.5 basis-full justify-end mt-1.5">
+          <div className="flex items-center gap-1.5 basis-full mt-1.5">
             {(['min', 'max', 'step'] as const).map(f => (
               <span key={f} className={`inline-flex items-center bg-bg-sunken border rounded-md ${err ? 'border-neg-text/60' : 'border-border-default'}`}>
                 <label className="text-[10px] text-text-tertiary pl-2 pr-1">{f === 'min' ? 'from' : f === 'max' ? 'to' : 'step'}</label>
@@ -279,24 +305,16 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
             ))}
           </div>
         )}
-        {swept && err && <span className="basis-full text-right text-[11px] text-neg-text">{err}</span>}
+        {swept && err && <span className="basis-full text-[11px] text-neg-text">{err}</span>}
       </>
     )
   }
 
-  // run / tune
-  // Only show "was X" when the baseline actually carries this param AND it changed.
-  // (A baseline run from before a param existed lacks the key — don't render a blank "was".)
-  const hasBase = !!baseline && Object.prototype.hasOwnProperty.call(baseline, p.name)
-  const tuneTag = mode === 'tune' && hasBase && String(v) !== String(baseline![p.name])
-    ? <span className="text-[10.5px] text-text-tertiary">was <b className="text-gold-text font-mono">{fmt(baseline![p.name])}</b></span>
-    : null
-
+  // run / tune — the "was X" tune tag renders on the label line (see <TuneTag>)
   if (widget === 'toggle') {
     const on = v === true
     return (
-      <>
-        <div className={`inline-flex bg-bg-sunken border border-border-default rounded-lg p-[3px] ${CONTROL_W} ${CONTROL_H}`}>
+      <div className={`inline-flex bg-bg-sunken border border-border-default rounded-lg p-[3px] ${CONTROL_W} ${CONTROL_H}`}>
           {([false, true] as const).map(state => {
             const label = String((state ? p.options?.on : p.options?.off) ?? (state ? 'On' : 'Off'))
             return (
@@ -316,15 +334,12 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
               </button>
             )
           })}
-        </div>
-        {tuneTag}
-      </>
+      </div>
     )
   }
 
   if (widget === 'select' && p.choices?.length) {
     return (
-      <>
         <select
           value={String(v ?? '')}
           onFocus={onFocus}
@@ -333,15 +348,12 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
         >
           {p.choices.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        {tuneTag}
-      </>
     )
   }
 
   if (widget === 'switch') {
     const on = v === true
     return (
-      <>
         <button type="button" onClick={() => { onFocus(); onChange?.(p.name, !on) }}
                 className={`inline-flex items-center gap-2.5 ${CONTROL_W} ${CONTROL_H}`}>
           <span className={`w-10 h-[23px] rounded-full relative transition-colors ${on ? 'bg-accent' : 'bg-border-default'}`}>
@@ -349,34 +361,30 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
           </span>
           <span className="text-[12px] font-semibold text-text-secondary">{on ? 'On' : 'Off'}</span>
         </button>
-        {tuneTag}
-      </>
     )
   }
 
   // number / time / text
   return (
-    <>
-      <NumberBox
-        value={String(v)}
-        text={widget !== 'number'}
-        step={p.step}
-        unit={p.unit}
-        onFocus={onFocus}
-        onInput={raw => onChange?.(p.name, coerceInput(p, raw, v))}
-      />
-      {tuneTag}
-    </>
+    <NumberBox
+      value={String(v)}
+      text={widget !== 'number'}
+      step={p.step}
+      unit={p.unit}
+      onFocus={onFocus}
+      onInput={raw => onChange?.(p.name, coerceInput(p, raw, v))}
+    />
   )
 }
 
 function NumberBox(props: {
-  value: string; text?: boolean; disabled?: boolean; readOnly?: boolean; dim?: boolean
+  value: string; text?: boolean; disabled?: boolean; readOnly?: boolean; dim?: boolean; fill?: boolean
   step?: number; unit?: string; onFocus: () => void; onInput: (raw: string) => void
 }) {
-  const { value, text, disabled, readOnly, dim, step, unit, onFocus, onInput } = props
+  const { value, text, disabled, readOnly, dim, fill, step, unit, onFocus, onInput } = props
+  // `fill` = the box shares the control width with a sibling (the optimizer's sweep button)
   return (
-    <span className={`inline-flex items-center bg-bg-sunken border border-border-default rounded-lg overflow-hidden ${CONTROL_W} ${CONTROL_H} ${dim ? 'opacity-40' : ''}`}>
+    <span className={`inline-flex items-center bg-bg-sunken border border-border-default rounded-lg overflow-hidden ${fill ? 'flex-1 min-w-0' : CONTROL_W} ${CONTROL_H} ${dim ? 'opacity-40' : ''}`}>
       <input
         type={text ? 'text' : 'number'}
         step={text ? undefined : (step ?? 'any')}

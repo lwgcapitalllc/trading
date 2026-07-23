@@ -143,6 +143,10 @@ def _row_to_detail(row: dict) -> BacktestDetail:
     # marker — load once and derive the flag from it rather than stat-ing the file twice.
     sized_timeline = _load_json(str(LAB_RESULTS_DIR / row["run_id"] / "engine_timeline.json"))
 
+    # Full-calendar regime labels — every trading day in the window, written at run completion.
+    # Absent on runs that finished before it existed; the charts degrade to daily_pnl's tags.
+    regime_timeline = _load_json(str(LAB_RESULTS_DIR / row["run_id"] / "regime_timeline.json")) or []
+
     return BacktestDetail(
         run_id=row["run_id"],
         strategy_id=row["strategy_id"],
@@ -179,6 +183,7 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         worst_losing_streak=row.get("worst_losing_streak"),
         equity_curve=equity_curve,
         daily_pnl=daily_pnl,
+        regime_timeline=regime_timeline,
         regime_breakdown=compute_regime_breakdown(equity_curve, daily_pnl, row.get("trade_count")),
         evaluations=evals,
         worthiness=_worthiness_from_row(row),

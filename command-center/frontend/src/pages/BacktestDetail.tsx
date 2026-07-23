@@ -2,7 +2,7 @@ import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useS
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
-  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Layers, Play,
+  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Play,
   Copy, Check, SlidersHorizontal, Minimize2, Newspaper,
 } from 'lucide-react'
 import {
@@ -10,7 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
 } from 'recharts'
-import { useBacktestRun, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunCandles, useRunNews } from '@/hooks/useLab'
+import { useBacktestRun, useBacktestRuns, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunCandles, useRunNews } from '@/hooks/useLab'
 import InfoTip from '@/components/InfoTip'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
@@ -18,6 +18,9 @@ import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/
 import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag, SizingMode } from '@/types'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
+import { balanceTicks, dateMs, getXMode, monthLabel, monthTicks, regimeBandsByIndex, regimeBandsFromTimeline, setXModePref, type XMode } from '@/lib/chartAxis'
+import { XModeToggle } from '@/components/XModeToggle'
+import { RegimeOverlayToggle } from '@/components/RegimeOverlayToggle'
 
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import { OptimizeButton } from '@/components/OptimizeButton'
@@ -637,40 +640,21 @@ interface RegimeBand { x1: number; x2: number; regime: string }
 // or a "drawdown" (below the prior peak — red). Contiguous same-state points merge into one band;
 // TradingView draws this as a thin colour strip along the bottom of the equity panel.
 interface RudBand { x1: number; x2: number; up: boolean }
-function computeRunupDrawdownBands(data: EquityPoint[]): RudBand[] {
+function computeRunupDrawdownBands(data: EquityPoint[], xOf: (p: EquityPoint) => number): RudBand[] {
   const bands: RudBand[] = []
   let peak = -Infinity
   let cur: RudBand | null = null
   for (const pt of data) {
     const up = pt.equity >= peak
     if (up) peak = pt.equity
+    const x = xOf(pt)
     if (!cur || cur.up !== up) {
-      cur = { x1: pt.index, x2: pt.index, up }
+      cur = { x1: x, x2: x, up }
       bands.push(cur)
     } else {
-      cur.x2 = pt.index
+      cur.x2 = x
     }
   }
-  for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
-  return bands
-}
-
-function computeRegimeBands(equity: EquityPoint[], dailyPnl: DailyPnlPoint[]): RegimeBand[] {
-  const dateToRegime = new Map<string, string>()
-  for (const d of dailyPnl) dateToRegime.set(d.date, d.regime_tag ?? 'UNKNOWN')
-  const bands: RegimeBand[] = []
-  let cur: RegimeBand | null = null
-  for (const trade of equity) {
-    const dateKey = trade.date?.slice(0, 10)
-    const regime = dateKey ? (dateToRegime.get(dateKey) ?? 'UNKNOWN') : 'UNKNOWN'
-    if (!cur || cur.regime !== regime) {
-      cur = { x1: trade.index, x2: trade.index, regime }
-      bands.push(cur)
-    } else {
-      cur.x2 = trade.index
-    }
-  }
-  // Tile the bands so they're contiguous (no gaps between regimes) — matches the tune page.
   for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
   return bands
 }
@@ -719,17 +703,18 @@ function fmtChartDate(d?: string): string {
 
 const _money0 = (v: number) => `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
-// A "nice" round tick step (1/2/5 × 10ⁿ) near the requested size.
-function niceStep(raw: number): number {
-  if (raw <= 0) return 1
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)))
-  const n = raw / mag
-  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag
-}
+const DAY_MS = 86_400_000
 
-function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDrawdown = false, height = 300 }: {
+function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDrawdown = false, height = 300, xMode = 'date', windowStart = null }: {
   data: EquityPoint[]; bands?: RegimeBand[]
   showHistogram?: boolean; showRunupDrawdown?: boolean; height?: number
+  /** 'date' (default) plots the real calendar — quiet months look quiet, regime bands get their
+   *  true width, and the tuning workbench's overlay traces the identical path. 'trade' spaces every
+   *  trade evenly, which is the view for per-trade forensics (streaks, excursions). */
+  xMode?: XMode
+  /** Run window start — where the starting-balance anchor sits in 'date' mode (the account existed
+   *  from the window opening, not from the first trade). Falls back to a day before trade #1. */
+  windowStart?: string | null
 }) {
   if (!data.length) return null
 
@@ -747,9 +732,19 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDr
   // Anchor the curve on the STARTING BALANCE: prepend a synthetic point at the opening balance so
   // the line visibly leaves the start line (TradingView does this). The anchor carries no trade —
   // it draws no dot, no histogram bar, and its tooltip just reports the starting balance.
+  const byDate     = xMode === 'date'
   const firstIdx   = data[0]?.index ?? 1
-  const chartData: (EquityPoint & { _anchor?: boolean })[] =
-    [{ index: firstIdx - 1, equity: startEq, _anchor: true }, ...data]
+  const firstMs    = dateMs(data[0]?.date) ?? Date.now()
+  // `x` is the plotted position: a real timestamp in date mode, the trade number otherwise. Every
+  // band/ribbon below is expressed in the same units, so switching mode moves the whole chart
+  // together.
+  const anchorX = byDate
+    ? Math.min(dateMs(windowStart) ?? firstMs - DAY_MS, firstMs - DAY_MS)
+    : firstIdx - 1
+  const chartData: (EquityPoint & { _anchor?: boolean; x: number })[] = [
+    { index: firstIdx - 1, equity: startEq, _anchor: true, x: anchorX },
+    ...data.map(d => ({ ...d, x: byDate ? (dateMs(d.date) ?? firstMs) : d.index })),
+  ]
   const allValues  = data.map(d => d.equity)
   const min = Math.min(...allValues)
   const max = Math.max(...allValues)
@@ -763,13 +758,12 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDr
   const dMin = Math.min(startEq, min)
   const dMax = Math.max(startEq, max)
   const startOffset = Math.min(1, Math.max(0, (dMax - startEq) / ((dMax - dMin) || 1)))
-  const eqTicks    = calIndexTicks(data)
+  const eqTicks    = byDate
+    ? monthTicks(anchorX, chartData[chartData.length - 1].x)
+    : calIndexTicks(data)
 
   // Y ticks anchored ON the starting balance so it's always labelled, evenly spaced around it.
-  const step = niceStep((yMax - yMin) / 5)
-  const yTicks: number[] = [startEq]
-  for (let t = startEq + step; t <= yMax; t += step) yTicks.push(t)
-  for (let t = startEq - step; t >= yMin; t -= step) yTicks.unshift(t)
+  const yTicks = balanceTicks(startEq, yMin, yMax)
 
   // Profit histogram rides its own hidden axis, scaled to a bottom strip: domain [-barMax, 6×barMax]
   // puts the zero baseline ~14% up so green bars rise and red bars drop within the bottom band.
@@ -780,12 +774,29 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDr
   // Run-up / drawdown ribbon segments, and a thin band at the very bottom of the plot to draw it in.
   // Pull the first segment left to the anchor so the ribbon spans the full axis (the curve starts at
   // the anchor point, one step left of the first trade).
-  const rudBands = showRunupDrawdown ? computeRunupDrawdownBands(data) : []
-  if (rudBands.length) rudBands[0].x1 = firstIdx - 1
+  const rudBands = showRunupDrawdown
+    ? computeRunupDrawdownBands(data, d => (byDate ? (dateMs(d.date) ?? firstMs) : d.index))
+    : []
+  if (rudBands.length) rudBands[0].x1 = anchorX
+
+  // Regime bands must span the WHOLE plot. The curve starts at the anchor (a step left of trade #1
+  // in trade mode, the window open in date mode), but the bands are built from trading days — so
+  // without this the strip before the first band renders uncoloured, reading as "no regime here"
+  // when really the market had one and the run just hadn't traded yet. Same at the right edge.
+  // FILTER FIRST, then stretch: UNKNOWN bands are dropped from the render, so stretching before
+  // the filter could hand the extension to a band that never draws — leaving the leading strip
+  // uncoloured anyway (a gap one or two trades wide, which is why it looked size-dependent).
+  const lastX = chartData[chartData.length - 1].x
+  const shown = bands.filter(b => b.regime !== 'UNKNOWN')
+  const plotBands = shown.map((b, i) => ({
+    ...b,
+    x1: i === 0 ? Math.min(b.x1, anchorX) : b.x1,
+    x2: i === shown.length - 1 ? Math.max(b.x2, lastX) : b.x2,
+  }))
   const rudY2 = yMin + (yMax - yMin) * 0.025
 
   return (
-    <ResponsiveContainer key={`${bands.length}-${showHistogram}-${showExcursions}-${showRunupDrawdown}`} width="100%" height={height}>
+    <ResponsiveContainer key={`${bands.length}-${showHistogram}-${showExcursions}-${showRunupDrawdown}-${xMode}`} width="100%" height={height}>
       <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           {/* Line stroke: green above break-even, red below, hard edge at the start-balance offset. */}
@@ -805,21 +816,28 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDr
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
         {/* Regime context as faint full-height background bands — skip UNKNOWN so the chart shows
             exactly the regimes in the legend (a run tags only the regimes it actually saw). */}
-        {bands.filter(b => b.regime !== 'UNKNOWN').map((b, i) => (
-          <ReferenceArea key={`r${i}`} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
+        {plotBands.map((b, i) => (
+          // ifOverflow="visible": the first/last band are deliberately pushed to the plot edges, and
+          // Recharts' default is to DISCARD a reference area whose bound sits outside the domain.
+          <ReferenceArea key={`r${i}`} x1={b.x1} x2={b.x2} ifOverflow="visible"
+            fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
         ))}
         <XAxis
-          dataKey="index"
+          dataKey="x"
           ticks={eqTicks}
-          // Point scale keeps the line flush to the axis whether or not the histogram bars are on —
-          // a bar series otherwise switches the axis to band scale, which pads both sides and shifts
-          // the curve right, opening a gap between the y-axis and the starting balance.
-          scale="point"
+          // Date mode: a true time axis (regime bands then span their real calendar width).
+          // Trade mode: point scale keeps the line flush to the axis whether or not the histogram
+          // bars are on — a bar series otherwise switches the axis to band scale, which pads both
+          // sides and shifts the curve right, opening a gap between the y-axis and the start line.
+          {...(byDate
+            ? { type: 'number' as const, scale: 'time' as const, domain: ['dataMin', 'dataMax'] as [string, string] }
+            : { scale: 'point' as const })}
           padding={{ left: 0, right: 0 }}
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v: number) => {
+            if (byDate) return monthLabel(v)
             const date = data[v - 1]?.date
             if (!date) return ''
             return calTickLabel(date, v === data[0].index || v === data[data.length - 1].index)
@@ -1213,22 +1231,6 @@ function RegimeLegend({ bands }: { bands: RegimeBand[] }) {
         </div>
       ))}
     </div>
-  )
-}
-
-function RegimeOverlayToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      onClick={() => onChange(!on)}
-      className={`flex items-center gap-1.5 px-2 py-[4px] rounded text-[11px] transition-colors ${
-        on
-          ? 'text-accent bg-accent/10 border border-accent/25'
-          : 'text-text-tertiary hover:text-text-secondary border border-border-subtle'
-      }`}
-    >
-      <Layers size={11} />
-      Regimes
-    </button>
   )
 }
 
@@ -2019,6 +2021,8 @@ function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscre
             spec={spec}
             height={effectiveH}
             onRequestCandles={spec.baseTimeframe !== 'D1' ? requestCandles : undefined}
+            // Snapshot button on the expanded chart only — same rule as every other chart here.
+            showCopy={isFullscreen}
             headerClassName={isFullscreen ? 'border-b border-border-subtle pb-2' : undefined}
             headerLeading={isFullscreen
               ? <span className="text-[15px] font-bold uppercase tracking-wide text-text-primary ml-1 mr-2">{spec.instrument}</span>
@@ -2728,6 +2732,14 @@ export function BacktestDetail() {
   // not a sweep/optimization child). Fetch its baseline to wire up breadcrumbs.
   const isTuneIteration = !!run?.source_run_id && !run?.optimization_id && !run?.sweep_id
   const { data: tuneBaseline } = useBacktestRun(isTuneIteration ? run!.source_run_id : null)
+  // Tuning iterations already run FROM this run. Unfiltered so it shares the Runs list's cache
+  // entry rather than opening a second one. Without this the only way to discover that a run had
+  // ever been tuned was to go back to the Runs list and spot the nested rows.
+  const { data: allRuns } = useBacktestRuns()
+  const tuneCount = useMemo(
+    () => (allRuns ?? []).filter(r => r.source_run_id === runId && !r.sweep_id && !r.optimization_id).length,
+    [allRuns, runId],
+  )
   const { data: strategy } = useStrategy(run?.strategy_id ?? null)
   const [paramsCollapsed, setParamsCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem('bt_params_panel') === 'collapsed' } catch { return false }
@@ -2761,6 +2773,10 @@ export function BacktestDetail() {
   const toggleHist = useCallback((v: boolean) => { setHistOn(v); setBoolPref(_HIST_KEY, v) }, [])
   const [rudOn, setRudOn] = useState(() => getBoolPref(_RUD_KEY))
   const toggleRud = useCallback((v: boolean) => { setRudOn(v); setBoolPref(_RUD_KEY, v) }, [])
+  // Equity x-axis: calendar (default) or trade number. Calendar is canonical — it's the axis the
+  // tuning workbench compares runs on, and the only one where a flat month reads as a flat month.
+  const [xMode, setXMode] = useState<XMode>(getXMode)
+  const toggleXMode = useCallback((v: XMode) => { setXMode(v); setXModePref(v) }, [])
   const hasExcursionData = useMemo(
     () => run?.equity_curve.some(p => p.favorable != null || p.adverse != null) ?? false,
     [run?.equity_curve],
@@ -2842,11 +2858,26 @@ export function BacktestDetail() {
     [run?.daily_pnl],
   )
 
+  // Regime bands for the main equity chart, in whatever units its x-axis is using.
+  // DATE mode reads the run's FULL-CALENDAR timeline — every trading day in the window, classified
+  // server-side — so the bands show the market's real regime calendar and match the tuning
+  // workbench exactly. Runs completed before the backend emitted a timeline fall back to the old
+  // per-trade-day derivation. TRADE mode always uses the per-trade one (only it is indexed by trade).
   const regimeBands = useMemo(
-    () => (overlayOn && hasRealRegimeTags && run)
-      ? computeRegimeBands(run.equity_curve, run.daily_pnl)
-      : [],
-    [overlayOn, hasRealRegimeTags, run?.equity_curve, run?.daily_pnl],
+    () => {
+      if (!overlayOn || !run) return []
+      // One source of truth for "what regime was this date": the run's FULL-CALENDAR timeline when
+      // it has one, else whatever tags its traded days carry (runs completed before the timeline
+      // existed). Then project it onto whichever axis the chart is on.
+      const map = new Map<string, string>()
+      for (const d of run.regime_timeline ?? []) map.set(d.date, d.regime)
+      if (!map.size) for (const d of run.daily_pnl) if (d.regime_tag) map.set(d.date, d.regime_tag)
+      if (!map.size) return []
+      return xMode === 'trade'
+        ? regimeBandsByIndex(run.equity_curve, map)
+        : regimeBandsFromTimeline([...map.entries()].map(([date, regime]) => ({ date, regime })))
+    },
+    [overlayOn, xMode, run?.regime_timeline, run?.equity_curve, run?.daily_pnl],
   )
 
   // Regime is a market property (same calendar days for every firm), so tag lookup uses the
@@ -3060,9 +3091,16 @@ export function BacktestDetail() {
                   <button
                     onClick={() => navigate(`/backtests/runs/${run.run_id}/tune`)}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-                    title="Tweak parameters and compare iterations"
+                    title={tuneCount
+                      ? `Open the tuning workbench — ${tuneCount} iteration${tuneCount !== 1 ? 's' : ''} already run from this backtest`
+                      : 'Tweak parameters and compare iterations'}
                   >
                     <SlidersHorizontal size={14} /> Tune
+                    {tuneCount > 0 && (
+                      <span className="px-1.5 py-[1px] rounded-full text-[10px] font-semibold bg-accent/15 text-accent tabular-nums">
+                        {tuneCount}
+                      </span>
+                    )}
                   </button>
                 )}
                 {(run.trade_count ?? 0) > 0 && <OptimizeButton run={run} />}
@@ -3263,6 +3301,27 @@ export function BacktestDetail() {
             // isModal=true means this render call is from inside ChartModal (equity/breakdown only).
             // Price chart manages its own fullscreen internally via position:fixed so the single
             // klinecharts instance is never disposed/re-inited during the fullscreen toggle.
+            // View controls for a chart tab — rendered BOTH inline and in the fullscreen header.
+            // Fullscreen is where a chart is actually read, so every control must exist there too
+            // (the axis switch especially: expanding to compare against a date is the whole point).
+            // Actions (Refresh / Rebuild) deliberately stay inline — they're not view state.
+            const chartControls = (key: string): React.ReactNode => (
+              <>
+                {key === 'equity' && (
+                  <SeriesToggle label={hasExcursionData ? 'Trade excursions' : 'Histogram'} on={histOn} onChange={toggleHist} />
+                )}
+                {key === 'equity' && (
+                  <SeriesToggle label="Run-ups & drawdowns" on={rudOn} onChange={toggleRud} />
+                )}
+                {key === 'equity' && (
+                  <XModeToggle value={xMode} onChange={toggleXMode} />
+                )}
+                {(key === 'equity' || key === 'sized') && hasRealRegimeTags && (
+                  <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
+                )}
+              </>
+            )
+
             const renderChart = (key: string, h: number, isModal = false): React.ReactNode => {
               switch (key) {
                 case 'equity':
@@ -3274,6 +3333,8 @@ export function BacktestDetail() {
                         showHistogram={histOn}
                         showRunupDrawdown={rudOn}
                         height={h}
+                        xMode={xMode}
+                        windowStart={run.start_date}
                       />
                       {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
                     </>
@@ -3376,15 +3437,7 @@ export function BacktestDetail() {
                       onExpand={() => setFullscreenChart(primaryTab)}
                       render={renderChart}
                       right={<>
-                        {primaryTab === 'equity' && (
-                          <SeriesToggle label={hasExcursionData ? 'Trade excursions' : 'Histogram'} on={histOn} onChange={toggleHist} />
-                        )}
-                        {primaryTab === 'equity' && (
-                          <SeriesToggle label="Run-ups & drawdowns" on={rudOn} onChange={toggleRud} />
-                        )}
-                        {(primaryTab === 'equity' || primaryTab === 'sized') && hasRealRegimeTags && (
-                          <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
-                        )}
+                        {chartControls(primaryTab)}
                         {isNt8 && (
                           <button
                             onClick={() => runId && reloadCharts.mutate(runId)}
@@ -3420,6 +3473,7 @@ export function BacktestDetail() {
                         title={TITLES[fullscreenChart] ?? 'Chart'}
                         onClose={() => setFullscreenChart(null)}
                         render={h => renderChart(fullscreenChart, h, true)}
+                        controls={chartControls(fullscreenChart)}
                       />
                     )}
                   </>
