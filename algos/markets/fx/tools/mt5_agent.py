@@ -108,6 +108,7 @@ _lock = threading.Lock()
 _experts_dir: Optional[Path] = None
 
 _terminal_path: Optional[Path] = None  # cached tester executable path
+_lab_bound            = False          # True once the API is bound to MT5_Lab (logged once)
 _BACKTEST_TIMEOUT     = 300            # seconds before force-kill
 _REPORT_POLL_INTERVAL = 5              # seconds between report-file polls
 
@@ -157,20 +158,98 @@ _mt5_lock = threading.Lock()
 _TICK_ROW_CAP = 3_000_000
 
 
+def _lab_terminal_exe() -> Optional[Path]:
+    """
+    Resolve the MT5_Lab terminal64.exe for the Python-API connection.
+
+    Resolution order — TERMINAL_PATH, then MT5_DATA_DIR's origin.txt, then the
+    baked-in C:\\MT5_Lab default (the canonical lab install path also hardcoded
+    by algos/tools/download_mt5_history.py and audit_mt5_data_quality.py). All
+    three point at the lab terminal; it deliberately NEVER falls back to a
+    running terminal — that is exactly the MT5_FFT leak we are closing. Returns
+    None only if no lab terminal64.exe exists at any of these locations.
+    """
+    dirs: list[Path] = []
+
+    env = os.environ.get("TERMINAL_PATH", "")
+    if env:
+        p = Path(env)
+        dirs.append(p if p.is_dir() else p.parent)
+
+    data_dir_env = os.environ.get("MT5_DATA_DIR", "")
+    if data_dir_env:
+        origin = Path(data_dir_env) / "origin.txt"
+        if origin.is_file():
+            try:
+                terminal_dir = Path(origin.read_text(encoding="utf-8", errors="replace").strip())
+                if terminal_dir.is_dir():
+                    dirs.append(terminal_dir)
+            except Exception:
+                pass
+
+    # Baked-in default — the canonical lab install. Keeps the data pull pinned to
+    # MT5_Lab even when the VPS env vars are unset (they currently are).
+    dirs.append(Path(r"C:\MT5_Lab"))
+
+    for d in dirs:
+        t = d / "terminal64.exe"
+        if t.is_file():
+            return t
+    return None
+
+
 def _ensure_mt5() -> tuple[bool, Optional[str]]:
     """
-    Ensure MT5 is initialized. Returns (ok, error_message).
-    Connects to whichever terminal answers first (typically the live trading terminal).
-    MT5_Lab is intentionally NOT pre-launched here — it must be free when we
-    launch terminal64.exe fresh for each backtest.
+    Ensure the Python API is connected to the MT5_Lab terminal — and ONLY that.
+    Returns (ok, error_message).
+
+    All backtest price/tick data must come from the account logged into
+    MT5_Lab. The connection is pinned to the lab terminal64.exe resolved from
+    the environment; if a different terminal (e.g. a live bot terminal such as
+    MT5_FFT) is already attached, it is dropped and re-bound to the lab. If the
+    lab terminal cannot be resolved or bound, the call FAILS — it never silently
+    attaches to whatever terminal answers first.
     """
+    global _lab_bound
     if not MT5_AVAILABLE:
         return False, "MetaTrader5 package not installed"
+
+    lab_exe = _lab_terminal_exe()
+    if lab_exe is None:
+        return False, ("Cannot locate the MT5_Lab terminal — set TERMINAL_PATH or "
+                       "MT5_DATA_DIR so the backtest binds to MT5_Lab. Refusing to "
+                       "connect to an unknown terminal.")
+    lab_dir = str(lab_exe.parent).lower()
+
+    def _connected_dir() -> str:
+        info = mt5.terminal_info()
+        return str(Path(getattr(info, "path", "") or "")).lower() if info else ""
+
     with _mt5_lock:
-        if mt5.initialize():
-            return True, None
-        err = mt5.last_error()
-        return False, f"MT5 init failed: {err}"
+        if not mt5.initialize(path=str(lab_exe)):
+            return False, f"MT5 init failed for lab terminal {lab_exe}: {mt5.last_error()}"
+
+        # Guard: if initialize() reused a pre-existing connection to a different
+        # terminal, drop it and re-bind to the lab terminal exactly once.
+        if _connected_dir() != lab_dir:
+            mt5.shutdown()
+            if not mt5.initialize(path=str(lab_exe)):
+                return False, f"MT5 init failed for lab terminal {lab_exe}: {mt5.last_error()}"
+            if _connected_dir() != lab_dir:
+                mt5.shutdown()
+                return False, (f"Refusing to run: MT5 connected to {_connected_dir() or 'an unknown terminal'}, "
+                               f"not the lab terminal at {lab_dir}. Close other MT5 terminals "
+                               f"or check TERMINAL_PATH / MT5_DATA_DIR.")
+
+        if not _lab_bound:
+            acc = mt5.account_info()
+            if acc is not None:
+                _alog(f"MT5 data bound to MT5_Lab: account {getattr(acc, 'login', '?')} "
+                      f"on {getattr(acc, 'server', '?')} ({lab_exe})")
+            else:
+                _alog(f"MT5 data bound to MT5_Lab terminal {lab_exe} (no account logged in)")
+            _lab_bound = True
+        return True, None
 
 
 def _get_lab_data_dir() -> Optional[Path]:
@@ -578,9 +657,9 @@ def _get_tester_exe() -> Optional[Path]:
     2. MT5_DATA_DIR env var — read origin.txt to resolve the terminal directory.
        This is the normal production path: Task Scheduler sets MT5_DATA_DIR to the
        MT5_Lab AppData folder; origin.txt inside it contains 'C:\\MT5_Lab'.
-    3. Auto-detect from running MT5 via terminal_info().path — last resort only,
-       may return a live trading terminal (MT5_FFT, MT5_Scalper) which must not
-       be used for backtesting.
+    3. Auto-detect via terminal_info().path — last resort only. Since
+       _ensure_mt5() is now pinned to MT5_Lab, this too resolves to the lab
+       terminal (never a live bot terminal such as MT5_FFT / MT5_Scalper).
     """
     global _terminal_path
     if _terminal_path is not None:
