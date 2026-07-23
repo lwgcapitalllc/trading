@@ -76,7 +76,18 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None) -
             exec_respect_veto=bool(b & 64), exec_close_opp_sos=bool(b & 128),
             exec_htf_exhaust_only=bool(b & 256), exec_no_late_day=bool(b & 512),
             show_div=bool(b & 1024), div_veto=bool(b & 2048),
+            exec_conf_sz=bool(b & 4096),
         )
+        # Bit 4096 (Pine execConfSZ, added 2026-07-21) turns the Sniper Zone into a second
+        # accepted entry confirmation. The Python bot has NOT ported that path yet, so an
+        # export made with it on would diff against logic this bot does not have — refuse
+        # rather than report a meaningless mismatch (or a meaningless green).
+        if vals.get("exec_conf_sz"):
+            raise SystemExit(
+                "This export was taken with 'Allow Sniper Zone as entry confirmation' ON "
+                "(cfg_bits bit 4096). That Pine path is not ported to the Python bot yet, so "
+                "the comparison would be meaningless. Re-export with it OFF, or port it first."
+            )
     sc = get("cfg_strcodes")
     if sc is not None:
         s = int(round(sc))

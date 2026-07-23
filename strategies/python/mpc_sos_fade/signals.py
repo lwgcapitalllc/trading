@@ -67,8 +67,9 @@ class Signals:
     last_bear_div_bar: Optional[int]
     bull_div_active: bool
     bear_div_active: bool
-    long_veto: bool
-    short_veto: bool
+    veto_on: bool                  # showDiv and divVeto — the veto is switched on at all
+    veto_rsi_ob: bool              # divRsi >= divExtremeOB (blocks longs, LIVE, never exempt)
+    veto_rsi_os: bool              # divRsi <= divExtremeOS (blocks shorts)
 
     # Structure fib
     fibo_dir: int
@@ -295,11 +296,13 @@ class SignalAdapter:
         bull_div_active = show_div and lb is not None and not bull_stale and index - lb <= vb
         bear_div_active = show_div and lbe is not None and not bear_stale and index - lbe <= vb
 
-        # longVeto / shortVeto (Pine 1953-1954). divRsi = current RSI.
+        # Veto PARTS, not the veto itself. The finished veto is SOS-aware as of the
+        # 2026-07-21 Pine change, and the SOS bar lives in the sequence layer — see
+        # `sos_aware_veto()` at the bottom of this module. divRsi = current RSI.
         div_rsi = state.rsi.rsi
         veto_on = show_div and self._cfg.div_veto
-        long_veto = veto_on and (bear_div_active or (div_rsi is not None and div_rsi >= self._cfg.div_extreme_ob))
-        short_veto = veto_on and (bull_div_active or (div_rsi is not None and div_rsi <= self._cfg.div_extreme_os))
+        veto_rsi_ob = div_rsi is not None and div_rsi >= self._cfg.div_extreme_ob
+        veto_rsi_os = div_rsi is not None and div_rsi <= self._cfg.div_extreme_os
 
         # Structure fib -> fibo_dir / fiboP* / latches
         fib = state.fib
@@ -334,7 +337,7 @@ class SignalAdapter:
             recent_bsl=recent_bsl, recent_bsl_bar=recent_bsl_bar, recent_bsl_time=recent_bsl_time,
             last_bull_div_bar=lb, last_bear_div_bar=lbe,
             bull_div_active=bull_div_active, bear_div_active=bear_div_active,
-            long_veto=long_veto, short_veto=short_veto,
+            veto_on=veto_on, veto_rsi_ob=veto_rsi_ob, veto_rsi_os=veto_rsi_os,
             fibo_dir=fibo_dir,
             fibo_p1=p["p1"], fibo_p2=p["p2"], fibo_p3=p["p3"], fibo_p4=p["p4"],
             fibo_p5=p["p5"], fibo_p6=p["p6"], fibo_p7=p["p7"], fibo_p10=p["p10"],
@@ -348,3 +351,29 @@ def _active_fvgs(fvg_events):
     """The live (unmitigated) FVGs the Pine's fvgBoxes/fvgTops/fvgBots/fvgIsBull arrays
     hold. FvgEvents exposes an `active` list; each gap carries top/bottom/is_bullish."""
     return getattr(fvg_events, "active", []) or []
+
+
+def sos_aware_veto(sig: Signals, l_sos_bar, s_sos_bar) -> Tuple[bool, bool]:
+    """Pine `longVetoA` / `shortVetoA` (mpc_strategy.pine ~3701, changed 2026-07-21).
+
+    A divergence that prints AFTER the SOS no longer vetoes its own setup: once stage 2
+    is live the setup is deliberately waiting on a retrace, and an opposing divergence
+    formed during that retrace IS the pullback — weakness in the counter-move, not a
+    reversal of the leg we just broke with. Only a divergence already live at or before
+    the SOS bar still blocks the side; with no SOS yet, nothing changes.
+
+    Extreme RSI keeps blocking LIVE — the exemption covers divergence only.
+
+    Lives here rather than in `SignalAdapter.update()` because the SOS bar is sequence
+    state, which the adapter has not computed yet. Both the primary execution layer and
+    the (Python-only) secondary re-entry read it, so it is one function, not two copies.
+    """
+    long_veto = sig.veto_on and (
+        sig.veto_rsi_ob
+        or (sig.bear_div_active and (l_sos_bar is None or sig.last_bear_div_bar <= l_sos_bar))
+    )
+    short_veto = sig.veto_on and (
+        sig.veto_rsi_os
+        or (sig.bull_div_active and (s_sos_bar is None or sig.last_bull_div_bar <= s_sos_bar))
+    )
+    return long_veto, short_veto

@@ -80,7 +80,7 @@ def _sig(**kw):
         recent_ssl="", recent_ssl_bar=None, recent_ssl_time=None,
         recent_bsl="", recent_bsl_bar=None, recent_bsl_time=None,
         last_bull_div_bar=None, last_bear_div_bar=None,
-        bull_div_active=False, bear_div_active=False, long_veto=False, short_veto=False,
+        bull_div_active=False, bear_div_active=False, veto_on=False, veto_rsi_ob=False, veto_rsi_os=False,
         fibo_dir=0, fibo_p1=None, fibo_p2=None, fibo_p3=None, fibo_p4=None,
         fibo_p5=None, fibo_p6=None, fibo_p7=None, fibo_p10=None,
         fibo_half_reached=False, fibo_618_ever_reached=False, fibo7_touched=False,

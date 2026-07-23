@@ -41,6 +41,8 @@ if str(_ROOT) not in sys.path:
 from backtest import fills as _fills
 from backtest.portfolio.account import SoloAccount
 
+from .signals import sos_aware_veto
+
 
 @dataclass
 class Fill:
@@ -330,7 +332,7 @@ class Execution:
         long_edge, short_edge = self._entry_edges(sig)
         dec.long_edge, dec.short_edge = long_edge, short_edge
         dec.l_stage, dec.s_stage = seq.l_stage, seq.s_stage
-        dec.long_veto, dec.short_veto = sig.long_veto, sig.short_veto
+        dec.long_veto, dec.short_veto = sos_aware_veto(sig, seq.l_sos_bar, seq.s_sos_bar)
 
         # Financing for any rollover crossed while still holding — charged before this bar's
         # exits, since the night was already carried by the time the bar trades. No-op in bar mode.
@@ -387,12 +389,12 @@ class Execution:
         long_armed = (cfg.exec_longs and arm_ok_l and not late and not htf_block_l
                       and not bias_block_l and seq.l_sos_bar is not None and sig.fibo_dir == 1
                       and long_edge is not None
-                      and (not sig.long_veto or not cfg.exec_respect_veto)
+                      and (not dec.long_veto or not cfg.exec_respect_veto)
                       and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l))
         short_armed = (cfg.exec_shorts and arm_ok_s and not late and not htf_block_s
                        and not bias_block_s and seq.s_sos_bar is not None and sig.fibo_dir == -1
                        and short_edge is not None
-                       and (not sig.short_veto or not cfg.exec_respect_veto)
+                       and (not dec.short_veto or not cfg.exec_respect_veto)
                        and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s))
         dec.long_armed, dec.short_armed = long_armed, short_armed
 

@@ -9,11 +9,16 @@ NOT own the engines (`engines/`), the replay runner (`backtest/`), or the lab (`
 `VANTAGE_XAUUSD, 5m` export (20,076 bars, `compare_strategy.py` with no warmup — the export starts at
 bar 0). Bar-for-bar identical decision stream vs `mpc_strategy.pine`. Runs real-tick fills + costs
 (`fill_model="tick"`), and is registered in the command-center lab as `runner="python"` (see
-`LAB_STRATEGY` in `__init__.py`) — risk % is editable in the Run modal. 102 offline tests green.
+`LAB_STRATEGY` in `__init__.py`) — risk % is editable in the Run modal. 51 offline tests green.
+**RE-VALIDATED GREEN 2026-07-22** after the Pine changed (SOS-aware veto + `execConfSZ` + CONT
+removal): the export was regenerated, the veto was ported, and `compare_strategy.py` matches Pine's
+decision stream on a fresh 19,863-bar `VANTAGE_XAUUSD, 15m` grand export — every `px_dec_bits` /
+`px_stages` / `px_edge` / `px_entry_price` bar-for-bar, one lone 25-cent `px_exit_run` difference on
+a single Nov-2025 runner (an intrabar trail-fill guess, not a decision). See `## The 2026-07-22 re-sync`.
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-16
+**Last reviewed:** 2026-07-22
 
 ---
 
@@ -190,6 +195,27 @@ the toggles, configures the bot identically, replays the same bars, and diffs th
 command-center/backend/.venv/bin/python strategies/python/mpc_sos_fade/tools/compare_strategy.py <export.csv> --warmup N
 ```
 
+### The 2026-07-22 re-sync (the export was 7 days stale)
+
+`mpc_strategy_export.pine` was last regenerated 2026-07-15 and had drifted on three trade-affecting
+Pine changes, so any diff it produced was July-15 drift, not a bug. Regenerated from
+`mpc_strategy.pine` @ `361f007`:
+
+1. **The veto is now SOS-aware** (Pine `longVetoA`/`shortVetoA`, ~3701). A divergence printing AFTER
+   the SOS no longer vetoes its own setup — once stage 2 is live the setup is waiting on a retrace,
+   and an opposing divergence formed during that retrace IS the pullback. Only one already live at
+   or before the SOS bar still blocks. Extreme RSI keeps blocking LIVE. **Ported here**: the veto
+   moved out of `SignalAdapter.update()` (which has no sequence state) into `signals.sos_aware_veto()`,
+   which `execution.py` and `secondary.py` both call. `Signals` now carries the veto PARTS
+   (`veto_on`, `veto_rsi_ob`, `veto_rsi_os`) instead of the finished `long_veto`/`short_veto`.
+   The old, stricter rule is why a lab run can miss a long TradingView took.
+2. **`execConfSZ`** — "Allow Sniper Zone as entry confirmation", a second accepted entry
+   confirmation alongside the FVG. **NOT ported.** `config.exec_conf_sz` exists (default False) and
+   the export packs it as `cfg_bits` bit 4096, so `compare_strategy.py` REFUSES an export taken with
+   it on rather than diffing against logic this bot lacks. Port = read `BarState.sniper`'s
+   0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
+3. **CONT trades removed** from the Pine — the export used to carry `contL_ok`/`contS_ok`.
+
 **When the Pine changes:** brother re-pastes `mpc_strategy.pine` → regenerate `mpc_strategy_export.pine`
 (re-copy + re-append the parity block) → re-export → re-run until exit 0. A new trade-affecting input =
 a new `config.py` field + a new `cfg_*` plot + a new `compare_strategy._TOGGLE_COLS` entry.
@@ -199,6 +225,24 @@ check (all nine engines + this strategy) whose columns are present in the CSV(s)
 GREEN/RED/SKIP table with auto-detected cold-start warmup. It is the "is everything in sync?" command
 to run after any re-paste; it reports drift, it does not fix it (a real logic change is still a hand
 port). Engines are the foundation — sync them first (`/audit-engines`), then this strategy.
+
+## LOGIC parity vs RESULT parity — two different tools, two different questions
+
+`compare_strategy.py` answers "is our CODE the Pine's code?" — it replays TradingView's OWN bars and
+diffs the per-bar `px_*` decision stream, so the data feed is out of the equation. That is the gate.
+
+`tools/compare_trades.py` answers a different question: "why does a LAB RUN's finished trade list
+differ from what I got in the TradingView Strategy Tester?" It pairs the two trade lists by entry TIME
+(not price — different brokers legitimately differ by cents on the same bar) and reports matched /
+TV-only / ours-only. **It is a diagnosis tool, not a parity gate** — a diff here is usually the DATA
+FEED, not the code (proven 2026-07-22: run `f455b21faabe` came in ~110% vs TradingView's 142%; the whole
+gap was two longs Vantage's wick swept a level our PU-Prime feed's wick fell ~10 cents short of, so the
+sweep never armed. `compare_strategy.py` was green on TradingView's bars, i.e. our code took both those
+longs on Vantage data — the lab missed them purely on the feed). Two counting conventions also confuse
+the comparison and are NOT bugs: TradingView counts each TP rung as its own "trade" (41 positions × 3
+rungs = 123) and its max-DD % is vs peak equity where ours is vs starting capital. Usage:
+`compare_trades.py <tv_trades.csv> <run_id>` — `--tz` defaults to `Etc/GMT+4` (the Vantage XAUUSD chart
+is a FIXED UTC-4, no US DST); it prints a hint if the median pairing offset says otherwise.
 
 ## The 2026-07-16 year run — what the numbers actually say
 

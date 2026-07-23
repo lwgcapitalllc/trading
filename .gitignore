@@ -91,3 +91,12 @@ algos/telegram_monitor_state.json
 
 # MT5 lock
 algos/mt5_connect.lock
+
+# =============================================================
+# TradingView exports — real market data, never committed
+# (chart-data exports AND Strategy Tester trade lists). They are
+# the INPUT to the parity harnesses, not source.
+# =============================================================
+*VANTAGE_*.csv
+*_Strategy_*_20*.csv
+tv-exports/

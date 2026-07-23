@@ -123,7 +123,7 @@ from strategies.python.mpc_sos_fade.secondary import M1State, SecArm, SecondaryA
 _SIG_LONG = SimpleNamespace(
     fibo_dir=1, fibo_p1=106.18, fibo_p2=105.0, fibo_p3=103.82, fibo_p6=101.14,
     fibo_p7=110.0, fibo_p10=100.0, bull_div_active=True, bear_div_active=False,
-    long_veto=False, short_veto=False)
+    veto_on=False, veto_rsi_ob=False, veto_rsi_os=False)
 _SEQ_LONG = SimpleNamespace(l_sos_bar=500, s_sos_bar=None)
 
 

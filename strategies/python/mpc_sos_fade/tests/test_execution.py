@@ -33,7 +33,7 @@ def _sig(index, o, h, l, c, dir=1, ny_hour=8, **kw):
         recent_ssl="", recent_ssl_bar=None, recent_ssl_time=None,
         recent_bsl="", recent_bsl_bar=None, recent_bsl_time=None,
         last_bull_div_bar=None, last_bear_div_bar=None,
-        bull_div_active=False, bear_div_active=False, long_veto=False, short_veto=False,
+        bull_div_active=False, bear_div_active=False, veto_on=False, veto_rsi_ob=False, veto_rsi_os=False,
         fibo_dir=dir,
         fibo_p1=106.18, fibo_p2=105.0, fibo_p3=103.82, fibo_p4=102.8,
         fibo_p5=102.0, fibo_p6=101.14, fibo_p7=110.0, fibo_p10=100.0,
@@ -154,5 +154,33 @@ def test_late_day_block_stops_new_entries():
 
 def test_veto_blocks_when_respected():
     ex = Execution(_cfg())
-    dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, long_veto=True), _seq_long_ready())
+    # extreme-RSI veto — never exempt, blocks whatever the SOS bar is
+    dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, veto_on=True, veto_rsi_ob=True),
+                  _seq_long_ready())
     assert dec.long_armed is False
+
+
+def test_divergence_before_the_sos_still_vetoes():
+    """Pine longVetoA: a bear divergence already live AT OR BEFORE the SOS bar blocks
+    the long, exactly as the old rule did."""
+    ex = Execution(_cfg())
+    dec = ex.step(
+        _sig(0, 104.0, 104.5, 103.9, 104.2,
+             veto_on=True, bear_div_active=True, last_bear_div_bar=1),
+        _seq_long_ready(sos_bar=1),
+    )
+    assert dec.long_veto is True
+    assert dec.long_armed is False
+
+
+def test_divergence_after_the_sos_is_exempt():
+    """The 2026-07-21 Pine change: a bear divergence that printed AFTER the bull SOS is
+    the pullback the setup is waiting on, not a reversal — it no longer vetoes."""
+    ex = Execution(_cfg())
+    dec = ex.step(
+        _sig(0, 104.0, 104.5, 103.9, 104.2,
+             veto_on=True, bear_div_active=True, last_bear_div_bar=5),
+        _seq_long_ready(sos_bar=1),
+    )
+    assert dec.long_veto is False
+    assert dec.long_armed is True

@@ -30,6 +30,8 @@ if str(_ENGINES) not in sys.path:
 
 from market_structure import Bar, StructureEngine  # noqa: E402
 
+from .signals import sos_aware_veto  # noqa: E402
+
 
 @dataclass(frozen=True)
 class M1State:
@@ -195,6 +197,8 @@ class SecondaryArm:
         fibs_ready = None not in (sig.fibo_p1, sig.fibo_p2, p3, p6, sig.fibo_p7, sig.fibo_p10)
         late = cfg.exec_no_late_day and 16 <= ny_hour < 18
         respect_veto = cfg.exec_respect_veto
+        # Same SOS-aware veto the primary reads (Pine longVetoA/shortVetoA).
+        long_veto, short_veto = sos_aware_veto(sig, seq.l_sos_bar, seq.s_sos_bar)
 
         l_armed = (cfg.exec_secondary and cfg.exec_longs and flat
                    and seq.l_sos_bar is not None and be_sos_l == seq.l_sos_bar
@@ -202,14 +206,14 @@ class SecondaryArm:
                    and sig.bull_div_active and sig.fibo_dir == 1 and fibs_ready
                    and self._l_hi is not None and self._l_lo is not None and self._l_hi > self._l_lo
                    and (self._l_traded is None or self._l_leg != self._l_traded)
-                   and not late and (not sig.long_veto or not respect_veto))
+                   and not late and (not long_veto or not respect_veto))
         s_armed = (cfg.exec_secondary and cfg.exec_shorts and flat
                    and seq.s_sos_bar is not None and be_sos_s == seq.s_sos_bar
                    and seq.s_sos_bar != self._s_dead
                    and sig.bear_div_active and sig.fibo_dir == -1 and fibs_ready
                    and self._s_hi is not None and self._s_lo is not None and self._s_hi > self._s_lo
                    and (self._s_traded is None or self._s_leg != self._s_traded)
-                   and not late and (not sig.short_veto or not respect_veto))
+                   and not late and (not short_veto or not respect_veto))
 
         buf = cfg.exec_sl_buf_tk * cfg.mintick
         l_edge = (self._l_hi - (self._l_hi - self._l_lo) * 0.382) if l_armed else None

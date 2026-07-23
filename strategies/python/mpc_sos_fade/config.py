@@ -47,6 +47,12 @@ class SosFadeConfig:
     exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
     exec_trail_step: float = 5.0       # "Runner trail step ($ of price)"
     exec_no_late_day: bool = True      # "No entries in final hour (16:00-17:00 NY)"
+    exec_conf_sz: bool = False         # "Allow Sniper Zone as entry confirmation" (Pine execConfSZ)
+    #   Added to `mpc_strategy.pine` 2026-07-21. NOT PORTED YET — the field exists so the toggle is
+    #   readable from the export's cfg_bits and `compare_strategy.py` can REFUSE a run made with it
+    #   on, rather than silently diffing against logic this bot does not have. Porting it means
+    #   reading the Sniper fib (already in the replay stack as `BarState.sniper`) and using its
+    #   0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
     exec_secondary: bool = False       # "Secondary re-entries (1m SOS)" — the 1m sniper re-entry
     #   OFF (default) = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
     #   ON = also re-enter on the same 15m leg from the 1m chart (needs run_dual + a 1m feed).
