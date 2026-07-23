@@ -164,3 +164,24 @@ findings. The agent's `/ticks` endpoint landed with A2; `Mt5Agent.ticks()` reads
   `command-center/backend/.venv/bin/python -m pytest backtest/tests/ -q`.
 - **Bars are UTC**, timestamped at the bar OPEN (matching MT5), columns open/high/low/close, no
   volume (the A+ engines don't need it).
+
+## Reading the numbers — two standing caveats
+
+- **Annualized Sharpe is inflated across ALL runners (NT8/MT5/Python).** `output.py:build_daily_pnl`
+  records only days that had a closed trade; flat days are deliberately absent (the trailing-drawdown
+  engine walks the days that exist). `metrics.daily_sharpe` then annualizes those active days ×√252,
+  as if every day looked like an active one. On a 22-trade / ~225-day run the shipped figure was
+  **7.80** vs a true **~2.2** when every weekday is zero-filled (monthly-%, daily-%, and dollar
+  variants all cluster ~2.0–2.6 — that cluster is the tell). KNOWN + MEASURED, deliberately NOT fixed
+  (fixing it re-scores every historical run — Aaron's call). Treat Sharpe as a *relative* ranking
+  between our own runs only; never quote it as an absolute, and never compare it raw to TradingView's.
+  If ever fixed, build a separate zero-filled series for the Sharpe calc — do NOT change `daily_pnl`
+  itself (the trailing-drawdown engine depends on the absent flat days).
+- **Reconciling with TradingView's Strategy Tester — two conventions differ, both expected.**
+  (1) TV counts each TP-ladder exit as its own closed trade, so it reports ~3× our position count
+  (66 TV "trades" = our 22 positions; win RATE matches to 4 s.f. — compare the rate, never raw counts).
+  (2) TV's Sharpe is a RAW MONTHLY figure — multiply by √12 (≈3.464) before comparing to our
+  annualized daily one. Normalize for both before calling any TV-vs-lab gap a bug; `verify_parity.py`
+  proves the SIGNALS match bar-for-bar, it does not make the two summary reports directly comparable.
+- **If a real backtest must be run, the MT5 runner is much faster than NT8** (NT8's Strategy Analyzer
+  is driven by slow pywinauto UI automation). Prefer an MT5-runner strategy/symbol when the goal allows.

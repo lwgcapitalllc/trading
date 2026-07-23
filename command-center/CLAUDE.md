@@ -116,6 +116,7 @@ NT8 and NinjaTrader were merged into one dot. Red = agent down (clickable); yell
 
 ## Never do
 
+- **Never run a bare `pytest tests/` in `backend/`** — it includes `tests/test_integration.py`, a LIVE suite that submits a real VPS backtest and runs `taskkill /f /im python.exe` on the VPS, which kills BOTH backtest agents (NT8 + MT5) and any in-flight tick-mode backtest. Always `pytest tests/ --ignore=tests/test_integration.py` (or name specific files). The tell you're about to make the mistake: the full suite takes ~15min vs ~5s without integration. Recovery if it happens: `ssh forexvps "schtasks /run /tn MT5AgentRDP"` (and `NT8Agent`), then REBUILD the SSH tunnel (the old `ssh -N -L` survives holding the ports while forwarding to a dead agent). Only run `test_integration.py` when explicitly asked for a live check.
 - Touch `algos/` or `smart-money/` source code — read their output files only
 - Commit secrets (`.env`, credentials, tokens)
 - Add a frontend route without a corresponding `NavItem` in `Sidebar.tsx`
