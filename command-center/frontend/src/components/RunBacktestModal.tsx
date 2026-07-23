@@ -81,7 +81,11 @@ function lookupInstrumentName(sym: string): string {
   return ''
 }
 
-const BROKER_SYMBOLS = ['EURUSD.s', 'GBPUSD.s', 'USDJPY.s', 'XAUUSD.s', 'GBPJPY.s', 'AUDUSD.s', 'USDCAD.s', 'EURGBP.s', 'AUDJPY.s', 'CADJPY.s']
+// Vantage demo symbol names — no ".s" suffix (that was PU Prime). Backtests pull data ONLY from
+// MT5_Lab, which is logged into the Vantage demo (see algos/CLAUDE.md), so these must be the Vantage
+// names or the data pull caches Vantage bars under a wrong PU-Prime key. Confirmed against the live
+// terminal 2026-07-22 via the agent's /symbol_info (all ten resolve plain).
+const BROKER_SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'GBPJPY', 'AUDUSD', 'USDCAD', 'EURGBP', 'AUDJPY', 'CADJPY']
 
 function getAllowedSymbols(firms: Firm[]): string[] {
   const set = new Set<string>()
@@ -161,7 +165,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   )
 
   const [instrumentSymbol, setInstrumentSymbol] = useState(
-    isNt8 ? parsed.symbol : scope === 'python' ? (parsed.symbol || 'XAUUSD.s') : 'EURUSD.s'
+    isNt8 ? parsed.symbol : scope === 'python' ? (parsed.symbol || 'XAUUSD') : 'EURUSD'
   )
   const [contractMonth, setContractMonth] = useState(parsed.month)
 

@@ -45,7 +45,7 @@ LAB_STRATEGY = {
     "name": "MPC SOS Fade",   # display name; the Platform column already says it's Python
     "config": SosFadeConfig,
     "strategy": MpcSosFadeStrategy,
-    "suggested_instrument": "XAUUSD.s",
+    "suggested_instrument": "XAUUSD",   # Vantage demo name (no ".s"; that was PU Prime) — backtests pull from MT5_Lab = Vantage
     "category": "reversal",
     # This bot sizes ITSELF: qty = equity * exec_risk_pct / stop_distance, every trade (the Pine
     # does the same). So the lab's dynamic sizing engine must not re-size it — `exec_risk_pct` IS
