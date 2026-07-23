@@ -10,6 +10,8 @@ Port: 8766  (NT8 agent uses 8765)
 Endpoints — Step 1 (this build):
     GET  /health                         → ping; running_jobs count
     GET  /status                         → MT5 connection + account info
+    GET  /symbol_info                    → broker contract spec: spread, swap, digits, contract size
+    GET  /data_availability              → earliest→latest served bar per timeframe (M1..H4)
     GET  /historical_data                → M1–M30/H1/H4/daily OHLC bars
     GET  /ticks                          → real bid/ask tick history (the A2 fill model's feed)
     GET  /files/strategies               → list .mq5/.ex5 in MT5 Experts folder
@@ -404,6 +406,112 @@ def status():
     # Try to populate experts_dir if not yet detected
     _detect_experts_dir()
     return jsonify(result)
+
+
+def _resolve_symbol(symbol: str) -> Optional[str]:
+    """Return the broker's ACTUAL name for `symbol`, trying it as given then with any suffix
+    stripped (PU Prime 'XAUUSD.s' vs Vantage 'XAUUSD'). Selects it into Market Watch so its spec
+    and history are readable. None if the terminal carries no such symbol. Caller holds _mt5_lock."""
+    candidates = [symbol]
+    root = symbol.split(".")[0]
+    if root and root != symbol:
+        candidates.append(root)
+    for cand in candidates:
+        if mt5.symbol_select(cand, True) and mt5.symbol_info(cand) is not None:
+            return cand
+    return None
+
+
+@app.route("/symbol_info")
+def symbol_info():
+    """Broker contract spec for a symbol — the cost model's ground truth, read off MT5 not guessed.
+
+    Query param: symbol (e.g. XAUUSD). Returns the resolved broker name, digits, point, contract
+    size, min/step volume, the terminal's live spread (in points AND price), and the swap long/short
+    values straight off the symbol's Specification — everything a cost profile needs, no estimates.
+    """
+    symbol = request.args.get("symbol", "").strip()
+    if not symbol:
+        return jsonify({"error": "symbol required"}), 400
+
+    ok, err = _ensure_mt5()
+    if not ok:
+        return jsonify({"error": err}), 503
+
+    with _mt5_lock:
+        used = _resolve_symbol(symbol)
+        if used is None:
+            return jsonify({"error": f"symbol not found on this terminal: {symbol}"}), 404
+        info = mt5.symbol_info(used)
+        tick = mt5.symbol_info_tick(used)
+
+    point = float(getattr(info, "point", 0.0) or 0.0)
+    spread_points = int(getattr(info, "spread", 0) or 0)
+    result = {
+        "requested": symbol,
+        "symbol": used,
+        "description": getattr(info, "description", None),
+        "digits": int(getattr(info, "digits", 0) or 0),
+        "point": point,
+        "contract_size": float(getattr(info, "trade_contract_size", 0.0) or 0.0),
+        "volume_min": float(getattr(info, "volume_min", 0.0) or 0.0),
+        "volume_step": float(getattr(info, "volume_step", 0.0) or 0.0),
+        "volume_max": float(getattr(info, "volume_max", 0.0) or 0.0),
+        "spread_points": spread_points,          # terminal's current spread, integer points
+        "spread_price": spread_points * point,   # the same spread in price terms
+        "swap_long": float(getattr(info, "swap_long", 0.0) or 0.0),
+        "swap_short": float(getattr(info, "swap_short", 0.0) or 0.0),
+        "swap_mode": int(getattr(info, "swap_mode", 0) or 0),
+        "swap_rollover3days": int(getattr(info, "swap_rollover3days", 0) or 0),  # MT5 day-of-week of triple swap
+        "currency_base": getattr(info, "currency_base", None),
+        "currency_profit": getattr(info, "currency_profit", None),
+        "currency_margin": getattr(info, "currency_margin", None),
+        "bid": (float(getattr(tick, "bid", 0.0) or 0.0) if tick else None),
+        "ask": (float(getattr(tick, "ask", 0.0) or 0.0) if tick else None),
+    }
+    _alog(f"symbol_info: {used} spread={spread_points}pt swap L/S={result['swap_long']}/{result['swap_short']}")
+    return jsonify(result)
+
+
+@app.route("/data_availability")
+def data_availability():
+    """How much history the broker actually SERVES per timeframe — the real bound on a backtest window.
+
+    Query params: symbol (e.g. XAUUSD); timeframes (CSV, default M1,M5,M15,M30,H1,H4). For each TF:
+    earliest and latest bar time (TRUE UTC) and the span in days. Cheap by design — it reads one bar
+    from each end (oldest at/after 2000, and newest), never a full history pull.
+    """
+    symbol = request.args.get("symbol", "").strip()
+    if not symbol:
+        return jsonify({"error": "symbol required"}), 400
+    tf_names = [t.strip() for t in request.args.get("timeframes", "M1,M5,M15,M30,H1,H4").split(",") if t.strip()]
+
+    ok, err = _ensure_mt5()
+    if not ok:
+        return jsonify({"error": err}), 503
+
+    epoch0 = datetime.datetime(2000, 1, 1)
+    out: dict = {}
+    with _mt5_lock:
+        used = _resolve_symbol(symbol)
+        if used is None:
+            return jsonify({"error": f"symbol not found on this terminal: {symbol}"}), 404
+        for name in tf_names:
+            tf = _tf_const(name)
+            if tf is None:
+                out[name] = {"error": f"unknown timeframe: {name}"}
+                continue
+            first = mt5.copy_rates_from(used, tf, epoch0, 1)    # oldest bar at/after 2000 = start of history
+            last  = mt5.copy_rates_from_pos(used, tf, 0, 1)     # newest bar
+            if first is None or len(first) == 0 or last is None or len(last) == 0:
+                out[name] = {"earliest": None, "latest": None, "span_days": 0}
+                continue
+            t0 = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(first[0]["time"]))
+            t1 = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(last[0]["time"]))
+            out[name] = {"earliest": t0.isoformat(), "latest": t1.isoformat(), "span_days": (t1 - t0).days}
+    _alog("data_availability: " + used + " -> " +
+          ", ".join(f"{k}:{v.get('span_days', '?')}d" for k, v in out.items()))
+    return jsonify({"symbol": used, "timeframes": out})
 
 
 @app.route("/historical_data")
