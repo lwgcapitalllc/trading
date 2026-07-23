@@ -9,19 +9,41 @@ import { SystemHealthStrip } from '@/components/SystemHealthStrip'
 import { useBacktestRuns, useOptimizations } from '@/hooks/useLab'
 import { useStressTests } from '@/hooks/useStressTests'
 
-const WORKSPACE: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
-  { to: '/',            label: 'Overview',    icon: LayoutDashboard, live: true  },
-  { to: '/smart-money', label: 'Smart Money', icon: Radar,           live: true  },
-  { to: '/bots',        label: 'Bots',        icon: Bot,             live: true  },
-  { to: '/calendar',    label: 'Calendar',    icon: CalendarDays,    live: true  },
-]
+type NavEntry = { to: string; label: string; icon: LucideIcon; live: boolean }
 
-const RESEARCH: { to: string; label: string; icon: LucideIcon; live: boolean }[] = [
-  { to: '/strategies',    label: 'Strategies',    icon: BookOpen,      live: true  },
-  { to: '/rulesets',      label: 'Rulesets',      icon: ClipboardList, live: true  },
-  { to: '/backtests',     label: 'Backtests',     icon: BarChart2,     live: true  },
-  { to: '/optimizations', label: 'Optimizations', icon: Sliders,     live: true  },
-  { to: '/stress-tests',  label: 'Stress Tests',  icon: Activity,    live: true  },
+// Grouped by what each item IS, not by page type. Order inside "Lab" follows the
+// actual strategy-development lifecycle (write → backtest → optimize → stress test),
+// so the list reads top-to-bottom as the workflow. Overview sits above all sections,
+// ungrouped, as the dashboard.
+const SECTIONS: { label?: string; items: NavEntry[] }[] = [
+  {
+    items: [
+      { to: '/',            label: 'Overview',    icon: LayoutDashboard, live: true },
+    ],
+  },
+  {
+    label: 'Lab',
+    items: [
+      { to: '/strategies',    label: 'Strategies',    icon: BookOpen,   live: true },
+      { to: '/backtests',     label: 'Backtests',     icon: BarChart2,  live: true },
+      { to: '/optimizations', label: 'Optimizations', icon: Sliders,    live: true },
+      { to: '/stress-tests',  label: 'Stress Tests',  icon: Activity,   live: true },
+    ],
+  },
+  {
+    label: 'Live',
+    items: [
+      { to: '/bots',        label: 'Bots',        icon: Bot,   live: true },
+      { to: '/smart-money', label: 'Smart Money', icon: Radar, live: true },
+    ],
+  },
+  {
+    label: 'Reference',
+    items: [
+      { to: '/rulesets', label: 'Rulesets', icon: ClipboardList, live: true },
+      { to: '/calendar', label: 'Calendar', icon: CalendarDays,  live: true },
+    ],
+  },
 ]
 
 // Pulsing dot meaning "a job is running under this item". Anchored to the icon's top-right
@@ -126,18 +148,25 @@ export function Sidebar() {
       {/* ── Nav ───────────────────────────────────────────────────── */}
       <div className="flex flex-col flex-1 py-[14px] px-3">
 
-      {/* ── Workspace items (no section label) ───────────────────── */}
-      {WORKSPACE.map(item => <NavItem key={item.to} {...item} collapsed={collapsed} />)}
-
-      {/* ── Research section ──────────────────────────────────────── */}
-      {collapsed ? (
-        <div className="my-[12px] mx-1 border-t border-border-subtle/60" />
-      ) : (
-        <div className="text-[10px] uppercase tracking-[1px] text-text-tertiary px-2 pt-[14px] pb-[6px] font-semibold">
-          Research
+      {/* ── Grouped nav sections ──────────────────────────────────── */}
+      {SECTIONS.map((section, i) => (
+        <div key={section.label ?? 'top'}>
+          {/* Section header: a label when expanded, a thin divider when collapsed.
+              The first (Overview) section has no header — it sits flush at the top. */}
+          {i > 0 && (
+            collapsed ? (
+              <div className="my-[12px] mx-1 border-t border-border-subtle/60" />
+            ) : (
+              <div className="text-[10px] uppercase tracking-[1px] text-text-tertiary px-2 pt-[14px] pb-[6px] font-semibold">
+                {section.label}
+              </div>
+            )
+          )}
+          {section.items.map(item => (
+            <NavItem key={item.to} {...item} collapsed={collapsed} active={activeByRoute[item.to]} />
+          ))}
         </div>
-      )}
-      {RESEARCH.map(item => <NavItem key={item.to} {...item} collapsed={collapsed} active={activeByRoute[item.to]} />)}
+      ))}
 
       {/* ── Footer ────────────────────────────────────────────────── */}
       <div className="mt-auto pt-[10px] border-t border-border-subtle">

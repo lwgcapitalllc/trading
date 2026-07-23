@@ -79,10 +79,10 @@ cd command-center
 | Overview | ✅ Live | Stat row plus Bots, Smart Money, and Backtests summary cards |
 | Smart Money | ✅ Live | Full pipeline UI: scan, terminal, rankings, profiles, config, cache |
 | Bots | ✅ Live | Monitor/control scaffold; no bots registered yet (all four first-attempt bots deleted 2026-06-22). Configure risk caps and deploy, manage Telegram users |
-| News Calendar | ✅ Live | WORKSPACE tab (`/calendar`) — live Forex-Factory-style economic calendar off the free TradingView feed (`engines/news/` `TradingViewSource`, read-only, not the shared cache). Day strip, server-clock "now" line + countdown, actual/forecast/previous w/ beat-miss colour, currency/impact/category filters. Separate path from the backtest news/holiday filter |
+| News Calendar | ✅ Live | tab (`/calendar`) — live Forex-Factory-style economic calendar off the free TradingView feed (`engines/news/` `TradingViewSource`, read-only, not the shared cache). Day strip, server-clock "now" line + countdown, actual/forecast/previous w/ beat-miss colour, currency/impact/category filters. Separate path from the backtest news/holiday filter |
 | Rulesets | ✅ Live | Own top-level page: firm-grouped tables, contract scaling column, editable personal rules (server-side lock on prop rows) |
 | Backtests lab | ✅ Live | Runs and Sweeps tabs; BacktestDetail with collapsible params side panel |
-| Optimizations | ✅ Live | Own top-level RESEARCH page (`/optimizations`); native NT8/MT5/Python optimizer; ranked results; "Tune winner" |
+| Optimizations | ✅ Live | Own top-level page (`/optimizations`); native NT8/MT5/Python optimizer; ranked results; "Tune winner" |
 | Tuning workbench | ✅ Live | `/backtests/runs/:id/tune` — edit a winner's params, run iterations, leaderboard + deltas + regime-aware equity overlay |
 | Per-platform job lock | ✅ Live | One job per platform (NT8/MT5/Python), platforms independent; DB is the single lock source (`has_running_job`) |
 | Worthiness badges | ✅ Live | Tier 1/2/3 worthiness badge auto-assigned on every completed run |

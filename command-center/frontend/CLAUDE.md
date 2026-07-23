@@ -90,12 +90,12 @@ frontend/src/
     ├── BacktestDetail.tsx    **Tune button carries a COUNT badge** of the iterations already run from this run (`source_run_id === runId`, off the unfiltered `useBacktestRuns()` so it shares the Runs list's cache entry) — clicking it opens the workbench where they all live. Without the badge the only way to discover a run had ever been tuned was to go back to the Runs list and spot the nested Tune rows. Full run detail — params side panel, per-firm evaluation + KPIs, tabbed charts, logs, News & Holiday filter card (inline NewsFilterCard)
     ├── StrategyDetail.tsx    strategy "spec sheet" — overview + grouped param reference tables
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
-    ├── Optimizations.tsx     own top-level RESEARCH page (/optimizations) — optimization list table
+    ├── Optimizations.tsx     own top-level page (/optimizations) — optimization list table
     ├── OptimizationDetail.tsx  optimizer results (/optimizations/:id) — table/bar-chart toggle, "Tune winner"
     ├── TuningWorkbench.tsx   /backtests/runs/:runId/tune — param editor + iteration leaderboard + regime overlay. The **Equity overlay** plots ACCOUNT BALANCE (not cumulative P&L from $0) off each run's own `equity_curve` — the same points BacktestDetail's equity chart draws — so the baseline traces an identical path there and here. It reuses that chart's conventions wholesale: starting balance derived as `equity[0] - profit[0]`, y-ticks anchored ON it, dashed break-even ReferenceLine, and the baseline as a monotone `Area` with `baseValue={startBal}` + the split green/red stroke and fill (split offset mapped to the filled shape's bbox, same math). Iterations ride on top as dashed palette Lines. Every run is anchored at the window's start date so the lines share a left edge, and balances FORWARD-FILL on days a run didn't trade (nulls + `connectNulls` drew a fake diagonal across flat stretches); `<runId>__pt` marks the real trade rows so only those get a dot. Regime bands come from ONE `date → regime` map, built TIMELINE-FIRST: the baseline's full-calendar `regime_timeline` if it has one, else any iteration's, else (pre-timeline runs) every run's tagged `daily_pnl` days merged — a run only reports days it traded, so any single run's tags leave the calendar full of holes. Fullscreen has the camera + minimize buttons. Its header controls are the run page's, in the run page's order and spacing — `XModeToggle` then `RegimeOverlayToggle`, `gap-2`. It carries the SAME `XModeToggle` as the run page and reads the SAME stored preference (`lib/chartAxis.ts` `getXMode`/`setXModePref`), so the two pages can never disagree about the axis: Date plots the calendar, Trade # keys each run's curve by trade ordinal (`balByIndex`) and a shorter run simply holds its final balance once it's out of trades. Regime bands project onto whichever axis is active — `regimeBandsFromTimeline` (date) or `regimeBandsByIndex` over the BASELINE's trades (trade #), both fed from one `date → regime` map, timeline-first
     ├── StressTests.tsx       stress test list — grade badge, prob breach/pass
     ├── StressTestDetail.tsx  stress test detail — grade card + tabbed Monte Carlo / Walk-Forward / Sensitivity workspace
-    ├── Calendar.tsx          live News Calendar (WORKSPACE) — Forex-Factory-style economic calendar. **Opens on today** (first mount selects today's day when on the current week with no explicit day; deselecting → whole week sticks). Day-summary strip (Mon–Sun counts, click-to-filter, Today button), "now" line + live countdown off the server clock, actual/forecast/previous with beat/miss colour. Filters (currency chips w/ country flags, independent High/Medium/Low impact toggles, category dropdown) + week offset + selected day all live in the URL. Fetches the whole week; filters CLIENT-SIDE so changes are instant and the strip counts stay in sync. Shared display helpers (flag map, impact colours, time/countdown formatters) live in `lib/calendar.ts` — reused by the Overview preview
+    ├── Calendar.tsx          live News Calendar — Forex-Factory-style economic calendar. **Opens on today** (first mount selects today's day when on the current week with no explicit day; deselecting → whole week sticks). Day-summary strip (Mon–Sun counts, click-to-filter, Today button), "now" line + live countdown off the server clock, actual/forecast/previous with beat/miss colour. Filters (currency chips w/ country flags, independent High/Medium/Low impact toggles, category dropdown) + week offset + selected day all live in the URL. Fetches the whole week; filters CLIENT-SIDE so changes are instant and the strip counts stay in sync. Shared display helpers (flag map, impact colours, time/countdown formatters) live in `lib/calendar.ts` — reused by the Overview preview
     └── Settings.tsx
 ```
 
@@ -261,7 +261,7 @@ toast.error('Failed: ...')
 ## Routing
 
 - Routes defined in `App.tsx`
-- Sidebar nav items in `Sidebar.tsx` — `WORKSPACE` for live modules, `RESEARCH` for lab
+- Sidebar nav items in `Sidebar.tsx` — one `SECTIONS` array grouped by what each item IS: an ungrouped **Overview** at the top, then **Lab** (Strategies → Backtests → Optimizations → Stress Tests, in lifecycle order), **Live** (Bots, Smart Money), **Reference** (Rulesets, Calendar). Add a new item to the section it belongs to
 - `live: false` shows a "Soon" badge; set to `true` when the page is real
 - Navigation: `useNavigate()` — never `<a href>` for in-app links
 - **Activity indicator:** `Sidebar.tsx` shows a pulsing accent `ActivityDot` on Backtests / Optimizations / Stress Tests when a job is running under each (`activeByRoute`, mirroring each page's "active" logic — backtest/sweep run excluding optimization combos, optimization grid, any stress phase). The dot is anchored to the **icon's top-right corner** so it's identical expanded or collapsed; expanded also adds a "Running" pill. Polling comes from the list hooks (`useBacktestRuns` now adaptive 3s/15s like `useOptimizations`; `useStressTests` 10s)
@@ -291,7 +291,7 @@ Implementation detail (exact param-type render rules, the sized-chart/timeline/b
 
 ## Rulesets page (own top-level nav item)
 
-`pages/Rulesets.tsx`, route `/rulesets` (RESEARCH group, between Strategies and Backtests). Prop rows grouped by firm, personal/demo rows in their own group; page-level firm/Personal filter. Prop rows are read-only in the UI (server-side locked); personal/demo rows have an edit modal for the 5 personal rule fields.
+`pages/Rulesets.tsx`, route `/rulesets` (Reference group, with Calendar). Prop rows grouped by firm, personal/demo rows in their own group; page-level firm/Personal filter. Prop rows are read-only in the UI (server-side locked); personal/demo rows have an edit modal for the 5 personal rule fields.
 
 Implementation detail (exact columns, contract-cap pill rendering, canonical display names): `command-center/docs/FRONTEND_BUILD_NOTES.md`.
 
@@ -316,7 +316,7 @@ Implementation detail (exact columns, contract-cap pill rendering, canonical dis
 
 1. Create `src/pages/PageName.tsx`
 2. Add the route in `App.tsx`
-3. Add `NavItem` in `Sidebar.tsx` (WORKSPACE or RESEARCH)
+3. Add an entry to the right group in `SECTIONS` in `Sidebar.tsx` (Lab / Live / Reference)
 4. If it needs data, create `src/hooks/useThing.ts`
 5. Add types to `src/types/index.ts`
 6. If it's a stub, use `EmptyState` for the placeholder — replace when it goes live
@@ -347,7 +347,7 @@ Full implementation detail (exact card set, fixed-height math, per-metric fallba
 | Smart Money | ✅ Live | Scan, terminal, rankings, profiles, disqualified, config, cache |
 | Bots | ✅ Live | Monitor, control, configure (risk caps + deploy), users |
 | Backtests lab | ✅ Live | Runs / Sweeps tabs; run modal; BacktestDetail |
-| Optimizations | ✅ Live | Own RESEARCH page (`/optimizations`); detail at `/optimizations/:id`; "Tune winner" → workbench |
+| Optimizations | ✅ Live | Own top-level page (`/optimizations`); detail at `/optimizations/:id`; "Tune winner" → workbench |
 | Tuning workbench | ✅ Live | `/backtests/runs/:runId/tune` — edit params, run iterations, leaderboard + regime-aware equity overlay + net-P&L-by-regime |
 | Worthiness Badges | ✅ Live | Tier 1/2/3 pill on every completed run |
 | Sweep Detail | ✅ Live | ProgressCard, ResultsTable, FailedRunsTable, cancel + retry |
@@ -368,7 +368,7 @@ Full implementation detail (exact card set, fixed-height math, per-metric fallba
 | Stress test market lock | ✅ Live | One futures + one forex test at a time; button disabled when blocked |
 | Running stress indicators | ✅ Live | Pulsing chips/banners on Runs, BacktestDetail, OptimizationDetail |
 | Strategy best grades | ✅ Live | Best Grade column on Strategies tab; links to the grading test |
-| News Calendar (WORKSPACE) | ✅ Live | `pages/Calendar.tsx` (`/calendar`) — Forex-Factory-style economic calendar off the free TradingView feed. Opens on today; day-summary strip, server-clock "now" line + countdown, actual/forecast/previous w/ beat-miss colour, currency chips (country flags), independent High/Medium/Low toggles, category dropdown. Whole week fetched, filtered client-side; all filter/week/day state in the URL. Shared helpers in `lib/calendar.ts` |
+| News Calendar | ✅ Live | `pages/Calendar.tsx` (`/calendar`) — Forex-Factory-style economic calendar off the free TradingView feed. Opens on today; day-summary strip, server-clock "now" line + countdown, actual/forecast/previous w/ beat-miss colour, currency chips (country flags), independent High/Medium/Low toggles, category dropdown. Whole week fetched, filtered client-side; all filter/week/day state in the URL. Shared helpers in `lib/calendar.ts` |
 | Overview calendar preview | ✅ Live | `pages/Overview.tsx` — full-width "Economic Calendar" card below the module grid: next high-impact callout (flag + countdown) + a 2-col list of the next upcoming events this week; whole card navigates to `/calendar`. Reuses `useCalendar` + `lib/calendar.ts` |
 | Settings | ✅ Live | Config read/write; `nt8_agent_tunnel` + `mt5_agent_tunnel` |
 | Sidebar health strip | ✅ Live | 4 dots: API, SSH, NT8 (3-state), MT5 Agent |
