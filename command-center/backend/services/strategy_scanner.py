@@ -388,6 +388,41 @@ def meta_path_for(source_path: Path) -> Path:
     return source_path.with_name(source_path.stem + ".meta.json")
 
 
+def needs_rescan(row: dict) -> bool:
+    """True when a registered strategy's source on disk has diverged from what the DB was
+    last scanned against — the read-only twin of the scan loop's skip check, so the UI can
+    flag "click Scan Strategies" the same way it flags needs-deploy/needs-compile.
+
+    Mirrors the exact staleness the scanner uses to decide upsert-vs-skip: the SOURCE hash
+    changed, OR the companion meta.json was edited since the last scan (mtime > scanned_at).
+    A Python strategy's source is the whole package dir (hashed like `_python_source_hash`);
+    a .cs/.mq5 is the single file. Missing source on disk is an ORPHAN, handled by
+    /reconcile — not a re-scan prompt — so it returns False here.
+    """
+    rel = row.get("source_path")
+    if not rel:
+        return False
+    src = Path(cfg.MONOREPO_ROOT) / rel
+    runner = row.get("runner") or "ninjatrader"
+    try:
+        if runner == "python":
+            if not src.is_dir():
+                return False
+            current_hash = _python_source_hash(src)
+            meta_p = src / f"{src.name}.meta.json"
+        else:
+            if not src.is_file():
+                return False
+            current_hash = _md5_text(src.read_text(encoding="utf-8", errors="replace"))
+            meta_p = meta_path_for(src)
+    except OSError:
+        return False
+    if row.get("source_hash") != current_hash:
+        return True
+    meta_mtime = meta_p.stat().st_mtime if meta_p.exists() else 0
+    return meta_mtime > (row.get("scanned_at") or 0)
+
+
 def _read_strategy_overview(meta_path: Path) -> dict:
     """Strategy-level narrative from a companion meta.json — UI only.
 

@@ -430,10 +430,26 @@ class Execution:
         else:
             self._pend_short = None
 
+    def _deep_fib_edge(self, gb, gt, is_bull, sig) -> Optional[float]:
+        """Method 3 (Pine f_deepFibEdge) — the re-priced entry for a DEEP gap whose NEAR edge
+        sits below 0.618, or None when the near edge is shallower (those keep the exact-edge
+        entry). ONLY the near edge's position decides it — a gap tall enough to span 0.702/0.786
+        is fine; what the body crosses is irrelevant. Long near edge = gap top (gt); short = gap
+        bottom (gb). The re-priced level is the fib just SHALLOWER than the near edge — the one
+        price reaches first (0.618-0.702 -> 0.618, 0.702-0.786 -> 0.702, 0.786-0.886 -> 0.786)."""
+        p3, p4, p5 = sig.fibo_p3, sig.fibo_p4, sig.fibo_p5
+        if is_bull and gt < p3:            # long: near edge deeper than the 0.618 line
+            return p3 if gt >= p4 else (p4 if gt >= p5 else p5)
+        if (not is_bull) and gb > p3:      # short: near edge deeper than the 0.618 line
+            return p3 if gb <= p4 else (p4 if gb <= p5 else p5)
+        return None
+
     def _entry_edges(self, sig) -> Tuple[Optional[float], Optional[float]]:
         """The resting-limit price on each side (Pine 4264-4293): the near edge of an
         FVG overlapping the 0.5-0.886 band, clamped into the band; the first one price
-        reaches (highest for longs). With Require-FVG off it falls back to 0.618."""
+        reaches (highest for longs). With Require-FVG off it falls back to 0.618. With
+        Method 3 (exec_deep_fib) on, a gap whose near edge is deeper than 0.618 is
+        re-priced to the nearest shallower fib instead of its own edge."""
         cfg = self._cfg
         p2, p3, p6 = sig.fibo_p2, sig.fibo_p3, sig.fibo_p6
         fibs_ready = None not in (sig.fibo_p1, p2, p3, p6, sig.fibo_p7, sig.fibo_p10)
@@ -443,10 +459,12 @@ class Execution:
                 l_deep_ok = not cfg.exec_fvg_deep_only or top <= p2
                 s_deep_ok = not cfg.exec_fvg_deep_only or bot >= p2
                 if is_bull and sig.fibo_dir == 1 and bot <= p2 and top >= p6 and l_deep_ok:
-                    e = min(top, p2)
+                    df = self._deep_fib_edge(bot, top, True, sig) if cfg.exec_deep_fib else None
+                    e = min(top, p2) if df is None else df   # Method 3 override, else shallowest touch
                     long_edge = e if long_edge is None else max(long_edge, e)
                 if (not is_bull) and sig.fibo_dir == -1 and top >= p2 and bot <= p6 and s_deep_ok:
-                    e = max(bot, p2)
+                    df = self._deep_fib_edge(bot, top, False, sig) if cfg.exec_deep_fib else None
+                    e = max(bot, p2) if df is None else df
                     short_edge = e if short_edge is None else min(short_edge, e)
             if not cfg.exec_req_fvg:
                 if long_edge is None and sig.fibo_dir == 1:

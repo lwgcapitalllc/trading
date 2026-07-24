@@ -241,6 +241,8 @@ function StrategiesTab() {
                   onRun={() => setRunStrategy(s)}
                   onDeploy={() => handleDeploy(s.id)}
                   onCompile={() => handleCompile(s.runner)}
+                  onScan={() => scan.mutate()}
+                  scanning={scan.isPending}
                 />
               ))}
             </tbody>
@@ -274,7 +276,7 @@ function StrategiesTab() {
 }
 
 function StrategyRow({
-  strategy: s, sync, isDeploying, bestGrade, onView, onRun, onDeploy, onCompile,
+  strategy: s, sync, isDeploying, bestGrade, onView, onRun, onDeploy, onCompile, onScan, scanning,
 }: {
   strategy: Strategy
   sync?: StrategyFileSyncStatus
@@ -284,6 +286,8 @@ function StrategyRow({
   onRun: () => void
   onDeploy: () => void
   onCompile: () => void
+  onScan: () => void
+  scanning: boolean
 }) {
   const navigate = useNavigate()
   const needsDeploy  = sync?.needs_deploy
@@ -306,6 +310,20 @@ function StrategyRow({
       <td className="px-4 py-3 text-text-secondary">{s.param_schema.length}</td>
       <td className="px-4 py-3 tabular-nums">{s.run_count}</td>
       <td className="px-4 py-3">
+        {/* Source changed since the last Scan — the param schema (and, for VPS runners, the
+            deploy/compile state) is stale until re-scanned. Shown for ALL runners; for Python
+            it's the only status pill (no deploy/compile). Click to Scan Strategies now. */}
+        {s.needs_scan && (
+          <button
+            onClick={e => { e.stopPropagation(); onScan() }}
+            disabled={scanning}
+            title="This strategy's source changed since the last scan. Click to Scan Strategies and refresh its parameters."
+            className="text-[11px] px-1.5 py-[2px] mb-1 rounded-full bg-warn-muted text-warn-text border border-warn-text/20 hover:bg-warn-muted/70 transition-colors flex items-center gap-1"
+          >
+            <RefreshCw size={10} className={scanning ? 'animate-spin' : ''} />
+            {scanning ? 'Scanning…' : 'Needs scan'}
+          </button>
+        )}
         {sync === undefined ? null : (
           <div className="flex items-center gap-1.5">
             {curVer != null && (

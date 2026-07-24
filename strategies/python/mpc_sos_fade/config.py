@@ -28,10 +28,15 @@ class SosFadeConfig:
     # ── GRP_EXEC — Strategy Execution (mpc_strategy.pine 4159-4183) ──────────────
     exec_longs: bool = True            # "Trade Longs"
     exec_shorts: bool = True           # "Trade Shorts"
-    exec_arm_sweep: bool = False       # "Arm on liquidity sweep"  (Stage-1 trigger)
-    exec_arm_div: bool = True          # "Arm on RSI divergence"   (Stage-1 trigger)
+    exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
+    exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
     exec_req_fvg: bool = True          # "Require FVG overlap in zone"
-    exec_fvg_deep_only: bool = False   # "Entry: FVG must sit fully past 0.5"
+    exec_fvg_deep_only: bool = True    # "Entry: FVG must sit fully past 0.5"
+    exec_deep_fib: bool = True         # "Entry: deep gap enters on nearest fib (not gap edge)"
+    #   Method 3 (Pine execDeepFib). OFF (default) = rest the limit at the gap's own edge (current
+    #   behaviour, keeps compare_strategy.py parity). ON = when a qualifying gap's NEAR edge sits
+    #   deeper than 0.618, rest at the nearest fib just SHALLOWER (0.618/0.702/0.786) — the level
+    #   price reaches first — instead of chasing an edge price may never tap. See execution._entry_edges.
     exec_respect_veto: bool = True     # "Respect divergence/extreme veto"
     exec_close_opp_sos: bool = False   # "Close on opposite SOS"
     exec_htf_exhaust_only: bool = False  # "Only fade HTF exhaustion, not breakouts"

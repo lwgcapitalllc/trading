@@ -370,6 +370,16 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           </div>
         )}
 
+        {/* ── Stale-schema warning — source changed since the last Scan ─────────── */}
+        {strategy.needs_scan && (
+          <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
+            <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
+            <p className="text-[12px] text-warn-text leading-snug">
+              <span className="font-semibold">Parameters may be out of date:</span> this strategy's source changed since the last scan. Close this, click <span className="font-semibold">Scan Strategies</span>, then reopen — otherwise the toggles and defaults below are stale.
+            </p>
+          </div>
+        )}
+
         {/* ── Scrollable body ─────────────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-5 space-y-5">
 

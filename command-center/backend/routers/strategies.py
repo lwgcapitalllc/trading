@@ -24,7 +24,10 @@ router = APIRouter(prefix="/strategies", tags=["strategies"])
 
 @router.get("", response_model=list[Strategy])
 def list_strategies():
-    return lab_db.list_strategies()
+    rows = lab_db.list_strategies()
+    for r in rows:
+        r["needs_scan"] = strategy_scanner.needs_rescan(r)
+    return rows
 
 
 @router.post("/scan", response_model=ScanResult)
@@ -88,6 +91,7 @@ def get_strategy(strategy_id: str):
     row = lab_db.get_strategy(strategy_id)
     if not row:
         raise HTTPException(404, f"Strategy '{strategy_id}' not found")
+    row["needs_scan"] = strategy_scanner.needs_rescan(row)
     return row
 
 

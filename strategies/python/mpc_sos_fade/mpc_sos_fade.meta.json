@@ -1,11 +1,11 @@
 {
   "_comment": "Editor UI metadata for MPC SOS Fade — labels, groups, plain-English descriptions, the 'essentials' (core) flag, conditional visibility (show_if), toggle option labels, and tuning guides. Read by the command-center scanner (strategies/python/<pkg>/<pkg>.meta.json) and overlaid onto the schema built from SosFadeConfig. UI ONLY: it never touches a trade decision or the source hash, so editing it needs no re-parity — but DO click Scan Strategies after editing. Param order here is the canonical UI order. Every show_if below was verified against the code, not assumed: exec_fvg_deep_only deliberately has NO condition (it still filters which FVGs qualify when Require FVG is off), and div_rsi_len/div_pivot_len have none either (they drive the divergence that ARMS the setup, which show_div does not gate — show_div only gates the veto and the live DIV flag).",
-  "edge": "It fades exhaustion, but only after structure agrees. A momentum divergence at an extreme says the move is tiring; a shift of structure (SOS) confirms the tide actually turned; then it waits for the pullback into the fib zone and buys/sells the imbalance left behind. Nothing is chased — every entry is a resting limit into a retracement. Where the tuning really lives: the ARM SOURCE. Divergence-only (the default) took 40 trades at PF 3.27 over 2 years of gold; adding sweeps took 79 at PF 1.87 — same engine, nearly half the profit factor. The other lever is the HTF bias filter, which currently does nothing (both set to Ignore): this bot shorted a +75% bull market and won, so shorts carry 89% of its profit. That concentration, not the direction split, is the open question.",
+  "edge": "It fades exhaustion, but only after structure agrees. Price grabs liquidity (a sweep of a known high/low) or prints a momentum divergence at an extreme; a shift of structure (SOS) confirms the tide actually turned; then it waits for a DEEP pullback into the fib zone and buys/sells the imbalance left behind on a clean fib line. Nothing is chased — every entry is a resting limit into a retracement. The default is the deep-entry combo: arm on liquidity sweeps, require the gap to sit fully past 0.5, and re-price a deep gap to the nearest fib (0.618/0.702/0.786) rather than its own edge. That combo measured about +237% at PF 6.2 / 85% win / 13% max drawdown over ~2 years of gold at 84 trades. The other lever is the HTF bias filter, which currently does nothing (both set to Ignore): this bot shorted a +75% bull market and won, so shorts carry most of the profit. That concentration is the open question.",
   "steps": [
     {
       "label": "01 · Arm",
       "title": "Something looks exhausted",
-      "detail": "An RSI divergence prints at an overbought/oversold extreme — price made a new high, momentum didn't. (A liquidity sweep can arm it too, but that's off by default.)"
+      "detail": "A liquidity sweep runs stops past a known high/low — the default arming trigger. (An RSI divergence at an overbought/oversold extreme can arm it too, but that's off by default now.)"
     },
     {
       "label": "02 · SOS",
@@ -15,7 +15,7 @@
     {
       "label": "03 · Zone",
       "title": "Wait for the pullback",
-      "detail": "Price retraces into the 0.5–0.886 fib band of the SOS leg and a live fair-value gap overlaps it. Entry is a resting limit at the gap's near edge — never a chase."
+      "detail": "Price retraces DEEP into the 0.5–0.886 fib band of the SOS leg and a live fair-value gap sitting fully past 0.5 overlaps it. A deep gap enters at the nearest fib just shallower (0.618/0.702/0.786) rather than the gap's own edge; a shallow gap enters at its edge. Always a resting limit — never a chase."
     },
     {
       "label": "04 · Manage",
@@ -34,7 +34,7 @@
         "off": "Ignore",
         "on": "Arms setups"
       },
-      "desc": "Let an RSI divergence start a setup. This is the single most important switch in the bot. Measured over 2 years of gold: divergence-only took 40 trades at profit factor 3.27. It is also why ~83% of trades are short — in a rising market, sell divergences outnumber buy divergences about 2 to 1."
+      "desc": "Let an RSI divergence start a setup. OFF by default now — the default combo arms on liquidity sweeps instead. Divergence-armed setups skew heavily short (in a rising market, sell divergences outnumber buy divergences about 2 to 1). Turn it on to trade the divergence pool on its own, or alongside sweeps."
     },
     {
       "name": "exec_arm_sweep",
@@ -46,7 +46,7 @@
         "off": "Ignore",
         "on": "Arms setups"
       },
-      "desc": "Let a liquidity sweep (price running stops past a known high/low) start a setup. Off by default, and the measurement says leave it off: turning it on took the same 2 years from 40 trades at PF 3.27 to 79 at PF 1.87 — it adds 39 trades that lose money together. Every divergence-armed trade is also sweep-armed, so 'both on' is identical to 'sweep only'."
+      "desc": "Let a liquidity sweep (price running stops past a known high/low) start a setup. ON by default — it is the arming trigger for the current deep-entry combo (sweep-arm + deep-gaps-only + deep-gap→fib entry), which measured about +237% at PF 6.2 / 85% win / 13% max drawdown over ~2 years of gold at 84 trades. That result is the COMBO, not sweep-arm alone: pair it with the two Entry-zone deep toggles below. Sweep-arm with shallow gaps allowed is much weaker."
     },
     {
       "name": "aplus_window",
@@ -74,13 +74,26 @@
     {
       "name": "exec_fvg_deep_only",
       "group": "Entry zone",
+      "core": true,
       "widget": "toggle",
       "label": "Deep gaps only",
       "options": {
         "off": "Any gap",
         "on": "Past 0.5 only"
       },
-      "desc": "Only count a gap that sits fully beyond the 0.5 retracement. Demands a deeper pullback, so you get a better price on fewer fills. Note this still filters gaps even when 'Require an FVG' is off — it changes which gap becomes the entry price."
+      "desc": "Only count a gap that sits fully beyond the 0.5 retracement. ON by default — part of the deep-entry combo. Demands a deeper pullback, so you get a better price on fewer fills. Note this still filters gaps even when 'Require an FVG' is off — it changes which gap becomes the entry price."
+    },
+    {
+      "name": "exec_deep_fib",
+      "group": "Entry zone",
+      "core": true,
+      "widget": "toggle",
+      "label": "Deep gap → nearest fib",
+      "options": {
+        "off": "Gap edge",
+        "on": "Nearest fib"
+      },
+      "desc": "When a qualifying gap floats deep in the zone (its near edge past 0.618), rest the limit at the nearest fib just shallower — 0.618 / 0.702 / 0.786 — instead of chasing the gap's own edge. ON by default: it recovers the deep setups that used to miss when price stalled at a fib and turned back before ever tapping the gap. A gap sitting on a fib, or shallower than 0.618, is unchanged."
     },
     {
       "name": "exec_htf_weekly",
@@ -362,6 +375,17 @@
         "on": "Secondary on"
       },
       "desc": "Add the 1-minute sniper re-entry: after the 15m primary reaches breakeven and price falls back into the zone, a 1m shift of structure re-enters. Needs a RECENT window (the broker serves ~35 days of 1m). Rare — ~3 fires in 2 years."
+    },
+    {
+      "name": "exec_conf_sz",
+      "group": "Direction & sessions",
+      "widget": "toggle",
+      "label": "Sniper Zone entry (not supported)",
+      "options": {
+        "off": "Off",
+        "on": "On"
+      },
+      "desc": "Pine-only for now. In TradingView this lets the Sniper Zone's 0.5–0.618 pocket act as a second entry confirmation on a leg with no qualifying FVG. NOT ported to this bot — leave it OFF; turning it on has no effect on a lab run (and the Pine-parity check refuses an export taken with it on)."
     },
     {
       "name": "exec_no_late_day",

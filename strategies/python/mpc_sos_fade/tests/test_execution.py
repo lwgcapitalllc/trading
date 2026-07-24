@@ -20,7 +20,11 @@ from mpc_sos_fade.signals import Signals  # noqa: E402
 
 
 def _cfg(**kw):
-    base = dict(exec_req_fvg=False, exec_be_buf_tk=0.0, exec_risk_pct=10.0)
+    # These fixtures arm via DIVERGENCE (_seq_long_ready sets sos_l_div), so pin the arm
+    # source on regardless of the production default (which is now sweep-arm). This isolates
+    # the execution mechanics under test from the arm-source default.
+    base = dict(exec_req_fvg=False, exec_be_buf_tk=0.0, exec_risk_pct=10.0,
+                exec_arm_div=True, exec_arm_sweep=False)
     base.update(kw)
     return SosFadeConfig(**base)
 
@@ -184,3 +188,49 @@ def test_divergence_after_the_sos_is_exempt():
     )
     assert dec.long_veto is False
     assert dec.long_armed is True
+
+
+# ------------------------------------------------------- Method 3 (deep fib) ----
+# Leg fibs (from _sig): 0.5=105.0  0.618=103.82  0.702=102.8  0.786=102.0  0.886=101.14.
+# A gap qualifies for the entry band when bot<=0.5 and top>=0.886. "Near edge" for a
+# long is the gap TOP (price reaches it first on the way down).
+
+def test_deep_fib_reprices_a_deep_long_gap_to_the_nearest_shallower_fib():
+    """Method 3 ON: a gap floating deep in the zone (near edge below 0.618) rests at the
+    fib just SHALLOWER, not the gap edge. Gap top 102.5 sits between 0.786 and 0.702, so
+    the limit re-prices to 0.702 = 102.8 (the level price reaches first)."""
+    fvg = [(102.5, 101.5, True)]   # (top, bot, is_bull) — deep, floats between 0.786 and 0.702
+    ex_on = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=True))
+    le, _ = ex_on._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))
+    assert abs(le - 102.8) < 1e-9          # 0.702, not the 102.5 gap edge
+
+
+def test_deep_fib_off_keeps_the_gap_edge_entry():
+    """Same gap, Method 3 OFF: unchanged — the limit rests at the gap's own near edge."""
+    fvg = [(102.5, 101.5, True)]
+    ex_off = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=False))
+    le, _ = ex_off._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))
+    assert abs(le - 102.5) < 1e-9          # min(top, 0.5) = the gap edge
+
+
+def test_deep_fib_leaves_a_shallow_gap_unchanged():
+    """A gap whose near edge is SHALLOWER than 0.618 (top 104.0, between 0.5 and 0.618) is
+    not a Method 3 case — it enters at the gap edge whether the toggle is on or off."""
+    fvg = [(104.0, 101.5, True)]
+    on = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=True))._entry_edges(
+        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))[0]
+    off = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=False))._entry_edges(
+        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))[0]
+    assert abs(on - 104.0) < 1e-9 and abs(off - 104.0) < 1e-9
+
+
+def test_deep_fib_reprices_a_deep_short_gap():
+    """Short mirror: near edge is the gap BOTTOM. With short-side fibs 0.5=105 0.618=106.18
+    0.702=107.2 0.786=108.0 0.886=108.86, a gap bottom 107.5 (between 0.702 and 0.786)
+    re-prices to 0.702 = 107.2."""
+    fvg = [(108.0, 107.5, False)]
+    sig = _sig(0, 106, 106.1, 105.5, 105.8, dir=-1, fvgs=fvg,
+               fibo_p2=105.0, fibo_p3=106.18, fibo_p4=107.2, fibo_p5=108.0,
+               fibo_p6=108.86, fibo_p1=103.82, fibo_p7=100.0, fibo_p10=110.0)
+    _, se = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=True))._entry_edges(sig)
+    assert abs(se - 107.2) < 1e-9

@@ -26,7 +26,7 @@
 // Fib, Sniper, structure labels) is cosmetic and defaults OFF — safe to toggle
 // freely, it never affects trade firing.
 // ============================================================================
-strategy("MPC A+ Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0)
+strategy("MPC A+ Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0)
 var GRP_TABLE = "Confirmation Table"
 bool showConfTable = input.bool(false, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
 string tablePositionInput = input.string("Top Center", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
@@ -3908,10 +3908,11 @@ if barstate.islast
 var GRP_EXEC = "Strategy Execution"
 bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
 bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
-bool  execArmSweep = input.bool(false, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
-bool  execArmDiv   = input.bool(true, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
+bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
+bool  execArmDiv   = input.bool(false, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
 bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
-bool  execFvgDeepOnly = input.bool(false, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
+bool  execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
+bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3 — a qualifying gap whose NEAR edge sits deeper than 0.618 rests its limit at the nearest fib just SHALLOWER (0.618/0.702/0.786) instead of the gap's own edge.")
 bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
 bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade. (Loss-mitigation test #2 — an opposite SOS is early proof the reversal failed, so exit there instead of riding to the fib-1.0 stop.)")
 bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1 (the big lever). Blocks a reversal that fights a FRESH higher-timeframe breakout, while still allowing one that fades an exhaustion sweep. A short fades a high, so it is blocked when the HTF just CLOSED above its prior high (Close > Prev High = a real breakout up). A long is blocked when the HTF just closed below its prior low. A swept-high/low (exhaustion) never blocks — that is exactly the state the setup is meant to fade. Off = current behaviour (no HTF filter). Use with the source dropdown below.")
@@ -4004,6 +4005,16 @@ f_slAnchor() =>
         => fiboP10
 bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
 
+// Method 3 (execDeepFib) — re-price a DEEP gap (near edge below 0.618) to the fib
+// just SHALLOWER than the near edge; na when the near edge is shallower than 0.618.
+f_deepFibEdge(float _gB, float _gT, bool _bull) =>
+    float _out = na
+    if _bull and _gT < fiboP3
+        _out := _gT >= fiboP4 ? fiboP3 : _gT >= fiboP5 ? fiboP4 : fiboP5
+    if (not _bull) and _gB > fiboP3
+        _out := _gB <= fiboP4 ? fiboP3 : _gB <= fiboP5 ? fiboP4 : fiboP5
+    _out
+
 // ── Entry EDGE — the exact price a resting limit sits at ───────────────────
 // We do NOT wait for a bar to close inside the zone. We rest a limit at the
 // near edge of the FVG that overlaps the 0.5-0.886 band, so a WICK to that edge
@@ -4024,10 +4035,12 @@ if fibsReady and array.size(fvgTops) > 0
         bool _lDeepOk = not execFvgDeepOnly or _gT <= fiboP2
         bool _sDeepOk = not execFvgDeepOnly or _gB >= fiboP2
         if _gBull and fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6 and _lDeepOk
-            float _e = math.min(_gT, fiboP2)                       // shallowest touch inside band
+            float _df = execDeepFib ? f_deepFibEdge(_gB, _gT, true) : na
+            float _e = na(_df) ? math.min(_gT, fiboP2) : _df       // Method 3 override, else shallowest touch
             longEdge := na(longEdge) ? _e : math.max(longEdge, _e) // first one price reaches
         if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6 and _sDeepOk
-            float _e = math.max(_gB, fiboP2)
+            float _df = execDeepFib ? f_deepFibEdge(_gB, _gT, false) : na
+            float _e = na(_df) ? math.max(_gB, fiboP2) : _df
             shortEdge := na(shortEdge) ? _e : math.min(shortEdge, _e)
 // ── SNIPER ZONE — the SECOND accepted confirmation ─────────────────────────
 // The SZ is the break leg's 0.5-0.618 pocket, so it already lives inside the
@@ -4642,11 +4655,11 @@ plot(_exTP2,    "px_exit_tp2",    _INV, editable = false)
 plot(_exRUN,    "px_exit_run",    _INV, editable = false)
 plot(closedR,   "px_closed_r",    _INV, editable = false)
 
-// CONFIG (packed). cfg_bits packs 13 booleans (bit 4096 = execConfSZ, added 2026-07-22); cfg_strcodes packs the 4 string dropdowns;
+// CONFIG (packed). cfg_bits packs 14 booleans (bit 4096 = execConfSZ, added 2026-07-22; bit 8192 = execDeepFib, added 2026-07-23); cfg_strcodes packs the 4 string dropdowns;
 // cfg_divints packs the 5 divergence ints. The other numeric toggles (tp1/tp2 %, buffers,
 // trail step, scratch band) are left at their defaults in the Python bot — if you tune one,
 // add a column here and in compare_strategy.py.
-plot((execLongs?1:0)+(execShorts?2:0)+(execArmSweep?4:0)+(execArmDiv?8:0)+(execReqFVG?16:0)+(execFvgDeepOnly?32:0)+(execRespectVeto?64:0)+(execCloseOppSOS?128:0)+(execHtfExhaustOnly?256:0)+(execNoLateDay?512:0)+(showDiv?1024:0)+(divVeto?2048:0)+(execConfSZ?4096:0), "cfg_bits", _INV, editable = false)
+plot((execLongs?1:0)+(execShorts?2:0)+(execArmSweep?4:0)+(execArmDiv?8:0)+(execReqFVG?16:0)+(execFvgDeepOnly?32:0)+(execRespectVeto?64:0)+(execCloseOppSOS?128:0)+(execHtfExhaustOnly?256:0)+(execNoLateDay?512:0)+(showDiv?1024:0)+(divVeto?2048:0)+(execConfSZ?4096:0)+(execDeepFib?8192:0), "cfg_bits", _INV, editable = false)
 plot((execSlLevel=="0.618"?0:execSlLevel=="0.702"?1:execSlLevel=="0.786"?2:execSlLevel=="0.886"?3:4)*1000 + (execHtfSource=="Weekly"?0:execHtfSource=="Daily"?1:2)*100 + (execHtfWeekly=="Ignore"?0:execHtfWeekly=="Must agree"?1:execHtfWeekly=="Must not oppose"?2:3)*10 + (execHtfDaily=="Ignore"?0:execHtfDaily=="Must agree"?1:execHtfDaily=="Must not oppose"?2:3), "cfg_strcodes", _INV, editable = false)
 plot(divExtremeOS + divExtremeOB*1000 + divRsiLen*1000000 + divPivotLen*1000000000 + divValidBars*1000000000000, "cfg_divints", _INV, editable = false)
 plot(aplusWindow, "cfg_window",   _INV, editable = false)

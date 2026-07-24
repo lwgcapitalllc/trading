@@ -322,6 +322,9 @@ export interface Strategy {
   // True = the strategy sizes its own trades off its own risk % param, so the sizing engine
   // must not re-size it and SIZING MODE is hidden (there is nothing to choose).
   self_sizing?: boolean
+  // True = the source on disk changed since the last Scan Strategies, so the param schema the
+  // Run modal shows is stale. Computed live by the backend; the scan-time twin of needs_deploy.
+  needs_scan?: boolean
 }
 
 export interface StrategyStep {

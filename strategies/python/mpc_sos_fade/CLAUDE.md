@@ -61,9 +61,10 @@ the limit price at placement, not the fill). Do not route qty computation throug
 ## What it is (one paragraph)
 
 A counter-trend reversal that fades exhaustion at HTF liquidity. Three-stage A+ sequence: **Arm**
-(RSI divergence by default, or a liquidity sweep) → **SOS** (a same-side external structure break in
+(liquidity sweep by default, or an RSI divergence) → **SOS** (a same-side external structure break in
 the trade direction, inside a staleness window) → **Zone+FVG** (price retraces into the 0.5–0.886 fib
-band and a live FVG overlaps it). Entry is a resting limit at the FVG's near edge, clamped into the
+band and a live FVG overlaps it; default requires the gap fully past 0.5). Entry is a resting limit — a
+deep gap re-prices to the nearest shallower fib (Method 3), else the FVG's near edge, clamped into the
 band; stop = fib 1.0 (leg origin) + buffer; exit = the fib TP ladder (30/40/runner) with stop→BE on
 TP1, stop→TP1 on TP2, and a ratcheting trail on the runner. Full rules: `docs/MPC_SOS_FADE_SPEC.md`.
 
@@ -215,6 +216,34 @@ Pine changes, so any diff it produced was July-15 drift, not a bug. Regenerated 
    it on rather than diffing against logic this bot lacks. Port = read `BarState.sniper`'s
    0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
 3. **CONT trades removed** from the Pine — the export used to carry `contL_ok`/`contS_ok`.
+4. **`execDeepFib`** (Method 3, added 2026-07-23) — "Entry: deep gap enters on nearest fib (not gap
+   edge)". A qualifying FVG whose NEAR edge (long = gap top, short = gap bottom) sits deeper than
+   0.618 rests its limit at the nearest fib just SHALLOWER (0.618/0.702/0.786) — the level price
+   reaches first — instead of chasing a gap edge price may never tap. **PORTED here**: `config.exec_deep_fib`
+   (default **True** as of 2026-07-23 — see the prime-combo defaults note below), `execution._deep_fib_edge()`
+   + the override in `_entry_edges()`, the export packs it as `cfg_bits` bit 8192, and `compare_strategy.py`
+   reads it (no refusal — it is fully ported). ONLY the near edge's position decides it; what the gap body
+   crosses is irrelevant (an earlier "body contains a level" gate was WRONG and dropped exactly the deep
+   multi-level gaps this targets).
+
+**Prime-combo defaults (2026-07-23).** Aaron's TradingView-tested "prime" settings are now the shipped
+defaults in BOTH Pine files and `config.py`, in lockstep so `compare_strategy.py` parity holds:
+`exec_arm_sweep` False→**True**, `exec_arm_div` True→**False** (arm on liquidity sweeps, not divergence),
+`exec_fvg_deep_only` False→**True**, `exec_deep_fib` (new) → **True**. `exec_req_fvg` stays True. Combo
+result on Aaron's Strategy Tester: ≈+237% / PF 6.2 / 85% win / 13% max DD over ~2yr gold at 84 trades.
+This SUPERSEDES the old divergence-armed default — the "2-year run" analysis further down was measured
+under that old default and predates Method 3 + deep-only; keep it as the historical baseline only.
+
+**Slippage pinned to 0 in the Pine (2026-07-23).** Both `mpc_strategy.pine` and `mpc_strategy_export.pine`
+now declare `slippage = 0` in the `strategy()` call, so the TradingView Properties tab defaults to zero
+instead of Aaron's old 25-tick setting. Reason: for HONEST parity the Pine's `fill_model="bar"` (zero
+costs) must line up with a TV run that also charges nothing, so `compare_strategy.py` and a hand
+trade-diff compare like-for-like. Real costs belong in the LAB's `fill_model="tick"` run (real bid/ask +
+spread + slippage + commission + swap), not smeared as a flat 25-tick charge on every TV fill. The
+breakeven buffer (`execBeBufTk`, default 30) is a STRATEGY input and is unchanged — it is signal logic,
+not a cost. So the old note that TV's number is "slightly PESSIMISTIC because TV charges 25 ticks" no
+longer applies to a fresh export: at slippage 0 the TV bar-mode number and our bar-mode number are the
+honest apples-to-apples pair; the tick-mode lab run is the real tradeable number.
 
 **When the Pine changes:** brother re-pastes `mpc_strategy.pine` → regenerate `mpc_strategy_export.pine`
 (re-copy + re-append the parity block) → re-export → re-run until exit 0. A new trade-affecting input =
@@ -279,6 +308,12 @@ net**. The edge is the runner. Treat the win rate as a byproduct of the BE stop,
 
 ### The 2-year run (2024-07-16 → 2026-07-16, tick mode) — the shape HOLDS
 
+> **⚠️ Pre-combo baseline (superseded 2026-07-23).** Everything in this subsection was measured under
+> the OLD default (divergence-armed, gap-edge entry, no deep-only). The shipped default is now the
+> deep-entry combo (sweep-arm + deep-only + deep-fib → ≈+237%/PF6.2/85%/13%DD at 84 trades). The
+> numbers below still stand as the divergence-only baseline, but they are no longer the default's
+> results. Read them as history, not as what the bot does out of the box today.
+
 40 trades, net **$21,536.60** on $10k. The distribution is the same story with a bigger sample:
 
 | outcome | n | $ pnl | % of net | avg R |
@@ -311,7 +346,7 @@ What the second year of data changed, and what it didn't:
   - **The default filter is the profitable subset, and it is a strict SUBSET.** Every
     divergence-armed trade is also sweep-armed, so `both` is bit-identical to `sweep only`.
     Arm source → trades / short% / net / PF (bar mode, 2yr, no costs):
-    divergence-only (default) 40 / 82.5% / +190% / **3.27** · sweep-only (= both) 79 / 69.6% /
+    divergence-only (OLD default) 40 / 82.5% / +190% / **3.27** · sweep-only (= both) 79 / 69.6% /
     +144% / **1.87**. Enabling sweeps adds 39 trades that lose money net and drags PF down ~43%.
   - **Longs are not broken, just rare** — 7 trades, **86% win**, profitable (+21% of capital).
     Nothing is blocking longs incorrectly; there simply are few bullish divergences up here.
@@ -323,8 +358,11 @@ What the second year of data changed, and what it didn't:
 Open threads (Aaron is on the edge work as of 2026-07-16): whether stop→BE on TP1 caps runners; and
 why 15m is reportedly the only winning timeframe (a real edge usually survives on neighbouring
 timeframes — if 5m and 30m lose, suspect luck). 40 trades is still a thin sample; treat the KPIs as
-directional, not settled. **Do not "fix" the skew by flipping `exec_arm_sweep`** — it is a Pine
-input default, so changing it breaks `compare_strategy.py` parity; tune it per-run instead.
+directional, not settled. (Superseded note: an earlier version warned "do not flip `exec_arm_sweep` — it
+breaks parity". That was wrong on the mechanism — parity is driven by the export's `cfg_bits`, not the
+default — and moot now: the default flipped to sweep-arm on 2026-07-23, in lockstep across both Pine
+files and `config.py`, so parity holds. Flip toggles freely per run; just keep the two Pine files and
+`config.py` defaults identical when you change a DEFAULT.)
 
 ## Tests
 

@@ -26,7 +26,7 @@
 // Fib, Sniper, structure labels) is cosmetic and defaults OFF — safe to toggle
 // freely, it never affects trade firing.
 // ============================================================================
-strategy("MPC A+ Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0)
+strategy("MPC A+ Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0)
 var GRP_TABLE = "Confirmation Table"
 bool showConfTable = input.bool(false, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
 string tablePositionInput = input.string("Top Center", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
@@ -3908,10 +3908,11 @@ if barstate.islast
 var GRP_EXEC = "Strategy Execution"
 bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
 bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
-bool  execArmSweep = input.bool(false, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
-bool  execArmDiv   = input.bool(true, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
+bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
+bool  execArmDiv   = input.bool(false, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
 bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
-bool  execFvgDeepOnly = input.bool(false, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
+bool  execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
+bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3 — recovers the trades lost when a deep FVG never gets tapped. Default (off) rests the limit at the gap's own edge, so a gap floating DEEP in the zone is missed whenever price stalls at a shallower fib and turns back. On = when the qualifying gap's near edge sits DEEPER than 0.618 AND the gap contains no fib level (it floats BETWEEN two of 0.618/0.702/0.786/0.886), the limit rests at the nearest fib just SHALLOWER than the gap instead — the level price reaches first (gap between 0.618-0.702 -> 0.618, 0.702-0.786 -> 0.702, 0.786-0.886 -> 0.786). A gap sitting ON a fib level, or shallower than 0.618, is unchanged and still enters at its exact edge. This fills more of these setups, but a deep between-levels trade that already filled now fills earlier and shallower, so those results move — leave it off to reproduce the current entries.")
 bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
 bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade. (Loss-mitigation test #2 — an opposite SOS is early proof the reversal failed, so exit there instead of riding to the fib-1.0 stop.)")
 bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1 (the big lever). Blocks a reversal that fights a FRESH higher-timeframe breakout, while still allowing one that fades an exhaustion sweep. A short fades a high, so it is blocked when the HTF just CLOSED above its prior high (Close > Prev High = a real breakout up). A long is blocked when the HTF just closed below its prior low. A swept-high/low (exhaustion) never blocks — that is exactly the state the setup is meant to fade. Off = current behaviour (no HTF filter). Use with the source dropdown below.")
@@ -4004,6 +4005,23 @@ f_slAnchor() =>
         => fiboP10
 bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
 
+// Method 3 (execDeepFib) — the entry price for a DEEP gap whose NEAR EDGE sits
+// below the 0.618 line, or na when the near edge is shallower than 0.618 (those
+// keep the normal exact-edge entry). The re-priced entry is the fib level just
+// SHALLOWER than the gap's near edge — the level price reaches first on the way
+// in. ONLY the near edge's position decides it: a real gap is often tall enough
+// to span 0.702/0.786, and an earlier "gap body contains a level" exception was
+// WRONG — it silently disqualified exactly these deep, multi-level gaps (the miss
+// this is built to catch). What the body crosses is irrelevant; where the near
+// edge lands is everything. Long near edge = gap top (_gT); short = gap bottom.
+f_deepFibEdge(float _gB, float _gT, bool _bull) =>
+    float _out = na
+    if _bull and _gT < fiboP3          // long: near edge deeper than the 0.618 line
+        _out := _gT >= fiboP4 ? fiboP3 : _gT >= fiboP5 ? fiboP4 : fiboP5
+    if (not _bull) and _gB > fiboP3    // short: near edge deeper than the 0.618 line
+        _out := _gB <= fiboP4 ? fiboP3 : _gB <= fiboP5 ? fiboP4 : fiboP5
+    _out
+
 // ── Entry EDGE — the exact price a resting limit sits at ───────────────────
 // We do NOT wait for a bar to close inside the zone. We rest a limit at the
 // near edge of the FVG that overlaps the 0.5-0.886 band, so a WICK to that edge
@@ -4024,10 +4042,12 @@ if fibsReady and array.size(fvgTops) > 0
         bool _lDeepOk = not execFvgDeepOnly or _gT <= fiboP2
         bool _sDeepOk = not execFvgDeepOnly or _gB >= fiboP2
         if _gBull and fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6 and _lDeepOk
-            float _e = math.min(_gT, fiboP2)                       // shallowest touch inside band
+            float _df = execDeepFib ? f_deepFibEdge(_gB, _gT, true) : na
+            float _e = na(_df) ? math.min(_gT, fiboP2) : _df       // Method 3 override, else shallowest touch
             longEdge := na(longEdge) ? _e : math.max(longEdge, _e) // first one price reaches
         if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6 and _sDeepOk
-            float _e = math.max(_gB, fiboP2)
+            float _df = execDeepFib ? f_deepFibEdge(_gB, _gT, false) : na
+            float _e = na(_df) ? math.max(_gB, fiboP2) : _df
             shortEdge := na(shortEdge) ? _e : math.min(shortEdge, _e)
 // ── SNIPER ZONE — the SECOND accepted confirmation ─────────────────────────
 // The SZ is the break leg's 0.5-0.618 pocket, so it already lives inside the

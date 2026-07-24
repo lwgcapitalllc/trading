@@ -311,6 +311,10 @@ class Strategy(BaseModel):
     scanned_at: datetime
     run_count: int = 0
     runner: str = "ninjatrader"
+    # True when the source on disk has changed since the last Scan Strategies — the run modal's
+    # param schema is stale until re-scanned. Computed live in the router (strategy_scanner.needs_rescan),
+    # never stored. The scan-time analog of needs_deploy/needs_compile.
+    needs_scan: bool = False
     # Strategy-level narrative overlaid from <Strategy>.meta.json (UI only).
     edge: Optional[str] = None
     steps: list[dict] = []   # flow: [{label, title, detail}]

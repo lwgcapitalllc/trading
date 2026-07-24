@@ -7,7 +7,7 @@
 // Win/loss box colours match london_breakout.pine.
 strategy("NY ORB Research", overlay=true, pyramiding=0, calc_on_order_fills=true,
      default_qty_type=strategy.fixed, default_qty_value=1,
-     max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+     max_boxes_count=500, max_lines_count=500, max_labels_count=500, slippage=0)
 
 //==================================================
 // INPUTS — SESSIONS (America/New_York, DST-aware)

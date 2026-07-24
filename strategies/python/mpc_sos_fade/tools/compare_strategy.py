@@ -76,7 +76,7 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None) -
             exec_respect_veto=bool(b & 64), exec_close_opp_sos=bool(b & 128),
             exec_htf_exhaust_only=bool(b & 256), exec_no_late_day=bool(b & 512),
             show_div=bool(b & 1024), div_veto=bool(b & 2048),
-            exec_conf_sz=bool(b & 4096),
+            exec_conf_sz=bool(b & 4096), exec_deep_fib=bool(b & 8192),
         )
         # Bit 4096 (Pine execConfSZ, added 2026-07-21) turns the Sniper Zone into a second
         # accepted entry confirmation. The Python bot has NOT ported that path yet, so an

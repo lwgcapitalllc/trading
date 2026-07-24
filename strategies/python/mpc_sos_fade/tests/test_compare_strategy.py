@@ -38,7 +38,8 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
          + int(cfg.exec_arm_div) * 8 + int(cfg.exec_req_fvg) * 16
          + int(cfg.exec_fvg_deep_only) * 32 + int(cfg.exec_respect_veto) * 64
          + int(cfg.exec_close_opp_sos) * 128 + int(cfg.exec_htf_exhaust_only) * 256
-         + int(cfg.exec_no_late_day) * 512 + int(cfg.show_div) * 1024 + int(cfg.div_veto) * 2048)
+         + int(cfg.exec_no_late_day) * 512 + int(cfg.show_div) * 1024 + int(cfg.div_veto) * 2048
+         + int(cfg.exec_conf_sz) * 4096 + int(cfg.exec_deep_fib) * 8192)
     sc = (_SL[cfg.exec_sl_level] * 1000 + _SRC[cfg.exec_htf_source] * 100
           + _REQ[cfg.exec_htf_weekly] * 10 + _REQ[cfg.exec_htf_daily])
     di = (cfg.div_extreme_os + cfg.div_extreme_ob * 1000 + cfg.div_rsi_len * 1_000_000
