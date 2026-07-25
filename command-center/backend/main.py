@@ -4,7 +4,7 @@ import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import smart_money, bots, backtests, stress_tests, settings, strategies, rulesets, system, sweeps, optimizations, strategy_files, calendar
+from routers import smart_money, bots, backtests, stress_tests, settings, strategies, rulesets, system, sweeps, stacks, optimizations, strategy_files, calendar
 from services import lab_db, runner_dispatch, mt5_agent_client
 from services.backtest_runner import read_progress, clear_progress
 
@@ -22,6 +22,7 @@ app.include_router(smart_money.router)
 app.include_router(bots.router)
 app.include_router(backtests.router)
 app.include_router(sweeps.router)
+app.include_router(stacks.router)
 app.include_router(optimizations.router)
 app.include_router(stress_tests.router)
 app.include_router(settings.router)

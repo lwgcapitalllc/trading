@@ -1,4 +1,5 @@
 // Mirror of backend models.py — these are the data contract.
+import type { ChartSpec } from '@/components/ChartPanel/types'
 
 export interface MonthlyPoint {
   month: string
@@ -758,6 +759,118 @@ export interface SweepDetail {
   created_at: string
   completed_at: string | null
   runs: BacktestSummary[]
+}
+
+// ── Lab — Portfolio stacks ────────────────────────────────────────────────────
+// A stack layers 2+ Python strategies over one shared instrument/window. The combined
+// portfolio P&L is composed CLIENT-SIDE by summing each leg's daily_pnl; toggling a leg
+// off is a re-sum without it (min one leg always on).
+
+export interface StackRequest {
+  strategy_ids: string[]
+  instrument: string
+  bar_type?: string
+  bar_value?: number
+  start_date: string
+  end_date: string
+  commission_per_side?: number
+  slippage_ticks?: number
+  ruleset_ids?: string[]
+  params_by_strategy?: Record<string, Record<string, unknown>>
+}
+
+export interface StackResponse {
+  stack_id: string
+  run_ids: string[]
+  status: string
+}
+
+export interface StackPreviewRequest {
+  strategy_ids: string[]
+  instrument: string
+  bar_type?: string
+  bar_value?: number
+  start_date: string
+  end_date: string
+  commission_per_side?: number
+  slippage_ticks?: number
+}
+
+export interface StackPreviewLeg {
+  strategy_id: string
+  strategy_name: string
+  action: 'reuse' | 'run'
+  matched_run_id: string | null
+  net_pnl: number | null
+  trade_count: number | null
+  profit_factor: number | null
+}
+
+export interface StackPreviewResponse {
+  legs: StackPreviewLeg[]
+  reuse_count: number
+  run_count: number
+}
+
+export interface StackSummary {
+  stack_id: string
+  instrument: string
+  start_date: string
+  end_date: string
+  total_strategies: number
+  completed_strategies: number
+  failed_strategies: number
+  status: string
+  created_at: string
+  strategy_names: string
+}
+
+export interface StackStrategyLeg {
+  run_id: string
+  strategy_id: string
+  strategy_name: string
+  status: string
+  net_pnl: number | null
+  max_drawdown: number | null
+  trade_count: number | null
+  sharpe: number | null
+  avg_trade_duration_min: number | null
+  error_message: string | null
+  daily_pnl: Array<{ date: string; pnl: number }>
+  equity_curve: EquityPoint[]
+}
+
+export interface StackDetail {
+  stack_id: string
+  instrument: string
+  start_date: string
+  end_date: string
+  bar_type: string
+  bar_value: number
+  commission_per_side: number
+  slippage_ticks: number
+  total_strategies: number
+  completed_strategies: number
+  status: string
+  created_at: string
+  completed_at: string | null
+  regime_timeline: RegimeDay[]
+  strategies: StackStrategyLeg[]
+}
+
+// A layer in the merged stack price chart — one completed leg.
+export interface StackChartLayer {
+  strategy_id: string
+  strategy_name: string
+  run_id: string
+}
+
+// Merged ChartSpec for the stack candle chart: shared candles + every leg's trades (each `layer`-
+// tagged with its strategy_id), plus the layer roster. Frontend filters trades to the toggled-on
+// strategies and tints each by its equity-chart colour before handing the spec to ChartPanel.
+export interface StackChartSpec extends ChartSpec {
+  layers: StackChartLayer[]
+  base_run_id: string | null   // the leg whose feed backs the shared candles — drives drill-down
 }
 
 // ── Lab — Optimizations ───────────────────────────────────────────────────────

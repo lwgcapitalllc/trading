@@ -100,6 +100,10 @@ interface TradeExtend {
   entryColor?: string  // entry bubble + line + chip (neutral)
   chipBg?: string      // side-label chip background (dark, for legibility over candles)
   neutralColor?: string
+  layerColor?: string  // portfolio-stack accent — tints the outcome chip border so overlapping
+                       // strategies read apart (absent on a single-run chart)
+  layerName?: string   // strategy name printed IN the outcome chip ("SOS Fade · Won") — the stack's
+                       // primary "who won this one" signal (absent on a single-run chart)
   entryPrice?: number
   exitPrice?: number
   mfePrice?: number
@@ -350,14 +354,16 @@ export function registerChartOverlays(): void {
         if (labels[i].y - labels[i - 1].y < MIN_GAP) labels[i].y = labels[i - 1].y + MIN_GAP
       }
       const LBL_GAP = 9
-      const chip = (x: number, y: number, text: string, color: string, align: 'left' | 'right' | 'center') =>
+      // `border` overrides the chip's border colour (else it echoes the text colour) — the stack
+      // view passes each strategy's layer colour so an overlapping trade's outcome chip reads apart.
+      const chip = (x: number, y: number, text: string, color: string, align: 'left' | 'right' | 'center', border?: string) =>
         figures.push({
           type: 'text',
           attrs: { x, y, text, align, baseline: 'middle' },
           styles: {
             style: 'stroke_fill', color, size: 10, weight: 'bold',
-            backgroundColor: labelBg, borderColor: withAlpha(color, 0.4), borderSize: 1,
-            borderStyle: 'solid', borderRadius: 3,
+            backgroundColor: labelBg, borderColor: withAlpha(border ?? color, border ? 0.85 : 0.4),
+            borderSize: 1, borderStyle: 'solid', borderRadius: 3,
             paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
           },
           ignoreEvent: true,
@@ -377,8 +383,24 @@ export function registerChartOverlays(): void {
         const won = d.pnl > 0
         const extY = won ? yMfe : (yOf(d.maePrice ?? d.stopPrice) ?? exit.y)
         const outPix = won ? -sign : sign      // beyond the extreme, away from entry (px: up = −)
-        chip((x0 + x1) / 2, extY + outPix * 12, won ? 'Won' : 'Lost',
-             won ? profitColor : stopColor, 'center')
+        // On a portfolio stack the chip also NAMES the strategy ("SOS Fade · Won") — with several
+        // strategies' trades on one chart, the outcome alone doesn't say whose trade it was.
+        const outcome = won ? 'Won' : 'Lost'
+        const text = d.layerName ? `${d.layerName} · ${outcome}` : outcome
+        const cx = (x0 + x1) / 2
+        const cy = extY + outPix * 12
+        chip(cx, cy, text, won ? profitColor : stopColor, 'center', d.layerColor)
+        // A filled dot in the strategy's colour just left of the chip — the same swatch the equity
+        // chart and the toggle chips use, so the eye matches trade → strategy without reading text.
+        if (d.layerName && d.layerColor) {
+          const halfW = (text.length * 6.3 + 12) / 2
+          figures.push({
+            type: 'circle',
+            attrs: { x: cx - halfW - 5, y: cy, r: 3 },
+            styles: { style: 'fill', color: d.layerColor },
+            ignoreEvent: true,
+          })
+        }
       }
 
       return figures

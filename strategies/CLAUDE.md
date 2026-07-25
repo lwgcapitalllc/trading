@@ -2,8 +2,8 @@
 
 **Purpose:** Generic trading strategy implementations, organized by runner platform.
 **Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5, `.pine` for TradingView, Python packages for the local Python runner). Does NOT cover backtest infrastructure (see `command-center/` and top-level `backtest/`), live bot runtime logic (see `algos/`), or regime classification (see `engines/regime/`).
-**Status:** Production. NT8 has one strategy (ORB.cs), deployed via the command center. MT5 has one strategy (LondonBreakout.mq5). Python has one strategy (`python/mpc_sos_fade/`, run locally — no deploy). `tradingview/` holds Pine research strategies tested in the TradingView Strategy Tester only (NOT scanned/deployed by the command center).
-**Last reviewed:** 2026-07-16
+**Status:** Production. NT8 has one strategy (ORB.cs), deployed via the command center. MT5 has one strategy (LondonBreakout.mq5). Python has two strategies (`python/mpc_sos_fade/` and `python/mpc_bleg/`, run locally — no deploy). `tradingview/` holds Pine research strategies tested in the TradingView Strategy Tester only (NOT scanned/deployed by the command center).
+**Last reviewed:** 2026-07-25
 
 ---
 
@@ -16,7 +16,8 @@ strategies/
 ├── mt5/            ← MT5 expert advisors (.mq5, MQL5)
 │   └── LondonBreakout.mq5
 ├── python/         ← Python strategy packages — run LOCALLY by the lab's python runner (no VPS)
-│   └── mpc_sos_fade/        (MPC SOS Fade bot; own CLAUDE.md inside)
+│   ├── mpc_sos_fade/        (MPC SOS Fade bot; own CLAUDE.md inside)
+│   └── mpc_bleg/            (MPC B-LEG bot — the late-retrace setup, split out to run parallel to A+; own CLAUDE.md)
 └── tradingview/    ← Pine v6 research strategies (.pine) — TV Strategy Tester only
     ├── london_breakout.pine
     └── ny_orb.pine
@@ -100,6 +101,7 @@ lingering DB rows/runs clear on the next **Scan Strategies** (the scanner warns 
 | `ORB.cs` | ORB | ninjatrader | Opening Range Breakout — entry on ORB high/low break. The only live NT8 strategy. **Reshaped to the gated-layer rules 2026-06-21:** trades unit size (1 contract), self-policing halts removed (moved to the engine), keeps only signal + stop/target + time rules; emits the per-trade record to `engine_trades.csv` (the runner→engine contract). Needs VPS compile + backtest to verify. |
 | `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range → London breakout, instrument-agnostic. Reshaped to the gated-layer rules 2026-06-22 (v3). Needs VPS compile + backtest to verify — cannot be tested locally. See `mt5/LONDON_BREAKOUT.md` for design + reshape detail and backtest record. |
 | `python/mpc_sos_fade/` | MpcSosFadeStrategy | python | MPC SOS Fade bot (XAUUSD 15m) — Python port of the brother's MPC-JARVIS A+ grade, replaying the canonical `engines/` via `backtest/`. **Logic-parity GREEN vs the Pine 2026-07-16** (bar-for-bar, exit 0). Runs locally in the lab (backtests + optimizer). Full rules in `python/mpc_sos_fade/CLAUDE.md`. |
+| `python/mpc_bleg/` | MpcBLegStrategy | python | MPC B-LEG bot (XAUUSD) — the late-retrace setup (the SOS whose retrace arrived late), split out of `mpc_strategy.pine` to run PARALLEL to A+ (2026-07-24). Port of `indicators/mpc_b_leg_strategy.pine`; REUSES `mpc_sos_fade`'s engine + A+ sequence + fill machinery, adds only the B-LEG tracker + a thin execution subclass. Built + 9 unit tests green; **NO Pine-parity harness yet** (follow-up: `compare_bleg.py` + an export Pine). Full rules in `python/mpc_bleg/CLAUDE.md`. |
 | `ny_orb.pine` | — | tradingview | **In TradingView research/tuning (2026-06-20), not yet promoted.** NY Opening Range Breakout, instrument-agnostic (FX + futures). Built on `london_breakout.pine`'s skeleton. Range = wick-to-wick high/low of the opening window; sessions anchored to `America/New_York` (DST-safe). Entry = break candle (excluded from count) + N direction-filtered confirmation closes (`confirmCloses`, 0 = enter on the break candle itself; bullish closes for longs, bearish for shorts). Two entry methods: **Breakout Close** (market) and **Retest** (limit at the broken box edge). Far-side stop, RR target, optional partial + step-trail. Win/loss boxes recolour like London Breakout (no labels). Guards: forced `orderQty` (futures otherwise round to 0 contracts — see notes), weekend skip, and a volume-based thin/holiday-day filter (Pine has no calendar; OR volume < % of lookback average ⇒ skip). |
 
 ---
@@ -119,7 +121,7 @@ To fix: add a Windows scheduled task (trigger: At startup, run whether user is l
 - **No trades on futures = order-size/margin, not the script.** TV's Properties "order size" defaults to a cash/% value; one expensive futures contract (NQ ≈ $420k notional, MES ≈ $27k) divided by that rounds to **0 contracts**, or fails the 100% margin check against a small initial capital → every order rejected. FX fills because one unit is tiny. Fixes: pass an explicit `qty` (the script forces `orderQty`), set Properties order size to **Contracts**, raise initial capital, or lower margin %. Use the `SYMBOL1!` continuous contract (e.g. `MNQ1!`) and prefer micros for eval-sized accounts.
 - **OR window ≠ chart timeframe.** A 15-min opening range on a 15-min chart is one candle and barely trades; run it on 1–5 min bars.
 - **The volume thin/holiday filter is a backtest-only proxy.** Pine has no holiday/economic calendar. Live, the correct pattern is a shared calendar/event-gate service (like the regime classifier) that every bot checks before trading — it's proactive and also covers high-impact news (which is high-volume, so the volume filter misses it). Keep the volume proxy for TV research only.
-- **Pin `slippage = 0` in the `strategy()` call, not the Properties UI.** All four `.pine` strategy files (`mpc_strategy`, `mpc_strategy_export`, `ny_orb`, `london_breakout`) declare `slippage = 0` explicitly (2026-07-23), so the Strategy Tester Properties tab defaults to zero. TV's slippage is a broker-emulator COST (in ticks; 25 ticks = $0.25 on gold) — a flat charge on every fill that is neither honest (a resting limit never slips) nor comparable to a zero-cost Python bar-mode run. Model real costs in the LAB's tick fill model instead. The breakeven buffer is a strategy INPUT (signal logic), not a cost — leave it alone.
+- **Pin `slippage = 0` AND `margin_long/short = 0.2` in the `strategy()` call, not the Properties UI.** The `.pine` strategy files (`mpc_strategy`, `mpc_strategy_export`, `mpc_b_leg_strategy`, `ny_orb`, `london_breakout`) declare `slippage = 0` (2026-07-23) and `margin_long = 0.2, margin_short = 0.2` (2026-07-24), so the Strategy Tester Properties tab defaults to zero slippage and 500x leverage (margin % = 100 / leverage) to match Aaron's demo account. Both are broker-emulator SETTINGS, not signal logic: TV slippage is a flat per-fill cost (in ticks; 25 ticks = $0.25 on gold) that is neither honest (a resting limit never slips) nor comparable to a zero-cost Python bar-mode run, and margin only sets the leverage the tester assumes. Model real costs in the LAB's tick fill model instead. The breakeven buffer is a strategy INPUT (signal logic), not a cost — leave it alone.
 
 ## References
 

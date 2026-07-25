@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
   CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Play,
@@ -23,6 +23,7 @@ import { XModeToggle } from '@/components/XModeToggle'
 import { RegimeOverlayToggle } from '@/components/RegimeOverlayToggle'
 
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
+import type { ChartSpec } from '@/components/ChartPanel/types'
 import { OptimizeButton } from '@/components/OptimizeButton'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { StatusPill } from '@/components/StatusPill'
@@ -173,6 +174,13 @@ function winRateLabel(rate: number | null): string {
   return 'weak — needs high R:R'
 }
 
+// A ratio card's value: a number, ∞ when the denominator is legitimately zero (no losing trade / no
+// drawdown), or a dash only when the input truly isn't there.
+function kpiNum(v: number | null): string {
+  if (v == null) return '—'
+  return Number.isFinite(v) ? v.toFixed(2) : '∞'
+}
+
 function pfCls(pf: number | null): string {
   if (pf == null) return 'text-text-tertiary'
   if (pf >= 2.0) return 'text-pos-text'
@@ -182,6 +190,7 @@ function pfCls(pf: number | null): string {
 
 function pfLabel(pf: number | null): string {
   if (pf == null) return 'gross wins ÷ gross losses'
+  if (!Number.isFinite(pf)) return 'no losing trades'
   if (pf >= 2.0) return 'strong — wins 2× losses'
   if (pf >= 1.5) return 'good'
   if (pf >= 1.0) return 'marginal'
@@ -285,7 +294,9 @@ function computeCalmar(equity: EquityPoint[], balance: number | null): number | 
   const rebased = rebaseEquity(equity, balance)
   const netPnl  = rebased[rebased.length - 1] - balance
   const dd      = maxDrawdownOf(rebased)
-  if (dd === 0) return null
+  // Zero drawdown isn't "unknown" — it's an undefeated curve, so Calmar is genuinely infinite.
+  // Report Infinity (the card prints ∞) rather than a dash that reads as missing data.
+  if (dd === 0) return netPnl > 0 ? Infinity : null
   const years   = days / 365
   const cagr    = Math.pow(1 + netPnl / balance, 1 / Math.max(years, 0.1)) - 1
   return cagr / (dd / balance)
@@ -300,6 +311,7 @@ function calmarCls(c: number | null): string {
 
 function calmarLabel(c: number | null): string {
   if (c == null) return 'set an account balance'
+  if (!Number.isFinite(c)) return 'no drawdown to divide by'
   if (c >= 3.0) return 'excellent'
   if (c >= 1.5) return 'good'
   if (c >= 1.0) return 'marginal'
@@ -330,6 +342,17 @@ function computeZScore(equity: EquityPoint[]): number | null {
 function zScoreCls(z: number | null): string {
   if (z == null) return 'text-text-tertiary'
   return Math.abs(z) > 2 ? 'text-warn-text' : 'text-text-primary'
+}
+
+// Why the runs test couldn't run, said in the strategy's own terms — a curve with no losing trade
+// has no win/loss sequence to test, and that is information, not a missing value.
+function zScoreUnavailableLabel(equity: EquityPoint[]): string {
+  const profits = equity.map(e => e.profit).filter((p): p is number => p != null && p !== 0)
+  if (profits.length < 2) return 'runs test — needs 2+ trades'
+  const losses = profits.filter(p => p < 0).length
+  if (losses === 0) return `all ${profits.length} trades won — no streaks to test`
+  if (losses === profits.length) return `all ${profits.length} trades lost — no streaks to test`
+  return 'runs test — needs wins & losses'
 }
 
 function zScoreLabel(z: number | null): string {
@@ -381,13 +404,13 @@ function concentrationLabel(c: number | null): string {
 // Derives Sharpe / Worst Day / Worst Streak from daily_pnl when the
 // NT8 agent doesn't report them directly.
 
-interface FallbackMetrics {
+export interface FallbackMetrics {
   worstDay: number | null
   worstStreak: number | null
   sharpe: number | null
 }
 
-function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
+export function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
   if (!daily_pnl.length) return { worstDay: null, worstStreak: null, sharpe: null }
 
   const pnls = daily_pnl.map(d => d.pnl)
@@ -445,7 +468,7 @@ function kpiTone(valueCls?: string): KpiTone {
 // template so the two grids stay aligned.
 const KPI_COLS = 'grid-cols-[1.4fr_repeat(5,minmax(0,1fr))]'
 
-function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false, fixedHeight = null }: {
+export function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false, fixedHeight = null }: {
   run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
   showMore?: boolean; fixedHeight?: number | null
 }) {
@@ -477,6 +500,12 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
     : null
   // 7b — Wald–Wolfowitz z-score over the win/loss sequence.
   const zScore = computeZScore(equity)
+  // Profit factor: the backend stores null when gross losses are 0 (divide-by-zero). That case is
+  // an undefeated run, not unknown data — recover it from the trades and print ∞.
+  const tradeProfits = equity.map(e => e.profit).filter((p): p is number => p != null && p !== 0)
+  const grossLoss = tradeProfits.filter(p => p < 0).reduce((a, b) => a + Math.abs(b), 0)
+  const pfValue = run.profit_factor
+    ?? (tradeProfits.length > 0 && grossLoss === 0 ? Infinity : null)
   // 7c — profit concentration: largest quarter's share of gross profit. Prefer the
   // backend-persisted value (authoritative, feeds grading); fall back to the client calc
   // for older runs predating the column. Both use the identical formula, so they agree.
@@ -517,9 +546,9 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
       valueCls: maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary', tone: 'neutral',
       sub: ddDollar != null ? `$${Math.round(ddDollar).toLocaleString()} peak-to-trough${maxDdPct == null ? ' · set a balance for %' : ''}` : 'set an account balance',
       tooltip: "Max drawdown — the largest peak-to-trough drop, shown both in dollars (sub-line) and as a % of the account balance (the value; ruleset's account_size, adjustable via the Account balance slider). Prop firms cap this hard. The dollar drawdown is trade-derived, identical across NT8 and MT5. Lower is better." },
-    { key: 'pf', label: 'Profit Factor', value: run.profit_factor != null ? run.profit_factor.toFixed(2) : '—', valueCls: pfCls(run.profit_factor), sub: pfLabel(run.profit_factor),
-      tooltip: "Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0." },
-    { key: 'calmar', label: 'Calmar Ratio', value: calmar != null ? calmar.toFixed(2) : '—', valueCls: calmarCls(calmar), sub: calmarLabel(calmar), tooltip: calmarTip },
+    { key: 'pf', label: 'Profit Factor', value: kpiNum(pfValue), valueCls: pfCls(pfValue), sub: pfLabel(pfValue),
+      tooltip: "Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0. A run with no losing trade has no denominator, so it shows ∞." },
+    { key: 'calmar', label: 'Calmar Ratio', value: kpiNum(calmar), valueCls: calmarCls(calmar), sub: calmarLabel(calmar), tooltip: calmarTip },
   ]
 
   // More — revealed in the same grid, directly beneath the core row.
@@ -531,7 +560,8 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
     { key: 'expectancy', label: 'Expectancy', value: expectancyUsd != null ? `$${expectancyUsd.toFixed(2)}` : '—',
       valueCls: expectancyUsd != null ? (expectancyUsd >= 0 ? 'text-pos-text' : 'text-neg-text') : '', sub: expectancySub,
       tooltip: "Average net P&L per trade (net P&L ÷ trade count) — your edge per position. Sub-line shows avg win / avg loss and the win:loss (reward:risk) ratio. R-multiple expectancy needs per-trade risk, which stored trades don't carry (profit only), so it's omitted rather than guessed." },
-    { key: 'zscore', label: 'Z-Score', value: zScore != null ? zScore.toFixed(2) : '—', valueCls: zScoreCls(zScore), sub: zScoreLabel(zScore),
+    { key: 'zscore', label: 'Z-Score', value: zScore != null ? zScore.toFixed(2) : '—', valueCls: zScoreCls(zScore),
+      sub: zScore != null ? zScoreLabel(zScore) : zScoreUnavailableLabel(equity),
       tooltip: "Wald–Wolfowitz runs test over the win/loss sequence. Measures whether wins and losses streak more than random chance. Within ±1.5 is healthy; beyond ±2 signals non-random streaking (positive = fewer runs / longer streaks, negative = alternating more than chance)." },
     { key: 'avgtrade', label: 'Avg Trade', value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—',
       sub: run.avg_trade_duration_min != null ? 'avg duration / trade' : 'duration unavailable',
@@ -591,7 +621,7 @@ function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false,
 
 // Lives in the Performance header (not below the grid) so the KPI grid can fill the column and
 // stay the same height as the eval card.
-function MoreMetricsToggle({ open, onToggle, count }: { open: boolean; onToggle: () => void; count: number }) {
+export function MoreMetricsToggle({ open, onToggle, count }: { open: boolean; onToggle: () => void; count: number }) {
   return (
     <button
       onClick={onToggle}
@@ -604,7 +634,7 @@ function MoreMetricsToggle({ open, onToggle, count }: { open: boolean; onToggle:
 }
 
 // Standout trade count — used in the no-evaluation fallback (the eval card carries it otherwise).
-function TradeCountStandout({ count }: { count: number }) {
+export function TradeCountStandout({ count }: { count: number }) {
   return (
     <div className="bg-bg-surface border border-border-subtle border-l-[3px] border-l-accent rounded-lg px-4 py-3 flex items-center gap-3">
       <div className="text-[30px] font-bold font-mono leading-none text-accent tabular-nums">{count}</div>
@@ -705,9 +735,13 @@ const _money0 = (v: number) => `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleSt
 
 const DAY_MS = 86_400_000
 
-function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDrawdown = false, height = 300, xMode = 'date', windowStart = null }: {
+export function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDrawdown = false, height = 300, xMode = 'date', windowStart = null, overlayLines = [] }: {
   data: EquityPoint[]; bands?: RegimeBand[]
   showHistogram?: boolean; showRunupDrawdown?: boolean; height?: number
+  /** Extra lines drawn on top of the main equity curve, keyed on a field the caller has already
+   *  attached to each `data` point (so they share the exact x-axis in both date and trade mode).
+   *  Used by the portfolio stack to overlay a line per strategy. Empty for a single backtest. */
+  overlayLines?: { id: string; color: string; name?: string }[]
   /** 'date' (default) plots the real calendar — quiet months look quiet, regime bands get their
    *  true width, and the tuning workbench's overlay traces the identical path. 'trade' spaces every
    *  trade evenly, which is the view for per-trade forensics (streaks, excursions). */
@@ -742,10 +776,17 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDr
     ? Math.min(dateMs(windowStart) ?? firstMs - DAY_MS, firstMs - DAY_MS)
     : firstIdx - 1
   const chartData: (EquityPoint & { _anchor?: boolean; x: number })[] = [
-    { index: firstIdx - 1, equity: startEq, _anchor: true, x: anchorX },
+    // The anchor also seeds every overlay line at the starting balance, so the strategy lines leave
+    // the same origin as the portfolio line instead of appearing to start at their first trade.
+    { index: firstIdx - 1, equity: startEq, _anchor: true, x: anchorX,
+      ...Object.fromEntries(overlayLines.map(ol => [ol.id, startEq])) },
     ...data.map(d => ({ ...d, x: byDate ? (dateMs(d.date) ?? firstMs) : d.index })),
   ]
-  const allValues  = data.map(d => d.equity)
+  // Overlay values count toward the y-range too — a strategy line can dip below the portfolio's low.
+  const allValues  = [
+    ...data.map(d => d.equity),
+    ...overlayLines.flatMap(ol => data.map(d => (d as unknown as Record<string, unknown>)[ol.id]).filter((v): v is number => typeof v === 'number')),
+  ]
   const min = Math.min(...allValues)
   const max = Math.max(...allValues)
   const pad = (max - min) * 0.1 || 500
@@ -971,6 +1012,26 @@ function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDr
           baseValue={startEq}
           isAnimationActive={false}
         />
+        {/* Per-strategy overlay lines (portfolio stack). Keyed on fields the caller attached to
+            each point, so they ride the same x-axis as the main curve. connectNulls skips the
+            synthetic start anchor (which carries no overlay values). */}
+        {overlayLines.map(ol => (
+          <Line key={ol.id} type="monotone" dataKey={ol.id} stroke={ol.color} strokeWidth={1.5}
+            isAnimationActive={false} connectNulls
+            // A dot only on the points that are THIS line's own trades — every point carries every
+            // leg's running balance, so without the owner check each line would dot on every trade.
+            dot={(props: { cx?: number; cy?: number; index?: number; payload?: { _legOwner?: string } }) => {
+              const { cx, cy, payload, index } = props
+              if (cx == null || cy == null || payload?._legOwner !== ol.id) return <g key={index} />
+              return <circle key={index} cx={cx} cy={cy} r={2.5} fill={ol.color} stroke={C.tooltipBg} strokeWidth={1} />
+            }}
+            activeDot={(props: { cx?: number; cy?: number; index?: number; payload?: { _legOwner?: string } }) => {
+              const { cx, cy, payload, index } = props
+              if (cx == null || cy == null || payload?._legOwner !== ol.id) return <g key={index} />
+              return <circle key={index} cx={cx} cy={cy} r={4} fill={ol.color} stroke={C.tooltipBg} strokeWidth={1.5} />
+            }}
+          />
+        ))}
       </ComposedChart>
     </ResponsiveContainer>
   )
@@ -1130,7 +1191,7 @@ function SizedCurveLegend({ mode, manualPct, profitable = true }:
 
 // ── Drawdown chart ────────────────────────────────────────────────────────────
 
-function DrawdownChart({ equity, limitLines, height = 140 }: {
+export function DrawdownChart({ equity, limitLines, height = 140 }: {
   equity: EquityPoint[]
   limitLines?: Array<{ limit: number; label: string; pass: boolean }>
   height?: number
@@ -1235,7 +1296,7 @@ function RegimeLegend({ bands }: { bands: RegimeBand[] }) {
 }
 
 // Generic on/off pill for an equity-chart series (histogram / excursions / run-ups & drawdowns).
-function SeriesToggle({ label, on, onChange }: { label: string; on: boolean; onChange: (v: boolean) => void }) {
+export function SeriesToggle({ label, on, onChange }: { label: string; on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
       onClick={() => onChange(!on)}
@@ -1252,7 +1313,7 @@ function SeriesToggle({ label, on, onChange }: { label: string; on: boolean; onC
 
 // ── Direction breakdown ───────────────────────────────────────────────────────
 
-function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
+export function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
   const trades = equity.filter(pt => pt.direction && pt.profit != null)
   if (!trades.length) return null
 
@@ -1315,7 +1376,7 @@ function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
 
 // ── Daily P&L chart ───────────────────────────────────────────────────────────
 
-function DailyPnlChart({ data, netPnl, height = 260 }: { data: DailyPnlPoint[]; netPnl: number | null; height?: number }) {
+export function DailyPnlChart({ data, netPnl, height = 260 }: { data: DailyPnlPoint[]; netPnl: number | null; height?: number }) {
   if (!data.length) {
     return (
       <div className="h-[160px] flex flex-col items-center justify-center gap-2 text-center px-6">
@@ -1966,6 +2027,27 @@ function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscre
 }) {
   const { data: spec, isLoading, isError } = useChartSpec(runId)
   const requestCandles = useRunCandles(runId)
+  return (
+    <PriceChartView
+      spec={spec} isLoading={isLoading} isError={isError} requestCandles={requestCandles}
+      height={height} isFullscreen={isFullscreen} onFullscreenClose={onFullscreenClose}
+    />
+  )
+}
+
+// The runId-agnostic price-chart body: same klinecharts panel, structure layers, fib/measurement
+// tools, and fullscreen chrome, driven by an already-fetched ChartSpec. BacktestDetail feeds it a
+// single run's spec; StackDetail feeds it the merged stack spec (trades layered by strategy) — both
+// get identical functionality. `requestCandles` wires M1/M5 drill-down; pass undefined to disable.
+export function PriceChartView({ spec, isLoading, isError, requestCandles, height = 520, isFullscreen = false, onFullscreenClose }: {
+  spec: ChartSpec | undefined
+  isLoading: boolean
+  isError: boolean
+  requestCandles?: ReturnType<typeof useRunCandles>
+  height?: number
+  isFullscreen?: boolean
+  onFullscreenClose?: () => void
+}) {
   const fsBodyRef = useRef<HTMLDivElement>(null)
   const [fsBodyH, setFsBodyH] = useState(0)
 
@@ -2727,6 +2809,10 @@ function NewsFilterCard({ run, avoidNews }: { run: Run; avoidNews: boolean }) {
 export function BacktestDetail() {
   const { runId } = useParams<{ runId: string }>()
   const navigate     = useNavigate()
+  // A leg opened from a stack carries the stack id in nav state, so Back returns to that stack
+  // instead of the Runs list.
+  const location     = useLocation()
+  const fromStack    = (location.state as { fromStack?: string } | null)?.fromStack ?? null
   const { data: run, isLoading } = useBacktestRun(runId ?? null)
   // A tuning iteration is a standalone run derived from a baseline (source_run_id set,
   // not a sweep/optimization child). Fetch its baseline to wire up breadcrumbs.
@@ -2956,11 +3042,13 @@ export function BacktestDetail() {
   const runMessage   = isRunning ? (progressMatches ? (progress?.message ?? 'Starting…') : 'Starting…') : ''
   const runStartedAt = isRunning ? (progressMatches ? (progress?.started_at ?? null) : null) : null
 
-  const backLabel = isTuneIteration ? 'Tuning workbench'
+  const backLabel = fromStack ? 'Stack'
+    : isTuneIteration ? 'Tuning workbench'
     : run?.optimization_id ? 'Optimization'
     : run?.sweep_id ? 'Sweep'
     : 'Backtests'
-  const backPath  = isTuneIteration ? `/backtests/runs/${run!.source_run_id}/tune`
+  const backPath  = fromStack ? `/backtests/stacks/${fromStack}`
+    : isTuneIteration ? `/backtests/runs/${run!.source_run_id}/tune`
     : run?.optimization_id ? `/optimizations/${run.optimization_id}`
     : run?.sweep_id ? `/backtests/sweeps/${run.sweep_id}`
     : '/backtests'

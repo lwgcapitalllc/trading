@@ -369,11 +369,15 @@ class Execution:
 
         return dec
 
-    # ── entry placement (Pine 4264-4507) ─────────────────────────────────────────
-    def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
+    # ── A+ arm gate (Pine longArmed/shortArmed, 4358-4359) ───────────────────────
+    def _armed(self, sig, seq, dec, long_edge, short_edge) -> Tuple[bool, bool]:
+        """The full A+ arm decision: arm-source filter + late-day + HTF blocks + veto +
+        the one-trade-per-leg latch. Sets `dec.long_armed`/`dec.short_armed` and RETURNS
+        the pair, WITHOUT placing anything. Extracted verbatim from `_place_entries` so the
+        B-LEG fork can reuse it as its 'A+ has priority' gate — parity-preserving (this is
+        exactly what `_place_entries` used to compute inline)."""
         cfg = self._cfg
         late = cfg.exec_no_late_day and 16 <= sig.ny_hour < 18   # 16:00-17:59 NY block
-        w_state, d_state = sig.w_est_state, sig.d_est_state
 
         # arm-source filter (Pine 4349-4355)
         use_swp_l = cfg.exec_arm_sweep and seq.sos_l_swp
@@ -397,6 +401,12 @@ class Execution:
                        and (not dec.short_veto or not cfg.exec_respect_veto)
                        and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s))
         dec.long_armed, dec.short_armed = long_armed, short_armed
+        return long_armed, short_armed
+
+    # ── entry placement (Pine 4264-4507) ─────────────────────────────────────────
+    def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
+        cfg = self._cfg
+        long_armed, short_armed = self._armed(sig, seq, dec, long_edge, short_edge)
 
         # deliberate deviation: no NEW entry inside the flat-by-close window (real runs)
         if cfg.flat_by_close and self._in_flat_window(sig):

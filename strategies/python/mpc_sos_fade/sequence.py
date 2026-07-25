@@ -53,6 +53,13 @@ class SeqState:
     new_div_s: bool
     retro_link_l: bool
     retro_link_s: bool
+    # B-LEG arm capture (Pine bLegArmL/bLegArmS, mpc_strategy.pine ~3661) — TRUE on the bar
+    # a stage-2 REV dies on a continuation BOS while still at 2/3 (no 0.5/0.618 latch). Read
+    # HERE, BEFORE the leg-resolution death below clears l_sos_bar and before the half/618
+    # latch update — the exact pre-death window the Pine captures it in. Nothing in the A+
+    # path reads these, so they are parity-neutral; the B-LEG bot consumes them.
+    bleg_arm_l: bool = False
+    bleg_arm_s: bool = False
 
 
 _DAY_MS = 86_400_000
@@ -208,6 +215,20 @@ class SosFadeSequence:
             self._cont_l_bos = None
             self._cont_s_bos = None
 
+        # ── B-LEG arm capture (Pine 3661) — READ BEFORE the leg-resolution death below,
+        #    which clears l_sos_bar on the continuation BOS, and before the half/618 latch
+        #    update (both happen later this bar). The B LEG owns exactly this death: a live
+        #    stage-2 REV breaking structure again in-trend while still at 2/3 (neither latch
+        #    set), fib pointing the trade's way, TP3 not yet hit. ──
+        bleg_arm_l = (self._l_sos_bar is not None and not gap
+                      and sig.bull_bos and not sig.bull_sos
+                      and not self._l_half and not self._l_618
+                      and sig.fibo_dir == 1 and not sig.fibo7_touched)
+        bleg_arm_s = (self._s_sos_bar is not None and not gap
+                      and sig.bear_bos and not sig.bear_sos
+                      and not self._s_half and not self._s_618
+                      and sig.fibo_dir == -1 and not sig.fibo7_touched)
+
         # ── A+ leg resolution: TP3 / invalidation / continuation-BOS (Pine 3854-3861) ──
         if self._l_sos_bar is not None and not gap:
             if (sig.fibo_dir == 1 and sig.fibo7_touched) or sig.fibo_dir == -1 \
@@ -315,6 +336,7 @@ class SosFadeSequence:
             new_sweep_l=new_sweep_l, new_div_l=new_div_l,
             new_sweep_s=new_sweep_s, new_div_s=new_div_s,
             retro_link_l=retro_link_l, retro_link_s=retro_link_s,
+            bleg_arm_l=bleg_arm_l, bleg_arm_s=bleg_arm_s,
         )
 
     def _clear_long(self) -> None:

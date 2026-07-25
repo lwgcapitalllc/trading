@@ -296,6 +296,36 @@ export default function ChartPanel({
   // Trades: one on/off toggle for all of them, driven from the right-click chart menu.
   const [tradesOn, setTradesOn] = useState(true)
 
+  // Portfolio-stack layers. The roster is DERIVED from the trades themselves (`layer`/`layerName`/
+  // `layerColor`), so the panel stays strategy-agnostic — it sees layers as data, exactly like
+  // overlay groups. Empty on a single-run spec, which is what hides the Strategies dropdown.
+  const tradeLayers = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string; color: string }>()
+    for (const tr of spec.trades) {
+      if (!tr.layer || seen.has(tr.layer)) continue
+      seen.set(tr.layer, { id: tr.layer, name: tr.layerName ?? tr.layer, color: tr.layerColor ?? DEFAULT_OVERLAY_COLOR })
+    }
+    return Array.from(seen.values())
+  }, [spec.trades])
+  // Layers hidden from the chart (isolate one strategy). Ids only — a stale id from a spec change
+  // is inert, so no reconciliation needed.
+  const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set())
+  const toggleLayer = (id: string) => setHiddenLayers(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const [strategiesOpen, setStrategiesOpen] = useState(false)
+  const strategiesRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!strategiesOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (strategiesRef.current && !strategiesRef.current.contains(e.target as Node)) setStrategiesOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [strategiesOpen])
+
   // Generic overlays (box/hline/vline) carry strategy structure, grouped by `group`. Each group
   // is independently toggleable. The chart never knows which strategy produced them.
   const overlayGroups = useMemo(() => {
@@ -544,6 +574,7 @@ export default function ChartPanel({
       // would otherwise clamp its markers onto the plot's left edge (the no-data region).
       if (loadedLoTs == null || loadedHiTs == null) break
       if (tr.entryTime < loadedLoTs || tr.entryTime > loadedHiTs) continue
+      if (tr.layer && hiddenLayers.has(tr.layer)) continue   // isolated via the Strategies dropdown
       chart.createOverlay({
         name: TRADE,
         lock: true,
@@ -568,13 +599,17 @@ export default function ChartPanel({
           tpTargets: tr.tpTargets,     // TP ladder — first UNHIT one drawn faintly (near-miss view)
           favColor: TRADE_PROFIT_FILL, // light mint — profit fill + take-profit lines
           advColor: TRADE_LOSS_COLOR,  // red — adverse side + the stop
-          entryColor: theme.textSecondary, // neutral — entry bubble/line/chip
+          // Portfolio stack: the entry marker takes the strategy's layer colour so overlapping
+          // strategies read apart; a single-run trade has no layer → neutral, unchanged.
+          entryColor: tr.layerColor ?? theme.textSecondary,
+          layerColor: tr.layerColor,   // outcome-chip border + dot accent (stack only)
+          layerName: tr.layerName,     // named in the outcome chip: "SOS Fade · Won" (stack only)
           chipBg: theme.bgSurface,     // dark chip behind the side labels (legible over candles)
           neutralColor: theme.textTertiary,
         },
       })
     }
-  }, [spec.trades, tradesOn, displayCandles, loadedLoTs, loadedHiTs])
+  }, [spec.trades, tradesOn, hiddenLayers, displayCandles, loadedLoTs, loadedHiTs])
 
   // Fibonacci drawings — re-created from state after any data change (applyNewData clears overlays,
   // same rationale as the trade/session effects), so a fib survives TF switches. Each carries
@@ -966,6 +1001,46 @@ export default function ChartPanel({
               )
             })()}
           </div>
+
+          {/* Strategies: its OWN dropdown (not folded into Layers — a stack's legs are a different
+              kind of thing from render layers). Appears only when the spec carries layered trades,
+              i.e. a portfolio stack; a single-run chart never sees it. Toggling isolates one
+              strategy's trades on the chart. */}
+          {tradeLayers.length > 0 && (
+            <div ref={strategiesRef} className="relative">
+              <button
+                onClick={() => setStrategiesOpen(o => !o)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
+              >
+                Strategies
+                <span className="font-mono text-text-tertiary">
+                  {tradeLayers.filter(l => !hiddenLayers.has(l.id)).length}/{tradeLayers.length}
+                </span>
+                <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${strategiesOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {strategiesOpen && (
+                <div className="absolute left-0 mt-1 min-w-[180px] rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg" style={{ zIndex: 50 }}>
+                  {tradeLayers.map(l => {
+                    const on = !hiddenLayers.has(l.id)
+                    return (
+                      <button
+                        key={l.id}
+                        onClick={() => toggleLayer(l.id)}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ background: on ? l.color : 'transparent', boxShadow: `inset 0 0 0 1px ${l.color}`, opacity: on ? 1 : 0.5 }}
+                        />
+                        <span className={on ? 'text-text-primary' : 'text-text-tertiary'}>{l.name}</span>
+                        {on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {isFetchMode && (() => {
             // The TF itself is already shown in the dropdown — don't echo it here. Only surface a

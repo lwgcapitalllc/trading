@@ -98,6 +98,14 @@ class Signals:
     w_est_desc: str = ""
     d_est_desc: str = ""
 
+    # Structure break-leg endpoints (st.bull_bos_high/low + bear mirror) — the 0.0/1.0
+    # anchors of the leg an SOS broke. The A+ path does not read them (so they cannot move
+    # compare_strategy.py); the B-LEG bot's band-freeze reads them off each SOS bar.
+    bull_bos_high: Optional[float] = None
+    bull_bos_low: Optional[float] = None
+    bear_bos_high: Optional[float] = None
+    bear_bos_low: Optional[float] = None
+
 
 # Pine fib level name -> the engine's `levels` dict key (see fibonacci/engine.py _RATIO).
 # Prices coincide where a retrace and a target share a ratio (0.5, 0.382), so the key
@@ -344,6 +352,8 @@ class SignalAdapter:
             fibo_half_reached=fibo_half, fibo_618_ever_reached=fibo_618_ever,
             fibo7_touched=fibo7_touched,
             fvgs=fvgs, poi_long_now=poi_long, poi_short_now=poi_short,
+            bull_bos_high=ext.bull_bos_high, bull_bos_low=ext.bull_bos_low,
+            bear_bos_high=ext.bear_bos_high, bear_bos_low=ext.bear_bos_low,
         )
 
 

@@ -12,6 +12,7 @@ import { Backtests } from '@/pages/Backtests'
 import { BacktestDetail } from '@/pages/BacktestDetail'
 import { StrategyDetail } from '@/pages/StrategyDetail'
 import { SweepDetail } from '@/pages/SweepDetail'
+import { StackDetail } from '@/pages/StackDetail'
 import { Optimizations } from '@/pages/Optimizations'
 import { OptimizationDetail } from '@/pages/OptimizationDetail'
 import { TuningWorkbench } from '@/pages/TuningWorkbench'
@@ -45,6 +46,7 @@ export default function App() {
               <Route path="/backtests/runs/:runId"              element={<BacktestDetail />} />
               <Route path="/strategies/:strategyId"            element={<StrategyDetail />} />
               <Route path="/backtests/sweeps/:sweepId"         element={<SweepDetail />} />
+              <Route path="/backtests/stacks/:stackId"         element={<StackDetail />} />
               <Route path="/optimizations"                      element={<Optimizations />} />
               <Route path="/optimizations/:optimizationId"      element={<OptimizationDetail />} />
               <Route path="/backtests/runs/:runId/tune"         element={<TuningWorkbench />} />

@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, Fragment, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { runningJobFor, runnerScope, runnerMarket, RUNNER_LABEL } from '@/lib/runner'
-import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2, Activity, X } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2, Activity, X, Plus } from 'lucide-react'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import {
   useBacktestRuns, useLabProgress, useDeleteRun, useRetryBacktest, useRunningVpsJob,
   useOptimizations, useSweeps, useDeleteSweep,
+  useStacks, useDeleteStack,
 } from '@/hooks/useLab'
+import { StackConfigModal } from '@/components/StackConfigModal'
 import { useRunningStressLock } from '@/hooks/useStressTests'
 import { EmptyState } from '@/components/EmptyState'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
@@ -172,23 +174,26 @@ export function ConfirmDeleteModal({
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-type Tab = 'runs' | 'sweeps'
+type Tab = 'runs' | 'sweeps' | 'stacks'
 
 function TabBar({
-  active, onChange, runsCount, sweepsCount,
-  runsActive, sweepsActive, right,
+  active, onChange, runsCount, sweepsCount, stacksCount,
+  runsActive, sweepsActive, stacksActive, right,
 }: {
   active: Tab
   onChange: (t: Tab) => void
   runsCount?: number
   sweepsCount?: number
+  stacksCount?: number
   runsActive?: boolean
   sweepsActive?: boolean
+  stacksActive?: boolean
   right?: ReactNode
 }) {
   const tabs: Array<{ id: Tab; label: string; count?: number; active?: boolean }> = [
     { id: 'runs',          label: 'Runs',          count: runsCount,   active: runsActive },
     { id: 'sweeps',        label: 'Sweeps',        count: sweepsCount, active: sweepsActive },
+    { id: 'stacks',        label: 'Stacks',        count: stacksCount, active: stacksActive },
   ]
   return (
     <div className="flex items-center justify-between border-b border-border-subtle mb-6">
@@ -972,6 +977,129 @@ function SweepsTab() {
   )
 }
 
+// ── Stacks tab ────────────────────────────────────────────────────────────────
+// A stack layers 2+ Python strategies over one shared instrument/window. The list is the
+// entry to StackDetail, where the combined portfolio P&L is composed with per-strategy toggles.
+
+function StacksTab() {
+  const navigate = useNavigate()
+  const deleteStack = useDeleteStack()
+  const { data: stacks, isLoading } = useStacks()
+  const [showCreate, setShowCreate] = useState(false)
+  const [deleteStackId, setDeleteStackId] = useState<string | null>(null)
+
+  function fmtStackStatus(s: string) {
+    if (s === 'complete')       return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'running')        return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
+    if (s === 'partial')        return { label: 'Partial',  cls: 'bg-warn-muted text-warn-text' }
+    if (s.startsWith('failed')) return { label: 'Failed',   cls: 'bg-neg-muted text-neg-text' }
+    return { label: s, cls: 'bg-bg-hover text-text-secondary' }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-[12px] text-text-tertiary max-w-[560px]">
+          Layer multiple Python strategies over one instrument to see combined portfolio P&L, then toggle any strategy off to see its effect.
+        </p>
+        {/* Header button only once stacks exist — the empty state has its own centered CTA. */}
+        {!!stacks?.length && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] px-3.5 py-2 rounded-md hover:opacity-90 transition-opacity flex-shrink-0"
+          >
+            <Plus size={14} /> New Stack
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <RunsTableSkeleton />
+      ) : !stacks?.length ? (
+        <EmptyState
+          icon={<Layers size={20} />}
+          title="No stacks yet"
+          description="Create a stack to layer two or more Python strategies over one instrument and compare their combined P&L."
+          action={
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] px-3.5 py-2 rounded-md hover:opacity-90 transition-opacity"
+            >
+              <Plus size={14} /> New Stack
+            </button>
+          }
+        />
+      ) : (
+        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b border-border-subtle">
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategies</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
+                <th className="px-3 py-3 w-20" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-subtle">
+              {stacks.map(st => {
+                const s = fmtStackStatus(st.status)
+                return (
+                  <tr
+                    key={st.stack_id}
+                    onClick={() => navigate(`/backtests/stacks/${st.stack_id}`)}
+                    className="hover:bg-bg-hover cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium max-w-[280px] truncate">{st.strategy_names}</td>
+                    <td className="px-4 py-3 text-text-secondary font-mono">{st.instrument}</td>
+                    <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">{fmtDateRange(st.start_date, st.end_date)}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
+                      {st.completed_strategies}/{st.total_strategies}
+                      {st.failed_strategies > 0 && <span className="ml-1 text-neg-text text-[11px]">({st.failed_strategies} failed)</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${s.cls}`}>
+                        {st.status === 'running' && <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />}
+                        {s.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={e => { e.stopPropagation(); setDeleteStackId(st.stack_id) }}
+                          disabled={st.status === 'running'}
+                          className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={st.status === 'running' ? 'Wait for the stack to finish before deleting' : 'Delete stack'}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                        <ChevronRight size={14} className="text-text-tertiary" />
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showCreate && <StackConfigModal onClose={() => setShowCreate(false)} />}
+
+      {deleteStackId && (
+        <ConfirmDeleteModal
+          count={1}
+          onConfirm={() => deleteStack.mutate(deleteStackId, { onSettled: () => setDeleteStackId(null) })}
+          onCancel={() => setDeleteStackId(null)}
+          isPending={deleteStack.isPending}
+          customMessage="This will permanently delete the stack and all its strategy runs and result files."
+        />
+      )}
+    </div>
+  )
+}
+
 // ── Page shell ────────────────────────────────────────────────────────────────
 
 export function Backtests() {
@@ -992,12 +1120,15 @@ export function Backtests() {
 
   const { data: allRuns }   = useBacktestRuns()
   const { data: allSweeps } = useSweeps()
+  const { data: allStacks } = useStacks()
   // A tune iteration is a standalone run with source_run_id; it lives in the workbench, not the Runs list.
   const isTuneRun = (r: BacktestSummary) => !!r.source_run_id && !r.sweep_id && !r.optimization_id
   const runsCount    = allRuns?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id && !isTuneRun(r)).length
   const sweepsCount  = allSweeps?.length
+  const stacksCount  = allStacks?.length
   const runsActive   = allRuns?.some(r => !r.sweep_id && !isTuneRun(r) && r.status === 'running')
   const sweepsActive = allSweeps?.some(s => s.status === 'running')
+  const stacksActive = allStacks?.some(s => s.status === 'running')
 
   const runsControls = (
     <>
@@ -1035,8 +1166,8 @@ export function Backtests() {
 
             <TabBar
               active={tab} onChange={setTab}
-              runsCount={runsCount} sweepsCount={sweepsCount}
-              runsActive={runsActive} sweepsActive={sweepsActive}
+              runsCount={runsCount} sweepsCount={sweepsCount} stacksCount={stacksCount}
+              runsActive={runsActive} sweepsActive={sweepsActive} stacksActive={stacksActive}
               right={tab === 'runs' ? runsControls : undefined}
             />
 
@@ -1049,6 +1180,7 @@ export function Backtests() {
 
       {tab === 'runs'   && <RunsTab statusFilter={statusFilter} marketFilter={marketFilter} />}
       {tab === 'sweeps' && <SweepsTab />}
+      {tab === 'stacks' && <StacksTab />}
     </div>
   )
 }

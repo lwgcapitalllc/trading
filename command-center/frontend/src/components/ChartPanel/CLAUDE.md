@@ -130,7 +130,18 @@ here**, so the chart shows exactly what the strategy saw.
   the stop) — so it always points the way the trade resolved (above a long win / below a long loss,
   mirrored for a short). Added because, once a winner also shows a red drawdown band, the result is no
   longer obvious from colour alone. It's a derived verdict, NOT the raw exit reason — no exit-reason
-  text (`stop`/`S-RUN`/…) is ever drawn. A **near-miss next-TP** guide: if the trade banked its earlier
+  text (`stop`/`S-RUN`/…) is ever drawn.
+- **Portfolio-stack layering** (`layer` / `layerName` / `layerColor` on a trade — all absent on a
+  single-run spec, which is what makes every stack affordance vanish for a normal backtest). With
+  several strategies' trades on ONE chart, the outcome alone doesn't say WHOSE trade it was, so the
+  outcome chip becomes **`<strategy> · Won`** with a filled dot in the strategy's colour just left of
+  it and its border in that colour — the same swatch the stack's equity lines and toggle chips use, so
+  the eye matches trade → strategy without reading text. The entry marker takes the layer colour too.
+  A **Strategies dropdown** sits beside Layers (deliberately NOT folded into it — Aaron's call: a
+  stack's legs are a different kind of thing from render layers) and hides one strategy's trades
+  (`hiddenLayers`), for when overlapping trades need isolating. **The roster is DERIVED from the
+  trades themselves**, so the panel stays strategy-agnostic — it sees layers as data, exactly like
+  overlay groups, and needs no new props and no knowledge of stacks. A **near-miss next-TP** guide: if the trade banked its earlier
   rungs but never tagged the FOLLOWING target, that target (`tpTargets`, the full TP ladder — emitted
   by `execution.py` → `output.py` `tp_targets` → `chart_spec`, reporting-only/parity-safe) is drawn as
   a FAINT dashed line + faint label, but ONLY when the furthest favourable run (`mfePrice`) covered

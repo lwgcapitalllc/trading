@@ -374,6 +374,23 @@ hand-checked Pine rules), `test_execution.py` (fills / ladder / stop-out / sizin
 `test_strategy_driver.py` (end-to-end), `test_compare_strategy.py` (the parity tool round-trips its
 own output). These prove the plumbing; the Pine diff is the live gate.
 
+## The B-LEG bot reuses this one — three parity-safe additions (2026-07-24, do NOT revert)
+
+`strategies/python/mpc_bleg/` (the standalone B-LEG bot) reuses this package's engine + A+ sequence +
+fill machinery, so it needed three ADDITIVE, decision-neutral changes here. All three are safe (this
+bot's offline tests stay green) and must not be reverted:
+
+1. **`signals.py`** — `Signals` gained `bull_bos_high/low` + `bear_bos_high/low` (the break-leg
+   endpoints the B-LEG band-freeze reads). Nothing in the A+ path reads them.
+2. **`sequence.py`** — `SeqState` gained `bleg_arm_l`/`bleg_arm_s`, computed at the EXACT Pine point:
+   after the opposite-SOS death, BEFORE the continuation-BOS death clears `l_sos_bar` and before the
+   half/618 latch update. The B leg arms off state that `update()` has already cleared by the time it
+   returns, so the sequence has to expose it here.
+3. **`execution.py`** — the A+ arm decision was extracted from `_place_entries` into `_armed()` (a pure
+   refactor) so the B-LEG subclass can reuse the "A+ has priority" gate. No behaviour change.
+
+Full context in `strategies/python/mpc_bleg/CLAUDE.md`.
+
 ## Do / Never
 
 - **Do** port any change to `mpc_strategy.pine`'s A+ block or execution layer here line-for-line, then
@@ -382,6 +399,7 @@ own output). These prove the plumbing; the Pine diff is the live gate.
 - **Never** build a second copy of any engine here — this consumes the canonical `engines/`.
 - **Never** trust a backtest number until `compare_strategy.py` is exit 0 on a fresh export.
 - **Never** commit a real TradingView export or backtest cache into git.
+- **Never** revert the three B-LEG parity-safe additions above without also updating `mpc_bleg/`.
 
 ## References
 

@@ -62,6 +62,13 @@ export interface ChartTrade {
   profitLegs?: ChartProfitLeg[] // where profit was actually taken → one labelled dotted line each
   stopPrice?: number            // initial 1R stop → a bubble + dotted risk line
   tpTargets?: number[]          // TP target ladder (nearest→furthest); first UNHIT one drawn faintly
+  // Portfolio-stack layering — OPTIONAL, absent on a single-run spec. `layer` names the strategy the
+  // trade belongs to (so a host can filter to the toggled-on strategies); `layerColor` tints the
+  // entry marker + outcome chip so overlapping strategies read apart; `layerName` is the human name
+  // printed IN the outcome chip ("SOS Fade · Won"). A single-run chart omits all three.
+  layer?: string
+  layerColor?: string
+  layerName?: string
 }
 
 /** Generic styling hints shared by overlays. All optional — the panel has defaults. */

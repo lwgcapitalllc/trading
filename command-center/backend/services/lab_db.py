@@ -325,6 +325,12 @@ def init_db() -> None:
             "ALTER TABLE backtest_runs ADD COLUMN stress_test_id TEXT",
             "ALTER TABLE backtest_runs ADD COLUMN walk_forward_window_id TEXT",
             "CREATE INDEX IF NOT EXISTS idx_runs_stress ON backtest_runs(stress_test_id)",
+            # Portfolio "stack" grouping — a stack fires N Python single-strategy runs over ONE
+            # shared instrument/window; children carry the stack_id and are hidden from the Runs
+            # tab (like sweep/stress children). The combined portfolio P&L is composed client-side
+            # by summing each child's daily_pnl, so there is no stack-level result row.
+            "ALTER TABLE backtest_runs ADD COLUMN stack_id TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_runs_stack ON backtest_runs(stack_id)",
             "ALTER TABLE stress_tests ADD COLUMN mc_completed_at INTEGER",
             "ALTER TABLE stress_tests ADD COLUMN wf_completed_at INTEGER",
             "ALTER TABLE optimizations ADD COLUMN regime_filter TEXT",
@@ -520,7 +526,40 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_intraday_ohlc_instrument
                 ON instrument_intraday_ohlc(instrument, timeframe);
+
+            -- Portfolio stacks. A stack layers 2+ Python strategies over ONE shared
+            -- instrument/timeframe/window/cost profile. Its own settings live here so a
+            -- stack whose legs are ALL reused (no fresh child run) still knows what it is.
+            CREATE TABLE IF NOT EXISTS stacks (
+                stack_id            TEXT PRIMARY KEY,
+                instrument          TEXT NOT NULL,
+                bar_type            TEXT NOT NULL,
+                bar_value           INTEGER NOT NULL,
+                start_date          TEXT NOT NULL,
+                end_date            TEXT NOT NULL,
+                commission_per_side REAL NOT NULL,
+                slippage_ticks      INTEGER NOT NULL,
+                created_at          INTEGER NOT NULL
+            );
+
+            -- Membership is separate from ownership. owned=1 = a fresh run this stack
+            -- created (hidden from Runs via backtest_runs.stack_id, deleted with the stack);
+            -- owned=0 = a pre-existing standalone run REUSED as-is (stays in Runs, survives
+            -- stack deletion). position orders the legs.
+            CREATE TABLE IF NOT EXISTS stack_members (
+                stack_id  TEXT NOT NULL,
+                run_id    TEXT NOT NULL,
+                owned     INTEGER NOT NULL DEFAULT 1,
+                position  INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (stack_id, run_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_stack_members_stack
+                ON stack_members(stack_id);
         """)
+
+        # Backfill the stacks/stack_members tables from any pre-membership stack whose
+        # children still live only on backtest_runs.stack_id (all such children are owned).
+        _backfill_stack_membership(conn)
 
         # Drop the retired job_queue table left on older DBs (queue feature removed).
         conn.execute("DROP TABLE IF EXISTS job_queue")
@@ -530,6 +569,16 @@ def init_db() -> None:
             conn.execute("UPDATE rulesets SET name = ? WHERE id = ?", (_rname, _rid))
 
         _seed_rulesets(conn)
+
+        # Forex rulesets carry slippage 0 to match the Pine strategies (all pinned slippage=0).
+        # A stray slippage=1 only ever showed a COSMETIC cost — the Python fill engine takes its
+        # cost from the account profile (vantage_demo = 0 commission) + measured/bar slippage, and
+        # never reads default_slippage_ticks. Converge existing DBs (the seed only inserts new rows);
+        # slippage isn't a user-editable personal-rule field, so this can't clobber a manual edit.
+        conn.execute(
+            "UPDATE rulesets SET default_slippage_ticks = 0 "
+            "WHERE market = 'forex' AND default_slippage_ticks != 0"
+        )
 
     # Run outside the main context manager — needs FK enforcement off, which
     # can't be toggled inside an active transaction in SQLite.
@@ -831,7 +880,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             0.80, 1.0, 3,
             None, None,                         # entry hours null — FX runs 24h
             _FX_DAYS,
-            0.0, 1, None,
+            0.0, 0, None,                       # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
             15.0, 3,
             "Forex demo/paper account. No real capital at risk.",
             now, now,
@@ -860,7 +909,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             None, 1.0, None,                    # no lock %, 1% risk fallback, no loss streak cap
             None, None,                         # entry hours null — no session gate
             _FX_DAYS,
-            0.0, 1, None,                       # no daily halt fraction
+            0.0, 0, None,                       # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
             None, None,                         # NO peak drawdown, NO consecutive-loss-day cap
             "No limits: no daily loss cap, no profit target, no drawdown floor, no contract "
             "ladder, no halts. Measures the strategy's raw behaviour — not whether it would "
@@ -1354,6 +1403,7 @@ def list_runs(
         params.append(status)
 
     base_clauses.append("r.stress_test_id IS NULL")
+    base_clauses.append("r.stack_id IS NULL")
 
     sql += " WHERE " + " AND ".join(base_clauses)
     sql += " ORDER BY r.created_at DESC"
@@ -1799,6 +1849,7 @@ def get_running_job() -> dict:
                 FROM backtest_runs r
                 LEFT JOIN strategies s ON s.id = r.strategy_id
                 WHERE r.status = 'running' AND r.sweep_id IS NULL AND r.optimization_id IS NULL
+                  AND r.stack_id IS NULL
                   AND {predicate.format(col='r.runner')}
                 LIMIT 1
                 """,
@@ -1809,6 +1860,15 @@ def get_running_job() -> dict:
                 LEFT JOIN strategies s ON s.id = r.strategy_id
                 WHERE r.status = 'running' AND r.sweep_id IS NOT NULL
                   AND {predicate.format(col='r.runner')}
+                LIMIT 1
+                """,
+                f"""
+                SELECT 'stack' AS job_type, r.stack_id AS job_id,
+                       'Portfolio stack (' || COUNT(*) || ' strategies)' AS description
+                FROM backtest_runs r
+                WHERE r.status = 'running' AND r.stack_id IS NOT NULL
+                  AND {predicate.format(col='r.runner')}
+                GROUP BY r.stack_id
                 LIMIT 1
                 """,
                 # optimizations has no runner column — the scope comes from the strategy.
@@ -1848,6 +1908,217 @@ def insert_run_sweep(data: dict) -> None:
             data["sweep_id"],
             data.get("source_run_id"), data.get("runner", "ninjatrader"),
         ))
+
+
+def _backfill_stack_membership(conn) -> None:
+    """One-time, idempotent: for every legacy stack that exists only as
+    backtest_runs.stack_id children, materialise a `stacks` settings row and an
+    owned `stack_members` row per child. INSERT OR IGNORE keeps it safe to re-run."""
+    legacy = conn.execute(
+        "SELECT stack_id, MIN(instrument) AS instrument, MIN(bar_type) AS bar_type, "
+        "MIN(bar_value) AS bar_value, MIN(start_date) AS start_date, "
+        "MIN(end_date) AS end_date, MIN(commission_per_side) AS commission_per_side, "
+        "MIN(slippage_ticks) AS slippage_ticks, MIN(created_at) AS created_at "
+        "FROM backtest_runs WHERE stack_id IS NOT NULL GROUP BY stack_id"
+    ).fetchall()
+    for s in legacy:
+        conn.execute(
+            "INSERT OR IGNORE INTO stacks (stack_id, instrument, bar_type, bar_value, "
+            "start_date, end_date, commission_per_side, slippage_ticks, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (s["stack_id"], s["instrument"], s["bar_type"], s["bar_value"],
+             s["start_date"], s["end_date"], s["commission_per_side"] or 0.0,
+             s["slippage_ticks"] or 0, s["created_at"]),
+        )
+        children = conn.execute(
+            "SELECT run_id, created_at FROM backtest_runs WHERE stack_id = ? "
+            "ORDER BY created_at ASC", (s["stack_id"],)
+        ).fetchall()
+        for pos, c in enumerate(children):
+            conn.execute(
+                "INSERT OR IGNORE INTO stack_members (stack_id, run_id, owned, position) "
+                "VALUES (?, ?, 1, ?)", (s["stack_id"], c["run_id"], pos),
+            )
+
+
+def insert_stack(data: dict) -> None:
+    """Persist a stack's shared settings (instrument/timeframe/window/costs)."""
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO stacks (stack_id, instrument, bar_type, bar_value, start_date, "
+            "end_date, commission_per_side, slippage_ticks, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (data["stack_id"], data["instrument"], data["bar_type"], data["bar_value"],
+             data["start_date"], data["end_date"], data["commission_per_side"],
+             data["slippage_ticks"], data["created_at"]),
+        )
+
+
+def add_stack_member(stack_id: str, run_id: str, owned: int, position: int) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO stack_members (stack_id, run_id, owned, position) "
+            "VALUES (?, ?, ?, ?)", (stack_id, run_id, owned, position),
+        )
+
+
+def get_stack_settings(stack_id: str) -> Optional[dict]:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM stacks WHERE stack_id = ?", (stack_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def find_matching_stack_run(
+    strategy_id: str, instrument: str, bar_type: str, bar_value: int,
+    start_date: str, end_date: str, commission_per_side: float, slippage_ticks: int,
+) -> Optional[dict]:
+    """Most-recent COMPLETED standalone Python run that matches a stack leg's exact
+    backtest identity, so it can be reused instead of re-run. Standalone only
+    (stack_id IS NULL, no stress child) so a reused run stays a real Runs-tab row and
+    never gets deleted out from under another stack."""
+    with _connect() as conn:
+        row = conn.execute("""
+            SELECT r.*, s.name AS strategy_name
+            FROM backtest_runs r
+            JOIN strategies s ON s.id = r.strategy_id
+            WHERE r.strategy_id = ? AND r.instrument = ?
+              AND r.bar_type = ? AND r.bar_value = ?
+              AND r.start_date = ? AND r.end_date = ?
+              AND r.commission_per_side = ? AND r.slippage_ticks = ?
+              AND r.status = 'complete' AND r.runner = 'python'
+              AND r.stack_id IS NULL AND r.stress_test_id IS NULL
+              AND r.sweep_id IS NULL AND r.optimization_id IS NULL
+            ORDER BY r.completed_at DESC
+            LIMIT 1
+        """, (strategy_id, instrument, bar_type, bar_value, start_date, end_date,
+              commission_per_side, slippage_ticks)).fetchone()
+    return _parse_json_fields(dict(row), ["params"]) if row else None
+
+
+def insert_run_stack(data: dict) -> None:
+    """Insert one child run of a portfolio stack. Same shape as insert_run_sweep but
+    grouped by stack_id instead of sweep_id — one row per strategy in the stack."""
+    with _connect() as conn:
+        conn.execute("""
+            INSERT INTO backtest_runs
+                (run_id, strategy_id, instrument, params, bar_type, bar_value,
+                 start_date, end_date, commission_per_side, slippage_ticks,
+                 status, created_at, started_at, stack_id, runner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data["run_id"], data["strategy_id"], data["instrument"],
+            json.dumps(data["params"]), data["bar_type"], data["bar_value"],
+            data["start_date"], data["end_date"],
+            data["commission_per_side"], data["slippage_ticks"],
+            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
+            data["stack_id"], data.get("runner", "python"),
+        ))
+
+
+def list_stack_runs(stack_id: str) -> list[dict]:
+    """Every leg of a stack — reused (owned=0) and fresh (owned=1) — in leg order.
+    INNER JOIN drops a reused run the user later deleted from the Runs tab, so the
+    stack degrades to its surviving legs rather than 500-ing on a dangling reference."""
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT r.*, s.name AS strategy_name, m.owned AS stack_owned
+            FROM stack_members m
+            JOIN backtest_runs r ON r.run_id = m.run_id
+            JOIN strategies s ON s.id = r.strategy_id
+            WHERE m.stack_id = ?
+            ORDER BY m.position ASC
+        """, (stack_id,)).fetchall()
+    return [_parse_json_fields(dict(r), ["params"]) for r in rows]
+
+
+def list_stacks() -> list[dict]:
+    """One aggregate row per stack — strategy count, shared settings, roll-up status.
+    Driven by the `stacks` settings table so a fully-reused stack (no owned child) still
+    appears; member statuses come from stack_members → backtest_runs."""
+    with _connect() as conn:
+        stacks = conn.execute(
+            "SELECT * FROM stacks ORDER BY created_at DESC"
+        ).fetchall()
+        result = []
+        for st in stacks:
+            members = conn.execute("""
+                SELECT r.status AS status, s.name AS name
+                FROM stack_members m
+                JOIN backtest_runs r ON r.run_id = m.run_id
+                JOIN strategies s ON s.id = r.strategy_id
+                WHERE m.stack_id = ?
+                ORDER BY m.position ASC
+            """, (st["stack_id"],)).fetchall()
+            total     = len(members)
+            completed = sum(1 for m in members if m["status"] == "complete")
+            failed    = sum(1 for m in members if str(m["status"]).startswith("failed"))
+            running   = sum(1 for m in members if m["status"] == "running")
+            if total == 0:
+                status = "failed"
+            elif running > 0:
+                status = "running"
+            elif completed == total:
+                status = "complete"
+            elif failed == total:
+                status = "failed"
+            else:
+                status = "partial"
+            result.append({
+                "stack_id":             st["stack_id"],
+                "instrument":           st["instrument"],
+                "start_date":           st["start_date"],
+                "end_date":             st["end_date"],
+                "created_at":           st["created_at"],
+                "total_strategies":     total,
+                "completed_strategies": completed,
+                "failed_strategies":    failed,
+                "status":               status,
+                "strategy_names":       " + ".join(m["name"] for m in members),
+            })
+    return result
+
+
+def delete_stack(stack_id: str) -> tuple[bool, list[str]]:
+    """Delete a stack. Only OWNED legs (fresh runs the stack created) are removed from
+    backtest_runs; REUSED legs (owned=0) are left untouched. Returns the owned run_ids so
+    the caller can rmtree their report dirs."""
+    with _connect() as conn:
+        existed = conn.execute(
+            "SELECT 1 FROM stacks WHERE stack_id = ?", (stack_id,)
+        ).fetchone() is not None
+        owned_ids = [
+            m["run_id"] for m in conn.execute(
+                "SELECT run_id FROM stack_members WHERE stack_id = ? AND owned = 1",
+                (stack_id,),
+            ).fetchall()
+        ]
+        # A legacy stack may predate the members table; fall back to the stack_id column.
+        legacy_ids = [
+            r["run_id"] for r in conn.execute(
+                "SELECT run_id FROM backtest_runs WHERE stack_id = ?", (stack_id,)
+            ).fetchall()
+        ]
+        child_ids = list(dict.fromkeys(owned_ids + legacy_ids))
+        if child_ids:
+            placeholders = ",".join("?" * len(child_ids))
+            conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({placeholders})", child_ids)
+            conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({placeholders})", child_ids)
+        conn.execute("DELETE FROM stack_members WHERE stack_id = ?", (stack_id,))
+        conn.execute("DELETE FROM stacks WHERE stack_id = ?", (stack_id,))
+    return (existed or bool(child_ids)), child_ids
+
+
+def cancel_stack_runs(stack_id: str) -> None:
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE backtest_runs SET status='failed_cancelled', "
+            "error_message='Cancelled by user', completed_at=? "
+            "WHERE stack_id=? AND status='running'",
+            (now, stack_id),
+        )
 
 
 # ── Optimizations ─────────────────────────────────────────────────────────────

@@ -1,0 +1,73 @@
+{
+  "_comment": "Editor UI metadata for MPC B-LEG. Overlaid onto the schema built from BLegConfig (a SosFadeConfig superset). UI ONLY — never touches a trade decision or the source hash. Click Scan Strategies after editing. Params not listed here fall back to their raw field names; the A+ gate params (arm sources, FVG/entry, HTF, veto) are inherited from the A+ bot and still matter because the B-LEG keeps the 'A+ has priority' stand-down — see the A+ strategy's own meta for their descriptions.",
+  "edge": "The B LEG is the SOS whose retrace arrived LATE. A reversal setup fires its shift-of-structure, but price expands and breaks structure AGAIN in the same direction before it ever pulls back — so the normal A+ leg dies at two-thirds with no entry. On a higher timeframe that is one clean leg, and the retrace does come, just later. The B LEG freezes the Sniper-Zone band (0.382–0.5) of that original break and rests a limit at the 0.5 edge; the tap IS the entry. Stop sits beyond the leg origin (fib 1.0); the target ladder is the broken swing extreme, then the expansion extreme, then a runner. Turned on alongside the A+ engine last night it added significant profit, which is why it was split into its own bot to run in parallel. This is the baseline port — faithful to the Pine — before any of its own entry/stop tuning.",
+  "steps": [
+    {
+      "label": "01 · SOS",
+      "title": "A reversal fires",
+      "detail": "An A+ shift-of-structure prints and freezes its Sniper-Zone band (0.382–0.5 of the break leg). The B LEG watches that band even though the A+ setup itself is still just armed."
+    },
+    {
+      "label": "02 · Dies at 2/3",
+      "title": "It breaks structure again first",
+      "detail": "Price expands and prints a continuation BOS BEFORE retracing, so the A+ reversal leg dies with no entry (neither 0.5 nor 0.618 was tapped). That death is exactly what ARMS the B LEG on the frozen band."
+    },
+    {
+      "label": "03 · Late retrace",
+      "title": "Wait for price to come back",
+      "detail": "A resting limit sits at the band's 0.5 edge for up to a tunable number of days (bleg_max_days). If price trades back into the band, the tap fills it. If it never comes back, or closes past the leg origin, the leg goes stale and is dropped."
+    },
+    {
+      "label": "04 · Manage",
+      "title": "Ladder out",
+      "detail": "Same machinery as the A+ bot: 30% at TP1 (the broken swing extreme) and stop to breakeven, 40% at TP2 (the expansion extreme) and stop to TP1, then trail the runner."
+    }
+  ],
+  "params": [
+    {
+      "name": "bleg_max_days",
+      "group": "B-LEG",
+      "core": true,
+      "unit": "days",
+      "label": "Days to watch for the late retrace",
+      "step": 0.25,
+      "desc": "How long a frozen B-LEG band waits for price to trade back into it before it goes stale. Measured in DAYS but converted to a bar count (one day ÷ the chart timeframe), so weekends and the daily close don't burn the clock. Default 1.25 = the original 120 bars on 15m. Lower = quick retraces only; higher = more room. Sweep 1 → 3.",
+      "guide": [
+        "Only quick retraces fill",
+        "A band waits longer for a late return"
+      ]
+    },
+    {
+      "name": "exec_risk_pct",
+      "group": "Sizing",
+      "core": true,
+      "unit": "%",
+      "label": "Risk per trade",
+      "desc": "Fraction of equity risked per trade, sized off the entry-to-stop distance so every trade risks the same R. This bot sizes itself — this is the knob."
+    },
+    {
+      "name": "exec_longs",
+      "group": "Sides",
+      "core": true,
+      "widget": "toggle",
+      "label": "Trade longs",
+      "options": {"off": "No", "on": "Yes"}
+    },
+    {
+      "name": "exec_shorts",
+      "group": "Sides",
+      "core": true,
+      "widget": "toggle",
+      "label": "Trade shorts",
+      "options": {"off": "No", "on": "Yes"}
+    },
+    {
+      "name": "exec_no_late_day",
+      "group": "Sides",
+      "widget": "toggle",
+      "label": "No entries in the final hour",
+      "options": {"off": "Allow", "on": "Block 16:00–17:00 NY"},
+      "desc": "Blocks new entries in the last hour before the gold daily close (17:00 NY), so a fill can't get gapped out over the session break."
+    }
+  ]
+}

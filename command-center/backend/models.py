@@ -767,6 +767,117 @@ class SweepDetail(BaseModel):
     runs: list[BacktestSummary] = []
 
 
+# ── Lab — portfolio stacks ────────────────────────────────────────────────────
+# A "stack" layers 2+ Python strategies over ONE shared instrument/window. Each strategy
+# runs as a normal single-strategy Python backtest (grouped by stack_id); the combined
+# portfolio P&L is composed CLIENT-SIDE by summing each child's daily_pnl, and toggling a
+# strategy off is a re-sum without it. Python strategies only.
+
+class StackRequest(BaseModel):
+    strategy_ids: list[str]                 # 2+ Python strategy ids to layer
+    instrument: str                         # one shared instrument for the whole stack
+    bar_type: str = "Minute"
+    bar_value: int = 15
+    start_date: str
+    end_date: str
+    # Zero costs by default — matches the Pine strategies (all pinned commission=0, slippage=0)
+    # for honest TV↔Python parity. The Python fill engine takes real cost from the account
+    # profile (vantage_demo = 0 commission) + measured/bar slippage, so these fields are the
+    # displayed/leg-matching values, not the applied ones.
+    commission_per_side: float = 0.0
+    slippage_ticks: int = 0
+    ruleset_ids: list[str] = []             # optional — scored per child run, like a normal run
+    # Optional per-strategy param override, keyed by strategy id. A strategy not present here
+    # uses its stored default_params. Lets the two sleeves carry different risk knobs.
+    params_by_strategy: dict[str, dict] = {}
+
+
+class StackPreviewRequest(BaseModel):
+    """Ask, without running anything, which legs would be REUSED from an existing
+    completed run vs RE-RUN fresh, for a given shared instrument/timeframe/window/costs."""
+    strategy_ids: list[str]
+    instrument: str
+    bar_type: str = "Minute"
+    bar_value: int = 15
+    start_date: str
+    end_date: str
+    commission_per_side: float = 0.0        # match the Pine (0/0) — see StackRequest
+    slippage_ticks: int = 0
+
+
+class StackPreviewLeg(BaseModel):
+    strategy_id: str
+    strategy_name: str
+    action: str                             # "reuse" | "run"
+    matched_run_id: Optional[str] = None    # set when action == "reuse"
+    net_pnl: Optional[float] = None
+    trade_count: Optional[int] = None
+    profit_factor: Optional[float] = None
+
+
+class StackPreviewResponse(BaseModel):
+    legs: list[StackPreviewLeg]
+    reuse_count: int
+    run_count: int
+
+
+class StackResponse(BaseModel):
+    stack_id: str
+    run_ids: list[str]
+    status: str
+
+
+class StackSummary(BaseModel):
+    stack_id: str
+    instrument: str
+    start_date: str
+    end_date: str
+    total_strategies: int
+    completed_strategies: int
+    failed_strategies: int
+    status: str
+    created_at: datetime
+    strategy_names: str = ""                 # " + "-joined display names
+
+
+class StackStrategyLeg(BaseModel):
+    run_id: str
+    strategy_id: str
+    strategy_name: str
+    status: str
+    net_pnl: Optional[float] = None
+    max_drawdown: Optional[float] = None
+    trade_count: Optional[int] = None
+    sharpe: Optional[float] = None
+    avg_trade_duration_min: Optional[float] = None   # trade-weighted into the stack's AVG TRADE KPI
+    error_message: Optional[str] = None
+    daily_pnl: list[dict] = []              # [{date, pnl}]
+    equity_curve: list[EquityPoint] = []
+
+
+class StackDetail(BaseModel):
+    stack_id: str
+    instrument: str
+    start_date: str
+    end_date: str
+    bar_type: str
+    bar_value: int
+    commission_per_side: float = 0.0
+    slippage_ticks: int = 0
+    total_strategies: int
+    completed_strategies: int
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    # Full-calendar regime timeline for the shared window (from a leg — regime is a property of the
+    # market on a date, identical for every leg). Drives the equity chart's regime overlay, same as
+    # a single backtest's `regime_timeline`.
+    regime_timeline: list[dict] = []
+    # One entry per strategy sleeve — carries the child run id + its daily P&L and equity curve
+    # so the frontend can sum enabled sleeves into a portfolio line and recompute KPIs on toggle.
+    strategies: list[StackStrategyLeg] = []
+
+
 # ── Lab — optimizations ───────────────────────────────────────────────────────
 
 class OptimizationRequest(BaseModel):

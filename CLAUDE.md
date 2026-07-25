@@ -11,7 +11,7 @@
 **Purpose:** Standing instructions for Claude Code across all subsystems.
 **Scope:** This covers repo-wide rules, VPS workflow, and branch conventions. It does NOT cover subsystem internals — each subsystem has its own CLAUDE.md.
 **Status:** Active — four apps, ten canonical engines, and tooling in various stages of production.
-**Last reviewed:** 2026-07-12
+**Last reviewed:** 2026-07-25
 
 ---
 
@@ -74,7 +74,7 @@ Canonical Equal Highs/Lows (EQH/EQL) engine — turns the bar stream into EQH/EQ
 Canonical economic-calendar (news) engine — **off the extraction roadmap and NOT a Pine port**. Standalone and time-driven: turns each bar's UTC timestamp into trade-BLACKOUT events around scheduled macro releases plus bank-holiday reporting; the engine reports, the bot decides via its own `NewsPolicy`. **Honest-coverage by Aaron's decision (2026-07-05): the filter is inert before the cache's earliest fetched date; `coverage_start_ms` marks the boundary.** Validated by 29 unit tests + live checks (no Pine source to diff). Full rules in `engines/news/CLAUDE.md`.
 
 ### strategies/
-Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the only live NinjaScript strategy, `ORB.cs` (VWAP_MR and Momentum were deleted 2026-06-21 — they baked risk management into the strategy, against the gated-layer rules). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS (NT8 or MT5 folder by extension). `strategies/mt5/` holds one MQL5 strategy: `LondonBreakout.mq5` (instrument-agnostic Asian-range → London breakout). `strategies/python/` holds Python strategy packages run locally by the lab's python runner (no deploy) — currently `mpc_sos_fade/`, the MPC SOS Fade bot, Pine-logic-parity green. Full rules in `strategies/CLAUDE.md`.
+Generic trading strategy source files, organized by runner platform. `strategies/ninjatrader/` holds the only live NinjaScript strategy, `ORB.cs` (VWAP_MR and Momentum were deleted 2026-06-21 — they baked risk management into the strategy, against the gated-layer rules). The command center scanner reads from here to register strategies in the database; the Deploy button uploads files to the VPS (NT8 or MT5 folder by extension). `strategies/mt5/` holds one MQL5 strategy: `LondonBreakout.mq5` (instrument-agnostic Asian-range → London breakout). `strategies/python/` holds Python strategy packages run locally by the lab's python runner (no deploy) — currently `mpc_sos_fade/` (MPC SOS Fade, Pine-logic-parity green) and `mpc_bleg/` (MPC B-LEG, the late-retrace setup split out of `mpc_strategy.pine` to run parallel to A+ — unit-tested, Pine-parity harness still to come). Full rules in `strategies/CLAUDE.md`.
 
 ### scripts/
 Cross-subsystem VPS bootstrap and full-recovery scripts (`bootstrap_vps.ps1` for the MT5/algos side, `bootstrap_ninjatrader.ps1` for the NT8 side). Idempotent, run on a wiped or new VPS. Full run order in `scripts/README.md`.

@@ -1,18 +1,29 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
 // ============================================================================
-//  MPC A+ STRATEGY — backtest wrapper around the MPC-JARVIS engine
+//  MPC B-LEG STRATEGY — the late-retrace setup, split out to run PARALLEL to A+
 // ============================================================================
-// Same market-structure / fib / liquidity / FVG / RSI-divergence engine as
-// mpc_assistant.pine (kept byte-identical so the A+ sequence stays at parity),
-// converted from indicator() to strategy() and given an execution layer at the
-// end of the file. It trades ONLY the confirmed A+ reversal sequence:
-//   sweep-or-divergence  ->  SOS (shift of structure)  ->  retrace into the
-//   0.5-0.886 fib of that leg WITH a live FVG overlapping the zone.
-// Exits: SL beyond fib 1.0 (leg origin), scaled fib-target ladder 30/30/40 at
-// TP1 (0.5) / TP2 (0.382) / TP3 (0.0 = swing extreme). Sizing: fixed % risk.
-// The execution block is the ONLY addition — do not let the engine above it
-// drift from mpc_assistant.pine.
+// FORKED FROM mpc_strategy.pine (the "MPC A+ Strategy"). Same byte-identical
+// MPC-JARVIS engine + A+ SEQUENCE TRACKER — because the B LEG arms off the A+
+// sequence STATE (the SOS whose retrace arrived late). The ONLY change vs the
+// parent is the EXECUTION layer: A+ entries are disabled and the B LEG is the
+// strategy's sole entry type. Everything upstream (engine + A+ arm/SOS/latch
+// tracking + the "A+ has priority" gate) is kept so the B LEG fires on EXACTLY
+// the bars it fires in the parent — this file is the provable baseline for the
+// standalone B-LEG bot, to be tuned (own entry / stop / TP models) AFTER parity.
+//
+// The B LEG: an A+ SOS fires, price expands and prints a continuation BOS BEFORE
+// it ever retraces, so the A+ reversal leg dies at 2/3 (no retrace). On the HTF
+// that is ONE clean leg and the retrace DOES arrive, late — into the frozen
+// Sniper-Zone band (0.382-0.5) of the original SOS leg. Entry = a resting limit
+// at the 0.5 edge (the tap IS the entry); SL beyond fib 1.0 (leg origin); TP
+// ladder = broken swing extreme -> expansion extreme -> runner.
+//
+// WHY it still runs the whole A+ machine: bLegArm reads aplus*_sosBar + the
+// half/618 latches + fibo_dir + the structure legs. That is a READ dependency on
+// the shared A+ sequence tracker (like depending on an engine), NOT on the A+
+// entry logic. Do not let the engine above the execution block drift from
+// mpc_assistant.pine / mpc_strategy.pine.
 // ----------------------------------------------------------------------------
 // TRADE-CRITICAL INPUTS — these compute the values the execution block reads, so
 // turning ANY of them off stops trades (they are marked "(REQUIRED)" in the
@@ -26,7 +37,7 @@
 // Fib, Sniper, structure labels) is cosmetic and defaults OFF — safe to toggle
 // freely, it never affects trade firing.
 // ============================================================================
-strategy("MPC A+ Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
+strategy("MPC B-LEG Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
 var GRP_TABLE = "Confirmation Table"
 bool showConfTable = input.bool(false, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
 string tablePositionInput = input.string("Top Center", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
@@ -84,49 +95,6 @@ f_structSize() =>
 // so structure tracking, fibs, OBs and the table behave identically either way.
 f_swingCol(color c) =>
     showSwingLabels ? c : color(na)
-
-//============================================================
-//  ORDER BLOCKS
-//============================================================
-var GRP_OB = "Order Blocks"
-bool  showOBsInput       = input.bool(false, "Show Order Blocks", group = GRP_OB, display = display.none)
-bool showOBs = marketStructureOnly ? false : showOBsInput
-bool  showBullOB    = input.bool(true, "Show Bullish OB", group = GRP_OB, inline = "BullOB", active = showOBsInput, display = display.none)
-color colBullOB     = input.color(color.new(color.blue, 85), "", group = GRP_OB, inline = "BullOB", display = display.none)
-bool  showBearOB    = input.bool(true, "Show Bearish OB", group = GRP_OB, inline = "BearOB", active = showOBsInput, display = display.none)
-color colBearOB     = input.color(color.new(color.red, 85), "", group = GRP_OB, inline = "BearOB", display = display.none)
-int   maxActiveOB   = input.int(6, "Max Active OBs (per direction)", group = GRP_OB, minval = 1, maxval = 20, active = showOBsInput, display = display.none)
-bool  obBodyOnly    = input.bool(false, "Use Body Only for OB", group = GRP_OB, active = showOBsInput, display = display.none)
-
-type OrderBlock
-    box   bg
-    float top
-    float bottom
-    bool  isBullish
-
-var array<OrderBlock> activeBullOBs = array.new<OrderBlock>()
-var array<OrderBlock> activeBearOBs = array.new<OrderBlock>()
-
-method manageOBs(array<OrderBlock> arr, OrderBlock newOB) =>
-    array.push(arr, newOB)
-    if array.size(arr) > maxActiveOB
-        OrderBlock oldest = array.shift(arr)
-        box.delete(oldest.bg)
-
-method extendOBs(array<OrderBlock> arr) =>
-    if array.size(arr) > 0
-        for i = array.size(arr) - 1 to 0
-            OrderBlock ob = array.get(arr, i)
-            box.set_right(ob.bg, bar_index + 1)
-            // Mitigation check
-            if ob.isBullish
-                if close < ob.bottom
-                    box.delete(ob.bg)
-                    array.remove(arr, i)
-            else
-                if close > ob.top
-                    box.delete(ob.bg)
-                    array.remove(arr, i)
 
 //============================================================
 //  FAIR VALUE GAPS (FVG) INPUTS
@@ -221,15 +189,6 @@ thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",   
 //  Pine's compiled-token cap (CE10117) and both were purely cosmetic, default
 //  OFF, and read by nothing in the execution layer. They live on in
 //  mpc_assistant.pine if the drawing is ever wanted back.)
-
-//============================================================
-//  VWAP INPUTS
-//============================================================
-var GRP_VWAP = "VWAP Settings"
-bool  showVwapInput  = input.bool(false,                "Show VWAP",       group = GRP_VWAP, display = display.none)
-bool showVwap = marketStructureOnly ? false : showVwapInput
-color vwapColor = input.color(color.rgb(5, 5, 0), "VWAP Color",      group = GRP_VWAP, active = showVwapInput, display = display.none)
-int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1, maxval = 5, group = GRP_VWAP, active = showVwapInput, display = display.none)
 
 //============================================================
 //  LIQUIDITY LEVELS INPUTS
@@ -402,16 +361,6 @@ bool showSniperFib = input.bool(false, "Sniper Zone", group = GRP_SNIPER, active
 // appears under "Strategy Execution" in the panel — group placement is by the
 // group string, not by position in the file.
 bool execConfSZ = input.bool(false, "Allow Sniper Zone as entry confirmation", group = "Strategy Execution", tooltip = "Adds the Sniper Zone as a SECOND accepted entry confirmation alongside the FVG. The SZ is the 0.5-0.618 pocket of the break leg, so it already sits inside the 0.5-0.886 entry band. FVG always wins: the SZ is used only on a leg where no qualifying gap exists, which means every trade the current settings already take is unchanged and any new trade is one that previously logged 'NO FVG missed'. The limit rests at the FAR side of the pocket (~0.618), so price must retrace the whole band to fill. Turning this on also makes the SZ engine track even when 'Sniper Zone' drawing is off.")
-
-//============================================================
-//  SESSION VOLUME PROFILE (SVP) INPUTS
-//============================================================
-var GRP_SVP   = "MV"
-bool  showSVPInput     = input.bool(false, "MV", group = GRP_SVP, display = display.none)
-bool showSVP = marketStructureOnly ? false : showSVPInput
-int   svpHistory  = input.int(2,     "Days back", group = GRP_SVP, minval = 1, maxval = 500, active = showSVPInput, display = display.none)
-int   svpRows     = 50
-color svpPOCCol   = #9C27B0
 
 //============================================================
 //  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
@@ -1128,8 +1077,6 @@ int  daysSinceSunday   = nyDayOfWeek - dayofweek.sunday
 int  weekStartTime     = nyMidnightToday - daysSinceSunday * 86400000
 bool withinSessionDays = showHistoricSessions or time >= weekStartTime
 
-vwapValue = ta.vwap(hlc3)
-
 //============================================================
 //  EXECUTION — EXTERNAL + INTERNAL STRUCTURE
 //============================================================
@@ -1156,40 +1103,6 @@ if not na(st.ash_lbl)
     label.set_textcolor(st.ash_lbl, showExternal ? f_swingCol(bearColor) : color(na))
 if not na(st.asl_lbl)
     label.set_textcolor(st.asl_lbl, showExternal ? f_swingCol(bullColor) : color(na))
-
-// Extend and clean OBs every bar
-if showOBs
-    activeBullOBs.extendOBs()
-    activeBearOBs.extendOBs()
-
-// Process OB creation on External breaks
-if showOBs and (st.bull_bos or st.bull_sos) and showBullOB
-    int lookbackIdx = bar_index - st.bull_bos_l_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] < open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
-            activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
-
-if showOBs and (st.bear_bos or st.bear_sos) and showBearOB
-    int lookbackIdx = bar_index - st.bear_bos_h_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] > open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
-            activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
 
 // Internal structure — Step 2: pullback tracking to confirm iSH / iSL
 
@@ -1724,36 +1637,6 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         i_last_mode       := -1
         i_mode            := -1
         i_sos_watch_ll    := na
-
-// ── Internal Structure OB Creation ──
-if showOBs and showBullOB and int_bull_break and not na(int_break_origin_loc)
-    int lookbackIdx = bar_index - int_break_origin_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] < open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
-            activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
-
-if showOBs and showBearOB and int_bear_break and not na(int_break_origin_loc)
-    int lookbackIdx = bar_index - int_break_origin_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] > open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
-            activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
-
 
 // ── Update last_mode when mode changes ───────────────────
 if internalActive and i_mode != 0
@@ -3043,122 +2926,8 @@ if showFibo and showSniperFib and array.size(sniperBoxArr) > 0
         label.set_x(array.get(sniperLbl382Arr,   _sni), bar_index + fiboLineExtend + 2)
 
 //============================================================
-//  SESSION VOLUME PROFILE — ASIA POC / MV LINE
-//============================================================
-string SVP_SESSION = "2000-0500"
-string SVP_TZ      = "GMT-4"
-
-var array<line>  svp_poc      = array.new<line>()
-var array<label> svp_poc_lbl  = array.new<label>()
-var array<float> svp_poc_px   = array.new<float>()
-
-var float svp_hi       = na
-var float svp_lo       = na
-var int   svp_startBar = na
-var bool  svp_inSess   = false
-
-var float svp_range    = na
-var float svp_bHi      = na
-var float svp_bLo      = na
-var float svp_bVol     = na
-var bool  svp_bull     = false
-var int   svp_rLo      = 0
-var int   svp_rHi      = 0
-var int   svp_span     = 0
-var float svp_perRow   = na
-var float svp_rv       = na
-var float svp_total    = 0.0
-var float svp_maxVol   = 0.0
-var int   svp_pocRow   = 0
-var float svp_pocPx    = na
-var int   svp_sLen     = 0
-var int   svp_sBar     = 0
-var int   svp_eBar     = 0
-var array<float> svp_rowUp = array.new<float>()
-var array<float> svp_rowDn = array.new<float>()
-
-bool inSVP  = not na(time(timeframe.period, SVP_SESSION, SVP_TZ))
-bool svpNew = inSVP and not inSVP[1]
-bool svpEnd = not inSVP and inSVP[1]
-
-if svpNew and showSVP and timeframe.isintraday
-    svp_hi       := high
-    svp_lo       := low
-    svp_startBar := bar_index
-    svp_inSess   := true
-
-if svp_inSess and inSVP and showSVP and timeframe.isintraday
-    if high > svp_hi
-        svp_hi := high
-    if low < svp_lo
-        svp_lo := low
-
-if svpEnd and svp_inSess and showSVP and timeframe.isintraday and not na(svp_hi) and not na(svp_lo)
-    svp_inSess := false
-    svp_range  := svp_hi - svp_lo
-    if svp_range > 0
-        svp_sLen := bar_index - svp_startBar + 1
-        array.clear(svp_rowUp)
-        array.clear(svp_rowDn)
-        for r = 0 to svpRows - 1
-            array.push(svp_rowUp, 0.0)
-            array.push(svp_rowDn, 0.0)
-        for b = 0 to math.min(svp_sLen - 1, 1490)
-            svp_bHi  := high[b]
-            svp_bLo  := low[b]
-            svp_bVol := volume[b]
-            svp_bull := close[b] >= open[b]
-            svp_rLo  := math.max(0, math.min(math.floor((svp_bLo - svp_lo) / svp_range * svpRows), svpRows - 1))
-            svp_rHi  := math.max(0, math.min(math.ceil( (svp_bHi - svp_lo) / svp_range * svpRows) - 1, svpRows - 1))
-            svp_span := math.max(1, svp_rHi - svp_rLo + 1)
-            svp_perRow := svp_bVol / svp_span
-            for r = svp_rLo to svp_rHi
-                if svp_bull
-                    array.set(svp_rowUp, r, array.get(svp_rowUp, r) + svp_perRow)
-                else
-                    array.set(svp_rowDn, r, array.get(svp_rowDn, r) + svp_perRow)
-
-        svp_total  := 0.0
-        svp_maxVol := 0.0
-        svp_pocRow := 0
-        for r = 0 to svpRows - 1
-            svp_rv = array.get(svp_rowUp, r) + array.get(svp_rowDn, r)
-            svp_total += svp_rv
-            if svp_rv > svp_maxVol
-                svp_maxVol := svp_rv
-                svp_pocRow := r
-
-        svp_pocPx := svp_lo + (svp_pocRow + 0.5) * (svp_range / svpRows)
-        svp_sBar  := svp_startBar
-        svp_eBar  := bar_index - 1
-
-        if array.size(svp_poc) >= svpHistory
-            line.delete(array.shift(svp_poc))
-            label.delete(array.shift(svp_poc_lbl))
-            array.shift(svp_poc_px)
-
-        array.push(svp_poc,     line.new(svp_sBar, svp_pocPx, bar_index + i_lineExtend, svp_pocPx, color = svpPOCCol, style = line.style_solid, width = 1))
-        array.push(svp_poc_lbl, label.new(bar_index + i_lineExtend, svp_pocPx + lblOff, "MV", style = label.style_none, textcolor = svpPOCCol, size = f_liqSize(), textalign = text.align_left))
-        array.push(svp_poc_px,  svp_pocPx)
-
-var line  svp_ln = na
-var label svp_lb = na
-if showSVP and timeframe.isintraday and array.size(svp_poc) > 0
-    for idx = 0 to array.size(svp_poc) - 1
-        svp_ln := array.get(svp_poc, idx)
-        svp_lb := array.get(svp_poc_lbl, idx)
-        line.set_x2(svp_ln, bar_index + i_lineExtend)
-        label.set_x(svp_lb, bar_index + i_lineExtend)
-
-//============================================================
 //  PLOTTING
 //============================================================
-// VWAP is drawn with plot() rather than a polyline. The old approach rebuilt the
-// whole day's polyline on every bar (O(n^2) over the session); plot is O(1) per bar.
-// ta.vwap already resets each session, so the line breaks at the day boundary on its own.
-plot(showVwap ? vwapValue : na, title = "VWAP", color = vwapColor, linewidth = vwapWidth)
-
-
 plot(array.get(a_lastHighs, 0), "DH", color.new(i_dailyColor,   100), editable = false, display = display.none)
 plot(array.get(a_lastLows,  0), "DL", color.new(i_dailyColor,   100), editable = false, display = display.none)
 plot(array.get(a_lastHighs, 1), "WH", color.new(i_weeklyColor,  100), editable = false, display = display.none)
@@ -3653,6 +3422,13 @@ if st.bull_sos and not sessionGapBar
 // OWN bar: your structure engine flags bull_bos = true on every bull_sos bar
 // too (they're not mutually exclusive), so without "not st.bull_sos" here, the
 // very bar that arms stage 2 would immediately kill itself.
+// B LEG capture — read HERE, BEFORE the death block clears aplus*_sosBar/latches.
+// The EXACT case the B LEG owns: the REV is about to die on a continuation BOS
+// while still at 2/3 (no retrace — neither the 0.5 nor the 0.618 latch is set).
+// A death for any OTHER reason (TP3 done, fib flipped, 1.0 broken) is a real
+// failure and does NOT arm a B leg.
+bool bLegArmL = not na(aplusL_sosBar) and not sessionGapBar and st.bull_bos and not st.bull_sos and not aplusL_half and not aplusL_618 and fibo_dir == 1 and not fibo7Touched
+bool bLegArmS = not na(aplusS_sosBar) and not sessionGapBar and st.bear_bos and not st.bear_sos and not aplusS_half and not aplusS_618 and fibo_dir == -1 and not fibo7Touched
 if not na(aplusL_sosBar) and not sessionGapBar
     if (fibo_dir == 1 and fibo7Touched) or fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10) or (st.bull_bos and not st.bull_sos)
         aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false, aplusL_armTime := na
@@ -3661,6 +3437,94 @@ if not na(aplusS_sosBar) and not sessionGapBar
     if (fibo_dir == -1 and fibo7Touched) or fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10) or (st.bear_bos and not st.bear_sos)
         aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false, aplusS_armTime := na
         armHolderS := ""
+
+//============================================================
+//  B LEG SETUP — the SOS whose retrace arrived late
+//============================================================
+// Ported from mpc_assistant.pine (tracker only — no chart box; the strategy's
+// own trade drawing visualises the fill). An SOS fires, price expands and prints
+// a continuation BOS BEFORE it ever retraces, so the REV leg above just died at
+// 2/3 ("no retracement"). On a higher timeframe that is ONE clean leg and the
+// retrace DOES arrive, later — into the Sniper-Zone band (0.382-0.5) frozen at
+// the ORIGINAL SOS. The B leg freezes that band and waits for price to trade
+// back into it. Runs fully PARALLEL to the A+ engine: it only READS st.* and the
+// bLegArm flags captured above, and never writes A+ state.
+var float bLegL_top = na, var float bLegL_bot = na, var float bLegL_inv = na, var float bLegL_tgt = na
+var bool  bLegL_on = false, var bool bLegL_tap = false
+var int   bLegL_bar = na,   var int  bLegL_sosBar = na
+var float bLegS_top = na, var float bLegS_bot = na, var float bLegS_inv = na, var float bLegS_tgt = na
+var bool  bLegS_on = false, var bool bLegS_tap = false
+var int   bLegS_bar = na,   var int  bLegS_sosBar = na
+
+// Freeze the SZ band on every SOS — the SAME 0.382/0.5 maths the drawn Sniper
+// Zone uses. inv = the leg origin (fib 1.0): a close past it means the reversal
+// failed outright. DEEPEST BAND WINS: a fresh same-side SOS while a leg is live
+// and UNTAPPED keeps whichever band is FARTHER from price (the deeper retrace
+// target), migrating the watch rather than resetting it; the target (expansion
+// extreme = TP reference) is extended, never rewound. A TAPPED leg never blocks
+// a replacement.
+if st.bull_sos and not na(st.bull_bos_high) and not na(st.bull_bos_low) and st.bull_bos_high > st.bull_bos_low
+    float _bLR   = st.bull_bos_high - st.bull_bos_low
+    float _bLnew = st.bull_bos_low + _bLR * 0.5
+    bool  _bLwas = bLegL_on and not bLegL_tap
+    bool  _bLkeep = _bLwas and not na(bLegL_top) and math.abs(_bLnew - close) <= math.abs(bLegL_top - close)
+    if not _bLkeep
+        bLegL_bot := st.bull_bos_low + _bLR * 0.382
+        bLegL_top := _bLnew
+        bLegL_inv := st.bull_bos_low
+        bLegL_tgt := _bLwas ? math.max(nz(bLegL_tgt, high), high) : high
+        bLegL_sosBar := bar_index
+        bLegL_tap := false
+        bLegL_on  := _bLwas
+        bLegL_bar := _bLwas ? bar_index : na
+if st.bear_sos and not na(st.bear_bos_high) and not na(st.bear_bos_low) and st.bear_bos_high > st.bear_bos_low
+    float _bSR   = st.bear_bos_high - st.bear_bos_low
+    float _bSnew = st.bear_bos_high - _bSR * 0.5
+    bool  _bSwas = bLegS_on and not bLegS_tap
+    bool  _bSkeep = _bSwas and not na(bLegS_bot) and math.abs(_bSnew - close) <= math.abs(bLegS_bot - close)
+    if not _bSkeep
+        bLegS_top := st.bear_bos_high - _bSR * 0.382
+        bLegS_bot := _bSnew
+        bLegS_inv := st.bear_bos_high
+        bLegS_tgt := _bSwas ? math.min(nz(bLegS_tgt, low), low) : low
+        bLegS_sosBar := bar_index
+        bLegS_tap := false
+        bLegS_on  := _bSwas
+        bLegS_bar := _bSwas ? bar_index : na
+
+// Target = how far the expansion ran before the retrace started; tracked only
+// until the B leg arms, then frozen as the TP reference.
+if not na(bLegL_top) and not bLegL_on
+    bLegL_tgt := math.max(nz(bLegL_tgt, high), high)
+if not na(bLegS_top) and not bLegS_on
+    bLegS_tgt := math.min(nz(bLegS_tgt, low), low)
+
+// Arm on the REV's death-by-continuation-BOS (captured above, before the death).
+if bLegArmL and not na(bLegL_top)
+    bLegL_on := true, bLegL_bar := bar_index
+if bLegArmS and not na(bLegS_top)
+    bLegS_on := true, bLegS_bar := bar_index
+
+// Death: a close past the leg origin (1.0), or the staleness cap. NO SOS in
+// either direction kills an untapped leg (a same-side one only MIGRATES the band
+// above; the opposite one is often the retrace itself).
+// Staleness is user-tunable in DAYS (1-3) but converted to a BAR count (day ÷ the
+// chart timeframe), so weekends and the daily close still don't burn the clock —
+// what matters is how much TRADING has passed. Declared with the literal group
+// string (GRP_EXEC is defined further down) so it lands in the Execution panel.
+// On 15m: 1 day ≈ 96 bars, 2 ≈ 192, 3 ≈ 288.
+float bLegMaxDays = input.float(1.25, "B-Leg: days to activate before it goes stale", minval = 1, maxval = 3, step = 0.25, group = "Strategy Execution", tooltip = "How long a B LEG watches its frozen band for the late retrace before it goes stale. Set in DAYS, measured as a BAR count (one day ÷ the chart timeframe) so weekends and the daily close don't consume it. Default 1.25 = the original 120 bars on 15m. Lower (e.g. 1) = quick retraces only; higher = more room. Sweep 1→3. B-LEG only.")
+int BLEG_MAX = int(math.max(1, math.round(bLegMaxDays * 86400 / timeframe.in_seconds())))
+if bLegL_on
+    if low <= bLegL_top
+        bLegL_tap := true
+    if close < bLegL_inv or bar_index - bLegL_bar > BLEG_MAX
+        bLegL_on := false
+if bLegS_on
+    if high >= bLegS_bot
+        bLegS_tap := true
+    if close > bLegS_inv or bar_index - bLegS_bar > BLEG_MAX
+        bLegS_on := false
 
 // (CONT — the continuation trade type — was removed from this file 2026-07-21.
 //  It was display-only here: nothing in the execution layer ever read
@@ -3908,11 +3772,13 @@ if barstate.islast
 var GRP_EXEC = "Strategy Execution"
 bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
 bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
+bool  execBLeg    = input.bool(true,  "Trade B-Leg setups",             group = GRP_EXEC, tooltip = "THIS STRATEGY'S CORE SETUP (default ON in the B-LEG fork). Arms when a REV setup dies on a continuation BOS before it retraced; freezes the Sniper-Zone band (0.382-0.5) of that SOS leg and rests a limit at the 0.5 edge — the tap IS the entry. SL beyond fib 1.0; ladder reuses the A+ machinery (TP1 swing extreme, TP2 expansion, TP3 runner). Honours Trade Longs/Shorts, flat and the final-hour block. A+ still has priority when it would have armed on a side (kept for baseline parity; a tuning candidate to drop). Turn OFF only to prove the file trades nothing without it.")
 bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
 bool  execArmDiv   = input.bool(false, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
 bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
 bool  execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
-bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3 — a qualifying gap whose NEAR edge sits deeper than 0.618 rests its limit at the nearest fib just SHALLOWER (0.618/0.702/0.786) instead of the gap's own edge.")
+bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3 — recovers the trades lost when a deep FVG never gets tapped. Default (off) rests the limit at the gap's own edge, so a gap floating DEEP in the zone is missed whenever price stalls at a shallower fib and turns back. On = when the qualifying gap's near edge sits DEEPER than 0.618 AND the gap contains no fib level (it floats BETWEEN two of 0.618/0.702/0.786/0.886), the limit rests at the nearest fib just SHALLOWER than the gap instead — the level price reaches first (gap between 0.618-0.702 -> 0.618, 0.702-0.786 -> 0.702, 0.786-0.886 -> 0.786). A gap sitting ON a fib level, or shallower than 0.618, is unchanged and still enters at its exact edge. This fills more of these setups, but a deep between-levels trade that already filled now fills earlier and shallower, so those results move — leave it off to reproduce the current entries.")
+bool  execFvg50   = input.bool(false, "Entry (least favorable): FVG must touch the 0.5 line", group = GRP_EXEC, tooltip = "Lowest-priority fallback (default OFF). Qualifies a gap that STRADDLES 0.5 — the 0.5 line inside the gap body (bottom at/below 0.5 AND top at/above 0.5), not merely an edge near it — and rests the limit AT 0.5. Ranks last: only prices a leg no more-favorable source already did (deep-FVG edge, deep-fib, Sniper Zone), so existing trades are unchanged and any new one previously logged 'NO FVG'. With 'FVG must sit fully past 0.5' on, this is the only path that trades a straddling gap.")
 bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
 bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade. (Loss-mitigation test #2 — an opposite SOS is early proof the reversal failed, so exit there instead of riding to the fib-1.0 stop.)")
 bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1 (the big lever). Blocks a reversal that fights a FRESH higher-timeframe breakout, while still allowing one that fades an exhaustion sweep. A short fades a high, so it is blocked when the HTF just CLOSED above its prior high (Close > Prev High = a real breakout up). A long is blocked when the HTF just closed below its prior low. A swept-high/low (exhaustion) never blocks — that is exactly the state the setup is meant to fade. Off = current behaviour (no HTF filter). Use with the source dropdown below.")
@@ -3920,8 +3786,7 @@ string execHtfSource = input.string("Weekly", "HTF exhaustion source", options =
 string execHtfWeekly = input.string("Ignore", "Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, WEEKLY leg. Judged against the trade's direction (a long wants Bullish). Ignore = no gate. Must agree = Weekly must be Bullish for a long / Bearish for a short. Must not oppose = only blocks if Weekly is actively against the trade (Neutral passes). Must oppose (reversal) = Weekly must be AGAINST the trade — this is the 'Weekly still in the old trend' half of a reversal. Combine with the Daily setting below: Weekly 'Must oppose' + Daily 'Must agree' = only fade when the Daily has flipped against a still-opposing Weekly (a forming reversal).")
 string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, DAILY leg. Same four choices as Weekly, judged against the trade direction. For your reversal idea set this to 'Must agree' (Daily has turned in the trade's direction) while Weekly is 'Must oppose (reversal)'. Set both to 'Must agree' for full Daily+Weekly trend alignment. Ignore = no gate.")
 float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 10, step = 0.1)
-string execSlLevel = input.string("1.0", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib level on the DEEP side of 0.5. Default 1.0 = the leg origin (the level the engine also uses to invalidate the leg). Pick a shallower level (0.618-0.886) for a tighter stop. The buffer below is then measured beyond THIS level, not 1.0. If the chosen level lands at or inside the entry price, the trade's SL distance is <= 0 and that setup simply won't fire — no bad trade is taken.")
-float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
+float execSlBufTk = input.float(0.0,  "SL buffer beyond fib 1.0 (ticks)",  group = GRP_EXEC, minval = 0)
 float execTp1Pct  = input.float(30,   "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
 float execTp2Pct  = input.float(40,   "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
@@ -3948,6 +3813,11 @@ var int   tradedSosL = na    // the SOS bar we already took a long on (one entry
 var int   tradedSosS = na
 var int   pendSosL   = na    // the SOS bar whose entry limit is currently resting
 var int   pendSosS   = na
+// B-LEG execution state — a B leg reuses the "Long"/"Short" entry id and all the
+// frozen SL/TP/label/posBox machinery below, so only two extra things are needed:
+// a per-B-leg "already traded" guard and a flag routing the fill to it.
+var int   tradedBLegL = na, var int  tradedBLegS = na
+var bool  pendIsBLegL = false, var bool pendIsBLegS = false
 var float lSL = na, var float lTP1 = na, var float lTP2 = na
 var float sSL = na, var float sTP1 = na, var float sTP2 = na
 var float lEntry = na, var float sEntry = na   // fill price of the open trade (breakeven anchor)
@@ -3989,29 +3859,32 @@ type TradeLbl
     line   ln   = na
     string head = ""   // "▲ LONG" / "▼ SHORT" — always the top line of the box
     string body = ""
+    bool   bLeg = false // this trade came from the B LEG — drawn BLUE, not by-result
 var TradeLbl tlbl = TradeLbl.new()
+
+// B-LEG callout colour — blue, so B-leg trades stand out from the A+ grey/green/
+// red/orange scheme. Kept even after close (the R is still in the text).
+color BLEG_BLUE   = color.new(#2962FF, 12)
+color BLEG_BLUE_L = color.new(#2962FF, 0)
 
 float execSlBuf = execSlBufTk * syminfo.mintick
 
-// Stop anchor — the fib price the SL is placed at, per the "SL fib level" input.
-// All choices sit on the deep side of 0.5, so the stop is always beyond the entry
-// band. 1.0 (default) = the leg origin.
-f_slAnchor() =>
-    switch execSlLevel
-        "0.618" => fiboP3
-        "0.702" => fiboP4
-        "0.786" => fiboP5
-        "0.886" => fiboP6
-        => fiboP10
 bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
 
-// Method 3 (execDeepFib) — re-price a DEEP gap (near edge below 0.618) to the fib
-// just SHALLOWER than the near edge; na when the near edge is shallower than 0.618.
+// Method 3 (execDeepFib) — the entry price for a DEEP gap whose NEAR EDGE sits
+// below the 0.618 line, or na when the near edge is shallower than 0.618 (those
+// keep the normal exact-edge entry). The re-priced entry is the fib level just
+// SHALLOWER than the gap's near edge — the level price reaches first on the way
+// in. ONLY the near edge's position decides it: a real gap is often tall enough
+// to span 0.702/0.786, and an earlier "gap body contains a level" exception was
+// WRONG — it silently disqualified exactly these deep, multi-level gaps (the miss
+// this is built to catch). What the body crosses is irrelevant; where the near
+// edge lands is everything. Long near edge = gap top (_gT); short = gap bottom.
 f_deepFibEdge(float _gB, float _gT, bool _bull) =>
     float _out = na
-    if _bull and _gT < fiboP3
+    if _bull and _gT < fiboP3          // long: near edge deeper than the 0.618 line
         _out := _gT >= fiboP4 ? fiboP3 : _gT >= fiboP5 ? fiboP4 : fiboP5
-    if (not _bull) and _gB > fiboP3
+    if (not _bull) and _gB > fiboP3    // short: near edge deeper than the 0.618 line
         _out := _gB <= fiboP4 ? fiboP3 : _gB <= fiboP5 ? fiboP4 : fiboP5
     _out
 
@@ -4053,25 +3926,39 @@ if fibsReady and array.size(fvgTops) > 0
 // falls past 0.886 or belongs to a different direction. The sz_bar guard stops a
 // zone left over from an earlier leg pricing this trade: it must have been
 // anchored at or after the SOS this setup is riding.
-bool longEdgeSz  = false
-bool shortEdgeSz = false
 if execConfSZ and fibsReady and not na(sniperZoneTop) and not na(sniperZoneBot) and not na(sz_bar)
     if na(longEdge) and fibo_dir == 1 and sz_bullish and not na(aplusL_sosBar) and sz_bar >= aplusL_sosBar
         float _e = math.min(sniperZoneBot, fiboP2)   // far side of the pocket
         if _e >= fiboP6
             longEdge   := _e
-            longEdgeSz := true
     if na(shortEdge) and fibo_dir == -1 and not sz_bullish and not na(aplusS_sosBar) and sz_bar >= aplusS_sosBar
         float _e = math.max(sniperZoneTop, fiboP2)
         if _e <= fiboP6
             shortEdge   := _e
-            shortEdgeSz := true
 
 if not execReqFVG and fibsReady
     if na(longEdge)  and fibo_dir == 1
         longEdge  := fiboP3
     if na(shortEdge) and fibo_dir == -1
         shortEdge := fiboP3
+
+// ── FVG TOUCHES 0.5 — the LEAST-FAVORABLE entry, a bottom-tier fallback ──────
+// A gap that STRADDLES the 0.5 line — the 0.5 must fall INSIDE the gap body
+// (gap bottom at/below 0.5 AND gap top at/above 0.5), not merely an edge near
+// it. This is the shallowest possible entry, so it ranks LAST: it only prices a
+// leg that no more-favorable source above already did (deep FVG edge, deep-fib
+// re-price, Sniper Zone, reqFVG-off). The limit rests AT 0.5 (the level the gap
+// touches). With "FVG must sit fully past 0.5" on, straddling gaps are otherwise
+// rejected by the main loop, so this is the only path that trades them.
+if execFvg50 and fibsReady and array.size(fvgTops) > 0
+    for _j = 0 to array.size(fvgTops) - 1
+        float _gT = array.get(fvgTops, _j)
+        float _gB = array.get(fvgBots, _j)
+        bool  _gBull = array.get(fvgIsBull, _j)
+        if na(longEdge)  and _gBull       and fibo_dir == 1  and _gB <= fiboP2 and _gT >= fiboP2
+            longEdge  := fiboP2
+        if na(shortEdge) and (not _gBull) and fibo_dir == -1 and _gB <= fiboP2 and _gT >= fiboP2
+            shortEdge := fiboP2
 
 // ── Arm-source filter — isolate WHICH Stage-1 confluence is allowed to arm ────
 // The engine treats a sweep and a divergence as interchangeable Stage-1 triggers
@@ -4138,38 +4025,6 @@ bool armOkS = useSwpS or useDivS
 // (The missed-setup callout used to fire here. It now lives further down, after
 //  the veto / late-day / HTF gates are declared, so it can name which one of them
 //  actually blocked the entry — see "MISSED-SETUP CALLOUT" below.)
-
-// Confluence text — every line is printed because ITS OWN flag is true on the bar
-// the order was placed, never because the feature exists in the script. Nothing
-// in here is a fixed template.
-// Body of the entry label. The direction header is NOT part of this — it is
-// prepended by f_confOpen and rewritten with the result by f_confClose, so the
-// top line of the box is always the trade type.
-//
-// Every line is printed because ITS OWN flag is true, and every price is the
-// price this trade actually placed. Nothing here is a fixed template: the TP
-// rungs name the fib level the ladder really used (deep entries run 0.5 → 0.382,
-// shallow ones 0.382 → 0.0) and print that level's price alongside it, so the
-// label can never claim a target the ladder did not set.
-f_conf(bool isLong, bool swp, bool div, string swpName, int sosAge, bool fvg, bool poi, bool liveDiv, bool deep, bool sz, float edgePx, float slPx, float tp1Px, float tp2Px) =>
-    string arm = swp and div ? "Sweep + RSI div" : swp ? "Sweep" : "RSI divergence"
-    if swp and swpName != ""
-        arm := arm + " · " + swpName
-    string s = "──────────────"
-    s := s + "\nArm     " + arm
-    s := s + "\nSOS     " + str.tostring(sosAge) + " bars ago"
-    // Which confirmation actually PRICED this entry — SZ only appears when the
-    // limit was placed off the Sniper Zone because no gap qualified.
-    s := s + "\nZone    " + (sz ? "Sniper Zone (no FVG)" : fvg ? "FVG ✓" : "fib only")
-    s := s + "\nPOI     " + (poi ? "✓" : "–")
-    s := s + "\nDiv     " + (liveDiv ? "✓" : "–")
-    s := s + "\n──────────────"
-    s := s + "\nEntry   " + (deep ? "0.618+ deep" : "0.5 shallow") + "   " + str.tostring(edgePx, format.mintick)
-    s := s + "\nStop    fib " + execSlLevel + "        " + str.tostring(slPx, format.mintick)
-    s := s + "\nTP1     fib " + (deep ? "0.5" : "0.382") + "      " + str.tostring(tp1Px, format.mintick)
-    s := s + "\nTP2     fib " + (deep ? "0.382" : "0.0") + "      " + str.tostring(tp2Px, format.mintick)
-    s := s + "\nTP3     runner · trailing stop"
-    s
 
 // ── Armed conditions — setup to SOS, fib aligned, an edge exists, not vetoed,
 //    flat, and this leg not already traded ──
@@ -4279,46 +4134,73 @@ bool  _dbgRecent = debugDays == 0 or time >= timenow - debugDays * 86400000
 string miss23L = f_w23(mwL, true,  not na(aplusL_sosBar), not na(tradedSosL) and tradedSosL == mwL.sosBar, strategy.position_size <= 0, aplusL_half or aplusL_618, longEdge,  fiboP3, longVetoA  and execRespectVeto, lateDayBlock, htfBlockLong  or htfBiasBlockLong,  execArmSweep and sosL_swp, execArmDiv and sosL_div, execReqFVG, _dbg23Lo, _dbg23Atr * 2, _dbgRecent)
 string miss23S = f_w23(mwS, false, not na(aplusS_sosBar), not na(tradedSosS) and tradedSosS == mwS.sosBar, strategy.position_size >= 0, aplusS_half or aplusS_618, shortEdge, fiboP3, shortVetoA and execRespectVeto, lateDayBlock, htfBlockShort or htfBiasBlockShort, execArmSweep and sosS_swp, execArmDiv and sosS_div, execReqFVG, _dbg23Hi, _dbg23Atr * 2, _dbgRecent)
 
-// ── Ladder select — which rungs this trade gets depends on how DEEP the resting
-//    limit sits. "Deep" = at or beyond the 0.618 fib (E1), i.e. one of the lower
-//    eligible entry levels (0.618 / 0.702 / 0.786 / 0.886). A deep entry is a full
-//    fib step below 0.5, so 0.5 is a legitimate TP1 for it. A shallow entry rests
-//    ON the 0.5 clamp, so 0.5 is the entry price itself and TP1 must skip to 0.382.
-//    (With "Require FVG" off the edge falls back to 0.618 exactly — that is deep.)
-bool longDeep  = not na(longEdge)  and longEdge  <= fiboP3
-bool shortDeep = not na(shortEdge) and shortEdge >= fiboP3
+// ── B-LEG arm — the frozen SZ band is live, untapped and valid, we're flat and
+//    this band has not already been traded. A+ has priority: while a fresh A+ leg
+//    is armed on the same side it owns the "Long"/"Short" limit and the B leg
+//    stands down. Honours Trade Longs/Shorts + the final-hour block; it does NOT
+//    use the arm-source, FVG or veto gates (the band tap is the whole trigger).
+bool bLegLongArm  = execBLeg and execLongs  and not longArmed  and bLegL_on and not bLegL_tap and not lateDayBlock and not na(bLegL_top) and not na(bLegL_inv) and not na(bLegL_tgt) and strategy.position_size == 0 and (na(tradedBLegL) or bLegL_bar != tradedBLegL)
+bool bLegShortArm = execBLeg and execShorts and not shortArmed and bLegS_on and not bLegS_tap and not lateDayBlock and not na(bLegS_bot) and not na(bLegS_inv) and not na(bLegS_tgt) and strategy.position_size == 0 and (na(tradedBLegS) or bLegS_bar != tradedBLegS)
 
-// ── Long: rest / refresh a buy-limit at the edge (cancel when disarmed) ──
+// ── Long: A+ ENTRY DISABLED in the B-LEG fork ──────────────────────────────
+// longArmed is still computed above, so the "A+ has priority" gate on the B-LEG
+// arm still stands a B-LEG down when an A+ would have armed this side — the
+// baseline behaviour of the parent's B leg. The difference here is only that A+
+// never PLACES an order: when it owns the side we pull any resting B-LEG limit
+// (the parent's A+ would have overwritten the slot), which is the same
+// stand-down outcome. All the A+ SL/TP/qty/conf maths is dropped as dead code.
 if longArmed
-    lSL  := f_slAnchor() - execSlBuf
-    float slDist = longEdge - lSL
-    lTP1 := longDeep ? fiboP2 : fiboP1   // deep → 0.5, shallow → 0.382
-    lTP2 := longDeep ? fiboP1 : fiboP7   // deep → 0.382, shallow → 0.0 (swing extreme)
-    if slDist > 0
-        float qty = (strategy.equity * execRiskPct / 100.0) / slDist
-        pendSosL := aplusL_sosBar
-        pendConfL := f_conf(true, useSwpL, useDivL, recentSSL, bar_index - aplusL_sosBar, aplusL_fvg, aplusL_poi, bullDivActive, longDeep, longEdgeSz, longEdge, lSL, lTP1, lTP2)
-        strategy.entry("Long", strategy.long, qty = qty, limit = longEdge)
-    else
-        strategy.cancel("Long")
-else if strategy.position_size == 0
+    strategy.cancel("Long")
+else if strategy.position_size == 0 and not bLegLongArm
     strategy.cancel("Long")
 
-// ── Short: rest / refresh a sell-limit at the edge ──
+// ── Short: A+ ENTRY DISABLED in the B-LEG fork (mirror of the Long block) ────
 if shortArmed
-    sSL  := f_slAnchor() + execSlBuf
-    float slDist = sSL - shortEdge
-    sTP1 := shortDeep ? fiboP2 : fiboP1
-    sTP2 := shortDeep ? fiboP1 : fiboP7
-    if slDist > 0
+    strategy.cancel("Short")
+else if strategy.position_size == 0 and not bLegShortArm
+    strategy.cancel("Short")
+
+// ── B-LEG entries — rest a limit at the frozen band's near (0.5) edge, reusing
+//    the "Long"/"Short" id so the fill / exits / posBox / label all flow through
+//    the same machinery. SL beyond the leg origin (fib 1.0). Ladder reuses the A+
+//    shallow rungs from the frozen band: TP1 = the broken swing extreme (fib 0.0
+//    of the band = 2·edge − origin), TP2 = the expansion extreme (bLeg*_tgt), TP3
+//    = runner. pendIsBLeg* routes the fill to the B-leg "already traded" guard. ──
+// B-LEG diagnostic context — appended to the entry conf so each B-leg log line
+// carries the HTF bias, session and cycle zone at fill, to profile the losers.
+string _bSess = inNY ? "NY" : inLondon ? "Ldn" : inAsia ? "Asia" : "off"
+string _bZone = "-"
+if macro_origin_locked and not na(macro_origin) and not na(macro_extreme) and macro_extreme > macro_origin
+    float _fr = (close - macro_origin) / (macro_extreme - macro_origin)
+    _bZone := _fr >= 0.618 ? "premium" : _fr <= 0.382 ? "discount" : "mid"
+string _bLegCtx = " · W " + wEstState + " · D " + dEstState + " · " + _bSess + " · cyc " + _bZone
+if bLegLongArm
+    lSL  := bLegL_inv - execSlBuf
+    float slDist = bLegL_top - lSL
+    lTP1 := 2 * bLegL_top - bLegL_inv
+    lTP2 := bLegL_tgt
+    if slDist > 0 and lTP1 > bLegL_top and lTP2 >= lTP1
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
-        pendSosS := aplusS_sosBar
-        pendConfS := f_conf(false, useSwpS, useDivS, recentBSL, bar_index - aplusS_sosBar, aplusS_fvg, aplusS_poi, bearDivActive, shortDeep, shortEdgeSz, shortEdge, sSL, sTP1, sTP2)
-        strategy.entry("Short", strategy.short, qty = qty, limit = shortEdge)
+        pendSosL   := bLegL_bar
+        pendIsBLegL := true
+        pendConfL  := "B-LEG long · late retrace" + _bLegCtx
+        strategy.entry("Long", strategy.long, qty = qty, limit = bLegL_top)
+    else
+        strategy.cancel("Long")
+
+if bLegShortArm
+    sSL  := bLegS_inv + execSlBuf
+    float slDist = sSL - bLegS_bot
+    sTP1 := 2 * bLegS_bot - bLegS_inv
+    sTP2 := bLegS_tgt
+    if slDist > 0 and sTP1 < bLegS_bot and sTP2 <= sTP1
+        float qty = (strategy.equity * execRiskPct / 100.0) / slDist
+        pendSosS   := bLegS_bar
+        pendIsBLegS := true
+        pendConfS  := "B-LEG short · late retrace" + _bLegCtx
+        strategy.entry("Short", strategy.short, qty = qty, limit = bLegS_bot)
     else
         strategy.cancel("Short")
-else if strategy.position_size == 0
-    strategy.cancel("Short")
 
 // ── Mark the leg traded once the resting limit FILLS; snapshot the entry price
 //    and reset the stop stage. Reset stage to 0 whenever we are flat. ──
@@ -4340,8 +4222,8 @@ f_confOpen(TradeLbl t, int dir, float px, float off, string body, bool showIt) =
         float ly = dir > 0 ? px - off : px + off
         t.head := dir > 0 ? "▲ LONG" : "▼ SHORT"
         t.body := body
-        t.ln   := line.new(bar_index, px, bar_index, ly, color = color.new(#787B86, 0), width = 1)
-        t.lb   := label.new(bar_index, ly, t.head, tooltip = t.head + "\n" + body, color = color.new(#787B86, 12), textcolor = color.new(#101014, 0), style = dir > 0 ? label.style_label_up : label.style_label_down, size = size.small)
+        t.ln   := line.new(bar_index, px, bar_index, ly, color = t.bLeg ? BLEG_BLUE_L : color.new(#787B86, 0), width = 1)
+        t.lb   := label.new(bar_index, ly, t.head, tooltip = t.head + "\n" + body, color = t.bLeg ? BLEG_BLUE : color.new(#787B86, 12), textcolor = color.new(#101014, 0), style = dir > 0 ? label.style_label_up : label.style_label_down, size = size.small)
 
 // On the bar the trade closes: recolour by RESULT and append the R. Green won,
 // red lost, ORANGE breakeven — a trade that went out and came back to entry is a
@@ -4360,8 +4242,8 @@ f_confClose(TradeLbl t, float tradeR, float band) =>
             string line1 = t.head + "  ·  " + res + "  " + (tradeR >= 0 ? "+" : "") + str.tostring(tradeR, "#.##") + "R"
             label.set_text(t.lb, line1)
             label.set_tooltip(t.lb, line1 + "\n" + t.body)
-            label.set_color(t.lb, be ? color.new(#FF9800, 12) : won ? color.new(#26A69A, 12) : color.new(#EF5350, 12))
-            line.set_color(t.ln, be ? color.new(#FF9800, 0) : won ? color.new(#26A69A, 0) : color.new(#EF5350, 0))
+            label.set_color(t.lb, t.bLeg ? BLEG_BLUE : be ? color.new(#FF9800, 12) : won ? color.new(#26A69A, 12) : color.new(#EF5350, 12))
+            line.set_color(t.ln, t.bLeg ? BLEG_BLUE_L : be ? color.new(#FF9800, 0) : won ? color.new(#26A69A, 0) : color.new(#EF5350, 0))
         else
             label.delete(t.lb)
             line.delete(t.ln)
@@ -4369,20 +4251,28 @@ f_confClose(TradeLbl t, float tradeR, float band) =>
         t.ln := na
 
 if strategy.position_size > 0 and strategy.position_size[1] <= 0
-    tradedSosL := pendSosL
+    if pendIsBLegL
+        tradedBLegL := pendSosL
+    else
+        tradedSosL := pendSosL
     lEntry     := strategy.position_avg_price
     lStage     := 0
     lMaxFav    := high
     openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
     netAtEntry  := strategy.netprofit
+    tlbl.bLeg  := pendIsBLegL
     f_confOpen(tlbl, 1, lEntry, _cOff, pendConfL, execLabelWhich != "None")
 if strategy.position_size < 0 and strategy.position_size[1] >= 0
-    tradedSosS := pendSosS
+    if pendIsBLegS
+        tradedBLegS := pendSosS
+    else
+        tradedSosS := pendSosS
     sEntry     := strategy.position_avg_price
     sStage     := 0
     sMaxFav    := low
     openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
     netAtEntry  := strategy.netprofit
+    tlbl.bLeg  := pendIsBLegS
     f_confOpen(tlbl, -1, sEntry, _cOff, pendConfS, execLabelWhich != "None")
 if strategy.position_size == 0
     lStage := 0
@@ -4580,126 +4470,104 @@ if strategy.position_size < 0
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
 
-
-
-//============================================================================
-//  PARITY EXPORT — per-bar DECISION STREAM  (for compare_strategy.py)
-//============================================================================
-// This file is `mpc_strategy.pine` + THIS appended block, nothing else changed. The
-// trade logic above must stay BYTE-IDENTICAL to `mpc_strategy.pine` — when your brother
-// re-pastes the strategy, regenerate this file (copy the strategy, re-append this block).
+//============================================================
+//  DIAGNOSTIC LOG — full text trace for off-chart debugging
+//============================================================
+// Turns everything the strategy DOES into copy-pasteable text in TradingView's
+// Pine Logs tab (open it from the "⋮" menu on the Pine editor, or the Pine Logs
+// button at the bottom of the Strategy Tester). Select-all in that pane, paste
+// it to Claude, and the whole trade history is legible with no screenshot: every
+// entry with the exact confluences that armed it, every partial exit at its REAL
+// fill price and bar, the graded result in R, and every MISS — no-FVG, veto /
+// late-day block, and 2-of-3 death — each with its context. It reads engine +
+// execution state ONLY: it places no orders, draws nothing, touches no counter,
+// and cannot change a single trade or stat. Toggle off for a clean run.
 //
-// REGENERATED 2026-07-22 from `mpc_strategy.pine` @ 361f007. The previous copy was from
-// 2026-07-15 and had drifted on three trade-affecting changes — the SOS-aware divergence
-// veto (longVetoA/shortVetoA), the new `execConfSZ` Sniper-Zone entry confirmation, and
-// the removal of the CONT trades — so any diff it produced was July-15 drift, not a bug.
-// Regenerate the same way: `sed -n '1,<line before the DIAGNOSTIC LOG header>p'
-// mpc_strategy.pine` + this block, then re-check that every identifier the block reads
-// still exists upstream (they are all globals declared before the exits).
+// This is the one place built specifically so Claude can "see what you see" on
+// the chart as plain text. When a trade looks wrong on the chart, turn this on,
+// bar-replay (or run) across it, and paste the log lines for that trade.
 //
-// The base strategy already sits just under Pine's main-body statement cap (CE10295 —
-// that is WHY its big renders are wrapped in f_drawTable / f_posBox). The token-heavy
-// Diagnostic Log block is removed in this export copy to fit under Pine's token cap. So this
-// block MUST stay tiny: the per-bar values are computed inside functions, and the columns
-// are PACKED — a dozen booleans into one integer, etc. — so there are ~14 plots, not ~40.
-// `compare_strategy.py` unpacks them with the exact same scheme; keep the two in lockstep.
+// Line grammar (so a paste is self-describing):
+//   [ENTRY @bar]  a position opened, with its frozen SL/TP ladder + confluences
+//   [EXIT #i]     one partial leg (TP1/TP2/RUN) filled, at its true price + bar
+//   [RESULT]      the trade closed — WIN / LOSS / BREAKEVEN graded in R
+//   [MISS-NOFVG]  reached the entry band but no FVG overlapped it — no fill
+//   [MISS]        a 2-of-3-or-better setup died without ever becoming a trade,
+//                 with the met and missing confluences named
+//   [BLOCK]       entry zone reached with a live edge, killed by veto / late-day
 //
-// GOTCHA (from the engine exports): a plotted column MUST use a transparent colour, never
-// `display.none` — TradingView drops display.none series from the CSV export.
-//
-// Run: put this on a 5m XAUUSD chart (5m exercises the Macro fib), set your toggles,
-// "Export chart data" to CSV, then:
-//   python strategies/python/mpc_sos_fade/tools/compare_strategy.py <that.csv> --warmup N
+// The known "all three legs, same price, same bar, 1-bar duration" phantom-exit
+// bug (see BUG_exit_fill_price_mismatch.md) shows up directly here: three [EXIT]
+// lines sharing one fill price and one bar is exactly that shape.
 
-// Per-bar values computed in functions (keeps the main body under the CE10295 cap).
-f_pxExits() =>
-    var int _seen = 0
-    float _tp1 = na, float _tp2 = na, float _run = na
-    if strategy.closedtrades > _seen
-        for _xi = _seen to strategy.closedtrades - 1
-            if strategy.closedtrades.exit_bar_index(_xi) == bar_index
-                string _xid = strategy.closedtrades.exit_id(_xi)
-                float  _xpx = strategy.closedtrades.exit_price(_xi)
-                if str.contains(_xid, "TP1")
-                    _tp1 := _xpx
-                else if str.contains(_xid, "TP2")
-                    _tp2 := _xpx
-                else
-                    _run := _xpx                 // L-RUN / S-RUN and any force-close
-        _seen := strategy.closedtrades
-    [_tp1, _tp2, _run]
+var GRP_DIAG = "Diagnostic Log"
+bool execDiagLog = input.bool(true, "Log every trade + miss to Pine Logs", group = GRP_DIAG, tooltip = "Writes one text line per event to the Pine Logs tab: entries (with the confluences that armed them), each partial exit at its true fill price, results in R, and every miss (no-FVG, veto/late-day block, 2-of-3 death). Copy the pane and paste it to Claude for a full off-chart trade audit. No effect on trades or drawings.")
 
-f_pxTrade() =>
-    float _ep = (strategy.position_size != 0 and strategy.position_size[1] == 0) ? strategy.position_avg_price : na
-    int   _ed = (strategy.position_size > 0 and strategy.position_size[1] <= 0) ? 1 : (strategy.position_size < 0 and strategy.position_size[1] >= 0) ? -1 : 0
-    float _st = strategy.position_size > 0 ? lStop : strategy.position_size < 0 ? sStop : na
-    [_ep, _ed, _st]
+// slot 0 = closed-trades already logged · slot 1/2 = last blocked long/short SOS bar (dedupe)
+var array<int> diagState = array.from(0, -1, -1)
 
-[_exTP1, _exTP2, _exRUN] = f_pxExits()
-[_entryPx, _entryDir, _stop] = f_pxTrade()
-color _INV = color.new(color.gray, 100)   // transparent — present in the export, invisible on chart
+f_diagNum(float v) => na(v) ? "na" : str.tostring(v, format.mintick)
 
-// DECISION STREAM (packed — compare_strategy.py unpacks with the same scheme):
-//   px_dec_bits = longArmed·1 + shortArmed·2 + longVetoA·4 + shortVetoA·8 + (entryDir==1?16:entryDir==-1?32:0)
-//   (longVetoA/shortVetoA are the SOS-AWARE vetoes — a divergence printing AFTER the
-//    SOS no longer blocks its own setup. Renamed from longVeto/shortVeto 2026-07-21.)
-//   px_stages   = aplusL_stage·10 + aplusS_stage
-//   px_edge     = the active side's entry edge (longEdge and shortEdge are mutually exclusive by fibo_dir)
-plot((longArmed ? 1 : 0) + (shortArmed ? 2 : 0) + (longVetoA ? 4 : 0) + (shortVetoA ? 8 : 0) + (_entryDir == 1 ? 16 : _entryDir == -1 ? 32 : 0), "px_dec_bits", _INV, editable = false)
-plot(aplusL_stage * 10 + aplusS_stage, "px_stages", _INV, editable = false)
-plot(na(longEdge) ? shortEdge : longEdge, "px_edge", _INV, editable = false)
-plot(_stop,     "px_stop",        _INV, editable = false)
-plot(_entryPx,  "px_entry_price", _INV, editable = false)
-plot(_exTP1,    "px_exit_tp1",    _INV, editable = false)
-plot(_exTP2,    "px_exit_tp2",    _INV, editable = false)
-plot(_exRUN,    "px_exit_run",    _INV, editable = false)
-plot(closedR,   "px_closed_r",    _INV, editable = false)
+// Whole trace lives in one function (its own toggle gate included) so the main
+// body pays for a single call — same CE10295 reason as f_drawTable / f_drawStats.
+// Everything it reads is a global declared above; the only state it writes is the
+// passed diagState array (mutated by reference, never a global reassignment).
+f_diag(array<int> ds) =>
+    if execDiagLog
+        // ── ENTRY — a position opened this bar. pendConf* already holds the arm
+        //    source, sweep name, SOS age, FVG/POI/DIV and deep/shallow snapshot. ──
+        if strategy.position_size != 0 and strategy.position_size[1] == 0
+            bool   isL  = strategy.position_size > 0
+            string conf = str.replace_all(isL ? pendConfL : pendConfS, "\n", " · ")
+            log.info("[ENTRY @" + str.tostring(bar_index) + "] " + (isL ? "LONG" : "SHORT") +
+              "  entry=" + f_diagNum(isL ? lEntry : sEntry) + " SL=" + f_diagNum(isL ? lSL : sSL) +
+              " TP1=" + f_diagNum(isL ? lTP1 : sTP1) + " TP2=" + f_diagNum(isL ? lTP2 : sTP2) +
+              " qty=" + str.tostring(math.abs(strategy.position_size), "#.###") + "  | " + conf)
+        // ── EXITS — drain every partial leg that filled since the last bar, each
+        //    at the price the engine REALLY got (from the closed-trades log, not
+        //    the fib level it aimed at). ──
+        if strategy.closedtrades > array.get(ds, 0)
+            for i = array.get(ds, 0) to strategy.closedtrades - 1
+                int   eBar = strategy.closedtrades.entry_bar_index(i)
+                int   xBar = strategy.closedtrades.exit_bar_index(i)
+                log.info("[EXIT #" + str.tostring(i) + "] " + strategy.closedtrades.exit_id(i) +
+                  "  fill=" + f_diagNum(strategy.closedtrades.exit_price(i)) +
+                  "  (entry " + f_diagNum(strategy.closedtrades.entry_price(i)) + " @" + str.tostring(eBar) +
+                  " → exit @" + str.tostring(xBar) + ", " + str.tostring(xBar - eBar) + " bars)" +
+                  "  pnl=$" + str.tostring(strategy.closedtrades.profit(i), "#.##"))
+            array.set(ds, 0, strategy.closedtrades)
+        // ── RESULT — the trade closed this bar (closedR is the execution layer's
+        //    own R grade, against the SAME breakeven band the entry label uses). ──
+        if not na(closedR)
+            string verdict = math.abs(closedR) <= execBeBandR ? "BREAKEVEN" : closedR > 0 ? "WIN" : "LOSS"
+            log.info("[RESULT] " + (strategy.position_size[1] > 0 ? "LONG " : "SHORT ") + verdict + "  " +
+              (closedR >= 0 ? "+" : "") + str.tostring(closedR, "#.##") + "R  | equity=$" + str.tostring(strategy.equity, "#.##"))
+        // ── MISS: no FVG — the execution layer just booked one (counter ticked). ──
+        if missedNoFvgL != missedNoFvgL[1]
+            log.info("[MISS-NOFVG] LONG @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
+        if missedNoFvgS != missedNoFvgS[1]
+            log.info("[MISS-NOFVG] SHORT @" + str.tostring(bar_index) + " — armed + SOS in + price inside the 0.5-0.886 band, but NO FVG overlapped the zone, so no limit ever rested.")
+        // ── MISS: a setup with 2-of-3 or better died without becoming a trade. The
+        //    callout block already assembled the exact same text it drew on the
+        //    chart, so the log and the box can never disagree. ──
+        if miss23L != ""
+            log.info("[MISS] @" + str.tostring(bar_index) + " " + miss23L + " (arm@" + str.tostring(mwL.armBar) + " sos@" + str.tostring(mwL.sosBar) + ")")
+        if miss23S != ""
+            log.info("[MISS] @" + str.tostring(bar_index) + " " + miss23S + " (arm@" + str.tostring(mwS.armBar) + " sos@" + str.tostring(mwS.sosBar) + ")")
+        // ── MISS: blocked at the entry zone — everything for a fill was satisfiable
+        //    EXCEPT a live veto or the final-hour rule. Deduped by SOS bar (via the
+        //    diagState array) so each blocked setup logs exactly once. ──
+        bool lReadyBase = execLongs and armOkL and not na(aplusL_sosBar) and fibo_dir == 1 and not na(longEdge) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+        bool lBlkVeto = lReadyBase and not lateDayBlock and longVetoA and execRespectVeto
+        bool lBlkLate = lReadyBase and lateDayBlock
+        if (lBlkVeto or lBlkLate) and aplusL_sosBar != array.get(ds, 1)
+            array.set(ds, 1, aplusL_sosBar)
+            log.info("[BLOCK] LONG @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (lBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
+        bool sReadyBase = execShorts and armOkS and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+        bool sBlkVeto = sReadyBase and not lateDayBlock and shortVetoA and execRespectVeto
+        bool sBlkLate = sReadyBase and lateDayBlock
+        if (sBlkVeto or sBlkLate) and aplusS_sosBar != array.get(ds, 2)
+            array.set(ds, 2, aplusS_sosBar)
+            log.info("[BLOCK] SHORT @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (sBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
 
-// CONFIG (packed). cfg_bits packs 14 booleans (bit 4096 = execConfSZ, added 2026-07-22; bit 8192 = execDeepFib, added 2026-07-23); cfg_strcodes packs the 4 string dropdowns;
-// cfg_divints packs the 5 divergence ints. The other numeric toggles (tp1/tp2 %, buffers,
-// trail step, scratch band) are left at their defaults in the Python bot — if you tune one,
-// add a column here and in compare_strategy.py.
-plot((execLongs?1:0)+(execShorts?2:0)+(execArmSweep?4:0)+(execArmDiv?8:0)+(execReqFVG?16:0)+(execFvgDeepOnly?32:0)+(execRespectVeto?64:0)+(execCloseOppSOS?128:0)+(execHtfExhaustOnly?256:0)+(execNoLateDay?512:0)+(showDiv?1024:0)+(divVeto?2048:0)+(execConfSZ?4096:0)+(execDeepFib?8192:0), "cfg_bits", _INV, editable = false)
-plot((execSlLevel=="0.618"?0:execSlLevel=="0.702"?1:execSlLevel=="0.786"?2:execSlLevel=="0.886"?3:4)*1000 + (execHtfSource=="Weekly"?0:execHtfSource=="Daily"?1:2)*100 + (execHtfWeekly=="Ignore"?0:execHtfWeekly=="Must agree"?1:execHtfWeekly=="Must not oppose"?2:3)*10 + (execHtfDaily=="Ignore"?0:execHtfDaily=="Must agree"?1:execHtfDaily=="Must not oppose"?2:3), "cfg_strcodes", _INV, editable = false)
-plot(divExtremeOS + divExtremeOB*1000 + divRsiLen*1000000 + divPivotLen*1000000000 + divValidBars*1000000000000, "cfg_divints", _INV, editable = false)
-plot(aplusWindow, "cfg_window",   _INV, editable = false)
-plot(execRiskPct, "cfg_risk_pct", _INV, editable = false)
-
-// DIAGNOSTIC (temporary — pins the A+ Stage-1 arming gap vs the Python bot at H4/
-// session boundaries; remove once parity is green). Everything the arming block at
-// ~3718 reads or sets, so Python's reconstructed liquidity can be diffed bar-for-bar.
-// Every bar field is stored (value+1) so 0 = "none" and the packing never goes negative.
-//   dbg_recent_bars = (recentSSL_bar+1) *1e6 + (recentBSL_bar+1)          [0 => none]
-//   dbg_recent_src  = SSL-slot code *10 + BSL-slot code
-//                     (""=0, H4=1, Day=2, Asia=3, Ldn=4, NY=5 — same order both sides)
-//   dbg_sweep_bits  = newSweepL·1 + newSweepS·2 + dailyTooOldL·4 + dailyTooOldS·8 + sessionGapBar·16
-//   dbg_armL_bars   = (na?0:aplusL_sweepBar+1) *1e6 + (na?0:aplusL_sosBar+1)  [0 => na]
-//   dbg_armS_bars   = (na?0:aplusS_sweepBar+1) *1e6 + (na?0:aplusS_sosBar+1)
-_dbgSslCode = recentSSL == "H4 Low" ? 1 : recentSSL == "Day Low" ? 2 : recentSSL == "Asia Low" ? 3 : recentSSL == "Ldn Low" ? 4 : recentSSL == "NY Low" ? 5 : 0
-_dbgBslCode = recentBSL == "H4 High" ? 1 : recentBSL == "Day High" ? 2 : recentBSL == "Asia High" ? 3 : recentBSL == "Ldn High" ? 4 : recentBSL == "NY High" ? 5 : 0
-plot((recentSSL_bar + 1) * 1000000 + (recentBSL_bar + 1), "dbg_recent_bars", _INV, editable = false)
-plot(_dbgSslCode * 10 + _dbgBslCode,                       "dbg_recent_src",  _INV, editable = false)
-plot((newSweepL?1:0)+(newSweepS?2:0)+(dailySweepTooOldL?4:0)+(dailySweepTooOldS?8:0)+(sessionGapBar?16:0), "dbg_sweep_bits", _INV, editable = false)
-plot((na(aplusL_sweepBar)?0:aplusL_sweepBar+1) * 1000000 + (na(aplusL_sosBar)?0:aplusL_sosBar+1), "dbg_armL_bars", _INV, editable = false)
-plot((na(aplusS_sweepBar)?0:aplusS_sweepBar+1) * 1000000 + (na(aplusS_sosBar)?0:aplusS_sosBar+1), "dbg_armS_bars", _INV, editable = false)
-
-// DIVERGENCE INTERNALS (temporary — the arm gap above traces to a bear divergence
-// Python fires that Pine doesn't; these expose Pine's own divergence state so the
-// RSI/pivot split can be pinned). Bars now align (full history), so raw, na = -1.
-//   dbg_div_bars   = lastBullDivBar (bull-fuel) *1e6-shifted + lastBearDivBar   [-1 = na]
-//   dbg_div_ph     = divPhRsi   — the RSI pivot-HIGH confirmed THIS bar (na most bars)
-//   dbg_div_prevhi = divPrevRsiHigh — the running "previous" RSI pivot high the gate reads
-plot((nz(lastBullDivBar, -1) + 1) * 1000000 + (nz(lastBearDivBar, -1) + 1), "dbg_div_bars", _INV, editable = false)
-plot(divPhRsi,       "dbg_div_ph",     _INV, editable = false)
-plot(divPrevRsiHigh, "dbg_div_prevhi", _INV, editable = false)
-
-// FIB LIVE-ANCHOR (temporary — an arm gap traces to the fib entry band; the gap top
-// sits right on the P6 boundary and Python's band shifts for one bar. These expose
-// Pine's own per-bar anchor + the two band edges the FVG-overlap gate reads, so the
-// live-anchor divergence can be pinned. Raw prices, na = empty cell.
-//   dbg_fib_ash / dbg_fib_asl = the live extending anchor high/low (tracks pb_extreme)
-//   dbg_fib_p2  = fiboP2 (0.5, shallow band edge)   dbg_fib_p6 = fiboP6 (0.886, deep edge)
-plot(fibo_ash, "dbg_fib_ash", _INV, editable = false)
-plot(fibo_asl, "dbg_fib_asl", _INV, editable = false)
-plot(fiboP2,   "dbg_fib_p2",  _INV, editable = false)
-plot(fiboP6,   "dbg_fib_p6",  _INV, editable = false)
+f_diag(diagState)

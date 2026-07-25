@@ -386,6 +386,71 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     return spec
 
 
+def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
+    """Build a MERGED ChartSpec for a portfolio stack — one shared candle chart carrying every
+    completed leg's trades, each tagged with `layer` = its strategy_id so the frontend can filter
+    by the SAME per-strategy toggle it uses for the equity chart (and colour each layer to match).
+
+    Reuses each leg's own `build_chart_spec` (all legs share one instrument/TF/window, so the
+    candles are identical) and drops the per-strategy structure overlays/indicators — a portfolio
+    price view stays readable with trades only. Returns None if the stack is unknown; a spec with
+    empty candles if no leg produced any (frontend shows "no price data"). Not cached (legs can
+    complete incrementally); each leg's own spec is cached, so the merge is cheap."""
+    rows = lab_db.list_stack_runs(stack_id)
+    if not rows:
+        return None
+
+    first_spec: Optional[dict] = None
+    base_spec: Optional[dict] = None      # first leg that actually has candles
+    base_run_id: Optional[str] = None     # its run_id — drives the price chart's drill-down/fullscreen
+    all_trades: list[dict] = []
+    layers: list[dict] = []
+    for r in rows:
+        if r["status"] != "complete":
+            continue
+        spec = build_chart_spec(r["run_id"])
+        if not spec:
+            continue
+        first_spec = first_spec or spec
+        if base_spec is None and spec.get("candles"):
+            base_spec = spec
+            base_run_id = r["run_id"]
+        layers.append({
+            "strategy_id": r["strategy_id"],
+            "strategy_name": r.get("strategy_name", ""),
+            "run_id": r["run_id"],
+        })
+        for tr in spec.get("trades", []):
+            t = dict(tr)
+            t["layer"] = r["strategy_id"]
+            t["id"] = f"{r['strategy_id']}:{tr.get('id', '')}"  # unique across layers
+            all_trades.append(t)
+
+    src = base_spec or first_spec
+    if src is None:
+        return None
+
+    all_trades.sort(key=lambda t: t.get("entryTime", 0))
+    return {
+        "instrument": src["instrument"],
+        "baseTimeframe": src["baseTimeframe"],
+        "brokerGmtOffsetHours": src["brokerGmtOffsetHours"],
+        "candles": src["candles"],
+        "sessions": [dict(s) for s in src.get("sessions", [])],
+        "trades": all_trades,
+        # Structure overlays + indicators are a property of the MARKET on these candles, not of
+        # any one strategy — identical for every leg (same instrument/timeframe/window). So the
+        # stack's price chart carries the base leg's, giving it full BacktestDetail parity
+        # (structure layers, ATR pane, fib/measurement tools all read the same spec).
+        "overlays": [dict(o) for o in src.get("overlays", [])],
+        "indicators": [dict(i) for i in src.get("indicators", [])],
+        "layers": layers,
+        # The base leg's run_id — the frontend routes M1/M5 drill-down + fullscreen candle fetches
+        # through it (all legs share the same feed, so any leg's candles are the stack's candles).
+        "base_run_id": base_run_id or (rows[0]["run_id"] if rows else None),
+    }
+
+
 def build_run_candles(
     run_id: str, timeframe: str, from_ms: int, to_ms: int,
 ) -> Optional[dict]:

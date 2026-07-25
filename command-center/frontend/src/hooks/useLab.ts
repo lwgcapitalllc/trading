@@ -8,6 +8,8 @@ import type {
   BacktestRunRequest, BacktestSummary, BacktestDetail, RunNewsReport,
   LabProgress, SystemHealth,
   SweepRequest, SweepResponse, SweepDetail,
+  StackRequest, StackResponse, StackSummary, StackDetail, StackChartSpec,
+  StackPreviewRequest, StackPreviewResponse,
   OptimizationRequest, OptimizationSummary, OptimizationDetail,
   InstrumentSummary, RunningJobStatus,
   StrategyFile, StrategyFileSyncStatus, CompileJobStatus,
@@ -561,6 +563,105 @@ export function useTriggerSweep() {
       } else {
         toast.error('Failed to start sweep')
       }
+    },
+  })
+}
+
+// ── Portfolio stacks ─────────────────────────────────────────────────────────
+
+export function useStacks() {
+  return useQuery({
+    queryKey: ['lab', 'stacks'],
+    queryFn: () => api.get<StackSummary[]>('/backtests/stacks'),
+    refetchInterval: (query) => {
+      const data = query.state.data as StackSummary[] | undefined
+      return data?.some(s => s.status === 'running') ? 3_000 : 30_000
+    },
+  })
+}
+
+export function useStack(stackId: string | null) {
+  return useQuery({
+    queryKey: ['lab', 'stack', stackId],
+    queryFn: () => api.get<StackDetail>(`/backtests/stacks/${stackId}`),
+    enabled: !!stackId,
+    refetchInterval: (query) => {
+      const data = query.state.data as StackDetail | undefined
+      if (!data) return 5_000
+      return data.completed_strategies < data.total_strategies ? 3_000 : false
+    },
+  })
+}
+
+// Merged price-chart spec for a stack (shared candles + every completed leg's layer-tagged trades).
+// `readyKey` (the completed-leg ids) is in the query key so the spec refetches as legs finish; the
+// candle fetch is heavy, so it's kept unfetched until the caller opens the price section (`enabled`).
+export function useStackChartSpec(stackId: string | null, readyKey: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['lab', 'stack-chart-spec', stackId, readyKey],
+    queryFn: () => api.get<StackChartSpec>(`/backtests/stacks/${stackId}/chart-spec`),
+    enabled: !!stackId && !!readyKey && enabled,
+    staleTime: Infinity,
+  })
+}
+
+// Live preview: which legs would be reused from an existing completed run vs re-run fresh,
+// for the chosen shared settings. Keyed on every setting so it refetches as the user edits.
+export function useStackPreview(body: StackPreviewRequest, enabled: boolean) {
+  return useQuery({
+    queryKey: ['lab', 'stack-preview', body],
+    queryFn: () => api.post<StackPreviewResponse>('/backtests/stacks/preview', body),
+    enabled,
+    staleTime: 30_000,
+    retry: false,
+  })
+}
+
+export function useTriggerStack() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: StackRequest) => api.post<StackResponse>('/backtests/stack', body),
+    onSuccess: (res) => {
+      toast.success(res.status === 'complete' ? 'Stack assembled from existing runs' : 'Stack started')
+      qc.invalidateQueries({ queryKey: ['lab', 'stacks'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
+    },
+    onError: (e: unknown) => {
+      const detail = (e as { detail?: string })?.detail
+      toast.error(detail ?? 'Failed to start stack')
+    },
+  })
+}
+
+export function useDeleteStack() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (stackId: string) => api.delete<void>(`/backtests/stacks/${stackId}`),
+    onSuccess: () => {
+      toast.success('Stack deleted')
+      qc.invalidateQueries({ queryKey: ['lab', 'stacks'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { detail?: string })?.detail
+      toast.error(msg ?? 'Failed to delete stack')
+    },
+  })
+}
+
+export function useCancelStack() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (stackId: string) =>
+      api.post<{ stack_id: string; status: string }>(`/backtests/stacks/${stackId}/cancel`),
+    onSuccess: (_data, stackId) => {
+      toast.success('Stack cancelled')
+      qc.invalidateQueries({ queryKey: ['lab', 'stack', stackId] })
+      qc.invalidateQueries({ queryKey: ['lab', 'stacks'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { detail?: string })?.detail
+      toast.error(msg ?? 'Failed to cancel stack')
     },
   })
 }
