@@ -65,13 +65,16 @@ function composeCombined(legs: StackStrategyLeg[], enabled: Set<string>): Combin
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
     .map(([date, pnl]) => ({ date, pnl }))
 
-  // Each leg's own opening balance; combined start = their sum.
+  // ONE shared account. Every leg was backtested against the SAME opening balance, so the portfolio
+  // starts THERE — not at the sum of the legs. Summing showed $20k for two legs of a $10k account and
+  // halved every balance-relative KPI. (A stack configures all legs together so their starts agree;
+  // max is the safe pick if a reused run ever carried a different one.)
   const legStart = new Map<string, number>()
   for (const leg of active) {
     const e0 = leg.equity_curve[0]
     legStart.set(leg.strategy_id, e0 ? (e0.equity ?? 0) - (e0.profit ?? 0) : 10_000)
   }
-  const balance = Array.from(legStart.values()).reduce((a, b) => a + b, 0)
+  const balance = legStart.size ? Math.max(...legStart.values()) : 10_000
 
   // Union of every leg's trades in time order → one portfolio equity curve. Each point also records
   // EVERY leg's running balance (the overlay lines), so a strategy's line rides the same x-axis.

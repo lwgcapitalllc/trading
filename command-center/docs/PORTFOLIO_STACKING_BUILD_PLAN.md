@@ -115,6 +115,11 @@ contention log records it.
 
 ## Phase 2 — lab integration (`command-center/`)
 
+> **Superseded by `SHARED_RISK_STACK.md` (2026-07-25).** The Stacks tab + `StackDetail` shipped in
+> the meantime as a Phase-0-style *screen*, so shared-account runs become a MODE of the existing
+> stack rather than the separate "Portfolios" page sketched below. Read that document for the work;
+> the sections below are kept for the storage/runner detail they still get right.
+
 ### 2A. Storage — `services/lab_db.py`
 Tables `portfolios`, `portfolio_legs`, `portfolio_runs`, and `portfolio_run_id` on `backtest_runs`
 (child leg-runs, hidden from `list_runs()` like `stress_test_id`). Heavy output (combined curve,
