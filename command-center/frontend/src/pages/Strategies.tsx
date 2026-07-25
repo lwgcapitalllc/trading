@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Upload, Trash2, CloudUpload, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, Upload, Trash2, CloudUpload, CheckCircle2, XCircle, AlertTriangle, Layers } from 'lucide-react'
 import {
   useStrategies,
   useScanStrategies, useReconcileStrategies,
@@ -13,6 +13,7 @@ import {
 import { ConfirmDeleteModal } from '@/pages/Backtests'
 import { EmptyState } from '@/components/EmptyState'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
+import { StackConfigModal } from '@/components/StackConfigModal'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { useStrategyBestGrades } from '@/hooks/useStressTests'
 import { RunnerBadge } from '@/components/RunnerBadge'
@@ -113,6 +114,12 @@ function StrategiesTab() {
   const [runStrategy, setRunStrategy] = useState<Strategy | null>(null)
   const [deployingId, setDeployingId] = useState<string | null>(null)
   const [marketFilter, setMarketFilter] = useState<MarketFilter>('all')
+  // Portfolio stacking, straight off this list — tick 2+ PYTHON strategies and hand them to the
+  // SAME `StackConfigModal` the Backtests → Stacks tab uses, so a stack is configured identically
+  // wherever you start it. Stacking is python-only (the runner the stack engine replays), so a
+  // non-python row simply has no checkbox.
+  const [stackSel, setStackSel] = useState<Set<string>>(new Set())
+  const [stackOpen, setStackOpen] = useState(false)
 
   const syncByStrategy = useMemo(() => {
     const m: Record<string, StrategyFileSyncStatus> = {}
@@ -135,6 +142,19 @@ function StrategiesTab() {
       return pa.localeCompare(pb) || (a.name || a.class_name).localeCompare(b.name || b.class_name)
     }),
     [visible]
+  )
+
+  // Stackable = the python rows currently VISIBLE (a filtered-out row can't be ticked, so it must
+  // not count toward the selection either).
+  const stackable = useMemo(() => sorted.filter(s => s.runner === 'python'), [sorted])
+  const toggleStack = (id: string) => setStackSel(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const stackCount = useMemo(
+    () => stackable.filter(s => stackSel.has(s.id)).length,
+    [stackable, stackSel],
   )
 
   const handleDeploy = async (strategyId: string) => {
@@ -170,6 +190,19 @@ function StrategiesTab() {
           <MarketFilterBar value={marketFilter} onChange={setMarketFilter} />
         </div>
         <div className="flex items-center gap-2">
+          {/* Appears once 2+ python strategies are ticked — same destination as Backtests → Stacks →
+              New Stack, just reached from the strategy you were already looking at. */}
+          {stackable.length >= 2 && (
+            <button
+              onClick={() => setStackOpen(true)}
+              disabled={stackCount < 2}
+              title={stackCount < 2 ? 'Tick 2 or more Python strategies to stack them' : `Stack ${stackCount} strategies over one instrument, timeframe and window`}
+              className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 transition-colors disabled:opacity-40 disabled:hover:bg-gold-muted"
+            >
+              <Layers size={12} />
+              {stackCount >= 2 ? `Stack ${stackCount} strategies` : 'Stack strategies'}
+            </button>
+          )}
           {orphans.length > 0 && (
             <button
               onClick={() => setConfirmReconcile(true)}
@@ -220,6 +253,7 @@ function StrategiesTab() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-border-subtle">
+                {stackable.length >= 2 && <th className="w-9 pl-4 py-3" title="Select Python strategies to stack" />}
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Name</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Platform</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Params</th>
@@ -243,6 +277,9 @@ function StrategiesTab() {
                   onCompile={() => handleCompile(s.runner)}
                   onScan={() => scan.mutate()}
                   scanning={scan.isPending}
+                  stackCol={stackable.length >= 2}
+                  stackChecked={stackSel.has(s.id)}
+                  onStackToggle={s.runner === 'python' ? () => toggleStack(s.id) : undefined}
                 />
               ))}
             </tbody>
@@ -250,6 +287,12 @@ function StrategiesTab() {
         </div>
       )}
 
+      {stackOpen && (
+        <StackConfigModal
+          initial={{ strategyIds: stackable.filter(s => stackSel.has(s.id)).map(s => s.id) }}
+          onClose={() => { setStackOpen(false); setStackSel(new Set()) }}
+        />
+      )}
       {runStrategy && (
         <RunBacktestModal
           strategy={runStrategy}
@@ -277,6 +320,7 @@ function StrategiesTab() {
 
 function StrategyRow({
   strategy: s, sync, isDeploying, bestGrade, onView, onRun, onDeploy, onCompile, onScan, scanning,
+  stackCol, stackChecked, onStackToggle,
 }: {
   strategy: Strategy
   sync?: StrategyFileSyncStatus
@@ -288,6 +332,11 @@ function StrategyRow({
   onCompile: () => void
   onScan: () => void
   scanning: boolean
+  /** Stack-select column is showing at all (2+ python strategies are listed). */
+  stackCol: boolean
+  stackChecked: boolean
+  /** Undefined on a non-python row — stacking only replays python strategies. */
+  onStackToggle?: () => void
 }) {
   const navigate = useNavigate()
   const needsDeploy  = sync?.needs_deploy
@@ -298,6 +347,19 @@ function StrategyRow({
   const liveVer = needsCompile ? sync?.deployed_version : sync?.compiled_version ?? depVer
   return (
     <tr onClick={onView} className="hover:bg-bg-hover cursor-pointer transition-colors">
+      {stackCol && (
+        <td className="w-9 pl-4 py-3" onClick={e => e.stopPropagation()}>
+          {onStackToggle && (
+            <input
+              type="checkbox"
+              checked={stackChecked}
+              onChange={onStackToggle}
+              title="Include in a portfolio stack"
+              className="w-3.5 h-3.5 accent-gold-text cursor-pointer align-middle"
+            />
+          )}
+        </td>
+      )}
       <td className="px-4 py-3 font-medium">
         <div className="flex items-center gap-1">
           {/* The strategy's NAME — matches StrategyDetail's heading. Showing class_name here
