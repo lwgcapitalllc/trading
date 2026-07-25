@@ -85,49 +85,14 @@ f_structSize() =>
 f_swingCol(color c) =>
     showSwingLabels ? c : color(na)
 
-//============================================================
-//  ORDER BLOCKS
-//============================================================
-var GRP_OB = "Order Blocks"
-bool  showOBsInput       = input.bool(false, "Show Order Blocks", group = GRP_OB, display = display.none)
-bool showOBs = marketStructureOnly ? false : showOBsInput
-bool  showBullOB    = input.bool(true, "Show Bullish OB", group = GRP_OB, inline = "BullOB", active = showOBsInput, display = display.none)
-color colBullOB     = input.color(color.new(color.blue, 85), "", group = GRP_OB, inline = "BullOB", display = display.none)
-bool  showBearOB    = input.bool(true, "Show Bearish OB", group = GRP_OB, inline = "BearOB", active = showOBsInput, display = display.none)
-color colBearOB     = input.color(color.new(color.red, 85), "", group = GRP_OB, inline = "BearOB", display = display.none)
-int   maxActiveOB   = input.int(6, "Max Active OBs (per direction)", group = GRP_OB, minval = 1, maxval = 20, active = showOBsInput, display = display.none)
-bool  obBodyOnly    = input.bool(false, "Use Body Only for OB", group = GRP_OB, active = showOBsInput, display = display.none)
-
-type OrderBlock
-    box   bg
-    float top
-    float bottom
-    bool  isBullish
-
-var array<OrderBlock> activeBullOBs = array.new<OrderBlock>()
-var array<OrderBlock> activeBearOBs = array.new<OrderBlock>()
-
-method manageOBs(array<OrderBlock> arr, OrderBlock newOB) =>
-    array.push(arr, newOB)
-    if array.size(arr) > maxActiveOB
-        OrderBlock oldest = array.shift(arr)
-        box.delete(oldest.bg)
-
-method extendOBs(array<OrderBlock> arr) =>
-    if array.size(arr) > 0
-        for i = array.size(arr) - 1 to 0
-            OrderBlock ob = array.get(arr, i)
-            box.set_right(ob.bg, bar_index + 1)
-            // Mitigation check
-            if ob.isBullish
-                if close < ob.bottom
-                    box.delete(ob.bg)
-                    array.remove(arr, i)
-            else
-                if close > ob.top
-                    box.delete(ob.bg)
-                    array.remove(arr, i)
-
+// (ORDER BLOCKS, VWAP and the Session Volume Profile / MV line were REMOVED
+//  2026-07-25 — the script had gone over Pine's compiled-token cap again
+//  (CE10117: 101484 > 100256) after the blocked-trade marker landed. All three
+//  were purely cosmetic, defaulted OFF, and were read by NOTHING in the
+//  execution layer — verified by grep: zero references after the STRATEGY
+//  EXECUTION header. The B-LEG fork dropped the same three on 2026-07-24 for
+//  the same reason. They live on in mpc_assistant.pine if the drawing is ever
+//  wanted back.)
 //============================================================
 //  FAIR VALUE GAPS (FVG) INPUTS
 //============================================================
@@ -221,15 +186,6 @@ thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",   
 //  Pine's compiled-token cap (CE10117) and both were purely cosmetic, default
 //  OFF, and read by nothing in the execution layer. They live on in
 //  mpc_assistant.pine if the drawing is ever wanted back.)
-
-//============================================================
-//  VWAP INPUTS
-//============================================================
-var GRP_VWAP = "VWAP Settings"
-bool  showVwapInput  = input.bool(false,                "Show VWAP",       group = GRP_VWAP, display = display.none)
-bool showVwap = marketStructureOnly ? false : showVwapInput
-color vwapColor = input.color(color.rgb(5, 5, 0), "VWAP Color",      group = GRP_VWAP, active = showVwapInput, display = display.none)
-int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1, maxval = 5, group = GRP_VWAP, active = showVwapInput, display = display.none)
 
 //============================================================
 //  LIQUIDITY LEVELS INPUTS
@@ -402,16 +358,6 @@ bool showSniperFib = input.bool(false, "Sniper Zone", group = GRP_SNIPER, active
 // appears under "Strategy Execution" in the panel — group placement is by the
 // group string, not by position in the file.
 bool execConfSZ = input.bool(false, "Allow Sniper Zone as entry confirmation", group = "Strategy Execution", tooltip = "Adds the Sniper Zone as a SECOND accepted entry confirmation alongside the FVG. The SZ is the 0.5-0.618 pocket of the break leg, so it already sits inside the 0.5-0.886 entry band. FVG always wins: the SZ is used only on a leg where no qualifying gap exists, which means every trade the current settings already take is unchanged and any new trade is one that previously logged 'NO FVG missed'. The limit rests at the FAR side of the pocket (~0.618), so price must retrace the whole band to fill. Turning this on also makes the SZ engine track even when 'Sniper Zone' drawing is off.")
-
-//============================================================
-//  SESSION VOLUME PROFILE (SVP) INPUTS
-//============================================================
-var GRP_SVP   = "MV"
-bool  showSVPInput     = input.bool(false, "MV", group = GRP_SVP, display = display.none)
-bool showSVP = marketStructureOnly ? false : showSVPInput
-int   svpHistory  = input.int(2,     "Days back", group = GRP_SVP, minval = 1, maxval = 500, active = showSVPInput, display = display.none)
-int   svpRows     = 50
-color svpPOCCol   = #9C27B0
 
 //============================================================
 //  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
@@ -1128,8 +1074,6 @@ int  daysSinceSunday   = nyDayOfWeek - dayofweek.sunday
 int  weekStartTime     = nyMidnightToday - daysSinceSunday * 86400000
 bool withinSessionDays = showHistoricSessions or time >= weekStartTime
 
-vwapValue = ta.vwap(hlc3)
-
 //============================================================
 //  EXECUTION — EXTERNAL + INTERNAL STRUCTURE
 //============================================================
@@ -1156,40 +1100,6 @@ if not na(st.ash_lbl)
     label.set_textcolor(st.ash_lbl, showExternal ? f_swingCol(bearColor) : color(na))
 if not na(st.asl_lbl)
     label.set_textcolor(st.asl_lbl, showExternal ? f_swingCol(bullColor) : color(na))
-
-// Extend and clean OBs every bar
-if showOBs
-    activeBullOBs.extendOBs()
-    activeBearOBs.extendOBs()
-
-// Process OB creation on External breaks
-if showOBs and (st.bull_bos or st.bull_sos) and showBullOB
-    int lookbackIdx = bar_index - st.bull_bos_l_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] < open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
-            activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
-
-if showOBs and (st.bear_bos or st.bear_sos) and showBearOB
-    int lookbackIdx = bar_index - st.bear_bos_h_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] > open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
-            activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
 
 // Internal structure — Step 2: pullback tracking to confirm iSH / iSL
 
@@ -1724,36 +1634,6 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         i_last_mode       := -1
         i_mode            := -1
         i_sos_watch_ll    := na
-
-// ── Internal Structure OB Creation ──
-if showOBs and showBullOB and int_bull_break and not na(int_break_origin_loc)
-    int lookbackIdx = bar_index - int_break_origin_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] < open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
-            activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
-
-if showOBs and showBearOB and int_bear_break and not na(int_break_origin_loc)
-    int lookbackIdx = bar_index - int_break_origin_loc
-    if lookbackIdx >= 0 and lookbackIdx < 500
-        int obIdx = na
-        for i = lookbackIdx to math.min(lookbackIdx + 20, bar_index)
-            if close[i] > open[i]
-                obIdx := i
-                break
-        if not na(obIdx)
-            float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-            float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-            box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
-            activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
-
 
 // ── Update last_mode when mode changes ───────────────────
 if internalActive and i_mode != 0
@@ -3041,124 +2921,9 @@ if showFibo and showSniperFib and array.size(sniperBoxArr) > 0
         line.set_x2(array.get(sniper382Arr,      _sni), bar_index + fiboLineExtend)
         line.set_x2(array.get(sniper50Arr,       _sni), bar_index + fiboLineExtend)
         label.set_x(array.get(sniperLbl382Arr,   _sni), bar_index + fiboLineExtend + 2)
-
-//============================================================
-//  SESSION VOLUME PROFILE — ASIA POC / MV LINE
-//============================================================
-string SVP_SESSION = "2000-0500"
-string SVP_TZ      = "GMT-4"
-
-var array<line>  svp_poc      = array.new<line>()
-var array<label> svp_poc_lbl  = array.new<label>()
-var array<float> svp_poc_px   = array.new<float>()
-
-var float svp_hi       = na
-var float svp_lo       = na
-var int   svp_startBar = na
-var bool  svp_inSess   = false
-
-var float svp_range    = na
-var float svp_bHi      = na
-var float svp_bLo      = na
-var float svp_bVol     = na
-var bool  svp_bull     = false
-var int   svp_rLo      = 0
-var int   svp_rHi      = 0
-var int   svp_span     = 0
-var float svp_perRow   = na
-var float svp_rv       = na
-var float svp_total    = 0.0
-var float svp_maxVol   = 0.0
-var int   svp_pocRow   = 0
-var float svp_pocPx    = na
-var int   svp_sLen     = 0
-var int   svp_sBar     = 0
-var int   svp_eBar     = 0
-var array<float> svp_rowUp = array.new<float>()
-var array<float> svp_rowDn = array.new<float>()
-
-bool inSVP  = not na(time(timeframe.period, SVP_SESSION, SVP_TZ))
-bool svpNew = inSVP and not inSVP[1]
-bool svpEnd = not inSVP and inSVP[1]
-
-if svpNew and showSVP and timeframe.isintraday
-    svp_hi       := high
-    svp_lo       := low
-    svp_startBar := bar_index
-    svp_inSess   := true
-
-if svp_inSess and inSVP and showSVP and timeframe.isintraday
-    if high > svp_hi
-        svp_hi := high
-    if low < svp_lo
-        svp_lo := low
-
-if svpEnd and svp_inSess and showSVP and timeframe.isintraday and not na(svp_hi) and not na(svp_lo)
-    svp_inSess := false
-    svp_range  := svp_hi - svp_lo
-    if svp_range > 0
-        svp_sLen := bar_index - svp_startBar + 1
-        array.clear(svp_rowUp)
-        array.clear(svp_rowDn)
-        for r = 0 to svpRows - 1
-            array.push(svp_rowUp, 0.0)
-            array.push(svp_rowDn, 0.0)
-        for b = 0 to math.min(svp_sLen - 1, 1490)
-            svp_bHi  := high[b]
-            svp_bLo  := low[b]
-            svp_bVol := volume[b]
-            svp_bull := close[b] >= open[b]
-            svp_rLo  := math.max(0, math.min(math.floor((svp_bLo - svp_lo) / svp_range * svpRows), svpRows - 1))
-            svp_rHi  := math.max(0, math.min(math.ceil( (svp_bHi - svp_lo) / svp_range * svpRows) - 1, svpRows - 1))
-            svp_span := math.max(1, svp_rHi - svp_rLo + 1)
-            svp_perRow := svp_bVol / svp_span
-            for r = svp_rLo to svp_rHi
-                if svp_bull
-                    array.set(svp_rowUp, r, array.get(svp_rowUp, r) + svp_perRow)
-                else
-                    array.set(svp_rowDn, r, array.get(svp_rowDn, r) + svp_perRow)
-
-        svp_total  := 0.0
-        svp_maxVol := 0.0
-        svp_pocRow := 0
-        for r = 0 to svpRows - 1
-            svp_rv = array.get(svp_rowUp, r) + array.get(svp_rowDn, r)
-            svp_total += svp_rv
-            if svp_rv > svp_maxVol
-                svp_maxVol := svp_rv
-                svp_pocRow := r
-
-        svp_pocPx := svp_lo + (svp_pocRow + 0.5) * (svp_range / svpRows)
-        svp_sBar  := svp_startBar
-        svp_eBar  := bar_index - 1
-
-        if array.size(svp_poc) >= svpHistory
-            line.delete(array.shift(svp_poc))
-            label.delete(array.shift(svp_poc_lbl))
-            array.shift(svp_poc_px)
-
-        array.push(svp_poc,     line.new(svp_sBar, svp_pocPx, bar_index + i_lineExtend, svp_pocPx, color = svpPOCCol, style = line.style_solid, width = 1))
-        array.push(svp_poc_lbl, label.new(bar_index + i_lineExtend, svp_pocPx + lblOff, "MV", style = label.style_none, textcolor = svpPOCCol, size = f_liqSize(), textalign = text.align_left))
-        array.push(svp_poc_px,  svp_pocPx)
-
-var line  svp_ln = na
-var label svp_lb = na
-if showSVP and timeframe.isintraday and array.size(svp_poc) > 0
-    for idx = 0 to array.size(svp_poc) - 1
-        svp_ln := array.get(svp_poc, idx)
-        svp_lb := array.get(svp_poc_lbl, idx)
-        line.set_x2(svp_ln, bar_index + i_lineExtend)
-        label.set_x(svp_lb, bar_index + i_lineExtend)
-
 //============================================================
 //  PLOTTING
 //============================================================
-// VWAP is drawn with plot() rather than a polyline. The old approach rebuilt the
-// whole day's polyline on every bar (O(n^2) over the session); plot is O(1) per bar.
-// ta.vwap already resets each session, so the line breaks at the day boundary on its own.
-plot(showVwap ? vwapValue : na, title = "VWAP", color = vwapColor, linewidth = vwapWidth)
-
-
 plot(array.get(a_lastHighs, 0), "DH", color.new(i_dailyColor,   100), editable = false, display = display.none)
 plot(array.get(a_lastLows,  0), "DL", color.new(i_dailyColor,   100), editable = false, display = display.none)
 plot(array.get(a_lastHighs, 1), "WH", color.new(i_weeklyColor,  100), editable = false, display = display.none)
@@ -4412,6 +4177,69 @@ bool  _dbgRecent = debugDays == 0 or time >= timenow - debugDays * 86400000
 string miss23L = f_w23(mwL, true,  not na(aplusL_sosBar), not na(tradedSosL) and tradedSosL == mwL.sosBar, strategy.position_size <= 0, aplusL_half or aplusL_618, longEdge,  fiboP3, longVetoA  and execRespectVeto, lateDayBlock, htfBlockLong  or htfBiasBlockLong,  execArmSweep and sosL_swp, execArmDiv and sosL_div, execReqFVG, _dbg23Lo, _dbg23Atr * 2, _dbgRecent)
 string miss23S = f_w23(mwS, false, not na(aplusS_sosBar), not na(tradedSosS) and tradedSosS == mwS.sosBar, strategy.position_size >= 0, aplusS_half or aplusS_618, shortEdge, fiboP3, shortVetoA and execRespectVeto, lateDayBlock, htfBlockShort or htfBiasBlockShort, execArmSweep and sosS_swp, execArmDiv and sosS_div, execReqFVG, _dbg23Hi, _dbg23Atr * 2, _dbgRecent)
 
+// ══ BLOCKED-TRADE MARKER ══════════════════════════════════════════════════════
+// A setup that was READY to rest its entry limit — armed through to the SOS, fib
+// pointing the right way, a live entry edge to rest on, flat, this leg not yet
+// traded — and was stopped by one of YOUR OWN TOGGLES rather than by price.
+//
+// These are the only trades that are invisible everywhere else: no order is ever
+// placed, so nothing is drawn, no row lands in the trade list, and the Strategy
+// Tester cannot know they existed. That makes it impossible to judge whether a
+// blocking rule is protecting you or costing you. Now each one prints a PINK tag
+// with the reason on hover, and a dotted leader down to the exact price the limit
+// would have rested at — so you can flip the rule off, re-run, and compare.
+//
+// ONE TAG PER SETUP PER REASON: the dedupe key is the SOS bar plus the reason
+// code, so a setup blocked for twenty bars running is one tag, not twenty — but
+// if the reason CHANGES (the veto clears and the final hour then blocks it) that
+// is a genuinely different refusal and gets its own tag.
+bool showBlockTag = input.bool(true, "Mark blocked trades on chart (pink)", group = GRP_DEBUG, tooltip = "Drops a pink 'TRADE BLOCKED' tag whenever a setup had everything it needed to rest its entry limit and one of YOUR rules stopped it — the final-hour rule, the divergence / extreme-RSI veto, either HTF filter, a disabled direction, or a disabled arm source. Hover the tag for the reason and the price the limit would have rested at. This is how you find out whether a blocking rule is saving you money or costing it: count the tags, flip the rule off, re-run, compare. Purely cosmetic — it never changes a trade.")
+
+color BLK_PINK  = color.new(#FF2E9A, 12)
+color BLK_PINKL = color.new(#FF2E9A, 0)
+
+// Reason PRECEDENCE — the first rule that would refuse the order is the one
+// reported, so a tag can never blame a downstream gate for an upstream refusal.
+//   1 direction off · 2 arm source off · 3 final hour · 4 veto · 5 HTF breakout · 6 HTF bias
+f_blkCode(bool dirOff, bool armOff, bool late, bool veto, bool htfBrk, bool htfBias) =>
+    dirOff ? 1 : armOff ? 2 : late ? 3 : veto ? 4 : htfBrk ? 5 : htfBias ? 6 : 0
+
+f_blkWhy(int c) =>
+    switch c
+        1 => "'Trade Longs' / 'Trade Shorts' is OFF for this side."
+        2 => "Arm source OFF — this setup was armed by the sweep or divergence trigger you disabled."
+        3 => "Final-hour rule — no new entries 16:00-18:00 New York, ahead of the daily close."
+        4 => "Divergence / extreme-RSI veto — opposing divergence live at the SOS, or RSI at an extreme."
+        5 => "HTF exhaustion filter — the higher timeframe just CLOSED through its prior extreme, so this is a fresh breakout rather than an exhaustion fade."
+        6 => "HTF bias requirement — your Weekly / Daily bias gate is not satisfied."
+        => ""
+
+// ks carries the last (sosBar*10 + code) reported per side — the dedupe key.
+// Trailing `int _blkDone = 0` for the same CE10235 reason as f_posBox: without it
+// the drawing chain becomes the function's return expression.
+f_blkTag(array<int> ks, int slot, bool isLong, bool ready, int code, int sosBar, float edge, float y) =>
+    if showBlockTag and ready and code != 0 and not na(sosBar) and not na(edge)
+        int key = sosBar * 10 + code
+        if key != array.get(ks, slot)
+            array.set(ks, slot, key)
+            line.new(bar_index, edge, bar_index, y, color = BLK_PINKL, style = line.style_dotted, width = 1)
+            label.new(bar_index, y, (isLong ? "▲" : "▼") + " TRADE BLOCKED", tooltip = (isLong ? "▲ LONG" : "▼ SHORT") + " blocked\n──────────────────\n" + f_blkWhy(code) + "\n──────────────────\nLimit would have rested at " + str.tostring(edge, format.mintick), color = BLK_PINK, textcolor = color.new(#101014, 0), style = isLong ? label.style_label_up : label.style_label_down, size = size.small)
+    int _blkDone = 0
+
+var array<int> blkKeys = array.from(-1, -1)
+
+// "Ready" deliberately omits every toggle gate — those ARE the blockers we are
+// reporting. It asserts only the things price and the engine decide: the SOS is
+// in, the fib agrees, an edge exists to rest on, we are flat, and this leg has
+// not already been traded.
+bool lBlkReady = not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+bool sBlkReady = not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+int  lBlkCode  = f_blkCode(not execLongs,  not armOkL, lateDayBlock, longVetoA  and execRespectVeto, htfBlockLong,  htfBiasBlockLong)
+int  sBlkCode  = f_blkCode(not execShorts, not armOkS, lateDayBlock, shortVetoA and execRespectVeto, htfBlockShort, htfBiasBlockShort)
+
+f_blkTag(blkKeys, 0, true,  lBlkReady, lBlkCode, aplusL_sosBar, longEdge,  _dbg23Lo - _dbg23Atr)
+f_blkTag(blkKeys, 1, false, sBlkReady, sBlkCode, aplusS_sosBar, shortEdge, _dbg23Hi + _dbg23Atr)
+
 // ── Ladder select — which rungs this trade gets depends on how DEEP the resting
 //    limit sits. "Deep" = at or beyond the 0.618 fib (E1), i.e. one of the lower
 //    eligible entry levels (0.618 / 0.702 / 0.786 / 0.886). A deep entry is a full
@@ -4857,20 +4685,15 @@ f_diag(array<int> ds) =>
             log.info("[MISS] @" + str.tostring(bar_index) + " " + miss23L + " (arm@" + str.tostring(mwL.armBar) + " sos@" + str.tostring(mwL.sosBar) + ")")
         if miss23S != ""
             log.info("[MISS] @" + str.tostring(bar_index) + " " + miss23S + " (arm@" + str.tostring(mwS.armBar) + " sos@" + str.tostring(mwS.sosBar) + ")")
-        // ── MISS: blocked at the entry zone — everything for a fill was satisfiable
-        //    EXCEPT a live veto or the final-hour rule. Deduped by SOS bar (via the
-        //    diagState array) so each blocked setup logs exactly once. ──
-        bool lReadyBase = execLongs and armOkL and not na(aplusL_sosBar) and fibo_dir == 1 and not na(longEdge) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
-        bool lBlkVeto = lReadyBase and not lateDayBlock and longVetoA and execRespectVeto
-        bool lBlkLate = lReadyBase and lateDayBlock
-        if (lBlkVeto or lBlkLate) and aplusL_sosBar != array.get(ds, 1)
+        // ── MISS: blocked — the setup was ready to rest its limit and one of the
+        //    strategy's own toggles refused it. Reads the SAME lBlkCode / sBlkCode
+        //    the pink chart tag uses, so the log and the tag can never disagree
+        //    about why a trade did not happen. Deduped by SOS bar via diagState. ──
+        if lBlkReady and lBlkCode != 0 and aplusL_sosBar != array.get(ds, 1)
             array.set(ds, 1, aplusL_sosBar)
-            log.info("[BLOCK] LONG @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (lBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
-        bool sReadyBase = execShorts and armOkS and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
-        bool sBlkVeto = sReadyBase and not lateDayBlock and shortVetoA and execRespectVeto
-        bool sBlkLate = sReadyBase and lateDayBlock
-        if (sBlkVeto or sBlkLate) and aplusS_sosBar != array.get(ds, 2)
+            log.info("[BLOCK] LONG @" + str.tostring(bar_index) + " — ready to rest a limit at " + f_diagNum(longEdge) + ", blocked: " + f_blkWhy(lBlkCode))
+        if sBlkReady and sBlkCode != 0 and aplusS_sosBar != array.get(ds, 2)
             array.set(ds, 2, aplusS_sosBar)
-            log.info("[BLOCK] SHORT @" + str.tostring(bar_index) + " — entry zone reached with a live FVG edge, but blocked by " + (sBlkVeto ? "the divergence / extreme-RSI veto." : "the final-hour (16:00-17:00 NY) rule."))
+            log.info("[BLOCK] SHORT @" + str.tostring(bar_index) + " — ready to rest a limit at " + f_diagNum(shortEdge) + ", blocked: " + f_blkWhy(sBlkCode))
 
 f_diag(diagState)

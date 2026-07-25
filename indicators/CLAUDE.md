@@ -95,6 +95,64 @@ The trade annotations were rebuilt so a chart can be read without decoding text,
 
 ---
 
+## 2026-07-25 — blocked-trade marker (`mpc_strategy.pine` + `mpc_strategy_export.pine`)
+
+A setup refused by one of the strategy's own toggles used to be **invisible everywhere**: no order is
+placed, so nothing is drawn, no row reaches the trade list, and the Strategy Tester cannot know it
+existed. That made it impossible to judge whether a blocking rule protects the account or costs it.
+
+**New in both A+ files.** A pink `▲/▼ TRADE BLOCKED` label with the reason in its hover tooltip and a
+dotted leader down to the price the limit would have rested at. Input `showBlockTag` ("Mark blocked
+trades on chart (pink)", group `A+ Debug`, default ON). Cosmetic only — it reads state and places no
+orders.
+
+**Six reasons, reported by PRECEDENCE** (`f_blkCode` returns the first rule that would refuse the
+order, so a tag never blames a downstream gate for an upstream refusal): 1 direction off · 2 arm
+source off · 3 final hour · 4 divergence/extreme veto · 5 HTF breakout · 6 HTF bias.
+
+**"Ready" deliberately omits every toggle gate** — those are the blockers being reported. It asserts
+only what price and the engine decide: SOS in, `fibo_dir` agrees, an entry edge exists, flat, this leg
+not already traded.
+
+**Deduped on `sosBar * 10 + code`**, so a setup blocked for twenty bars is one tag — but a *changed*
+reason (veto clears, final hour then blocks) is a genuinely different refusal and gets its own tag.
+
+**The `[BLOCK]` log now reads the same `lBlkCode` / `sBlkCode`**, so the log and the tag can never
+disagree about why a trade did not happen. This also *shrank* the diag block (the old `lReadyBase` /
+`lBlkVeto` / `lBlkLate` trio is gone) and widened its coverage from two reasons to all six.
+
+**Export gets `px_block`** = `longCode + shortCode·10`, non-zero on **every** bar the block holds
+(not deduped like the tag), so an offline reader can measure how long each refusal lasted as well as
+count them.
+
+**It broke the token cap, and three subsystems paid for it (CE10117: 101484 > 100256).** Removed from
+`mpc_strategy.pine` — **Order Blocks** (input group, `OrderBlock` type, `manageOBs`/`extendOBs`, and
+all four creation blocks: external bull/bear + internal bull/bear), **VWAP** (input group,
+`ta.vwap(hlc3)`, the `plot`), and the **Session Volume Profile / MV line** (input group + the whole
+Asia-POC block). 4935 → 4700 lines.
+
+All three were cosmetic, defaulted OFF, and read by **nothing** in the execution layer — verified by
+grep before deleting (zero references to any of them after the `STRATEGY EXECUTION` header, and zero
+orphaned identifiers after: `showOBs`, `obBodyOnly`, `maxActiveOB`, `colBull/BearOB`, `showBull/BearOB`,
+`manageOBs`, `extendOBs`, `vwapValue`, `vwapColor`, `vwapWidth`, `showVwap`, `hlc3`, `SVP_SESSION`,
+`SVP_TZ`, `inSVP`, `svpRows`, `svpHistory`, `svpPOCCol`, `svp_poc*`, `GRP_OB/VWAP/SVP`). The B-LEG
+fork dropped the same three on 2026-07-24 for the same reason, so this is precedent, not a new call.
+They live on in `mpc_assistant.pine` if the drawing is ever wanted back.
+
+**`process()` is untouched**, so the byte-identical rule still holds and no parity harness is affected.
+
+**`mpc_strategy_export.pine` got the identical cuts** (4778 → 4540 lines) — its pre-cut line numbers
+matched the parent's exactly, so the same eight ranges applied verbatim. In the export the three were
+doubly pointless: nobody reads its chart, it exists only to emit the columns, and none of the three fed
+any of them. **All 25 `px_*` / `cfg_*` / `dbg_*` columns verified present afterward**, including the
+new `px_block`, so `compare_strategy.py` is unaffected.
+
+**If CE10117 returns anyway**, trim in this order: shorten the six `f_blkWhy` strings, then drop codes
+1 and 2 (a disabled direction or arm source is a setting you already know about, unlike the four that
+depend on price).
+
+---
+
 ## Standing instructions
 
 **Do**
