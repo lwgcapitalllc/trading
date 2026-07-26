@@ -69,10 +69,7 @@ def _encode_cfg(cfg: BLegConfig) -> dict:
 
 def _pack_bar(dec, bleg) -> dict:
     """Pack one bar the way the Pine's px_* / bl_* plots do."""
-    entry_dir = 0
-    for f in dec.fills:
-        if f.kind == "entry":
-            entry_dir = 1 if f.qty > 0 else -1
+    entry_dir = next((f.dir for f in dec.fills if f.kind == "entry"), 0)
     dec_bits = ((1 if dec.long_armed else 0) + (2 if dec.short_armed else 0)
                 + (4 if entry_dir == 1 else 8 if entry_dir == -1 else 0))
     exits = {"px_exit_tp1": None, "px_exit_tp2": None, "px_exit_run": None}
@@ -188,3 +185,26 @@ def test_detects_a_planted_decision_mismatch(tmp_path):
     msgs = cb.run_parity(p2, warmup=100)
     assert msgs, "tool did not catch a planted px_dec_bits mismatch"
     assert f"bar {i} " in msgs[0] and "px_long_armed" in msgs[0], msgs[0]
+
+
+def test_entry_direction_comes_from_fill_dir_not_qty_sign():
+    """`Fill.dir` is the signed direction; `Fill.qty` is not signed. Deriving the direction
+    from qty's sign made every SHORT report as a long — and the round-trip test above could
+    never catch it, because its encoder shared the same wrong derivation so the two agreed.
+    Only the first real Pine export exposed it (bar 680: py=1 pine=-1).
+
+    This asserts against the FIELD rather than against a round trip, which is the only way
+    a shared-mistake bug like that gets caught offline."""
+    from mpc_sos_fade.execution import Decision, Fill
+    from mpc_bleg.bleg import BLegState
+
+    flat = BLegState(l_top=None, l_bot=None, l_inv=None, l_tgt=None, l_on=False, l_tap=False,
+                     l_bar=None, s_top=None, s_bot=None, s_inv=None, s_tgt=None, s_on=False,
+                     s_tap=False, s_bar=None)
+    short = Decision(index=1, fills=[Fill(kind="entry", order_id="Short", price=100.0,
+                                          qty=7.0, dir=-1)])   # qty POSITIVE, dir negative
+    long_ = Decision(index=2, fills=[Fill(kind="entry", order_id="Long", price=100.0,
+                                          qty=7.0, dir=1)])
+    assert cb._py_row(short, flat)["px_entry_dir"] == -1
+    assert cb._py_row(long_, flat)["px_entry_dir"] == 1
+    assert cb._py_row(Decision(index=3), flat)["px_entry_dir"] == 0

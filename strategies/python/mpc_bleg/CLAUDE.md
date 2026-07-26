@@ -8,12 +8,12 @@ resting limit at the 0.5 edge waits for the late return.
 **Scope:** This bot only — its tracker, order layer, config, tests. It does NOT own the
 engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it reuses
 (`strategies/python/mpc_sos_fade/`).
-**Status:** Built + unit-tested (14 tests green). **Pine-parity HARNESS BUILT 2026-07-26**
-(`tools/compare_bleg.py` + `indicators/mpc_b_leg_strategy_export.pine`, registered in
-`verify_parity.py`) and plumbing-tested offline — but **NOT YET RUN against a real export**, so
-the port is still unproven. Next action: paste the export Pine into TradingView, export the CSV,
-run `compare_bleg.py` until exit 0. See "The parity gate" below.
-**Last reviewed:** 2026-07-26 — the exit levers landed, and the Pine-parity harness was built (see "The parity gate").
+**Status:** Built + unit-tested (15 tests green) + **Pine-parity GREEN (exit 0) 2026-07-26** on a
+real 21,231-bar `VANTAGE_XAUUSD, 15m` export — bar-for-bar identical decision stream, including
+~90 distinct frozen bands and 5 graded trades. The harness is `tools/compare_bleg.py` +
+`indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
+open question, not correctness:** 5 trades is far too thin to tune against. See "The parity gate".
+**Last reviewed:** 2026-07-26 — the exit levers landed, the Pine-parity harness was built, and it came back GREEN on the first real export (see "The parity gate").
 
 ## Why it exists (the split, 2026-07-24)
 
@@ -160,9 +160,45 @@ to catch each at the right bar. The encoder there is written from the Pine's plo
 than from the tool's decoder, so it also catches the two drifting apart. It uses 30 synthetic days,
 not 10: on 10 no leg ever ARMS, so the `bl_*` diff would prove nothing.
 
-**Until a real export runs green, treat backtest numbers as directional** — per Aaron's standing
-"no trade off an unvalidated port" rule. Plumbing tests prove the harness; only the Pine diff proves
-the port.
+### PARITY GREEN 2026-07-26 (exit 0) — first real export
+
+`compare_bleg.py "VANTAGE_XAUUSD, 15_9b74a.csv" --warmup 100` → **exit 0**. 21,231 bars,
+2025-08-31 → 2026-07-24. Green at every warmup from 100 to 2000, so the ~100-bar skip is genuine
+engine cold start, not a mask.
+
+**The run was not vacuous** — it exercised the machinery this harness exists to check:
+
+| what | count |
+|---|---|
+| bars with a live long / short leg | 2,195 / 1,010 |
+| bars tapped (long / short) | 568 / 141 |
+| bars ARMED (long / short) | 2,024 / 862 |
+| entries taken (long / short) | 2 / 3 |
+| trades closed and graded in R | 5 |
+| distinct frozen band prices diffed | 48 long / 45 short |
+
+So the band freeze, the deepest-band migration, the target track, the tap and the staleness death
+were all diffed against Pine across ~90 distinct bands — not just the 5 bars that became trades.
+That breadth is the whole reason the `bl_*` columns exist.
+
+**The first run found a bug — in the HARNESS, not the port.** `bar 680 px_entry_dir: py=1 pine=-1`.
+`_py_row` derived the trade direction from `Fill.qty`'s sign, but `qty` is NOT signed in this
+codebase — `Fill.dir` is. Every short read as a long. Fixed to read `Fill.dir`.
+
+**Why the round-trip test could never have caught it:** the test's encoder had the identical wrong
+derivation, so encoder and decoder agreed and the round trip passed. A round trip only proves the
+two halves are consistent with each other, never that either is right. That is the structural limit
+of the technique, and it is why a real export is the gate.
+`test_entry_direction_comes_from_fill_dir_not_qty_sign` now asserts against the FIELD rather than
+against a round trip — the only way a shared-mistake bug like that gets caught offline. Apply the
+same shape to any future packed column whose value is DERIVED rather than copied.
+
+**Config decoded off the export** (all of it correct): `bleg_max_days` 1.25, A+-priority ON,
+`execBLeg` ON, Structure trail, TP2 floor = TP1 price, TP1/TP2 30/40%, risk 10%.
+
+Backtest numbers are now validated logic, not directional guesses — with the standing caveat that
+**5 trades is far too thin a sample to tune against.** Parity says the code is right; it says nothing
+about whether the edge is real.
 
 ## Tests
 

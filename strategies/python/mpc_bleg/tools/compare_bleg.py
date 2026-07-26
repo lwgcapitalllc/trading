@@ -114,10 +114,10 @@ _PRICE = ["px_edge", "px_stop", "px_entry_price", "px_tp1", "px_tp2",
 
 def _py_row(dec, bleg) -> dict:
     """One bar of the Python side, in the export's column names."""
-    entry_dir = 0
-    for f in dec.fills:
-        if f.kind == "entry":
-            entry_dir = 1 if f.qty > 0 else -1
+    # `Fill.dir` is the signed direction; `Fill.qty` is NOT signed. Reading qty's sign here
+    # made every short look like a long — caught by the first real export, and NOT by the
+    # round-trip test, because the test's encoder had the identical bug so the two agreed.
+    entry_dir = next((f.dir for f in dec.fills if f.kind == "entry"), 0)
     exits = {"px_exit_tp1": None, "px_exit_tp2": None, "px_exit_run": None}
     for f in dec.fills:
         if f.kind != "exit":

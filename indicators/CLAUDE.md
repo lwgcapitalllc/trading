@@ -260,7 +260,7 @@ same day: **`indicators/mpc_b_leg_strategy_export.pine`** = that file with the b
 It plots the B-LEG arm (NOT `longArmed` — A+ never places an order in this fork), the band's 0.5 edge,
 the band-derived TP1/TP2, and the tracker's own `bl_*` state, which is the column set that matters:
 every new B-LEG rule lives in the tracker, and a band-maths bug shows as a wrong price many bars before
-it becomes a wrong trade. **Not yet run against a real export — the port stays unproven until exit 0.**
+it becomes a wrong trade. **Ran GREEN (exit 0) on its first real export the same day** — 21,231 bars, ~90 distinct frozen bands and 5 graded trades diffed. That run also found a bug in the HARNESS (entry direction read off `Fill.qty`'s sign instead of the signed `Fill.dir`), which the offline round-trip test could never catch because its encoder shared the same mistake — a round trip proves the two halves agree, never that either is right.
 `cfg_strcodes`' SL slot is pinned to the "1.0" code because this fork has no `execSlLevel` (its stop is
 the band ORIGIN), which keeps ONE `cfg_*` decoder serving both exports. Regeneration split point is in
 the export's own header.
