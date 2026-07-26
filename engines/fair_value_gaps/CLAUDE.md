@@ -21,7 +21,7 @@ consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine` FVG block ("FAIR VALUE GAPS — persist until
 mitigated", + the `GRP_FVG` inputs); parity harness is `indicators/fvg_export.pine`, diffed against
 this Python by `tools/compare_fvg.py`.
-**Last reviewed:** 2026-07-19 (re-synced to the mpc FVG default drift — optional `require_close`,
+**Last reviewed:** 2026-07-26 — no engine change, but the `require_close` DEFAULT is now documented as a downstream trap: it is correct for `mpc_assistant.pine` and wrong for `mpc_strategy.pine`, which hardcodes the check (see the callout under "What it detects"). Earlier: 2026-07-19 (re-synced to the mpc FVG default drift — optional `require_close`,
 reconciled defaults, EQ-exemption coupling; unit tests green; Pine-parity re-validated exit 0 on a fresh
 grand export)
 
@@ -57,6 +57,18 @@ the classic FVG. There is **no** clean-impulse or progressive-close requirement 
 the conditions qualify. The gap spans `bottom = high[2]` up to `top = low`. A **bearish FVG** mirrors
 it (`high < low[2]`; optional `close[1] < low[2]`; `top = low[2]`, `bottom = high`). Either way
 `top > bottom`.
+
+> **`require_close = False` is right for `mpc_assistant.pine` and WRONG for `mpc_strategy.pine`.**
+> The assistant exposes `fvgRequireClose` as an input defaulting off, which is what this default
+> mirrors. The STRATEGY file HARDCODES the check (`close[1] > high[2]` / `close[1] < low[2]`,
+> lines 1686/1688) — it has no input and is permanently ON. A consumer replaying the strategy must
+> therefore pass `require_close=True`, and one that doesn't will create gaps the Pine never did.
+> That is exactly what happened: `strategies/python/mpc_sos_fade` left it unpinned from 2026-07-18
+> (when the gate landed here) until 2026-07-26, when a fresh export produced one phantom entry edge
+> on a weekend-gap bar and `compare_strategy.py` caught it. The pin now lives in
+> `backtest/replay/EngineConfig.fvg_require_close` + that bot's `engine_config()`. **Changing a
+> default here can silently break a downstream port — the two mpc Pine files disagree, so no single
+> default is correct for both.**
 
 Two things end a gap:
 

@@ -194,8 +194,11 @@ def test_dead_leg_blocks_further_reentries():
 
 
 def _bar1m(i, o, h, l, c):
+    # last_conf_* feed the STRUCTURE runner trail; None here = no confirmed swing on this
+    # synthetic 1m stream, so the trail stays off and the stage-2 floor alone holds the stop.
     return SimpleNamespace(index=i, time_ms=1_700_000_000_000 + i * 60_000,
-                           open=o, high=h, low=l, close=c)
+                           open=o, high=h, low=l, close=c,
+                           last_conf_high=None, last_conf_low=None)
 
 
 def test_execution_fills_and_closes_a_secondary_trade():

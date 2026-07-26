@@ -7,7 +7,7 @@ local optimizer. It does NOT cover the engines it replays (`engines/`), the stra
 **Status:** **Deliverable A COMPLETE 2026-07-16.** A0 (data layer) + A1 (replay loop) landed
 2026-07-15; A2 (fill & cost model), A3 (output adapter), the lab's `runner="python"` adapter, and A4
 (local optimizer) all landed 2026-07-16. See `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
-**Last reviewed:** 2026-07-16
+**Last reviewed:** 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below)
 
 ---
 
@@ -288,6 +288,16 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
 
 ## Rules
 
+- **An engine input the decision stream does not export is a silent parity trap.** `EngineConfig`
+  carries the engine-construction knobs, and a consumer replaying a specific Pine must pin every one
+  that Pine does not leave at the engine's default — `EngineConfig`'s own defaults cannot be right for
+  everyone, because the Pine files disagree with each other. Live example (caught 2026-07-26):
+  `fvg_require_close` defaults **False** here, mirroring `mpc_assistant.pine` where it is an input and
+  is off; but `mpc_strategy.pine` HARDCODES the check, so `mpc_sos_fade` pins it True. Unpinned, the
+  engine created gaps that Pine never did and produced a phantom entry edge — invisible to
+  `compare_strategy.py` until a fresh export happened to disagree, ~8 days after the engine made the
+  gate optional. **When an engine default changes, audit every `engine_config()` that replays a Pine
+  which does not share the new default.**
 - **Never build a second copy of a canonical engine here.** This package *replays* `engines/`; it
   imports them, it does not reimplement structure/fib/fvg/rsi/liquidity/sessions detection.
 - **Resample only ever UP.** Building a lower timeframe from a higher one invents intrabar path —

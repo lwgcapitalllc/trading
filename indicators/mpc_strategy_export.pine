@@ -4486,11 +4486,15 @@ if strategy.position_size < 0
 // difference from the parent — and (b) re-check that every identifier this block reads
 // still exists upstream (they are all globals declared before the exits).
 //
-// KNOWN GAP after this regen: `cfg_bits` still packs 14 booleans and does NOT carry
-// `execAplus`, `execBLeg` or `execFvg50`, and there is no column for `execRunnerTrail` /
-// `execStructTrailBufTk` / `execTp2StopMode`. At their DEFAULTS that costs parity nothing
-// (execBLeg/execFvg50 are OFF and the Python bot has no B leg), but if you tune any of
-// them, add the column here AND in compare_strategy.py before trusting a diff.
+// GAP CLOSED 2026-07-26. The regen above left six toggles with no column, and one of them
+// (`execRunnerTrail`) had ALREADY defaulted to "Structure (swing)" — so an export taken in
+// between told compare_strategy.py nothing about the trail the Pine actually ran, and the
+// Python bot silently fell back to the fixed-step default. Any parity diff from that window
+// is drift, not a bug. Now carried: `execAplus` / `execBLeg` / `execFvg50` as cfg_bits bits
+// 16384 / 32768 / 65536, plus `cfg_exitmode` (the two exit dropdowns) and one raw column
+// each for the six exit numerics + the scratch band. EVERY trade-affecting input has a
+// column again — the standing rule is that a new one lands here and in compare_strategy.py
+// in the same commit as the Pine change.
 //
 // The base strategy already sits just under Pine's main-body statement cap (CE10295 —
 // that is WHY its big renders are wrapped in f_drawTable / f_posBox). The token-heavy
@@ -4560,15 +4564,32 @@ plot(closedR,   "px_closed_r",    _INV, editable = false)
 // reader can measure how LONG each refusal lasted as well as count them.
 plot((lBlkReady ? lBlkCode : 0) + (sBlkReady ? sBlkCode : 0) * 10, "px_block", _INV, editable = false)
 
-// CONFIG (packed). cfg_bits packs 14 booleans (bit 4096 = execConfSZ, added 2026-07-22; bit 8192 = execDeepFib, added 2026-07-23); cfg_strcodes packs the 4 string dropdowns;
-// cfg_divints packs the 5 divergence ints. The other numeric toggles (tp1/tp2 %, buffers,
-// trail step, scratch band) are left at their defaults in the Python bot — if you tune one,
-// add a column here and in compare_strategy.py.
-plot((execLongs?1:0)+(execShorts?2:0)+(execArmSweep?4:0)+(execArmDiv?8:0)+(execReqFVG?16:0)+(execFvgDeepOnly?32:0)+(execRespectVeto?64:0)+(execCloseOppSOS?128:0)+(execHtfExhaustOnly?256:0)+(execNoLateDay?512:0)+(showDiv?1024:0)+(divVeto?2048:0)+(execConfSZ?4096:0)+(execDeepFib?8192:0), "cfg_bits", _INV, editable = false)
+// CONFIG (packed). cfg_bits packs 17 booleans (4096 = execConfSZ, 2026-07-22; 8192 = execDeepFib,
+// 2026-07-23; 16384 = execAplus, 32768 = execBLeg, 65536 = execFvg50, all 2026-07-26);
+// cfg_strcodes packs the 4 HTF/SL string dropdowns; cfg_divints packs the 5 divergence ints;
+// cfg_exitmode packs the 2 EXIT dropdowns and cfg_exitnums the 5 exit-ladder numerics
+// (both added 2026-07-26, when the structure runner trail landed and became the default).
+// Every toggle that changes a trade decision now has a column — keep it that way.
+plot((execLongs?1:0)+(execShorts?2:0)+(execArmSweep?4:0)+(execArmDiv?8:0)+(execReqFVG?16:0)+(execFvgDeepOnly?32:0)+(execRespectVeto?64:0)+(execCloseOppSOS?128:0)+(execHtfExhaustOnly?256:0)+(execNoLateDay?512:0)+(showDiv?1024:0)+(divVeto?2048:0)+(execConfSZ?4096:0)+(execDeepFib?8192:0)+(execAplus?16384:0)+(execBLeg?32768:0)+(execFvg50?65536:0), "cfg_bits", _INV, editable = false)
 plot((execSlLevel=="0.618"?0:execSlLevel=="0.702"?1:execSlLevel=="0.786"?2:execSlLevel=="0.886"?3:4)*1000 + (execHtfSource=="Weekly"?0:execHtfSource=="Daily"?1:2)*100 + (execHtfWeekly=="Ignore"?0:execHtfWeekly=="Must agree"?1:execHtfWeekly=="Must not oppose"?2:3)*10 + (execHtfDaily=="Ignore"?0:execHtfDaily=="Must agree"?1:execHtfDaily=="Must not oppose"?2:3), "cfg_strcodes", _INV, editable = false)
 plot(divExtremeOS + divExtremeOB*1000 + divRsiLen*1000000 + divPivotLen*1000000000 + divValidBars*1000000000000, "cfg_divints", _INV, editable = false)
 plot(aplusWindow, "cfg_window",   _INV, editable = false)
 plot(execRiskPct, "cfg_risk_pct", _INV, editable = false)
+// EXIT LADDER — the levers that decide where the stop and the partials sit. The two
+// dropdowns pack into one int; the six numerics are plotted RAW, one column each.
+//   cfg_exitmode = (execRunnerTrail=="Fixed step"?0:1)*10 + (TP1 price?0 : Breakeven?1 : one-step?2)
+// They are NOT packed because they are floats: any pack that fits five of them in one
+// float64 has to round, and a silently rounded buffer mis-configures the Python bot —
+// which is the exact failure this block exists to prevent. A bare `plot(ident)` is also
+// cheaper in tokens than the arithmetic a pack would need, so nothing is lost.
+plot((execRunnerTrail=="Fixed step"?0:1)*10 + (execTp2StopMode=="TP1 price"?0:execTp2StopMode=="Breakeven"?1:2), "cfg_exitmode", _INV, editable = false)
+plot(execStructTrailBufTk, "cfg_struct_buf",  _INV, editable = false)
+plot(execTrailStep,        "cfg_trail_step",  _INV, editable = false)
+plot(execTp1Pct,           "cfg_tp1_pct",     _INV, editable = false)
+plot(execTp2Pct,           "cfg_tp2_pct",     _INV, editable = false)
+plot(execBeBufTk,          "cfg_be_buf",      _INV, editable = false)
+plot(execSlBufTk,          "cfg_sl_buf",      _INV, editable = false)
+plot(execBeBandR,          "cfg_scratch_r",   _INV, editable = false)
 
 // DIAGNOSTIC (temporary — pins the A+ Stage-1 arming gap vs the Python bot at H4/
 // session boundaries; remove once parity is green). Everything the arming block at

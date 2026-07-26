@@ -106,6 +106,13 @@ class Signals:
     bear_bos_high: Optional[float] = None
     bear_bos_low: Optional[float] = None
 
+    # Last CONFIRMED external swing high/low (Pine st.last_conf_high / st.last_conf_low) — the
+    # anchor the STRUCTURE runner trail rides (`exec_runner_trail == "Structure (swing)"`).
+    # Read only by `Execution._advance_stage` once a trade is past TP2, so with the trail on
+    # "Fixed step" nothing in the decision stream touches them.
+    last_conf_high: Optional[float] = None
+    last_conf_low: Optional[float] = None
+
 
 # Pine fib level name -> the engine's `levels` dict key (see fibonacci/engine.py _RATIO).
 # Prices coincide where a retrace and a target share a ratio (0.5, 0.382), so the key
@@ -354,6 +361,7 @@ class SignalAdapter:
             fvgs=fvgs, poi_long_now=poi_long, poi_short_now=poi_short,
             bull_bos_high=ext.bull_bos_high, bull_bos_low=ext.bull_bos_low,
             bear_bos_high=ext.bear_bos_high, bear_bos_low=ext.bear_bos_low,
+            last_conf_high=ext.last_conf_high, last_conf_low=ext.last_conf_low,
         )
 
 

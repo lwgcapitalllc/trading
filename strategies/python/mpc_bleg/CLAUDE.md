@@ -13,7 +13,7 @@ position mpc_sos_fade was in before its `compare_strategy.py` landed. Verified s
 hand-traced tracker tests + an end-to-end driver run on the synthetic stack. A
 `compare_bleg.py` + a `mpc_b_leg_strategy_export.pine` are the follow-up to prove bar-for-bar
 parity, once Aaron exports a decision stream (see "Parity — the follow-up" below).
-**Last reviewed:** 2026-07-24.
+**Last reviewed:** 2026-07-26 — the exit levers landed (see below).
 
 ## Why it exists (the split, 2026-07-24)
 
@@ -71,6 +71,33 @@ The reuse needed three ADDITIVE, decision-neutral changes there (all re-verified
    to expose them — by the time `update()` returns, the state the B-LEG arms off is gone.
 3. **`execution.py`** — the A+ arm decision was extracted from `_place_entries` into `_armed()`
    (a pure refactor) so the B-LEG subclass can reuse the priority gate. No behaviour change.
+
+## The exit ladder is inherited (2026-07-26)
+
+The structure runner trail, the TP2 stop-floor dropdown and the two setup toggles were ported into
+`mpc_sos_fade`, and this bot picks up ALL of them for free — `BLegConfig` subclasses `SosFadeConfig`
+and `BLegExecution` subclasses `Execution`, and the exit ladder lives entirely in the parent. The
+full register is `mpc_sos_fade/CLAUDE.md` → `## The exit ladder`. What is specific here:
+
+- **`exec_bleg` is re-defaulted to True.** `mpc_b_leg_strategy.pine` ships `execBLeg = true` (the
+  A+ file ships it false), so `BLegConfig` overrides the inherited default to match. It gates the
+  B-LEG arm in `_place_entries`; OFF the bot trades nothing, which is its only real use.
+- **`exec_aplus` controls the PRIORITY GATE here, not entries.** A+ never places an order in this
+  fork, so `exec_aplus=False` doesn't disable an entry path — it drops the "A+ stands the B leg
+  down" gate entirely. That is the tuning experiment this file's own notes have called for since
+  2026-07-24, now a one-flag run instead of a code edit. The same input was added to
+  `indicators/mpc_b_leg_strategy.pine` under the label "A+ has priority (stand the B-leg down)".
+- **This bot OVERRIDES TP1 / TP2 / SL** with its band prices (SL = band origin, TP1 = the broken
+  swing extreme, TP2 = the expansion extreme). Everything from the stop staging down — the floor,
+  the trail, both dropdowns — is the parent's, unchanged.
+
+`indicators/mpc_b_leg_strategy.pine` was ported in the same pass and now matches: `execRunnerTrail`,
+`execStructTrailBufTk`, `execTp2StopMode`, `execAplus`, and the `lStage2Floor` / structure-trail
+exit block copied line-for-line from `mpc_strategy.pine`. **Not ported, deliberately:** `execSlLevel`
+(the SL fib dropdown) is meaningless here because the B leg's stop is its band origin, not a fib; and
+the pink blocked-trade markers, whose codes describe why an **A+** setup was refused — in this fork
+A+ never trades, so those tags would report the opposite of what a reader would assume. A B-LEG
+block tag would need its own code set, which is new design work, not a port.
 
 ## Sizing — sizes ITSELF
 

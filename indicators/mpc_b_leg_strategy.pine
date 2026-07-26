@@ -3772,6 +3772,7 @@ if barstate.islast
 var GRP_EXEC = "Strategy Execution"
 bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
 bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
+bool  execAplus   = input.bool(true,  "A+ has priority (stand the B-leg down)", group = GRP_EXEC, tooltip = "In THIS fork the A+ setup never places an order — it only holds PRIORITY: on a side where A+ would have armed, the B leg stands down. On (default) keeps that gate, so results stay comparable to the parent file. Off drops it entirely and lets every B leg trade on its own merit — Aaron's first tuning candidate, and the honest way to read the B leg in isolation.")
 bool  execBLeg    = input.bool(true,  "Trade B-Leg setups",             group = GRP_EXEC, tooltip = "THIS STRATEGY'S CORE SETUP (default ON in the B-LEG fork). Arms when a REV setup dies on a continuation BOS before it retraced; freezes the Sniper-Zone band (0.382-0.5) of that SOS leg and rests a limit at the 0.5 edge — the tap IS the entry. SL beyond fib 1.0; ladder reuses the A+ machinery (TP1 swing extreme, TP2 expansion, TP3 runner). Honours Trade Longs/Shorts, flat and the final-hour block. A+ still has priority when it would have armed on a side (kept for baseline parity; a tuning candidate to drop). Turn OFF only to prove the file trades nothing without it.")
 bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
 bool  execArmDiv   = input.bool(false, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
@@ -3791,6 +3792,9 @@ float execTp1Pct  = input.float(30,   "TP1 size %",                    group = G
 float execTp2Pct  = input.float(40,   "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
 float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
+string execRunnerTrail = input.string("Structure (swing)", "Runner trail method", options = ["Fixed step", "Structure (swing)"], group = GRP_EXEC, tooltip = "How the TP3 runner is trailed once TP2 is hit. 'Fixed step' = the 50-pip grid ratchet above. 'Structure (swing)' (default) = trail behind the last confirmed swing low (longs) / high (shorts) from the structure engine, minus/plus the buffer below — breathes with the trend and usually rides further, but gives back more at the turn. This is the tested best combo: Structure trail + buffer 20 + TP2 floor = TP1 price.")
+float execStructTrailBufTk = input.float(20, "Structure trail buffer (ticks)", group = GRP_EXEC, minval = 0, tooltip = "Only used when Runner trail method = Structure. The runner stop sits this many ticks BELOW the last confirmed swing low (long) / ABOVE the last confirmed swing high (short), so a wick through the swing doesn't clip it.")
+string execTp2StopMode = input.string("TP1 price", "TP2 → stop floor (delay the jump)", options = ["TP1 price", "Breakeven", "One trail step behind"], group = GRP_EXEC, tooltip = "What the stop floor becomes the moment TP2 is hit, BEFORE the runner trail takes over. 'TP1 price' (default) = snap the stop up to TP1 (tight, can scratch the runner on the first pullback). 'Breakeven' = hold at entry+buffer, giving the runner maximum room. 'One trail step behind' = keep it one trail-step under the high-water mark (never below breakeven). The runner trail can still tighten it beyond this floor.")
 bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
 bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints one small label at each trade, carrying the full confluence breakdown in its HOVER TOOLTIP — the arm source, SOS age, FVG/POI/DIV flags, and the real entry / stop / TP prices. The on-chart text stays one line. When the trade closes it is recoloured by RESULT — green won, red lost, orange breakeven — and the R it made is appended. Use the filter below to keep only the results you care about.")
 string execLabelWhich = input.string("All", "…keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = GRP_EXEC, tooltip = "Which trades keep their hover label once the result is known. Every other trade's label is deleted on the bar it closes, so the chart keeps the coloured result box and the entry triangle but loses the annotation. Losses + breakevens is the review view — the trades worth auditing, nothing else. None removes them entirely.")
@@ -4064,8 +4068,8 @@ f_htfReqBlock(string req, string state, bool isLong) =>
 bool htfBiasBlockLong  = f_htfReqBlock(execHtfWeekly, wEstState, true)  or f_htfReqBlock(execHtfDaily, dEstState, true)
 bool htfBiasBlockShort = f_htfReqBlock(execHtfWeekly, wEstState, false) or f_htfReqBlock(execHtfDaily, dEstState, false)
 
-bool longArmed  = execLongs  and armOkL and not lateDayBlock and not htfBlockLong  and not htfBiasBlockLong  and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
-bool shortArmed = execShorts and armOkS and not lateDayBlock and not htfBlockShort and not htfBiasBlockShort and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+bool longArmed  = execAplus and execLongs  and armOkL and not lateDayBlock and not htfBlockLong  and not htfBiasBlockLong  and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+bool shortArmed = execAplus and execShorts and armOkS and not lateDayBlock and not htfBlockShort and not htfBiasBlockShort and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
 
 // ── MISSED-DUE-TO-NO-FVG counter ──────────────────────────────────────────────
 // A "missed" setup = every trade gate is satisfiable EXCEPT the FVG. Same
@@ -4448,11 +4452,22 @@ if strategy.position_size < 0
     if sStage < 2 and low <= sTP2
         sStage := 2
 
-float lTrail = lStage >= 2 ? f_trail(lMaxFav, lTP2, 1)  : na
-float sTrail = sStage >= 2 ? f_trail(sMaxFav, sTP2, -1) : na
+// Runner trail (ported from mpc_strategy.pine 2026-07-26, same defaults). "Structure
+// (swing)" rides the structure engine's last CONFIRMED swing instead of the fixed grid,
+// and is the DEFAULT — it breathes with the trend and usually rides further, at the cost
+// of giving more back at the turn.
+float structBuf = execStructTrailBufTk * syminfo.mintick
+bool  useStructTrail = execRunnerTrail == "Structure (swing)"
+float lTrail = lStage >= 2 ? (useStructTrail ? (not na(st.last_conf_low)  ? st.last_conf_low  - structBuf : na) : f_trail(lMaxFav, lTP2, 1))  : na
+float sTrail = sStage >= 2 ? (useStructTrail ? (not na(st.last_conf_high) ? st.last_conf_high + structBuf : na) : f_trail(sMaxFav, sTP2, -1)) : na
 
-float lStop = lStage >= 2 ? (na(lTrail) ? lTP1 : math.max(lTP1, lTrail)) : lStage >= 1 ? lEntry + beBuf : lSL
-float sStop = sStage >= 2 ? (na(sTrail) ? sTP1 : math.min(sTP1, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
+// The stop FLOOR the moment TP2 fills, before the trail takes over (execTp2StopMode).
+// The trail can only tighten past this, never loosen it.
+float lStage2Floor = execTp2StopMode == "Breakeven" ? lEntry + beBuf : execTp2StopMode == "One trail step behind" ? math.max(lEntry + beBuf, lMaxFav - trailStep) : lTP1
+float sStage2Floor = execTp2StopMode == "Breakeven" ? sEntry - beBuf : execTp2StopMode == "One trail step behind" ? math.min(sEntry - beBuf, sMaxFav + trailStep) : sTP1
+
+float lStop = lStage >= 2 ? (na(lTrail) ? lStage2Floor : math.max(lStage2Floor, lTrail)) : lStage >= 1 ? lEntry + beBuf : lSL
+float sStop = sStage >= 2 ? (na(sTrail) ? sStage2Floor : math.min(sStage2Floor, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
 
 // ── Manage open long: TP1 / TP2 scale-outs + a runner that only trails ──
 if strategy.position_size > 0

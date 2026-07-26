@@ -196,8 +196,13 @@ class Execution:
         self._exit_reason = ""
         self._tp1 = 0.0
         self._tp2 = 0.0
-        self._stage = 0                    # 0 full-stop, 1 BE, 2 stop->TP1 + runner ratchet
+        self._stage = 0                    # 0 full-stop, 1 BE, 2 floor + runner trail
         self._max_fav = 0.0
+        # Structure-trail anchors, snapshotted at each bar's CLOSE (see _advance_stage). The stop
+        # placed at bar N's close is what bar N+1 trades against, so the trail must read bar N's
+        # swing — never the live one — exactly like `_max_fav` does for the fixed-step ratchet.
+        self._trail_swing_hi: Optional[float] = None
+        self._trail_swing_lo: Optional[float] = None
         # excursion extremes across the whole hold (reporting only — see Trade.mfe_usd)
         self._ext_high = 0.0
         self._ext_low = 0.0
@@ -390,12 +395,12 @@ class Execution:
         htf_block_l, htf_block_s = self._htf_exhaustion_block(sig)
         bias_block_l, bias_block_s = self._htf_bias_block(sig)
 
-        long_armed = (cfg.exec_longs and arm_ok_l and not late and not htf_block_l
+        long_armed = (cfg.exec_aplus and cfg.exec_longs and arm_ok_l and not late and not htf_block_l
                       and not bias_block_l and seq.l_sos_bar is not None and sig.fibo_dir == 1
                       and long_edge is not None
                       and (not dec.long_veto or not cfg.exec_respect_veto)
                       and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l))
-        short_armed = (cfg.exec_shorts and arm_ok_s and not late and not htf_block_s
+        short_armed = (cfg.exec_aplus and cfg.exec_shorts and arm_ok_s and not late and not htf_block_s
                        and not bias_block_s and seq.s_sos_bar is not None and sig.fibo_dir == -1
                        and short_edge is not None
                        and (not dec.short_veto or not cfg.exec_respect_veto)
@@ -572,6 +577,8 @@ class Execution:
         self._last_roll_ms = None
         self._charge_commission(pend.qty)
         self._max_fav = None                            # _advance_stage seeds it
+        self._trail_swing_hi = None                     # structure-trail anchors — same
+        self._trail_swing_lo = None
         self._ext_high = sig.high                       # excursion (reporting) — seed on entry bar
         self._ext_low = sig.low
         self._legs = []                                 # per-rung exit ledger (reporting only)
@@ -836,22 +843,55 @@ class Execution:
             else:
                 self._be_sos_s = self._sos_bar_open
 
+        # Structure-trail anchors for the NEXT bar (Pine reads st.last_conf_* on the same bar it
+        # calls strategy.exit, and that exit is active from the following bar).
+        self._trail_swing_hi = sig.last_conf_high
+        self._trail_swing_lo = sig.last_conf_low
+
     def _current_stop(self) -> float:
         cfg = self._cfg
         d = self._pos_dir
         be_buf = cfg.exec_be_buf_tk * cfg.mintick
         if self._stage >= 2:
+            floor = self._stage2_floor()
             trail = self._trail()
             if d > 0:
-                return self._tp1 if trail is None else max(self._tp1, trail)
-            return self._tp1 if trail is None else min(self._tp1, trail)
+                return floor if trail is None else max(floor, trail)
+            return floor if trail is None else min(floor, trail)
         if self._stage >= 1:
             return self._entry + be_buf if d > 0 else self._entry - be_buf
         return self._sl
 
-    def _trail(self) -> Optional[float]:
-        step = self._cfg.exec_trail_step
+    def _stage2_floor(self) -> float:
+        """The stop FLOOR the moment TP2 fills, before the runner trail takes over
+        (Pine lStage2Floor / sStage2Floor, `exec_tp2_stop_mode`). The trail can only
+        tighten past this — never loosen it."""
+        cfg = self._cfg
         d = self._pos_dir
+        be_buf = cfg.exec_be_buf_tk * cfg.mintick
+        be = self._entry + be_buf if d > 0 else self._entry - be_buf
+        mode = cfg.exec_tp2_stop_mode
+        if mode == "Breakeven":
+            return be
+        if mode == "One trail step behind":
+            if self._max_fav is None:            # no bar has staged yet — hold breakeven
+                return be
+            step = cfg.exec_trail_step
+            return max(be, self._max_fav - step) if d > 0 else min(be, self._max_fav + step)
+        return self._tp1                          # "TP1 price" (default)
+
+    def _trail(self) -> Optional[float]:
+        """The runner's trailing stop past TP2, or None when it hasn't engaged yet
+        (Pine lTrail / sTrail, `exec_runner_trail`)."""
+        cfg = self._cfg
+        d = self._pos_dir
+        if cfg.exec_runner_trail == "Structure (swing)":
+            swing = self._trail_swing_lo if d > 0 else self._trail_swing_hi
+            if swing is None:                     # no confirmed swing yet — floor only
+                return None
+            buf = cfg.exec_struct_trail_buf_tk * cfg.mintick
+            return swing - buf if d > 0 else swing + buf
+        step = cfg.exec_trail_step
         if self._max_fav is None:
             return None
         run = (self._max_fav - self._tp2) if d > 0 else (self._tp2 - self._max_fav)

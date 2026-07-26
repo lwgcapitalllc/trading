@@ -28,6 +28,12 @@ class SosFadeConfig:
     # ── GRP_EXEC — Strategy Execution (mpc_strategy.pine 4159-4183) ──────────────
     exec_longs: bool = True            # "Trade Longs"
     exec_shorts: bool = True           # "Trade Shorts"
+    exec_aplus: bool = True            # "Trade A+ setups" (Pine execAplus)
+    #   On (default) = the A+ reversal sequence arms normally. Off = no A+ entry ever fires —
+    #   pair with `exec_bleg` ON in the B-LEG bot to read that setup's results in isolation.
+    exec_bleg: bool = False            # "Trade B-Leg setups" (Pine execBLeg)
+    #   The A+ bot never trades a B leg, so this stays False here; `mpc_bleg.BLegConfig`
+    #   overrides it to True to match `indicators/mpc_b_leg_strategy.pine`'s own default.
     exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
     exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
     exec_req_fvg: bool = True          # "Require FVG overlap in zone"
@@ -37,6 +43,12 @@ class SosFadeConfig:
     #   behaviour, keeps compare_strategy.py parity). ON = when a qualifying gap's NEAR edge sits
     #   deeper than 0.618, rest at the nearest fib just SHALLOWER (0.618/0.702/0.786) — the level
     #   price reaches first — instead of chasing an edge price may never tap. See execution._entry_edges.
+    exec_fvg_50: bool = False          # "Entry (least favorable): FVG must touch the 0.5 line"
+    #   Added to `mpc_strategy.pine` 2026-07-24. NOT PORTED YET — same pattern as `exec_conf_sz`:
+    #   the field exists so `compare_strategy.py` can REFUSE an export taken with it on rather than
+    #   silently diffing against logic this bot does not have. Porting it means qualifying a gap
+    #   that STRADDLES 0.5 (bottom <= 0.5 <= top) and resting the limit AT 0.5, ranked LAST behind
+    #   the deep-FVG edge, deep-fib and Sniper Zone — see execution._entry_edges.
     exec_respect_veto: bool = True     # "Respect divergence/extreme veto"
     exec_close_opp_sos: bool = False   # "Close on opposite SOS"
     exec_htf_exhaust_only: bool = False  # "Only fade HTF exhaustion, not breakouts"
@@ -50,7 +62,21 @@ class SosFadeConfig:
     exec_tp1_pct: float = 30.0         # "TP1 size %"
     exec_tp2_pct: float = 40.0         # "TP2 size %"
     exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
-    exec_trail_step: float = 5.0       # "Runner trail step ($ of price)"
+    exec_trail_step: float = 5.0       # "Runner trail step ($ of price)" — Fixed-step mode only
+    exec_runner_trail: str = "Structure (swing)"   # "Runner trail method"
+    #   ∈ {"Fixed step", "Structure (swing)"}. How the TP3 runner is trailed once TP2 fills.
+    #   "Fixed step" = the `exec_trail_step` grid ratchet off TP2 (the pre-2026-07-25 behaviour).
+    #   "Structure (swing)" (DEFAULT, matching the Pine) = trail behind the structure engine's
+    #   last CONFIRMED swing low (longs) / high (shorts), offset by `exec_struct_trail_buf_tk`.
+    #   Breathes with the trend and rides further, but gives back more at the turn.
+    exec_struct_trail_buf_tk: float = 20.0  # "Structure trail buffer (ticks)"
+    #   Structure mode only. The runner stop sits this many ticks BELOW the confirmed swing low
+    #   (long) / ABOVE the swing high (short), so a wick through the swing doesn't clip it.
+    exec_tp2_stop_mode: str = "TP1 price"   # "TP2 → stop floor (delay the jump)"
+    #   ∈ {"TP1 price", "Breakeven", "One trail step behind"}. What the stop FLOOR becomes the
+    #   moment TP2 fills, before the runner trail takes over. "TP1 price" (default) snaps the stop
+    #   up to TP1; "Breakeven" holds at entry ± the BE buffer (most room); "One trail step behind"
+    #   keeps it one `exec_trail_step` under the high-water mark, never below breakeven.
     exec_no_late_day: bool = True      # "No entries in final hour (16:00-17:00 NY)"
     exec_conf_sz: bool = False         # "Allow Sniper Zone as entry confirmation" (Pine execConfSZ)
     #   Added to `mpc_strategy.pine` 2026-07-21. NOT PORTED YET — the field exists so the toggle is

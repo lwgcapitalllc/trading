@@ -69,6 +69,13 @@ class EngineConfig:
     # fair_value_gaps
     fvg_max_count: int = 6
     fvg_threshold_pct: float = 0.1
+    # Middle-bar close-cleared requirement (Pine `fvgRequireClose`). `mpc_assistant.pine`
+    # exposes it as an input defaulting OFF — the classic 3-candle FVG — which is why this
+    # defaults False. But `mpc_strategy.pine` HARDCODES the check (`close[1] > high[2]` /
+    # `close[1] < low[2]`), so a consumer replaying THAT Pine must pin this True or it will
+    # hold gaps the Pine never created. Same class of trap as `fvg_max_count`: an engine
+    # input the decision stream does not export, so the consumer has to know it.
+    fvg_require_close: bool = False
     # rsi_divergence
     rsi_len: int = 14
     rsi_pivot_len: int = 5
@@ -112,7 +119,8 @@ class EngineStack:
         self.macro = MacroFib()
         self.internal = InternalFib()
         self.fvg = FairValueGapEngine(
-            max_count=c.fvg_max_count, threshold_pct=c.fvg_threshold_pct
+            max_count=c.fvg_max_count, threshold_pct=c.fvg_threshold_pct,
+            require_close=c.fvg_require_close
         )
         self.rsi = RsiDivergenceEngine(
             rsi_len=c.rsi_len,

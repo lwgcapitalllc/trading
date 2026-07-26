@@ -51,7 +51,10 @@
       "core": true,
       "widget": "toggle",
       "label": "Trade longs",
-      "options": {"off": "No", "on": "Yes"}
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      }
     },
     {
       "name": "exec_shorts",
@@ -59,15 +62,91 @@
       "core": true,
       "widget": "toggle",
       "label": "Trade shorts",
-      "options": {"off": "No", "on": "Yes"}
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      }
     },
     {
       "name": "exec_no_late_day",
       "group": "Sides",
       "widget": "toggle",
       "label": "No entries in the final hour",
-      "options": {"off": "Allow", "on": "Block 16:00–17:00 NY"},
+      "options": {
+        "off": "Allow",
+        "on": "Block 16:00–17:00 NY"
+      },
       "desc": "Blocks new entries in the last hour before the gold daily close (17:00 NY), so a fill can't get gapped out over the session break."
+    },
+    {
+      "name": "exec_runner_trail",
+      "group": "Exit ladder",
+      "core": true,
+      "label": "Runner trail method",
+      "choices": [
+        "Fixed step",
+        "Structure (swing)"
+      ],
+      "desc": "How the runner is trailed once TP2 is banked. Fixed step ratchets a fixed distance behind price. Structure follows the last confirmed swing, so it breathes with the trend — it usually rides further but hands back more at the turn. The runner is where this strategy's money is, so this is the highest-leverage setting on the page.",
+      "guide": [
+        "Fixed step — mechanical, predictable give-back",
+        "Structure — rides trends further, wider give-back"
+      ]
+    },
+    {
+      "name": "exec_struct_trail_buf_tk",
+      "group": "Exit ladder",
+      "unit": "ticks",
+      "label": "Structure trail buffer",
+      "show_if": {
+        "exec_runner_trail": "Structure (swing)"
+      },
+      "desc": "How far below the confirmed swing low (or above the swing high) the runner's stop sits, so an ordinary wick through the swing doesn't clip it.",
+      "guide": [
+        "Tight to the swing — clipped by wicks",
+        "Wide of the swing — survives noise, gives back more"
+      ]
+    },
+    {
+      "name": "exec_trail_step",
+      "group": "Exit ladder",
+      "label": "Runner trail step",
+      "unit": "$ of price",
+      "step": 0.5,
+      "show_if": {
+        "exec_runner_trail": "Fixed step"
+      },
+      "desc": "How tightly the runner's stop ratchets behind price once TP2 is done. Fixed-step mode only.",
+      "guide": [
+        "Tighter trail — banks sooner, cuts runners short",
+        "Looser trail — lets winners breathe, gives back more"
+      ]
+    },
+    {
+      "name": "exec_tp2_stop_mode",
+      "group": "Exit ladder",
+      "label": "TP2 → stop floor",
+      "choices": [
+        "TP1 price",
+        "Breakeven",
+        "One trail step behind"
+      ],
+      "desc": "Where the stop jumps the moment TP2 fills, before the trail takes over. TP1 price is tight and can scratch the runner on the first pullback. Breakeven gives the runner the most room. One trail step behind sits in between.",
+      "guide": [
+        "TP1 price — protects the gain, scratches runners",
+        "Breakeven — maximum room for the runner"
+      ]
+    },
+    {
+      "name": "exec_aplus",
+      "group": "Setup",
+      "widget": "toggle",
+      "label": "A+ has priority",
+      "options": {
+        "off": "Every B leg trades",
+        "on": "A+ stands the B leg down"
+      },
+      "desc": "In this bot the A+ setup never places an order — it only holds priority, standing the B leg down on a side where A+ would have armed. Turn it off to drop that gate and read the B leg completely on its own."
     }
   ]
 }

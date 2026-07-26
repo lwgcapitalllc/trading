@@ -18,7 +18,10 @@ a single Nov-2025 runner (an intrabar trail-fill guess, not a decision). See `##
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-22
+**Last reviewed:** 2026-07-26 — the exit levers (structure runner trail, TP2 stop floor, the three
+setup toggles) ported from the Pine, the export's config columns completed, and **PARITY RE-VALIDATED
+GREEN (exit 0)** on a fresh 21,230-bar `VANTAGE_XAUUSD, 15m` export — which caught a real unpinned-
+engine-input bug (`fvg_require_close`). See `## The exit ladder` and `## The 2026-07-26 exit-lever sync`.
 
 ---
 
@@ -136,6 +139,94 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
 - **Sparse-data note:** the secondary is rare (a live leg + zone + a 1m SOS + div, all at once). Over
   the ~4 days of local 1m cache it fired 0 times — expected, not a bug (see the arm trace). A real
   visual verification needs a longer 1m window (broker serves ~35d direct; older via ticks).
+
+## The exit ladder — every TP/SL lever, and which ones are switchable
+
+The register of how this bot (and `mpc_bleg`, which reuses the whole ladder) decides where the
+stop and the targets sit. Keep it current: a new exit lever in the Pine lands here, in `config.py`,
+in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
+
+| Stage | What sets it | Switchable? |
+|---|---|---|
+| **Stop loss** | A fib on the deep side of 0.5, `exec_sl_level` ∈ {0.618, 0.702, 0.786, 0.886, **1.0**}, then `exec_sl_buf_tk` ticks beyond it. 1.0 = the leg origin. | **Yes** — dropdown |
+| **TP1 / TP2** | Fibs, chosen AUTOMATICALLY by how deep the entry was. Deep entry → TP1 = 0.5, TP2 = 0.382. Shallow → TP1 = 0.382, TP2 = 0.0 (the swing extreme). | **No** — only the sizes (`exec_tp1_pct` 30%, `exec_tp2_pct` 40%) |
+| **TP3 (the runner)** | No target at all. It rides a trailing stop, and it is where the strategy's money is (>100% of net in every window measured). | **Yes** — see below |
+| **Stop staging** | Three phases, always on: (0) the full stop → (1) after TP1, breakeven + `exec_be_buf_tk` → (2) after TP2, a floor, then the trail. | **No** |
+| **The TP2 floor** | `exec_tp2_stop_mode`: **"TP1 price"** (tight, can scratch the runner on the first pullback) / "Breakeven" (most room) / "One trail step behind" (never below breakeven). | **Yes** — dropdown |
+| **The runner trail** | `exec_runner_trail`: "Fixed step" (a `exec_trail_step` grid ratchet anchored on TP2) / **"Structure (swing)"** (the structure engine's last confirmed swing low/high, offset by `exec_struct_trail_buf_tk`). | **Yes** — dropdown |
+| **Early bail-out** | `exec_close_opp_sos` (default OFF) force-closes on an opposite SOS instead of riding to the stop. | **Yes** — toggle |
+
+The floor and the trail compose: past TP2 the stop is the floor, and the trail may only tighten
+it further, never loosen it. With Structure selected and no confirmed swing yet, the trail is
+absent and the floor alone holds the stop.
+
+**`mpc_bleg` overrides TP1, TP2 and the SL** with its own band prices (SL = band origin, TP1 =
+the broken swing extreme, TP2 = the expansion extreme). Everything from the staging down —
+floor, trail, both dropdowns — is this table, inherited unchanged.
+
+**Aaron's brother's tested best combo (the shipped default 2026-07-26):** Structure trail +
+buffer 20 ticks + TP2 floor = TP1 price.
+
+## The 2026-07-26 exit-lever sync
+
+`mpc_strategy.pine` gained a structure-based runner trail, a TP2 stop-floor dropdown, an SL fib
+dropdown and three setup toggles. Ported here, with the Pine's defaults adopted verbatim:
+
+- **New config fields** — `exec_runner_trail` (**"Structure (swing)"**), `exec_struct_trail_buf_tk`
+  (20), `exec_tp2_stop_mode` ("TP1 price"), `exec_aplus` (True), `exec_bleg` (False here, True in
+  `BLegConfig`), `exec_fvg_50` (False). `exec_sl_level` already existed.
+- **`signals.py`** — `Signals` gained `last_conf_high` / `last_conf_low`, passed straight through
+  from the structure snapshot. Only `_advance_stage` reads them, and only past TP2.
+- **`execution.py`** — `_trail()` gained the structure branch; the stage-2 floor moved out of
+  `_current_stop()` into `_stage2_floor()`. Both anchors are snapshotted at the bar's CLOSE, the
+  same one-bar delay `_max_fav` already had, because the stop placed at bar N's close is what bar
+  N+1 trades against. Reading the live swing instead would silently make the trail clairvoyant.
+- **`exec_fvg_50` is NOT ported** (same standing as `exec_conf_sz`) — `compare_strategy.py` refuses
+  an export taken with it on. `exec_bleg` on is refused too: those trades belong to `mpc_bleg`.
+
+### PARITY GREEN 2026-07-26 (exit 0) — and the bug the run caught
+
+`compare_strategy.py "VANTAGE_XAUUSD, 15_e8beb.csv" --warmup 100` → **exit 0**, bar-for-bar identical
+on 21,130 of 21,230 bars (20,730 15m bars, 2025-09-01 → 2026-07-25). The export starts mid-history, so
+the ~100-bar warmup is genuine engine cold start, not a mask: every warmup from 100 up is green and the
+first mismatch at warmup 0 is bar 16.
+
+The first run came back with ONE mismatch, and it was a real bug, not noise:
+
+> `bar 20315 2026-07-12 23:00:00 px_edge: py=4100.94376 pine=None`
+
+Python computed a short entry edge on a bar where the Pine had none. The fib matched to the decimal
+(`dbg_fib_p2`/`p6`/`ash`/`asl` all identical), so it was an **FVG lifetime** difference: Python held a
+bearish gap created on the first bar after the weekend gap that the Pine never created at all.
+
+**Root cause — an unpinned engine input.** `mpc_strategy.pine` HARDCODES the middle-bar close-cleared
+check in its FVG detection (`close[1] > high[2]` / `close[1] < low[2]`, lines 1686/1688). The
+`fair_value_gaps` engine has that as the OPTIONAL `require_close` flag, defaulting **False** (it mirrors
+`mpc_assistant.pine`, where it IS an input and IS off). Nothing exported it, so nothing caught it — the
+engine happily created gaps whose middle candle never cleared the void.
+
+Fixed by making it explicit rather than implicit: `EngineConfig` gained `fvg_require_close` (default
+False, so no other consumer moves) and `MpcSosFadeStrategy.engine_config()` pins it **True**, alongside
+the `fvg_max_count=7` and `show_internal=False` pins that were already there for exactly this reason.
+`test_engine_config_pins_every_input_the_pine_moved_off_its_default` locks all three.
+
+**The lesson is the class of bug, not the flag.** An engine input the decision stream does not export
+is invisible to the parity check until a fresh export happens to disagree — and this one had been wrong
+since the FVG engine made the gate optional on 2026-07-18. Any time an engine's default changes, check
+every `engine_config()` that replays a Pine which does NOT share that default.
+
+**What the new export columns immediately paid for:** they revealed the Pine was running
+`execTp1Pct = 20` / `execTp2Pct = 20`, not the 30/40 defaults. Before this change no column carried
+them, so the bot would have silently replayed 30/40 against a 20/20 Pine and the diff would have been
+blamed on logic.
+
+**The export had a real hole while this was in flight.** `execRunnerTrail` defaulted to Structure in
+the Pine on 2026-07-25, but no `cfg_*` column carried it, so `compare_strategy.py` configured the
+bot to the fixed-step fallback and diffed two different strategies. Any parity result from that
+window is drift, not a bug. `mpc_strategy_export.pine` now carries `cfg_bits` bits 16384 /
+32768 / 65536 (`execAplus` / `execBLeg` / `execFvg50`), `cfg_exitmode` (both exit dropdowns), and
+one raw column each for the six exit numerics + the scratch band. An export WITHOUT `cfg_exitmode`
+is pre-2026-07-26 and `compare_strategy.py` prints a loud warning rather than guessing.
 
 ## Deliberate deviations from the Pine (per the framework)
 

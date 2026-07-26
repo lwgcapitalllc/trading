@@ -30,6 +30,8 @@ import compare_strategy as cs  # noqa: E402
 _SL = {v: k for k, v in cs._SL_LEVEL.items()}
 _SRC = {v: k for k, v in cs._HTF_SRC.items()}
 _REQ = {v: k for k, v in cs._HTF_REQ.items()}
+_TRAIL = {v: k for k, v in cs._RUNNER_TRAIL.items()}
+_TP2 = {v: k for k, v in cs._TP2_STOP.items()}
 
 
 def _encode_cfg(cfg: SosFadeConfig) -> dict:
@@ -39,13 +41,22 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
          + int(cfg.exec_fvg_deep_only) * 32 + int(cfg.exec_respect_veto) * 64
          + int(cfg.exec_close_opp_sos) * 128 + int(cfg.exec_htf_exhaust_only) * 256
          + int(cfg.exec_no_late_day) * 512 + int(cfg.show_div) * 1024 + int(cfg.div_veto) * 2048
-         + int(cfg.exec_conf_sz) * 4096 + int(cfg.exec_deep_fib) * 8192)
+         + int(cfg.exec_conf_sz) * 4096 + int(cfg.exec_deep_fib) * 8192
+         + int(cfg.exec_aplus) * 16384 + int(cfg.exec_bleg) * 32768
+         + int(cfg.exec_fvg_50) * 65536)
     sc = (_SL[cfg.exec_sl_level] * 1000 + _SRC[cfg.exec_htf_source] * 100
           + _REQ[cfg.exec_htf_weekly] * 10 + _REQ[cfg.exec_htf_daily])
     di = (cfg.div_extreme_os + cfg.div_extreme_ob * 1000 + cfg.div_rsi_len * 1_000_000
           + cfg.div_pivot_len * 1_000_000_000 + cfg.div_valid_bars * 1_000_000_000_000)
+    em = _TRAIL[cfg.exec_runner_trail] * 10 + _TP2[cfg.exec_tp2_stop_mode]
     return {"cfg_bits": b, "cfg_strcodes": sc, "cfg_divints": di,
-            "cfg_window": cfg.aplus_window, "cfg_risk_pct": cfg.exec_risk_pct}
+            "cfg_window": cfg.aplus_window, "cfg_risk_pct": cfg.exec_risk_pct,
+            "cfg_exitmode": em,
+            "cfg_struct_buf": cfg.exec_struct_trail_buf_tk,
+            "cfg_trail_step": cfg.exec_trail_step,
+            "cfg_tp1_pct": cfg.exec_tp1_pct, "cfg_tp2_pct": cfg.exec_tp2_pct,
+            "cfg_be_buf": cfg.exec_be_buf_tk, "cfg_sl_buf": cfg.exec_sl_buf_tk,
+            "cfg_scratch_r": cfg.exec_scratch_r}
 
 
 def _pack_decision(drow: dict) -> dict:
@@ -101,6 +112,20 @@ def test_roundtrip_parity_under_nondefault_toggles(tmp_path):
     # a different config must still round-trip (proves cfg_* decode drives the bot)
     cfg = SosFadeConfig(exec_arm_sweep=True, exec_req_fvg=False, exec_risk_pct=1.0,
                       exec_sl_level="0.786", div_valid_bars=250, aplus_window=1440)
+    p, _ = _write(tmp_path, cfg)
+    msgs = cs.run_parity(p, warmup=100)
+    assert msgs == [], msgs[:3]
+
+
+def test_roundtrip_parity_under_nondefault_exit_levers(tmp_path):
+    """The 2026-07-26 exit columns must drive the bot too. Every lever is off its default:
+    the fixed-step trail instead of structure, a breakeven TP2 floor, and moved buffers —
+    a run whose px_stop stream is only reproducible if cfg_exitmode + the raw exit columns
+    are actually read back."""
+    cfg = SosFadeConfig(exec_runner_trail="Fixed step", exec_tp2_stop_mode="Breakeven",
+                        exec_struct_trail_buf_tk=5.0, exec_trail_step=2.5,
+                        exec_tp1_pct=50.0, exec_tp2_pct=25.0,
+                        exec_be_buf_tk=10.0, exec_sl_buf_tk=4.0)
     p, _ = _write(tmp_path, cfg)
     msgs = cs.run_parity(p, warmup=100)
     assert msgs == [], msgs[:3]

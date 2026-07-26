@@ -234,3 +234,80 @@ def test_deep_fib_reprices_a_deep_short_gap():
                fibo_p6=108.86, fibo_p1=103.82, fibo_p7=100.0, fibo_p10=110.0)
     _, se = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=True))._entry_edges(sig)
     assert abs(se - 107.2) < 1e-9
+
+
+# ---------------------------------------------- runner trail + TP2 stop floor ----
+# The exit levers added to `mpc_strategy.pine` 2026-07-25. All four tests drive the same
+# long to stage 2 (TP1 105 and TP2 106.18 both taken on bar 2) and then read the stop the
+# bar-2 close staged, so only the lever under test differs.
+
+def _stage2_long(ex, last_conf_low=None):
+    """Fill a long at 103.82 and rally it through TP1+TP2 on bar 2. Returns bar 2's decision,
+    whose `.stop` is the runner's stop for bar 3."""
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    return ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5, last_conf_low=last_conf_low), _seq_flat())
+
+
+def test_structure_trail_rides_the_confirmed_swing_low():
+    """Structure mode: the runner stop is the last confirmed swing low minus the buffer.
+    Swing 105.6, buffer 20 ticks of 0.01 = 0.20 -> 105.4, which beats the TP1 floor (105)."""
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Structure (swing)",
+                                      exec_struct_trail_buf_tk=20.0)), last_conf_low=105.6)
+    assert abs(dec.stop - 105.4) < 1e-9
+
+
+def test_structure_trail_never_loosens_below_the_stage2_floor():
+    """A swing BELOW the floor is ignored — the floor wins. Swing 104.0 - 0.20 = 103.80,
+    which is worse than the TP1 floor (105), so the stop stays at 105."""
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Structure (swing)",
+                                      exec_struct_trail_buf_tk=20.0)), last_conf_low=104.0)
+    assert abs(dec.stop - 105.0) < 1e-9
+
+
+def test_structure_trail_with_no_confirmed_swing_falls_back_to_the_floor():
+    """Warmup case: no confirmed swing yet -> no trail, floor only."""
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Structure (swing)")), last_conf_low=None)
+    assert abs(dec.stop - 105.0) < 1e-9
+
+
+def test_fixed_step_trail_ignores_the_confirmed_swing():
+    """Fixed-step mode must not read the swing at all. Max favourable 107.0 is only 0.82
+    past TP2 (106.18) — under one 5.0 step — so the ratchet hasn't engaged and the floor holds,
+    even though a structure trail would have put the stop at 105.4."""
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Fixed step")), last_conf_low=105.6)
+    assert abs(dec.stop - 105.0) < 1e-9
+
+
+def test_tp2_stop_mode_breakeven_holds_the_stop_at_entry():
+    """'Breakeven' keeps the runner at entry + the BE buffer instead of jumping to TP1.
+    Entry 103.82, buffer 0 in these fixtures -> 103.82."""
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Fixed step",
+                                      exec_tp2_stop_mode="Breakeven")))
+    assert abs(dec.stop - 103.82) < 1e-9
+
+
+def test_tp2_stop_mode_one_trail_step_behind():
+    """'One trail step behind' floors the stop one 5.0 step under the high-water mark
+    (107.0 - 5.0 = 102.0), but never below breakeven (103.82), so breakeven wins here."""
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Fixed step",
+                                      exec_tp2_stop_mode="One trail step behind")))
+    assert abs(dec.stop - 103.82) < 1e-9
+
+
+def test_tp2_stop_mode_one_trail_step_behind_beats_breakeven_on_a_big_run():
+    """Same mode, bigger run: high-water 112.0 - 5.0 = 107.0 clears breakeven, so it holds."""
+    ex = Execution(_cfg(exec_runner_trail="Fixed step",
+                        exec_tp2_stop_mode="One trail step behind"))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    dec = ex.step(_sig(2, 104.0, 112.0, 103.9, 111.5), _seq_flat())
+    assert abs(dec.stop - 107.0) < 1e-9
+
+
+def test_aplus_off_disarms_every_a_plus_entry():
+    """`exec_aplus` False = the A+ sequence never arms, so nothing is ever placed."""
+    ex = Execution(_cfg(exec_aplus=False))
+    dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert dec.long_armed is False
+    assert ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready()).fills == []

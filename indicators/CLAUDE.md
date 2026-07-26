@@ -3,7 +3,7 @@
 **Purpose:** From-scratch Pine Script rebuild of the "Structure OS / SMC Engine" market-structure indicator (swing highs/lows, HH/HL/LH/LL, BOS, CHoCH), replicating a private TradingView indicator's behavior using a pullback-only detection method.
 **Scope:** This covers Pine Script indicator development and the market-structure detection engine only. It does NOT cover trading strategy logic, risk management, or any live/backtest execution — this is a charting indicator, not a bot.
 **Status:** Under construction — Stage 2b (break-gated swing structure + BOS/CHoCH) is ~95% validated against the original; Stage 3 (internal structure) and Stage 4 (multi-symbol/timeframe comparison) not started. Blocked on chart validation by Aaron before Stage 3 begins.
-**Last reviewed:** 2026-07-26 — orphaned-SVP compile fix in `mpc_strategy.pine` + `mpc_strategy_export.pine` regenerated off it (see the 2026-07-26 entry). Earlier: 2026-07-12 — the whole structure chain was re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% Pine parity (see the "2026-07-12 structure re-sync" note below), and the A+ divergence retro-link landed in both A+-carrying files (see the note after it).
+**Last reviewed:** 2026-07-26 — the new exit levers (structure runner trail, TP2 stop floor, SL fib dropdown, `execAplus`) ported into `mpc_b_leg_strategy.pine`, and `mpc_strategy_export.pine` given a column for every trade-affecting input (see the second 2026-07-26 entry). Earlier the same day: orphaned-SVP compile fix in `mpc_strategy.pine` + the export regenerated off it. Earlier: 2026-07-12 — the whole structure chain was re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% Pine parity (see the "2026-07-12 structure re-sync" note below), and the A+ divergence retro-link landed in both A+-carrying files (see the note after it).
 
 ---
 
@@ -196,6 +196,65 @@ columns verified present afterward.
   years — a real fix on the specific trade Aaron raised (a −1.00R stop-out became a +0.10R scratch) but
   only modestly above the ~3R noise floor in aggregate. **The lesson is the process, not the feature:
   commit repo-side Pine work before the next TradingView round-trip, or it dies.**
+
+---
+
+## 2026-07-26 — the exit levers ported to the B-leg fork + the export's config columns completed
+
+Aaron's brother's 2026-07-25 paste added a new **exit** family to `mpc_strategy.pine`. This pass
+brought `mpc_b_leg_strategy.pine` and both Python bots up to it, and closed the export hole it left.
+
+**What was new in the parent** (all in `GRP_EXEC`):
+- `execRunnerTrail` — "Fixed step" / **"Structure (swing)"**, the DEFAULT. Past TP2 the runner
+  trails the structure engine's last confirmed swing (`st.last_conf_low` / `st.last_conf_high`)
+  instead of the `execTrailStep` grid ratchet.
+- `execStructTrailBufTk` — 20 ticks below/above that swing, so a wick doesn't clip the runner.
+- `execTp2StopMode` — "TP1 price" (default) / "Breakeven" / "One trail step behind": the stop FLOOR
+  the instant TP2 fills, before the trail engages. The trail may tighten past it, never loosen it.
+- `execSlLevel` — the stop's fib, 0.618 … **1.0** (default = the leg origin, i.e. unchanged).
+- `execAplus` — trade A+ setups at all, so the B leg can be read in isolation.
+
+The brother's tooltip names the tested best combo: **Structure trail + buffer 20 + floor = TP1 price**.
+
+**Ported into `mpc_b_leg_strategy.pine`:** `execRunnerTrail`, `execStructTrailBufTk`,
+`execTp2StopMode` and the `lStage2Floor` / `sStage2Floor` + structure-trail exit block, line-for-line
+off the parent. Plus `execAplus`, relabelled **"A+ has priority (stand the B-leg down)"** — in this
+fork A+ never places an order, so the flag doesn't disable an entry path, it drops the priority gate.
+That gate has been the file's own first-listed tuning candidate since 2026-07-24 and is now a toggle.
+
+**Deliberately NOT ported to the B-leg fork**, with reasons, so nobody "fixes" it later:
+- `execSlLevel` — the B leg's stop is its frozen band's origin, not a fib on the A+ leg. The dropdown
+  has nothing to select there.
+- The pink blocked-trade markers. Their codes answer "why was this **A+** setup refused". In a fork
+  where A+ never trades, those tags read as the opposite of what they mean. A B-LEG block tag needs
+  its own code set — new design work, not a port.
+
+**The export hole this closed — the important part.** `execRunnerTrail` shipped defaulting to
+Structure on 2026-07-25, but `mpc_strategy_export.pine` carried no column for it. So
+`compare_strategy.py` configured the Python bot to the fixed-step fallback and diffed a
+structure-trailed Pine against a grid-trailed Python: a mismatch that is pure drift, reported as if
+it were a bug. **A default that changes behaviour is exactly as dangerous as a new input, and it
+hides better.** The export now carries `cfg_bits` bits 16384 / 32768 / 65536 (`execAplus` /
+`execBLeg` / `execFvg50`), `cfg_exitmode` (both exit dropdowns packed), and one RAW column each for
+`execStructTrailBufTk` / `execTrailStep` / `execTp1Pct` / `execTp2Pct` / `execBeBufTk` /
+`execSlBufTk` / `execBeBandR`. Those six are plotted raw rather than packed on purpose: any pack
+that fits them in one float64 has to round, and a silently rounded buffer mis-configures the bot —
+the exact failure the block exists to prevent. `compare_strategy.py` warns loudly on an export with
+no `cfg_exitmode` (i.e. taken before this change) instead of guessing.
+
+**VALIDATED the same day — and the new columns paid for themselves immediately.** A fresh 21,230-bar
+`VANTAGE_XAUUSD, 15m` export off the updated export Pine ran `compare_strategy.py --warmup 100` to
+**exit 0**. Two things only the new columns could have told us:
+1. The Pine was running `execTp1Pct = 20` / `execTp2Pct = 20`, NOT the 30/40 shipped defaults. With no
+   column for them the bot would have replayed 30/40 and the diff would have been blamed on logic.
+2. The first run's single mismatch (`px_edge` on one bar) was a genuine bug — an unpinned FVG engine
+   input. `mpc_strategy.pine` HARDCODES the middle-bar close-cleared check (lines 1686/1688) while the
+   `fair_value_gaps` engine defaults `require_close` OFF, so Python created gaps the Pine never did.
+   Fixed on the Python side (`EngineConfig.fvg_require_close`, pinned True by the bot). **Never fix
+   this class of gap by editing the Pine** — it is the source of truth; the pin belongs in the port.
+
+`mpc_b_leg_strategy.pine` compiles (confirmed on TradingView) but has **no parity harness yet** — the
+`compare_bleg.py` + export Pine remain the follow-up, so its numbers are still directional only.
 
 ---
 

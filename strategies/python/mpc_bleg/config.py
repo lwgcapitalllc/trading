@@ -29,6 +29,13 @@ from mpc_sos_fade.config import SosFadeConfig  # noqa: E402
 
 @dataclass(frozen=True)
 class BLegConfig(SosFadeConfig):
+    # ── Inherited toggle, re-defaulted to this fork's Pine value ───────────────────
+    exec_bleg: bool = True        # "Trade B-Leg setups" — THIS fork's core setup, so ON here
+    #   `mpc_b_leg_strategy.pine` ships execBLeg = true (the A+ file ships it false). Turn OFF
+    #   only to prove the bot trades nothing without it. `exec_aplus` is inherited and still
+    #   matters: A+ never PLACES an order here, but it holds the priority gate — set it False
+    #   to drop that gate and read the B leg completely on its own.
+
     # ── B-LEG-only input (Pine bLegMaxDays, group "Strategy Execution") ─────────────
     bleg_max_days: float = 1.25   # days a frozen band watches before it goes stale (1-3)
     #   Converted to a BAR count (day ÷ chart timeframe) so weekends and the daily close

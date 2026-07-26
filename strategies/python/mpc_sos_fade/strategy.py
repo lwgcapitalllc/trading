@@ -84,10 +84,17 @@ class MpcSosFadeStrategy:
         showInternal`), so `i_confirmed_*` is never set and the Structure fib never adopts a
         more-extreme internal swing as its anchor. The market_structure engine always
         computes internal structure, so we must switch that adoption off to match the Pine.
+        `fvgRequireClose` — `mpc_strategy.pine` HARDCODES the middle-bar close-cleared check
+        (`close[1] > high[2]` / `close[1] < low[2]`, lines 1686/1688), i.e. it is permanently ON
+        there, while the FVG engine defaults it OFF (mirroring `mpc_assistant.pine`, which
+        exposes it as an input defaulting off). Left unpinned, the engine creates gaps the Pine
+        never did — caught 2026-07-26 as the single parity mismatch on a fresh export: a
+        weekend-gap bar whose middle candle never closed past the void produced a Python-only
+        entry edge. Do not "simplify" this back to the engine default.
         If a bot ever tunes another engine input off its default, add it here (and export it
         if it must vary per run)."""
         from backtest.replay import EngineConfig
-        return EngineConfig(fvg_max_count=7, show_internal=False)
+        return EngineConfig(fvg_max_count=7, show_internal=False, fvg_require_close=True)
 
     def run(self, df, engine_config=None, warmup: int = 0) -> "MpcSosFadeStrategy":
         """Replay a canonical bar frame end-to-end. Engines warm on every bar; the

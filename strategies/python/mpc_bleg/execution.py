@@ -53,11 +53,11 @@ class BLegExecution(Execution):
 
         # B-LEG arm (Pine 4429-4430): the frozen band is live, untapped and valid, we're flat,
         # A+ is not armed on this side, not late-day, and this band is not already traded.
-        bleg_l_arm = (cfg.exec_longs and not long_armed and bleg.l_on and not bleg.l_tap
+        bleg_l_arm = (cfg.exec_bleg and cfg.exec_longs and not long_armed and bleg.l_on and not bleg.l_tap
                       and not late and bleg.l_top is not None and bleg.l_inv is not None
                       and bleg.l_tgt is not None and self._pos_dir == 0
                       and (self._traded_sos_l is None or bleg.l_bar != self._traded_sos_l))
-        bleg_s_arm = (cfg.exec_shorts and not short_armed and bleg.s_on and not bleg.s_tap
+        bleg_s_arm = (cfg.exec_bleg and cfg.exec_shorts and not short_armed and bleg.s_on and not bleg.s_tap
                       and not late and bleg.s_bot is not None and bleg.s_inv is not None
                       and bleg.s_tgt is not None and self._pos_dir == 0
                       and (self._traded_sos_s is None or bleg.s_bar != self._traded_sos_s))

@@ -46,6 +46,8 @@ from mpc_sos_fade.execution import Decision  # noqa: E402
 _SL_LEVEL = {0: "0.618", 1: "0.702", 2: "0.786", 3: "0.886", 4: "1.0"}
 _HTF_SRC = {0: "Weekly", 1: "Daily", 2: "Either"}
 _HTF_REQ = {0: "Ignore", 1: "Must agree", 2: "Must not oppose", 3: "Must oppose (reversal)"}
+_RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)"}
+_TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
 
 # decision columns compared, after _expand_packed() has unpacked cfg_bits/px_dec_bits/etc.
 _DEC_BOOL = ["px_long_armed", "px_short_armed", "px_long_veto", "px_short_veto"]
@@ -77,6 +79,8 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None) -
             exec_htf_exhaust_only=bool(b & 256), exec_no_late_day=bool(b & 512),
             show_div=bool(b & 1024), div_veto=bool(b & 2048),
             exec_conf_sz=bool(b & 4096), exec_deep_fib=bool(b & 8192),
+            exec_aplus=bool(b & 16384), exec_bleg=bool(b & 32768),
+            exec_fvg_50=bool(b & 65536),
         )
         # Bit 4096 (Pine execConfSZ, added 2026-07-21) turns the Sniper Zone into a second
         # accepted entry confirmation. The Python bot has NOT ported that path yet, so an
@@ -87,6 +91,25 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None) -
                 "This export was taken with 'Allow Sniper Zone as entry confirmation' ON "
                 "(cfg_bits bit 4096). That Pine path is not ported to the Python bot yet, so "
                 "the comparison would be meaningless. Re-export with it OFF, or port it first."
+            )
+        # Bit 65536 (Pine execFvg50, added 2026-07-24) qualifies a gap that STRADDLES 0.5 and
+        # rests the limit at 0.5. Same situation as execConfSZ — not ported, so refuse rather
+        # than diff against logic this bot does not have.
+        if vals.get("exec_fvg_50"):
+            raise SystemExit(
+                "This export was taken with 'Entry (least favorable): FVG must touch the 0.5 "
+                "line' ON (cfg_bits bit 65536). That Pine path is not ported to the Python bot "
+                "yet, so the comparison would be meaningless. Re-export with it OFF, or port it "
+                "first."
+            )
+        # Bit 32768 (Pine execBLeg) turns on a SECOND setup type the A+ bot does not implement
+        # at all — those trades live in `strategies/python/mpc_bleg/`. An export with it on
+        # carries B-leg entries the A+ decision stream can never reproduce.
+        if vals.get("exec_bleg"):
+            raise SystemExit(
+                "This export was taken with 'Trade B-Leg setups' ON (cfg_bits bit 32768). The "
+                "B LEG is a separate bot (strategies/python/mpc_bleg/), so this A+ comparison "
+                "would diff against trades it never makes. Re-export with it OFF."
             )
     sc = get("cfg_strcodes")
     if sc is not None:
@@ -109,6 +132,30 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None) -
     r = get("cfg_risk_pct")
     if r is not None:
         vals["exec_risk_pct"] = float(r)
+    # Exit ladder (added 2026-07-26 alongside the structure runner trail). cfg_exitmode packs
+    # the two dropdowns; the numerics are raw columns. An OLDER export has none of these, so
+    # each one falls back to the base default — and for `exec_runner_trail` that fallback is
+    # now "Structure (swing)", i.e. an export predating the columns would be read as structure
+    # even if the Pine ran fixed-step. Warn loudly rather than diff on a guess.
+    em = get("cfg_exitmode")
+    if em is None:
+        print("WARNING: no cfg_exitmode column — this export predates 2026-07-26 and does not "
+              "record the runner trail or the TP2 stop floor. The exit levers are assumed to be "
+              "at their defaults; re-export to compare them honestly.")
+    else:
+        e = int(round(em))
+        vals["exec_runner_trail"] = _RUNNER_TRAIL.get(e // 10, vals["exec_runner_trail"])
+        vals["exec_tp2_stop_mode"] = _TP2_STOP.get(e % 10, vals["exec_tp2_stop_mode"])
+    for col, field in (("cfg_struct_buf", "exec_struct_trail_buf_tk"),
+                       ("cfg_trail_step", "exec_trail_step"),
+                       ("cfg_tp1_pct", "exec_tp1_pct"),
+                       ("cfg_tp2_pct", "exec_tp2_pct"),
+                       ("cfg_be_buf", "exec_be_buf_tk"),
+                       ("cfg_sl_buf", "exec_sl_buf_tk"),
+                       ("cfg_scratch_r", "exec_scratch_r")):
+        v = get(col)
+        if v is not None:
+            vals[field] = float(v)
     return SosFadeConfig(**vals)
 
 
