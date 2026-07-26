@@ -3,7 +3,7 @@
 **Purpose:** From-scratch Pine Script rebuild of the "Structure OS / SMC Engine" market-structure indicator (swing highs/lows, HH/HL/LH/LL, BOS, CHoCH), replicating a private TradingView indicator's behavior using a pullback-only detection method.
 **Scope:** This covers Pine Script indicator development and the market-structure detection engine only. It does NOT cover trading strategy logic, risk management, or any live/backtest execution — this is a charting indicator, not a bot.
 **Status:** Under construction — Stage 2b (break-gated swing structure + BOS/CHoCH) is ~95% validated against the original; Stage 3 (internal structure) and Stage 4 (multi-symbol/timeframe comparison) not started. Blocked on chart validation by Aaron before Stage 3 begins.
-**Last reviewed:** 2026-07-12 — the whole structure chain was re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% Pine parity (see the "2026-07-12 structure re-sync" note below), and the A+ divergence retro-link landed in both A+-carrying files (see the note after it).
+**Last reviewed:** 2026-07-26 — orphaned-SVP compile fix in `mpc_strategy.pine` + `mpc_strategy_export.pine` regenerated off it (see the 2026-07-26 entry). Earlier: 2026-07-12 — the whole structure chain was re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% Pine parity (see the "2026-07-12 structure re-sync" note below), and the A+ divergence retro-link landed in both A+-carrying files (see the note after it).
 
 ---
 
@@ -150,6 +150,52 @@ new `px_block`, so `compare_strategy.py` is unaffected.
 **If CE10117 returns anyway**, trim in this order: shorten the six `f_blkWhy` strings, then drop codes
 1 and 2 (a disabled direction or arm source is a setting you already know about, unlike the four that
 depend on price).
+
+---
+
+## 2026-07-26 — orphaned-SVP compile fix + `mpc_strategy_export.pine` regenerated
+
+**The compile error.** Aaron's brother edited `mpc_strategy.pine` directly on TradingView and pushed
+it. His copy deleted the Session Volume Profile **inputs** (`showSVP`, `svpRows`, `svpHistory`,
+`svpPOCCol`, `GRP_SVP`) but left the entire 108-line SVP computation block behind, so the script failed
+with `CE10272: Undeclared identifier "showSVP"` at the first line that read one. Removed the orphaned
+block (the MV / Asia-POC line; cosmetic, read by nothing in the execution layer). 4668 → 4560 lines.
+Order Blocks and VWAP were cut cleanly in his copy — verified by grep, no orphans left.
+
+**Lesson for the next TradingView round-trip:** when a feature is cut on the TV side, grep for its
+identifiers before trusting the paste. A deleted input group with its consumer still in place compiles
+locally in nobody's head and fails on the first line that reads it. The 2026-07-25 entry above lists
+the exact identifier set for all three cosmetic subsystems — use it as the checklist.
+
+**`mpc_strategy_export.pine` regenerated** (4540 → 4610 lines) by its own documented procedure: the
+parent's body up to the `DIAGNOSTIC LOG` header, plus the appended `PARITY EXPORT` block, then restore
+`strategy("MPC A+ Strategy Export"` on line 29. That title is now the **ONLY** difference from the
+parent — verified by `diff` over the shared range, zero other lines. The export had drifted five
+trade-affecting changes behind (the whole **B LEG** setup + its three inputs and the `execAplus` term
+in `longArmed`; **`execFvg50`**; **`execRunnerTrail` + `execStructTrailBufTk`**, the structure-swing
+runner trail that is now the DEFAULT; **`execTp2StopMode`**; and the removed fixed-R:R lever) and still
+carried the JARVIS confirmation table the parent dropped 2026-07-24. All 25 `px_*` / `cfg_*` / `dbg_*`
+columns verified present afterward.
+
+**Two things deliberately NOT done, both flagged in the export's own header:**
+- **`cfg_bits` still packs 14 booleans.** `execAplus`, `execBLeg` and `execFvg50` have no bit, and
+  `execRunnerTrail` / `execStructTrailBufTk` / `execTp2StopMode` have no column. At their **defaults**
+  this costs parity nothing (`execBLeg` and `execFvg50` are OFF, and the `mpc_sos_fade` Python bot has
+  no B leg — that lives in `mpc_bleg`). Tune any of them and the column must be added here AND in
+  `compare_strategy.py` before a diff means anything.
+- **`execFvgDeepest` (the deepest-gap-on-a-fib entry toggle) is GONE and has to be rebuilt from
+  scratch if wanted.** Built repo-side 2026-07-25 across both Pine files, `mpc_sos_fade`
+  (`config.py` / `execution._pick_edge` / 6 unit tests / meta.json panel / `cfg_bits` bit 16384) and
+  never committed — then wiped: the brother's TradingView copy overwrote the Pine, and the working-tree
+  revert that followed discarded the Python. Nothing of it survives. What it did: when TWO OR MORE
+  FVGs qualify in the entry band, ignore the shallow ones and rest the limit at the DEEPEST gap whose
+  body holds a fib entry level (0.618/0.702/0.786/0.886), at that gap's own near edge — instead of the
+  historical rule of taking the gap price reaches FIRST. Method 3 was deliberately NOT applied on that
+  path (re-pricing a gap that already holds a level drags the limit back to the shallow side and undoes
+  the choice). Measured over 8 years of gold 15m: 188 trades / +39.0R → 180 / +44.5R, better in 6 of 9
+  years — a real fix on the specific trade Aaron raised (a −1.00R stop-out became a +0.10R scratch) but
+  only modestly above the ~3R noise floor in aggregate. **The lesson is the process, not the feature:
+  commit repo-side Pine work before the next TradingView round-trip, or it dies.**
 
 ---
 
