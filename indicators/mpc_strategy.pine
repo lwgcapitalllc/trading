@@ -68,7 +68,7 @@ color iBearColor  = bearColor
 //  MARKET STRUCTURE LABEL SIZE
 //============================================================
 var GRP_STRUCT = "Market Structure"
-bool   marketStructureOnly = input.bool(false, "Hide Everything Except Market Structure", group = GRP_STRUCT, tooltip = "On = show ONLY the external and internal structure engine (BOS/SOS/iBOS/iSOS). Every other feature — fibs, liquidity, sessions, kill zones, VWAP, MV, FVG, divergence, order blocks — is force-disabled regardless of its own toggle, and the table shows structure-related rows only. Off = every feature works normally per its own toggle. This is the default view.", display = display.none)
+bool   marketStructureOnly = input.bool(false, "Hide Everything Except Market Structure", group = GRP_STRUCT, tooltip = "On = show ONLY the structure engine (BOS/SOS/iBOS/iSOS); every other feature is force-disabled regardless of its own toggle. Off (default) = every feature works per its own toggle.", display = display.none)
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
 bool   showInternal     = input.bool(false,     "Show Internal Structure", group = GRP_STRUCT, display = display.none)
@@ -117,15 +117,15 @@ var GRP_APLUS = "A+ Setup"
 //  read anywhere in this file. Deleted to buy compile tokens for the
 //  post-SOS divergence veto exemption. Arming is controlled by the
 //  execArmSweep / execArmDiv toggles in the Execution group instead.)
-int aplusWindow = input.int(4320, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop, measured in TIME rather than bars — a bar count is fragile across timeframes (300 bars is 5 hours on 1m but 12.5 days on 4H). The SOS must fire within this many minutes of the sweep. The real kill switch is narrative — an opposite-direction SOS disarms the sweep — so this only filters out extremely old sweeps. A newer same-side sweep always refreshes the window.", display = display.none)
+int aplusWindow = input.int(4320, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop in TIME: the SOS must fire within this many minutes of the sweep. The real kill switch is narrative (an opposite SOS disarms it), so this only filters extremely old sweeps.", display = display.none)
 
 //============================================================
 //  A+ DEBUG (bar-replay diagnostics — no effect on trades)
 //============================================================
 var GRP_DEBUG = "A+ Debug"
-bool debugShow23 = input.bool(true, "Show missed setups (2 of 3 or better)", group = GRP_DEBUG, tooltip = "Drops one orange callout on every setup that reached at least 2 of the 3 A+ confluences (Arm, SOS, Zone+FVG) and never became a trade — whatever killed it. The box lists what was MET and what was MISSING, and a dashed line marks the price the entry limit would have rested at. Which confluences count is read from your own inputs, so a setup armed by a source you switched off is reported as missing that arm, not silently dropped. A setup that met all three and still did not fill is headed 'NO ENTRY' with the real blocker named. Purely cosmetic — never changes trade results.")
+bool debugShow23 = input.bool(true, "Show missed setups (2 of 3 or better)", group = GRP_DEBUG, tooltip = "Drops one orange callout on every 2-of-3-or-better setup that never became a trade, listing MET / MISSING confluences and the would-be entry price in its tooltip. Which confluences count is read from your inputs. Purely cosmetic — never changes trade results.")
 bool debugShow23Disarmed = input.bool(false, "…include ones armed by a disabled source", group = GRP_DEBUG, tooltip = "Off (default) = only show missed setups whose arm source you actually have enabled. On = also show setups armed by the source you switched off, so you can see what the other arm trigger would have caught. Expect a lot more boxes with this on.")
-string debug23Filter = input.string("Near misses only", "Which misses to draw", options = ["Near misses only", "All misses", "3-of-3 only"], group = GRP_DEBUG, tooltip = "A setup that simply never came back to the entry zone is the ORDINARY outcome and there are hundreds of them — drawing every one buries the ones that matter. Near misses only (default) = the setup either reached the zone and failed on the FVG, or met all three and still did not fill. 3-of-3 only = the strictest view: setups that were fully qualified and still produced no trade. All misses = everything from 2 of 3 up, including 'price never retraced'.")
+string debug23Filter = input.string("Near misses only", "Which misses to draw", options = ["Near misses only", "All misses", "3-of-3 only"], group = GRP_DEBUG, tooltip = "Near misses only (default) = reached the zone and failed on the FVG, or met all three and still did not fill. 3-of-3 only = fully qualified but no trade. All misses = everything from 2 of 3 up.")
 int    debugDays = input.int(3, "Only draw debug callouts from the last N days (0 = all)", group = GRP_DEBUG, minval = 0, maxval = 365, tooltip = "Callouts older than this are not drawn. You are almost never studying a miss from three weeks ago while reading this week's price action, and the old ones are what turn the chart into a wall of boxes. Set 0 to draw the entire history. Applies ONLY to the missed-setup callouts — every real trade always gets its label, however old.")
 
 //============================================================
@@ -164,22 +164,22 @@ const string TZ_TOOLTIP_TEXT = "The session's time zone, specified in either GMT
 const string FIRST_SESSION_GROUP = "First Session"
 showFirst         = input.bool(true,                         "Show session",     group = FIRST_SESSION_GROUP, display = display.none)
 firstSessionName  = input.string("Tokyo",                    "Displayed name",   group = FIRST_SESSION_GROUP, display = display.none, active = showFirst)
-firstSessionTime  = input.session("2000-0500",               "Session time",     group = FIRST_SESSION_GROUP, display = display.none, active = showFirst)
-firstSessionTZ    = input.string("GMT-4",                    "Session timezone", group = FIRST_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showFirst)
+firstSessionTime  = input.session("0900-1800",               "Session time",     group = FIRST_SESSION_GROUP, active = showFirst)
+firstSessionTZ    = input.string("Asia/Tokyo",               "Session timezone", group = FIRST_SESSION_GROUP, tooltip = TZ_TOOLTIP_TEXT, active = showFirst)
 firstSessionColor = input.color(color.new(#FF5252, 92),      "Session color",    group = FIRST_SESSION_GROUP, active = showFirst)
 
 const string SECOND_SESSION_GROUP = "Second Session"
 showSecond         = input.bool(true,                        "Show session",     group = SECOND_SESSION_GROUP, display = display.none)
 secondSessionName  = input.string("London",                  "Displayed name",   group = SECOND_SESSION_GROUP, display = display.none, active = showSecond)
-secondSessionTime  = input.session("0400-1300",              "Session time",     group = SECOND_SESSION_GROUP, display = display.none, active = showSecond)
-secondSessionTZ    = input.string("GMT-4",                   "Session timezone", group = SECOND_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showSecond)
+secondSessionTime  = input.session("0800-1700",              "Session time",     group = SECOND_SESSION_GROUP, active = showSecond)
+secondSessionTZ    = input.string("Europe/London",           "Session timezone", group = SECOND_SESSION_GROUP, tooltip = TZ_TOOLTIP_TEXT, active = showSecond)
 secondSessionColor = input.color(color.new(#2962FF, 92),     "Session color",    group = SECOND_SESSION_GROUP, active = showSecond)
 
 const string THIRD_SESSION_GROUP = "Third Session"
 showThird         = input.bool(true,                         "Show session",     group = THIRD_SESSION_GROUP, display = display.none)
 thirdSessionName  = input.string("New York",                 "Displayed name",   group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
-thirdSessionTime  = input.session("0900-1800",               "Session time",     group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
-thirdSessionTZ    = input.string("GMT-4",                    "Session timezone", group = THIRD_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showThird)
+thirdSessionTime  = input.session("0800-1700",               "Session time",     group = THIRD_SESSION_GROUP, active = showThird)
+thirdSessionTZ    = input.string("America/New_York",         "Session timezone", group = THIRD_SESSION_GROUP, tooltip = TZ_TOOLTIP_TEXT, active = showThird)
 thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",    group = THIRD_SESSION_GROUP, active = showThird)
 
 // (Kill Zones & NY Range were REMOVED 2026-07-22 — the script had gone over
@@ -357,7 +357,7 @@ bool showSniperFib = input.bool(false, "Sniper Zone", group = GRP_SNIPER, active
 // lines below has to read it, and Pine needs the declaration first. It still
 // appears under "Strategy Execution" in the panel — group placement is by the
 // group string, not by position in the file.
-bool execConfSZ = input.bool(false, "Allow Sniper Zone as entry confirmation", group = "Strategy Execution", tooltip = "Adds the Sniper Zone as a SECOND accepted entry confirmation alongside the FVG. The SZ is the 0.5-0.618 pocket of the break leg, so it already sits inside the 0.5-0.886 entry band. FVG always wins: the SZ is used only on a leg where no qualifying gap exists, which means every trade the current settings already take is unchanged and any new trade is one that previously logged 'NO FVG missed'. The limit rests at the FAR side of the pocket (~0.618), so price must retrace the whole band to fill. Turning this on also makes the SZ engine track even when 'Sniper Zone' drawing is off.")
+bool execConfSZ = input.bool(false, "Allow Sniper Zone as entry confirmation", group = "Strategy Execution", tooltip = "Adds the Sniper Zone (0.5-0.618 pocket) as a fallback entry confirmation, used only on a leg with no qualifying FVG. The limit rests at the far side (~0.618). Existing trades are unchanged; any new one is a leg that previously logged 'NO FVG'.")
 
 //============================================================
 //  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
@@ -2921,6 +2921,115 @@ if showFibo and showSniperFib and array.size(sniperBoxArr) > 0
         line.set_x2(array.get(sniper382Arr,      _sni), bar_index + fiboLineExtend)
         line.set_x2(array.get(sniper50Arr,       _sni), bar_index + fiboLineExtend)
         label.set_x(array.get(sniperLbl382Arr,   _sni), bar_index + fiboLineExtend + 2)
+
+//============================================================
+//  SESSION VOLUME PROFILE — ASIA POC / MV LINE
+//============================================================
+string SVP_SESSION = "0900-1800"
+string SVP_TZ      = "Asia/Tokyo"
+
+var array<line>  svp_poc      = array.new<line>()
+var array<label> svp_poc_lbl  = array.new<label>()
+var array<float> svp_poc_px   = array.new<float>()
+
+var float svp_hi       = na
+var float svp_lo       = na
+var int   svp_startBar = na
+var bool  svp_inSess   = false
+
+var float svp_range    = na
+var float svp_bHi      = na
+var float svp_bLo      = na
+var float svp_bVol     = na
+var bool  svp_bull     = false
+var int   svp_rLo      = 0
+var int   svp_rHi      = 0
+var int   svp_span     = 0
+var float svp_perRow   = na
+var float svp_rv       = na
+var float svp_total    = 0.0
+var float svp_maxVol   = 0.0
+var int   svp_pocRow   = 0
+var float svp_pocPx    = na
+var int   svp_sLen     = 0
+var int   svp_sBar     = 0
+var int   svp_eBar     = 0
+var array<float> svp_rowUp = array.new<float>()
+var array<float> svp_rowDn = array.new<float>()
+
+bool inSVP  = not na(time(timeframe.period, SVP_SESSION, SVP_TZ))
+bool svpNew = inSVP and not inSVP[1]
+bool svpEnd = not inSVP and inSVP[1]
+
+if svpNew and showSVP and timeframe.isintraday
+    svp_hi       := high
+    svp_lo       := low
+    svp_startBar := bar_index
+    svp_inSess   := true
+
+if svp_inSess and inSVP and showSVP and timeframe.isintraday
+    if high > svp_hi
+        svp_hi := high
+    if low < svp_lo
+        svp_lo := low
+
+if svpEnd and svp_inSess and showSVP and timeframe.isintraday and not na(svp_hi) and not na(svp_lo)
+    svp_inSess := false
+    svp_range  := svp_hi - svp_lo
+    if svp_range > 0
+        svp_sLen := bar_index - svp_startBar + 1
+        array.clear(svp_rowUp)
+        array.clear(svp_rowDn)
+        for r = 0 to svpRows - 1
+            array.push(svp_rowUp, 0.0)
+            array.push(svp_rowDn, 0.0)
+        for b = 0 to math.min(svp_sLen - 1, 1490)
+            svp_bHi  := high[b]
+            svp_bLo  := low[b]
+            svp_bVol := volume[b]
+            svp_bull := close[b] >= open[b]
+            svp_rLo  := math.max(0, math.min(math.floor((svp_bLo - svp_lo) / svp_range * svpRows), svpRows - 1))
+            svp_rHi  := math.max(0, math.min(math.ceil( (svp_bHi - svp_lo) / svp_range * svpRows) - 1, svpRows - 1))
+            svp_span := math.max(1, svp_rHi - svp_rLo + 1)
+            svp_perRow := svp_bVol / svp_span
+            for r = svp_rLo to svp_rHi
+                if svp_bull
+                    array.set(svp_rowUp, r, array.get(svp_rowUp, r) + svp_perRow)
+                else
+                    array.set(svp_rowDn, r, array.get(svp_rowDn, r) + svp_perRow)
+
+        svp_total  := 0.0
+        svp_maxVol := 0.0
+        svp_pocRow := 0
+        for r = 0 to svpRows - 1
+            svp_rv = array.get(svp_rowUp, r) + array.get(svp_rowDn, r)
+            svp_total += svp_rv
+            if svp_rv > svp_maxVol
+                svp_maxVol := svp_rv
+                svp_pocRow := r
+
+        svp_pocPx := svp_lo + (svp_pocRow + 0.5) * (svp_range / svpRows)
+        svp_sBar  := svp_startBar
+        svp_eBar  := bar_index - 1
+
+        if array.size(svp_poc) >= svpHistory
+            line.delete(array.shift(svp_poc))
+            label.delete(array.shift(svp_poc_lbl))
+            array.shift(svp_poc_px)
+
+        array.push(svp_poc,     line.new(svp_sBar, svp_pocPx, bar_index + i_lineExtend, svp_pocPx, color = svpPOCCol, style = line.style_solid, width = 1))
+        array.push(svp_poc_lbl, label.new(bar_index + i_lineExtend, svp_pocPx + lblOff, "MV", style = label.style_none, textcolor = svpPOCCol, size = f_liqSize(), textalign = text.align_left))
+        array.push(svp_poc_px,  svp_pocPx)
+
+var line  svp_ln = na
+var label svp_lb = na
+if showSVP and timeframe.isintraday and array.size(svp_poc) > 0
+    for idx = 0 to array.size(svp_poc) - 1
+        svp_ln := array.get(svp_poc, idx)
+        svp_lb := array.get(svp_poc_lbl, idx)
+        line.set_x2(svp_ln, bar_index + i_lineExtend)
+        label.set_x(svp_lb, bar_index + i_lineExtend)
+
 //============================================================
 //  PLOTTING
 //============================================================
@@ -2932,13 +3041,10 @@ plot(array.get(a_lastLows,  1), "WL", color.new(i_weeklyColor,  100), editable =
 //============================================================
 //  MPC - JARVIS CONFIRMATION TABLE
 //============================================================
-color JARVIS_YELLOW = #fbe35e
-color JARVIS_BLUE   = #17578e
-color JARVIS_WHITE  = #ffffff
+// (Confirmation table REMOVED 2026-07-24 to free compile tokens — CE10117. The
+//  setup state it displayed on-chart is all in the Pine Logs. Only JARVIS_BLACK
+//  survives, for the watermark below.)
 color JARVIS_BLACK  = #000000
-color JARVIS_BSL    = color.new(#ff4444, 0)
-color JARVIS_SSL    = color.new(#00cc66, 0)
-color JARVIS_NEUTRAL = color.new(#888888, 0)
 
 // ── 1. LIQUIDITY slots ──
 var string liq_h4h = "", var string liq_h4l = ""
@@ -2993,80 +3099,8 @@ if h4BarChanged
     liq_h4h := "", liq_h4h_px := na, liq_h4h_bar := na
     liq_h4l := "", liq_h4l_px := na, liq_h4l_bar := na
 
-// ── 2. STRUCTURE slots — most recent external and internal ──
-var string ext_struct = ""
-var string int_struct = ""
-
-// External — update on every BOS/SOS, most recent always wins
-if st.bull_sos
-    ext_struct := "▲ SOS"
-else if st.bear_sos
-    ext_struct := "▼ SOS"
-else if st.bull_bos
-    ext_struct := "▲ BOS"
-else if st.bear_bos
-    ext_struct := "▼ BOS"
-
-// Internal — update on every iBOS/iSOS with correct label
-// Internal — track bar index so we can validate it's within current fib range
-var int int_struct_bar = na
-
-// An external break ends the current internal swing and (unless historic internals
-// are enabled) wipes its drawings from the chart. Clear the table's INT state on the
-// same bar so the row can never show an iBOS/iSOS that has no drawing behind it.
-if extBreakThisBar
-    int_struct     := ""
-    int_struct_bar := na
-
-if int_bull_sos
-    int_struct := "▲ iSOS", int_struct_bar := bar_index
-else if int_bear_sos
-    int_struct := "▼ iSOS", int_struct_bar := bar_index
-else if int_bull_bos
-    int_struct := "▲ iBOS", int_struct_bar := bar_index
-else if int_bear_bos
-    int_struct := "▼ iBOS", int_struct_bar := bar_index
-
-// Valid whenever a live internal break exists for the CURRENT external swing.
-// (The external-break clear above is what scopes it — no fib-origin comparison
-// needed, since fiboStartIndex tracks the swing anchor, not the break bar, and
-// could sit far enough back to let a stale internal break slip through.)
-bool int_struct_valid = int_struct != "" and not na(int_struct_bar)
-
-// ── 5. SNIPER ZONE slot ──
-
-if not na(sniperZoneTop) and not na(sniperZoneBot)
-    if not sniperZoneActive and high >= sniperZoneBot and low <= sniperZoneTop
-        sniperZoneActive := true
-        sz_status        := sz_bullish ? "▲ Confirmed" : "▼ Confirmed"
-
-if _snBearBOS or _snBullBOS
-    sz_status := ""
-
-// ── Draw table ──
-var table jarvisTable = table.new(f_tablePosition(tablePositionInput), 3, 18,
-  bgcolor      = color.new(#0a0a14, 5),
-  border_color = color.new(JARVIS_BLUE, 50),
-  border_width = 1,
-  frame_color  = JARVIS_YELLOW,
-  frame_width  = 2)
-
-f_jRow3(table t, int row, string sec, string val, color vc, string detail) =>
-    table.cell(t, 0, row, sec,
-      text_color  = color.new(JARVIS_WHITE, 20),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_left)
-    table.cell(t, 1, row, val,
-      text_color  = vc,
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_center)
-    table.cell(t, 2, row, detail,
-      text_color  = color.new(JARVIS_WHITE, 40),
-      text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
-      text_halign = text.align_center)
+// (STRUCTURE + SNIPER-ZONE table slots and the JARVIS table drawing were removed
+//  2026-07-24 to free compile tokens — they only fed the confirmation table.)
 
 // Most recent BSL/SSL source — priority: NY > London > Asia > Daily > H4
 bool showSessH = liq_dh == ""
@@ -3605,104 +3639,11 @@ if array.size(fvgBoxes) > 0 and not na(fiboP2) and not na(fiboP6)
             if fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6
                 aplusS_fvg := true
 
-// The whole render lives in a function, including its own barstate gate, so the
-// main body pays for exactly ONE statement instead of ~60. Pine caps how many
-// statements the main body may hold (CE10295: "The main body of the script is
-// too long"), and this table is by far the largest block in it. Same trick as
-// f_drawStats / f_posBox below. Everything it reads is a global declared above.
-f_drawTable() =>
-    if showConfTable and barstate.islast
-        // Header
-        table.cell(jarvisTable, 0, 0, "MPC- JARVIS",
-          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
-          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
-        table.cell(jarvisTable, 1, 0, "STATUS",
-          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
-          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
-        table.cell(jarvisTable, 2, 0, "SOURCE",
-          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
-          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
-
-        int r = 1
-
-        // Everything below (A+ SETUP, CONT, Weekly, Daily, LIQ BSL/SSL) is hidden in
-        // Market Structure mode — only EXT/INT print then.
-        if not marketStructureOnly
-            // A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
-            // completes, this row goes back to Pass; what tracks afterward is the CONT
-            // row below — a different trade type, displayed separately so the two can
-            // never be confused. Divergence/extreme-RSI veto: a side with live opposing
-            // divergence or an extreme RSI reading is suppressed and flagged instead of
-            // displayed as a tradeable setup, even if the entry zone is reached.
-            // FVG is a REQUIRED confirmation for READY (not just a tag) — reaching 0.618
-            // without a live matching FVG holds the row at "awaiting FVG" instead of
-            // declaring the setup ready. POI (Cycle Fib discount/premium) is a separate,
-            // optional confirmation — it does not substitute for the FVG requirement.
-            bool aplusL_ok = aplusL_stage > 0 and not longVetoA
-            bool aplusS_ok = aplusS_stage > 0 and not shortVetoA
-            bool aplusL_blocked = aplusL_stage > 0 and longVetoA
-            bool aplusS_blocked = aplusS_stage > 0 and shortVetoA
-            if aplusL_ok or aplusS_ok
-                bool seqIsLong = aplusL_ok and (not aplusS_ok or aplusL_stage >= aplusS_stage)
-                int  seqStage  = seqIsLong ? aplusL_stage : aplusS_stage
-                color seqCol = seqIsLong ? JARVIS_SSL : JARVIS_BSL
-                string seqSide = seqIsLong ? "LONG" : "SHORT"
-                bool  seqFvg  = seqIsLong ? aplusL_fvg : aplusS_fvg
-                bool  seqPoi  = seqIsLong ? aplusL_poi : aplusS_poi
-                bool  seqDiv  = seqIsLong ? bullDivActive : bearDivActive
-                string poiTag = seqPoi ? " + POI" : ""
-                string divTag = seqDiv ? " + DIV" : ""
-                if seqStage == 4 and seqFvg
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, "E1 zone + FVG" + poiTag + divTag)
-                else if seqStage == 4
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT FVG " + seqSide, JARVIS_YELLOW, "E1 zone, no FVG yet" + poiTag + divTag)
-                else if seqStage == 3
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + (seqFvg ? " + FVG" : "") + poiTag + divTag)
-                else if seqStage == 2
-                    f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag)
-                else
-                    f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag)
-                r := r + 1
-            else if aplusL_blocked or aplusS_blocked
-                f_jRow3(jarvisTable, r, "A+ SETUP", "EXTREME", JARVIS_YELLOW, aplusL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
-                r := r + 1
-            else
-                f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
-                r := r + 1
-
-            // WEEKLY — Established Context (last closed week vs the one before)
-            f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
-            r := r + 1
-
-            // DAILY — Established Context (last closed day vs the one before)
-            f_jRow3(jarvisTable, r, "Daily", dEstState, dEstState == "Bullish" ? JARVIS_SSL : dEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, dEstDesc)
-            r := r + 1
-
-            // LIQ BSL
-            if recentBSL != ""
-                f_jRow3(jarvisTable, r, "LIQ BSL", "BSL", JARVIS_BSL, recentBSL)
-                r := r + 1
-
-            // LIQ SSL
-            if recentSSL != ""
-                f_jRow3(jarvisTable, r, "LIQ SSL", "SSL", JARVIS_SSL, recentSSL)
-                r := r + 1
-
-        // STRUCTURE — EXT always, INT only if within current fib range
-        if ext_struct != ""
-            f_jRow3(jarvisTable, r, "EXT", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "External")
-            r := r + 1
-        if int_struct_valid
-            f_jRow3(jarvisTable, r, "INT", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "Internal")
-            r := r + 1
-
-        // Wipe any leftover cells below the last drawn row. Without this, a tick
-        // that draws FEWER rows than the previous one leaves the old rows visible
-        // (e.g. a ghost duplicate of the final row after a row above disappears).
-        if r <= 17
-            table.clear(jarvisTable, 0, r, 2, 17)
-
-f_drawTable()
+// (f_drawTable REMOVED 2026-07-24 — the on-chart JARVIS confirmation table. It
+//  read aplus*_stage / veto / recentBSL/SSL / wEst/dEst and drew status rows;
+//  none of that fed a trade, so removing it changes no fill, exit or stat. The
+//  same state prints to the Pine Logs. Freed the compile tokens the split R:R
+//  exit + B-leg colour/context needed.)
 
 //============================================================
 //  MPC- JARVIS WATERMARK
@@ -3768,32 +3709,43 @@ if barstate.islast
 var GRP_EXEC = "Strategy Execution"
 bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
 bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
-bool  execBLeg    = input.bool(false, "Trade B-Leg setups",             group = GRP_EXEC, tooltip = "Adds the B LEG as a second setup type (default OFF). Arms when a REV setup dies on a continuation BOS before it retraced; freezes the Sniper-Zone band (0.382-0.5) of that SOS leg and rests a limit at the 0.5 edge — the tap IS the entry. SL beyond fib 1.0; ladder reuses the A+ machinery (TP1 swing extreme, TP2 expansion, TP3 runner). Honours Trade Longs/Shorts, flat and the final-hour block. A+ has priority when both are armed on a side.")
+bool  execAplus   = input.bool(true,  "Trade A+ setups",                group = GRP_EXEC, tooltip = "On (default) = the A+ reversal sequence trades normally. Off = no A+ entry ever fires — pair with 'Trade B-Leg setups' ON to backtest the B-leg in complete isolation and read its results on their own.")
+bool  execBLeg    = input.bool(false, "Trade B-Leg setups",             group = GRP_EXEC, tooltip = "Adds the B LEG as a second setup type (default OFF). Arms when a REV setup dies on a continuation BOS before it retraced; freezes the SZ band (0.382-0.5) and rests a limit at the 0.5 edge. SL beyond fib 1.0; TP1 swing extreme, TP2 expansion, TP3 runner. A+ has priority.")
 bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
 bool  execArmDiv   = input.bool(false, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
 bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
 bool  execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
-bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3 — recovers the trades lost when a deep FVG never gets tapped. Default (off) rests the limit at the gap's own edge, so a gap floating DEEP in the zone is missed whenever price stalls at a shallower fib and turns back. On = when the qualifying gap's near edge sits DEEPER than 0.618 AND the gap contains no fib level (it floats BETWEEN two of 0.618/0.702/0.786/0.886), the limit rests at the nearest fib just SHALLOWER than the gap instead — the level price reaches first (gap between 0.618-0.702 -> 0.618, 0.702-0.786 -> 0.702, 0.786-0.886 -> 0.786). A gap sitting ON a fib level, or shallower than 0.618, is unchanged and still enters at its exact edge. This fills more of these setups, but a deep between-levels trade that already filled now fills earlier and shallower, so those results move — leave it off to reproduce the current entries.")
-bool  execFvg50   = input.bool(false, "Entry (least favorable): FVG must touch the 0.5 line", group = GRP_EXEC, tooltip = "Lowest-priority fallback (default OFF). Qualifies a gap that STRADDLES 0.5 — the 0.5 line inside the gap body (bottom at/below 0.5 AND top at/above 0.5), not merely an edge near it — and rests the limit AT 0.5. Ranks last: only prices a leg no more-favorable source already did (deep-FVG edge, deep-fib, Sniper Zone), so existing trades are unchanged and any new one previously logged 'NO FVG'. With 'FVG must sit fully past 0.5' on, this is the only path that trades a straddling gap.")
+bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3. On = when a qualifying gap's near edge sits deeper than 0.618 and floats between two fib levels, rest the limit at the nearest fib just shallower than the gap (the level price reaches first) instead of the gap edge — recovers deep gaps that never get tapped. A gap on a fib level or shallower than 0.618 still enters at its exact edge. Off = enter at the gap edge.")
+bool  execFvg50   = input.bool(false, "Entry (least favorable): FVG must touch the 0.5 line", group = GRP_EXEC, tooltip = "Lowest-priority fallback (default OFF). Qualifies a gap that STRADDLES 0.5 (bottom at/below 0.5 AND top at/above 0.5) and rests the limit AT 0.5. Ranks last — only prices a leg no more-favorable source already did, so existing trades are unchanged.")
 bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
 bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade. (Loss-mitigation test #2 — an opposite SOS is early proof the reversal failed, so exit there instead of riding to the fib-1.0 stop.)")
-bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1 (the big lever). Blocks a reversal that fights a FRESH higher-timeframe breakout, while still allowing one that fades an exhaustion sweep. A short fades a high, so it is blocked when the HTF just CLOSED above its prior high (Close > Prev High = a real breakout up). A long is blocked when the HTF just closed below its prior low. A swept-high/low (exhaustion) never blocks — that is exactly the state the setup is meant to fade. Off = current behaviour (no HTF filter). Use with the source dropdown below.")
+bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1. Blocks a reversal that fights a fresh HTF breakout (HTF closed past its prior high/low) while still allowing one that fades an exhaustion sweep. Off = no HTF filter. Uses the source dropdown below.")
 string execHtfSource = input.string("Weekly", "HTF exhaustion source", options = ["Weekly", "Daily", "Either"], group = GRP_EXEC, tooltip = "Which higher timeframe the breakout block reads. Weekly = only a weekly breakout blocks (widest, fewest blocks). Daily = only a daily breakout blocks. Either = a breakout on Weekly OR Daily blocks (strictest, most trades removed). Only used when 'Only fade HTF exhaustion' is on.")
-string execHtfWeekly = input.string("Ignore", "Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, WEEKLY leg. Judged against the trade's direction (a long wants Bullish). Ignore = no gate. Must agree = Weekly must be Bullish for a long / Bearish for a short. Must not oppose = only blocks if Weekly is actively against the trade (Neutral passes). Must oppose (reversal) = Weekly must be AGAINST the trade — this is the 'Weekly still in the old trend' half of a reversal. Combine with the Daily setting below: Weekly 'Must oppose' + Daily 'Must agree' = only fade when the Daily has flipped against a still-opposing Weekly (a forming reversal).")
-string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, DAILY leg. Same four choices as Weekly, judged against the trade direction. For your reversal idea set this to 'Must agree' (Daily has turned in the trade's direction) while Weekly is 'Must oppose (reversal)'. Set both to 'Must agree' for full Daily+Weekly trend alignment. Ignore = no gate.")
+string execHtfWeekly = input.string("Ignore", "Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias gate, WEEKLY, judged vs trade direction. Ignore = off. Must agree = Weekly matches the trade. Must not oppose = Neutral passes, only an opposing Weekly blocks. Must oppose (reversal) = Weekly must be against the trade. Pair with Daily below (Weekly 'Must oppose' + Daily 'Must agree' = forming reversal).")
+string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias gate, DAILY. Same four choices as Weekly, judged vs trade direction. Ignore = off.")
 float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 10, step = 0.1)
-string execSlLevel = input.string("1.0", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib level on the DEEP side of 0.5. Default 1.0 = the leg origin (the level the engine also uses to invalidate the leg). Pick a shallower level (0.618-0.886) for a tighter stop. The buffer below is then measured beyond THIS level, not 1.0. If the chosen level lands at or inside the entry price, the trade's SL distance is <= 0 and that setup simply won't fire — no bad trade is taken.")
+string execSlLevel = input.string("1.0", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib on the deep side of 0.5. Default 1.0 = leg origin. Pick a shallower level (0.618-0.886) for a tighter stop; the buffer is measured beyond it. If it lands at/inside the entry, the setup won't fire.")
 float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
 float execTp1Pct  = input.float(30,   "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
 float execTp2Pct  = input.float(40,   "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
 float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
+// Runner-trail EXPERIMENT levers — all three default to the shipped behaviour, so the
+// baseline backtest is unchanged until you flip one. Change ONE at a time and compare.
+string execRunnerTrail = input.string("Structure (swing)", "Runner trail method", options = ["Fixed step", "Structure (swing)"], group = GRP_EXEC, tooltip = "How the TP3 runner is trailed once TP2 is hit. 'Fixed step' = the 50-pip grid ratchet above. 'Structure (swing)' (default) = trail behind the last confirmed swing low (longs) / high (shorts) from the structure engine, minus/plus the buffer below — breathes with the trend and usually rides further, but gives back more at the turn. This is the tested best combo: Structure trail + buffer 20 + TP2 floor = TP1 price.")
+float execStructTrailBufTk = input.float(20, "Structure trail buffer (ticks)", group = GRP_EXEC, minval = 0, tooltip = "Only used when Runner trail method = Structure. The runner stop sits this many ticks BELOW the last confirmed swing low (long) / ABOVE the last confirmed swing high (short), so a wick through the swing doesn't clip it.")
+string execTp2StopMode = input.string("TP1 price", "TP2 → stop floor (delay the jump)", options = ["TP1 price", "Breakeven", "One trail step behind"], group = GRP_EXEC, tooltip = "What the stop floor becomes the moment TP2 is hit, BEFORE the runner trail takes over. 'TP1 price' (default) = snap the stop up to TP1 (tight, can scratch the runner on the first pullback). 'Breakeven' = hold at entry+buffer, giving the runner maximum room. 'One trail step behind' = keep it one trail-step under the high-water mark (never below breakeven). The runner trail can still tighten it beyond this floor.")
 bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
-bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints one small label at each trade, carrying the full confluence breakdown in its HOVER TOOLTIP — the arm source, SOS age, FVG/POI/DIV flags, and the real entry / stop / TP prices. The on-chart text stays one line. When the trade closes it is recoloured by RESULT — green won, red lost, orange breakeven — and the R it made is appended. Use the filter below to keep only the results you care about.")
+bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints one label per trade with the full confluence breakdown in its hover tooltip. On close it recolours by result (green/red/orange) and appends the R. Filter which results keep their label below.")
 string execLabelWhich = input.string("All", "…keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = GRP_EXEC, tooltip = "Which trades keep their hover label once the result is known. Every other trade's label is deleted on the bar it closes, so the chart keeps the coloured result box and the entry triangle but loses the annotation. Losses + breakevens is the review view — the trades worth auditing, nothing else. None removes them entirely.")
-float execLabelOff = input.float(6, "…label distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, tooltip = "How far the trade label is pushed away from the entry — below it on a long, above it on a short — measured in ATRs. TradingView draws the HOVER TOOLTIP right next to the label and gives Pine no way to place it, so this is the only lever on where that tooltip lands: park the label further out and the tooltip opens over empty space instead of over the candles. Raise it until you can read the tooltip and the trade at the same time. A thin leader line always connects the label back to the exact entry price, so pushing it out never loses you the anchor.")
+float execLabelOff = input.float(6, "…label distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, tooltip = "How far the trade label sits from the entry (ATRs) — the only lever on where the hover tooltip opens. Raise it so the tooltip lands over empty space, not the candles. A leader line always connects it back to the entry.")
 bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the furthest price the trade was ACTUALLY FILLED at; RED from entry to the stop fill if it was stopped for a loss; ORANGE line at entry if it only came back to breakeven. Replaces TradingView's built-in trade markers.")
 bool  execShowExitLines = input.bool(true, "Label the TP bands (TP1/TP2/TP3)", group = GRP_EXEC, tooltip = "Adds a faint dashed line at each partial exit's REAL fill price and tags it TP1 / TP2 / TP3 at the RIGHT edge of the trade — all three stacked on the same side, one colour, no prices in the text. Off = the coloured bands still paint, just untagged. The prices themselves are always in the trade label's tooltip.")
+
+// (Fixed R:R exit lever REMOVED 2026-07-25 — the strict single-target exit
+//  underperformed the scaled fib ladder in testing, so every trade is back on
+//  the normal TP1/TP2/runner ladder + staged stop. The four execAplusRR /
+//  execBLegRR / *RRmult inputs and the L-RR/S-RR exit branches are gone.)
 
 // ── Breakeven band ────────────────────────────────────────────────────────────
 // TradingView's "Breakevens: 0" is an artifact: our breakeven stop sits a few
@@ -3815,6 +3767,7 @@ var int   pendSosS   = na
 // a per-B-leg "already traded" guard and a flag routing the fill to it.
 var int   tradedBLegL = na, var int  tradedBLegS = na
 var bool  pendIsBLegL = false, var bool pendIsBLegS = false
+var bool  lIsBLeg = false, var bool sIsBLeg = false   // is the OPEN long/short a B-leg — routes the fixed-R:R toggle
 var float lSL = na, var float lTP1 = na, var float lTP2 = na
 var float sSL = na, var float sTP1 = na, var float sTP2 = na
 var float lEntry = na, var float sEntry = na   // fill price of the open trade (breakeven anchor)
@@ -4107,8 +4060,8 @@ f_htfReqBlock(string req, string state, bool isLong) =>
 bool htfBiasBlockLong  = f_htfReqBlock(execHtfWeekly, wEstState, true)  or f_htfReqBlock(execHtfDaily, dEstState, true)
 bool htfBiasBlockShort = f_htfReqBlock(execHtfWeekly, wEstState, false) or f_htfReqBlock(execHtfDaily, dEstState, false)
 
-bool longArmed  = execLongs  and armOkL and not lateDayBlock and not htfBlockLong  and not htfBiasBlockLong  and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
-bool shortArmed = execShorts and armOkS and not lateDayBlock and not htfBlockShort and not htfBiasBlockShort and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
+bool longArmed  = execAplus and execLongs  and armOkL and not lateDayBlock and not htfBlockLong  and not htfBiasBlockLong  and not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and (not longVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
+bool shortArmed = execAplus and execShorts and armOkS and not lateDayBlock and not htfBlockShort and not htfBiasBlockShort and not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and (not shortVetoA or not execRespectVeto) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
 
 // ── MISSED-DUE-TO-NO-FVG counter ──────────────────────────────────────────────
 // A "missed" setup = every trade gate is satisfiable EXCEPT the FVG. Same
@@ -4392,6 +4345,7 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegL
+    lIsBLeg    := pendIsBLegL
     f_confOpen(tlbl, 1, lEntry, _cOff, pendConfL, execLabelWhich != "None")
 if strategy.position_size < 0 and strategy.position_size[1] >= 0
     if pendIsBLegS
@@ -4404,6 +4358,7 @@ if strategy.position_size < 0 and strategy.position_size[1] >= 0
     openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegS
+    sIsBLeg    := pendIsBLegS
     f_confOpen(tlbl, -1, sEntry, _cOff, pendConfS, execLabelWhich != "None")
 if strategy.position_size == 0
     lStage := 0
@@ -4579,13 +4534,23 @@ if strategy.position_size < 0
     if sStage < 2 and low <= sTP2
         sStage := 2
 
-float lTrail = lStage >= 2 ? f_trail(lMaxFav, lTP2, 1)  : na
-float sTrail = sStage >= 2 ? f_trail(sMaxFav, sTP2, -1) : na
+// Runner trail candidate — either the fixed-step ratchet (default) or a structure
+// trail behind the last confirmed swing (st.last_conf_low/high). na = not engaged yet.
+float structBuf = execStructTrailBufTk * syminfo.mintick
+bool  useStructTrail = execRunnerTrail == "Structure (swing)"
+float lTrail = lStage >= 2 ? (useStructTrail ? (not na(st.last_conf_low)  ? st.last_conf_low  - structBuf : na) : f_trail(lMaxFav, lTP2, 1))  : na
+float sTrail = sStage >= 2 ? (useStructTrail ? (not na(st.last_conf_high) ? st.last_conf_high + structBuf : na) : f_trail(sMaxFav, sTP2, -1)) : na
 
-float lStop = lStage >= 2 ? (na(lTrail) ? lTP1 : math.max(lTP1, lTrail)) : lStage >= 1 ? lEntry + beBuf : lSL
-float sStop = sStage >= 2 ? (na(sTrail) ? sTP1 : math.min(sTP1, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
+// TP2 stop floor — the protective baseline the instant TP2 hits, before the runner
+// trail takes over. Default snaps to TP1; the alternatives delay that jump for room.
+// "One trail step behind" never drops below breakeven, so it can't hand back a loss.
+float lStage2Floor = execTp2StopMode == "Breakeven" ? lEntry + beBuf : execTp2StopMode == "One trail step behind" ? math.max(lEntry + beBuf, lMaxFav - trailStep) : lTP1
+float sStage2Floor = execTp2StopMode == "Breakeven" ? sEntry - beBuf : execTp2StopMode == "One trail step behind" ? math.min(sEntry - beBuf, sMaxFav + trailStep) : sTP1
 
-// ── Manage open long: TP1 / TP2 scale-outs + a runner that only trails ──
+float lStop = lStage >= 2 ? (na(lTrail) ? lStage2Floor : math.max(lStage2Floor, lTrail)) : lStage >= 1 ? lEntry + beBuf : lSL
+float sStop = sStage >= 2 ? (na(sTrail) ? sStage2Floor : math.min(sStage2Floor, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
+
+// ── Manage open long: TP1/TP2 scale-outs + runner, staged stop ──
 if strategy.position_size > 0
     strategy.exit("L-TP1", from_entry = "Long", qty_percent = execTp1Pct, limit = lTP1, stop = lStop)
     strategy.exit("L-TP2", from_entry = "Long", qty_percent = execTp2Pct, limit = lTP2, stop = lStop)
@@ -4671,7 +4636,11 @@ f_diag(array<int> ds) =>
         //    own R grade, against the SAME breakeven band the entry label uses). ──
         if not na(closedR)
             string verdict = math.abs(closedR) <= execBeBandR ? "BREAKEVEN" : closedR > 0 ? "WIN" : "LOSS"
-            log.info("[RESULT] " + (strategy.position_size[1] > 0 ? "LONG " : "SHORT ") + verdict + "  " +
+            // Setup tag so a paste can be split A+ vs B-leg with no guessing. The
+            // closing trade's B-leg flag is the still-frozen lIsBLeg/sIsBLeg (set at
+            // open, only overwritten on the NEXT fill), keyed off the closed side.
+            string setupTag = (strategy.position_size[1] > 0 ? lIsBLeg : sIsBLeg) ? "B-LEG" : "A+"
+            log.info("[RESULT] " + setupTag + " " + (strategy.position_size[1] > 0 ? "LONG " : "SHORT ") + verdict + "  " +
               (closedR >= 0 ? "+" : "") + str.tostring(closedR, "#.##") + "R  | equity=$" + str.tostring(strategy.equity, "#.##"))
         // ── MISS: no FVG — the execution layer just booked one (counter ticked). ──
         if missedNoFvgL != missedNoFvgL[1]

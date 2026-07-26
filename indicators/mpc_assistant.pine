@@ -180,7 +180,7 @@ var GRP_SESS = "Trading Sessions"
 bool showSessionsInput         = input.bool(true,   "Show Sessions",      group = GRP_SESS, display = display.none)
 bool showSessions = showTradeTools and showSessionsInput
 bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessionsInput, display = display.none)
-bool showHistoricSessions = input.bool(true,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions as far back as possible.", display = display.none)
+bool showHistoricSessions = input.bool(false,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions as far back as possible.", display = display.none)
 
 const string TZ_TOOLTIP_TEXT = "The session's time zone, specified in either GMT notation (e.g., 'GMT-5') or as an IANA time zone database name (e.g., 'America/New_York')."
  + " We recommend the latter since it includes other time-related changes, such as daylight savings."
@@ -188,22 +188,22 @@ const string TZ_TOOLTIP_TEXT = "The session's time zone, specified in either GMT
 const string FIRST_SESSION_GROUP = "First Session"
 showFirst         = input.bool(true,                         "Show session",     group = FIRST_SESSION_GROUP, display = display.none)
 firstSessionName  = input.string("Tokyo",                    "Displayed name",   group = FIRST_SESSION_GROUP, display = display.none, active = showFirst)
-firstSessionTime  = input.session("2000-0500",               "Session time",     group = FIRST_SESSION_GROUP, display = display.none, active = showFirst)
-firstSessionTZ    = input.string("GMT-4",                    "Session timezone", group = FIRST_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showFirst)
+firstSessionTime  = input.session("0900-1800",               "Session time",     group = FIRST_SESSION_GROUP, active = showFirst)
+firstSessionTZ    = input.string("Asia/Tokyo",               "Session timezone", group = FIRST_SESSION_GROUP, tooltip = TZ_TOOLTIP_TEXT, active = showFirst)
 firstSessionColor = input.color(color.new(#FF5252, 92),      "Session color",    group = FIRST_SESSION_GROUP, active = showFirst)
 
 const string SECOND_SESSION_GROUP = "Second Session"
 showSecond         = input.bool(true,                        "Show session",     group = SECOND_SESSION_GROUP, display = display.none)
 secondSessionName  = input.string("London",                  "Displayed name",   group = SECOND_SESSION_GROUP, display = display.none, active = showSecond)
-secondSessionTime  = input.session("0400-1300",              "Session time",     group = SECOND_SESSION_GROUP, display = display.none, active = showSecond)
-secondSessionTZ    = input.string("GMT-4",                   "Session timezone", group = SECOND_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showSecond)
+secondSessionTime  = input.session("0800-1700",              "Session time",     group = SECOND_SESSION_GROUP, active = showSecond)
+secondSessionTZ    = input.string("Europe/London",           "Session timezone", group = SECOND_SESSION_GROUP, tooltip = TZ_TOOLTIP_TEXT, active = showSecond)
 secondSessionColor = input.color(color.new(#2962FF, 92),     "Session color",    group = SECOND_SESSION_GROUP, active = showSecond)
 
 const string THIRD_SESSION_GROUP = "Third Session"
 showThird         = input.bool(true,                         "Show session",     group = THIRD_SESSION_GROUP, display = display.none)
 thirdSessionName  = input.string("New York",                 "Displayed name",   group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
-thirdSessionTime  = input.session("0900-1800",               "Session time",     group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
-thirdSessionTZ    = input.string("GMT-4",                    "Session timezone", group = THIRD_SESSION_GROUP, display = display.none, tooltip = TZ_TOOLTIP_TEXT, active = showThird)
+thirdSessionTime  = input.session("0800-1700",               "Session time",     group = THIRD_SESSION_GROUP, active = showThird)
+thirdSessionTZ    = input.string("America/New_York",         "Session timezone", group = THIRD_SESSION_GROUP, tooltip = TZ_TOOLTIP_TEXT, active = showThird)
 thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",    group = THIRD_SESSION_GROUP, active = showThird)
 
 //============================================================
@@ -3824,8 +3824,8 @@ f_sniperExtend()
   // SESSION VOLUME PROFILE — ASIA POC / MV LINE
 //============================================================
 f_processSvp() =>
-    string SVP_SESSION = "2000-0500"
-    string SVP_TZ      = "GMT-4"
+    string SVP_SESSION = "0900-1800"
+    string SVP_TZ      = "Asia/Tokyo"
 
     var array<line>  svp_poc      = array.new<line>()
     var array<label> svp_poc_lbl  = array.new<label>()
