@@ -56,14 +56,20 @@ _DEC_PRICE = ["px_edge", "px_stop", "px_entry_price",
               "px_exit_tp1", "px_exit_tp2", "px_exit_run"]
 
 
-def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None) -> SosFadeConfig:
-    """Build an SosFadeConfig from the export's packed cfg_* columns (constant per run —
-    read from the first row). Columns absent from the export keep the base default, so
-    the numeric toggles the Pine doesn't export (tp %, buffers, trail, scratch) stay at
-    their shared defaults."""
+def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
+                       allow_bleg: bool = False) -> SosFadeConfig:
+    """Build a config from the export's packed cfg_* columns (constant per run — read from
+    the first row). Columns absent from the export keep the base default, so a toggle the
+    Pine doesn't export stays where the caller put it.
+
+    The returned config is the SAME CLASS as `base`, which is what lets the B-LEG harness
+    (`mpc_bleg/tools/compare_bleg.py`) reuse this decoder: it passes a `BLegConfig` and gets
+    one back, subclass-only fields (`bleg_max_days`) untouched. Both exports pack cfg_* with
+    one scheme deliberately — one decoder, two bots."""
+    cls = type(base) if base is not None else SosFadeConfig
     vals = dict(base.__dict__) if base else dict(SosFadeConfig().__dict__)
     if len(df) == 0:
-        return SosFadeConfig(**vals)
+        return cls(**vals)
     row = df.iloc[0]
 
     def get(col):
@@ -105,7 +111,12 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None) -
         # Bit 32768 (Pine execBLeg) turns on a SECOND setup type the A+ bot does not implement
         # at all — those trades live in `strategies/python/mpc_bleg/`. An export with it on
         # carries B-leg entries the A+ decision stream can never reproduce.
-        if vals.get("exec_bleg"):
+        # `allow_bleg=True` is the B-LEG harness saying "that bot IS the B leg" — its export
+        # always ships execBLeg on, so the refusal would block the only run that matters there.
+        # The execConfSZ / execFvg50 refusals above are NOT opt-out: both change `longEdge` /
+        # `shortEdge`, which feed `longArmed` / `shortArmed`, which is the B leg's priority gate
+        # — so an unported entry path corrupts the B-LEG decision stream too.
+        if vals.get("exec_bleg") and not allow_bleg:
             raise SystemExit(
                 "This export was taken with 'Trade B-Leg setups' ON (cfg_bits bit 32768). The "
                 "B LEG is a separate bot (strategies/python/mpc_bleg/), so this A+ comparison "
@@ -156,7 +167,7 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None) -
         v = get(col)
         if v is not None:
             vals[field] = float(v)
-    return SosFadeConfig(**vals)
+    return cls(**vals)
 
 
 def _expand_packed(df: pd.DataFrame) -> pd.DataFrame:

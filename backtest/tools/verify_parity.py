@@ -33,21 +33,31 @@ from typing import List, Tuple
 
 _ROOT = Path(__file__).resolve().parents[2]
 
-# (label, tool path relative to repo root, marker column, extra CLI args). A check runs
-# only when its marker column is in the CSV header. Ordered engines-first (the foundation),
-# strategy last (it sits on top of them) — the same dependency order you sync in.
-_CHECKS: List[Tuple[str, str, str, List[str]]] = [
-    ("market_structure", "engines/market_structure/tools/compare_tradingview.py", "px_ash", []),
-    ("order_blocks",     "engines/order_blocks/tools/compare_ob.py",              "px_ob_bull_count", []),
-    ("fibonacci",        "engines/fibonacci/tools/compare_fib.py",                "px_fib_active", []),
-    ("fair_value_gaps",  "engines/fair_value_gaps/tools/compare_fvg.py",          "px_fvg_count", []),
-    ("rsi_divergence",   "engines/rsi_divergence/tools/compare_rsi_div.py",       "px_div_rsi", []),
-    ("equal_highs_lows", "engines/equal_highs_lows/tools/compare_eq.py",          "px_eq_tol", []),
-    ("liquidity",        "engines/liquidity/tools/compare_liquidity.py",          "px_pdh", []),
-    ("sessions",         "engines/sessions/tools/compare_sessions.py",            "px_in_asia", []),
-    ("vwap",             "engines/vwap/tools/compare_vwap.py",                    "px_vwap", []),
-    ("session_volume_profile", "engines/session_volume_profile/tools/compare_svp.py", "px_svp_poc", []),
-    ("strategy (bot)",   "strategies/python/mpc_sos_fade/tools/compare_strategy.py", "px_stages", []),
+# (label, tool path relative to repo root, marker column, veto column, extra CLI args).
+# A check runs when its MARKER column is in the CSV header and its VETO column is NOT
+# (veto "" = never vetoed). Ordered engines-first (the foundation), strategies last (they
+# sit on top of them) — the same dependency order you sync in.
+#
+# The veto exists because the two STRATEGY exports overlap: `mpc_b_leg_strategy_export.pine`
+# plots `px_stages` too (the B leg arms off the A+ sequence, so its stages are part of the
+# B-LEG decision stream). Marker alone would run the A+ check against a B-LEG export, which
+# fails on trades the A+ bot cannot make — a red that means nothing. `bl_bits` exists only in
+# the B-LEG export, so it is the A+ check's veto and the B-LEG check's marker. Deliberately
+# NOT solved by re-marking the A+ check on a B-LEG-absent column like `px_block`: that column
+# only landed 2026-07-25, so every older A+ export would silently stop being checked.
+_CHECKS: List[Tuple[str, str, str, str, List[str]]] = [
+    ("market_structure", "engines/market_structure/tools/compare_tradingview.py", "px_ash", "", []),
+    ("order_blocks",     "engines/order_blocks/tools/compare_ob.py",              "px_ob_bull_count", "", []),
+    ("fibonacci",        "engines/fibonacci/tools/compare_fib.py",                "px_fib_active", "", []),
+    ("fair_value_gaps",  "engines/fair_value_gaps/tools/compare_fvg.py",          "px_fvg_count", "", []),
+    ("rsi_divergence",   "engines/rsi_divergence/tools/compare_rsi_div.py",       "px_div_rsi", "", []),
+    ("equal_highs_lows", "engines/equal_highs_lows/tools/compare_eq.py",          "px_eq_tol", "", []),
+    ("liquidity",        "engines/liquidity/tools/compare_liquidity.py",          "px_pdh", "", []),
+    ("sessions",         "engines/sessions/tools/compare_sessions.py",            "px_in_asia", "", []),
+    ("vwap",             "engines/vwap/tools/compare_vwap.py",                    "px_vwap", "", []),
+    ("session_volume_profile", "engines/session_volume_profile/tools/compare_svp.py", "px_svp_poc", "", []),
+    ("strategy A+ (bot)", "strategies/python/mpc_sos_fade/tools/compare_strategy.py", "px_stages", "bl_bits", []),
+    ("strategy B-LEG (bot)", "strategies/python/mpc_bleg/tools/compare_bleg.py",  "bl_bits", "", []),
 ]
 
 def _header(csv_path: Path) -> set:
@@ -121,7 +131,8 @@ def main(argv=None) -> int:
             continue
         header = _header(csv_path)
         rows = _row_count(csv_path)
-        applicable = [(lbl, t, mk, ex) for (lbl, t, mk, ex) in _CHECKS if mk in header]
+        applicable = [(lbl, t, mk, ex) for (lbl, t, mk, veto, ex) in _CHECKS
+                      if mk in header and not (veto and veto in header)]
         print(f"── {csv_path.name}  ({rows} bars, {len(applicable)}/{len(_CHECKS)} checks apply) ──")
         if not applicable:
             print("   (no parity columns found — is this the right export?)\n")

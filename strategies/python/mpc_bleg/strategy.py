@@ -47,6 +47,13 @@ class MpcBLegStrategy(MpcSosFadeStrategy):
                                        resolver=resolver, profile=profile)
         self.tracker: Optional[BLegTracker] = None   # built in run() once the timeframe is known
         self.decisions: List[Decision] = []
+        # The tracker's per-bar state, recorded alongside the decisions. REPORTING ONLY —
+        # nothing reads it back, so it cannot move a decision. `compare_bleg.py` diffs it
+        # against the export's `bl_*` columns: the tracker is where every new B-LEG rule
+        # lives (band freeze, deepest-band migration, target track, tap, staleness death),
+        # and a bug there shows as a wrong band price MANY bars before it becomes a wrong
+        # trade. Without it a mismatch says "a trade differs" and nothing about why.
+        self.bleg_states: List = []
 
     def step(self, bar_state) -> Decision:
         if self.tracker is None:
@@ -56,6 +63,7 @@ class MpcBLegStrategy(MpcSosFadeStrategy):
         bleg = self.tracker.update(sig, seq)
         dec = self.execution.step(sig, seq, bleg)
         self.decisions.append(dec)
+        self.bleg_states.append(bleg)
         return dec
 
     def run(self, df, engine_config=None, warmup: int = 0) -> "MpcBLegStrategy":
@@ -80,6 +88,7 @@ class MpcBLegStrategy(MpcSosFadeStrategy):
             dec = self.execution.step(sig, seq, bleg)
             if bar.index >= warmup:
                 self.decisions.append(dec)
+                self.bleg_states.append(bleg)
         return self
 
     def run_dual(self, *args, **kwargs):

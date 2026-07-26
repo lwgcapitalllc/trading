@@ -253,8 +253,17 @@ no `cfg_exitmode` (i.e. taken before this change) instead of guessing.
    Fixed on the Python side (`EngineConfig.fvg_require_close`, pinned True by the bot). **Never fix
    this class of gap by editing the Pine** — it is the source of truth; the pin belongs in the port.
 
-`mpc_b_leg_strategy.pine` compiles (confirmed on TradingView) but has **no parity harness yet** — the
-`compare_bleg.py` + export Pine remain the follow-up, so its numbers are still directional only.
+`mpc_b_leg_strategy.pine` compiles (confirmed on TradingView), and its parity harness was built the
+same day: **`indicators/mpc_b_leg_strategy_export.pine`** = that file with the body byte-identical
+(only the line-40 `strategy()` title differs) + an appended PARITY EXPORT block, diffed by
+`strategies/python/mpc_bleg/tools/compare_bleg.py` and registered in `backtest/tools/verify_parity.py`.
+It plots the B-LEG arm (NOT `longArmed` — A+ never places an order in this fork), the band's 0.5 edge,
+the band-derived TP1/TP2, and the tracker's own `bl_*` state, which is the column set that matters:
+every new B-LEG rule lives in the tracker, and a band-maths bug shows as a wrong price many bars before
+it becomes a wrong trade. **Not yet run against a real export — the port stays unproven until exit 0.**
+`cfg_strcodes`' SL slot is pinned to the "1.0" code because this fork has no `execSlLevel` (its stop is
+the band ORIGIN), which keeps ONE `cfg_*` decoder serving both exports. Regeneration split point is in
+the export's own header.
 
 ---
 

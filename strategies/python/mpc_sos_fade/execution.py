@@ -72,6 +72,13 @@ class Decision:
     stop: Optional[float] = None          # the active stop of the open trade (if any)
     fills: List[Fill] = field(default_factory=list)
     closed_r: Optional[float] = None      # R booked on the bar a trade closed
+    # The OPEN trade's frozen TP ladder, or None when flat — mirroring the Pine's
+    # `strategy.position_size > 0 ? lTP1 : ...` plot gate. The A+ bot reads its rungs off
+    # fib levels the export already carries, so `compare_strategy.py` does NOT diff these;
+    # the B-LEG derives them from its frozen band, so `compare_bleg.py` does. Reporting
+    # only either way — no decision reads them back, so they are parity-safe.
+    tp1: Optional[float] = None
+    tp2: Optional[float] = None
 
 
 @dataclass
@@ -357,6 +364,7 @@ class Execution:
         if self._pos_dir != 0 and self._entry_kind != "secondary":
             self._advance_stage(sig)
             dec.stop = self._current_stop()
+            dec.tp1, dec.tp2 = self._tp1, self._tp2
             # tell the account this leg's live stop + remaining size, so its reservation is
             # current for any other leg sizing on the next tick (drops to 0 once stop = BE).
             self._account.update_stop(self._leg, dec.stop, self._qty - self._filled_qty)

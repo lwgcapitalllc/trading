@@ -7,7 +7,7 @@ local optimizer. It does NOT cover the engines it replays (`engines/`), the stra
 **Status:** **Deliverable A COMPLETE 2026-07-16.** A0 (data layer) + A1 (replay loop) landed
 2026-07-15; A2 (fill & cost model), A3 (output adapter), the lab's `runner="python"` adapter, and A4
 (local optimizer) all landed 2026-07-16. See `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
-**Last reviewed:** 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below)
+**Last reviewed:** 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below); `verify_parity.py` gained a veto column and now runs the B-LEG parity check too
 
 ---
 
@@ -77,12 +77,20 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 - **`tools/verify_parity.py`** — the one "is everything in sync?" command. Point it at the TradingView
   export CSV(s) you just pulled; it runs every parity check (all nine engine `compare_*.py` + the
-  mpc_sos_fade `compare_strategy.py`) whose MARKER column is present in the CSV, and prints one
+  mpc_sos_fade `compare_strategy.py` + the mpc_bleg `compare_bleg.py`) whose MARKER column is present in the CSV, and prints one
   GREEN/RED/SKIP table. Cold-start warmup is auto-detected by walking a capped ladder (≤25% of the
   file), so a genuine LATE drift can never be skipped away as warmup. It reports drift; it does not fix
   it (a real logic change is still a hand port, per drift). Run it after any `mpc_assistant.pine` /
-  `mpc_strategy.pine` re-paste + re-export. Stdlib only. `verify_parity.py <csv> [csv ...]`, or no args
-  = newest CSV in `backtest/`.
+  `mpc_strategy.pine` / `mpc_b_leg_strategy.pine` re-paste + re-export. Stdlib only.
+  `verify_parity.py <csv> [csv ...]`, or no args = newest CSV in `backtest/`.
+  Each registry row carries a MARKER column and a **VETO** column (added 2026-07-26): a check runs
+  when its marker is present and its veto is absent. The veto exists because the two STRATEGY exports
+  overlap — `mpc_b_leg_strategy_export.pine` plots `px_stages` too (the B leg arms off the A+
+  sequence), so marker-alone would run the A+ check against a B-LEG export and produce a red that
+  means nothing. `bl_bits` exists only in the B-LEG export, so it is the A+ check's veto and the
+  B-LEG check's marker. Deliberately NOT solved by re-marking A+ on an A+-only column like
+  `px_block`: that column landed 2026-07-25, so every older A+ export would silently stop being
+  checked.
 - **`tools/run_report.py`** — the "WHY did it make/lose money" run. Replays a `strategies/python/`
   bot over YEARS of broker bars and writes `trades.csv` (one row per trade, tagged with the
   `engines/regime/` label at entry, NY session/hour, and excursion in R) plus `setups.csv` (one row

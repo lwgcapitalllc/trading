@@ -8,12 +8,12 @@ resting limit at the 0.5 edge waits for the late return.
 **Scope:** This bot only — its tracker, order layer, config, tests. It does NOT own the
 engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it reuses
 (`strategies/python/mpc_sos_fade/`).
-**Status:** Built + unit-tested (9 tests green). **NO Pine-parity harness yet** — same
-position mpc_sos_fade was in before its `compare_strategy.py` landed. Verified so far by the
-hand-traced tracker tests + an end-to-end driver run on the synthetic stack. A
-`compare_bleg.py` + a `mpc_b_leg_strategy_export.pine` are the follow-up to prove bar-for-bar
-parity, once Aaron exports a decision stream (see "Parity — the follow-up" below).
-**Last reviewed:** 2026-07-26 — the exit levers landed (see below).
+**Status:** Built + unit-tested (14 tests green). **Pine-parity HARNESS BUILT 2026-07-26**
+(`tools/compare_bleg.py` + `indicators/mpc_b_leg_strategy_export.pine`, registered in
+`verify_parity.py`) and plumbing-tested offline — but **NOT YET RUN against a real export**, so
+the port is still unproven. Next action: paste the export Pine into TradingView, export the CSV,
+run `compare_bleg.py` until exit 0. See "The parity gate" below.
+**Last reviewed:** 2026-07-26 — the exit levers landed, and the Pine-parity harness was built (see "The parity gate").
 
 ## Why it exists (the split, 2026-07-24)
 
@@ -106,13 +106,63 @@ stop_distance`, so the lab's dynamic sizing engine leaves it alone and `exec_ris
 risk knob. Registered as class `MpcBLegStrategy` (distinct from `MpcSosFadeStrategy`), so both
 register and run side by side — the parallel-stack use case.
 
-## Parity — the follow-up (not done yet)
+## The parity gate — `tools/compare_bleg.py` + `mpc_b_leg_strategy_export.pine` (built 2026-07-26)
 
-There is NO `compare_bleg.py` and no export Pine. To build it, mirror the A+ harness:
-`mpc_b_leg_strategy_export.pine` = the strategy + an appended block that plots the per-bar
-decision stream (`px_*`) and toggles (`cfg_*`); `tools/compare_bleg.py` reads the toggles,
-configures `BLegConfig`, replays, and diffs. Until then, treat backtest numbers as
-directional, per Aaron's standing "no trade off an unvalidated port" rule.
+BUILT, plumbing-tested, **awaiting its first real export**. `indicators/mpc_b_leg_strategy_export.pine`
+= `mpc_b_leg_strategy.pine` (body byte-identical, only the line-40 `strategy()` title differs) + an
+appended PARITY EXPORT block. Export it from a 15m XAUUSD chart, then:
+
+```
+command-center/backend/.venv/bin/python strategies/python/mpc_bleg/tools/compare_bleg.py <export.csv> --warmup N
+```
+
+Exit 0 = bar-for-bar identical. It is also registered in `backtest/tools/verify_parity.py`, so the
+one-shot "is everything in sync?" run covers the B leg now.
+
+**What it diffs, and why it is NOT a flag on `compare_strategy.py`.** The two bots diff DIFFERENT
+fields. In this fork A+ never places an order, so:
+- `px_dec_bits`' arm bits are the **B-LEG** arm (`bLegLongArm`/`bLegShortArm`), not `longArmed`.
+  Diffing `longArmed` here would test a decision that never happens.
+- `px_edge` is the frozen band's 0.5 edge, not an FVG edge.
+- `px_tp1`/`px_tp2` are their own columns because the B leg derives its ladder from the band
+  (TP1 = 2·edge − origin, TP2 = the expansion extreme) instead of reading fib levels.
+- `px_stages` IS still diffed: the B leg arms off the A+ sequence's death, so an A+ stage drift is
+  where a B-LEG mismatch usually ORIGINATES. It turns "a trade differs" into "the upstream moved".
+
+What IS shared — the packed `cfg_*` decoding — is imported, not duplicated: both export Pines plot
+`cfg_*` with one identical scheme on purpose, and `compare_strategy.config_from_export` now returns
+the caller's config CLASS, so passing a `BLegConfig` gets one back with `bleg_max_days` intact.
+`allow_bleg=True` is needed because the A+ decoder (correctly) REFUSES an export with `execBLeg` on,
+and this fork's export always ships it on.
+
+**The `bl_*` columns are the point.** They carry the TRACKER's own state — `bl_bits` (on/tap per
+side), `bl_bars` (the armed bar per side, packed as bar+1 so 0 = none), and the four band prices per
+side (top / bot / inv / tgt). Every new B-LEG rule lives in the tracker (band freeze, deepest-band
+migration, target track, tap, staleness death), and a bug there shows as a wrong band price MANY bars
+before it becomes a wrong trade. Without them a mismatch says "a trade differs" and nothing about why.
+
+**Two things that are NOT in the export, deliberately:**
+- `execSlLevel` — the fork has no such input (the B-LEG stop is its band ORIGIN, not a fib on the A+
+  leg). `cfg_strcodes`' SL slot is pinned to the "1.0" code so the shared decoder reads
+  `exec_sl_level = "1.0"` — correct-and-unused here, and one decoder keeps serving both exports.
+- The Diagnostic Log block, dropped in the export copy to stay under Pine's token cap (CE10117),
+  exactly as the A+ export does.
+
+**Regenerate it whenever `mpc_b_leg_strategy.pine` changes** — the split point is exact and is
+recorded in the export's own header (`sed -n '1,4486p'`, then re-append the block and restore the
+line-40 title). A new trade-affecting input = a new `config.py` field + a new `cfg_*` plot + a new
+read in `compare_bleg.config_from_export`, in the SAME commit as the Pine change.
+
+Offline guard: `tests/test_compare_bleg.py` (5 tests) round-trips the tool — run the bot, serialise
+its own decisions + tracker state into an export-shaped CSV using the Pine's packing, feed it back,
+require exit 0 — then plants a `bl_l_top` mismatch and a `px_dec_bits` mismatch and requires the tool
+to catch each at the right bar. The encoder there is written from the Pine's plot expressions rather
+than from the tool's decoder, so it also catches the two drifting apart. It uses 30 synthetic days,
+not 10: on 10 no leg ever ARMS, so the `bl_*` diff would prove nothing.
+
+**Until a real export runs green, treat backtest numbers as directional** — per Aaron's standing
+"no trade off an unvalidated port" rule. Plumbing tests prove the harness; only the Pine diff proves
+the port.
 
 ## Tests
 
