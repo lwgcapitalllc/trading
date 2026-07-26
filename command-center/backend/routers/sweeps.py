@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from models import SweepRequest, SweepResponse, SweepDetail, SweepSummary, BacktestSummary, WorthinessScore
-from services import lab_db, runner_dispatch, worthiness
+from services import lab_db, runner_dispatch, worthiness, history_limits
 from services.evaluator import evaluate_run
 from services.sweep_runner import run_sweep, retry_failed_sweep_runs
 from routers.backtests import _row_to_summary
@@ -58,6 +58,16 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
         raise HTTPException(400, "instruments list cannot be empty")
 
     runner = strategy.get("runner", "ninjatrader")
+
+    # Broker-history floor — every instrument in the sweep shares one window, so one check
+    # per instrument before anything is inserted or locked.
+    for _inst in req.instruments:
+        try:
+            history_limits.validate_window(
+                _inst, req.start_date, req.end_date, req.bar_type, req.bar_value, runner)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
     ensure_platform_idle(runner)
 
     sweep_id = "sw_" + uuid.uuid4().hex[:10]

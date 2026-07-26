@@ -41,6 +41,22 @@ export interface NewsTradeTag {
   title: string | null
 }
 
+// How far back a backtest may start for a given instrument + timeframe + runner.
+// MEASURED off the live broker terminal (probed by bar density, cached per broker), never
+// hardcoded — so pointing the terminal at a broker with deeper history widens this by
+// itself. `null` from the API means UNKNOWN (non-python runner, agent down, unidentified
+// broker), and the UI must then leave the range open rather than guess.
+export interface HistoryLimit {
+  instrument: string
+  runner: string
+  timeframe_minutes: number
+  earliest_date: string        // 'YYYY-MM-DD' — first date with REAL bars
+  broker: string               // terminal server, e.g. 'VantageMarkets-Demo'
+  verified: string             // when the floor was last measured
+  source: string               // 'probed' | 'seed'
+  note: string                 // plain-English reason, shown under the date field
+}
+
 export interface RunNewsReport {
   has_data: boolean                  // false when the calendar cache is empty → filter inert
   coverage_start_ms: number | null   // earliest ms with news data — the "news starts here" boundary

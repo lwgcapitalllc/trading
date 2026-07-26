@@ -20,8 +20,9 @@ from pydantic import BaseModel
 from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
     WorthinessScore, RunningJobStatus, RunningJobInfo, RetryRunRequest, RunNewsReport,
+    HistoryLimit,
 )
-from services import lab_db, runner_dispatch, chart_spec, news_filter
+from services import lab_db, runner_dispatch, chart_spec, news_filter, history_limits
 from services.backtest_runner import (
     run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv,
 )
@@ -209,6 +210,29 @@ def get_running_job() -> RunningJobStatus:
     )
 
 
+@router.get("/history-limit", response_model=Optional[HistoryLimit])
+def get_history_limit(
+    instrument: str,
+    bar_type: str = "Minute",
+    bar_value: int = 15,
+    runner: str = "python",
+    refresh: bool = False,
+) -> Optional[HistoryLimit]:
+    """The earliest date a backtest of this shape may start, or null if unbounded.
+
+    MEASURED off the live terminal and cached per broker — swap the terminal to a broker
+    with deeper history and this widens by itself. The date picker reads this instead of
+    hardcoding a date, so the UI minimum and the data layer's refusal can never drift
+    apart. Null = unknown (every non-python runner, an unreachable agent, or an instrument
+    on a broker we cannot identify) — the UI then leaves the range open, because refusing
+    on a guess would be worse than letting the data layer's spacing check catch it.
+
+    `refresh=true` re-probes (~15s) — use after a broker back-fills history.
+    """
+    lim = history_limits.limits_for(instrument, bar_type, bar_value, runner, refresh=refresh)
+    return HistoryLimit(**lim) if lim else None
+
+
 @router.get("/runs")
 def list_backtest_runs(
     strategy_id: Optional[str] = None,
@@ -267,6 +291,18 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
             raise HTTPException(404, f"Ruleset '{rid}' not found")
 
     runner = strategy.get("runner", "ninjatrader")
+
+    # Refuse a window the broker has no real bars for BEFORE taking the lock or inserting
+    # a row. MT5 answers a too-early request with coarser bars mislabelled as the
+    # timeframe asked for, so this would otherwise complete as a plausible fiction.
+    try:
+        history_limits.validate_window(
+            req.instrument, req.start_date, req.end_date,
+            req.bar_type, req.bar_value, runner,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
     ensure_platform_idle(runner)
 
     run_id = uuid.uuid4().hex[:12]
@@ -381,6 +417,14 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
         # one of them would make the comparison meaningless. Reject rather than silently ignore.
         if row.get("sweep_id") or row.get("optimization_id"):
             raise HTTPException(400, "The period can only be changed on a standalone run")
+        # Same broker-history floor the initial trigger enforces — a rerun is a new window.
+        try:
+            history_limits.validate_window(
+                row["instrument"], new_start, new_end,
+                row.get("bar_type", "Minute"), row.get("bar_value", 15), runner,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
 
     # A retry reuses the run_id, so the failed attempt's progress entry — error text and all — is
     # still filed under it and the live banner would render that error while the rerun ran. Wipe it

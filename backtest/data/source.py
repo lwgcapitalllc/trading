@@ -18,6 +18,7 @@ import pandas as pd
 
 from .cache import BarCache
 from .coverage import RangeCoverage
+from .history import HistoryFloors, assert_bar_spacing
 from .mt5_agent import Mt5Agent
 from .resample import resample_up
 from .timeframes import resolve_base_tf, to_minutes
@@ -28,16 +29,34 @@ class BarSource:
         self.agent = agent if agent is not None else Mt5Agent()
         self.cache = cache if cache is not None else BarCache()
         self.coverage = RangeCoverage(self.cache.dir)
+        # Built from OUR agent, not the module-level shared one, so an injected fake in a
+        # test probes the fake — a floor check that reached the real terminal from a unit
+        # test would be both slow and non-deterministic.
+        self.floors = HistoryFloors(agent=self.agent, cache_dir=self.cache.dir)
 
     def load(
         self, symbol: str, timeframe: str | int, start_date: str, end_date: str
     ) -> pd.DataFrame:
         """Return canonical OHLC bars for the target timeframe over
-        [start_date, end_date] inclusive (dates as YYYY-MM-DD)."""
+        [start_date, end_date] inclusive (dates as YYYY-MM-DD).
+
+        Raises `history.HistoryFloorError` when the window starts before the broker's
+        real history for this timeframe, or when the bars that came back are not the
+        timeframe requested. **Both checks live here, not in the callers** — MT5 answers
+        a too-early request with COARSER bars mislabelled as what you asked for, and a
+        backtest fed those produces a clean, confident, fictional result. Every consumer
+        (the lab, the optimizer, the CLI tools) reads bars through this method, so this
+        is the one place that can protect all of them. The floor is MEASURED per broker,
+        never hardcoded — see `history.py` for the evidence and the probe.
+        """
         target_min = to_minutes(timeframe)
+        self.floors.assert_window(symbol, target_min, start_date, end_date)
         base_tf, base_min = resolve_base_tf(target_min)
 
         base_bars = self._load_base(symbol, base_tf, start_date, end_date)
+        # Checked at the BASE timeframe — that is what the broker actually served, and
+        # resampling up would smooth a substitution into a plausible-looking frame.
+        assert_bar_spacing(base_bars, base_min, symbol)
         if base_min == target_min:
             bars = base_bars
         else:

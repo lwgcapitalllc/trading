@@ -60,6 +60,10 @@ smart-money/data/smart_money.db-wal
 smart-money/reports/*
 !smart-money/reports/.gitkeep
 
+# run_report.py output — per-run trades.csv / setups.csv, regenerable from the
+# cache in minutes. Same character as backtest/cache/: data, not source.
+backtest/reports/
+
 # =============================================================
 # Command Center — lab runtime files
 # DB is created on startup via init_db(); reports are per-run

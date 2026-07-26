@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X, Play, Info } from 'lucide-react'
 import { AlertTriangle } from 'lucide-react'
-import { useFirms, useTriggerBacktest, useRunningVpsJob } from '@/hooks/useLab'
+import { useFirms, useTriggerBacktest, useRunningVpsJob, useHistoryLimit } from '@/hooks/useLab'
 import { ParamEditor } from '@/components/ParamEditor'
 import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
@@ -191,6 +191,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // ── Bar size ─────────────────────────────────────────────────────────────────
   const BAR_PRESETS = isNt8 ? [1, 3, 5, 15, 30] : [5, 15, 30, 60, 240]
   const [barValue, setBarValue] = useState(isNt8 ? 5 : scope === 'python' ? 15 : 60)
+
+  // How far back this instrument + timeframe actually has bars. Depends on barValue, so it
+  // re-reads when the bar size changes — a broker can hold years of 15m and months of 1m.
+  const { data: historyLimit } = useHistoryLimit(instrument || null, 'Minute', barValue, strategy.runner)
 
   // ── Sizing mode — how the engine sizes each trade from the room left ───────────
   // A self-sizing strategy sizes its own trades off its own risk % param — the engine never
@@ -478,6 +482,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               start={startDate}
               end={endDate}
               onChange={(s, e) => { setStartDate(s); setEndDate(e) }}
+              limit={historyLimit}
             />
           </div>
 

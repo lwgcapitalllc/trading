@@ -3,7 +3,7 @@
 **Purpose:** FastAPI backend (`:8000`) — owns all SQLite state, talks to the VPS via SSH + HTTP agents, runs the smart-money pipeline via subprocess, and drives NT8/MT5 backtests.
 **Scope:** This covers backend conventions, routers, services, DB, and VPS interaction. It does NOT cover the frontend (see `../frontend/CLAUDE.md`) or `algos/`/`smart-money/` source.
 **Status:** Live — lab (strategies, rulesets, backtests, sweeps, optimizations, stress tests, MT5 runner, Python runner) all shipped.
-**Last reviewed:** 2026-07-22
+**Last reviewed:** 2026-07-26
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
@@ -33,7 +33,7 @@ backend/
 ├── routers/               thin — validation + status codes only, no business logic
 │   ├── smart_money.py
 │   ├── bots.py
-│   ├── backtests.py       lab — backtest runs; GET /runs/{id}/chart-spec serves the price-chart ChartSpec (chart_spec.py); GET /runs/{id}/news serves the post-run news/holiday trade tags (news_filter.py)
+│   ├── backtests.py       lab — backtest runs; GET /history-limit serves the measured broker history floor (drives the UI date picker); GET /runs/{id}/chart-spec serves the price-chart ChartSpec (chart_spec.py); GET /runs/{id}/news serves the post-run news/holiday trade tags (news_filter.py)
 │   ├── strategies.py      lab — strategy registry + deploy endpoint + POST /scan (read-only) + POST /reconcile (destructive orphan cleanup) + GET /:id/instrument_summary + GET /:id/param-types
 │   ├── rulesets.py        lab — ruleset CRUD (/rulesets); PATCH = guarded personal-rules edit (prop rows locked 403; PUT also 403 on prop)
 │   ├── system.py          lab — health + log proxies
@@ -65,6 +65,11 @@ backend/
 │   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + recomputed strategy structure/ATR + market-structure overlays)
 │   ├── structure_overlays.py  replay the CANONICAL engines/market_structure/ engine over a run's candles → BOS/SOS/swing overlays for the chart, in the 4 groups that ARE structure_engine.pine's 4 toggles (External / Internal / Historic Internal Structure / Swing Point Labels), nesting like the Pine's via each overlay's `requires` list (swing tags need their owning structure; historic internal needs Internal). Never a 2nd engine (bare-name import like regime/news); called by chart_spec on the displayed TF. Break tags anchor at the line MIDPOINT (`_mid`, = Pine's `mid_x`) so they clear the break-bar candles; reversal breaks are labelled SOS/iSOS (not "CHoCH")
 │   ├── news_filter.py     post-run news/holiday tagging — composes the canonical engines/news/ engine (never a 2nd impl) to mark which of a run's trades opened in a high-impact news window / on a bank holiday, for the BacktestDetail News filter card. Pure over a trade list; loads the EventStore cache (see "News filter (post-run)")
+│   ├── history_limits.py  broker history floors — thin shim over the canonical `backtest/data/history.py`
+│   │                      (declares NO dates itself). `limits_for()` → the MEASURED earliest backtestable
+│   │                      date for an (instrument, timeframe, runner); `validate_window()` raises ValueError
+│   │                      which routers turn into a 400. PYTHON RUNNER ONLY — NT8/MT5 read history from their
+│   │                      own terminals, so a Vantage floor must never be imposed on them (see "History floors")
 │   ├── calendar_service.py  live News Calendar tab — calls engines/news/ TradingViewSource.fetch_window() (never a 2nd impl), 60s in-memory cache keyed on (from,to,countries), computes beat/miss "surprise" server-side via _LOWER_IS_BETTER. Read-only: does NOT touch the shared EventStore cache. Returns the whole week; the frontend filters client-side (see "Live calendar tab")
 │   ├── runner_dispatch.py      typed HTTP wrapper over NT8 nt8_agent; runner dispatcher (routes mt5 → mt5_agent_client)
 │   ├── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel)
@@ -319,6 +324,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Portfolio stacks | ✅ Live | `routers/stacks.py` + `services/lab_db.py` — layer 2+ **Python** strategies over ONE shared instrument/timeframe/window/cost profile to see combined P&L (summed client-side from each leg's `daily_pnl`; toggling a leg off never re-runs). **Smart reuse** (2026-07-25): on create, each leg that already has a COMPLETED standalone run at the EXACT same settings is reused as-is; only legs with no match are backtested fresh. `POST /backtests/stacks/preview` reports reuse-vs-run per leg without running anything (drives the modal's badges). See "Portfolio stacks (smart reuse)" below. |
 | Telegram notifications | ✅ Live | `services/notify.py` — urllib Telegram sender (same token as `algos/shared/notify.py`, no extra deps). `stress_tester` fires after grade is written. |
 | Live calendar tab | ✅ Live | `routers/calendar.py` (`GET /calendar?from&to`) → `services/calendar_service.py` → `engines/news/` `TradingViewSource.fetch_window()` (never a 2nd impl). Returns the whole week's events unfiltered + `server_now_ms` (drives the frontend "now" line off the server clock); 60s in-memory cache; beat/miss `surprise` computed server-side (`_LOWER_IS_BETTER`). Read-only — does NOT write the shared EventStore cache (separate path from the post-run news filter). Feed only, no DB. |
+| History floors | ✅ Live | `services/history_limits.py` + `GET /backtests/history-limit`. Refuses (400) any backtest window starting before the broker's REAL history for that timeframe — MT5 silently substitutes coarser bars, which would produce a plausible but fictional run. Floor is MEASURED off the live terminal (probed by bar density, cached per broker) via the canonical `backtest/data/history.py`, so a broker swap re-measures instead of inheriting. Enforced at run / retry / sweep / optimization / stack, and again in `BarSource.load`. Python runner only. |
 | Settings | ✅ Live | Config read/write. `nt8_agent_tunnel` and `mt5_agent_tunnel` both present. |
 | Startup — auto-start agents | ✅ Live | Daemon thread on startup (8s delay): `/health` each agent, fires schtask for any that don't respond. |
 
@@ -486,6 +492,39 @@ A **stack** layers 2+ Python strategies over ONE shared instrument + timeframe +
 **Matching is STRICT by Aaron's call (2026-07-25)** — any difference (even a one-day window shift or a different cost field) misses and the leg re-runs. Do NOT loosen it without asking. **Cost defaults are 0/0** (`commission_per_side=0`, `slippage_ticks=0`, `bar_value=15`) — matching the Pine strategies, which are all pinned `commission=0, slippage=0` for TV↔Python parity (costs are modeled inside the strategy via the 30-tick breakeven buffer). **These fields are cosmetic for Python runs** — `python_runner` never reads them; the real cost comes from the strategy's account profile (`backtest/fills.py` `PROFILES["vantage_demo"]` = commission 0.00) + measured (tick) / 0 (bar) slippage. So they're the displayed + leg-matching values, not the applied ones. The stack's original bug was the **5m timeframe** (vs the designed 15m), not costs — a stacked leg read ~⅓ of the same strategy's standalone run because it ran on entirely different signals. The forex rulesets (`personal_forex_demo`, `unconstrained`) also seed `default_slippage_ticks=0` (converged on existing DBs in `init_db`) so the Run modal shows 0/0 too; futures rulesets keep `2.25/1` (NT8/MT5 platforms genuinely apply them).
 
 **`POST /backtests/stacks/preview`** (`StackPreviewRequest` → `StackPreviewResponse`) reports per-leg `action` (`reuse`|`run`) + the matched run's `net_pnl`/`trade_count`/`profit_factor`, running nothing — it drives the modal's live Reuse/Run badges. **`GET /stacks/{id}`** (`StackDetail`, async) now also carries `commission_per_side`/`slippage_ticks` (from the settings row, for the Rerun modal) and a full-calendar `regime_timeline` for the shared window (drives the equity chart's regime overlay). Regime source: read from a leg's `regime_timeline.json` if present; sweep-child legs aren't regime-tagged, so when none exists it computes the timeline once via `build_regime_timeline_and_tag(..., runner="python")` (off-thread) and caches it to the base leg's dir so later polls read the file. **`build_stack_chart_spec`** carries the base leg's structure `overlays`/`indicators` (a property of the market on the shared candles, identical for every leg) and a `base_run_id` — so the stack's price chart has full BacktestDetail parity (structure layers, ATR pane, fib/measurement, and M1/M5 drill-down routed through the base leg's `/candles`). **`delete_stack`** removes only `owned=1` legs from `backtest_runs` (+ their report dirs, via the router) and clears the `stacks`/`stack_members` rows; reused legs are untouched. `_backfill_stack_membership` (in `init_db`, idempotent) materialises `stacks` + owned `stack_members` for any legacy pre-membership stack so old stacks survive. Python-only: summing daily P&L models independent sleeves, and NT8/MT5 have their own single-window terminals a lab stack has no reason to touch.
+
+## History floors — blocking a window the broker has no bars for
+
+**MT5 does not error when a symbol lacks history at the requested timeframe — it returns the nearest
+COARSER bars, still labelled as what you asked for.** A backtest fed daily bars as 15m does not crash:
+it produces a full trade list, a clean equity curve, and a completely fictional answer. So the lab
+refuses the window instead of running it.
+
+The floor is **measured, never hardcoded**: `backtest/data/history.py` binary-searches the live
+terminal by bar density and caches per `(server, symbol, timeframe)` — swap MT5_Lab to a broker with
+deeper history and the limit widens by itself. `services/history_limits.py` is a thin shim over it and
+declares no dates of its own; duplicating them here would guarantee the UI and the data layer
+eventually disagree, and the disagreement would surface as a run that passes validation then dies
+mid-flight.
+
+- **`GET /backtests/history-limit?instrument=&bar_type=&bar_value=&runner=[&refresh=]`** → `HistoryLimit`
+  (`earliest_date`, `broker`, `verified`, `source: probed|seed`, `note`) or **`null`** when unbounded.
+  The frontend date picker reads this instead of hardcoding a date. `refresh=true` re-probes (~15s).
+- **400 at every trigger that accepts dates**, checked BEFORE the platform lock is taken or a run row
+  is inserted: `POST /backtests/run`, `POST /runs/{id}/retry` (period override), `POST /backtests/sweep`
+  (per instrument), `POST /optimizations/run`, `POST /backtests/stacks`. `BarSource.load` raises too, so
+  a path that forgets the check still cannot replay substituted bars — but it raises at FETCH time, by
+  which point a row exists, a lock is held, and the user is watching a progress bar. That is the whole
+  reason the router-level check exists as well.
+- **Python runner ONLY.** NT8 (NinjaTrader) and MT5 pull history from their own terminals, so their
+  depth is a different question with a different answer. `limits_for()`/`validate_window()` return
+  None / no-op for them. Claiming a Vantage gold floor on an NT8 futures run would be a lie in the
+  more dangerous direction.
+- **`null` means UNKNOWN, never "unlimited"** — agent down, or a broker we cannot identify. Nothing is
+  refused on a guess; the data layer's bar-spacing backstop still catches substituted bars.
+
+Full mechanism, the evidence table, and the probe's two-phase design: `backtest/CLAUDE.md` →
+*History floors*.
 
 ## News filter (post-run)
 

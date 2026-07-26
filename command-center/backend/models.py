@@ -502,6 +502,25 @@ class BacktestRunRequest(BaseModel):
         return self.evaluate_rulesets or self.evaluate_firms
 
 
+class HistoryLimit(BaseModel):
+    """How far back a backtest of a given (instrument, timeframe, runner) may start.
+
+    Served by `GET /backtests/history-limit` so the date picker's minimum comes from the
+    same declaration `backtest/data/history.py` enforces — a second hardcoded date in the
+    frontend would drift, and the drift would show up as a run that passes the UI and
+    then 400s (or, before this existed, one that silently replayed substituted bars).
+    A null response means no declared floor, not "unlimited".
+    """
+    instrument: str
+    runner: str
+    timeframe_minutes: int
+    earliest_date: str          # 'YYYY-MM-DD' — the first date with REAL bars
+    broker: str = ""            # the terminal's server, e.g. 'VantageMarkets-Demo'
+    verified: str = ""          # when the floor was last measured
+    source: str = ""            # 'probed' (measured off this broker) | 'seed' (offline fallback)
+    note: str = ""              # plain-English reason, shown under the date field
+
+
 class RetryRunRequest(BaseModel):
     # Optional rulesets to score against when re-firing an optimizer combo as a full
     # backtest. None = let the backend inherit from the optimization (and prompt the

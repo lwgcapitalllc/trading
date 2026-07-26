@@ -29,7 +29,7 @@ from models import (
     StackRequest, StackResponse, StackSummary, StackDetail, StackStrategyLeg,
     StackPreviewRequest, StackPreviewResponse, StackPreviewLeg,
 )
-from services import chart_spec, lab_db
+from services import chart_spec, lab_db, history_limits
 from services.sweep_runner import run_sweep
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
@@ -100,6 +100,15 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
     for rid in req.ruleset_ids:
         if not lab_db.get_ruleset(rid):
             raise HTTPException(404, f"Ruleset '{rid}' not found")
+
+    # Broker-history floor. Stacks are python-only and every leg shares one window, so a
+    # single check covers the whole stack.
+    try:
+        history_limits.validate_window(
+            req.instrument, req.start_date, req.end_date,
+            req.bar_type, req.bar_value, "python")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
     stack_id = "st_" + uuid.uuid4().hex[:10]
     now      = int(time.time())

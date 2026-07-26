@@ -17,7 +17,7 @@ from fastapi.responses import PlainTextResponse
 from models import (
     OptimizationRequest, OptimizationSummary, OptimizationDetail,
 )
-from services import lab_db, runner_dispatch
+from services import lab_db, runner_dispatch, history_limits
 from services.optimization_runner import expand_grid, pick_search_method, sample_combinations, run_optimization, retry_failed_runs
 from routers.backtests import _row_to_summary
 from routers._locks import ensure_platform_idle
@@ -41,6 +41,14 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         raise HTTPException(400, "param_grid cannot be empty")
 
     runner = strategy.get("runner", "ninjatrader")
+
+    try:
+        history_limits.validate_window(
+            req.instrument, req.start_date, req.end_date,
+            req.bar_type, req.bar_value, runner)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
     ensure_platform_idle(runner)
 
     method = pick_search_method(req.param_grid, req.search_method)

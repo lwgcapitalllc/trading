@@ -10,7 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
 } from 'recharts'
-import { useBacktestRun, useBacktestRuns, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunCandles, useRunNews } from '@/hooks/useLab'
+import { useBacktestRun, useBacktestRuns, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunCandles, useRunNews, useHistoryLimit } from '@/hooks/useLab'
 import InfoTip from '@/components/InfoTip'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
@@ -2447,7 +2447,12 @@ function RerunModal({ run, busy, onConfirm, onClose }: {
 }) {
   const [start, setStart] = useState(run.start_date)
   const [end, setEnd]     = useState(run.end_date)
-  const valid = !!start && !!end && start < end
+  // Same measured floor the new-run modal uses — a rerun picks a new window, so it needs
+  // the identical guard rather than inheriting the original run's (possibly wider) period.
+  const { data: historyLimit } = useHistoryLimit(
+    run.instrument || null, run.bar_type || 'Minute', run.bar_value ?? 15, run.runner)
+  const floor = historyLimit?.earliest_date ?? null
+  const valid = !!start && !!end && start < end && !(floor && start < floor)
   const moved = start !== run.start_date || end !== run.end_date
 
   return (
@@ -2463,7 +2468,7 @@ function RerunModal({ run, busy, onConfirm, onClose }: {
 
         <div>
           <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">Period</div>
-          <PeriodPicker start={start} end={end} onChange={(s, e) => { setStart(s); setEnd(e) }} />
+          <PeriodPicker start={start} end={end} onChange={(s, e) => { setStart(s); setEnd(e) }} limit={historyLimit} />
         </div>
 
         {moved && (

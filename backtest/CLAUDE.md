@@ -83,6 +83,17 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   it (a real logic change is still a hand port, per drift). Run it after any `mpc_assistant.pine` /
   `mpc_strategy.pine` re-paste + re-export. Stdlib only. `verify_parity.py <csv> [csv ...]`, or no args
   = newest CSV in `backtest/`.
+- **`tools/run_report.py`** — the "WHY did it make/lose money" run. Replays a `strategies/python/`
+  bot over YEARS of broker bars and writes `trades.csv` (one row per trade, tagged with the
+  `engines/regime/` label at entry, NY session/hour, and excursion in R) plus `setups.csv` (one row
+  per A+ leg that reached SOS, traded or not, with the FIRST thing that stopped it). The second file
+  is the point: a blocked or skipped setup places no order, so it leaves NO trace in any broker trade
+  list — this is the only place it is countable. Reports in **R, never dollars** (a fixed-%-risk
+  strategy earns exponentially more dollars at the same edge, so a dollar curve makes a flat early
+  year look like a broken edge). `--set FIELD=VALUE` overrides any config field for A/B tests
+  (frozen dataclass, applied via `replace`); `--no-regime` skips the tagging. Everything it adds is
+  reporting-only — no tag feeds back into the strategy, so results are identical with or without it.
+  Carries the timeframe-substitution guard described under *history depth* below.
 - **`tools/compare_feeds.py`** — feed-parity check: MT5 pull vs a TradingView export of the same
   symbol/TF/window. Reports **clock offset** (0 = aligned; non-zero = the broker-server-time bug
   that shifts every session — fix before demo), coverage, and OHLC drift. This is *data* parity, not
@@ -139,7 +150,10 @@ indistinguishable from a symbol with no history. Measured 2026-07-21 on XAUUSD.s
 fine, ~70,000 (3 years) dead, so a 3-year backtest could not load bars at all. `bars()` now splits
 any long window into chunks sized from the timeframe against a 24h day (`_MAX_BARS_PER_REQUEST`
 60,000), fetches each, and stitches them (dropping the shared boundary bar). A window already small
-enough still makes exactly one call. **An empty chunk is not an error when others returned data** —
+enough still makes exactly one call. (The terminal's own "Max bars in chart" was later set to
+unlimited — see *history depth* below — but the per-request chunking stays: it is what makes a
+multi-year window loadable at all, and it must not depend on a terminal setting nobody can see from
+here.) **An empty chunk is not an error when others returned data** —
 broker history starts somewhere, so a 3-year request against a shallower symbol now returns the
 history that exists instead of failing; only "no chunk served anything" raises. `_read_error` also
 surfaces the agent's `mt5_error`, which is what distinguishes the two cases.
@@ -159,11 +173,108 @@ terminal so spread/commission/swap/symbol and history depth never have to be typ
 - `GET /data_availability?symbol=XAUUSD&timeframes=M1,M5,M15,M30,H1,H4` → earliest→latest served bar
   per timeframe (cheap: one bar from each end).
 
-**Vantage XAUUSD history depth (probed 2026-07-22 via /data_availability) — this BOUNDS a backtest
-window:** M1 from 2026-04-13 (~3mo), **M5 from 2025-02-24 (~17mo)**, M15 from 2022-04-29 (~4yr),
-M30/H1/H4 from 2007 (~19yr). So the 5m/15m SOS Fade strategy has ~17 months of native-timeframe data;
-ask for more and the client returns the history that exists (empty edge chunks aren't errors). Depth
-grows with wall-clock time and differs per timeframe, so re-probe rather than trust these numbers.
+## History floors — MEASURED per broker, and ENFORCED (`data/history.py`)
+
+**The floor is discovered, never hardcoded.** `HistoryFloors.floor(symbol, tf)` binary-searches the
+live terminal for the earliest date with real bars and caches it keyed on
+`(server, symbol, timeframe)`, where `server` is the agent's `/status` server name
+(`VantageMarkets-Demo`). Point MT5_Lab at a broker with deeper history and the floor widens on its
+own; point it at a shallower one and it tightens. A hardcoded date would fail in both directions —
+needlessly truncating the deep broker, and fictionalising the shallow one.
+
+Probing asks one question per candidate day — *"does this day return a plausible number of bars for
+this timeframe?"* — because **bar density is the one thing that cannot lie** (see the substitution
+table below). Two phases, deliberately with opposite error tolerances: a holiday-tolerant cluster
+test for the binary search (a false "no data" on a single holiday would push the floor years late),
+then a strict single-day forward scan to remove the early bias that tolerance creates. ~25 HTTP calls,
+once per (broker, symbol, timeframe), then cached to `backtest/cache/history_floors.json`.
+`refresh=True` re-probes (use after a broker back-fills).
+
+**Two independent defences, both required:**
+1. `HistoryFloors.assert_window()` — the measured floor, checked in `BarSource.load` **before any
+   fetch**. Also read by the lab API so a user is stopped at the date picker, not 40 minutes into a run.
+2. `assert_bar_spacing()` — pure, empirical, on what actually came back: the frame's MODAL gap must
+   equal the requested timeframe. Backstop for an unprobed symbol, an unreachable agent, and the day a
+   broker's depth shifts. Checked at the BASE timeframe, because resampling up would smooth a
+   substitution into a plausible-looking frame.
+
+**`floor()` returning `None` means UNKNOWN, never "unlimited"** — an unreachable agent, or a broker we
+cannot identify. Nothing is refused on a guess; the spacing backstop still applies. The `_SEED`
+fallback is tagged with the server it was measured on and is applied **only** to that broker.
+
+**Enforcement points.** `BarSource.load` (every consumer — lab, optimizer, CLI) plus a 400 at each lab
+trigger: `POST /backtests/run`, `POST /runs/{id}/retry` (period override), `POST /backtests/sweep`,
+`POST /optimizations/run`, `POST /backtests/stacks`. Only the **python** runner is bounded —
+NT8 and MT5 pull history from their own terminals, so their depth is a different question and claiming
+a Vantage gold floor there would be a lie in the more dangerous direction.
+
+**UI.** `GET /backtests/history-limit?instrument=&bar_type=&bar_value=&runner=` → `HistoryLimit`
+(`earliest_date`, `broker`, `verified`, `source: probed|seed`, `note`) or `null` when unbounded.
+`useHistoryLimit` feeds `PeriodPicker`, which sets `min` on both date inputs, **clamps the 1Y/3Y/5Y
+presets** to the floor (so "5Y" on a 4-year broker asks for what exists), makes "All" mean *all there
+is*, and shows a one-click "Start at <date>" fix — a native `min` stops the calendar but not a typed
+or pasted date. `source: "seed"` renders as "last known — terminal unreachable" so a fallback is never
+mistaken for a measurement. Tests: `backtest/tests/test_history.py` (20) — a fake agent with a settable
+history start exercises the real probe, including deeper-broker, shallower-broker, and
+broker-swap-does-not-inherit.
+
+## Vantage XAUUSD history depth — and the silent-substitution trap
+
+**MT5 does NOT error when a symbol has no history at the requested timeframe. It returns the nearest
+COARSER timeframe's bars, still labelled as what you asked for.** This is the single most dangerous
+behaviour in the data layer: a backtest fed daily bars as 15m does not crash — it produces a full
+trade list, a clean equity curve, and a completely fictional answer. Verified 2026-07-26 on Vantage
+XAUUSD by asking for one month (January 2010) at four timeframes:
+
+| asked | bars returned | real count would be |
+|---|---|---|
+| M1  | 21 | ~29,000 |
+| M15 | 21 | ~1,900 |
+| H1  | 21 | ~480 |
+| D1  | 21 | 21 ← the bars all four actually served |
+
+21 = the trading days in that month. Every intraday request was handed D1. Single-day probes show the
+same thing one level up: on 2018-09-11, M1/M5/M15/M30 each return an identical 23 bars of $1.88 median
+range — H1 data, served four ways.
+
+**Real depth (density-verified 2026-07-26, AFTER "Max bars in chart" was set to unlimited).** These
+are a SNAPSHOT for orientation — the code probes rather than reading them, so do not treat them as the
+contract:
+
+| timeframe | real history starts | bars available |
+|---|---|---|
+| M1 · M5 · M30 · H1 · H4 | **2018-09-14** | ~2.8M / 570k / 95k / 47k / 12k |
+| M15 | **2018-09-13** (probe; a partial 38-bar first day) | ~190k |
+| D1 | 2007-06-21 | ~4,700 |
+
+Every INTRADAY timeframe shares one floor — Vantage's gold intraday start. That common date is itself
+the proof no bar cap is in play: a cap would exhaust M1 ~15× sooner than M15, and it does not.
+**~7.9 years is the hard ceiling for any intraday backtest on this broker**; no MT5 setting moves it
+(only a different broker or a paid feed would).
+
+Note M15 starts one day earlier than hand-sampling found: the automated probe caught 2018-09-13 (38
+real bars, $1.24 median range — history begins mid-day) where manual day-picking had tested 09-12 and
+09-14 and missed the Thursday between. The `_SEED` fallback deliberately carries the LATER 2018-09-14
+for all intraday: refusing one extra day costs nothing, allowing one day too early is the failure this
+whole section exists to prevent.
+
+**`GET /data_availability` CANNOT be trusted for depth.** It samples one bar from each end, so the
+substitution above fools it completely — on 2026-07-26 it reported `earliest 2007-06-22` for **every**
+timeframe including M1, which is false by ~11 years. The two previous depth figures in this file
+(2026-07-21, 2026-07-22: "M1 from 2026-04-13", "M30/H1/H4 from 2007") came from that endpoint and were
+wrong for the same reason. **Verify depth by BAR DENSITY — count bars per day and compare against the
+timeframe's expected count — never by the earliest timestamp.**
+
+**"Max bars in chart" must be unlimited in the MT5_Lab terminal.** Before it was raised (2026-07-25)
+every timeframe capped at ~100,000 bars, which is 4.2 years on M15 but only ~3.5 months on M1 — the
+old "M1 from 2026-04-13" reading was that cap, not the broker's history. Tools → Options → Charts.
+
+**The guard now lives in the DATA LAYER, so every consumer inherits it** — `BarSource.load` calls both
+`assert_window` and `assert_bar_spacing` (see *History floors* above), which closes the earlier gap
+where only `run_report.py` was protected and the lab/optimizer were exposed. Verified firing: asking
+for 15m over 2015 raises `HistoryFloorError: … most common spacing in the returned data is 1440m`.
+`run_report.py` keeps its own copy of the spacing check so it fails with a CLI-shaped message before
+loading, which is redundant by design — a duplicated refusal is cheap, a missed one is not.
 
 **Cache isolation is by SYMBOL name, not broker** — files are keyed `(symbol, tf)` with no broker tag,
 so Vantage `XAUUSD__*.csv` and any PU Prime `XAUUSD_s__*.csv` are naturally separate. The trap: if a

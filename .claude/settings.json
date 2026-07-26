@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "Bash(cd:*)",
       "Bash(ls:*)",
@@ -29,7 +28,6 @@
       "Bash(mkdir:*)",
       "Bash(touch:*)",
       "Bash(cp:*)",
-
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
@@ -52,7 +50,6 @@
       "Bash(gh issue list:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-
       "Bash(python:*)",
       "Bash(python3:*)",
       "Bash(.venv/bin/python:*)",
@@ -61,7 +58,6 @@
       "Bash(pip list:*)",
       "Bash(pip show:*)",
       "Bash(pip freeze:*)",
-
       "Bash(npm run:*)",
       "Bash(npm ls:*)",
       "Bash(npm test:*)",
@@ -69,14 +65,12 @@
       "Bash(npx vitest:*)",
       "Bash(npx eslint:*)",
       "Bash(node:*)",
-
       "Bash(sqlite3:*)",
       "Bash(curl http://localhost:*)",
       "Bash(curl -s http://localhost:*)",
       "Bash(curl http://127.0.0.1:*)",
       "Bash(lsof:*)",
       "Bash(ps:*)",
-
       "Bash(ssh -f -N -L * forexvps)",
       "Bash(ssh forexvps \"netstat *\")",
       "Bash(ssh forexvps \"schtasks /query *\")",
@@ -89,11 +83,25 @@
       "Bash(ssh forexvps \"del C:\\trading\\algos\\mt5_connect.lock*\")",
       "Bash(ssh forexvps \"taskkill *\")",
       "Bash(ssh forexvps \"schtasks /run*\")",
-
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:docs.claude.com)",
-      "Read(//Users/alwg/Desktop/playbook/**)"
+      "Read(//Users/alwg/Desktop/playbook/**)",
+      "Read(//Users/alwg/.claude/**)",
+      "Bash(echo \"started pid $!\")",
+      "Bash(curl -s -m 90 \"http://localhost:8766/historical_data?symbol=XAUUSD&timeframe=M15&start_date=2026-07-23&end_date=2026-07-23\")"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(rm -rf /:*)",
+      "Read(//Users/alwg/trading/**/.env)",
+      "Read(//Users/alwg/trading/**/credentials.json)",
+      "Read(//Users/alwg/trading/**/users.json)",
+      "Edit(//Users/alwg/trading/**/.env)",
+      "Edit(//Users/alwg/trading/**/credentials.json)",
+      "Write(//Users/alwg/trading/**/.env)",
+      "Write(//Users/alwg/trading/**/credentials.json)"
     ],
     "ask": [
       "Bash(rm:*)",
@@ -123,20 +131,10 @@
       "Bash(ssh forexvps \"format *\")",
       "Bash(ssh forexvps \"schtasks /delete*\")"
     ],
-    "deny": [
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Bash(rm -rf /:*)",
-      "Read(//Users/alwg/trading/**/.env)",
-      "Read(//Users/alwg/trading/**/credentials.json)",
-      "Read(//Users/alwg/trading/**/users.json)",
-      "Edit(//Users/alwg/trading/**/.env)",
-      "Edit(//Users/alwg/trading/**/credentials.json)",
-      "Write(//Users/alwg/trading/**/.env)",
-      "Write(//Users/alwg/trading/**/credentials.json)"
-    ],
+    "defaultMode": "acceptEdits",
     "additionalDirectories": [
-      "/private/tmp/claude-501"
+      "/private/tmp/claude-501",
+      "/Users/alwg/.claude"
     ]
   }
 }

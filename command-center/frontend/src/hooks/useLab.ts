@@ -5,7 +5,7 @@ import { api } from '@/api/client'
 import type {
   Strategy, ScanResult, ReconcileResult, DeployJobStatus,
   Ruleset, RulesetCreate, PersonalRulesetPatch,
-  BacktestRunRequest, BacktestSummary, BacktestDetail, RunNewsReport,
+  BacktestRunRequest, BacktestSummary, BacktestDetail, RunNewsReport, HistoryLimit,
   LabProgress, SystemHealth,
   SweepRequest, SweepResponse, SweepDetail,
   StackRequest, StackResponse, StackSummary, StackDetail, StackChartSpec,
@@ -202,6 +202,29 @@ export function useBacktestRun(runId: string | null) {
 
 // News/holiday tagging of a completed run's trades — the post-run filter. Static per (run, window),
 // so cache indefinitely; re-fetches when pre/post change. `enabled` off until the section is opened.
+// Earliest date a backtest of this shape may start. The date picker's `min` comes from
+// here rather than a constant in the frontend: the floor is measured off the broker, so a
+// hardcoded copy here would drift the moment the terminal changed — and the drift would
+// show up as a run the UI accepts and the backend then rejects.
+// Long staleTime: it only changes when the broker does, and measuring costs a probe.
+export function useHistoryLimit(
+  instrument: string | null,
+  barType = 'Minute',
+  barValue = 15,
+  runner = 'python',
+) {
+  return useQuery({
+    queryKey: ['lab', 'history-limit', instrument, barType, barValue, runner],
+    queryFn: () => api.get<HistoryLimit | null>(
+      `/backtests/history-limit?instrument=${encodeURIComponent(instrument!)}`
+      + `&bar_type=${encodeURIComponent(barType)}&bar_value=${barValue}`
+      + `&runner=${encodeURIComponent(runner)}`,
+    ),
+    enabled: !!instrument,
+    staleTime: 60 * 60_000,
+  })
+}
+
 export function useRunNews(runId: string | null, pre = 15, post = 30, enabled = true) {
   return useQuery({
     queryKey: ['lab', 'run', runId, 'news', pre, post],

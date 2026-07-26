@@ -141,6 +141,40 @@ class Mt5Agent:
             )
         return _normalize(pd.DataFrame(bars))
 
+    def status(self) -> dict:
+        """The terminal's identity — `{account, server, terminal_path, mt5_connected, …}`.
+
+        `server` is what tells one BROKER from another ("VantageMarkets-Demo"). History
+        depth is a property of the broker, so anything cached about depth must be keyed on
+        this: swap the account to a different broker and a cached floor measured on the old
+        one is worse than no answer, because it looks authoritative. Returns `{}` rather
+        than raising — an unreachable agent means "identity unknown", which callers must
+        already handle.
+        """
+        try:
+            return self._fetch(f"{self.base_url}/status", "status")
+        except Exception:
+            return {}
+
+    def bar_count(self, symbol: str, tf_name: str, start_date: str, end_date: str) -> int:
+        """How many bars the broker serves for a window — 0 when it serves none.
+
+        The cheap primitive history probing is built on. Unlike `bars()` this never
+        raises on an empty answer: "no bars here" is the ANSWER when you are searching
+        for where history begins, not a failure.
+        """
+        query = urllib.parse.urlencode({
+            "symbol": symbol, "timeframe": tf_name,
+            "start_date": start_date, "end_date": end_date,
+        })
+        try:
+            payload = self._fetch(f"{self.base_url}/historical_data?{query}", "bar_count")
+        except Exception:
+            return 0
+        if "error" in payload:
+            return 0
+        return int(payload.get("count") or len(payload.get("bars") or []))
+
     def ticks(self, symbol: str, start: str, end: str) -> list[dict]:
         """Fetch real bid/ask ticks in [start, end) — ISO datetimes in TRUE UTC.
 

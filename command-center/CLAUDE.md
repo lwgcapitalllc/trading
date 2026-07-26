@@ -3,7 +3,7 @@
 **Purpose:** Local operations platform for LWG Capital — a React frontend + FastAPI backend that monitors the live bots, surfaces the Smart Money pipeline, and runs/evaluates NinjaTrader + MT5 backtests.
 **Scope:** This covers the command-center app (backend + frontend). Sub-directory CLAUDE.md files cover backend and frontend internals. It does NOT cover `algos/` or `smart-money/` source — those are read-only outputs to this app.
 **Status:** Live — all modules shipped (Smart Money, Bots, Backtests lab, Sweeps, Optimizations, Stress Tests, MT5 runner, Python runner, portfolio stacks).
-**Last reviewed:** 2026-07-25
+**Last reviewed:** 2026-07-26
 
 Local operations platform for LWG Capital. Two-process app: React frontend (`:5173`) → FastAPI backend (`:8000`). The backend is the only process that touches the filesystem or the VPS — the frontend never does.
 
@@ -93,6 +93,7 @@ cd command-center
 | Strategy deployment | ✅ Live | Upload, delete, compile, and one-click Deploy NT8/MT5 strategy files from the UI |
 | MT5 runner | ✅ Live | MT5 agent on VPS drives Strategy Tester; backtests, optimizer, walk-forward, badges |
 | Python runner | ✅ Live | `services/python_runner.py` runs `strategies/python/` packages LOCALLY via the top-level `backtest/` package (no VPS, no compile). Backtests + native optimizer (A4 `backtest/optimizer.py` sweep across cores). Third independent lock scope (`python`), end-to-end: `get_running_job()` returns a `python` bucket and the frontend resolves scope/market/labels through `lib/runner.ts` (**2026-07-16** — replaced the `runner === 'mt5' ? … : NT8` branching that made python jobs wear the NT8 badge and check the NT8 lock). Price charts come from the same `backtest/` bar cache the run replayed |
+| History floors | ✅ Live | Backtest windows are refused (400) before the broker's real history for that timeframe. MT5 silently substitutes COARSER bars when it has none, which would produce a plausible but fictional run. The floor is MEASURED off the live terminal (bar-density probe, cached per broker) via the canonical `backtest/data/history.py` — swap brokers and it re-measures rather than inheriting. Enforced at run/retry/sweep/optimization/stack and in `BarSource.load`; the date picker's minimum reads `GET /backtests/history-limit`. Python runner only (NT8/MT5 use their own terminals' history) |
 | Settings | ✅ Live | Strategy detail UX, descriptions, best-grade column, runner badges, market filter |
 | Sidebar health | ✅ Live | Four live dots: API, SSH tunnel, NT8 agent, MT5 agent |
 

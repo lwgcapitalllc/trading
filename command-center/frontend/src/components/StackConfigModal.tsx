@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Layers, X, Play, Loader2 } from 'lucide-react'
-import { useStrategies, useTriggerStack, useRunningVpsJob, useStackPreview } from '@/hooks/useLab'
+import { useStrategies, useTriggerStack, useRunningVpsJob, useStackPreview, useHistoryLimit } from '@/hooks/useLab'
 import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
 
 const BAR_PRESETS: [number, string][] = [[5, '5m'], [15, '15m'], [30, '30m'], [60, '1H'], [240, '4H']]
@@ -42,6 +42,8 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
   const [start, setStart] = useState(initial?.start ?? yearsAgo(1))
   const [end, setEnd] = useState(initial?.end ?? today())
   const [barValue, setBarValue] = useState(initial?.barValue ?? 15)
+  // Stacks are python-only, so the runner is fixed.
+  const { data: historyLimit } = useHistoryLimit(instrument || null, 'Minute', barValue, 'python')
   // 0/0 matches the Pine strategies (all pinned commission=0, slippage=0). The Python fill engine
   // applies real cost via the account profile (vantage_demo = 0), so these display values stay honest.
   const [commPerSide, setCommPerSide] = useState(initial?.commPerSide ?? 0)
@@ -194,7 +196,7 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
 
           <div>
             <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">Period</div>
-            <PeriodPicker start={start} end={end} onChange={(s, e) => { setStart(s); setEnd(e) }} />
+            <PeriodPicker start={start} end={end} onChange={(s, e) => { setStart(s); setEnd(e) }} limit={historyLimit} />
           </div>
 
           {settingsReady && preview && (
