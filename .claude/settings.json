@@ -89,7 +89,15 @@
       "Read(//Users/alwg/Desktop/playbook/**)",
       "Read(//Users/alwg/.claude/**)",
       "Bash(echo \"started pid $!\")",
-      "Bash(curl -s -m 90 \"http://localhost:8766/historical_data?symbol=XAUUSD&timeframe=M15&start_date=2026-07-23&end_date=2026-07-23\")"
+      "Bash(curl -s -m 90 \"http://localhost:8766/historical_data?symbol=XAUUSD&timeframe=M15&start_date=2026-07-23&end_date=2026-07-23\")",
+      "Bash(ls -la /Users/alwg/Downloads/*.csv 2>/dev/null | tail -20; echo \"--- exports dirs\"; find /Users/alwg/trading -type d -name \"exports\" -o -type d -name \"export\" | head)",
+      "Read(//Users/alwg/Downloads/**)",
+      "Bash(ls -la /Users/alwg/trading/strategies/python/mpc_bleg/tools/ /Users/alwg/trading/strategies/python/mpc_sos_fade/tools/ 2>/dev/null; echo \"=== any bleg csv anywhere\"; find /Users/alwg -maxdepth 5 -iname \"*.csv\" -newermt \"2026-07-24\" 2>/dev/null | head -30)",
+      "Read(//Users/alwg/**)",
+      "Bash(git -C /Users/alwg/trading status --short)",
+      "Bash(git -C /Users/alwg/trading add docs/MPC_BOS_SPEC.md)",
+      "Bash(git -C /Users/alwg/trading commit -m 'docs\\(mpc_bos\\): spec the BOS continuation strategy — the SOS fade with the arm swapped *)",
+      "Bash(git -C /Users/alwg/trading push origin main)"
     ],
     "deny": [
       "Bash(git push --force:*)",
