@@ -148,13 +148,13 @@ in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
 
 | Stage | What sets it | Switchable? |
 |---|---|---|
-| **Stop loss** | A fib on the deep side of 0.5, `exec_sl_level` ∈ {0.618, 0.702, 0.786, 0.886, **1.0**}, then `exec_sl_buf_tk` ticks beyond it. 1.0 = the leg origin. | **Yes** — dropdown |
+| **Stop loss** | A fib on the deep side of 0.5, `exec_sl_level` ∈ {0.618, 0.702, 0.786, 0.886, **1.0**}, then `exec_sl_buf_tk` ticks beyond it. 1.0 = the leg origin. | **Only `1.0` is safe** — see the warning below |
 | **TP1 / TP2** | Fibs, chosen AUTOMATICALLY by how deep the entry was. Deep entry → TP1 = 0.5, TP2 = 0.382. Shallow → TP1 = 0.382, TP2 = 0.0 (the swing extreme). | **No** — only the sizes (`exec_tp1_pct` 30%, `exec_tp2_pct` 40%) |
 | **TP3 (the runner)** | No target at all. It rides a trailing stop, and it is where the strategy's money is (>100% of net in every window measured). | **Yes** — see below |
 | **Stop staging** | Three phases, always on: (0) the full stop → (1) after TP1, breakeven + `exec_be_buf_tk` → (2) after TP2, a floor, then the trail. | **No** |
 | **The TP2 floor** | `exec_tp2_stop_mode`: **"TP1 price"** (tight, can scratch the runner on the first pullback) / "Breakeven" (most room) / "One trail step behind" (never below breakeven). | **Yes** — dropdown |
 | **The runner trail** | `exec_runner_trail`: "Fixed step" (a `exec_trail_step` grid ratchet anchored on TP2) / **"Structure (swing)"** (the structure engine's last confirmed swing low/high, offset by `exec_struct_trail_buf_tk`). | **Yes** — dropdown |
-| **Early bail-out** | `exec_close_opp_sos` (default OFF) force-closes on an opposite SOS instead of riding to the stop. | **Yes** — toggle |
+| **Early bail-out** | `exec_close_opp_sos` (default OFF) force-closes on an opposite SOS instead of riding to the stop. **Measured INERT** (Run 5): turning it on produced a byte-identical trade list — an opposite SOS never fires before SL/TP has already resolved the position. There is nothing on the other end of this lever. | toggle exists, **does nothing** |
 
 The floor and the trail compose: past TP2 the stop is the floor, and the trail may only tighten
 it further, never loosen it. With Structure selected and no confirmed swing yet, the trail is
@@ -166,6 +166,65 @@ floor, trail, both dropdowns — is this table, inherited unchanged.
 
 **Aaron's brother's tested best combo (the shipped default 2026-07-26):** Structure trail +
 buffer 20 ticks + TP2 floor = TP1 price.
+
+**⚠ `exec_sl_level` — only `"1.0"` is supported. Do NOT sweep or ship the other four**
+(Run 4, 2026-07-26). The entry is a resting limit inside the **0.5–0.886 fib band**, and
+0.618 / 0.702 / 0.786 / 0.886 all sit inside that SAME band — so the stop can be placed at, or
+past, the entry price. Nothing validates the result. Measured consequence at `0.786` + 20 ticks
+over full history: stop distance collapses to **$0.20** on 15m gold, `qty = risk / stop_distance`
+builds a **39,033 oz (~$78M notional)** position, one bar takes **18× the intended risk**, and
+equity ends at **−$63,726** — after which the bot stops trading entirely. Two defects behind it,
+both still OPEN and both live-trading hazards:
+1. No validation that the chosen SL fib is on the correct side of the entry, or a sane distance
+   from it. Assume `mpc_strategy.pine` has the same exposure (same dropdown) until checked.
+2. **No minimum stop distance.** `execution.py:329` sizes correctly —
+   `qty = (equity * exec_risk_pct / 100) / dist` — so risk IS dynamic and a wider stop DOES give a
+   smaller lot. The formula is not the bug. What it assumes is: `exec_risk_pct` is only the real
+   risk **if the exit actually happens at the stop price**. That holds when the stop is wider than
+   a typical bar (which `"1.0"` = leg origin always is) and fails completely when it is narrower —
+   price gaps straight through and the realised loss is unbounded. At a $0.20 stop on 15m gold the
+   nominal 10% risk was realised as **~180% in one bar**. So the guard needed is a floor on
+   `dist` (e.g. ≥ some ATR multiple), NOT a change to the sizing math. A position/margin cap is
+   worth adding as a second backstop, but it treats the symptom.
+
+**This bot has no R:R dial.** Targets are fibs and the stop is a fib, so the risk-reward ratio is
+an OUTPUT of leg geometry, never an input — no combination of existing parameters can express
+"risk 1 to make 3". Answering that question needs an ATR-based stop distance + fixed-R targets,
+which is new code here AND in the Pine. See Run 4's writeup for the two proposed routes.
+
+**Every sweep of these levers is logged in `mpc_sos_fade_optimization.md`** — one entry per run,
+with the full grid, per-year and per-half R, and whether it was adopted. Read it before tuning
+anything here so a question already answered is not re-measured. Five runs are recorded, all
+measured and **none adopted** — Runs 1–3 on the same 185,530 M15 bars / 187 trades:
+
+1. **TP split** (21 combos) — monotonic; best is `exec_tp1_pct=0, exec_tp2_pct=0` (100% on the
+   runner) at 70.7R vs 47.9R for the shipped 30/40 split. Needs a tick-mode re-run first.
+2. **The whole ladder** (525 combos) — re-confirms (1), and finds **both dropdowns are already at
+   their best value**: structure trail beats every fixed step (best fixed = 62.5R), the trail
+   buffer is nearly irrelevant (0.4R across 10→80 ticks), and `exec_tp2_stop_mode="One trail step
+   behind"` is actively harmful (caps out at 42.3R). The TP split is the only lever with real
+   variance: ~−2R per 10% moved off the runner.
+3. **Stop TIMING** (35 combos, research-only dials — both moments are hardcoded in Python AND
+   Pine) — **the shipped timing wins; nothing to adopt.** Delaying breakeven grows the average
+   winner 3.7x (0.80R → 2.96R) but total R falls 25% and drawdown grows 3.5x, monotonically bad.
+   **This settles the open question below about whether stop→BE on TP1 caps runners: it does not.**
+   It converts full losses to scratches (avg loss −0.73R with it, −0.99R without) and that is worth
+   more than the upside it forgoes. The biggest winner was +15.03R in all 35 combos — the trade
+   that makes the money never traded against its stop, so this lever cannot reach it.
+4. **Stop PLACEMENT** (40 combos) — **INVALID, discard the numbers.** Four of the five
+   `exec_sl_level` values put the stop on top of the entry; equity ended at −$63,726. See the ⚠
+   warning above — it is this run's writeup.
+5. **"How do I cut the losers quicker?"** (2022+ cache, 118 trades) — **there is nothing to cut
+   quicker with.** Both early-exit toggles measured at exactly zero effect (`exec_close_opp_sos`
+   and `exec_htf_exhaust_only` each produced byte-identical trade lists), and a time stop would
+   cut the WINNERS (all net comes from trades held past 20 bars). The diagnosis is the value:
+   **every loss is a trade that never touched TP1**, and TP1 sits ~0.45R away while the stop sits
+   1R away, so a losing trade dies a median 0.34R short of the level that would have staged it to
+   breakeven. That makes this a stop-DISTANCE problem, not a stop-timing one. Re-running
+   `exec_sl_level` on a clean window scored **59.3R at 0.786 vs 33.6R shipped at the same
+   drawdown** — but 8 of its 108 trades reproduced Run 4's sub-$2-stop hazard, so it stays
+   unadoptable. **The minimum-stop-distance guard is now the highest-value open item on this bot:
+   it is worth a measured ~+26R, not just safety.**
 
 ## The 2026-07-26 exit-lever sync
 
@@ -446,7 +505,8 @@ What the second year of data changed, and what it didn't:
     unfiltered counter-trend fade that shorted a +75% bull market and won at 70%. That is the
     claim needing a second regime to confirm — the direction split itself is now accounted for.
 
-Open threads (Aaron is on the edge work as of 2026-07-16): whether stop→BE on TP1 caps runners; and
+Open threads (Aaron is on the edge work as of 2026-07-16): ~~whether stop→BE on TP1 caps runners~~
+(**ANSWERED 2026-07-26, Run 3 in `mpc_sos_fade_optimization.md`: it does not — it pays for itself**); and
 why 15m is reportedly the only winning timeframe (a real edge usually survives on neighbouring
 timeframes — if 5m and 30m lose, suspect luck). 40 trades is still a thin sample; treat the KPIs as
 directional, not settled. (Superseded note: an earlier version warned "do not flip `exec_arm_sweep` — it
