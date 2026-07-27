@@ -3,21 +3,21 @@
 indicator("MPC- JARVIS", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000)
 
 var GRP_MASTER = "Display"
-bool showTradeTools = input.bool(true, "Show FVG, Order Blocks, Sessions & Liquidity", group = GRP_MASTER, tooltip = "Master switch for the discretionary tools: Fair Value Gaps, Order Blocks, Trading Sessions, Kill Zones and Liquidity Levels. Off by default for a clean market-structure-only chart.", display = display.none)
-bool showFibTool    = input.bool(true, "Show External Fib", group = GRP_MASTER, tooltip = "Master switch for the External Fibonacci (entry zones / OTE). Off by default.", display = display.none)
+bool showTradeTools = input.bool(true, "Show Chart Tools", group = GRP_MASTER, tooltip = "Master switch for the chart tools below. Off leaves a clean market-structure-only chart.", display = display.none)
+bool showFibTool    = input.bool(true, "Show Fibs", group = GRP_MASTER, tooltip = "Master switch for the fib tools.", display = display.none)
 
 var GRP_TABLE = "Confirmation Table"
 bool showConfTable = input.bool(true, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
-// Table Priority — when ON (default), force-enables every input the confirmation
-// table depends on (External Fib, FVG, Sniper Zone, Liquidity, RSI Divergence)
-// regardless of their own checkboxes, so the full table always runs. Turn OFF to
-// let the individual feature toggles declutter the chart (the table may then show
-// fewer rows). Purely-visual tools (Order Blocks, VWAP, MV, Sessions, Kill Zones)
-// are never forced — they don't feed the table.
-bool tableForceFeeds = input.bool(true, "Table Priority (force-enable required inputs)", group = GRP_TABLE, tooltip = "ON (default): the confirmation table's five feeder inputs — External Fib, FVG, Sniper Zone, Liquidity, RSI Divergence — are forced on so every table row works, even if their own toggles are off. OFF: the individual toggles win, so turning a feature off can blank the rows that depend on it. Order Blocks / VWAP / MV / Sessions / Kill Zones are visual-only and never forced.", display = display.none)
-bool showBLeg = input.bool(true, "Show BLEG SZ zone", group = GRP_TABLE, tooltip = "The B LEG setup: an SOS that expanded and printed a continuation BOS BEFORE it retraced, so the REV row died reading 'no retracement'. The B leg keeps watching the Sniper Zone band frozen at that original SOS — the retrace usually comes back to it, just later. It has NO table row: it draws as the grey BLEG SZ box on the chart, which is where a level you are waiting on belongs. Tracks in parallel — it never changes what the REV or CONT rows do. 15m only.", display = display.none)
-string tablePositionInput = input.string("Top Right", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
-string tableSizeInput = input.string("Tiny", "Table Text Size", group = GRP_TABLE, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
+string tablePositionInput = input.string("Top Right", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], active = showConfTable, display = display.none)
+string tableSizeInput = input.string("Tiny", "Table Text Size", group = GRP_TABLE, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = showConfTable, display = display.none)
+// COMPUTE vs DRAW — the rule for the five features the confirmation table feeds off
+// (External Fib, FVG, Liquidity, RSI Divergence, Sniper Zone). Their ENGINES always
+// run, so every table row works no matter what the student has switched off. Their
+// toggles control DRAWING only. Each one below therefore has a show<X> compute flag
+// (forced true) and a draw<X> flag wired to the input.
+// This replaced the old "Table Priority" input, which forced the FEATURE on rather
+// than just its engine — so with it enabled (the default) the External Fib, FVG,
+// Liquidity, RSI Divergence and Sniper Zone toggles did nothing at all.
 
 f_tablePosition(string opt) =>
     switch opt
@@ -59,8 +59,8 @@ bool   marketStructureOnly = not showTradeTools and not showFibTool
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
-bool   showHistoricalInternal = input.bool(false, "Show Historic Internal Structure", group = GRP_STRUCT, tooltip = "Keep internal structure labels and lines from previous swing ranges on the chart. Off = only show current swing range internals.", display = display.none)
-bool   showSwingLabels  = input.bool(false, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off = hide ASH/ASL, HH/HL, LH/LL and the internal swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart. The structure engine keeps running exactly as before — fibs, order blocks and the confirmation table are unaffected.", display = display.none)
+bool   showSwingLabels  = input.bool(false, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart.", display = display.none)
+bool   showHistoricalInternal = false
 int    internalLength   = 5
 float  pbBuffer         = 0.0
 
@@ -76,15 +76,32 @@ f_swingCol(color c) =>
 //============================================================
   // ORDER BLOCKS
 //============================================================
-var GRP_OB = "Order Blocks"
-bool  showOBsInput       = input.bool(false, "Show Order Blocks", group = GRP_OB, display = display.none)
+//============================================================
+  // CHART TOOLS — one on/off per tool. Every appearance and behaviour setting
+  // behind them is locked to the tuned defaults below, so a student can declutter
+  // the chart but can never change what a tool detects or how it looks.
+//============================================================
+var GRP_TOOLS = "Chart Tools"
+bool showFVGInput        = input.bool(true,  "Fair Value Gaps",   group = GRP_TOOLS, display = display.none)
+bool showOBsInput        = input.bool(false, "Order Blocks",      group = GRP_TOOLS, display = display.none)
+bool eqShowInput         = input.bool(true,  "Equal Highs/Lows",  group = GRP_TOOLS, display = display.none)
+var i_showLiquidityInput = input.bool(true,  "Liquidity Levels",  group = GRP_TOOLS, display = display.none)
+bool showSessionsInput   = input.bool(true,  "Trading Sessions",  group = GRP_TOOLS, display = display.none)
+bool showKZandNYRInput   = input.bool(true,  "Kill Zones & NY Range", group = GRP_TOOLS, display = display.none)
+bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, display = display.none)
+bool showVwapInput       = input.bool(false, "VWAP",              group = GRP_TOOLS, display = display.none)
+bool showDivInput        = input.bool(true,  "RSI Divergence",    group = GRP_TOOLS, display = display.none)
+
+//============================================================
+  // ORDER BLOCKS — appearance + cap locked, no panel inputs
+//============================================================
 bool showOBs = showTradeTools and showOBsInput
-bool  showBullOB    = input.bool(true, "Show Bullish OB", group = GRP_OB, inline = "BullOB", active = showOBsInput, display = display.none)
-color colBullOB     = input.color(color.new(color.blue, 85), "", group = GRP_OB, inline = "BullOB", display = display.none)
-bool  showBearOB    = input.bool(true, "Show Bearish OB", group = GRP_OB, inline = "BearOB", active = showOBsInput, display = display.none)
-color colBearOB     = input.color(color.new(color.red, 85), "", group = GRP_OB, inline = "BearOB", display = display.none)
-int   maxActiveOB   = input.int(2, "Max Active OBs (per direction)", group = GRP_OB, minval = 1, maxval = 20, active = showOBsInput, display = display.none)
-bool  obBodyOnly    = input.bool(false, "Use Body Only for OB", group = GRP_OB, active = showOBsInput, display = display.none)
+bool  showBullOB  = true
+color colBullOB   = color.new(color.blue, 85)
+bool  showBearOB  = true
+color colBearOB   = color.new(color.red, 85)
+int   maxActiveOB = 2
+bool  obBodyOnly  = false
 
 type OrderBlock
     box   bg
@@ -119,34 +136,30 @@ method extendOBs(array<OrderBlock> arr) =>
 //============================================================
   // FAIR VALUE GAPS (FVG) INPUTS
 //============================================================
-var GRP_FVG = "Fair Value Gaps"
-bool  showFVGInput      = input.bool(true, "Show FVG", group = GRP_FVG, tooltip = "Detects fair value gaps: any 3-candle imbalance where bar A and bar C never overlap and the middle bar closed past the gap (the LuxAlgo definition). Gaps below the size threshold are ignored. A gap is removed only when a candle CLOSES fully past it.", display = display.none)
-bool showFVG = showTradeTools and showFVGInput or tableForceFeeds
-bool  fvgDirOnly   = input.bool(false, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
-color fvgBullColor = input.color(color.new(color.gray, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVGInput, display = display.none)
-color fvgBearColor = input.color(color.new(color.gray, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVGInput, display = display.none)
-// Detection thresholds + strictness are LOCKED to tuned defaults — hidden from the
-// panel so students can't alter detection (color, directional and Max Active stay
-// visible). Sub-15m 0.0%; 15m-and-above 0.04%; classic 3-candle rule (no close req).
+// Detection always runs (the A+ entry check reads the gaps); the toggle hides them.
+bool showFVG = true
+bool drawFVG = showTradeTools and showFVGInput
+// Detection, appearance and cap are LOCKED to the tuned defaults — no panel inputs,
+// so nothing about what a gap is or how many are kept can be altered.
+bool  fvgDirOnly   = false
+color fvgBullColor = color.new(color.gray, 80)
+color fvgBearColor = color.new(color.gray, 80)
 float fvgThreshLTF = 0.0
 float fvgThreshHTF = 0.04
 float fvgThreshPct = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF
 bool fvgRequireClose = false
-int   fvgMaxCount  = input.int(8, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "How many fair value gaps to keep on the chart. Only the newest gaps up to this count are kept; the oldest are dropped first.", display = display.none)
+int   fvgMaxCount  = 8
 
 //============================================================
   // EQUAL HIGHS / LOWS (EQH / EQL) — liquidity pools
 //============================================================
-var GRP_EQ = "Equal Highs/Lows"
-bool  eqShowInput = input.bool(true, "Show Equal Highs/Lows", group = GRP_EQ, tooltip = "Marks EQH (two swing highs at nearly the same price = buy-side liquidity resting above) and EQL (equal lows = sell-side liquidity below), each drawn as a horizontal line until a candle CLOSES through it. Part of the trade-tools master switch.", display = display.none)
-// Detection logic LOCKED to tuned defaults — hidden from the panel (colors + Max
-// Active stay visible). Pivot length 2, tolerance 0.1×ATR(50), FVG-behind-EQ exempt.
+// Detection, appearance and cap LOCKED to tuned defaults — no panel inputs.
 int   eqPivotLen  = 2
 float eqAtrMult   = 0.1
-int   eqMax       = input.int(6, "Max Active EQ Levels (per side)", minval = 1, maxval = 20, group = GRP_EQ, active = eqShowInput, tooltip = "Newest EQH/EQL levels kept per side; oldest dropped.", display = display.none)
+int   eqMax       = 6
 bool  eqExemptFvg = true
-color eqhColor    = input.color(color.new(color.black, 0), "EQH", group = GRP_EQ, inline = "eqc", active = eqShowInput, display = display.none)
-color eqlColor    = input.color(color.new(color.black, 0), "EQL", group = GRP_EQ, inline = "eqc", active = eqShowInput, display = display.none)
+color eqhColor    = color.new(color.black, 0)
+color eqlColor    = color.new(color.black, 0)
 
 //============================================================
   // A+ SETUP SEQUENCE INPUTS
@@ -163,10 +176,13 @@ int  aplusSweepWindow  = 1440
 //============================================================
   // RSI DIVERGENCE (locked defaults — not user-tunable)
 //============================================================
-var GRP_DIV = "RSI Divergence"
-bool showDivInput     = input.bool(true, "Track RSI Divergence", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes and tags it as confluence on the A+ setup row. Settings are fixed to tuned defaults. Off by default.", display = display.none)
-bool showDivHistory   = input.bool(true, "Show Divergence History", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show divergences from the last 3 days. On = show as far back as possible.", display = display.none)
-bool showDiv = showDivInput or tableForceFeeds
+bool showDivHistory   = true
+// Detection always runs (the A+ arm reads lastBull/BearDivBar); the toggle hides the
+// drawn divergence lines and labels.
+bool showDiv = true
+bool drawDiv = showTradeTools and showDivInput
+color DIV_BULL_COL = drawDiv ? color.new(#4caf50, 0) : color(na)
+color DIV_BEAR_COL = drawDiv ? color.new(#ff5252, 0) : color(na)
 int  divRsiLen    = 14
 int  divPivotLen  = 5
 int  divOS        = 25
@@ -176,43 +192,34 @@ int  divMaxCount  = 10
 //============================================================
   // TRADING SESSIONS INPUTS
 //============================================================
-var GRP_SESS = "Trading Sessions"
-bool showSessionsInput         = input.bool(true,   "Show Sessions",      group = GRP_SESS, display = display.none)
+// Session windows, timezones, names and colors are all hardcoded — no panel inputs.
 bool showSessions = showTradeTools and showSessionsInput
-bool showSessionNames     = input.bool(false,  "Show session names", group = GRP_SESS, active = showSessionsInput, display = display.none)
-bool showHistoricSessions = input.bool(false,  "Show All History", group = GRP_SESS, tooltip = "Off = only show sessions from the current week. On = show sessions as far back as possible.", display = display.none)
+bool showSessionNames     = false
+bool showHistoricSessions = false
 
-const string TZ_TOOLTIP_TEXT = "The session's time zone, specified in either GMT notation (e.g., 'GMT-5') or as an IANA time zone database name (e.g., 'America/New_York')."
- + " We recommend the latter since it includes other time-related changes, such as daylight savings."
+bool   showFirst         = true
+string firstSessionName  = "Tokyo"
+string firstSessionTime  = "0900-1800"
+string firstSessionTZ    = "Asia/Tokyo"
+color  firstSessionColor = color.new(#FF5252, 92)
 
-const string FIRST_SESSION_GROUP = "First Session"
-showFirst         = input.bool(true,                         "Show session",     group = FIRST_SESSION_GROUP, display = display.none)
-firstSessionName  = input.string("Tokyo",                    "Displayed name",   group = FIRST_SESSION_GROUP, display = display.none, active = showFirst)
-firstSessionTime  = input.session("0900-1800",               "Session time",     group = FIRST_SESSION_GROUP, active = showFirst)
-firstSessionTZ    = input.string("Asia/Tokyo",               "Session timezone", group = FIRST_SESSION_GROUP, tooltip = TZ_TOOLTIP_TEXT, active = showFirst)
-firstSessionColor = input.color(color.new(#FF5252, 92),      "Session color",    group = FIRST_SESSION_GROUP, active = showFirst)
+bool   showSecond         = true
+string secondSessionName  = "London"
+string secondSessionTime  = "0800-1700"
+string secondSessionTZ    = "Europe/London"
+color  secondSessionColor = color.new(#2962FF, 92)
 
-const string SECOND_SESSION_GROUP = "Second Session"
-showSecond         = input.bool(true,                        "Show session",     group = SECOND_SESSION_GROUP, display = display.none)
-secondSessionName  = input.string("London",                  "Displayed name",   group = SECOND_SESSION_GROUP, display = display.none, active = showSecond)
-secondSessionTime  = input.session("0800-1700",              "Session time",     group = SECOND_SESSION_GROUP, active = showSecond)
-secondSessionTZ    = input.string("Europe/London",           "Session timezone", group = SECOND_SESSION_GROUP, tooltip = TZ_TOOLTIP_TEXT, active = showSecond)
-secondSessionColor = input.color(color.new(#2962FF, 92),     "Session color",    group = SECOND_SESSION_GROUP, active = showSecond)
-
-const string THIRD_SESSION_GROUP = "Third Session"
-showThird         = input.bool(true,                         "Show session",     group = THIRD_SESSION_GROUP, display = display.none)
-thirdSessionName  = input.string("New York",                 "Displayed name",   group = THIRD_SESSION_GROUP, display = display.none, active = showThird)
-thirdSessionTime  = input.session("0800-1700",               "Session time",     group = THIRD_SESSION_GROUP, active = showThird)
-thirdSessionTZ    = input.string("America/New_York",         "Session timezone", group = THIRD_SESSION_GROUP, tooltip = TZ_TOOLTIP_TEXT, active = showThird)
-thirdSessionColor = input.color(color.new(#FFEB3B, 90),      "Session color",    group = THIRD_SESSION_GROUP, active = showThird)
+bool   showThird         = true
+string thirdSessionName  = "New York"
+string thirdSessionTime  = "0800-1700"
+string thirdSessionTZ    = "America/New_York"
+color  thirdSessionColor = color.new(#FFEB3B, 90)
 
 //============================================================
   // KILL ZONES & NY RANGE INPUTS (single toggle)
 //============================================================
-var GRP_KZ = "Kill Zones & NY Range"
-bool showKZandNYRInput   = input.bool(true, "Show Kill Zones & NY Range", group = GRP_KZ, display = display.none)
 bool showKZandNYR = showTradeTools and showKZandNYRInput
-bool showKZHistoric = input.bool(false, "Show All History", group = GRP_KZ, active = showKZandNYRInput, tooltip = "Off = current day only. On = show as far back as possible.", display = display.none)
+bool showKZHistoric = false
 
 bool showKillZones = showKZandNYR
 bool showNYRange   = showKZandNYR
@@ -220,103 +227,108 @@ bool showNYRange   = showKZandNYR
 //============================================================
   // VWAP INPUTS
 //============================================================
-var GRP_VWAP = "VWAP Settings"
-bool  showVwapInput  = input.bool(false,                 "Show VWAP",       group = GRP_VWAP, display = display.none)
 bool showVwap = showTradeTools and showVwapInput
-color vwapColor = input.color(color.rgb(5, 5, 0), "VWAP Color",      group = GRP_VWAP, active = showVwapInput, display = display.none)
-int   vwapWidth = input.int(1,                    "VWAP Line Width", minval = 1, maxval = 5, group = GRP_VWAP, active = showVwapInput, display = display.none)
+color vwapColor = color.rgb(5, 5, 0)
+int   vwapWidth = 1
 
 //============================================================
   // LIQUIDITY LEVELS INPUTS
 //============================================================
-var GRP_LIQ = "Liquidity Levels"
-var i_showLiquidityInput    = input.bool(true,  "Show All Liquidity Levels",  group = GRP_LIQ, display = display.none)
-bool i_showLiquidity = showTradeTools and i_showLiquidityInput or tableForceFeeds
+// Which levels are drawn, their labels, sizing and extension are all locked — the
+// single "Liquidity Levels" toggle in Chart Tools is the whole panel surface.
+// Level tracking + sweep detection always run (the A+ sequence arms off a sweep and
+// the LIQ BSL/SSL rows read it); drawLiq blanks the drawn lines and labels.
+bool i_showLiquidity = true
+bool drawLiq = showTradeTools and i_showLiquidityInput
 bool i_showLabels      = true
-string liqLabelSize    = input.string("Tiny", "Liquidity Label Size",   group = GRP_LIQ, options = ["Tiny", "Small", "Normal", "Large", "Huge"], active = i_showLiquidityInput, display = display.none)
+string liqLabelSize    = "Tiny"
 bool i_currentDayOnly  = true   // always hide mitigated on new day
 
 f_liqSize() =>
     liqLabelSize == "Tiny" ? size.tiny : liqLabelSize == "Normal" ? size.normal : liqLabelSize == "Large" ? size.large : liqLabelSize == "Huge" ? size.huge : size.small
 
-var i_isDailyEnabled   = input.bool(true,  "Previous Day H/L",            group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
-var i_isWeeklyEnabled  = input.bool(true,  "Previous Week H/L",           group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
-var i_showSessionHL    = input.bool(true,  "Sessions H/L",                group = GRP_LIQ, active = i_showLiquidityInput, tooltip = "Shows Asia, London and New York session highs and lows.", display = display.none)
+bool i_isDailyEnabled   = true
+bool i_isWeeklyEnabled  = true
+bool i_showSessionHL    = true
 
-// Single toggle drives all three session H/L sets — kept as separate internal
+// Single flag drives all three session H/L sets — kept as separate internal
 // flags so the drawing/mitigation logic below stays unchanged.
 bool i_showAsiaHL      = i_showSessionHL
 bool i_showLondonHL    = i_showSessionHL
 bool i_showNYHL        = i_showSessionHL
-var i_showPWC          = input.bool(true,  "Previous Week Close (PWC)",   group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
-var i_showH4Sweep      = input.bool(true,  "H4 High/Low Sweep (SSH/BSL)", group = GRP_LIQ, active = i_showLiquidityInput, display = display.none)
-bool showMitLiq        = input.bool(false, "Show Mitigated Liquidity Lines", group = GRP_LIQ, active = i_showLiquidityInput, tooltip = "When ON, a liquidity level that price breaks (mitigates) is kept on the chart as a dotted line running from the candle that formed it up to the exact bar where it was broken — for reference. When OFF (default), broken levels are removed. Applies to the Previous Day/Week highs & lows and the Asia/London/New York session highs & lows.", display = display.none)
-var i_lblOffset        = input.int(300,    "Label Y Offset (ticks)",       group = GRP_LIQ, minval = 0, maxval = 5000, step = 50, tooltip = "Moves HIGH labels up and LOW labels down by this many ticks to reduce overlap", display = display.none)
-var i_lineExtend       = input.int(50,     "Line Extension (bars)",         group = GRP_LIQ, minval = 5, maxval = 200, display = display.none)
+bool i_showPWC         = true
+bool i_showH4Sweep     = true
+bool showMitLiq        = false
+int  i_lblOffset       = 300
+int  i_lineExtend      = 50
 
-color i_dailyColor    = color.black
-color i_weeklyColor   = color.black
-color i_asiaHLColor   = color.black
-color i_londonHLColor = color.black
-color i_nyHLColor     = color.black
+color i_dailyColor    = drawLiq ? color.black : color(na)
+color i_weeklyColor   = drawLiq ? color.black : color(na)
+color i_asiaHLColor   = drawLiq ? color.black : color(na)
+color i_londonHLColor = drawLiq ? color.black : color(na)
+color i_nyHLColor     = drawLiq ? color.black : color(na)
 
 //============================================================
   // INTERNAL FIB INPUTS
 //============================================================
-var GRP_IFIB      = "Internal Fib"
-bool hideFibsSub5m     = input.bool(true, "Hide Fibs Below 5m", group = GRP_IFIB, tooltip = "On = the External fib is turned off entirely on timeframes under 5 minutes (keeps low-timeframe charts clean). Off = it runs on all timeframes.", display = display.none)
-// (Internal Fib feature removed to save compile tokens — hideFibsSub5m kept for the External Fib.)
+//============================================================
+  // FIBS — one toggle per fib tool plus its line extension. Every level, ratio,
+  // color and line style is locked: the ladder is not adjustable or inspectable
+  // from the panel, and the "Fib Value" label mode (which printed the raw ratios
+  // on the chart) is gone.
+//============================================================
+var GRP_FIBO = "Fibs"
+bool   showFiboInput   = input.bool(true, "Show External Fib", group = GRP_FIBO, display = display.none)
+int    fiboLineExtend  = input.int(80, "External Fib Line Extension (bars)", group = GRP_FIBO, minval = 5, maxval = 500, active = showFiboInput, tooltip = "How far the External Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
+bool   showMacroFibInput = input.bool(true, "Show Cycle Fib", group = GRP_FIBO, display = display.none)
+int    macroLineExtend = input.int(180, "Cycle Fib Line Extension (bars)", group = GRP_FIBO, minval = 10, maxval = 500, active = showMacroFibInput, tooltip = "How far the Cycle Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
+bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, display = display.none)
+bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "Shows the BLEG SZ watch level on the chart. 15m only.", display = display.none)
 
-//============================================================
-  // FIBONACCI INPUTS
-//============================================================
-var GRP_FIBO = "External Fib"
-bool   showFiboInput        = input.bool(true,          "Show External Fib",       group = GRP_FIBO, display = display.none)
+bool hideFibsSub5m = true
 // 1m is the entry-view timeframe — the External Fib always shows there (its SOS-leg
-// fib is the entry map), overriding the sub-5m hide. Internal fib stays hidden on 1m.
-bool showFibo = (showFibTool and showFiboInput or tableForceFeeds) and (timeframe.in_seconds() == 60 or not (hideFibsSub5m and timeframe.in_seconds() < 300))
-string sharedLabelMode = input.string("TP/Entry",  "Label Style",               group = GRP_FIBO, options = ["Fib Value", "TP/Entry"], active = showFiboInput, display = display.none)
-int    fiboLineExtend  = input.int(80,             "Line Extension (bars)",     group = GRP_FIBO, minval = 5, maxval = 500, display = display.none)
+// fib is the entry map), overriding the sub-5m hide.
+bool _fibTfOk = timeframe.in_seconds() == 60 or not (hideFibsSub5m and timeframe.in_seconds() < 300)
+// showFibo = COMPUTE. The fib maths must always run: the confirmation table and the
+// whole A+ sequence read fiboP1..fiboP10, so switching the fib off may not stop it
+// being calculated. drawFibo / drawSniper are what the toggles actually control —
+// they gate the drawn lines, so the level objects are deleted, not just recoloured.
+bool showFibo   = _fibTfOk
+bool drawFibo   = showFibTool and showFiboInput and _fibTfOk
+bool drawSniper = showFibTool and showSniperInput
+string sharedLabelMode = "TP/Entry"
 
-bool  isFibo1ToShow  = input.bool(true,    "TP2 / 0.382",  group = GRP_FIBO, inline = "Fibo1",  active = showFiboInput, display = display.none)
 float fibo1Value     = 0.382
-color fibo1Color     = input.color(#4caf50,"",              group = GRP_FIBO, inline = "Fibo1", display = display.none)
-string fibo1Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo1",  options = ["─","┈","╌"], display = display.none)
+color fibo1Color     = #4caf50
+string fibo1Style    = "┈"
 
-bool  isFibo2ToShow  = input.bool(true,    "TP1 / 0.500",  group = GRP_FIBO, inline = "Fibo2",  active = showFiboInput, display = display.none)
 float fibo2Value     = 0.500
-color fibo2Color     = input.color(#4caf50,"",              group = GRP_FIBO, inline = "Fibo2", display = display.none)
-string fibo2Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo2",  options = ["─","┈","╌"], display = display.none)
+color fibo2Color     = #4caf50
+string fibo2Style    = "┈"
 
-bool  isFibo3ToShow  = input.bool(true,    "E1 / 0.618",   group = GRP_FIBO, inline = "Fibo3",  active = showFiboInput, display = display.none)
 float fibo3Value     = 0.618
-color fibo3Color     = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo3", display = display.none)
-string fibo3Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo3",  options = ["─","┈","╌"], display = display.none)
+color fibo3Color     = #2196F3
+string fibo3Style    = "┈"
 
-bool  isFibo4ToShow  = input.bool(true,    "E2 / 0.702",   group = GRP_FIBO, inline = "Fibo4",  active = showFiboInput, display = display.none)
 float fibo4Value     = 0.702
-color fibo4Color     = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo4", display = display.none)
-string fibo4Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo4",  options = ["─","┈","╌"], display = display.none)
+color fibo4Color     = #2196F3
+string fibo4Style    = "┈"
 
-bool  isFibo5ToShow  = input.bool(true,    "E3 / 0.786",   group = GRP_FIBO, inline = "Fibo5",  active = showFiboInput, display = display.none)
 float fibo5Value     = 0.786
-color fibo5Color     = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo5", display = display.none)
-string fibo5Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo5",  options = ["─","┈","╌"], display = display.none)
+color fibo5Color     = #2196F3
+string fibo5Style    = "┈"
 
-bool  isFibo6ToShow  = input.bool(true,    "E4 / 0.886",   group = GRP_FIBO, inline = "Fibo6",  active = showFiboInput, display = display.none)
 float fibo6Value     = 0.886
-color fibo6Color     = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo6", display = display.none)
-string fibo6Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo6",  options = ["─","┈","╌"], display = display.none)
+color fibo6Color     = #2196F3
+string fibo6Style    = "┈"
 
-bool  isFibo10ToShow = input.bool(true,    "1.000",        group = GRP_FIBO, inline = "Fibo10", active = showFiboInput, display = display.none)
 float fibo10Value    = 1.000
-color fibo10Color    = input.color(#2196F3,"",              group = GRP_FIBO, inline = "Fibo10", display = display.none)
-string fibo10Style   = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo10", options = ["─","┈","╌"], display = display.none)
+color fibo10Color    = #2196F3
+string fibo10Style   = "┈"
 
-bool  isFibo7ToShow  = input.bool(true,    "TP3 / 0.000",  group = GRP_FIBO, inline = "Fibo7",  active = showFiboInput, display = display.none)
 float fibo7Value     = 0.000
-color fibo7Color     = input.color(#4caf50,"",              group = GRP_FIBO, inline = "Fibo7", display = display.none)
-string fibo7Style    = input.string("┈",   "",              group = GRP_FIBO, inline = "Fibo7",  options = ["─","┈","╌"], display = display.none)
+color fibo7Color     = #4caf50
+string fibo7Style    = "┈"
 
 f_fiboLineStyle(string opt) =>
     opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
@@ -324,60 +336,47 @@ f_fiboLineStyle(string opt) =>
 //============================================================
   // MACRO FIB (full-cycle retracement across multiple BOS, locks in on trend reversal)
 //============================================================
-var GRP_MACRO = "Cycle Fib"
-bool   showMacroFibInput      = input.bool(true,        "Show Cycle Fib",             group = GRP_MACRO, display = display.none)
 bool showMacroFib = showFibTool and showMacroFibInput
-int    macroLineExtend   = input.int(180,            "Line Extension (bars)",      group = GRP_MACRO, minval = 10, maxval = 500, display = display.none)
-int    macroMaxTfMin     = input.int(30,             "Draw Up To Timeframe (min)", group = GRP_MACRO, minval = 1, maxval = 240, tooltip = "The Cycle Fib is drawn on charts up to this timeframe (in minutes). Tracking runs on every timeframe regardless — the fib's discount/premium zones feed the A+ setup's POI even when the lines aren't drawn. Note the cycle recalculates per chart timeframe: a 15m chart tracks the 15m-scale cycle, not the 5m one.", display = display.none)
-// Cycle Fib computed on the 1m for charts above it (the hybrid split); locked to 1 —
-// input removed from the panel. Charts at/below 1m compute it natively (see _cycNative).
-int    macroCycleTf      = 1
+int  macroMaxTfMin = 30
+int  macroCycleTf  = 1
 
-bool   showMacro0        = input.bool(true,   "TP3 / 0.000",   group = GRP_MACRO, inline = "mFibo0",   active = showMacroFibInput, display = display.none)
-color  macro0Color       = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo0",   display = display.none)
-string macro0Style       = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo0",   options = ["─","┈","╌"], display = display.none)
+bool   showMacro0        = true
+color  macro0Color       = #4caf50
+string macro0Style       = "─"
 
-bool   showMacro382      = input.bool(true,   "TP2 / 0.382",   group = GRP_MACRO, inline = "mFibo382", active = showMacroFibInput, display = display.none)
-color  macro382Color     = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo382", display = display.none)
-string macro382Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo382", options = ["─","┈","╌"], display = display.none)
+bool   showMacro382      = true
+color  macro382Color     = #4caf50
+string macro382Style     = "┈"
 
-bool   showMacro50       = input.bool(true,   "TP1 / 0.500",   group = GRP_MACRO, inline = "mFibo50",  active = showMacroFibInput, display = display.none)
-color  macro50Color      = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo50",  display = display.none)
-string macro50Style      = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo50",  options = ["─","┈","╌"], display = display.none)
+bool   showMacro50       = true
+color  macro50Color      = #4caf50
+string macro50Style      = "┈"
 
-bool   showMacro618      = input.bool(true,   "E1 / 0.618",    group = GRP_MACRO, inline = "mFibo618", active = showMacroFibInput, display = display.none)
-color  macro618Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo618", display = display.none)
-string macro618Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo618", options = ["─","┈","╌"], display = display.none)
+bool   showMacro618      = true
+color  macro618Color     = #2196F3
+string macro618Style     = "┈"
 
-bool   showMacro702      = input.bool(true,   "E2 / 0.702",    group = GRP_MACRO, inline = "mFibo702", active = showMacroFibInput, display = display.none)
-color  macro702Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo702", display = display.none)
-string macro702Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo702", options = ["─","┈","╌"], display = display.none)
+bool   showMacro702      = true
+color  macro702Color     = #2196F3
+string macro702Style     = "┈"
 
-bool   showMacro786      = input.bool(true,   "E3 / 0.786",    group = GRP_MACRO, inline = "mFibo786", active = showMacroFibInput, display = display.none)
-color  macro786Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo786", display = display.none)
-string macro786Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo786", options = ["─","┈","╌"], display = display.none)
+bool   showMacro786      = true
+color  macro786Color     = #2196F3
+string macro786Style     = "┈"
 
-bool   showMacro886      = input.bool(true,   "E4 / 0.886",    group = GRP_MACRO, inline = "mFibo886", active = showMacroFibInput, display = display.none)
-color  macro886Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo886", display = display.none)
-string macro886Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo886", options = ["─","┈","╌"], display = display.none)
+bool   showMacro886      = true
+color  macro886Color     = #2196F3
+string macro886Style     = "┈"
 
-bool   showMacro100      = input.bool(true,   "1.000",         group = GRP_MACRO, inline = "mFibo100", active = showMacroFibInput, display = display.none)
-color  macro100Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo100", display = display.none)
-string macro100Style     = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo100", options = ["─","┈","╌"], display = display.none)
+bool   showMacro100      = true
+color  macro100Color     = #2196F3
+string macro100Style     = "─"
 
 //============================================================
-  // SNIPER FIB INPUTS
+  // SESSION VOLUME PROFILE (MV) — locked, driven by the Chart Tools toggle
 //============================================================
-var GRP_SNIPER    = "Sniper Fib"
-bool showSniperFib = input.bool(true, "Sniper Zone", group = GRP_SNIPER, active = showFiboInput, display = display.none)
-
-//============================================================
-  // SESSION VOLUME PROFILE (SVP) INPUTS
-//============================================================
-var GRP_SVP   = "MV"
-bool  showSVPInput     = input.bool(true, "MV", group = GRP_SVP, display = display.none)
 bool showSVP = showTradeTools and showSVPInput
-int   svpHistory  = input.int(2,     "Days back", group = GRP_SVP, minval = 1, maxval = 500, active = showSVPInput, display = display.none)
+int   svpHistory  = 2
 int   svpRows     = 50
 color svpPOCCol   = #9C27B0
 
@@ -395,7 +394,6 @@ color svpPOCCol   = #9C27B0
   // the original variable via ":=" anywhere in the script poisons its type for
   // every "active=" use of it, even ones textually earlier in the file. These
   // three have no "active=" dependents elsewhere, so a plain override is safe.
-showSniperFib  := (showTradeTools ? showSniperFib : false) or tableForceFeeds
 showKillZones  := showTradeTools ? showKillZones : false
 showNYRange    := showTradeTools ? showNYRange : false
 
@@ -1715,13 +1713,13 @@ else
 var canShowDaily   = i_isDailyEnabled   and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily)
 var canShowWeekly  = i_isWeeklyEnabled  and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily or timeframe.isweekly)
 
-color  MITIGATED_COLOR = color.new(#666666, 25)
+color  MITIGATED_COLOR = drawLiq ? color.new(#666666, 25) : color(na)
 float  lblOff          = syminfo.mintick * i_lblOffset
 
 var a_lastHighs = array.new_float(2)
 var a_lastLows  = array.new_float(2)
 
-f_labelText(string txt) => i_showLabels and i_showLiquidity ? txt : ""
+f_labelText(string txt) => i_showLabels and drawLiq ? txt : ""
 
 // How far back a liquidity line's origin candle may be searched — and, below, how
 // far back its x1 is allowed to sit. Declared here because f_liqMitigate clamps to it.
@@ -2584,7 +2582,8 @@ f_processFvg() =>
                 // Directional filter: hide misaligned gaps (st.dir 0 = undecided, show all).
                 // A gap behind an EQH/EQL is exempt — kept visible as liquidity confluence.
                 bool nearEq  = eqExemptFvg and f_fvgNearEq(gTop, gBot, eqTol)
-                bool visible = nearEq or not fvgDirOnly or st.dir == 0 or (isBull ? st.dir == 1 : st.dir == -1)
+                // drawFVG first — the toggle hides every gap; detection above still ran.
+                bool visible = drawFVG and (nearEq or not fvgDirOnly or st.dir == 0 or (isBull ? st.dir == 1 : st.dir == -1))
                 box.set_bgcolor(fb, visible ? (isBull ? fvgBullColor : fvgBearColor) : color(na))
                 box.set_text_color(fb, visible ? (isBull ? color.new(color.green, 0) : color.new(color.red, 0)) : color(na))
     int _ret = 0
@@ -2621,8 +2620,8 @@ if showDiv and not na(divPlRsi)
         // Lower low in price, higher low in RSI, from the oversold extreme
         if _pLow < divPrevPriceLow and divPlRsi > divPrevRsiLow and math.min(divPlRsi, divPrevRsiLow) <= divOS
             lastBullDivBar := _pBar
-            array.push(bullDivLines, line.new(divPrevLowBar, divPrevPriceLow, _pBar, _pLow, color = color.new(#4caf50, 0), style = line.style_dotted, width = 2))
-            array.push(bullDivLabels, label.new(_pBar, _pLow, "\nBull Div", color = color(na), textcolor = color.new(#4caf50, 0), style = label.style_label_up, size = size.tiny))
+            array.push(bullDivLines, line.new(divPrevLowBar, divPrevPriceLow, _pBar, _pLow, color = DIV_BULL_COL, style = line.style_dotted, width = 2))
+            array.push(bullDivLabels, label.new(_pBar, _pLow, "\nBull Div", color = color(na), textcolor = DIV_BULL_COL, style = label.style_label_up, size = size.tiny))
             // Cap: drop the oldest marker once past the limit — nothing here is
             // deleted for being "stale," only for exceeding the display cap.
             if array.size(bullDivLines) > divMaxCount
@@ -2640,8 +2639,8 @@ if showDiv and not na(divPhRsi)
         // Higher high in price, lower high in RSI, from the overbought extreme
         if _pHigh > divPrevPriceHigh and divPhRsi < divPrevRsiHigh and math.max(divPhRsi, divPrevRsiHigh) >= divOB
             lastBearDivBar := _pBar
-            array.push(bearDivLines, line.new(divPrevHighBar, divPrevPriceHigh, _pBar, _pHigh, color = color.new(#ff5252, 0), style = line.style_dotted, width = 2))
-            array.push(bearDivLabels, label.new(_pBar, _pHigh, "Bear Div\n", color = color(na), textcolor = color.new(#ff5252, 0), style = label.style_label_down, size = size.tiny))
+            array.push(bearDivLines, line.new(divPrevHighBar, divPrevPriceHigh, _pBar, _pHigh, color = DIV_BEAR_COL, style = line.style_dotted, width = 2))
+            array.push(bearDivLabels, label.new(_pBar, _pHigh, "Bear Div\n", color = color(na), textcolor = DIV_BEAR_COL, style = label.style_label_down, size = size.tiny))
             if array.size(bearDivLines) > divMaxCount
                 line.delete(array.shift(bearDivLines))
                 label.delete(array.shift(bearDivLabels))
@@ -2787,12 +2786,12 @@ if i_showPWC and i_showLiquidity and not na(pwcSecurity) and barstate.isconfirme
             label.delete(pwc_lbl)
         pwc_price := pwcSecurity
         pwc_bar   := bar_index
-        pwcCol    = close >= pwc_price ? color.blue : color.red
+        pwcCol    = not drawLiq ? color(na) : close >= pwc_price ? color.blue : color.red
         pwc_line  := line.new(pwc_bar, pwc_price, pwc_bar + i_lineExtend, pwc_price, color = pwcCol, style = line.style_solid, width = 1)
         pwc_lbl   := label.new(pwc_bar + i_lineExtend, pwc_price + lblOff, f_labelText("PWC"), style = label.style_none, textcolor = pwcCol, size = f_liqSize(), textalign = text.align_left)
 
 if not na(pwc_line) and i_showPWC and i_showLiquidity
-    pwcCol = close >= pwc_price ? color.blue : color.red
+    pwcCol = not drawLiq ? color(na) : close >= pwc_price ? color.blue : color.red
     // Same x1 clamp as f_liqMitigate — PWC is redrawn only once a week, so on a low
     // timeframe its origin bar ages out of the historical buffer and any coordinate
     // write on the line would throw. See the note in f_liqMitigate.
@@ -2805,8 +2804,8 @@ if not na(pwc_line) and i_showPWC and i_showLiquidity
 //============================================================
   // H4 LIQUIDITY SWEEP TRACKER
 //============================================================
-color H4_ACTIVE_COLOR = #FF6B35
-color H4_SWEPT_COLOR  = color.new(#999999, 45)
+color H4_ACTIVE_COLOR = drawLiq ? #FF6B35 : color(na)
+color H4_SWEPT_COLOR  = drawLiq ? color.new(#999999, 45) : color(na)
 
 var float h4TrackHigh    = na
 var float h4TrackLow     = na
@@ -3414,49 +3413,49 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
 
     color c1 = fibo1Touched ? fibo1Color : FIBO_GREY
     string tx1 = f_fiboLabel(fibo1Value, "TP2", "TP2") + str.tostring(fiboP1, format.mintick) + ")"
-    [l1, lb1] = f_fibLevel(isFibo1ToShow and not fiboResetActive and fiboShowAligned, fibo1Line, fibo1Label, fiboStartIndex, fiboP1, bar_index + fiboLineExtend, c1, f_fiboLineStyle(fibo1Style), tx1)
+    [l1, lb1] = f_fibLevel(drawFibo and not fiboResetActive and fiboShowAligned, fibo1Line, fibo1Label, fiboStartIndex, fiboP1, bar_index + fiboLineExtend, c1, f_fiboLineStyle(fibo1Style), tx1)
     fibo1Line := l1
     fibo1Label := lb1
 
     color c2 = fibo2Touched ? fibo2Color : FIBO_GREY
     string tx2 = (fibo2Touched ? "FFT  (" : f_fiboLabel(fibo2Value, "TP1", "TP1")) + str.tostring(fiboP2, format.mintick) + ")"
-    [l2, lb2] = f_fibLevel(isFibo2ToShow and not fiboResetActive and fiboShowAligned, fibo2Line, fibo2Label, fiboStartIndex, fiboP2, bar_index + fiboLineExtend, c2, f_fiboLineStyle(fibo2Style), tx2)
+    [l2, lb2] = f_fibLevel(drawFibo and not fiboResetActive and fiboShowAligned, fibo2Line, fibo2Label, fiboStartIndex, fiboP2, bar_index + fiboLineExtend, c2, f_fiboLineStyle(fibo2Style), tx2)
     fibo2Line := l2
     fibo2Label := lb2
 
     color c3 = fibo3Touched ? fibo3Color : FIBO_GREY
     string tx3 = f_fiboLabel(fibo3Value, "E1", "E1") + str.tostring(fiboP3, format.mintick) + ")"
-    [l3, lb3] = f_fibLevel(isFibo3ToShow and not fiboResetActive and fiboShowAligned, fibo3Line, fibo3Label, fiboStartIndex, fiboP3, bar_index + fiboLineExtend, c3, f_fiboLineStyle(fibo3Style), tx3)
+    [l3, lb3] = f_fibLevel(drawFibo and not fiboResetActive and fiboShowAligned, fibo3Line, fibo3Label, fiboStartIndex, fiboP3, bar_index + fiboLineExtend, c3, f_fiboLineStyle(fibo3Style), tx3)
     fibo3Line := l3
     fibo3Label := lb3
 
     color c4 = fibo4Touched ? fibo4Color : FIBO_GREY
     string tx4 = f_fiboLabel(fibo4Value, "E2", "E2") + str.tostring(fiboP4, format.mintick) + ")"
-    [l4, lb4] = f_fibLevel(isFibo4ToShow and not fiboResetActive and fiboShowAligned, fibo4Line, fibo4Label, fiboStartIndex, fiboP4, bar_index + fiboLineExtend, c4, f_fiboLineStyle(fibo4Style), tx4)
+    [l4, lb4] = f_fibLevel(drawFibo and not fiboResetActive and fiboShowAligned, fibo4Line, fibo4Label, fiboStartIndex, fiboP4, bar_index + fiboLineExtend, c4, f_fiboLineStyle(fibo4Style), tx4)
     fibo4Line := l4
     fibo4Label := lb4
 
     color c5 = fibo5Touched ? fibo5Color : FIBO_GREY
     string tx5 = f_fiboLabel(fibo5Value, "E3", "E3") + str.tostring(fiboP5, format.mintick) + ")"
-    [l5, lb5] = f_fibLevel(isFibo5ToShow and not fiboResetActive and fiboShowAligned, fibo5Line, fibo5Label, fiboStartIndex, fiboP5, bar_index + fiboLineExtend, c5, f_fiboLineStyle(fibo5Style), tx5)
+    [l5, lb5] = f_fibLevel(drawFibo and not fiboResetActive and fiboShowAligned, fibo5Line, fibo5Label, fiboStartIndex, fiboP5, bar_index + fiboLineExtend, c5, f_fiboLineStyle(fibo5Style), tx5)
     fibo5Line := l5
     fibo5Label := lb5
 
     color c6 = fibo6Touched ? fibo6Color : FIBO_GREY
     string tx6 = f_fiboLabel(fibo6Value, "E4", "E4") + str.tostring(fiboP6, format.mintick) + ")"
-    [l6, lb6] = f_fibLevel(isFibo6ToShow and not fiboResetActive and fiboShowAligned, fibo6Line, fibo6Label, fiboStartIndex, fiboP6, bar_index + fiboLineExtend, c6, f_fiboLineStyle(fibo6Style), tx6)
+    [l6, lb6] = f_fibLevel(drawFibo and not fiboResetActive and fiboShowAligned, fibo6Line, fibo6Label, fiboStartIndex, fiboP6, bar_index + fiboLineExtend, c6, f_fiboLineStyle(fibo6Style), tx6)
     fibo6Line := l6
     fibo6Label := lb6
 
     color c10 = fibo10Touched ? fibo10Color : FIBO_GREY
     string tx10 = f_fiboLabel(fibo10Value, "1.0", "1.0") + str.tostring(fiboP10, format.mintick) + ")"
-    [l10, lb10] = f_fibLevel(isFibo10ToShow and not fiboResetActive and fiboShowAligned, fibo10Line, fibo10Label, fiboStartIndex, fiboP10, bar_index + fiboLineExtend, c10, f_fiboLineStyle(fibo10Style), tx10)
+    [l10, lb10] = f_fibLevel(drawFibo and not fiboResetActive and fiboShowAligned, fibo10Line, fibo10Label, fiboStartIndex, fiboP10, bar_index + fiboLineExtend, c10, f_fiboLineStyle(fibo10Style), tx10)
     fibo10Line := l10
     fibo10Label := lb10
 
     color c7 = fibo7Touched ? fibo7Color : FIBO_GREY
     string tx7 = f_fiboLabel(fibo7Value, "TP3", "TP3") + str.tostring(fiboP7, format.mintick) + ")"
-    [l7, lb7] = f_fibLevel(isFibo7ToShow and not fiboResetActive and fiboShowAligned, fibo7Line, fibo7Label, fiboStartIndex, fiboP7, bar_index + fiboLineExtend, c7, f_fiboLineStyle(fibo7Style), tx7)
+    [l7, lb7] = f_fibLevel(drawFibo and not fiboResetActive and fiboShowAligned, fibo7Line, fibo7Label, fiboStartIndex, fiboP7, bar_index + fiboLineExtend, c7, f_fiboLineStyle(fibo7Style), tx7)
     fibo7Line := l7
     fibo7Label := lb7
 
@@ -3741,8 +3740,8 @@ bool _sn1m = timeframe.in_seconds() == 60
 // On the 1m the Sniper Zone only draws on an aligned SOS that fires AFTER the 15m
 // has retraced ≥ 50% (_m15Retraced) — same gate as the 1m fib, so nothing on the 1m
 // is considered until the 15m reaches its entry zone. Other timeframes: per-BOS as before.
-bool _snBearBOS = barstate.isconfirmed and showFibo and showSniperFib and (_sn1m ? (st.bear_sos and m15Dir == -1 and _m15Retraced) : st.bear_bos)
-bool _snBullBOS = barstate.isconfirmed and showFibo and showSniperFib and (_sn1m ? (st.bull_sos and m15Dir == 1 and _m15Retraced) : st.bull_bos)
+bool _snBearBOS = barstate.isconfirmed and showFibo and (_sn1m ? (st.bear_sos and m15Dir == -1 and _m15Retraced) : st.bear_bos)
+bool _snBullBOS = barstate.isconfirmed and showFibo and (_sn1m ? (st.bull_sos and m15Dir == 1 and _m15Retraced) : st.bull_bos)
 
 if _snBearBOS or _snBullBOS
     float _snh   = _snBullBOS ? st.bull_bos_high : st.bear_bos_high
@@ -3767,8 +3766,8 @@ if _snBearBOS or _snBullBOS
         array.clear(sniper50Arr)
         array.clear(sniperLbl382Arr)
 
-    color _snColor = _snBullBOS ? color.new(#4caf50, 75) : color.new(#ff4444, 75)
-    color _snLineColor = _snBullBOS ? color.new(#4caf50, 0) : color.new(#ff4444, 0)
+    color _snColor = not drawSniper ? color(na) : _snBullBOS ? color.new(#4caf50, 75) : color.new(#ff4444, 75)
+    color _snLineColor = not drawSniper ? color(na) : _snBullBOS ? color.new(#4caf50, 0) : color.new(#ff4444, 0)
 
     array.push(sniperBoxArr,    box.new(_snS, _zTop, _snE, _zBot, bgcolor = _snColor, border_color = color(na)))
     array.push(sniper382Arr,    line.new(_snS, _sn382, _snE, _sn382, color = _snLineColor, style = line.style_dotted, width = 1))
@@ -3783,7 +3782,7 @@ if _snBearBOS or _snBullBOS
 // aligned SOS. Other timeframes just extend it as before. Wrapped in a function so
 // the cancel branch doesn't grow the main body.
 f_sniperExtend() =>
-    if showFibo and showSniperFib and array.size(sniperBoxArr) > 0
+    if showFibo and array.size(sniperBoxArr) > 0
         // 1m: the Sniper Zone belongs to the aligned SOS leg it was drawn on. When the
         // External Fib RE-ANCHORS to a new leg (a continuation BOS, or a countering SOS)
         // WITHOUT a fresh aligned-SOS sniper drawn this same bar, the old zone is orphaned
@@ -3805,7 +3804,7 @@ f_sniperExtend() =>
             // countering SOS or a 15m flip turns fiboShowAligned off, so the zone hides
             // (by color, not deleted) and reappears if alignment returns. Other timeframes
             // always show it.
-            bool  _snHide = _sn1m and (not fiboShowAligned or fiboResetActive)
+            bool  _snHide = not drawSniper or (_sn1m and (not fiboShowAligned or fiboResetActive))
             color _snBoxC = _snHide ? color(na) : (sz_bullish ? color.new(#4caf50, 75) : color.new(#ff4444, 75))
             color _snLnC  = _snHide ? color(na) : (sz_bullish ? color.new(#4caf50, 0)  : color.new(#ff4444, 0))
             for _sni = 0 to array.size(sniperBoxArr) - 1
