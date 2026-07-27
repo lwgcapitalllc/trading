@@ -172,7 +172,13 @@ export interface ChartIndicator {
 
 export interface ChartSpec {
   instrument: string            // e.g. "AUDJPY.s"
-  baseTimeframe: string         // finest TF the strategy used, e.g. "M5"
+  // The bars SHIPPED in `candles`. NOT necessarily what the run traded — the emitter steps this up
+  // on a long run so the payload stays sane (a 6.5-year M15 run ships H4).
+  baseTimeframe: string
+  // The bars the run ACTUALLY TRADED — what the chart opens on, pulled live via drill-down when it
+  // is finer than `baseTimeframe`. Optional: a spec cached before this existed falls back to
+  // `baseTimeframe`, which is the old behaviour.
+  runTimeframe?: string
   brokerGmtOffsetHours: number  // for correct session placement
   candles: ChartCandle[]        // base-TF OHLC
   sessions: ChartSession[]

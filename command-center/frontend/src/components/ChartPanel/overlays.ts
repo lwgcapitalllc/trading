@@ -126,6 +126,12 @@ interface BlockExtend {
   textColor?: string
 }
 
+// Where a Blocked tag parks, in px from the pane edge. The top must clear the pinned OHLC readout
+// (one ~20px line at the very top) with visible air under it; the bottom only has to clear the
+// time axis. Raise these if either edge grows another row of chrome.
+const BLOCK_TAG_INSET_TOP = 56
+const BLOCK_TAG_INSET_BOTTOM = 44
+
 // Draw the next UNHIT take-profit only when the trade got at least this far toward it (mfe covered
 // this fraction of the gap from the last hit level) — the "close enough to the next TP" filter, so a
 // trade that barely nudged past TP1 doesn't sprout a far-away TP2 line.
@@ -681,8 +687,10 @@ export function registerChartOverlays(): void {
       const d = (overlay.extendData ?? {}) as BlockExtend
       const color = d.color ?? '#ff2e9a'
       const down = d.dir !== 'short'          // a refused LONG parks its tag at the bottom
-      const INSET = 16                         // px from the pane edge to the chip
-      const yTag = down ? bounding.height - INSET : INSET
+      // Inset from the pane edge to the chip. Asymmetric because the two edges are not equally
+      // busy: the TOP carries the pinned OHLC readout (and the Sessions legend under it), so a tag
+      // parked tight against it lands ON that text; the BOTTOM only has to clear the time axis.
+      const yTag = down ? bounding.height - BLOCK_TAG_INSET_BOTTOM : BLOCK_TAG_INSET_TOP
       // Never let the tag cross the level it points at (possible when the price sits right at the
       // pane edge) — the line would double back and read as pointing the wrong way.
       const y = down ? Math.max(yTag, a.y + 14) : Math.min(yTag, a.y - 14)

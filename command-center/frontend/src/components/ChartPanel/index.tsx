@@ -250,9 +250,18 @@ export default function ChartPanel({
     return [...down, ...base]
   }, [baseMin, spec.baseTimeframe, onRequestCandles])
 
-  // Selected display TF (minutes). Component-local UI state. Defaults to the base TF (not
-  // options[0], which is now the finest drill-down TF).
-  const [selectedMin, setSelectedMin] = useState<number>(() => baseMin)
+  // The timeframe the run actually TRADED — the chart's default view, because that is the only
+  // timeframe its trades and blocked setups line up with bar-for-bar. It is often FINER than the
+  // shipped `baseTimeframe` (the emitter steps a long run up to keep the payload sane), in which case
+  // opening on it means opening in drill-down. Falls back to the shipped bars when the run TF isn't
+  // offered — no fetcher wired, or a spec cached before `runTimeframe` existed.
+  const openMin = useMemo(() => {
+    const want = parseTfMinutes(spec.runTimeframe ?? spec.baseTimeframe)
+    return options.some(o => o.min === want) ? want : baseMin
+  }, [spec.runTimeframe, spec.baseTimeframe, options, baseMin])
+
+  // Selected display TF (minutes). Component-local UI state.
+  const [selectedMin, setSelectedMin] = useState<number>(() => openMin)
   // Timeframe dropdown (TradingView-style) open state + click-outside to close.
   const [tfOpen, setTfOpen] = useState(false)
   const tfRef = useRef<HTMLDivElement>(null)
@@ -265,10 +274,10 @@ export default function ChartPanel({
     return () => document.removeEventListener('mousedown', onDown)
   }, [tfOpen])
 
-  // Reset selection to the base TF when the spec (and thus its options) changes.
+  // Reset selection to the run's own TF when the spec (and thus its options) changes.
   useEffect(() => {
-    setSelectedMin(options.find(o => o.min === baseMin)?.min ?? options[0].min)
-  }, [options, baseMin])
+    setSelectedMin(openMin)
+  }, [openMin])
 
   // Drill-down (sub-base) fetch state. `isFetchMode` = a TF finer than the run's own bars is
   // selected; then `fetched` (pulled live for the visible window) replaces the resampled candles.
@@ -315,7 +324,7 @@ export default function ChartPanel({
     }
     const end = spec.candles[spec.candles.length - 1]?.time ?? Date.now()
     const from = end - (FETCH_TF_LOOKBACK_DAYS[min] ?? 30) * DAY_MS
-    const label = min === 1 ? 'M1' : min === 5 ? 'M5' : `M${min}`
+    const label = FETCH_TFS.find(tf => tf.min === min)?.label ?? `M${min}`
     const token = ++fetchTokenRef.current
     setFetchStatus('loading')
     try {
@@ -663,6 +672,19 @@ export default function ChartPanel({
     runFetch(selectedMin)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFetchMode, selectedMin])
+
+  // The chart now OPENS in drill-down (the run's own TF is usually finer than the shipped bars), so
+  // a feed that can't serve it would leave a blank chart where the shipped candles used to be. Fall
+  // back to those once, and only for the AUTO-chosen TF — a TF the user picked keeps its honest
+  // "no data" message instead of silently jumping somewhere they didn't ask for.
+  const autoFellBackRef = useRef(false)
+  useEffect(() => { autoFellBackRef.current = false }, [openMin])
+  useEffect(() => {
+    if (autoFellBackRef.current || selectedMin !== openMin || openMin === baseMin) return
+    if (fetchStatus !== 'empty' && fetchStatus !== 'error') return
+    autoFellBackRef.current = true
+    setSelectedMin(baseMin)
+  }, [fetchStatus, selectedMin, openMin, baseMin])
 
   // Rebuild session overlays after data changes (applyNewData can clear them) or a toggle.
   // Declared AFTER the data effect so candles are present when overlays are created.

@@ -383,9 +383,13 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     # has intraday in the backtest cache it replayed. Cap the candle volume by stepping the TF up
     # for long spans (a 5yr run → H1, not ~125k M15 candles).
     intraday = runner in ("mt5", "python")
-    base_tf = _base_timeframe(row.get("bar_type"), row.get("bar_value")) if intraday else "D1"
-    if intraday:
-        base_tf = _fit_timeframe(base_tf, row["start_date"], row["end_date"])
+    # `run_tf` = the bars the strategy ACTUALLY TRADED. `base_tf` = what we can afford to ship, which
+    # _fit_timeframe may step up (a 6.5-year 15m run is ~160k candles → H4). They are different
+    # answers to different questions and the chart needs both: it OPENS on the run's own timeframe
+    # (that's the view the run means something on) and falls back to the shipped bars when the
+    # drill-down feed can't serve it.
+    run_tf = _base_timeframe(row.get("bar_type"), row.get("bar_value")) if intraday else "D1"
+    base_tf = _fit_timeframe(run_tf, row["start_date"], row["end_date"]) if intraday else "D1"
 
     candles = _build_candles(instrument, row["start_date"], row["end_date"], base_tf, runner)
     # Fallback: the MT5 agent can't always serve intraday history (symbol not selected, or the
@@ -425,6 +429,8 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     spec = {
         "instrument": instrument,
         "baseTimeframe": base_tf,
+        # The timeframe the run actually traded — what the chart opens on (see above).
+        "runTimeframe": run_tf,
         "brokerGmtOffsetHours": 0,
         "candles": candles,
         "sessions": [dict(s) for s in _FX_SESSIONS],
@@ -492,6 +498,7 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
     return {
         "instrument": src["instrument"],
         "baseTimeframe": src["baseTimeframe"],
+        "runTimeframe": src.get("runTimeframe", src["baseTimeframe"]),
         "brokerGmtOffsetHours": src["brokerGmtOffsetHours"],
         "candles": src["candles"],
         "sessions": [dict(s) for s in src.get("sessions", [])],

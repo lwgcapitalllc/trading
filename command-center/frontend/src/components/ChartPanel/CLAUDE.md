@@ -32,7 +32,8 @@ ChartPanel/
 
 ## The contract (`types.ts`)
 
-`ChartSpec` carries: `instrument`, `baseTimeframe`, `brokerGmtOffsetHours`, `candles`,
+`ChartSpec` carries: `instrument`, `baseTimeframe` (the bars SHIPPED), `runTimeframe` (the bars the
+run TRADED — what the chart opens on), `brokerGmtOffsetHours`, `candles`,
 `sessions[]`, `trades[]`, `blocks[]` (OPTIONAL — refused setups), `overlays[]`
 (`box`/`hline`/`vline`/`label`, each tagged with a `group`),
 `indicators[]`. **All times are epoch milliseconds** (klinecharts' native unit) — convert at
@@ -51,6 +52,15 @@ here**, so the chart shows exactly what the strategy saw.
   the same source `@/themes/chart` uses for Recharts). No raw hex in components. Grid is off.
 - **klinecharts data shape.** Spec candles use `time`; klinecharts wants `timestamp`. The
   `candlesToKLine` mapper in `index.tsx` is the single conversion point.
+- **The chart OPENS on the timeframe the run TRADED** (`spec.runTimeframe`), not on the bars the spec
+  happened to ship (`spec.baseTimeframe`). They are different answers to different questions: the
+  emitter steps the shipped TF UP on a long run to keep the payload sane, so a 6.5-year M15 run ships
+  H4 — and H4 is a timeframe the run's trades and blocked setups mean nothing on. So the default is
+  usually a DRILL-DOWN, fetched on mount. Two guards make that safe: the TF is only chosen when
+  `options` actually offers it (no fetcher wired, or a spec cached before `runTimeframe` existed ⇒
+  fall back to the shipped bars), and if the fetch comes back empty/error the panel reverts ONCE to
+  `baseMin` — but only for the AUTO-chosen TF, never for one the user picked, which keeps its honest
+  "no data" message instead of silently jumping somewhere they didn't ask for.
 - **Timeframe — up = display, down = drill-down.** The segmented control offers two kinds of TF.
   **At or above the base** (`DISPLAY_TFS`, filtered to TFs ≥ and divisible by the spec's base TF):
   `resample` aggregates base bars up (epoch-aligned buckets) — display only, `spec.baseTimeframe`
@@ -158,7 +168,10 @@ here**, so the chart shows exactly what the strategy saw.
     parked at the PANE EDGE** — bottom for a refused long, top for a refused short (the way the trade
     would have moved) — never near the price, so it can never sit on the candles; that is also why the
     line has to be long. The tag is clamped so it can never cross the level it points at (possible
-    when the price sits right at the pane edge), which would make the line double back.
+    when the price sits right at the pane edge), which would make the line double back. The two insets
+    (`BLOCK_TAG_INSET_TOP` 56 / `_BOTTOM` 44) are ASYMMETRIC because the edges aren't equally busy:
+    the top carries the pinned OHLC readout (a tag tight against it lands ON that text — the bug that
+    set these), the bottom only has to clear the time axis. Raise them if either edge grows a row.
   - **The tag text is UNIFORM: `Blocked`, plus a count when several rules refused the same setup**
     (`Blocked 2`). Every tag looking identical is what makes the layer scannable at a glance, and the
     reasons are one hover away. Do not put reason text back on the chip.
