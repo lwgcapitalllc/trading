@@ -4,7 +4,9 @@
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
 **Last reviewed:** 2026-07-27 (the Analysis dropdown: Trades + Winners/Losers and Blocked + its
-per-reason filters, all moved out of Layers)
+per-reason filters; Layers renamed Structure and day breaks moved into the Sessions legend; the
+chart now opens on `runTimeframe` and paints the
+shipped bars while the drill-down loads)
 
 ---
 
@@ -121,8 +123,12 @@ here**, so the chart shows exactly what the strategy saw.
   (`+ brokerGmtOffsetHours`). Verified: London shifts BST↔GMT across the year; Tokyo is fixed.
   Boxes hug the high/low of the candles inside each window. **Managed from an on-chart "Sessions"
   legend** (TradingView indicator-legend style) pinned top-left over the plot — a pill showing the
-  active count that opens a popover with a Show/Hide-all toggle + a per-session row each. NOT in the
-  Layers dropdown. To keep that top-left corner clear for the legend, klinecharts' own candle + indicator
+  active count that opens a popover with a Show/Hide-all toggle, a per-session row each, and **Day
+  breaks** below a rule. NOT in a header dropdown. **The legend owns everything CLOCK-driven**: day
+  breaks ARE the daily session boundary, so having them in the header put the two halves of "when did
+  the day/session start" in two different places. One roster (`clockLayerCount` / `anyClockLayerOn` /
+  `setAllClockLayers`) drives the pill count, the dot and Show/Hide-all together — counting day breaks
+  in the pill while leaving them out of "all" would be a quiet lie. To keep that top-left corner clear for the legend, klinecharts' own candle + indicator
   tooltips are set `showRule: 'follow_cross'` in `chartStyles.ts` (the OHLC/indicator legend appears on
   crosshair hover instead of being permanently pinned).
 - **Trades** (`TRADE` overlay): a **profit-depth view**, not a plain box. From the entry it fills
@@ -257,7 +263,7 @@ here**, so the chart shows exactly what the strategy saw.
   same for older legs), `Swing Point Labels` (HH/HL/LH/LL/ASH/ASL + internal iSH/iSL/…).
   The group names are pinned in `STRUCTURE_GROUPS` (`overlays.ts`) so the panel can (a) default them
   **OFF** — a chart with all structure drawn is unreadable — while every other group defaults ON, and
-  (b) order the four together at the end of the Layers menu. **All four are listed whenever a run
+  (b) order the four together at the end of the Structure menu. **All four are listed whenever a run
   carries any structure at all, even when a group is EMPTY** — they're the Pine's four checkboxes, and
   one that vanishes reads as a missing feature. `Internal Structure` is the one this bites: it holds
   only the CURRENT external leg, so it's legitimately empty on most finished runs (everything older is
@@ -298,14 +304,17 @@ here**, so the chart shows exactly what the strategy saw.
   from `INDICATOR_PALETTE` (theme).
 - **Daily session breaks** (`DAY_BREAK`): vlines at each interior broker-day boundary (candle
   epochs are broker wall-clock, so boundaries fall on `DAY_MS` multiples; the left edge is
-  skipped). Separate overlay name from `VLINE` so the two toggle independently. Own toggle.
+  skipped). Separate overlay name from `VLINE` so the two toggle independently. Toggled from the
+  on-chart Sessions legend (see above), not the header — it is a clock layer, not market structure.
 - **Two header dropdowns, split by QUESTION, not by mechanism** (Aaron's call, 2026-07-27).
   **Analysis** = what the strategy DID with its signals — Trades (+ the Winners / Losers sub-filters)
-  and Blocked (+ one sub-filter per reason). **Layers** = what to DRAW on the market — the four
-  market-structure groups, indicators, day breaks. **Strategies** (stacks only) is a third. Trades and
-  Blocked used to sit in Layers; they were moved because "which trades do I want to interrogate" and
-  "which market structure do I want drawn" are different questions, and mixing them made a long menu
-  where the two most-used rows were buried among structure groups.
+  and Blocked (+ one sub-filter per reason). **Structure** = what the MARKET drew — the four
+  market-structure groups + the shipped indicators. **Strategies** (stacks only) is a third, and
+  everything CLOCK-driven (sessions, day breaks) is the on-chart legend, not a header menu. Trades and
+  Blocked used to sit in the old catch-all "Layers"; they were moved because "which trades do I want to
+  interrogate" and "which market structure do I want drawn" are different questions, and mixing them
+  made a long menu where the two most-used rows were buried among structure groups. Renamed
+  Layers → **Structure** once day breaks left it, so the title names what is actually in it.
 - **All three dropdowns are ONE `ToggleMenu` component** (button with an `on/total` count + a list of
   dot/label/count/tick rows, `sub: true` indenting a filter under its parent). It owns its own open
   state and click-outside close, so adding a fourth menu is one call. Never hand-roll a fourth — three
@@ -313,15 +322,15 @@ here**, so the chart shows exactly what the strategy saw.
   had no counts and different padding).
 - **All layer toggles** use one `ToggleChip` component (colored dot + label).
 - **Header + tool-strip layout (TradingView).** The header row carries the **symbol/interval**
-  controls top-**LEFT** — timeframe dropdown, then Layers, then the drill-down fetch status — and
+  controls top-**LEFT** — timeframe dropdown, then Analysis / Structure, then the drill-down fetch status — and
   the **snapshot (Copy)** button top-**RIGHT**. The header exposes three optional slot props so a
   host can fold ITS chrome onto this SAME single row rather than stacking a second bar above it:
   `headerLeading` (far left, before TF), `headerTrailing` (far right, after Copy), and
   `headerClassName` (appended to the row — e.g. a `border-b` when it doubles as a modal title bar).
   `PriceChartPanel` uses them in fullscreen to put its **instrument title (`spec.instrument`) + a
-  minimize button** (`Minimize2`, the two-arrows-inward icon) on the same row as TF/Layers/Copy (it no
+  minimize button** (`Minimize2`, the two-arrows-inward icon) on the same row as TF/menus/Copy (it no
   longer renders a separate top bar) — so everything lives on one top row.
-  Inline, the slots are unset and the header is just TF/Layers/Copy. Chart **tools** do NOT live in the header — they
+  Inline, the slots are unset and the header is just TF/menus/Copy. Chart **tools** do NOT live in the header — they
   sit on a vertical **tool strip** (40px, `border-r`, `bg-bg-sunken`) down the far-left edge of the
   chart body, like TV's drawing toolbar. Currently Measure + Fibonacci (**icon-only** ruler /
   align-lines buttons); it's built to hold more. It runs the **FULL chart height** (default flex

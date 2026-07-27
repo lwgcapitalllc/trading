@@ -3,7 +3,7 @@
 **Purpose:** FastAPI backend (`:8000`) — owns all SQLite state, talks to the VPS via SSH + HTTP agents, runs the smart-money pipeline via subprocess, and drives NT8/MT5 backtests.
 **Scope:** This covers backend conventions, routers, services, DB, and VPS interaction. It does NOT cover the frontend (see `../frontend/CLAUDE.md`) or `algos/`/`smart-money/` source.
 **Status:** Live — lab (strategies, rulesets, backtests, sweeps, optimizations, stress tests, MT5 runner, Python runner) all shipped.
-**Last reviewed:** 2026-07-27 — blocked setups (the trades that never happened) plumbed strategy → output → run dir → chart spec
+**Last reviewed:** 2026-07-27 — blocked setups (the trades that never happened) plumbed strategy → output → run dir → chart spec; `chart_spec` now emits shipped-vs-traded timeframes
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
@@ -62,7 +62,7 @@ backend/
 │   ├── scripts/backfill_regime_timeline.py  opt-in backfill of `regime_timeline.json` on old runs (`--force`, `--run-id`); kept OUT of backfill_metrics.py because it fetches OHLC
 │   ├── scripts/prop_kpi_audit.py    read-only dump of every prop ruleset's core KPIs from lab.db (the saved "is our engine in sync" query); feeds docs/PROP_RULESET_KPIS.md
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
-│   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + blocked setups + recomputed strategy structure/ATR + market-structure overlays). `_build_blocks` reads the run dir's `blocked_setups.json` — see "Blocked setups" below
+│   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + blocked setups + recomputed strategy structure/ATR + market-structure overlays). Emits TWO timeframes — `baseTimeframe` (the bars SHIPPED, stepped up by `_fit_timeframe` on a long run) and `runTimeframe` (the bars the run TRADED, what the chart opens on); see "Two timeframes" below. `_build_blocks` reads the run dir's `blocked_setups.json` — see "Blocked setups" below
 │   ├── structure_overlays.py  replay the CANONICAL engines/market_structure/ engine over a run's candles → BOS/SOS/swing overlays for the chart, in the 4 groups that ARE structure_engine.pine's 4 toggles (External / Internal / Historic Internal Structure / Swing Point Labels), nesting like the Pine's via each overlay's `requires` list (swing tags need their owning structure; historic internal needs Internal). Never a 2nd engine (bare-name import like regime/news); called by chart_spec on the displayed TF. Break tags anchor at the line MIDPOINT (`_mid`, = Pine's `mid_x`) so they clear the break-bar candles; reversal breaks are labelled SOS/iSOS (not "CHoCH")
 │   ├── news_filter.py     post-run news/holiday tagging — composes the canonical engines/news/ engine (never a 2nd impl) to mark which of a run's trades opened in a high-impact news window / on a bank holiday, for the BacktestDetail News filter card. Pure over a trade list; loads the EventStore cache (see "News filter (post-run)")
 │   ├── history_limits.py  broker history floors — thin shim over the canonical `backtest/data/history.py`
@@ -525,6 +525,23 @@ mid-flight.
 
 Full mechanism, the evidence table, and the probe's two-phase design: `backtest/CLAUDE.md` →
 *History floors*.
+
+## Two timeframes in a ChartSpec — shipped vs traded
+
+`_fit_timeframe` steps a long run's chart timeframe UP so the payload stays sane: 6.5 years of M15
+is ~160k candles and a ~15 MB `chart_spec.json` shipped on every chart open, so it ships **H4**.
+
+That is the right call for TRANSPORT and the wrong answer for the USER — H4 is a timeframe the run's
+trades and blocked setups mean nothing on. So the spec carries both, and they must not be conflated:
+
+- **`baseTimeframe`** — the bars actually in `candles`. What resampling and the drill-down threshold
+  are measured against.
+- **`runTimeframe`** — `bar_type`/`bar_value` off the run row, i.e. what the strategy traded. The
+  panel OPENS on this, pulling it live through `GET /runs/{id}/candles` when it is finer.
+
+`runTimeframe` is OPTIONAL on the frontend contract: a `chart_spec.json` cached before it existed
+falls back to `baseTimeframe`, which is the old behaviour. Six stepped-up caches were cleared when
+it landed; the rest were left alone because the fallback is correct whenever the two are equal.
 
 ## Blocked setups — the trades that never happened
 

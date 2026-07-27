@@ -361,7 +361,7 @@ export default function ChartPanel({
   )
 
   // Per-session visibility (component-local UI state). Defaults all OFF — the chart opens on just
-  // the trades; sessions are opt-in from the Layers dropdown. Resets with the spec.
+  // the trades; sessions are opt-in from the on-chart legend. Resets with the spec.
   const [sessionsOn, setSessionsOn] = useState<Record<string, boolean>>(
     () => Object.fromEntries(spec.sessions.map(s => [s.name, false] as [string, boolean])) as Record<string, boolean>,
   )
@@ -370,7 +370,6 @@ export default function ChartPanel({
   }, [spec.sessions])
   const toggleSession = (name: string) => setSessionsOn(v => ({ ...v, [name]: !v[name] }))
   const setAllSessions = (on: boolean) => setSessionsOn(Object.fromEntries(spec.sessions.map(s => [s.name, on])) as Record<string, boolean>)
-  const anySessionOn = spec.sessions.some(s => sessionsOn[s.name])
   // On-chart "Sessions" legend popover (TradingView indicator-legend style) open state + outside-close.
   const [sessionsLegendOpen, setSessionsLegendOpen] = useState(false)
   const sessionsLegendRef = useRef<HTMLDivElement>(null)
@@ -494,7 +493,7 @@ export default function ChartPanel({
   }, [spec.overlays])
 
   // Every overlay group defaults ON, EXCEPT the market-structure groups — those are opt-in (a chart
-  // would be unreadable with all of BOS/SOS/swings/internal drawn by default), toggled from Layers.
+  // would be unreadable with all of BOS/SOS/swings/internal drawn by default), toggled from Structure.
   const groupDefault = (name: string): boolean => !STRUCTURE_GROUPS.includes(name as typeof STRUCTURE_GROUPS[number])
   const [groupsOn, setGroupsOn] = useState<Record<string, boolean>>(
     () => Object.fromEntries(overlayGroups.map(g => [g.name, groupDefault(g.name)] as [string, boolean])) as Record<string, boolean>,
@@ -519,6 +518,19 @@ export default function ChartPanel({
     return Array.from(firstOfDay.values()).sort((a, b) => a - b).slice(1)
   }, [spec.candles])
   const [dayBreaksOn, setDayBreaksOn] = useState(false)
+
+  // The on-chart Sessions legend governs everything CLOCK-driven — the session windows AND the daily
+  // session breaks. One roster so the pill's count, the dot and Show/Hide-all all describe the same
+  // set; counting day breaks in the pill but leaving them out of "all" would be a quiet lie.
+  const clockLayerCount = useMemo(() => {
+    const extra = dailyBreaks.length > 0 ? 1 : 0
+    return {
+      on: spec.sessions.filter(s => sessionsOn[s.name]).length + (dayBreaksOn && extra ? 1 : 0),
+      total: spec.sessions.length + extra,
+    }
+  }, [spec.sessions, sessionsOn, dayBreaksOn, dailyBreaks.length])
+  const anyClockLayerOn = clockLayerCount.on > 0
+  const setAllClockLayers = (on: boolean) => { setAllSessions(on); setDayBreaksOn(on) }
 
   // Indicators (shipped series). One on/off per indicator; sub-pane ids tracked for removal.
   const [indicatorsOn, setIndicatorsOn] = useState<Record<string, boolean>>(
@@ -731,7 +743,7 @@ export default function ChartPanel({
       if (loadedLoTs == null || loadedHiTs == null) break
       if (tr.entryTime < loadedLoTs || tr.entryTime > loadedHiTs) continue
       if (tr.layer && hiddenLayers.has(tr.layer)) continue   // isolated via the Strategies dropdown
-      if (!(tr.pnl > 0 ? winnersOn : losersOn)) continue     // Winners/Losers filters (Layers menu)
+      if (!(tr.pnl > 0 ? winnersOn : losersOn)) continue     // Winners/Losers filters (Analysis menu)
       chart.createOverlay({
         name: TRADE,
         lock: true,
@@ -1149,7 +1161,7 @@ export default function ChartPanel({
 
           {/* Analysis: what the strategy DID with its signals — the trades it took (split by
               outcome) and the setups its own rules refused (split by reason). Deliberately its own
-              dropdown, separate from Layers: Layers is what to DRAW on the market, Analysis is what
+              dropdown, separate from Structure: Structure is what the MARKET drew, Analysis is what
               to interrogate about the run. Trades ALSO toggles from the right-click chart menu —
               both drive the same `tradesOn` state. */}
           {(spec.trades.length > 0 || blocks.length > 0) && (
@@ -1182,14 +1194,13 @@ export default function ChartPanel({
             />
           )}
 
-          {/* Layers: what to DRAW on the market — the strategy-structure "bricks", indicators and
-              day breaks. Sessions live in their own on-chart legend (below). */}
+          {/* Structure: what the MARKET drew — the strategy-structure "bricks" and shipped indicators.
+              Everything clock-driven (sessions, day breaks) lives in the on-chart legend instead. */}
           <ToggleMenu
-            title="Layers"
+            title="Structure"
             items={[
               ...overlayGroups.map(g => ({ key: `g-${g.name}`, label: g.name, color: g.color, on: groupsOn[g.name], toggle: () => toggleGroup(g.name) })),
               ...spec.indicators.map((ind, i) => ({ key: `i-${ind.name}`, label: ind.name, color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length], on: indicatorsOn[ind.name], toggle: () => toggleIndicator(ind.name) })),
-              ...(dailyBreaks.length > 0 ? [{ key: 'daybreaks', label: 'Day breaks', color: DAY_BREAK_COLOR, on: dayBreaksOn, toggle: () => setDayBreaksOn(o => !o) }] : []),
             ]}
           />
 
@@ -1349,11 +1360,13 @@ export default function ChartPanel({
             </div>
           )}
 
-          {/* On-chart "Sessions" legend (TradingView indicator-legend style) — the one place sessions
-              are managed now that they're out of the Layers dropdown. Sits on LINE 2, directly under
-              the pinned OHLC readout (line 1), so it no longer covers the statistics.
+          {/* On-chart "Sessions" legend (TradingView indicator-legend style) — everything CLOCK-driven
+              lives here: the session windows and the daily session breaks. Day breaks used to sit in
+              the header dropdown, which put the two halves of "when did the day/session start" in two
+              different places. Sits on LINE 2, directly under the pinned OHLC readout (line 1), so it
+              no longer covers the statistics.
               stopPropagation so a click here never trips measure-mode anchoring. */}
-          {spec.sessions.length > 0 && (
+          {(spec.sessions.length > 0 || dailyBreaks.length > 0) && (
             <div
               ref={sessionsLegendRef}
               className="absolute"
@@ -1364,19 +1377,19 @@ export default function ChartPanel({
                 onClick={() => setSessionsLegendOpen(o => !o)}
                 className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-border-subtle bg-bg-surface text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors shadow-sm"
               >
-                <span className="w-2 h-2 rounded-full" style={{ background: anySessionOn ? theme.accent : 'transparent', boxShadow: `inset 0 0 0 1px ${theme.accent}` }} />
+                <span className="w-2 h-2 rounded-full" style={{ background: anyClockLayerOn ? theme.accent : 'transparent', boxShadow: `inset 0 0 0 1px ${theme.accent}` }} />
                 Sessions
-                <span className="font-mono text-text-tertiary">{spec.sessions.filter(s => sessionsOn[s.name]).length}/{spec.sessions.length}</span>
+                <span className="font-mono text-text-tertiary">{clockLayerCount.on}/{clockLayerCount.total}</span>
                 <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${sessionsLegendOpen ? 'rotate-180' : ''}`} />
               </button>
               {sessionsLegendOpen && (
                 <div className="mt-1 min-w-[168px] rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg">
                   <button
-                    onClick={() => setAllSessions(!anySessionOn)}
+                    onClick={() => setAllClockLayers(!anyClockLayerOn)}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-text-secondary hover:bg-bg-sunken hover:text-text-primary transition-colors"
                   >
-                    {anySessionOn ? <EyeOff className="w-3 h-3 text-text-tertiary" /> : <Eye className="w-3 h-3 text-text-tertiary" />}
-                    {anySessionOn ? 'Hide all' : 'Show all'}
+                    {anyClockLayerOn ? <EyeOff className="w-3 h-3 text-text-tertiary" /> : <Eye className="w-3 h-3 text-text-tertiary" />}
+                    {anyClockLayerOn ? 'Hide all' : 'Show all'}
                   </button>
                   <div className="my-1 border-t border-border-subtle" />
                   {spec.sessions.map(s => (
@@ -1393,6 +1406,25 @@ export default function ChartPanel({
                       {sessionsOn[s.name] && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
                     </button>
                   ))}
+                  {/* Day breaks — the DAILY session boundary, so it belongs with the session windows
+                      rather than in the header. Ruled off because it draws a different shape (a
+                      vertical line, not a box). */}
+                  {dailyBreaks.length > 0 && (
+                    <>
+                      {spec.sessions.length > 0 && <div className="my-1 border-t border-border-subtle" />}
+                      <button
+                        onClick={() => setDayBreaksOn(o => !o)}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ background: dayBreaksOn ? DAY_BREAK_COLOR : 'transparent', boxShadow: `inset 0 0 0 1px ${DAY_BREAK_COLOR}`, opacity: dayBreaksOn ? 1 : 0.5 }}
+                        />
+                        <span className={dayBreaksOn ? 'text-text-primary' : 'text-text-tertiary'}>Day breaks</span>
+                        {dayBreaksOn && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
