@@ -97,7 +97,9 @@
       "Bash(git -C /Users/alwg/trading status --short)",
       "Bash(git -C /Users/alwg/trading add docs/MPC_BOS_SPEC.md)",
       "Bash(git -C /Users/alwg/trading commit -m 'docs\\(mpc_bos\\): spec the BOS continuation strategy — the SOS fade with the arm swapped *)",
-      "Bash(git -C /Users/alwg/trading push origin main)"
+      "Bash(git -C /Users/alwg/trading push origin main)",
+      "Bash(git push *)",
+      "Bash(npx vite *)"
     ],
     "deny": [
       "Bash(git push --force:*)",

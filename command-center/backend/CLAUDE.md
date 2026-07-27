@@ -3,7 +3,7 @@
 **Purpose:** FastAPI backend (`:8000`) — owns all SQLite state, talks to the VPS via SSH + HTTP agents, runs the smart-money pipeline via subprocess, and drives NT8/MT5 backtests.
 **Scope:** This covers backend conventions, routers, services, DB, and VPS interaction. It does NOT cover the frontend (see `../frontend/CLAUDE.md`) or `algos/`/`smart-money/` source.
 **Status:** Live — lab (strategies, rulesets, backtests, sweeps, optimizations, stress tests, MT5 runner, Python runner) all shipped.
-**Last reviewed:** 2026-07-26
+**Last reviewed:** 2026-07-27 — blocked setups (the trades that never happened) plumbed strategy → output → run dir → chart spec
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
@@ -62,7 +62,7 @@ backend/
 │   ├── scripts/backfill_regime_timeline.py  opt-in backfill of `regime_timeline.json` on old runs (`--force`, `--run-id`); kept OUT of backfill_metrics.py because it fetches OHLC
 │   ├── scripts/prop_kpi_audit.py    read-only dump of every prop ruleset's core KPIs from lab.db (the saved "is our engine in sync" query); feeds docs/PROP_RULESET_KPIS.md
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
-│   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + recomputed strategy structure/ATR + market-structure overlays)
+│   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + blocked setups + recomputed strategy structure/ATR + market-structure overlays). `_build_blocks` reads the run dir's `blocked_setups.json` — see "Blocked setups" below
 │   ├── structure_overlays.py  replay the CANONICAL engines/market_structure/ engine over a run's candles → BOS/SOS/swing overlays for the chart, in the 4 groups that ARE structure_engine.pine's 4 toggles (External / Internal / Historic Internal Structure / Swing Point Labels), nesting like the Pine's via each overlay's `requires` list (swing tags need their owning structure; historic internal needs Internal). Never a 2nd engine (bare-name import like regime/news); called by chart_spec on the displayed TF. Break tags anchor at the line MIDPOINT (`_mid`, = Pine's `mid_x`) so they clear the break-bar candles; reversal breaks are labelled SOS/iSOS (not "CHoCH")
 │   ├── news_filter.py     post-run news/holiday tagging — composes the canonical engines/news/ engine (never a 2nd impl) to mark which of a run's trades opened in a high-impact news window / on a bank holiday, for the BacktestDetail News filter card. Pure over a trade list; loads the EventStore cache (see "News filter (post-run)")
 │   ├── history_limits.py  broker history floors — thin shim over the canonical `backtest/data/history.py`
@@ -525,6 +525,38 @@ mid-flight.
 
 Full mechanism, the evidence table, and the probe's two-phase design: `backtest/CLAUDE.md` →
 *History floors*.
+
+## Blocked setups — the trades that never happened
+
+A signal the strategy had READY and one of its OWN rules refused places no order, so it appears in
+no trade list, no equity curve, no `engine_trades`, and no broker report. Nothing downstream can
+infer it. That makes it impossible to judge whether a blocking rule protects the account or costs
+it — which is the whole reason this channel exists.
+
+The path is one straight line, and every hop is OPTIONAL so a runner that can't report them is
+simply silent (never a lie, never an empty UI):
+
+1. **The strategy records them.** `mpc_sos_fade/execution.py` — `BlockedSetup` + `_record_blocks`,
+   a port of `mpc_strategy.pine`'s pink `TRADE BLOCKED` tag (4025-4086), same six reason codes in
+   the same PRECEDENCE and the same `sosBar*10 + code` dedupe (one record per setup per reason, not
+   per bar). **Reporting only** — nothing reads a record back, so it cannot move a decision and
+   `compare_strategy.py`'s `px_*` stream is untouched. `mpc_bleg` records none by construction (its
+   `BLegExecution` overrides `_place_entries`, where the recording hangs) — deliberate: those codes
+   describe why an **A+** setup was refused, and A+ never trades in that fork.
+2. **`backtest/output.py`** — `build_blocked_setups()` turns them into the lab's row shape;
+   `build_results` returns them as `blocked_setups` (always present, `[]` when there are none).
+   Strategy-agnostic duck-type: `dir`/`time_ms`/`code`/`edge`/`label`/`reason`.
+3. **`backtest_runner._handle_complete`** writes `reports/lab/<run_id>/blocked_setups.json` when the
+   runner reported any. Runner-agnostic — NT8/MT5 return no such key, so no file.
+4. **`chart_spec._build_blocks`** reads that file into the spec's `blocks[]`, clipped to the candle
+   window (same reason trades are). No file ⇒ `[]` ⇒ the chart's Blocked toggle never appears.
+
+**Only runs completed AFTER this landed have the file** — it is written at completion, and there is
+no backfill (recomputing it would mean replaying the strategy). An older run's chart correctly shows
+no Blocked layer. A run that HAS the file but a stale cached `chart_spec.json` needs **Reload charts**.
+
+The `label`/`reason` strings are the STRATEGY's own words end to end; neither the lab nor the chart
+interprets them, so a strategy with a different rule set needs no change anywhere in this path.
 
 ## News filter (post-run)
 

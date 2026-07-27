@@ -18,7 +18,9 @@ a single Nov-2025 runner (an intrabar trail-fill guess, not a decision). See `##
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-26 — the exit levers (structure runner trail, TP2 stop floor, the three
+**Last reviewed:** 2026-07-27 — `Execution` now records BLOCKED SETUPS (the Pine's pink TRADE
+BLOCKED tag, reporting-only) for the lab price chart's Blocked layer. Earlier: 2026-07-26 — the
+exit levers (structure runner trail, TP2 stop floor, the three
 setup toggles) ported from the Pine, the export's config columns completed, and **PARITY RE-VALIDATED
 GREEN (exit 0)** on a fresh 21,230-bar `VANTAGE_XAUUSD, 15m` export — which caught a real unpinned-
 engine-input bug (`fvg_require_close`). See `## The exit ladder` and `## The 2026-07-26 exit-lever sync`.
@@ -107,6 +109,19 @@ BarState  --SignalAdapter-->  Signals  --SosFadeSequence-->  SeqState  --Executi
   whole hold on bar high/low (`_ext_high`/`_ext_low`) and converted to USD at close. NO decision
   reads them, so they are parity-safe (`compare_strategy.py` diffs the `px_*` decision stream, not
   `Trade`); they flow through `backtest/output.py` to the lab's equity-chart excursion overlay.
+  `Execution` also records **blocked setups** (`BlockedSetup`, `execution.blocks`) — a port of the
+  Pine's pink `TRADE BLOCKED` tag (`mpc_strategy.pine` 4025-4086): a setup price and the engine had
+  READY (SOS in, fib agreeing, an entry edge to rest on, flat, this leg untraded) that one of the
+  strategy's OWN toggles refused. Same six reason codes in the same PRECEDENCE (`f_blkCode`: 1
+  direction off · 2 arm source off · 3 final hour · 4 divergence/extreme veto · 5 HTF breakout · 6
+  HTF bias), the same hover text as `f_blkWhy`, and the same `sosBar*10 + code` dedupe — one record
+  per setup per REASON, so a setup blocked for twenty bars is one record but a CHANGED reason is a
+  genuinely different refusal. **Reporting-only and parity-safe**, exactly like the excursion fields:
+  nothing reads a record back, so no decision can move and `compare_strategy.py` diffs the same
+  `px_*` stream as before. The recording hangs off `_place_entries` (reading gates `_armed`
+  computed, never recomputing them), which is why `mpc_bleg` gets none — it overrides that method,
+  and those codes describe why an *A+* setup was refused. Surfaced on the lab price chart's Blocked
+  layer; the full path is in `command-center/backend/CLAUDE.md` → *Blocked setups*.
 - **`strategy.py`** — `MpcSosFadeStrategy`: the driver. `run(df, warmup=…)` replays a canonical frame
   end-to-end; `step(bar_state)` does one bar. Collects `.decisions` (the per-bar stream) and
   `.execution.trades`.

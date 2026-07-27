@@ -3,7 +3,7 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-07-27 (Winners/Losers outcome filters added to the Layers dropdown)
+**Last reviewed:** 2026-07-27 (Winners/Losers outcome filters + the Blocked-setups layer)
 
 ---
 
@@ -32,7 +32,8 @@ ChartPanel/
 ## The contract (`types.ts`)
 
 `ChartSpec` carries: `instrument`, `baseTimeframe`, `brokerGmtOffsetHours`, `candles`,
-`sessions[]`, `trades[]`, `overlays[]` (`box`/`hline`/`vline`/`label`, each tagged with a `group`),
+`sessions[]`, `trades[]`, `blocks[]` (OPTIONAL — refused setups), `overlays[]`
+(`box`/`hline`/`vline`/`label`, each tagged with a `group`),
 `indicators[]`. **All times are epoch milliseconds** (klinecharts' native unit) — convert at
 the emitter, never in the browser. Indicator series are shipped from the run, **not recomputed
 here**, so the chart shows exactly what the strategy saw.
@@ -136,6 +137,25 @@ here**, so the chart shows exactly what the strategy saw.
   mirrored for a short). Added because, once a winner also shows a red drawdown band, the result is no
   longer obvious from colour alone. It's a derived verdict, NOT the raw exit reason — no exit-reason
   text (`stop`/`S-RUN`/…) is ever drawn.
+- **Blocked setups** (`BLOCK` overlay, spec `blocks[]`) — **the trades that never happened.** A setup
+  the strategy had READY and one of its OWN rules refused places no order, so it appears in no trade
+  list, no equity curve and no broker report; without this layer there is no way to judge whether a
+  blocking rule protects the account or costs it. Each one draws a **pink tag** at the price the entry
+  limit would have rested at, with a dot on that price and a short dotted leader up to the chip. The
+  tag hangs BELOW the price for a refused long and ABOVE for a refused short — the way the trade would
+  have moved — so direction reads without parsing the label. **Hover it** for the full sentence plus
+  that would-be entry price. The hover card is a React node in the SAME `pointer-events:none` plane as
+  the measurement layer (a card that ate its own hover would flicker), positioned from the coordinates
+  klinecharts hands back on `onMouseEnter`, and flipped left/up near the pane edges. The `BLOCK`
+  overlay is the ONE template here that is deliberately not `ignoreEvent` — klinecharts only fires
+  hover on figures that accept events. Geometry is all PIXEL offsets from one anchor point, so it needs
+  no bar geometry and survives a TF switch untouched. **Pink is off the win/loss axis on purpose:** a
+  refused trade is not a loser, and red would read as one. Toggled from Layers as **Blocked** (with its
+  count), **default OFF** — it is a diagnostic view, not part of reading the run, and a long run has
+  more refusals than trades. The toggle is listed only when the run reports any, so an NT8/MT5 run
+  (which cannot report them) shows no permanently-empty switch. `label` and `reason` are strings the
+  STRATEGY wrote and the panel renders verbatim — it knows nothing about what any rule means, so a
+  strategy with an entirely different rule set needs no chart change.
 - **Portfolio-stack layering** (`layer` / `layerName` / `layerColor` on a trade — all absent on a
   single-run spec, which is what makes every stack affordance vanish for a normal backtest). With
   several strategies' trades on ONE chart, the outcome alone doesn't say WHOSE trade it was, so the

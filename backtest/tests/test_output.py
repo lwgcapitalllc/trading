@@ -16,8 +16,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from backtest.output import (build_daily_pnl, build_engine_trades, build_equity_curve,
-                             build_kpis, build_results, engine_trades_csv)
+from backtest.output import (build_blocked_setups, build_daily_pnl, build_engine_trades,
+                             build_equity_curve, build_kpis, build_results, engine_trades_csv)
 
 
 def _ms(y, mo, d, h=12, mi=0) -> int:
@@ -256,9 +256,16 @@ def test_engine_trades_csv_roundtrips():
 
 # ── build_results ─────────────────────────────────────────────────────────────
 
-def test_build_results_has_the_four_lab_keys():
+def test_build_results_has_the_lab_keys():
     res = build_results([_t(100.0)], point_value=1.0)
-    assert set(res) == {"equity_curve", "daily_pnl", "kpis", "engine_trades"}
+    assert set(res) == {"equity_curve", "daily_pnl", "kpis", "engine_trades",
+                        "blocked_setups"}
+
+
+def test_build_results_reports_no_blocked_setups_when_none_were_recorded():
+    """A strategy that records no refusals still emits the key — an EMPTY list, never a
+    missing one, so a consumer never has to tell "none" apart from "not reported"."""
+    assert build_results([_t(100.0)], point_value=1.0)["blocked_setups"] == []
 
 
 def test_build_results_is_json_serialisable():
@@ -274,6 +281,32 @@ def test_exit_price_reproduces_pnl():
     row = build_engine_trades([t], point_value=1.0)[0]
     implied = (row["exit_price"] - row["entry_price"]) * row["direction"] * t.qty * 1.0
     assert implied == pytest.approx(t.pnl_usd)
+
+
+# ── blocked setups ────────────────────────────────────────────────────────────
+
+class _Blk:
+    """The duck-type `build_blocked_setups` consumes — deliberately NOT the strategy's own
+    class, so the test proves the adapter needs nothing but these attributes."""
+
+    def __init__(self, dir_, time_ms, code, edge, label, reason):
+        self.dir, self.time_ms, self.code = dir_, time_ms, code
+        self.edge, self.label, self.reason = edge, label, reason
+
+
+def test_blocked_setups_map_direction_and_sort_by_time():
+    rows = build_blocked_setups([
+        _Blk(-1, 2_000, 3, 1234.5678, "Final hour", "no new entries 16:00-18:00 NY"),
+        _Blk(1, 1_000, 4, 1200.0, "Divergence / RSI veto", "opposing divergence"),
+    ])
+    assert [r["time_ms"] for r in rows] == [1_000, 2_000]
+    assert [r["direction"] for r in rows] == ["Long", "Short"]
+    assert rows[1]["edge"] == 1234.5678
+    assert rows[1]["label"] == "Final hour"
+
+
+def test_blocked_setups_tolerates_none():
+    assert build_blocked_setups(None) == []
 
 
 # ── the real contract: does the lab's sizing engine accept our rows? ───────────

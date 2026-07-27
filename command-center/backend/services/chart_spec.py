@@ -223,6 +223,46 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
     return trades
 
 
+def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
+    """The run's BLOCKED setups → the chart's `blocks` array.
+
+    A blocked setup is a signal the strategy had ready and one of its own rules refused —
+    it places no order, so it exists in no trade list, no equity curve, and no broker
+    report. `blocked_setups.json` (written at run completion when the runner reports them)
+    is the only source. Runners that don't report them have no file → `[]` → the chart's
+    Blocked layer never appears, which is the honest answer for NT8/MT5.
+
+    Clipped to the candle window for the same reason trades are: klinecharts clamps an
+    out-of-range overlay onto the plot edge, which would pile every older marker up in the
+    no-data region. Strategy-agnostic — the label and reason are strings the strategy wrote;
+    this function knows nothing about what any of them mean.
+    """
+    path = run_dir / "blocked_setups.json"
+    if not path.exists():
+        return []
+    try:
+        raw = json.loads(path.read_text())
+    except (ValueError, OSError):
+        return []
+    if not isinstance(raw, list) or not candles:
+        return []
+    lo, hi = candles[0]["time"], candles[-1]["time"]
+    out: list[dict] = []
+    for i, b in enumerate(raw, start=1):
+        t = b.get("time_ms")
+        if not isinstance(t, (int, float)) or not (lo <= t <= hi):
+            continue
+        out.append({
+            "id": f"B{i}",
+            "time": int(t),
+            "dir": "short" if str(b.get("direction", "")).lower().startswith("s") else "long",
+            "price": float(b.get("edge") or 0.0),
+            "label": str(b.get("label") or "Blocked"),
+            "reason": str(b.get("reason") or ""),
+        })
+    return out
+
+
 # ── Strategy structure (Phase 7b) — London-breakout family ─────────────────────────
 _DAY_MS = 24 * 60 * 60 * 1000
 
@@ -375,6 +415,7 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
         "candles": candles,
         "sessions": [dict(s) for s in _FX_SESSIONS],
         "trades": trades,
+        "blocks": _build_blocks(run_dir, candles),
         "overlays": overlays,
         "indicators": indicators,
     }
@@ -393,7 +434,10 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
 
     Reuses each leg's own `build_chart_spec` (all legs share one instrument/TF/window, so the
     candles are identical) and drops the per-strategy structure overlays/indicators — a portfolio
-    price view stays readable with trades only. Returns None if the stack is unknown; a spec with
+    price view stays readable with trades only. Blocked setups are dropped for a second reason:
+    they carry no `layer`, so on a merged chart there would be no way to tell WHOSE rule refused
+    a setup. Omitting the key hides the Blocked toggle; a leg's own page still has it. Returns
+    None if the stack is unknown; a spec with
     empty candles if no leg produced any (frontend shows "no price data"). Not cached (legs can
     complete incrementally); each leg's own spec is cached, so the merge is cheap."""
     rows = lab_db.list_stack_runs(stack_id)

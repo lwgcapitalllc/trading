@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Optional, Sequence
 
 __all__ = ["build_results", "build_equity_curve", "build_daily_pnl", "build_kpis",
-           "build_engine_trades", "engine_trades_csv"]
+           "build_engine_trades", "engine_trades_csv", "build_blocked_setups"]
 
 
 def _utc(ms: int) -> datetime:
@@ -253,10 +253,39 @@ def engine_trades_csv(rows: Iterable[dict]) -> str:
 
 # ── the one entry point ───────────────────────────────────────────────────────
 
+def build_blocked_setups(blocks: Optional[Sequence[Any]]) -> list[dict]:
+    """A strategy's refused setups → the lab's blocked-setup contract (the price chart's
+    "why didn't this trade" markers).
+
+    A blocked setup places no order, so it appears in no trade list and no equity curve —
+    this is the only channel it reaches the lab through. Strategy-agnostic like everything
+    else here: the input is any object carrying `dir` / `time_ms` / `code` / `edge` plus a
+    `label` and `reason` string (`mpc_sos_fade.execution.BlockedSetup` satisfies it), and a
+    strategy that records none simply produces `[]`.
+    """
+    out: list[dict] = []
+    for b in blocks or []:
+        out.append({
+            "time_ms":   int(getattr(b, "time_ms", 0)),
+            "direction": "Long" if getattr(b, "dir", 0) > 0 else "Short",
+            "code":      int(getattr(b, "code", 0)),
+            "label":     str(getattr(b, "label", "") or ""),
+            "reason":    str(getattr(b, "reason", "") or ""),
+            "edge":      _round(float(getattr(b, "edge", 0.0)), 5),
+        })
+    out.sort(key=lambda r: r["time_ms"])
+    return out
+
+
 def build_results(trades: Sequence[Any], *, point_value: float,
                   initial_capital: float = 0.0,
-                  commission_per_side: float = 0.0) -> dict:
-    """Everything the lab needs from a finished Python backtest, in one call."""
+                  commission_per_side: float = 0.0,
+                  blocked: Optional[Sequence[Any]] = None) -> dict:
+    """Everything the lab needs from a finished Python backtest, in one call.
+
+    `blocked` is optional and reporting-only — a strategy that doesn't record refusals
+    yields an empty list, and no downstream consumer requires the key.
+    """
     trades = list(trades)
     curve = build_equity_curve(trades, initial_capital=initial_capital)
     days  = build_daily_pnl(trades)
@@ -267,4 +296,5 @@ def build_results(trades: Sequence[Any], *, point_value: float,
                                     equity_curve=curve, daily_pnl=days),
         "engine_trades": build_engine_trades(trades, point_value=point_value,
                                              commission_per_side=commission_per_side),
+        "blocked_setups": build_blocked_setups(blocked),
     }

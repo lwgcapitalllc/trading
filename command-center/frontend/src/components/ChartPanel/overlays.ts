@@ -50,6 +50,9 @@ export const DAY_BREAK = 'lwgDayBreak'
  *  for the current sub-base TF (a TRUE feed limit, not our render cap). */
 export const DATA_EDGE = 'lwgDataEdge'
 
+/** A refused setup — the strategy had the trade ready and one of its OWN rules stopped it. */
+export const BLOCK = 'lwgBlock'
+
 /** User-drawn Fibonacci retracement tool (2 anchor points → horizontal levels + price labels). */
 export const FIB = 'lwgFib'
 
@@ -111,6 +114,15 @@ interface TradeExtend {
   profitLegs?: Array<number | { price: number; label: string }> // {price,label}; bare number tolerated
   stopPrice?: number
   tpTargets?: number[] // TP ladder nearest→furthest; first UNHIT one drawn faintly (near-miss view)
+}
+
+/** What the BLOCK overlay reads. `label` is the strategy's own short reason text — the overlay
+ *  renders it verbatim and never interprets it. */
+interface BlockExtend {
+  dir?: 'long' | 'short'
+  label?: string
+  color?: string
+  textColor?: string
 }
 
 // Draw the next UNHIT take-profit only when the trade got at least this far toward it (mfe covered
@@ -636,6 +648,59 @@ export function registerChartOverlays(): void {
         },
         ignoreEvent: true,
       }))
+    },
+  })
+
+  // ── Blocked setup — the trade that never happened ────────────────────────────
+  // A pink tag at the price the entry limit would have rested at, with a short dotted leader
+  // back to that exact price and a dot on it. Everything is offset from the ONE anchor point in
+  // PIXELS, so it needs no bar geometry and survives every timeframe switch untouched.
+  //
+  // The tag hangs BELOW the price for a refused long and ABOVE for a refused short — the side the
+  // trade would have moved toward — so direction reads without the label being parsed.
+  //
+  // Deliberately NOT `ignoreEvent` (unlike every other overlay here): the whole point is the hover,
+  // and klinecharts only fires onMouseEnter/onMouseLeave on figures that accept events.
+  registerOverlay({
+    name: BLOCK,
+    totalStep: 1,
+    lock: true,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
+      if (coordinates.length < 1) return []
+      const a = coordinates[0]
+      const d = (overlay.extendData ?? {}) as BlockExtend
+      const color = d.color ?? '#ff2e9a'
+      const down = d.dir !== 'short'          // a refused LONG hangs its tag below the price
+      const LEAD = 22                          // px from the price to the chip
+      const y = a.y + (down ? LEAD : -LEAD)
+      const text = `${down ? '▲' : '▼'} ${d.label ?? 'Blocked'}`
+      return [
+        // the price the limit would have rested at
+        {
+          type: 'circle',
+          attrs: { x: a.x, y: a.y, r: 2.5 },
+          styles: { style: 'fill', color },
+          ignoreEvent: true,
+        },
+        {
+          type: 'line',
+          attrs: { coordinates: [{ x: a.x, y: a.y }, { x: a.x, y }] },
+          styles: { color, size: 1, style: 'dashed', dashedValue: [3, 3] },
+          ignoreEvent: true,
+        },
+        {
+          type: 'text',
+          attrs: { x: a.x, y, text, align: 'center', baseline: down ? 'top' : 'bottom' },
+          styles: {
+            color: d.textColor ?? '#101014', size: 10, weight: 'bold',
+            backgroundColor: color, borderColor: color, borderSize: 1, borderRadius: 3,
+            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+          },
+        },
+      ]
     },
   })
 

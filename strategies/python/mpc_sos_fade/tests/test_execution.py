@@ -190,6 +190,59 @@ def test_divergence_after_the_sos_is_exempt():
     assert dec.long_armed is True
 
 
+# ------------------------------------------------------- blocked setups ---------
+# Port of the Pine's pink TRADE BLOCKED tag: a setup price and the engine had READY,
+# refused by one of the strategy's own toggles. Reporting only — no decision reads it.
+
+def test_a_refused_setup_is_recorded_with_the_reason_and_the_would_be_entry():
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    assert len(ex.blocks) == 1
+    b = ex.blocks[0]
+    assert b.dir == 1 and b.code == 3            # 3 = the final-hour rule
+    assert b.label == "Final hour"
+    assert "16:00-18:00" in b.reason
+    assert abs(b.edge - 103.82) < 1e-9           # where the limit would have rested
+
+
+def test_an_armed_setup_records_no_block():
+    """The marker is for setups that were REFUSED — one that actually arms must be silent,
+    or the count stops meaning anything."""
+    ex = Execution(_cfg())
+    dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert dec.long_armed is True
+    assert ex.blocks == []
+
+
+def test_the_first_rule_that_would_refuse_wins_the_reason():
+    """Pine `f_blkCode` precedence — with the direction off AND the final hour live, the
+    tag must blame the direction (1), never the downstream gate."""
+    ex = Execution(_cfg(exec_longs=False))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    assert ex.blocks[0].code == 1
+
+
+def test_one_record_per_setup_per_reason_not_per_bar():
+    """The Pine's `sosBar*10 + code` dedupe: a setup blocked for many bars running is ONE
+    record — but a CHANGED reason is a genuinely different refusal and gets its own."""
+    ex = Execution(_cfg())
+    for i in range(4):
+        ex.step(_sig(i, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    assert len(ex.blocks) == 1
+    # the final hour passes, the veto takes over → a second, different refusal
+    ex.step(_sig(4, 104.0, 104.5, 103.9, 104.2, veto_on=True, veto_rsi_ob=True),
+            _seq_long_ready())
+    assert [b.code for b in ex.blocks] == [3, 4]
+
+
+def test_a_setup_price_never_made_ready_is_not_a_block():
+    """"Ready" asserts only what price and the engine decide (SOS in, fib agrees, an edge to
+    rest on). With no SOS there is no setup to refuse, whatever the toggles say."""
+    ex = Execution(_cfg(exec_longs=False))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_flat())
+    assert ex.blocks == []
+
+
 # ------------------------------------------------------- Method 3 (deep fib) ----
 # Leg fibs (from _sig): 0.5=105.0  0.618=103.82  0.702=102.8  0.786=102.0  0.886=101.14.
 # A gap qualifies for the entry band when bot<=0.5 and top>=0.886. "Near edge" for a

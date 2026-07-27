@@ -125,3 +125,13 @@ def test_driver_is_deterministic():
 def test_longs_and_shorts_off_means_no_trades():
     strat = MpcBLegStrategy(BLegConfig(exec_longs=False, exec_shorts=False)).run(synth_bars(12))
     assert strat.execution.trades == []
+
+
+def test_this_fork_records_no_blocked_setups():
+    """The A+ bot's blocked-setup markers are deliberately NOT ported here: their reason codes
+    answer "why was this A+ setup refused", and A+ never places an order in this fork — so the
+    tags would report the opposite of what a reader assumes. The fork gets none by CONSTRUCTION
+    (recording hangs off the parent's `_place_entries`, which `BLegExecution` overrides); this
+    pins that, so restoring the parent's entry path can't quietly switch them on."""
+    strat = MpcBLegStrategy().run(synth_bars(12), warmup=100)
+    assert strat.execution.blocks == []

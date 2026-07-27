@@ -135,6 +135,67 @@ class Trade:
     tp2: float = 0.0
 
 
+# ── blocked setups (Pine 4025-4086, the pink TRADE BLOCKED tag) ─────────────────
+# A setup that was READY to rest its entry limit — armed through to the SOS, fib pointing
+# the right way, a live entry edge to rest on, flat, this leg not yet traded — and was
+# refused by one of the strategy's OWN TOGGLES rather than by price. It places no order, so
+# it leaves no trace in any trade list; this is the only place it is countable.
+#
+# REPORTING ONLY. Nothing reads a recorded block back, so it cannot move a decision — the
+# same parity standing as `Trade.mfe_usd`. `compare_strategy.py` diffs the `px_*` decision
+# stream, which is untouched.
+#
+# Reason PRECEDENCE is the Pine's `f_blkCode`, verbatim: the FIRST rule that would refuse
+# the order is the one reported, so a block never blames a downstream gate for an upstream
+# refusal.
+_BLOCK_LABEL = {
+    1: "Direction off",
+    2: "Arm source off",
+    3: "Final hour",
+    4: "Divergence / RSI veto",
+    5: "HTF breakout",
+    6: "HTF bias",
+}
+# The hover text, word-for-word from Pine `f_blkWhy` so the chart and TradingView agree.
+_BLOCK_REASON = {
+    1: "'Trade Longs' / 'Trade Shorts' is OFF for this side.",
+    2: "Arm source OFF — this setup was armed by the sweep or divergence trigger you disabled.",
+    3: "Final-hour rule — no new entries 16:00-18:00 New York, ahead of the daily close.",
+    4: "Divergence / extreme-RSI veto — opposing divergence live at the SOS, or RSI at an extreme.",
+    5: "HTF exhaustion filter — the higher timeframe just CLOSED through its prior extreme, so "
+       "this is a fresh breakout rather than an exhaustion fade.",
+    6: "HTF bias requirement — your Weekly / Daily bias gate is not satisfied.",
+}
+
+
+def _block_code(dir_off: bool, arm_off: bool, late: bool, veto: bool,
+                htf_brk: bool, htf_bias: bool) -> int:
+    """Pine `f_blkCode` — 0 = nothing is blocking this side."""
+    return 1 if dir_off else 2 if arm_off else 3 if late else \
+        4 if veto else 5 if htf_brk else 6 if htf_bias else 0
+
+
+@dataclass
+class BlockedSetup:
+    """One refusal, at the bar it was refused on. `edge` is where the limit would have
+    rested — the price the trade never got."""
+
+    dir: int              # +1 long, -1 short
+    index: int            # bar index
+    time_ms: int
+    code: int             # 1-6, the Pine reason code
+    edge: float
+    sos_bar: int
+
+    @property
+    def label(self) -> str:
+        return _BLOCK_LABEL.get(self.code, "Blocked")
+
+    @property
+    def reason(self) -> str:
+        return _BLOCK_REASON.get(self.code, "")
+
+
 # ── the resting-order + position model ──────────────────────────────────────────
 @dataclass
 class _Pending:
@@ -240,6 +301,18 @@ class Execution:
         self._sec_stop_dir: Optional[int] = None
 
         self.trades: List[Trade] = []
+        # Blocked setups (reporting only — see BlockedSetup). `_blk_keys` is the Pine's
+        # per-side dedupe latch (`sosBar*10 + code`): one entry per setup per REASON, so a
+        # setup blocked for twenty bars is one record — but a reason that CHANGES is a
+        # genuinely different refusal and gets its own.
+        self.blocks: List[BlockedSetup] = []
+        self._blk_keys = [-1, -1]
+        # The gate booleans `_armed` computed this bar, stashed for `_record_blocks`. `_armed`
+        # stays a pure gate (the B-LEG fork reuses it as its A+-priority check), and the
+        # recording hangs off `_place_entries`, which that fork overrides — which is exactly
+        # why the B-LEG bot records no blocks: its codes describe why an A+ setup was refused,
+        # and A+ never trades there. See strategies/python/mpc_bleg/CLAUDE.md.
+        self._blk_gates: Optional[Tuple[bool, ...]] = None
 
     # ── public equity read ──
     @property
@@ -414,12 +487,57 @@ class Execution:
                        and (not dec.short_veto or not cfg.exec_respect_veto)
                        and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s))
         dec.long_armed, dec.short_armed = long_armed, short_armed
+        # Hand the gate booleans to `_record_blocks` rather than recompute them there — one
+        # place decides what "blocked" means, so the marker can never disagree with the arm.
+        self._blk_gates = (late, arm_ok_l, arm_ok_s, htf_block_l, htf_block_s,
+                           bias_block_l, bias_block_s)
         return long_armed, short_armed
+
+    # ── blocked-setup marker (Pine 4065-4086) — reporting only ───────────────────
+    def _record_blocks(self, sig, seq, dec, long_edge, short_edge) -> None:
+        """Record a setup that price and the engine had ready and one of the strategy's own
+        toggles refused. Deliberately runs AFTER `_armed`, off the gates it computed."""
+        if self._blk_gates is None:
+            return
+        cfg = self._cfg
+        late, arm_ok_l, arm_ok_s, htf_l, htf_s, bias_l, bias_s = self._blk_gates
+
+        # "Ready" omits every toggle gate — those ARE the blockers being reported. It asserts
+        # only what price and the engine decide: the SOS is in, the fib agrees, an edge exists
+        # to rest on, we're flat, and this leg has not already been traded.
+        ready = (
+            (seq.l_sos_bar is not None and sig.fibo_dir == 1 and long_edge is not None
+             and self._pos_dir == 0
+             and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l)),
+            (seq.s_sos_bar is not None and sig.fibo_dir == -1 and short_edge is not None
+             and self._pos_dir == 0
+             and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s)),
+        )
+        codes = (
+            _block_code(not cfg.exec_longs, not arm_ok_l, late,
+                        dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l),
+            _block_code(not cfg.exec_shorts, not arm_ok_s, late,
+                        dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s),
+        )
+        for slot, (is_long, ok, code, edge, sos_bar) in enumerate((
+            (True, ready[0], codes[0], long_edge, seq.l_sos_bar),
+            (False, ready[1], codes[1], short_edge, seq.s_sos_bar),
+        )):
+            if not ok or code == 0 or sos_bar is None or edge is None:
+                continue
+            key = sos_bar * 10 + code
+            if key == self._blk_keys[slot]:
+                continue
+            self._blk_keys[slot] = key
+            self.blocks.append(BlockedSetup(
+                dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
+                code=code, edge=float(edge), sos_bar=int(sos_bar)))
 
     # ── entry placement (Pine 4264-4507) ─────────────────────────────────────────
     def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
         cfg = self._cfg
         long_armed, short_armed = self._armed(sig, seq, dec, long_edge, short_edge)
+        self._record_blocks(sig, seq, dec, long_edge, short_edge)
 
         # deliberate deviation: no NEW entry inside the flat-by-close window (real runs)
         if cfg.flat_by_close and self._in_flat_window(sig):

@@ -12,10 +12,10 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { AlignJustify, Camera, Check, ChevronDown, Eye, EyeOff, RotateCcw, Ruler, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DomPosition, IndicatorSeries, dispose, init, type Chart, type KLineData } from 'klinecharts'
-import type { ChartCandle, ChartSpec } from './types'
+import type { ChartBlock, ChartCandle, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
-import { BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
+import { BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
 import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
 import theme from '@/themes/electric-indigo'
@@ -49,6 +49,11 @@ const TRADE_LOSS_COLOR = theme.neg         // red box — trade hit its stop (pn
 // Profit-fill mint — deliberately LIGHTER than the candle up-colour (theme.pos) so the
 // profit-depth band never blends into the green candles inside it (Aaron 2026-07-20).
 const TRADE_PROFIT_FILL = '#8ef2b8'
+// Blocked setups get their OWN colour, off the win/loss axis entirely — a refused trade is not a
+// loser, and painting it red would read as one. Pink, matching the Pine's `TRADE BLOCKED` tag.
+const BLOCK_COLOR = '#ff2e9a'
+const BLOCK_TIP_W = 240                    // hover-card width  } both feed the viewport clamp —
+const BLOCK_TIP_H = 130                    // ~its tallest height} keep in sync with the card's markup
 const DEFAULT_OVERLAY_COLOR = theme.textTertiary // fallback when a spec overlay omits a color
 const DAY_BREAK_COLOR = theme.textTertiary // muted vertical line for daily session breaks
 const INDICATOR_PALETTE = [theme.gold, theme.series[4], theme.accent, theme.series[1]] // line colors
@@ -305,6 +310,19 @@ export default function ChartPanel({
     const wins = spec.trades.reduce((n, tr) => n + (tr.pnl > 0 ? 1 : 0), 0)
     return { wins, losses: spec.trades.length - wins }
   }, [spec.trades])
+
+  // Blocked setups — the trades that never happened. Default OFF: they are a diagnostic view
+  // ("is this rule protecting me or costing me?"), not part of reading the run's result, and on a
+  // long run there are more of them than there are trades.
+  const blocks = useMemo(() => spec.blocks ?? [], [spec.blocks])
+  const [blocksOn, setBlocksOn] = useState(false)
+  // The hovered block's text + where to float it. klinecharts fires the hover on its own canvas, so
+  // the card is a plain DOM node placed at the cursor. It reads the event's PAGE coordinates and
+  // renders viewport-`fixed` (the right-click menu's pattern) rather than positioning inside the
+  // chart wrapper: the overlay event's `x`/`y` are pane-relative, so any wrapper padding or a second
+  // pane would silently offset the card. Page coords have one origin, in every layout and fullscreen.
+  const [blockTip, setBlockTip] = useState<{ x: number; y: number; b: ChartBlock } | null>(null)
+  useEffect(() => { setBlockTip(null) }, [blocks, blocksOn])
 
   // Portfolio-stack layers. The roster is DERIVED from the trades themselves (`layer`/`layerName`/
   // `layerColor`), so the panel stays strategy-agnostic — it sees layers as data, exactly like
@@ -621,6 +639,39 @@ export default function ChartPanel({
       })
     }
   }, [spec.trades, tradesOn, winnersOn, losersOn, hiddenLayers, displayCandles, loadedLoTs, loadedHiTs])
+
+  // Blocked setups — same rebuild-on-data-change rationale as the trades effect. Each marker
+  // carries its own hover handlers, which is what turns the tag into "why didn't this trade":
+  // klinecharts hands back the event's pixel coordinates, and the card is rendered in React.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.removeOverlay({ name: BLOCK })
+    setBlockTip(null)
+    if (!blocksOn) return
+    for (const b of blocks) {
+      // Clipped to the loaded candles, like every other auto-generated overlay — klinecharts
+      // clamps an out-of-range point onto the plot edge, which would pile every older marker
+      // into the no-data region left of the drill-down edge.
+      if (loadedLoTs == null || loadedHiTs == null) break
+      if (b.time < loadedLoTs || b.time > loadedHiTs) continue
+      chart.createOverlay({
+        name: BLOCK,
+        lock: true,
+        points: [{ timestamp: b.time, value: b.price }],
+        extendData: { dir: b.dir, label: b.label, color: BLOCK_COLOR, textColor: theme.bgBase },
+        onMouseEnter: (e) => {
+          setBlockTip({
+            x: (e.pageX ?? 0) - window.scrollX,
+            y: (e.pageY ?? 0) - window.scrollY,
+            b,
+          })
+          return true
+        },
+        onMouseLeave: () => { setBlockTip(null); return true },
+      })
+    }
+  }, [blocks, blocksOn, displayCandles, loadedLoTs, loadedHiTs])
 
   // Fibonacci drawings — re-created from state after any data change (applyNewData clears overlays,
   // same rationale as the trade/session effects), so a fib survives TF switches. Each carries
@@ -982,6 +1033,10 @@ export default function ChartPanel({
                   { key: 'winners', label: 'Winners', color: TRADE_WIN_COLOR, on: winnersOn, toggle: () => setWinnersOn(o => !o), sub: true, count: outcomeCounts.wins },
                   { key: 'losers', label: 'Losers', color: TRADE_LOSS_COLOR, on: losersOn, toggle: () => setLosersOn(o => !o), sub: true, count: outcomeCounts.losses },
                 ] : []),
+                // Blocked setups sit next to Trades — same subject (what the strategy did with a
+                // signal), opposite answer. Listed only when the run reports any: a runner that
+                // can't tell us would otherwise show a permanently empty toggle.
+                ...(blocks.length > 0 ? [{ key: 'blocks', label: 'Blocked', color: BLOCK_COLOR, on: blocksOn, toggle: () => setBlocksOn(o => !o), sub: false, count: blocks.length }] : []),
                 ...overlayGroups.map(g => ({ key: `g-${g.name}`, label: g.name, color: g.color, on: groupsOn[g.name], toggle: () => toggleGroup(g.name), sub: false, count: undefined as number | undefined })),
                 ...spec.indicators.map((ind, i) => ({ key: `i-${ind.name}`, label: ind.name, color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length], on: indicatorsOn[ind.name], toggle: () => toggleIndicator(ind.name), sub: false, count: undefined as number | undefined })),
                 ...(dailyBreaks.length > 0 ? [{ key: 'daybreaks', label: 'Day breaks', color: DAY_BREAK_COLOR, on: dayBreaksOn, toggle: () => setDayBreaksOn(o => !o), sub: false, count: undefined as number | undefined }] : []),
@@ -1159,6 +1214,36 @@ export default function ChartPanel({
             {measurement && renderMeasRect(measurement, measurement.id, 1)}
             {liveDrag && renderMeasRect(liveDrag, 'live', 0.85)}
           </div>
+
+          {/* Blocked-setup hover card — the "why didn't this trade" answer. `pointerEvents: none`
+              so it can never eat the hover that spawned it (which would flicker it on and off), and
+              viewport-`fixed` + clamped like the right-click menu, so a marker at the right or
+              bottom edge of the chart still shows its whole card. */}
+          {blockTip && (
+            <div
+              style={{
+                position: 'fixed',
+                left: Math.max(6, Math.min(blockTip.x + 14, window.innerWidth - BLOCK_TIP_W - 6)),
+                top: Math.max(6, Math.min(blockTip.y + 12, window.innerHeight - BLOCK_TIP_H - 6)),
+                width: BLOCK_TIP_W,
+                pointerEvents: 'none',
+                zIndex: 60,
+              }}
+              className="rounded-md border border-border-subtle bg-bg-surface px-2.5 py-2 shadow-lg"
+            >
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: BLOCK_COLOR }}>
+                <span>{blockTip.b.dir === 'long' ? '▲ Long' : '▼ Short'} blocked</span>
+              </div>
+              <div className="mt-1 text-[11px] font-medium text-text-primary">{blockTip.b.label}</div>
+              <div className="mt-1 text-[11px] leading-snug text-text-secondary">{blockTip.b.reason}</div>
+              <div className="mt-1.5 border-t border-border-subtle pt-1.5 text-[10px] text-text-tertiary">
+                Limit would have rested at{' '}
+                <span className="font-mono tabular-nums text-text-secondary">
+                  {blockTip.b.price.toFixed(pricePrecision)}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* On-chart "Sessions" legend (TradingView indicator-legend style) — the one place sessions
               are managed now that they're out of the Layers dropdown. Sits on LINE 2, directly under

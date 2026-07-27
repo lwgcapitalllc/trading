@@ -13,7 +13,7 @@ real 21,231-bar `VANTAGE_XAUUSD, 15m` export — bar-for-bar identical decision 
 ~90 distinct frozen bands and 5 graded trades. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
 open question, not correctness:** 5 trades is far too thin to tune against. See "The parity gate".
-**Last reviewed:** 2026-07-26 — the exit levers landed, the Pine-parity harness was built, and it came back GREEN on the first real export (see "The parity gate").
+**Last reviewed:** 2026-07-27 — the A+ blocked-setup markers stay non-ported here, now pinned by a test. Earlier: 2026-07-26 — the exit levers landed, the Pine-parity harness was built, and it came back GREEN on the first real export (see "The parity gate").
 
 ## Why it exists (the split, 2026-07-24)
 
@@ -98,6 +98,12 @@ exit block copied line-for-line from `mpc_strategy.pine`. **Not ported, delibera
 the pink blocked-trade markers, whose codes describe why an **A+** setup was refused — in this fork
 A+ never trades, so those tags would report the opposite of what a reader would assume. A B-LEG
 block tag would need its own code set, which is new design work, not a port.
+
+**That non-port now also holds on the PYTHON side (2026-07-27).** `mpc_sos_fade`'s `Execution` gained
+`blocks` (the same six codes, feeding the lab price chart's Blocked layer). This fork records none by
+CONSTRUCTION: the recording hangs off the parent's `_place_entries`, which `BLegExecution` overrides.
+`test_this_fork_records_no_blocked_setups` pins it, so restoring the parent's entry path here can't
+quietly switch on tags that would mean the opposite of what they say.
 
 ## Sizing — sizes ITSELF
 

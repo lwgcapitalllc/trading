@@ -475,6 +475,13 @@ async def _handle_complete(
     equity_path.write_text(json.dumps(equity_curve, default=str))
     daily_pnl_path.write_text(json.dumps(daily_pnl, default=str))
 
+    # Blocked setups — signals the strategy's own toggles refused, which place no order and
+    # so appear in NO trade list. Only runners that report them write the file (Python today);
+    # its absence is what makes the chart's Blocked layer vanish for an NT8/MT5 run.
+    blocked = result.get("blocked_setups") or []
+    if blocked:
+        (run_dir / "blocked_setups.json").write_text(json.dumps(blocked, default=str))
+
     # Regime tagging — happens BEFORE DB update so the run stays "running" during tagging,
     # letting the frontend show the Tagging milestone step in the progress bar.
     if daily_pnl:

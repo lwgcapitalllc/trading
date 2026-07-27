@@ -71,6 +71,22 @@ export interface ChartTrade {
   layerName?: string
 }
 
+/** A setup the strategy had ready and one of its OWN rules refused — no order was placed, so it
+ *  exists in no trade list and no equity curve. Drawn as a small pink tag at `price` (where the
+ *  entry would have rested) with the full `reason` on hover.
+ *
+ *  Generic on purpose: `label` and `reason` are strings the STRATEGY wrote. The panel renders them
+ *  verbatim and knows nothing about what any particular rule means, so a new strategy with an
+ *  entirely different rule set needs no chart change. */
+export interface ChartBlock {
+  id: string
+  time: EpochMs
+  dir: TradeDir      // the side that was refused — tag points down for a long, up for a short
+  price: number      // where the entry limit would have rested
+  label: string      // short chip text, e.g. "Final hour"
+  reason: string     // the full sentence, shown on hover
+}
+
 /** Generic styling hints shared by overlays. All optional — the panel has defaults. */
 export interface OverlayStyle {
   color?: string
@@ -150,6 +166,9 @@ export interface ChartSpec {
   candles: ChartCandle[]        // base-TF OHLC
   sessions: ChartSession[]
   trades: ChartTrade[]
+  // Refused setups. OPTIONAL — a runner that can't report them (NT8/MT5) omits the key, which is
+  // what makes the Blocked layer vanish rather than render an empty, misleading toggle.
+  blocks?: ChartBlock[]
   overlays: ChartOverlay[]      // generic strategy structure, each tagged with a `group`
   indicators: ChartIndicator[]
 }
