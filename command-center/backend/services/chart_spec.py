@@ -239,7 +239,9 @@ def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
     chart build its per-reason filters straight off the data.
 
     A setup can be refused by several rules at once, so `reasons` is a LIST (the strategy's
-    own precedence order, primary first).
+    own precedence order, primary first). A file written before that list existed carries a
+    single `label`/`reason` pair instead, and is read as a one-item list — a run already on
+    disk must never silently lose its markers because the record shape moved on.
     """
     path = run_dir / "blocked_setups.json"
     if not path.exists():
@@ -256,9 +258,12 @@ def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
         t = b.get("time_ms")
         if not isinstance(t, (int, float)) or not (lo <= t <= hi):
             continue
+        raw_reasons = b.get("reasons")
+        if not raw_reasons and b.get("label"):
+            raw_reasons = [{"label": b.get("label"), "reason": b.get("reason")}]  # pre-list file
         reasons = [
             {"label": str(r.get("label") or "Blocked"), "reason": str(r.get("reason") or "")}
-            for r in (b.get("reasons") or []) if isinstance(r, dict)
+            for r in (raw_reasons or []) if isinstance(r, dict)
         ]
         if not reasons:
             continue        # a record naming no rule can't be filtered or explained — drop it

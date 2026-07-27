@@ -99,7 +99,9 @@
       "Bash(git -C /Users/alwg/trading commit -m 'docs\\(mpc_bos\\): spec the BOS continuation strategy — the SOS fade with the arm swapped *)",
       "Bash(git -C /Users/alwg/trading push origin main)",
       "Bash(git push *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(git stash *)",
+      "Bash(git commit -m 'fix\\(chart\\): restore the 15m view and the Blocked toggle *)"
     ],
     "deny": [
       "Bash(git push --force:*)",

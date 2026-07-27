@@ -134,17 +134,30 @@ const DISPLAY_TFS: readonly TfOption[] = [
   { label: 'H1', min: 60 },
 ]
 
-// Drill-down timeframes BELOW the run's base bars — pulled live from the broker (they can't be
+// Drill-down timeframes BELOW the chart's base bars — pulled live from the broker (they can't be
 // resampled UP from the base). Offered only when an `onRequestCandles` fetcher is wired.
+//
+// The ladder deliberately covers every intraday TF, not just M1/M5, because the chart's base is NOT
+// always the run's own bar size: `chart_spec._fit_timeframe` steps a long run's base UP to keep the
+// shipped candle count sane (a 6.5-year 15m run ships H4). Without M15/M30/H1 here, that run could
+// not be viewed at the timeframe it actually TRADED — the one view that matters most.
 const FETCH_TFS: readonly TfOption[] = [
   { label: 'M1', min: 1 },
   { label: 'M5', min: 5 },
+  { label: 'M15', min: 15 },
+  { label: 'M30', min: 30 },
+  { label: 'H1', min: 60 },
 ]
 
-// How far back to REQUEST each drill-down TF — deliberately MORE than the broker's known depth
-// (~30d of M1, ~240d of M5) so the fetch always reaches the feed's true edge, which the backend then
-// reports as a hard limit (the red "no earlier data" line). The backend caps the candle volume.
-const FETCH_TF_LOOKBACK_DAYS: Record<number, number> = { 1: 45, 5: 270 }
+// How far back to REQUEST each drill-down TF. For M1/M5 this is deliberately MORE than the broker's
+// known depth (~30d / ~240d) so the fetch reaches the feed's true edge, which the backend reports as
+// a hard limit (the red "no earlier data" line). From M15 up the broker has years, so the binding
+// limit is the backend's own 60k-candle drill cap instead — these values sit just under it, which is
+// what a full-depth request would be clamped to anyway (and a clamped request correctly draws NO red
+// edge, since the boundary is ours, not the broker's).
+const FETCH_TF_LOOKBACK_DAYS: Record<number, number> = {
+  1: 45, 5: 270, 15: 850, 30: 1700, 60: 3400,
+}
 
 /** "M5" → 5, "M15" → 15, "H1" → 60, "H4" → 240, "D1" → 1440. Falls back to 5. */
 function parseTfMinutes(tf: string): number {
@@ -368,7 +381,19 @@ export default function ChartPanel({
   // Blocked setups — the trades that never happened. Default OFF: they are a diagnostic view
   // ("is this rule protecting me or costing me?"), not part of reading the run's result, and on a
   // long run there are more of them than there are trades.
-  const blocks = useMemo(() => spec.blocks ?? [], [spec.blocks])
+  // NORMALISED on read. A `chart_spec.json` is CACHED per run, so a spec built before `reasons`
+  // became a list is still on disk carrying a single `label`/`reason` pair — and every read below
+  // (`b.reasons.length`, the filter roster, the hover card) would throw on it, taking the whole
+  // panel down. A stale cache must degrade, never crash.
+  const blocks = useMemo<ChartBlock[]>(() => (spec.blocks ?? []).map(b => {
+    const legacy = b as unknown as { label?: string; reason?: string }
+    return {
+      ...b,
+      reasons: b.reasons?.length ? b.reasons
+        : legacy.label ? [{ label: legacy.label, reason: legacy.reason ?? '' }]
+        : [],
+    }
+  }).filter(b => b.reasons.length > 0), [spec.blocks])
   const [blocksOn, setBlocksOn] = useState(false)
   // The hovered block's text + where to float it. klinecharts fires the hover on its own canvas, so
   // the card is a plain DOM node placed at the cursor. It reads the event's PAGE coordinates and
@@ -871,9 +896,9 @@ export default function ChartPanel({
     if (!chart) return
     chart.removeOverlay({ name: DATA_EDGE })
     if (!dataEdge || dataEdge.tf !== selectedMin) return
-    const label = selectedMin === 1 ? 'No earlier 1-minute data'
-      : selectedMin === 5 ? 'No earlier 5-minute data'
-      : 'No earlier data'
+    // Named off the ACTIVE drill-down TF, so every rung of the ladder reads correctly.
+    const tfLabel = FETCH_TFS.find(tf => tf.min === selectedMin)?.label
+    const label = tfLabel ? `No earlier ${tfLabel} data` : 'No earlier data'
     chart.createOverlay({
       name: DATA_EDGE,
       lock: true,

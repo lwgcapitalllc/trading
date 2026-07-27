@@ -54,16 +54,27 @@ here**, so the chart shows exactly what the strategy saw.
 - **Timeframe — up = display, down = drill-down.** The segmented control offers two kinds of TF.
   **At or above the base** (`DISPLAY_TFS`, filtered to TFs ≥ and divisible by the spec's base TF):
   `resample` aggregates base bars up (epoch-aligned buckets) — display only, `spec.baseTimeframe`
-  stays the source of truth. **Below the base** (`FETCH_TFS` = 1m/5m): these can't be resampled up,
+  stays the source of truth. **Below the base** (`FETCH_TFS` = M1/M5/M15/M30/H1): these can't be
+  resampled up,
   so they are **drill-down** — offered ONLY when the host passes an `onRequestCandles(tf, fromMs,
   toMs)` fetcher (BacktestDetail wires it to `GET /backtests/runs/{id}/candles`, gated to intraday
   runs — a D1/NT8 run has no sub-base bars). Selecting one enters `isFetchMode`: the panel pulls the
-  TF's **full broker depth in ONE shot** (`FETCH_TF_LOOKBACK_DAYS` — 45d for M1, 270d for M5,
-  deliberately MORE than the broker keeps so the fetch reaches the true feed edge), ending at the
+  TF's depth in ONE shot (`FETCH_TF_LOOKBACK_DAYS` — 45d M1 / 270d M5, deliberately MORE than the
+  broker keeps so the fetch reaches the true feed edge; 850d M15 / 1700d M30 / 3400d H1, which is
+  what the backend's 60k drill cap would clamp a full-depth request to anyway), ending at the
   run's last bar; `displayCandles` becomes those `fetched` candles. No pan-driven refetch — the whole
   depth is loaded, so scrolling within it is free. Results are cached per-TF in-session
   (`fetchCacheRef`; a completed run's window is fixed, so it never restales) on top of the backend's
   own disk cache — re-selecting a TF is instant, and a cold reload hits the broker once.
+  - **The ladder must cover EVERY intraday TF, not just M1/M5 (2026-07-27).** The chart's base is not
+    always the run's own bar size: `chart_spec._fit_timeframe` steps a long run's base UP to keep the
+    shipped candle count under `_CANDLE_CAP` (35k) — a 6.5-year **15m** run ships **H4**. With only
+    M1/M5 below it, that run could not be viewed at the timeframe it actually TRADED, which is the one
+    view that matters. So `FETCH_TFS` runs M1→H1 and `options` offers whichever of them sit below the
+    shipped base. The drill-down window is still bounded (newest ~850d at M15), so a multi-year run
+    shows its most recent stretch at 15m rather than the whole span — the same trade-off M1/M5 already
+    made. Raising `_CANDLE_CAP` instead is the wrong lever: 6.5 years of M15 is ~160k candles and a
+    ~15 MB `chart_spec.json` shipped on every chart open.
   - **The red "no earlier data" edge.** The backend returns `data_start_ms` + `hard_edge`: `hard_edge`
     is True only when the oldest bar is the broker's TRUE limit (feed has nothing older, not our render
     cap — `_DRILL_CANDLE_CAP` 60k sits above M1/M5 depth so it never binds and can't fake a boundary).
@@ -159,6 +170,13 @@ here**, so the chart shows exactly what the strategy saw.
     The `BLOCK` template is the ONE here that is deliberately not `ignoreEvent` (klinecharts only fires
     hover on figures that accept events), and its dot and line accept events too, so the LINE is
     hoverable, not just the chip.
+  - **Both readers tolerate the pre-list record shape**, and must keep doing so. `blocked_setups.json`
+    is written ONCE at run completion and then lives on disk forever, while the shape it is read with
+    keeps moving — the backend reads a lone `label`/`reason` pair as a one-item list, and the panel
+    normalises `spec.blocks` on read because `chart_spec.json` is CACHED per run. This already broke
+    once (a run silently lost all 312 of its markers, with no error anywhere) and would have taken the
+    whole panel down on the frontend side, since every read does `b.reasons.length`. Locked by
+    `backend/tests/test_chart_spec_blocks.py`.
   - **`reasons` is a LIST** because several rules can refuse one setup. The panel derives its
     per-reason filter roster from those labels (first-seen order, with counts), exactly as it derives
     stack layers from trades — so it stays strategy-agnostic and a different rule set needs no chart
