@@ -164,7 +164,12 @@ here**, so the chart shows exactly what the strategy saw.
   list, no equity curve and no broker report; without this layer there is no way to judge whether a
   blocking rule protects the account or costs it.
   - **The LINE is the marker.** The overlay's single anchor is the EXACT price the entry limit would
-    have rested at: a dot sits on it and a dashed pink line runs from it to the tag. **The tag is
+    have rested at. Three figures come off it: a **short horizontal dashed line AT that price**
+    (`BLOCK_ENTRY_LINE_BACK` 8 / `_FWD` 46 px, weighted forward the way a resting order waits) — the
+    working order, drawn the way a working order is drawn everywhere else, so the marker reads as
+    "the limit sat HERE and price never gave it a chance" rather than "something happened on this
+    bar"; a **dot** pinning the exact bar on that level (the line alone spans several); and a dashed
+    **leader** tying the level to the tag. **The tag is
     parked at the PANE EDGE** — bottom for a refused long, top for a refused short (the way the trade
     would have moved) — never near the price, so it can never sit on the candles; that is also why the
     line has to be long. The tag is clamped so it can never cross the level it points at (possible

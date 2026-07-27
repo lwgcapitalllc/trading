@@ -132,6 +132,12 @@ interface BlockExtend {
 const BLOCK_TAG_INSET_TOP = 56
 const BLOCK_TAG_INSET_BOTTOM = 44
 
+// The would-be-entry line, in px either side of the block's bar. Deliberately SHORT — it marks a
+// price on a bar, not a level that held for a while — and weighted forward, the way a resting order
+// waits. Fixed pixels rather than a bar count so it stays legible at every zoom.
+const BLOCK_ENTRY_LINE_BACK = 8
+const BLOCK_ENTRY_LINE_FWD = 46
+
 // Draw the next UNHIT take-profit only when the trade got at least this far toward it (mfe covered
 // this fraction of the gap from the last hit level) — the "close enough to the next TP" filter, so a
 // trade that barely nudged past TP1 doesn't sprout a far-away TP2 line.
@@ -696,13 +702,27 @@ export function registerChartOverlays(): void {
       const y = down ? Math.max(yTag, a.y + 14) : Math.min(yTag, a.y - 14)
       const n = d.count ?? 1
       return [
-        // the exact price the limit would have rested at
+        // THE RESTING LIMIT — a short horizontal dashed line AT the would-be entry price, drawn the
+        // way a working order is drawn everywhere else, so the marker reads as "the limit sat here
+        // and price never got a chance at it" rather than just "something happened on this bar".
+        // Mostly forward in time from the bar, because that is the direction a resting order waits.
+        {
+          type: 'line',
+          attrs: {
+            coordinates: [
+              { x: a.x - BLOCK_ENTRY_LINE_BACK, y: a.y },
+              { x: a.x + BLOCK_ENTRY_LINE_FWD, y: a.y },
+            ],
+          },
+          styles: { color, size: 1, style: 'dashed', dashedValue: [4, 3] },
+        },
+        // the dot pins the exact BAR on that level (the line alone spans several)
         {
           type: 'circle',
           attrs: { x: a.x, y: a.y, r: 2.5 },
           styles: { style: 'fill', color },
         },
-        // …and the line that points at it
+        // …and the leader that ties the level to its tag
         {
           type: 'line',
           attrs: { coordinates: [{ x: a.x, y: a.y }, { x: a.x, y }] },
