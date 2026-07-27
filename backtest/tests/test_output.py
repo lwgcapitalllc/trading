@@ -289,20 +289,31 @@ class _Blk:
     """The duck-type `build_blocked_setups` consumes — deliberately NOT the strategy's own
     class, so the test proves the adapter needs nothing but these attributes."""
 
-    def __init__(self, dir_, time_ms, code, edge, label, reason):
-        self.dir, self.time_ms, self.code = dir_, time_ms, code
-        self.edge, self.label, self.reason = edge, label, reason
+    def __init__(self, dir_, time_ms, codes, edge, labels, reasons):
+        self.dir, self.time_ms, self.codes = dir_, time_ms, codes
+        self.edge, self.labels, self.reasons = edge, labels, reasons
 
 
 def test_blocked_setups_map_direction_and_sort_by_time():
     rows = build_blocked_setups([
-        _Blk(-1, 2_000, 3, 1234.5678, "Final hour", "no new entries 16:00-18:00 NY"),
-        _Blk(1, 1_000, 4, 1200.0, "Divergence / RSI veto", "opposing divergence"),
+        _Blk(-1, 2_000, [3], 1234.5678, ["Final hour"], ["no new entries 16:00-18:00 NY"]),
+        _Blk(1, 1_000, [4], 1200.0, ["Divergence / RSI veto"], ["opposing divergence"]),
     ])
     assert [r["time_ms"] for r in rows] == [1_000, 2_000]
     assert [r["direction"] for r in rows] == ["Long", "Short"]
     assert rows[1]["edge"] == 1234.5678
-    assert rows[1]["label"] == "Final hour"
+    assert rows[1]["reasons"] == [
+        {"label": "Final hour", "reason": "no new entries 16:00-18:00 NY"}]
+
+
+def test_blocked_setups_carry_every_reason_in_order():
+    """A setup can be refused by several rules at once — the row keeps them ALL, in the
+    strategy's precedence order, which is what lets the chart filter by reason."""
+    rows = build_blocked_setups([
+        _Blk(1, 1_000, [1, 3], 1200.0, ["Direction off", "Final hour"], ["a", "b"]),
+    ])
+    assert [r["label"] for r in rows[0]["reasons"]] == ["Direction off", "Final hour"]
+    assert rows[0]["codes"] == [1, 3]
 
 
 def test_blocked_setups_tolerates_none():

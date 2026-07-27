@@ -259,18 +259,28 @@ def build_blocked_setups(blocks: Optional[Sequence[Any]]) -> list[dict]:
 
     A blocked setup places no order, so it appears in no trade list and no equity curve —
     this is the only channel it reaches the lab through. Strategy-agnostic like everything
-    else here: the input is any object carrying `dir` / `time_ms` / `code` / `edge` plus a
-    `label` and `reason` string (`mpc_sos_fade.execution.BlockedSetup` satisfies it), and a
-    strategy that records none simply produces `[]`.
+    else here: the input is any object carrying `dir` / `time_ms` / `edge` plus parallel
+    `labels` and `reasons` sequences (`mpc_sos_fade.execution.BlockedSetup` satisfies it),
+    and a strategy that records none simply produces `[]`.
+
+    A setup can be refused by SEVERAL rules at once, so `reasons` is a LIST — that is what
+    lets the chart filter by reason without lying ("blocked by the veto" has to stay true
+    when something else was also blocking). The list is ordered by the strategy's own
+    precedence, so `reasons[0]` is the primary one.
     """
     out: list[dict] = []
     for b in blocks or []:
+        labels = list(getattr(b, "labels", None) or [])
+        texts = list(getattr(b, "reasons", None) or [])
+        reasons = [
+            {"label": str(labels[i]), "reason": str(texts[i] if i < len(texts) else "")}
+            for i in range(len(labels))
+        ]
         out.append({
             "time_ms":   int(getattr(b, "time_ms", 0)),
             "direction": "Long" if getattr(b, "dir", 0) > 0 else "Short",
-            "code":      int(getattr(b, "code", 0)),
-            "label":     str(getattr(b, "label", "") or ""),
-            "reason":    str(getattr(b, "reason", "") or ""),
+            "codes":     [int(c) for c in (getattr(b, "codes", None) or [])],
+            "reasons":   reasons,
             "edge":      _round(float(getattr(b, "edge", 0.0)), 5),
         })
     out.sort(key=lambda r: r["time_ms"])

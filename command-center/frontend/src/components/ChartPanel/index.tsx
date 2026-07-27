@@ -52,13 +52,78 @@ const TRADE_PROFIT_FILL = '#8ef2b8'
 // Blocked setups get their OWN colour, off the win/loss axis entirely — a refused trade is not a
 // loser, and painting it red would read as one. Pink, matching the Pine's `TRADE BLOCKED` tag.
 const BLOCK_COLOR = '#ff2e9a'
-const BLOCK_TIP_W = 240                    // hover-card width  } both feed the viewport clamp —
-const BLOCK_TIP_H = 130                    // ~its tallest height} keep in sync with the card's markup
+const BLOCK_TIP_W = 240                    // hover-card width; feeds the viewport clamp
+const BLOCK_TIP_H = 180                    // ~its height with two reasons listed; same clamp
 const DEFAULT_OVERLAY_COLOR = theme.textTertiary // fallback when a spec overlay omits a color
 const DAY_BREAK_COLOR = theme.textTertiary // muted vertical line for daily session breaks
 const INDICATOR_PALETTE = [theme.gold, theme.series[4], theme.accent, theme.series[1]] // line colors
 
 type TfOption = { label: string; min: number }
+
+/** One row in a header dropdown: a coloured dot, a label, an optional count, a tick when on.
+ *  `sub` indents it under the row above (a filter of that layer rather than a peer of it). */
+interface MenuItem {
+  key: string
+  label: string
+  color: string
+  on: boolean
+  toggle: () => void
+  sub?: boolean
+  count?: number
+}
+
+/** The header's multi-select dropdown — Layers, Analysis and Strategies are all this component
+ *  with different items, so a row can never render three different ways. It owns its own open
+ *  state + click-outside close, and deliberately stays OPEN while toggling (these menus are used
+ *  to compare combinations, not to make one choice). */
+function ToggleMenu({ title, items, minWidth = 172 }: {
+  title: string
+  items: MenuItem[]
+  minWidth?: number
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+  const activeCount = items.filter(it => it.on).length
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
+      >
+        {title}
+        <span className="font-mono text-text-tertiary">{activeCount}/{items.length}</span>
+        <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 mt-1 rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg" style={{ zIndex: 50, minWidth }}>
+          {items.map(it => (
+            <button
+              key={it.key}
+              onClick={it.toggle}
+              className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken ${it.sub ? 'pl-7' : 'pl-3'}`}
+            >
+              <span
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ background: it.on ? it.color : 'transparent', boxShadow: `inset 0 0 0 1px ${it.color}`, opacity: it.on ? 1 : 0.5 }}
+              />
+              <span className={it.on ? 'text-text-primary' : 'text-text-tertiary'}>{it.label}</span>
+              {it.count != null && <span className="font-mono text-text-tertiary">{it.count}</span>}
+              {it.on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Display-timeframe ladder for the segmented control. Filtered per spec.baseTimeframe so we
 // never offer a TF finer than the strategy's own bars (those come from the drill-down below).
@@ -187,17 +252,6 @@ export default function ChartPanel({
     return () => document.removeEventListener('mousedown', onDown)
   }, [tfOpen])
 
-  // Layers multi-select dropdown open state + click-outside to close (stays open while toggling).
-  const [layersOpen, setLayersOpen] = useState(false)
-  const layersRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!layersOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (layersRef.current && !layersRef.current.contains(e.target as Node)) setLayersOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [layersOpen])
   // Reset selection to the base TF when the spec (and thus its options) changes.
   useEffect(() => {
     setSelectedMin(options.find(o => o.min === baseMin)?.min ?? options[0].min)
@@ -322,7 +376,35 @@ export default function ChartPanel({
   // chart wrapper: the overlay event's `x`/`y` are pane-relative, so any wrapper padding or a second
   // pane would silently offset the card. Page coords have one origin, in every layout and fullscreen.
   const [blockTip, setBlockTip] = useState<{ x: number; y: number; b: ChartBlock } | null>(null)
-  useEffect(() => { setBlockTip(null) }, [blocks, blocksOn])
+
+  // Per-reason filters. The roster is DERIVED from the blocks themselves — first-seen order, keyed
+  // on the strategy's own label — so the panel stays strategy-agnostic: it sees reasons as data,
+  // exactly like overlay groups and stack layers, and a strategy with a different rule set needs no
+  // change here. Counts are how many setups EACH rule refused, which is the number the whole layer
+  // exists to produce ("is this rule protecting me or costing me?").
+  const blockReasons = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const b of blocks) for (const r of b.reasons) counts.set(r.label, (counts.get(r.label) ?? 0) + 1)
+    return Array.from(counts, ([label, count]) => ({ label, count }))
+  }, [blocks])
+  // Reasons hidden from the chart. A stale label from a spec change is inert, so no reconciliation.
+  const [hiddenReasons, setHiddenReasons] = useState<Set<string>>(new Set())
+  const toggleReason = (label: string) => setHiddenReasons(prev => {
+    const next = new Set(prev)
+    if (next.has(label)) next.delete(label); else next.add(label)
+    return next
+  })
+  // A block draws while ANY of its reasons is still on. Requiring ALL would make "show me the veto
+  // blocks" hide the ones the final hour was also refusing — which are still veto blocks.
+  const blockVisible = useCallback(
+    (b: ChartBlock) => b.reasons.some(r => !hiddenReasons.has(r.label)),
+    [hiddenReasons],
+  )
+  const shownBlockCount = useMemo(
+    () => blocks.reduce((n, b) => n + (blockVisible(b) ? 1 : 0), 0),
+    [blocks, blockVisible],
+  )
+  useEffect(() => { setBlockTip(null) }, [blocks, blocksOn, hiddenReasons])
 
   // Portfolio-stack layers. The roster is DERIVED from the trades themselves (`layer`/`layerName`/
   // `layerColor`), so the panel stays strategy-agnostic — it sees layers as data, exactly like
@@ -343,16 +425,6 @@ export default function ChartPanel({
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
   })
-  const [strategiesOpen, setStrategiesOpen] = useState(false)
-  const strategiesRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!strategiesOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (strategiesRef.current && !strategiesRef.current.contains(e.target as Node)) setStrategiesOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [strategiesOpen])
 
   // Generic overlays (box/hline/vline) carry strategy structure, grouped by `group`. Each group
   // is independently toggleable. The chart never knows which strategy produced them.
@@ -655,11 +727,12 @@ export default function ChartPanel({
       // into the no-data region left of the drill-down edge.
       if (loadedLoTs == null || loadedHiTs == null) break
       if (b.time < loadedLoTs || b.time > loadedHiTs) continue
+      if (!blockVisible(b)) continue                       // per-reason filters
       chart.createOverlay({
         name: BLOCK,
         lock: true,
         points: [{ timestamp: b.time, value: b.price }],
-        extendData: { dir: b.dir, label: b.label, color: BLOCK_COLOR, textColor: theme.bgBase },
+        extendData: { dir: b.dir, count: b.reasons.length, color: BLOCK_COLOR, textColor: theme.bgBase },
         onMouseEnter: (e) => {
           setBlockTip({
             x: (e.pageX ?? 0) - window.scrollX,
@@ -671,7 +744,7 @@ export default function ChartPanel({
         onMouseLeave: () => { setBlockTip(null); return true },
       })
     }
-  }, [blocks, blocksOn, displayCandles, loadedLoTs, loadedHiTs])
+  }, [blocks, blocksOn, blockVisible, displayCandles, loadedLoTs, loadedHiTs])
 
   // Fibonacci drawings — re-created from state after any data change (applyNewData clears overlays,
   // same rationale as the trade/session effects), so a fib survives TF switches. Each carries
@@ -1018,14 +1091,17 @@ export default function ChartPanel({
             )}
           </div>
 
-          {/* Layers: multi-select dropdown for Trades, the strategy-structure "bricks", indicators,
-              and day breaks. Sessions live in their own on-chart legend (below). Trades ALSO toggles
-              from the right-click chart menu — both drive the same `tradesOn` state. Toggling keeps
-              the menu open. */}
-          <div ref={layersRef} className="relative">
-            {(() => {
-              const items = [
-                ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o), sub: false, count: undefined as number | undefined }] : []),
+          {/* Analysis: what the strategy DID with its signals — the trades it took (split by
+              outcome) and the setups its own rules refused (split by reason). Deliberately its own
+              dropdown, separate from Layers: Layers is what to DRAW on the market, Analysis is what
+              to interrogate about the run. Trades ALSO toggles from the right-click chart menu —
+              both drive the same `tradesOn` state. */}
+          {(spec.trades.length > 0 || blocks.length > 0) && (
+            <ToggleMenu
+              title="Analysis"
+              minWidth={188}
+              items={[
+                ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o), count: spec.trades.length }] : []),
                 // Winners/Losers are SUB-toggles of Trades — indented, and only listed while trades
                 // are on (with trades hidden they'd be inert switches). Each carries its count so the
                 // split is readable without opening the trades table.
@@ -1033,87 +1109,47 @@ export default function ChartPanel({
                   { key: 'winners', label: 'Winners', color: TRADE_WIN_COLOR, on: winnersOn, toggle: () => setWinnersOn(o => !o), sub: true, count: outcomeCounts.wins },
                   { key: 'losers', label: 'Losers', color: TRADE_LOSS_COLOR, on: losersOn, toggle: () => setLosersOn(o => !o), sub: true, count: outcomeCounts.losses },
                 ] : []),
-                // Blocked setups sit next to Trades — same subject (what the strategy did with a
-                // signal), opposite answer. Listed only when the run reports any: a runner that
-                // can't tell us would otherwise show a permanently empty toggle.
-                ...(blocks.length > 0 ? [{ key: 'blocks', label: 'Blocked', color: BLOCK_COLOR, on: blocksOn, toggle: () => setBlocksOn(o => !o), sub: false, count: blocks.length }] : []),
-                ...overlayGroups.map(g => ({ key: `g-${g.name}`, label: g.name, color: g.color, on: groupsOn[g.name], toggle: () => toggleGroup(g.name), sub: false, count: undefined as number | undefined })),
-                ...spec.indicators.map((ind, i) => ({ key: `i-${ind.name}`, label: ind.name, color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length], on: indicatorsOn[ind.name], toggle: () => toggleIndicator(ind.name), sub: false, count: undefined as number | undefined })),
-                ...(dailyBreaks.length > 0 ? [{ key: 'daybreaks', label: 'Day breaks', color: DAY_BREAK_COLOR, on: dayBreaksOn, toggle: () => setDayBreaksOn(o => !o), sub: false, count: undefined as number | undefined }] : []),
-              ]
-              const activeCount = items.filter(it => it.on).length
-              return (
-                <>
-                  <button
-                    onClick={() => setLayersOpen(o => !o)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
-                  >
-                    Layers
-                    <span className="font-mono text-text-tertiary">{activeCount}/{items.length}</span>
-                    <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${layersOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  {layersOpen && (
-                    <div className="absolute left-0 mt-1 min-w-[172px] rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg" style={{ zIndex: 50 }}>
-                      {items.map(it => (
-                        <button
-                          key={it.key}
-                          onClick={it.toggle}
-                          className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken ${it.sub ? 'pl-7' : 'pl-3'}`}
-                        >
-                          <span
-                            className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ background: it.on ? it.color : 'transparent', boxShadow: `inset 0 0 0 1px ${it.color}`, opacity: it.on ? 1 : 0.5 }}
-                          />
-                          <span className={it.on ? 'text-text-primary' : 'text-text-tertiary'}>{it.label}</span>
-                          {it.count != null && <span className="font-mono text-text-tertiary">{it.count}</span>}
-                          {it.on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )
-            })()}
-          </div>
+                // Blocked sits under Trades — same subject (what happened to a signal), opposite
+                // answer. Listed only when the run reports any: a runner that can't tell us would
+                // otherwise show a permanently empty toggle.
+                ...(blocks.length > 0 ? [{ key: 'blocks', label: 'Blocked', color: BLOCK_COLOR, on: blocksOn, toggle: () => setBlocksOn(o => !o), count: shownBlockCount }] : []),
+                // …and one sub-toggle per REASON, so a rule can be isolated ("show me only what the
+                // veto refused") or excluded. Each count is how many setups that rule refused — the
+                // number this whole layer exists to produce. Same "only while the parent is on" rule
+                // as Winners/Losers.
+                ...(blocksOn ? blockReasons.map(r => ({
+                  key: `blk-${r.label}`, label: r.label, color: BLOCK_COLOR,
+                  on: !hiddenReasons.has(r.label), toggle: () => toggleReason(r.label),
+                  sub: true, count: r.count,
+                })) : []),
+              ]}
+            />
+          )}
 
-          {/* Strategies: its OWN dropdown (not folded into Layers — a stack's legs are a different
-              kind of thing from render layers). Appears only when the spec carries layered trades,
-              i.e. a portfolio stack; a single-run chart never sees it. Toggling isolates one
+          {/* Layers: what to DRAW on the market — the strategy-structure "bricks", indicators and
+              day breaks. Sessions live in their own on-chart legend (below). */}
+          <ToggleMenu
+            title="Layers"
+            items={[
+              ...overlayGroups.map(g => ({ key: `g-${g.name}`, label: g.name, color: g.color, on: groupsOn[g.name], toggle: () => toggleGroup(g.name) })),
+              ...spec.indicators.map((ind, i) => ({ key: `i-${ind.name}`, label: ind.name, color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length], on: indicatorsOn[ind.name], toggle: () => toggleIndicator(ind.name) })),
+              ...(dailyBreaks.length > 0 ? [{ key: 'daybreaks', label: 'Day breaks', color: DAY_BREAK_COLOR, on: dayBreaksOn, toggle: () => setDayBreaksOn(o => !o) }] : []),
+            ]}
+          />
+
+          {/* Strategies: its OWN dropdown (not folded into Analysis — a stack's legs are a different
+              kind of thing from a run's own trades). Appears only when the spec carries layered
+              trades, i.e. a portfolio stack; a single-run chart never sees it. Toggling isolates one
               strategy's trades on the chart. */}
           {tradeLayers.length > 0 && (
-            <div ref={strategiesRef} className="relative">
-              <button
-                onClick={() => setStrategiesOpen(o => !o)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
-              >
-                Strategies
-                <span className="font-mono text-text-tertiary">
-                  {tradeLayers.filter(l => !hiddenLayers.has(l.id)).length}/{tradeLayers.length}
-                </span>
-                <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${strategiesOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {strategiesOpen && (
-                <div className="absolute left-0 mt-1 min-w-[180px] rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg" style={{ zIndex: 50 }}>
-                  {tradeLayers.map(l => {
-                    const on = !hiddenLayers.has(l.id)
-                    return (
-                      <button
-                        key={l.id}
-                        onClick={() => toggleLayer(l.id)}
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken"
-                      >
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ background: on ? l.color : 'transparent', boxShadow: `inset 0 0 0 1px ${l.color}`, opacity: on ? 1 : 0.5 }}
-                        />
-                        <span className={on ? 'text-text-primary' : 'text-text-tertiary'}>{l.name}</span>
-                        {on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+            <ToggleMenu
+              title="Strategies"
+              minWidth={180}
+              items={tradeLayers.map(l => ({
+                key: l.id, label: l.name, color: l.color,
+                on: !hiddenLayers.has(l.id), toggle: () => toggleLayer(l.id),
+              }))}
+            />
           )}
 
           {isFetchMode && (() => {
@@ -1231,11 +1267,18 @@ export default function ChartPanel({
               }}
               className="rounded-md border border-border-subtle bg-bg-surface px-2.5 py-2 shadow-lg"
             >
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: BLOCK_COLOR }}>
-                <span>{blockTip.b.dir === 'long' ? '▲ Long' : '▼ Short'} blocked</span>
+              <div className="text-[11px] font-semibold" style={{ color: BLOCK_COLOR }}>
+                {blockTip.b.dir === 'long' ? '▲ Long' : '▼ Short'} blocked
+                {blockTip.b.reasons.length > 1 && ` — ${blockTip.b.reasons.length} rules`}
               </div>
-              <div className="mt-1 text-[11px] font-medium text-text-primary">{blockTip.b.label}</div>
-              <div className="mt-1 text-[11px] leading-snug text-text-secondary">{blockTip.b.reason}</div>
+              {/* Every rule that was refusing it, in the strategy's own precedence order (primary
+                  first) — the tag only carries the COUNT, so this is where the reasons live. */}
+              {blockTip.b.reasons.map((r, i) => (
+                <div key={i} className="mt-1.5">
+                  <div className="text-[11px] font-medium text-text-primary">{r.label}</div>
+                  <div className="text-[11px] leading-snug text-text-secondary">{r.reason}</div>
+                </div>
+              ))}
               <div className="mt-1.5 border-t border-border-subtle pt-1.5 text-[10px] text-text-tertiary">
                 Limit would have rested at{' '}
                 <span className="font-mono tabular-nums text-text-secondary">

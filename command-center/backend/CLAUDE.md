@@ -537,19 +537,27 @@ The path is one straight line, and every hop is OPTIONAL so a runner that can't 
 simply silent (never a lie, never an empty UI):
 
 1. **The strategy records them.** `mpc_sos_fade/execution.py` — `BlockedSetup` + `_record_blocks`,
-   a port of `mpc_strategy.pine`'s pink `TRADE BLOCKED` tag (4025-4086), same six reason codes in
-   the same PRECEDENCE and the same `sosBar*10 + code` dedupe (one record per setup per reason, not
-   per bar). **Reporting only** — nothing reads a record back, so it cannot move a decision and
+   a port of `mpc_strategy.pine`'s pink `TRADE BLOCKED` tag (4025-4086): the same six reason codes,
+   the same PRECEDENCE, and the Pine's `sosBar*10 + code` dedupe generalised to the reason SET (one
+   record per setup per distinct combination, not per bar). **One deliberate deviation:** the Pine
+   reports the FIRST blocker only (a chart tag has room for one line); we record EVERY rule refusing
+   the setup, because the lab filters by reason and "blocked by the veto" must stay true when the
+   final hour was also blocking. Precedence survives as the ORDER, so `codes[0]` is exactly what
+   `f_blkCode` would have returned — a per-reason count off the primary still reconciles with
+   TradingView. **Reporting only** — nothing reads a record back, so it cannot move a decision and
    `compare_strategy.py`'s `px_*` stream is untouched. `mpc_bleg` records none by construction (its
    `BLegExecution` overrides `_place_entries`, where the recording hangs) — deliberate: those codes
    describe why an **A+** setup was refused, and A+ never trades in that fork.
 2. **`backtest/output.py`** — `build_blocked_setups()` turns them into the lab's row shape;
    `build_results` returns them as `blocked_setups` (always present, `[]` when there are none).
-   Strategy-agnostic duck-type: `dir`/`time_ms`/`code`/`edge`/`label`/`reason`.
+   Strategy-agnostic duck-type: `dir`/`time_ms`/`edge` plus parallel `labels`/`reasons` sequences,
+   emitted as a `reasons: [{label, reason}]` LIST (primary first).
 3. **`backtest_runner._handle_complete`** writes `reports/lab/<run_id>/blocked_setups.json` when the
    runner reported any. Runner-agnostic — NT8/MT5 return no such key, so no file.
 4. **`chart_spec._build_blocks`** reads that file into the spec's `blocks[]`, clipped to the candle
-   window (same reason trades are). No file ⇒ `[]` ⇒ the chart's Blocked toggle never appears.
+   window (same reason trades are). No file ⇒ `[]` ⇒ the chart's Blocked toggle never appears. The
+   chart builds its per-reason filter roster straight off those label strings, so nothing between the
+   strategy and the UI needs to know what any rule means.
 
 **Only runs completed AFTER this landed have the file** — it is written at completion, and there is
 no backfill (recomputing it would mean replaying the strategy). An older run's chart correctly shows

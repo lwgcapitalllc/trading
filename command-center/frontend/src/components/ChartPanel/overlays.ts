@@ -116,11 +116,12 @@ interface TradeExtend {
   tpTargets?: number[] // TP ladder nearest→furthest; first UNHIT one drawn faintly (near-miss view)
 }
 
-/** What the BLOCK overlay reads. `label` is the strategy's own short reason text — the overlay
- *  renders it verbatim and never interprets it. */
+/** What the BLOCK overlay reads. The chip text is fixed ("Blocked"); `count` is how many rules
+ *  refused this setup, and is the ONLY thing that varies between tags. The reasons themselves are
+ *  never drawn — they live in the host's hover card. */
 interface BlockExtend {
   dir?: 'long' | 'short'
-  label?: string
+  count?: number
   color?: string
   textColor?: string
 }
@@ -652,15 +653,21 @@ export function registerChartOverlays(): void {
   })
 
   // ── Blocked setup — the trade that never happened ────────────────────────────
-  // A pink tag at the price the entry limit would have rested at, with a short dotted leader
-  // back to that exact price and a dot on it. Everything is offset from the ONE anchor point in
-  // PIXELS, so it needs no bar geometry and survives every timeframe switch untouched.
+  // The ANCHOR is the exact price the entry limit would have rested at: a dot sits on it and a
+  // dotted line runs from it to the tag. That line is the whole point of the marker — it is what
+  // says "here, on this candle, at this price".
   //
-  // The tag hangs BELOW the price for a refused long and ABOVE for a refused short — the side the
-  // trade would have moved toward — so direction reads without the label being parsed.
+  // The tag is parked at the PANE EDGE (bottom for a refused long, top for a refused short — the
+  // way the trade would have moved), never near the price, so it can't sit on the candles. That is
+  // also why the line has to be long: it spans from the tag all the way back to the level.
+  //
+  // The text is UNIFORM — "Blocked", plus a count when several rules refused the same setup. It is
+  // deliberately not the reason: every tag looking the same is what makes the layer scannable, and
+  // the reasons are one hover away.
   //
   // Deliberately NOT `ignoreEvent` (unlike every other overlay here): the whole point is the hover,
-  // and klinecharts only fires onMouseEnter/onMouseLeave on figures that accept events.
+  // and klinecharts only fires onMouseEnter/onMouseLeave on figures that accept events. The dot and
+  // the line accept events too, so the line itself is hoverable, not just the chip.
   registerOverlay({
     name: BLOCK,
     totalStep: 1,
@@ -668,32 +675,37 @@ export function registerChartOverlays(): void {
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
+    createPointFigures: ({ coordinates, bounding, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
       if (coordinates.length < 1) return []
       const a = coordinates[0]
       const d = (overlay.extendData ?? {}) as BlockExtend
       const color = d.color ?? '#ff2e9a'
-      const down = d.dir !== 'short'          // a refused LONG hangs its tag below the price
-      const LEAD = 22                          // px from the price to the chip
-      const y = a.y + (down ? LEAD : -LEAD)
-      const text = `${down ? '▲' : '▼'} ${d.label ?? 'Blocked'}`
+      const down = d.dir !== 'short'          // a refused LONG parks its tag at the bottom
+      const INSET = 16                         // px from the pane edge to the chip
+      const yTag = down ? bounding.height - INSET : INSET
+      // Never let the tag cross the level it points at (possible when the price sits right at the
+      // pane edge) — the line would double back and read as pointing the wrong way.
+      const y = down ? Math.max(yTag, a.y + 14) : Math.min(yTag, a.y - 14)
+      const n = d.count ?? 1
       return [
-        // the price the limit would have rested at
+        // the exact price the limit would have rested at
         {
           type: 'circle',
           attrs: { x: a.x, y: a.y, r: 2.5 },
           styles: { style: 'fill', color },
-          ignoreEvent: true,
         },
+        // …and the line that points at it
         {
           type: 'line',
           attrs: { coordinates: [{ x: a.x, y: a.y }, { x: a.x, y }] },
           styles: { color, size: 1, style: 'dashed', dashedValue: [3, 3] },
-          ignoreEvent: true,
         },
         {
           type: 'text',
-          attrs: { x: a.x, y, text, align: 'center', baseline: down ? 'top' : 'bottom' },
+          attrs: {
+            x: a.x, y, text: n > 1 ? `Blocked ${n}` : 'Blocked',
+            align: 'center', baseline: down ? 'top' : 'bottom',
+          },
           styles: {
             color: d.textColor ?? '#101014', size: 10, weight: 'bold',
             backgroundColor: color, borderColor: color, borderSize: 1, borderRadius: 3,

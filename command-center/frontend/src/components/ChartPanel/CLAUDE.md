@@ -3,7 +3,8 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-07-27 (Winners/Losers outcome filters + the Blocked-setups layer)
+**Last reviewed:** 2026-07-27 (the Analysis dropdown: Trades + Winners/Losers and Blocked + its
+per-reason filters, all moved out of Layers)
 
 ---
 
@@ -124,9 +125,9 @@ here**, so the chart shows exactly what the strategy saw.
   `backtest/output.py` (`mfe_price`/`mae_price`/`stop_price`/`legs`, all reporting-only — parity-safe)
   → `chart_spec` (which filters `legs` to real profit-takes beyond a 0.1R scratch band, so a
   breakeven-stop fill is never drawn as profit, and attaches each surviving leg's label). One on/off
-  toggle for all trades (`tradesOn`), driven from BOTH the Layers dropdown AND the right-click chart
-  menu — same state, either surface flips it. **Winners / Losers outcome filters** (`winnersOn` /
-  `losersOn`, both default ON) sit under it as INDENTED sub-rows in the Layers dropdown, each with its
+  toggle for all trades (`tradesOn`), driven from BOTH the **Analysis** dropdown AND the right-click
+  chart menu — same state, either surface flips it. **Winners / Losers outcome filters** (`winnersOn` /
+  `losersOn`, both default ON) sit under it as INDENTED sub-rows in Analysis, each with its
   count, so a run can be read as all-winners or all-losers without hunting trade by trade. They're
   listed only while `tradesOn` — with trades hidden they'd be inert switches — and the win test is
   `pnl > 0`, the SAME expression as the overlay's win/loss colour, so a trade's chip colour and the
@@ -140,30 +141,41 @@ here**, so the chart shows exactly what the strategy saw.
 - **Blocked setups** (`BLOCK` overlay, spec `blocks[]`) — **the trades that never happened.** A setup
   the strategy had READY and one of its OWN rules refused places no order, so it appears in no trade
   list, no equity curve and no broker report; without this layer there is no way to judge whether a
-  blocking rule protects the account or costs it. Each one draws a **pink tag** at the price the entry
-  limit would have rested at, with a dot on that price and a short dotted leader up to the chip. The
-  tag hangs BELOW the price for a refused long and ABOVE for a refused short — the way the trade would
-  have moved — so direction reads without parsing the label. **Hover it** for the full sentence plus
-  that would-be entry price. The hover card is a React node in the SAME `pointer-events:none` plane as
-  the measurement layer (a card that ate its own hover would flicker), positioned from the coordinates
-  klinecharts hands back on `onMouseEnter`, and flipped left/up near the pane edges. The `BLOCK`
-  overlay is the ONE template here that is deliberately not `ignoreEvent` — klinecharts only fires
-  hover on figures that accept events. Geometry is all PIXEL offsets from one anchor point, so it needs
-  no bar geometry and survives a TF switch untouched. **Pink is off the win/loss axis on purpose:** a
-  refused trade is not a loser, and red would read as one. Toggled from Layers as **Blocked** (with its
-  count), **default OFF** — it is a diagnostic view, not part of reading the run, and a long run has
-  more refusals than trades. The toggle is listed only when the run reports any, so an NT8/MT5 run
-  (which cannot report them) shows no permanently-empty switch. `label` and `reason` are strings the
-  STRATEGY wrote and the panel renders verbatim — it knows nothing about what any rule means, so a
-  strategy with an entirely different rule set needs no chart change.
+  blocking rule protects the account or costs it.
+  - **The LINE is the marker.** The overlay's single anchor is the EXACT price the entry limit would
+    have rested at: a dot sits on it and a dashed pink line runs from it to the tag. **The tag is
+    parked at the PANE EDGE** — bottom for a refused long, top for a refused short (the way the trade
+    would have moved) — never near the price, so it can never sit on the candles; that is also why the
+    line has to be long. The tag is clamped so it can never cross the level it points at (possible
+    when the price sits right at the pane edge), which would make the line double back.
+  - **The tag text is UNIFORM: `Blocked`, plus a count when several rules refused the same setup**
+    (`Blocked 2`). Every tag looking identical is what makes the layer scannable at a glance, and the
+    reasons are one hover away. Do not put reason text back on the chip.
+  - **Hover** gives the side, EVERY rule that was refusing it (label + full sentence, primary first)
+    and the would-be entry price. The card is a React node in the SAME `pointer-events:none` plane as
+    the measurement layer (a card that ate its own hover would flicker), placed from the event's
+    **`pageX`/`pageY`** and rendered viewport-`fixed` + clamped like the right-click menu — the overlay
+    event's `x`/`y` are PANE-relative, so wrapper padding or a second pane would silently offset it.
+    The `BLOCK` template is the ONE here that is deliberately not `ignoreEvent` (klinecharts only fires
+    hover on figures that accept events), and its dot and line accept events too, so the LINE is
+    hoverable, not just the chip.
+  - **`reasons` is a LIST** because several rules can refuse one setup. The panel derives its
+    per-reason filter roster from those labels (first-seen order, with counts), exactly as it derives
+    stack layers from trades — so it stays strategy-agnostic and a different rule set needs no chart
+    change. A block draws while **ANY** of its reasons is still on: requiring ALL would make "show me
+    the veto blocks" hide the ones the final hour was also refusing, and those are still veto blocks.
+  - **Pink is off the win/loss axis on purpose:** a refused trade is not a loser, and red would read as
+    one. Lives in the **Analysis** dropdown, **default OFF** — a diagnostic view, not part of reading
+    the run, and a long run has more refusals than trades. Listed only when the run reports any, so an
+    NT8/MT5 run (which cannot report them) shows no permanently-empty switch.
 - **Portfolio-stack layering** (`layer` / `layerName` / `layerColor` on a trade — all absent on a
   single-run spec, which is what makes every stack affordance vanish for a normal backtest). With
   several strategies' trades on ONE chart, the outcome alone doesn't say WHOSE trade it was, so the
   outcome chip becomes **`<strategy> · Won`** with a filled dot in the strategy's colour just left of
   it and its border in that colour — the same swatch the stack's equity lines and toggle chips use, so
   the eye matches trade → strategy without reading text. The entry marker takes the layer colour too.
-  A **Strategies dropdown** sits beside Layers (deliberately NOT folded into it — Aaron's call: a
-  stack's legs are a different kind of thing from render layers) and hides one strategy's trades
+  A **Strategies dropdown** sits beside Analysis (deliberately NOT folded into it — Aaron's call: a
+  stack's legs are a different kind of thing from a run's own trades) and hides one strategy's trades
   (`hiddenLayers`), for when overlapping trades need isolating. **The roster is DERIVED from the
   trades themselves**, so the panel stays strategy-agnostic — it sees layers as data, exactly like
   overlay groups, and needs no new props and no knowledge of stacks. A **near-miss next-TP** guide: if the trade banked its earlier
@@ -243,6 +255,18 @@ here**, so the chart shows exactly what the strategy saw.
 - **Daily session breaks** (`DAY_BREAK`): vlines at each interior broker-day boundary (candle
   epochs are broker wall-clock, so boundaries fall on `DAY_MS` multiples; the left edge is
   skipped). Separate overlay name from `VLINE` so the two toggle independently. Own toggle.
+- **Two header dropdowns, split by QUESTION, not by mechanism** (Aaron's call, 2026-07-27).
+  **Analysis** = what the strategy DID with its signals — Trades (+ the Winners / Losers sub-filters)
+  and Blocked (+ one sub-filter per reason). **Layers** = what to DRAW on the market — the four
+  market-structure groups, indicators, day breaks. **Strategies** (stacks only) is a third. Trades and
+  Blocked used to sit in Layers; they were moved because "which trades do I want to interrogate" and
+  "which market structure do I want drawn" are different questions, and mixing them made a long menu
+  where the two most-used rows were buried among structure groups.
+- **All three dropdowns are ONE `ToggleMenu` component** (button with an `on/total` count + a list of
+  dot/label/count/tick rows, `sub: true` indenting a filter under its parent). It owns its own open
+  state and click-outside close, so adding a fourth menu is one call. Never hand-roll a fourth — three
+  hand-rolled copies is exactly what this replaced, and they had already drifted (the Strategies list
+  had no counts and different padding).
 - **All layer toggles** use one `ToggleChip` component (colored dot + label).
 - **Header + tool-strip layout (TradingView).** The header row carries the **symbol/interval**
   controls top-**LEFT** — timeframe dropdown, then Layers, then the drill-down fetch status — and

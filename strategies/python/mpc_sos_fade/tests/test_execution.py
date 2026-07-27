@@ -199,9 +199,9 @@ def test_a_refused_setup_is_recorded_with_the_reason_and_the_would_be_entry():
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
     assert len(ex.blocks) == 1
     b = ex.blocks[0]
-    assert b.dir == 1 and b.code == 3            # 3 = the final-hour rule
-    assert b.label == "Final hour"
-    assert "16:00-18:00" in b.reason
+    assert b.dir == 1 and b.codes == [3]         # 3 = the final-hour rule
+    assert b.labels == ["Final hour"]
+    assert "16:00-18:00" in b.reasons[0]
     assert abs(b.edge - 103.82) < 1e-9           # where the limit would have rested
 
 
@@ -214,17 +214,23 @@ def test_an_armed_setup_records_no_block():
     assert ex.blocks == []
 
 
-def test_the_first_rule_that_would_refuse_wins_the_reason():
-    """Pine `f_blkCode` precedence — with the direction off AND the final hour live, the
-    tag must blame the direction (1), never the downstream gate."""
+def test_every_refusing_rule_is_recorded_in_pine_precedence_order():
+    """The one deliberate deviation from the Pine: it reports ONE code, we report them all so
+    the chart can filter by reason ("blocked by the veto" must stay true when the final hour
+    was also blocking). Pine's precedence survives as the ORDER, so `code` — the primary — is
+    still exactly what `f_blkCode` would have returned alone."""
     ex = Execution(_cfg(exec_longs=False))
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
-    assert ex.blocks[0].code == 1
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16, veto_on=True, veto_rsi_ob=True),
+            _seq_long_ready())
+    b = ex.blocks[0]
+    assert b.codes == [1, 3, 4]     # direction off · final hour · veto
+    assert b.code == 1              # the primary — Pine's single answer
 
 
-def test_one_record_per_setup_per_reason_not_per_bar():
-    """The Pine's `sosBar*10 + code` dedupe: a setup blocked for many bars running is ONE
-    record — but a CHANGED reason is a genuinely different refusal and gets its own."""
+def test_one_record_per_setup_per_reason_set_not_per_bar():
+    """The Pine's `sosBar*10 + code` dedupe, generalised to the reason SET: a setup blocked
+    for many bars running is ONE record — but a set that CHANGES is a genuinely different
+    refusal and gets its own."""
     ex = Execution(_cfg())
     for i in range(4):
         ex.step(_sig(i, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
@@ -232,7 +238,11 @@ def test_one_record_per_setup_per_reason_not_per_bar():
     # the final hour passes, the veto takes over → a second, different refusal
     ex.step(_sig(4, 104.0, 104.5, 103.9, 104.2, veto_on=True, veto_rsi_ob=True),
             _seq_long_ready())
-    assert [b.code for b in ex.blocks] == [3, 4]
+    assert [b.codes for b in ex.blocks] == [[3], [4]]
+    # picking up a SECOND blocker on the same setup is also a different refusal
+    ex.step(_sig(5, 104.0, 104.5, 103.9, 104.2, ny_hour=16, veto_on=True, veto_rsi_ob=True),
+            _seq_long_ready())
+    assert [b.codes for b in ex.blocks] == [[3], [4], [3, 4]]
 
 
 def test_a_setup_price_never_made_ready_is_not_a_block():

@@ -234,8 +234,12 @@ def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
 
     Clipped to the candle window for the same reason trades are: klinecharts clamps an
     out-of-range overlay onto the plot edge, which would pile every older marker up in the
-    no-data region. Strategy-agnostic — the label and reason are strings the strategy wrote;
-    this function knows nothing about what any of them mean.
+    no-data region. Strategy-agnostic — every label and reason is a string the strategy
+    wrote; this function knows nothing about what any of them mean, which is what lets the
+    chart build its per-reason filters straight off the data.
+
+    A setup can be refused by several rules at once, so `reasons` is a LIST (the strategy's
+    own precedence order, primary first).
     """
     path = run_dir / "blocked_setups.json"
     if not path.exists():
@@ -252,13 +256,18 @@ def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
         t = b.get("time_ms")
         if not isinstance(t, (int, float)) or not (lo <= t <= hi):
             continue
+        reasons = [
+            {"label": str(r.get("label") or "Blocked"), "reason": str(r.get("reason") or "")}
+            for r in (b.get("reasons") or []) if isinstance(r, dict)
+        ]
+        if not reasons:
+            continue        # a record naming no rule can't be filtered or explained — drop it
         out.append({
             "id": f"B{i}",
             "time": int(t),
             "dir": "short" if str(b.get("direction", "")).lower().startswith("s") else "long",
             "price": float(b.get("edge") or 0.0),
-            "label": str(b.get("label") or "Blocked"),
-            "reason": str(b.get("reason") or ""),
+            "reasons": reasons,
         })
     return out
 

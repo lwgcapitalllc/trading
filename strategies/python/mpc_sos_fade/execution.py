@@ -145,9 +145,12 @@ class Trade:
 # same parity standing as `Trade.mfe_usd`. `compare_strategy.py` diffs the `px_*` decision
 # stream, which is untouched.
 #
-# Reason PRECEDENCE is the Pine's `f_blkCode`, verbatim: the FIRST rule that would refuse
-# the order is the one reported, so a block never blames a downstream gate for an upstream
-# refusal.
+# ONE DELIBERATE DEVIATION FROM THE PINE: we record EVERY rule refusing the setup, not just
+# the first. Pine reports one code (`f_blkCode` returns the highest-precedence blocker) because
+# a chart tag has room for one line; the lab wants to filter by reason, and "this setup was
+# blocked by the veto" must stay true even when the final hour was also blocking it. The Pine's
+# PRECEDENCE is kept as the ORDER, so `codes[0]` is exactly what `f_blkCode` would have returned
+# — a per-reason count taken off the primary still reconciles with TradingView.
 _BLOCK_LABEL = {
     1: "Direction off",
     2: "Arm source off",
@@ -168,32 +171,39 @@ _BLOCK_REASON = {
 }
 
 
-def _block_code(dir_off: bool, arm_off: bool, late: bool, veto: bool,
-                htf_brk: bool, htf_bias: bool) -> int:
-    """Pine `f_blkCode` — 0 = nothing is blocking this side."""
-    return 1 if dir_off else 2 if arm_off else 3 if late else \
-        4 if veto else 5 if htf_brk else 6 if htf_bias else 0
+def _block_codes(dir_off: bool, arm_off: bool, late: bool, veto: bool,
+                 htf_brk: bool, htf_bias: bool) -> List[int]:
+    """Every rule refusing this side, in the Pine's `f_blkCode` precedence order.
+    Empty = nothing is blocking; `[0]` is what `f_blkCode` itself would have returned."""
+    return [c for c, on in enumerate(
+        (dir_off, arm_off, late, veto, htf_brk, htf_bias), start=1) if on]
 
 
 @dataclass
 class BlockedSetup:
     """One refusal, at the bar it was refused on. `edge` is where the limit would have
-    rested — the price the trade never got."""
+    rested — the price the trade never got. `codes` holds EVERY rule that was refusing it,
+    in precedence order (see the deviation note above), so `codes[0]` is the primary."""
 
     dir: int              # +1 long, -1 short
     index: int            # bar index
     time_ms: int
-    code: int             # 1-6, the Pine reason code
+    codes: List[int]      # 1-6, the Pine reason codes, precedence-ordered
     edge: float
     sos_bar: int
 
     @property
-    def label(self) -> str:
-        return _BLOCK_LABEL.get(self.code, "Blocked")
+    def code(self) -> int:
+        """The PRIMARY reason — what Pine's `f_blkCode` would have reported alone."""
+        return self.codes[0] if self.codes else 0
 
     @property
-    def reason(self) -> str:
-        return _BLOCK_REASON.get(self.code, "")
+    def labels(self) -> List[str]:
+        return [_BLOCK_LABEL.get(c, "Blocked") for c in self.codes]
+
+    @property
+    def reasons(self) -> List[str]:
+        return [_BLOCK_REASON.get(c, "") for c in self.codes]
 
 
 # ── the resting-order + position model ──────────────────────────────────────────
@@ -303,10 +313,10 @@ class Execution:
         self.trades: List[Trade] = []
         # Blocked setups (reporting only — see BlockedSetup). `_blk_keys` is the Pine's
         # per-side dedupe latch (`sosBar*10 + code`): one entry per setup per REASON, so a
-        # setup blocked for twenty bars is one record — but a reason that CHANGES is a
+        # setup blocked for twenty bars is one record — but a reason SET that CHANGES is a
         # genuinely different refusal and gets its own.
         self.blocks: List[BlockedSetup] = []
-        self._blk_keys = [-1, -1]
+        self._blk_keys: List[Optional[Tuple[int, Tuple[int, ...]]]] = [None, None]
         # The gate booleans `_armed` computed this bar, stashed for `_record_blocks`. `_armed`
         # stays a pure gate (the B-LEG fork reuses it as its A+-priority check), and the
         # recording hangs off `_place_entries`, which that fork overrides — which is exactly
@@ -514,24 +524,28 @@ class Execution:
              and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s)),
         )
         codes = (
-            _block_code(not cfg.exec_longs, not arm_ok_l, late,
-                        dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l),
-            _block_code(not cfg.exec_shorts, not arm_ok_s, late,
-                        dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s),
+            _block_codes(not cfg.exec_longs, not arm_ok_l, late,
+                         dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l),
+            _block_codes(not cfg.exec_shorts, not arm_ok_s, late,
+                         dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s),
         )
-        for slot, (is_long, ok, code, edge, sos_bar) in enumerate((
+        for slot, (is_long, ok, cs, edge, sos_bar) in enumerate((
             (True, ready[0], codes[0], long_edge, seq.l_sos_bar),
             (False, ready[1], codes[1], short_edge, seq.s_sos_bar),
         )):
-            if not ok or code == 0 or sos_bar is None or edge is None:
+            if not ok or not cs or sos_bar is None or edge is None:
                 continue
-            key = sos_bar * 10 + code
+            # Pine's dedupe (`sosBar*10 + code`), generalised to the full reason SET: one
+            # record per setup per distinct COMBINATION, so a setup blocked for twenty bars
+            # is one record, but a setup that picks up (or sheds) a second blocker is a
+            # genuinely different refusal and gets its own.
+            key = (int(sos_bar), tuple(cs))
             if key == self._blk_keys[slot]:
                 continue
             self._blk_keys[slot] = key
             self.blocks.append(BlockedSetup(
                 dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
-                code=code, edge=float(edge), sos_bar=int(sos_bar)))
+                codes=list(cs), edge=float(edge), sos_bar=int(sos_bar)))
 
     # ── entry placement (Pine 4264-4507) ─────────────────────────────────────────
     def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:

@@ -114,9 +114,15 @@ BarState  --SignalAdapter-->  Signals  --SosFadeSequence-->  SeqState  --Executi
   READY (SOS in, fib agreeing, an entry edge to rest on, flat, this leg untraded) that one of the
   strategy's OWN toggles refused. Same six reason codes in the same PRECEDENCE (`f_blkCode`: 1
   direction off · 2 arm source off · 3 final hour · 4 divergence/extreme veto · 5 HTF breakout · 6
-  HTF bias), the same hover text as `f_blkWhy`, and the same `sosBar*10 + code` dedupe — one record
-  per setup per REASON, so a setup blocked for twenty bars is one record but a CHANGED reason is a
-  genuinely different refusal. **Reporting-only and parity-safe**, exactly like the excursion fields:
+  HTF bias), the same hover text as `f_blkWhy`, and the Pine's `sosBar*10 + code` dedupe generalised
+  to the reason SET — one record per setup per distinct COMBINATION, so a setup blocked for twenty
+  bars is one record but a set that changes is a genuinely different refusal.
+  **ONE DELIBERATE DEVIATION:** the Pine reports only the FIRST blocker (a chart tag has room for one
+  line); we record EVERY rule refusing the setup, because the lab filters by reason and "blocked by
+  the veto" has to stay true when the final hour was also blocking. Precedence survives as the ORDER,
+  so `codes[0]` (exposed as `.code`) is exactly what `f_blkCode` would have returned alone — a
+  per-reason count taken off the primary still reconciles with TradingView.
+  **Reporting-only and parity-safe**, exactly like the excursion fields:
   nothing reads a record back, so no decision can move and `compare_strategy.py` diffs the same
   `px_*` stream as before. The recording hangs off `_place_entries` (reading gates `_armed`
   computed, never recomputing them), which is why `mpc_bleg` gets none — it overrides that method,

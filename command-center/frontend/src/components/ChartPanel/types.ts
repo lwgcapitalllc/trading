@@ -71,20 +71,31 @@ export interface ChartTrade {
   layerName?: string
 }
 
-/** A setup the strategy had ready and one of its OWN rules refused — no order was placed, so it
- *  exists in no trade list and no equity curve. Drawn as a small pink tag at `price` (where the
- *  entry would have rested) with the full `reason` on hover.
+/** One rule that was refusing a setup. `label` is the short name the per-reason filter is keyed on;
+ *  `reason` is the full sentence shown on hover. Both are the STRATEGY's own words. */
+export interface ChartBlockReason {
+  label: string
+  reason: string
+}
+
+/** A setup the strategy had ready and its OWN rules refused — no order was placed, so it exists in
+ *  no trade list and no equity curve. Drawn as a dotted line pointing at `price` (the exact level
+ *  the entry would have rested at) with a uniform "Blocked" tag parked clear of the candles; the
+ *  reasons are on hover.
  *
- *  Generic on purpose: `label` and `reason` are strings the STRATEGY wrote. The panel renders them
- *  verbatim and knows nothing about what any particular rule means, so a new strategy with an
- *  entirely different rule set needs no chart change. */
+ *  `reasons` is a LIST because several rules can refuse the same setup at once — that is what lets
+ *  the panel filter by reason without lying (a setup blocked by the veto stays a veto block even
+ *  when something else was also blocking it). Ordered by the strategy's precedence, primary first.
+ *
+ *  Generic on purpose: the panel renders these strings verbatim, derives its filter roster from
+ *  them, and knows nothing about what any particular rule means — so a strategy with an entirely
+ *  different rule set needs no chart change. */
 export interface ChartBlock {
   id: string
   time: EpochMs
-  dir: TradeDir      // the side that was refused — tag points down for a long, up for a short
+  dir: TradeDir      // the side that was refused — tag sits below for a long, above for a short
   price: number      // where the entry limit would have rested
-  label: string      // short chip text, e.g. "Final hour"
-  reason: string     // the full sentence, shown on hover
+  reasons: ChartBlockReason[]
 }
 
 /** Generic styling hints shared by overlays. All optional — the panel has defaults. */
