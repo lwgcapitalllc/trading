@@ -55,6 +55,14 @@ def _pend(direction, edge, sl, tp1, tp2, qty=100.0):
     return _Pending(dir=direction, edge=edge, qty=qty, sl=sl, tp1=tp1, tp2=tp2, sos_bar=1)
 
 
+def _ladder_cfg(**kw):
+    """Config with the TP1/TP2 scale-outs pinned ON. The shipped default is 0/0 (the whole
+    position rides the runner, so no TP bracket is ever placed), which is right for trading and
+    useless for a test that needs to watch a TP leg transact. A test about WHICH SIDE OF THE BOOK
+    a scale-out fills on has to have a scale-out to fill."""
+    return dataclasses.replace(SosFadeConfig(), exec_tp1_pct=30.0, exec_tp2_pct=40.0, **kw)
+
+
 class Dec:
     def __init__(self):
         self.fills = []
@@ -108,7 +116,7 @@ def test_short_entry_sells_the_bid():
 def test_long_exit_sells_the_bid_not_the_ask():
     """The conflation this guards: a long's ENTRY buys, but its EXIT sells. Testing the exit
     against the ask would refund part of the spread on every one of the ladder's legs."""
-    ex = Execution(SosFadeConfig(), 10_000.0, profile=_profile())
+    ex = Execution(_ladder_cfg(), 10_000.0, profile=_profile())
     ex._resolver = _resolver([Tick(0, bid=100.5, ask=100.83)])
     ex.bar_ms = 300_000
     ex._pos_dir, ex._qty, ex._entry = 1, 100.0, 99.5
@@ -140,7 +148,7 @@ def test_stop_fills_at_the_next_real_price_so_slippage_is_measured():
 
 def test_limit_exit_does_not_slip_against_you():
     ticks = [Tick(0, bid=100.7, ask=101.03)]      # gapped past TP1 in our favour
-    ex = Execution(SosFadeConfig(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
+    ex = Execution(_ladder_cfg(), 10_000.0, resolver=_resolver(ticks), profile=_profile())
     ex.bar_ms = 300_000
     ex._pos_dir, ex._qty, ex._entry = 1, 100.0, 99.5
     ex._sl, ex._tp1, ex._tp2 = 99.0, 100.5, 101.0

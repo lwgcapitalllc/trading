@@ -59,8 +59,19 @@ class SosFadeConfig:
     exec_risk_pct: float = 10.0        # "Risk % per trade"
     exec_sl_level: str = "1.0"         # "SL fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0}
     exec_sl_buf_tk: float = 0.0        # "SL buffer beyond chosen level (ticks)"
-    exec_tp1_pct: float = 30.0         # "TP1 size %"
-    exec_tp2_pct: float = 40.0         # "TP2 size %"
+    exec_tp1_pct: float = 0.0          # "TP1 size %"
+    exec_tp2_pct: float = 0.0          # "TP2 size %"
+    #   **Both defaulted 30/40 → 0/0 on 2026-07-27** (Aaron's call, and how his TradingView chart
+    #   has actually been configured). 0 = bank NOTHING at the target: the whole position rides to
+    #   the runner. The targets still MATTER at 0 — `_advance_stage` stages the stop off price
+    #   touching TP1/TP2 (→ breakeven, → the TP2 floor) regardless of how much size the rung takes.
+    #   Zero is handled without a guard: `_remaining_brackets` computes p1 = p2 = 0, so neither
+    #   bracket is emitted and only the runner is left. The Pine needs an explicit guard (a
+    #   `strategy.exit` with qty_percent = 0 closes the WHOLE position) — see mpc_strategy.pine.
+    #   Measured: `mpc_sos_fade_optimization.md` Run 1 — 0/0 = 70.7R vs 47.9R at 30/40, monotonic
+    #   across all 21 combos (~−2R for every 10% moved off the runner). The runner is the edge.
+    #   NOTE this is `BLegConfig`'s parent, so the B-LEG bot inherits 0/0 too — intended, both bots
+    #   share one exit ladder.
     exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
     exec_trail_step: float = 5.0       # "Runner trail step ($ of price)" — Fixed-step mode only
     exec_runner_trail: str = "Structure (swing)"   # "Runner trail method"

@@ -3,7 +3,7 @@
 **Purpose:** From-scratch Pine Script rebuild of the "Structure OS / SMC Engine" market-structure indicator (swing highs/lows, HH/HL/LH/LL, BOS, CHoCH), replicating a private TradingView indicator's behavior using a pullback-only detection method.
 **Scope:** This covers Pine Script indicator development and the market-structure detection engine only. It does NOT cover trading strategy logic, risk management, or any live/backtest execution — this is a charting indicator, not a bot.
 **Status:** Under construction — Stage 2b (break-gated swing structure + BOS/CHoCH) is ~95% validated against the original; Stage 3 (internal structure) and Stage 4 (multi-symbol/timeframe comparison) not started. Blocked on chart validation by Aaron before Stage 3 begins.
-**Last reviewed:** 2026-07-26 — the new exit levers (structure runner trail, TP2 stop floor, SL fib dropdown, `execAplus`) ported into `mpc_b_leg_strategy.pine`, and `mpc_strategy_export.pine` given a column for every trade-affecting input (see the second 2026-07-26 entry). Earlier the same day: orphaned-SVP compile fix in `mpc_strategy.pine` + the export regenerated off it. Earlier: 2026-07-12 — the whole structure chain was re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% Pine parity (see the "2026-07-12 structure re-sync" note below), and the A+ divergence retro-link landed in both A+-carrying files (see the note after it).
+**Last reviewed:** 2026-07-27 — `execTp1Pct`/`execTp2Pct` defaulted 30/40 → **0/0** in both A+ Pine files, with the `qty_percent = 0` guard that makes 0 mean "bank nothing" instead of "bank everything"; parity re-validated GREEN on a 21,320-bar export at SL 0.886 + 0/0 (see the 2026-07-27 entry). Earlier: 2026-07-26 — the new exit levers (structure runner trail, TP2 stop floor, SL fib dropdown, `execAplus`) ported into `mpc_b_leg_strategy.pine`, and `mpc_strategy_export.pine` given a column for every trade-affecting input (see the second 2026-07-26 entry). Earlier the same day: orphaned-SVP compile fix in `mpc_strategy.pine` + the export regenerated off it. Earlier: 2026-07-12 — the whole structure chain was re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% Pine parity (see the "2026-07-12 structure re-sync" note below), and the A+ divergence retro-link landed in both A+-carrying files (see the note after it).
 
 ---
 
@@ -264,6 +264,44 @@ it becomes a wrong trade. **Ran GREEN (exit 0) on its first real export the same
 `cfg_strcodes`' SL slot is pinned to the "1.0" code because this fork has no `execSlLevel` (its stop is
 the band ORIGIN), which keeps ONE `cfg_*` decoder serving both exports. Regeneration split point is in
 the export's own header.
+
+---
+
+## 2026-07-27 — TP1/TP2 default 30/40 → 0/0, and the `qty_percent = 0` trap
+
+`execTp1Pct` / `execTp2Pct` now default **0** in both `mpc_strategy.pine` and
+`mpc_strategy_export.pine` (and `exec_tp1_pct`/`exec_tp2_pct` in `config.py`, in lockstep). 0 = bank
+NOTHING at the targets; the whole position rides to the runner. This is what Aaron has actually been
+trading — his saved chart carried 1% on both rungs, which is the closest the input would take — and it
+is what `mpc_sos_fade_optimization.md` Run 1 measured as best (0/0 = 70.7R vs 47.9R at 30/40,
+monotonic across all 21 combos).
+
+**The trap, and why the code needed a guard, not just a new default.** `strategy.exit()` treats
+`qty_percent = 0` as UNSPECIFIED and falls back to closing the **whole position** at that limit — so
+setting the input to 0 would have banked everything at TP1, the exact opposite of what it reads as.
+This is why 0 appeared not to work. Both files now SKIP the call entirely when the rung is 0:
+
+```pine
+if execTp1Pct > 0
+    strategy.exit("L-TP1", from_entry = "Long", qty_percent = execTp1Pct, limit = lTP1, stop = lStop)
+```
+
+leaving the runner leg as the only exit, which is what 0% means. The TP **prices** still drive the
+staged stop (`lStage`/`sStage`) whatever the rung sizes are — touching TP1 still lifts the stop to
+breakeven, touching TP2 still hands the runner to the trail. The Python needs no guard:
+`_remaining_brackets` computes p1 = p2 = 0 and emits neither bracket. `minval` on both inputs was
+already 0; the failure was at runtime, not in the input.
+
+**Parity RE-VALIDATED GREEN (exit 0) 2026-07-27** on a fresh 21,320-bar `VANTAGE_XAUUSD, 15m` export
+taken at the settings Aaron trades — SL fib **0.886**, TP1 0%, TP2 0%, structure trail. First run of
+the 0/0 exit path against the Pine, so the guard is verified by the decision stream, not just by the
+script compiling.
+
+**A note on reading TradingView's trade list, learned the same day.** The Strategy Tester counts each
+exit RUNG as its own "trade": a 486-row list over 2020-2026 was 162 positions × 3 rungs. Group by entry
+timestamp before comparing anything to a Python run's trade count. The rung SIZES in that export are
+also how the 1%/1%/98% split was caught — the sizes are in the CSV and they are ground truth about what
+the chart was configured to do, which the code's defaults are not.
 
 ---
 

@@ -18,7 +18,11 @@ a single Nov-2025 runner (an intrabar trail-fill guess, not a decision). See `##
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-27 — `Execution` now records BLOCKED SETUPS (the Pine's pink TRADE
+**Last reviewed:** 2026-07-27 — `exec_tp1_pct`/`exec_tp2_pct` defaulted 30/40 → **0/0** (Run 1
+adopted; the whole position rides the runner), and **PARITY RE-VALIDATED GREEN (exit 0)** on a fresh
+21,320-bar 15m export taken at the settings Aaron trades — SL fib 0.886, TP1 0%, TP2 0%, structure
+trail. First run of the 0/0 exit path against the Pine. See `## The exit ladder`. Earlier the same
+day: `Execution` now records BLOCKED SETUPS (the Pine's pink TRADE
 BLOCKED tag, reporting-only) for the lab price chart's Blocked layer. Earlier: 2026-07-26 — the
 exit levers (structure runner trail, TP2 stop floor, the three
 setup toggles) ported from the Pine, the export's config columns completed, and **PARITY RE-VALIDATED
@@ -170,7 +174,7 @@ in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
 | Stage | What sets it | Switchable? |
 |---|---|---|
 | **Stop loss** | A fib on the deep side of 0.5, `exec_sl_level` ∈ {0.618, 0.702, 0.786, 0.886, **1.0**}, then `exec_sl_buf_tk` ticks beyond it. 1.0 = the leg origin. | **Only `1.0` is safe** — see the warning below |
-| **TP1 / TP2** | Fibs, chosen AUTOMATICALLY by how deep the entry was. Deep entry → TP1 = 0.5, TP2 = 0.382. Shallow → TP1 = 0.382, TP2 = 0.0 (the swing extreme). | **No** — only the sizes (`exec_tp1_pct` 30%, `exec_tp2_pct` 40%) |
+| **TP1 / TP2** | Fibs, chosen AUTOMATICALLY by how deep the entry was. Deep entry → TP1 = 0.5, TP2 = 0.382. Shallow → TP1 = 0.382, TP2 = 0.0 (the swing extreme). | **No** — only the sizes (`exec_tp1_pct` / `exec_tp2_pct`, **both default 0** since 2026-07-27: bank nothing, ride the runner) |
 | **TP3 (the runner)** | No target at all. It rides a trailing stop, and it is where the strategy's money is (>100% of net in every window measured). | **Yes** — see below |
 | **Stop staging** | Three phases, always on: (0) the full stop → (1) after TP1, breakeven + `exec_be_buf_tk` → (2) after TP2, a floor, then the trail. | **No** |
 | **The TP2 floor** | `exec_tp2_stop_mode`: **"TP1 price"** (tight, can scratch the runner on the first pullback) / "Breakeven" (most room) / "One trail step behind" (never below breakeven). | **Yes** — dropdown |
@@ -180,6 +184,16 @@ in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
 The floor and the trail compose: past TP2 the stop is the floor, and the trail may only tighten
 it further, never loosen it. With Structure selected and no confirmed swing yet, the trail is
 absent and the floor alone holds the stop.
+
+**The TP rungs default to 0/0 (2026-07-27) — and 0 does NOT disable the target.** The rung SIZE and
+the target PRICE are separate things. At 0 no size leaves at TP1/TP2, but `_advance_stage` still
+watches those prices, so touching TP1 still stages the stop to breakeven and touching TP2 still
+installs the floor and hands the runner to the trail. The whole position then exits as one runner leg.
+This is the shipped behaviour because it is what Run 1 measured as best AND what Aaron actually trades.
+`test_zero_pct_rungs_bank_nothing_but_still_stage_the_stop` locks both halves of that.
+Python needs no special case (`_remaining_brackets` computes p1 = p2 = 0 and emits neither bracket);
+**the Pine does** — `strategy.exit(qty_percent = 0)` closes the WHOLE position, so both Pine files skip
+the call when the rung is 0. If you ever port a new rung, port that guard with it.
 
 **`mpc_bleg` overrides TP1, TP2 and the SL** with its own band prices (SL = band origin, TP1 =
 the broken swing extreme, TP2 = the expansion extreme). Everything from the staging down —
@@ -215,11 +229,17 @@ which is new code here AND in the Pine. See Run 4's writeup for the two proposed
 
 **Every sweep of these levers is logged in `mpc_sos_fade_optimization.md`** — one entry per run,
 with the full grid, per-year and per-half R, and whether it was adopted. Read it before tuning
-anything here so a question already answered is not re-measured. Five runs are recorded, all
-measured and **none adopted** — Runs 1–3 on the same 185,530 M15 bars / 187 trades:
+anything here so a question already answered is not re-measured. Five runs are recorded; **Run 1 is
+now ADOPTED (2026-07-27)**, the other four are measured and unadopted — Runs 1–3 on the same
+185,530 M15 bars / 187 trades:
 
 1. **TP split** (21 combos) — monotonic; best is `exec_tp1_pct=0, exec_tp2_pct=0` (100% on the
-   runner) at 70.7R vs 47.9R for the shipped 30/40 split. Needs a tick-mode re-run first.
+   runner) at 70.7R vs 47.9R for the shipped 30/40 split. **ADOPTED 2026-07-27 as the default**, in
+   lockstep across `config.py` and both A+ Pine files. The tick-mode re-run this entry originally
+   asked for was overtaken by better evidence: Aaron's own TradingView chart had been running the
+   rungs at 1% each (the closest the input would take to 0) for the whole 2020-2026 Deep Backtest,
+   so the setting has a real 162-trade out-of-sample record, not just a bar-mode sweep. Adopting it
+   also FIXED a live hazard — see the `qty_percent = 0` guard note in `## The exit ladder`.
 2. **The whole ladder** (525 combos) — re-confirms (1), and finds **both dropdowns are already at
    their best value**: structure trail beats every fixed step (best fixed = 62.5R), the trail
    buffer is nearly irrelevant (0.4R across 10→80 ticks), and `exec_tp2_stop_mode="One trail step

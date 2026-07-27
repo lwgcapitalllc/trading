@@ -3618,8 +3618,8 @@ string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options
 float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 10, step = 0.1)
 string execSlLevel = input.string("1.0", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib on the deep side of 0.5. Default 1.0 = leg origin. Pick a shallower level (0.618-0.886) for a tighter stop; the buffer is measured beyond it. If it lands at/inside the entry, the setup won't fire.")
 float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
-float execTp1Pct  = input.float(30,   "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
-float execTp2Pct  = input.float(40,   "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
+float execTp1Pct  = input.float(0,    "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. DEFAULT 0 = bank nothing, ride the whole position to the runner — the tested best setting. The TP1 PRICE still matters at 0: touching it is what stages the stop to breakeven. Raise it only to scale out.")
+float execTp2Pct  = input.float(0,    "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP2 limit banks. DEFAULT 0 = bank nothing (see TP1). Touching TP2 still lifts the stop to the TP2 floor and hands the runner to the trail.")
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
 float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
 // Runner-trail EXPERIMENT levers — all three default to the shipped behaviour, so the
@@ -4443,17 +4443,26 @@ float lStop = lStage >= 2 ? (na(lTrail) ? lStage2Floor : math.max(lStage2Floor, 
 float sStop = sStage >= 2 ? (na(sTrail) ? sStage2Floor : math.min(sStage2Floor, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
 
 // ── Manage open long: TP1/TP2 scale-outs + runner, staged stop ──
+// A rung sized 0% is SKIPPED, never placed. strategy.exit() treats qty_percent = 0 as
+// "unspecified" and falls back to closing the WHOLE position at that limit, so calling it
+// with 0 would turn "bank nothing here" into "bank everything here" — the exact opposite.
+// Skipping leaves the runner leg as the only exit, which is what 0% means. The TP PRICES
+// still drive the staged stop (lStage/sStage above) whatever the rung sizes are.
 if strategy.position_size > 0
-    strategy.exit("L-TP1", from_entry = "Long", qty_percent = execTp1Pct, limit = lTP1, stop = lStop)
-    strategy.exit("L-TP2", from_entry = "Long", qty_percent = execTp2Pct, limit = lTP2, stop = lStop)
+    if execTp1Pct > 0
+        strategy.exit("L-TP1", from_entry = "Long", qty_percent = execTp1Pct, limit = lTP1, stop = lStop)
+    if execTp2Pct > 0
+        strategy.exit("L-TP2", from_entry = "Long", qty_percent = execTp2Pct, limit = lTP2, stop = lStop)
     strategy.exit("L-RUN", from_entry = "Long",                                          stop = lStop)
     if execCloseOppSOS and st.bear_sos
         strategy.close("Long", comment = "opp SOS")
 
 // ── Manage open short ──
 if strategy.position_size < 0
-    strategy.exit("S-TP1", from_entry = "Short", qty_percent = execTp1Pct, limit = sTP1, stop = sStop)
-    strategy.exit("S-TP2", from_entry = "Short", qty_percent = execTp2Pct, limit = sTP2, stop = sStop)
+    if execTp1Pct > 0
+        strategy.exit("S-TP1", from_entry = "Short", qty_percent = execTp1Pct, limit = sTP1, stop = sStop)
+    if execTp2Pct > 0
+        strategy.exit("S-TP2", from_entry = "Short", qty_percent = execTp2Pct, limit = sTP2, stop = sStop)
     strategy.exit("S-RUN", from_entry = "Short",                                          stop = sStop)
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")

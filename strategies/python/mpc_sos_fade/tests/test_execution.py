@@ -103,7 +103,10 @@ def test_sizing_matches_risk_over_stop_distance():
 
 # ------------------------------------------------------- winning ladder ---------
 def test_ladder_wins_tp1_tp2_then_runner_trail():
-    ex = Execution(_cfg())
+    # Scale-outs pinned ON: the shipped default is 0/0 (everything rides the runner), and this
+    # test is about the SCALE-OUT mechanics, so it states the sizes it needs rather than
+    # inheriting them — same reason _cfg pins the arm source.
+    ex = Execution(_cfg(exec_tp1_pct=30.0, exec_tp2_pct=40.0))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())     # place
     ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())     # fill @103.82
     # bar 2: rallies through TP1(105) and TP2(106.18), never near stop(100)
@@ -117,6 +120,32 @@ def test_ladder_wins_tp1_tp2_then_runner_trail():
     assert any(f.order_id == "L-RUN" for f in dec3.fills)
     assert len(ex.trades) == 1
     assert ex.trades[0].r > 0        # net winner
+
+
+def test_zero_pct_rungs_bank_nothing_but_still_stage_the_stop():
+    """The SHIPPED default (0/0, 2026-07-27). Two things must both hold, and they pull opposite
+    ways: no size may leave at TP1/TP2, yet touching those PRICES must still lift the stop. The
+    failure mode this guards is the Pine's — `strategy.exit(qty_percent = 0)` closes the WHOLE
+    position, turning "bank nothing" into "bank everything". Python must not grow that bug."""
+    cfg = _cfg()
+    assert (cfg.exec_tp1_pct, cfg.exec_tp2_pct) == (0.0, 0.0)     # the default under test
+    ex = Execution(cfg)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())     # place
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())     # fill @103.82
+    qty_at_entry = ex._qty
+
+    # bar 2: rallies clean through TP1 (105) and TP2 (106.18), nowhere near the stop (100).
+    dec2 = ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
+    assert not [f for f in dec2.fills if f.kind == "exit"]   # nothing banked
+    assert ex._pos_dir == 1 and ex._qty == qty_at_entry      # full size still on
+    # ...but the stop staged exactly as if the rungs had filled: TP2 seen -> floor = TP1 price.
+    assert dec2.stop is not None and abs(dec2.stop - 105.0) < 1e-9
+
+    # bar 3: pulls back into the staged stop — the WHOLE position leaves as the runner.
+    dec3 = ex.step(_sig(3, 106.0, 106.2, 104.9, 105.0), _seq_flat())
+    runs = [f for f in dec3.fills if f.order_id == "L-RUN"]
+    assert len(runs) == 1 and abs(runs[0].qty - qty_at_entry) < 1e-9
+    assert len(ex.trades) == 1 and ex.trades[0].r > 0
 
 
 # ------------------------------------------------------- losing stop-out --------
