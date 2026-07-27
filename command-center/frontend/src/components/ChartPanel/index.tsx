@@ -296,6 +296,16 @@ export default function ChartPanel({
   // Trades: one on/off toggle for all of them, driven from the right-click chart menu.
   const [tradesOn, setTradesOn] = useState(true)
 
+  // Outcome filters — winners and losers toggle independently, so the chart can show just the
+  // winners or just the losers. Both default ON (a run opens on every trade). Same win test as the
+  // overlay's colour rule (`pnl > 0`), so a trade's chip colour and its filter can never disagree.
+  const [winnersOn, setWinnersOn] = useState(true)
+  const [losersOn, setLosersOn] = useState(true)
+  const outcomeCounts = useMemo(() => {
+    const wins = spec.trades.reduce((n, tr) => n + (tr.pnl > 0 ? 1 : 0), 0)
+    return { wins, losses: spec.trades.length - wins }
+  }, [spec.trades])
+
   // Portfolio-stack layers. The roster is DERIVED from the trades themselves (`layer`/`layerName`/
   // `layerColor`), so the panel stays strategy-agnostic — it sees layers as data, exactly like
   // overlay groups. Empty on a single-run spec, which is what hides the Strategies dropdown.
@@ -575,6 +585,7 @@ export default function ChartPanel({
       if (loadedLoTs == null || loadedHiTs == null) break
       if (tr.entryTime < loadedLoTs || tr.entryTime > loadedHiTs) continue
       if (tr.layer && hiddenLayers.has(tr.layer)) continue   // isolated via the Strategies dropdown
+      if (!(tr.pnl > 0 ? winnersOn : losersOn)) continue     // Winners/Losers filters (Layers menu)
       chart.createOverlay({
         name: TRADE,
         lock: true,
@@ -609,7 +620,7 @@ export default function ChartPanel({
         },
       })
     }
-  }, [spec.trades, tradesOn, hiddenLayers, displayCandles, loadedLoTs, loadedHiTs])
+  }, [spec.trades, tradesOn, winnersOn, losersOn, hiddenLayers, displayCandles, loadedLoTs, loadedHiTs])
 
   // Fibonacci drawings — re-created from state after any data change (applyNewData clears overlays,
   // same rationale as the trade/session effects), so a fib survives TF switches. Each carries
@@ -963,10 +974,17 @@ export default function ChartPanel({
           <div ref={layersRef} className="relative">
             {(() => {
               const items = [
-                ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o) }] : []),
-                ...overlayGroups.map(g => ({ key: `g-${g.name}`, label: g.name, color: g.color, on: groupsOn[g.name], toggle: () => toggleGroup(g.name) })),
-                ...spec.indicators.map((ind, i) => ({ key: `i-${ind.name}`, label: ind.name, color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length], on: indicatorsOn[ind.name], toggle: () => toggleIndicator(ind.name) })),
-                ...(dailyBreaks.length > 0 ? [{ key: 'daybreaks', label: 'Day breaks', color: DAY_BREAK_COLOR, on: dayBreaksOn, toggle: () => setDayBreaksOn(o => !o) }] : []),
+                ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o), sub: false, count: undefined as number | undefined }] : []),
+                // Winners/Losers are SUB-toggles of Trades — indented, and only listed while trades
+                // are on (with trades hidden they'd be inert switches). Each carries its count so the
+                // split is readable without opening the trades table.
+                ...(spec.trades.length > 0 && tradesOn ? [
+                  { key: 'winners', label: 'Winners', color: TRADE_WIN_COLOR, on: winnersOn, toggle: () => setWinnersOn(o => !o), sub: true, count: outcomeCounts.wins },
+                  { key: 'losers', label: 'Losers', color: TRADE_LOSS_COLOR, on: losersOn, toggle: () => setLosersOn(o => !o), sub: true, count: outcomeCounts.losses },
+                ] : []),
+                ...overlayGroups.map(g => ({ key: `g-${g.name}`, label: g.name, color: g.color, on: groupsOn[g.name], toggle: () => toggleGroup(g.name), sub: false, count: undefined as number | undefined })),
+                ...spec.indicators.map((ind, i) => ({ key: `i-${ind.name}`, label: ind.name, color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length], on: indicatorsOn[ind.name], toggle: () => toggleIndicator(ind.name), sub: false, count: undefined as number | undefined })),
+                ...(dailyBreaks.length > 0 ? [{ key: 'daybreaks', label: 'Day breaks', color: DAY_BREAK_COLOR, on: dayBreaksOn, toggle: () => setDayBreaksOn(o => !o), sub: false, count: undefined as number | undefined }] : []),
               ]
               const activeCount = items.filter(it => it.on).length
               return (
@@ -985,13 +1003,14 @@ export default function ChartPanel({
                         <button
                           key={it.key}
                           onClick={it.toggle}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken"
+                          className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken ${it.sub ? 'pl-7' : 'pl-3'}`}
                         >
                           <span
                             className="w-2 h-2 rounded-full flex-shrink-0"
                             style={{ background: it.on ? it.color : 'transparent', boxShadow: `inset 0 0 0 1px ${it.color}`, opacity: it.on ? 1 : 0.5 }}
                           />
                           <span className={it.on ? 'text-text-primary' : 'text-text-tertiary'}>{it.label}</span>
+                          {it.count != null && <span className="font-mono text-text-tertiary">{it.count}</span>}
                           {it.on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
                         </button>
                       ))}

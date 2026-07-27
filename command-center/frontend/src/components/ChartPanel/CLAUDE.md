@@ -3,7 +3,7 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-06-16
+**Last reviewed:** 2026-07-27 (Winners/Losers outcome filters added to the Layers dropdown)
 
 ---
 
@@ -124,7 +124,12 @@ here**, so the chart shows exactly what the strategy saw.
   → `chart_spec` (which filters `legs` to real profit-takes beyond a 0.1R scratch band, so a
   breakeven-stop fill is never drawn as profit, and attaches each surviving leg's label). One on/off
   toggle for all trades (`tradesOn`), driven from BOTH the Layers dropdown AND the right-click chart
-  menu — same state, either surface flips it. A single **outcome chip** (`Won` green / `Lost` red, from `pnl`'s sign) sits
+  menu — same state, either surface flips it. **Winners / Losers outcome filters** (`winnersOn` /
+  `losersOn`, both default ON) sit under it as INDENTED sub-rows in the Layers dropdown, each with its
+  count, so a run can be read as all-winners or all-losers without hunting trade by trade. They're
+  listed only while `tradesOn` — with trades hidden they'd be inert switches — and the win test is
+  `pnl > 0`, the SAME expression as the overlay's win/loss colour, so a trade's chip colour and the
+  filter that shows it can never disagree. A single **outcome chip** (`Won` green / `Lost` red, from `pnl`'s sign) sits
   horizontally **centred** over the trade, just BEYOND its **resolved extreme** — a win past the
   furthest favourable point (`mfePrice`), a loss past the furthest adverse point (`maePrice`, behind
   the stop) — so it always points the way the trade resolved (above a long win / below a long loss,
