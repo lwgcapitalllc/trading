@@ -3513,8 +3513,36 @@ if bLegArmS and not na(bLegS_top)
 // what matters is how much TRADING has passed. Declared with the literal group
 // string (GRP_EXEC is defined further down) so it lands in the Execution panel.
 // On 15m: 1 day ≈ 96 bars, 2 ≈ 192, 3 ≈ 288.
-float bLegMaxDays = input.float(1.25, "B-Leg: days to activate before it goes stale", minval = 1, maxval = 3, step = 0.25, group = "Strategy Execution", tooltip = "How long a B LEG watches its frozen band for the late retrace before it goes stale. Set in DAYS, measured as a BAR count (one day ÷ the chart timeframe) so weekends and the daily close don't consume it. Default 1.25 = the original 120 bars on 15m. Lower (e.g. 1) = quick retraces only; higher = more room. Sweep 1→3. B-LEG only.")
+float bLegMaxDays = input.float(2.5, "B-Leg: days to activate before it goes stale", minval = 1, maxval = 3, step = 0.25, group = "Strategy Execution", tooltip = "How long a B LEG watches its frozen band for the late retrace before it goes stale. Set in DAYS, measured as a BAR count (one day ÷ the chart timeframe) so weekends and the daily close don't consume it. 2.5 = 240 bars on 15m. RAISED from 1.25 on 2026-07-27 — this is the B LEG's binding constraint: the band goes stale before the late retrace arrives, so widening the window is what produces trades. Measured over 4.5y of XAUUSD 15m, same stop: 1.0d = 25 trades / 4.7R, 1.25d = 35 / 6.5R, 1.75d = 44 / 1.5R, 2.5d = 55 / 10.2R (smaller drawdown too), 3.0d = 58 / 8.9R. Note the surface is NOT smooth — the 1.75 dip means part of this is luck, so treat 2.5 as better-than-1.25 rather than optimal. B-LEG only.")
 int BLEG_MAX = int(math.max(1, math.round(bLegMaxDays * 86400 / timeframe.in_seconds())))
+
+// B-LEG stop level. Was HARDCODED to the leg origin (bLegL_inv / bLegS_inv) before
+// 2026-07-27. Separate from execSlLevel because the two measure DIFFERENT geometry:
+// execSlLevel indexes the A+ fib engine's drawn levels, while the B LEG has no fib
+// engine behind it — only the frozen band's own origin and range.
+//
+// ⚠ THIS ZONE'S FIB IS DRAWN THE OPPOSITE WAY ROUND. Read before adding a level.
+// The band is built as origin + f*range, so the zone's fib has 0 AT THE LEG ORIGIN and
+// 1.0 at the expansion extreme — the mirror of a standard retracement. That is the frame
+// the setup is designed and reasoned about in, and this input uses it:
+//     entry band = 0.5 (the resting limit) down to 0.382 (the band's far edge)
+//     below it   = 0.236, then 0.0 = the leg origin
+// so the only real fib levels a stop can sit on are 0.382 / 0.236 / 0.0. The levels above
+// 0.5 — 0.618, 0.786, 0.886 — are on the WRONG SIDE of the entry here (above it on a long)
+// and are deliberately not offered.
+//
+// ⚠ THE STOP IS COUPLED TO TP1: stop = (0.5 - f)*range while TP1 is ALWAYS 0.5*range, so
+// TP1 in R = 0.5/(0.5 - f) — 1.00R at 0.0, 1.89R at 0.236, 4.24R at 0.382. A TP1 touch is
+// the only thing that stages the stop to breakeven, so a TIGHTER stop pushes protection
+// FURTHER away in R. Use execSlBufTk to sit beyond the origin.
+string bLegSlLevel = input.string("0.0", "B-Leg: SL fib level", options = ["0.382", "0.236", "0.0"], group = "Strategy Execution", tooltip = "Where the B-LEG stop sits on the ZONE'S OWN fib — which runs 0 at the leg origin up to 1.0 at the extreme, the opposite way round to a standard retracement. The entry rests at 0.5 and the band's far edge is 0.382, so the levels below the entry are 0.382 / 0.236 / 0.0. 0.0 (default) = the leg origin, the old hardcoded behaviour. 0.382 puts the stop ON the band's far edge — any wick through the zone kills the trade, and it leaves only 0.118 of the leg range as stop distance. Note TP1 sits at 0.5*range no matter what you pick, so a tighter stop makes TP1 FURTHER away in R (1.00R at 0.0, 1.89R at 0.236, 4.24R at 0.382) and breakeven protection arrives later. Use the SL buffer to sit beyond the origin. B-LEG only.")
+
+// The zone's fractions are used DIRECTLY — 0 is the origin, so there is no conversion.
+f_bLegSl(float origin, float entry, int dir) =>
+    float x    = bLegSlLevel == "0.382" ? 0.382 : bLegSlLevel == "0.236" ? 0.236 : 0.0
+    // entry sits at the zone's 0.5, so 2*|entry - origin| recovers the full leg range.
+    float rng  = 2.0 * math.abs(entry - origin)
+    dir > 0 ? origin + rng * x : origin - rng * x
 if bLegL_on
     if low <= bLegL_top
         bLegL_tap := true
@@ -4179,7 +4207,7 @@ if macro_origin_locked and not na(macro_origin) and not na(macro_extreme) and ma
     _bZone := _fr >= 0.618 ? "premium" : _fr <= 0.382 ? "discount" : "mid"
 string _bLegCtx = " · W " + wEstState + " · D " + dEstState + " · " + _bSess + " · cyc " + _bZone
 if bLegLongArm
-    lSL  := bLegL_inv - execSlBuf
+    lSL  := f_bLegSl(bLegL_inv, bLegL_top, 1) - execSlBuf
     float slDist = bLegL_top - lSL
     lTP1 := 2 * bLegL_top - bLegL_inv
     lTP2 := bLegL_tgt
@@ -4193,7 +4221,7 @@ if bLegLongArm
         strategy.cancel("Long")
 
 if bLegShortArm
-    sSL  := bLegS_inv + execSlBuf
+    sSL  := f_bLegSl(bLegS_inv, bLegS_bot, -1) + execSlBuf
     float slDist = sSL - bLegS_bot
     sTP1 := 2 * bLegS_bot - bLegS_inv
     sTP2 := bLegS_tgt

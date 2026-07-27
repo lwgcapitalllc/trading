@@ -66,6 +66,16 @@ def config_from_export(df: pd.DataFrame, base: Optional[BLegConfig] = None) -> B
     else:
         print("WARNING: no cfg_bleg_days column — the B-LEG staleness cap is assumed to be at "
               "its default. Re-export off the current mpc_b_leg_strategy_export.pine.")
+
+    # cfg_bleg_sl is plotted as the NUMBER ("0.786"), so map it back to the string the
+    # config keys off. Exports predating the input have no column and ran the hardcoded
+    # origin stop, which is exactly what the "1.0" default reproduces — so a missing
+    # column is silent, not a warning.
+    if "cfg_bleg_sl" in df.columns and not pd.isna(row["cfg_bleg_sl"]):
+        from dataclasses import replace
+        lvl = min(("0.382", "0.236", "0.0"),
+                  key=lambda s: abs(float(s) - float(row["cfg_bleg_sl"])))
+        cfg = replace(cfg, bleg_sl_level=lvl)
     return cfg
 
 

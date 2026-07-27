@@ -8,12 +8,12 @@ resting limit at the 0.5 edge waits for the late return.
 **Scope:** This bot only — its tracker, order layer, config, tests. It does NOT own the
 engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it reuses
 (`strategies/python/mpc_sos_fade/`).
-**Status:** Built + unit-tested (15 tests green) + **Pine-parity GREEN (exit 0) 2026-07-26** on a
+**Status:** Built + unit-tested (21 tests green) + **Pine-parity GREEN (exit 0) 2026-07-26** on a
 real 21,231-bar `VANTAGE_XAUUSD, 15m` export — bar-for-bar identical decision stream, including
 ~90 distinct frozen bands and 5 graded trades. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
 open question, not correctness:** 5 trades is far too thin to tune against. See "The parity gate".
-**Last reviewed:** 2026-07-26 — the exit levers landed, the Pine-parity harness was built, and it came back GREEN on the first real export (see "The parity gate").
+**Last reviewed:** 2026-07-27 — `bleg_sl_level` made the hardcoded stop configurable in both Pine forks + Python, the first 4.5y performance measurement landed, and a 15-cell sweep adopted exactly one change (`bleg_max_days` 1.25 → 2.5). See "The exit ladder is inherited" and "Measured performance".
 
 ## Why it exists (the split, 2026-07-24)
 
@@ -42,7 +42,8 @@ R-grading machinery is direction- and setup-agnostic, so it is REUSED wholesale:
     B-LEG limit rested at the band's 0.5 edge (SL beyond the leg origin, TP1 = broken swing
     extreme `2·edge−inv`, TP2 = expansion extreme `tgt`, TP3 runner). Everything from
     `_open_position` onward is the parent's.
-  - `config.py` `BLegConfig(SosFadeConfig)` — a strict superset, adds only `bleg_max_days`.
+  - `config.py` `BLegConfig(SosFadeConfig)` — a strict superset, adds `bleg_max_days` + `bleg_sl_level`.
+    Both were swept 2026-07-27; only `bleg_max_days` moved. See "Measured performance".
   - `strategy.py` `MpcBLegStrategy(MpcSosFadeStrategy)` — inherits `_fill_model` +
     `engine_config` (the SAME `fvg_max_count=7` + `show_internal=False` pins — the B-LEG reads
     the same structure/fib engines), overrides `__init__`/`run`/`step` to splice the tracker.
@@ -87,17 +88,119 @@ full register is `mpc_sos_fade/CLAUDE.md` → `## The exit ladder`. What is spec
   down" gate entirely. That is the tuning experiment this file's own notes have called for since
   2026-07-24, now a one-flag run instead of a code edit. The same input was added to
   `indicators/mpc_b_leg_strategy.pine` under the label "A+ has priority (stand the B-leg down)".
-- **This bot OVERRIDES TP1 / TP2 / SL** with its band prices (SL = band origin, TP1 = the broken
-  swing extreme, TP2 = the expansion extreme). Everything from the stop staging down — the floor,
-  the trail, both dropdowns — is the parent's, unchanged.
+- **This bot OVERRIDES TP1 / TP2 / SL** with its band prices (SL = `bleg_sl_level` off the band,
+  TP1 = the broken swing extreme, TP2 = the expansion extreme). Everything from the stop staging
+  down — the floor, the trail, both dropdowns — is the parent's, unchanged.
+- **`bleg_sl_level` (added 2026-07-27)** — the stop was HARDCODED to the band origin until then.
+  Own field, not the inherited `exec_sl_level`, because the two index different geometry: the A+
+  one picks a level off the fib engine (`sig.fibo_p3..p10`), the B leg has no fib engine and must
+  derive its stop from the band's own origin + range. Options **`0.382` / `0.236` / `0.0`**,
+  defaulting to `"0.0"` = the old hardcoded origin, which is byte-identical on a full 4.5y replay,
+  so the parity gate is unaffected.
+
+  ⚠ **THIS ZONE'S FIB IS DRAWN THE OPPOSITE WAY ROUND — read before adding a level.** `bleg.py`
+  builds the band as `origin + f·range`, so the zone's fib has **0 at the leg origin and 1.0 at
+  the expansion extreme** — the mirror of a standard retracement, which puts 0 at the extreme.
+  The setup's author (Aaron's brother) draws and reasons about it in this frame, and the field
+  uses HIS frame:
+
+  | Zone level | Where it sits | Stop distance |
+  |---|---|---|
+  | 0.5 | the resting entry limit (`l_top`/`s_bot`) | — |
+  | 0.382 | the band's far edge (`l_bot`/`s_top`) | 0.118·range |
+  | 0.236 | below the band | 0.264·range |
+  | 0.0 | the leg origin (`l_inv`/`s_inv`) — **DEFAULT** | 0.500·range |
+
+  The levels ABOVE 0.5 — 0.618 / 0.786 / 0.886 — sit on the WRONG SIDE of the entry here (above
+  it on a long) and are deliberately not offered. **A first version of this field got that wrong**:
+  it mirrored the standard ladder into the zone, pricing stops at 0.298 / 0.214 / 0.114 — valid
+  points arithmetically, but not fib levels in this frame, and labelled with numbers that name
+  levels on the opposite side of the entry. Corrected same-day on the author's own reading. Six
+  tests in `tests/test_bleg.py` pin the frame, including one asserting every offered level sits
+  below the entry in both directions. To sit BEYOND the origin, use `exec_sl_buf_tk` (ticks).
+
+  **The stop is COUPLED to TP1 — a tighter stop does not cut losers sooner.** Entry rests at 0.5
+  and TP1 is `2·edge − origin`, so `stop = (0.5 − f)·range` while `TP1 = 0.5·range` ALWAYS. TP1
+  measured in R is therefore `0.5 / (0.5 − f)`: **1.00R** at 0.0, 1.89R at 0.236, **4.24R** at
+  0.382. Since a TP1 touch is the ONLY thing that stages the stop to breakeven, tightening the
+  stop pushes safety further away in R rather than closer — verified empirically on the 4.5y
+  baseline, where the single loss that reached 1.0R MFE lost only −0.74R while **every** loss
+  short of 1.0R lost the full −1.00R. At 0.382 the stop also sits ON the band's far edge, so any
+  wick through the zone kills the trade, and the median stop falls to ~$2.59 on gold with 11 of
+  36 trades under $2 — the degenerate-stop artifact documented in `mpc_sos_fade_optimization.md`
+  Runs 4–5. **Do not adopt 0.382 without a minimum-stop-distance guard.**
 
 `indicators/mpc_b_leg_strategy.pine` was ported in the same pass and now matches: `execRunnerTrail`,
 `execStructTrailBufTk`, `execTp2StopMode`, `execAplus`, and the `lStage2Floor` / structure-trail
-exit block copied line-for-line from `mpc_strategy.pine`. **Not ported, deliberately:** `execSlLevel`
-(the SL fib dropdown) is meaningless here because the B leg's stop is its band origin, not a fib; and
+exit block copied line-for-line from `mpc_strategy.pine`. `bLegSlLevel` + `f_bLegSl` were added to
+BOTH Pine forks on 2026-07-27, and the export fork plots `cfg_bleg_sl` so `compare_bleg.py` can
+reproduce whatever level an export was taken under (a missing column means a pre-input export, which
+ran the hardcoded origin — exactly what the `"0.0"` default reproduces, so it is silent, not a
+warning). This supersedes the earlier note that `execSlLevel` was deliberately not ported: the
+*inherited* one still is not (it indexes fib-engine levels this fork has none of), but the B leg now
+has its OWN equivalent. **Not ported, deliberately:**
 the pink blocked-trade markers, whose codes describe why an **A+** setup was refused — in this fork
 A+ never trades, so those tags would report the opposite of what a reader would assume. A B-LEG
 block tag would need its own code set, which is new design work, not a port.
+
+## Measured performance + the 2026-07-27 sweep (the ONLY adopted change)
+
+**First real performance read.** Pine parity proved the two implementations AGREE; it never showed
+the setup makes money, and the 21,231-bar parity export is only ~11 months. `run_report.py` replays
+the Python bot over the M15 broker cache instead (back to 2015), so the numbers below are 4.5y —
+2022-01-02 → 2026-07-24, 107,803 bars, `fill_model="bar"` (zero costs; a tick run will be worse).
+
+**Headline: at the shipped config B-LEG made 6.5R on 35 trades in 4.5 years.** ~8 trades a year. The
+A+ bot does 118 trades / 33.6R over the identical window. Treat B-LEG as a side dish.
+
+### What was swept (15 cells: 3 stop levels × 5 staleness windows)
+
+| Stop | Timer | n | sumR | minus top 2 | maxDD | wr | median stop | stops < $2 |
+|---|---|---|---|---|---|---|---|---|
+| **0.0** | **2.5d** | **55** | **10.2** | **+4.0** | **−5.8** | **47%** | **$11.36** | **0** |
+| 0.0 | 3.0d | 58 | 8.9 | +2.6 | −5.4 | 47% | $11.89 | 0 |
+| 0.0 | 1.25d | 35 | 6.5 | +2.6 | −6.7 | 51% | $11.36 | 0 |
+| 0.0 | 1.75d | 44 | 1.5 | −2.5 | −8.7 | 43% | $10.62 | 0 |
+| 0.236 | 2.5d | 58 | 7.2 | −0.5 | −17.5 | 33% | $5.81 | 3 |
+| 0.382 | 3.0d | 62 | **18.0** | **−0.3** | −13.6 | 26% | $2.80 | 17 |
+| 0.382 | 2.5d | 58 | 17.9 | +0.8 | −20.3 | 26% | $2.60 | 18 |
+
+**ADOPTED: `bleg_max_days` 1.25 → 2.5.** The only cell better than the shipped one on every axis —
+more trades, more R, SMALLER drawdown, 4 positive years instead of 3, no degenerate stops.
+
+**REJECTED: every tighter stop.** Two different failure modes, both worth knowing:
+- **0.382 is a mirage.** Biggest headline in the grid (18.0R) and the worst row in it: strip its two
+  best trades and it is **−0.3R**, win rate 26%, worst losing streak **11**, median stop $2.80 with
+  17 of 62 trades under $2 — inside the spread on gold, so R is a division artifact. Same failure the
+  A+ bot hit; see `mpc_sos_fade_optimization.md` Runs 4–5.
+- **0.236 fails honestly, which is more instructive.** No fake stops, just more real losses — 37 of
+  58 vs 25 at the origin stop, drawdown roughly tripled to −17.5R. Its losers reach a **median 1.03R
+  MFE** before dying: they get a full R into profit and hand it all back, because at 0.236 TP1 sits
+  at 1.89R and the stop never stages to breakeven. This is the TP1 coupling (see `bleg_sl_level`)
+  showing up as money, not theory.
+
+### Two caveats that must travel with these numbers
+
+1. **The timer surface is NOT monotonic.** 1.25 → 6.5R, 1.75 → **1.5R**, 2.5 → 10.2R. A genuine
+   improvement would rise smoothly. Part of the 2.5 result is which trades landed where. It is
+   "probably better than 1.25", not an optimum — do not sweep it finer on this sample.
+2. **Strip the top 5 trades and EVERY cell goes negative** (best case 0.0/2.5 at −1.6R). B-LEG's
+   entire 4.5y result rests on a handful of winners. It does not have a broad edge yet, and no
+   stop or timer setting creates one.
+
+### What was measured INERT (do not re-test without a reason)
+
+- **`exec_req_fvg`** — the B-LEG entry never consults an FVG (`_place_entries` rests at the band's
+  0.5 edge). Turning it off moved the trade count 35 → 34, and only indirectly, by letting A+ arm
+  more often and stand the B leg down. Not a B-LEG lever.
+- **`exec_aplus` (the priority gate)** — off = 36 trades / 5.5R vs 35 / 6.5R. Byte-identical to
+  "both off", which proves FVG's only route into this bot was through that gate. The file's
+  long-standing "first tuning candidate" is worth one trade over 4.5 years.
+
+⚠ **The setups table in a B-LEG `run_report.py` run is about A+ LEGS, not B legs.** `_collect_legs`
+reads `d.l_stage`/`d.s_stage` (the A+ sequence stages) while `BLegExecution` overwrites the edge/arm
+fields with the B-LEG's own — so its "no FVG in the zone" rows describe legs this bot never trades.
+Do not read a B-LEG constraint off it; that misreading is what produced the wrong first answer here.
 
 ## Sizing — sizes ITSELF
 

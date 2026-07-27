@@ -39,6 +39,25 @@ class BLegExecution(Execution):
         self._bleg = bleg
         return super().step(sig, seq)
 
+    # ── stop anchor (Pine bLegSlLevel) ───────────────────────────────────────────
+    # The zone's fib has 0 at the leg ORIGIN and 1.0 at the extreme — the mirror of a standard
+    # retracement, and the frame the setup's author works in. So these fractions are used
+    # DIRECTLY: no 1-x conversion, no reinterpretation. See BLegConfig.bleg_sl_level.
+    # "0.0" is the leg origin = the pre-2026-07-27 hardcoded stop, so the default is
+    # bar-for-bar parity-safe.
+    _SL_FROM_ORIGIN = {"0.382": 0.382, "0.236": 0.236, "0.0": 0.0}
+
+    def _sl_price(self, origin: float, entry: float, is_long: bool) -> float:
+        """Stop price for a B-LEG entry, before the `exec_sl_buf_tk` buffer.
+
+        `origin` is the leg origin (`l_inv`/`s_inv`, the old hardcoded stop). The entry edge
+        sits at the zone's 0.5, so `range = 2·|entry - origin|` recovers the full leg range
+        without the tracker having to carry it.
+        """
+        frac = self._SL_FROM_ORIGIN.get(self._cfg.bleg_sl_level, 0.0)
+        rng = 2.0 * abs(entry - origin)
+        return origin + rng * frac if is_long else origin - rng * frac
+
     # ── entry placement — B-LEG only (Pine 4429-4506) ────────────────────────────
     def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
         cfg = self._cfg
@@ -77,7 +96,7 @@ class BLegExecution(Execution):
 
         # ── Long B-LEG entry (Pine 4480-4490) ──
         if bleg_l_arm:
-            sl = bleg.l_inv - cfg.exec_sl_buf_tk * cfg.mintick
+            sl = self._sl_price(bleg.l_inv, bleg.l_top, True) - cfg.exec_sl_buf_tk * cfg.mintick
             dist = bleg.l_top - sl
             tp1 = 2 * bleg.l_top - bleg.l_inv     # broken swing extreme (fib 0.0 of the band)
             tp2 = bleg.l_tgt                      # expansion extreme
@@ -87,7 +106,7 @@ class BLegExecution(Execution):
 
         # ── Short B-LEG entry (Pine 4494-4504) ──
         if bleg_s_arm:
-            sl = bleg.s_inv + cfg.exec_sl_buf_tk * cfg.mintick
+            sl = self._sl_price(bleg.s_inv, bleg.s_bot, False) + cfg.exec_sl_buf_tk * cfg.mintick
             dist = sl - bleg.s_bot
             tp1 = 2 * bleg.s_bot - bleg.s_inv
             tp2 = bleg.s_tgt

@@ -3,7 +3,7 @@
 **Purpose:** From-scratch Pine Script rebuild of the "Structure OS / SMC Engine" market-structure indicator (swing highs/lows, HH/HL/LH/LL, BOS, CHoCH), replicating a private TradingView indicator's behavior using a pullback-only detection method.
 **Scope:** This covers Pine Script indicator development and the market-structure detection engine only. It does NOT cover trading strategy logic, risk management, or any live/backtest execution — this is a charting indicator, not a bot.
 **Status:** Under construction — Stage 2b (break-gated swing structure + BOS/CHoCH) is ~95% validated against the original; Stage 3 (internal structure) and Stage 4 (multi-symbol/timeframe comparison) not started. Blocked on chart validation by Aaron before Stage 3 begins.
-**Last reviewed:** 2026-07-26 — the new exit levers (structure runner trail, TP2 stop floor, SL fib dropdown, `execAplus`) ported into `mpc_b_leg_strategy.pine`, and `mpc_strategy_export.pine` given a column for every trade-affecting input (see the second 2026-07-26 entry). Earlier the same day: orphaned-SVP compile fix in `mpc_strategy.pine` + the export regenerated off it. Earlier: 2026-07-12 — the whole structure chain was re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% Pine parity (see the "2026-07-12 structure re-sync" note below), and the A+ divergence retro-link landed in both A+-carrying files (see the note after it).
+**Last reviewed:** 2026-07-27 — the B-LEG stop made configurable in both forks (on the ZONE's inverted fib) + `bLegMaxDays` default raised to 2.5 off a measured sweep; see the 2026-07-27 entry. Earlier: 2026-07-26 — the new exit levers (structure runner trail, TP2 stop floor, SL fib dropdown, `execAplus`) ported into `mpc_b_leg_strategy.pine`, and `mpc_strategy_export.pine` given a column for every trade-affecting input (see the second 2026-07-26 entry). Earlier the same day: orphaned-SVP compile fix in `mpc_strategy.pine` + the export regenerated off it. Earlier: 2026-07-12 — the whole structure chain was re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% Pine parity (see the "2026-07-12 structure re-sync" note below), and the A+ divergence retro-link landed in both A+-carrying files (see the note after it).
 
 ---
 
@@ -223,8 +223,16 @@ fork A+ never places an order, so the flag doesn't disable an entry path, it dro
 That gate has been the file's own first-listed tuning candidate since 2026-07-24 and is now a toggle.
 
 **Deliberately NOT ported to the B-leg fork**, with reasons, so nobody "fixes" it later:
-- `execSlLevel` — the B leg's stop is its frozen band's origin, not a fib on the A+ leg. The dropdown
-  has nothing to select there.
+- `execSlLevel` — it indexes the A+ fib engine's drawn levels, which this fork has none of. The B
+  leg got its OWN equivalent instead on 2026-07-27: `bLegSlLevel` + `f_bLegSl`, in both forks, with
+  `cfg_bleg_sl` plotted in the export. **Its levels are the ZONE's own fib, not a standard
+  retracement** — the band is built as `origin + f*range`, so 0 is the leg ORIGIN and 1.0 the
+  extreme, the mirror of a normal fib. Entry rests at 0.5, the band's far edge is 0.382, and the
+  only levels below the entry are 0.382 / 0.236 / 0.0 (default, = the old hardcoded origin). A
+  first cut mirrored the standard ladder in and offered 0.618/0.786/0.886 — levels that sit ABOVE
+  the entry in this frame; corrected the same day. Note the stop is coupled to TP1 (`TP1 in R =
+  0.5/(0.5-f)`: 1.00R at 0.0, 4.24R at 0.382), so a tighter stop delays breakeven protection
+  rather than cutting losers sooner.
 - The pink blocked-trade markers. Their codes answer "why was this **A+** setup refused". In a fork
   where A+ never trades, those tags read as the opposite of what they mean. A B-LEG block tag needs
   its own code set — new design work, not a port.
@@ -261,9 +269,40 @@ It plots the B-LEG arm (NOT `longArmed` — A+ never places an order in this for
 the band-derived TP1/TP2, and the tracker's own `bl_*` state, which is the column set that matters:
 every new B-LEG rule lives in the tracker, and a band-maths bug shows as a wrong price many bars before
 it becomes a wrong trade. **Ran GREEN (exit 0) on its first real export the same day** — 21,231 bars, ~90 distinct frozen bands and 5 graded trades diffed. That run also found a bug in the HARNESS (entry direction read off `Fill.qty`'s sign instead of the signed `Fill.dir`), which the offline round-trip test could never catch because its encoder shared the same mistake — a round trip proves the two halves agree, never that either is right.
-`cfg_strcodes`' SL slot is pinned to the "1.0" code because this fork has no `execSlLevel` (its stop is
-the band ORIGIN), which keeps ONE `cfg_*` decoder serving both exports. Regeneration split point is in
+`cfg_strcodes`' SL slot is pinned to the "1.0" code because this fork has no `execSlLevel`, which keeps
+ONE `cfg_*` decoder serving both exports; the B leg's own stop level rides in a separate `cfg_bleg_sl`
+column (added 2026-07-27) rather than in that shared slot. Regeneration split point is in
 the export's own header.
+
+---
+
+## 2026-07-27 — B-LEG: configurable stop + the first parameter sweep
+
+**`bLegSlLevel` + `f_bLegSl` added to both B-LEG forks.** The stop had been hardcoded to the band
+origin. Levels are the **ZONE's own fib, not a standard retracement** — the band is built as
+`origin + f*range`, so 0 is the leg ORIGIN and 1.0 the extreme. Entry rests at 0.5, the band's far
+edge is 0.382, so the only levels below the entry are **0.382 / 0.236 / 0.0** (default = the old
+hardcoded origin, byte-identical on a 4.5y replay). The export fork plots `cfg_bleg_sl`.
+
+**A first cut of this input got the frame wrong** and offered 0.618/0.786/0.886 by mirroring the
+standard ladder — levels that sit ABOVE the entry here, priced at 0.298/0.214/0.114 of the leg,
+which are not fib levels in this frame at all. Caught by Aaron's brother (the setup's author) and
+corrected the same day. Six tests in `mpc_bleg/tests/test_bleg.py` now pin the frame, one of them
+asserting every offered level sits below the entry in both directions.
+
+**`bLegMaxDays` default raised 1.25 → 2.5** in both forks — the ONLY change adopted from a 15-cell
+sweep (3 stop levels × 5 windows, 4.5y XAUUSD M15). The staleness window is the B LEG's binding
+constraint: 1.25d = 35 trades / 6.5R, 2.5d = 55 / 10.2R with a SMALLER drawdown. Every tighter stop
+was rejected — 0.382 posts the grid's biggest headline (18.0R) and is worthless (−0.3R without its
+top two trades, 17 of 62 stops under $2 on gold); 0.236 triples drawdown by producing real losses,
+because TP1 moves to 1.89R and breakeven protection never arrives. Full grid, both caveats (the
+surface is not monotonic, and every cell goes negative minus its top 5 trades) and the two levers
+measured INERT are in `strategies/python/mpc_bleg/CLAUDE.md` → "Measured performance".
+
+**Note for the next round-trip:** `bLegMaxDays` is a DEFAULT change, the class of drift that hides
+best (see the 2026-07-26 `execRunnerTrail` note above). It is safe here only because the export fork
+already plots `cfg_bleg_days` and `compare_bleg.py` reads it, so a parity run configures the bot to
+whatever the export actually ran.
 
 ---
 

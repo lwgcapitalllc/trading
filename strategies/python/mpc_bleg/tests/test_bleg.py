@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+
+import pytest
 from types import SimpleNamespace
 
 _ROOT = Path(__file__).resolve().parents[4]
@@ -125,3 +127,73 @@ def test_driver_is_deterministic():
 def test_longs_and_shorts_off_means_no_trades():
     strat = MpcBLegStrategy(BLegConfig(exec_longs=False, exec_shorts=False)).run(synth_bars(12))
     assert strat.execution.trades == []
+
+
+# ── bleg_sl_level — the configurable stop, on the ZONE'S OWN fib ──────────────────
+#
+# The zone's fib has 0 at the leg ORIGIN and 1.0 at the extreme — the mirror of a standard
+# retracement. The entry rests at 0.5 and the band's far edge is 0.382, so the only levels
+# BELOW the entry are 0.382 / 0.236 / 0.0. These tests pin that frame so nobody re-derives
+# the field as a standard retracement (which would offer 0.618/0.786/0.886 — levels that sit
+# on the WRONG SIDE of the entry here).
+
+def _sl(level, origin, entry, is_long):
+    from mpc_bleg.execution import BLegExecution
+    exe = BLegExecution.__new__(BLegExecution)
+    exe._cfg = BLegConfig(bleg_sl_level=level)
+    return BLegExecution._sl_price(exe, origin, entry, is_long)
+
+
+def test_sl_default_is_the_old_hardcoded_origin():
+    """"0.0" is the leg origin — the pre-2026-07-27 hardcoded stop. That is what keeps the
+    shipped default bar-for-bar Pine-parity safe."""
+    assert _sl("0.0", 100.0, 105.0, True) == 100.0
+    assert _sl("0.0", 200.0, 195.0, False) == 200.0
+
+
+def test_sl_382_lands_on_the_band_far_edge():
+    """0.382 IS the band's own far edge (`l_bot` = origin + 0.382*range). The entry sits at
+    the zone's 0.5, so range = 2*(entry - origin) = 10 here."""
+    assert _sl("0.382", 100.0, 105.0, True) == pytest.approx(103.82)
+    assert _sl("0.382", 200.0, 195.0, False) == pytest.approx(196.18)   # short mirror
+
+
+def test_sl_levels_are_read_directly_not_mirrored():
+    """Regression guard. The fractions are the ZONE's own, used as-is — 0.236 means 0.236 of
+    the leg range up from the origin. A mirrored reading (1 - x) would put it at 0.764, which
+    is ABOVE the 0.5 entry on a long: an instantly-stopped trade."""
+    origin, entry = 100.0, 105.0      # range 10
+    assert _sl("0.236", origin, entry, True) == pytest.approx(102.36)
+    assert _sl("0.236", origin, entry, True) < entry, "a long stop must sit BELOW the entry"
+
+
+def test_every_offered_level_sits_below_the_entry():
+    """The whole point of the level set: 0.382/0.236/0.0 are the fib levels BELOW the 0.5
+    entry. Nothing offered may sit at or above it, in either direction."""
+    for origin, entry, is_long in ((100.0, 105.0, True), (200.0, 195.0, False)):
+        for lvl in ("0.382", "0.236", "0.0"):
+            sl = _sl(lvl, origin, entry, is_long)
+            assert (sl < entry) if is_long else (sl > entry), (lvl, sl, entry)
+
+
+def test_sl_deeper_level_means_wider_stop_both_directions():
+    """Monotonicity: a SMALLER zone fraction is a deeper stop, hence more distance."""
+    origin, entry = 100.0, 105.0
+    dists = [entry - _sl(l, origin, entry, True) for l in ("0.382", "0.236", "0.0")]
+    assert dists == sorted(dists), dists
+    origin, entry = 200.0, 195.0
+    dists = [_sl(l, origin, entry, False) - entry for l in ("0.382", "0.236", "0.0")]
+    assert dists == sorted(dists), dists
+
+
+def test_tp1_in_r_is_coupled_to_the_stop_level():
+    """The finding that governs any stop choice here: TP1 is ALWAYS 0.5*range from the entry,
+    while the stop is (0.5 - f)*range — so tightening the stop pushes TP1 FURTHER away in R.
+    A TP1 touch is the only thing that stages the stop to breakeven."""
+    origin, entry = 100.0, 105.0                 # range 10, TP1 = 2*entry - origin = 110
+    tp1 = 2 * entry - origin
+    got = {l: (tp1 - entry) / (entry - _sl(l, origin, entry, True))
+           for l in ("0.0", "0.236", "0.382")}
+    assert got["0.0"] == pytest.approx(1.0)
+    assert got["0.236"] == pytest.approx(1.894, abs=0.01)
+    assert got["0.382"] == pytest.approx(4.237, abs=0.01)
