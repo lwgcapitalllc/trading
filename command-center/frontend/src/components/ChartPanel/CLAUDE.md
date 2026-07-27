@@ -76,6 +76,14 @@ here**, so the chart shows exactly what the strategy saw.
   depth is loaded, so scrolling within it is free. Results are cached per-TF in-session
   (`fetchCacheRef`; a completed run's window is fixed, so it never restales) on top of the backend's
   own disk cache — re-selecting a TF is instant, and a cold reload hits the broker once.
+  - **A drill-down shows the SHIPPED bars until the finer ones land — never nothing.** The spec's
+    candles are already in the payload, so they paint on the first frame; the drill-down is a network
+    pull (measured on a real run: M15 over 850d = 54,865 candles, ~5.1 MB, ~4.7s warm; M5 over 270d
+    ~40s). So `displayCandles` falls back to `spec.candles` while `fetched` is empty. Returning
+    `fetched` straight out was invisible while M1/M5 were opt-in, but turned EVERY chart open into a
+    blank screen once the panel started opening in drill-down by default. The header names what is
+    actually on screen (`showing H4 — loading all available bars…`), because bars that don't match
+    the TF button would otherwise be a silent lie.
   - **The ladder must cover EVERY intraday TF, not just M1/M5 (2026-07-27).** The chart's base is not
     always the run's own bar size: `chart_spec._fit_timeframe` steps a long run's base UP to keep the
     shipped candle count under `_CANDLE_CAP` (35k) — a 6.5-year **15m** run ships **H4**. With only

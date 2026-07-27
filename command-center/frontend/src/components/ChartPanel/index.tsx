@@ -294,9 +294,18 @@ export default function ChartPanel({
   const isFetchMode = onRequestCandles != null && selectedMin < baseMin
 
   const displayCandles = useMemo(() => {
-    if (isFetchMode) return fetched
+    // In drill-down, show the SHIPPED bars until the finer ones land. They arrive in the spec, so
+    // they paint on the first frame; the drill-down is a network pull. Returning `fetched` straight
+    // out means an empty chart for the length of that pull — and since the panel now OPENS in
+    // drill-down (the run's own TF is usually finer than the shipped bars), that turned every chart
+    // open into a blank screen where it used to be instant. Coarse bars now, correct bars in a
+    // moment, never nothing.
+    if (isFetchMode) return fetched.length ? fetched : spec.candles
     return selectedMin === baseMin ? spec.candles : resample(spec.candles, selectedMin * 60_000)
   }, [isFetchMode, fetched, spec.candles, selectedMin, baseMin])
+  // True while the chart is showing shipped bars that are NOT the selected TF — the header says so,
+  // because bars that don't match the TF button would otherwise be a silent lie.
+  const showingPlaceholder = isFetchMode && fetched.length === 0 && spec.candles.length > 0
 
   // Time bounds of the LOADED candles (ascending). Overlays anchored OUTSIDE this range must not be
   // drawn: klinecharts clamps an out-of-range point to the plot edge, so in a drill-down TF (whose
@@ -1203,7 +1212,12 @@ export default function ChartPanel({
             // The TF itself is already shown in the dropdown — don't echo it here. Only surface a
             // STATE worth calling out (loading / feed offline / failed / at the broker's data edge).
             const warn = fetchStatus === 'empty' || fetchStatus === 'error'
-            const text = fetchStatus === 'loading' ? 'loading all available bars…'
+            // While loading, the chart is showing the SHIPPED bars rather than nothing — say which,
+            // because bars that don't match the TF button would otherwise be a silent lie.
+            const text = fetchStatus === 'loading'
+                ? (showingPlaceholder
+                    ? `showing ${spec.baseTimeframe.toUpperCase()} — loading all available bars…`
+                    : 'loading all available bars…')
               : fetchStatus === 'empty' ? 'no data (feed offline?)'
               : fetchStatus === 'error' ? 'fetch failed'
               : dataEdge ? 'all the broker still has'
