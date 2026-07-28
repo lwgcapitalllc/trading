@@ -1,7 +1,29 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python -c ' *)",
+      "Bash(sqlite3 /Users/alwg/trading/command-center/backend/lab.db \".tables\")",
+      "Bash(sqlite3 /Users/alwg/trading/command-center/backend/data/lab.db \".tables\")",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(sqlite3 -header -column /Users/alwg/trading/command-center/backend/data/lab.db \"SELECT id, strategy_id, start_date, end_date, timeframe, status, created_at, total_trades, net_profit FROM backtest_runs ORDER BY created_at DESC LIMIT 15\")",
+      "Bash(sqlite3 -header -column /Users/alwg/trading/command-center/backend/data/lab.db \"SELECT run_id, strategy_id, instrument, bar_value, start_date, end_date, status, trade_count, round\\(net_pnl,0\\) FROM backtest_runs ORDER BY created_at DESC LIMIT 12\")",
+      "Bash(sqlite3 /Users/alwg/trading/command-center/backend/data/lab.db \"SELECT run_id, params, trades_path, created_at FROM backtest_runs WHERE run_id IN \\('0e3983a0c3c7','15f0122acdb4'\\)\")",
+      "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python test_minstop.py)",
+      "Bash(sqlite3 -header -column /Users/alwg/trading/command-center/backend/data/lab.db \"SELECT run_id, commission_per_side, slippage_ticks, runner, round\\(max_drawdown,0\\) dd, round\\(profit_factor,2\\) pf, round\\(win_rate,3\\) wr, win_count, round\\(avg_win,0\\) aw, round\\(avg_loss,0\\) al FROM backtest_runs WHERE run_id IN \\('0e3983a0c3c7','15f0122acdb4'\\)\")",
+      "Bash(sysctl -n hw.ncpu)",
+      "Bash(npx eslint *)",
+      "Bash(npm run *)",
+      "Bash(curl -s -m 3 http://localhost:8000/system/health)",
+      "Bash(curl -s -m 3 -o /dev/null -w \"frontend:%{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s -m 5 \"http://localhost:5173/api/backtests/runs?limit=5\")",
+      "Bash(curl -s -m 60 \"http://localhost:5173/api/backtests/runs/d2ab68f9e884/chart-spec\" -o /private/tmp/claude-501/-Users-alwg-trading/17314f4b-9494-4d97-9765-1404fcc06fd1/scratchpad/spec.json -w \"%{http_code} %{size_download}\\\\n\")",
+      "Bash(ps -eo pid,etime,rss,command)",
+      "Bash(grep -n \"Raising \\\\`_CANDLE_CAP\\\\`\\\\|The red \\\\\"no earlier data\\\\\" edge\" /Users/alwg/trading/command-center/frontend/src/components/ChartPanel/CLAUDE.md)",
+      "Bash(git commit -m ' *)",
+      "Bash(ROUND=3 nohup python trail_sweep.py)",
+      "Bash(ps -eo pid,command)"
     ]
   }
 }

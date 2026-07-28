@@ -56,6 +56,15 @@ optimizer grid — that is the "manual %" for this strategy, and the SIZING MODE
 because there is nothing for it to decide. Pair a run with the **Unconstrained (No Limits)**
 ruleset to see the raw behaviour with no halts and no drawdown floor cutting a day short.
 
+**Input range (2026-07-27):** the Pine input's `maxval` was raised **10 → 100** across all four
+strategy Pine files at Aaron's request — the old 10 was an arbitrary UI cap, not a safety rule, and
+`exec_risk_pct` in `config.py` never had one. The DEFAULT is still 10 on both sides, so no run
+changes. Two things the raised ceiling exposes and neither side checks: the `margin_long/short =
+0.2` pin means TradingView rejects (or partially fills) an entry whose notional exceeds 5x equity —
+silently, as a missing trade rather than an error — and the **no-minimum-stop-distance hazard**
+below scales linearly with the risk %, so a degenerate stop that realised ~180% of equity at
+`exec_risk_pct = 10` realises the same multiple of whatever is typed here.
+
 ## The portfolio-account seam (2026-07-17)
 
 `Execution.__init__` takes an injected `account` (default `SoloAccount`) and a `leg` name — the seam

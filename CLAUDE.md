@@ -11,7 +11,28 @@
 **Purpose:** Standing instructions for Claude Code across all subsystems.
 **Scope:** This covers repo-wide rules, VPS workflow, and branch conventions. It does NOT cover subsystem internals — each subsystem has its own CLAUDE.md.
 **Status:** Active — four apps, ten canonical engines, and tooling in various stages of production.
-**Last reviewed:** 2026-07-27 (TP1/TP2 scale-out rungs defaulted to 0/0 — bank nothing, ride the runner — across both A+ Pine files and `config.py`; A+ parity re-validated green at SL fib 0.886 + 0/0)
+**Last reviewed:** 2026-07-27 (`## Trading Philosophy` added — few high-quality setups by design, sample size arrives at the portfolio level, risk budgeted per account; TP1/TP2 scale-out rungs defaulted to 0/0 across both A+ Pine files and `config.py`; A+ parity re-validated green at SL fib 0.886 + 0/0)
+
+---
+
+## Trading Philosophy — read this before judging any strategy
+
+**Recorded 2026-07-27, Aaron's standing design intent. This governs how every strategy in this repo is evaluated.**
+
+**Few high-quality setups, not many mediocre ones.** A low trade count is the design target, not a defect. The whole point of a selective entry is that when it fires you can put real risk behind it. Chasing quantity means loosening the filter, and a loose filter is what blows an account in bad conditions or a black swan. A strategy that trades a couple of times a month and is right is worth more than one that trades weekly and is marginal.
+
+**Sample size arrives at the PORTFOLIO level, not the strategy level.** Multiple strategies stack on one account. Each may trade 2–4 times a month; together they produce the trade frequency a single strategy is never asked to produce alone. So do NOT reject a strategy, or hedge every conclusion about it, on the grounds that "164 trades is a small sample." That objection has been raised and answered — stop re-raising it as a blocker.
+
+Two things this does NOT excuse, and which must still be said plainly when they're true:
+
+1. **A small sample still means wide error bars on that strategy's own edge.** Stacking five strategies does not make strategy A's edge more certain; it just spreads A's outcomes over more calendar time. Confidence in each edge is still earned per strategy. Say so when it matters — as a caveat on a number, never as a reason to refuse the work.
+2. **Stacking only reduces drawdown if the strategies are actually independent.** Everything here reads the same `engines/market_structure/` on the same instrument. Two "different" strategies off one structure stream can fire together, lose together, and behave as one position at 2x the size. Correlation between strategies is a real open question in this repo, not a solved one.
+
+**The suite is carved up by LEG, not by signal.** Aaron's answer to the correlation problem (2026-07-27): the strategies share a confluence source on purpose, but each takes a different part of the move — think Elliott waves. A+ SOS Fade catches the REVERSAL. The breakout-structure bot (not built yet) catches the LEGS IN BETWEEN. B-LEG catches SOS setups that take a long time to play out. By construction they should not be in the market on the same swing at the same time.
+
+**Risk is budgeted per ACCOUNT, and never layered.** The intended rule: there is one risk pool (call it 10%, whatever the number lands on) available at any moment. Concurrent setups either SHARE that pool or the later one is BLOCKED outright. Risk is never stacked on top of risk. `exec_risk_pct = 10` is today a per-trade figure with no allocator above it — the account-level cap is UNBUILT and is a prerequisite for running more than one bot live. The Pine input's own ceiling was raised 10 → **100** on 2026-07-27 at Aaron's request (defaults unchanged at 10, and the Python side never had a cap), so nothing in the code now refuses a per-trade risk the account rule would.
+
+**Standing item — the overlap audit. Keep raising this with Aaron; he asked to be reminded.** "The legs don't overlap" is a design intent, not a measured fact, and it has never been checked against real data. The audit is cheap: run two bots over the same window and count bars where both hold a position. Do it whenever a second strategy nears completion, and re-do it after any entry-logic change. The pair most likely to break the rule is **A+ vs B-LEG** — B-LEG is the late retrace of an SOS, and A+ is the fade of an SOS, so both can be triggered by the SAME structure break rather than by different legs of the move. That is the specific case to measure first.
 
 ---
 

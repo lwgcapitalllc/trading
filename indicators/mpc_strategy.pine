@@ -3615,9 +3615,16 @@ bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not brea
 string execHtfSource = input.string("Weekly", "HTF exhaustion source", options = ["Weekly", "Daily", "Either"], group = GRP_EXEC, tooltip = "Which higher timeframe the breakout block reads. Weekly = only a weekly breakout blocks (widest, fewest blocks). Daily = only a daily breakout blocks. Either = a breakout on Weekly OR Daily blocks (strictest, most trades removed). Only used when 'Only fade HTF exhaustion' is on.")
 string execHtfWeekly = input.string("Ignore", "Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias gate, WEEKLY, judged vs trade direction. Ignore = off. Must agree = Weekly matches the trade. Must not oppose = Neutral passes, only an opposing Weekly blocks. Must oppose (reversal) = Weekly must be against the trade. Pair with Daily below (Weekly 'Must oppose' + Daily 'Must agree' = forming reversal).")
 string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias gate, DAILY. Same four choices as Weekly, judged vs trade direction. Ignore = off.")
-float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 10, step = 0.1)
+float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 100, step = 0.1)
 string execSlLevel = input.string("1.0", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib on the deep side of 0.5. Default 1.0 = leg origin. Pick a shallower level (0.618-0.886) for a tighter stop; the buffer is measured beyond it. If it lands at/inside the entry, the setup won't fire.")
 float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
+// Minimum stop distance — refuse a setup whose stop lands so close to the entry
+// that the position is degenerate. The $-risk is unchanged but SIZE balloons,
+// ordinary noise takes you out, and price can travel PAST the stop inside the
+// entry bar, so the realised loss beats the 1R you agreed to. Defaults OFF, so
+// the shipped baseline is unchanged until you flip it.
+string execMinStopMode = input.string("Off", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = GRP_EXEC, tooltip = "Skip a setup whose stop sits closer to the entry than the floor below. '% of price' (try 0.10) scales itself as gold runs 1200 to 3300. 'Fixed $' (try 1.50) is one flat number at both ends of that range. 'x ATR(14)' (try 0.5) is the only one that reacts to a quiet vs violent market at the same price. The value below is read in the unit of whichever mode you pick — change both together.")
+float execMinStopVal = input.float(0.10, "   ...floor value (unit = mode above)", group = GRP_EXEC, minval = 0, step = 0.05, tooltip = "A PERCENT in '% of price' mode, DOLLARS of price in 'Fixed $', a MULTIPLE in 'x ATR(14)'. Over 8 years of gold 15m, mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of 188 trades and are slightly positive in R; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start eating winners.")
 float execTp1Pct  = input.float(0,    "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. DEFAULT 0 = bank nothing, ride the whole position to the runner — the tested best setting. The TP1 PRICE still matters at 0: touching it is what stages the stop to breakeven. Raise it only to scale out.")
 float execTp2Pct  = input.float(0,    "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP2 limit banks. DEFAULT 0 = bank nothing (see TP1). Touching TP2 still lifts the stop to the TP2 floor and hands the runner to the trail.")
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
@@ -3721,6 +3728,18 @@ f_slAnchor() =>
         "0.786" => fiboP5
         "0.886" => fiboP6
         => fiboP10
+
+// The minimum-stop floor, in PRICE, for whichever mode is selected. `ta.atr` has
+// to run on EVERY bar to stay a valid series, so it is hoisted out of the
+// function — a ta.* call inside a conditionally-called function silently skips
+// bars and returns a different number than the same call on the main body.
+float minStopAtr = ta.atr(14)
+f_minStopFloor(float px) =>
+    switch execMinStopMode
+        "% of price" => px * execMinStopVal / 100.0
+        "Fixed $"    => execMinStopVal
+        "x ATR(14)"  => execMinStopVal * minStopAtr
+        => 0.0
 bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
 
 // Method 3 (execDeepFib) — the entry price for a DEEP gap whose NEAR EDGE sits
@@ -4045,9 +4064,9 @@ color BLK_PINKL = color.new(#FF2E9A, 0)
 
 // Reason PRECEDENCE — the first rule that would refuse the order is the one
 // reported, so a tag can never blame a downstream gate for an upstream refusal.
-//   1 direction off · 2 arm source off · 3 final hour · 4 veto · 5 HTF breakout · 6 HTF bias
-f_blkCode(bool dirOff, bool armOff, bool late, bool veto, bool htfBrk, bool htfBias) =>
-    dirOff ? 1 : armOff ? 2 : late ? 3 : veto ? 4 : htfBrk ? 5 : htfBias ? 6 : 0
+//   1 direction off · 2 arm source off · 3 final hour · 4 veto · 5 HTF breakout · 6 HTF bias · 7 stop too tight
+f_blkCode(bool dirOff, bool armOff, bool late, bool veto, bool htfBrk, bool htfBias, bool tight) =>
+    dirOff ? 1 : armOff ? 2 : late ? 3 : veto ? 4 : htfBrk ? 5 : htfBias ? 6 : tight ? 7 : 0
 
 f_blkWhy(int c) =>
     switch c
@@ -4057,6 +4076,7 @@ f_blkWhy(int c) =>
         4 => "Divergence / extreme-RSI veto — opposing divergence live at the SOS, or RSI at an extreme."
         5 => "HTF exhaustion filter — the higher timeframe just CLOSED through its prior extreme, so this is a fresh breakout rather than an exhaustion fade."
         6 => "HTF bias requirement — your Weekly / Daily bias gate is not satisfied."
+        7 => "Minimum stop distance — the stop sits closer to the entry than your floor, so this position would be oversized and noise-sensitive."
         => ""
 
 // ks carries the last (sosBar*10 + code) reported per side — the dedupe key.
@@ -4079,8 +4099,16 @@ var array<int> blkKeys = array.from(-1, -1)
 // not already been traded.
 bool lBlkReady = not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
 bool sBlkReady = not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
-int  lBlkCode  = f_blkCode(not execLongs,  not armOkL, lateDayBlock, longVetoA  and execRespectVeto, htfBlockLong,  htfBiasBlockLong)
-int  sBlkCode  = f_blkCode(not execShorts, not armOkS, lateDayBlock, shortVetoA and execRespectVeto, htfBlockShort, htfBiasBlockShort)
+// The min-stop refusal happens at order placement below; it is recomputed here so
+// a setup refused on PRICE gets a chart tag like every other refusal. `> 0` keeps
+// an inverted stop (dist <= 0, already handled by its own cancel) from being
+// mislabelled as a floor refusal. na propagates, so a missing fib tags nothing.
+float lBlkDist  = longEdge - (f_slAnchor() - execSlBuf)
+float sBlkDist  = (f_slAnchor() + execSlBuf) - shortEdge
+bool  lBlkTight = lBlkDist > 0 and lBlkDist < f_minStopFloor(longEdge)
+bool  sBlkTight = sBlkDist > 0 and sBlkDist < f_minStopFloor(shortEdge)
+int  lBlkCode  = f_blkCode(not execLongs,  not armOkL, lateDayBlock, longVetoA  and execRespectVeto, htfBlockLong,  htfBiasBlockLong,  lBlkTight)
+int  sBlkCode  = f_blkCode(not execShorts, not armOkS, lateDayBlock, shortVetoA and execRespectVeto, htfBlockShort, htfBiasBlockShort, sBlkTight)
 
 f_blkTag(blkKeys, 0, true,  lBlkReady, lBlkCode, aplusL_sosBar, longEdge,  _dbg23Lo - _dbg23Atr)
 f_blkTag(blkKeys, 1, false, sBlkReady, sBlkCode, aplusS_sosBar, shortEdge, _dbg23Hi + _dbg23Atr)
@@ -4108,7 +4136,7 @@ if longArmed
     float slDist = longEdge - lSL
     lTP1 := longDeep ? fiboP2 : fiboP1   // deep → 0.5, shallow → 0.382
     lTP2 := longDeep ? fiboP1 : fiboP7   // deep → 0.382, shallow → 0.0 (swing extreme)
-    if slDist > 0
+    if slDist > 0 and slDist >= f_minStopFloor(longEdge)
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosL := aplusL_sosBar
         pendIsBLegL := false
@@ -4125,7 +4153,7 @@ if shortArmed
     float slDist = sSL - shortEdge
     sTP1 := shortDeep ? fiboP2 : fiboP1
     sTP2 := shortDeep ? fiboP1 : fiboP7
-    if slDist > 0
+    if slDist > 0 and slDist >= f_minStopFloor(shortEdge)
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosS := aplusS_sosBar
         pendIsBLegS := false

@@ -25,6 +25,7 @@ Standing rules for anything recorded here:
 | 3 | 2026-07-26 | Stop TIMING — when breakeven fires × when the trail engages, 35 combos | **nothing beats the shipped timing** — the one row that scores higher fails the per-year check | nothing to adopt |
 | 4 | 2026-07-26 | Stop PLACEMENT — `exec_sl_level` × `exec_sl_buf_tk` × TP split, 40 combos | **none — the sweep is INVALID.** Four of the five SL levels can place the stop on top of the entry; the account blows to −$63k. Found two real defects. | **discard the numbers, read the writeup** |
 | 5 | 2026-07-26 | *"how do I cut the losers quicker?"* — diagnosis of the loss bucket, then `exec_sl_level` re-run on a clean window + `exec_close_opp_sos` + `exec_htf_exhaust_only` | **Diagnosis: every loss is a trade that never touched TP1.** `exec_sl_level=0.786` scores 59.3R vs 33.6R shipped at the SAME drawdown — but it reproduces Run 4's hazard on 8 trades, so **still not adoptable**. Both "cut quick" toggles measured **exactly zero effect**. | measured, **blocked on Run 4's guard** |
+| 6 | 2026-07-27 | *"cut trades early / block the losing pattern"* — 8 years at the SHIPPED config, with every trade's per-bar R path captured. 3 cut families (~40 variants) + 10 entry blocks + `exec_close_opp_sos` | **The question is closed. Every cut rule loses money**, because no loser runs straight to its stop (min MFE **+0.09R**, median +0.51R) and winners are underwater just as deep (median MAE −0.36R) — the two are indistinguishable while live. The −54.9% DD is a **losing streak at 10% risk**, not give-back, so **risk % is the only lever**. Only positive filter: **stop < $2** (293x → 338x). | **do not build it** — read the verdict |
 
 **Still open:** *"what R:R should I use as a dynamic stop loss?"* — no sweep of existing
 parameters can answer it (the bot has no R:R dial). A three-stage plan is written up at the
@@ -692,3 +693,173 @@ Stage 1 changes nothing and is safe. **Anything ADOPTED from Stage 2 or 3 is new
 `config.py` AND in `mpc_strategy.pine` / `mpc_strategy_export.pine` / `compare_strategy.py`, in one
 commit, with Pine↔Python parity re-run green** — the brother's Pine is the source of truth and
 must gain the same levers or parity breaks.
+
+---
+
+# Run 6 — 2026-07-27 — "cut the losers early" is dead. The answer is position size.
+
+**The question, Aaron's words:** *"when I lose a trade it runs straight to stop loss. I need
+something, some confluence that could help me know when to cut trades early. Look at the trades
+I'm losing — is there a pattern I could block? And what can I use to dynamically assess whether
+to cut a trade early?"*
+
+**The answer: no, and the reason is not a missing indicator.** Three independent families of
+early-exit rule were tested and **every single variant lost money.** The premise itself does not
+survive contact with the data — no trade in eight years ran straight to its stop.
+
+This supersedes Run 5's version of the same question. Run 5 tested two toggles on a partial
+window; Run 6 tests the full history at the SHIPPED config (SL 0.886 + TP 0/0), with the
+**per-bar R path of every trade captured**, so a cut rule can be scored against the actual ride
+instead of guessed at from the extremes.
+
+## How it was measured
+
+Window **2018-09-13 → 2026-07-27** (185,649 15m bars — the broker's whole intraday history),
+`exec_sl_level=0.886`, TP rungs 0/0, structure trail. **188 trades, 107.7R, 293x, −54.9% maxDD.**
+
+Two artefacts, and the second is the new one:
+
+- `run_report.py --set exec_sl_level=0.886` → `trades.csv` (per-trade tags + excursion extremes).
+- A **path capture**: the same replay, snapshotting each open trade's R at every bar's close plus
+  that bar's own high/low in R. 12,838 path rows over 188 trades. A stop cannot move price, so the
+  path is invariant to the stop — which is what makes replaying it against a different stop an
+  honest counterfactual. Exit-only rules can therefore be scored offline in a second each, instead
+  of a 10-minute replay per variant. **Rules that change ENTRY cannot be scored this way** (fewer
+  trades = different equity = different sizing) and were run properly instead.
+
+Convention, matching `_advance_stage`: a stop moved on bar N's close is live from bar N+1. Checking
+the trigger bar's own low would let a rule exit on a move it only learned about at that bar's close.
+
+## Finding 1 — there is no trade to cut. Every loser goes into profit first.
+
+`run_report.py`'s never-worked column reads **0 in every one of the eight years.** Not one losing
+trade failed to reach +0.1R before it died.
+
+| losers' MFE (how far in profit before they lost) | R |
+|---|---|
+| minimum, all 61 losses | **+0.09** |
+| 25th pct | +0.27 |
+| **median** | **+0.51** |
+| 75th pct | +1.00 |
+| max | +4.03 |
+
+32 of 61 losers showed **+0.5R or better** and gave it all back plus the full stop. 16 showed
++1.0R. 3 showed +2.0R. The loss bucket is not bad entries — it is good entries that reversed.
+
+**Why they get no protection:** the stop only lifts to breakeven when the TP1 PRICE is touched, and
+TP1 is a fib, not a risk level. Measured across the 138 trades that reached stage 1, that trigger
+fires at a **median +0.76R and a 90th-percentile +2.69R.** So a trade can run +1.5R and round-trip
+to a full stop with the stop never having moved. **50 of the 61 losers never reached stage 1 at all.**
+
+That is a real mechanical gap, and it is the obvious thing to fix. Finding 2 is why fixing it loses money.
+
+## Finding 2 — winners and losers are indistinguishable while the trade is live
+
+The eventual winners are underwater too. Their MAE: **median −0.36R, 25th pct −0.57R, 10th pct
+−0.74R.** A winner routinely sits three-quarters of the way to the stop before it pays.
+
+So the two populations overlap almost completely. Share of losers whose R sits inside the winners'
+10–90 band at bar N — i.e. the share a rule at that bar cannot tell apart:
+
+| bar since entry | winners' median R | losers' median R | losers indistinguishable |
+|---|---|---|---|
+| 1 | +0.13 | −0.04 | **55%** |
+| 3 | +0.19 | −0.02 | **70%** |
+| 8 | +0.37 | −0.22 | **62%** |
+| 20 | +0.77 | −0.28 | **39%** |
+
+There is no early tell. Not at bar 3, not at bar 20. **Any rule that cuts a loser early cuts a
+winner early**, and the winners are where the entire edge is (avgWin 2.75R, max 23.9R, avgLoss −0.92R).
+
+## Finding 3 — all three cut families lose money. Best variant of each:
+
+| rule | sumR | vs base | helped | hurt | final | maxDD |
+|---|---|---|---|---|---|---|
+| **baseline (shipped)** | **107.7** | — | — | — | **293x** | **−54.9%** |
+| breakeven at +0.5R | 76.0 | −31.8 | 17 | 19 | 64x | −43.0% |
+| breakeven at +1.0R | 104.9 | −2.8 | 7 | 5 | 256x | −50.6% |
+| stop to +0.25R at +1.5R | 80.8 | −26.9 | 8 | 4 | — | — |
+| give-back cap (past 2R keep 25%) | 79.2 | −28.6 | 6 | 4 | — | — |
+| time stop: below 0R at bar 48 → close | 95.5 | −12.2 | — | 14 | 186x | −56.1% |
+| time stop: below 0R at bar 10 → close | 77.1 | −30.6 | — | 47 | 43x | −56.9% |
+
+Every row is negative. Note the two traps:
+
+- **The rule that saves the most trades loses the most money.** BE at +0.5R rescues 17 losers and
+  destroys 19 winners — and it costs 78% of the account (293x → 64x) to shave 12 points off the
+  drawdown. The rescued trades are worth ~1R each; the killed ones are worth many.
+- **Time stops make the drawdown WORSE, not better** (−54.9% → −56.9%). Losers already die fast:
+  median hold **10 bars** for a loser vs **75 bars** for a winner. There is nothing to cut short —
+  a time stop only reaches the slow trades, and the slow trades are the winners.
+
+## Finding 4 — no entry filter either. Ten candidates, all fail.
+
+| block | trades cut | their R | new final | new maxDD |
+|---|---|---|---|---|
+| *(keep everything)* | — | — | **293x** | **−54.9%** |
+| stop < $2 | 8 | −0.6 | **338x** | −54.3% |
+| stop < $5 | 51 | +21.3 | 107x | −46.2% |
+| stop > $25 | 21 | +17.9 | 66x | −55.0% |
+| Asia session | 45 | +20.9 | 165x | −50.2% |
+| Late session | 13 | +2.6 | 236x | −55.0% |
+| TRANSITIONING regime | 20 | +4.3 | 223x | −59.9% |
+| longs | 85 | +42.5 | 29x | −56.8% |
+| Friday | 23 | +21.7 | 122x | −55.1% |
+| Monday | 26 | +29.1 | 70x | −56.0% |
+
+Only **stop < $2** is positive, and it is positive because those 8 trades are collectively worth
+−0.6R — it is the degenerate-stop hazard from Run 4, not a market pattern. Everything else that
+looks like a "losing bucket" is carrying winners that pay for it.
+
+`exec_close_opp_sos` was re-run ON over the full window as a real structure-based cut signal:
+**188 trades either way, 107.7R either way.** An opposite SOS essentially never prints while a
+position is open. Confirms Run 5's zero-effect result on a longer window.
+
+## Finding 5 — the drawdown is a LOSING STREAK, not give-back. So risk % is the lever.
+
+The −54.9% drawdown is one stretch, **2021-11-28 → 2022-11-14, 20 trades**:
+
+```
++0.0 +0.0 -1.0 +0.1 -1.0 -1.0 +0.0 -1.0 -1.0 +0.1 +1.1 +0.1 -1.0 -1.0 -1.0 +0.1 +0.0 +0.0 +0.0 -1.0
+```
+
+Nine clean −1.0R full stops and no give-back at all. **No exit rule can touch this** — these trades
+went to the stop they were given, which is the stop doing its job. What made it −54.9% is that each
+of those nine was 10% of the account.
+
+Longest consecutive full-loss run in eight years: **4** (0.9⁴ = −34% at 10% risk; −19% at 5%).
+
+| risk % | final | maxDD |
+|---|---|---|
+| 2% | 6x | −14.0% |
+| 3% | 13x | −20.3% |
+| 5% | **41x** | **−31.9%** |
+| 7% | 104x | −42.1% |
+| **10% (shipped)** | **293x** | **−54.9%** |
+
+This is the whole answer to *"save me some max drawdown."* It is the one dial that moves drawdown
+without touching the edge, because it does not interact with the trade logic at all.
+
+## Verdict
+
+1. **Do not build an early-cut rule.** Three families, ~40 variants, every one negative. The
+   strategy's edge is a fat right tail and every protective rule taxes the tail to rescue trades
+   worth 1R. This question is now closed — reopen it only with a signal that separates winners from
+   losers *while the trade is live*, which Finding 2 says does not exist in anything tested.
+2. **Do not raise the TP1-touch breakeven trigger into an R trigger**, despite Finding 1 making it
+   look like an obvious gap. It is the BE-at-+X row of Finding 3 and it loses money at every X.
+3. **The minimum-stop-distance guard is still worth doing** — the only positive filter found
+   (293x → 338x, and it removes the single −1.98R trade, the one trade in eight years that lost
+   more than the 1R it risked). Small, but free, and it closes a real hazard rather than curve-fitting.
+4. **Drawdown is a sizing decision, not a logic decision.** 10% risk earns 293x and costs 55%.
+   5% earns 41x and costs 32%. Nothing in the strategy changes either number — pick the ride.
+
+## What was NOT measured
+
+- Rules using an indicator the bot does not currently read (a live RSI-divergence flip against the
+  position, an opposing FVG forming, price closing back inside the entry zone). Finding 2 makes
+  these unpromising — the populations overlap on PRICE, and these all derive from price — but they
+  are not disproven.
+- Anything that changes ENTRY count, beyond the ten single-bucket blocks above. Combinations were
+  not swept, deliberately: at n=188 a two-way block sweep will find something that looks good and
+  is noise.
