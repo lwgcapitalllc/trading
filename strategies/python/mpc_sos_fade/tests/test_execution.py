@@ -56,8 +56,25 @@ def _seq_long_ready(sos_bar=1):
         l_poi=False, s_poi=False, l_fvg=False, s_fvg=False,
         sos_l_swp=False, sos_l_div=True, sos_s_swp=False, sos_s_div=False,
         new_sweep_l=False, new_div_l=False, new_sweep_s=False, new_div_s=False,
-        retro_link_l=False, retro_link_s=False,
+        retro_link_l=False, retro_link_s=False, l_arm_src="DIV",
     )
+
+
+def _seq_long_stage2(sos_bar=1):
+    """A long setup at Stage 2 — SOS in, price has NOT retraced (neither fib latch set)."""
+    s = _seq_long_ready(sos_bar)
+    s.l_stage, s.l_half, s.l_618 = 2, False, False
+    return s
+
+
+def _seq_long_dead():
+    """The bar AFTER a long setup dies. `sos_l_div` survives the death in the real sequence
+    (`_clear_long` never touches it — only the next SOS reassigns it), so the fixture keeps it
+    too; without that the arm source would read as absent on exactly the bar the miss is booked."""
+    s = _seq_flat()
+    s.sos_l_div = True
+    s.l_arm_src = "DIV"
+    return s
 
 
 def _seq_flat():
@@ -280,6 +297,83 @@ def test_a_setup_price_never_made_ready_is_not_a_block():
     ex = Execution(_cfg(exec_longs=False))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_flat())
     assert ex.blocks == []
+
+
+# ------------------------------------------------------- missed setups ---------
+# Port of the Pine's orange 2-of-3 callout: a setup that reached two or three of the three
+# confluences and then DIED without becoming a trade. Reporting only, like the blocks.
+
+def test_a_setup_that_had_everything_and_never_filled_is_a_3_of_3_miss():
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert ex.misses == []                      # still alive — nothing is booked yet
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
+    assert len(ex.misses) == 1
+    m = ex.misses[0]
+    assert (m.met, m.code, m.dir) == (3, 7, 1)  # 7 = the limit rested and price never came
+    assert m.labels == ["Never filled"]
+    assert m.near is True
+    assert abs(m.edge - 103.82) < 1e-9          # where the limit would have rested
+    assert m.met_lines == ["Arm — RSI divergence", "SOS — confirmed",
+                           "Zone — 0.5-0.886 tagged, FVG live"]
+
+
+def test_a_setup_that_never_retraced_is_a_2_of_3_and_is_NOT_a_near_miss():
+    """The ordinary way most setups die. It is still recorded — the lab has no label cap and a
+    count nobody kept is a count nobody can get back — but `near` is False, which is what the
+    chart reads to leave it out of the default view."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_stage2())
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
+    m = ex.misses[0]
+    assert (m.met, m.code) == (2, 2)
+    assert m.labels == ["No retrace"] and m.near is False
+    assert m.met_lines == ["Arm — RSI divergence", "SOS — confirmed"]
+
+
+def test_a_setup_armed_by_a_disabled_source_names_that_source():
+    """With BOTH arm toggles off the arm confluence cannot count, so the setup tops out at 2/3
+    — and the reason has to say WHICH trigger was switched off, or it means nothing. That name
+    comes from the sequence's `l_arm_src`, the one place that still knows."""
+    ex = Execution(_cfg(exec_arm_div=False, exec_arm_sweep=False))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
+    m = ex.misses[0]
+    assert (m.met, m.code) == (2, 1)
+    assert m.arm_met is False
+    assert "RSI divergence" in m.reasons[0] and "switched OFF" in m.reasons[0]
+
+
+def test_a_3_of_3_that_a_rule_refused_names_the_rule_not_the_fill():
+    """At 3/3 every confluence was there, so the miss reports the ENTRY-side reason instead —
+    in the Pine's precedence. The final hour beats 'never filled'."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_dead())
+    m = ex.misses[0]
+    assert (m.met, m.code) == (3, 5)
+    assert m.labels == ["Final hour"]
+
+
+def test_one_record_per_setup_booked_only_when_it_dies():
+    """A setup alive for many bars is ONE record, and nothing at all until it actually dies —
+    otherwise the count measures bars, not setups."""
+    ex = Execution(_cfg())
+    for i in range(5):
+        ex.step(_sig(i, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert ex.misses == []
+    ex.step(_sig(5, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
+    ex.step(_sig(6, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
+    assert len(ex.misses) == 1
+
+
+def test_a_setup_that_traded_is_never_a_miss():
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.0, 104.5, 103.0, 104.0), _seq_long_ready())   # limit at 103.82 fills
+    assert ex._pos_dir == 1
+    ex.step(_sig(2, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
+    assert ex.misses == []
 
 
 # ------------------------------------------------------- Method 3 (deep fib) ----

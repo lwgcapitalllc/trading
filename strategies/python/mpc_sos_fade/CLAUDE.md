@@ -18,7 +18,9 @@ a single Nov-2025 runner (an intrabar trail-fill guess, not a decision). See `##
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-27 — `exec_tp1_pct`/`exec_tp2_pct` defaulted 30/40 → **0/0** (Run 1
+**Last reviewed:** 2026-07-27 — `Execution` now also records MISSED SETUPS (the Pine's orange 2-of-3
+callout, reporting-only) for the lab price chart's Missed layer; see `## The missed-setup watch`.
+Earlier the same day: `exec_tp1_pct`/`exec_tp2_pct` defaulted 30/40 → **0/0** (Run 1
 adopted; the whole position rides the runner), and **PARITY RE-VALIDATED GREEN (exit 0)** on a fresh
 21,320-bar 15m export taken at the settings Aaron trades — SL fib 0.886, TP1 0%, TP2 0%, structure
 trail. First run of the 0/0 exit path against the Pine. See `## The exit ladder`. Earlier the same
@@ -132,11 +134,73 @@ BarState  --SignalAdapter-->  Signals  --SosFadeSequence-->  SeqState  --Executi
   computed, never recomputing them), which is why `mpc_bleg` gets none — it overrides that method,
   and those codes describe why an *A+* setup was refused. Surfaced on the lab price chart's Blocked
   layer; the full path is in `command-center/backend/CLAUDE.md` → *Blocked setups*.
+  `Execution` also records **missed setups** (`MissedSetup`, `execution.misses`) — the OTHER half of
+  "why didn't this trade", and a port of the Pine's orange 2-of-3 callout (`f_w23Arm` / `f_w23`,
+  `mpc_strategy.pine` 3064-3194 + 4022-4023). See *The missed-setup watch* below.
 - **`strategy.py`** — `MpcSosFadeStrategy`: the driver. `run(df, warmup=…)` replays a canonical frame
   end-to-end; `step(bar_state)` does one bar. Collects `.decisions` (the per-bar stream) and
   `.execution.trades`.
 - **`secondary.py`** — the 1m sniper re-entry (below). `Structure1m` (1m structure feed, port of Pine
   `f_struct1m`) + `SecondaryArm` (the latch/arm, port of Pine `f_secArm`). Consumed by `run_dual`.
+
+## The missed-setup watch (2026-07-27) — the setups that died, not the ones that were refused
+
+A **block** and a **miss** answer the same question one step apart in a setup's life, and mixing
+them up makes both useless. A block is a trade the strategy had FULLY READY and one of its own
+toggles refused. A miss never got that far: it reached 2 or 3 of the three confluences and then
+DIED. Neither places an order, so neither is in any trade list, any equity curve, or any broker
+report — the only place either is countable is here.
+
+The three confluences, and what "met" means (Pine `f_w23`):
+
+| # | Confluence | Met when |
+|---|---|---|
+| 1 | **ARM** | a liquidity sweep or an RSI divergence armed Stage 1 — and the source that fired is one you have ENABLED |
+| 2 | **SOS** | always: it is why the watch is open at all |
+| 3 | **ZONE** | price tagged the 0.5-0.886 band AND (with Require-FVG on) a gap was live in it while price was there |
+
+**Exactly one thing is ever missing**, which is why `MissedSetup` carries a single `code` where
+`BlockedSetup` carries a list. At 2 of 3 it is the arm or the zone (codes 1-3); at 3 of 3 every
+confluence was there and the entry still never happened, so the record names the ENTRY-side reason
+instead, in the Pine's precedence: veto → final hour → HTF → "the limit rested and price never
+touched it" (codes 4-7). `reasons` is still exposed as a one-item LIST purely so a miss and a block
+read identically all the way downstream.
+
+**Three deliberate deviations from the Pine, all reporting-side:**
+
+1. **Every miss is recorded; nothing is filtered at write time.** The Pine has three view filters
+   (`debugShow23`, `debug23Filter`, `debugShow23Disarmed`) plus a `debugDays` recency window because
+   TradingView caps a chart at 500 labels. The lab has neither problem, and a miss filtered away at
+   write time can never be counted later. The chart filters BY REASON instead, which is strictly
+   more expressive than the Pine's three presets.
+2. **`near` replaces those presets.** Each record carries the Pine's own near-miss test
+   (`metN == 3 or (zone reached and zone not met)`). The chart derives its DEFAULT view from it —
+   see `command-center/backend/CLAUDE.md` → *Missed setups* — so the layer opens on the Pine's
+   default and one click widens it, which the Pine's radio buttons cannot do.
+3. **A setup that filled this bar closes as TRADED immediately.** The Pine assigns `tradedSosL`
+   further down its script than it reads it, so on the fill bar it still reads the previous value.
+   Both end with no callout; ours gets there a bar sooner, and it is the correct answer on the one
+   bar where they differ (a trade that opened and closed inside the same bar, which the Pine would
+   have booked as a miss).
+
+**Where it runs, and why not where the blocks run.** `_record_misses` is called from `step()`,
+between the fills and the placement — the same slot the Pine calls `f_w23` from. It CANNOT hang off
+`_place_entries` like the block recorder does: a setup keeps accumulating state while a position
+from the other side is open, and that path never runs then. That is also why `_bar_gates` was
+extracted from `_armed` (the final-hour / HTF / bias gates are needed on every bar, not only when
+flat) and why `mpc_bleg` needs the explicit `_records_misses = False` opt-out rather than getting
+the exclusion for free.
+
+**Two additions this needed elsewhere, both parity-neutral.** `SeqState` gained `l_arm_src` /
+`s_arm_src` (Pine `armHolderL`/`armHolderS`) — the source holding the Stage-1 slot, which is the one
+thing the live `sos_*_swp`/`sos_*_div` flags cannot tell you once the execution layer has filtered
+them through the toggles, and without it a "your arm source is off" reason could not say WHICH one.
+`build_results` gained `missed_setups`.
+
+**Measured on the shipped window** (XAUUSD M15, 2025-03-04 → 2026-07-27, 33,041 bars, defaults):
+46 trades, 80 blocks, **93 misses** — 50 "No retrace" (none near), 35 "No FVG in zone" (all near),
+4 "Never filled", 4 "Final hour". So the chart opens on 43 markers and the routine 50 are one click
+away. The 35 is the actionable number this whole layer exists to produce.
 
 ## Secondary (1m sniper) re-entry — `exec_secondary` (built 2026-07-19, NOT committed)
 

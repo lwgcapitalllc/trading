@@ -482,6 +482,12 @@ async def _handle_complete(
     if blocked:
         (run_dir / "blocked_setups.json").write_text(json.dumps(blocked, default=str))
 
+    # Missed setups — the companion question: not "which ready trade was refused" but "how far
+    # did this setup get before it died". Same optionality, same reason.
+    missed = result.get("missed_setups") or []
+    if missed:
+        (run_dir / "missed_setups.json").write_text(json.dumps(missed, default=str))
+
     # Regime tagging — happens BEFORE DB update so the run stays "running" during tagging,
     # letting the frontend show the Tagging milestone step in the progress bar.
     if daily_pnl:

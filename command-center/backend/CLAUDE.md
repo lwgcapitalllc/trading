@@ -3,7 +3,7 @@
 **Purpose:** FastAPI backend (`:8000`) — owns all SQLite state, talks to the VPS via SSH + HTTP agents, runs the smart-money pipeline via subprocess, and drives NT8/MT5 backtests.
 **Scope:** This covers backend conventions, routers, services, DB, and VPS interaction. It does NOT cover the frontend (see `../frontend/CLAUDE.md`) or `algos/`/`smart-money/` source.
 **Status:** Live — lab (strategies, rulesets, backtests, sweeps, optimizations, stress tests, MT5 runner, Python runner) all shipped.
-**Last reviewed:** 2026-07-27 — blocked setups (the trades that never happened) plumbed strategy → output → run dir → chart spec; `chart_spec` now ships the run's own timeframe and caps the WINDOW instead of coarsening the bars
+**Last reviewed:** 2026-07-27 — missed setups (how close the ones that died came) plumbed alongside blocked setups, strategy → output → run dir → chart spec; `chart_spec` now ships the run's own timeframe and caps the WINDOW instead of coarsening the bars
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
@@ -62,7 +62,7 @@ backend/
 │   ├── scripts/backfill_regime_timeline.py  opt-in backfill of `regime_timeline.json` on old runs (`--force`, `--run-id`); kept OUT of backfill_metrics.py because it fetches OHLC
 │   ├── scripts/prop_kpi_audit.py    read-only dump of every prop ruleset's core KPIs from lab.db (the saved "is our engine in sync" query); feeds docs/PROP_RULESET_KPIS.md
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
-│   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + blocked setups + recomputed strategy structure/ATR + market-structure overlays). Always ships the timeframe the run TRADED and caps the WINDOW instead (`_capped_start` → the newest slice under `_CANDLE_CAP`), with `historyStartMs` telling the panel how far back it may page; see "ChartSpec candles" below. `_build_blocks` reads the run dir's `blocked_setups.json` — see "Blocked setups" below
+│   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + blocked setups + recomputed strategy structure/ATR + market-structure overlays). Always ships the timeframe the run TRADED and caps the WINDOW instead (`_capped_start` → the newest slice under `_CANDLE_CAP`), with `historyStartMs` telling the panel how far back it may page; see "ChartSpec candles" below. `_build_blocks` reads the run dir's `blocked_setups.json` — see "Blocked setups" below; `_build_misses` reads `missed_setups.json` and ALSO returns the derived `missNoise` list — see "Missed setups" below
 │   ├── structure_overlays.py  replay the CANONICAL engines/market_structure/ engine over a run's candles → BOS/SOS/swing overlays for the chart, in the 4 groups that ARE structure_engine.pine's 4 toggles (External / Internal / Historic Internal Structure / Swing Point Labels), nesting like the Pine's via each overlay's `requires` list (swing tags need their owning structure; historic internal needs Internal). Never a 2nd engine (bare-name import like regime/news); called by chart_spec on the displayed TF. Break tags anchor at the line MIDPOINT (`_mid`, = Pine's `mid_x`) so they clear the break-bar candles; reversal breaks are labelled SOS/iSOS (not "CHoCH")
 │   ├── news_filter.py     post-run news/holiday tagging — composes the canonical engines/news/ engine (never a 2nd impl) to mark which of a run's trades opened in a high-impact news window / on a bank holiday, for the BacktestDetail News filter card. Pure over a trade list; loads the EventStore cache (see "News filter (post-run)")
 │   ├── history_limits.py  broker history floors — thin shim over the canonical `backtest/data/history.py`
@@ -587,6 +587,37 @@ no Blocked layer. A run that HAS the file but a stale cached `chart_spec.json` n
 
 The `label`/`reason` strings are the STRATEGY's own words end to end; neither the lab nor the chart
 interprets them, so a strategy with a different rule set needs no change anywhere in this path.
+
+## Missed setups — how close the ones that died came
+
+A **block** and a **miss** answer the same question one step apart in a setup's life. A block is a
+trade the strategy had FULLY READY and one of its own rules refused. A miss never got that far: it
+met some of the strategy's confluences and then DIED. Both place no order, so both are invisible
+everywhere else; separately they answer "is this rule costing me?" and "what am I actually waiting
+on that never arrives?".
+
+The path is the block path, hop for hop, and every hop is equally optional:
+`mpc_sos_fade/execution.py` (`MissedSetup` + `_record_misses`, a port of the Pine's orange 2-of-3
+callout — see that package's CLAUDE.md → *The missed-setup watch*) → `backtest/output.py`
+`build_missed_setups` → `missed_setups.json` in the run dir → `chart_spec._build_misses` →
+`spec.misses[]` → the price chart's **Analysis → Missed** layer, default OFF.
+
+**The one thing that is NOT a copy of the block path: `spec.missNoise`.** `_build_misses` returns a
+second value — the reason labels the chart should start with UNTICKED — and it is **derived, never
+named**. A label goes on the list when it never once appears on a miss the strategy flagged `near`.
+Why this exists: the Pine's callout defaults to "Near misses only" because a chart showing every
+setup that simply never retraced is unreadable, and on the measured window that is 50 of 93 markers.
+Reproducing that default by teaching the chart what "No retrace" means would have put a strategy
+concept inside a panel whose one rule is that it has none. Instead the strategy marks `near`, the
+emitter turns it into a list of strings, and the panel hides those on first render. The panel still
+lists them with their counts, so nothing is hidden silently, and one click brings any of them back —
+which the Pine's radio buttons cannot do.
+
+Same on-disk-shape discipline as the blocks: a record missing `near` reads as `near: True`, so a
+file written before the flag existed does not have every one of its reasons filed as noise and
+hidden on open (which would make an old run look like it had no misses at all). Locked by
+`backend/tests/test_chart_spec_misses.py`. **Python runner only, no backfill** — same as the blocks,
+for the same reason.
 
 ## News filter (post-run)
 

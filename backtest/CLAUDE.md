@@ -7,7 +7,7 @@ local optimizer. It does NOT cover the engines it replays (`engines/`), the stra
 **Status:** **Deliverable A COMPLETE 2026-07-16.** A0 (data layer) + A1 (replay loop) landed
 2026-07-15; A2 (fill & cost model), A3 (output adapter), the lab's `runner="python"` adapter, and A4
 (local optimizer) all landed 2026-07-16. See `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
-**Last reviewed:** 2026-07-27 — `build_results` gained `blocked_setups`. Earlier: 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below); `verify_parity.py` gained a veto column and now runs the B-LEG parity check too
+**Last reviewed:** 2026-07-27 — `build_results` gained `blocked_setups` and `missed_setups`. Earlier: 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below); `verify_parity.py` gained a veto column and now runs the B-LEG parity check too
 
 ---
 
@@ -62,7 +62,15 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   strategy's own rules refused places no order, so it is in no trade list and this is its ONLY
   channel to the lab. Same duck-type discipline (`dir`/`time_ms`/`code`/`edge`/`label`/`reason`),
   always present as a key, `[]` when a strategy records none. Full path:
-  `command-center/backend/CLAUDE.md` → *Blocked setups*.
+  `command-center/backend/CLAUDE.md` → *Blocked setups*. **`missed_setups`** (added 2026-07-27,
+  `build_missed_setups`) is its companion one step earlier in a setup's life: not "which ready trade
+  did a rule refuse" but "how far did this setup get before it died". Same duck-type
+  (`dir`/`time_ms`/`edge`/`met`/`near` + `labels`/`reasons`/`met_lines`), same always-present-and-
+  empty rule. `met_lines` arrives pre-FORMATTED and `of` is a per-record number, so nothing here or
+  downstream knows what a "confluence" is — a strategy scoring out of four just ships `of=4`. `near`
+  is the strategy's own "worth looking at" flag and must pass through UNTOUCHED: the chart derives
+  its opening view from it, so defaulting or dropping it silently changes what a reader sees first.
+  Full path: `command-center/backend/CLAUDE.md` → *Missed setups*.
 - **A4 — Local optimizer** *(done 2026-07-16)*. `backtest/optimizer.py`. `run_sweep(module_path, df,
   combos, …)` replays one strategy over N parameter sets with the bars loaded ONCE and combos fanned
   across cores — no VPS, no terminal lock, no deploy/compile (4 combos over 3 months = 9s).

@@ -287,6 +287,65 @@ def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
     return out
 
 
+def _build_misses(run_dir: Path, candles: list[dict]) -> tuple[list[dict], list[str]]:
+    """The run's MISSED setups → the chart's `misses` array, plus the reason labels the
+    chart should start with HIDDEN.
+
+    A miss is the block's companion: not "a ready trade a rule refused" but "a setup that got
+    partway and died". Same plumbing, same optionality — `missed_setups.json` is the only
+    source, so a runner that can't report them has no file, an empty list, and no toggle.
+
+    **The second return value is the noise list, and it is DERIVED, not named.** A label goes on
+    it when it never once appears on a `near` miss — i.e. the strategy itself never marked any
+    setup carrying that reason as worth looking at. Nothing here knows what any label means; it
+    reads the strategy's own `near` flag and hands the panel a list of strings to start with
+    unticked. That is what reproduces the Pine's default view (`debug23Filter = "Near misses
+    only"` plus `debugShow23Disarmed = false`) without the chart learning a single strategy
+    concept — and one click restores the full set, which the Pine's radio buttons cannot do.
+    """
+    path = run_dir / "missed_setups.json"
+    if not path.exists():
+        return [], []
+    try:
+        raw = json.loads(path.read_text())
+    except (ValueError, OSError):
+        return [], []
+    if not isinstance(raw, list) or not candles:
+        return [], []
+    lo, hi = candles[0]["time"], candles[-1]["time"]
+    out: list[dict] = []
+    near_labels: set[str] = set()
+    all_labels: list[str] = []
+    for i, m in enumerate(raw, start=1):
+        t = m.get("time_ms")
+        if not isinstance(t, (int, float)) or not (lo <= t <= hi):
+            continue
+        reasons = [
+            {"label": str(r.get("label") or "Missed"), "reason": str(r.get("reason") or "")}
+            for r in (m.get("reasons") or []) if isinstance(r, dict)
+        ]
+        if not reasons:
+            continue    # a record naming nothing can't be filtered or explained — drop it
+        is_near = bool(m.get("near", True))
+        for r in reasons:
+            if r["label"] not in all_labels:
+                all_labels.append(r["label"])
+            if is_near:
+                near_labels.add(r["label"])
+        out.append({
+            "id": f"M{i}",
+            "time": int(t),
+            "dir": "short" if str(m.get("direction", "")).lower().startswith("s") else "long",
+            "price": float(m.get("edge") or 0.0),
+            "met": int(m.get("met") or 0),
+            "of": int(m.get("of") or 0),
+            "near": is_near,
+            "metLines": [str(s) for s in (m.get("met_lines") or [])],
+            "reasons": reasons,
+        })
+    return out, [lb for lb in all_labels if lb not in near_labels]
+
+
 # ── Strategy structure (Phase 7b) — London-breakout family ─────────────────────────
 _DAY_MS = 24 * 60 * 60 * 1000
 
@@ -436,6 +495,8 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     # structure Layers groups (default OFF in the panel). Best-effort: [] on any failure.
     overlays = overlays + build_market_structure_overlays(candles)
 
+    misses, miss_noise = _build_misses(run_dir, candles)
+
     spec = {
         "instrument": instrument,
         "baseTimeframe": base_tf,
@@ -450,6 +511,10 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
         "sessions": [dict(s) for s in _FX_SESSIONS],
         "trades": trades,
         "blocks": _build_blocks(run_dir, candles),
+        "misses": misses,
+        # Reason labels the panel starts with unticked — derived from the strategy's own `near`
+        # flag, never named here. See `_build_misses`.
+        "missNoise": miss_noise,
         "overlays": overlays,
         "indicators": indicators,
     }
@@ -468,9 +533,10 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
 
     Reuses each leg's own `build_chart_spec` (all legs share one instrument/TF/window, so the
     candles are identical) and drops the per-strategy structure overlays/indicators — a portfolio
-    price view stays readable with trades only. Blocked setups are dropped for a second reason:
-    they carry no `layer`, so on a merged chart there would be no way to tell WHOSE rule refused
-    a setup. Omitting the key hides the Blocked toggle; a leg's own page still has it. Returns
+    price view stays readable with trades only. Blocked AND missed setups are dropped for a second
+    reason: neither carries a `layer`, so on a merged chart there would be no way to tell WHOSE
+    rule refused a setup or WHOSE confluence was missing. Omitting the keys hides both toggles; a
+    leg's own page still has them. Returns
     None if the stack is unknown; a spec with
     empty candles if no leg produced any (frontend shows "no price data"). Not cached (legs can
     complete incrementally); each leg's own spec is cached, so the merge is cheap."""

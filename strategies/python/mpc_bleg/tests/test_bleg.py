@@ -135,3 +135,13 @@ def test_this_fork_records_no_blocked_setups():
     pins that, so restoring the parent's entry path can't quietly switch them on."""
     strat = MpcBLegStrategy().run(synth_bars(12), warmup=100)
     assert strat.execution.blocks == []
+
+
+def test_this_fork_records_no_missed_setups():
+    """Same call, same reason — the missed-setup confluences score how far an **A+** setup got,
+    and A+ never trades here. Unlike the blocks this one is NOT free: the miss watch runs from
+    `step()`, which this fork delegates straight to the parent, so it takes the explicit
+    `_records_misses = False` opt-out. Pin it — a flag is much easier to flip by accident than
+    an overridden method."""
+    strat = MpcBLegStrategy().run(synth_bars(30), warmup=100)
+    assert strat.execution.misses == []

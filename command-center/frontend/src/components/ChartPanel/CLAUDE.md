@@ -3,9 +3,11 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-07-27 (the spec now ships the run's OWN timeframe with the WINDOW capped,
-and older history pages in on scroll-left — no fetch, no placeholder, no swap on open; plus the
-Analysis dropdown, Layers renamed Structure, and day breaks moved into the Sessions legend)
+**Last reviewed:** 2026-07-27 (the **Missed** layer — how close the setups that died came — sharing
+one overlay template and one hover card with Blocked; earlier the same day: the spec now ships the
+run's OWN timeframe with the WINDOW capped, and older history pages in on scroll-left — no fetch, no
+placeholder, no swap on open; plus the Analysis dropdown, Layers renamed Structure, and day breaks
+moved into the Sessions legend)
 
 ---
 
@@ -35,7 +37,8 @@ ChartPanel/
 
 `ChartSpec` carries: `instrument`, `baseTimeframe` (the bars SHIPPED), `runTimeframe` (the bars the
 run TRADED — what the chart opens on), `brokerGmtOffsetHours`, `candles`,
-`sessions[]`, `trades[]`, `blocks[]` (OPTIONAL — refused setups), `overlays[]`
+`sessions[]`, `trades[]`, `blocks[]` (OPTIONAL — refused setups), `misses[]` + `missNoise[]`
+(OPTIONAL — setups that died partway, and the reason labels to start hidden), `overlays[]`
 (`box`/`hline`/`vline`/`label`, each tagged with a `group`),
 `indicators[]`. **All times are epoch milliseconds** (klinecharts' native unit) — convert at
 the emitter, never in the browser. Indicator series are shipped from the run, **not recomputed
@@ -231,6 +234,32 @@ here**, so the chart shows exactly what the strategy saw.
     one. Lives in the **Analysis** dropdown, **default OFF** — a diagnostic view, not part of reading
     the run, and a long run has more refusals than trades. Listed only when the run reports any, so an
     NT8/MT5 run (which cannot report them) shows no permanently-empty switch.
+- **Missed setups** (`MISS` overlay, spec `misses[]`) — **how close the ones that DIED came.** The
+  companion of Blocked, one step earlier in a setup's life: a block is a trade the strategy had
+  fully ready and a rule refused; a miss met some of the strategy's confluences and then died. The
+  tag is the SCORE (`2/3`, `3/3`), uniform within the layer for the same reason "Blocked" is; hover
+  gives **Met** (what it had, as pre-formatted strings the panel prints verbatim) and **Missing**
+  (the one thing it didn't), plus the price the entry would have rested at.
+  - **One template, two layers.** `MISS` and `BLOCK` are the SAME registered template under two
+    names (`const marker` in `overlays.ts`) — they draw the identical thing and forking it would
+    guarantee the two drift in look and in bugs. The tag TEXT comes from the host via
+    `extendData.text`, so the wording lives in `index.tsx` next to the data it describes; `row: 1`
+    parks the Missed tags one step further from the pane edge so the two layers shown together
+    don't stack. One `MarkerTipCard` serves both hovers, off one `markerTip` state, for the same
+    reason.
+  - **Amber, not a new colour.** Blocked pink = a rule said no; missed amber = the setup never
+    finished. Siblings on the same "the trade that never happened" axis, both deliberately off the
+    win/loss green/red, and matching the Pine's own orange 2-of-3 callout.
+  - **`spec.missNoise` decides what the layer OPENS on, and the panel does not know why.** It is a
+    list of reason labels to start UNTICKED, derived server-side from each miss's own `near` flag
+    (see `backend/CLAUDE.md` → *Missed setups*). On the measured window 50 of 93 markers are "price
+    never retraced" — the ordinary way a setup dies — so opening on all of them would bury the 35
+    that are actually actionable. Hiding them by NAME here would have put a strategy concept inside
+    a panel whose one rule is that it has none; hiding them by an emitter-supplied list of opaque
+    strings does not. The hidden reasons are still listed with their counts, so nothing vanishes
+    silently, and one click restores any of them.
+  - Everything else — per-reason filters with ANY-of semantics, clipping to the loaded candles,
+    default OFF, listed only when the run reports any — is the Blocked layer's, unchanged.
 - **Portfolio-stack layering** (`layer` / `layerName` / `layerColor` on a trade — all absent on a
   single-run spec, which is what makes every stack affordance vanish for a normal backtest). With
   several strategies' trades on ONE chart, the outcome alone doesn't say WHOSE trade it was, so the
@@ -320,8 +349,8 @@ here**, so the chart shows exactly what the strategy saw.
   skipped). Separate overlay name from `VLINE` so the two toggle independently. Toggled from the
   on-chart Sessions legend (see above), not the header — it is a clock layer, not market structure.
 - **Two header dropdowns, split by QUESTION, not by mechanism** (Aaron's call, 2026-07-27).
-  **Analysis** = what the strategy DID with its signals — Trades (+ the Winners / Losers sub-filters)
-  and Blocked (+ one sub-filter per reason). **Structure** = what the MARKET drew — the four
+  **Analysis** = what the strategy DID with its signals — Trades (+ the Winners / Losers sub-filters),
+  Blocked and Missed (each + one sub-filter per reason). **Structure** = what the MARKET drew — the four
   market-structure groups + the shipped indicators. **Strategies** (stacks only) is a third, and
   everything CLOCK-driven (sessions, day breaks) is the on-chart legend, not a header menu. Trades and
   Blocked used to sit in the old catch-all "Layers"; they were moved because "which trades do I want to

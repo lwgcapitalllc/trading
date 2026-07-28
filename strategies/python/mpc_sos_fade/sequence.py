@@ -60,6 +60,15 @@ class SeqState:
     # path reads these, so they are parity-neutral; the B-LEG bot consumes them.
     bleg_arm_l: bool = False
     bleg_arm_s: bool = False
+    # Which Stage-1 SOURCE currently holds the arm slot on each side — "SWP" / "DIV" / "".
+    # Pine `armHolderL` / `armHolderS` (mpc_strategy.pine 3061-3062), which that file's own
+    # comment calls read-only bookkeeping: nothing in the engine or the trade path reads it.
+    # It exists so the missed-setup callout can name the source that armed a setup EVEN WHEN
+    # that source is switched off — the one case the live `sos_*_swp`/`sos_*_div` flags cannot
+    # answer, because the execution layer has already filtered them through the toggles.
+    # REPORTING ONLY, so parity-neutral (same standing as `bleg_arm_*` above).
+    l_arm_src: str = ""
+    s_arm_src: str = ""
 
 
 _DAY_MS = 86_400_000
@@ -106,6 +115,10 @@ class SosFadeSequence:
         self._sos_l_div = False
         self._sos_s_swp = False
         self._sos_s_div = False
+
+        # which source holds the Stage-1 slot (Pine armHolderL/armHolderS) — see SeqState
+        self._arm_holder_l = ""
+        self._arm_holder_s = ""
 
         # previous-bar values for the edge detectors (Pine `X != X[1]`)
         self._prev_recent_ssl_bar: Optional[int] = None
@@ -154,9 +167,11 @@ class SosFadeSequence:
         if new_sweep_l and l_can_arm:
             self._l_sweep_bar = sig.recent_ssl_bar
             self._l_arm_time = sig.time_ms
+            self._arm_holder_l = "SWP"
         if new_div_l and l_can_arm_div:
             self._l_sweep_bar = sig.last_bull_div_bar
             self._l_arm_time = sig.time_ms
+            self._arm_holder_l = "DIV"
 
         # ── retro-link: adopt an SOS that already fired at/after the div pivot (3771-3773) ──
         retro_link_l = (new_div_l and self._l_sweep_bar is not None and self._l_sos_bar is None
@@ -172,9 +187,11 @@ class SosFadeSequence:
         if new_sweep_s and s_can_arm:
             self._s_sweep_bar = sig.recent_bsl_bar
             self._s_arm_time = sig.time_ms
+            self._arm_holder_s = "SWP"
         if new_div_s and s_can_arm_div:
             self._s_sweep_bar = sig.last_bear_div_bar
             self._s_arm_time = sig.time_ms
+            self._arm_holder_s = "DIV"
         retro_link_s = (new_div_s and self._s_sweep_bar is not None and self._s_sos_bar is None
                         and self._last_bear_sos_bar is not None
                         and self._last_bear_sos_bar >= sig.last_bear_div_bar
@@ -201,10 +218,12 @@ class SosFadeSequence:
                 and self._l_arm_time is not None and sig.time_ms - self._l_arm_time > self._window_ms:
             self._l_sweep_bar = None
             self._l_arm_time = None
+            self._arm_holder_l = ""
         if not gap and self._s_sweep_bar is not None and self._s_sos_bar is None \
                 and self._s_arm_time is not None and sig.time_ms - self._s_arm_time > self._window_ms:
             self._s_sweep_bar = None
             self._s_arm_time = None
+            self._arm_holder_s = ""
 
         # ── sequence death: opposite SOS (Pine 3835-3843) ──
         if sig.bear_sos and not gap:
@@ -337,6 +356,7 @@ class SosFadeSequence:
             new_sweep_s=new_sweep_s, new_div_s=new_div_s,
             retro_link_l=retro_link_l, retro_link_s=retro_link_s,
             bleg_arm_l=bleg_arm_l, bleg_arm_s=bleg_arm_s,
+            l_arm_src=self._arm_holder_l, s_arm_src=self._arm_holder_s,
         )
 
     def _clear_long(self) -> None:
@@ -344,9 +364,11 @@ class SosFadeSequence:
         self._l_sweep_bar = None
         self._l_poi = False
         self._l_arm_time = None
+        self._arm_holder_l = ""
 
     def _clear_short(self) -> None:
         self._s_sos_bar = None
         self._s_sweep_bar = None
         self._s_poi = False
         self._s_arm_time = None
+        self._arm_holder_s = ""

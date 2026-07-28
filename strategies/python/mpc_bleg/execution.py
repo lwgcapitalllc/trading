@@ -35,6 +35,16 @@ class BLegExecution(Execution):
 
     _bleg = None   # set by step() before the parent calls _place_entries
 
+    # No A+ diagnostic markers in this fork. The parent's BLOCKED codes and MISSED-setup
+    # confluences both answer "how far did this **A+** setup get before it was refused" — and
+    # here A+ never places an order, so both would report the near-misses of a trade that was
+    # never on the table. The blocked markers are already excluded by construction (the recording
+    # hangs off `_place_entries`, overridden below); the miss watch runs from `step()`, which this
+    # fork delegates to the parent, so it needs this explicit opt-out. A B-LEG version of either
+    # needs its own code set — new design work, not a port. Same call as
+    # `indicators/mpc_b_leg_strategy.pine`, which drops the pink tags for the same reason.
+    _records_misses = False
+
     def step(self, sig, seq, bleg):  # type: ignore[override]
         self._bleg = bleg
         return super().step(sig, seq)

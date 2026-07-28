@@ -137,11 +137,12 @@ def _execute(job_id: str, spec: dict) -> None:
         return
 
     _set(job_id, pct=95, message="building results…")
-    # `blocks` is optional on the execution layer — a strategy that records no refusals
-    # (or an older one) yields an empty list rather than a missing key.
+    # `blocks` / `misses` are optional on the execution layer — a strategy that records no
+    # refusals or near-misses (or an older one) yields an empty list, never a missing key.
     results = build_results(strategy.execution.trades, point_value=config.point_value,
                             initial_capital=capital,
-                            blocked=getattr(strategy.execution, "blocks", None))
+                            blocked=getattr(strategy.execution, "blocks", None),
+                            missed=getattr(strategy.execution, "misses", None))
     _set(job_id, status="complete", pct=100, results=results,
          message=f"{len(strategy.execution.trades)} trades")
 

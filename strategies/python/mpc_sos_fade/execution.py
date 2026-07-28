@@ -206,6 +206,122 @@ class BlockedSetup:
         return [_BLOCK_REASON.get(c, "") for c in self.codes]
 
 
+# ── missed setups (Pine 3064-3194 + 4017-4023) — reporting only ─────────────────
+# A MISSED setup is the other half of "why didn't this trade", and a different question from a
+# BLOCKED one. A block is a setup that was fully READY and a toggle refused it. A miss is a setup
+# that got to 2 or 3 of the three confluences and then DIED without ever becoming a trade — most
+# often because price never came back, or came back with nothing to enter from.
+#
+# The three confluences, and what "met" means for each (Pine `f_w23`):
+#   1  ARM    a liquidity sweep or an RSI divergence armed Stage 1 — and counts only if the arm
+#             source that fired is one you have ENABLED.
+#   2  SOS    always met: it is why the watch is open at all.
+#   3  ZONE   price tagged the 0.5-0.886 retrace band AND (with Require-FVG on) a gap was live in
+#             that band while price was there. Reaching the band is only half of it — having
+#             something to rest a limit on is the other half.
+#
+# Exactly ONE thing is ever missing. At 2 of 3 it is the arm or the zone; at 3 of 3 every
+# confluence was there and the entry still never happened, so the miss names the entry-side
+# reason instead — in the Pine's own precedence: veto, then the final hour, then HTF, else the
+# limit simply rested and price never touched it.
+#
+# REPORTING ONLY, exactly like `BlockedSetup` below: nothing reads a record back, so it cannot
+# move a decision and `compare_strategy.py`'s `px_*` stream is untouched.
+_MISS_LABEL = {
+    1: "Arm source off",
+    2: "No retrace",
+    3: "No FVG in zone",
+    4: "Divergence / RSI veto",
+    5: "Final hour",
+    6: "HTF filter",
+    7: "Never filled",
+}
+_MISS_REASON = {
+    2: "Price never retraced into the 0.5-0.886 band, so the entry zone was never reached. This "
+       "is the ordinary way a setup dies.",
+    3: "Price DID reach the 0.5-0.886 band, but no fair-value gap overlapped it while price was "
+       "there — there was nothing to rest a limit on.",
+    4: "All three confluences met. The divergence / extreme-RSI veto refused the entry.",
+    5: "All three confluences met. The final-hour rule (16:00-18:00 New York) refused the entry.",
+    6: "All three confluences met. The HTF breakout / bias filter refused the entry.",
+    7: "All three confluences met and the limit rested — price never came back to touch it.",
+}
+
+
+@dataclass
+class MissedSetup:
+    """One setup that reached 2-of-3 or better and died without trading.
+
+    `code` is the ONE thing that was missing (see `_MISS_LABEL`); `met` is 2 or 3. `edge` is
+    where the limit would have rested — the entry edge if one ever existed, else the 0.618.
+    `near` mirrors the Pine's "near miss" test (`debug23Filter`'s default view): a miss worth
+    looking at is one that met all three and still did not fill, or that got price into the zone
+    and failed only on the FVG. Everything else is the ordinary outcome of most setups, and is
+    what floods a chart — the lab records it anyway and lets the reader filter."""
+
+    dir: int              # +1 long, -1 short
+    index: int            # bar index the miss was booked on (the bar the setup died)
+    time_ms: int
+    met: int              # 2 or 3 (of 3)
+    code: int             # 1-7 — the single missing piece
+    arm_text: str         # what armed it, in words: "Sweep · Day Low" / "RSI divergence"
+    arm_met: bool         # ...and whether that source is one you have enabled
+    zone: bool            # price tagged the 0.5-0.886 band
+    fvg: bool             # ...and a gap was live while it was there
+    edge: float           # where the limit would have rested
+    near: bool
+
+    @property
+    def labels(self) -> List[str]:
+        """A list of one, to match `BlockedSetup`'s shape — the lab reads both the same way."""
+        return [_MISS_LABEL.get(self.code, "Missed")]
+
+    @property
+    def reasons(self) -> List[str]:
+        # Code 1 is the only DYNAMIC sentence: it has to name the source that armed the setup,
+        # because "the trigger you switched off" is meaningless without saying which one.
+        if self.code == 1:
+            return [f"Armed by {self.arm_text} — that arm source is switched OFF. Every other "
+                    f"confluence was there."]
+        return [_MISS_REASON.get(self.code, "")]
+
+    @property
+    def met_lines(self) -> List[str]:
+        """The MET breakdown, in the Pine's order — what this setup DID have."""
+        out: List[str] = []
+        if self.arm_met:
+            out.append(f"Arm — {self.arm_text}")
+        out.append("SOS — confirmed")
+        if self.zone:
+            out.append("Zone — 0.5-0.886 tagged" + (", FVG live" if self.fvg else ""))
+        return out
+
+
+@dataclass
+class _MissWatch:
+    """Per-side state of one live setup (Pine `type MissW`). Opened the moment a setup reaches
+    stage 2 and held until it either BECOMES A TRADE or DIES — deliberately NOT closed when price
+    reaches the retrace zone, which is the bug that used to make a setup that got all the way to
+    the zone and then failed to enter vanish with no explanation."""
+
+    watch: bool = False
+    sos_bar: Optional[int] = None
+    arm_src: str = ""                 # "SWP" / "DIV" — which source actually armed it
+    swp_nm: str = ""                  # the swept level's name, e.g. "Day Low"
+    zone: bool = False
+    fvg: bool = False
+    edge: Optional[float] = None      # first entry edge seen while alive
+    fib: Optional[float] = None       # 0.618 fallback, kept fresh
+    blk_v: bool = False               # a veto was live while in the zone
+    blk_l: bool = False               # the final-hour rule was live while in the zone
+    blk_h: bool = False               # an HTF filter was live while in the zone
+
+    def open(self, sos_bar: Optional[int], arm_src: str, swp_nm: str) -> None:
+        self.watch, self.sos_bar, self.arm_src, self.swp_nm = True, sos_bar, arm_src, swp_nm
+        self.zone = self.fvg = self.blk_v = self.blk_l = self.blk_h = False
+        self.edge = self.fib = None
+
+
 # ── the resting-order + position model ──────────────────────────────────────────
 @dataclass
 class _Pending:
@@ -235,6 +351,12 @@ class Execution:
     A2 existed. That default is load-bearing — `compare_strategy.py`'s exit 0 rests on it, so the
     bar paths are never routed through the resolver. Tick mode is an added branch, never a rewrite.
     """
+
+    # Whether this order layer records MISSED setups. The codes describe how far an **A+** setup
+    # got before it died, so a fork where A+ never places an order must switch this off rather
+    # than report near-misses of a trade it was never going to take — the same call the B-LEG
+    # fork already makes for the blocked markers, for the same reason.
+    _records_misses = True
 
     def __init__(self, config, initial_capital: float = 1_000_000.0,
                  resolver=None, profile=None, bar_ms: int = 300_000,
@@ -323,6 +445,11 @@ class Execution:
         # why the B-LEG bot records no blocks: its codes describe why an A+ setup was refused,
         # and A+ never trades there. See strategies/python/mpc_bleg/CLAUDE.md.
         self._blk_gates: Optional[Tuple[bool, ...]] = None
+        # Missed setups (reporting only — see MissedSetup). One watch per side, plus last bar's
+        # stage so the watch opens on the RISING edge into stage 2 (Pine `stage[1] < 2`).
+        self.misses: List[MissedSetup] = []
+        self._mw: List[_MissWatch] = [_MissWatch(), _MissWatch()]
+        self._prev_stage: List[int] = [0, 0]
 
     # ── public equity read ──
     @property
@@ -443,6 +570,13 @@ class Execution:
         if self._pos_dir != 0 and not opened and self._entry_kind != "secondary":
             self._manage_open(sig, dec)
 
+        # The missed-setup watch runs EVERY bar, between the fills and the placement — the same
+        # slot the Pine calls `f_w23` from (after the fill state is known, before `strategy.entry`).
+        # It cannot live in `_place_entries` like the blocked marker does: a setup keeps
+        # accumulating state while a position from the other side is open, and that path never
+        # runs then.
+        self._record_misses(sig, seq, dec, long_edge, short_edge)
+
         # ── Phase B: at close, (re)place orders for the next bar ──
         if self._pos_dir != 0 and self._entry_kind != "secondary":
             self._advance_stage(sig)
@@ -473,7 +607,7 @@ class Execution:
         B-LEG fork can reuse it as its 'A+ has priority' gate — parity-preserving (this is
         exactly what `_place_entries` used to compute inline)."""
         cfg = self._cfg
-        late = cfg.exec_no_late_day and 16 <= sig.ny_hour < 18   # 16:00-17:59 NY block
+        late, htf_block_l, htf_block_s, bias_block_l, bias_block_s = self._bar_gates(sig)
 
         # arm-source filter (Pine 4349-4355)
         use_swp_l = cfg.exec_arm_sweep and seq.sos_l_swp
@@ -482,9 +616,6 @@ class Execution:
         use_div_s = cfg.exec_arm_div and seq.sos_s_div
         arm_ok_l = use_swp_l or use_div_l
         arm_ok_s = use_swp_s or use_div_s
-
-        htf_block_l, htf_block_s = self._htf_exhaustion_block(sig)
-        bias_block_l, bias_block_s = self._htf_bias_block(sig)
 
         long_armed = (cfg.exec_aplus and cfg.exec_longs and arm_ok_l and not late and not htf_block_l
                       and not bias_block_l and seq.l_sos_bar is not None and sig.fibo_dir == 1
@@ -502,6 +633,117 @@ class Execution:
         self._blk_gates = (late, arm_ok_l, arm_ok_s, htf_block_l, htf_block_s,
                            bias_block_l, bias_block_s)
         return long_armed, short_armed
+
+    # ── bar-only gates ───────────────────────────────────────────────────────────
+    def _bar_gates(self, sig) -> Tuple[bool, bool, bool, bool, bool]:
+        """`(late, htf_block_l, htf_block_s, bias_block_l, bias_block_s)` — the refusal gates
+        that depend on the BAR alone, not on the sequence or on being flat.
+
+        Extracted from `_armed` because the missed-setup watch needs them on every bar, including
+        while a position is open, where `_armed` never runs. Pure and cheap; one place decides
+        what "the final hour" and "the HTF filter" mean, so a marker can never disagree with the
+        arm about it."""
+        cfg = self._cfg
+        late = cfg.exec_no_late_day and 16 <= sig.ny_hour < 18   # 16:00-17:59 NY block
+        htf_l, htf_s = self._htf_exhaustion_block(sig)
+        bias_l, bias_s = self._htf_bias_block(sig)
+        return late, htf_l, htf_s, bias_l, bias_s
+
+    # ── missed-setup watch (Pine f_w23Arm / f_w23, 3116-3194 + 4022-4023) ────────
+    def _record_misses(self, sig, seq, dec, long_edge, short_edge) -> None:
+        """Track each side's live setup and book a MISS when it dies without trading.
+
+        Two DELIBERATE deviations from the Pine, both reporting-side only:
+
+        1. **Every miss is recorded; none is filtered away here.** The Pine has three view
+           filters (`debugShow23`, `debug23Filter`, `debugShow23Disarmed`) and a `debugDays`
+           recency window, because a TradingView chart has a hard 500-label cap and a wall of
+           boxes is unreadable. The lab has neither problem: the reader filters BY REASON in the
+           chart panel, which is strictly more expressive than the Pine's three presets — and a
+           miss that was filtered out at write time could never be counted later.
+        2. **A setup that filled this bar is closed as TRADED immediately.** The Pine assigns
+           `tradedSosL` further down its script than it reads it, so on the fill bar it still
+           reads the previous value. Both end with no callout; ours just gets there a bar sooner,
+           and it is the correct answer on the one bar where they differ (a trade that opened and
+           closed within the same bar, which the Pine would have booked as a miss).
+        """
+        if not self._records_misses:
+            return
+        cfg = self._cfg
+        late, htf_l, htf_s, bias_l, bias_s = self._bar_gates(sig)
+
+        # Which arm sources COUNT — the live flags already filtered through the enable-toggles,
+        # exactly as `_armed` reads them, so "armed" means the same thing in both places.
+        sides = (
+            (0, True, seq.l_stage, seq.l_sos_bar, self._traded_sos_l, self._pos_dir <= 0,
+             seq.l_half or seq.l_618, long_edge, dec.long_veto and cfg.exec_respect_veto,
+             htf_l or bias_l, cfg.exec_arm_sweep and seq.sos_l_swp,
+             cfg.exec_arm_div and seq.sos_l_div, seq.l_arm_src, sig.recent_ssl),
+            (1, False, seq.s_stage, seq.s_sos_bar, self._traded_sos_s, self._pos_dir >= 0,
+             seq.s_half or seq.s_618, short_edge, dec.short_veto and cfg.exec_respect_veto,
+             htf_s or bias_s, cfg.exec_arm_sweep and seq.sos_s_swp,
+             cfg.exec_arm_div and seq.sos_s_div, seq.s_arm_src, sig.recent_bsl),
+        )
+        for (slot, is_long, stage, sos_bar, traded_sos, flat, zone_hit, edge, veto,
+             htf_any, arm_swp, arm_div, arm_src, swp_nm) in sides:
+            m = self._mw[slot]
+            # Open the watch on the RISING edge into stage 2 OR HIGHER — a fast leg can print the
+            # SOS and tag the 0.5 on the same bar, jumping 1 → 3, and an `== 2` test would never
+            # open the watch for it. The arm source and swept level are snapshotted here because
+            # the sequence clears them the instant the setup dies.
+            if stage >= 2 and self._prev_stage[slot] < 2:
+                m.open(sos_bar, arm_src, swp_nm)
+            self._prev_stage[slot] = stage
+
+            if not m.watch:
+                continue
+            traded = traded_sos is not None and m.sos_bar is not None and traded_sos == m.sos_bar
+            if sos_bar is not None and not traded:
+                # still alive — accumulate what it achieved
+                m.fib = sig.fibo_p3
+                if m.edge is None and edge is not None:
+                    m.edge = edge
+                if zone_hit:
+                    m.zone = True
+                    m.fvg = m.fvg or edge is not None
+                    m.blk_v = m.blk_v or veto
+                    m.blk_l = m.blk_l or late
+                    m.blk_h = m.blk_h or htf_any
+                continue
+
+            # it died (or traded) — book the miss, then close the watch either way
+            m.watch = False
+            if traded or not flat:
+                continue
+            arm_met = arm_swp or arm_div
+            zone_met = m.zone and (m.fvg or not cfg.exec_req_fvg)
+            met_n = (1 if arm_met else 0) + 1 + (1 if zone_met else 0)
+            if met_n < 2:
+                continue
+            price = m.edge if m.edge is not None else m.fib
+            if price is None:
+                continue    # nothing to anchor a marker to — a record with no price can't be drawn
+            if not arm_met:
+                code = 1
+            elif not m.zone:
+                code = 2
+            elif not zone_met:
+                code = 3
+            else:
+                code = 4 if m.blk_v else 5 if m.blk_l else 6 if m.blk_h else 7
+            if arm_met:
+                arm_text = ("Sweep + RSI div" if (arm_swp and arm_div)
+                            else "Sweep" if arm_swp else "RSI divergence")
+                if arm_swp and m.swp_nm:
+                    arm_text += f" · {m.swp_nm}"
+            else:
+                arm_text = "RSI divergence" if m.arm_src == "DIV" else "a liquidity sweep"
+            self.misses.append(MissedSetup(
+                dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
+                met=met_n, code=code, arm_text=arm_text, arm_met=arm_met,
+                zone=m.zone, fvg=m.fvg, edge=float(price),
+                near=met_n == 3 or (m.zone and not zone_met),
+            ))
 
     # ── blocked-setup marker (Pine 4065-4086) — reporting only ───────────────────
     def _record_blocks(self, sig, seq, dec, long_edge, short_edge) -> None:

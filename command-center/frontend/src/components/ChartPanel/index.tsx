@@ -12,10 +12,10 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { AlignJustify, Camera, Check, ChevronDown, Eye, EyeOff, RotateCcw, Ruler, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
-import type { ChartBlock, ChartCandle, ChartSpec } from './types'
+import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
-import { BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
+import { BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
 import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
 import theme from '@/themes/electric-indigo'
@@ -55,8 +55,13 @@ const TRADE_PROFIT_FILL = '#8ef2b8'
 // (~1 MB of JSON) instead of ballooning on a fine one.
 const PAGE_BARS = 12_000
 const BLOCK_COLOR = '#ff2e9a'
-const BLOCK_TIP_W = 240                    // hover-card width; feeds the viewport clamp
-const BLOCK_TIP_H = 180                    // ~its height with two reasons listed; same clamp
+// Missed setups sit on the same "the trade that never happened" axis as Blocked, so they take a
+// sibling colour rather than a new one: amber, matching the Pine's orange 2-of-3 callout, and
+// still nowhere near the win/loss green/red. Blocked pink = a rule said no; missed amber = the
+// setup never finished. Two answers to one question, readable apart at a glance.
+const MISS_COLOR = '#ff9800'
+const TIP_W = 260                          // hover-card width; feeds the viewport clamp
+const TIP_H = 220                          // ~its height with a met list + a reason; same clamp
 const DEFAULT_OVERLAY_COLOR = theme.textTertiary // fallback when a spec overlay omits a color
 const DAY_BREAK_COLOR = theme.textTertiary // muted vertical line for daily session breaks
 const INDICATOR_PALETTE = [theme.gold, theme.series[4], theme.accent, theme.series[1]] // line colors
@@ -73,6 +78,68 @@ interface MenuItem {
   toggle: () => void
   sub?: boolean
   count?: number
+}
+
+/** The hover answer behind a would-be-entry marker (Blocked or Missed), and where to float it.
+ *  `met` is what the setup DID have (empty for a block, which by definition had everything);
+ *  `reasons` is what stopped it. Page coordinates — see where this is set. */
+interface MarkerTip {
+  x: number
+  y: number
+  color: string
+  title: string
+  met: string[]
+  reasons: ChartBlockReason[]
+  price: number
+}
+
+/** The card itself. ONE component for both marker layers: they answer the same question ("why is
+ *  there no trade here?") in the same shape, and two cards would drift in styling and in clamp
+ *  maths. `pointerEvents: none` so it can never eat the hover that spawned it (which would
+ *  flicker it on and off), and viewport-`fixed` + clamped like the right-click menu, so a marker
+ *  at the right or bottom edge of the chart still shows its whole card. */
+function MarkerTipCard({ tip, precision }: { tip: MarkerTip; precision: number }) {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: Math.max(6, Math.min(tip.x + 14, window.innerWidth - TIP_W - 6)),
+        top: Math.max(6, Math.min(tip.y + 12, window.innerHeight - TIP_H - 6)),
+        width: TIP_W,
+        pointerEvents: 'none',
+        zIndex: 60,
+      }}
+      className="rounded-md border border-border-subtle bg-bg-surface px-2.5 py-2 shadow-lg"
+    >
+      <div className="text-[11px] font-semibold" style={{ color: tip.color }}>{tip.title}</div>
+      {/* What it HAD — only a miss carries these; a block had everything by definition. */}
+      {tip.met.length > 0 && (
+        <div className="mt-1.5">
+          <div className="text-[10px] uppercase tracking-wide text-text-tertiary">Met</div>
+          {tip.met.map((line, i) => (
+            <div key={i} className="text-[11px] leading-snug text-text-secondary">{line}</div>
+          ))}
+        </div>
+      )}
+      {/* …and what stopped it, in the strategy's own precedence order (primary first) — the tag
+          carries only a count or a score, so this is where the reasons live. */}
+      {tip.met.length > 0 && (
+        <div className="mt-1.5 text-[10px] uppercase tracking-wide text-text-tertiary">Missing</div>
+      )}
+      {tip.reasons.map((r, i) => (
+        <div key={i} className={tip.met.length > 0 ? '' : 'mt-1.5'}>
+          <div className="text-[11px] font-medium text-text-primary">{r.label}</div>
+          <div className="text-[11px] leading-snug text-text-secondary">{r.reason}</div>
+        </div>
+      ))}
+      <div className="mt-1.5 border-t border-border-subtle pt-1.5 text-[10px] text-text-tertiary">
+        Entry would have rested at{' '}
+        <span className="font-mono tabular-nums text-text-secondary">
+          {tip.price.toFixed(precision)}
+        </span>
+      </div>
+    </div>
+  )
 }
 
 /** The header's multi-select dropdown — Layers, Analysis and Strategies are all this component
@@ -456,12 +523,14 @@ export default function ChartPanel({
     }
   }).filter(b => b.reasons.length > 0), [spec.blocks])
   const [blocksOn, setBlocksOn] = useState(false)
-  // The hovered block's text + where to float it. klinecharts fires the hover on its own canvas, so
-  // the card is a plain DOM node placed at the cursor. It reads the event's PAGE coordinates and
-  // renders viewport-`fixed` (the right-click menu's pattern) rather than positioning inside the
-  // chart wrapper: the overlay event's `x`/`y` are pane-relative, so any wrapper padding or a second
-  // pane would silently offset the card. Page coords have one origin, in every layout and fullscreen.
-  const [blockTip, setBlockTip] = useState<{ x: number; y: number; b: ChartBlock } | null>(null)
+  // The hovered marker's card + where to float it. ONE state and one card for BOTH the Blocked and
+  // Missed layers — they carry the same shape of answer, so two cards would drift.
+  // klinecharts fires the hover on its own canvas, so the card is a plain DOM node placed at the
+  // cursor. It reads the event's PAGE coordinates and renders viewport-`fixed` (the right-click
+  // menu's pattern) rather than positioning inside the chart wrapper: the overlay event's `x`/`y`
+  // are pane-relative, so any wrapper padding or a second pane would silently offset the card.
+  // Page coords have one origin, in every layout and fullscreen.
+  const [markerTip, setMarkerTip] = useState<MarkerTip | null>(null)
 
   // Per-reason filters. The roster is DERIVED from the blocks themselves — first-seen order, keyed
   // on the strategy's own label — so the panel stays strategy-agnostic: it sees reasons as data,
@@ -490,7 +559,45 @@ export default function ChartPanel({
     () => blocks.reduce((n, b) => n + (blockVisible(b) ? 1 : 0), 0),
     [blocks, blockVisible],
   )
-  useEffect(() => { setBlockTip(null) }, [blocks, blocksOn, hiddenReasons])
+
+  // Missed setups — the other half of "why didn't this trade". A block was a trade the strategy
+  // had READY and refused; a miss got partway and died. Default OFF for the same reason Blocked
+  // is: a diagnostic view, and there are far more of them than there are trades.
+  const misses = useMemo<ChartMiss[]>(
+    () => (spec.misses ?? []).filter(m => m.reasons?.length > 0),
+    [spec.misses],
+  )
+  const [missesOn, setMissesOn] = useState(false)
+  const missReasons = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const m of misses) for (const r of m.reasons) counts.set(r.label, (counts.get(r.label) ?? 0) + 1)
+    return Array.from(counts, ([label, count]) => ({ label, count }))
+  }, [misses])
+  // Seeded from the EMITTER's `missNoise` — the reasons it says aren't worth opening on. The panel
+  // treats them as opaque strings (it has no idea one of them means "price never retraced"); it
+  // just starts them unticked, and one click brings any of them back. That is what reproduces the
+  // Pine's default view without the chart learning a strategy concept, and it is why the layer is
+  // usable the moment you switch it on instead of burying the interesting misses under the routine
+  // ones. Re-seeded when the spec changes; a stale label is inert.
+  const [hiddenMissReasons, setHiddenMissReasons] = useState<Set<string>>(
+    () => new Set(spec.missNoise ?? []),
+  )
+  useEffect(() => { setHiddenMissReasons(new Set(spec.missNoise ?? [])) }, [spec.missNoise])
+  const toggleMissReason = (label: string) => setHiddenMissReasons(prev => {
+    const next = new Set(prev)
+    if (next.has(label)) next.delete(label); else next.add(label)
+    return next
+  })
+  const missVisible = useCallback(
+    (m: ChartMiss) => m.reasons.some(r => !hiddenMissReasons.has(r.label)),
+    [hiddenMissReasons],
+  )
+  const shownMissCount = useMemo(
+    () => misses.reduce((n, m) => n + (missVisible(m) ? 1 : 0), 0),
+    [misses, missVisible],
+  )
+
+  useEffect(() => { setMarkerTip(null) }, [blocks, blocksOn, hiddenReasons, misses, missesOn, hiddenMissReasons])
 
   // Portfolio-stack layers. The roster is DERIVED from the trades themselves (`layer`/`layerName`/
   // `layerColor`), so the panel stays strategy-agnostic — it sees layers as data, exactly like
@@ -850,7 +957,7 @@ export default function ChartPanel({
     const chart = chartRef.current
     if (!chart) return
     chart.removeOverlay({ name: BLOCK })
-    setBlockTip(null)
+    setMarkerTip(null)
     if (!blocksOn) return
     for (const b of blocks) {
       // Clipped to the loaded candles, like every other auto-generated overlay — klinecharts
@@ -863,19 +970,65 @@ export default function ChartPanel({
         name: BLOCK,
         lock: true,
         points: [{ timestamp: b.time, value: b.price }],
-        extendData: { dir: b.dir, count: b.reasons.length, color: BLOCK_COLOR, textColor: theme.bgBase },
+        extendData: {
+          dir: b.dir, color: BLOCK_COLOR, textColor: theme.bgBase,
+          text: b.reasons.length > 1 ? `Blocked ${b.reasons.length}` : 'Blocked',
+        },
         onMouseEnter: (e) => {
-          setBlockTip({
+          setMarkerTip({
             x: (e.pageX ?? 0) - window.scrollX,
             y: (e.pageY ?? 0) - window.scrollY,
-            b,
+            color: BLOCK_COLOR,
+            title: `${b.dir === 'long' ? '▲ Long' : '▼ Short'} blocked`
+              + (b.reasons.length > 1 ? ` — ${b.reasons.length} rules` : ''),
+            met: [],
+            reasons: b.reasons,
+            price: b.price,
           })
           return true
         },
-        onMouseLeave: () => { setBlockTip(null); return true },
+        onMouseLeave: () => { setMarkerTip(null); return true },
       })
     }
   }, [blocks, blocksOn, blockVisible, displayCandles, loadedLoTs, loadedHiTs])
+
+  // Missed setups — identical machinery to Blocked (same template, same clipping, same hover
+  // card), with the score on the tag instead of a rule count. `row: 1` parks these one step
+  // further from the pane edge so the two layers shown together don't stack their tags.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.removeOverlay({ name: MISS })
+    setMarkerTip(null)
+    if (!missesOn) return
+    for (const m of misses) {
+      if (loadedLoTs == null || loadedHiTs == null) break
+      if (m.time < loadedLoTs || m.time > loadedHiTs) continue
+      if (!missVisible(m)) continue
+      chart.createOverlay({
+        name: MISS,
+        lock: true,
+        points: [{ timestamp: m.time, value: m.price }],
+        extendData: {
+          dir: m.dir, color: MISS_COLOR, textColor: theme.bgBase, row: 1,
+          text: `${m.met}/${m.of}`,
+        },
+        onMouseEnter: (e) => {
+          setMarkerTip({
+            x: (e.pageX ?? 0) - window.scrollX,
+            y: (e.pageY ?? 0) - window.scrollY,
+            color: MISS_COLOR,
+            title: `${m.dir === 'long' ? '▲ Long' : '▼ Short'} — ${m.met} of ${m.of}`,
+            met: m.metLines,
+            reasons: m.reasons,
+            price: m.price,
+          })
+          return true
+        },
+        onMouseLeave: () => { setMarkerTip(null); return true },
+      })
+    }
+  }, [misses, missesOn, missVisible, displayCandles, loadedLoTs, loadedHiTs])
 
   // Fibonacci drawings — re-created from state after any data change (applyNewData clears overlays,
   // same rationale as the trade/session effects), so a fib survives TF switches. Each carries
@@ -1227,10 +1380,10 @@ export default function ChartPanel({
               dropdown, separate from Structure: Structure is what the MARKET drew, Analysis is what
               to interrogate about the run. Trades ALSO toggles from the right-click chart menu —
               both drive the same `tradesOn` state. */}
-          {(spec.trades.length > 0 || blocks.length > 0) && (
+          {(spec.trades.length > 0 || blocks.length > 0 || misses.length > 0) && (
             <ToggleMenu
               title="Analysis"
-              minWidth={188}
+              minWidth={198}
               items={[
                 ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o), count: spec.trades.length }] : []),
                 // Winners/Losers are SUB-toggles of Trades — indented, and only listed while trades
@@ -1251,6 +1404,19 @@ export default function ChartPanel({
                 ...(blocksOn ? blockReasons.map(r => ({
                   key: `blk-${r.label}`, label: r.label, color: BLOCK_COLOR,
                   on: !hiddenReasons.has(r.label), toggle: () => toggleReason(r.label),
+                  sub: true, count: r.count,
+                })) : []),
+                // Missed = the setups that never got as far as being refused. Listed after
+                // Blocked because it's the same question one step earlier in the setup's life,
+                // and only when the run reports any (an NT8/MT5 run reports none).
+                ...(misses.length > 0 ? [{ key: 'misses', label: 'Missed', color: MISS_COLOR, on: missesOn, toggle: () => setMissesOn(o => !o), count: shownMissCount }] : []),
+                // …one sub-toggle per MISSING confluence, same shape as Blocked's. Some start
+                // OFF — the ones the strategy flagged as routine (see `spec.missNoise`) — so the
+                // layer opens on the misses worth studying rather than every setup that simply
+                // never retraced. Their counts are still listed, so nothing is hidden silently.
+                ...(missesOn ? missReasons.map(r => ({
+                  key: `mis-${r.label}`, label: r.label, color: MISS_COLOR,
+                  on: !hiddenMissReasons.has(r.label), toggle: () => toggleMissReason(r.label),
                   sub: true, count: r.count,
                 })) : []),
               ]}
@@ -1386,42 +1552,9 @@ export default function ChartPanel({
             {liveDrag && renderMeasRect(liveDrag, 'live', 0.85)}
           </div>
 
-          {/* Blocked-setup hover card — the "why didn't this trade" answer. `pointerEvents: none`
-              so it can never eat the hover that spawned it (which would flicker it on and off), and
-              viewport-`fixed` + clamped like the right-click menu, so a marker at the right or
-              bottom edge of the chart still shows its whole card. */}
-          {blockTip && (
-            <div
-              style={{
-                position: 'fixed',
-                left: Math.max(6, Math.min(blockTip.x + 14, window.innerWidth - BLOCK_TIP_W - 6)),
-                top: Math.max(6, Math.min(blockTip.y + 12, window.innerHeight - BLOCK_TIP_H - 6)),
-                width: BLOCK_TIP_W,
-                pointerEvents: 'none',
-                zIndex: 60,
-              }}
-              className="rounded-md border border-border-subtle bg-bg-surface px-2.5 py-2 shadow-lg"
-            >
-              <div className="text-[11px] font-semibold" style={{ color: BLOCK_COLOR }}>
-                {blockTip.b.dir === 'long' ? '▲ Long' : '▼ Short'} blocked
-                {blockTip.b.reasons.length > 1 && ` — ${blockTip.b.reasons.length} rules`}
-              </div>
-              {/* Every rule that was refusing it, in the strategy's own precedence order (primary
-                  first) — the tag only carries the COUNT, so this is where the reasons live. */}
-              {blockTip.b.reasons.map((r, i) => (
-                <div key={i} className="mt-1.5">
-                  <div className="text-[11px] font-medium text-text-primary">{r.label}</div>
-                  <div className="text-[11px] leading-snug text-text-secondary">{r.reason}</div>
-                </div>
-              ))}
-              <div className="mt-1.5 border-t border-border-subtle pt-1.5 text-[10px] text-text-tertiary">
-                Limit would have rested at{' '}
-                <span className="font-mono tabular-nums text-text-secondary">
-                  {blockTip.b.price.toFixed(pricePrecision)}
-                </span>
-              </div>
-            </div>
-          )}
+          {/* Marker hover card — the "why is there no trade here?" answer, shared by the Blocked
+              and Missed layers. */}
+          {markerTip && <MarkerTipCard tip={markerTip} precision={pricePrecision} />}
 
           {/* On-chart "Sessions" legend (TradingView indicator-legend style) — everything CLOCK-driven
               lives here: the session windows and the daily session breaks. Day breaks used to sit in

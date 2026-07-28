@@ -33,7 +33,8 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Optional, Sequence
 
 __all__ = ["build_results", "build_equity_curve", "build_daily_pnl", "build_kpis",
-           "build_engine_trades", "engine_trades_csv", "build_blocked_setups"]
+           "build_engine_trades", "engine_trades_csv", "build_blocked_setups",
+           "build_missed_setups"]
 
 
 def _utc(ms: int) -> datetime:
@@ -287,14 +288,62 @@ def build_blocked_setups(blocks: Optional[Sequence[Any]]) -> list[dict]:
     return out
 
 
+# How many confluences a full setup has. A property of the CONTRACT, not of any strategy: the
+# chart prints "<met>/<of>", so a strategy scoring out of four just ships of=4 per record.
+_MISS_OF = 3
+
+
+def build_missed_setups(missed: Optional[Sequence[Any]]) -> list[dict]:
+    """A strategy's MISSED setups → the lab's missed-setup contract (the price chart's
+    "how close did this come" markers).
+
+    A miss is the companion of a block, and a different question. A BLOCKED setup was fully
+    ready and a rule refused it. A MISSED setup got partway — it met some of the strategy's
+    confluences and then died without ever becoming a trade. Neither places an order, so
+    neither exists in any trade list; this is the only channel a miss reaches the lab through.
+
+    Strategy-agnostic in the same way `build_blocked_setups` is: the input is any object
+    carrying `dir` / `time_ms` / `edge` / `met` / `near`, parallel `labels` and `reasons`
+    sequences, and a `met_lines` list of already-formatted strings
+    (`mpc_sos_fade.execution.MissedSetup` satisfies it). Nothing here knows what a
+    "confluence" is — `met`/`of` are just a score, and every string is the strategy's own.
+
+    `reasons` is a LIST purely so a miss and a block read identically downstream; a miss has
+    exactly one missing piece by construction.
+    """
+    out: list[dict] = []
+    for m in missed or []:
+        labels = list(getattr(m, "labels", None) or [])
+        texts = list(getattr(m, "reasons", None) or [])
+        reasons = [
+            {"label": str(labels[i]), "reason": str(texts[i] if i < len(texts) else "")}
+            for i in range(len(labels))
+        ]
+        out.append({
+            "time_ms":   int(getattr(m, "time_ms", 0)),
+            "direction": "Long" if getattr(m, "dir", 0) > 0 else "Short",
+            "met":       int(getattr(m, "met", 0)),
+            "of":        _MISS_OF,
+            # The reader's default view. A strategy marks the misses worth looking at; the ones
+            # it doesn't are the ordinary way most setups die, and they are what floods a chart.
+            "near":      bool(getattr(m, "near", True)),
+            "met_lines": [str(s) for s in (getattr(m, "met_lines", None) or [])],
+            "reasons":   reasons,
+            "edge":      _round(float(getattr(m, "edge", 0.0)), 5),
+        })
+    out.sort(key=lambda r: r["time_ms"])
+    return out
+
+
 def build_results(trades: Sequence[Any], *, point_value: float,
                   initial_capital: float = 0.0,
                   commission_per_side: float = 0.0,
-                  blocked: Optional[Sequence[Any]] = None) -> dict:
+                  blocked: Optional[Sequence[Any]] = None,
+                  missed: Optional[Sequence[Any]] = None) -> dict:
     """Everything the lab needs from a finished Python backtest, in one call.
 
-    `blocked` is optional and reporting-only — a strategy that doesn't record refusals
-    yields an empty list, and no downstream consumer requires the key.
+    `blocked` and `missed` are optional and reporting-only — a strategy that records neither
+    yields empty lists, and no downstream consumer requires either key.
     """
     trades = list(trades)
     curve = build_equity_curve(trades, initial_capital=initial_capital)
@@ -307,4 +356,5 @@ def build_results(trades: Sequence[Any], *, point_value: float,
         "engine_trades": build_engine_trades(trades, point_value=point_value,
                                              commission_per_side=commission_per_side),
         "blocked_setups": build_blocked_setups(blocked),
+        "missed_setups":  build_missed_setups(missed),
     }

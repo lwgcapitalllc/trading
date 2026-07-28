@@ -13,7 +13,7 @@ real 21,231-bar `VANTAGE_XAUUSD, 15m` export — bar-for-bar identical decision 
 ~90 distinct frozen bands and 5 graded trades. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
 open question, not correctness:** 5 trades is far too thin to tune against. See "The parity gate".
-**Last reviewed:** 2026-07-27 — the A+ blocked-setup markers stay non-ported here, now pinned by a test. Earlier: 2026-07-26 — the exit levers landed, the Pine-parity harness was built, and it came back GREEN on the first real export (see "The parity gate").
+**Last reviewed:** 2026-07-27 — the A+ blocked-setup AND missed-setup markers stay non-ported here, both now pinned by a test (the miss watch needed an explicit opt-out). Earlier: 2026-07-26 — the exit levers landed, the Pine-parity harness was built, and it came back GREEN on the first real export (see "The parity gate").
 
 ## Why it exists (the split, 2026-07-24)
 
@@ -104,6 +104,14 @@ block tag would need its own code set, which is new design work, not a port.
 CONSTRUCTION: the recording hangs off the parent's `_place_entries`, which `BLegExecution` overrides.
 `test_this_fork_records_no_blocked_setups` pins it, so restoring the parent's entry path here can't
 quietly switch on tags that would mean the opposite of what they say.
+
+**Same call for the MISSED-setup markers (2026-07-27), but this one is NOT free.** The parent's miss
+watch scores how far an **A+** setup got before it died (2 of 3 / 3 of 3) — meaningless in a fork
+where A+ never places an order. Unlike the blocks it runs from `step()`, which this fork delegates
+straight to the parent, so it takes an explicit class-level opt-out: `BLegExecution._records_misses
+= False`. `test_this_fork_records_no_missed_setups` pins it — a flag is far easier to flip by
+accident than an overridden method. A B-LEG version of either marker needs its own code set (what
+would "2 of 3" even mean for a frozen band?), which is new design work, not a port.
 
 ## Sizing — sizes ITSELF
 

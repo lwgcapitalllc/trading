@@ -98,6 +98,30 @@ export interface ChartBlock {
   reasons: ChartBlockReason[]
 }
 
+/** A setup that got PARTWAY and then died without ever becoming a trade — the companion of a
+ *  block, and a different question. A block was a trade the strategy had fully ready and one of
+ *  its rules refused. A miss never got that far: it met some of the strategy's confluences and
+ *  the rest never arrived. Neither places an order, so neither is in any trade list.
+ *
+ *  `met` / `of` is the score the tag prints ("2/3"). `metLines` are pre-formatted strings the
+ *  panel renders verbatim on hover — the panel has no idea what a confluence is, which is what
+ *  keeps it strategy-agnostic; `reasons` is the missing piece, shaped exactly like a block's so
+ *  both render and filter through the same code.
+ *
+ *  `near` is the STRATEGY's own judgement that this miss is worth looking at. The panel never
+ *  interprets it — it reads `ChartSpec.missNoise`, which the emitter derives from it. */
+export interface ChartMiss {
+  id: string
+  time: EpochMs
+  dir: TradeDir      // the side that was set up — tag sits below for a long, above for a short
+  price: number      // where the entry limit would have rested, had it got that far
+  met: number
+  of: number
+  near: boolean
+  metLines: string[]
+  reasons: ChartBlockReason[]
+}
+
 /** Generic styling hints shared by overlays. All optional — the panel has defaults. */
 export interface OverlayStyle {
   color?: string
@@ -188,6 +212,12 @@ export interface ChartSpec {
   // Refused setups. OPTIONAL — a runner that can't report them (NT8/MT5) omits the key, which is
   // what makes the Blocked layer vanish rather than render an empty, misleading toggle.
   blocks?: ChartBlock[]
+  // Setups that died partway. Same optionality, same reason.
+  misses?: ChartMiss[]
+  // Reason labels the Missed layer starts with UNTICKED — the emitter's recommendation, derived
+  // from each miss's own `near` flag. Just strings to the panel: it hides them on first render
+  // and the reader ticks them back on. Absent/empty ⇒ every reason starts visible.
+  missNoise?: string[]
   overlays: ChartOverlay[]      // generic strategy structure, each tagged with a `group`
   indicators: ChartIndicator[]
 }

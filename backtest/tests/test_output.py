@@ -17,7 +17,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from backtest.output import (build_blocked_setups, build_daily_pnl, build_engine_trades,
-                             build_equity_curve, build_kpis, build_results, engine_trades_csv)
+                             build_equity_curve, build_kpis, build_missed_setups,
+                             build_results, engine_trades_csv)
 
 
 def _ms(y, mo, d, h=12, mi=0) -> int:
@@ -259,13 +260,18 @@ def test_engine_trades_csv_roundtrips():
 def test_build_results_has_the_lab_keys():
     res = build_results([_t(100.0)], point_value=1.0)
     assert set(res) == {"equity_curve", "daily_pnl", "kpis", "engine_trades",
-                        "blocked_setups"}
+                        "blocked_setups", "missed_setups"}
 
 
 def test_build_results_reports_no_blocked_setups_when_none_were_recorded():
     """A strategy that records no refusals still emits the key — an EMPTY list, never a
     missing one, so a consumer never has to tell "none" apart from "not reported"."""
     assert build_results([_t(100.0)], point_value=1.0)["blocked_setups"] == []
+
+
+def test_build_results_reports_no_missed_setups_when_none_were_recorded():
+    """Same contract as the blocked key — present and empty, never absent."""
+    assert build_results([_t(100.0)], point_value=1.0)["missed_setups"] == []
 
 
 def test_build_results_is_json_serialisable():
@@ -318,6 +324,44 @@ def test_blocked_setups_carry_every_reason_in_order():
 
 def test_blocked_setups_tolerates_none():
     assert build_blocked_setups(None) == []
+
+
+class _Miss:
+    """The duck-type `build_missed_setups` consumes — again deliberately NOT the strategy's
+    own class, so the test proves the adapter needs nothing but these attributes."""
+
+    def __init__(self, dir_, time_ms, met, edge, labels, reasons, met_lines, near=True):
+        self.dir, self.time_ms, self.met, self.edge = dir_, time_ms, met, edge
+        self.labels, self.reasons, self.met_lines, self.near = labels, reasons, met_lines, near
+
+
+def test_missed_setups_map_direction_score_and_sort_by_time():
+    rows = build_missed_setups([
+        _Miss(-1, 2_000, 3, 1234.5678, ["Never filled"], ["price never touched it"],
+              ["Arm — Sweep", "SOS — confirmed", "Zone — 0.5-0.886 tagged"]),
+        _Miss(1, 1_000, 2, 1200.0, ["No retrace"], ["never came back"],
+              ["SOS — confirmed"], near=False),
+    ])
+    assert [r["time_ms"] for r in rows] == [1_000, 2_000]
+    assert [r["direction"] for r in rows] == ["Long", "Short"]
+    assert [(r["met"], r["of"]) for r in rows] == [(2, 3), (3, 3)]
+    assert rows[1]["met_lines"][0] == "Arm — Sweep"
+    assert rows[1]["reasons"] == [{"label": "Never filled", "reason": "price never touched it"}]
+
+
+def test_missed_setups_carry_the_near_flag_verbatim():
+    """`near` is the STRATEGY's own judgement about which misses are worth opening on. The
+    adapter must pass it through untouched — the chart derives its default filters from it,
+    so a dropped or defaulted flag silently changes what the reader sees first."""
+    rows = build_missed_setups([
+        _Miss(1, 1_000, 2, 1.0, ["No retrace"], ["…"], [], near=False),
+        _Miss(1, 2_000, 3, 1.0, ["Final hour"], ["…"], [], near=True),
+    ])
+    assert [r["near"] for r in rows] == [False, True]
+
+
+def test_missed_setups_tolerates_none():
+    assert build_missed_setups(None) == []
 
 
 # ── the real contract: does the lab's sizing engine accept our rows? ───────────

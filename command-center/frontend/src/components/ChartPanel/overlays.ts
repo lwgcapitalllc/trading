@@ -53,6 +53,9 @@ export const DATA_EDGE = 'lwgDataEdge'
 /** A refused setup — the strategy had the trade ready and one of its OWN rules stopped it. */
 export const BLOCK = 'lwgBlock'
 
+/** A setup that got PARTWAY — met some of the strategy's confluences, then died unfilled. */
+export const MISS = 'lwgMiss'
+
 /** User-drawn Fibonacci retracement tool (2 anchor points → horizontal levels + price labels). */
 export const FIB = 'lwgFib'
 
@@ -116,27 +119,31 @@ interface TradeExtend {
   tpTargets?: number[] // TP ladder nearest→furthest; first UNHIT one drawn faintly (near-miss view)
 }
 
-/** What the BLOCK overlay reads. The chip text is fixed ("Blocked"); `count` is how many rules
- *  refused this setup, and is the ONLY thing that varies between tags. The reasons themselves are
- *  never drawn — they live in the host's hover card. */
-interface BlockExtend {
+/** What a WOULD-BE-ENTRY marker (BLOCK / MISS) reads. The `text` is decided by the host, not
+ *  here, so one template serves both layers and the wording lives in one place. The reasons are
+ *  never drawn — they live in the host's hover card. `row` parks the tag one step further from
+ *  the pane edge, so two layers shown together don't stack their tags on each other. */
+interface MarkerExtend {
   dir?: 'long' | 'short'
-  count?: number
+  text?: string
   color?: string
   textColor?: string
+  row?: number
 }
 
-// Where a Blocked tag parks, in px from the pane edge. The top must clear the pinned OHLC readout
+// Where a marker tag parks, in px from the pane edge. The top must clear the pinned OHLC readout
 // (one ~20px line at the very top) with visible air under it; the bottom only has to clear the
 // time axis. Raise these if either edge grows another row of chrome.
-const BLOCK_TAG_INSET_TOP = 56
-const BLOCK_TAG_INSET_BOTTOM = 44
+const MARKER_TAG_INSET_TOP = 56
+const MARKER_TAG_INSET_BOTTOM = 44
+// One tag's height + air, for the `row` offset that keeps two marker layers off each other.
+const MARKER_TAG_ROW_H = 20
 
-// The would-be-entry line, in px either side of the block's bar. Deliberately SHORT — it marks a
+// The would-be-entry line, in px either side of the marker's bar. Deliberately SHORT — it marks a
 // price on a bar, not a level that held for a while — and weighted forward, the way a resting order
 // waits. Fixed pixels rather than a bar count so it stays legible at every zoom.
-const BLOCK_ENTRY_LINE_BACK = 8
-const BLOCK_ENTRY_LINE_FWD = 46
+const MARKER_ENTRY_LINE_BACK = 8
+const MARKER_ENTRY_LINE_FWD = 46
 
 // Draw the next UNHIT take-profit only when the trade got at least this far toward it (mfe covered
 // this fraction of the gap from the last hit level) — the "close enough to the next TP" filter, so a
@@ -664,24 +671,27 @@ export function registerChartOverlays(): void {
     },
   })
 
-  // ── Blocked setup — the trade that never happened ────────────────────────────
+  // ── Would-be-entry markers — the trades that never happened ──────────────────
+  // TWO layers share ONE template: BLOCK (the strategy had the trade ready and its own rule
+  // refused it) and MISS (the setup got partway and died). They answer different questions but
+  // draw the identical thing — "here, on this candle, at this price, a trade almost was" — so
+  // forking the template would guarantee the two drift apart in look and in bugs.
+  //
   // The ANCHOR is the exact price the entry limit would have rested at: a dot sits on it and a
-  // dotted line runs from it to the tag. That line is the whole point of the marker — it is what
-  // says "here, on this candle, at this price".
+  // dotted line runs from it to the tag. That line is the whole point of the marker.
   //
-  // The tag is parked at the PANE EDGE (bottom for a refused long, top for a refused short — the
-  // way the trade would have moved), never near the price, so it can't sit on the candles. That is
-  // also why the line has to be long: it spans from the tag all the way back to the level.
+  // The tag is parked at the PANE EDGE (bottom for a long, top for a short — the way the trade
+  // would have moved), never near the price, so it can't sit on the candles. That is also why the
+  // line has to be long: it spans from the tag all the way back to the level.
   //
-  // The text is UNIFORM — "Blocked", plus a count when several rules refused the same setup. It is
-  // deliberately not the reason: every tag looking the same is what makes the layer scannable, and
-  // the reasons are one hover away.
+  // The tag TEXT comes from the host (`extendData.text`) and is uniform within a layer —
+  // "Blocked" / "2 of 3". It is deliberately never the reason: every tag looking the same is what
+  // makes a layer scannable, and the detail is one hover away.
   //
   // Deliberately NOT `ignoreEvent` (unlike every other overlay here): the whole point is the hover,
   // and klinecharts only fires onMouseEnter/onMouseLeave on figures that accept events. The dot and
   // the line accept events too, so the line itself is hoverable, not just the chip.
-  registerOverlay({
-    name: BLOCK,
+  const marker = {
     totalStep: 1,
     lock: true,
     needDefaultPointFigure: false,
@@ -690,17 +700,19 @@ export function registerChartOverlays(): void {
     createPointFigures: ({ coordinates, bounding, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
       if (coordinates.length < 1) return []
       const a = coordinates[0]
-      const d = (overlay.extendData ?? {}) as BlockExtend
+      const d = (overlay.extendData ?? {}) as MarkerExtend
       const color = d.color ?? '#ff2e9a'
-      const down = d.dir !== 'short'          // a refused LONG parks its tag at the bottom
+      const down = d.dir !== 'short'          // a LONG parks its tag at the bottom
       // Inset from the pane edge to the chip. Asymmetric because the two edges are not equally
       // busy: the TOP carries the pinned OHLC readout (and the Sessions legend under it), so a tag
       // parked tight against it lands ON that text; the BOTTOM only has to clear the time axis.
-      const yTag = down ? bounding.height - BLOCK_TAG_INSET_BOTTOM : BLOCK_TAG_INSET_TOP
+      // `row` steps a second layer's tags clear of the first when both are shown together.
+      const inset = (down ? MARKER_TAG_INSET_BOTTOM : MARKER_TAG_INSET_TOP)
+        + (d.row ?? 0) * MARKER_TAG_ROW_H
+      const yTag = down ? bounding.height - inset : inset
       // Never let the tag cross the level it points at (possible when the price sits right at the
       // pane edge) — the line would double back and read as pointing the wrong way.
       const y = down ? Math.max(yTag, a.y + 14) : Math.min(yTag, a.y - 14)
-      const n = d.count ?? 1
       return [
         // THE RESTING LIMIT — a short horizontal dashed line AT the would-be entry price, drawn the
         // way a working order is drawn everywhere else, so the marker reads as "the limit sat here
@@ -710,8 +722,8 @@ export function registerChartOverlays(): void {
           type: 'line',
           attrs: {
             coordinates: [
-              { x: a.x - BLOCK_ENTRY_LINE_BACK, y: a.y },
-              { x: a.x + BLOCK_ENTRY_LINE_FWD, y: a.y },
+              { x: a.x - MARKER_ENTRY_LINE_BACK, y: a.y },
+              { x: a.x + MARKER_ENTRY_LINE_FWD, y: a.y },
             ],
           },
           styles: { color, size: 1, style: 'dashed', dashedValue: [4, 3] },
@@ -731,7 +743,7 @@ export function registerChartOverlays(): void {
         {
           type: 'text',
           attrs: {
-            x: a.x, y, text: n > 1 ? `Blocked ${n}` : 'Blocked',
+            x: a.x, y, text: d.text ?? '',
             align: 'center', baseline: down ? 'top' : 'bottom',
           },
           styles: {
@@ -742,7 +754,9 @@ export function registerChartOverlays(): void {
         },
       ]
     },
-  })
+  }
+  registerOverlay({ name: BLOCK, ...marker })
+  registerOverlay({ name: MISS, ...marker })
 
   // Drill-down data edge — a red dashed FULL-HEIGHT line at the broker's oldest available bar for the
   // current sub-base TF, with a dark label chip to its RIGHT (where data still exists). Marks a TRUE
