@@ -101,7 +101,9 @@
       "Bash(git push *)",
       "Bash(npx vite *)",
       "Bash(git stash *)",
-      "Bash(git commit -m 'fix\\(chart\\): restore the 15m view and the Blocked toggle *)"
+      "Bash(git commit -m 'fix\\(chart\\): restore the 15m view and the Blocked toggle *)",
+      "Bash(git commit -m 'fix\\(chart\\): open on the run'\\\\''s own timeframe, and give Blocked tags room *)",
+      "Bash(git pull *)"
     ],
     "deny": [
       "Bash(git push --force:*)",
