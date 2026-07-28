@@ -62,8 +62,9 @@ def _base_timeframe(bar_type: Optional[str], bar_value: Optional[int]) -> str:
 
 
 _TF_MIN = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
-_TF_LADDER = ["M5", "M15", "M30", "H1", "H4", "D1"]
-_CANDLE_CAP = 35_000  # keeps ~1yr at M15; a 5yr run steps up to H1 instead of ~125k M15 candles
+# Bars shipped in the spec. The chart ALWAYS ships the run's own timeframe (see `_capped_start`) and
+# trims the WINDOW to fit under this — it never coarsens the bars. ~35k at M15 is ~1.4 years.
+_CANDLE_CAP = 35_000
 # Drill-down loads the broker's FULL sub-base depth in one shot (M5's ~240d ≈ 49k candles). It sits
 # ABOVE the base-chart cap on purpose: the render cap must never be the binding limit for a drill-down,
 # so the ONLY left edge the user hits is the broker's real data boundary (the red "no earlier data"
@@ -74,20 +75,29 @@ _DRILL_CANDLE_CAP = 60_000
 _HARD_EDGE_SLOP_MS = 4 * 24 * 60 * 60 * 1000
 
 
-def _fit_timeframe(base_tf: str, start_date: str, end_date: str) -> str:
-    """Step the base TF up to a coarser one when a full intraday fetch over the span would be too
-    many candles to ship/render. Returns base_tf unchanged when it already fits under the cap."""
-    if base_tf not in _TF_LADDER:
-        return base_tf
+def _capped_start(tf: str, start_date: str, end_date: str) -> str:
+    """The earliest date we can ship at `tf` without blowing `_CANDLE_CAP` — the NEWEST slice of the
+    run, so the chart opens on the most recent behaviour. Returns `start_date` when the whole run fits.
+
+    This replaced a `_fit_timeframe` that coarsened the BARS instead of trimming the WINDOW (a
+    6.5-year M15 run shipped H4). Coarsening was the wrong axis to give on: H4 is a timeframe the
+    run's trades and blocked setups line up with nowhere, so the chart could show the whole span and
+    still be useless for the one job it has. Older bars are reachable — the panel pages them in as you
+    scroll left (`GET /runs/{id}/candles`), so trimming the window costs reach, not access.
+    """
+    tf_min = _TF_MIN.get(tf.upper())
+    if not tf_min:
+        return start_date
     try:
-        span_days = max(1, (date.fromisoformat(end_date) - date.fromisoformat(start_date)).days)
+        end = date.fromisoformat(end_date)
+        span_days = max(1, (end - date.fromisoformat(start_date)).days)
     except ValueError:
-        return base_tf
-    for tf in _TF_LADDER[_TF_LADDER.index(base_tf):]:
-        bars = (1440 / _TF_MIN[tf]) * (5 / 7) * span_days  # ~forex: 5 trading days/week, 24h
-        if bars <= _CANDLE_CAP:
-            return tf
-    return "D1"
+        return start_date
+    per_day = (1440 / tf_min) * (5 / 7)          # ~forex: 5 trading days/week, 24h
+    fit_days = int(_CANDLE_CAP / per_day)
+    if span_days <= fit_days:
+        return start_date
+    return (end - timedelta(days=fit_days)).isoformat()
 
 
 def _ts_to_epoch_ms(ts) -> int:
@@ -379,19 +389,19 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
 
     runner = row.get("runner") or "ninjatrader"
     instrument = row["instrument"]
-    # NT8 only has daily bars today; MT5 ideally has intraday from the agent, and a Python run
-    # has intraday in the backtest cache it replayed. Cap the candle volume by stepping the TF up
-    # for long spans (a 5yr run → H1, not ~125k M15 candles).
+    # NT8 only has daily bars today; MT5 ideally has intraday from the agent, and a Python run has
+    # intraday in the backtest cache it replayed.
+    #
+    # The chart ALWAYS ships the timeframe the run TRADED — it is the only one its trades and blocked
+    # setups line up with, so a coarser view can cover the whole span and still be useless for the one
+    # job this chart has. Volume is capped on the WINDOW instead: the newest slice that fits under
+    # `_CANDLE_CAP`. Everything older is reachable by scrolling left, which pages it in through
+    # `GET /runs/{id}/candles`.
     intraday = runner in ("mt5", "python")
-    # `run_tf` = the bars the strategy ACTUALLY TRADED. `base_tf` = what we can afford to ship, which
-    # _fit_timeframe may step up (a 6.5-year 15m run is ~160k candles → H4). They are different
-    # answers to different questions and the chart needs both: it OPENS on the run's own timeframe
-    # (that's the view the run means something on) and falls back to the shipped bars when the
-    # drill-down feed can't serve it.
-    run_tf = _base_timeframe(row.get("bar_type"), row.get("bar_value")) if intraday else "D1"
-    base_tf = _fit_timeframe(run_tf, row["start_date"], row["end_date"]) if intraday else "D1"
+    base_tf = _base_timeframe(row.get("bar_type"), row.get("bar_value")) if intraday else "D1"
+    ship_from = _capped_start(base_tf, row["start_date"], row["end_date"])
 
-    candles = _build_candles(instrument, row["start_date"], row["end_date"], base_tf, runner)
+    candles = _build_candles(instrument, ship_from, row["end_date"], base_tf, runner)
     # Fallback: the MT5 agent can't always serve intraday history (symbol not selected, or the
     # run's sub-hour TF unsupported). Daily bars come from yfinance via the D1 path — coarse, but
     # a real price chart beats none. baseTimeframe reflects what actually loaded.
@@ -400,7 +410,7 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     if not candles and base_tf != "D1" and runner != "python":
         candles = _build_candles(instrument, row["start_date"], row["end_date"], "D1", runner)
         if candles:
-            base_tf = "D1"
+            base_tf, ship_from = "D1", row["start_date"]
 
     equity_curve: list[dict] = []
     eq_path = row.get("equity_curve_path")
@@ -429,8 +439,12 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     spec = {
         "instrument": instrument,
         "baseTimeframe": base_tf,
-        # The timeframe the run actually traded — what the chart opens on (see above).
-        "runTimeframe": run_tf,
+        # Same thing now that the window is what gets capped, not the bars — kept so a frontend or a
+        # cached spec that reads either name gets the same answer.
+        "runTimeframe": base_tf,
+        # How far back the run goes. The shipped candles start at `ship_from`, which is later than
+        # this on a long run; the panel pages the gap in as you scroll left, and stops here.
+        "historyStartMs": _iso_to_epoch_ms(row["start_date"]),
         "brokerGmtOffsetHours": 0,
         "candles": candles,
         "sessions": [dict(s) for s in _FX_SESSIONS],
@@ -499,6 +513,7 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
         "instrument": src["instrument"],
         "baseTimeframe": src["baseTimeframe"],
         "runTimeframe": src.get("runTimeframe", src["baseTimeframe"]),
+        "historyStartMs": src.get("historyStartMs"),
         "brokerGmtOffsetHours": src["brokerGmtOffsetHours"],
         "candles": src["candles"],
         "sessions": [dict(s) for s in src.get("sessions", [])],

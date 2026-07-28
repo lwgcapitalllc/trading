@@ -11,7 +11,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AlignJustify, Camera, Check, ChevronDown, Eye, EyeOff, RotateCcw, Ruler, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { DomPosition, IndicatorSeries, dispose, init, type Chart, type KLineData } from 'klinecharts'
+import { DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
 import type { ChartBlock, ChartCandle, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
@@ -51,6 +51,9 @@ const TRADE_LOSS_COLOR = theme.neg         // red box — trade hit its stop (pn
 const TRADE_PROFIT_FILL = '#8ef2b8'
 // Blocked setups get their OWN colour, off the win/loss axis entirely — a refused trade is not a
 // loser, and painting it red would read as one. Pink, matching the Pine's `TRADE BLOCKED` tag.
+// One scroll-left page of older history, in BARS — so a page costs the same at every timeframe
+// (~1 MB of JSON) instead of ballooning on a fine one.
+const PAGE_BARS = 12_000
 const BLOCK_COLOR = '#ff2e9a'
 const BLOCK_TIP_W = 240                    // hover-card width; feeds the viewport clamp
 const BLOCK_TIP_H = 180                    // ~its height with two reasons listed; same clamp
@@ -293,6 +296,17 @@ export default function ChartPanel({
   const fetchTokenRef = useRef(0)
   const isFetchMode = onRequestCandles != null && selectedMin < baseMin
 
+  // The candles the chart is built from: the spec's shipped window, GROWN by older pages paged in as
+  // you scroll left. The spec deliberately ships only the newest slice of a long run (see
+  // `chart_spec._capped_start`), so this is how the rest of the run's history becomes reachable
+  // without a 15 MB payload on open. Reset whenever the spec changes.
+  const [baseCandles, setBaseCandles] = useState<ChartCandle[]>(spec.candles)
+  useEffect(() => { setBaseCandles(spec.candles) }, [spec.candles])
+  // Read by the load callback, which is registered once on mount and would otherwise close over the
+  // first render's candles forever.
+  const baseCandlesRef = useRef(baseCandles)
+  useEffect(() => { baseCandlesRef.current = baseCandles }, [baseCandles])
+
   const displayCandles = useMemo(() => {
     // In drill-down, show the SHIPPED bars until the finer ones land. They arrive in the spec, so
     // they paint on the first frame; the drill-down is a network pull. Returning `fetched` straight
@@ -300,12 +314,12 @@ export default function ChartPanel({
     // drill-down (the run's own TF is usually finer than the shipped bars), that turned every chart
     // open into a blank screen where it used to be instant. Coarse bars now, correct bars in a
     // moment, never nothing.
-    if (isFetchMode) return fetched.length ? fetched : spec.candles
-    return selectedMin === baseMin ? spec.candles : resample(spec.candles, selectedMin * 60_000)
-  }, [isFetchMode, fetched, spec.candles, selectedMin, baseMin])
+    if (isFetchMode) return fetched.length ? fetched : baseCandles
+    return selectedMin === baseMin ? baseCandles : resample(baseCandles, selectedMin * 60_000)
+  }, [isFetchMode, fetched, baseCandles, selectedMin, baseMin])
   // True while the chart is showing shipped bars that are NOT the selected TF — the header says so,
   // because bars that don't match the TF button would otherwise be a silent lie.
-  const showingPlaceholder = isFetchMode && fetched.length === 0 && spec.candles.length > 0
+  const showingPlaceholder = isFetchMode && fetched.length === 0 && baseCandles.length > 0
 
   // Time bounds of the LOADED candles (ascending). Overlays anchored OUTSIDE this range must not be
   // drawn: klinecharts clamps an out-of-range point to the plot edge, so in a drill-down TF (whose
@@ -349,15 +363,45 @@ export default function ChartPanel({
     }
   }
 
+  // ── Paging older history (scroll left) ───────────────────────────────────────
+  // The spec ships only the newest slice of a long run. klinecharts asks for more the moment you
+  // scroll past the left edge, and this answers with one page from the run's own feed. The page is
+  // sized in BARS, not days, so it costs the same at every timeframe.
+  const loadOlder = useCallback(async (): Promise<{ bars: ChartCandle[]; more: boolean }> => {
+    const oldest = baseCandlesRef.current[0]?.time
+    const start = spec.historyStartMs
+    // No fetcher, nothing loaded, or already at the run's start ⇒ nothing older is claimed to exist.
+    if (!onRequestCandles || oldest == null || start == null || oldest <= start) {
+      return { bars: [], more: false }
+    }
+    const perDay = (1440 / baseMin) * (5 / 7)          // ~forex: 5 trading days/week, 24h
+    const to = oldest - 1
+    const from = Math.max(start, to - Math.ceil(PAGE_BARS / perDay) * DAY_MS)
+    const res = await onRequestCandles(spec.baseTimeframe.toUpperCase(), from, to)
+    // Guard the merge: a feed that returns an overlapping window would otherwise duplicate bars.
+    const bars = res.candles.filter(c => c.time < oldest)
+    return { bars, more: bars.length > 0 && from > start }
+  }, [onRequestCandles, spec.historyStartMs, spec.baseTimeframe, baseMin])
+  const loadOlderRef = useRef(loadOlder)
+  useEffect(() => { loadOlderRef.current = loadOlder }, [loadOlder])
+  // A drill-down TF loads its own full depth in one shot, so paging must not fire there — it would
+  // splice base-TF bars into a 1m chart.
+  const pagingOffRef = useRef(false)
+  useEffect(() => { pagingOffRef.current = isFetchMode }, [isFetchMode])
+  // Set when a candle change came from a PAGE rather than a TF/spec switch. klinecharts has already
+  // merged those bars and holds the scroll position; re-running `applyNewData` would throw both away
+  // and snap the view back — the jump-on-every-page bug.
+  const skipApplyRef = useRef(false)
+
   // Session boxes are derived from the BASE candles (high/low envelope is TF-invariant) and
   // anchored by timestamp, so they stay put across timeframe switches. Show on ALL candle days.
   const sessionBoxes = useMemo(
     () => spec.sessions.map(s => ({
       name: s.name,
       color: s.color,
-      windows: sessionWindows(spec.candles, s, spec.brokerGmtOffsetHours),
+      windows: sessionWindows(baseCandles, s, spec.brokerGmtOffsetHours),
     })),
-    [spec.candles, spec.sessions, spec.brokerGmtOffsetHours],
+    [baseCandles, spec.sessions, spec.brokerGmtOffsetHours],
   )
 
   // Per-session visibility (component-local UI state). Defaults all OFF — the chart opens on just
@@ -509,14 +553,14 @@ export default function ChartPanel({
   // that day's FIRST candle so it always lands on a real bar (weekend/holiday days have no candle
   // and so no line — separators sit between consecutive trading days). The opening day is skipped.
   const dailyBreaks = useMemo(() => {
-    if (spec.candles.length === 0) return []
+    if (baseCandles.length === 0) return []
     const firstOfDay = new Map<number, number>()   // dayStart(UTC) → first candle time that day
-    for (const c of spec.candles) {
+    for (const c of baseCandles) {
       const day = Math.floor(c.time / DAY_MS) * DAY_MS
       if (!firstOfDay.has(day)) firstOfDay.set(day, c.time)
     }
     return Array.from(firstOfDay.values()).sort((a, b) => a - b).slice(1)
-  }, [spec.candles])
+  }, [baseCandles])
   const [dayBreaksOn, setDayBreaksOn] = useState(false)
 
   // The on-chart Sessions legend governs everything CLOCK-driven — the session windows AND the daily
@@ -662,6 +706,22 @@ export default function ChartPanel({
     defaultBarSpaceRef.current = chart.getBarSpace()          // remembered for "Reset chart view"
     defaultOffsetRef.current = chart.getOffsetRightDistance()
 
+    // Scroll-left paging. Registered ONCE (klinecharts keeps one callback) and delegating through
+    // refs, so it always sees the current candles/timeframe instead of the first render's.
+    chart.setLoadDataCallback(({ type, callback }) => {
+      if (type !== LoadDataType.Forward || pagingOffRef.current) {
+        callback([], type === LoadDataType.Forward)
+        return
+      }
+      void loadOlderRef.current().then(({ bars, more }) => {
+        if (bars.length) {
+          skipApplyRef.current = true
+          setBaseCandles(prev => [...bars, ...prev])
+        }
+        callback(candlesToKLine(bars), more)
+      }).catch(() => callback([], false))
+    })
+
     const ro = new ResizeObserver(() => { chart.resize(); measureInset() })
     ro.observe(el)
     requestAnimationFrame(measureInset)
@@ -677,7 +737,10 @@ export default function ChartPanel({
   // inset after: a new price range can widen/narrow the y-axis (digit count).
   useEffect(() => {
     if (!chartRef.current) return
-    chartRef.current.applyNewData(candlesToKLine(displayCandles))
+    // A PAGE is already merged by klinecharts (which also kept the scroll position) — re-applying
+    // would reset the view on every page. Everything else is a real data swap and must re-apply.
+    if (skipApplyRef.current) skipApplyRef.current = false
+    else chartRef.current.applyNewData(candlesToKLine(displayCandles))
     const id = requestAnimationFrame(measureInset)
     return () => cancelAnimationFrame(id)
   }, [displayCandles, measureInset])
@@ -852,7 +915,7 @@ export default function ChartPanel({
     chart.removeOverlay({ name: HLINE })
     chart.removeOverlay({ name: VLINE })
     chart.removeOverlay({ name: LABEL })
-    const dummyValue = spec.candles[0]?.close ?? 0 // vline ignores y; needs a valid number
+    const dummyValue = baseCandles[0]?.close ?? 0 // vline ignores y; needs a valid number
     // All visible structure labels go into ONE overlay so they de-collide together (see LABEL in
     // overlays.ts). Collected here, created after the loop.
     const labelPoints: { timestamp: number; value: number }[] = []
@@ -910,7 +973,7 @@ export default function ChartPanel({
     if (labelPoints.length) {
       chart.createOverlay({ name: LABEL, lock: true, points: labelPoints, extendData: { items: labelItems } })
     }
-  }, [spec.overlays, spec.candles, groupsOn, displayCandles, loadedLoTs, loadedHiTs])
+  }, [spec.overlays, baseCandles, groupsOn, displayCandles, loadedLoTs, loadedHiTs])
 
   // Daily session-break vlines. Rebuilt after data changes (applyNewData can clear overlays).
   useEffect(() => {
@@ -918,7 +981,7 @@ export default function ChartPanel({
     if (!chart) return
     chart.removeOverlay({ name: DAY_BREAK })
     if (!dayBreaksOn) return
-    const dummyValue = spec.candles[0]?.close ?? 0
+    const dummyValue = baseCandles[0]?.close ?? 0
     for (const t of dailyBreaks) {
       // Skip a day break outside the loaded candles (no-data region).
       if (loadedLoTs == null || loadedHiTs == null || t < loadedLoTs || t > loadedHiTs) continue
@@ -929,7 +992,7 @@ export default function ChartPanel({
         extendData: { color: DAY_BREAK_COLOR, lineStyle: 'dashed', lineWidth: 1 },
       })
     }
-  }, [dailyBreaks, dayBreaksOn, displayCandles, spec.candles, loadedLoTs, loadedHiTs])
+  }, [dailyBreaks, dayBreaksOn, displayCandles, baseCandles, loadedLoTs, loadedHiTs])
 
   // Drill-down data edge — a red dashed "no earlier data" line at the broker's oldest bar for the
   // active sub-base TF, so a true feed limit reads as a hard wall (not a blank chart). Rebuilt after

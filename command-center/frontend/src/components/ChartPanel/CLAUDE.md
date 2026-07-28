@@ -3,10 +3,9 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-07-27 (the Analysis dropdown: Trades + Winners/Losers and Blocked + its
-per-reason filters; Layers renamed Structure and day breaks moved into the Sessions legend; the
-chart now opens on `runTimeframe` and paints the
-shipped bars while the drill-down loads)
+**Last reviewed:** 2026-07-27 (the spec now ships the run's OWN timeframe with the WINDOW capped,
+and older history pages in on scroll-left — no fetch, no placeholder, no swap on open; plus the
+Analysis dropdown, Layers renamed Structure, and day breaks moved into the Sessions legend)
 
 ---
 
@@ -54,15 +53,21 @@ here**, so the chart shows exactly what the strategy saw.
   the same source `@/themes/chart` uses for Recharts). No raw hex in components. Grid is off.
 - **klinecharts data shape.** Spec candles use `time`; klinecharts wants `timestamp`. The
   `candlesToKLine` mapper in `index.tsx` is the single conversion point.
-- **The chart OPENS on the timeframe the run TRADED** (`spec.runTimeframe`), not on the bars the spec
-  happened to ship (`spec.baseTimeframe`). They are different answers to different questions: the
-  emitter steps the shipped TF UP on a long run to keep the payload sane, so a 6.5-year M15 run ships
-  H4 — and H4 is a timeframe the run's trades and blocked setups mean nothing on. So the default is
-  usually a DRILL-DOWN, fetched on mount. Two guards make that safe: the TF is only chosen when
-  `options` actually offers it (no fetcher wired, or a spec cached before `runTimeframe` existed ⇒
-  fall back to the shipped bars), and if the fetch comes back empty/error the panel reverts ONCE to
-  `baseMin` — but only for the AUTO-chosen TF, never for one the user picked, which keeps its honest
-  "no data" message instead of silently jumping somewhere they didn't ask for.
+- **The spec ships the run's OWN timeframe, and the chart opens on it with NO fetch** (2026-07-27,
+  Aaron's call). The bars are in the payload, so the chart paints on the first frame — no loading
+  text, no placeholder, no swap under you. Volume is capped by trimming the **window**, never by
+  coarsening the bars: `chart_spec._capped_start` ships the newest slice that fits `_CANDLE_CAP`
+  (measured on the real 2020→2026 M15 run: 33,041 candles / 3.1 MB / 17 months).
+  - **Why not coarsen.** The previous design stepped a long run's bars UP (that same run shipped H4).
+    It could show the whole span and still be useless: H4 is a timeframe the run's trades and blocked
+    setups line up with nowhere. Covering the span was the wrong thing to buy with the payload budget.
+  - **Older history is PAGED IN on scroll-left**, so trimming the window costs reach, not access.
+    `spec.historyStartMs` is the run's start; the panel pages from the oldest loaded bar back toward
+    it, one `PAGE_BARS` (12,000) chunk at a time — sized in BARS so a page costs the same at every
+    timeframe (measured: 175d / 11,255 candles / ~1.0 MB / ~1.5s at M15). See *Paging* below.
+  - `runTimeframe` still exists on the contract and still drives `openMin`, because a CACHED spec from
+    the coarsening era carries a stepped-up `baseTimeframe` with the run's real TF here. On a fresh
+    spec the two are equal, so the auto-drill-down path is inert.
 - **Timeframe — up = display, down = drill-down.** The segmented control offers two kinds of TF.
   **At or above the base** (`DISPLAY_TFS`, filtered to TFs ≥ and divisible by the spec's base TF):
   `resample` aggregates base bars up (epoch-aligned buckets) — display only, `spec.baseTimeframe`
@@ -78,23 +83,31 @@ here**, so the chart shows exactly what the strategy saw.
   depth is loaded, so scrolling within it is free. Results are cached per-TF in-session
   (`fetchCacheRef`; a completed run's window is fixed, so it never restales) on top of the backend's
   own disk cache — re-selecting a TF is instant, and a cold reload hits the broker once.
-  - **A drill-down shows the SHIPPED bars until the finer ones land — never nothing.** The spec's
-    candles are already in the payload, so they paint on the first frame; the drill-down is a network
-    pull (measured on a real run: M15 over 850d = 54,865 candles, ~5.1 MB, ~4.7s warm; M5 over 270d
-    ~40s). So `displayCandles` falls back to `spec.candles` while `fetched` is empty. Returning
-    `fetched` straight out was invisible while M1/M5 were opt-in, but turned EVERY chart open into a
-    blank screen once the panel started opening in drill-down by default. The header names what is
-    actually on screen (`showing H4 — loading all available bars…`), because bars that don't match
-    the TF button would otherwise be a silent lie.
-  - **The ladder must cover EVERY intraday TF, not just M1/M5 (2026-07-27).** The chart's base is not
-    always the run's own bar size: `chart_spec._fit_timeframe` steps a long run's base UP to keep the
-    shipped candle count under `_CANDLE_CAP` (35k) — a 6.5-year **15m** run ships **H4**. With only
-    M1/M5 below it, that run could not be viewed at the timeframe it actually TRADED, which is the one
-    view that matters. So `FETCH_TFS` runs M1→H1 and `options` offers whichever of them sit below the
-    shipped base. The drill-down window is still bounded (newest ~850d at M15), so a multi-year run
-    shows its most recent stretch at 15m rather than the whole span — the same trade-off M1/M5 already
-    made. Raising `_CANDLE_CAP` instead is the wrong lever: 6.5 years of M15 is ~160k candles and a
-    ~15 MB `chart_spec.json` shipped on every chart open.
+  - **A drill-down shows the loaded bars until the finer ones land — never nothing.** A drill-down is
+    a network pull (M5 over 270d measured ~40s), so `displayCandles` falls back to `baseCandles` while
+    `fetched` is empty and the header names what is actually on screen (`showing M15 — loading all
+    available bars…`) — bars that don't match the TF button would otherwise be a silent lie. This is
+    now only reachable by CHOOSING M1/M5; the open path no longer fetches at all.
+  - **`FETCH_TFS` still runs M1→H1** even though a fresh spec now ships the run's own TF (so only
+    M1/M5 sit below it). The extra rungs cost nothing and keep a CACHED coarsened spec — H4 base with
+    an M15 run — usable at the timeframe it traded.
+
+- **Paging older history (scroll left).** `chart.setLoadDataCallback` on `LoadDataType.Forward` →
+  `loadOlder()` → one page from the run's own feed (`onRequestCandles`, i.e.
+  `GET /runs/{id}/candles`), stopping at `spec.historyStartMs`. Four things hold it together:
+  - **`baseCandles` state, not `spec.candles`,** is what the chart derives from — it starts as the
+    shipped window and GROWS by prepending each page. Sessions and day breaks derive from it too, so
+    paged-in history gets them; a `baseCandlesRef` feeds the callback, which is registered once on
+    mount and would otherwise close over the first render's candles forever.
+  - **`skipApplyRef`.** klinecharts has already merged a page AND kept the scroll position, so the
+    `applyNewData` effect must NOT re-run for it — that would throw both away and snap the view back
+    on every page. Set it before the state update; the effect clears it.
+  - **`pagingOffRef`.** No paging while a drill-down TF is selected — it would splice base-TF bars
+    into a 1m chart. The drill-down loads its own full depth in one shot instead.
+  - **Overlap guard.** A page is filtered to bars strictly older than the current oldest, so a feed
+    that answers with an overlapping window can't duplicate bars.
+  Raising `_CANDLE_CAP` to ship everything instead is the wrong lever: 6.5 years of M15 is ~160k
+  candles and a ~15 MB `chart_spec.json` on every chart open.
   - **The red "no earlier data" edge.** The backend returns `data_start_ms` + `hard_edge`: `hard_edge`
     is True only when the oldest bar is the broker's TRUE limit (feed has nothing older, not our render
     cap — `_DRILL_CANDLE_CAP` 60k sits above M1/M5 depth so it never binds and can't fake a boundary).

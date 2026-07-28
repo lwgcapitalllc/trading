@@ -172,13 +172,15 @@ export interface ChartIndicator {
 
 export interface ChartSpec {
   instrument: string            // e.g. "AUDJPY.s"
-  // The bars SHIPPED in `candles`. NOT necessarily what the run traded — the emitter steps this up
-  // on a long run so the payload stays sane (a 6.5-year M15 run ships H4).
+  // The bars SHIPPED in `candles` — always the timeframe the run TRADED. A long run is capped by
+  // trimming the WINDOW (newest slice), never by coarsening the bars.
   baseTimeframe: string
-  // The bars the run ACTUALLY TRADED — what the chart opens on, pulled live via drill-down when it
-  // is finer than `baseTimeframe`. Optional: a spec cached before this existed falls back to
-  // `baseTimeframe`, which is the old behaviour.
+  // Same value; kept because an older CACHED spec may carry a coarsened `baseTimeframe` with the
+  // run's real timeframe here, and the panel opens on this one.
   runTimeframe?: string
+  // Epoch ms of the run's START. `candles` may begin later (the window cap), and the panel pages the
+  // gap in as you scroll left, stopping here. Absent ⇒ no paging (nothing older is claimed to exist).
+  historyStartMs?: number | null
   brokerGmtOffsetHours: number  // for correct session placement
   candles: ChartCandle[]        // base-TF OHLC
   sessions: ChartSession[]

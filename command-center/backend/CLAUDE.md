@@ -3,7 +3,7 @@
 **Purpose:** FastAPI backend (`:8000`) — owns all SQLite state, talks to the VPS via SSH + HTTP agents, runs the smart-money pipeline via subprocess, and drives NT8/MT5 backtests.
 **Scope:** This covers backend conventions, routers, services, DB, and VPS interaction. It does NOT cover the frontend (see `../frontend/CLAUDE.md`) or `algos/`/`smart-money/` source.
 **Status:** Live — lab (strategies, rulesets, backtests, sweeps, optimizations, stress tests, MT5 runner, Python runner) all shipped.
-**Last reviewed:** 2026-07-27 — blocked setups (the trades that never happened) plumbed strategy → output → run dir → chart spec; `chart_spec` now emits shipped-vs-traded timeframes
+**Last reviewed:** 2026-07-27 — blocked setups (the trades that never happened) plumbed strategy → output → run dir → chart spec; `chart_spec` now ships the run's own timeframe and caps the WINDOW instead of coarsening the bars
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
@@ -62,7 +62,7 @@ backend/
 │   ├── scripts/backfill_regime_timeline.py  opt-in backfill of `regime_timeline.json` on old runs (`--force`, `--run-id`); kept OUT of backfill_metrics.py because it fetches OHLC
 │   ├── scripts/prop_kpi_audit.py    read-only dump of every prop ruleset's core KPIs from lab.db (the saved "is our engine in sync" query); feeds docs/PROP_RULESET_KPIS.md
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
-│   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + blocked setups + recomputed strategy structure/ATR + market-structure overlays). Emits TWO timeframes — `baseTimeframe` (the bars SHIPPED, stepped up by `_fit_timeframe` on a long run) and `runTimeframe` (the bars the run TRADED, what the chart opens on); see "Two timeframes" below. `_build_blocks` reads the run dir's `blocked_setups.json` — see "Blocked setups" below
+│   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + blocked setups + recomputed strategy structure/ATR + market-structure overlays). Always ships the timeframe the run TRADED and caps the WINDOW instead (`_capped_start` → the newest slice under `_CANDLE_CAP`), with `historyStartMs` telling the panel how far back it may page; see "ChartSpec candles" below. `_build_blocks` reads the run dir's `blocked_setups.json` — see "Blocked setups" below
 │   ├── structure_overlays.py  replay the CANONICAL engines/market_structure/ engine over a run's candles → BOS/SOS/swing overlays for the chart, in the 4 groups that ARE structure_engine.pine's 4 toggles (External / Internal / Historic Internal Structure / Swing Point Labels), nesting like the Pine's via each overlay's `requires` list (swing tags need their owning structure; historic internal needs Internal). Never a 2nd engine (bare-name import like regime/news); called by chart_spec on the displayed TF. Break tags anchor at the line MIDPOINT (`_mid`, = Pine's `mid_x`) so they clear the break-bar candles; reversal breaks are labelled SOS/iSOS (not "CHoCH")
 │   ├── news_filter.py     post-run news/holiday tagging — composes the canonical engines/news/ engine (never a 2nd impl) to mark which of a run's trades opened in a high-impact news window / on a bank holiday, for the BacktestDetail News filter card. Pure over a trade list; loads the EventStore cache (see "News filter (post-run)")
 │   ├── history_limits.py  broker history floors — thin shim over the canonical `backtest/data/history.py`
@@ -317,7 +317,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Strategy Files | ✅ Live | Upload/delete/compile `.cs` (NT8 F5) and `.mq5` (MetaEditor) files. Sync-status badges. |
 | Strategy Deploy | ✅ Live | `POST /strategies/{id}/deploy` reads `source_path`, uploads to VPS. `.mq5` → MT5 agent, `.cs` → NT8 agent. |
 | Param types | ✅ Live | `GET /strategies/{id}/param-types` parses `.cs`/`.mq5` source → `{paramName: "int"\|"double"}`. Used by optimizer modal to block decimal steps on integer params. |
-| MT5 runner | ✅ Live | `mt5_agent.py` port 8766: Strategy Tester driver (ini+set, terminal64, HTML report). `mt5_agent_client.py` typed wrapper. Runner dispatch via `runner_dispatch`. `/historical_data` maps M5/M15/M30 (was M1/H1/H4/D1 only), `symbol_select()`s before reading bars, **preserves symbol case** and tries the symbol **as given then its root** (terminals vary — GBPJPY is only `GBPJPY.s`, USDJPY both ways). `ohlc_fetcher._resolve_mt5_symbol` passes the run's broker symbol through; `chart_spec._fit_timeframe` caps candle volume (long spans step the base TF up — 5yr → H1). |
+| MT5 runner | ✅ Live | `mt5_agent.py` port 8766: Strategy Tester driver (ini+set, terminal64, HTML report). `mt5_agent_client.py` typed wrapper. Runner dispatch via `runner_dispatch`. `/historical_data` maps M5/M15/M30 (was M1/H1/H4/D1 only), `symbol_select()`s before reading bars, **preserves symbol case** and tries the symbol **as given then its root** (terminals vary — GBPJPY is only `GBPJPY.s`, USDJPY both ways). `ohlc_fetcher._resolve_mt5_symbol` passes the run's broker symbol through; `chart_spec._capped_start` caps candle volume by trimming the WINDOW, never the timeframe. |
 | MT5 deployment | ✅ Live | MT5 agent upload/delete `.mq5`. `POST /compile` → MetaEditor. Backend: `POST/GET /strategy-files/compile-mt5`. |
 | MT5 native optimizer | ✅ Live | `mt5_agent.py` `POST /native-optimize` + `POST /native-walkforward`; `mt5_agent_client.py` typed wrappers. `runner_dispatch` dispatcher + `optimization_runner.run_native_optimization` route by `runner`. Native single-job `Optimization=1` run — MQL5 frame callbacks (`OnTesterInit/OnTester/OnTesterPass/OnTesterDeinit`) collect per-combo KPIs into `opt_results.csv`; the tester distributes combos across its local agents. **The EA MUST implement those callbacks** — without them the optimizer runs every pass but harvests nothing (single backtests work, optimization yields an empty CSV → "OnTesterPass may not have fired"). CSV columns must match `_parse_opt_csv` / `_OPT_KPI_COLS` (net_pnl/profit_factor/max_drawdown/trade_count/win_trades/sharpe[/gross_profit/gross_loss]) and the param column names must equal the grid keys. Combos rank on MT5's platform Sharpe (the native path has no `daily_pnl`, so canonical Sharpe isn't computed) — re-validate a winner with a single full backtest. |
 | Python runner + optimizer | ✅ Live | `services/python_runner.py` — runs `strategies/python/` packages LOCALLY, in-process, via the top-level `backtest/` package (data cache → engine replay → `output.build_results`). No VPS, no agent, no compile. Scanner registers packages declaring `LAB_STRATEGY` (`strategy_scanner._parse_python_package`); the runner resolves by `strategy_class` = the strategy class's `__name__` — the same job-spec key NT8/MT5 use, locked by `test_python_runner.py`'s scanner↔runner agreement test. Optimizer: `runner_dispatch.start_native_optimization(spec, "python")` → `backtest/optimizer.run_sweep` fans combos across cores (lab still owns grid expansion + ranking — `expand_grid`, `objectives.py`). Sweeps run in bar mode; validate the winner in tick mode. Third lock scope: `has_running_python_job()`, surfaced through `get_running_job()`'s `python` bucket and consumed by the frontend's `lib/runner.ts` (wired 2026-07-16). Price charts AND regime tagging both read `ohlc_fetcher.get_ohlc(runner="python")` → `backtest.data.BarSource`, the SAME disk cache the run replayed, and deliberately never fall back to another feed: yfinance maps XAUUSD.s → GC=F, so a fallback would chart/label a spot-gold run off Yahoo's gold FUTURES daily bars. **Feature parity with the native runners is otherwise inherited, not re-implemented** — `run_backtest_job`/`_handle_complete` are runner-agnostic, so sizing (via `engine_trades`, which `backtest/output.py` emits), evaluations, worthiness, canonical Sharpe, regime tagging, the news/holiday filter (needs `entry_ms`, which the Python output carries) and stress tests all work unchanged. |
@@ -526,22 +526,27 @@ mid-flight.
 Full mechanism, the evidence table, and the probe's two-phase design: `backtest/CLAUDE.md` →
 *History floors*.
 
-## Two timeframes in a ChartSpec — shipped vs traded
+## ChartSpec candles — cap the WINDOW, never the timeframe
 
-`_fit_timeframe` steps a long run's chart timeframe UP so the payload stays sane: 6.5 years of M15
-is ~160k candles and a ~15 MB `chart_spec.json` shipped on every chart open, so it ships **H4**.
+6.5 years of M15 is ~160k candles and a ~15 MB `chart_spec.json` on every chart open. Something has
+to give. There were two axes to give on, and the first choice was wrong:
 
-That is the right call for TRANSPORT and the wrong answer for the USER — H4 is a timeframe the run's
-trades and blocked setups mean nothing on. So the spec carries both, and they must not be conflated:
+- **Coarsen the bars** (the old `_fit_timeframe`: that run shipped **H4**). Covers the whole span —
+  and is useless, because H4 is a timeframe the run's trades and blocked setups line up with nowhere.
+  It also forced a fetch-on-open to get back to M15, which meant a loading placeholder and a visible
+  swap on every chart open.
+- **Trim the window** (`_capped_start`, 2026-07-27, Aaron's call). Ship the run's OWN timeframe over
+  the newest slice that fits `_CANDLE_CAP`. Measured on that same run: **33,041 candles / 3.1 MB /
+  17 months**, painted on the first frame with no fetch at all.
 
-- **`baseTimeframe`** — the bars actually in `candles`. What resampling and the drill-down threshold
-  are measured against.
-- **`runTimeframe`** — `bar_type`/`bar_value` off the run row, i.e. what the strategy traded. The
-  panel OPENS on this, pulling it live through `GET /runs/{id}/candles` when it is finer.
+Reach is restored by PAGING, not by coarsening: `historyStartMs` (the run's start) tells the panel how
+far back it may go, and scroll-left pulls one page at a time through `GET /runs/{id}/candles`
+(measured: 175d / 11,255 candles / ~1.0 MB / ~1.5s at M15). So trimming costs reach, not access.
 
-`runTimeframe` is OPTIONAL on the frontend contract: a `chart_spec.json` cached before it existed
-falls back to `baseTimeframe`, which is the old behaviour. Six stepped-up caches were cleared when
-it landed; the rest were left alone because the fallback is correct whenever the two are equal.
+`baseTimeframe` and `runTimeframe` are now the SAME value. `runTimeframe` stays on the contract
+because a `chart_spec.json` cached under the old scheme still carries a coarsened `baseTimeframe`,
+and the panel opens on `runTimeframe` — which keeps those caches usable until they rebuild. Every
+cached spec was cleared when this landed; they rebuild on next chart open (~5s for a 17-month M15).
 
 ## Blocked setups — the trades that never happened
 
