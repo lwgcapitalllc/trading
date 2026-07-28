@@ -9,7 +9,7 @@
  * only load once the panel's section is opened (page performance).
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignJustify, Camera, Check, ChevronDown, Eye, EyeOff, RotateCcw, Ruler, Trash2 } from 'lucide-react'
+import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, Eye, EyeOff, RotateCcw, Ruler, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
 import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartSpec } from './types'
@@ -54,6 +54,10 @@ const TRADE_PROFIT_FILL = '#8ef2b8'
 // One scroll-left page of older history, in BARS — so a page costs the same at every timeframe
 // (~1 MB of JSON) instead of ballooning on a fine one.
 const PAGE_BARS = 12_000
+// Runaway guard on a "go to date" that has to page history in. The loop's REAL terminator is
+// `loadOlder` running dry (no bars once the oldest loaded bar reaches the run's start), so this only
+// binds if a feed keeps answering without ever reaching back — it is not a reach limit.
+const MAX_JUMP_PAGES = 40
 const BLOCK_COLOR = '#ff2e9a'
 // Missed setups sit on the same "the trade that never happened" axis as Blocked, so they take a
 // sibling colour rather than a new one: amber, matching the Pine's orange 2-of-3 callout, and
@@ -195,6 +199,105 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
   )
 }
 
+/** "Go to date" — a header pill that opens a date box and scrolls the chart there, so reaching an
+ *  old part of a long run is one entry instead of a long drag.
+ *
+ *  It is a pure INPUT: it collects a date, clamps it to the range the host says is reachable, and
+ *  hands back epoch ms. Everything about how the chart gets there (paging older history in, where
+ *  the bar is parked) belongs to the host — the popover just reports `busy` while it happens.
+ *
+ *  `lo`/`hi` set the native `min`/`max`, but the clamp is done in code as well: a native bound stops
+ *  the calendar widget and nothing else, so a typed or pasted date walks straight past it (the same
+ *  lesson `PeriodPicker` learned about the broker's history floor). */
+function GoToDate({ lo, hi, busy, onGo }: {
+  lo: number
+  hi: number
+  busy: boolean
+  onGo: (ts: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+  // The date the last Go was aimed at, so the busy pill can NAME it. A jump back through years of
+  // history is a real wait (it fetches every bar in between), and "loading…" on its own leaves the
+  // reader unsure whether the chart even took the date.
+  const [sent, setSent] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  // Open on the newest bar's date and select it, so the box is usable from the keyboard alone.
+  useEffect(() => {
+    if (!open) return
+    setValue(v => v || toIsoDay(hi))
+    const id = requestAnimationFrame(() => inputRef.current?.focus())
+    return () => cancelAnimationFrame(id)
+  }, [open, hi])
+
+  const submit = () => {
+    const ts = dayStartMs(value)
+    if (ts == null) return
+    const clamped = Math.min(Math.max(ts, lo), hi)
+    setSent(toIsoDay(clamped))
+    onGo(clamped)
+    setOpen(false)
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        title="Go to date"
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium transition-colors ${
+          busy ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
+        }`}
+      >
+        <CalendarSearch className="w-3.5 h-3.5" />
+        {busy && <span className="font-mono">loading {sent}…</span>}
+      </button>
+      {open && (
+        <div className="absolute left-0 mt-1 rounded-md border border-border-subtle bg-bg-surface p-2.5 shadow-lg" style={{ zIndex: 50, minWidth: 210 }}>
+          <div className="text-[10px] uppercase tracking-wide text-text-tertiary">Go to date</div>
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <input
+              ref={inputRef}
+              type="date"
+              value={value}
+              min={toIsoDay(lo)}
+              max={toIsoDay(hi)}
+              onChange={e => setValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); submit() }
+                if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
+              }}
+              className="flex-1 rounded-md border border-border-subtle bg-bg-sunken px-2 py-1 text-[11px] font-mono text-text-primary focus:border-accent focus:outline-none"
+            />
+            <button
+              onClick={submit}
+              disabled={dayStartMs(value) == null}
+              className="rounded-md border border-border-subtle bg-bg-sunken px-2 py-1 text-[11px] font-medium text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:hover:text-text-secondary transition-colors"
+            >
+              Go
+            </button>
+          </div>
+          {/* The reachable span, so a date outside the run reads as out of range before it's typed
+              rather than as a jump that silently did nothing. */}
+          <div className="mt-1.5 text-[10px] font-mono text-text-tertiary">
+            {toIsoDay(lo)} → {toIsoDay(hi)}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Display-timeframe ladder for the segmented control. Filtered per spec.baseTimeframe so we
 // never offer a TF finer than the strategy's own bars (those come from the drill-down below).
 const DISPLAY_TFS: readonly TfOption[] = [
@@ -227,6 +330,39 @@ const FETCH_TFS: readonly TfOption[] = [
 // edge, since the boundary is ours, not the broker's).
 const FETCH_TF_LOOKBACK_DAYS: Record<number, number> = {
   1: 45, 5: 270, 15: 850, 30: 1700, 60: 3400,
+}
+
+/** `<input type="date">` value ("YYYY-MM-DD") → epoch ms at LOCAL midnight, or null if malformed.
+ *  Local, not UTC, on purpose: klinecharts prints its time axis in the browser's own timezone, so
+ *  local midnight is the instant that sits under that date ON SCREEN. `new Date("2026-03-05")`
+ *  would parse as UTC and land on the wrong side of the day for anyone west of Greenwich. */
+function dayStartMs(iso: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return null
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return Number.isNaN(d.getTime()) ? null : d.getTime()
+}
+
+/** Epoch ms → "YYYY-MM-DD" in LOCAL time — the inverse of `dayStartMs`, for the input's value/min/max.
+ *  `toISOString().slice(0,10)` is the tempting one-liner and is wrong here: it converts to UTC first. */
+function toIsoDay(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** Index of the first candle at or after `ts` (ascending list), clamped to the ends. A date with no
+ *  bar of its own — a weekend, a holiday — therefore lands on the next trading bar rather than the
+ *  previous one, which is what "take me to the 5th" means when the 5th is a Sunday. */
+function indexAtOrAfter(candles: ChartCandle[], ts: number): number {
+  let lo = 0
+  let hi = candles.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (candles[mid].time < ts) lo = mid + 1
+    else hi = mid
+  }
+  return lo
 }
 
 /** "M5" → 5, "M15" → 15, "H1" → 60, "H4" → 240, "D1" → 1440. Falls back to 5. */
@@ -459,6 +595,73 @@ export default function ChartPanel({
   // merged those bars and holds the scroll position; re-running `applyNewData` would throw both away
   // and snap the view back — the jump-on-every-page bug.
   const skipApplyRef = useRef(false)
+
+  // ── Go to date ───────────────────────────────────────────────────────────────
+  // True while a jump is pulling older pages in. Shown on the pill, and it parks klinecharts' own
+  // scroll-left paging so the two can't both be splicing onto the front of the same array.
+  const [jumping, setJumping] = useState(false)
+  const jumpingRef = useRef(false)
+  // A jump target waiting for its bars. Set only when the jump had to PAGE — the redraw that follows
+  // is what flushes it; a jump inside the loaded window scrolls straight away.
+  const pendingJumpRef = useRef<number | null>(null)
+
+  // Park the target bar in the MIDDLE of the plot, not on the right edge where `scrollToDataIndex`
+  // leaves it: a date with nothing after it reads as the end of the run's data. Scrolling to
+  // `target + half a screen` puts the target centre-stage with its lead-up still visible.
+  const scrollToTs = useCallback((ts: number, candles: ChartCandle[]) => {
+    const chart = chartRef.current
+    if (!chart || candles.length === 0) return
+    const idx = indexAtOrAfter(candles, ts)
+    const range = chart.getVisibleRange()
+    const half = Math.max(1, Math.floor((range.to - range.from) / 2))
+    chart.scrollToDataIndex(Math.min(candles.length - 1, idx + half))
+  }, [])
+
+  // The reachable span the date box bounds itself to: everything loaded, plus everything paging can
+  // still REACH (back to the run's own start). In drill-down there is no paging, so it is whatever
+  // that timeframe's one-shot fetch brought back.
+  const jumpRange = useMemo(() => {
+    if (loadedLoTs == null || loadedHiTs == null) return null
+    const start = !isFetchMode && onRequestCandles && spec.historyStartMs != null ? spec.historyStartMs : null
+    return { lo: start != null ? Math.min(start, loadedLoTs) : loadedLoTs, hi: loadedHiTs }
+  }, [loadedLoTs, loadedHiTs, isFetchMode, onRequestCandles, spec.historyStartMs])
+
+  const goToDate = useCallback(async (target: number) => {
+    if (!chartRef.current || jumpingRef.current) return
+    // Older than what's loaded ⇒ fetch the gap first. klinecharts' own scroll-left paging can't do
+    // this: it only asks for ONE page, when the viewport actually reaches the left edge. So the jump
+    // asks `loadOlder` directly, advancing the ref each round (that's where it reads its cursor) and
+    // committing ONE state update at the end — a set per page would re-apply and repaint N times.
+    let paged = false
+    if (!pagingOffRef.current && (baseCandlesRef.current[0]?.time ?? Infinity) > target) {
+      jumpingRef.current = true
+      setJumping(true)
+      try {
+        for (let i = 0; i < MAX_JUMP_PAGES; i++) {
+          if ((baseCandlesRef.current[0]?.time ?? Infinity) <= target) break
+          const { bars } = await loadOlderRef.current()
+          if (!bars.length) break                       // at the run's start — go as far as it goes
+          baseCandlesRef.current = [...bars, ...baseCandlesRef.current]
+          paged = true
+        }
+      } catch {
+        // A failed page keeps whatever already landed — the scroll below clamps to it — rather than
+        // discarding good bars over one bad request.
+      } finally {
+        jumpingRef.current = false
+        setJumping(false)
+      }
+    }
+    if (paged) {
+      // NOT `skipApplyRef` — unlike a scroll-left page, klinecharts has never seen these bars, so
+      // the chart must re-apply. That snaps the view to the right edge, which is exactly why the
+      // scroll waits for the redraw instead of running now.
+      pendingJumpRef.current = target
+      setBaseCandles(baseCandlesRef.current)
+    } else {
+      scrollToTs(target, displayCandles)
+    }
+  }, [displayCandles, scrollToTs])
 
   // Session boxes are derived from the BASE candles (high/low envelope is TF-invariant) and
   // anchored by timestamp, so they stay put across timeframe switches. Show on ALL candle days.
@@ -816,7 +1019,9 @@ export default function ChartPanel({
     // Scroll-left paging. Registered ONCE (klinecharts keeps one callback) and delegating through
     // refs, so it always sees the current candles/timeframe instead of the first render's.
     chart.setLoadDataCallback(({ type, callback }) => {
-      if (type !== LoadDataType.Forward || pagingOffRef.current) {
+      // A jump is already pulling pages onto the front of the same array — two writers would
+      // duplicate or drop bars. Answer "nothing now, more exists" and let the jump finish.
+      if (type !== LoadDataType.Forward || pagingOffRef.current || jumpingRef.current) {
         callback([], type === LoadDataType.Forward)
         return
       }
@@ -851,6 +1056,15 @@ export default function ChartPanel({
     const id = requestAnimationFrame(measureInset)
     return () => cancelAnimationFrame(id)
   }, [displayCandles, measureInset])
+
+  // Flush a jump that had to page. Declared AFTER the apply effect above so the bars are in the
+  // chart by the time this runs, and only ever fires on the redraw that jump asked for.
+  useEffect(() => {
+    const ts = pendingJumpRef.current
+    if (ts == null) return
+    pendingJumpRef.current = null
+    scrollToTs(ts, displayCandles)
+  }, [displayCandles, scrollToTs])
 
   // Drill-down: when a sub-base TF is selected, pull its full broker depth; clear on leave.
   useEffect(() => {
@@ -1374,6 +1588,11 @@ export default function ChartPanel({
               </div>
             )}
           </div>
+
+          {/* Go to date — sits next to the timeframe because it answers the other half of "what am I
+              looking at": the TF picks the bar size, this picks WHERE. Bounded by the span the chart
+              can actually reach, and hidden until there are candles to reach into. */}
+          {jumpRange && <GoToDate lo={jumpRange.lo} hi={jumpRange.hi} busy={jumping} onGo={goToDate} />}
 
           {/* Analysis: what the strategy DID with its signals — the trades it took (split by
               outcome) and the setups its own rules refused (split by reason). Deliberately its own

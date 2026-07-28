@@ -3,11 +3,12 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-07-27 (the **Missed** layer — how close the setups that died came — sharing
-one overlay template and one hover card with Blocked; earlier the same day: the spec now ships the
-run's OWN timeframe with the WINDOW capped, and older history pages in on scroll-left — no fetch, no
-placeholder, no swap on open; plus the Analysis dropdown, Layers renamed Structure, and day breaks
-moved into the Sessions legend)
+**Last reviewed:** 2026-07-28 (**Go to date** — a header pill that types you to a date instead of
+dragging there, driving the existing scroll-left pager itself; earlier: the **Missed** layer — how
+close the setups that died came — sharing one overlay template and one hover card with Blocked; the
+spec now ships the run's OWN timeframe with the WINDOW capped, and older history pages in on
+scroll-left — no fetch, no placeholder, no swap on open; plus the Analysis dropdown, Layers renamed
+Structure, and day breaks moved into the Sessions legend)
 
 ---
 
@@ -111,6 +112,40 @@ here**, so the chart shows exactly what the strategy saw.
     that answers with an overlapping window can't duplicate bars.
   Raising `_CANDLE_CAP` to ship everything instead is the wrong lever: 6.5 years of M15 is ~160k
   candles and a ~15 MB `chart_spec.json` on every chart open.
+- **Go to date** (`GoToDate` in `index.tsx`, header pill next to the timeframe). Type a date, land on
+  it — the answer to reach costing a long drag once history pages in. It sits by the timeframe because
+  the two answer halves of one question: TF picks the bar SIZE, this picks WHERE.
+  - **It reuses the paging machinery above rather than adding a second one.** `goToDate` calls
+    `loadOlder()` in a loop until the oldest loaded bar covers the target. klinecharts' own callback
+    can't be asked to do this — it fires ONE page, and only when the viewport actually reaches the
+    left edge — so the jump drives `loadOlder` directly. Two consequences worth keeping straight:
+    it advances `baseCandlesRef` itself each round (that ref is where `loadOlder` reads its cursor,
+    and state hasn't landed yet mid-loop), and it commits **one** `setBaseCandles` at the end — a set
+    per page would re-apply and repaint the whole chart N times.
+  - **A jump that paged does NOT set `skipApplyRef`** — the opposite of a scroll-left page. klinecharts
+    has never seen these bars (this path bypasses its callback), so the chart MUST re-apply. That
+    re-apply snaps the view to the right edge, which is why the scroll is deferred to `pendingJumpRef`
+    and flushed by an effect declared AFTER the `applyNewData` effect. A jump inside the loaded window
+    pages nothing and scrolls immediately.
+  - **The two paths are mutually exclusive by `jumpingRef`**, which the load-data callback also checks:
+    both splice onto the front of the same array, and two writers would duplicate or drop bars.
+  - **Local midnight, not UTC.** klinecharts prints its time axis in the browser's timezone, so
+    `dayStartMs` parses `YYYY-MM-DD` as LOCAL midnight — the instant sitting under that date on screen.
+    `new Date("2026-03-05")` parses as UTC and lands on the wrong side of the day west of Greenwich;
+    `toIsoDay` is its inverse for the same reason (never `toISOString().slice(0,10)`).
+  - **The target is CENTRED, not parked on the right edge** where `scrollToDataIndex` leaves it — a
+    date with nothing after it reads as the end of the run's data. It scrolls to `target + half a
+    visible screen` (`getVisibleRange()`), so the lead-up stays on screen.
+  - **Bounds are the span the chart can REACH** — everything loaded plus everything paging can still
+    get to (`spec.historyStartMs`); in drill-down, just that TF's one-shot fetch. Clamped in CODE as
+    well as via the input's `min`/`max`, because a native bound stops the calendar widget and nothing
+    else (the lesson `PeriodPicker` learned about the history floor). A weekend/holiday date has no bar
+    of its own, so `indexAtOrAfter` lands on the NEXT trading bar — what "take me to the 5th" means
+    when the 5th is a Sunday.
+  - **A deep jump is a real wait** and says so: measured on the 2021→2026 M15 run, 2025-03-05 back to
+    2022-09-15 is 6 pages / ~20s / ~101k bars, and reaching the run's start is 3 more / ~10s / 131k.
+    So the pill reads `loading <date>…` in accent while it runs — naming the date, because "loading…"
+    alone leaves the reader unsure the chart even took it.
   - **The red "no earlier data" edge.** The backend returns `data_start_ms` + `hard_edge`: `hard_edge`
     is True only when the oldest bar is the broker's TRUE limit (feed has nothing older, not our render
     cap — `_DRILL_CANDLE_CAP` 60k sits above M1/M5 depth so it never binds and can't fake a boundary).
@@ -364,7 +399,7 @@ here**, so the chart shows exactly what the strategy saw.
   had no counts and different padding).
 - **All layer toggles** use one `ToggleChip` component (colored dot + label).
 - **Header + tool-strip layout (TradingView).** The header row carries the **symbol/interval**
-  controls top-**LEFT** — timeframe dropdown, then Analysis / Structure, then the drill-down fetch status — and
+  controls top-**LEFT** — timeframe dropdown, then Go to date, then Analysis / Structure, then the drill-down fetch status — and
   the **snapshot (Copy)** button top-**RIGHT**. The header exposes three optional slot props so a
   host can fold ITS chrome onto this SAME single row rather than stacking a second bar above it:
   `headerLeading` (far left, before TF), `headerTrailing` (far right, after Copy), and
