@@ -379,6 +379,17 @@ entry limit can itself rest at — the stop is just past the deep edge of the ba
 mode needs the entry to fill at almost exactly 0.886. **It is evidence of absence, not a
 guarantee:** both defects below are still OPEN at this level, so treat a sudden outsized loss as
 this hazard until proven otherwise, and turn the Pine's "Minimum stop distance" on for live use.
+
+⚠ **But know what turning it on costs: the guard exists ONLY in the Pine.** `mpc_strategy.pine`
+has `execMinStopMode` / `execMinStopVal` and applies them as a real entry filter; `config.py` has
+**no equivalent at all**, `mpc_strategy_export.pine` emits **no `cfg_min_stop*` column**, and
+`compare_strategy.py` therefore cannot see the setting. At the `"Off"` default the two sides agree
+and parity holds. **The moment the filter is switched on in TradingView, the Pine refuses setups the
+Python still takes, and the comparator reports GREEN anyway** — it is diffing against a config it
+cannot read. This is the one known Pine↔Python divergence on the A+ pair. Closing it is Run 7's
+"what adoption requires": `exec_min_stop_mode` / `exec_min_stop_val` in `config.py`, a `cfg_min_stop`
+column in the export, and a `_TOGGLE_COLS` decode — one commit, then re-run parity.
+
 Measured consequence at `0.786` + 20 ticks
 over full history: stop distance collapses to **$0.20** on 15m gold, `qty = risk / stop_distance`
 builds a **39,033 oz (~$78M notional)** position, one bar takes **18× the intended risk**, and

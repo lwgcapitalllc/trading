@@ -27,6 +27,15 @@ Standing rules for anything recorded here:
 | 5 | 2026-07-26 | *"how do I cut the losers quicker?"* — diagnosis of the loss bucket, then `exec_sl_level` re-run on a clean window + `exec_close_opp_sos` + `exec_htf_exhaust_only` | **Diagnosis: every loss is a trade that never touched TP1.** `exec_sl_level=0.786` scores 59.3R vs 33.6R shipped at the SAME drawdown — but it reproduces Run 4's hazard on 8 trades, so **still not adoptable**. Both "cut quick" toggles measured **exactly zero effect**. | measured, **blocked on Run 4's guard** |
 | 6 | 2026-07-27 | *"cut trades early / block the losing pattern"* — 8 years at the SHIPPED config, with every trade's per-bar R path captured. 3 cut families (~40 variants) + 10 entry blocks + `exec_close_opp_sos` | **The question is closed. Every cut rule loses money**, because no loser runs straight to its stop (min MFE **+0.09R**, median +0.51R) and winners are underwater just as deep (median MAE −0.36R) — the two are indistinguishable while live. The −54.9% DD is a **losing streak at 10% risk**, not give-back, so **risk % is the only lever**. Only positive filter: **stop < $2** (293x → 338x). | **do not build it** — read the verdict |
 | 7 | 2026-07-27 | **The minimum-stop guard, properly measured** — 17 real replays (not row-filtering), 8 years, three independent definitions of "too tight": fixed $, % of price, ×ATR(14) | **The guard PASSES, at a MILD threshold only.** All three definitions agree: light = **+0.7 to +2.7R**, medium/heavy = **−12 to −39R**. Best is **`pct 0.1`** (stop ≥ 0.1% of price): 182 trades, +2.5R, blocks the −1.98R trade, leaves 2021/2024/2025/2026 **untouched**. It is a **safety** rule — the R gain is noise-level, and it does **not** fix drawdown (−54.9% → −54.3%). | **measured, awaiting Aaron's go** |
+| 8 | 2026-07-28 | *"the runner hands too much back"* — the whole runner-exit space at once: 4 trail families (fixed $, chandelier ATR, % trail, giveback cap), hard TP ceilings, "clamp once it's a monster", an RSI-divergence exit, and a NEW swing-ratchet trail | **ADOPTED: `"Structure + % ratchet"` at 1.0%.** Share of each run actually banked **43% → 53%**, same 164 trades, same entries, **identical % drawdown**. Everything else lost: every tightening family costs 60–90% of net, a hard TP costs 20%+ or never fires, the divergence exit costs 77%. | **SHIPPED** — default in 4 Pine files + both Python bots |
+| 9 | 2026-07-28 | *"why not bank at the extension fibs?"* — Aaron's own hand rule (0.0 / −0.272 / −0.414 / −0.618) plus a stop-floor variant and a deep-rung variant (−1/−2/−3/−4/−6). 40 replays across 3 designs | **REJECTED in every form.** Shallow rungs **109.3R → 69.1R**; as a stop floor → **56.1R**; deep rungs → **106.3R**. Cause: only **29 of 164** trades ever reach 0.0 and the **11 past −0.618 carry 106R of the 109R**, so any fixed ceiling caps exactly what pays. | **do not build it** — read the verdict |
+
+⚠ **BLOCKING as of Run 8 (2026-07-28): both Pine↔Python parity gates are STALE.** The last green
+`compare_strategy.py` was 2026-07-27, which predates the swing ratchet; `compare_bleg.py` is stale
+for the same reason. Until both are re-run green on a FRESH TradingView export — and the A+ one at
+the shipped `exec_tp1_pct = exec_tp2_pct = 0` — **no number in Runs 8–9 is confirmed to describe the
+Pine that Aaron trades.** They describe the Python bot, which has been byte-matched to the Pine
+before and has not been re-checked since.
 
 **Still open:** *"what R:R should I use as a dynamic stop loss?"* — no sweep of existing
 parameters can answer it (the bot has no R:R dial). A three-stage plan is written up at the
@@ -1024,3 +1033,291 @@ the same floor before shipping.
 - Whether the six blocked setups would have been better taken at a WIDER stop rather than skipped
   entirely. Refusing the trade is the conservative choice; re-anchoring the stop is a different
   rule and was not tested.
+
+---
+
+# Run 8 — 2026-07-28 — the runner's give-back. One winner out of ~50 candidates.
+
+**The question, Aaron's words:** *"the runner hands too much back at the turn."*
+**The answer: he was right, and there is exactly one fix that works.** The plain structure trail
+PARKS the stop at the last confirmed swing and leaves it there. That swing is a **lagging** anchor,
+so in a strong leg the gap between it and the high IS the give-back. Measured over 164 trades: the
+bot banked **27.5% of the total profit it ever showed open**, and on the 78 trades that ran ≥$10 of
+gold it captured $2,283 of the $5,300 they moved — **57% handed back**.
+
+**ADOPTED: `exec_runner_trail = "Structure + % ratchet"`, `exec_trail_pct = 1.0`.** Same swing
+anchor, but the stop then climbs one %-of-price step per step of favourable move instead of sitting
+still while price runs away. Shipped as the default in all four strategy Pine files and both Python
+bots on 2026-07-28.
+
+## How it was measured
+
+Window **2020-01-01 → 2026-07-27** (155,071 M15 XAUUSD bars), `exec_sl_level="0.886"`, structure
+trail, `fill_model="bar"`. **164 trades in every row** — these are exit levers, so entries never
+move.
+
+⚠ **The sweep ran at `exec_tp1_pct = exec_tp2_pct = 1`, not the shipped 0/0** (caught 2026-07-28,
+after the fact). Every A/B below is apples-to-apples so **no ranking changes**, but the absolute
+figures are one config off the shipped bot. **The true 0/0 baseline on this window is 110.65R**; the
+1%+1% rungs cost 1.4R. Quote 110.65R as "the current bot", never 109.3R.
+
+Note this is a SHORTER window than Runs 1–7 (2020+, 164 trades — not the 2018+ 187/188-trade
+corpus), so R totals here are not directly comparable to theirs. Within this file, compare Run 8 and
+Run 9 to each other and to 109.3R/110.65R only.
+
+## Result 1 — the winner
+
+| | order-free edge | net | run actually banked | max DD |
+|---|---|---|---|---|
+| Structure (swing) — the old default | 107.6R | $2.82M | **43%** | 54.7% |
+| **Structure + 1% ratchet** — shipped | **109.3R** | $3.81M | **53%** | **54.7%** |
+
+**Read this honestly: the EDGE is unchanged.** +1.7R over 164 trades is noise, and the neighbouring
+steps bounce either side of it (1.5% → 106.3R, 2.5% → 110.4R) — the signature of randomness, not an
+optimum. **Do not treat 1.0 as a tuned value; treat it as the middle of a flat region.**
+
+What IS real is the 10-point jump in how much of each run survives to the close, and it costs
+nothing: **percentage drawdown is identical — 54.7%, on the same day.** The bigger DOLLAR drawdown
+in an early write-up was a compounding artifact of a larger account, not a risk increase. This is
+the same trap Run 7 flagged in its `x`-multiple column; the same discipline applies.
+
+**Only 11 exits change at all.** 8 better (+13.2R), 3 worse (−11.5R), and ONE trade (2025-10-21,
++25.23R → +16.27R) is almost the entire downside. A change this narrow is not a new strategy — it is
+a targeted repair to the trades that were leaking.
+
+**Never looser than what it replaced.** The ratchet falls back to the bare swing anchor until the
+move is one full step past it, so it is only ever equal or tighter than the plain structure trail.
+That is pinned by a unit test (`test_swing_ratchet_is_never_looser_than_the_plain_structure_trail`)
+and is why adopting it cannot re-open Run 3's stop-timing conclusions.
+
+## Result 2 — why PERCENT and not dollars
+
+Gold ran **1,500 → 3,400** across the window, so no fixed $ step means the same thing at both ends:
+$20 is a 1.3% trail at 1,500 and a 0.6% trail at 3,400. The dollar version of the identical
+mechanism tops out at **100.4R against the percent version's 109.3R**, and as the step widens it
+only ever climbs back toward the plain structure trail it was meant to beat. **Do not "simplify" it
+back to a $ step** — that is the same reasoning Run 7 used to pick `pct 0.1` over `fixed 1.5`.
+
+## Result 3 — everything else lost. ~50 variants, four families, all negative.
+
+| family | variants tested | best result | cost vs baseline |
+|---|---|---|---|
+| tighten the trail — fixed step $2–$40 | 7 | — | **60–90% of net** |
+| tighten the trail — chandelier 2–8×ATR(14) | 4 | — | 60–90% of net |
+| tighten the trail — % trail 0.5–2.5% | 4 | — | 60–90% of net |
+| tighten the trail — giveback cap 25–50% | 6 | — | 60–90% of net |
+| bank at the TP rungs (25/25, 33/33, 50/0) | 3 | — | ~60% of net |
+| "stay loose, then clamp once it's a monster" (>3R/5R/8R/15R → tight trail) | 8 | — | 20–45% of net |
+| hard take-profit ceiling | 3 | 40R = **byte-identical** to no target | 15R → 86.4R |
+| exit on an opposing RSI divergence past TP2 | 4 | — | **77% of net** |
+
+Three of these deserve their own note, because each fails for a *different* reason and each looks
+reasonable before it is run:
+
+- **The hard TP ceiling has no useful middle.** 40R never fires — no trade in 6.6 years reached it,
+  so the row is byte-identical to no target at all. 15R fires and costs a fifth of the edge. The 25R
+  row looks best on the table and is **three lucky trades** — only 3 of 164 ever reached a 25R peak.
+  This is the same shape Run 9 finds in the extension fibs, arrived at independently.
+- **The RSI-divergence exit is starved of signal.** Only 18 of 164 trades ever print an opposing
+  divergence past TP2, **the six biggest give-back trades print ZERO**, and where it does fire it
+  fires 2–4 times — so a live bot can only ever act on the earliest one, which is the worst one.
+  This is the "use an indicator the bot doesn't currently read" idea Run 6 left open. It is now
+  closed for RSI divergence specifically.
+- **Every tightening family reproduces Run 6's Finding 2 in a new costume.** Winners and losers are
+  indistinguishable while live, so a rule that protects the average trade taxes the tail — and the
+  tail is the strategy. The ratchet wins precisely because it never tightens *relative to the
+  structure trail*; it only stops the stop from falling behind.
+
+## Verdict
+
+1. **Adopted, as a give-back repair — not as an edge improvement.** The honest claim is "53% of each
+   run banked instead of 43%, at identical percentage drawdown." The claim "+1.7R" is noise and must
+   not be quoted as the reason.
+2. **Do not tune `exec_trail_pct`.** The region is flat and the neighbours straddle the winner.
+3. **The runner-tightening question is now closed** the same way Run 6 closed early cuts. Four
+   families, ~30 variants, every one negative. Reopen only with a mechanism that does not tighten
+   against the structure trail.
+
+## What adoption cost, and the standing rule it triggered
+
+One commit across `config.py`, all four Pine files, and `compare_strategy.py` — plus the export
+plumbing, which is the part that is easy to forget: **`cfg_exitmode`'s trail digit went 2-way →
+3-way and `cfg_trail_pct` was added.** Without both, the comparator silently decodes a ratcheted
+Pine as "Structure (swing)" and reports pure drift as a parity bug.
+
+⚠ **The A+ parity gate is STALE as of this run.** The last green `compare_strategy.py` was
+2026-07-27, which predates the ratchet. **Re-run it on a fresh export at the shipped
+`exec_tp1_pct = exec_tp2_pct = 0`** before any number from this build is trusted. `compare_bleg.py`
+is stale for the same reason.
+
+Harness: `scratchpad/trail_sweep.py` + `ext_*.py`, subclassing `Execution` so no repo file was
+modified. Throwaway, not committed.
+
+---
+
+# Run 9 — 2026-07-28 — extension fibs. Aaron's own hand rule, and it loses in all three forms.
+
+**The question, Aaron's words:** *"I don't ever have a TP3 on my runners... after structure is
+broken it's kinda like a no man's land. What about using extension fibs? If I was manually trading
+I'd bank some at the 0.0, some at the −0.272, some at −0.414, and if it gets all the way to −0.618
+I take everything off the table. Can you run a test and see if that would extend some of my
+winners?"*
+
+**The answer: no, in every form tested — and the reason is the shape of the trade book, not the
+choice of levels.** This is the most natural-looking idea in the file and the one Aaron actually
+trades by hand, so it gets a full run rather than a footnote.
+
+**Nothing adopted. Nothing to build.**
+
+## How it was measured
+
+Same corpus and caveats as Run 8: 155,071 M15 bars, 2020-01-01 → 2026-07-27, `exec_sl_level=0.886`,
+164 trades in every row, `fill_model="bar"`, baseline 109.3R at 1%/1% rungs (**110.65R at the
+shipped 0/0**).
+
+Extension prices are direction-agnostic: `ext(x) = p7 + (p7 − p10) * x`, where `p7` is the leg's 0.0
+fib and `p10` its 1.0. **The leg anchors are frozen at ORDER PLACEMENT**, not at fill — matching how
+TP1/TP2 are already frozen, so a rung cannot drift with a later structure update.
+
+Three independent designs, deliberately, so the answer does not depend on one framing:
+
+## Design 1 — as TAKE-PROFIT rungs, at Aaron's levels
+
+| ladder | sumR | vs base |
+|---|---|---|
+| **BASE — runner only (shipped)** | **109.3** | — |
+| 50% at −0.618 only | 92.4 | −16.9 |
+| 10/10/10/10, 60% runs on | 92.3 | −17.0 |
+| 50% at −0.414 only | 91.1 | −18.2 |
+| 50% at −0.272 only | 89.5 | −19.8 |
+| 15/15/15/15, 40% runs on | 83.9 | −25.4 |
+| 20/20/20/0, 40% runs on | 82.1 | −27.2 |
+| 50% at 0.0 only | 79.3 | −30.0 |
+| 0/0/0/100 — all off at −0.618 (**Aaron's stated rule**) | 77.7 | −31.6 |
+| 0/25/25/50 — skip the 0.0 | 75.7 | −33.6 |
+| 25/25/25/0 | 75.4 | −33.9 |
+| 10/20/30/40 | 73.2 | −36.1 |
+| 20/20/20/40 | 70.9 | −38.4 |
+| **even 25/25/25/25** | **69.1** | **−40.2** |
+
+**All 14 allocations lose, and the ranking is perfectly monotonic in how much is banked.** That is
+the same shape as Run 1's TP-split grid, re-measured on a different rung set: the limit of "bank
+less" is the shipped runner, and there is no interior optimum. Aaron's exact hand rule scores 77.7R
+against 109.3R.
+
+## Design 2 — as a STOP FLOOR (bank nothing, just ratchet the stop up the extension ladder)
+
+This is the steelman: keep 100% of the position, but once price trades through a rung, refuse to
+give that rung back.
+
+| variant | sumR | vs base |
+|---|---|---|
+| **BASE (no extension floor)** | **109.3** | — |
+| floor one rung behind | 56.1 | −53.2 |
+| floor two rungs behind | 51.9 | −57.4 |
+| floor at the tagged rung | 49.3 | −60.0 |
+
+**Worse than the take-profit version — roughly half the strategy.** The cause is specific and worth
+recording: **a fib level is a FIXED price and does not breathe.** The structure trail moves with the
+market and survives an ordinary retrace; a horizontal line does not. The 23.5R trade became 10.5R,
+cut on a pullback **six legs before it actually finished.** Adding lag does not help — it makes it
+worse, because a floor two rungs behind is simply a looser version of the same rigid line.
+
+## Design 3 — as DEEP rungs (Aaron's follow-up: −1 / −2 / −3 / −4 / −6)
+
+Aaron's own correction after seeing Design 1: *"if we ever get to −6, take all the money off the
+table. If we ever get to −4, take at least 50% off. If we get to −1, take like 10%."* Design 1 only
+tested shallow rungs, so this was a genuine gap in the test, not a re-run.
+
+| variant | sumR | vs base |
+|---|---|---|
+| −6 take 100% | **112.2** | +2.9 |
+| −6 take 50% | 109.6 | +0.3 |
+| −6 take 25% | 109.4 | +0.1 |
+| **BASE runner only** | **109.3** | — |
+| −4 take 25% | 107.9 | −1.4 |
+| −4 take 50% | 106.5 | −2.8 |
+| **AARON −1:10% / −4:50% / −6:rest** | **106.3** | **−3.0** |
+| −4 take 100% | 106.0 | −3.3 |
+| −3 take 25% | 105.6 | −3.7 |
+| −2:25 / −4:25 / −6:50 | 104.5 | −4.8 |
+| −1:10 / −2:20 / −4:30 / −6:40 | 102.6 | −6.7 |
+| −1 take 25% | 102.4 | −6.9 |
+| −1 take 50% | 95.5 | −13.8 |
+| *(22 variants total; the rest fall between)* | | |
+
+**Far better than shallow, and still not an improvement.** The three rows that beat the baseline all
+sit at **−6, and exactly ONE trade in 6.6 years ever reached −6.** `−6 take 100%` scores 112.2R,
+which is **+1.55R over the true 110.65R baseline, from a single 2020 trade.** That is a description
+of July 2020, not a rule. Aaron's ladder scores 106.3R.
+
+## The pattern — why there is no ceiling to find, at any depth
+
+**Rule cost tracks how OFTEN the rule fires.** Nothing else.
+
+| depth | trades that ever reach it | what a rule there costs |
+|---|---|---|
+| −1 | 8 | 7–14R |
+| −4 | 2 | 1–3R |
+| −6 | 1 | ~0 |
+
+Every candidate converges on the baseline **from below** as it stops doing anything. **There is no
+depth at which banking becomes profitable — there is only a depth at which it becomes harmless.**
+This is the general answer to "surely some ceiling works", and it applies to hard R targets (Run 8)
+exactly as it applies to fib extensions.
+
+## The shape of the book — the real reason, in one table
+
+Of 164 trades:
+
+| reached | trades | % |
+|---|---|---|
+| the 0.0 fib | **29** | 18% |
+| −0.272 | 23 | 14% |
+| −0.414 | 18 | 11% |
+| **−0.618** | **11** | **7%** |
+| −1 | 8 | 5% |
+| −2 | 2 | 1% |
+| −4 | 2 | 1% |
+| −6 | **1** | 0.6% |
+
+**Those 11 trades past −0.618 make 106R of the 109R total.** The two biggest ran to **−6.738** and
+**−4.770**, and the swing ratchet paid them out at −5.679 and −3.692. A fixed ceiling is applied to
+every trade, so it necessarily caps exactly the handful that carry the strategy.
+
+Aaron's own reference trade (2026-06-17) is not in this list — it did not clear 0.0. The trade he
+was looking at that turned "right before the −0.618" is the 2025-10-21 trade, which ran to −0.630
+and exited at −0.302. His read of the chart was correct; it just does not generalise, because the
+book contains two trades that ran 7–10x further and they are where the money is.
+
+## The one real leak, and why it is still not worth plugging
+
+**8 trades run past 0.0 and hand the ENTIRE extension back**, exiting at the 0.382 floor. That leak
+is real and Aaron's instinct was aimed at it. It is worth **5.7R**. The cheapest rule found that
+plugs it costs **17R**, because the same rule necessarily touches the trades that keep going. This
+is the honest version of "why not just protect the ones that round-trip": you can, and it costs 3x
+what it saves.
+
+## Verdict
+
+1. **Do not build extension-fib exits, in any of the three forms.** 40 replays, three independent
+   designs, every one negative against the shipped runner.
+2. **The manual method is not wrong — it is a different instrument.** Trading by hand, Aaron sees
+   the leg and can judge which run is a monster. A fixed rule cannot, so it charges every trade for
+   the protection and only 11 of 164 can pay.
+3. **This closes the "no man's land past 0.0" question.** The runner already has the right answer
+   there: a trail that moves with structure, which is the only mechanism tested that does not cap
+   the tail.
+
+## What was NOT measured
+
+- **Conditional rungs** — e.g. bank at −0.618 only when the trade took longer than N bars, or only
+  in a RANGING regime. Run 6 swept ten single-bucket entry filters and found nothing, and at n=164 a
+  two-way conditional sweep will find something that looks good and is noise. Deliberately skipped.
+- **Tick-mode fills.** Bar mode, zero costs, like every run in this file. Extension rungs are limit
+  orders at fixed prices, so tick mode would if anything treat them slightly WORSE than the market
+  exits they replace.
+
+Harness: `scratchpad/ext_fibs.py` (rungs), `ext_floor.py` (stop floor), `ext_deep.py` (deep rungs),
+`ext_where.py` (per-trade depth diagnostic) — all subclassing `Execution`, no repo file modified.
+Throwaway, not committed.
