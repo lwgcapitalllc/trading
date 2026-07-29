@@ -1,0 +1,61 @@
+loading XAUUSD 15m  2018-09-14 -> 2026-07-29 ...
+  185,745 bars  2018-09-14 00:00:00 -> 2026-07-29 05:30:00
+replaying mpc_sos_fade (warmup 1000) ...
+  187 trades, 700 A+ legs reached SOS
+
+============================================================================================================
+mpc_sos_fade  XAUUSD 15m   2018-09-14 -> 2026-07-29   fill=bar   breakeven band ±0.15R
+============================================================================================================
+
+ALL              n= 187  sumR=   108.4  avgR=  0.58  win= 58 loss= 61 be= 68  wr= 31%  avgWin= 2.80  avgLoss= -0.92
+
+--- BY YEAR ---
+2018             n=   4  sumR=    -2.9  avgR= -0.73  win=  0 loss=  3 be=  1  wr=  0%  avgWin= 0.00  avgLoss= -1.00
+2019             n=  19  sumR=     0.7  avgR=  0.03  win=  4 loss=  6 be=  9  wr= 21%  avgWin= 1.35  avgLoss= -0.88
+2020             n=  23  sumR=    31.1  avgR=  1.35  win=  6 loss=  6 be= 11  wr= 26%  avgWin= 6.03  avgLoss= -0.89
+2021             n=  23  sumR=     5.4  avgR=  0.24  win=  7 loss=  2 be= 14  wr= 30%  avgWin= 1.01  avgLoss= -1.00
+2022             n=  22  sumR=    -4.0  avgR= -0.18  win=  3 loss= 11 be=  8  wr= 14%  avgWin= 1.92  avgLoss= -0.93
+2023             n=  28  sumR=    20.5  avgR=  0.73  win= 11 loss= 10 be=  7  wr= 39%  avgWin= 2.70  avgLoss= -0.95
+2024             n=  18  sumR=    19.1  avgR=  1.06  win=  5 loss=  8 be=  5  wr= 28%  avgWin= 5.16  avgLoss= -0.86
+2025             n=  33  sumR=    22.4  avgR=  0.68  win= 12 loss= 12 be=  9  wr= 36%  avgWin= 2.79  avgLoss= -0.92
+2026             n=  17  sumR=    16.2  avgR=  0.95  win= 10 loss=  3 be=  4  wr= 59%  avgWin= 1.92  avgLoss= -1.00
+
+--- BY REGIME AT ENTRY ---
+TRANSITIONING    n=  20  sumR=     5.9  avgR=  0.29  win=  7 loss=  6 be=  7  wr= 35%  avgWin= 1.66  avgLoss= -1.00
+TRENDING         n= 167  sumR=   102.5  avgR=  0.61  win= 51 loss= 55 be= 61  wr= 31%  avgWin= 2.96  avgLoss= -0.91
+
+--- BY SESSION ---
+Asia             n=  45  sumR=    12.6  avgR=  0.28  win= 12 loss= 20 be= 13  wr= 27%  avgWin= 2.55  avgLoss= -0.92
+Late             n=  13  sumR=     4.8  avgR=  0.37  win=  4 loss=  2 be=  7  wr= 31%  avgWin= 1.64  avgLoss= -1.00
+London           n=  45  sumR=    34.7  avgR=  0.77  win= 19 loss= 10 be= 16  wr= 42%  avgWin= 2.32  avgLoss= -1.00
+NewYork          n=  84  sumR=    56.2  avgR=  0.67  win= 23 loss= 29 be= 32  wr= 27%  avgWin= 3.53  avgLoss= -0.89
+
+--- BY DIRECTION ---
+long             n=  85  sumR=    50.4  avgR=  0.59  win= 25 loss= 26 be= 34  wr= 29%  avgWin= 2.96  avgLoss= -0.95
+short            n= 102  sumR=    58.0  avgR=  0.57  win= 33 loss= 35 be= 34  wr= 32%  avgWin= 2.69  avgLoss= -0.90
+
+--- LOSSES: did the trade ever work? ---
+(mfe_r = furthest it ever showed in profit, in R, before it lost)
+  2018  losses=  3  never-worked(mfe<0.1R)=  0  gave-back(mfe>=0.5R)=  1  medianMfe=0.33R
+  2019  losses=  6  never-worked(mfe<0.1R)=  0  gave-back(mfe>=0.5R)=  3  medianMfe=0.48R
+  2020  losses=  6  never-worked(mfe<0.1R)=  0  gave-back(mfe>=0.5R)=  4  medianMfe=0.53R
+  2021  losses=  2  never-worked(mfe<0.1R)=  0  gave-back(mfe>=0.5R)=  0  medianMfe=0.27R
+  2022  losses= 11  never-worked(mfe<0.1R)=  0  gave-back(mfe>=0.5R)=  7  medianMfe=0.68R
+  2023  losses= 10  never-worked(mfe<0.1R)=  0  gave-back(mfe>=0.5R)=  6  medianMfe=0.56R
+  2024  losses=  8  never-worked(mfe<0.1R)=  0  gave-back(mfe>=0.5R)=  4  medianMfe=0.56R
+  2025  losses= 12  never-worked(mfe<0.1R)=  1  gave-back(mfe>=0.5R)=  5  medianMfe=0.40R
+  2026  losses=  3  never-worked(mfe<0.1R)=  0  gave-back(mfe>=0.5R)=  2  medianMfe=0.51R
+
+--- SETUPS THAT NEVER TRADED, by reason ---
+  year    divergence / extreme-R  limit rested, never fi   never retraced to 0.5      no FVG in the zone                  traded
+  2018                         0                       1                       7                       9                       4
+  2019                         1                       1                      30                      17                      19
+  2020                         1                       1                      32                      21                      23
+  2021                         1                       7                      35                      21                      23
+  2022                         2                       3                      45                      38                      22
+  2023                         1                       2                      32                      28                      28
+  2024                         3                       2                      33                      31                      18
+  2025                         1                       3                      42                      26                      33
+  2026                         1                       3                      20                      12                      17
+
+wrote /Users/alwg/trading/backtest/archive/2026-07-29_xauusd_15m_full_history/mpc_sos_fade/trades.csv  and  /Users/alwg/trading/backtest/archive/2026-07-29_xauusd_15m_full_history/mpc_sos_fade/setups.csv
