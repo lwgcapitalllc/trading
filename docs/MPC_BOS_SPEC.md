@@ -315,6 +315,45 @@ Listed so they don't get smuggled in, and so the next iteration has somewhere to
 4. Only then the Python port under `strategies/python/mpc_bos/`, and only after a real TradingView
    export has passed exit 0 (the standing rule).
 
+### 10b. Run 1 (2026-07-29) — and the F4 design conflict it exposed
+
+**XAUUSD 15m, 365 days, shipped defaults: 13 trades, −2.65%.**
+
+13 trades in a year is not a selective setup, it is a broken one, and the cause is
+**F4 (`bosReqHold`) fighting the entry**. F4 kills an armed leg when a candle CLOSES back
+through the broken swing. But the entry is a retrace to **0.618–0.886 of the leg**, and that
+band sits **below** the broken swing on almost every leg — the expansion has to run more than
+twice the distance from the leg origin to the broken swing for the band to clear it. So price
+cannot reach the entry without first closing back through the level, and F4 dropped the setup
+a few bars before its own limit would have filled. The only fills that survived were legs
+where a single bar wicked into the band and closed back above the swing.
+
+This is a conflict in §4 itself, not a build error: F4 as written is only coherent with a very
+shallow entry on a leg that expanded a long way past the broken swing. **F4 now defaults OFF**,
+with that reasoning on its tooltip.
+
+**Defaults changed (2026-07-29) so the baseline measures the BOS idea and nothing else:**
+
+| | was | now |
+|---|---|---|
+| entry | FVG edge required, fib fallback off | **plain fib `bosEntryFib`, default 0.618** |
+| FVG / Sniper Zone | required | `bosUseFvg` master toggle, **off** |
+| F3 leg-size floor | 1.0 × ATR | **0.0 (off)** |
+| F4 broken level must hold | on | **off** — see above |
+| F5 / F5b divergence | on | **off** (spec §4a wants on; tuning candidate #1) |
+| F6 max trades/regime | 2 | **10 (effectively off)** |
+| F9 staleness | 1.25 days | **3.0 days** |
+| F7 final hour | on | **on** — a market-hours fact, not a strategy opinion |
+
+Every filter is KEPT as an input, not deleted. Finding which of them pays is the point of the
+file; each is now switched on alone against a baseline that trades.
+
+New input `bosEntryFib` (0.5 / 0.618 / 0.702 / 0.786 / 0.886) is the entry level. Deep/shallow
+is still derived from where the limit lands, so picking 0.5 moves TP1 to 0.382 automatically and
+the trade cannot scratch itself on its own fill bar.
+
+---
+
 ### 10a. Deviations taken during the build — read before judging a run
 
 Three, all flagged in the Pine's own header per §0:

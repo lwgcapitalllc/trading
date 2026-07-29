@@ -33,8 +33,23 @@
 // Not every BOS is real — some are the last poke before the reversal — so this
 // is deliberately a FILTERED setup (F1-F9), not a "take them all" setup.
 //
-// IT IS THE A+ WITH THE ARM SWAPPED. Entries, targets, staging, trail and sizing
-// are the A+ ladder unchanged. Three things differ:
+// THE DEFAULT SETUP, 2026-07-29, after the first real run. An SOS opens a regime;
+// every BOS after it arms a leg; a limit rests at fib 0.618 of that leg's retrace;
+// the tap is the entry. No gap, no zone, no confirmation, no filters. Everything
+// that can refuse a trade is OFF and stays an input, so each one can be switched
+// on alone and measured against this baseline.
+//
+// WHY IT CHANGED. The first build shipped with F3 (leg-size floor), F4 (broken
+// level must hold), F6 (2 trades per regime), F5/F5b (divergence) and a REQUIRED
+// FVG all on. Over 365 days of XAUUSD 15m that took 13 trades for −2.65%. F4 was
+// the main cause and it is a DESIGN CONFLICT rather than a bad number: the entry
+// is a retrace to 0.618-0.886 of the leg, that band sits BELOW the broken swing
+// on almost every leg, so F4 killed the setup a few bars before its own limit
+// would have filled. It now defaults OFF with that written on its tooltip.
+//
+// IT IS THE A+ WITH THE ARM SWAPPED. Targets, staging, trail and sizing are the
+// A+ ladder unchanged; the entry is now a plain fib by default. Three things
+// differ from mpc_strategy.pine:
 //   • the arm is a BOS after an SOS, not a sweep-or-divergence before one,
 //   • liquidity sweeps are not used at all — no sweep arming, no sweep confluence,
 //   • divergence is a KILL, not a veto-with-an-exemption: it blocks the entry,
@@ -405,7 +420,7 @@ bool showSniperFib = input.bool(false, "Sniper Zone", group = GRP_SNIPER, active
 // lines below has to read it, and Pine needs the declaration first. It still
 // appears under "Strategy Execution" in the panel — group placement is by the
 // group string, not by position in the file.
-bool execConfSZ = input.bool(true, "Allow Sniper Zone as entry confirmation", group = "Strategy Execution", tooltip = "Adds the Sniper Zone (the break leg's 0.382-0.5 pocket, re-anchored on every BOS) as a fallback entry, used only on a leg with no qualifying FVG. The limit rests at the far side of the pocket, clamped to 0.5 and rejected past 0.886, and the zone must be anchored at or after THIS BOS's bar. Default ON here (the A+ file defaults it OFF) — Aaron named the sniper zone as an entry method for this setup.")
+bool execConfSZ = input.bool(true, "Track the Sniper Zone (needed if it prices entries)", group = "Strategy Execution", tooltip = "Engine-side TRACKER enable, not the entry rule. It only makes the Sniper Zone's 0.382-0.5 pocket get computed at all — without it sniperZoneTop/Bot stay na and the zone can never price anything. Leave it ON; whether the zone actually prices an entry is decided by the two settings in the entry-confirmation block ('price the entry off an FVG / Sniper Zone' + 'Sniper Zone counts as a gap'), both of which sit behind the master confirmation toggle that is OFF by default.")
 
 //============================================================
 //  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
@@ -3132,27 +3147,40 @@ if barstate.islast
 
 var GRP_EXEC = "Strategy Execution"
 
-// ── Setup — which BOS we arm on (spec §4) ────────────────────────────────────
+// ══ THE SETUP — this is the whole strategy at its defaults ═══════════════════
+// An SOS opens a regime. Every BOS after it in that direction arms a leg. A limit
+// rests at the chosen fib of that leg's retrace. That is it. Nothing else is on.
+//
+// EVERY filter below defaults OFF and every entry confirmation defaults OFF, so
+// the shipped run measures the BOS IDEA and nothing else. Turn ONE on at a time
+// and compare — that is what they are for. They are kept rather than deleted
+// precisely because the point of this file is to find which of them pays.
 bool   execLongs   = input.bool(true,  "Trade Longs",  group = GRP_EXEC)
 bool   execShorts  = input.bool(true,  "Trade Shorts", group = GRP_EXEC)
-string bosWhich    = input.string("All", "F1 · Which break after the SOS", options = ["1st only", "1st + 2nd", "All"], group = GRP_EXEC, tooltip = "The 1st break after a shift is the EXPANSION; 2nd+ are CONTINUATIONS. The hunch is that the 3rd+ break of a run is where exhaustion and the terminal fakeout live — it is only a hunch, so the default trades all of them and every trade logs its BOS ordinal so the split is readable straight off the run. Set the cutoff from the results, not from the hunch.")
-float  bosMinDispAtr = input.float(0.0, "F2 · Break must close past the swing by (x ATR14)", minval = 0, maxval = 5, step = 0.1, group = GRP_EXEC, tooltip = "Displacement filter. A one-tick poke through a swing high is a liquidity grab, not a break. 0 = off (the unfiltered baseline). Sweep 0 -> 0.5 -> 1.0.")
-float  bosMinLegAtr  = input.float(1.0, "F3 · Break-leg range floor (x ATR14)", minval = 0, maxval = 10, step = 0.25, group = GRP_EXEC, tooltip = "Leg-size filter. A micro leg's 0.5-0.886 band is inside the noise: its stop is too tight to survive and its targets are inside the spread. 0 = off.")
-bool   bosReqHold    = input.bool(true, "F4 · Broken level must hold (close back through = dead)", group = GRP_EXEC, tooltip = "The single most important filter. The whole premise of a continuation is that broken resistance becomes support — if a candle CLOSES back through the broken swing, the break was the fakeout and the setup is dropped with no trade.")
-int    bosMaxPerRegime = input.int(2, "F6 · Max trades per regime (since last SOS)", minval = 1, maxval = 10, group = GRP_EXEC, tooltip = "After this many FILLED BOS trades since the last shift of structure, stand down until the next SOS. Stops the strategy stacking three losses into one chop leg.")
-float  bosMaxDays  = input.float(1.25, "F9 · Armed BOS: days before it goes stale", minval = 0.25, maxval = 5, step = 0.25, group = GRP_EXEC, tooltip = "How long an armed BOS waits for its retrace. Set in DAYS, measured as a BAR count (one day / the chart timeframe) so weekends and the daily close don't consume it. Same construction and default as the B-LEG.")
-string bosFibAnchor = input.string("Expansion leg", "Entry fib anchor", options = ["Expansion leg", "Break leg"], group = GRP_EXEC, tooltip = "Which leg prices the entry band, the stop and the targets. 'Expansion leg' (default) = bos_low -> the running extreme, i.e. the drawn External fib — the band the A+ machinery already prices off, and its levels move until the pullback confirms. 'Break leg' = bos_low -> bos_high, frozen at the BOS bar (the Sniper Zone's own leg).")
+string bosEntryFib = input.string("0.618", "Entry: rest the limit at fib", options = ["0.5", "0.618", "0.702", "0.786", "0.886"], group = GRP_EXEC, tooltip = "THE ENTRY. A limit rests at this retracement of the armed BOS leg and the tap fills it — no gap, no zone, no confirmation required. 0.618 (default) is the shallowest of the entry band, so it fills most often; deeper levels fill less often but risk less per trade. The band this walks is 0.618 -> 0.886. 0.5 is offered because it is the shallowest fill of all, but note the ladder then treats the entry as SHALLOW and moves TP1 to 0.382 so the trade cannot scratch itself on its own fill bar.")
+string bosFibAnchor = input.string("Expansion leg", "Entry fib anchor", options = ["Expansion leg", "Break leg"], group = GRP_EXEC, tooltip = "Which leg the entry fib, the stop and the targets are measured on. 'Expansion leg' (default) = bos_low -> the running extreme, so the levels keep moving until the pullback confirms. 'Break leg' = bos_low -> bos_high, frozen at the BOS bar. On a leg that expanded a long way past the broken swing these two are far apart — worth a sweep of its own.")
 
-// ── Entry — the A+ ladder verbatim. Only execConfSZ / execFvg50 flip to ON. ──
-bool execReqFVG   = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG (or the Sniper Zone) prices the leg. Off is OFF-SPEC for this strategy: it lets a bare 0.618 fib price the leg with nothing behind it.")
-bool execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = the ENTIRE gap must sit on the deep side of 0.5 (between 0.5 and 0.886), never straddling it. Off = any gap overlapping the band qualifies.")
-bool execDeepFib  = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3. When a qualifying gap's near edge sits deeper than 0.618, rest the limit at the nearest fib just SHALLOWER than the gap (0.618 / 0.702 / 0.786) — the level price reaches first — instead of the gap edge.")
-bool execFvg50    = input.bool(true, "Entry (least favorable): FVG must touch the 0.5 line", group = GRP_EXEC, tooltip = "Lowest-priority fallback. Qualifies a gap that STRADDLES 0.5 and rests the limit AT 0.5. Ranks last, so it only prices a leg no better source already did. Default ON here (A+ default is OFF) — Aaron named it as an entry method for this setup.")
+// ── Entry confirmations — ALL OFF by default. Turn one on to test whether
+//    demanding it pays for the trades it costs you. ────────────────────────────
+bool bosUseFvg    = input.bool(false, "Confirm: price the entry off an FVG / Sniper Zone", group = GRP_EXEC, tooltip = "OFF (default) = the limit rests at the fib level above, full stop. ON = the A+ entry ladder takes over and prices the limit off a live fair value gap (or the Sniper Zone) inside the band instead, with the fib as fallback per the next setting. This is the single biggest lever on trade COUNT: demanding a gap is what turns a setup that would have traded into one that never places an order.")
+bool execReqFVG   = input.bool(false, "   ↳ ...and REQUIRE one (no gap = no trade)", group = GRP_EXEC, active = bosUseFvg, tooltip = "Only used when the confirmation above is on. OFF = a leg with no qualifying gap still trades at the plain fib. ON = no gap, no trade. This is the strict A+ rule; it is the most expensive setting in the file in trade count, which is exactly why it is worth measuring rather than assuming.")
+bool execConfSZ2  = input.bool(true,  "   ↳ ...Sniper Zone counts as a gap", group = GRP_EXEC, active = bosUseFvg, tooltip = "Only used when the confirmation above is on. Lets the break leg's 0.382-0.5 pocket price a leg that had no qualifying FVG. (The engine-side tracker toggle for the zone lives in the Sniper Fib group and must also be on — it is, by default.)")
+bool execFvgDeepOnly = input.bool(true, "   ↳ ...gap must sit fully past 0.5", group = GRP_EXEC, active = bosUseFvg, tooltip = "Only used when the confirmation above is on. The ENTIRE gap must sit on the deep side of 0.5, never straddling it.")
+bool execDeepFib  = input.bool(true, "   ↳ ...deep gap enters at the nearest fib", group = GRP_EXEC, active = bosUseFvg, tooltip = "Only used when the confirmation above is on. Method 3: when a qualifying gap's near edge sits deeper than 0.618, rest the limit at the nearest fib just SHALLOWER than the gap — the level price reaches first — instead of the gap edge.")
+bool execFvg50    = input.bool(false, "   ↳ ...a gap straddling 0.5 enters at 0.5", group = GRP_EXEC, active = bosUseFvg, tooltip = "Only used when the confirmation above is on. Lowest-priority fallback: a gap whose body contains the 0.5 line rests the limit AT 0.5.")
 
-// ── Filters ──────────────────────────────────────────────────────────────────
-bool bosRespectVeto  = input.bool(true, "F5 · Divergence / extreme-RSI blocks entry", group = GRP_EXEC, tooltip = "Live gate, re-checked on every bar the limit rests — NOT a one-time check at the BOS bar. A long is blocked while a bearish divergence is live or RSI >= the extreme-overbought level; the short mirror. If the divergence appears while the setup waits for its retrace the resting limit is PULLED; if it goes stale the limit may be re-placed. There is deliberately NO post-SOS exemption here (the A+ has one) — for a CONTINUATION an opposing divergence is weakness in the move we are trying to ride, which is exactly the fakeout signature.")
-bool bosCloseOppDiv  = input.bool(true, "F5b · Close an open trade on opposing divergence", group = GRP_EXEC, tooltip = "The one addition to the exit side. An opposing divergence means the move is overextended and setting up the NEXT shift of structure — a continuation trade is the worst thing to be holding into that. Fires on a CONFIRMED divergence only, not on extreme RSI (an overbought RSI is the normal state of a healthy long). Register any change to this in strategies/python/mpc_sos_fade/CLAUDE.md -> The exit ladder.")
-bool execNoLateDay = input.bool(true, "F7 · No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00, so this bars 16:00-18:00 NY.")
+// ── Filters — ALL OFF / wide open by default (spec §4). ──────────────────────
+// The 2026-07-29 365-day 15m run took 13 trades at −2.65% with these ON. F4 was
+// the reason and it is a DESIGN CONFLICT, not a tuning problem — see its tooltip.
+string bosWhich    = input.string("All", "F1 · Which break after the SOS", options = ["1st only", "1st + 2nd", "All"], group = GRP_EXEC, tooltip = "The 1st break after a shift is the EXPANSION; 2nd+ are CONTINUATIONS. Default trades all of them; every trade logs its BOS ordinal so the split is readable straight off the run. Set the cutoff from the results, not from a hunch.")
+float  bosMinDispAtr = input.float(0.0, "F2 · Break must close past the swing by (x ATR14)", minval = 0, maxval = 5, step = 0.1, group = GRP_EXEC, tooltip = "Displacement filter. A one-tick poke through a swing high is a liquidity grab, not a break. 0 = OFF (the default). Sweep 0 -> 0.5 -> 1.0.")
+float  bosMinLegAtr  = input.float(0.0, "F3 · Break-leg range floor (x ATR14)", minval = 0, maxval = 10, step = 0.25, group = GRP_EXEC, tooltip = "Leg-size filter. A micro leg's entry band is inside the noise: its stop is too tight to survive and its targets are inside the spread. 0 = OFF (the default; it was 1.0 in the first build and refused legs before anything else got a chance to). Sweep 0 -> 0.5 -> 1.0.")
+bool   bosReqHold    = input.bool(false, "F4 · Broken level must hold (close back through = dead)", group = GRP_EXEC, tooltip = "DEFAULT OFF, and read this before turning it on. The rule says a candle CLOSING back through the broken swing kills the setup. But the ENTRY is a retrace to 0.618-0.886 of the leg, and that band sits BELOW the broken swing on almost every leg — so price cannot reach the entry without first closing back through the level, and this filter kills the setup a few bars before its own limit would have filled. With it ON the strategy took 13 trades in a year. It is only coherent paired with a very shallow entry on a leg that expanded far past the broken swing. Measure it, do not assume it.")
+int    bosMaxPerRegime = input.int(10, "F6 · Max trades per regime (since last SOS)", minval = 1, maxval = 20, group = GRP_EXEC, tooltip = "After this many FILLED trades since the last shift of structure, stand down until the next SOS. Default 10 = effectively OFF. Lower it to 2-3 to stop the strategy stacking losses into one chop leg — but measure what it costs first.")
+float  bosMaxDays  = input.float(3.0, "F9 · Armed BOS: days before it goes stale", minval = 0.25, maxval = 10, step = 0.25, group = GRP_EXEC, tooltip = "How long an armed BOS waits for its retrace before it is dropped. Set in DAYS, measured as a BAR count (one day / the chart timeframe) so weekends and the daily close don't consume it. Raised 1.25 -> 3.0: a 15m continuation retrace routinely takes longer than a day and the old cap was expiring setups that would have filled.")
+bool bosRespectVeto  = input.bool(false, "F5 · Divergence / extreme-RSI blocks entry", group = GRP_EXEC, tooltip = "Live gate, re-checked on every bar the limit rests. A long is blocked while a bearish divergence is live or RSI is at the extreme; the short mirror. If the divergence appears while the setup waits for its retrace the resting limit is PULLED. Spec §4a wants this ON — it is defaulted OFF here only so the first run measures the raw BOS idea. It is tuning candidate #1.")
+bool bosCloseOppDiv  = input.bool(false, "F5b · Close an open trade on opposing divergence", group = GRP_EXEC, tooltip = "The one addition to the exit side: an opposing divergence means the move is overextended and setting up the NEXT shift of structure. Fires on a CONFIRMED divergence only, not on extreme RSI. Spec §4a wants this ON; defaulted OFF for the same reason as F5. Register any change in strategies/python/mpc_sos_fade/CLAUDE.md -> The exit ladder.")
+bool execNoLateDay = input.bool(true, "F7 · No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "The one filter left ON. Blocks NEW entries in the last hour before the daily close — gold closes 17:00 New York and reopens 18:00, so this bars 16:00-18:00 NY and stops trades that get gapped out over the break. It is a market-hours fact rather than a strategy opinion, which is why it is not off with the rest.")
 string execHtfWeekly = input.string("Ignore", "F8 · Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias gate, WEEKLY, judged vs trade direction. For a CONTINUATION setup 'Must agree' is the natural tuning candidate — the opposite of how the A+ reversal uses it.")
 string execHtfDaily  = input.string("Ignore", "F8 · Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "Same four choices as Weekly, judged vs trade direction.")
 
@@ -3326,12 +3354,17 @@ if bosS_on
 // bar to close inside the band (a wick fills the order, and the order survives
 // the FVG box being deleted on the tap because the order is already placed).
 //
-// First source that prices the leg wins:
+// DEFAULT: the limit rests at `bosEntryFib` (0.618) of the armed leg. One level,
+// no confirmation, no gap. That is the entry this strategy ships with.
+//
+// With `bosUseFvg` ON the A+ ladder takes over and the first source that prices
+// the leg wins:
 //   1. FVG edge (clamped to 0.5; whole gap past 0.5 with execFvgDeepOnly on)
 //   2. deep-fib re-price — Method 3
 //   3. Sniper Zone — only on a leg with no qualifying gap, and only a zone
 //      anchored at or after THIS BOS's bar
-//   4. gap straddling 0.5 -> limit at 0.5 (ranks last)
+//   4. gap straddling 0.5 -> limit at 0.5
+//   5. the plain fib — unless execReqFVG says no gap means no trade
 // 0.5 is the floor: no candidate may ever rest shallower than it, and anything
 // past 0.886 is rejected.
 
@@ -3363,7 +3396,11 @@ bool  shortEdgeSz = false
 bool  longFvgOk   = false
 bool  shortFvgOk  = false
 
-if array.size(fvgTops) > 0
+// The chosen fib entry price, per side. This IS the entry at the defaults.
+float lFibEntry = bosEntryFib == "0.5" ? lP2 : bosEntryFib == "0.702" ? lP4 : bosEntryFib == "0.786" ? lP5 : bosEntryFib == "0.886" ? lP6 : lP3
+float sFibEntry = bosEntryFib == "0.5" ? sP2 : bosEntryFib == "0.702" ? sP4 : bosEntryFib == "0.786" ? sP5 : bosEntryFib == "0.886" ? sP6 : sP3
+
+if bosUseFvg and array.size(fvgTops) > 0
     for _i = 0 to array.size(fvgTops) - 1
         float _gT = array.get(fvgTops, _i)
         float _gB = array.get(fvgBots, _i)
@@ -3383,7 +3420,7 @@ if array.size(fvgTops) > 0
 // only on a leg where no qualifying gap exists, and only if the zone belongs to
 // THIS break (sz_bar >= the anchor's bar) rather than being left over from an
 // earlier leg. The limit rests at the FAR side of the pocket.
-if execConfSZ and not na(sniperZoneTop) and not na(sniperZoneBot) and not na(sz_bar)
+if bosUseFvg and execConfSZ2 and execConfSZ and not na(sniperZoneTop) and not na(sniperZoneBot) and not na(sz_bar)
     if na(longEdge) and bosL_on and lFibsReady and sz_bullish and not na(bosL_bar) and sz_bar >= bosL_bar
         float _e = math.min(sniperZoneBot, lP2)
         if _e >= lP6
@@ -3395,16 +3432,9 @@ if execConfSZ and not na(sniperZoneTop) and not na(sniperZoneBot) and not na(sz_
             shortEdge   := _e
             shortEdgeSz := true
 
-// "Require FVG" off is OFF-SPEC — it lets a bare 0.618 price the leg.
-if not execReqFVG
-    if na(longEdge)  and bosL_on and lFibsReady
-        longEdge  := lP3
-    if na(shortEdge) and bosS_on and sFibsReady
-        shortEdge := sP3
-
-// The least-favorable entry: a gap whose body STRADDLES 0.5. Ranks last, so it
-// only ever prices a leg no better source already did.
-if execFvg50 and array.size(fvgTops) > 0
+// The least-favorable gap entry: a gap whose body STRADDLES 0.5. Ranks below
+// every other gap source, so it only prices a leg none of them did.
+if bosUseFvg and execFvg50 and array.size(fvgTops) > 0
     for _j = 0 to array.size(fvgTops) - 1
         float _gT = array.get(fvgTops, _j)
         float _gB = array.get(fvgBots, _j)
@@ -3415,6 +3445,15 @@ if execFvg50 and array.size(fvgTops) > 0
         if na(shortEdge) and bosS_on and sFibsReady and (not _gBull) and _gB <= sP2 and _gT >= sP2
             shortEdge  := sP2
             shortFvgOk := true
+
+// ── THE DEFAULT ENTRY — the plain fib level, last in the ladder so any enabled
+//    confirmation above wins, and the ONLY source at the shipped defaults.
+//    Skipped only when a gap is both used AND required.
+if not (bosUseFvg and execReqFVG)
+    if na(longEdge)  and bosL_on and lFibsReady
+        longEdge  := lFibEntry
+    if na(shortEdge) and bosS_on and sFibsReady
+        shortEdge := sFibEntry
 
 //============================================================
 //  GATES — the filters that refuse a ready setup
