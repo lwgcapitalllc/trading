@@ -11,7 +11,8 @@ position sizing, NOT UI. The engine emits facts; a bot owns the policy and the s
 **Status:** Built 2026-07-05. Unit-tested (29 tests, green) + validated live end-to-end against the
 real Forex Factory calendar (live weekly feed + a real Feb-2025 history backfill → cache → engine
 blackout). **Off the roadmap and NOT a Pine port** — see "Validation".
-**Last reviewed:** 2026-07-06
+**Last reviewed:** 2026-07-29 — the FF history scraper's browser fingerprint is now a fallback chain
+(Cloudflare started 403-ing every `chrome*` profile); 2021-01 → 2026-07 backfilled (27,363 events)
 
 ---
 
@@ -81,7 +82,13 @@ package dir puts `engines/news/` on `sys.path[0]`, and `news/types.py` would the
      `calendarComponentStates`, using each event's `dateline` = UTC unix seconds). The site is
      behind Cloudflare, so it needs `curl_cffi` (browser impersonation) — **lazy-imported and
      isolated here**, so the core + live feed stay pure-stdlib. For historical backfill
-     (`tools/backfill.py`).
+     (`tools/backfill.py`). **The browser fingerprint is a FALLBACK CHAIN (`_PROFILES`), never one
+     hardcoded profile** — Cloudflare blocks them per-family and changes its mind: on 2026-07-28
+     every `chrome*` profile started returning 403 while `safari18_0`/`firefox133` still returned
+     the page, the exact reverse of when this source was written. `_get` walks the chain and
+     remembers the first profile that answers 200, so a 66-month backfill pays for the search once;
+     `impersonate=` still pins one explicitly, and the chain rescues it if that one is refused. If
+     the WHOLE chain fails, upgrade `curl_cffi` and put its newer profiles at the front.
    - `TradingViewSource` — the **free TradingView calendar API** (`economic-calendar.tradingview.com`,
      needs an `Origin` header, no key). Unlike FF it takes an **arbitrary date window**, carries the
      released **`actual`** result, and tags each row with a **`category`** (Labor, Prices, …). No bank

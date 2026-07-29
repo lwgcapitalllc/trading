@@ -26,6 +26,11 @@ class EquityPoint(BaseModel):
     index: int
     equity: float
     date: Optional[str] = None
+    # The trade's OPEN time (UTC epoch ms) — what the News & Holiday filter card tags against.
+    # backtest/output.py has always written it to equity_curve.json and the /news endpoint reads it
+    # straight off disk, so the SERVER-side tagging worked; it was missing HERE, so the model dropped
+    # it on the way out and the card judged every run "made before trade times were recorded".
+    entry_ms: Optional[int] = None
     direction: Optional[str] = None   # 'Long' | 'Short'
     profit: Optional[float] = None
     exit_name: Optional[str] = None

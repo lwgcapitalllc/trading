@@ -35,6 +35,14 @@ _MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct",
 _CAL_URL = "https://www.forexfactory.com/calendar?month={mon}.{year}"
 _STATE_RE = re.compile(r"calendarComponentStates\[\d+\]\s*=\s*\{")
 
+# curl_cffi browser fingerprints, tried in order until one is not refused. Cloudflare blocks these
+# per-family and changes its mind over time — as of 2026-07-28 every chrome* profile 403s here while
+# safari and firefox return the page, which is the exact reverse of when this source was written.
+# So this is an ordered fallback chain, never a single hardcoded profile: measure, don't assume.
+# Chrome is kept last rather than deleted — it is the most common fingerprint and may be unblocked
+# again. If the whole chain ever fails, upgrade curl_cffi and add its newer profiles at the front.
+_PROFILES = ("safari18_0", "firefox133", "safari17_0", "chrome131")
+
 
 def _month_bounds_ms(year: int, month: int) -> Interval:
     """[first-instant, last-instant] of a calendar month in UTC epoch ms."""
@@ -84,13 +92,16 @@ class ForexFactoryHistorySource(CalendarSource):
     """Scrapes the FF calendar website for historical (or current) months and normalises to
     NewsEvent. `fetch()` pulls the current month; use `fetch_month` / `fetch_range` for history.
 
-    `sleep_s` throttles month requests (politeness); `impersonate` is the curl_cffi browser profile.
+    `sleep_s` throttles month requests (politeness); `impersonate` pins ONE curl_cffi browser
+    profile — leave it None to walk `_PROFILES` until one gets through (the normal path).
     """
 
-    def __init__(self, sleep_s: float = 1.0, timeout: float = 30.0, impersonate: str = "chrome"):
+    def __init__(self, sleep_s: float = 1.0, timeout: float = 30.0,
+                 impersonate: Optional[str] = None):
         self._sleep_s = sleep_s
         self._timeout = timeout
         self._impersonate = impersonate
+        self._working: Optional[str] = impersonate   # first profile that got a 200, reused after
 
     def fetch(self) -> FetchResult:
         now = datetime.now(tz=timezone.utc)
@@ -125,10 +136,25 @@ class ForexFactoryHistorySource(CalendarSource):
                 "historical FF backfill needs curl_cffi to get past Cloudflare — "
                 "`pip install curl_cffi`. (The live JSON feed and the engine core need no deps.)"
             ) from exc
-        resp = cffi_requests.get(url, impersonate=self._impersonate, timeout=self._timeout)
-        if resp.status_code != 200:
-            raise RuntimeError(f"FF calendar fetch failed ({resp.status_code}) for {url}")
-        return resp.text
+        # Cloudflare blocks fingerprints one family at a time, not all at once — on 2026-07-28 every
+        # chrome* profile started returning 403 while safari/firefox still got 200. So we try a
+        # CHAIN rather than trusting a single hardcoded profile, and remember the one that worked so
+        # a 66-month backfill pays for the search once instead of on every request.
+        candidates = list(_PROFILES)
+        if self._working:                           # known-good (or user-pinned) goes first, but the
+            candidates = [self._working] + [p for p in _PROFILES if p != self._working]  # rest still
+        last = ""                                                                        # rescue us
+        for profile in candidates:
+            resp = cffi_requests.get(url, impersonate=profile, timeout=self._timeout)
+            if resp.status_code == 200:
+                self._working = profile
+                return resp.text
+            last = f"{resp.status_code} on {profile}"
+        raise RuntimeError(
+            f"FF calendar fetch failed ({last}) for {url} — every browser profile was refused. "
+            f"Cloudflare has likely tightened; try a newer curl_cffi and add its profiles to "
+            f"_PROFILES."
+        )
 
     # --- parsing (pure — unit-tested offline on a saved sample) ----------------------------------
 
