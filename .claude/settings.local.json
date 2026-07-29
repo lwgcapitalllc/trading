@@ -53,7 +53,15 @@
       "Bash(./.venv/bin/python -m pytest tests/test_news_filter.py tests/test_chart_spec_misses.py -q)",
       "Bash(echo \"exit=$?\")",
       "Bash(git check-ignore *)",
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Bash(grep -A 8 -i \"forexvps\" ~/.ssh/config)",
+      "Read(//Users/alwg/.ssh/**)",
+      "Bash(git -C /Users/alwg/trading ls-files smart-money/config/ command-center/backend/config.json)",
+      "Bash(npm --version)",
+      "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python --version)",
+      "Bash(git -C /Users/alwg/trading ls-files -s command-center/start.sh)",
+      "Bash(git -C /Users/alwg/trading status --short)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }
