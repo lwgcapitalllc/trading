@@ -22,6 +22,52 @@
 
 ---
 
+## 2026-07-29 — `mpc_bos_strategy.pine`, the third strategy off the shared engine
+
+**New file `indicators/mpc_bos_strategy.pine`** (3875 lines), built to `docs/MPC_BOS_SPEC.md`. It
+trades the CONTINUATION: an SOS sets a regime, and every BOS after it in that direction is a fresh
+leg whose retrace is bought/sold. A+ fades the shift; this rides what the shift started.
+
+**How it was assembled.** Engine block = **lines 1-3028 of `mpc_strategy.pine`, byte-identical**
+(everything through the liquidity `recentSSL`/`recentBSL` block), then the watermark, then a new
+execution layer. **Not copied:** the A+ SEQUENCE tracker, the B-LEG tracker, the missed-setup callout
+and its `MissW` machinery — nothing here reads them, and the compile-token budget in this family has
+already hit CE10117 and CE10295 twice. Net effect vs the parent: ~510 lines of tracker out, ~250 of
+execution in. Regenerate with `head -3028 mpc_strategy.pine`, the parent's watermark block, then this
+file's execution layer.
+
+**Two default flips vs the A+, both named in the spec:** `execConfSZ` OFF→**ON** (the Sniper Zone is
+entry method 3 here) and `execFvg50` OFF→**ON**. Note `execConfSZ` also gates `_snTrack`, and
+`_snBullBOS`/`_snBearBOS` sit behind `showFibo` — so **"Show External Fib" is still trade-critical**
+in this file even though the fib LEVELS are no longer read off it (see below).
+
+**The levels are computed, not read.** The entry band, stop and targets come from `f_lvl(ext, org, v)`
+over the anchor leg's own extreme/origin — identical arithmetic to the engine's `fiboP*`, just
+anchored per-setup. `bosFibAnchor` picks the EXPANSION leg (default — `fibo_ash`/`fibo_asl`, the drawn
+External fib's own anchors, so the band moves until the pullback confirms) or the frozen BREAK leg
+(`bos_high`/`bos_low`). This is what makes the "Break leg" option possible at all; the A+ could only
+ever price off the one drawn fib.
+
+**Three deviations from the spec, all flagged in the file header and in the spec's new §10a.** The
+important one: **`fibo7Touched` is re-implemented per-anchor.** The engine's latch is keyed to the fib
+ORIGIN, which does not change across a run of breaks, so break #1's round trip would have killed
+breaks #2 and #3 on their arm bar — every continuation after the first would be untradeable. The Pine
+tracks the anchor's own 0.5 tap and its own return to 0.0 instead. The other two: the divergence
+CLOSE fires on a confirmed divergence only (not extreme RSI — that is the normal state of a healthy
+long, and closing on it flattens the runner on every winner), and `execMinStopMode`/`execMinStopVal`
+are carried over from the A+ though §8 does not list them (default Off, so the baseline is unmoved).
+
+**Not yet compiled on TradingView and not yet backtested.** There is no local Pine compiler; the file
+is statically checked only (no identifier collisions with the engine block, every referenced engine
+symbol present, no duplicate declarations or input titles). **No number in this repo describes this
+strategy yet** — §10 steps 2-4 (baseline + the F1→F4→SL-model sweeps, the export Pine +
+`compare_bos.py`, the Python port under `strategies/python/mpc_bos/`) are all open.
+
+**Standing rule, same as the B-LEG fork:** any change to the engine block flows in line-for-line from
+`mpc_strategy.pine`; any BOS execution change flows to the Python port once it exists.
+
+---
+
 ## The 2026-07-12 structure re-sync (`choch_lock` removed from the break decision)
 
 Aaron's brother found a missing higher high on XAUUSD 15m (17 Jun 2026, the ~4382 spike) and had it fixed on TradingView. The fix landed in `mpc_assistant.pine` and was propagated through the entire chain. **Both symptoms were one bug:** a bullish SOS set `choch_lock`, so the next bearish break was not treated as a CHoCH — it printed as a **BOS instead of an SOS**, and since the bear-break fallback classifies the old high with `old_is_hh = is_choch ? true : (…)`, losing the CHoCH also lost the forced `true`, so the **HH never printed**.

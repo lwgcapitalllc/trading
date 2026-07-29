@@ -1,6 +1,8 @@
 # MPC BOS — Break-of-Structure Continuation Strategy (v1 spec)
 
-**Status:** DRAFT — written 2026-07-27 from Aaron's concept call. Nothing built yet.
+**Status:** **§10 step 1 BUILT 2026-07-29** — `indicators/mpc_bos_strategy.pine` exists and implements
+this spec. NOT yet compiled on TradingView and NOT yet backtested, so no number in this repo describes
+it. Steps 2-4 (baseline + sweeps, the export Pine + `compare_bos.py`, the Python port) are open.
 **Target file:** `indicators/mpc_bos_strategy.pine` (a strategy fork, same pattern as
 `mpc_b_leg_strategy.pine`).
 **Engine source:** `indicators/mpc_assistant.pine` — the engine block is copied byte-identical
@@ -302,16 +304,35 @@ Listed so they don't get smuggled in, and so the next iteration has somewhere to
 
 ## 10. Build order
 
-1. `indicators/mpc_bos_strategy.pine` — fork the engine block from `mpc_assistant.pine`, drop the
-   A+ sequence tracker, the B-LEG block, the debug callouts and the confirmation table (compile
-   token budget: this script family has already hit CE10117 and CE10295 twice), then write the
-   execution layer above.
+1. ~~`indicators/mpc_bos_strategy.pine`~~ — **DONE 2026-07-29.** Engine block = lines 1-3028 of
+   `mpc_strategy.pine`, byte-identical. The A+ sequence tracker, the B-LEG tracker and the
+   missed-setup callout were not copied (nothing here reads them, and the compile-token budget is
+   why). Execution layer written to this spec. Awaiting a TradingView compile.
 2. Backtest on XAUUSD 15m, the same window the other two were measured on. Baseline first with
    every optional filter off, then sweep F1 → F4 → the SL model.
 3. `indicators/mpc_bos_strategy_export.pine` + a `compare_bos.py` harness, matching the pattern in
    `strategies/python/mpc_bleg/`.
 4. Only then the Python port under `strategies/python/mpc_bos/`, and only after a real TradingView
    export has passed exit 0 (the standing rule).
+
+### 10a. Deviations taken during the build — read before judging a run
+
+Three, all flagged in the Pine's own header per §0:
+
+- **`fibo7Touched` is re-implemented per-anchor, not read from the engine.** The engine's latch is
+  keyed to the fib ORIGIN, which does not change across a run of breaks, so the latch set by break
+  #1's round trip would kill breaks #2 and #3 on their arm bar — every continuation after the first
+  would be untradeable. The Pine tracks the anchor's own 0.5 tap and its own return to 0.0 instead.
+  This is what §3 means by "on the anchor leg".
+- **The divergence CLOSE (§4a) fires on a confirmed opposing divergence only, not on extreme RSI.**
+  The entry BLOCK still reads both, exactly as §4a specifies. An overbought RSI is the normal state
+  of a healthy long continuation; closing on it would flatten the runner on every winner.
+- **`execMinStopMode` / `execMinStopVal` are carried over from the A+ risk block** and are not in
+  §8's input list. They default Off, so the baseline run is exactly this spec's baseline.
+
+One thing §3's Stage 2 describes that the code does NOT gate on: the retrace latch. A resting limit
+inside the band IS the retrace test — the A+ does not gate on `aplus*_half` either, and adding a
+gate here would only delay the order past the price it was meant to catch.
 
 ---
 
