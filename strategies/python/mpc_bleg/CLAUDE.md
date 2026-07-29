@@ -8,12 +8,19 @@ resting limit at the 0.5 edge waits for the late return.
 **Scope:** This bot only — its tracker, order layer, config, tests. It does NOT own the
 engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it reuses
 (`strategies/python/mpc_sos_fade/`).
-**Status:** Built + unit-tested (15 tests green) + **Pine-parity GREEN (exit 0) 2026-07-26** on a
-real 21,231-bar `VANTAGE_XAUUSD, 15m` export — bar-for-bar identical decision stream, including
-~90 distinct frozen bands and 5 graded trades. The harness is `tools/compare_bleg.py` +
+**Status:** Built + unit-tested (15 tests green) + **Pine-parity GREEN (exit 0), re-validated 2026-07-29**
+on a fresh 21,493-bar `VANTAGE_XAUUSD, 15m` export carrying the ratchet exit ladder — bar-for-bar
+identical decision stream. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
 open question, not correctness:** 5 trades is far too thin to tune against. See "The parity gate".
-**Last reviewed:** 2026-07-28 — **`mpc_b_leg_strategy.pine` caught up to the A+ exit ladder**, so this
+**Last reviewed:** 2026-07-29 — **the stale export is CLEARED: `compare_bleg.py` re-run GREEN on the
+ratchet build.** `compare_bleg.py "VANTAGE_XAUUSD, 15_ab202.csv" --warmup 100` → exit 0, 21,493 bars,
+2025-08-31 → 2026-07-29, still green at warmup 200/500/1000/2000. The export decoded
+`cfg_exitmode = 20` (the new 3-way trail digit reading as "Structure + % ratchet"), `cfg_trail_pct = 1`
+and `cfg_tp1_pct = cfg_tp2_pct = 0` — so the ladder changes below are proven through the export, not
+merely present in it. `mpc_b_leg_strategy.pine` also compiles clean in TradingView. The ratchet's
+43% → 53% run-capture caveat below still stands: parity proves the two sides AGREE, never that the
+setting is right for B legs. Earlier: 2026-07-28 — **`mpc_b_leg_strategy.pine` caught up to the A+ exit ladder**, so this
 package's two divergence pins are gone: `exec_runner_trail` is INHERITED again ("Structure + % ratchet",
 with `exec_trail_pct` alongside it) and the TP rungs sit at the inherited 0/0. The Pine also gained the
 `qty_percent = 0` guard — without it a 0 rung closed the WHOLE position at TP1, which is why typing 0
@@ -186,6 +193,22 @@ require exit 0 — then plants a `bl_l_top` mismatch and a `px_dec_bits` mismatc
 to catch each at the right bar. The encoder there is written from the Pine's plot expressions rather
 than from the tool's decoder, so it also catches the two drifting apart. It uses 30 synthetic days,
 not 10: on 10 no leg ever ARMS, so the `bl_*` diff would prove nothing.
+
+### PARITY GREEN 2026-07-29 (exit 0) — the ratchet build
+
+`compare_bleg.py "VANTAGE_XAUUSD, 15_ab202.csv" --warmup 100` → **exit 0**. 21,493 bars,
+2025-08-31 → 2026-07-29. Green at warmup 200, 500, 1000 and 2000 as well, same cold-start
+picture as the first run.
+
+This is the run that clears the 2026-07-28 stale-export warning. What makes it non-vacuous is
+what the export DECODED, not just the bar count: `cfg_exitmode = 20`, `cfg_trail_pct = 1`,
+`cfg_tp1_pct = cfg_tp2_pct = 0`. The tens digit of `cfg_exitmode` is the trail method, and it
+went 2-way → 3-way when the ratchet landed. An OLD export would have decoded the ratchet as
+the plain structure trail and gone green while comparing two different exit ladders — this one
+carries the third code, so the Python side really was configured to the ratchet.
+
+5 trades graded, **sum 10.91R** over the window. That trade count is the same warning as ever:
+enough to prove the two implementations agree, nowhere near enough to tune against.
 
 ### PARITY GREEN 2026-07-26 (exit 0) — first real export
 

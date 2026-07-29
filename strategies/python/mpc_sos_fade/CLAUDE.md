@@ -15,10 +15,18 @@ removal): the export was regenerated, the veto was ported, and `compare_strategy
 decision stream on a fresh 19,863-bar `VANTAGE_XAUUSD, 15m` grand export — every `px_dec_bits` /
 `px_stages` / `px_edge` / `px_entry_price` bar-for-bar, one lone 25-cent `px_exit_run` difference on
 a single Nov-2025 runner (an intrabar trail-fill guess, not a decision). See `## The 2026-07-22 re-sync`.
+**RE-VALIDATED GREEN 2026-07-29** on a fresh 21,494-bar `VANTAGE_XAUUSD, 15m` export taken at the
+shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the swing ratchet through `cfg_exitmode`/
+`cfg_trail_pct` — exit 0 at warmup 100 and at every warmup up to 2000. See
+`### PARITY GREEN 2026-07-29`.
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-27 — `exec_sl_level` defaulted **"1.0" → "0.886"** in lockstep with both
+**Last reviewed:** 2026-07-29 — **parity re-run GREEN on a fresh export that finally carries the
+ratchet AND the shipped 0/0 rungs** (`### PARITY GREEN 2026-07-29`). Every "the export is stale"
+warning in this file is cleared, with one exception that is NOT cleared: the export still has no
+`execMinStopMode`/`execMinStopVal` column, so nothing here validates the minimum-stop filter.
+Earlier: 2026-07-27 — `exec_sl_level` defaulted **"1.0" → "0.886"** in lockstep with both
 A+ Pine files (Aaron's call — it is what he trades, and Run 6 rode it over the full history). The
 ⚠ block below is AMENDED, not retracted: 0.886 is still inside the entry band and neither Run 4
 defect is fixed; 0.618 / 0.702 / 0.786 stay unsupported. `mpc_bleg` PINS "1.0" rather than
@@ -485,6 +493,28 @@ dropdown and three setup toggles. Ported here, with the Pine's defaults adopted 
   N+1 trades against. Reading the live swing instead would silently make the trail clairvoyant.
 - **`exec_fvg_50` is NOT ported** (same standing as `exec_conf_sz`) — `compare_strategy.py` refuses
   an export taken with it on. `exec_bleg` on is refused too: those trades belong to `mpc_bleg`.
+
+### PARITY GREEN 2026-07-29 (exit 0) — the ratchet build, at the shipped rungs
+
+`compare_strategy.py "VANTAGE_XAUUSD, 15_7b2f3.csv" --warmup 100` → **exit 0**. 21,494 bars,
+2025-08-31 → 2026-07-29. Green at warmup 200, 500, 1000 and 2000 too.
+
+This clears the 2026-07-28 stale warning. Two things make it the run that was actually needed:
+
+1. **It carries the ratchet through the export.** `cfg_exitmode = 20` — the tens digit is the trail
+   method, and it went 2-way → 3-way when `"Structure + % ratchet"` landed. Plus `cfg_trail_pct = 1`.
+   An export taken before that change would decode the ratchet as the plain structure trail and go
+   green while silently comparing two different exit ladders.
+2. **It was taken at `cfg_tp1_pct = cfg_tp2_pct = 0`** — what the bot actually ships. The previous
+   green run and the 109.3R ratchet headline were both at 1%/1%, which is not the shipped config.
+
+26 trades graded, **sum 30.29R** over the ~11 months. Note this is the TradingView window, not the
+6.6-year MT5 window the 110.65R baseline and the extension-fib work were measured on — the two
+numbers are not comparable and neither supersedes the other.
+
+⚠ **Not covered by this run:** `mpc_strategy_export.pine` still has no `execMinStopMode` /
+`execMinStopVal` column. The run was taken at the `"Off"` default where the gate is inert, so it
+proves nothing about the minimum-stop filter. Turn that filter on and this green goes meaningless.
 
 ### PARITY GREEN 2026-07-26 (exit 0) — and the bug the run caught
 
