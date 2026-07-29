@@ -97,14 +97,32 @@ f_swingCol(color c) =>
 //  FAIR VALUE GAPS (FVG) INPUTS
 //============================================================
 var GRP_FVG = "Fair Value Gaps"
-bool  showFVGInput      = input.bool(true, "Show FVG (REQUIRED — feeds entries)", group = GRP_FVG, tooltip = "Detects fair value gaps: any 3-candle imbalance where bar A and bar C never overlap and the middle bar closed past the gap (the LuxAlgo definition). Gaps below 0.1% of price are ignored. A gap is removed the moment price taps it.", display = display.none)
+bool  showFVGInput      = input.bool(true, "Show FVG (REQUIRED — feeds entries)", group = GRP_FVG, tooltip = "Detects fair value gaps: any 3-candle imbalance where bar A and bar C never overlap (the LuxAlgo definition). The minimum gap size and the middle-bar close test are BOTH split by timeframe — below 15m they match mpc_assistant.pine (no floor, no close test); at 15m and above they are unchanged. See the two FVG Min Gap inputs.", display = display.none)
 bool showFVG = marketStructureOnly ? false : showFVGInput
 bool  fvgDirOnly   = input.bool(false, "Directional FVGs Only", group = GRP_FVG, active = showFVGInput, tooltip = "Only show FVGs aligned with the current external structure direction — bullish gaps while structure is bullish, bearish gaps while bearish. Misaligned gaps are hidden, not deleted, so they reappear if direction flips back.", display = display.none)
 color fvgBullColor = input.color(color.new(color.gray, 80), "Bullish FVG", group = GRP_FVG, inline = "fvgB", active = showFVGInput, display = display.none)
 color fvgBearColor = input.color(color.new(color.gray, 80), "Bearish FVG", group = GRP_FVG, inline = "fvgS", active = showFVGInput, display = display.none)
 // Minimum gap size floor: a gap must be at least this % of price to count.
 // No Auto-Threshold volatility scaling — a fixed floor, now user-tunable.
-float fvgThreshPct = input.float(0.1, "FVG Min Gap (% of price)", minval = 0.0, step = 0.01, group = GRP_FVG, active = showFVGInput, tooltip = "Minimum size of the 3-candle imbalance, as a percent of price. A gap smaller than this is ignored. Default 0.1%. Lower it to catch smaller gaps, raise it to only keep large displacements.", display = display.none)
+// FVG minimum-gap floor, SPLIT BY TIMEFRAME — ported from mpc_assistant.pine
+// (its lines 149-151). This is why the assistant draws 5m gaps this file did not:
+// a %-of-price floor does not scale down. 0.1% of gold at $3,300 is $3.30, wider
+// than most WHOLE 5m bars, so one flat floor silently erased nearly every gap
+// below 15m. 900 seconds = 15m.
+// The 15m-and-above value stays 0.1 and is deliberately NOT the assistant's 0.04:
+// at 15m this file's behaviour must not move — it is the A+ baseline and the
+// mpc_sos_fade parity reference. ONLY sub-15m changes.
+bool  fvgIsLTF     = timeframe.in_seconds() < 900
+float fvgThreshLTF = input.float(0.0, "FVG Min Gap - below 15m (% of price)", minval = 0.0, step = 0.01, group = GRP_FVG, active = showFVGInput, tooltip = "Minimum gap size on 1m/3m/5m charts, as a percent of price. Default 0.0 = every 3-candle imbalance counts, which is what mpc_assistant.pine does. Raise it only if the low timeframes get too noisy.", display = display.none)
+float fvgThreshHTF = input.float(0.1, "FVG Min Gap - 15m and above (% of price)", minval = 0.0, step = 0.01, group = GRP_FVG, active = showFVGInput, tooltip = "Minimum gap size on 15m and higher, as a percent of price. Default 0.1% — UNCHANGED from before the timeframe split, so every 15m result still reproduces. Note mpc_assistant.pine uses 0.04 here; matching it would move this strategy's baseline, so it is deliberately not matched.", display = display.none)
+float fvgThreshPct = fvgIsLTF ? fvgThreshLTF : fvgThreshHTF
+// Middle-bar close-cleared test. mpc_assistant.pine has this OFF at every
+// timeframe (fvgRequireClose = false); this file hardcoded it ON. Split the same
+// way as the floor: forced off below 15m so low-timeframe gaps match the
+// assistant, on at 15m+ so the A+ baseline and the Python parity pin
+// (EngineConfig.fvg_require_close = True) are untouched.
+bool  fvgReqCloseHTF  = input.bool(true, "FVG: middle bar must close past the gap (15m+)", group = GRP_FVG, active = showFVGInput, tooltip = "The classic FVG needs only that bar A and bar C do not overlap. This adds a stricter test: bar B must also CLOSE past the gap. It has always been on in this file and stays on at 15m and above, so results reproduce and the mpc_sos_fade parity pin still holds. Below 15m it is forced OFF regardless of this setting, matching mpc_assistant.pine.", display = display.none)
+bool  fvgRequireClose = fvgIsLTF ? false : fvgReqCloseHTF
 int   fvgMaxCount  = input.int(7, "Max Active FVGs", minval = 1, maxval = 20, group = GRP_FVG, active = showFVGInput, tooltip = "Only the newest gaps up to this count are kept; oldest are dropped first.", display = display.none)
 bool  fvgKeepUntilBroken = input.bool(true, "FVG: keep until broken through (not on tap)", group = GRP_FVG, active = showFVGInput, tooltip = "OFF (default) = a gap is removed the moment price taps its near edge. ON = a tap no longer removes it; the gap stays alive until a candle CLOSES fully through it on the opposite (far) side. A gap that lives longer keeps its resting entry limit alive longer, so flip this to test whether it changes which entries fire.")
 
@@ -1774,13 +1792,13 @@ if not showFVG and array.size(fvgBoxes) > 0
 // The FVG is the 3-candle imbalance itself (LuxAlgo definition): bar A and bar C
 // never overlap and the middle bar's close cleared the gap. No "clean impulse"
 // body/colour rule — any 3 bars that leave a big-enough gap qualify.
-// Threshold is the user-set %-of-price floor (see fvgThreshPct input above).
+// Threshold is the timeframe-split %-of-price floor (see fvgThreshPct above).
 float fvgThreshold = fvgThreshPct
 if showFVG and barstate.isconfirmed and bar_index >= 2
     // Bullish: gap between two bars ago's high and this bar's low; middle bar closed above it
-    bool bullFvg = low > high[2] and close[1] > high[2] and (low - high[2]) / high[2] * 100 > fvgThreshold
+    bool bullFvg = low > high[2] and (not fvgRequireClose or close[1] > high[2]) and (low - high[2]) / high[2] * 100 > fvgThreshold
     // Bearish: mirror
-    bool bearFvg = high < low[2] and close[1] < low[2] and (low[2] - high) / low[2] * 100 > fvgThreshold
+    bool bearFvg = high < low[2] and (not fvgRequireClose or close[1] < low[2]) and (low[2] - high) / low[2] * 100 > fvgThreshold
     if bullFvg
         box b = box.new(bar_index - 1, low, bar_index, high[2], bgcolor = fvgBullColor, border_color = color(na), text = "FVG", text_color = color.new(color.gray, 30), text_size = size.tiny, text_halign = text.align_right)
         array.push(fvgBoxes, b)

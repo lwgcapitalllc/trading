@@ -22,6 +22,63 @@
 
 ---
 
+## 2026-07-29 — the FVG floor is now SPLIT BY TIMEFRAME (A+, its export, and BOS)
+
+**The bug Aaron found.** `mpc_assistant.pine` draws fair value gaps on a 5m chart
+that `mpc_strategy.pine` does not. Cause: the assistant's minimum-gap floor is
+timeframe-aware and the strategy's was one flat number.
+
+```pine
+// mpc_assistant.pine:149-151
+float fvgThreshLTF = 0.0
+float fvgThreshHTF = 0.04
+float fvgThreshPct = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF
+```
+
+The strategy had `input.float(0.1, "FVG Min Gap (% of price)")` — 0.1% at every
+timeframe. **A %-of-price floor does not scale down.** 0.1% of gold at $3,300 is
+$3.30 of gap, which is wider than most WHOLE 5m bars, so a single flat floor
+silently erased nearly every low-timeframe gap. A second, smaller difference
+stacked on it: the assistant has `fvgRequireClose = false` everywhere, while the
+strategy HARDCODED the middle-bar close-cleared test on.
+
+**What landed.** Both are now split at the same 900-second boundary, in
+`mpc_strategy.pine`, `mpc_strategy_export.pine` and `mpc_bos_strategy.pine`:
+
+| | below 15m | 15m and above |
+|---|---|---|
+| min gap | `fvgThreshLTF`, default **0.0** | `fvgThreshHTF`, default **0.1** |
+| middle-bar close test | forced **off** | `fvgReqCloseHTF`, default **on** |
+
+**15m and above is bit-identical to before, deliberately.** The HTF floor stays
+0.1 and is NOT set to the assistant's 0.04, and the close test stays on. A+ is
+traded on 15m, so its baseline, its 188-trade history and the `mpc_sos_fade`
+parity pin (`EngineConfig.fvg_require_close = True`) must not move. Matching the
+assistant at 15m too is a one-number change if it is ever wanted — but it is a
+different decision, with a re-validation attached, and it was not made here.
+
+**Consequence to carry.** These are new trade-affecting inputs and
+`mpc_strategy_export.pine` has no `cfg_*` column for either. At their defaults on
+15m that costs parity nothing (behaviour is unchanged), but **a parity run taken
+on a sub-15m chart, or with either input tuned, is meaningless until the columns
+land here and in `compare_strategy.py`.** Same trap as `execRunnerTrail` in the
+2026-07-26 entry: a default that changes behaviour is as dangerous as a new
+input, and it hides better.
+
+**NOT applied to `mpc_b_leg_strategy.pine` / `mpc_b_leg_strategy_export.pine`.**
+They carry the identical FVG block and are now the only strategy files without
+the split. The standing "engine changes flow line-for-line to the fork" rule says
+they should get it; it was left out only because the request scoped A+ and BOS.
+
+**Pre-existing drift found while checking this, NOT caused by it.**
+`mpc_strategy_export.pine` is missing `execMinStopMode` / `execMinStopVal`
+entirely — the min-stop lever landed in the parent (`7603444`) and never reached
+the export. That breaks the export's own "the title is the ONLY difference" rule.
+A parity run replays the bot with a floor the export cannot describe; harmless
+while the mode is "Off" (the default), wrong the moment it is not.
+
+---
+
 ## 2026-07-29 — `mpc_bos_strategy.pine`, the third strategy off the shared engine
 
 **New file `indicators/mpc_bos_strategy.pine`** (3875 lines), built to `docs/MPC_BOS_SPEC.md`. It
