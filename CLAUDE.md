@@ -11,7 +11,7 @@
 **Purpose:** Standing instructions for Claude Code across all subsystems.
 **Scope:** This covers repo-wide rules, VPS workflow, and branch conventions. It does NOT cover subsystem internals — each subsystem has its own CLAUDE.md.
 **Status:** Active — four apps, ten canonical engines, and tooling in various stages of production.
-**Last reviewed:** 2026-07-27 (`## Trading Philosophy` added — few high-quality setups by design, sample size arrives at the portfolio level, risk budgeted per account; TP1/TP2 scale-out rungs defaulted to 0/0 across both A+ Pine files and `config.py`; A+ parity re-validated green at SL fib 0.886 + 0/0)
+**Last reviewed:** 2026-07-28 — the shared exit ladder's runner trail defaults to **"Structure + % ratchet"** across all four strategy Pine files and both Python bots: anchor on the last confirmed swing, then climb one %-of-price step per step of favourable move, so a runner stops handing back the gap to a lagging swing. ⚠ **Both parity gates are STALE** — `compare_strategy.py` (A+) and `compare_bleg.py` (B-LEG) must be re-run on fresh exports before any number from this build is trusted; the A+ run must use the shipped `exec_tp1_pct = exec_tp2_pct = 0`, since the headline 109.3R was measured at 1%/1% (true 0/0 baseline: **110.65R**). Extension-fib take-profits were measured and rejected the same day — see `strategies/python/mpc_sos_fade/CLAUDE.md`. Earlier: 2026-07-27 (`## Trading Philosophy` added — few high-quality setups by design, sample size arrives at the portfolio level, risk budgeted per account; TP1/TP2 scale-out rungs defaulted to 0/0 across both A+ Pine files and `config.py`; A+ parity re-validated green at SL fib 0.886 + 0/0)
 
 ---
 

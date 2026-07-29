@@ -355,12 +355,98 @@ string macro100Style     = input.string("─",   "",              group = GRP_MA
 var GRP_SNIPER    = "Sniper Fib"
 bool showSniperFib = input.bool(false, "Sniper Zone", group = GRP_SNIPER, active = showFiboInput, display = display.none)
 
-// Entry-confirmation toggle, declared HERE (not down in the Strategy Execution
-// block where it belongs by group) because the Sniper Fib engine a few hundred
-// lines below has to read it, and Pine needs the declaration first. It still
-// appears under "Strategy Execution" in the panel — group placement is by the
-// group string, not by position in the file.
-bool execConfSZ = input.bool(false, "Allow Sniper Zone as entry confirmation", group = "Strategy Execution", tooltip = "Adds the Sniper Zone as a SECOND accepted entry confirmation alongside the FVG. The SZ is the 0.5-0.618 pocket of the break leg, so it already sits inside the 0.5-0.886 entry band. FVG always wins: the SZ is used only on a leg where no qualifying gap exists, which means every trade the current settings already take is unchanged and any new trade is one that previously logged 'NO FVG missed'. The limit rests at the FAR side of the pocket (~0.618), so price must retrace the whole band to fill. Turning this on also makes the SZ engine track even when 'Sniper Zone' drawing is off.")
+//============================================================
+//  STRATEGY EXECUTION INPUTS
+//============================================================
+// EVERY Strategy Execution input is declared HERE, in one block, and NOWHERE
+// else. That is deliberate and it is load-bearing:
+//
+//   1. ORDER IN THE PANEL IS ORDER OF DECLARATION IN THE FILE. Before 2026-07-28
+//      two of these lived hundreds of lines away — execConfSZ next to the Sniper
+//      engine that reads it, bLegMaxDays next to the B-leg staleness check — so
+//      they landed at the TOP of the Execution panel, above "Trade Longs", with
+//      no context. Consolidating here is the only way to control the order.
+//   2. Pine needs a declaration BEFORE its first read. The Sniper engine and
+//      BLEG_MAX both read inputs from this block, which is why the whole block
+//      sits up here rather than beside the execution logic at the bottom of the
+//      file. The execution block still OWNS the behaviour — it just no longer
+//      owns the declarations.
+//
+// The block is ordered the way a trade actually happens: what trades → what arms
+// it → where the limit rests → what can refuse it → size and stop → targets →
+// runner → drawing. Read it top to bottom and you have followed one trade.
+// Kept in LOCKSTEP with mpc_strategy.pine's block of the same name — same eight
+// sections, same order. This fork simply has fewer levers (no SL fib dropdown, no
+// minimum-stop floor, no % ratchet on the runner trail).
+//
+// A CHILD input is prefixed "↳" and carries `active = <its parent>`, so it greys
+// out and locks the moment its parent makes it irrelevant. `active` needs a pure
+// INPUT bool — never reassign one of these with ":=" or every `active` that
+// references it stops compiling.
+//
+// Exceptions worth knowing, because they look like children and are not:
+//   • "Runner trail step" has TWO masters (Fixed-step mode AND the "One trail
+//     step behind" TP2 floor), so it is NOT gated on the trail method.
+//   • The three FVG entry toggles still price an entry with "Require FVG" OFF —
+//     that input only adds a fib fallback, it does not disable the gap logic.
+var GRP_EXEC = "Strategy Execution"
+
+// ── 1. WHAT TRADES ────────────────────────────────────────────────────────────
+bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
+bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
+bool  execAplus   = input.bool(true,  "A+ has priority (stand the B-leg down)", group = GRP_EXEC, tooltip = "In THIS fork the A+ setup never places an order — it only holds PRIORITY: on a side where A+ would have armed, the B leg stands down. On (default) keeps that gate, so results stay comparable to the parent file. Off drops it entirely and lets every B leg trade on its own merit — Aaron's first tuning candidate, and the honest way to read the B leg in isolation.")
+bool  execBLeg    = input.bool(true,  "Trade B-Leg setups",             group = GRP_EXEC, tooltip = "THIS STRATEGY'S CORE SETUP (default ON in the B-LEG fork). Arms when a REV setup dies on a continuation BOS before it retraced; freezes the Sniper-Zone band (0.382-0.5) of that SOS leg and rests a limit at the 0.5 edge — the tap IS the entry. SL beyond fib 1.0; ladder reuses the A+ machinery (TP1 swing extreme, TP2 expansion, TP3 runner). Honours Trade Longs/Shorts, flat and the final-hour block. A+ still has priority when it would have armed on a side (kept for baseline parity; a tuning candidate to drop). Turn OFF only to prove the file trades nothing without it.")
+float bLegMaxDays = input.float(1.25, "   ↳ B-Leg: days to activate before it goes stale", minval = 1, maxval = 3, step = 0.25, group = GRP_EXEC, active = execBLeg, tooltip = "How long a B LEG watches its frozen band for the late retrace before it goes stale. Set in DAYS, measured as a BAR count (one day ÷ the chart timeframe) so weekends and the daily close don't consume it. Default 1.25 = the original 120 bars on 15m. Lower (e.g. 1) = quick retraces only; higher = more room. Sweep 1→3. B-LEG only.")
+
+// ── 2. WHAT ARMS IT (Stage 1) ─────────────────────────────────────────────────
+bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
+bool  execArmDiv   = input.bool(false, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
+bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
+
+// ── 3. WHERE THE LIMIT RESTS (entry price) ────────────────────────────────────
+// These four are SIBLINGS, not a parent and three children. With "Require FVG"
+// OFF a qualifying gap still prices the entry exactly as before — that toggle
+// only adds the 0.618 fib as a FALLBACK when no gap qualifies. So none of the
+// three gap rules below is greyed out by it; they all stay live either way.
+bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
+bool  execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
+bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3 — recovers the trades lost when a deep FVG never gets tapped. Default (off) rests the limit at the gap's own edge, so a gap floating DEEP in the zone is missed whenever price stalls at a shallower fib and turns back. On = when the qualifying gap's near edge sits DEEPER than 0.618 AND the gap contains no fib level (it floats BETWEEN two of 0.618/0.702/0.786/0.886), the limit rests at the nearest fib just SHALLOWER than the gap instead — the level price reaches first (gap between 0.618-0.702 -> 0.618, 0.702-0.786 -> 0.702, 0.786-0.886 -> 0.786). A gap sitting ON a fib level, or shallower than 0.618, is unchanged and still enters at its exact edge. This fills more of these setups, but a deep between-levels trade that already filled now fills earlier and shallower, so those results move — leave it off to reproduce the current entries.")
+bool  execFvg50   = input.bool(false, "Entry (least favorable): FVG must touch the 0.5 line", group = GRP_EXEC, tooltip = "Lowest-priority fallback (default OFF). Qualifies a gap that STRADDLES 0.5 — the 0.5 line inside the gap body (bottom at/below 0.5 AND top at/above 0.5), not merely an edge near it — and rests the limit AT 0.5. Ranks last: only prices a leg no more-favorable source already did (deep-FVG edge, deep-fib, Sniper Zone), so existing trades are unchanged and any new one previously logged 'NO FVG'. With 'FVG must sit fully past 0.5' on, this is the only path that trades a straddling gap.")
+bool execConfSZ = input.bool(false, "Allow Sniper Zone as entry confirmation", group = GRP_EXEC, tooltip = "Adds the Sniper Zone as a SECOND accepted entry confirmation alongside the FVG. The SZ is the 0.5-0.618 pocket of the break leg, so it already sits inside the 0.5-0.886 entry band. FVG always wins: the SZ is used only on a leg where no qualifying gap exists, which means every trade the current settings already take is unchanged and any new trade is one that previously logged 'NO FVG missed'. The limit rests at the FAR side of the pocket (~0.618), so price must retrace the whole band to fill. Turning this on also makes the SZ engine track even when 'Sniper Zone' drawing is off.")
+
+// ── 4. WHAT CAN REFUSE IT (filters) ───────────────────────────────────────────
+bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1 (the big lever). Blocks a reversal that fights a FRESH higher-timeframe breakout, while still allowing one that fades an exhaustion sweep. A short fades a high, so it is blocked when the HTF just CLOSED above its prior high (Close > Prev High = a real breakout up). A long is blocked when the HTF just closed below its prior low. A swept-high/low (exhaustion) never blocks — that is exactly the state the setup is meant to fade. Off = current behaviour (no HTF filter). Use with the source dropdown below.")
+string execHtfSource = input.string("Weekly", "   ↳ HTF exhaustion source", options = ["Weekly", "Daily", "Either"], group = GRP_EXEC, active = execHtfExhaustOnly, tooltip = "Which higher timeframe the breakout block reads. Weekly = only a weekly breakout blocks (widest, fewest blocks). Daily = only a daily breakout blocks. Either = a breakout on Weekly OR Daily blocks (strictest, most trades removed). Only used when 'Only fade HTF exhaustion' is on.")
+string execHtfWeekly = input.string("Ignore", "Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, WEEKLY leg. Judged against the trade's direction (a long wants Bullish). Ignore = no gate. Must agree = Weekly must be Bullish for a long / Bearish for a short. Must not oppose = only blocks if Weekly is actively against the trade (Neutral passes). Must oppose (reversal) = Weekly must be AGAINST the trade — this is the 'Weekly still in the old trend' half of a reversal. Combine with the Daily setting below: Weekly 'Must oppose' + Daily 'Must agree' = only fade when the Daily has flipped against a still-opposing Weekly (a forming reversal).")
+string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, DAILY leg. Same four choices as Weekly, judged against the trade direction. For your reversal idea set this to 'Must agree' (Daily has turned in the trade's direction) while Weekly is 'Must oppose (reversal)'. Set both to 'Must agree' for full Daily+Weekly trend alignment. Ignore = no gate.")
+bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
+
+// ── 5. SIZE & STOP ────────────────────────────────────────────────────────────
+float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 100, step = 0.1)
+float execSlBufTk = input.float(0.0,  "SL buffer beyond fib 1.0 (ticks)",  group = GRP_EXEC, minval = 0)
+
+// ── 6. TARGETS (the TP ladder) ────────────────────────────────────────────────
+float execTp1Pct  = input.float(0,    "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. DEFAULT 0 = bank nothing, ride the whole position to the runner — matched to mpc_strategy.pine, where the full-history sweep picked it. The TP1 PRICE still matters at 0: touching it is what stages the stop to breakeven. Raise it only to scale out.")
+float execTp2Pct  = input.float(0,    "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP2 limit banks. DEFAULT 0 = bank nothing (see TP1). Touching TP2 still lifts the stop to the TP2 floor and hands the runner to the trail.")
+float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
+
+// ── 7. THE RUNNER — everything here starts only AFTER TP2 is hit ──────────────
+string execRunnerTrail = input.string("Structure + % ratchet", "Runner trail method", options = ["Fixed step", "Structure (swing)", "Structure + % ratchet"], group = GRP_EXEC, tooltip = "How the TP3 runner is trailed once TP2 is hit, and which of the two settings below is live. 'Fixed step' = the grid ratchet off 'Runner trail step' (both ↳ settings greyed). 'Structure (swing)' = park the stop at the last confirmed swing low (longs) / high (shorts) minus/plus the buffer below — breathes with the trend, but the swing is a LAGGING anchor so it hands a lot back at the turn. 'Structure + % ratchet' (DEFAULT since 2026-07-28) = the same swing anchor, but the stop then CLIMBS one % step per % of favourable move instead of sitting still while price runs away. Ported from mpc_strategy.pine to keep the two forks on ONE exit ladder — the 43% → 53% run-capture measurement behind it was taken on that file's A+ trades, NOT on B-LEG trades, so treat it here as the same machinery rather than as a proven B-LEG result until a B-LEG sweep says so.")
+float execStructTrailBufTk = input.float(20, "   ↳ Structure trail buffer (ticks)", group = GRP_EXEC, minval = 0, active = execRunnerTrail != "Fixed step", tooltip = "Used by BOTH structure trail methods, greyed out on 'Fixed step'. The runner stop sits this many ticks BELOW the last confirmed swing low (long) / ABOVE the last confirmed swing high (short), so a wick through the swing doesn't clip it.")
+float execTrailPct = input.float(1.0, "   ↳ Runner ratchet step (% of price)", group = GRP_EXEC, minval = 0.05, step = 0.05, active = execRunnerTrail == "Structure + % ratchet", tooltip = "Only used when Runner trail method = 'Structure + % ratchet'; greyed out otherwise. The stop starts at the last confirmed swing and climbs one step of this size for every step of favourable move. A PERCENT rather than a dollar figure on purpose: gold ran 1,500 to 3,400 over the backtest window, so no fixed $ step is right at both ends — $20 is a 1.3% trail at 1,500 and a 0.6% trail at 3,400. 1.0 is the value mpc_strategy.pine measured best on its own A+ trades; below ~0.5 it starts clipping runners there. Sweep it here before trusting it on B legs.")
+string execTp2StopMode = input.string("TP1 price", "TP2 → stop floor (delay the jump)", options = ["TP1 price", "Breakeven", "One trail step behind"], group = GRP_EXEC, tooltip = "What the stop floor becomes the moment TP2 is hit, BEFORE the runner trail takes over. 'TP1 price' (default) = snap the stop up to TP1 (tight, can scratch the runner on the first pullback). 'Breakeven' = hold at entry+buffer, giving the runner maximum room. 'One trail step behind' = keep it one trail-step under the high-water mark (never below breakeven). The runner trail can still tighten it beyond this floor.")
+// NOT a child of the trail method — it has TWO masters. 'Fixed step' trails off it,
+// and the "One trail step behind" TP2 floor above measures off it too. Greying it
+// on the trail method would silently disable a live setting, so it is never greyed.
+float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
+bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade. (Loss-mitigation test #2 — an opposite SOS is early proof the reversal failed, so exit there instead of riding to the fib-1.0 stop.)")
+
+// ── 8. DRAWING (cosmetic — none of this changes a trade) ──────────────────────
+bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints one small label at each trade, carrying the full confluence breakdown in its HOVER TOOLTIP — the arm source, SOS age, FVG/POI/DIV flags, and the real entry / stop / TP prices. The on-chart text stays one line. When the trade closes it is recoloured by RESULT — green won, red lost, orange breakeven — and the R it made is appended. Use the filter below to keep only the results you care about.")
+string execLabelWhich = input.string("All", "   ↳ keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = GRP_EXEC, active = execShowConfLabel, tooltip = "Which trades keep their hover label once the result is known. Every other trade's label is deleted on the bar it closes, so the chart keeps the coloured result box and the entry triangle but loses the annotation. Losses + breakevens is the review view — the trades worth auditing, nothing else. None removes them entirely.")
+float execLabelOff = input.float(6, "   ↳ label distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, active = execShowConfLabel, tooltip = "How far the trade label is pushed away from the entry — below it on a long, above it on a short — measured in ATRs. TradingView draws the HOVER TOOLTIP right next to the label and gives Pine no way to place it, so this is the only lever on where that tooltip lands: park the label further out and the tooltip opens over empty space instead of over the candles. Raise it until you can read the tooltip and the trade at the same time. A thin leader line always connects the label back to the exact entry price, so pushing it out never loses you the anchor.")
+bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the furthest price the trade was ACTUALLY FILLED at; RED from entry to the stop fill if it was stopped for a loss; ORANGE line at entry if it only came back to breakeven. Replaces TradingView's built-in trade markers.")
+bool  execShowExitLines = input.bool(true, "   ↳ Label the TP bands (TP1/TP2/TP3)", group = GRP_EXEC, active = execShowPosBox, tooltip = "Adds a faint dashed line at each partial exit's REAL fill price and tags it TP1 / TP2 / TP3 at the RIGHT edge of the trade — all three stacked on the same side, one colour, no prices in the text. Off = the coloured bands still paint, just untagged. The prices themselves are always in the trade label's tooltip.")
 
 //============================================================
 //  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
@@ -3510,10 +3596,11 @@ if bLegArmS and not na(bLegS_top)
 // above; the opposite one is often the retrace itself).
 // Staleness is user-tunable in DAYS (1-3) but converted to a BAR count (day ÷ the
 // chart timeframe), so weekends and the daily close still don't burn the clock —
-// what matters is how much TRADING has passed. Declared with the literal group
-// string (GRP_EXEC is defined further down) so it lands in the Execution panel.
-// On 15m: 1 day ≈ 96 bars, 2 ≈ 192, 3 ≈ 288.
-float bLegMaxDays = input.float(1.25, "B-Leg: days to activate before it goes stale", minval = 1, maxval = 3, step = 0.25, group = "Strategy Execution", tooltip = "How long a B LEG watches its frozen band for the late retrace before it goes stale. Set in DAYS, measured as a BAR count (one day ÷ the chart timeframe) so weekends and the daily close don't consume it. Default 1.25 = the original 120 bars on 15m. Lower (e.g. 1) = quick retraces only; higher = more room. Sweep 1→3. B-LEG only.")
+// what matters is how much TRADING has passed. On 15m: 1 day ≈ 96 bars, 2 ≈ 192,
+// 3 ≈ 288. The `bLegMaxDays` INPUT moved to the consolidated Strategy Execution
+// block near the top of the file on 2026-07-28 (it used to be declared right here,
+// which put it at the top of the Execution panel above "Trade Longs"); only the
+// bar-count conversion is left here, next to the check that reads it.
 int BLEG_MAX = int(math.max(1, math.round(bLegMaxDays * 86400 / timeframe.in_seconds())))
 if bLegL_on
     if low <= bLegL_top
@@ -3769,38 +3856,17 @@ if barstate.islast
 // = 1 unit of quote currency per contract (true for XAUUSD/most CFDs); revisit
 // syminfo.pointvalue if you run this on an instrument where that is not the case.
 
-var GRP_EXEC = "Strategy Execution"
-bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
-bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
-bool  execAplus   = input.bool(true,  "A+ has priority (stand the B-leg down)", group = GRP_EXEC, tooltip = "In THIS fork the A+ setup never places an order — it only holds PRIORITY: on a side where A+ would have armed, the B leg stands down. On (default) keeps that gate, so results stay comparable to the parent file. Off drops it entirely and lets every B leg trade on its own merit — Aaron's first tuning candidate, and the honest way to read the B leg in isolation.")
-bool  execBLeg    = input.bool(true,  "Trade B-Leg setups",             group = GRP_EXEC, tooltip = "THIS STRATEGY'S CORE SETUP (default ON in the B-LEG fork). Arms when a REV setup dies on a continuation BOS before it retraced; freezes the Sniper-Zone band (0.382-0.5) of that SOS leg and rests a limit at the 0.5 edge — the tap IS the entry. SL beyond fib 1.0; ladder reuses the A+ machinery (TP1 swing extreme, TP2 expansion, TP3 runner). Honours Trade Longs/Shorts, flat and the final-hour block. A+ still has priority when it would have armed on a side (kept for baseline parity; a tuning candidate to drop). Turn OFF only to prove the file trades nothing without it.")
-bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
-bool  execArmDiv   = input.bool(false, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
-bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
-bool  execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
-bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3 — recovers the trades lost when a deep FVG never gets tapped. Default (off) rests the limit at the gap's own edge, so a gap floating DEEP in the zone is missed whenever price stalls at a shallower fib and turns back. On = when the qualifying gap's near edge sits DEEPER than 0.618 AND the gap contains no fib level (it floats BETWEEN two of 0.618/0.702/0.786/0.886), the limit rests at the nearest fib just SHALLOWER than the gap instead — the level price reaches first (gap between 0.618-0.702 -> 0.618, 0.702-0.786 -> 0.702, 0.786-0.886 -> 0.786). A gap sitting ON a fib level, or shallower than 0.618, is unchanged and still enters at its exact edge. This fills more of these setups, but a deep between-levels trade that already filled now fills earlier and shallower, so those results move — leave it off to reproduce the current entries.")
-bool  execFvg50   = input.bool(false, "Entry (least favorable): FVG must touch the 0.5 line", group = GRP_EXEC, tooltip = "Lowest-priority fallback (default OFF). Qualifies a gap that STRADDLES 0.5 — the 0.5 line inside the gap body (bottom at/below 0.5 AND top at/above 0.5), not merely an edge near it — and rests the limit AT 0.5. Ranks last: only prices a leg no more-favorable source already did (deep-FVG edge, deep-fib, Sniper Zone), so existing trades are unchanged and any new one previously logged 'NO FVG'. With 'FVG must sit fully past 0.5' on, this is the only path that trades a straddling gap.")
-bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
-bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade. (Loss-mitigation test #2 — an opposite SOS is early proof the reversal failed, so exit there instead of riding to the fib-1.0 stop.)")
-bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1 (the big lever). Blocks a reversal that fights a FRESH higher-timeframe breakout, while still allowing one that fades an exhaustion sweep. A short fades a high, so it is blocked when the HTF just CLOSED above its prior high (Close > Prev High = a real breakout up). A long is blocked when the HTF just closed below its prior low. A swept-high/low (exhaustion) never blocks — that is exactly the state the setup is meant to fade. Off = current behaviour (no HTF filter). Use with the source dropdown below.")
-string execHtfSource = input.string("Weekly", "HTF exhaustion source", options = ["Weekly", "Daily", "Either"], group = GRP_EXEC, tooltip = "Which higher timeframe the breakout block reads. Weekly = only a weekly breakout blocks (widest, fewest blocks). Daily = only a daily breakout blocks. Either = a breakout on Weekly OR Daily blocks (strictest, most trades removed). Only used when 'Only fade HTF exhaustion' is on.")
-string execHtfWeekly = input.string("Ignore", "Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, WEEKLY leg. Judged against the trade's direction (a long wants Bullish). Ignore = no gate. Must agree = Weekly must be Bullish for a long / Bearish for a short. Must not oppose = only blocks if Weekly is actively against the trade (Neutral passes). Must oppose (reversal) = Weekly must be AGAINST the trade — this is the 'Weekly still in the old trend' half of a reversal. Combine with the Daily setting below: Weekly 'Must oppose' + Daily 'Must agree' = only fade when the Daily has flipped against a still-opposing Weekly (a forming reversal).")
-string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias confluence, DAILY leg. Same four choices as Weekly, judged against the trade direction. For your reversal idea set this to 'Must agree' (Daily has turned in the trade's direction) while Weekly is 'Must oppose (reversal)'. Set both to 'Must agree' for full Daily+Weekly trend alignment. Ignore = no gate.")
-float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 100, step = 0.1)
-float execSlBufTk = input.float(0.0,  "SL buffer beyond fib 1.0 (ticks)",  group = GRP_EXEC, minval = 0)
-float execTp1Pct  = input.float(30,   "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
-float execTp2Pct  = input.float(40,   "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100)
-float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
-float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
-string execRunnerTrail = input.string("Structure (swing)", "Runner trail method", options = ["Fixed step", "Structure (swing)"], group = GRP_EXEC, tooltip = "How the TP3 runner is trailed once TP2 is hit. 'Fixed step' = the 50-pip grid ratchet above. 'Structure (swing)' (default) = trail behind the last confirmed swing low (longs) / high (shorts) from the structure engine, minus/plus the buffer below — breathes with the trend and usually rides further, but gives back more at the turn. This is the tested best combo: Structure trail + buffer 20 + TP2 floor = TP1 price.")
-float execStructTrailBufTk = input.float(20, "Structure trail buffer (ticks)", group = GRP_EXEC, minval = 0, tooltip = "Only used when Runner trail method = Structure. The runner stop sits this many ticks BELOW the last confirmed swing low (long) / ABOVE the last confirmed swing high (short), so a wick through the swing doesn't clip it.")
-string execTp2StopMode = input.string("TP1 price", "TP2 → stop floor (delay the jump)", options = ["TP1 price", "Breakeven", "One trail step behind"], group = GRP_EXEC, tooltip = "What the stop floor becomes the moment TP2 is hit, BEFORE the runner trail takes over. 'TP1 price' (default) = snap the stop up to TP1 (tight, can scratch the runner on the first pullback). 'Breakeven' = hold at entry+buffer, giving the runner maximum room. 'One trail step behind' = keep it one trail-step under the high-water mark (never below breakeven). The runner trail can still tighten it beyond this floor.")
-bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
-bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints one small label at each trade, carrying the full confluence breakdown in its HOVER TOOLTIP — the arm source, SOS age, FVG/POI/DIV flags, and the real entry / stop / TP prices. The on-chart text stays one line. When the trade closes it is recoloured by RESULT — green won, red lost, orange breakeven — and the R it made is appended. Use the filter below to keep only the results you care about.")
-string execLabelWhich = input.string("All", "…keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = GRP_EXEC, tooltip = "Which trades keep their hover label once the result is known. Every other trade's label is deleted on the bar it closes, so the chart keeps the coloured result box and the entry triangle but loses the annotation. Losses + breakevens is the review view — the trades worth auditing, nothing else. None removes them entirely.")
-float execLabelOff = input.float(6, "…label distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, tooltip = "How far the trade label is pushed away from the entry — below it on a long, above it on a short — measured in ATRs. TradingView draws the HOVER TOOLTIP right next to the label and gives Pine no way to place it, so this is the only lever on where that tooltip lands: park the label further out and the tooltip opens over empty space instead of over the candles. Raise it until you can read the tooltip and the trade at the same time. A thin leader line always connects the label back to the exact entry price, so pushing it out never loses you the anchor.")
-bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the furthest price the trade was ACTUALLY FILLED at; RED from entry to the stop fill if it was stopped for a loss; ORANGE line at entry if it only came back to breakeven. Replaces TradingView's built-in trade markers.")
-bool  execShowExitLines = input.bool(true, "Label the TP bands (TP1/TP2/TP3)", group = GRP_EXEC, tooltip = "Adds a faint dashed line at each partial exit's REAL fill price and tags it TP1 / TP2 / TP3 at the RIGHT edge of the trade — all three stacked on the same side, one colour, no prices in the text. Off = the coloured bands still paint, just untagged. The prices themselves are always in the trade label's tooltip.")
+// INPUTS MOVED 2026-07-28 — every Strategy Execution input now lives in ONE block
+// near the top of the file (search "STRATEGY EXECUTION INPUTS"), ordered the way a
+// trade happens and with each dependent setting greyed out by its parent. They had
+// to move rather than be reordered in place: two of them (execConfSZ, bLegMaxDays)
+// are read by engine code far above this point, and Pine needs the declaration
+// first, so leaving the rest here would always strand those two at the top of the
+// panel. Nothing about the LOGIC below changed — this block still owns the
+// behaviour, it just no longer owns the declarations. Mirrors mpc_strategy.pine.
+//
+// Adding a new execution input? Declare it in that block, in the section it
+// belongs to, and give it `active =` if another input can make it irrelevant.
 
 // ── Breakeven band ────────────────────────────────────────────────────────────
 // TradingView's "Breakevens: 0" is an artifact: our breakeven stop sits a few
@@ -4437,6 +4503,24 @@ f_trail(float maxFav, float tp2, int dir) =>
         out := dir > 0 ? tp2 + steps * trailStep : tp2 - steps * trailStep
     out
 
+// f_swingRatchet — the structure trail that does not stand still. Same anchor as the
+// Structure trail (last confirmed swing ± buffer), but from there the stop climbs one
+// `pct`-of-price step for every step of favourable move. The plain Structure trail sits
+// at the swing however far price runs, which is where the runner's give-back comes from:
+// the swing is a LAGGING anchor and in a strong leg it ends up a long way behind. Falls
+// back to the bare anchor until the move is one full step past it, so it is never LOOSER
+// than the Structure trail — only equal or tighter. Copied verbatim from mpc_strategy.pine
+// so the two forks keep ONE exit ladder; do not let the two copies drift.
+f_swingRatchet(float swing, float maxFav, int dir, float buf, float pct) =>
+    float anchor = dir > 0 ? swing - buf : swing + buf
+    float step   = maxFav * pct / 100.0
+    float run    = (maxFav - anchor) * dir
+    float out    = anchor
+    if step > 0 and not na(run) and run >= step
+        float steps = math.floor((run - step) / step)
+        out := anchor + steps * step * dir
+    out
+
 // lSL / sSL are only ever written while flat (longArmed requires position_size == 0),
 // so entry-to-stop is frozen for the life of the trade and is a safe 1R yardstick.
 if strategy.position_size > 0
@@ -4452,14 +4536,15 @@ if strategy.position_size < 0
     if sStage < 2 and low <= sTP2
         sStage := 2
 
-// Runner trail (ported from mpc_strategy.pine 2026-07-26, same defaults). "Structure
-// (swing)" rides the structure engine's last CONFIRMED swing instead of the fixed grid,
-// and is the DEFAULT — it breathes with the trend and usually rides further, at the cost
-// of giving more back at the turn.
+// Runner trail candidate — the fixed-step ratchet, a structure trail parked at the last
+// confirmed swing (st.last_conf_low/high), or that same swing anchor with a % ratchet
+// climbing off it. na = not engaged yet. (Ported from mpc_strategy.pine: the structure
+// trail + TP2 floor 2026-07-26, the % ratchet 2026-07-28.)
 float structBuf = execStructTrailBufTk * syminfo.mintick
-bool  useStructTrail = execRunnerTrail == "Structure (swing)"
-float lTrail = lStage >= 2 ? (useStructTrail ? (not na(st.last_conf_low)  ? st.last_conf_low  - structBuf : na) : f_trail(lMaxFav, lTP2, 1))  : na
-float sTrail = sStage >= 2 ? (useStructTrail ? (not na(st.last_conf_high) ? st.last_conf_high + structBuf : na) : f_trail(sMaxFav, sTP2, -1)) : na
+bool  useStructTrail  = execRunnerTrail == "Structure (swing)"
+bool  useSwingRatchet = execRunnerTrail == "Structure + % ratchet"
+float lTrail = lStage >= 2 ? (useSwingRatchet ? (not na(st.last_conf_low)  ? f_swingRatchet(st.last_conf_low,  lMaxFav,  1, structBuf, execTrailPct) : na) : useStructTrail ? (not na(st.last_conf_low)  ? st.last_conf_low  - structBuf : na) : f_trail(lMaxFav, lTP2,  1)) : na
+float sTrail = sStage >= 2 ? (useSwingRatchet ? (not na(st.last_conf_high) ? f_swingRatchet(st.last_conf_high, sMaxFav, -1, structBuf, execTrailPct) : na) : useStructTrail ? (not na(st.last_conf_high) ? st.last_conf_high + structBuf : na) : f_trail(sMaxFav, sTP2, -1)) : na
 
 // The stop FLOOR the moment TP2 fills, before the trail takes over (execTp2StopMode).
 // The trail can only tighten past this, never loosen it.
@@ -4470,17 +4555,26 @@ float lStop = lStage >= 2 ? (na(lTrail) ? lStage2Floor : math.max(lStage2Floor, 
 float sStop = sStage >= 2 ? (na(sTrail) ? sStage2Floor : math.min(sStage2Floor, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
 
 // ── Manage open long: TP1 / TP2 scale-outs + a runner that only trails ──
+// A rung sized 0% is SKIPPED, never placed. strategy.exit() treats qty_percent = 0 as
+// "unspecified" and falls back to closing the WHOLE position at that limit, so calling it
+// with 0 would turn "bank nothing here" into "bank everything here" — the exact opposite.
+// Skipping leaves the runner leg as the only exit, which is what 0% means. The TP PRICES
+// still drive the staged stop (lStage/sStage above) whatever the rung sizes are.
 if strategy.position_size > 0
-    strategy.exit("L-TP1", from_entry = "Long", qty_percent = execTp1Pct, limit = lTP1, stop = lStop)
-    strategy.exit("L-TP2", from_entry = "Long", qty_percent = execTp2Pct, limit = lTP2, stop = lStop)
+    if execTp1Pct > 0
+        strategy.exit("L-TP1", from_entry = "Long", qty_percent = execTp1Pct, limit = lTP1, stop = lStop)
+    if execTp2Pct > 0
+        strategy.exit("L-TP2", from_entry = "Long", qty_percent = execTp2Pct, limit = lTP2, stop = lStop)
     strategy.exit("L-RUN", from_entry = "Long",                                          stop = lStop)
     if execCloseOppSOS and st.bear_sos
         strategy.close("Long", comment = "opp SOS")
 
 // ── Manage open short ──
 if strategy.position_size < 0
-    strategy.exit("S-TP1", from_entry = "Short", qty_percent = execTp1Pct, limit = sTP1, stop = sStop)
-    strategy.exit("S-TP2", from_entry = "Short", qty_percent = execTp2Pct, limit = sTP2, stop = sStop)
+    if execTp1Pct > 0
+        strategy.exit("S-TP1", from_entry = "Short", qty_percent = execTp1Pct, limit = sTP1, stop = sStop)
+    if execTp2Pct > 0
+        strategy.exit("S-TP2", from_entry = "Short", qty_percent = execTp2Pct, limit = sTP2, stop = sStop)
     strategy.exit("S-RUN", from_entry = "Short",                                          stop = sStop)
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
@@ -4498,9 +4592,9 @@ if strategy.position_size < 0
 // Exit 0 = the Python bot's decision stream is bar-for-bar identical to this Pine.
 //
 // REGENERATE whenever mpc_b_leg_strategy.pine changes — the split point is exact:
-//   sed -n '1,4486p' indicators/mpc_b_leg_strategy.pine > indicators/mpc_b_leg_strategy_export.pine
-//   (4486 = `strategy.close("Short", comment = "opp SOS")`, the last line before the
-//    DIAGNOSTIC LOG header at 4489)
+//   sed -n '1,4580p' indicators/mpc_b_leg_strategy.pine > indicators/mpc_b_leg_strategy_export.pine
+//   (4580 = `strategy.close("Short", comment = "opp SOS")`, the last line before the
+//    DIAGNOSTIC LOG header at 4583 — re-grep it, this number moves on every edit)
 //   then re-append this block and restore the line-40 title.
 // The Diagnostic Log block is dropped in the export copy to stay under Pine's
 // compiled-token cap (CE10117), exactly as the A+ export does.
@@ -4595,13 +4689,20 @@ plot(bLegS_tgt, "bl_s_tgt", _BINV, editable = false)
 // bit 16384 is execAplus, which in THIS fork means "A+ holds priority", and bit
 // 32768 is execBLeg, which here defaults ON. cfg_strcodes' SL slot is pinned to
 // the "1.0" code (4) — see the note above. cfg_bleg_days is this fork's only extra.
+// cfg_exitmode's TENS digit is the runner trail method, and since 2026-07-28 it is a
+// THREE-way code (0 fixed / 1 structure / 2 structure + % ratchet) exactly as the A+
+// export packs it — it used to collapse everything non-fixed to 1, which would have
+// decoded the ratchet as the plain structure trail and diffed a ratcheted Python
+// against a ratcheted Pine while calling both "Structure (swing)". cfg_trail_pct
+// carries the ratchet step alongside it.
 plot((execLongs?1:0)+(execShorts?2:0)+(execArmSweep?4:0)+(execArmDiv?8:0)+(execReqFVG?16:0)+(execFvgDeepOnly?32:0)+(execRespectVeto?64:0)+(execCloseOppSOS?128:0)+(execHtfExhaustOnly?256:0)+(execNoLateDay?512:0)+(showDiv?1024:0)+(divVeto?2048:0)+(execConfSZ?4096:0)+(execDeepFib?8192:0)+(execAplus?16384:0)+(execBLeg?32768:0)+(execFvg50?65536:0), "cfg_bits", _BINV, editable = false)
 plot(4*1000 + (execHtfSource=="Weekly"?0:execHtfSource=="Daily"?1:2)*100 + (execHtfWeekly=="Ignore"?0:execHtfWeekly=="Must agree"?1:execHtfWeekly=="Must not oppose"?2:3)*10 + (execHtfDaily=="Ignore"?0:execHtfDaily=="Must agree"?1:execHtfDaily=="Must not oppose"?2:3), "cfg_strcodes", _BINV, editable = false)
 plot(divExtremeOS + divExtremeOB*1000 + divRsiLen*1000000 + divPivotLen*1000000000 + divValidBars*1000000000000, "cfg_divints", _BINV, editable = false)
 plot(aplusWindow, "cfg_window",   _BINV, editable = false)
 plot(execRiskPct, "cfg_risk_pct", _BINV, editable = false)
-plot((execRunnerTrail=="Fixed step"?0:1)*10 + (execTp2StopMode=="TP1 price"?0:execTp2StopMode=="Breakeven"?1:2), "cfg_exitmode", _BINV, editable = false)
+plot((execRunnerTrail=="Fixed step"?0:execRunnerTrail=="Structure (swing)"?1:2)*10 + (execTp2StopMode=="TP1 price"?0:execTp2StopMode=="Breakeven"?1:2), "cfg_exitmode", _BINV, editable = false)
 plot(execStructTrailBufTk, "cfg_struct_buf",  _BINV, editable = false)
+plot(execTrailPct,         "cfg_trail_pct",   _BINV, editable = false)
 plot(execTrailStep,        "cfg_trail_step",  _BINV, editable = false)
 plot(execTp1Pct,           "cfg_tp1_pct",     _BINV, editable = false)
 plot(execTp2Pct,           "cfg_tp2_pct",     _BINV, editable = false)

@@ -352,12 +352,107 @@ string macro100Style     = input.string("─",   "",              group = GRP_MA
 var GRP_SNIPER    = "Sniper Fib"
 bool showSniperFib = input.bool(false, "Sniper Zone", group = GRP_SNIPER, active = showFiboInput, display = display.none)
 
-// Entry-confirmation toggle, declared HERE (not down in the Strategy Execution
-// block where it belongs by group) because the Sniper Fib engine a few hundred
-// lines below has to read it, and Pine needs the declaration first. It still
-// appears under "Strategy Execution" in the panel — group placement is by the
-// group string, not by position in the file.
-bool execConfSZ = input.bool(false, "Allow Sniper Zone as entry confirmation", group = "Strategy Execution", tooltip = "Adds the Sniper Zone (0.5-0.618 pocket) as a fallback entry confirmation, used only on a leg with no qualifying FVG. The limit rests at the far side (~0.618). Existing trades are unchanged; any new one is a leg that previously logged 'NO FVG'.")
+//============================================================
+//  STRATEGY EXECUTION INPUTS
+//============================================================
+// EVERY Strategy Execution input is declared HERE, in one block, and NOWHERE
+// else. That is deliberate and it is load-bearing:
+//
+//   1. ORDER IN THE PANEL IS ORDER OF DECLARATION IN THE FILE. Before 2026-07-28
+//      two of these lived hundreds of lines away — execConfSZ next to the Sniper
+//      engine that reads it, bLegMaxDays next to the B-leg staleness check — so
+//      they landed at the TOP of the Execution panel, above "Trade Longs", with
+//      no context. Consolidating here is the only way to control the order.
+//   2. Pine needs a declaration BEFORE its first read. The Sniper engine (~line
+//      2900) and BLEG_MAX (~line 3430) both read inputs from this block, which is
+//      why the whole block sits up here rather than beside the execution logic at
+//      the bottom of the file. The execution block still OWNS the behaviour — it
+//      just no longer owns the declarations.
+//
+// The block is ordered the way a trade actually happens: what trades → what arms
+// it → where the limit rests → what can refuse it → size and stop → targets →
+// runner → drawing. Read it top to bottom and you have followed one trade.
+//
+// A CHILD input is prefixed "↳" and carries `active = <its parent>`, so it greys
+// out and locks the moment its parent makes it irrelevant. `active` needs a pure
+// INPUT bool — never reassign one of these with ":=" or every `active` that
+// references it stops compiling.
+//
+// Exceptions worth knowing, because they look like children and are not:
+//   • "Runner trail step" has TWO masters (Fixed-step mode AND the "One trail
+//     step behind" TP2 floor), so it is NOT gated on the trail method.
+//   • The three FVG entry toggles still price an entry with "Require FVG" OFF —
+//     that input only adds a fib fallback, it does not disable the gap logic.
+//   • "Minimum stop distance" is an ENTRY filter, unrelated to the runner trail.
+var GRP_EXEC = "Strategy Execution"
+
+// ── 1. WHAT TRADES ─────────────────────────────────────────────────────────
+bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
+bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
+bool  execAplus   = input.bool(true,  "Trade A+ setups",                group = GRP_EXEC, tooltip = "On (default) = the A+ reversal sequence trades normally. Off = no A+ entry ever fires — pair with 'Trade B-Leg setups' ON to backtest the B-leg in complete isolation and read its results on their own.")
+bool  execBLeg    = input.bool(false, "Trade B-Leg setups",             group = GRP_EXEC, tooltip = "Adds the B LEG as a second setup type (default OFF). Arms when a REV setup dies on a continuation BOS before it retraced; freezes the SZ band (0.382-0.5) and rests a limit at the 0.5 edge. SL beyond fib 1.0; TP1 swing extreme, TP2 expansion, TP3 runner. A+ has priority.")
+float bLegMaxDays = input.float(1.25, "   ↳ B-Leg: days to activate before it goes stale", minval = 1, maxval = 3, step = 0.25, group = GRP_EXEC, active = execBLeg, tooltip = "Only used when 'Trade B-Leg setups' is on. How long a B LEG watches its frozen band for the late retrace before it goes stale. Set in DAYS, measured as a BAR count (one day ÷ the chart timeframe) so weekends and the daily close don't consume it. Default 1.25 = the original 120 bars on 15m. Lower (e.g. 1) = quick retraces only; higher = more room. Sweep 1→3.")
+
+// ── 2. WHAT ARMS IT (Stage 1) ──────────────────────────────────────────────
+bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
+bool  execArmDiv   = input.bool(false, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
+bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC, tooltip = "On = an opposing divergence live at the SOS, or RSI at an extreme, blocks the side. The veto itself is built in the RSI Divergence group ('Veto Setups on Extreme/Divergence') — turn it off THERE and this has nothing to respect.")
+
+// ── 3. WHERE THE LIMIT RESTS (entry price) ─────────────────────────────────
+// These four are SIBLINGS, not a parent and three children. With "Require FVG"
+// OFF a qualifying gap still prices the entry exactly as before — that toggle
+// only adds the 0.618 fib as a FALLBACK when no gap qualifies. So none of the
+// three gap rules below is greyed out by it; they all stay live either way.
+bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = fall back to the 0.618 fib and enter on the retrace into the zone alone. NOTE: off does NOT disable the three gap rules below — a qualifying gap still prices the entry first.")
+bool  execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
+bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3. On = when a qualifying gap's near edge sits deeper than 0.618 and floats between two fib levels, rest the limit at the nearest fib just shallower than the gap (the level price reaches first) instead of the gap edge — recovers deep gaps that never get tapped. A gap on a fib level or shallower than 0.618 still enters at its exact edge. Off = enter at the gap edge.")
+bool  execFvg50   = input.bool(false, "Entry (least favorable): FVG must touch the 0.5 line", group = GRP_EXEC, tooltip = "Lowest-priority fallback (default OFF). Qualifies a gap that STRADDLES 0.5 (bottom at/below 0.5 AND top at/above 0.5) and rests the limit AT 0.5. Ranks last — only prices a leg no more-favorable source already did, so existing trades are unchanged.")
+bool  execConfSZ  = input.bool(false, "Allow Sniper Zone as entry confirmation", group = GRP_EXEC, tooltip = "Adds the Sniper Zone (0.5-0.618 pocket) as a fallback entry confirmation, used only on a leg with no qualifying FVG. The limit rests at the far side (~0.618). Existing trades are unchanged; any new one is a leg that previously logged 'NO FVG'.")
+
+// ── 4. WHAT CAN REFUSE IT (filters) ────────────────────────────────────────
+bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1. Blocks a reversal that fights a fresh HTF breakout (HTF closed past its prior high/low) while still allowing one that fades an exhaustion sweep. Off = no HTF filter, and the source below is greyed out.")
+string execHtfSource = input.string("Weekly", "   ↳ HTF exhaustion source", options = ["Weekly", "Daily", "Either"], group = GRP_EXEC, active = execHtfExhaustOnly, tooltip = "Only used when 'Only fade HTF exhaustion' is on. Which higher timeframe the breakout block reads. Weekly = only a weekly breakout blocks (widest, fewest blocks). Daily = only a daily breakout blocks. Either = a breakout on Weekly OR Daily blocks (strictest, most trades removed).")
+string execHtfWeekly = input.string("Ignore", "Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "A SEPARATE gate from the exhaustion filter above — this one works whether that is on or off. HTF-bias, WEEKLY, judged vs trade direction. Ignore = off. Must agree = Weekly matches the trade. Must not oppose = Neutral passes, only an opposing Weekly blocks. Must oppose (reversal) = Weekly must be against the trade. Pair with Daily below (Weekly 'Must oppose' + Daily 'Must agree' = forming reversal).")
+string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias gate, DAILY. Same four choices as Weekly, judged vs trade direction. Ignore = off.")
+bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
+
+// ── 5. SIZE & STOP ─────────────────────────────────────────────────────────
+float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 100, step = 0.1)
+string execSlLevel = input.string("0.886", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib on the deep side of 0.5. DEFAULT 0.886 — the deep edge of the entry band, and what Aaron actually trades (8 years / 188 trades behind it). 1.0 = the leg origin, the widest and structurally safest. The three shallower levels (0.618-0.786) can place the stop ON TOP OF the entry: nothing validates that, and a stop distance near zero balloons position size — turn 'Minimum stop distance' on before using them.")
+float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
+// Minimum stop distance — refuse a setup whose stop lands so close to the entry
+// that the position is degenerate. The $-risk is unchanged but SIZE balloons,
+// ordinary noise takes you out, and price can travel PAST the stop inside the
+// entry bar, so the realised loss beats the 1R you agreed to. Defaults OFF, so
+// the shipped baseline is unchanged until you flip it.
+// This is an ENTRY-TIME filter — it decides whether an order is placed at all. It
+// has nothing to do with the runner trail further down, which only starts once
+// TP2 is hit. Both work at once; neither disables the other.
+string execMinStopMode = input.string("Off", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = GRP_EXEC, tooltip = "Skip a setup whose stop sits closer to the entry than the floor below. '% of price' (try 0.10) scales itself as gold runs 1200 to 3300. 'Fixed $' (try 1.50) is one flat number at both ends of that range. 'x ATR(14)' (try 0.5) is the only one that reacts to a quiet vs violent market at the same price. Off greys out the floor value below. An ENTRY filter — unrelated to the runner trail.")
+float execMinStopVal = input.float(0.10, "   ↳ floor value (unit = mode above)", group = GRP_EXEC, minval = 0, step = 0.05, active = execMinStopMode != "Off", tooltip = "A PERCENT in '% of price' mode, DOLLARS of price in 'Fixed $', a MULTIPLE in 'x ATR(14)'. Over 8 years of gold 15m, mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of 188 trades and are slightly positive in R; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start eating winners.")
+
+// ── 6. TARGETS (the TP ladder) ─────────────────────────────────────────────
+float execTp1Pct  = input.float(0,    "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. DEFAULT 0 = bank nothing, ride the whole position to the runner — the tested best setting. The TP1 PRICE still matters at 0: touching it is what stages the stop to breakeven. Raise it only to scale out.")
+float execTp2Pct  = input.float(0,    "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP2 limit banks. DEFAULT 0 = bank nothing (see TP1). Touching TP2 still lifts the stop to the TP2 floor and hands the runner to the trail.")
+float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
+
+// ── 7. THE RUNNER — everything here starts only AFTER TP2 is hit ───────────
+string execRunnerTrail = input.string("Structure + % ratchet", "Runner trail method", options = ["Fixed step", "Structure (swing)", "Structure + % ratchet"], group = GRP_EXEC, tooltip = "How the TP3 runner is trailed once TP2 is hit, and which of the two settings below is live. 'Fixed step' = the grid ratchet off 'Runner trail step' (both ↳ settings greyed). 'Structure (swing)' = park the stop at the last confirmed swing low (longs) / high (shorts) minus/plus the buffer below — breathes with the trend, but the swing is a LAGGING anchor so it hands a lot back at the turn. 'Structure + % ratchet' (DEFAULT since 2026-07-28) = the same swing anchor, but the stop then CLIMBS one % step per % of favourable move instead of sitting still while price runs away. Measured over 6.6y XAUUSD 15m: the share of each run actually banked went 43% → 53% on the SAME 164 trades, same entries, same % drawdown. Buffer 20 + TP2 floor = TP1 price remains the tested best pairing.")
+float execStructTrailBufTk = input.float(20, "   ↳ Structure trail buffer (ticks)", group = GRP_EXEC, minval = 0, active = execRunnerTrail != "Fixed step", tooltip = "Used by BOTH structure trail methods, greyed out on 'Fixed step'. The runner stop sits this many ticks BELOW the last confirmed swing low (long) / ABOVE the last confirmed swing high (short), so a wick through the swing doesn't clip it.")
+float execTrailPct = input.float(1.0, "   ↳ Runner ratchet step (% of price)", group = GRP_EXEC, minval = 0.05, step = 0.05, active = execRunnerTrail == "Structure + % ratchet", tooltip = "Only used when Runner trail method = 'Structure + % ratchet'; greyed out otherwise. The stop starts at the last confirmed swing and climbs one step of this size for every step of favourable move. A PERCENT rather than a dollar figure on purpose: gold ran 1,500 to 3,400 over the backtest window, so no fixed $ step is right at both ends — $20 is a 1.3% trail at 1,500 and a 0.6% trail at 3,400. Measured over 6.6y XAUUSD 15m: 1.0 lifted the share of each run that is actually banked from 43% to 53% on the same 164 trades, same entries, same % drawdown. Below ~0.5 it starts clipping runners and costs real edge.")
+string execTp2StopMode = input.string("TP1 price", "TP2 → stop floor (delay the jump)", options = ["TP1 price", "Breakeven", "One trail step behind"], group = GRP_EXEC, tooltip = "What the stop floor becomes the moment TP2 is hit, BEFORE the runner trail takes over. 'TP1 price' (default) = snap the stop up to TP1 (tight, can scratch the runner on the first pullback). 'Breakeven' = hold at entry+buffer, giving the runner maximum room. 'One trail step behind' = keep it one 'Runner trail step' under the high-water mark (never below breakeven). The runner trail can still tighten it beyond this floor.")
+// NOT a child of the trail method — it has TWO masters. 'Fixed step' trails off it,
+// and the "One trail step behind" TP2 floor above measures off it too. Greying it
+// on the trail method would silently disable a live setting, so it is never greyed.
+float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "Read by TWO settings, so it is never greyed out: (1) Runner trail method = 'Fixed step' trails the runner on this grid, and (2) TP2 → stop floor = 'One trail step behind' sits this far under the high-water mark. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0. Irrelevant only when the trail is a Structure method AND the TP2 floor is TP1/Breakeven.")
+bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade. (Loss-mitigation test #2 — an opposite SOS is early proof the reversal failed, so exit there instead of riding to the fib-1.0 stop.)")
+
+// ── 8. DRAWING (cosmetic — none of this changes a trade) ───────────────────
+bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints one label per trade with the full confluence breakdown in its hover tooltip. On close it recolours by result (green/red/orange) and appends the R. Off greys out both settings below.")
+string execLabelWhich = input.string("All", "   ↳ keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = GRP_EXEC, active = execShowConfLabel, tooltip = "Which trades keep their hover label once the result is known. Every other trade's label is deleted on the bar it closes, so the chart keeps the coloured result box and the entry triangle but loses the annotation. Losses + breakevens is the review view — the trades worth auditing, nothing else. None removes them entirely.")
+float execLabelOff = input.float(6, "   ↳ label distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, active = execShowConfLabel, tooltip = "How far the trade label sits from the entry (ATRs) — the only lever on where the hover tooltip opens. Raise it so the tooltip lands over empty space, not the candles. A leader line always connects it back to the entry.")
+bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the furthest price the trade was ACTUALLY FILLED at; RED from entry to the stop fill if it was stopped for a loss; ORANGE line at entry if it only came back to breakeven. Replaces TradingView's built-in trade markers. Off greys out the band labels below.")
+bool  execShowExitLines = input.bool(true, "   ↳ Label the TP bands (TP1/TP2/TP3)", group = GRP_EXEC, active = execShowPosBox, tooltip = "Adds a faint dashed line at each partial exit's REAL fill price and tags it TP1 / TP2 / TP3 at the RIGHT edge of the trade — all three stacked on the same side, one colour, no prices in the text. Off = the coloured bands still paint, just untagged. The prices themselves are always in the trade label's tooltip.")
 
 //============================================================
 //  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
@@ -3432,10 +3527,11 @@ if bLegArmS and not na(bLegS_top)
 // above; the opposite one is often the retrace itself).
 // Staleness is user-tunable in DAYS (1-3) but converted to a BAR count (day ÷ the
 // chart timeframe), so weekends and the daily close still don't burn the clock —
-// what matters is how much TRADING has passed. Declared with the literal group
-// string (GRP_EXEC is defined further down) so it lands in the Execution panel.
-// On 15m: 1 day ≈ 96 bars, 2 ≈ 192, 3 ≈ 288.
-float bLegMaxDays = input.float(1.25, "B-Leg: days to activate before it goes stale", minval = 1, maxval = 3, step = 0.25, group = "Strategy Execution", tooltip = "How long a B LEG watches its frozen band for the late retrace before it goes stale. Set in DAYS, measured as a BAR count (one day ÷ the chart timeframe) so weekends and the daily close don't consume it. Default 1.25 = the original 120 bars on 15m. Lower (e.g. 1) = quick retraces only; higher = more room. Sweep 1→3. B-LEG only.")
+// what matters is how much TRADING has passed. On 15m: 1 day ≈ 96 bars, 2 ≈ 192,
+// 3 ≈ 288. The `bLegMaxDays` INPUT moved to the consolidated Strategy Execution
+// block near the top of the file on 2026-07-28 (it used to be declared right here,
+// which put it at the top of the Execution panel above "Trade Longs"); only the
+// bar-count conversion is left here, next to the check that reads it.
 int BLEG_MAX = int(math.max(1, math.round(bLegMaxDays * 86400 / timeframe.in_seconds())))
 if bLegL_on
     if low <= bLegL_top
@@ -3598,48 +3694,17 @@ if barstate.islast
 // = 1 unit of quote currency per contract (true for XAUUSD/most CFDs); revisit
 // syminfo.pointvalue if you run this on an instrument where that is not the case.
 
-var GRP_EXEC = "Strategy Execution"
-bool  execLongs   = input.bool(true,  "Trade Longs",                    group = GRP_EXEC)
-bool  execShorts  = input.bool(true,  "Trade Shorts",                   group = GRP_EXEC)
-bool  execAplus   = input.bool(true,  "Trade A+ setups",                group = GRP_EXEC, tooltip = "On (default) = the A+ reversal sequence trades normally. Off = no A+ entry ever fires — pair with 'Trade B-Leg setups' ON to backtest the B-leg in complete isolation and read its results on their own.")
-bool  execBLeg    = input.bool(false, "Trade B-Leg setups",             group = GRP_EXEC, tooltip = "Adds the B LEG as a second setup type (default OFF). Arms when a REV setup dies on a continuation BOS before it retraced; freezes the SZ band (0.382-0.5) and rests a limit at the 0.5 edge. SL beyond fib 1.0; TP1 swing extreme, TP2 expansion, TP3 runner. A+ has priority.")
-bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by an HTF liquidity sweep (H4 / prev-day / session high-low). Turn OFF and leave divergence ON to backtest divergence-armed setups in isolation.")
-bool  execArmDiv   = input.bool(false, "Arm on RSI divergence",          group = GRP_EXEC, tooltip = "Stage 1 trigger. Allows a setup that was armed by a confirmed RSI divergence. Turn OFF and leave sweep ON to backtest sweep-armed setups in isolation. Both OFF = no trades. This does NOT control the divergence VETO — that has its own toggle below.")
-bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = enter on the retrace into the zone alone.")
-bool  execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
-bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3. On = when a qualifying gap's near edge sits deeper than 0.618 and floats between two fib levels, rest the limit at the nearest fib just shallower than the gap (the level price reaches first) instead of the gap edge — recovers deep gaps that never get tapped. A gap on a fib level or shallower than 0.618 still enters at its exact edge. Off = enter at the gap edge.")
-bool  execFvg50   = input.bool(false, "Entry (least favorable): FVG must touch the 0.5 line", group = GRP_EXEC, tooltip = "Lowest-priority fallback (default OFF). Qualifies a gap that STRADDLES 0.5 (bottom at/below 0.5 AND top at/above 0.5) and rests the limit AT 0.5. Ranks last — only prices a leg no more-favorable source already did, so existing trades are unchanged.")
-bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = GRP_EXEC)
-bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = GRP_EXEC, tooltip = "Force-close the trade if an opposite-direction SOS fires before SL/TP. Off = let SL/TP resolve every trade. (Loss-mitigation test #2 — an opposite SOS is early proof the reversal failed, so exit there instead of riding to the fib-1.0 stop.)")
-bool  execHtfExhaustOnly = input.bool(false, "Only fade HTF exhaustion, not breakouts", group = GRP_EXEC, tooltip = "Loss-mitigation test #1. Blocks a reversal that fights a fresh HTF breakout (HTF closed past its prior high/low) while still allowing one that fades an exhaustion sweep. Off = no HTF filter. Uses the source dropdown below.")
-string execHtfSource = input.string("Weekly", "HTF exhaustion source", options = ["Weekly", "Daily", "Either"], group = GRP_EXEC, tooltip = "Which higher timeframe the breakout block reads. Weekly = only a weekly breakout blocks (widest, fewest blocks). Daily = only a daily breakout blocks. Either = a breakout on Weekly OR Daily blocks (strictest, most trades removed). Only used when 'Only fade HTF exhaustion' is on.")
-string execHtfWeekly = input.string("Ignore", "Weekly bias requirement", options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias gate, WEEKLY, judged vs trade direction. Ignore = off. Must agree = Weekly matches the trade. Must not oppose = Neutral passes, only an opposing Weekly blocks. Must oppose (reversal) = Weekly must be against the trade. Pair with Daily below (Weekly 'Must oppose' + Daily 'Must agree' = forming reversal).")
-string execHtfDaily  = input.string("Ignore", "Daily bias requirement",  options = ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"], group = GRP_EXEC, tooltip = "HTF-bias gate, DAILY. Same four choices as Weekly, judged vs trade direction. Ignore = off.")
-float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 100, step = 0.1)
-string execSlLevel = input.string("1.0", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib on the deep side of 0.5. Default 1.0 = leg origin. Pick a shallower level (0.618-0.886) for a tighter stop; the buffer is measured beyond it. If it lands at/inside the entry, the setup won't fire.")
-float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
-// Minimum stop distance — refuse a setup whose stop lands so close to the entry
-// that the position is degenerate. The $-risk is unchanged but SIZE balloons,
-// ordinary noise takes you out, and price can travel PAST the stop inside the
-// entry bar, so the realised loss beats the 1R you agreed to. Defaults OFF, so
-// the shipped baseline is unchanged until you flip it.
-string execMinStopMode = input.string("Off", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = GRP_EXEC, tooltip = "Skip a setup whose stop sits closer to the entry than the floor below. '% of price' (try 0.10) scales itself as gold runs 1200 to 3300. 'Fixed $' (try 1.50) is one flat number at both ends of that range. 'x ATR(14)' (try 0.5) is the only one that reacts to a quiet vs violent market at the same price. The value below is read in the unit of whichever mode you pick — change both together.")
-float execMinStopVal = input.float(0.10, "   ...floor value (unit = mode above)", group = GRP_EXEC, minval = 0, step = 0.05, tooltip = "A PERCENT in '% of price' mode, DOLLARS of price in 'Fixed $', a MULTIPLE in 'x ATR(14)'. Over 8 years of gold 15m, mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of 188 trades and are slightly positive in R; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start eating winners.")
-float execTp1Pct  = input.float(0,    "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. DEFAULT 0 = bank nothing, ride the whole position to the runner — the tested best setting. The TP1 PRICE still matters at 0: touching it is what stages the stop to breakeven. Raise it only to scale out.")
-float execTp2Pct  = input.float(0,    "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP2 limit banks. DEFAULT 0 = bank nothing (see TP1). Touching TP2 still lifts the stop to the TP2 floor and hands the runner to the trail.")
-float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
-float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "The remaining runner (TP3) has no fixed target — it rides a ratchet stop past TP2. Once price runs one full step beyond TP2 the stop moves to TP2, then climbs one step for every further step of favourable movement. On GOLD 1 pip = $0.10 of price, so 50 pips = 5.0.")
-// Runner-trail EXPERIMENT levers — all three default to the shipped behaviour, so the
-// baseline backtest is unchanged until you flip one. Change ONE at a time and compare.
-string execRunnerTrail = input.string("Structure (swing)", "Runner trail method", options = ["Fixed step", "Structure (swing)"], group = GRP_EXEC, tooltip = "How the TP3 runner is trailed once TP2 is hit. 'Fixed step' = the 50-pip grid ratchet above. 'Structure (swing)' (default) = trail behind the last confirmed swing low (longs) / high (shorts) from the structure engine, minus/plus the buffer below — breathes with the trend and usually rides further, but gives back more at the turn. This is the tested best combo: Structure trail + buffer 20 + TP2 floor = TP1 price.")
-float execStructTrailBufTk = input.float(20, "Structure trail buffer (ticks)", group = GRP_EXEC, minval = 0, tooltip = "Only used when Runner trail method = Structure. The runner stop sits this many ticks BELOW the last confirmed swing low (long) / ABOVE the last confirmed swing high (short), so a wick through the swing doesn't clip it.")
-string execTp2StopMode = input.string("TP1 price", "TP2 → stop floor (delay the jump)", options = ["TP1 price", "Breakeven", "One trail step behind"], group = GRP_EXEC, tooltip = "What the stop floor becomes the moment TP2 is hit, BEFORE the runner trail takes over. 'TP1 price' (default) = snap the stop up to TP1 (tight, can scratch the runner on the first pullback). 'Breakeven' = hold at entry+buffer, giving the runner maximum room. 'One trail step behind' = keep it one trail-step under the high-water mark (never below breakeven). The runner trail can still tighten it beyond this floor.")
-bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY)", group = GRP_EXEC, tooltip = "Blocks NEW entries in the last hour before the daily close. Gold closes 17:00 New York and reopens 18:00 New York, so this bars 16:00-17:00 NY. Stops trades that get gapped out over the session break.")
-bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints one label per trade with the full confluence breakdown in its hover tooltip. On close it recolours by result (green/red/orange) and appends the R. Filter which results keep their label below.")
-string execLabelWhich = input.string("All", "…keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = GRP_EXEC, tooltip = "Which trades keep their hover label once the result is known. Every other trade's label is deleted on the bar it closes, so the chart keeps the coloured result box and the entry triangle but loses the annotation. Losses + breakevens is the review view — the trades worth auditing, nothing else. None removes them entirely.")
-float execLabelOff = input.float(6, "…label distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, tooltip = "How far the trade label sits from the entry (ATRs) — the only lever on where the hover tooltip opens. Raise it so the tooltip lands over empty space, not the candles. A leader line always connects it back to the entry.")
-bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while the trade is open. On close it paints the result: GREEN from entry to the furthest price the trade was ACTUALLY FILLED at; RED from entry to the stop fill if it was stopped for a loss; ORANGE line at entry if it only came back to breakeven. Replaces TradingView's built-in trade markers.")
-bool  execShowExitLines = input.bool(true, "Label the TP bands (TP1/TP2/TP3)", group = GRP_EXEC, tooltip = "Adds a faint dashed line at each partial exit's REAL fill price and tags it TP1 / TP2 / TP3 at the RIGHT edge of the trade — all three stacked on the same side, one colour, no prices in the text. Off = the coloured bands still paint, just untagged. The prices themselves are always in the trade label's tooltip.")
+// INPUTS MOVED 2026-07-28 — every Strategy Execution input now lives in ONE block
+// near the top of the file (search "STRATEGY EXECUTION INPUTS"), ordered the way a
+// trade happens and with each dependent setting greyed out by its parent. They had
+// to move rather than be reordered in place: two of them (execConfSZ, bLegMaxDays)
+// are read by engine code far above this point, and Pine needs the declaration
+// first, so leaving the rest here would always strand those two at the top of the
+// panel. Nothing about the LOGIC below changed — this block still owns the
+// behaviour, it just no longer owns the declarations.
+//
+// Adding a new execution input? Declare it in that block, in the section it
+// belongs to, and give it `active =` if another input can make it irrelevant.
 
 // (Fixed R:R exit lever REMOVED 2026-07-25 — the strict single-target exit
 //  underperformed the scaled fib ladder in testing, so every trade is back on
@@ -4439,6 +4504,23 @@ f_trail(float maxFav, float tp2, int dir) =>
         out := dir > 0 ? tp2 + steps * trailStep : tp2 - steps * trailStep
     out
 
+// f_swingRatchet — the structure trail that does not stand still. Same anchor as the
+// Structure trail (last confirmed swing ± buffer), but from there the stop climbs one
+// `pct`-of-price step for every step of favourable move. The plain Structure trail sits
+// at the swing however far price runs, which is where the runner's give-back comes from:
+// the swing is a LAGGING anchor and in a strong leg it ends up a long way behind. Falls
+// back to the bare anchor until the move is one full step past it, so it is never LOOSER
+// than the Structure trail — only equal or tighter.
+f_swingRatchet(float swing, float maxFav, int dir, float buf, float pct) =>
+    float anchor = dir > 0 ? swing - buf : swing + buf
+    float step   = maxFav * pct / 100.0
+    float run    = (maxFav - anchor) * dir
+    float out    = anchor
+    if step > 0 and not na(run) and run >= step
+        float steps = math.floor((run - step) / step)
+        out := anchor + steps * step * dir
+    out
+
 // lSL / sSL are only ever written while flat (longArmed requires position_size == 0),
 // so entry-to-stop is frozen for the life of the trade and is a safe 1R yardstick.
 if strategy.position_size > 0
@@ -4454,12 +4536,14 @@ if strategy.position_size < 0
     if sStage < 2 and low <= sTP2
         sStage := 2
 
-// Runner trail candidate — either the fixed-step ratchet (default) or a structure
-// trail behind the last confirmed swing (st.last_conf_low/high). na = not engaged yet.
+// Runner trail candidate — the fixed-step ratchet, a structure trail parked at the last
+// confirmed swing (st.last_conf_low/high), or that same swing anchor with a % ratchet
+// climbing off it. na = not engaged yet.
 float structBuf = execStructTrailBufTk * syminfo.mintick
-bool  useStructTrail = execRunnerTrail == "Structure (swing)"
-float lTrail = lStage >= 2 ? (useStructTrail ? (not na(st.last_conf_low)  ? st.last_conf_low  - structBuf : na) : f_trail(lMaxFav, lTP2, 1))  : na
-float sTrail = sStage >= 2 ? (useStructTrail ? (not na(st.last_conf_high) ? st.last_conf_high + structBuf : na) : f_trail(sMaxFav, sTP2, -1)) : na
+bool  useStructTrail  = execRunnerTrail == "Structure (swing)"
+bool  useSwingRatchet = execRunnerTrail == "Structure + % ratchet"
+float lTrail = lStage >= 2 ? (useSwingRatchet ? (not na(st.last_conf_low)  ? f_swingRatchet(st.last_conf_low,  lMaxFav,  1, structBuf, execTrailPct) : na) : useStructTrail ? (not na(st.last_conf_low)  ? st.last_conf_low  - structBuf : na) : f_trail(lMaxFav, lTP2,  1)) : na
+float sTrail = sStage >= 2 ? (useSwingRatchet ? (not na(st.last_conf_high) ? f_swingRatchet(st.last_conf_high, sMaxFav, -1, structBuf, execTrailPct) : na) : useStructTrail ? (not na(st.last_conf_high) ? st.last_conf_high + structBuf : na) : f_trail(sMaxFav, sTP2, -1)) : na
 
 // TP2 stop floor — the protective baseline the instant TP2 hits, before the runner
 // trail takes over. Default snaps to TP1; the alternatives delay that jump for room.

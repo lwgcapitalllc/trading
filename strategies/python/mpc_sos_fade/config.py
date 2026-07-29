@@ -57,7 +57,17 @@ class SosFadeConfig:
     exec_htf_daily: str = "Ignore"     # "Daily bias requirement"
     #   HTF-bias options: Ignore | Must agree | Must not oppose | Must oppose (reversal)
     exec_risk_pct: float = 10.0        # "Risk % per trade"
-    exec_sl_level: str = "1.0"         # "SL fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0}
+    exec_sl_level: str = "0.886"       # "SL fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0}
+    #   **Defaulted "1.0" → "0.886" on 2026-07-27** (Aaron's call, and how his TradingView chart is
+    #   configured), in lockstep with both A+ Pine files. 0.886 is the DEEP EDGE of the 0.5-0.886
+    #   entry band, so the stop sits just past the deepest price a limit may rest at. Evidence: the
+    #   2026-07-27 parity run went GREEN at it, and Run 6 rode it over the broker's whole intraday
+    #   history — 188 trades, 107.7R, 293x, −54.9% maxDD, no degenerate stop.
+    #   ⚠ It is still one of the four levels INSIDE the entry band, so Run 4's structural hazard is
+    #   not gone, only unobserved at this level: nothing validates that the stop lands on the far
+    #   side of the entry, and a near-zero stop distance balloons `qty = risk / dist`. The three
+    #   SHALLOWER levels (0.618 / 0.702 / 0.786) remain unsupported — 0.786 detonated an account to
+    #   −$63k in Run 4. See the ⚠ block in CLAUDE.md before changing this.
     exec_sl_buf_tk: float = 0.0        # "SL buffer beyond chosen level (ticks)"
     exec_tp1_pct: float = 0.0          # "TP1 size %"
     exec_tp2_pct: float = 0.0          # "TP2 size %"
@@ -74,15 +84,30 @@ class SosFadeConfig:
     #   share one exit ladder.
     exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
     exec_trail_step: float = 5.0       # "Runner trail step ($ of price)" — Fixed-step mode only
-    exec_runner_trail: str = "Structure (swing)"   # "Runner trail method"
-    #   ∈ {"Fixed step", "Structure (swing)"}. How the TP3 runner is trailed once TP2 fills.
+    exec_runner_trail: str = "Structure + % ratchet"   # "Runner trail method"
+    #   ∈ {"Fixed step", "Structure (swing)", "Structure + % ratchet"}. How the TP3 runner is
+    #   trailed once TP2 fills.
     #   "Fixed step" = the `exec_trail_step` grid ratchet off TP2 (the pre-2026-07-25 behaviour).
-    #   "Structure (swing)" (DEFAULT, matching the Pine) = trail behind the structure engine's
-    #   last CONFIRMED swing low (longs) / high (shorts), offset by `exec_struct_trail_buf_tk`.
-    #   Breathes with the trend and rides further, but gives back more at the turn.
+    #   "Structure (swing)" = park the stop at the structure engine's last CONFIRMED swing low
+    #   (longs) / high (shorts), offset by `exec_struct_trail_buf_tk`. Breathes with the trend,
+    #   but the swing is a LAGGING anchor — in a strong leg it ends up far behind, and that gap
+    #   IS the runner's give-back.
+    #   "Structure + % ratchet" (DEFAULT since 2026-07-28) = the same swing anchor, but the stop
+    #   then climbs one `exec_trail_pct`-of-price step per step of favourable move instead of
+    #   sitting still. Never LOOSER than the plain structure trail — only equal or tighter.
     exec_struct_trail_buf_tk: float = 20.0  # "Structure trail buffer (ticks)"
     #   Structure mode only. The runner stop sits this many ticks BELOW the confirmed swing low
     #   (long) / ABOVE the swing high (short), so a wick through the swing doesn't clip it.
+    exec_trail_pct: float = 1.0        # "Runner ratchet step (% of price)"
+    #   "Structure + % ratchet" mode only. A PERCENT of price, not a dollar figure, and that is
+    #   the whole point: gold ran 1,500 → 3,400 over the backtest window, so no fixed $ step is
+    #   right at both ends ($20 is a 1.3% trail at 1,500 and a 0.6% trail at 3,400 — the dollar
+    #   version tops out ~8R below the percent one for exactly this reason).
+    #   Measured over 6.6y XAUUSD 15m, vs the plain structure trail: the share of each run actually
+    #   banked went 43% → 53% on the SAME 164 trades, same entries, same % max drawdown (54.7%,
+    #   identical to the bar). Only 11 exits change — 8 better, 3 worse, net +1.7R, i.e. the EDGE
+    #   is unchanged within noise and what improves is how much of each run survives to the close.
+    #   Below ~0.5 it starts clipping runners and costs real edge (0.25% → 43.6R vs 109.3R at 1.0).
     exec_tp2_stop_mode: str = "TP1 price"   # "TP2 → stop floor (delay the jump)"
     #   ∈ {"TP1 price", "Breakeven", "One trail step behind"}. What the stop FLOOR becomes the
     #   moment TP2 fills, before the runner trail takes over. "TP1 price" (default) snaps the stop

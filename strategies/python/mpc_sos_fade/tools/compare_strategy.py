@@ -46,7 +46,11 @@ from mpc_sos_fade.execution import Decision  # noqa: E402
 _SL_LEVEL = {0: "0.618", 1: "0.702", 2: "0.786", 3: "0.886", 4: "1.0"}
 _HTF_SRC = {0: "Weekly", 1: "Daily", 2: "Either"}
 _HTF_REQ = {0: "Ignore", 1: "Must agree", 2: "Must not oppose", 3: "Must oppose (reversal)"}
-_RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)"}
+# Slot 2 landed 2026-07-28 with "Structure + % ratchet", which also became the DEFAULT.
+# An export taken before that date encodes the old binary `Fixed step?0:1`, and its 1 still
+# decodes to "Structure (swing)" — correct, because that is what those exports ran. Only 2
+# is new, so older exports stay readable rather than silently mapping to the new default.
+_RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)", 2: "Structure + % ratchet"}
 _TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
 
 # decision columns compared, after _expand_packed() has unpacked cfg_bits/px_dec_bits/etc.
@@ -150,14 +154,23 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
     # even if the Pine ran fixed-step. Warn loudly rather than diff on a guess.
     em = get("cfg_exitmode")
     if em is None:
+        # Do NOT fall back to the config default here. Since 2026-07-28 that default is
+        # "Structure + % ratchet", which NO export predating the column ever ran — so the
+        # silent fallback would diff a ratcheted Python against a non-ratcheted Pine and
+        # report pure drift as a bug. "Structure (swing)" is the least-wrong assumption
+        # (it is what the 2026-07-25 → 2026-07-28 window ran); anything older ran fixed
+        # step and is not recoverable from this file at all.
+        vals["exec_runner_trail"] = "Structure (swing)"
         print("WARNING: no cfg_exitmode column — this export predates 2026-07-26 and does not "
-              "record the runner trail or the TP2 stop floor. The exit levers are assumed to be "
-              "at their defaults; re-export to compare them honestly.")
+              "record the runner trail or the TP2 stop floor. Assuming the runner trail was "
+              "'Structure (swing)' (NOT the current default) and the rest at their defaults; "
+              "re-export to compare them honestly.")
     else:
         e = int(round(em))
         vals["exec_runner_trail"] = _RUNNER_TRAIL.get(e // 10, vals["exec_runner_trail"])
         vals["exec_tp2_stop_mode"] = _TP2_STOP.get(e % 10, vals["exec_tp2_stop_mode"])
     for col, field in (("cfg_struct_buf", "exec_struct_trail_buf_tk"),
+                       ("cfg_trail_pct", "exec_trail_pct"),
                        ("cfg_trail_step", "exec_trail_step"),
                        ("cfg_tp1_pct", "exec_tp1_pct"),
                        ("cfg_tp2_pct", "exec_tp2_pct"),

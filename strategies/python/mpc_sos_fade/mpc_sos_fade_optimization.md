@@ -26,6 +26,7 @@ Standing rules for anything recorded here:
 | 4 | 2026-07-26 | Stop PLACEMENT — `exec_sl_level` × `exec_sl_buf_tk` × TP split, 40 combos | **none — the sweep is INVALID.** Four of the five SL levels can place the stop on top of the entry; the account blows to −$63k. Found two real defects. | **discard the numbers, read the writeup** |
 | 5 | 2026-07-26 | *"how do I cut the losers quicker?"* — diagnosis of the loss bucket, then `exec_sl_level` re-run on a clean window + `exec_close_opp_sos` + `exec_htf_exhaust_only` | **Diagnosis: every loss is a trade that never touched TP1.** `exec_sl_level=0.786` scores 59.3R vs 33.6R shipped at the SAME drawdown — but it reproduces Run 4's hazard on 8 trades, so **still not adoptable**. Both "cut quick" toggles measured **exactly zero effect**. | measured, **blocked on Run 4's guard** |
 | 6 | 2026-07-27 | *"cut trades early / block the losing pattern"* — 8 years at the SHIPPED config, with every trade's per-bar R path captured. 3 cut families (~40 variants) + 10 entry blocks + `exec_close_opp_sos` | **The question is closed. Every cut rule loses money**, because no loser runs straight to its stop (min MFE **+0.09R**, median +0.51R) and winners are underwater just as deep (median MAE −0.36R) — the two are indistinguishable while live. The −54.9% DD is a **losing streak at 10% risk**, not give-back, so **risk % is the only lever**. Only positive filter: **stop < $2** (293x → 338x). | **do not build it** — read the verdict |
+| 7 | 2026-07-27 | **The minimum-stop guard, properly measured** — 17 real replays (not row-filtering), 8 years, three independent definitions of "too tight": fixed $, % of price, ×ATR(14) | **The guard PASSES, at a MILD threshold only.** All three definitions agree: light = **+0.7 to +2.7R**, medium/heavy = **−12 to −39R**. Best is **`pct 0.1`** (stop ≥ 0.1% of price): 182 trades, +2.5R, blocks the −1.98R trade, leaves 2021/2024/2025/2026 **untouched**. It is a **safety** rule — the R gain is noise-level, and it does **not** fix drawdown (−54.9% → −54.3%). | **measured, awaiting Aaron's go** |
 
 **Still open:** *"what R:R should I use as a dynamic stop loss?"* — no sweep of existing
 parameters can answer it (the bot has no R:R dial). A three-stage plan is written up at the
@@ -451,6 +452,15 @@ range.
    entry, or a sane distance from it. **Treat `exec_sl_level="1.0"` as the only supported value
    until a guard exists.** (Unverified here: whether `mpc_strategy.pine` has the same exposure. It
    offers the same dropdown, so assume yes until checked.)
+
+   **AMENDED 2026-07-27 — the default is now `"0.886"`, by Aaron's decision.** It is the setting he
+   trades; the parity run went green at it and Run 6 rode it over the full history (188 trades,
+   107.7R) without a degenerate stop. The finding above is NOT retracted: 0.886 is still inside the
+   entry band and neither defect is fixed, it simply never collapsed at this level, because 0.886
+   is the deepest price the entry limit itself can rest at. **0.618 / 0.702 / 0.786 remain
+   unsupported.** A partial guard now exists on the Pine side only — `execMinStopMode` (default
+   "Off") refuses a setup whose stop is inside a %-of-price / fixed-$ / ATR floor. It is NOT ported
+   to `config.py`, so the Python bot still has no floor at all.
 2. **There is no floor on stop distance.** Note carefully what is and is not broken here.
    `execution.py:329` sizes the position as `qty = (equity * exec_risk_pct / 100) / dist` — risk-
    based sizing, working exactly as designed. A wider stop gives a SMALLER lot, a tighter stop a
@@ -863,3 +873,154 @@ without touching the edge, because it does not interact with the trade logic at 
 - Anything that changes ENTRY count, beyond the ten single-bucket blocks above. Combinations were
   not swept, deliberately: at n=188 a two-way block sweep will find something that looks good and
   is noise.
+
+---
+
+# Run 7 — 2026-07-27 — the minimum-stop guard, measured properly. It passes, but only mildly.
+
+Run 6 left one live recommendation: the minimum-stop-distance guard, on the strength of a single
+number (`stop < $2` → 293x → 338x). That number came from **filtering rows out of a finished trade
+list**, which is not a test of the rule. Skipping an entry frees the bot to take the NEXT setup it
+would otherwise have been in a position for, so the guard changes *which trades exist*, not just
+which ones are counted. This run does it honestly.
+
+## How it was measured
+
+17 full 8-year replays (185,668 M15 bars, 2018-09-13 → 2026-07-27, `exec_sl_level="0.886"`, the
+shipped config). The guard is a subclass of the shipped `Execution` that lets the real
+`_place_entries` build the order and then drops it if `abs(edge - sl)` is under the floor — so
+every other rule (arming, vetoes, blocked/missed recording) behaves exactly as shipped and **only
+the placement decision changes**. No repo file was modified.
+
+The engines + signals + sequence stream is built ONCE and shared across all 17 variants. That is
+safe because the pipeline is strictly one-way — nothing reads execution state back — and it turns
+~75 minutes of replay into ~5.
+
+**Three independent definitions of "too tight", deliberately**, because the answer must not depend
+on which one was picked:
+
+| definition | what it is | why it is in the sweep |
+|---|---|---|
+| `fixed` | a flat dollar floor | simplest, but gold ran 1200 → 3300 over this window, so one number cannot mean the same thing at both ends |
+| `pct` | floor as a % of price | self-scales with the price level, needs no new state, ports to Pine in one line |
+| `atr` | floor as a fraction of ATR(14) | the honest volatility measure — the only one that reacts to a quiet vs violent market at the SAME price |
+
+**The pass mark was set before the results arrived:** positive across a RANGE of thresholds and
+degrading smoothly = a real rule. Positive at exactly one value and negative either side = a curve
+fit, and a fail.
+
+## The result
+
+| guard | trades | sumR | final $ | x | maxDD | worst yr |
+|---|---|---|---|---|---|---|
+| **none (shipped)** | 188 | 107.7 | 2,931,537 | 293.2x | −54.9% | −4.0R |
+| fixed 1 | 188 | 107.7 | 2,931,537 | 293.2x | −54.9% | −4.0R |
+| **fixed 1.5** | 183 | **110.4** | 3,868,664 | 386.9x | −54.9% | −3.0R |
+| fixed 2 | 180 | 108.4 | 3,380,685 | 338.1x | −54.3% | −3.0R |
+| fixed 2.5 | 174 | 95.3 | 1,948,835 | 194.9x | −54.3% | −1.2R |
+| fixed 3 | 169 | 89.5 | 1,140,728 | 114.1x | −54.3% | −2.1R |
+| fixed 4 | 160 | 95.3 | 2,120,192 | 212.0x | −54.3% | −2.1R |
+| pct 0.05 | 188 | 107.7 | 2,931,537 | 293.2x | −54.9% | −4.0R |
+| **pct 0.1** | 182 | **110.2** | 3,912,804 | 391.3x | −54.3% | −3.0R |
+| pct 0.15 | 172 | 89.3 | 1,147,596 | 114.8x | −54.3% | −1.2R |
+| pct 0.2 | 166 | 94.3 | 2,047,887 | 204.8x | −45.7% | −2.1R |
+| pct 0.3 | 137 | 68.4 | 608,340 | 60.8x | −40.3% | −3.1R |
+| atr 0.25 | 188 | 107.7 | 2,931,537 | 293.2x | −54.9% | −4.0R |
+| **atr 0.5** | 185 | **108.4** | 3,133,618 | 313.4x | −54.9% | −3.0R |
+| atr 0.75 | 184 | 106.2 | 2,585,781 | 258.6x | −57.0% | −3.5R |
+| atr 1 | 179 | 109.2 | 3,672,402 | 367.2x | −57.5% | −3.5R |
+| atr 1.5 | 168 | 71.9 | 674,094 | 67.4x | −49.3% | −3.1R |
+
+**The harness is validated:** the `none (shipped)` row reproduces Run 6's baseline exactly —
+188 trades / 107.7R / $2,931,537 / 293.2x / −54.9%.
+
+## Read sumR, NOT the x-multiple
+
+The `x` column is ragged and non-monotonic (fixed: 387 → 338 → 195 → 114 → **212**; pct: 391 → 115
+→ **205** → 61; atr: 313 → 259 → **367** → 67). That bouncing is **compounding amplifying which
+individual trades land either side of the line** — a +2.5R difference in the raw edge becomes a
++100x difference in the final balance because an early trade's outcome multiplies everything after
+it. **The 391x must never be quoted as the expected gain.** sumR is the honest column.
+
+In sumR the picture is clean and, critically, the **same in all three definitions**:
+
+| tightness | fixed $ | % of price | ×ATR |
+|---|---|---|---|
+| **light** (blocks 3–6 trades) | **+2.7R** | **+2.5R** | **+0.7R** |
+| medium | −12.4R | −18.4R | −1.5R |
+| heavy | −18.2R | −39.3R | −35.8R |
+
+Three unrelated ways of measuring "too tight" agreeing on both the sign and the shape is what makes
+this a finding rather than a fluke. It passes the curve-fit test.
+
+## The per-year table is the proof
+
+```
+         guard    2018    2019    2020    2021    2022    2023    2024    2025    2026
+none (shipped)    -1.8     0.7    22.2     4.6    -4.0    20.5    19.1    31.5    15.1
+     fixed 1.5    -0.8     1.7    21.8     4.6    -3.0    20.5    19.1    31.5    15.1
+       pct 0.1    -0.8     0.7    21.8     4.6    -3.0    21.4    19.1    31.5    15.1
+       atr 0.5    -1.8     0.7    21.8     4.6    -3.0    20.5    19.1    31.5    15.1
+--- everything below here eats winners ---
+     fixed 2.5    -0.8    -1.2    21.7     4.6    -1.2     6.6    19.1    31.5    15.1
+       fixed 3    -1.9    -1.4    21.7     4.6    -2.1     3.1    19.1    31.5    15.1
+      pct 0.15    -0.8    -1.2    21.7     4.6    -1.2     5.3    19.1    26.8    15.1
+       pct 0.3    -0.9    -1.1    19.3     4.1    -3.1     6.6    -1.2    28.6    16.1
+       atr 1.5    -1.8    -2.2    22.7     3.6    -3.1     6.1    -3.0    33.5    16.1
+```
+
+At the mild settings **four of the nine years are byte-identical** to the shipped bot. The rule
+costs 0.4R in 2020 and everything it gains comes out of **2018 and 2022 — the two losing years**.
+That is exactly the shape a safety rule should have: it removes damage, it does not manufacture
+profit.
+
+**The tell for "too tight" is the 2023 column.** It collapses 20.5R → 3.1–6.6R at `fixed 2.5/3/4`,
+`pct 0.15/0.2/0.3` and `atr 1.5`. `pct 0.3` and `atr 1.5` also destroy 2024 (19.1 → −1.2 / −3.0).
+Past the mild band the guard stops refusing degenerate stops and starts refusing real trades.
+
+## Winner: `pct 0.1` — the stop must be at least 0.1% of price
+
+$1.20 when gold is at 1,200; $3.30 when it is at 3,300. It scales itself, needs no new state, and
+is one line in Pine. It blocks 6 of 188 trades, scores **+2.5R**, and **it does block the
+2023-07-27 trade** — the single trade in eight years that realised 1.98R against a 1R risk (a $1.83
+stop against a bar that travelled $11; 0.1% of 1967 = $1.97, so it is refused). `fixed 1.5` scores
+marginally higher (+2.7R) but does NOT block that trade ($1.83 > $1.50), and a flat dollar floor is
+the wrong shape for an instrument that tripled.
+
+`atr 0.5` is the most theoretically correct definition and is also positive (+0.7R), but it too
+misses 2023-07-27 and it needs ATR state on both sides of the parity boundary. Keep it as the
+fallback if `pct` ever misbehaves at a different price regime.
+
+## Verdict
+
+1. **Adopt the guard at `pct 0.1`** — but adopt it as a **SAFETY rule, not a profit rule.** +2.5R
+   out of 107.7R over eight years is inside the noise. The reason to ship it is that it closes the
+   `## The exit ladder` ⚠ hazard: a stop narrower than a typical bar means `exec_risk_pct` is no
+   longer the real risk, and the realised loss is unbounded. The measured edge being mildly
+   positive means the protection is **free**, which is the whole argument.
+2. **Do NOT optimise the threshold upward.** The mild band is the finding; the higher numbers are
+   the rule breaking. Anything above ~0.1% / $1.50 / 0.5×ATR is refusing real trades.
+3. **This does not fix drawdown.** −54.9% → −54.3%. Run 6's verdict stands unchanged: drawdown is a
+   position-size decision. This guard removes a tail hazard, not the losing streak.
+4. **Run 6's verdict item 3 is SUPERSEDED by this run.** Its "293x → 338x" was row-filtering, not a
+   replay, and it overstated the gain by an order of magnitude. The direction was right; the size
+   was not.
+
+## What adoption requires (the standing rule)
+
+`exec_min_stop_pct` (default 0.1) in `config.py` **and** in `indicators/mpc_strategy.pine` **and**
+`indicators/mpc_strategy_export.pine` (new `cfg_*` column) **and** `compare_strategy.py`
+(`_TOGGLE_COLS`), in ONE commit, with `compare_strategy.py` re-run green on a fresh export. Note
+`mpc_bleg` inherits `_place_entries` — decide explicitly whether the B-LEG's band-origin stop wants
+the same floor before shipping.
+
+## What was NOT measured
+
+- The guard interacting with a different `exec_sl_level`. All 17 runs are at 0.886. Run 5's
+  finding that 0.786 scores 59.3R vs 33.6R *if the hazard were fixed* is the obvious follow-up —
+  **re-run Run 5's `exec_sl_level` sweep with `pct 0.1` installed** and see whether the shallower
+  stops become adoptable. That is now the highest-value open item on this bot.
+- Tick-mode fills. Every number here is bar mode (zero costs), like every other run in this file.
+- Whether the six blocked setups would have been better taken at a WIDER stop rather than skipped
+  entirely. Refusing the trade is the conservative choice; re-anchoring the stop is a different
+  rule and was not tested.

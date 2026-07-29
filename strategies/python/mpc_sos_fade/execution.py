@@ -28,6 +28,7 @@ See `backtest/fills.py` for why both models must exist.
 
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1267,6 +1268,24 @@ class Execution:
         (Pine lTrail / sTrail, `exec_runner_trail`)."""
         cfg = self._cfg
         d = self._pos_dir
+        if cfg.exec_runner_trail == "Structure + % ratchet":
+            # Pine f_swingRatchet. Same anchor as the plain structure trail, but the stop
+            # then climbs one %-of-price step per step of favourable move, so it does not
+            # sit at a lagging swing while price runs away. Falls back to the bare anchor
+            # until the move is one full step past it — never LOOSER than Structure.
+            swing = self._trail_swing_lo if d > 0 else self._trail_swing_hi
+            if swing is None:
+                return None
+            buf = cfg.exec_struct_trail_buf_tk * cfg.mintick
+            anchor = swing - buf if d > 0 else swing + buf
+            if self._max_fav is None:
+                return anchor
+            step = self._max_fav * cfg.exec_trail_pct / 100.0
+            run = (self._max_fav - anchor) * d
+            if step <= 0 or run < step:
+                return anchor
+            steps = math.floor((run - step) / step)
+            return anchor + steps * step * d
         if cfg.exec_runner_trail == "Structure (swing)":
             swing = self._trail_swing_lo if d > 0 else self._trail_swing_hi
             if swing is None:                     # no confirmed swing yet — floor only

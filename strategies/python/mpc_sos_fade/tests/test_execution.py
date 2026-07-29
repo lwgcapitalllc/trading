@@ -23,8 +23,11 @@ def _cfg(**kw):
     # These fixtures arm via DIVERGENCE (_seq_long_ready sets sos_l_div), so pin the arm
     # source on regardless of the production default (which is now sweep-arm). This isolates
     # the execution mechanics under test from the arm-source default.
+    # `exec_sl_level` is pinned for the same reason: the price fixtures put the stop at
+    # fibo_p10 = 100.0 and the sizing / −1R assertions are hand-computed off that, so they must
+    # not move when the shipped default does (it went 1.0 → 0.886 on 2026-07-27).
     base = dict(exec_req_fvg=False, exec_be_buf_tk=0.0, exec_risk_pct=10.0,
-                exec_arm_div=True, exec_arm_sweep=False)
+                exec_arm_div=True, exec_arm_sweep=False, exec_sl_level="1.0")
     base.update(kw)
     return SosFadeConfig(**base)
 
@@ -457,6 +460,40 @@ def test_structure_trail_with_no_confirmed_swing_falls_back_to_the_floor():
     assert abs(dec.stop - 105.0) < 1e-9
 
 
+def test_swing_ratchet_climbs_above_the_bare_structure_anchor():
+    """"Structure + % ratchet": same anchor as Structure (swing low 105.6 - 0.20 = 105.40),
+    then one step per step of favourable move. Max favourable on bar 2 is 107.0, so the step
+    is 107.0 * 1% = 1.07 and the run is 107.0 - 105.40 = 1.60. floor((1.60-1.07)/1.07) = 0,
+    so the stop is anchor + 0 = 105.40 — engaged, and never below the anchor."""
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Structure + % ratchet",
+                                      exec_struct_trail_buf_tk=20.0,
+                                      exec_trail_pct=1.0)), last_conf_low=105.6)
+    assert abs(dec.stop - 105.4) < 1e-9
+
+
+def test_swing_ratchet_is_never_looser_than_the_plain_structure_trail():
+    """The property the whole lever rests on: for the SAME swing it can only ever be equal
+    to or TIGHTER than Structure (swing). A tiny step makes the ratchet bind hard; the plain
+    trail sits at the anchor. Long, so tighter = higher."""
+    swing = 105.6
+    plain = _stage2_long(Execution(_cfg(exec_runner_trail="Structure (swing)",
+                                        exec_struct_trail_buf_tk=20.0)), last_conf_low=swing)
+    ratchet = _stage2_long(Execution(_cfg(exec_runner_trail="Structure + % ratchet",
+                                          exec_struct_trail_buf_tk=20.0,
+                                          exec_trail_pct=0.2)), last_conf_low=swing)
+    assert ratchet.stop >= plain.stop - 1e-12
+    # ...and with a 0.2% step (0.214) it genuinely binds: run 1.60 -> 6 whole steps past
+    # the first, so anchor + 6*0.214 = 106.684, well above the plain trail's 105.40.
+    assert ratchet.stop > plain.stop
+
+
+def test_swing_ratchet_with_no_confirmed_swing_falls_back_to_the_floor():
+    """Same warmup guard as the plain structure trail — no anchor, no trail, floor only."""
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Structure + % ratchet")),
+                       last_conf_low=None)
+    assert abs(dec.stop - 105.0) < 1e-9
+
+
 def test_fixed_step_trail_ignores_the_confirmed_swing():
     """Fixed-step mode must not read the swing at all. Max favourable 107.0 is only 0.82
     past TP2 (106.18) — under one 5.0 step — so the ratchet hasn't engaged and the floor holds,
@@ -497,3 +534,15 @@ def test_aplus_off_disarms_every_a_plus_entry():
     dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
     assert dec.long_armed is False
     assert ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready()).fills == []
+
+
+def test_shipped_sl_level_default_is_the_deep_band_edge():
+    """The SHIPPED default is 0.886 (2026-07-27) — the deep edge of the 0.5-0.886 entry band,
+    matching `mpc_strategy.pine` / `mpc_strategy_export.pine`. Toggle-default parity with the
+    Pine is a hard requirement (see config.py's docstring), and this value is load-bearing:
+    it moves the stop, so a silent drift changes every trade's size and R. The B-LEG fork
+    pins "1.0" instead, because ITS Pine still ships 1.0."""
+    from mpc_bleg.config import BLegConfig
+
+    assert SosFadeConfig().exec_sl_level == "0.886"
+    assert BLegConfig().exec_sl_level == "1.0"

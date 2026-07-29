@@ -61,6 +61,7 @@ def _encode_cfg(cfg: BLegConfig) -> dict:
     return {"cfg_bits": b, "cfg_strcodes": sc, "cfg_divints": di,
             "cfg_window": cfg.aplus_window, "cfg_risk_pct": cfg.exec_risk_pct,
             "cfg_exitmode": em, "cfg_struct_buf": cfg.exec_struct_trail_buf_tk,
+            "cfg_trail_pct": cfg.exec_trail_pct,
             "cfg_trail_step": cfg.exec_trail_step,
             "cfg_tp1_pct": cfg.exec_tp1_pct, "cfg_tp2_pct": cfg.exec_tp2_pct,
             "cfg_be_buf": cfg.exec_be_buf_tk, "cfg_sl_buf": cfg.exec_sl_buf_tk,

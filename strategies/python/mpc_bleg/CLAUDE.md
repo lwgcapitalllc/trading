@@ -13,7 +13,17 @@ real 21,231-bar `VANTAGE_XAUUSD, 15m` export — bar-for-bar identical decision 
 ~90 distinct frozen bands and 5 graded trades. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
 open question, not correctness:** 5 trades is far too thin to tune against. See "The parity gate".
-**Last reviewed:** 2026-07-27 — the A+ blocked-setup AND missed-setup markers stay non-ported here, both now pinned by a test (the miss watch needed an explicit opt-out). Earlier: 2026-07-26 — the exit levers landed, the Pine-parity harness was built, and it came back GREEN on the first real export (see "The parity gate").
+**Last reviewed:** 2026-07-28 — **`mpc_b_leg_strategy.pine` caught up to the A+ exit ladder**, so this
+package's two divergence pins are gone: `exec_runner_trail` is INHERITED again ("Structure + % ratchet",
+with `exec_trail_pct` alongside it) and the TP rungs sit at the inherited 0/0. The Pine also gained the
+`qty_percent = 0` guard — without it a 0 rung closed the WHOLE position at TP1, which is why typing 0
+"blew up" there. Nothing changed in this package's CODE (the ladder has always lived in the parent's
+`Execution`); what changed is that the config no longer has to lie to stay parity-green. ⚠ **The export
+is now STALE and every B-LEG number from this build is unvalidated until `compare_bleg.py` is re-run**
+— `cfg_exitmode`'s trail digit went 2-way → 3-way and `cfg_trail_pct` is new, so an OLD export decodes
+the ratchet as the plain structure trail. ⚠ The ratchet's 43% → 53% run-capture result was measured on
+**A+ trades only**; it is inherited for one-ladder consistency, not as a proven B-LEG result. Earlier:
+2026-07-27 — the A+ blocked-setup AND missed-setup markers stay non-ported here, both now pinned by a test (the miss watch needed an explicit opt-out). Earlier: 2026-07-26 — the exit levers landed, the Pine-parity harness was built, and it came back GREEN on the first real export (see "The parity gate").
 
 ## Why it exists (the split, 2026-07-24)
 
@@ -93,7 +103,10 @@ full register is `mpc_sos_fade/CLAUDE.md` → `## The exit ladder`. What is spec
 
 `indicators/mpc_b_leg_strategy.pine` was ported in the same pass and now matches: `execRunnerTrail`,
 `execStructTrailBufTk`, `execTp2StopMode`, `execAplus`, and the `lStage2Floor` / structure-trail
-exit block copied line-for-line from `mpc_strategy.pine`. **Not ported, deliberately:** `execSlLevel`
+exit block copied line-for-line from `mpc_strategy.pine`. **Completed 2026-07-28** — that Pine had
+fallen a lever behind: it lacked the `"Structure + % ratchet"` trail method (+ `f_swingRatchet` and
+`execTrailPct`), still defaulted the TP rungs 30/40, and still called `strategy.exit()` on a 0% rung.
+All three were ported, so the two forks are back on ONE ladder with nothing pinned around a gap. **Not ported, deliberately:** `execSlLevel`
 (the SL fib dropdown) is meaningless here because the B leg's stop is its band origin, not a fib; and
 the pink blocked-trade markers, whose codes describe why an **A+** setup was refused — in this fork
 A+ never trades, so those tags would report the opposite of what a reader would assume. A B-LEG

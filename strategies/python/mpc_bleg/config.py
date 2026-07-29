@@ -35,6 +35,22 @@ class BLegConfig(SosFadeConfig):
     #   only to prove the bot trades nothing without it. `exec_aplus` is inherited and still
     #   matters: A+ never PLACES an order here, but it holds the priority gate — set it False
     #   to drop that gate and read the B leg completely on its own.
+    exec_sl_level: str = "1.0"    # "SL fib level" — pinned, NOT inherited
+    #   The parent defaulted this "1.0" → "0.886" on 2026-07-27 to match the A+ Pine. This fork's
+    #   Pine (`mpc_b_leg_strategy.pine`) still ships "1.0", and toggle-default parity with its OWN
+    #   Pine is the contract, so the value is pinned here rather than inherited. It is also unused
+    #   on this path — a B leg's stop is the frozen band's origin, never the fib anchor — so the
+    #   pin costs nothing and only stops a silent drift between this config and its export.
+
+    #   `exec_runner_trail` was PINNED to "Structure (swing)" here from 2026-07-28 until later the
+    #   same day, because the parent had moved to "Structure + % ratchet" while this fork's Pine
+    #   still shipped the two-option dropdown — inheriting would have moved every B-LEG runner exit
+    #   against a Pine that stood still, and `compare_bleg.py` would have reported the drift as a
+    #   bug. `mpc_b_leg_strategy.pine` now carries the ratchet (same `f_swingRatchet`, same default),
+    #   so the pin is GONE and `exec_runner_trail` / `exec_trail_pct` are inherited again. The
+    #   43% → 53% run-capture number behind that default was measured on the parent's A+ trades,
+    #   never on B legs — it is inherited for ONE-LADDER consistency, not as a proven B-LEG result.
+    #   Sweep it here before treating it as tuned.
 
     # ── B-LEG-only input (Pine bLegMaxDays, group "Strategy Execution") ─────────────
     bleg_max_days: float = 1.25   # days a frozen band watches before it goes stale (1-3)

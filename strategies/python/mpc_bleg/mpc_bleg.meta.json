@@ -85,12 +85,13 @@
       "label": "Runner trail method",
       "choices": [
         "Fixed step",
-        "Structure (swing)"
+        "Structure (swing)",
+        "Structure + % ratchet"
       ],
-      "desc": "How the runner is trailed once TP2 is banked. Fixed step ratchets a fixed distance behind price. Structure follows the last confirmed swing, so it breathes with the trend — it usually rides further but hands back more at the turn. The runner is where this strategy's money is, so this is the highest-leverage setting on the page.",
+      "desc": "How the runner is trailed once TP2 is banked. Fixed step ratchets a fixed dollar distance behind price. Structure parks the stop at the last confirmed swing — it breathes with the trend but the swing lags, so a big run hands a lot back at the turn. Structure + % ratchet (default) uses the same swing anchor and then climbs it a percent at a time as price runs, which is what stops the give-back. The runner is where this strategy's money is, so this is the highest-leverage setting on the page.",
       "guide": [
-        "Fixed step — mechanical, predictable give-back",
-        "Structure — rides trends further, wider give-back"
+        "Fixed step — mechanical, worst on a multi-year price range",
+        "Structure + % ratchet — measured best on the A+ bot, unswept here"
       ]
     },
     {
@@ -98,13 +99,26 @@
       "group": "Exit ladder",
       "unit": "ticks",
       "label": "Structure trail buffer",
-      "show_if": {
-        "exec_runner_trail": "Structure (swing)"
-      },
-      "desc": "How far below the confirmed swing low (or above the swing high) the runner's stop sits, so an ordinary wick through the swing doesn't clip it.",
+      "desc": "How far below the confirmed swing low (or above the swing high) the runner's stop sits, so an ordinary wick through the swing doesn't clip it. Used by both Structure modes; ignored in Fixed step.",
       "guide": [
         "Tight to the swing — clipped by wicks",
         "Wide of the swing — survives noise, gives back more"
+      ]
+    },
+    {
+      "name": "exec_trail_pct",
+      "group": "Exit ladder",
+      "core": true,
+      "label": "Runner ratchet step",
+      "unit": "% of price",
+      "step": 0.05,
+      "show_if": {
+        "exec_runner_trail": "Structure + % ratchet"
+      },
+      "desc": "How fast the runner's stop climbs off the swing anchor — one step of this size for every step of favourable move. A percent rather than a dollar amount on purpose: gold ran 1,500 to 3,400 over the backtest, so no fixed dollar step is right at both ends. The 1.0 default is what the A+ bot measured best on its own trades; it has never been swept on B legs.",
+      "guide": [
+        "Below 0.5 — clips runners, costs real edge",
+        "Above 2.5 — barely binds, back to the plain structure trail"
       ]
     },
     {
