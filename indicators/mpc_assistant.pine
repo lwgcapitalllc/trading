@@ -57,8 +57,8 @@ color iBearColor  = bearColor
 var GRP_STRUCT = "Market Structure"
 bool   marketStructureOnly = not showTradeTools and not showFibTool
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
-bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
-bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
+bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, tooltip = "The major swing structure. ASH/ASL = Active Swing High/Low, the live level being watched. HH/HL = Higher High/Higher Low, LH/LL = Lower High/Lower Low. BOS = Break of Structure, a break that continues the trend. SOS = Shift of Structure, a break that reverses it (also called CHoCH, Change of Character).", display = display.none)
+bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, tooltip = "The smaller structure inside the current major swing. Same names with an i prefix: iSH/iSL = internal Swing High/Low, iHH/iHL/iLH/iLL, iBOS = internal Break of Structure, iSOS = internal Shift of Structure.", display = display.none)
 bool   showSwingLabels  = input.bool(false, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart.", display = display.none)
 bool   showHistoricalInternal = input.bool(false, "Show Internal Structure History", group = GRP_STRUCT, active = showInternal, tooltip = "Off (default) wipes the internal structure each time the external structure breaks, so only the current swing's internals are drawn. On keeps every past swing's internal labels and lines on the chart.", display = display.none)
 int    internalLength   = 5
@@ -82,17 +82,17 @@ f_swingCol(color c) =>
   // the chart but can never change what a tool detects or how it looks.
 //============================================================
 var GRP_TOOLS = "Chart Tools"
-bool showFVGInput        = input.bool(true,  "Fair Value Gaps",   group = GRP_TOOLS, display = display.none)
-bool showOBsInput        = input.bool(false, "Order Blocks",      group = GRP_TOOLS, display = display.none)
-bool eqShowInput         = input.bool(true,  "Equal Highs/Lows",  group = GRP_TOOLS, display = display.none)
-var i_showLiquidityInput = input.bool(true,  "Liquidity Levels",  group = GRP_TOOLS, display = display.none)
+bool showFVGInput        = input.bool(true,  "Fair Value Gaps",   group = GRP_TOOLS, tooltip = "FVG on the chart. A fair value gap is the price void left by a 3-candle imbalance, where the first and third candles do not overlap.", display = display.none)
+bool showOBsInput        = input.bool(false, "Order Blocks",      group = GRP_TOOLS, tooltip = "OB on the chart. An order block is the last opposing candle before the move that broke structure.", display = display.none)
+bool eqShowInput         = input.bool(true,  "Equal Highs/Lows",  group = GRP_TOOLS, tooltip = "Tagged EQH and EQL. EQH = Equal Highs, a pair of highs at the same price with buy-side liquidity resting above. EQL = Equal Lows, the mirror below.", display = display.none)
+var i_showLiquidityInput = input.bool(true,  "Liquidity Levels",  group = GRP_TOOLS, tooltip = "The tags down the right edge. PDH/PDL = Previous Day High/Low. PWH/PWL = Previous Week High/Low. PWC = Previous Week Close. H4 H/L = the previous 4-hour candle High/Low. Asia/Ldn/NY H and L = that session High and Low. BSL = Buy-Side Liquidity (above a high), SSL = Sell-Side Liquidity (below a low).", display = display.none)
 bool showSessionsInput   = input.bool(true,  "Trading Sessions",  group = GRP_TOOLS, display = display.none)
 bool showHistoricSessions = input.bool(false, "    ↳ Session History", group = GRP_TOOLS, active = showSessionsInput, tooltip = "Off (default) draws only the current week's session boxes, from Sunday 00:00 New York. On draws every session in the chart's history.", display = display.none)
-bool showKZandNYRInput   = input.bool(true,  "Kill Zones & NY Range", group = GRP_TOOLS, display = display.none)
+bool showKZandNYRInput   = input.bool(true,  "Kill Zones & NY Range", group = GRP_TOOLS, tooltip = "KZ = Kill Zone, the high-activity window at a session open. NY = New York. NY Range = the opening range of the New York session.", display = display.none)
 bool showKZHistoric      = input.bool(false, "    ↳ Kill Zone History", group = GRP_TOOLS, active = showKZandNYRInput, tooltip = "Off (default) draws the kill zones and NY range for the current New York day only. On draws them for every day in the chart's history.", display = display.none)
-bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, display = display.none)
-bool showVwapInput       = input.bool(false, "VWAP",              group = GRP_TOOLS, display = display.none)
-bool showDivInput        = input.bool(true,  "RSI Divergence",    group = GRP_TOOLS, display = display.none)
+bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, tooltip = "The MV line — the Asia session Point of Control (POC), the single price the most volume traded at during Asia. Drawn from that session's Volume Profile (SVP = Session Volume Profile).", display = display.none)
+bool showVwapInput       = input.bool(false, "VWAP",              group = GRP_TOOLS, tooltip = "VWAP = Volume Weighted Average Price. The average price paid so far in the session, weighted by how much traded at each price.", display = display.none)
+bool showDivInput        = input.bool(true,  "RSI Divergence",    group = GRP_TOOLS, tooltip = "RSI = Relative Strength Index, a momentum oscillator. Divergence = price and RSI disagreeing, one making a new extreme while the other does not. Tagged Bull Div / Bear Div.", display = display.none)
 
 //============================================================
   // ORDER BLOCKS — appearance + cap locked, no panel inputs
@@ -243,7 +243,7 @@ int   vwapWidth = 1
 bool i_showLiquidity = true
 bool drawLiq = showTradeTools and i_showLiquidityInput
 bool i_showLabels      = true
-string liqLabelSize    = "Tiny"
+string liqLabelSize    = input.string("Tiny", "Level tag size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = GRP_TOOLS, tooltip = "One size for every price-level tag down the right-hand side: the Liquidity Levels (PDH/PDL, PWH/PWL, PWC, H4 H/L, session highs and lows), the MV line, and the EQH/EQL pools. Deliberately ONE control — sizing them separately is what makes the right edge look ragged.", display = display.none)
 bool i_currentDayOnly  = true   // always hide mitigated on new day
 
 f_liqSize() =>
@@ -280,12 +280,12 @@ color i_nyHLColor     = drawLiq ? color.black : color(na)
   // on the chart) is gone.
 //============================================================
 var GRP_FIBO = "Fibs"
-bool   showFiboInput   = input.bool(true, "Show External Fib", group = GRP_FIBO, display = display.none)
+bool   showFiboInput   = input.bool(true, "Show External Fib", group = GRP_FIBO, tooltip = "The retracement drawn on the current major swing leg. Its lines are tagged TP1/TP2/TP3 (Take Profit) and E1-E4 (Entry levels). FFT = the 0.5 line once price has traded back through it.", display = display.none)
 int    fiboLineExtend  = input.int(80, "External Fib Line Extension (bars)", group = GRP_FIBO, minval = 5, maxval = 500, active = showFiboInput, tooltip = "How far the External Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
-bool   showMacroFibInput = input.bool(true, "Show Cycle Fib", group = GRP_FIBO, display = display.none)
+bool   showMacroFibInput = input.bool(true, "Show Cycle Fib", group = GRP_FIBO, tooltip = "The same retracement drawn on the whole cycle rather than one leg — the move from the last major low to the last major high. Same TP and E tags.", display = display.none)
 int    macroLineExtend = input.int(180, "Cycle Fib Line Extension (bars)", group = GRP_FIBO, minval = 10, maxval = 500, active = showMacroFibInput, tooltip = "How far the Cycle Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
-bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, display = display.none)
-bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "Shows the BLEG SZ watch level on the chart. 15m only.", display = display.none)
+bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, tooltip = "SZ = Sniper Zone, the 0.382-0.5 pocket of the leg that just broke structure.", display = display.none)
+bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "BLEG = B-Leg, the setup whose retrace arrives late. SZ = Sniper Zone, its 0.382-0.5 pocket. Shows that watch level on the chart. 15m only.", display = display.none)
 
 bool hideFibsSub5m = true
 // 1m is the entry-view timeframe — the External Fib always shows there (its SOS-leg
@@ -298,7 +298,7 @@ bool _fibTfOk = timeframe.in_seconds() == 60 or not (hideFibsSub5m and timeframe
 bool showFibo   = _fibTfOk
 bool drawFibo   = showFibTool and showFiboInput and _fibTfOk
 bool drawSniper = showFibTool and showSniperInput
-string sharedLabelMode = "TP/Entry"
+string sharedLabelMode = input.string("TP/Entry", "Fib label style", options = ["TP/Entry", "Fib Value", "Both"], group = GRP_FIBO, tooltip = "What each fib line is tagged with, in front of its price. TP/Entry = the trade name (TP1, TP2, TP3, E1-E4). Fib Value = the ratio (0.5, 0.618). Both = the name and the ratio side by side. Applies to the External, Cycle and Internal fibs together.", display = display.none)
 
 float fibo1Value     = 0.382
 color fibo1Color     = #4caf50
@@ -2482,7 +2482,7 @@ f_processEq() =>
         if not na(eqPrevPh) and math.abs(eqPh - eqPrevPh) <= eqTol
             float lvl = math.max(eqPh, eqPrevPh)
             line ln = line.new(eqPrevPhBar, lvl, bar_index + i_lineExtend, lvl, color = eqhColor, style = line.style_dotted, width = 1)
-            label lb = label.new(bar_index + i_lineExtend, lvl, "EQH", style = label.style_none, textcolor = eqhColor, size = size.tiny, textalign = text.align_left)
+            label lb = label.new(bar_index + i_lineExtend, lvl, "EQH", style = label.style_none, textcolor = eqhColor, size = f_liqSize(), textalign = text.align_left)
             array.push(eqhLines, ln), array.push(eqhLbls, lb), array.push(eqhPx, lvl), array.push(eqhBar, eqPrevPhBar)
             while array.size(eqhLines) > eqMax
                 line.delete(array.shift(eqhLines)), label.delete(array.shift(eqhLbls)), array.shift(eqhPx), array.shift(eqhBar)
@@ -2493,7 +2493,7 @@ f_processEq() =>
         if not na(eqPrevPl) and math.abs(eqPl - eqPrevPl) <= eqTol
             float lvl = math.min(eqPl, eqPrevPl)
             line ln = line.new(eqPrevPlBar, lvl, bar_index + i_lineExtend, lvl, color = eqlColor, style = line.style_dotted, width = 1)
-            label lb = label.new(bar_index + i_lineExtend, lvl, "EQL", style = label.style_none, textcolor = eqlColor, size = size.tiny, textalign = text.align_left)
+            label lb = label.new(bar_index + i_lineExtend, lvl, "EQL", style = label.style_none, textcolor = eqlColor, size = f_liqSize(), textalign = text.align_left)
             array.push(eqlLines, ln), array.push(eqlLbls, lb), array.push(eqlPx, lvl), array.push(eqlBar, eqPrevPlBar)
             while array.size(eqlLines) > eqMax
                 line.delete(array.shift(eqlLines)), label.delete(array.shift(eqlLbls)), array.shift(eqlPx), array.shift(eqlBar)
@@ -3315,7 +3315,8 @@ f_checkTouch(bool touched, float lvl, bool breachCond) =>
     touched or (not na(lvl) and breachCond)
 
 f_fiboLabel(float val, string tpLabel, string entryLabel) =>
-    sharedLabelMode == "TP/Entry"    ? tpLabel    + "  (" :
+    sharedLabelMode == "Both"        ? tpLabel + " " + str.tostring(val) + "  (" :
+     sharedLabelMode == "TP/Entry"   ? tpLabel    + "  (" :
      str.tostring(val) + "  ("
 
 // Shared by External/Internal/Cycle fib: creates a level's line+label on first use,
@@ -3538,7 +3539,8 @@ f_macroLineStyle(string opt) =>
     opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
 
 f_macroLabel(float val, string tpLabel, string entryLabel) =>
-    sharedLabelMode == "TP/Entry"    ? tpLabel    + "  (" :
+    sharedLabelMode == "Both"        ? tpLabel + " " + str.tostring(val) + "  (" :
+     sharedLabelMode == "TP/Entry"   ? tpLabel    + "  (" :
      str.tostring(val) + "  ("
 
 // ── 5m Cycle-Fib anchor engine (returns STATE, not edge events) ──
