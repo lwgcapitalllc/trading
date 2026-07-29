@@ -7,7 +7,7 @@ local optimizer. It does NOT cover the engines it replays (`engines/`), the stra
 **Status:** **Deliverable A COMPLETE 2026-07-16.** A0 (data layer) + A1 (replay loop) landed
 2026-07-15; A2 (fill & cost model), A3 (output adapter), the lab's `runner="python"` adapter, and A4
 (local optimizer) all landed 2026-07-16. See `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
-**Last reviewed:** 2026-07-27 — `build_results` gained `blocked_setups` and `missed_setups`. Earlier: 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below); `verify_parity.py` gained a veto column and now runs the B-LEG parity check too
+**Last reviewed:** 2026-07-29 — `run_report.py --start` now defaults to the MEASURED broker floor instead of a hardcoded `2022-01-01`, and `backtest/archive/` was added for committed multi-year trade data. Earlier: 2026-07-27 — `build_results` gained `blocked_setups` and `missed_setups`; 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below); `verify_parity.py` gained a veto column and now runs the B-LEG parity check too
 
 ---
 
@@ -115,6 +115,21 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   (frozen dataclass, applied via `replace`); `--no-regime` skips the tagging. Everything it adds is
   reporting-only — no tag feeds back into the strategy, so results are identical with or without it.
   Carries the timeframe-substitution guard described under *history depth* below.
+  **`--start` defaults to the MEASURED floor** (`_default_start` → `history.floor_for`), fixed
+  2026-07-29. It had been hardcoded to `2022-01-01` while the help text claimed "broker's earliest",
+  so every default run silently reported 4.6 of the available 7.9 years — the quiet direction of the
+  substitution trap: nothing errors, the equity curve looks fine, and the run just answers a
+  narrower question than the one asked. When the agent is down the broker cannot be identified, so
+  it refuses and asks for an explicit `--start` rather than guess. **Same rule as everywhere else in
+  this package: never type a history depth, measure it.**
+- **`archive/`** — committed, frozen `run_report.py` output. `backtest/reports/` is git-ignored
+  per-run scratch, which meant multi-year trade data existed only on the machine with a warm cache
+  and a live agent; `archive/<date>_<symbol>_<tf>_<scope>/` is the copy that travels with a clone, so
+  someone with no VPS and no MT5 can still analyse real trades. It is a SNAPSHOT, not a build
+  artefact — nothing regenerates it, so any config change makes it stale. Each folder carries a
+  README stating the window, fill model, config levers at run time, and open caveats; keep that
+  honest or the numbers get quoted without them. Current: `2026-07-29_xauusd_15m_full_history/`
+  (A+ and B-LEG, 2018-09-13 → 2026-07-29, bar fills).
 - **`tools/compare_feeds.py`** — feed-parity check: MT5 pull vs a TradingView export of the same
   symbol/TF/window. Reports **clock offset** (0 = aligned; non-zero = the broker-server-time bug
   that shifts every session — fix before demo), coverage, and OHLC drift. This is *data* parity, not

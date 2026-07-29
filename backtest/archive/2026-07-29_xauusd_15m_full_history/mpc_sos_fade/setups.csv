@@ -1,5 +1,5 @@
 sos_utc,year,hour_ny,session,dir,bars_alive,stage_max,reached_zone,edge_ever,veto_ever,armed_ever,traded,verdict,edge_price
-2018-09-28T20:00:00,2018,16,NewYork,long,128,4,True,True,False,True,True,traded,1186.65
+2018-09-28T12:45:00,2018,08,London,long,157,4,True,True,False,True,True,traded,1186.65
 2018-10-11T12:30:00,2018,08,London,long,162,2,False,True,True,True,False,never retraced to 0.5,1195.99
 2018-10-23T14:15:00,2018,10,NewYork,short,80,2,False,False,False,False,False,never retraced to 0.5,
 2018-10-24T20:45:00,2018,16,NewYork,long,159,4,True,True,False,True,False,"limit rested, never filled",1227.43

@@ -13,32 +13,33 @@ Everything is in here: winners, losers, scratches, and every setup that never tr
 |---|---|
 | Instrument | XAUUSD, 15-minute bars |
 | Data source | Vantage Markets demo (MT5), via `backtest/cache/` |
-| Window | **2018-09-14 → 2026-07-29** — 7.9 years, 185,745 bars |
+| Window | **2018-09-13 → 2026-07-29** — 7.9 years, 185,783 bars |
 | Warm-up | first 1,000 bars, engines only, no decisions recorded |
 | Fill model | `bar` — zero-cost, matches what TradingView's Strategy Tester would show. `costs_usd` is 0 in every row. Real spread/commission is NOT modelled here. |
 | Strategies | `mpc_sos_fade` (A+ SOS Fade) and `mpc_bleg` (B-LEG) |
 
-2018-09-14 is the **measured** floor of the broker's real 15m history, not a guess.
+2018-09-13 is the **measured** floor of the broker's real 15m history, not a guess.
 MT5 answers a request for a timeframe it has no history at with coarser bars still
 labelled as what you asked for, so the floor is probed by bar density and cached in
 `backtest/cache/history_floors.json`. Do not run this earlier than that date — the
-numbers would be fiction.
+numbers would be fiction. (The first day is partial: 38 real bars, history begins
+mid-day.)
 
 ## Headline
 
 | | A+ SOS Fade | B-LEG |
 |---|---|---|
-| Trades | 187 | 58 |
-| Total | **+108.4R** | **+3.5R** |
+| Trades | 188 | 58 |
+| Total | **+109.5R** | **+3.5R** |
 | Avg per trade | +0.58R | +0.06R |
-| Win / Loss / Breakeven | 58 / 61 / 68 | 20 / 28 / 10 |
+| Win / Loss / Breakeven | 59 / 61 / 68 | 20 / 28 / 10 |
 | Win rate | 31% | 34% |
-| Avg win / avg loss | +2.80R / −0.92R | +1.56R / −1.00R |
+| Avg win / avg loss | +2.78R / −0.92R | +1.56R / −1.00R |
 
 A+ carries the edge. B-LEG is roughly flat over 7.9 years and is the one that most
 needs the analysis. Its losing years are 2021 (−6.0R), 2022 (−3.9R) and 2023 (−3.6R).
 
-A+'s only losing years are 2018 (−2.9R, a 4-trade stub) and 2022 (−4.0R, 3 wins from 22).
+A+'s only losing years are 2018 (−1.8R, a 5-trade stub) and 2022 (−4.0R, 3 wins from 22).
 
 Win rate is low by design — this is a fade strategy that scratches often at breakeven and
 pays out on a small number of large runners. Judge it on sumR, not win rate.
@@ -93,7 +94,7 @@ That points at the exit ladder, not the entry filter.
 
 The two dominant reasons a setup never traded are `never retraced to 0.5` and
 `no FVG in the zone`. Both are entry-filter choices, and both are worth arguing about —
-across 7.9 years, 700 setups reached SOS and only 187 became A+ trades.
+across 7.9 years, 700 setups reached SOS and only 188 became A+ trades.
 
 ## Caveats — read before drawing conclusions
 
@@ -104,7 +105,7 @@ across 7.9 years, 700 setups reached SOS and only 187 became A+ trades.
    them as directionally right, not settled.
 2. **Zero costs.** `fill=bar` models no spread and no commission. Real fills will be
    worse. A `--fill-model tick` run exists as an option and was not used here.
-3. **Small sample per strategy.** 187 A+ trades over 7.9 years is by design — a selective
+3. **Small sample per strategy.** 188 A+ trades over 7.9 years is by design — a selective
    entry that fires a couple of times a month. It still means wide error bars on the edge
    itself. Sample size is meant to arrive at the portfolio level, once several strategies
    stack on one account.
@@ -121,13 +122,13 @@ across 7.9 years, 700 setups reached SOS and only 187 became A+ trades.
 Needs the repo, Python deps, and either a warm `backtest/cache/` or a running MT5 agent.
 
 ```
-python backtest/tools/run_report.py --strategy mpc_sos_fade --start 2018-09-14 --out <dir>
-python backtest/tools/run_report.py --strategy mpc_bleg     --start 2018-09-14 --out <dir>
+python backtest/tools/run_report.py --strategy mpc_sos_fade --out <dir>
+python backtest/tools/run_report.py --strategy mpc_bleg     --out <dir>
 ```
 
-`--start` is required. The tool's own default is hardcoded to `2022-01-01` despite its
-help text claiming "broker's earliest" — leaving it off silently gives you 4.6 years
-instead of 7.9.
+No `--start` needed — the tool defaults to the broker's measured floor for the
+timeframe. If the MT5 agent is down it cannot identify the broker, so it refuses to
+guess and asks for `--start` rather than quietly running a narrower window.
 
 `backtest/reports/` is git-ignored (per-run scratch output). This folder is not — it is
 a deliberate committed snapshot.

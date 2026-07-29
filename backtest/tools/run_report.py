@@ -215,6 +215,31 @@ def _assert_timeframe(df, tf: str) -> None:
         raise SystemExit(f"REFUSING TO RUN: {off_tf} bars are spaced closer than {want_min}m")
 
 
+def _default_start(symbol: str, tf: str) -> str:
+    """The earliest date this broker has REAL bars at this timeframe — measured, not typed.
+
+    A hardcoded default here is wrong in both directions. Too early and MT5 serves coarser
+    bars mislabelled as the timeframe asked for (`_assert_timeframe` catches that, but only
+    after a long load). Too late and years of real history go silently unused — which is the
+    quieter failure, because the run looks perfectly healthy while answering a narrower
+    question than the one asked. This tool shipped with a fixed "2022-01-01", so every
+    default run reported 4.6 years of a 7.9-year history and said nothing about it.
+
+    `floor_for` returns None when the attached broker cannot be identified (agent down), and
+    an unknown broker's depth is not something to guess at — say so and ask for `--start`.
+    """
+    from backtest.data.history import floor_for
+
+    fl = floor_for(symbol, tf)
+    if fl is None:
+        raise SystemExit(
+            f"cannot measure the broker's earliest {tf}m history for {symbol} — the MT5 agent "
+            f"is unreachable, so the attached broker is unknown and no floor applies. Pass "
+            f"--start YYYY-MM-DD explicitly (guessing one here would risk a fictional run)."
+        )
+    return fl.isoformat()
+
+
 def _grade(r: float, band: float) -> str:
     if abs(r) <= band:
         return "be"
@@ -250,7 +275,9 @@ def main(argv=None) -> int:
     ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15", help="target timeframe in minutes")
-    ap.add_argument("--start", default=None, help="YYYY-MM-DD (default: broker's earliest)")
+    ap.add_argument("--start", default=None,
+                    help="YYYY-MM-DD (default: the broker's measured earliest bar at this "
+                         "timeframe, from backtest/data/history.py)")
     ap.add_argument("--end", default=None, help="YYYY-MM-DD (default: today)")
     ap.add_argument("--warmup", type=int, default=1000,
                     help="bars the engines warm on before decisions are recorded")
@@ -274,7 +301,7 @@ def main(argv=None) -> int:
     spec = mod.LAB_STRATEGY
     StrategyCls, ConfigCls = spec["strategy"], spec["config"]
 
-    start = args.start or "2022-01-01"
+    start = args.start or _default_start(args.symbol, args.tf)
     end = args.end or dt.date.today().isoformat()
 
     print(f"loading {args.symbol} {args.tf}m  {start} -> {end} ...", flush=True)
