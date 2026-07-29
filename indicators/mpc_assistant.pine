@@ -60,7 +60,7 @@ string structLabelSize  = input.string("Small", "Structure Label Size",    group
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
 bool   showSwingLabels  = input.bool(false, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart.", display = display.none)
-bool   showHistoricalInternal = false
+bool   showHistoricalInternal = input.bool(false, "Show Internal Structure History", group = GRP_STRUCT, active = showInternal, tooltip = "Off (default) wipes the internal structure each time the external structure breaks, so only the current swing's internals are drawn. On keeps every past swing's internal labels and lines on the chart.", display = display.none)
 int    internalLength   = 5
 float  pbBuffer         = 0.0
 
@@ -87,7 +87,9 @@ bool showOBsInput        = input.bool(false, "Order Blocks",      group = GRP_TO
 bool eqShowInput         = input.bool(true,  "Equal Highs/Lows",  group = GRP_TOOLS, display = display.none)
 var i_showLiquidityInput = input.bool(true,  "Liquidity Levels",  group = GRP_TOOLS, display = display.none)
 bool showSessionsInput   = input.bool(true,  "Trading Sessions",  group = GRP_TOOLS, display = display.none)
+bool showHistoricSessions = input.bool(false, "    ↳ Session History", group = GRP_TOOLS, active = showSessionsInput, tooltip = "Off (default) draws only the current week's session boxes, from Sunday 00:00 New York. On draws every session in the chart's history.", display = display.none)
 bool showKZandNYRInput   = input.bool(true,  "Kill Zones & NY Range", group = GRP_TOOLS, display = display.none)
+bool showKZHistoric      = input.bool(false, "    ↳ Kill Zone History", group = GRP_TOOLS, active = showKZandNYRInput, tooltip = "Off (default) draws the kill zones and NY range for the current New York day only. On draws them for every day in the chart's history.", display = display.none)
 bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, display = display.none)
 bool showVwapInput       = input.bool(false, "VWAP",              group = GRP_TOOLS, display = display.none)
 bool showDivInput        = input.bool(true,  "RSI Divergence",    group = GRP_TOOLS, display = display.none)
@@ -193,9 +195,9 @@ int  divMaxCount  = 10
   // TRADING SESSIONS INPUTS
 //============================================================
 // Session windows, timezones, names and colors are all hardcoded — no panel inputs.
+// showHistoricSessions is declared with the Chart Tools toggles, next to its parent.
 bool showSessions = showTradeTools and showSessionsInput
 bool showSessionNames     = false
-bool showHistoricSessions = false
 
 bool   showFirst         = true
 string firstSessionName  = "Tokyo"
@@ -218,8 +220,8 @@ color  thirdSessionColor = color.new(#FFEB3B, 90)
 //============================================================
   // KILL ZONES & NY RANGE INPUTS (single toggle)
 //============================================================
+// showKZHistoric is declared with the Chart Tools toggles, next to its parent.
 bool showKZandNYR = showTradeTools and showKZandNYRInput
-bool showKZHistoric = false
 
 bool showKillZones = showKZandNYR
 bool showNYRange   = showKZandNYR
@@ -1959,6 +1961,28 @@ var int   i_sos_watch_hh_loc= na
 var float i_sos_watch_ll    = na
 var int   i_sos_watch_ll_loc= na
 
+// ── Break-line colour handles ──
+// A break label (iBOS/iSOS) is printed ON a dotted line that was drawn EARLIER, in
+// the colour of whatever that level was at the time — the iSH line is bearish-red,
+// the iHL line is bullish-blue, and so on. So a bullish iBOS breaking the first iSH
+// used to print a BLUE label on a RED line, and an iSOS printed its label on the
+// opposite-coloured iHL/iLH line. The LABEL is the truth (it names the break that
+// just happened), so these handles let each break site recolour the line under its
+// own label. Cleared with the rest of the internal state on an external break —
+// after that wipe the line objects may be deleted, so the handles must not outlive
+// them.
+var line  i_last_hl_line = na
+var line  i_last_lh_line = na
+var line  i_sos_hh_line  = na
+var line  i_sos_ll_line  = na
+
+// Repaint a break's line in the break label's colour. Silent when the handle is na
+// (nothing was drawn at that level yet) or when internal structure is hidden.
+f_iBrkCol(line ln, color c) =>
+    if not na(ln)
+        line.set_color(ln, showInternal ? color.new(c, 15) : color(na))
+    int _r = 0
+
 // (Internal Fib anchor + touched-tracking vars removed — feature deleted.)
 
 float i_lbl_y_offset = syminfo.mintick * 20   // vertical offset for iBOS/iSOS (smaller number = closer to the line)
@@ -1995,6 +2019,10 @@ if internalActive and (st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos)
     i_had_bos         := false
     i_sos_watch_hh    := na
     i_sos_watch_ll    := na
+    i_last_hl_line    := na
+    i_last_lh_line    := na
+    i_sos_hh_line     := na
+    i_sos_ll_line     := na
     // Past swing just ended — wipe its internal structure unless history is enabled
     if not showHistoricalInternal
         if array.size(intHistLabels) > 0
@@ -2174,6 +2202,8 @@ if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barsta
         array.push(intHistLabels, iBullBOSLbl)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
+            // The broken swing line carries the iBOS label — repaint it bullish.
+            f_iBrkCol(i_sw_line, iBullColor)
             i_sw_line := na
         i_sw_lbl := na
         if not na(i_tracked_ext)
@@ -2181,8 +2211,9 @@ if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barsta
             label iHLLbl  = label.new(i_tracked_ext_loc, i_tracked_ext, "\niHL", color = color(na), textcolor=f_swingCol(color.new(iBullColor, 15)), style = label.style_label_up, size = size.tiny)
             array.push(intHistLines, iHLLine)
             array.push(intHistLabels, iHLLbl)
-            i_last_hl     := i_tracked_ext
-            i_last_hl_loc := i_tracked_ext_loc
+            i_last_hl      := i_tracked_ext
+            i_last_hl_loc  := i_tracked_ext_loc
+            i_last_hl_line := iHLLine
         
         int_bull_break := true
         int_bull_bos   := true
@@ -2205,6 +2236,8 @@ if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barsta
         array.push(intHistLabels, iBearBOSLbl)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
+            // The broken swing line carries the iBOS label — repaint it bearish.
+            f_iBrkCol(i_sw_line, iBearColor)
             i_sw_line := na
         i_sw_lbl := na
         if not na(i_tracked_ext)
@@ -2212,8 +2245,9 @@ if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barsta
             label iLHLbl  = label.new(i_tracked_ext_loc, i_tracked_ext, "iLH\n", color = color(na), textcolor=f_swingCol(color.new(iBearColor, 15)), style = label.style_label_down, size = size.tiny)
             array.push(intHistLines, iLHLine)
             array.push(intHistLabels, iLHLbl)
-            i_last_lh     := i_tracked_ext
-            i_last_lh_loc := i_tracked_ext_loc
+            i_last_lh      := i_tracked_ext
+            i_last_lh_loc  := i_tracked_ext_loc
+            i_last_lh_line := iLHLine
             
         int_bear_break := true
         int_bear_bos   := true
@@ -2240,10 +2274,15 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         line  iSOS1Line = line.new(i_last_hl_loc, i_last_hl, bar_index, i_last_hl, color = showInternal ? color.new(iBearColor, 15) : color(na), style = line.style_dotted, width = 1)
         array.push(intHistLabels, iSOS1Lbl)
         array.push(intHistLines, iSOS1Line)
+        // The iHL line already sits at this exact price in bullish blue — repaint it
+        // bearish so the level under the red iSOS label is not two clashing colours.
+        f_iBrkCol(i_last_hl_line, iBearColor)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
+            // This swing's line becomes the i_sos_watch_hh level a later iSOS annotates.
+            i_sos_hh_line := i_sw_line
             i_sw_line := na
-        
+
         i_sos_watch_hh     := i_sw_price
         i_sos_watch_hh_loc := i_sw_loc
         i_sos_watch_ll     := na
@@ -2269,10 +2308,13 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         line  iSOS2Line = line.new(i_last_lh_loc, i_last_lh, bar_index, i_last_lh, color = showInternal ? color.new(iBullColor, 15) : color(na), style = line.style_dotted, width = 1)
         array.push(intHistLabels, iSOS2Lbl)
         array.push(intHistLines, iSOS2Line)
+        // Mirror of iSOS1 — the iLH line at this price is bearish red; repaint bullish.
+        f_iBrkCol(i_last_lh_line, iBullColor)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
+            i_sos_ll_line := i_sw_line
             i_sw_line := na
-            
+
         i_sos_watch_ll     := i_sw_price
         i_sos_watch_ll_loc := i_sw_loc
         i_sos_watch_hh     := na
@@ -2298,10 +2340,14 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         line  iSOS3Line = line.new(i_sos_watch_hh_loc, i_sos_watch_hh, bar_index, i_sos_watch_hh, color = showInternal ? color.new(iBullColor, 15) : color(na), style = line.style_dotted, width = 1)
         array.push(intHistLabels, iSOS3Lbl)
         array.push(intHistLines, iSOS3Line)
+        // The watched-high level's own line was drawn in that swing's colour — repaint
+        // it bullish to match this iSOS label.
+        f_iBrkCol(i_sos_hh_line, iBullColor)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
+            i_sos_ll_line := i_sw_line
             i_sw_line := na
-            
+
         i_sos_watch_ll     := i_sw_price
         i_sos_watch_ll_loc := i_sw_loc
         
@@ -2327,10 +2373,13 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         line  iSOS4Line = line.new(i_sos_watch_ll_loc, i_sos_watch_ll, bar_index, i_sos_watch_ll, color = showInternal ? color.new(iBearColor, 15) : color(na), style = line.style_dotted, width = 1)
         array.push(intHistLabels, iSOS4Lbl)
         array.push(intHistLines, iSOS4Line)
+        // Mirror of iSOS3 — repaint the watched-low level's line bearish.
+        f_iBrkCol(i_sos_ll_line, iBearColor)
         if not na(i_sw_line)
             line.set_x2(i_sw_line, bar_index)
+            i_sos_hh_line := i_sw_line
             i_sw_line := na
-            
+
         i_sos_watch_hh     := i_sw_price
         i_sos_watch_hh_loc := i_sw_loc
         
