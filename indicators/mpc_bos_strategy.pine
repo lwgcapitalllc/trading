@@ -3239,14 +3239,35 @@ var float bosS_high = na,  var float bosS_low  = na
 var int   bosL_bar  = na,  var int   bosS_bar  = na
 var int   bosL_n    = 0,   var int   bosS_n    = 0     // the anchor's BOS ordinal
 var bool  bosL_half = false, var bool bosS_half = false // the per-anchor 0.5 latch
+var string bosLwhy = "",   var string bosSwhy = ""     // why the last arm died — the [DEAD] log reads it
 
 // Stage 0 — an SOS opens its own regime and closes the opposite one.
+//
+// OPENING and CLOSING are gated DIFFERENTLY on purpose, and this was a bug until
+// 2026-07-29. Both used to sit behind `not sessionGapBar`, so an SOS printing on
+// the first bar after the daily close did neither. The half that mattered was the
+// CLOSE: a bear SOS on a gap bar left `bosL_on` true, and the armed long kept its
+// buy-limit resting straight through into the new bearish regime, where it could
+// still fill on the way down. That is a trade with no BOS of its own behind it —
+// exactly the out-of-sequence entry this comment now exists to prevent.
+//
+//   OPEN  stays gap-guarded — a structure event printed on a gap bar is a time-jump
+//         artifact, and arming a fresh regime off one is how you trade a phantom.
+//   CLOSE fires ALWAYS — refusing to believe an SOS cannot make it untrue, and if
+//         the shift is real the arm on the other side is already dead. Killing on a
+//         possible artifact costs one setup; keeping it costs a wrong-way trade.
+if st.bear_sos
+    if bosL_on
+        bosLwhy := "opposite SOS — the bullish regime is over"
+    bosRegL := false, bosL_on := false
+if st.bull_sos
+    if bosS_on
+        bosSwhy := "opposite SOS — the bearish regime is over"
+    bosRegS := false, bosS_on := false
 if st.bull_sos and not sessionGapBar
     bosRegL := true,  bosCntL := 0, bosTrdL := 0
-    bosRegS := false, bosS_on := false
 if st.bear_sos and not sessionGapBar
     bosRegS := true,  bosCntS := 0, bosTrdS := 0
-    bosRegL := false, bosL_on := false
 
 // Stage 1 — the BOS. The counter increments even when the filters refuse the
 // leg, so the ordinal a trade reports is its true position in the run.
@@ -3257,6 +3278,8 @@ bool bosFireS = bosRegS and st.bear_bos and not st.bear_sos and not sessionGapBa
 
 if bosFireL
     bosCntL := bosCntL + 1
+    if bosL_on
+        bosLwhy := "re-anchored — a newer BOS on this side took the setup"
     bosL_on := false
     bool _okWhichL = bosWhich == "All" or (bosWhich == "1st + 2nd" and bosCntL <= 2) or (bosWhich == "1st only" and bosCntL == 1)
     bool _okDispL  = bosMinDispAtr <= 0 or (close - st.bull_bos_high) >= bosMinDispAtr * atr14
@@ -3271,6 +3294,8 @@ if bosFireL
 
 if bosFireS
     bosCntS := bosCntS + 1
+    if bosS_on
+        bosSwhy := "re-anchored — a newer BOS on this side took the setup"
     bosS_on := false
     bool _okWhichS = bosWhich == "All" or (bosWhich == "1st + 2nd" and bosCntS <= 2) or (bosWhich == "1st only" and bosCntS == 1)
     bool _okDispS  = bosMinDispAtr <= 0 or (st.bear_bos_low - close) >= bosMinDispAtr * atr14
@@ -3337,15 +3362,33 @@ int BOS_MAX = int(math.max(1, math.round(bosMaxDays * 86400 / timeframe.in_secon
 if bosL_on
     if lFibsReady and low <= lP2
         bosL_half := true
-    bool _deadL = (bosL_half and lFibsReady and high >= lP7) or (lFibsReady and close < lP10) or (bosReqHold and close < bosL_high) or (bar_index - bosL_bar > BOS_MAX)
-    if _deadL
+    string _wL = ""
+    if bosL_half and lFibsReady and high >= lP7
+        _wL := "cycle complete — retraced, then came back to the leg extreme"
+    else if lFibsReady and close < lP10
+        _wL := "closed past the anchor's fib 1.0 (leg origin) — leg invalidated"
+    else if bosReqHold and close < bosL_high
+        _wL := "F4 — closed back through the broken swing"
+    else if bar_index - bosL_bar > BOS_MAX
+        _wL := "stale — the F9 day cap expired before the retrace arrived"
+    if _wL != ""
         bosL_on := false
+        bosLwhy := _wL
 if bosS_on
     if sFibsReady and high >= sP2
         bosS_half := true
-    bool _deadS = (bosS_half and sFibsReady and low <= sP7) or (sFibsReady and close > sP10) or (bosReqHold and close > bosS_low) or (bar_index - bosS_bar > BOS_MAX)
-    if _deadS
+    string _wS = ""
+    if bosS_half and sFibsReady and low <= sP7
+        _wS := "cycle complete — retraced, then came back to the leg extreme"
+    else if sFibsReady and close > sP10
+        _wS := "closed past the anchor's fib 1.0 (leg origin) — leg invalidated"
+    else if bosReqHold and close > bosS_low
+        _wS := "F4 — closed back through the broken swing"
+    else if bar_index - bosS_bar > BOS_MAX
+        _wS := "stale — the F9 day cap expired before the retrace arrived"
+    if _wS != ""
         bosS_on := false
+        bosSwhy := _wS
 
 //============================================================
 //  STAGE 3 — ENTRY: the A+ ladder, unchanged, on the BOS leg
@@ -3941,8 +3984,8 @@ f_diag(array<int> ds) =>
             array.set(ds, 2, bosS_bar)
             log.info("[BLOCK] SHORT BOS #" + str.tostring(bosS_n) + " @" + str.tostring(bar_index) + " — ready to rest a limit at " + f_diagNum(shortEdge) + ", blocked: " + f_blkWhy(sBlkCode))
         if bosLdied
-            log.info("[DEAD] LONG BOS #" + str.tostring(bosL_n) + " @" + str.tostring(bar_index) + " — armed leg dropped without a trade (opposite SOS / re-anchor / cycle complete / close past 1.0 / broken level lost / stale).")
+            log.info("[DEAD] LONG BOS #" + str.tostring(bosL_n) + " @" + str.tostring(bar_index) + " — armed leg dropped without a trade: " + bosLwhy)
         if bosSdied
-            log.info("[DEAD] SHORT BOS #" + str.tostring(bosS_n) + " @" + str.tostring(bar_index) + " — armed leg dropped without a trade (opposite SOS / re-anchor / cycle complete / close past 1.0 / broken level lost / stale).")
+            log.info("[DEAD] SHORT BOS #" + str.tostring(bosS_n) + " @" + str.tostring(bar_index) + " — armed leg dropped without a trade: " + bosSwhy)
 
 f_diag(diagState)
