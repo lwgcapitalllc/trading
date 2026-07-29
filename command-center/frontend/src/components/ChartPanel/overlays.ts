@@ -59,11 +59,16 @@ export const MISS = 'lwgMiss'
 /** User-drawn Fibonacci retracement tool (2 anchor points → horizontal levels + price labels). */
 export const FIB = 'lwgFib'
 
-interface FibLevel { ratio: number; color: string }
+/** One rung of the fib ladder. `visible: false` keeps a level in the user's configured set while
+ *  leaving it off the chart — the difference between "I don't use this one right now" and "delete
+ *  it", exactly as the checkbox in TradingView's fib settings behaves. */
+export interface FibLevel { ratio: number; color: string; visible?: boolean }
 interface FibExtend { levels?: FibLevel[]; precision?: number; chipBg?: string }
 
-// Aaron's Fibonacci retracement levels + colours (his TradingView setup). 0 & 1 share a neutral
-// grey; the retracement zone runs green (shallow) → blue (the OTE band) → red (deep 0.886).
+// The FACTORY ladder — Aaron's Fibonacci retracement levels + colours (his TradingView setup).
+// 0 & 1 share a neutral grey; the retracement zone runs green (shallow) → blue (the OTE band) →
+// red (deep 0.886). This is the starting point and the "Reset" target, NOT the live set: the ladder
+// is user-editable per drawing and as the tool default — see `fibLevels.ts` and `FibSettings.tsx`.
 export const DEFAULT_FIB_LEVELS: FibLevel[] = [
   { ratio: 0,     color: '#9598a1' }, // neutral (same as 1)
   { ratio: 0.382, color: '#22c55e' }, // green
@@ -459,7 +464,10 @@ export function registerChartOverlays(): void {
       const p1 = overlay.points[1]?.value
       if (typeof p0 !== 'number' || typeof p1 !== 'number') return []
       const d = (overlay.extendData ?? {}) as FibExtend
-      const levels = d.levels?.length ? d.levels : DEFAULT_FIB_LEVELS
+      // Tested with `Array.isArray`, NOT `.length` — an EMPTY configured ladder means the user
+      // switched every level off, and must draw nothing. Falling back to the factory set there
+      // would answer "delete them all" with "here are the originals back".
+      const levels = (Array.isArray(d.levels) ? d.levels : DEFAULT_FIB_LEVELS).filter(l => l.visible !== false)
       const precision = d.precision ?? 2
       const chipBg = withAlpha(d.chipBg ?? '#0d0d1a', 0.82)
       const xLeft = Math.min(a.x, b.x)

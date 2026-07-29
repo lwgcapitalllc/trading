@@ -3,7 +3,9 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-07-28 (**Go to date** — a header pill that types you to a date instead of
+**Last reviewed:** 2026-07-29 (**configurable fib levels** — the ladder is no longer a hardcoded
+array: add / remove / retune / recolour / hide any level from a live editor, per drawing or as the
+tool's persisted default; 2026-07-28: **Go to date** — a header pill that types you to a date instead of
 dragging there, driving the existing scroll-left pager itself; earlier: the **Missed** layer — how
 close the setups that died came — sharing one overlay template and one hover card with Blocked; the
 spec now ships the run's OWN timeframe with the WINDOW capped, and older history pages in on
@@ -26,6 +28,8 @@ ChartPanel/
 ├── types.ts           ChartSpec — the contract the lab emits per run (THE source of truth)
 ├── chartStyles.ts     klinecharts style object, derived from the app theme (no hardcoded hex)
 ├── overlays.ts        custom klinecharts overlay templates (registerChartOverlays, idempotent)
+├── fibLevels.ts       the fib LADDER — factory set, localStorage persistence, add/sanitize helpers
+├── FibSettings.tsx    the fib level editor panel (add / remove / retune / recolour / hide a level)
 ├── indicators.ts      shipped-series indicator: ensureSeriesIndicator + mapSeriesToCandles (pure)
 ├── sessions.ts        session placement math: tz + broker offset → broker-axis windows (DST-aware)
 ├── fixtures/audjpy.ts  AUDJPY_FIXTURE — hand-written stand-in spec until Step 7 wires real specs
@@ -450,15 +454,41 @@ here**, so the chart shows exactly what the strategy saw.
   + parenthesised price (e.g. `0.886 (3987.45)`), styled as the **same dark rounded chip as the trade
   level labels** (`chipBg` via `extendData`, `withAlpha` border in the level colour) so it reads over
   candles. Prices come from `overlay.points[i].value` via `yAxis.convertToPixel`, so they track the
-  axis. Levels/colours are **Aaron's set** (`DEFAULT_FIB_LEVELS` in `overlays.ts`): 0/1 neutral grey,
-  0.382/0.5 green, 0.618/0.702/0.786 blue, 0.886 red — edit that one array to retune. `precision`
-  (label decimals) is inferred from instrument magnitude in `index.tsx`. **Delete (gotcha):**
+  axis. `precision` (label decimals) is inferred from instrument magnitude in `index.tsx`.
+  **Delete (gotcha):**
   klinecharts REMOVES an overlay on right-click whenever its `onRightClick` returns falsy (source:
   `_figureMouseRightClickEvent`) — which silently deleted a fib on right-click. The fix: the fib's
   `onRightClick` returns **true** (keeps it) and stashes the fib id in `ctxFibRef` for the menu.
   klinecharts fires that right-click on `mousedown` (button 2) BEFORE the DOM `contextmenu`, so the
   React menu reads a fresh `ctxFibRef`. `onSelected` also marks a fib for the **Delete/Backspace** key
   (ignored while typing); `onPressedMoveEnd` writes an anchor-drag back to state.
+- **Fib LEVELS are configurable** (`fibLevels.ts` + `FibSettings.tsx`, 2026-07-28) — add, remove,
+  retune, recolour or hide any level, TradingView-style. `DEFAULT_FIB_LEVELS` in `overlays.ts` is now
+  only the FACTORY set (Aaron's: 0/1 neutral grey, 0.382/0.5 green, 0.618/0.702/0.786 blue, 0.886 red)
+  — the starting point and the "Reset" target, not the live ladder. Editing is **live**: every
+  keystroke commits and the chart redraws, which is the point of doing it on the chart.
+  - **Two scopes, one component.** The gear under the fib button on the tool strip edits the tool's
+    **default** ladder; a fib's own right-click menu (**"Fib levels"**, above Delete) edits **that
+    drawing**. Same panel either way, so the two can't drift.
+  - **A drawing FOLLOWS the default until it is customised** (`fib.levels` is an override and is
+    normally absent). Retuning the default therefore retunes every un-customised fib already on
+    screen — snapshotting at draw time instead would make "change my levels" appear to do nothing.
+    `Use default set` drops an override; `Save as default` promotes one AND drops it, so the fib you
+    saved from keeps following rather than quietly freezing.
+  - **The ladder persists** (`localStorage: chartpanel_fib_levels`) — it is a setting. A fib DRAWING
+    is still session-only, which is unchanged and deliberate.
+  - **Ratios past 1 or below 0 draw extensions** for free: the level price is
+    `p0 + (p1 - p0) * ratio`, which never assumed a 0–1 range.
+  - **Gotchas, both measured.** (1) The overlay picks the ladder with `Array.isArray(d.levels)`, NOT
+    `.length` — an EMPTY set means the user switched every level off and must draw nothing; the old
+    `.length` test would answer "delete them all" with the factory set back. (2) `FibSettings`
+    re-seeds its rows in an **effect** keyed on `resetKey`. The tempting render-phase version
+    (mutate a "last seen key" ref, `setRows` during render) is silently broken under **StrictMode**,
+    which double-invokes render: the first, discarded invocation moves the ref, the second skips the
+    seed, and **Reset does nothing at all**. That was a real bug, caught in the browser, not in review.
+  - The ratio is held as a **string** while editing — a number input cannot represent `0.` or `-`,
+    the states a decimal passes through as it is typed. A row that isn't yet a number sits out that
+    frame and returns the moment it parses.
 - **Right-click menu** (`ctxMenu` state, incl. `fibId`): the chart body's `onContextMenu` opens a
   small viewport-`fixed` menu at the cursor (clamped), TradingView-style, and is **context-split** (per
   Aaron — fibs and the chart are separate concerns): right-click **on a fib** → a fib-only menu with

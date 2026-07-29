@@ -9,13 +9,15 @@
  * only load once the panel's section is opened (page performance).
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, Eye, EyeOff, RotateCcw, Ruler, Trash2 } from 'lucide-react'
+import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, Eye, EyeOff, RotateCcw, Ruler, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
 import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
 import { BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
+import FibSettings from './FibSettings'
+import { DEFAULT_FIB_LEVELS, loadFibLevels, sameFibLevels, saveFibLevels, type FibLevel } from './fibLevels'
 import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
 import theme from '@/themes/electric-indigo'
@@ -907,9 +909,23 @@ export default function ChartPanel({
   // Fibonacci drawings — the source of truth is React state (each = id + its two anchor points as
   // timestamp/value), so the tool survives TF switches / data reloads (which clear klinecharts
   // overlays). A persistence effect re-creates them from state after every data change.
-  const [fibs, setFibs] = useState<{ id: string; points: { timestamp: number; value: number }[] }[]>([])
+  // `levels` is an OVERRIDE and is normally absent: a fib with no ladder of its own FOLLOWS the
+  // tool default live, so retuning the default retunes every drawing that has not been customised.
+  // Snapshotting the default at draw time instead would make "change my levels" silently do nothing
+  // to the fibs already on screen.
+  const [fibs, setFibs] = useState<{ id: string; points: { timestamp: number; value: number }[]; levels?: FibLevel[] }[]>([])
   const selectedFibRef = useRef<string | null>(null)  // fib currently selected (for the Delete key)
   const ctxFibRef = useRef<string | null>(null)       // fib the right-click landed on (→ "Delete this fib")
+
+  // The tool's DEFAULT ladder — a setting, so it persists across reloads (a drawing does not).
+  const [fibLevels, setFibLevels] = useState<FibLevel[]>(() => loadFibLevels())
+  useEffect(() => { saveFibLevels(fibLevels) }, [fibLevels])
+  // The open level editor. `fibId: null` = editing the default ladder (from the tool strip);
+  // a fib id = editing that one drawing's override (from its right-click menu).
+  const [fibEditor, setFibEditor] = useState<{ x: number; y: number; fibId: string | null } | null>(null)
+  // Bumped whenever the editor's rows must be re-seeded from state rather than from typing —
+  // a reset, or dropping a per-drawing override. See `resetKey` in FibSettings.
+  const [fibEditorSeq, setFibEditorSeq] = useState(0)
   // Default zoom/scroll captured at init, restored by "Reset chart view" (right-click menu).
   const defaultBarSpaceRef = useRef<number | null>(null)
   const defaultOffsetRef = useRef<number | null>(null)
@@ -1257,7 +1273,8 @@ export default function ChartPanel({
         name: FIB,
         id: f.id,
         points: f.points,
-        extendData: { precision: pricePrecision, chipBg: theme.bgSurface },
+        // No override → the tool default, read live (not snapshotted) — see the `fibs` state note.
+        extendData: { levels: f.levels ?? fibLevels, precision: pricePrecision, chipBg: theme.bgSurface },
         onSelected: () => { selectedFibRef.current = f.id; return false },
         onDeselected: () => { if (selectedFibRef.current === f.id) selectedFibRef.current = null; return false },
         // klinecharts REMOVES an overlay on right-click when onRightClick returns falsy — return true
@@ -1272,7 +1289,7 @@ export default function ChartPanel({
         },
       })
     }
-  }, [fibs, displayCandles, pricePrecision])
+  }, [fibs, fibLevels, displayCandles, pricePrecision])
 
   // Rebuild generic overlays (box/hline/vline) by group, after data changes or a group toggle.
   useEffect(() => {
@@ -1497,7 +1514,7 @@ export default function ChartPanel({
     setMeasureMode(false); setAnchor(null); setLiveDrag(null); setMeasurement(null)
     chart.createOverlay({
       name: FIB,
-      extendData: { precision: pricePrecision, chipBg: theme.bgSurface },
+      extendData: { levels: fibLevels, precision: pricePrecision, chipBg: theme.bgSurface },
       onDrawEnd: e => {
         const pts = (e.overlay.points ?? [])
           .filter(p => typeof p.timestamp === 'number' && typeof p.value === 'number')
@@ -1512,6 +1529,45 @@ export default function ChartPanel({
     if (selectedFibRef.current === id) selectedFibRef.current = null
     if (ctxFibRef.current === id) ctxFibRef.current = null
     setFibs(prev => prev.filter(f => f.id !== id))
+    setFibEditor(e => (e?.fibId === id ? null : e))   // never leave the editor pointing at a deleted fib
+  }
+
+  // ── Level editor plumbing ───────────────────────────────────────────────────────────────────
+  // The ladder the open editor is editing. A drawing with no override edits a COPY of the default,
+  // which is what makes the first keystroke on a fib create its override rather than silently
+  // retune every other fib on the chart.
+  const fibEditorTarget = fibEditor?.fibId ? fibs.find(f => f.id === fibEditor.fibId) ?? null : null
+  const fibEditorLevels = fibEditor?.fibId ? fibEditorTarget?.levels ?? fibLevels : fibLevels
+
+  const setFibEditorLevels = (next: FibLevel[]) => {
+    if (!fibEditor) return
+    if (fibEditor.fibId) setFibs(prev => prev.map(f => (f.id === fibEditor.fibId ? { ...f, levels: next } : f)))
+    else setFibLevels(next)
+  }
+
+  const openFibEditor = (x: number, y: number, fibId: string | null) => {
+    setFibEditor({ x, y, fibId })
+    setFibEditorSeq(n => n + 1)   // re-seed the rows for the new target
+  }
+
+  // Promote this drawing's ladder to the default, then DROP its override so it goes back to
+  // following — the two are identical at that moment, and following means later default edits keep
+  // reaching it. Leaving the override behind would quietly freeze the fib you just saved from.
+  const saveFibLevelsAsDefault = () => {
+    if (!fibEditor?.fibId) return
+    setFibLevels(fibEditorLevels)
+    setFibs(prev => prev.map(f => (f.id === fibEditor.fibId ? { ...f, levels: undefined } : f)))
+  }
+
+  const clearFibOverride = () => {
+    if (!fibEditor?.fibId) return
+    setFibs(prev => prev.map(f => (f.id === fibEditor.fibId ? { ...f, levels: undefined } : f)))
+    setFibEditorSeq(n => n + 1)
+  }
+
+  const resetFibLevels = () => {
+    setFibLevels(DEFAULT_FIB_LEVELS)
+    setFibEditorSeq(n => n + 1)
   }
 
   // Delete/Backspace removes the selected fib (ignored while typing); Escape closes the menu.
@@ -1526,7 +1582,7 @@ export default function ChartPanel({
         setFibs(prev => prev.filter(f => f.id !== id))
         e.preventDefault()
       }
-      if (e.key === 'Escape') setCtxMenu(null)
+      if (e.key === 'Escape') { setCtxMenu(null); setFibEditor(null) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -1539,6 +1595,14 @@ export default function ChartPanel({
     window.addEventListener('mousedown', close)
     return () => window.removeEventListener('mousedown', close)
   }, [ctxMenu])
+
+  // Same for the level editor (it stops its own mousedown, so every press inside is safe).
+  useEffect(() => {
+    if (!fibEditor) return
+    const close = () => setFibEditor(null)
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [fibEditor])
 
   return (
     <div>
@@ -1734,10 +1798,27 @@ export default function ChartPanel({
           </button>
           <button
             onClick={startFib}
-            title="Fibonacci retracement — click one swing, then the other. Right-click a fib → Delete this fib (or select it + Delete)."
+            title="Fibonacci retracement — click one swing, then the other. Right-click a fib → Fib levels / Delete this fib (or select it + Delete)."
             className="flex items-center justify-center w-8 h-8 rounded-md border border-transparent text-text-tertiary hover:text-text-secondary hover:bg-bg-surface transition-colors"
           >
             <AlignJustify className="w-5 h-5" />
+          </button>
+          {/* Sits directly under the fib button, and is deliberately SMALLER — it configures that
+              tool rather than being one, so it must not read as a third drawing tool. Opens the
+              DEFAULT ladder; one drawing's own levels are reached by right-clicking that drawing. */}
+          <button
+            onClick={e => {
+              const r = e.currentTarget.getBoundingClientRect()
+              openFibEditor(r.right + 8, r.top, null)
+            }}
+            title="Fibonacci levels — add, remove, retune or recolour the levels the fib tool draws"
+            className={`flex items-center justify-center w-8 h-6 rounded-md border transition-colors ${
+              fibEditor && !fibEditor.fibId
+                ? 'border-accent/60 text-accent bg-accent/10'
+                : 'border-transparent text-text-tertiary hover:text-text-secondary hover:bg-bg-surface'
+            }`}
+          >
+            <Settings2 className="w-3.5 h-3.5" />
           </button>
           {/* More tools land here. */}
         </div>
@@ -1754,6 +1835,8 @@ export default function ChartPanel({
             // right-click → fib-only menu; an empty right-click (ref null) → chart-only menu.
             const fibId = ctxFibRef.current
             ctxFibRef.current = null
+            // Clamp box for the menu — both branches carry two rows (fib: levels + delete;
+            // chart: reset view + show/hide trades). Bump these if either grows a row.
             const MENU_W = 190, MENU_H = 96
             setCtxMenu({
               x: Math.min(e.clientX, window.innerWidth - MENU_W),
@@ -1858,12 +1941,20 @@ export default function ChartPanel({
           {ctxMenu.fibId ? (
             // Right-clicked ON a fib → fib-only menu (managing a fib is its own context; deleting one
             // at a time, per Aaron — no reset, no bulk remove here).
-            <button
-              onClick={() => { removeFib(ctxMenu.fibId!); setCtxMenu(null) }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-neg-text hover:bg-bg-sunken transition-colors"
-            >
-              <Trash2 className="w-3 h-3" /> Delete this fib
-            </button>
+            <>
+              <button
+                onClick={() => { openFibEditor(ctxMenu.x, ctxMenu.y, ctxMenu.fibId); setCtxMenu(null) }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-text-secondary hover:bg-bg-sunken hover:text-text-primary transition-colors"
+              >
+                <Settings2 className="w-3 h-3 text-text-tertiary" /> Fib levels
+              </button>
+              <button
+                onClick={() => { removeFib(ctxMenu.fibId!); setCtxMenu(null) }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-neg-text hover:bg-bg-sunken transition-colors"
+              >
+                <Trash2 className="w-3 h-3" /> Delete this fib
+              </button>
+            </>
           ) : (
             // Right-clicked on empty chart → chart-only menu: reset the view + show/hide trades.
             <>
@@ -1885,6 +1976,25 @@ export default function ChartPanel({
             </>
           )}
         </div>
+      )}
+
+      {/* Fib level editor — one component, two targets: the tool's default ladder (gear on the tool
+          strip) or one drawing's own (its right-click menu). Rendered at the panel root, like the
+          context menu, so the chart body's measure-mode click handler can never see its clicks. */}
+      {fibEditor && (
+        <FibSettings
+          x={fibEditor.x}
+          y={fibEditor.y}
+          scope={fibEditor.fibId ? 'drawing' : 'default'}
+          levels={fibEditorLevels}
+          resetKey={`${fibEditor.fibId ?? 'default'}:${fibEditorSeq}`}
+          isCustom={!!fibEditorTarget?.levels && !sameFibLevels(fibEditorTarget.levels, fibLevels)}
+          onChange={setFibEditorLevels}
+          onClose={() => setFibEditor(null)}
+          onSaveAsDefault={saveFibLevelsAsDefault}
+          onUseDefault={clearFibOverride}
+          onResetFactory={resetFibLevels}
+        />
       )}
     </div>
   )
