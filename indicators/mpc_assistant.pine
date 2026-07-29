@@ -90,7 +90,7 @@ bool showSessionsInput   = input.bool(true,  "Trading Sessions",  group = GRP_TO
 bool showHistoricSessions = input.bool(false, "    ↳ Session History", group = GRP_TOOLS, active = showSessionsInput, tooltip = "Off (default) draws only the current week's session boxes, from Sunday 00:00 New York. On draws every session in the chart's history.", display = display.none)
 bool showKZandNYRInput   = input.bool(true,  "Kill Zones & NY Range", group = GRP_TOOLS, tooltip = "KZ = Kill Zone, the high-activity window at a session open. NY = New York. NY Range = the opening range of the New York session.", display = display.none)
 bool showKZHistoric      = input.bool(false, "    ↳ Kill Zone History", group = GRP_TOOLS, active = showKZandNYRInput, tooltip = "Off (default) draws the kill zones and NY range for the current New York day only. On draws them for every day in the chart's history.", display = display.none)
-bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, tooltip = "The MV line — the Asia session Point of Control (POC), the single price the most volume traded at during Asia. Drawn from that session's Volume Profile (SVP = Session Volume Profile).", display = display.none)
+bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, tooltip = "The MV line — where the highest volume of trades occurred during the Asian session.", display = display.none)
 bool showVwapInput       = input.bool(false, "VWAP",              group = GRP_TOOLS, tooltip = "VWAP = Volume Weighted Average Price. The average price paid so far in the session, weighted by how much traded at each price.", display = display.none)
 bool showDivInput        = input.bool(true,  "RSI Divergence",    group = GRP_TOOLS, tooltip = "RSI = Relative Strength Index, a momentum oscillator. Divergence = price and RSI disagreeing, one making a new extreme while the other does not. Tagged Bull Div / Bear Div.", display = display.none)
 
@@ -284,8 +284,8 @@ bool   showFiboInput   = input.bool(true, "Show External Fib", group = GRP_FIBO,
 int    fiboLineExtend  = input.int(80, "External Fib Line Extension (bars)", group = GRP_FIBO, minval = 5, maxval = 500, active = showFiboInput, tooltip = "How far the External Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
 bool   showMacroFibInput = input.bool(true, "Show Cycle Fib", group = GRP_FIBO, tooltip = "The same retracement drawn on the whole cycle rather than one leg — the move from the last major low to the last major high. Same TP and E tags.", display = display.none)
 int    macroLineExtend = input.int(180, "Cycle Fib Line Extension (bars)", group = GRP_FIBO, minval = 10, maxval = 500, active = showMacroFibInput, tooltip = "How far the Cycle Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
-bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, tooltip = "SZ = Sniper Zone, the 0.382-0.5 pocket of the leg that just broke structure.", display = display.none)
-bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "BLEG = B-Leg, the setup whose retrace arrives late. SZ = Sniper Zone, its 0.382-0.5 pocket. Shows that watch level on the chart. 15m only.", display = display.none)
+bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, tooltip = "SZ = Sniper Zone. A significant area that institutions come back to after a displacement.", display = display.none)
+bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "BLEG = B-Leg, a setup whose retrace arrives late. Shows the area it is waiting for price to come back to. 15m only.", display = display.none)
 
 bool hideFibsSub5m = true
 // 1m is the entry-view timeframe — the External Fib always shows there (its SOS-leg
