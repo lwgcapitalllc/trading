@@ -51,7 +51,8 @@
       "Bash(npx vite *)",
       "Bash(PYTHONPATH=engines command-center/backend/.venv/bin/python -m pytest engines/news/tests/ -q)",
       "Bash(./.venv/bin/python -m pytest tests/test_news_filter.py tests/test_chart_spec_misses.py -q)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(git check-ignore *)"
     ]
   }
 }
