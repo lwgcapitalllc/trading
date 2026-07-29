@@ -7,7 +7,7 @@
  * theme automatically restyles the chart — nothing here is theme-specific.
  */
 import { TooltipShowRule, type DeepPartial, type Styles } from 'klinecharts'
-import t from '@/themes/electric-indigo'
+import t from '@/themes/dark-2026'
 
 export const chartStyles: DeepPartial<Styles> = {
   grid: { show: false },

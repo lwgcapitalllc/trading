@@ -1,4 +1,4 @@
-import t from './src/themes/electric-indigo.js'
+import t from './src/themes/dark-2026.js'
 
 /** @type {import('tailwindcss').Config} */
 export default {

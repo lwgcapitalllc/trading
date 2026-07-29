@@ -20,7 +20,7 @@ import FibSettings from './FibSettings'
 import { DEFAULT_FIB_LEVELS, loadFibLevels, sameFibLevels, saveFibLevels, type FibLevel } from './fibLevels'
 import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
-import theme from '@/themes/electric-indigo'
+import theme from '@/themes/dark-2026'
 
 interface MeasureRect {
   x: number; y: number; w: number; h: number

@@ -5,7 +5,7 @@
  * All values are derived from the active theme file. When swapping themes,
  * update the import below to point to the new theme file.
  */
-import t from './electric-indigo.js'
+import t from './dark-2026.js'
 
 export const C = {
   // Data colors
