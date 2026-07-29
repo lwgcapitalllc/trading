@@ -3154,6 +3154,15 @@ f_processKillZones() =>
     var box  kz2TodayBox = na
     var box  kz3TodayBox = na
 
+    // The start-of-zone arrows. These were plotshape() until 2026-07-29, which is
+    // why they used to outlive their kill zone: a plotshape is a series plot, it has
+    // no handle and cannot be deleted, so the box vanished on schedule and the green
+    // triangle stayed behind on a chart with nothing under it. As labels they are
+    // drawing objects with handles, deleted in the same blocks as the box.
+    var label kz1Arrow = na
+    var label kz2Arrow = na
+    var label kz3Arrow = na
+
     var bool kz1TodayDeleted = false
     var bool kz2TodayDeleted = false
     var bool kz3TodayDeleted = false
@@ -3168,6 +3177,9 @@ f_processKillZones() =>
         kz1TodayBox       := na
         kz2TodayBox       := na
         kz3TodayBox       := na
+        kz1Arrow          := na
+        kz2Arrow          := na
+        kz3Arrow          := na
 
     kzBgColor     = color.new(color.green, 90)
     kzBorderColor = color.new(color.green, 70)
@@ -3179,6 +3191,7 @@ f_processKillZones() =>
             array.push(kz1Boxes, newKZ1)
             if isToday
                 kz1TodayBox := newKZ1
+                kz1Arrow := label.new(bar_index, na, "", yloc = yloc.abovebar, style = label.style_triangledown, color = color.green, size = size.tiny)
         if inKZ1 and withinKZDays and array.size(kz1Boxes) > 0
             box.set_right(array.last(kz1Boxes), bar_index + 1)
 
@@ -3188,6 +3201,7 @@ f_processKillZones() =>
             array.push(kz2Boxes, newKZ2)
             if isToday
                 kz2TodayBox := newKZ2
+                kz2Arrow := label.new(bar_index, na, "", yloc = yloc.abovebar, style = label.style_triangledown, color = color.green, size = size.tiny)
         if inKZ2 and withinKZDays and array.size(kz2Boxes) > 0
             box.set_right(array.last(kz2Boxes), bar_index + 1)
 
@@ -3197,6 +3211,7 @@ f_processKillZones() =>
             array.push(kz3Boxes, newKZ3)
             if isToday
                 kz3TodayBox := newKZ3
+                kz3Arrow := label.new(bar_index, na, "", yloc = yloc.abovebar, style = label.style_triangledown, color = color.green, size = size.tiny)
         if inKZ3 and withinKZDays and array.size(kz3Boxes) > 0
             box.set_right(array.last(kz3Boxes), bar_index + 1)
 
@@ -3205,6 +3220,9 @@ f_processKillZones() =>
             if not na(kz1TodayBox)
                 box.delete(kz1TodayBox)
                 kz1TodayBox := na
+            if not na(kz1Arrow)
+                label.delete(kz1Arrow)
+                kz1Arrow := na
             kz1TodayDeleted := true
 
     if isToday and not kz2TodayDeleted and showKillZones
@@ -3212,6 +3230,9 @@ f_processKillZones() =>
             if not na(kz2TodayBox)
                 box.delete(kz2TodayBox)
                 kz2TodayBox := na
+            if not na(kz2Arrow)
+                label.delete(kz2Arrow)
+                kz2Arrow := na
             kz2TodayDeleted := true
 
     if isToday and not kz3TodayDeleted and showKillZones
@@ -3219,13 +3240,13 @@ f_processKillZones() =>
             if not na(kz3TodayBox)
                 box.delete(kz3TodayBox)
                 kz3TodayBox := na
+            if not na(kz3Arrow)
+                label.delete(kz3Arrow)
+                kz3Arrow := na
             kz3TodayDeleted := true
     int _ret = 0
 f_processKillZones()
 
-plotshape(showKillZones and inKZ1 and not inKZ1[1] and withinKZDays, style = shape.triangledown, location = location.abovebar, color = color.green, size = size.tiny)
-plotshape(showKillZones and inKZ2 and not inKZ2[1] and withinKZDays, style = shape.triangledown, location = location.abovebar, color = color.green, size = size.tiny)
-plotshape(showKillZones and inKZ3 and not inKZ3[1] and withinKZDays, style = shape.triangledown, location = location.abovebar, color = color.green, size = size.tiny)
 
 //============================================================
   // FIBONACCI DRAWING
