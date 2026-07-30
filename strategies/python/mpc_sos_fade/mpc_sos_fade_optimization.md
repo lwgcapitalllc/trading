@@ -29,24 +29,35 @@ Standing rules for anything recorded here:
 | 7 | 2026-07-27 | **The minimum-stop guard, properly measured** — 17 real replays (not row-filtering), 8 years, three independent definitions of "too tight": fixed $, % of price, ×ATR(14) | **The guard PASSES, at a MILD threshold only.** All three definitions agree: light = **+0.7 to +2.7R**, medium/heavy = **−12 to −39R**. Best is **`pct 0.1`** (stop ≥ 0.1% of price): 182 trades, +2.5R, blocks the −1.98R trade, leaves 2021/2024/2025/2026 **untouched**. It is a **safety** rule — the R gain is noise-level, and it does **not** fix drawdown (−54.9% → −54.3%). | **measured, awaiting Aaron's go** |
 | 8 | 2026-07-28 | *"the runner hands too much back"* — the whole runner-exit space at once: 4 trail families (fixed $, chandelier ATR, % trail, giveback cap), hard TP ceilings, "clamp once it's a monster", an RSI-divergence exit, and a NEW swing-ratchet trail | **ADOPTED: `"Structure + % ratchet"` at 1.0%.** Share of each run actually banked **43% → 53%**, same 164 trades, same entries, **identical % drawdown**. Everything else lost: every tightening family costs 60–90% of net, a hard TP costs 20%+ or never fires, the divergence exit costs 77%. | **SHIPPED** — default in 4 Pine files + both Python bots |
 | 9 | 2026-07-28 | *"why not bank at the extension fibs?"* — Aaron's own hand rule (0.0 / −0.272 / −0.414 / −0.618) plus a stop-floor variant and a deep-rung variant (−1/−2/−3/−4/−6). 40 replays across 3 designs | **REJECTED in every form.** Shallow rungs **109.3R → 69.1R**; as a stop floor → **56.1R**; deep rungs → **106.3R**. Cause: only **29 of 164** trades ever reach 0.0 and the **11 past −0.618 carry 106R of the 109R**, so any fixed ceiling caps exactly what pays. | **do not build it** — read the verdict |
+| 10 | 2026-07-29 | *"cut the trade by the SHAPE of its path"* — Aaron's in-and-out-of-profit idea, a stall variant, and his fib-level cut. 3 families, ~130 variants + 6 real replays, on captured per-bar R paths | **Two rejected, one mild keeper.** The in/out pattern is **not a loss signal** (trades showing it lose 18–30% of the time vs a **32% base rate**) — every cut loses, best is −70.5R. The fib cut at **0.886 fires 0 times** (it IS the stop) and at 0.786 costs **−27.0R** (35 losers saved +12.6R, 4 winners cost −33.6R). Only the **stall** cut works: no +0.15R by bar 3 → close = **+4.8R real-replayed**, and **drawdown does not move (54.9%)**. | measured, **not adopted** |
+| 11 | 2026-07-29 | **Run 5's `exec_sl_level` sweep RE-RUN with Run 7's guard installed** — the file's stated highest-value open item. 5 SL levels × 4 guard strengths, 14 full-history replays | **ANSWERED, negatively. 0.886 is the right level.** 0.786 = **105.2R unguarded (below shipped) and 49.0R guarded**, and 72% of its unguarded total is 2024+2026 — the guard turns its 2024 from **+50.4R to −2.9R**, i.e. the tight-stop trades ARE the money. 0.702/0.618 reproduce Run 4's detonation on a third window. **The one improvement is `0.886 + pct 0.1`: 112.0R, maxDD 54.3%, worst trade −1.98R → −1.00R.** | **Run 7's guard CONFIRMED — awaiting Aaron's go** |
 
-⚠ **BLOCKING as of Run 8 (2026-07-28): both Pine↔Python parity gates are STALE.** The last green
-`compare_strategy.py` was 2026-07-27, which predates the swing ratchet; `compare_bleg.py` is stale
-for the same reason. Until both are re-run green on a FRESH TradingView export — and the A+ one at
-the shipped `exec_tp1_pct = exec_tp2_pct = 0` — **no number in Runs 8–9 is confirmed to describe the
-Pine that Aaron trades.** They describe the Python bot, which has been byte-matched to the Pine
-before and has not been re-checked since.
+✅ **Both Pine↔Python parity gates were re-run GREEN on 2026-07-29** (`compare_strategy.py`, 21,494
+bars, at the shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the ratchet through
+`cfg_exitmode`/`cfg_trail_pct`; `compare_bleg.py`, 21,493 bars). This CLEARS the Run 8 stale-parity
+warning — Runs 8–9 now describe the Pine Aaron trades. ⚠ One gap remains and it is the one that
+matters for Run 11's recommendation: `mpc_strategy_export.pine` still emits **no `cfg_min_stop*`
+column**, so parity is proven only at the `execMinStopMode = "Off"` default. Shipping the guard
+means closing that hole in the same commit.
 
-**Still open:** *"what R:R should I use as a dynamic stop loss?"* — no sweep of existing
-parameters can answer it (the bot has no R:R dial). A three-stage plan is written up at the
-**bottom of this file** under `# OPEN — "What R:R should I use?"`. Stage 1 is ~30 min and needs
-no new strategy code. Start there.
+**Still open:** *"what R:R should I use as a dynamic stop loss?"* — the plan at the bottom of this
+file under `# OPEN — "What R:R should I use?"` still stands, but **Run 11 has closed one of its two
+routes.** The cheap route (re-sweep the fib dropdown behind a minimum-stop guard) is DONE and the
+answer is that no fib level beats 0.886. So the only remaining route is Stage 2's **ATR-based stop
+distance** — new code in `config.py` AND the Pine. Stage 1 (measure MFE/MAE/ATR on the existing
+trades) is still the right first step and is now partly done: Runs 6 and 10 captured the per-bar R
+paths, and `backtest/archive/2026-07-29_xauusd_15m_full_history/` carries every trade's `mfe_r`/
+`mae_r` on disk.
 
-**Run 5 sharpens why that plan is the right one.** The loss bucket has a single mechanical cause
-(TP1 sits ~0.45R away while the stop sits 1R away, so a loser dies ~0.34R short of safety), and
-the only lever that touches it is stop DISTANCE — which is exactly what Stage 2 builds and what
-Run 4 proved is currently unguarded. Run 5's measured tighter-stop gain (+26R) is the size of the
-prize sitting behind Stage 1's guard.
+**What Runs 6, 10 and 11 jointly establish about DRAWDOWN — stop re-deriving this.** Four
+independent attack surfaces have now been swept: exit timing (Runs 3, 6), exit tightening (Run 8),
+path-shape cuts (Run 10) and stop placement (Runs 4, 5, 11). **None of them moves the drawdown.**
+The best figure any of them produced is 54.3%, against a 54.9% baseline. The reason is Run 6's
+Finding 5 and it has survived every re-test: the −54.9% is a **losing streak of clean −1R stops**
+(2021-11-28 → 2022-11-14, nine full stops in 20 trades), and a trade that goes to the stop it was
+given is not an exit-rule problem. **Drawdown is a position-size decision** (10% → 54.9%,
+5% → 31.9%, 3% → 20.3%) or a **portfolio** decision — and the portfolio route is blocked on the
+A+ vs B-LEG overlap audit, which is still UNRUN and is now the highest-value open item on this bot.
 
 ---
 
@@ -635,6 +646,12 @@ multiple), re-run this exact grid with it in place, and **count the rejections p
 0.786 keeps most of its setups under the guard, it becomes a real candidate. If the guard discards
 most of them, the ATR-stop build in Stage 2 is the only route and this dropdown should be retired.
 
+⚠ **SUPERSEDED 2026-07-29 by Run 11, which ran exactly that test. This dropdown is now RETIRED as a
+tuning lever.** On the full 7.9-year history 0.786 scores **105.2R unguarded — below the shipped
+0.886's 109.5R** — with a WORSE drawdown (60.2% vs 54.9%), and with `pct 0.1` installed it collapses
+to **49.0R**. The +26R prize this section describes was a 4.5-year-window artifact. Read Run 11
+before quoting anything in Run 5's `exec_sl_level` table.
+
 ## How it was measured
 
 `backtest/tools/run_report.py --no-regime` off the M15 cache, 2022-01-02 → 2026-07-24, 118 trades
@@ -1025,10 +1042,15 @@ the same floor before shipping.
 
 ## What was NOT measured
 
-- The guard interacting with a different `exec_sl_level`. All 17 runs are at 0.886. Run 5's
+- ~~The guard interacting with a different `exec_sl_level`. All 17 runs are at 0.886. Run 5's
   finding that 0.786 scores 59.3R vs 33.6R *if the hazard were fixed* is the obvious follow-up —
   **re-run Run 5's `exec_sl_level` sweep with `pct 0.1` installed** and see whether the shallower
-  stops become adoptable. That is now the highest-value open item on this bot.
+  stops become adoptable. That is now the highest-value open item on this bot.~~
+  **DONE — see Run 11 (2026-07-29). The answer is no: 0.786 scores 105.2R unguarded (BELOW the
+  shipped 0.886) and 49.0R with the guard on.** Run 5's 59.3R did not survive the full history.
+  Run 11 also found the guard is **not** a universal safety floor — at 0.702 a −2.74R trade
+  survives both `pct 0.10` and `pct 0.15`, and at 0.618 a −4.53R trade survives. It closes 0.886's
+  one hazard trade; it does not license a tighter level.
 - Tick-mode fills. Every number here is bar mode (zero costs), like every other run in this file.
 - Whether the six blocked setups would have been better taken at a WIDER stop rather than skipped
   entirely. Refusing the trade is the conservative choice; re-anchoring the stop is a different
@@ -1320,4 +1342,358 @@ what it saves.
 
 Harness: `scratchpad/ext_fibs.py` (rungs), `ext_floor.py` (stop floor), `ext_deep.py` (deep rungs),
 `ext_where.py` (per-trade depth diagnostic) — all subclassing `Execution`, no repo file modified.
+Throwaway, not committed.
+
+---
+
+# Run 10 — 2026-07-29 — cut the trade by the SHAPE of its path. Two of three ideas die.
+
+**The question, Aaron's words:** *"how many losers went never into profit and just trickled towards
+the stop loss? How many went into profit at least two times before they hit stop? … find a number,
+doesn't have to be two — the most amount of losers whose price went into profit, then back into
+loss, and back into profit, up to n times. Use that as a baseline to say, when price is acting like
+this it typically leads to a loss, so cut those trades at hopefully breakeven."*
+
+**The answer: the pattern is not a loss signal — it is a mild WIN signal.** Trades that chop in and
+out of profit lose **18–30%** of the time against a **32% base rate**, and that number is flat at
+every threshold and every repeat count. Every cut rule built on it loses money.
+
+A second idea derived from the same data DOES work, mildly: cutting a trade that **stalls** (never
+clears +0.15R). And Aaron's own follow-up — cut when price retraces to a deep fib — **fails, with
+0.886 mathematically unable to fire at all.**
+
+**Nothing adopted.**
+
+## How it was measured
+
+Window **2018-09-13 → 2026-07-29** (185,783 M15 XAUUSD bars — the broker's whole measured intraday
+history), the shipped config: `exec_sl_level="0.886"`, TP rungs 0/0, `"Structure + % ratchet"` at
+1.0%, risk 10%, `fill_model="bar"`. **Baseline 188 trades, 109.5R, maxDD 54.9%, 384x, 59W/61L/68S**
+(breakeven band ±0.15R). This is the same corpus as
+`backtest/archive/2026-07-29_xauusd_15m_full_history/`.
+
+Two artefacts, both from monkey-patching the shipped `Execution` on the INSTANCE — no repo file was
+modified:
+
+- **A per-bar R path** per trade: the bar's favourable extreme, adverse extreme, CLOSE (the price a
+  market exit would actually get) and the exit-ladder STAGE. 10,767 rows over 188 trades.
+- **A per-bar OHLC path + the frozen fib ladder** (0.618/0.702/0.786/0.886) snapshotted where the
+  order is PLACED, which is where `pend.sl` is frozen.
+
+**Both captures are self-validating, and that matters more than usual here.** The R path's
+`max(fav_r)` reproduces every trade's independently-computed `mfe_r` to **7.4e-6**. The fib
+capture's 0.886 level equals the trade's actual stop to **$0.000000** — which it must, because
+`exec_sl_level="0.886"` with `exec_sl_buf_tk=0`. A capture that did not reconcile would have made
+every number below meaningless.
+
+**Convention, matching `_advance_stage` and Run 6:** a counter read at bar N's close is acted on at
+that close (a market exit) or is live from bar N+1 (a stop). Checking the trigger bar's own
+extremes for a stop would let a rule act on a move it only learned about at the close.
+
+## Part A — the bucket counts Aaron asked for
+
+How many of the **61 losers** went into profit 0 / 1 / 2+ times before dying? A "poke" is counted
+once and only re-counted after price returns to the entry price or worse (hysteresis — without it a
+wobble around the line reads as ten separate excursions).
+
+| "in profit" = the bar's favourable extreme reached | never | once | 2+ times |
+|---|---|---|---|
+| **+0.10R** (barely above entry) | **1** | 13 | **47** |
+| **+0.25R** (the repo's scratch band) | 13 | 21 | 27 |
+| **+0.50R** | 29 | 20 | 12 |
+
+**The "never in profit, just trickled to the stop" trade is ONE trade in 61** — 2025-12-15, which
+showed +0.09R. That reconciles exactly with the archive's never-worked column (2025 = 1, every other
+year 0) and with Run 6's min-MFE of +0.09R, from a third independent direction.
+
+The 13 "never" trades at +0.25R are the real trickle group: they topped out at 0.09–0.24R and **all
+13 died at exactly −1.00R**, worth **−13.0R** together. Distribution of the multi-pokers is long-
+tailed — one trade poked 20 times, one 15, one 14.
+
+## Part B — the poke cut. 70 combos, every one negative.
+
+7 thresholds × 5 poke counts × {cut at any stage, cut only while at full risk}. Fire at the close of
+the bar the counter reaches N.
+
+| T | N | fires on | losers caught | winners killed | R saved on losers | R lost on winners | net |
+|---|---|---|---|---|---|---|---|
+| 0.10 | 2 | 165 | 47 | 57 | **+47.7** | **−127.7** | **−70.5R** |
+| 0.25 | 2 | 126 | 27 | 51 | +29.7 | −89.9 | −46.2R |
+| 0.25 | 3 | 48 | 11 | 19 | +15.3 | −47.4 | −28.2R |
+| 0.30 | 5 | 17 | 5 | 7 | +5.5 | −25.6 | −18.6R |
+| 0.50 | 3 | 17 | 4 | 7 | +6.8 | −27.7 | −18.4R |
+
+**The separation table is what kills it, and it is the finding worth keeping.** Of every trade that
+ever reaches N pokes, what did it turn out to be?
+
+| poke threshold | N | reached it | loss | scratch | win | **% loss** | their R if left alone |
+|---|---|---|---|---|---|---|---|
+| +0.10R | 2 | 165 | 47 | 61 | 57 | **28%** | +119.9 |
+| +0.10R | 4 | 69 | 16 | 24 | 29 | **23%** | +75.7 |
+| +0.20R | 3 | 68 | 14 | 24 | 30 | **21%** | +82.7 |
+| +0.25R | 2 | 126 | 27 | 48 | 51 | **21%** | +106.5 |
+| +0.25R | 5 | 22 | 5 | 6 | 11 | **23%** | +29.9 |
+| +0.50R | 2 | 65 | 12 | 22 | 31 | **18%** | +90.5 |
+
+**Base rate is 32%** (61/188). Every row is BELOW it, and the column does not rise as N rises — if
+the pattern were a loss signal it would. Every one of these populations is net PROFITABLE if left
+alone. **There is no number to find. The requested rule does not exist in this data.**
+
+**Why an earlier read of this looked worse than it is.** A first pass compared raw poke counts
+between winners and losers (86% of winners poke 2+ times vs 44% of losers) and called that the
+refutation. That comparison is UNFAIR — winners are held a median 75 bars against a loser's 10, so
+they have seven times as many bars in which to poke. The separation table above is the honest form
+of the test, and it happens to reach the same conclusion by a valid route.
+
+**Matched against the alternative.** The aggressive settings DO cut drawdown, but only by amputating
+the book, and turning the risk dial down buys the same drawdown while keeping all 109.5R:
+
+| poke rule | sumR | maxDD | final | plain risk % at the SAME drawdown | sumR | final |
+|---|---|---|---|---|---|---|
+| T=0.10 N=2 | 39.0 | 27.4% | 24x | 4.2% | **109.5** | 29x |
+| T=0.25 N=2 | 63.3 | 29.5% | 69x | 4.6% | **109.5** | 37x |
+| T=0.25 N=3 | 81.3 | 41.6% | 72x | 6.9% | **109.5** | 120x |
+| T=0.30 N=3 | 83.0 | 45.9% | 82x | 7.8% | **109.5** | 178x |
+
+The `final` column bounces both ways — Run 7's ragged-multiple warning applies exactly. Read sumR.
+
+## Part C — the STALL cut. The one thing that works, and it does not touch drawdown.
+
+Different from Run 6's time stops, which keyed on the trade being BELOW 0R at bar N. This keys on
+failure to make PROGRESS: a trade can be fractionally green and still be going nowhere.
+
+**The diagnostic that picks the threshold** — how many bars until the trade first shows +T R:
+
+| | n | never | median | p90 | max |
+|---|---|---|---|---|---|
+| **+0.15R** wins | 59 | 0 | 0 | 0 | **18** |
+| **+0.15R** losses | 61 | 5 | 0 | 1 | 41 |
+| **+0.25R** wins | 59 | 0 | 0 | 10 | **56** |
+| **+0.25R** losses | 61 | 13 | 0 | 7 | 42 |
+
+**+0.15R is the only level where the two populations separate.** No winner ever takes more than 18
+bars to clear it; losers stretch to 41. At +0.25R a winner can take 56 bars, so any finite cut-off
+catches winners — and the grid confirms it (T=0.25 loses 20–28R at every N).
+
+**REAL-REPLAYED, not screened** (6 variants, the rule inside the strategy so entries may move). The
+control reproduced the baseline exactly — 188 trades / 109.5R / 54.9% / 384x:
+
+| variant | trades | sumR | ΔR | maxDD | final | cut |
+|---|---|---|---|---|---|---|
+| **CONTROL** | 188 | **109.5** | — | **54.9%** | 384x | 0 |
+| **T=0.15 N=3** | 188 | **114.3** | **+4.8** | **54.9%** | 662x | 15 |
+| T=0.15 N=5 | 188 | 113.0 | +3.6 | 54.9% | 578x | 11 |
+| T=0.15 N=10 | 188 | 111.8 | +2.4 | 54.9% | 501x | 7 |
+| T=0.15 N=20 | 188 | 111.0 | +1.5 | 54.9% | 451x | 2 |
+| T=0.20 N=10 | 188 | 112.6 | +3.2 | **56.6%** | 572x | 15 |
+
+The T=0.15 family is **positive at every N and decays smoothly toward zero** as the rule stops
+firing — the shape Run 7 set as the pass mark for a real rule rather than a curve fit. The screen
+predicted +5.0R and the real replay delivered +4.8R, so the offline approximation held.
+
+**But maxDD is 54.9% in every T=0.15 row — identical to baseline, to one decimal.** And +4.8R out of
+109.5R is noise-level, the same standing as Run 7's +2.5R. T=0.20 makes drawdown WORSE. So this is a
+small free improvement that does **not** answer the question it was built to answer.
+
+## Part D — Aaron's fib-level cut. 0.886 cannot fire; 0.786 loses 27R.
+
+*"Trades that went in and out of entry level more than N times and then retraced back to at least
+0.786 — or 0.886 — go ahead and cut."*
+
+**0.886 fires on 0 of 188 trades, by construction.** `exec_sl_level="0.886"` with
+`exec_sl_buf_tk=0` means the 0.886 fib **IS** the stop, to the cent. There is no room between the
+entry and it for a cut to live in. Verified rather than argued: the captured level equals the actual
+stop on every trade, worst gap $0.000000.
+
+**0.786** sits strictly between entry and stop on 161/188 trades. Cut fires as a stop at the level
+(or the open, if the bar gapped past), only while the trade is still at full risk:
+
+| cut level | poke T | N | fires | losers caught | winners killed | R saved | R lost | net | maxDD |
+|---|---|---|---|---|---|---|---|---|---|
+| **0.786** | any | 0 | 48 | 35 | 4 | **+12.6** | **−33.6** | **−27.0R** | 52.3% |
+| 0.786 | 0.10 | 2 | 37 | 26 | 4 | +8.7 | −33.6 | −29.5R | 55.0% |
+| 0.786 | 0.10 | 4 | 15 | 12 | 1 | +4.2 | −1.6 | +1.4R | 56.6% |
+| **0.702** | any | 0 | 58 | 29 | 17 | +17.2 | −59.3 | **−47.3R** | **62.4%** |
+| 0.702 | 0.02 | 3 | 36 | 19 | 11 | +11.0 | −49.5 | −41.2R | 60.7% |
+
+**Four winners.** The rule rescues 35 losers for +12.6R and kills four trades worth −33.6R — nearly
+three times as much. 0.702 is worse and makes drawdown worse (62.4%). The poke filter does not
+rescue either: as N rises the rule fires less and creeps back to baseline (+1.4R at N=4 is noise).
+
+**This is Run 9's pattern again, arrived at from the opposite side.** Run 9: *"there is no depth at
+which banking becomes profitable — only a depth at which it becomes harmless."* Here: there is no
+depth at which cutting becomes profitable, only a depth at which it stops firing.
+
+**The distinction that makes this different from Run 5, and worth writing down.** Cutting at 0.786
+MID-TRADE takes a smaller loss on a position already sized off the 0.886 stop. Setting the stop to
+0.786 AT ENTRY is a different thing entirely — `qty = risk / dist`, so a tighter stop buys a BIGGER
+position, the loss stays exactly 1R, and the winners are worth more R. That is the mechanism behind
+Run 5's +26R claim, and Run 11 tests it properly.
+
+## Verdict
+
+1. **The in-and-out-of-profit rule does not exist.** The pattern is a mild WIN signal (18–30% loss
+   rate vs a 32% base rate, flat across every parameter). Do not re-open without a signal that is
+   not derived from the trade's own price path — Run 6's Finding 2 and this run now agree from two
+   independent measurements.
+2. **The fib-level cut is dead.** 0.886 is arithmetically incapable of firing; 0.786 costs 27R.
+3. **The stall cut (no +0.15R by bar 3) is real, small, and free** — +4.8R real-replayed, same
+   drawdown, positive at every N. It is a candidate on the same footing as Run 7's guard: ship it
+   for tidiness, never for the money. **Not adopted** — it would be new inputs in `config.py` AND
+   both Pine files, and +4.8R does not justify that on its own. Bundle it with the Run 11 guard
+   commit or leave it.
+4. **None of this touches drawdown.** Best figure in the whole run is 54.9% — unchanged.
+
+## What was NOT measured
+
+- **Tick-mode fills.** Bar mode, zero costs, like every run in this file. Parts B and D exit at
+  market or at a stop, so tick mode would treat them slightly WORSE than the baseline's trailed
+  exits.
+- **The stall cut combined with the Run 7 guard.** Both are mild positives that fire on different
+  trades; whether they compose or overlap is unrun.
+- **Combinations of poke count with anything else** (regime, session, stop size). Deliberately
+  skipped for Run 6's stated reason: at n=188 a two-way sweep will find something that looks good
+  and is noise. The separation table makes a conditional version unpromising anyway — there is no
+  base-rate lift to condition ON.
+
+Harness: `scratchpad/poke_capture.py` + `poke_grid.py` (Parts A/B), `stall_grid.py` +
+`stall_replay.py` (Part C), `fib_cut_capture.py` + `fib_cut_grid.py` (Part D). All patch or subclass
+`Execution`; no repo file modified. Throwaway, not committed.
+
+---
+
+# Run 11 — 2026-07-29 — the stop-level sweep, guarded. 0.886 is the right level.
+
+**The question:** the one this file has called its highest-value open item since Run 7 (2026-07-27).
+Run 5 measured `exec_sl_level="0.786"` at **59.3R vs 33.6R** shipped, but 8 of its 108 trades rested
+a stop under \$2 — Run 4's account-detonating hazard, live. Run 7 then measured a guard that closes
+it (`pct 0.1`: the stop must be ≥ 0.1% of the entry price) and found it essentially free. Nobody had
+put the two together. Run 7's closing line: *"re-run Run 5's `exec_sl_level` sweep with `pct 0.1`
+installed. That is now the highest-value open item on this bot."*
+
+**The answer: no shallower stop is adoptable. 0.886 — what Aaron already trades — is correct.**
+Run 5's +26R prize was a short-window artifact and does not survive the full history.
+
+**The one thing this run DOES confirm for adoption: `0.886 + pct 0.1`.** It reproduces Run 7's
+result independently on a fresh full-history replay that includes the swing ratchet Run 7 predated.
+
+## How it was measured
+
+14 full replays, **2018-09-13 → 2026-07-29** (185,783 M15 bars), shipped config apart from the two
+dials. The guard is a subclass that lets the REAL `_place_entries` build the order and then DROPS it
+if `abs(edge - sl)` is inside the floor — so arming, vetoes and every other rule behave exactly as
+shipped and **only the placement decision changes.** No repo file was modified.
+
+**Harness validated two ways.** `0.886 / no guard` reproduces the shipped run to the decimal (188
+trades, 109.5R, 54.9%, 384x, worst trade −1.98R, tightest stop \$1.03). `0.886 / pct 0.10`
+reproduces Run 7's `pct 0.1` row (182 trades, +2.5R, 54.9% → 54.3%, and it blocks the −1.98R trade)
+— Run 7 measured that on a pre-ratchet bot, so agreeing here is a genuine independent confirmation.
+
+## The result
+
+| SL fib | guard | trades | sumR | maxDD | final | W/L/S | worst trade | tightest stop |
+|---|---|---|---|---|---|---|---|---|
+| 1.0 | — | 188 | 75.7 | 47.4% | 181x | 64/42/82 | −1.00 | \$2.21 |
+| 1.0 | 0.10% | 188 | 75.7 | 47.4% | 181x | 64/42/82 | −1.00 | \$2.21 |
+| **0.886 (shipped)** | — | 188 | **109.5** | 54.9% | 384x | 59/61/68 | **−1.98** | \$1.03 |
+| **0.886** | **0.10%** | 182 | **112.0** | **54.3%** | **512x** | 56/58/68 | **−1.00** | \$1.43 |
+| 0.786 | — | 170 | 105.2 | 60.2% | 171x | 51/61/58 | −1.88 | \$0.65 |
+| 0.786 | 0.05% | 169 | 102.8 | 60.2% | 138x | 50/61/58 | −1.88 | \$0.65 |
+| 0.786 | 0.10% | 160 | 49.0 | 55.8% | 23x | 45/56/59 | −1.37 | \$1.32 |
+| 0.786 | 0.15% | 152 | 36.8 | 70.3% | 10x | 42/52/58 | −1.37 | \$2.06 |
+| 0.702 | — | 150 | 18.1 | 82.8% | 1x | 36/73/41 | −2.74 | \$0.87 |
+| 0.702 | 0.10% | 138 | 9.7 | 83.9% | 0x | 28/68/42 | −2.74 | \$1.12 |
+| 0.702 | 0.15% | 106 | 10.4 | 75.3% | 1x | 18/52/36 | −2.74 | \$2.11 |
+| 0.618 | — | 118 | **223.8** | **97.6%** | 3x | 23/81/14 | **−5.02** | **\$0.08** |
+| 0.618 | 0.10% | 62 | 6.5 | 87.8% | 0x | 10/38/14 | −4.53 | \$1.35 |
+| 0.618 | 0.15% | 42 | 15.2 | 67.5% | 1x | 7/25/10 | −4.53 | \$2.88 |
+
+## Why 0.786 fails, and why its unguarded number is a trap too
+
+**Unguarded it is already worse than shipped** — 105.2R vs 109.5R, with a WORSE drawdown (60.2% vs
+54.9%) and the hazard fully live (tightest stop \$0.65, worst trade −1.88R). Run 5's 59.3R-vs-33.6R
+was measured on the 2022+ cache (118 trades) under the old exit ladder. It does not generalise.
+
+**And that 105.2R is concentrated in two years.** Per-year R: `+0.5 −4.6 +4.5 +8.2 +2.8 +12.3
++50.4 +5.6 +25.4` — **2024 alone is +50.4R and 2026 is +25.4R, i.e. 72% of the total.**
+
+**The guard then turns 2024 from +50.4R into −2.9R.** That is the decisive fact in the whole run:
+the trades carrying 0.786's result are precisely the ones with stops tight enough for the guard to
+refuse. **You cannot separate 0.786's return from its hazard, because they are the same trades.**
+Guarded it scores 49.0R; tightening the guard to 0.15% makes it 36.8R. There is no setting where
+0.786 is both safe and better than 0.886.
+
+## The guard is a hazard reducer, NOT a licence to tighten
+
+Worth recording separately, because it is easy to assume otherwise: `pct 0.1` removes 0.886's single
+worst trade (−1.98R → −1.00R), but at **0.702 a −2.74R trade survives both 0.10% and 0.15%**, and at
+**0.618 a −4.53R trade survives both.** A 0.1%-of-price floor is enough to catch the tail of a
+sane level; it does not make an unsafe level safe.
+
+**0.618 is Run 4's detonation reproducing on a third independent window.** 223.8R — the highest
+number anywhere in this file — at a **97.6% drawdown** for a 3x account, on an \$0.08 tightest stop.
+It is the same divide-by-a-tiny-denominator artifact Runs 4 and 5 diagnosed, and it is the cleanest
+available demonstration of why sumR must never be read without the drawdown beside it. Guarded, it
+discards **56 of 118 setups** (118 → 62) and still holds a −4.53R trade at 87.8% — which is Run 4's
+own stated test (*"if 0.618 discards most of its setups, it is not a real option"*) applied and
+failed.
+
+## Matched drawdown — the question that actually decides it
+
+Every config dialled to the shipped bot's 54.9% drawdown, so return is compared at equal pain:
+
+| SL fib | guard | sumR | risk % for the same 54.9% DD | final at that risk |
+|---|---|---|---|---|
+| **0.886** | **0.10%** | **112.0** | 10.2% | **540x** |
+| 0.886 | — | 109.5 | 10.0% | 384x |
+| 1.0 | — | 75.7 | 12.2% | 382x |
+| 0.786 | — | 105.2 | 8.8% | 122x |
+| 0.786 | 0.10% | 49.0 | 9.8% | 22x |
+| 0.702 | — | 18.1 | 4.7% | 1x |
+| 0.618 | — | 223.8 | 2.7% | 11x |
+
+**`0.886 + pct 0.1` is the best config in the sweep on every honest measure** — highest sumR, lowest
+drawdown of the viable rows, best matched-drawdown outcome.
+
+**A side finding worth keeping: the stop level is nearly risk-equivalent.** `1.0` needs 12.2% risk
+to reach the same 54.9% drawdown and lands at 382x, statistically the same as 0.886 at 10% (384x).
+So 1.0 vs 0.886 is a smoothness preference, not an edge — which is a cleaner statement of the same
+thing Run 5 was reaching for, and it means Run 4's "1.0 is the only supported value" advice cost
+nothing while it stood.
+
+## Verdict
+
+1. **`exec_sl_level` is settled. Keep "0.886". The dropdown is retired as a tuning lever.** 0.618 /
+   0.702 / 0.786 are now measured-bad on the full history, not merely unsupported-pending-a-guard.
+2. **Adopt `pct 0.1` on 0.886** — as a SAFETY rule, exactly as Run 7 argued. +2.5R out of 109.5R is
+   noise; the reason to ship is that it deletes the only trade in 7.9 years that lost more than the
+   1R it risked, and it closes the `## The exit ladder` ⚠ hazard.
+3. **This does not fix drawdown** (54.9% → 54.3%), and neither does any other row. Run 6's Finding 5
+   stands after a fourth independent attempt.
+4. **Run 5's `exec_sl_level` table and its +26R follow-up are SUPERSEDED.** Both are annotated in
+   place.
+
+## What adoption requires (unchanged from Run 7, plus one item)
+
+`exec_min_stop_mode` / `exec_min_stop_val` (or a single `exec_min_stop_pct`, default 0.1) in
+`config.py` **and** `mpc_strategy.pine` (which already has `execMinStopMode`/`execMinStopVal`)
+**and** a new `cfg_min_stop*` column in `mpc_strategy_export.pine` **and** a `_TOGGLE_COLS` entry in
+`compare_strategy.py` — ONE commit, then re-run parity. **The export column is the load-bearing
+part:** today the Pine has the filter and the export cannot see it, so the moment it is switched on
+in TradingView the Pine refuses setups the Python still takes and `compare_strategy.py` reports
+GREEN anyway. That is the one known Pine↔Python divergence on the A+ pair and shipping the guard is
+what closes it. Also decide explicitly whether `mpc_bleg` (which inherits `_place_entries`) wants
+the same floor on its band-origin stop.
+
+## What was NOT measured
+
+- **Tick-mode fills.** Bar mode, zero costs, like every run in this file. Note a tighter stop is
+  proportionally more cost-sensitive, so any tick re-run would penalise the shallow levels FURTHER —
+  it can only strengthen this verdict, not weaken it.
+- **`atr 0.5`, Run 7's theoretically-cleaner guard definition, at levels other than 0.886.** `pct`
+  was carried forward because Run 7 picked it and it needs no new state on either side of the parity
+  boundary. Given 0.786 fails at every `pct` strength, an `atr` variant is unlikely to rescue it.
+- **The guard combined with Run 10's stall cut.** Both are mild positives on different trades.
+
+Harness: `scratchpad/sl_guarded.py` — a `GuardedExecution` subclass, no repo file modified.
 Throwaway, not committed.
