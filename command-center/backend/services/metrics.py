@@ -39,6 +39,35 @@ def effective_dd_limit_usd(ruleset: Optional[dict]) -> float:
     return float(ruleset.get("max_loss_eod") or ruleset.get("daily_loss_cap") or 0)
 
 
+def effective_dd_limit_pct(ruleset: Optional[dict]) -> Optional[float]:
+    """
+    The same drawdown limit expressed as a PERCENT of the account, or None when the ruleset
+    states none. None means NOT GRADEABLE — do not substitute a default. Total ruin (100%) was
+    measured as a candidate default and rejected: a compounding simulation can never reach a zero
+    balance, so a 10%-risk strategy with a 70.4% worst-1% drawdown clears a ruin bar and would be
+    graded A. A threshold almost nothing can fail is not a grade.
+
+    Percent is the comparison that survives compounding. A dollar limit is fixed while a
+    compounding account is not, so once the account has grown the two are not comparable: on run
+    06f7eece0db1 the dollar view reported a 100% breach of TOTAL RUIN ($10k on a $10k account)
+    across simulations in which the account was never once wiped out — 0.00% real ruin. Every
+    ruleset already carries the percent, either stated outright or derivable, so nothing new has
+    to be defined to use it.
+    """
+    if not ruleset:
+        return None
+    size = ruleset.get("account_size")
+    if ruleset.get("ruleset_type") in ("personal", "demo"):
+        pct = ruleset.get("max_drawdown_from_peak_pct")
+        return float(pct) if pct else None
+    # Prop rows state the limit in dollars against a fixed account size, so the percent is that
+    # ratio — a $5,000 trailing max loss on a $50,000 account is 10%.
+    usd = effective_dd_limit_usd(ruleset)
+    if usd > 0 and size:
+        return usd / float(size) * 100.0
+    return None
+
+
 def daily_sharpe_from_values(daily_values: list[float]) -> float:
     """
     Annualized Sharpe from a list of per-day P&L values.

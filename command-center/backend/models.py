@@ -1015,6 +1015,15 @@ class StressTest(BaseModel):
     median_max_dd: Optional[float] = None
     pct5_max_dd: Optional[float] = None
     pct1_max_dd: Optional[float] = None
+    # The same drawdowns against the ACCOUNT, as a percent, and which of the two bases the grade
+    # read. Percent once the run compounds (a fixed dollar limit stops being comparable to a
+    # growing account); dollars otherwise. Null on fixed-size runs and on rows predating this.
+    # These MUST be declared here or Pydantic drops them silently on the way to the browser —
+    # the same trap `entry_ms` and `favorable`/`adverse` hit on EquityPoint.
+    median_max_dd_pct: Optional[float] = None
+    pct5_max_dd_pct: Optional[float] = None
+    pct1_max_dd_pct: Optional[float] = None
+    dd_basis: Optional[str] = None
     prob_breach: Optional[float] = None
     prob_pass_eval: Optional[float] = None
     walk_forward_windows: int = 5

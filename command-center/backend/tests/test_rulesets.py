@@ -22,8 +22,9 @@ def test_cold_start_seeds_all_four_firms(client):
     r = client.get("/rulesets")
     assert r.status_code == 200
     rulesets = r.json()
-    # 14 prop + personal forex/futures demo + unconstrained (added 2026-07-16).
-    assert len(rulesets) == 17
+    # 14 prop + personal forex/futures demo + unconstrained (2026-07-16)
+    # + personal_forex_risk (2026-07-30).
+    assert len(rulesets) == 18
     firms = {r["id"].split("_")[0] for r in _prop_rows(rulesets)}
     assert firms == set(PROP_FIRM_PREFIXES)
     assert LUCIDFLEX_IDS.issubset({r["id"] for r in rulesets})
@@ -139,4 +140,40 @@ def test_seeding_is_idempotent(fresh_db):
     before = len(lab_db.list_rulesets())
     lab_db.init_db()
     after = len(lab_db.list_rulesets())
-    assert before == after == 17
+    assert before == after == 18
+
+
+# ── personal_forex_risk: the gradeable forex row ──────────────────────────────
+# Every grade in services/grading.py is a statement about drawdown vs a limit, so a ruleset that
+# states none cannot produce a letter. This row exists to state one.
+
+def test_the_forex_risk_row_states_a_drawdown_limit(client):
+    """55%, Aaron's stated tolerance (2026-07-30). Without it the run is 'not graded'."""
+    from services.metrics import effective_dd_limit_pct
+    rs = client.get("/rulesets/personal_forex_risk").json()
+    assert rs["max_drawdown_from_peak_pct"] == 55.0
+    assert effective_dd_limit_pct(rs) == 55.0
+
+
+def test_the_forex_risk_row_does_not_inherit_the_prop_15_percent(client):
+    """The 15% on personal_forex_demo is a PROP-FIRM rule. Aaron's instruction is that it must
+    never be applied to forex, so a copy-paste of that row would be the specific wrong answer."""
+    rs = client.get("/rulesets/personal_forex_risk").json()
+    assert rs["max_drawdown_from_peak_pct"] != 15.0
+    assert rs["market"] == "forex"
+
+
+def test_the_forex_risk_row_carries_no_other_limit(client):
+    """Drawdown is the ONLY bar. A daily cap or a loss-streak rule would fire constantly at
+    10-12.5% risk per trade and turn the verdict into a statement about that rule instead."""
+    rs = client.get("/rulesets/personal_forex_risk").json()
+    assert rs["max_consecutive_loss_days"] is None   # the capped-day DISCARD rule is off
+    assert rs["daily_profit_target"] in (None, 0)    # no halt
+    assert rs["profit_target"] == 0                  # nothing to hit
+    assert rs["max_loss_eod"] == 0                   # sentinel: no trailing EOD floor
+
+
+def test_unconstrained_still_states_no_limit(client):
+    """The new row is an ADDITION, not an edit. `unconstrained`'s whole purpose is having none."""
+    rs = client.get("/rulesets/unconstrained").json()
+    assert rs["max_drawdown_from_peak_pct"] is None

@@ -7,19 +7,20 @@ interface Props { sensitivity: StressTest['sensitivity_summary']; height?: numbe
 export default function SensitivityRadar({ sensitivity, height = 252 }: Props) {
   if (!sensitivity || Object.keys(sensitivity).length === 0) return null
 
-  // Grid sensitivity (auto-injected from an optimization) carries `degradation` (a PF drop)
-  // instead of the perturbation path's signed `pnl_delta_pct` — detect once so the tooltip names
-  // the metric correctly rather than always saying "PnL Delta".
-  const isGrid = Object.values(sensitivity).some(shifts =>
+  // Both sensitivity paths now carry `degradation` (a profit-factor change fraction). Records
+  // written before 2026-07-30 by the perturbation path instead carry a signed `pnl_delta_pct`, so
+  // the metric is detected per-record and the tooltip names whichever one this record actually
+  // holds — an old test must not be relabelled as something it never measured.
+  const isPf = Object.values(sensitivity).some(shifts =>
     Object.values(shifts).some(s => s.pnl_delta_pct == null && s.degradation != null))
-  const metricLabel = isGrid ? 'PF degradation' : 'PnL impact'
+  const metricLabel = isPf ? 'PF degradation' : 'PnL impact (legacy)'
 
   const data: { label: string; pnl_delta_pct: number }[] = []
   for (const [param, shifts] of Object.entries(sensitivity)) {
     for (const [shift, info] of Object.entries(shifts)) {
-      // Perturbation sensitivity carries a signed pnl_delta_pct. Grid sensitivity (auto-injected
-      // from an optimization) instead carries `degradation` (a 0..1 PF drop, always ≥ 0) — render
-      // it as a negative magnitude so a bigger drop = a longer red bar, matching the diverging axis.
+      // `degradation` is a 0..1 profit-factor change, always ≥ 0 — render it as a negative
+      // magnitude so a bigger change = a longer red bar, matching the diverging axis. A pre-
+      // 2026-07-30 record instead carries a signed pnl_delta_pct and is drawn as-is.
       const pct = info.pnl_delta_pct != null
         ? info.pnl_delta_pct
         : info.degradation != null ? -info.degradation * 100 : 0

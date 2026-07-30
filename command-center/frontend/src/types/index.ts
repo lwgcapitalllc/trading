@@ -314,7 +314,8 @@ export interface ParamSchemaEntry {
   core?: boolean            // essential knob — shown in the Essentials card up front
   widget?: 'toggle' | 'switch' | 'time' | 'number' | 'text'
   options?: { off: string; on: string }   // labels for a bool rendered as a segmented toggle
-  show_if?: Record<string, string | number | boolean>  // show only when another param equals a value
+  // show only when another param equals a value — or, with an array, equals ANY of them
+  show_if?: Record<string, string | number | boolean | Array<string | number | boolean>>
   guide?: [string, string]  // [what lowering does, what raising does]
   step?: number             // input step
 }
@@ -635,15 +636,21 @@ export interface WalkForwardWindow {
 }
 
 export interface SensitivityShift {
-  // Perturbation sensitivity (run_sensitivity_task) — signed PnL delta vs baseline.
+  // BOTH sensitivity paths — the perturbation runner and the optimizer-grid injection — now score
+  // `degradation`: a PROFIT-FACTOR change as a fraction (0..1). They used to disagree (perturbation
+  // reported a net-P&L delta) while writing the same `sensitivity_max_degradation` and being judged
+  // against the same grading thresholds, so one strategy could get two verdicts depending on which
+  // path produced its score. P&L is also a dollar figure, which let any position-sizing parameter
+  // swamp the score by arithmetic rather than by fragility.
+  degradation?: number
+  profit_factor?: number
   run_id?: string
   new_value?: number
+  value?: number
+  // Dollar effect of the shift, for reference only. `pnl_delta_pct` is written by NOTHING now and
+  // survives on records from before 2026-07-30; the chart still reads it so those stay renderable.
   pnl_delta?: number
   pnl_delta_pct?: number
-  // Grid sensitivity (auto-injected from an optimization) — PF degradation (0..1, always ≥ 0).
-  value?: number
-  profit_factor?: number
-  degradation?: number
 }
 
 export interface StressTest {
@@ -667,6 +674,13 @@ export interface StressTest {
   prob_pass_eval: number | null
   walk_forward_windows: number
   walk_forward_summary: WalkForwardWindow[] | null
+  // The same Monte Carlo drawdowns against the ACCOUNT, as a percent, and which basis the grade
+  // read. 'percent' once the run compounds — a fixed dollar limit is not comparable to an account
+  // that grew away from it. Null on fixed-size runs and on tests run before 2026-07-30.
+  median_max_dd_pct: number | null
+  pct5_max_dd_pct: number | null
+  pct1_max_dd_pct: number | null
+  dd_basis: 'percent' | 'dollars' | null
   walk_forward_degradation: number | null
   sensitivity_summary: Record<string, Record<string, SensitivityShift>> | null
   sensitivity_max_degradation: number | null

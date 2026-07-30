@@ -333,6 +333,14 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_runs_stack ON backtest_runs(stack_id)",
             "ALTER TABLE stress_tests ADD COLUMN mc_completed_at INTEGER",
             "ALTER TABLE stress_tests ADD COLUMN wf_completed_at INTEGER",
+            # Monte Carlo drawdown against the ACCOUNT, as a percent, plus which of the two bases
+            # the grade must read. A dollar drawdown stops being comparable to a fixed dollar limit
+            # once the account compounds away from the size that limit was written for. NULL on
+            # rows written before 2026-07-30 and on fixed-size runs, both of which grade in dollars.
+            "ALTER TABLE stress_tests ADD COLUMN median_max_dd_pct REAL",
+            "ALTER TABLE stress_tests ADD COLUMN pct5_max_dd_pct REAL",
+            "ALTER TABLE stress_tests ADD COLUMN pct1_max_dd_pct REAL",
+            "ALTER TABLE stress_tests ADD COLUMN dd_basis TEXT",
             "ALTER TABLE optimizations ADD COLUMN regime_filter TEXT",
             # Pass 1 — foundational config columns
             "ALTER TABLE rulesets ADD COLUMN risk_per_trade_pct REAL",
@@ -883,6 +891,44 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             0.0, 0, None,                       # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
             15.0, 3,
             "Forex demo/paper account. No real capital at risk.",
+            now, now,
+        ))
+
+    # ── Personal forex risk tolerance: the ONE bar Aaron actually accepts ────────
+    # `unconstrained` states no limit, so a run against it cannot be graded — every grade in
+    # `services/grading.py` is a statement about drawdown vs a limit, and there is no honest default
+    # to substitute (total ruin was measured as a candidate and rejected: a compounding simulation
+    # cannot reach a zero balance, so a 10%-risk strategy with a 70.4% worst-1% drawdown clears a
+    # ruin bar and would grade A).
+    #
+    # 55% is Aaron's stated tolerance (2026-07-30), chosen against his own measured numbers: on the
+    # A+ SOS Fade run the worst-5% of simulations draws down 53.2% and the worst-1% draws down
+    # 62.1%, so 55% accepts the 5% tail and explicitly does not accept the 1% tail. NOT the
+    # 15% on `personal_forex_demo` — that figure is a PROP-FIRM rule and Aaron's instruction is that
+    # it must never be applied to forex.
+    #
+    # Every other limit is deliberately absent, exactly as on `unconstrained`. A daily loss cap
+    # would fire constantly at 10-12.5% risk per trade and turn the verdict into a statement about
+    # the cap rather than about drawdown, which is the one thing this row exists to measure.
+    if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_forex_risk",)).fetchone():
+        conn.execute(_PERSONAL_DEMO_SQL, (
+            "personal_forex_risk",
+            "Personal Forex — 55% Drawdown",
+            10000, 0, 0, None,                  # profit_target 0, max_loss_eod 0 = no trailing floor
+            "static", None, None, None,         # no consistency, no min days, no force-flat
+            _FX_INSTRUMENTS,
+            None,                               # max_contracts null — no ladder
+            json.dumps(["MT5", "Python"]),
+            "demo", "personal", "forex", "usd",
+            None, None, None,                   # daily_loss_cap / weekly / daily_profit_target
+            None, 1.0, None,                    # no lock %, 1% risk fallback, no loss streak cap
+            None, None,                         # entry hours null — FX runs 24h
+            _FX_DAYS,
+            0.0, 0, None,                       # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
+            55.0, None,                         # THE limit, and the only one
+            "Forex risk tolerance: fail at 55% drawdown from peak, no other limits. The gradeable "
+            "counterpart to Unconstrained — same raw behaviour, but with the one bar stated, so a "
+            "stress test can return a letter instead of 'not graded'.",
             now, now,
         ))
 
@@ -2477,6 +2523,7 @@ def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict) -> None:
                 status='complete', completed_at=?, mc_completed_at=?,
                 median_final_pnl=?, pct5_final_pnl=?, pct1_final_pnl=?,
                 median_max_dd=?, pct5_max_dd=?, pct1_max_dd=?,
+                median_max_dd_pct=?, pct5_max_dd_pct=?, pct1_max_dd_pct=?, dd_basis=?,
                 prob_breach=?, prob_pass_eval=?,
                 equity_paths_path=?, distribution_path=?
             WHERE stress_test_id=?
@@ -2484,6 +2531,8 @@ def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict) -> None:
             now, now,
             mc.get("median_final_pnl"), mc.get("pct5_final_pnl"), mc.get("pct1_final_pnl"),
             mc.get("median_max_dd"), mc.get("pct5_max_dd"), mc.get("pct1_max_dd"),
+            mc.get("median_max_dd_pct"), mc.get("pct5_max_dd_pct"), mc.get("pct1_max_dd_pct"),
+            mc.get("dd_basis"),
             mc.get("prob_breach"), mc.get("prob_pass_eval"),
             paths.get("equity_paths_path"), paths.get("distribution_path"),
             stress_test_id,
@@ -2499,7 +2548,10 @@ def update_stress_test_walk_forward(stress_test_id: str, summary: list, degradat
         )
 
 
-def update_stress_test_sensitivity(stress_test_id: str, summary: dict, max_degradation: float) -> None:
+def update_stress_test_sensitivity(stress_test_id: str, summary: dict,
+                                   max_degradation: Optional[float]) -> None:
+    """`max_degradation` is None when sensitivity ran but nothing could be measured (no params, or
+    an unusable baseline profit factor). Grading treats None as not-run — never as a clean 0.0."""
     with _connect() as conn:
         conn.execute(
             "UPDATE stress_tests SET sensitivity_summary=?, sensitivity_max_degradation=? WHERE stress_test_id=?",
@@ -2507,7 +2559,10 @@ def update_stress_test_sensitivity(stress_test_id: str, summary: dict, max_degra
         )
 
 
-def update_stress_test_grade(stress_test_id: str, grade: str, reasons: list[str]) -> None:
+def update_stress_test_grade(stress_test_id: str, grade: Optional[str], reasons: list[str]) -> None:
+    """`grade` is None when the test completed but could not be graded (see grading.compute_grade
+    — a ruleset with no drawdown limit). The test is still `complete`; the reasons carry the why,
+    and `best_grades_by_strategy()` already filters `grade IS NOT NULL` so it is simply skipped."""
     now = int(time.time())
     with _connect() as conn:
         conn.execute(

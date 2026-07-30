@@ -18,7 +18,12 @@ import numpy as np
 
 from services import lab_db
 from services import notify
-from services.metrics import daily_sharpe, apply_canonical_sharpe, effective_dd_limit_usd
+from services.metrics import (
+    apply_canonical_sharpe,
+    daily_sharpe,
+    effective_dd_limit_pct,
+    effective_dd_limit_usd,
+)
 
 log = logging.getLogger("stress_tester")
 
@@ -39,11 +44,90 @@ MIN_TRADES_FOR_STRESS = 100
 # as not-assessable and each surviving window is clamped to a sane band before averaging.
 _WF_IS_SHARPE_FLOOR = 0.1          # below this the in-sample window had no real edge to degrade from
 _WF_DEG_CLAMP = (-1.0, 2.0)        # per-window degradation bounded to [-100%, +200%]
+# Minimum closed trades on EACH side of a window for its Sharpe to mean anything. 20 is the point
+# below which a single trade is worth more than 5% of the sample, so the ratio `1 - OOS/IS` reports
+# one trade's luck as a robustness verdict. Deliberately a flat count, not a fraction of the run:
+# the question is whether THIS window has enough evidence, which does not depend on how big the
+# whole backtest was.
+_WF_MIN_TRADES_PER_WINDOW = 20
 
 
 def _clamp_wf_degradation(deg: float) -> float:
     lo, hi = _WF_DEG_CLAMP
     return max(lo, min(hi, deg))
+
+
+# ── Which series is safe to shuffle ────────────────────────────────────────────
+
+# A dollar P&L series may be shuffled only if it is STATIONARY — i.e. a trade from late in the run
+# could equally have happened early. That holds when position size is constant, and fails whenever
+# size scales with the account: a strategy risking a % of equity, or any run the lab's own sizing
+# engine sized in consistent/bullet/manual mode. Then a late trade's dollars encode an account
+# balance that did not exist yet, and shuffling builds paths the account could never have taken.
+#
+# Measured on run 06f7eece0db1 (self-sizing, 10% risk, $10k → $382k): median |trade| ran $222 in the
+# first third to $3,913 in the last, a 17.7x drift, and the shuffle reported a worst-1% drawdown of
+# $41,970 — four times the account it started with. Shuffling that run's PERCENT returns instead
+# (drift 1.4x) gives $359,886. The old number was not merely imprecise, it was UNREACHABLE, and it
+# understated the real tail by ~8x.
+#
+# The choice is made from the DATA, never from a strategy flag or a config field, so it needs no
+# knowledge of which strategy ran and cannot be tuned per strategy. A fixed-size run keeps the
+# dollar model and its numbers do not move at all.
+_DRIFT_MIN_TRADES = 30      # below this, thirds are too small to judge drift from
+_DRIFT_TRIGGER    = 2.0     # dollar trade size must at least double across the run to look non-stationary
+
+
+def _median_abs(values: np.ndarray) -> float:
+    return float(np.median(np.abs(values)))
+
+
+def _drift(values: np.ndarray) -> float:
+    """Median |value| of the last third over the first third. 1.0 = stationary."""
+    n = len(values)
+    first = _median_abs(values[: n // 3])
+    last = _median_abs(values[2 * n // 3:])
+    if first <= 0 or last <= 0:
+        return 1.0
+    return last / first
+
+
+def choose_shuffle_series(
+    trade_pnls: list[float], balances: Optional[list[float]]
+) -> tuple[np.ndarray, str, float]:
+    """Pick the series whose distribution is stable across the run.
+
+    Returns (values, model, start_balance) where model is "dollars" (values are P&L, compose by
+    addition) or "returns" (values are per-trade fractional returns, compose by compounding).
+
+    Defaults to "dollars" — today's behaviour — and only switches when the data says the dollar
+    series drifted AND the account's own growth is what explains that drift. If trade size doubled
+    while the balance stayed flat (a volatility regime, not compounding), both series drift by the
+    same factor, neither is more stable, and the dollar model is kept.
+    """
+    pnls = np.asarray(trade_pnls, dtype=np.float64)
+    if balances is None or len(balances) != len(pnls) or len(pnls) < _DRIFT_MIN_TRADES:
+        return pnls, "dollars", 0.0
+
+    bal = np.asarray(balances, dtype=np.float64)
+    if not np.all(np.isfinite(bal)) or np.any(bal <= 0):
+        return pnls, "dollars", 0.0
+
+    returns = pnls / bal
+    # A return of -100% or worse wipes the account out; compounding past it is meaningless.
+    if np.any(1.0 + returns <= 0):
+        return pnls, "dollars", 0.0
+
+    dollar_drift = _drift(pnls)
+    return_drift = _drift(returns)
+    if dollar_drift < _DRIFT_TRIGGER:
+        return pnls, "dollars", 0.0
+    # Compare distance from 1.0 in LOG space so growth and shrinkage are weighed symmetrically —
+    # a fixed-size strategy on a doubling account has flat dollars and halving returns, and must
+    # keep the dollar model.
+    if abs(np.log(return_drift)) >= abs(np.log(dollar_drift)):
+        return pnls, "dollars", 0.0
+    return returns, "returns", float(bal[0])
 
 
 # ── Monte Carlo ────────────────────────────────────────────────────────────────
@@ -54,39 +138,77 @@ def run_monte_carlo(
     num_reshuffles: int = 10_000,
     num_bootstrap: int = 1_000,
     num_path_samples: int = 100,
+    balances: Optional[list[float]] = None,
 ) -> dict:
-    """Vectorised Monte Carlo on trade PnL list. Returns percentile stats + sampled paths."""
+    """Vectorised Monte Carlo on trade PnL list. Returns percentile stats + sampled paths.
+
+    `balances` is the account balance BEFORE each trade, in the same order. When supplied it lets
+    the simulation detect a compounding run and shuffle returns rather than dollars — see
+    choose_shuffle_series. Omit it and the dollar model is used, exactly as before.
+    """
     if not trade_pnls:
         raise ValueError("No trades to simulate")
 
-    trades = np.array(trade_pnls, dtype=np.float64)
-    n = len(trades)
+    values, model, start_bal = choose_shuffle_series(trade_pnls, balances)
+    n = len(values)
     rng = np.random.default_rng()
+
+    def _paths(idx: np.ndarray) -> np.ndarray:
+        """Cumulative P&L (not balance) per simulated path, so every downstream stat is unchanged.
+
+        Dollars compose by addition; returns compose by compounding off the real starting balance
+        and are then expressed back as cumulative P&L.
+        """
+        drawn = values[idx]
+        if model == "returns":
+            return start_bal * np.cumprod(1.0 + drawn, axis=1) - start_bal
+        return np.cumsum(drawn, axis=1)
 
     # Vectorised reshuffles: argsort(random) produces a random permutation per row
     idx_rs = np.argsort(rng.random((num_reshuffles, n)), axis=1)
-    shuffled = trades[idx_rs]
-    equity_rs = np.cumsum(shuffled, axis=1)
+    equity_rs = _paths(idx_rs)
     peak_rs = np.maximum.accumulate(equity_rs, axis=1)
     final_pnl_rs = equity_rs[:, -1]
     max_dd_rs = np.max(peak_rs - equity_rs, axis=1)
 
     # Vectorised bootstrap (sample with replacement)
     idx_bs = rng.integers(0, n, size=(num_bootstrap, n))
-    resampled = trades[idx_bs]
-    equity_bs = np.cumsum(resampled, axis=1)
+    equity_bs = _paths(idx_bs)
     peak_bs = np.maximum.accumulate(equity_bs, axis=1)
     final_pnl_bs = equity_bs[:, -1]
     max_dd_bs = np.max(peak_bs - equity_bs, axis=1)
 
-    all_pnls = np.concatenate([final_pnl_rs, final_pnl_bs])
     all_dds = np.concatenate([max_dd_rs, max_dd_bs])
 
-    # Final-PnL percentiles come from the BOOTSTRAP pool only. Reshuffles keep the same
-    # trades, so their sum (final PnL) is order-invariant — every reshuffle ends at the net
-    # total, which would collapse median/p5/p1 onto one number. Bootstrap resamples with
-    # replacement, so its final PnL genuinely varies. (Drawdown still uses both pools below —
-    # order DOES change drawdown, so reshuffles are valid there.)
+    # The SAME drawdowns expressed against the account, as a percent. A dollar drawdown is only
+    # comparable to a fixed dollar limit while the account stays near the size that limit was
+    # written for, and a compounding account does not: on run 06f7eece0db1 the dollar view reported
+    # a 100% breach of TOTAL RUIN across simulations that were never once wiped out.
+    #
+    # Each point is measured against the peak the balance had reached BY THAT POINT — the standard
+    # definition — not against the path's final peak, which would understate an early collapse.
+    #
+    # Only the compounding model has a balance series of its own (it is simulated off the real
+    # starting balance). A fixed-size run's percent would need an account size the simulation is
+    # not given, so it reports None and is graded in dollars, exactly as before. `dd_basis` names
+    # which of the two the grade should read.
+    dd_basis = "percent" if model == "returns" else "dollars"
+    all_dds_pct: Optional[np.ndarray] = None
+    if model == "returns" and start_bal > 0:
+        def _dd_pct(equity: np.ndarray) -> np.ndarray:
+            balance = equity + start_bal
+            peaks = np.maximum.accumulate(balance, axis=1)
+            return np.max((peaks - balance) / peaks, axis=1) * 100.0
+        all_dds_pct = np.concatenate([_dd_pct(equity_rs), _dd_pct(equity_bs)])
+
+    # Final-PnL percentiles come from the BOOTSTRAP pool only: it resamples WITH replacement, so it
+    # answers "what if the trades themselves had come out differently", which is the question a
+    # p5/p1 outcome is asking. Reshuffles answer a different one ("what if the same trades arrived
+    # in another order") and are used for drawdown, which order genuinely changes.
+    # (Under the dollar model reshuffles are also order-invariant in sum, so including them would
+    # collapse these three percentiles onto the net total. That is no longer true under the returns
+    # model — compounding is order-dependent — but the pool split is kept, because the reason above
+    # is the durable one and it holds for both models.)
     median_final_pnl = float(np.percentile(final_pnl_bs, 50))
     pct5_final_pnl   = float(np.percentile(final_pnl_bs, 5))   # worst 5% outcome by PnL
     pct1_final_pnl   = float(np.percentile(final_pnl_bs, 1))   # worst 1% outcome by PnL
@@ -94,8 +216,19 @@ def run_monte_carlo(
     pct5_max_dd      = float(np.percentile(all_dds, 95))   # 95th pct = worst-5% drawdown
     pct1_max_dd      = float(np.percentile(all_dds, 99))   # 99th pct = worst-1% drawdown
 
-    prob_breach = 0.0
-    prob_pass_eval = 0.0
+    pct_of = (lambda q: float(np.percentile(all_dds_pct, q))) if all_dds_pct is not None else (lambda q: None)
+    median_max_dd_pct = pct_of(50)
+    pct5_max_dd_pct   = pct_of(95)
+    pct1_max_dd_pct   = pct_of(99)
+
+    # None = NOT ASSESSABLE, and it is the correct answer whenever there is no rule to test against
+    # (no ruleset at all, or one with no drawdown limit — the "Unconstrained" row by design).
+    # These used to default to 0.0, which is a claim, not an absence: the page reported "0%
+    # probability of breaching" and "0% probability of passing" about the same run, and the second
+    # reads as "this strategy never passes" when nothing was ever measured. Both fields are already
+    # nullable in the DB and the frontend renders null as "—".
+    prob_breach: Optional[float] = None
+    prob_pass_eval: Optional[float] = None
     if ruleset:
         # Personal/demo: max_loss_eod = 0 is a sentinel (no trailing EOD rule), and the
         # old `or daily_loss_cap` fallback would wrongly use the per-day cap as a
@@ -104,7 +237,13 @@ def run_monte_carlo(
         max_loss = effective_dd_limit_usd(ruleset)
         profit_target = ruleset.get("profit_target") or 0
         rtype = ruleset.get("ruleset_type", "prop_eval")
-        if max_loss > 0:
+        # Breach probability MUST be measured on the basis the grade uses, or the headline number
+        # and the letter contradict each other. On a compounding run the percent basis also gives
+        # a no-limit ruleset something real to be tested against — total ruin — instead of nothing.
+        limit_pct = effective_dd_limit_pct(ruleset)
+        if dd_basis == "percent" and all_dds_pct is not None and limit_pct is not None:
+            prob_breach = float(np.mean(all_dds_pct > limit_pct))
+        elif max_loss > 0 and dd_basis == "dollars":
             prob_breach = float(np.mean(all_dds > max_loss))
         if rtype == "prop_eval" and profit_target > 0 and max_loss > 0:
             # Pass = hit target AND never breach drawdown, per path. Use the BOOTSTRAP pool only:
@@ -112,11 +251,13 @@ def run_monte_carlo(
             # with the target collapses the PnL test to a single value and skews the probability.
             # Bootstrap resamples vary both PnL and drawdown, so the pass rate is real.
             prob_pass_eval = float(np.mean((final_pnl_bs >= profit_target) & (max_dd_bs <= max_loss)))
-        elif rtype in ("prop_funded", "demo", "personal") and max_loss > 0:
+        elif rtype in ("prop_funded", "demo", "personal") and prob_breach is not None:
             # personal/demo have no profit-target requirement (profit_target = 0 sentinel) — per
             # spec they behave identically. "Pass" = never breached the drawdown rule. Without
             # personal here it fell through both branches and defaulted to 0.0, so a good personal
             # strategy would have reported 0% pass regardless of quality.
+            # Keyed on prob_breach rather than max_loss so it also covers the percent basis, where
+            # a no-limit ruleset is tested against ruin and there is no dollar limit to check.
             prob_pass_eval = 1.0 - prob_breach
 
     sampled_paths = equity_rs[:num_path_samples].tolist()
@@ -137,8 +278,19 @@ def run_monte_carlo(
         "median_max_dd":    round(median_max_dd, 2),
         "pct5_max_dd":      round(pct5_max_dd, 2),
         "pct1_max_dd":      round(pct1_max_dd, 2),
-        "prob_breach":      round(prob_breach, 4),
-        "prob_pass_eval":   round(prob_pass_eval, 4),
+        # The same drawdowns against the account. None on a fixed-size run, which has no balance
+        # series of its own — see the dd_basis note above.
+        "median_max_dd_pct": None if median_max_dd_pct is None else round(median_max_dd_pct, 2),
+        "pct5_max_dd_pct":   None if pct5_max_dd_pct is None else round(pct5_max_dd_pct, 2),
+        "pct1_max_dd_pct":   None if pct1_max_dd_pct is None else round(pct1_max_dd_pct, 2),
+        # Which of the two the grade must read. Persisted, because a grade computed on the wrong
+        # basis is wrong silently.
+        "dd_basis":         dd_basis,
+        "prob_breach":      None if prob_breach is None else round(prob_breach, 4),
+        "prob_pass_eval":   None if prob_pass_eval is None else round(prob_pass_eval, 4),
+        # Which series the shuffle used. Not persisted — logged by the caller so a compounding run
+        # is never silently re-modelled without it appearing anywhere.
+        "shuffle_model":    model,
         "sampled_paths":    sampled_paths,
         "distribution":     distribution,
     }
@@ -403,6 +555,12 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
     Run walk-forward windows. Uses NT8 native WF mode when the source run comes from
     a native optimization (one data load, all windows); falls back to N orchestrated
     backtests for standalone single runs.
+
+    WHAT THIS MEASURES, precisely: the SAME fixed parameters are run on each window's in-sample and
+    out-of-sample halves — nothing is re-tuned between them. So a large IS→OOS drop means the edge
+    did not hold up in the later period; it does NOT show that the parameters were overfitted,
+    because no fitting happens here for the out-of-sample half to be blind to. Detecting overfit
+    would need the optimizer re-run on each in-sample half and its winner tested on the OOS half.
     """
     st = lab_db.get_stress_test(stress_test_id)
     if not st:
@@ -435,7 +593,8 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
 
     summary = []
     for w in windows:
-        window_data = {"window": w["window"], "is_pnl": None, "oos_pnl": None, "is_sharpe": None, "oos_sharpe": None}
+        window_data = {"window": w["window"], "is_pnl": None, "oos_pnl": None, "is_sharpe": None,
+                       "oos_sharpe": None, "is_trades": None, "oos_trades": None}
 
         for period_type, p_start, p_end in [
             ("is",  w["is_start"],  w["is_end"]),
@@ -493,9 +652,11 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
             if period_type == "is":
                 window_data["is_pnl"] = round(pnl, 2)
                 window_data["is_sharpe"] = round(sharpe, 4)
+                window_data["is_trades"] = child.get("trade_count") or 0
             else:
                 window_data["oos_pnl"] = round(pnl, 2)
                 window_data["oos_sharpe"] = round(sharpe, 4)
+                window_data["oos_trades"] = child.get("trade_count") or 0
 
         summary.append(window_data)
 
@@ -511,12 +672,32 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
     # Each surviving window is also clamped to a sane band so one noisy small-sample window (a
     # couple of trades) can't blow up the mean. If no window qualifies, degradation is not
     # assessable → store None (UI shows "n/a", grading treats as not-run, never "solid").
+    #
+    # A window is ALSO excluded when either side closed too few trades to support a Sharpe at all.
+    # This is the same honesty rule as the floor above, applied to sample size instead of magnitude:
+    # both sides of `1 - OOS/IS` are mean/variance estimates, and over a handful of trades one trade
+    # dominates both. Measured on stress test 630cefbebd8347db (126 trades over 5 years, split 5
+    # ways): the out-of-sample halves closed 6, 6, 6, 12 and 8 trades, window 1 produced a Sharpe of
+    # -3.66 and window 5 +2.66 off six trades each, and averaging them was reported as "38.6%
+    # degradation" — false precision on noise.
+    #
+    # Refusing is the right answer AND an actionable one: `walk_forward_windows` is a user setting,
+    # so the fix is fewer, longer windows, not a looser test.
+    thin = [w["window"] for w in summary
+            if (w.get("is_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
+            or (w.get("oos_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW]
     degradations = [
         _clamp_wf_degradation(1.0 - (w.get("oos_sharpe") or 0) / w["is_sharpe"])
         for w in summary
         if w.get("is_sharpe") and w["is_sharpe"] >= _WF_IS_SHARPE_FLOOR
+        and w["window"] not in thin
     ]
     avg_deg = float(np.mean(degradations)) if degradations else None
+    if thin:
+        log.info("Walk-forward %s: %d of %d window(s) excluded — under %d trades on one side "
+                 "(windows %s). Re-run with fewer walk_forward_windows for a longer sample each.",
+                 stress_test_id, len(thin), len(summary), _WF_MIN_TRADES_PER_WINDOW,
+                 ", ".join(str(w) for w in thin))
 
     lab_db.update_stress_test_walk_forward(stress_test_id, summary, avg_deg)
     return True
@@ -525,7 +706,26 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
 # ── Sensitivity runner ─────────────────────────────────────────────────────────
 
 async def run_sensitivity_task(stress_test_id: str) -> bool:
-    """Run ±10%/±25% param perturbations sequentially through NT8. Updates DB when done."""
+    """Run ±10%/±25% param perturbations sequentially through NT8. Updates DB when done.
+
+    THE METRIC IS PROFIT FACTOR, not net P&L (changed 2026-07-30). Two reasons, and the second is
+    the load-bearing one:
+
+    1. Net P&L is a DOLLAR figure, so any parameter that scales position size swamps every real
+       robustness signal by arithmetic alone. On stress test 630cefbebd8347db the score was 85.8%
+       and came entirely from `exec_risk_pct` — turning risk up 25% turns profit up ~25%, which is
+       multiplication, not fragility. Scored on profit factor the same run reads 12.6%, and the
+       most sensitive setting becomes `aplus_window`, which is an actual strategy choice.
+    2. The OTHER sensitivity path — `_apply_grid_sensitivity_if_available`, used when the source run
+       came from an optimizer — has ALWAYS reported a profit-factor drop, and both paths write the
+       same `sensitivity_max_degradation` field and are judged against the same grading thresholds.
+       So one strategy could get two different verdicts depending on which path produced its score.
+       Whatever the right metric is, the two must agree; this makes them agree.
+
+    Magnitude is ABSOLUTE (`|new - base| / base`), keeping the old behaviour that a shift which
+    IMPROVES the result is just as much evidence the result moves. The grid path measures a one-
+    sided drop; both are a fraction of profit factor, which is what the shared threshold needs.
+    """
     st = lab_db.get_stress_test(stress_test_id)
     if not st:
         return False
@@ -543,7 +743,9 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
     param_schema: list = strategy.get("param_schema") or []
 
     if not base_params or not param_schema:
-        lab_db.update_stress_test_sensitivity(stress_test_id, {}, 0.0)
+        # None, not 0.0 — nothing was measured, and 0.0 would report "no parameter moved the
+        # result", the most reassuring answer available, on a strategy with no parameters to move.
+        lab_db.update_stress_test_sensitivity(stress_test_id, {}, None)
         return True
 
     # Only perturb numeric STRATEGY-LOGIC params — the same set the optimizer tunes.
@@ -557,8 +759,18 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
         and not _is_foundational(p)
     ]
 
-    # Baseline metrics
+    # Baseline metrics. Profit factor is the scored one (see the docstring); net P&L is kept
+    # alongside it purely so a shift's dollar effect is still visible on the record.
     baseline_pnl = source_run.get("net_pnl") or 0.0
+    baseline_pf = source_run.get("profit_factor")
+    # A baseline profit factor that is missing, zero or infinite gives nothing to measure a change
+    # against. That is NOT-ASSESSABLE, and it must be reported as None rather than 0.0 — a 0.0 here
+    # would read as "no parameter moved the result", the most reassuring possible answer, on a run
+    # where nothing was actually measured. Grading treats a None the same as not-run.
+    pf_usable = baseline_pf is not None and np.isfinite(baseline_pf) and baseline_pf > 0
+    if not pf_usable:
+        log.warning("Sensitivity %s: baseline profit factor is %r — degradation is not assessable",
+                    stress_test_id, baseline_pf)
 
     # MT5 runs one VPS job at a time — 4 shifts × N params = very long queues.
     # Use 2 shifts for slow runners; ±10% is sufficient to flag parameter sensitivity.
@@ -567,18 +779,37 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
     else:
         SHIFTS = [("+10%", 1.10), ("-10%", 0.90), ("+25%", 1.25), ("-25%", 0.75)]
     sensitivity: dict = {}
-    max_degradation = 0.0
+    max_degradation: Optional[float] = None
+
+    skipped: list[str] = []
 
     for param in numeric_params:
         pname = param["name"]
         baseline_val = base_params[pname]
         param_result = {}
+        # Values already measured for THIS param, so an int shift that rounds onto one we have
+        # already run doesn't run it twice.
+        seen_vals: set = set()
 
         for shift_label, factor in SHIFTS:
             new_val = baseline_val * factor
             # Respect int type
             if param.get("type") == "int":
                 new_val = int(round(new_val))
+
+            # A perturbation that lands back on the baseline TESTS NOTHING — it re-runs the
+            # identical backtest and books a 0% delta, which reads as "rock solid" when the truth
+            # is "never measured". Two ways it happens, both common:
+            #   • the param is 0 (0 x 1.10 == 0) — e.g. a TP rung or buffer left at zero;
+            #   • an int rounds straight back (pivot width 5: +10% -> 6 and +25% -> 6 as well,
+            #     so four shifts probe two distinct values).
+            # Measured on stress test 630cefbebd8347db: 43 of 60 sensitivity backtests were exact
+            # re-runs of the baseline, ~56 minutes of the 78-minute phase. Skip them, and record
+            # what was skipped rather than dropping it silently.
+            if new_val == baseline_val or new_val in seen_vals:
+                skipped.append(f"{pname} {shift_label} (={new_val})")
+                continue
+            seen_vals.add(new_val)
 
             perturbed_params = {**base_params, pname: new_val}
             child_id = uuid.uuid4().hex[:16]
@@ -617,21 +848,44 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
             ok = await _run_child_backtest(child_id, job_spec, runner)
             child = lab_db.get_run(child_id) if ok else None
             child_pnl = child.get("net_pnl") or 0.0 if child else 0.0
+            child_pf = child.get("profit_factor") if child else None
             pnl_delta = child_pnl - baseline_pnl
+
+            # `degradation` is the SCORED field and the same key the grid path writes, so the chart
+            # renders and labels both paths identically. None = this shift could not be measured
+            # (the child failed, or a profit factor was missing/infinite) — never 0.0, which would
+            # claim the parameter was tested and did nothing.
+            degradation = None
+            if pf_usable and child_pf is not None and np.isfinite(child_pf):
+                degradation = abs(child_pf - baseline_pf) / baseline_pf
 
             param_result[shift_label] = {
                 "run_id": child_id,
                 "new_value": new_val,
+                "degradation": None if degradation is None else round(degradation, 4),
+                "profit_factor": child_pf,
+                # Dollar effect, kept for reference only. NOT read by grading or the chart — the
+                # chart switches to the profit-factor bar as soon as `pnl_delta_pct` is absent.
                 "pnl_delta": round(pnl_delta, 2),
-                "pnl_delta_pct": round(pnl_delta / abs(baseline_pnl) * 100, 2) if baseline_pnl else 0.0,
             }
 
-            if baseline_pnl and abs(pnl_delta / baseline_pnl) > max_degradation:
-                max_degradation = abs(pnl_delta / baseline_pnl)
+            if degradation is not None:
+                max_degradation = degradation if max_degradation is None else max(max_degradation, degradation)
 
-        sensitivity[pname] = param_result
+        # A param with no measurable shift at all (every one landed on the baseline) is omitted
+        # rather than stored as an all-zero row: the chart draws one bar per shift, so an empty
+        # row would render four flat bars claiming the param was tested and didn't matter.
+        if param_result:
+            sensitivity[pname] = param_result
 
-    lab_db.update_stress_test_sensitivity(stress_test_id, sensitivity, round(max_degradation, 4))
+    if skipped:
+        log.info("Sensitivity %s: skipped %d no-op perturbation(s) (value unchanged from baseline): %s",
+                 stress_test_id, len(skipped), ", ".join(skipped))
+
+    lab_db.update_stress_test_sensitivity(
+        stress_test_id, sensitivity,
+        None if max_degradation is None else round(max_degradation, 4),
+    )
     return True
 
 
@@ -669,7 +923,7 @@ async def _apply_grid_sensitivity_if_available(st: dict, stress_test_id: str) ->
 
 # ── Telegram grade notification ───────────────────────────────────────────────
 
-def _fire_grade_notification(stress_test_id: str, run: dict, st: dict, grade: str, reasons: list[str]) -> None:
+def _fire_grade_notification(stress_test_id: str, run: dict, st: dict, grade: Optional[str], reasons: list[str]) -> None:
     strategy = lab_db.get_strategy(run.get("strategy_id", ""))
     strat_name = (strategy.get("name") or strategy.get("class_name") or "Unknown") if strategy else "Unknown"
     instrument = run.get("instrument", "?")
@@ -678,7 +932,9 @@ def _fire_grade_notification(stress_test_id: str, run: dict, st: dict, grade: st
 
     lines = [f"*Lab stress test complete*"]
     lines.append(f"Strategy: `{strat_name}` | `{instrument}`")
-    lines.append(f"Grade: *{grade}*")
+    # grade is None when the run was not gradeable (no drawdown limit on the ruleset) — say that
+    # rather than sending "Grade: *None*", which reads as a crash.
+    lines.append(f"Grade: *{grade}*" if grade else "Grade: _not graded_")
     if prob_pass is not None:
         lines.append(f"Pass probability: {round(prob_pass * 100, 1)}%")
     if p1_dd is not None:
@@ -720,6 +976,17 @@ async def run_stress_test_task(
             lab_db.update_stress_test_status(stress_test_id, "failed_no_trades", "No trades in equity curve")
             return
 
+        # Balance BEFORE each trade, so the simulation can tell a compounding run from a fixed-size
+        # one (see choose_shuffle_series). `equity` is the balance AFTER the trade on every runner's
+        # curve, so the opening balance is equity - profit. Built in the same pass as the P&L list so
+        # the two stay index-aligned; a curve missing `equity` yields None and the dollar model.
+        balances: Optional[list[float]] = [
+            t["equity"] - t["profit"] for t in equity_curve
+            if t.get("profit") is not None and t.get("equity") is not None
+        ]
+        if len(balances) != len(trade_pnls):
+            balances = None
+
         ruleset = lab_db.get_ruleset(st["ruleset_id"]) if st.get("ruleset_id") else None
 
         # ── Monte Carlo ──
@@ -727,7 +994,11 @@ async def run_stress_test_task(
             run_monte_carlo, trade_pnls, ruleset,
             st.get("num_simulations", 10_000),
             st.get("num_bootstrap", 1_000),
+            100,
+            balances,
         )
+        log.info("Stress test %s: Monte Carlo shuffled the %s series over %d trades",
+                 stress_test_id, mc.pop("shuffle_model", "dollars"), len(trade_pnls))
 
         st_dir = _RESULTS_DIR / stress_test_id
         st_dir.mkdir(parents=True, exist_ok=True)
