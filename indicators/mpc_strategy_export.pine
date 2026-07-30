@@ -117,7 +117,7 @@ var GRP_APLUS = "A+ Setup"
 //  read anywhere in this file. Deleted to buy compile tokens for the
 //  post-SOS divergence veto exemption. Arming is controlled by the
 //  execArmSweep / execArmDiv toggles in the Execution group instead.)
-int aplusWindow = input.int(4320, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 4320, group = GRP_APLUS, tooltip = "Staleness backstop in TIME: the SOS must fire within this many minutes of the sweep. The real kill switch is narrative (an opposite SOS disarms it), so this only filters extremely old sweeps.", display = display.none)
+int aplusWindow = input.int(4320, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 20160, group = GRP_APLUS, tooltip = "Staleness backstop in TIME: the SOS must fire within this many minutes of the sweep. The real kill switch is narrative (an opposite SOS disarms it), so this only filters extremely old sweeps. Default 4320 = 3 days; ceiling 20160 = 14 days (raised from 4320 on 2026-07-29 — the old ceiling EQUALLED the default, so the field could only be lowered, and typing anything above it was silently clamped). Kept identical to mpc_strategy.pine so a parity export can carry any value the parent can produce.", display = display.none)
 
 //============================================================
 //  A+ DEBUG (bar-replay diagnostics — no effect on trades)

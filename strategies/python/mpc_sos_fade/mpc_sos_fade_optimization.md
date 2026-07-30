@@ -31,6 +31,7 @@ Standing rules for anything recorded here:
 | 9 | 2026-07-28 | *"why not bank at the extension fibs?"* — Aaron's own hand rule (0.0 / −0.272 / −0.414 / −0.618) plus a stop-floor variant and a deep-rung variant (−1/−2/−3/−4/−6). 40 replays across 3 designs | **REJECTED in every form.** Shallow rungs **109.3R → 69.1R**; as a stop floor → **56.1R**; deep rungs → **106.3R**. Cause: only **29 of 164** trades ever reach 0.0 and the **11 past −0.618 carry 106R of the 109R**, so any fixed ceiling caps exactly what pays. | **do not build it** — read the verdict |
 | 10 | 2026-07-29 | *"cut the trade by the SHAPE of its path"* — Aaron's in-and-out-of-profit idea, a stall variant, and his fib-level cut. 3 families, ~130 variants + 6 real replays, on captured per-bar R paths | **Two rejected, one mild keeper.** The in/out pattern is **not a loss signal** (trades showing it lose 18–30% of the time vs a **32% base rate**) — every cut loses, best is −70.5R. The fib cut at **0.886 fires 0 times** (it IS the stop) and at 0.786 costs **−27.0R** (35 losers saved +12.6R, 4 winners cost −33.6R). Only the **stall** cut works: no +0.15R by bar 3 → close = **+4.8R real-replayed**, and **drawdown does not move (54.9%)**. | measured, **not adopted** |
 | 11 | 2026-07-29 | **Run 5's `exec_sl_level` sweep RE-RUN with Run 7's guard installed** — the file's stated highest-value open item. 5 SL levels × 4 guard strengths, 14 full-history replays | **ANSWERED, negatively. 0.886 is the right level.** 0.786 = **105.2R unguarded (below shipped) and 49.0R guarded**, and 72% of its unguarded total is 2024+2026 — the guard turns its 2024 from **+50.4R to −2.9R**, i.e. the tight-stop trades ARE the money. 0.702/0.618 reproduce Run 4's detonation on a third window. **The one improvement is `0.886 + pct 0.1`: 112.0R, maxDD 54.3%, worst trade −1.98R → −1.00R.** | **Run 7's guard CONFIRMED — awaiting Aaron's go** |
+| 12 | 2026-07-29 | *"what if I took the MISSED setups?"* — Aaron's question about the 2-of-3 misses that had sweep + SOS + the retrace but **no FVG in the zone**. Measured as an A/B on one input (`exec_req_fvg`), 2020-01-01 → 2026-07-29, plus a 3-level robustness sweep on the counterfactual entry price | **KEEP REQUIRING THE FVG.** 180 no-FVG misses, 173 would have filled at the 0.618 fallback: **50 win / 54 loss / 69 breakeven, +34.0R gross** — but they crowd out 17 real trades worth **+21.0R**, so the net is **+13.0R on 110.6R** while **drawdown goes 54.9% → 77.1%**. And it is not an edge: **40% of the +34R is ONE trade** (2020-01-02) and the sign **flips with the entry price** (+13.0R at fib 0.618, **−6.7R at 0.5**, −58.5R at 0.786). | **do not build it** — read the verdict |
 
 ✅ **Both Pine↔Python parity gates were re-run GREEN on 2026-07-29** (`compare_strategy.py`, 21,494
 bars, at the shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the ratchet through
@@ -1697,3 +1698,242 @@ the same floor on its band-origin stop.
 
 Harness: `scratchpad/sl_guarded.py` — a `GuardedExecution` subclass, no repo file modified.
 Throwaway, not committed.
+
+---
+
+# Run 12 — 2026-07-29 — the MISSED setups. "No FVG in the zone" is not lost money.
+
+**The question (Aaron's, verbatim in intent):** the strategy logs a pile of 2-of-3 misses where the
+sweep armed it, the SOS fired, price *did* retrace into the entry band — and no fair-value gap
+overlapped the band, so no limit ever rested. **If I had taken those trades, how many would have won,
+how many would have lost, and what would it have done to my P&L?** Window: 2020-01-01 → now.
+
+**The answer: they are a coin flip that costs more than it pays.** Taken at the strategy's own no-gap
+fallback they add **+34.0R gross**, but they displace **+21.0R** of real trades and push max drawdown
+from **54.9% to 77.1%**. 40% of the gross is one January-2020 trade, and the whole verdict **flips
+sign** if the counterfactual entry moves half a fib step. **Keep `exec_req_fvg = True`.**
+
+## How it was measured
+
+**One input changed, nothing else.** `exec_req_fvg` False is the Pine's OWN answer to "take it
+without the gap" (`if not execReqFVG ... longEdge := fiboP3` — rest the limit at the 0.618 / E1 fib),
+so the counterfactual is existing, parity-tested logic rather than a rule invented for the test.
+
+Two full replays over the **same 155,186 M15 bars** (2020-01-01 → 2026-07-29), shipped config
+otherwise, bar fills, warmup 1000. Trades are then paired **by entry bar**, which splits them three
+ways: MATCHED (in both), NEW (only the counterfactual — the no-FVG entries), DISPLACED (a baseline
+trade that no longer happens, because a new trade was holding the one position slot).
+
+**Harness validated two ways.** The baseline reproduces the shipped figure exactly — **164 trades,
+110.6R** vs the file's 110.65R — and all **147 matched trades are identical to the decimal** in both
+entry price and R (drift count: 0). So every difference below is genuinely the added setups, not a
+side effect.
+
+## The baseline's own miss ledger (what the chart's orange callouts count)
+
+| miss reason | n |
+|---|---|
+| No retrace (price never reached the band — the ordinary death) | 238 |
+| **No FVG in zone ← this run** | **180** |
+| Final hour (3-of-3, refused by the 16:00-18:00 rule) | 18 |
+| Never filled (3-of-3, limit rested, price never came back) | 7 |
+| Divergence / RSI veto (3-of-3) | 3 |
+
+180 no-FVG misses over 6.6 years, and **173 of them would actually have filled** at the 0.618 — the
+other 7 never traded that deep.
+
+## The result
+
+| | trades | sumR | win | loss | breakeven | avgWin | avgLoss | maxDD | final equity |
+|---|---|---|---|---|---|---|---|---|---|
+| **A — baseline (FVG required)** | 164 | **110.6** | 54 | 52 | 58 | 2.91 | −0.92 | **54.9%** | \$3.95M |
+| **B — no-FVG allowed** | 320 | **123.6** | 99 | 102 | 119 | 2.11 | −0.87 | **77.1%** | \$6.52M |
+| *the NEW no-FVG entries, in isolation* | 173 | **+34.0** | **50** | **54** | **69** | 1.52 | −0.82 | — | — |
+| *the baseline trades they DISPLACED* | 17 | **+21.0** | 5 | 4 | 8 | 4.97 | −1.00 | — | — |
+
+**The R arithmetic, which is the honest number** (order-free, unlike dollars):
+`110.6 + 34.0 − 21.0 = 123.6R`, i.e. **+13.0R, +11.7% of the edge, for +22 points of drawdown.**
+
+Aaron's question answered literally: of the 173, **50 won, 54 lost, 69 scratched at breakeven** —
+so roughly a third each way, and the median trade is **+0.04R**. That is a coin flip, and the
+breakeven third is only breakeven because the stop→BE staging rescued it.
+
+## Why the +34R is not an edge — two independent reasons
+
+**1. Concentration.** One trade (2020-01-02, +13.56R) is **40% of the total**, and the top 3 are
+**106%** of it — without the single best trade the remaining 172 make **+20.4R**, about **0.12R
+each**. Compare the shipped book's own avgR of 0.67.
+
+**2. It is a bet on the entry PRICE, not on the setups.** The whole test rests on where a limit with
+no gap to anchor it should sit. Move it and the verdict inverts:
+
+| fallback entry level | cf trades | cf sumR | delta vs baseline | new n | new R | maxDD |
+|---|---|---|---|---|---|---|
+| **0.618 (E1) — the Pine's own fallback** | 320 | 123.6 | **+13.0** | 173 | +34.0 | 77.1% |
+| 0.500 — shallowest legal entry | 352 | 103.9 | **−6.7** | 205 | +14.3 | 64.2% |
+| 0.786 — deep entry | 290 | 52.2 | −58.5 | 138 | −35.5 | 94.3% |
+
+Half a fib step shallower and the idea **loses** money. A result that changes sign under a
+cosmetic change to an arbitrary parameter is not a finding. (**The 0.786 row is contaminated** —
+with the stop at 0.886 the stop distance collapses and Run 4's degenerate-sizing hazard fires, which
+is why equity ends at \$3,355. Read it as "the hazard is still live at shallow entries", not as a
+−58.5R measurement.)
+
+## The displacement, which nobody would see on a chart
+
+17 real trades vanish because a no-FVG trade was already holding the position — including
+**2025-10-20 short, +16.49R**, which is single-handedly why 2025 goes **+22.4R → +1.6R**. This is the
+account-level allocator gap in `CLAUDE.md` showing up as a measured cost: with one position slot,
+adding marginal setups is not free, it is a **queue**, and the marginal setup can be standing in
+front of the trade that pays for the year.
+
+## Per year — it helped the first four years and hurt the last three
+
+| year | base n | base R | new n | new R | displaced R | cf R | delta |
+|---|---|---|---|---|---|---|---|
+| 2020 | 23 | 31.1 | 20 | +15.6 | 4.5 | 42.2 | **+11.1** |
+| 2021 | 23 | 5.4 | 21 | +6.3 | −0.5 | 12.2 | +6.8 |
+| 2022 | 22 | −4.0 | 35 | +15.4 | 1.8 | 9.6 | **+13.6** |
+| 2023 | 28 | 20.5 | 25 | +7.2 | 0.1 | 27.6 | +7.1 |
+| 2024 | 18 | 19.1 | 33 | −2.7 | −1.0 | 17.4 | −1.7 |
+| 2025 | 33 | 22.4 | 27 | −4.7 | 16.1 | 1.6 | **−20.8** |
+| 2026 | 17 | 16.2 | 12 | −3.1 | 0.0 | 13.1 | −3.1 |
+
+The gain is 2020-2023 and the damage is 2024-2026. Per this file's standing per-year rule, that is a
+config that worked in one regime, not an improvement.
+
+## Verdict
+
+1. **Keep `exec_req_fvg = True`. The FVG requirement is doing real work** — it is what makes the
+   book 164 trades at 0.67R instead of 320 at 0.39R.
+2. **The 180 "No FVG in zone" callouts are not lost money.** They are the filter working. The layer
+   is still worth having as a diagnostic; it is not a to-do list.
+3. **Drawdown is the disqualifier even on the best row.** 77.1% at 10% risk is not survivable, and
+   Run 6's Finding 5 stands again: nothing but risk % moves drawdown on this bot.
+4. **The 3-of-3 misses are a different and better question, and they are still open** — 18 final-hour
+   + 7 never-filled + 3 veto = 28 setups that had every confluence. That is where to look next, and
+   the final-hour bucket is the biggest single addressable one.
+
+## What was NOT measured
+
+- **Tick fills.** Bar mode, zero costs, like every run here. Note the counterfactual **doubles the
+  trade count**, so real spread/commission/swap would penalise it roughly twice as hard — it can only
+  weaken this row, not rescue it.
+- **A gap-quality relaxation instead of a removal.** `exec_fvg_deep_only=False` and `exec_fvg_50`
+  (which is unported here) both loosen *which* gaps qualify rather than dropping the requirement.
+  Those are the honest follow-ups if the question is revisited — not this one.
+- **The 3-of-3 buckets** (verdict item 4), the biggest of which is the final-hour rule.
+
+Harness: `scratchpad/nofvg_ab.py` (the A/B + pairing) and `scratchpad/nofvg_extra.py` (the entry-level
+robustness sweep + concentration). Both monkeypatch or re-configure `Execution`; **no repo file was
+modified.** Throwaway, not committed.
+
+## Run 12b — the four follow-ups Aaron asked for. All negative or neutral.
+
+Same window, same method (one input changed, trades paired by entry bar). Recorded here rather
+than as separate runs because they are one question: **can this strategy be made to trade more?**
+
+### 1. Size the extras smaller (Aaron: "I'd take those at 5%, not 10%")
+
+**Worse, and the direction of the error is instructive.** Risk % scales SIZE, not which trades
+fire — so it scales the extras' contribution but NOT the cost of them displacing a real trade.
+A 1%-risk no-FVG trade holds the one position slot exactly as long as a 10% one.
+
+| extras at | trades | sumR (10%-risk units) | equity | maxDD |
+|---|---|---|---|---|
+| 0.5% | 320 | 91.3 | 153x | 55.8% |
+| 1% | 320 | 93.0 | 179x | 53.1% |
+| 2% | 320 | 96.4 | 235x | 55.6% |
+| 5% | 320 | 106.6 | 426x | 64.9% |
+| 7.5% | 320 | 115.1 | 568x | 71.5% |
+| 10% | 320 | 123.6 | 652x | 77.1% |
+| *shipped* | *164* | *110.6* | *395x* | *54.9%* |
+
+Break-even is **X ≈ 6.2%** (`34.0R × X/10 = 21.0R`), so **5% is NEGATIVE (−4.0R)** and the
+trade-off gets monotonically worse as X falls. At X→0 you have blocked 17 real trades for nothing.
+**No X clears both bars** (beat baseline AND not raise drawdown).
+
+**The matched-drawdown control kills it outright on Aaron's own terms** (he was explicit that the
+goal is more money, not less drawdown): no-FVG at 5% = **426x at 64.9% DD**; the SHIPPED 164 trades
+at `exec_risk_pct=12.5` = **832x at 64.2% DD**. Same ruin risk, nearly double the money, zero new
+trades. Baseline gradient for reference: 5% → 44x/31.9%, 7.5% → 151x/44.4%, 10% → 395x/54.9%,
+11% → 545x/58.8%, 12% → 728x/62.5%. **Adding marginal setups is a strictly worse use of a risk
+budget than sizing up trades you already trust.**
+
+### 2. Deep-fib entries (Aaron's cut: "only the ones with deep fib entries")
+
+Wrong on BOTH axes he cares about — deeper means **fewer** trades *and* less money. The stop dial
+is included because it is a CONFOUND: at stop 0.886 an entry at 0.786 leaves ~0.1 of the leg as
+stop distance, which is Run 4's degenerate-sizing hazard, live.
+
+| entry | stop | added | addedR | win/loss/be | median |
+|---|---|---|---|---|---|
+| **0.618** | 0.886 (shipped) | **173** | **+34.0** | 50/54/69 | +0.04 |
+| 0.618 | 1.0 | 173 | +23.6 | 52/45/76 | +0.03 |
+| 0.702 | 0.886 | 153 | −12.8 | 43/82/28 | −0.32 |
+| 0.702 | 1.0 | 153 | −7.9 | 50/65/38 | +0.03 |
+| 0.786 | 0.886 | 138 | −35.5 | 31/92/15 | **−1.00** |
+| 0.786 | 1.0 | 138 | −8.8 | 42/72/24 | −0.27 |
+
+**The confound was real and is now separated:** 0.786 goes −35.5R → −8.8R once the stop moves to
+1.0, so most of the earlier catastrophe (equity → \$3,355) was the tight stop, NOT the entry.
+**Hazard-free, deep entries are still negative.** The tell is the 0.786/0.886 row's median of
+**exactly −1.00R** — the median added trade is a full stop-out, 92 of 138 lost.
+
+**Mechanism:** filling deeper requires a deeper retrace, and a retrace that deep is the reversal
+FAILING, not a better price. Shallower is no better (0.5 = −6.7R), so **0.618 is an interior
+optimum — the level the Pine already picks.**
+
+### 3. Loosen WHICH gaps qualify (`exec_fvg_deep_only=False`) — the one route that keeps the rule
+
+**The worst of the three: 229 trades (+65), 78.2R vs 110.6R, 395x → 37x, maxDD 62.6%.**
+The 101 added trades are worth **+3.4R total** (11 win / 20 loss / **70 breakeven** — median
++0.01R, pure noise), 36 real trades are displaced (+16.7R), and uniquely **it damages trades you
+already take**: 7 shared trades were RE-PRICED for **−19.1R**, because a shallower qualifying gap
+wins the "first price reaches" contest and drags the entry to a worse price. 2023 alone goes
++20.5R → −2.8R. **A looser gap rule is not additive — it is corrosive.**
+
+### 4. The final-hour rule (`exec_no_late_day=False`) — the last 3-of-3 bucket
+
+**Neutral. Keep the rule.** 18 setups are recorded as final-hour misses, but only **3 ever fill**
+once the clock stops refusing them — the rest still need price to come back to the limit.
+
+| | trades | sumR | equity | maxDD |
+|---|---|---|---|---|
+| rule ON (shipped) | 164 | 110.6 | 395x | **54.9%** |
+| rule OFF | 165 | 111.1 | 337x | **54.9%** |
+
+Added 3 (1 win / 1 loss / 1 breakeven, +1.8R), displaced 2 (+1.4R) → **net +0.4R on +1 trade**, and
+the biggest added trade is **186% of the added total** (without it: −1.6R). Drawdown is identical
+to the decimal. **The rule costs ~0.4R over 6.5 years and buys real session-gap protection — that
+is free insurance, not a constraint.** (Note the equity multiple FALLS, 395x → 337x, purely from
+compounding order — read sumR, not the multiple.)
+
+## Verdict on the whole thread — the trade count is not inside this strategy
+
+Four routes to more A+ trades, measured on 6.5 years: drop the gap (+173 trades, +13.0R net, 40%
+one trade, negative 2024-2026), size the extras down (negative below 6.2%), deepen the entry (fewer
+trades AND negative), loosen the gap rule (+65 trades, −32.4R). **The entry rule is not gatekeeping
+trade count out of fussiness — it IS the edge**, and with ONE position slot every marginal trade is
+a queue, not an addition.
+
+**This is the same conclusion the account-level allocator gap in the root `CLAUDE.md` predicts, now
+measured:** trade frequency is a PORTFOLIO property. The routes that remain are more SETUPS
+(`mpc_bleg` is built and parity-green), more instruments, or more timeframes — not a looser A+.
+
+## What was NOT measured (all four)
+
+- **Tick fills**, as everywhere in this file. Every variant here ADDS trades, so real costs
+  penalise them harder than the baseline — it can only strengthen these verdicts.
+- **`exec_fvg_50` / `exec_conf_sz`** — the two Pine entry fallbacks not yet ported to Python. Both
+  are "qualify a shallower entry", which is the family §3 just measured at −32R, so neither is
+  promising. Porting them for parity is still worth doing; sweeping them is not.
+- **A concurrency change.** Every number here assumes one position at a time. The displacement cost
+  (17 / 36 / 2 trades) only exists because of that, and it is the single biggest term in §1 and §3.
+  Whether the A+ book improves with two concurrent slots is a REAL open question — and it needs the
+  account-level risk allocator that `CLAUDE.md` lists as unbuilt and as a prerequisite for running
+  more than one bot live.
+
+Harness: `scratchpad/nofvg_ab.py`, `nofvg_extra.py`, `nofvg_tiered.py`, `nofvg_deep.py`,
+`loosen_gap.py`, `matched_dd.py`, `latehour.py` — all subclass or re-configure `Execution`; **no
+repo file modified.** Throwaway, not committed.

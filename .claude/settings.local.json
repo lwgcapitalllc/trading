@@ -61,7 +61,9 @@
       "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python --version)",
       "Bash(git -C /Users/alwg/trading ls-files -s command-center/start.sh)",
       "Bash(git -C /Users/alwg/trading status --short)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python nofvg_extra.py)",
+      "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python nofvg_tiered.py)"
     ]
   }
 }

@@ -22,10 +22,19 @@ shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the swing ratchet through
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-29 — **parity re-run GREEN on a fresh export that finally carries the
-ratchet AND the shipped 0/0 rungs** (`### PARITY GREEN 2026-07-29`). Every "the export is stale"
-warning in this file is cleared, with one exception that is NOT cleared: the export still has no
-`execMinStopMode`/`execMinStopVal` column, so nothing here validates the minimum-stop filter.
+**Last reviewed:** 2026-07-29 — **Run 12: "can this bot trade more?" is answered NO, and one claim in
+this file was measured wrong and is now corrected.** The `## The missed-setup watch` section used to
+call the "No FVG in zone" bucket the layer's *actionable* output; replaying 6.5 years with
+`exec_req_fvg` off shows those setups are a coin flip whose entire positive result is one 2020 trade
+and whose sign flips with the counterfactual entry price — see the ⚠ block there. Three other routes
+to more trades (smaller size on the extras, deeper entries, a looser gap rule) are negative too, and
+the final-hour rule costs ~0.4R over 6.5 years so it stays on. **No strategy code changed**; the only
+code change is a Pine UI cap (`aplusWindow` maxval 4320 → 20160, default still 4320, so no result
+moves — `aplus_window` here never had a cap). Earlier the same day: **parity re-run GREEN on a fresh
+export that finally carries the ratchet AND the shipped 0/0 rungs** (`### PARITY GREEN 2026-07-29`).
+Every "the export is stale" warning in this file is cleared, with one exception that is NOT cleared:
+the export still has no `execMinStopMode`/`execMinStopVal` column, so nothing here validates the
+minimum-stop filter.
 Earlier: 2026-07-27 — `exec_sl_level` defaulted **"1.0" → "0.886"** in lockstep with both
 A+ Pine files (Aaron's call — it is what he trades, and Run 6 rode it over the full history). The
 ⚠ block below is AMENDED, not retracted: 0.886 is still inside the entry band and neither Run 4
@@ -222,7 +231,19 @@ them through the toggles, and without it a "your arm source is off" reason could
 **Measured on the shipped window** (XAUUSD M15, 2025-03-04 → 2026-07-27, 33,041 bars, defaults):
 46 trades, 80 blocks, **93 misses** — 50 "No retrace" (none near), 35 "No FVG in zone" (all near),
 4 "Never filled", 4 "Final hour". So the chart opens on 43 markers and the routine 50 are one click
-away. The 35 is the actionable number this whole layer exists to produce.
+away.
+
+⚠ **"No FVG in zone" is a DIAGNOSTIC, not a to-do list — corrected 2026-07-29 (Run 12).** This
+section used to call that bucket "the actionable number this whole layer exists to produce". It was
+then measured over 6.5 years (2020-01-01 → 2026-07-29, 155,186 M15 bars) by replaying the same bars
+with `exec_req_fvg` off, and **taking those setups is not worth it**: 180 no-FVG misses, 173 fill at
+the 0.618 fallback, **50 win / 54 loss / 69 breakeven** (median +0.04R) for +34.0R gross — of which
+**40% is one January-2020 trade**, and they crowd out 17 real trades worth +21.0R, so the net is
++13.0R on a 110.6R book while max drawdown goes **54.9% → 77.1%**. The sign also flips with the
+counterfactual entry price (+13.0R at fib 0.618, **−6.7R at 0.5**), which is the signature of noise
+rather than an edge. Deepening the entry and loosening which gaps qualify are both worse still.
+**Read the layer as "why didn't this trade", never as "here is missed money"** — full record and the
+three other routes in `mpc_sos_fade_optimization.md` → Run 12 / 12b.
 
 ## Secondary (1m sniper) re-entry — `exec_secondary` (built 2026-07-19, NOT committed)
 
@@ -422,8 +443,10 @@ which is new code here AND in the Pine. See Run 4's writeup for the two proposed
 
 **Every sweep of these levers is logged in `mpc_sos_fade_optimization.md`** — one entry per run,
 with the full grid, per-year and per-half R, and whether it was adopted. Read it before tuning
-anything here so a question already answered is not re-measured. Seven runs are recorded; **Run 1 is
-now ADOPTED (2026-07-27)**, the other six are measured and unadopted — Runs 1–3 on the same
+anything here so a question already answered is not re-measured. **Twelve runs are recorded.** Only
+1–7 are enumerated below (they are the exit-ladder work this section owns); 8–12 live in the log and
+are summarised in the paragraph after the list. **Run 1 is ADOPTED (2026-07-27)** and **Run 8 is
+SHIPPED (2026-07-28)**; every other run is measured and unadopted — Runs 1–3 on the same
 185,530 M15 bars / 187 trades, Runs 6–7 on the full 185,668-bar history at 188 trades:
 
 1. **TP split** (21 combos) — monotonic; best is `exec_tp1_pct=0, exec_tp2_pct=0` (100% on the
@@ -476,6 +499,24 @@ now ADOPTED (2026-07-27)**, the other six are measured and unadopted — Runs 1�
    **NOT** fix drawdown (−54.9% → −54.3%). **Not adopted — awaiting Aaron's go.** The follow-up it
    unblocks: re-run Run 5's `exec_sl_level` sweep with the guard installed, to see whether 0.786
    becomes adoptable.
+
+**Runs 8–12, in one line each** (full write-ups in the log; do not re-measure any of them):
+**8** the runner-exit space — **SHIPPED**, `"Structure + % ratchet"` at 1.0%, run-capture 43% → 53%
+on the same 164 trades at identical % drawdown; every tightening family lost 60–90%. · **9** banking
+at the extension fibs — **REJECTED in every form** (109.3R → 69.1R as rungs, 56.1R as a stop floor,
+106.3R as deep rungs); 11 trades past −0.618 carry 106R of the 109R, so any fixed ceiling caps
+exactly what pays. · **10** cutting by the SHAPE of the path — in/out-of-profit is **not** a loss
+signal (32% base rate), the 0.886 fib cut fires zero times and 0.786 costs −27.0R; only a "no +0.15R
+by bar 3 → close" stall cut is mildly positive (+4.8R) and it does not move drawdown. · **11** the
+`exec_sl_level` sweep re-run WITH Run 7's guard — **`exec_sl_level` is settled at "0.886"**; 0.786 is
+105.2R unguarded / 49.0R guarded, and 0.702/0.618 detonate. The one improvement is `0.886 + pct 0.1`
+(112.0R, maxDD 54.3%, worst trade −1.98R → −1.00R), which independently confirms Run 7. · **12** *can
+this strategy trade MORE?* — **no, not from inside the entry rule.** Dropping the FVG requirement,
+sizing those extras smaller, deepening the entry and loosening which gaps qualify are all negative
+or noise (see the ⚠ block in `## The missed-setup watch`), and the final-hour rule costs ~0.4R over
+6.5 years so it stays on. **Trade count is a PORTFOLIO property here** — with one position slot every
+marginal setup displaces a real one, and sizing UP trades already trusted beats adding new ones
+(shipped book at `exec_risk_pct=12.5` = 832x @ 64.2% DD vs 426x @ 64.9% for the loosened book).
 
 ## The 2026-07-26 exit-lever sync
 
