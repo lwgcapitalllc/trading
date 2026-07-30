@@ -2650,12 +2650,31 @@ function NewsMiniKpi({ label, value, from, to, kind, goodWhen }: {
   label: string; value: React.ReactNode; from: number; to: number
   kind: 'money' | 'pct' | 'pf' | 'num'; goodWhen?: 'higher' | 'lower'
 }) {
+  // Two lines, not three (delta BESIDE the value), and no border — this tile repeats five times
+  // directly above the Equity chart, inside a card that is already a box. Nested boxes read heavy,
+  // and every line the tile costs is a line of separation between the controls and the curve they
+  // reshape.
   return (
-    <div className="rounded-md border border-border-subtle bg-bg-sunken px-3 py-2 min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-text-tertiary">{label}</div>
-      <div className="text-[15px] font-semibold tabular-nums text-text-primary truncate">{value}</div>
-      <div className="text-[11px] mt-0.5"><NewsDelta from={from} to={to} kind={kind} goodWhen={goodWhen} /></div>
+    <div className="rounded-md bg-bg-sunken px-2.5 py-1.5 min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-text-tertiary truncate">{label}</div>
+      <div className="flex items-baseline gap-1.5 min-w-0">
+        <div className="flex-1 min-w-0 text-[15px] font-semibold tabular-nums text-text-primary truncate">{value}</div>
+        <div className="text-[11px] shrink-0"><NewsDelta from={from} to={to} kind={kind} goodWhen={goodWhen} /></div>
+      </div>
     </div>
+  )
+}
+
+// One excluded-trade count: a coloured dot, the number, the noun. It replaced a sentence per count
+// ("3 bank-holiday trades always excluded") — the rule that made the sentence long lives in the
+// panel's single InfoTip instead, where it costs no height.
+function NewsCountChip({ n, noun, tone }: { n: number; noun: string; tone: 'holiday' | 'news' }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12px]">
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'holiday' ? 'bg-neg-text' : 'bg-gold-text'}`} />
+      <span className="tabular-nums font-medium text-text-primary">{n}</span>
+      <span className="text-text-tertiary">{noun}{n === 1 ? '' : 's'}</span>
+    </span>
   )
 }
 
@@ -2756,65 +2775,58 @@ function NewsFilterCard({ news }: { news: NewsFilter }) {
   if (!enabled) return null
 
   // The header has to be readable CLOSED, because closed is the default and the filter can be
-  // silently reshaping the Equity chart above. So the summary states which way the toggle is set and
-  // how many trades that takes out — never just a title you have to open to interpret.
-  const excluded = holidayCount + (removeNews ? newsCount : 0)
-  const summary = isLoading ? 'Checking the calendar…'
-    : noData  ? 'No calendar data cached for this period'
-    : oldRun  ? 'No trade times recorded on this run'
-    : nothingHit ? 'No releases or bank holidays landed on any trade'
+  // silently reshaping the Equity chart above. It carries ONE line: the state, not a title. The
+  // title is the SectionLabel directly above it — a card headed "Remove trades around high-impact
+  // news" under a heading reading "NEWS & HOLIDAY FILTER" said the same thing twice, and the state
+  // is the only part of it you can't already see.
+  const summary = isLoading ? <>Checking the calendar…</>
+    : noData     ? <>No calendar data for this period</>
+    : oldRun     ? <>No trade times on this run</>
+    : nothingHit ? <>Nothing landed on a trade</>
     : report?.has_data && hasEntryTimes
-      ? `${removeNews ? 'News removed' : 'News kept'} · ${excluded} of ${baseline.trades} trades excluded`
-      : ''
+      ? <>
+          <span className="tabular-nums font-medium text-text-primary">{filtered.trades}</span>
+          {' of '}
+          <span className="tabular-nums">{baseline.trades}</span>
+          {' trades kept'}
+        </>
+      : null
 
+  // No space-y on the root — SectionLabel already carries its own mb-3, and the two stacked on top
+  // of each other were spending 24px on one gap.
   return (
-    <div className="space-y-3">
+    <div>
       <SectionLabel>News &amp; Holiday Filter</SectionLabel>
       <div className="rounded-lg border border-border-subtle bg-bg-surface overflow-hidden">
         <button
           onClick={toggleOpen}
-          className={`w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-bg-elevated/30 transition-colors ${open ? 'border-b border-border-subtle' : ''}`}
+          className={`w-full px-4 py-2 flex items-center gap-2.5 text-left hover:bg-bg-elevated/30 transition-colors ${open ? 'border-b border-border-subtle' : ''}`}
         >
-          <div className="flex items-center gap-2 min-w-0">
-            <Newspaper size={15} className="text-accent shrink-0" />
-            <div className="min-w-0">
-              <div className="text-[13px] font-medium text-text-primary">
-                Remove trades around high-impact news
-              </div>
-              <div className="text-[11px] text-text-tertiary mt-[2px] truncate">
-                {summary}
-                {active && <span className="text-accent"> · Equity chart filtered</span>}
-              </div>
-            </div>
-          </div>
+          <Newspaper size={14} className="text-accent shrink-0" />
+          <span className="text-[12px] text-text-secondary min-w-0 truncate">{summary}</span>
+          {active && (
+            <span className="shrink-0 rounded px-1.5 py-[1px] text-[10px] font-medium border border-accent/25 bg-accent/10 text-accent">
+              Equity chart filtered
+            </span>
+          )}
+          <span className="flex-1" />
           {open ? <ChevronUp size={15} className="text-text-tertiary shrink-0" />
                 : <ChevronDown size={15} className="text-text-tertiary shrink-0" />}
         </button>
 
       {open && (
-      <div className="p-4 space-y-4">
-        {/* News-window toggle. Holidays are not on this toggle — always excluded. */}
-        {report?.has_data && hasEntryTimes && (
-          <div className="inline-flex rounded-md border border-border-subtle overflow-hidden">
-            {(['Included', 'Removed'] as const).map(opt => {
-              const on = (opt === 'Removed') === removeNews
-              return (
-                <button key={opt} onClick={() => setRemoveNewsChoice(opt === 'Removed')}
-                  className={`px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                    on ? 'bg-accent text-bg-base' : 'bg-bg-sunken text-text-secondary hover:text-text-primary'}`}>
-                  News {opt}
-                </button>
-              )
-            })}
-          </div>
-        )}
-
+      // Deliberately SHORT and deliberately terse. This panel sits directly above the Equity chart
+      // it reshapes and the two have to be readable together, so it is laid out as an instrument
+      // row — knobs LEFT, resulting numbers RIGHT — not as prose. Every rule that used to be a
+      // sentence on screen ("bank holidays are always excluded", "every other number is the raw
+      // backtest") is in the one InfoTip below, where it costs no height and no reading.
+      <div className="px-4 py-3 space-y-2.5">
         {isLoading && <div className="text-[12px] text-text-tertiary">Checking the calendar…</div>}
 
         {noData && (
           <div className="flex items-start gap-2 text-[12px] text-text-secondary">
             <Info size={14} className="text-text-tertiary mt-0.5 shrink-0" />
-            <span>No news data cached for this period yet. Run <code className="text-text-primary">engines/news/tools/backfill.py</code> for these months to turn the filter on. Until then the backtest is shown unfiltered.</span>
+            <span>No calendar data cached for these months — the run is shown unfiltered. Backfill with <code className="text-text-primary">engines/news/tools/backfill.py</code>.</span>
           </div>
         )}
 
@@ -2823,72 +2835,89 @@ function NewsFilterCard({ news }: { news: NewsFilter }) {
             <Info size={14} className="text-warn-text mt-0.5 shrink-0" />
             {/* Reload charts re-exports from NT8 on the VPS, so it is the fix on that runner ONLY.
                 Offering it on an MT5 or Python run sends you to a button that cannot help. */}
-            <span>This run was made before trade times were recorded, so there is nothing to match against the calendar. {news.isNt8
-              ? <>Hit <span className="text-text-primary font-medium">Reload charts</span> (or rerun it) to record each trade's time and enable the filter.</>
-              : <><span className="text-text-primary font-medium">Rerun it</span> to record each trade's time and enable the filter.</>}</span>
+            <span>This run recorded no trade times, so nothing can be matched against the calendar. {news.isNt8
+              ? <><span className="text-text-primary font-medium">Reload charts</span> or rerun it to enable the filter.</>
+              : <><span className="text-text-primary font-medium">Rerun it</span> to enable the filter.</>}</span>
           </div>
         )}
 
         {report?.has_data && hasEntryTimes && (
-          <>
-            {/* Window sliders — drag to change how long before/after a release to block; re-tags live. */}
-            <div className="flex items-center gap-x-6 gap-y-2 flex-wrap">
-              <label className="flex items-center gap-2 text-[12px] text-text-secondary">
-                <span className="w-20 shrink-0">Before news</span>
-                <input type="range" min={0} max={120} step={5} value={pre}
-                  onChange={e => setPre(Number(e.target.value))}
-                  className="w-40 accent-accent cursor-pointer" />
-                <span className="w-10 tabular-nums text-text-primary font-medium">{pre}m</span>
-              </label>
-              <label className="flex items-center gap-2 text-[12px] text-text-secondary">
-                <span className="w-20 shrink-0">After news</span>
-                <input type="range" min={0} max={120} step={5} value={post}
-                  onChange={e => setPost(Number(e.target.value))}
-                  className="w-40 accent-accent cursor-pointer" />
-                <span className="w-10 tabular-nums text-text-primary font-medium">{post}m</span>
-              </label>
-            </div>
-            {nothingHit ? (
-              <div className="text-[12px] text-text-tertiary">No news releases or bank holidays landed on any trade in this window.</div>
-            ) : (
-              <>
-              <div className="flex items-center gap-4 text-[12px] text-text-secondary flex-wrap">
-                <span>
-                  <span className="text-neg-text font-medium tabular-nums">{holidayCount}</span> bank-holiday {holidayCount === 1 ? 'trade' : 'trades'} always excluded
-                </span>
-                <span className="text-text-tertiary">·</span>
-                <span>
-                  <span className="text-gold-text font-medium tabular-nums">{newsCount}</span> news-window {newsCount === 1 ? 'trade' : 'trades'} {removeNews ? 'removed' : 'kept'}
-                </span>
+          // Flex-wrap, not a viewport breakpoint, because the params side panel changes the width
+          // available here — when the numbers can no longer hold their `min-w` the block simply
+          // drops to its own full-width line, which is the stacked layout.
+          <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+            <div className="shrink-0 max-w-full space-y-2">
+              {/* Row 1 — the knobs. "News" is a field label, so the segments don't have to repeat
+                  the word; holidays are not on this toggle (always excluded, see the InfoTip). The
+                  sliders are the blackout window either side of a release; both re-tag live. */}
+              <div className="flex items-center gap-x-5 gap-y-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] text-text-tertiary">News</span>
+                  <div className="inline-flex rounded-md border border-border-subtle overflow-hidden shrink-0">
+                    {(['Keep', 'Remove'] as const).map(opt => {
+                      const on = (opt === 'Remove') === removeNews
+                      return (
+                        <button key={opt} onClick={() => setRemoveNewsChoice(opt === 'Remove')}
+                          className={`px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                            on ? 'bg-accent text-bg-base' : 'bg-bg-sunken text-text-secondary hover:text-text-primary'}`}>
+                          {opt}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-[12px] text-text-tertiary">
+                  <span className="shrink-0">Before</span>
+                  <input type="range" min={0} max={120} step={5} value={pre}
+                    onChange={e => setPre(Number(e.target.value))}
+                    className="w-28 accent-accent cursor-pointer" />
+                  <span className="w-9 tabular-nums text-text-primary font-medium">{pre}m</span>
+                </label>
+                <label className="flex items-center gap-2 text-[12px] text-text-tertiary">
+                  <span className="shrink-0">After</span>
+                  <input type="range" min={0} max={120} step={5} value={post}
+                    onChange={e => setPost(Number(e.target.value))}
+                    className="w-28 accent-accent cursor-pointer" />
+                  <span className="w-9 tabular-nums text-text-primary font-medium">{post}m</span>
+                </label>
               </div>
 
-              {/* The five numbers are the whole answer to "does news cost me?" — each one the
-                  FILTERED value with its delta against the raw backtest underneath. The filtered
-                  equity curve that used to sit below them is gone: it was a second, smaller copy of
-                  the Equity chart further up the page. That chart now redraws on these same kept
-                  trades instead, so there is one curve and it moves with these controls. */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              {/* Row 2 — what those settings take out, as counts rather than sentences. */}
+              <div className="flex items-center gap-4 flex-wrap">
+                {nothingHit
+                  ? <span className="text-[12px] text-text-tertiary">Nothing excluded — no release or holiday landed on a trade</span>
+                  : <>
+                      <NewsCountChip n={holidayCount} noun="holiday" tone="holiday" />
+                      <NewsCountChip n={newsCount} noun="news trade" tone="news" />
+                    </>}
+                <InfoTip text={`Bank holidays are always excluded. News-window trades are excluded only while the toggle is set to Remove.${active ? ' Only the Equity chart above follows this filter — every other number and chart on the page reports the raw backtest.' : ''}`} />
+              </div>
+            </div>
+
+            {/* The five numbers are the whole answer to "does news cost me?" — each the FILTERED
+                value with its delta against the raw backtest beside it. The filtered equity curve
+                that used to sit below them is gone: it was a second, smaller copy of the Equity
+                chart further up the page. That chart now redraws on these same kept trades instead,
+                so there is one curve and it moves with these controls.
+                Uneven columns, same reasoning as the page's main KPI_COLS: the two money tiles carry
+                the long values, and a number whose font differs from its neighbours reads as broken
+                — so a long value is solved by ROOM, never by shrinking the type. min-w is what the
+                five need to stay legible; below it the block wraps rather than squeezing. */}
+            {!nothingHit && (
+              <div className="flex-1 min-w-[680px] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-[1.35fr_1fr_1fr_1.25fr_0.85fr] gap-1.5">
                 <NewsMiniKpi label="Net P&L" value={<FitMoney n={filtered.net} signed />}
                   from={baseline.net} to={filtered.net} kind="money" />
                 <NewsMiniKpi label="Win Rate" value={pct(filtered.winRate)}
                   from={baseline.winRate} to={filtered.winRate} kind="pct" />
                 <NewsMiniKpi label="Profit Factor" value={filtered.pf.toFixed(2)}
                   from={baseline.pf} to={filtered.pf} kind="pf" />
-                <NewsMiniKpi label="Max DD" value={dollar(filtered.maxDd)}
+                <NewsMiniKpi label="Max DD" value={<FitMoney n={filtered.maxDd} />}
                   from={baseline.maxDd} to={filtered.maxDd} kind="money" goodWhen="lower" />
                 <NewsMiniKpi label="Trades" value={filtered.trades}
                   from={baseline.trades} to={filtered.trades} kind="num" />
               </div>
-              {active && (
-                <div className="text-[11px] text-text-tertiary">
-                  The Equity chart above is drawn on these {filtered.trades} kept trades
-                  {removeNews ? ' (news + holidays removed)' : ' (holidays removed)'}. Every other
-                  number and chart on the page still reports the raw backtest.
-                </div>
-              )}
-              </>
             )}
-          </>
+          </div>
         )}
       </div>
       )}
