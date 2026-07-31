@@ -32,6 +32,19 @@ from typing import Any, Dict, Optional
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _INSTANCES = _REPO_ROOT / "algos" / "markets" / "fx" / "instances"
 
+# ── what may change under a RUNNING bot ─────────────────────────────────────────
+# Strategy params that the runner will pick up from a rewritten instance config without a
+# restart. Everything else needs one, deliberately: these are the knobs that change HOW
+# MUCH the bot risks, never WHICH trades it takes, so applying one leaves the running bot
+# still comparable to the backtest that justified it. Change which trades it takes and the
+# `strategy_source_hash` pin stops meaning anything.
+#
+# ⚠ MIRRORED in command-center/backend/services/bot_params.py::RUNTIME_EDITABLE, which is
+# what the Bots page will let you edit. The two cannot import each other (the subsystems
+# are independent by rule), so the command center pins the agreement with a test that
+# READS this file — see tests/test_bot_params_agreement.py. Change one, change both.
+RUNTIME_RELOADABLE = frozenset({"exec_risk_pct"})
+
 
 @dataclass
 class LiveConfig:

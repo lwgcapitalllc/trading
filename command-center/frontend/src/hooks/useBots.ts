@@ -71,7 +71,7 @@ export const useBotRestartOne = () => useBotAction('restart')
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-import type { BotConfigSections, BotConfigUpdate, TelegramUser, TelegramUserCreate } from '@/types'
+import type { BotConfigSections, BotConfigUpdate, BotParamsView, TelegramUser, TelegramUserCreate } from '@/types'
 
 export function useBotConfig(botName: string | null) {
   return useQuery({
@@ -79,6 +79,37 @@ export function useBotConfig(botName: string | null) {
     queryFn: () => api.get<BotConfigSections>(`/bots/${encodeURIComponent(botName!)}/config`),
     enabled: !!botName,
     staleTime: 60_000,
+  })
+}
+
+// ── Live parameters ──────────────────────────────────────────────────────────
+// What a running bot is actually configured with, and the one lever that may move
+// under it. The editable set is decided by the BACKEND (services/bot_params.py) —
+// this hook never assumes which rows are editable, it reads `row.editable`.
+
+export function useBotParams(botName: string | null) {
+  return useQuery({
+    queryKey: ['bots', 'params', botName],
+    queryFn: () => api.get<BotParamsView>(`/bots/${encodeURIComponent(botName!)}/params`),
+    enabled: !!botName,
+    staleTime: 30_000,
+  })
+}
+
+export function useSaveBotRuntime() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ botName, values }: { botName: string; values: Record<string, number> }) =>
+      api.patch<{ status: string; changed: boolean; detail?: string }>(
+        `/bots/${encodeURIComponent(botName)}/runtime`, { values, deploy: true }),
+    onSuccess: (data, { botName }) => {
+      toast.success(data.changed
+        ? `${botName}: ${data.detail} — applies at the next bar the bot is flat`
+        : `${botName} already at those values`)
+      qc.invalidateQueries({ queryKey: ['bots', 'params', botName] })
+      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+    },
+    onError: (err, { botName }) => toast.error(`${botName}: ${err}`),
   })
 }
 

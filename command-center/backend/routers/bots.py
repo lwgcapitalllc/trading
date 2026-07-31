@@ -4,6 +4,11 @@ Bots router — /bots/*
 Read endpoints:
   GET  /bots/snapshot                  — full VPS state via batched SSH
   GET  /bots/{bot_name}/log            — last N lines of stdout log
+  GET  /bots/{bot_name}/params         — what this bot is configured with (read-only)
+
+Runtime config:
+  PATCH /bots/{bot_name}/runtime       — the levers allowed to move on a RUNNING bot
+                                         (risk % only — see services/bot_params.py)
 
 Global control actions (all bots):
   POST /bots/start                     — run SYS_STARTUP task
@@ -30,7 +35,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 import config as cfg
-from models import BotCapUpdate, BotConfigSections, BotConfigUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
+from models import BotCapUpdate, BotConfigSections, BotConfigUpdate, BotParamsView, BotRuntimeUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
+from services import bot_params, lab_db
 from services.notify import send_telegram
 
 router = APIRouter(prefix="/bots", tags=["bots"])
@@ -38,19 +44,32 @@ router = APIRouter(prefix="/bots", tags=["bots"])
 VPS_HOST = cfg.SSH_ALIAS
 
 # Mirror algo.py's constants so behaviour matches the retired panel exactly.
-# All first-attempt bots deleted 2026-06-22 (see algos/docs/BOT_DEPLOYMENT_INFRA.md).
-# No bots registered — the Bots page shows the SYS_* jobs + Telegram only until a
-# new bot is added back here.
-_BOT_DISPLAY_ORDER = []
+# All first-attempt bots deleted 2026-06-22 (see algos/docs/BOT_DEPLOYMENT_INFRA.md);
+# the suite restarted from scratch 2026-07-31 (algos/CLAUDE.md → "CLEAN SLATE").
+#
+# ⚠ `BOT_MPC_SOS_FADE` IS NOT A REAL SCHEDULED TASK. Every key in these maps is a task
+# name because that is how the retired panel was keyed, but the live bot has no `BOT_*`
+# task of its own: it boots through SYS_STARTUP → startup_coordinator.py, and the command
+# center starts it through that same coordinator over WMI. `_parse_tasks` therefore never
+# returns a status for it, which is harmless — `get_snapshot` already treats the PROCESS
+# LIST as authoritative and only consults the task status as a secondary signal.
+_BOT_DISPLAY_ORDER = ["BOT_MPC_SOS_FADE"]
 _DISPLAY_NAMES = {
+    "BOT_MPC_SOS_FADE":   "MPC SOS Fade",
     "SYS_TELEGRAM":       "Telegram",
     "SYS_REPORTER":       "Reporter",
     "SYS_MONITOR":        "Monitor",
     "SYS_PNLTRACKER":     "P&L Tracker",
 }
-_TASK_BOT_KEYS = {}
-_TASK_ACCT_TYPE = {}
-_LOG_MAP = {}
+# The bot_key is also the string matched against the VPS process commandline
+# (`runner.py --bot mpc_sos_fade_demo`) — see `_is_python_running`.
+_TASK_BOT_KEYS = {"BOT_MPC_SOS_FADE": "mpc_sos_fade_demo"}
+_TASK_ACCT_TYPE = {"BOT_MPC_SOS_FADE": "demo"}
+# task → (bot_key, instance dir, log filename). algos/live/runner.py names its log after
+# the bot key, in the instance dir.
+_LOG_MAP = {
+    "BOT_MPC_SOS_FADE": ("mpc_sos_fade_demo", "mpc_sos_fade_demo", "mpc_sos_fade_demo.log"),
+}
 _SCHEDULED_JOBS = [
     JobStatus(name="Monitor",     schedule="every 1 min",  status="UNKNOWN"),
     JobStatus(name="P&L Tracker", schedule="every 1 min",  status="UNKNOWN"),
@@ -59,10 +78,13 @@ _SCHEDULED_JOBS = [
 
 # Crash-alert suppress keys — must match telegram_bot.py / monitor.py
 # (bot_key → the short key written to stop_suppress.json)
-_SUPPRESS_KEYS: dict[str, str] = {}
+_SUPPRESS_KEYS: dict[str, str] = {"mpc_sos_fade_demo": "mpc_sos_fade_demo"}
 
 # Risk caps per bot — mirrors bot_state.py BOT_THRESHOLDS.
-# Update here whenever thresholds change in the algo.
+# EMPTY ON PURPOSE. These are pnl_tracker's daily/weekly ALERT levels, and that job is
+# disabled (algos/CLAUDE.md → "On hold"), so a number here would render a cap on the Bots
+# page that nothing on the VPS enforces. The live bot's real risk lever is
+# `strategy_params.exec_risk_pct` in its instance config — see the runtime panel below.
 _BOT_THRESHOLDS: dict[str, dict[str, float]] = {}
 
 # bot_key → display name for notifications
@@ -93,12 +115,22 @@ def _get_thresholds(bot_key: str) -> dict[str, float]:
 
 # Maps (bot_key, cap_name) → [(section, field)] pairs to write into instance config.json.
 # These are the fields the strategy engines actually read for hard stops.
+# EMPTY for mpc_sos_fade_demo, and not an oversight: algos/live/ has no daily-cap or
+# weekly-cap field to write. Its only account-level lever is per-trade risk, and the
+# account-level allocator that would consume a daily budget is UNBUILT (root CLAUDE.md).
+# Writing caps into a config the bot never reads is how a dashboard starts lying.
 _CAP_CONFIG_FIELDS: dict[str, dict[str, list[tuple[str, str]]]] = {}
 
 
 # ── Per-bot config file mapping ───────────────────────────────────────────────
 # Maps bot_key → the instance config.json path and the strategy section name.
-_BOT_INSTANCE_MAP: dict[str, dict] = {}
+_BOT_INSTANCE_MAP: dict[str, dict] = {
+    "mpc_sos_fade_demo": {
+        "path": cfg.MONOREPO_ROOT / "algos" / "markets" / "fx" / "instances"
+                / "mpc_sos_fade_demo" / "config.json",
+        "section": "strategy_params",
+    },
+}
 
 
 def _read_instance_config(bot_key: str) -> dict:
@@ -196,20 +228,32 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     )
     sections = _parse_sections(_ssh(cmd1), "procs")
 
-    # No bot instances exist (all deleted 2026-06-22). Only the Telegram start
-    # marker is fetched; per-bot state is read from each instance's bot_state.json
-    # via _BOT_STATE_SECTIONS once a bot is registered again.
-    cmd2 = (
-        "echo ===TELEGRAM_START==="
-        " & if exist C:\\trading\\algos\\telegram_start.json"
-        " (type C:\\trading\\algos\\telegram_start.json)"
-    )
-    sections.update(_parse_sections(_ssh(cmd2), "state_main"))
+    # One `type` per registered instance's bot_state.json, plus the Telegram start marker.
+    # Built from _BOT_STATE_SECTIONS so adding a bot never means editing this string —
+    # the two drifting apart is how a registered bot silently reports no state forever.
+    # `type X 2>nul`, never `if exist X (type X)`. In cmd a trailing `& next` BINDS to the
+    # if-block, so one missing state file silently swallows every section after it — which
+    # is exactly how the Telegram row went blank the first time this was chained. `type` on
+    # a missing file just prints nothing and moves on.
+    parts = [f"echo ==={s.upper()}=== & type {_BOT_STATE_PATHS[s]} 2>nul"
+             for s, _ in _BOT_STATE_SECTIONS]
+    parts.append("echo ===TELEGRAM_START=== & type C:\\trading\\algos\\telegram_start.json 2>nul")
+    sections.update(_parse_sections(_ssh(" & ".join(parts)), "state_main"))
     return sections
 
 
-# (section, [bot keys in that bot_state.json]) — empty until a bot is registered.
-_BOT_STATE_SECTIONS: list[tuple[str, list[str]]] = []
+# (section, [bot keys in that bot_state.json]). One entry per instance dir — a single
+# bot_state.json can hold several bot keys, which is why the value is a list.
+_BOT_STATE_SECTIONS: list[tuple[str, list[str]]] = [
+    ("state_mpc_sos_fade", ["mpc_sos_fade_demo"]),
+]
+
+# section → the VPS path `_fetch_vps_snapshot` types. Windows paths, so this stays a
+# literal string rather than anything derived from the Mac's filesystem.
+_BOT_STATE_PATHS: dict[str, str] = {
+    "state_mpc_sos_fade":
+        r"C:\trading\algos\markets\fx\instances\mpc_sos_fade_demo\bot_state.json",
+}
 
 
 def _parse_bot_states(snap: dict[str, str]) -> dict[str, dict]:
@@ -235,7 +279,11 @@ def _parse_tasks(snap: dict[str, str]) -> dict[str, str]:
         parts = line.split(",")
         if len(parts) < 3:
             continue
-        name = parts[0].strip('"')
+        # schtasks reports the task's PATH, not its name — `\SYS_MONITOR`, with a leading
+        # backslash (and `\Folder\Name` if one is ever nested). Matching the raw value
+        # against _DISPLAY_NAMES therefore never hit, so this returned {} and EVERY job on
+        # the Bots page read UNKNOWN from the day the router was written.
+        name = parts[0].strip('"').lstrip("\\").rsplit("\\", 1)[-1]
         status = parts[2].strip('"')
         if name in _DISPLAY_NAMES:
             tasks[name] = status
@@ -386,7 +434,17 @@ def get_snapshot():
         task_key = {"Monitor": "SYS_MONITOR", "P&L Tracker": "SYS_PNLTRACKER",
                     "Reporter": "SYS_REPORTER"}.get(job.name)
         t_status = task_statuses.get(task_key, "") if task_key else ""
-        status = "RUNNING" if t_status == "Running" else ("STOPPED" if t_status else "UNKNOWN")
+        # "Disabled" is its own answer, not a STOPPED. All three of these were switched
+        # off deliberately until a live bot is registered (algos/CLAUDE.md → "On hold"),
+        # and showing them as merely stopped reads as a fault the user should go fix.
+        if t_status == "Running":
+            status = "RUNNING"
+        elif t_status == "Disabled":
+            status = "DISABLED"
+        elif t_status:
+            status = "STOPPED"
+        else:
+            status = "UNKNOWN"
         jobs.append(JobStatus(name=job.name, schedule=job.schedule, status=status))
 
     # Telegram
@@ -593,6 +651,85 @@ def save_bot_config(bot_name: str, update: BotConfigUpdate):
         _notify_telegram(f"🔄 *{display}* config updated + restarting \\[command center\\]")
 
     return {"status": "ok"}
+
+
+@router.get("/{bot_name}/params", response_model=BotParamsView)
+def get_bot_params(bot_name: str):
+    """Everything this bot is configured with — what it trades, on which account, at which
+    version, and with which parameters. Read-only.
+
+    This is the answer to "what is that bot actually running?", which previously required
+    an SSH session and a JSON file. Labels come from the LAB's scanned schema for the same
+    strategy, so a knob is described identically here and in the Run modal.
+    """
+    _, bot_key = _resolve_bot(bot_name)
+    data = _read_instance_config(bot_key)
+    section = _BOT_INSTANCE_MAP[bot_key]["section"]
+
+    # Cosmetic only — a strategy the lab has never scanned still renders every parameter
+    # under its raw field name rather than dropping it.
+    schema = None
+    try:
+        row = lab_db.get_strategy(data.get("strategy_package", ""))
+        schema = (row or {}).get("param_schema")
+    except Exception:
+        pass
+
+    return BotParamsView(**bot_params.build_view(bot_key, data, schema, section))
+
+
+@router.patch("/{bot_name}/runtime")
+def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
+    """Change the levers that are allowed to move on a running bot.
+
+    Today that is `exec_risk_pct` alone — see `services/bot_params.py` for why the strategy
+    parameters are deliberately not in this set.
+
+    **The bot is NOT restarted.** It re-reads its own config at the top of a loop and
+    applies the change only while FLAT (`algos/live/runner.py::_maybe_reload_runtime`), so
+    a resize can never land mid-trade and leave a position being managed by rules that
+    would not have opened it. That is also why this endpoint does not need to know whether
+    a trade is open — the bot does, and it is the one holding the position.
+    """
+    _, bot_key = _resolve_bot(bot_name)
+    info = _BOT_INSTANCE_MAP[bot_key]
+    section = info["section"]
+
+    try:
+        values = bot_params.validate_runtime(update.values)
+    except bot_params.RuntimeUpdateError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    data = _read_instance_config(bot_key)
+    params = data.setdefault(section, {})
+    before = {k: params.get(k) for k in values}
+    if all(params.get(k) == v for k, v in values.items()):
+        return {"status": "ok", "changed": False, "detail": "Already at those values."}
+
+    params.update(values)
+    _write_instance_config(bot_key, data)
+
+    changed = ", ".join(f"{k} {before[k]} → {v}" for k, v in values.items())
+    if not update.deploy:
+        return {"status": "ok", "changed": True, "deployed": False, "detail": changed}
+
+    try:
+        _git_commit_push(info["path"], f"runtime: {bot_name} — {changed} [command center]")
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500,
+                            detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+    try:
+        out = _ssh("cd C:\\trading && git pull origin main")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+
+    display = _KEY_DISPLAY.get(bot_key, bot_key)
+    # Plain text, no Markdown: bot keys and param names are full of underscores, and
+    # Telegram drops the WHOLE message on an unbalanced entity rather than escaping it.
+    _notify_telegram(f"{display} runtime updated [command center]\n{changed}\n"
+                     f"Applies at the next bar the bot is flat.")
+    return {"status": "ok", "changed": True, "deployed": True, "detail": changed,
+            "output": out}
 
 
 @router.patch("/{bot_name}/caps")

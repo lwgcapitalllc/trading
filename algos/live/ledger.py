@@ -104,15 +104,23 @@ class Ledger:
     # ── trades ───────────────────────────────────────────────────────────────
     def trade_opened(self, *, ticket: int, direction: str, symbol: str, lots: float,
                      price: float, stop: float, tp1: float = 0.0, tp2: float = 0.0,
-                     intended_price: float = 0.0, confluences: Optional[dict] = None) -> None:
+                     intended_price: float = 0.0, risk_pct: Optional[float] = None,
+                     confluences: Optional[dict] = None) -> None:
         """`price` is the BROKER's fill; `intended_price` is where the strategy rested its
         limit. Both are recorded because the gap between them is the only honest measure of
-        live-vs-backtest execution quality, and it is invisible if only one is kept."""
+        live-vs-backtest execution quality, and it is invisible if only one is kept.
+
+        `risk_pct` is the sizing setting IN EFFECT for this trade. It can be changed under
+        a running bot from the command center (`algos/live/runner._maybe_reload_runtime`),
+        so without it a later reader has no way to explain why trade 14 was 0.05 lots and
+        trade 15 was 0.02 — and the live-vs-lab comparison, which is the entire reason this
+        ledger exists, becomes unreadable at exactly the point it starts to matter.
+        """
         self._write("trade", {
             "event": "opened", "ticket": ticket, "dir": direction, "symbol": symbol,
             "lots": lots, "price": price, "intended_price": intended_price,
             "slippage": (price - intended_price) if intended_price else None,
-            "stop": stop, "tp1": tp1, "tp2": tp2,
+            "stop": stop, "tp1": tp1, "tp2": tp2, "risk_pct": risk_pct,
             "confluences": confluences or {},
         })
 

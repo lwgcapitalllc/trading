@@ -87,7 +87,8 @@ export interface SizedTimelineDay {
 export interface JobStatus {
   name: string
   schedule: string
-  status: 'RUNNING' | 'STOPPED' | 'UNKNOWN'
+  /** DISABLED is distinct from STOPPED: switched off deliberately, not broken. */
+  status: 'RUNNING' | 'STOPPED' | 'DISABLED' | 'UNKNOWN'
 }
 
 export interface ProcessStatus {
@@ -286,6 +287,53 @@ export interface BotConfigUpdate {
   regime?: Record<string, unknown>
   dead_zone?: Record<string, unknown>
   deploy?: boolean
+}
+
+/** One line of a live bot's configuration. Mirrors `models.BotParamRow`. */
+export interface BotParamRow {
+  name: string
+  value: unknown
+  label: string
+  group: string
+  desc: string | null
+  unit: string | null
+  type: string
+  options: Record<string, string> | null
+  choices: unknown[] | null
+  core: boolean
+  /** Decided by the BACKEND. Never infer it from the param name here — the whole
+   *  point is that one list governs what a running bot will actually pick up. */
+  editable: boolean
+  min: number | null
+  max: number | null
+  /** The `_`-prefixed prose from the instance config explaining why the value is what
+   *  it is — written when the decision was made, which is when it was accurate. */
+  note: string | null
+}
+
+export interface BotParamsView {
+  bot_key: string
+  display_name: string
+  identity: {
+    account: number | null
+    server: string | null
+    symbol: string | null
+    timeframe: string | null
+    mt5_path: string | null
+    magic: number | null
+  }
+  version: {
+    strategy_package: string | null
+    strategy_class: string | null
+    strategy_version: number | null
+    strategy_source_hash: string | null
+    promoted_commit: string | null
+    promoted_at: string | null
+  }
+  runtime: BotParamRow[]
+  strategy: BotParamRow[]
+  notes: Record<string, string>
+  readme: string | null
 }
 
 // ── Lab — Strategies ─────────────────────────────────────────────────────────

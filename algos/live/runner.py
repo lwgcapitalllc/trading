@@ -74,6 +74,12 @@ class LiveRunner:
         self.feed = None
         self.bridge = None
         self.source_hash = ""
+        # Stamped from the file `cfg` was just read from, so `_cfg_mtime` always describes
+        # the config actually in memory and the first poll sees no phantom change.
+        try:
+            self._cfg_mtime = live_config.config_path(cfg.bot_key).stat().st_mtime
+        except OSError:
+            self._cfg_mtime = 0.0
 
     # ── setup ────────────────────────────────────────────────────────────────
     def _make_logger(self):
@@ -293,6 +299,7 @@ class LiveRunner:
                 for _, row in self.feed.new_bars().iterrows():
                     self._on_bar(row)
 
+                self._maybe_reload_runtime()
                 self._heartbeat(bot_state)
                 consecutive_errors = 0
             except Exception as e:
@@ -355,6 +362,104 @@ class LiveRunner:
             ex.blocks.clear()
         if hasattr(ex, "misses"):
             ex.misses.clear()
+
+    def _maybe_reload_runtime(self) -> None:
+        """Pick up a runtime config change without restarting — but only while FLAT.
+
+        The command center writes `exec_risk_pct` into this bot's instance config, commits,
+        and the VPS pulls it. Nothing tells the bot; it notices the file changed.
+
+        Three rules, in order, and each one exists because of a specific way this could go
+        wrong:
+
+        1. **Only `live_config.RUNTIME_RELOADABLE` may be applied.** If ANYTHING else moved
+           — a strategy param, the account, the symbol, the version pin — the change is
+           REFUSED and left on disk. That is the case where a `git pull` carrying unrelated
+           strategy edits reaches a running bot, and quietly absorbing it is precisely what
+           the source-hash pin exists to prevent. A restart is required, so the pin is
+           re-checked and the engines re-warm on the code that is actually there.
+        2. **Applied only when flat.** Not because resizing mid-trade would corrupt an open
+           position (it would not — size is fixed at entry), but so every trade in the
+           ledger is attributable to exactly ONE configuration. A trade recorded at 5% that
+           was sized at 10% makes the live-vs-lab diff unreadable, which is the one thing
+           that diff has to be.
+        3. **The mtime is consumed only when the file is actually handled** — applied or
+           refused. A pending change stays pending across polls instead of being noticed
+           once and forgotten, which would leave the bot running old settings while the UI
+           showed the new ones.
+        """
+        try:
+            mtime = live_config.config_path(self.cfg.bot_key).stat().st_mtime
+        except OSError:
+            return                                   # file briefly missing mid-write
+        if mtime == self._cfg_mtime:
+            return
+
+        try:
+            fresh = live_config.load(self.cfg.bot_key)
+        except Exception as e:
+            # Do NOT consume the mtime: a half-written file re-reads cleanly next poll.
+            self.log.warning(f"Config changed but could not be parsed ({e}) — ignoring it "
+                             f"for now and staying on the settings already loaded.")
+            return
+
+        allowed, blocked = self._config_delta(fresh)
+        if blocked:
+            self._cfg_mtime = mtime                  # handled: refused, do not re-warn
+            detail = ", ".join(f"{k}: {a!r} → {b!r}" for k, a, b in blocked)
+            self.log.error(
+                f"Config changed in ways that CANNOT be applied to a running bot: {detail}. "
+                f"Still running the settings loaded at startup. Restart the bot to take "
+                f"them (the version pin and the engine warmup are re-checked on restart).")
+            self.ledger.event("config_change_refused", changes=detail)
+            self._notify(f"⚠️ {self.cfg.display_name} — config changed on disk but was NOT "
+                         f"applied:\n{detail}\n\nStill running the startup settings. "
+                         f"Restart the bot to take them.")
+            return
+
+        if not allowed:
+            self._cfg_mtime = mtime                  # cosmetic edit (a comment, a note)
+            return
+
+        if not self.bridge.is_flat:
+            self.log.info("Runtime config change is waiting for the bot to be flat "
+                          f"({', '.join(k for k, _, _ in allowed)}).")
+            return                                   # mtime NOT consumed — retry next poll
+
+        self._cfg_mtime = mtime
+        scfg = self.strategy.execution.cfg
+        for name, old, new in allowed:
+            setattr(scfg, name, new)
+            self.cfg.strategy_params[name] = new
+        detail = ", ".join(f"{k} {a} → {b}" for k, a, b in allowed)
+        self.log.info(f"Runtime config applied while flat: {detail}")
+        self.ledger.event("config_applied", changes=detail)
+        self._notify(f"⚙️ {self.cfg.display_name} — {detail}\nApplied; the bot was flat.")
+
+    def _config_delta(self, fresh):
+        """Split what changed into (reloadable, blocked).
+
+        Compares the WHOLE config, not just strategy params — a changed account number or
+        symbol is exactly as disqualifying as a changed fib level, and is the more
+        dangerous of the two because it looks like plumbing rather than strategy.
+        """
+        allowed, blocked = [], []
+        for name, new in fresh.strategy_params.items():
+            old = self.cfg.strategy_params.get(name)
+            if old == new:
+                continue
+            (allowed if name in live_config.RUNTIME_RELOADABLE
+             else blocked).append((name, old, new))
+        for name in set(self.cfg.strategy_params) - set(fresh.strategy_params):
+            blocked.append((name, self.cfg.strategy_params[name], None))
+
+        for name in ("account", "server", "symbol", "magic", "timeframe",
+                     "mt5_path", "strategy_package", "strategy_class",
+                     "strategy_source_hash"):
+            old, new = getattr(self.cfg, name), getattr(fresh, name)
+            if old != new:
+                blocked.append((name, old, new))
+        return allowed, blocked
 
     def _heartbeat(self, bot_state) -> None:
         try:

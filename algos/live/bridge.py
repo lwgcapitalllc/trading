@@ -115,6 +115,18 @@ class OrderBridge:
         self._pos_alert_id = None
         self.halt_reason: str = ""
 
+    @property
+    def is_flat(self) -> bool:
+        """No position open AND nothing resting at the broker.
+
+        Stricter than "no position" on purpose. This is the seam a runtime config change
+        is applied on (see `runner._maybe_reload_runtime`), and a resting limit is an
+        order the OLD settings sized and priced. Waiting for it to fill or be cancelled is
+        what keeps every trade attributable to exactly one configuration — otherwise the
+        ledger records a trade at 5% risk that was actually sized at 10%.
+        """
+        return self._pos_ticket is None and not any(self._rest.values())
+
     # ── startup ──────────────────────────────────────────────────────────────
     def begin_live(self) -> None:
         """Called once, after warmup, before the first live bar.
@@ -211,6 +223,7 @@ class OrderBridge:
             # Nested getattr on purpose: this package reads the strategy defensively everywhere
             # else, and a strategy without a `cfg` must not be able to stop an exit alert.
             scratch_r=getattr(getattr(self._ex, "cfg", None), "exec_scratch_r", 0.15),
+            threaded=self._pos_alert_id is not None,
             when=self._bar_time(sig)),
             reply_to=self._pos_alert_id)
         self._pos_ticket = None
@@ -246,6 +259,10 @@ class OrderBridge:
             ticket=p.ticket, direction=side, symbol=self._mt5.symbol, lots=p.volume,
             price=p.price_open, stop=p.sl, intended_price=intended,
             tp1=getattr(dec, "tp1", 0.0) or 0.0, tp2=getattr(dec, "tp2", 0.0) or 0.0,
+            # Read off the strategy LIVE, not cached at construction — the runner mutates
+            # this same config object when a runtime change is applied, so caching it here
+            # would record the risk the bot started with rather than the one it sized on.
+            risk_pct=getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None),
             confluences=self._confluences(dec, sig))
         self._pos_alert_id = self._notify(alerts.format_entry(
             strategy=self._strategy_name, symbol=self._mt5.symbol, direction=side,

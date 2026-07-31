@@ -51,10 +51,26 @@ TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 # "manage trades only") can sleep up to ~2-3 min. 5 min is a safe floor.
 LOG_STALE_SECS = 5 * 60
 
-# No bots registered. The first-attempt bots (SMC Trend, Scalper, FFT, Mean
-# Reversion) were all deleted 2026-06-22 — see algos/docs/BOT_DEPLOYMENT_INFRA.md.
-# Add a new bot here — {"name", "suppress_key", "script", "log"} — when one goes live.
-BOTS = {}
+# Registered bots — {"name", "suppress_key", "script", "log"}.
+#
+# ⚠ SYS_MONITOR itself is DISABLED (algos/CLAUDE.md → "On hold, by Aaron's call"), so
+# nothing below runs yet. It is filled in anyway so re-enabling is one schtasks command
+# and not a code change — a watchdog that has to be written at the moment you need it is
+# a watchdog you do not have.
+#
+# `script` is matched as a SUBSTRING of the process commandline. The bot_key is what
+# appears there (`runner.py --bot mpc_sos_fade_demo`), so it is the match — never the
+# script filename, which is `runner.py` for every live bot and would make them
+# indistinguishable the moment a second one exists.
+BOTS = {
+    "mpc_sos_fade_demo": {
+        "name":         "MPC SOS Fade",
+        "suppress_key": "mpc_sos_fade_demo",
+        "script":       "mpc_sos_fade_demo",
+        "log":          str(ALGOS_ROOT / "markets/fx/instances/mpc_sos_fade_demo"
+                                         "/mpc_sos_fade_demo.log"),
+    },
+}
 
 
 def send_alert(message: str):

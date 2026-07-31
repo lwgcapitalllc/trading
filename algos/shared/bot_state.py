@@ -29,23 +29,40 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-ALGOS_ROOT = Path("C:/trading/algos")
+# DERIVED, not hardcoded. This module is imported by algos/live/runner.py, which is
+# dry-run-capable off the VPS — a literal "C:/trading/algos" made every state write fail
+# on a Mac while looking perfectly correct in the source. The VPS resolves this to the
+# same C:/trading/algos it always was.
+ALGOS_ROOT = Path(__file__).resolve().parent.parent
 
-# Bot registries. All first-attempt bots (SMC Trend, Scalper, FFT, Mean Reversion)
-# were deleted 2026-06-22 — see algos/docs/BOT_DEPLOYMENT_INFRA.md. Add a new bot
-# key to each registry below when one goes live.
+# Bot registries — the three of them are keyed by bot_key and must stay in step.
+#
+# ⚠ An unregistered key is a CRASH, not a no-op: set_started() does BOT_ACCOUNTS[key]
+# and write_bot() does BOT_INSTANCES[key], both unguarded. algos/live/runner.py calls
+# set_started() at the top of its loop, so a bot missing from here dies on startup with
+# a bare KeyError after connecting to MT5 and warming the engines.
+_INSTANCES = ALGOS_ROOT / "markets" / "fx" / "instances"
 
 # Instance directory for each bot key
-BOT_INSTANCES = {}
+BOT_INSTANCES = {
+    "mpc_sos_fade_demo": _INSTANCES / "mpc_sos_fade_demo",
+}
 
 # Account numbers for each bot
-BOT_ACCOUNTS = {}
+BOT_ACCOUNTS = {
+    "mpc_sos_fade_demo": 700107749,
+}
 
 # Display names
-BOT_NAMES = {}
+BOT_NAMES = {
+    "mpc_sos_fade_demo": "MPC SOS Fade",
+}
 
 
-# Thresholds — defaults; overridden by thresholds.json if present
+# Thresholds — defaults; overridden by thresholds.json if present.
+# EMPTY ON PURPOSE for mpc_sos_fade_demo: these are the pnl_tracker's daily/weekly alert
+# levels, and that job is disabled (see algos/CLAUDE.md → "On hold"). Seeding numbers here
+# would put caps on the Bots page that nothing on the VPS enforces.
 _BOT_THRESHOLDS_DEFAULT = {}
 
 _THRESHOLDS_PATH = Path(__file__).parent / "thresholds.json"

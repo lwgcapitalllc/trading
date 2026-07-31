@@ -28,7 +28,26 @@ BOTS   = Path("C:/trading/algos/bots")
 sys.path.insert(0, str(ALGOS / "shared"))
 from bot_state import set_started, set_status
 
-STARTUP_SEQUENCE = []
+# (bot_key, display name, script, argv, log path, ready string, connect timeout)
+#
+# `argv` is the FULL argument list, not a config path. The old bots all took
+# `--config <file>`; algos/live/runner.py takes `--bot <key>` and resolves its own
+# instance dir, so the launcher can no longer assume one flag shape.
+#
+# ⚠ NO `--live` HERE, and that is the point. The runner defaults to dry run and requires
+# `--live` to be typed, so a bot that boots with the VPS can never arm itself. Arming is a
+# deliberate act — see algos/live/ and docs/LIVE_TRADING_PIPELINE.md step 9.
+STARTUP_SEQUENCE = [
+    (
+        "mpc_sos_fade_demo",
+        "MPC SOS Fade",
+        str(ALGOS / "live" / "runner.py"),
+        ["--bot", "mpc_sos_fade_demo"],
+        str(ALGOS / "markets/fx/instances/mpc_sos_fade_demo/mpc_sos_fade_demo.log"),
+        "Connected | #",
+        180,
+    ),
+]
 
 
 def clear_lock():
@@ -83,11 +102,11 @@ def main():
             print(f"Unknown bot key '{args.bot}'. Available: {', '.join(keys)}")
             sys.exit(1)
 
-        bot_key, name, script, config, *_ = entry
+        bot_key, name, script, argv, *_ = entry
         print(f"Starting {name} (single-bot mode)...")
         set_started(bot_key)
         subprocess.Popen(
-            [PYTHON, script, "--config", config],
+            [PYTHON, script, *argv],
             cwd=str(BOTS),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -111,7 +130,7 @@ def main():
 
     all_ok = True
 
-    for bot_key, name, script, config, log_path, ready_str, timeout in STARTUP_SEQUENCE:
+    for bot_key, name, script, argv, log_path, ready_str, timeout in STARTUP_SEQUENCE:
         print(f"Starting {name}...")
 
         # Write started timestamp BEFORE launching
@@ -120,7 +139,7 @@ def main():
         size_before = get_log_size(log_path)
 
         subprocess.Popen(
-            [PYTHON, script, "--config", config],
+            [PYTHON, script, *argv],
             cwd=str(BOTS),
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
         )

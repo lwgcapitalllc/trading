@@ -5,7 +5,7 @@ These shapes are authoritative. Pipeline outputs conform to this; not the revers
 
 from __future__ import annotations
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -77,7 +77,8 @@ class RegimeBreakdownRow(BaseModel):
 class JobStatus(BaseModel):
     name: str
     schedule: str
-    status: str         # "RUNNING" | "STOPPED" | "UNKNOWN"
+    # DISABLED is distinct from STOPPED on purpose: switched off deliberately, not broken.
+    status: str         # "RUNNING" | "STOPPED" | "DISABLED" | "UNKNOWN"
 
 
 class ProcessStatus(BaseModel):
@@ -285,6 +286,45 @@ class BotCapUpdate(BaseModel):
     daily_goal_pct: float
     daily_cap_pct: float
     weekly_cap_pct: float
+
+
+class BotParamRow(BaseModel):
+    """One line of a live bot's configuration, as rendered on the Bots page."""
+    name: str
+    value: Any = None
+    label: str
+    group: str
+    desc: Optional[str] = None
+    unit: Optional[str] = None
+    type: str
+    options: Optional[dict] = None
+    choices: Optional[list] = None
+    core: bool = False
+    editable: bool = False
+    min: Optional[float] = None
+    max: Optional[float] = None
+    note: Optional[str] = None
+
+
+class BotParamsView(BaseModel):
+    bot_key: str
+    display_name: str
+    identity: dict          # account, server, symbol, timeframe, terminal, magic
+    version: dict           # package/class/version + source hash + promoted commit
+    runtime: list[BotParamRow]      # editable on a running bot
+    strategy: list[BotParamRow]     # read-only — changing these needs a re-promote
+    notes: dict = {}
+    readme: Optional[str] = None
+
+
+class BotRuntimeUpdate(BaseModel):
+    """A change to the levers that may move on a running bot.
+
+    `values` is validated against `services/bot_params.RUNTIME_EDITABLE` — the backend is
+    authoritative about what is editable, so a frontend bug cannot widen the set.
+    """
+    values: dict[str, float]
+    deploy: bool = True     # commit + push + VPS pull; False writes locally only
 
 
 class TelegramUser(BaseModel):

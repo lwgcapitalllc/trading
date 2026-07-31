@@ -76,18 +76,27 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function JobDot({ status }: { status: string }) {
-  const title = status === 'RUNNING' ? 'Running' : 'Scheduled — waiting for next trigger'
   if (status === 'RUNNING') {
     return (
       <span
-        title={title}
+        title="Running"
         className="inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 bg-pos shadow-[0_0_6px_#00ff7f] cursor-default"
+      />
+    )
+  }
+  // Switched off on purpose — no glow. A gold "waiting for next trigger" dot on a task
+  // that will never fire is worse than no dot: it says the job is covered when it isn't.
+  if (status === 'DISABLED') {
+    return (
+      <span
+        title="Disabled — will not run until re-enabled on the VPS"
+        className="inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 bg-text-tertiary/40 cursor-default"
       />
     )
   }
   return (
     <span
-      title={title}
+      title="Scheduled — waiting for next trigger"
       className="inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 bg-gold shadow-[0_0_6px_#d9a441] cursor-default"
     />
   )
