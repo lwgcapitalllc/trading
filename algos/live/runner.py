@@ -477,12 +477,33 @@ class LiveRunner:
         return allowed, blocked
 
     def _heartbeat(self, bot_state) -> None:
+        """Stamp that the loop turned, then record what it saw.
+
+        `heartbeat` is the field SYS_MONITOR reads to catch a process that is ALIVE but no
+        longer stepping. Nothing wrote it until 2026-07-31, and the monitor's check reads a
+        missing key as 0 and then compares 0 > 300 — so it never fired. A frozen bot still
+        answers `wmic`, so it showed RUNNING on the Bots page, in Telegram and in the task
+        list while doing nothing. That is the failure the watchdog exists for, and it was
+        the one failure it could not see.
+
+        The balance lookup is deliberately OUTSIDE the write and best-effort: a broker read
+        that throws must not be able to swallow the stamp. An MT5 outage already has its own
+        louder path (`new_bars()` raises → loop_error → a named alert at 10), and letting it
+        also suppress the heartbeat would just add a second, vaguer alert for the same event.
+        """
+        balance = None
         try:
             import MetaTrader5 as mt5
             info = mt5.account_info()
+            balance = float(info.balance) if info else None
+        except Exception as e:
+            self.log.warning(f"Balance read failed: {e}")
+
+        try:
             bot_state.write_bot(self.cfg.bot_key, {
                 "status": self.bridge.state.value,
-                "balance": float(info.balance) if info else None,
+                "heartbeat": time.time(),
+                "balance": balance,
                 "account": self.cfg.account,
                 "symbol": self.cfg.symbol,
                 "version": self.cfg.strategy_version,

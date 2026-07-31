@@ -33,7 +33,10 @@ except ImportError:
     print("pip install requests")
     sys.exit(1)
 
-ALGOS_ROOT     = Path("C:/trading/algos")
+# DERIVED, not hardcoded — same reason as algos/shared/bot_state.py. A literal
+# "C:/trading/algos" is correct on the VPS and silently wrong everywhere else, which makes
+# this file untestable off the box.
+ALGOS_ROOT     = Path(__file__).resolve().parent.parent
 STATE_FILE     = ALGOS_ROOT / "monitor_state.json"
 SUPPRESS_FILE  = ALGOS_ROOT / "stop_suppress.json"
 TEXAS          = ZoneInfo("America/Chicago")
@@ -159,8 +162,15 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
         return bot_state
 
     # ── Heartbeat check — catches alive-but-frozen loops ─────────────────
+    #
+    # Falls back to `started` when no stamp exists yet, and that fallback is the point.
+    # Reading a missing heartbeat as 0 makes this check compare 0 > 300 and never fire —
+    # which is what happened between the runner being written and 2026-07-31, when nothing
+    # wrote the field at all. A watchdog whose failure mode is SILENCE is worse than no
+    # watchdog, because the empty alert channel reads as good news. Anchoring on the start
+    # time means a bot that boots and never stamps alerts like the stalled bot it is.
     bot_live    = _bot_state.read_bot(bot_key)
-    heartbeat   = bot_live.get("heartbeat", 0)
+    heartbeat   = bot_live.get("heartbeat") or bot_live.get("started") or 0
     stale_secs  = (time.time() - heartbeat) if heartbeat else 0
     if stale_secs > LOG_STALE_SECS:
         if not bot_state.get("stale_alerted"):
