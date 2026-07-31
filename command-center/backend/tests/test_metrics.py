@@ -11,6 +11,7 @@ from services.metrics import (
     apply_canonical_sharpe,
     daily_sharpe,
     daily_sharpe_from_values,
+    profit_concentration_pct,
     zero_filled_daily_values,
 )
 
@@ -189,3 +190,78 @@ def test_backfill_never_invents_a_platform_sharpe_for_python_runs(fresh_db, tmp_
             daily_sharpe([{"date": "2026-01-05", "pnl": 100.0},
                           {"date": "2026-01-09", "pnl": 50.0}])
         )
+
+
+# ── Profit concentration — the return basis ──────────────────────────────────────────────────
+#
+# The metric answers "was the edge clustered in one window, or repeatable?". Weighted by dollars
+# it answers a different question on a compounding account: the last quarter must hold nearly all
+# the dollars however evenly the edge is spread, which is what made mpc_sos_fade d2ab68f9e884
+# read 88.9% ("edge clustered — overfit risk") on a run whose returns are spread.
+
+
+def _curve(rows, *, base):
+    """Equity points from (date, pnl) pairs, compounding from `base`. base=0 gives the NT8
+    cum-P&L-from-zero shape — a unit-size run with no account to compound against."""
+    out, equity = [], float(base)
+    for i, (day, pnl) in enumerate(rows, start=1):
+        equity += pnl
+        out.append({"index": i, "date": day, "equity": round(equity, 2), "profit": pnl})
+    return out
+
+
+def _even_return_run(base=10_000.0, years=4, per_year=8, rate=0.20):
+    """A strategy with a CONSTANT 20% return per trade, evenly spaced over four years — the edge
+    is identical in every quarter by construction, so honest concentration is ~25%."""
+    rows, equity = [], base
+    for y in range(years):
+        for i in range(per_year):
+            pnl = equity * rate
+            equity += pnl
+            rows.append((f"{2021 + y}-{1 + i:02d}-15", round(pnl, 2)))
+    return rows
+
+
+def test_compounding_run_is_measured_in_returns_not_dollars():
+    rows = _even_return_run()
+    daily = [{"date": d, "pnl": p} for d, p in rows]
+    curve = _curve(rows, base=10_000.0)
+
+    pct, basis = profit_concentration_pct(daily, curve)
+    assert basis == "return"
+    # Every trade earned the same RETURN, so no quarter is special — ~25%, and nowhere near the
+    # 60% threshold that prints "edge clustered — overfit risk".
+    assert pct == pytest.approx(25.0, abs=1.0)
+
+    # The same trades weighted by dollars: the compounding alone reads as clustering.
+    dollars, _ = profit_concentration_pct(daily, None)
+    assert dollars > 60
+
+
+def test_unit_size_run_keeps_the_dollar_basis():
+    # An NT8-shaped curve accumulates from 0, so there is no balance to compound against — its
+    # dollars are already comparable across periods and must not be divided by a fiction.
+    rows = [("2021-01-15", 100.0), ("2021-07-15", 100.0),
+            ("2022-01-15", 100.0), ("2022-07-15", 100.0)]
+    daily = [{"date": d, "pnl": p} for d, p in rows]
+    pct, basis = profit_concentration_pct(daily, _curve(rows, base=0.0))
+    assert basis == "dollars"
+    assert pct == pytest.approx(25.0, abs=1.0)
+
+
+def test_clustered_edge_still_reports_clustered():
+    # The fix must not blunt the detector: profit earned only in the final quarter reads ~100%
+    # on the return basis too.
+    rows = [("2021-02-15", 0.0), ("2021-08-15", 0.0), ("2022-02-15", 0.0),
+            ("2022-11-15", 4000.0)]
+    daily = [{"date": d, "pnl": p} for d, p in rows]
+    pct, basis = profit_concentration_pct(daily, _curve(rows, base=10_000.0))
+    assert basis == "return"
+    assert pct == pytest.approx(100.0)
+
+
+def test_no_positive_profit_is_none_never_zero():
+    rows = [("2021-01-15", -100.0), ("2022-01-15", -100.0)]
+    daily = [{"date": d, "pnl": p} for d, p in rows]
+    pct, _ = profit_concentration_pct(daily, _curve(rows, base=10_000.0))
+    assert pct is None

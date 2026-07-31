@@ -16,6 +16,62 @@ _HERE = Path(__file__).parent.parent
 DB_PATH = _HERE / "data" / "lab.db"
 
 
+def _restamp_profit_concentration(conn: sqlite3.Connection) -> None:
+    """One-time re-stamp of profit_concentration_pct onto the return basis.
+
+    Until 2026-07-31 the metric weighted each day by DOLLARS, which on a compounding account
+    measures the growth rather than the clustering it exists to detect: the final quarter holds
+    nearly all the dollars however evenly the edge is spread. mpc_sos_fade run d2ab68f9e884 was
+    stored at 88.94% ("edge clustered — overfit risk") and is 40.0% on the return basis. Fixed at
+    the source in services/metrics.profit_concentration_pct, but the figure is STORED, so every
+    existing row keeps the stale number without this.
+
+    Recomputing needs the equity curve, which lives on disk rather than in the row, so this reads
+    each completed run's equity_curve.json. `profit_concentration_basis` is the marker: NULL means
+    "written before the basis existed", and stamping it is what makes this run exactly once. A run
+    whose file is missing or unreadable is stamped 'dollars' — that IS what the stored number is,
+    and leaving it NULL would re-read the missing file on every startup forever.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT run_id, equity_curve_path, daily_pnl_path FROM backtest_runs "
+            "WHERE status = 'complete' AND profit_concentration_basis IS NULL"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return                                    # column not added yet (fresh DB, first pass)
+    if not rows:
+        return
+
+    from services.metrics import CONCENTRATION_DOLLARS, profit_concentration_pct
+
+    def _load(path: Optional[str]) -> list[dict]:
+        if not path:
+            return []
+        try:
+            data = json.loads(Path(path).read_text())
+            return data if isinstance(data, list) else []
+        except (OSError, ValueError):
+            return []
+
+    for row in rows:
+        equity = _load(row["equity_curve_path"])
+        daily = _load(row["daily_pnl_path"])
+        if not equity and not daily:
+            # Nothing to recompute from — leave the stored number alone and label it for what
+            # it already is, so this row is not re-read on every startup.
+            conn.execute(
+                "UPDATE backtest_runs SET profit_concentration_basis=? WHERE run_id=?",
+                (CONCENTRATION_DOLLARS, row["run_id"]),
+            )
+            continue
+        pct, basis = profit_concentration_pct(daily, equity)
+        conn.execute(
+            "UPDATE backtest_runs SET profit_concentration_pct=?, profit_concentration_basis=? "
+            "WHERE run_id=?",
+            (pct, basis, row["run_id"]),
+        )
+
+
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -129,6 +185,7 @@ def init_db() -> None:
                 platform_sharpe     REAL,
                 sharpe_low_sample   INTEGER,
                 profit_concentration_pct REAL,
+                profit_concentration_basis TEXT,
                 avg_win             REAL,
                 avg_loss            REAL,
                 avg_trade_duration_min REAL,
@@ -404,6 +461,9 @@ def init_db() -> None:
             "ALTER TABLE backtest_runs ADD COLUMN sharpe_low_sample INTEGER",
             # Profit concentration (overfit detector) persisted for later grading use.
             "ALTER TABLE backtest_runs ADD COLUMN profit_concentration_pct REAL",
+            # ...and how it was weighted ('return' | 'dollars'). Doubles as the marker the
+            # one-time re-stamp below reads: NULL = written before the basis existed.
+            "ALTER TABLE backtest_runs ADD COLUMN profit_concentration_basis TEXT",
             # Tradeify corrections — current $50k target is $3,000 (old accounts grandfathered at
             # $2,500); and the $50k/$100k eval trailing MLL locks at start+$100.
             "UPDATE rulesets SET profit_target = 3000 WHERE id = 'tradeify_50k_eval'",
@@ -485,6 +545,8 @@ def init_db() -> None:
                          AND max_drawdown_from_peak_pct IS NOT NULL AND max_drawdown_from_peak_pct != 0)
             )
         """)
+
+        _restamp_profit_concentration(conn)
 
         # Pass 1 — backfill foundational config for all existing rulesets where null.
         # Personal-specific overrides must run BEFORE the blanket defaults so the
@@ -1553,7 +1615,8 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
                 win_count=?, trade_count=?, sharpe=?, sortino=?, cagr=?,
                 avg_win=?, avg_loss=?, avg_trade_duration_min=?,
                 worst_day_pnl=?, worst_losing_streak=?,
-                platform_sharpe=?, sharpe_low_sample=?, profit_concentration_pct=?,
+                platform_sharpe=?, sharpe_low_sample=?,
+                profit_concentration_pct=?, profit_concentration_basis=?,
                 equity_curve_path=?, trades_path=?, daily_pnl_path=?
             WHERE run_id=?
         """, (
@@ -1565,7 +1628,7 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
             kpis.get("worst_day_pnl"), kpis.get("worst_losing_streak"),
             kpis.get("platform_sharpe"),
             int(kpis["sharpe_low_sample"]) if kpis.get("sharpe_low_sample") is not None else None,
-            kpis.get("profit_concentration_pct"),
+            kpis.get("profit_concentration_pct"), kpis.get("profit_concentration_basis"),
             file_paths.get("equity_curve"), file_paths.get("trades"),
             file_paths.get("daily_pnl"), run_id,
         ))

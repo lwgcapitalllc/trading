@@ -521,8 +521,11 @@ async def _handle_complete(
     # Canonical Sharpe — shared daily-√252 value (consistent across every run path),
     # preserving the platform's own value as platform_sharpe and flagging low sample.
     apply_canonical_sharpe(kpis, daily_pnl)
-    # Profit concentration (overfit detector) — null on runs with no positive profit.
-    kpis["profit_concentration_pct"] = profit_concentration_pct(daily_pnl)
+    # Profit concentration (overfit detector) — null on runs with no positive profit. The equity
+    # curve is what tells it whether this run COMPOUNDED; without it the figure measures account
+    # growth instead of clustering. The basis is stored beside the number so the row says which.
+    kpis["profit_concentration_pct"], kpis["profit_concentration_basis"] = \
+        profit_concentration_pct(daily_pnl, equity_curve)
     lab_db.update_run_complete(run_id, kpis, {
         "equity_curve": str(equity_path),
         "trades":       None,

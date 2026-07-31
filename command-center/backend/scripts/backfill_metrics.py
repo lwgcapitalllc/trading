@@ -76,9 +76,15 @@ def backfill(dry_run: bool = False) -> dict:
         if daily_pnl is None:
             stats["no_daily_file"] += 1
         else:
-            conc = profit_concentration_pct(daily_pnl)
+            # The equity curve is what tells the metric whether this run COMPOUNDED. Without it
+            # the figure is weighted by dollars, which on a growing account measures the growth
+            # instead of the clustering it exists to detect (see services/metrics). Absent file
+            # → the dollar basis, and the stored basis says so.
+            conc, conc_basis = profit_concentration_pct(
+                daily_pnl, _load_json(run["equity_curve_path"]) or [])
             stats["concentration_set" if conc is not None else "concentration_null"] += 1
-            sets, params = ["profit_concentration_pct = ?"], [conc]
+            sets = ["profit_concentration_pct = ?", "profit_concentration_basis = ?"]
+            params = [conc, conc_basis]
 
             # `sharpe` / `sharpe_low_sample` are ALWAYS recomputed: both are pure functions of the
             # stored daily_pnl, so this is idempotent, and re-running is how a change to the

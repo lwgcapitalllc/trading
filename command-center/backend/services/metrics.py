@@ -159,47 +159,97 @@ def apply_canonical_sharpe(kpis: dict, daily_pnl: list[dict]) -> dict:
     return kpis
 
 
-def profit_concentration_pct(daily_pnl: list[dict]) -> Optional[float]:
-    """
-    Share of total gross profit earned in the most profitable calendar quarter.
+# How a stored concentration figure was weighted. Persisted alongside the number
+# (backtest_runs.profit_concentration_basis) so a row is self-describing and the one-time
+# backfill knows which rows it has already converted.
+CONCENTRATION_RETURN = "return"
+CONCENTRATION_DOLLARS = "dollars"
 
-    Mirrors the frontend computeProfitConcentration exactly: split the date span (first→last)
-    into 4 equal slices, gross profit = sum of positive daily P&L, concentration = the largest
-    quarter's positive P&L / gross × 100. High = the edge is clustered in one period.
 
-    Returns None when there's no dated data, a zero span, or no positive profit to concentrate
-    (e.g. a net-negative run with no winning days) — never fabricated.
+def _equity_base(equity_curve: Optional[list[dict]]) -> float:
+    """The account balance the curve starts FROM, or 0 when it carries none.
+
+    An equity point's `equity` is the running account value; subtracting that point's own
+    `profit` gives the balance before the first trade. The python and MT5 runners open from a
+    real deposit, so this is positive; the NT8 parser accumulates from 0, so it is 0.
     """
-    dated = [d for d in daily_pnl if d.get("date")]
-    if len(dated) < 2:
-        return None
+    if not equity_curve:
+        return 0.0
+    first = equity_curve[0]
+    return float(first.get("equity", 0.0) or 0.0) - float(first.get("profit", 0.0) or 0.0)
+
+
+def profit_concentration_pct(
+    daily_pnl: list[dict],
+    equity_curve: Optional[list[dict]] = None,
+) -> tuple[Optional[float], str]:
+    """
+    Share of total gross profit earned in the most profitable quarter of the test span.
+
+    Split the span (first→last date) into 4 equal slices and take the largest slice's share of
+    gross profit × 100. High = the edge is clustered in one period rather than repeatable — a
+    classic curve-fit signal.
+
+    MEASURED IN RETURNS WHENEVER THE RUN COMPOUNDED (fixed 2026-07-31). Weighted by dollars, this
+    reports the compounding rather than the clustering: on an account that grows 85x, the final
+    quarter must hold nearly all the dollars however evenly the edge is spread. Measured on
+    mpc_sos_fade run d2ab68f9e884 — dollar quarters of $9k / $49k / $71k / $1,039k read 88.9%
+    ("edge clustered — overfit risk"), while the same trades as returns on the equity each was
+    taken with read 40.0% ("spread across the test"). The warning was describing the account.
+
+    The switch is whether the equity curve carries a real account base. A %-of-equity strategy
+    compounds and must be normalized; a cum-P&L-from-zero curve (the NT8 shape) is a unit-size
+    run whose dollars ARE already comparable across periods, and dividing those by a fictitious
+    balance would introduce the opposite bias. With no curve at all, dollars is the only option.
+
+    Returns (pct, basis). `pct` is None when there's no dated data, a zero span, or no positive
+    profit to concentrate (e.g. a net-negative run with no winning days) — never fabricated.
+    The frontend's computeProfitConcentration applies the identical rule.
+    """
+    # Each entry contributes a WEIGHT: a return when the run compounded, else a dollar amount.
+    if _equity_base(equity_curve) > 0:
+        basis = CONCENTRATION_RETURN
+        points = []
+        for e in equity_curve or []:
+            if not e.get("date"):
+                continue
+            before = float(e.get("equity", 0.0) or 0.0) - float(e.get("profit", 0.0) or 0.0)
+            if before <= 0:
+                continue
+            points.append((str(e["date"])[:10], float(e.get("profit", 0.0) or 0.0) / before))
+    else:
+        basis = CONCENTRATION_DOLLARS
+        points = [(str(d["date"])[:10], float(d.get("pnl", 0.0) or 0.0))
+                  for d in daily_pnl if d.get("date")]
+
+    if len(points) < 2:
+        return None, basis
     try:
-        t0 = date.fromisoformat(str(dated[0]["date"])[:10])
-        t1 = date.fromisoformat(str(dated[-1]["date"])[:10])
+        t0 = date.fromisoformat(points[0][0])
+        t1 = date.fromisoformat(points[-1][0])
     except ValueError:
-        return None
+        return None, basis
     span = (t1 - t0).days
     if span <= 0:
-        return None
+        return None, basis
 
     quarters = [0.0, 0.0, 0.0, 0.0]
     gross = 0.0
-    for d in dated:
-        pnl = d.get("pnl", 0.0) or 0.0
-        if pnl <= 0:
+    for day_str, weight in points:
+        if weight <= 0:
             continue
         try:
-            day = date.fromisoformat(str(d["date"])[:10])
+            day = date.fromisoformat(day_str)
         except ValueError:
             continue
-        gross += pnl
+        gross += weight
         idx = int(((day - t0).days / span) * 4)
         idx = max(0, min(3, idx))
-        quarters[idx] += pnl
+        quarters[idx] += weight
 
     if gross <= 0:
-        return None
-    return round((max(quarters) / gross) * 100, 2)
+        return None, basis
+    return round((max(quarters) / gross) * 100, 2), basis
 
 
 # Bucket for a day or trade that can't be attributed to a classified regime.
