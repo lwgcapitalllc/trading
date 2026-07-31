@@ -32,7 +32,6 @@ one bot at a time and waiting for connection confirmation before the next.
 ## Install All Tasks (PowerShell)
 
 ```powershell
-$pass = "<vps-trader-password>"
 $tasks = @(
     "startup_coordinator_task.xml:SYS_STARTUP",
     "telegram_task.xml:SYS_TELEGRAM",
@@ -43,8 +42,25 @@ $tasks = @(
 foreach ($t in $tasks) {
     $parts = $t.Split(":")
     Copy-Item "C:\trading\algos\scheduler\$($parts[0])" "C:\temp\$($parts[0])"
-    schtasks /create /tn $parts[1] /xml "C:\temp\$($parts[0])" /ru trader /rp $pass
+    schtasks /create /tn $parts[1] /xml "C:\temp\$($parts[0])" /f
 }
+```
+
+### No password — and never add one back
+
+These tasks run as **SYSTEM** (`S-1-5-18` / `ServiceAccount` in each XML). Do **not** pass
+`/ru trader /rp $pass`: it overrides the XML's principal and stores a password copy on every task.
+
+That is not hypothetical. This guide told you to do exactly that, and when the VPS provider rotated
+the `trader`/Administrator password around **30 May 2026**, all five tasks stopped launching —
+**silently**. `schtasks /run` kept returning SUCCESS, the tasks kept reading `Ready`, and only
+`Last Run Time` betrayed it by never advancing. Crash alerts were dead for two months and
+`SYS_STARTUP` would not have restarted a single bot after a reboot. Found 2026-07-31.
+
+**Verifying a task actually runs takes one command, and the exit code is not it:**
+
+```powershell
+schtasks /query /tn SYS_STARTUP /fo list /v | findstr /C:"Last Run Time"
 ```
 
 When a new bot is added, install its `BOT_<NAME>` task the same way and disable it

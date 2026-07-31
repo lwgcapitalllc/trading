@@ -338,21 +338,27 @@ function Invoke-InstallTasks {
     if (-not (Test-Path $schedDir)) { Write-Err2 "Scheduler dir not found at $schedDir"; $script:Results['Task Scheduler'] = 'failed'; return }
     if (-not (Test-Path $TempDir)) { New-Item -ItemType Directory -Path $TempDir -Force | Out-Null }
 
-    $sec = Read-Host -AsSecureString "Password for the '$TraderUser' VPS account"
-    $pass = ConvertFrom-SecureToPlain -Secure $sec
-    try {
-        foreach ($t in $Tasks) {
-            $xmlSrc = Join-Path $schedDir $t.Xml
-            if (-not (Test-Path $xmlSrc)) { Write-Warn2 "missing xml: $($t.Xml) — skipping $($t.Name)"; continue }
-            $xmlTmp = Join-Path $TempDir $t.Xml
-            Copy-Item $xmlSrc $xmlTmp -Force
-            # /f makes this idempotent (recreate if the task already exists).
-            & schtasks /create /tn $t.Name /xml $xmlTmp /ru $TraderUser /rp $pass /f | Out-Null
-            if ($LASTEXITCODE -eq 0) { Write-Ok "created $($t.Name)" }
-            else { Write-Warn2 "schtasks /create returned $LASTEXITCODE for $($t.Name)" }
-        }
-    } finally {
-        $pass = $null   # drop the plaintext password
+    # No password is asked for, and that is the fix for a real outage.
+    #
+    # This used to prompt for the `trader` password and pass it as /ru /rp, so every task stored a
+    # copy. The VPS provider rotates that password (see the CheckAndPromptPasswordChange task), and
+    # when it changed on ~30 May 2026 EVERY SYS_* task stopped launching — silently. `schtasks /run`
+    # still returned SUCCESS and the tasks still read `Ready`; only `Last Run Time` gave it away by
+    # never advancing. Crash alerts were off for two months and SYS_STARTUP would not have brought
+    # bots back after a reboot.
+    #
+    # The XMLs now declare SYSTEM (`S-1-5-18` / `ServiceAccount`), which needs no password and
+    # cannot go stale. Passing /ru here would OVERRIDE that principal and reintroduce the bug, so
+    # the XML is applied as-is.
+    foreach ($t in $Tasks) {
+        $xmlSrc = Join-Path $schedDir $t.Xml
+        if (-not (Test-Path $xmlSrc)) { Write-Warn2 "missing xml: $($t.Xml) — skipping $($t.Name)"; continue }
+        $xmlTmp = Join-Path $TempDir $t.Xml
+        Copy-Item $xmlSrc $xmlTmp -Force
+        # /f makes this idempotent (recreate if the task already exists).
+        & schtasks /create /tn $t.Name /xml $xmlTmp /f | Out-Null
+        if ($LASTEXITCODE -eq 0) { Write-Ok "created $($t.Name) (runs as SYSTEM)" }
+        else { Write-Warn2 "schtasks /create returned $LASTEXITCODE for $($t.Name)" }
     }
 
     foreach ($name in $DisableTasks) {
