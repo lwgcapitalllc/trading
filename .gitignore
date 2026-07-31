@@ -88,11 +88,14 @@ command-center/backend/reports/lab/
 algos/markets/fx/instances/*/bot_state.json
 
 # Watchdog + process runtime state. Written by SYS_MONITOR and the Telegram bot on the
-# VPS, so they show up as untracked in the VPS working tree — which is the tree the daily
-# log-backup job commits from. They are per-machine runtime, never source.
+# VPS. Per-machine runtime, never source.
 algos/monitor_state.json
 algos/stop_suppress.json
 algos/*.pid
+
+# Zipped raw logs from SYS_LOGBACKUP. VPS-local housekeeping with a 90-day window — the
+# artefact that must survive the box is the LEDGER, and ledger_sync.py commits that.
+algos/log_archive/
 
 # Telegram runtime
 algos/users.json

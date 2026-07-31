@@ -231,29 +231,67 @@ session), which is why the platform looked healthy while its whole scheduled lay
 What that cost: crash alerts were off for two months, and **`SYS_STARTUP` would not have restarted
 anything after a reboot.**
 
-All five are now `LogonType: ServiceAccount` running as **SYSTEM** — no password to go stale, and it
-survives the next rotation. `algos/scheduler/*.xml` were rewritten to match, because they also
-hardcoded this machine's SID and would have re-created dead tasks on any rebuild or new VPS.
+All are now running as **SYSTEM** — no password to go stale, and it survives the next rotation.
+`algos/scheduler/*.xml` were rewritten to match, because they also hardcoded this machine's SID and
+would have re-created dead tasks on any rebuild or new VPS.
 
 **Standing rule: a scheduled task that must run unattended runs as SYSTEM.** Never register one with
 a stored password, and never trust `schtasks /run`'s exit code — verify `Last Run Time` moved.
 
-### On hold, by Aaron's call (2026-07-31) — do not delete, do not switch on yet
+**Follow-on, same day: the XMLs could not be registered at all.** Every file in
+`algos/scheduler/` carried `<LogonType>ServiceAccount</LogonType>`, which this Windows build
+rejects for `S-1-5-18` — `schtasks /create /xml` fails with *"incorrectly formatted or out of
+range"* naming LogonType. A working SYSTEM principal on this box is `UserId` + `RunLevel` and **no
+`LogonType` element**; `schtasks /query /tn <name> /xml` on a live task is the way to see the shape
+Windows actually accepted. `bootstrap_vps.ps1` installs every task through that same call and only
+`Write-Warn2`s per failure, so **a rebuild would have created no tasks and still reported success.**
+All six XMLs are fixed and each was test-imported under a throwaway name. If you add a task, import
+it before you trust it — and delete the throwaway immediately, because a stray copy of
+`telegram_task.xml` or `startup_coordinator_task.xml` starts a SECOND bot.
 
-Only the Telegram bot is maintained from the original suite: **trade ENTRY and EXIT alerts, nothing
-else.** These three are FIXED (they will run when enabled) but deliberately **disabled**:
+**Two things a task cannot do, both found by running it as SYSTEM:**
+
+- **It cannot `git push`.** SYSTEM has its own credential store, Git Credential Manager has no token
+  there and no session to prompt in, so the push **blocks** rather than failing — the task sits in
+  `Running` with no output until its execution limit kills it. This is why the ledger is pulled by
+  the Mac (`algos/tools/ledger_sync.py`) instead of pushed by the VPS. Do not "fix" it by putting a
+  GitHub token on this box: it already holds a live MT5 password and a Telegram token.
+- **It has no console.** `timeout /t` and anything else wanting a console fails under a task and
+  over SSH alike.
+
+### Live tasks, and the two still on hold
+
+**`SYS_MONITOR` is ON as of 2026-07-31** (Aaron's call — a dry-run bot nobody is watching is the
+thing this layer exists to prevent). It runs every minute as SYSTEM and alerts on: bot gone, bot
+back, **loop stalled**, Telegram bot down (auto-restart ×3, then a critical alert).
+
+⚠ **The stalled-loop half had never been able to fire, and that is worth knowing before trusting
+any watchdog here.** `monitor.py` reads a `heartbeat` timestamp from `bot_state.json`; nothing
+wrote one, and the check read the missing key as `0` and then asked `0 > 300`. So it was
+permanently false rather than obviously broken — and a frozen bot still answers `wmic`, so it
+reads RUNNING on the Bots page, in Telegram and in the task list. `runner._heartbeat()` now stamps
+it every loop (with the balance read moved OUT of that try block, so a broker hiccup cannot swallow
+the stamp), and the monitor falls back to `started` when no stamp exists. `algos/tests/test_watchdog.py`
+pins both halves plus three launcher↔watchdog agreement tests. **A watchdog whose failure mode is
+silence is worse than none — the empty alert channel reads as good news.**
+
+**`SYS_LOGBACKUP` is ON as of 2026-07-31.** Daily 00:30 UTC (the VPS clock is UTC), runs
+`tools/log_backup.py`: zips the instance `.log` files into `algos/log_archive/`, prunes past 90
+days, reports closed ledger days. **It does no git** — see the SYSTEM-cannot-push note above. The
+ledger reaches the repo when `algos/tools/ledger_sync.py` is run **on the Mac**, which means the
+decision record is on one disk until someone runs it. Logs are COPIED, never rotated: the bot holds
+its log open and renaming an open file on Windows fails.
+
+Still deliberately **disabled**:
 
 | Task | Script | Why it waits |
 |---|---|---|
-| `SYS_MONITOR` | `notifications/monitor.py` | Crash / liveness alerts. **Registry now filled** — only the task is off |
 | `SYS_PNLTRACKER` | `notifications/pnl_tracker.py` | Its bot registry is still empty |
 | `SYS_REPORTER` | `notifications/reporter.py` | Daily report at 21:00 — would send an empty one |
 
-Re-enable with `schtasks /change /tn <NAME> /enable`. **Crash alerting should come back before real
-money does** — a live bot nobody is watching is the thing this whole layer exists to prevent.
-`SYS_MONITOR` is the one that is genuinely ready: `monitor.BOTS` carries `mpc_sos_fade_demo`, so
-enabling the task is the whole job. The Bots page now renders a disabled task as **DISABLED**, not
-"scheduled — waiting for next trigger", so an off watchdog stops reading as a covered one.
+Re-enable with `schtasks /change /tn <NAME> /enable`. The Bots page renders a disabled task as
+**DISABLED**, not "scheduled — waiting for next trigger", so an off watchdog stops reading as a
+covered one.
 
 ### Registering a bot — the four registries, and the crash if you miss one
 
