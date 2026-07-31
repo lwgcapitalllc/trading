@@ -197,12 +197,10 @@ function pfLabel(pf: number | null): string {
   return 'losing — below 1.0'
 }
 
-function sharpeCls(s: number | null): string {
-  if (s == null) return 'text-text-tertiary'
-  if (s >= 1.0) return 'text-pos-text'
-  if (s >= 0.5) return 'text-warn-text'
-  return 'text-neg-text'
-}
+// Sharpe has no colour helper on purpose. It used to be graded green/amber/red by value,
+// which reads as a verdict the number can't support: 0.91 is positive AND weak, and this
+// run's own news filter moves it 0.91 → 2.98 by removing 3 of 142 trades. The panel prints
+// sharpeLabel's word beside it instead. See the colour policy on PerformancePanel.
 
 function sharpeLabel(s: number | null, estimated: boolean): string {
   if (s == null) return 'risk-adjusted annual return'
@@ -213,11 +211,11 @@ function sharpeLabel(s: number | null, estimated: boolean): string {
   return estimated ? `${base} (estimated)` : base
 }
 
-function worstStreakCls(n: number | null): string {
-  if (n == null) return 'text-text-tertiary'
-  if (n >= 6) return 'text-neg-text'
-  if (n >= 3) return 'text-warn-text'
-  return 'text-text-primary'
+// Turns a value-colour class into an EXCEPTION colour: an ordinary value gets no colour at
+// all. Lets the *Cls helpers stay the single definition of "what counts as bad" while the
+// panel only paints the rows that cross it. See the colour policy on PerformancePanel.
+function exceptionCls(cls: string): string | undefined {
+  return (cls === 'text-text-primary' || cls === 'text-text-tertiary') ? undefined : cls
 }
 
 // ── Recovery factor ──────────────────────────────────────────────────────────
@@ -462,43 +460,12 @@ export function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
   return { worstDay, worstStreak: maxStreak, sharpe }
 }
 
-// ── KPI grid ──────────────────────────────────────────────────────────────────
+// ── Derived metrics ──────────────────────────────────────────────────────────
 
-// Fixed pixel heights shared by the eval card and the KPI grid on lg. COLLAPSED sits at the short
-// height (one KPI row, sized to fit the tallest verdict card); EXPANDED grows both columns together
-// so the two KPI rows each get enough room (no crop) while still matching the eval card exactly.
-// Fixed per state → paging evaluations never grows/shrinks the row.
-const KPI_ROW_H = 196
-const KPI_ROW_H_EXPANDED = 228
-
-type KpiTone = 'good' | 'bad' | 'warn' | 'neutral'
-const KPI_TONE_BORDER: Record<KpiTone, string> = {
-  good:    'border-l-pos-text/60',
-  bad:     'border-l-neg-text/60',
-  warn:    'border-l-warn-text/60',
-  neutral: 'border-l-border-default',
-}
-// Left-accent tone derived from the value's text-colour class, so the accent always agrees with
-// the number's colour — one source of sentiment.
-function kpiTone(valueCls?: string): KpiTone {
-  if (!valueCls) return 'neutral'
-  if (valueCls.includes('pos'))  return 'good'
-  if (valueCls.includes('neg'))  return 'bad'
-  if (valueCls.includes('warn')) return 'warn'
-  return 'neutral'
-}
-
-// Six KPI columns, but the first is wider. Column one carries the money values (Net P&L, and Profit
-// Concentration/Expectancy on the second row) — a 5-figure "+$11,525" needs ~30% more room than a
-// "72.7%" to render at the collapsed row's 34px without running into the card's padding. Widening
-// the column is what buys that room; the type stays the same size in every card. Both rows use this
-// template so the two grids stay aligned.
-const KPI_COLS = 'grid-cols-[1.4fr_repeat(5,minmax(0,1fr))]'
-
-// Every number the grid shows, derived from one run. Pulled out of the component so the SAME
-// expressions can be evaluated a second time against a comparison run — that is what lets the news
-// filter print "−$2,003 vs unfiltered" on each card instead of shipping a second copy of the grid.
-// Adding a metric here and forgetting the card is harmless; the reverse is what drifts.
+// Every number the panel shows, derived from one run. Pulled out of the component so the
+// SAME expressions can be evaluated a second time against a comparison run — that is what
+// lets the news filter print a delta on each row instead of shipping a second copy of the
+// panel. Adding a metric here and forgetting the card is harmless; the reverse is what drifts.
 function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], balance: number | null) {
   const sharpe      = run.sharpe              ?? fallback.sharpe
   const worstDay    = run.worst_day_pnl       ?? fallback.worstDay
@@ -507,34 +474,33 @@ function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], 
   // Capital-based scores rebase the equity to `balance` (the ruleset's account_size, or the
   // what-if slider). Both compute off the same stored run — no re-run, no backend.
   const calmar = computeCalmar(equity, balance)
-  // 7a — expectancy. $/trade is always available; R needs per-trade risk, which stored
-  // trades don't carry (profit only), so expectancy_r is not computable — left out honestly.
+  // Expectancy. $/trade is always available; R needs per-trade risk, which stored trades
+  // don't carry (profit only), so expectancy_r is not computable — left out honestly.
   const expectancyUsd = (run.net_pnl != null && run.trade_count)
     ? run.net_pnl / run.trade_count
     : null
-  // 7b — Wald–Wolfowitz z-score over the win/loss sequence.
   const zScore = computeZScore(equity)
-  // Profit factor: the backend stores null when gross losses are 0 (divide-by-zero). That case is
-  // an undefeated run, not unknown data — recover it from the trades and print ∞.
+  // Profit factor: the backend stores null when gross losses are 0 (divide-by-zero). That case
+  // is an undefeated run, not unknown data — recover it from the trades and print ∞.
   const tradeProfits = equity.map(e => e.profit).filter((p): p is number => p != null && p !== 0)
   const grossLoss = tradeProfits.filter(p => p < 0).reduce((a, b) => a + Math.abs(b), 0)
   const pfValue = run.profit_factor
     ?? (tradeProfits.length > 0 && grossLoss === 0 ? Infinity : null)
-  // 7c — profit concentration: largest quarter's share of gross profit. Prefer the
-  // backend-persisted value (authoritative, feeds grading); fall back to the client calc
-  // for older runs predating the column. Both use the identical formula, so they agree.
+  // Profit concentration: largest quarter's share of gross profit. Prefer the backend-persisted
+  // value (authoritative, feeds grading); fall back to the client calc for older runs predating
+  // the column. Both use the identical formula, so they agree.
   const profitConc = run.profit_concentration_pct ?? computeProfitConcentration(run.daily_pnl ?? [])
-  // 7d — max drawdown as a % of the equity it fell FROM (peak-relative), which is the drawdown
-  // that would actually have ended the account. NOT the dollar drawdown over a static
-  // account_size: that reported 1096.7% on a run whose $109,665 drop came off a $330,303 peak,
-  // because the account had grown 33x away from the balance the denominator was frozen at.
+  // Max drawdown as a % of the equity it fell FROM (peak-relative), which is the drawdown that
+  // would actually have ended the account. NOT the dollar drawdown over a static account_size:
+  // that reported 1096.7% on a run whose $109,665 drop came off a $330,303 peak, because the
+  // account had grown 33x away from the balance the denominator was frozen at.
   // Null only when no balance is available (no ruleset / no trades).
   const ddWorst  = (balance != null && balance > 0 && equity.length >= 2)
     ? maxDrawdownPctOf(rebaseEquity(equity, balance))
     : null
   const maxDdPct = ddWorst != null ? ddWorst.pct * 100 : null
-  // The dollars of that SAME episode — what the card's sub-line describes. A different, usually
-  // larger, dollar drawdown exists later in a compounding run; it lives in the tooltip, never
+  // The dollars of that SAME episode — what the card's caption describes. A different, usually
+  // larger, dollar drawdown exists later in a compounding run; it is reported separately, never
   // beside the percentage it does not correspond to.
   const ddAtWorstPct = ddWorst?.dollars ?? null
   const ddPeak       = ddWorst?.peak ?? null
@@ -551,211 +517,339 @@ function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], 
 }
 type DerivedKpis = ReturnType<typeof deriveKpis>
 
-export function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false, fixedHeight = null,
-                         compare = null, filtered = false }: {
+// ── Time underwater ──────────────────────────────────────────────────────────
+// Share of trading days spent below the previous equity high. Max drawdown says how DEEP
+// the hole was; this says how long you sat in it, which is the half that decides whether a
+// strategy is holdable. Rebased to 0 so it never depends on the account balance.
+function computeTimeUnderwater(daily: DailyPnlPoint[]): number | null {
+  if (daily.length < 2) return null
+  let bal = 0, peak = 0, under = 0
+  for (const d of daily) {
+    bal += d.pnl ?? 0
+    if (bal > peak) peak = bal
+    else if (bal < peak) under++
+  }
+  return under / daily.length
+}
+
+// ── Performance panel — three questions ──────────────────────────────────────
+//
+// Twelve metrics are not twelve peers. They answer three questions: what did it MAKE, what
+// did it RISK, and can I TRUST it. One card per question, one hero number each, its
+// supporting rows beneath.
+//
+// That grouping is what deleted the two problems this panel had. The 6+6 "More metrics"
+// expand is gone (three wide cards hold every metric at once, so nothing hides behind a
+// chevron), and with it the fixed pixel heights KPI_ROW_H 196/228 that the whole layout was
+// pinned to in order to match the evaluation card — a constant height on variable content
+// is what cropped the taller cards. Rows flow now; nothing is clipped. The evaluation card
+// itself became the ribbon above, which is what stopped `unconstrained` rendering 300×196px
+// of empty box (it states no rules, so it had no rows to draw).
+//
+// COLOUR POLICY — colour marks the exception, not the sign:
+//   · the three hero numbers carry colour (they are each card's verdict)
+//   · every delta is coloured in both directions — a change is the signal the news filter
+//     was opened to find, and its direction is the point
+//   · a supporting row stays neutral unless it is an EXCEPTION: an unexpected sign, or a
+//     value at a threshold that should stop you
+// Sign-colouring every row was the obvious alternative and it fails three ways: on a
+// strategy that works nearly every row is positive, so green ranks nothing; Worst Day and
+// Deepest-in-$ can only ever be negative, so red on them is decoration on a definition; and
+// Sharpe 0.91 is positive AND weak, so green would call it good. Where a number is soft,
+// the row says so in words (`· weak`) instead of lying with a colour.
+
+// A drawdown meter's track is snapped to one of these ceilings rather than scaled to the
+// run, so two runs of the same strategy stay visually comparable. Smallest ceiling that
+// holds the largest marker with ~8% headroom.
+const METER_CEILINGS = [25, 50, 75, 100]
+function meterCeiling(...vals: Array<number | null | undefined>): number {
+  const m = Math.max(0, ...vals.filter((v): v is number => v != null && isFinite(v)))
+  return METER_CEILINGS.find(c => m <= c * 0.92) ?? 100
+}
+
+// The observed drawdown as a bar, with two optional references: the ruleset's stated limit
+// (gold tick) and the stress test's worst-1% simulated drawdown (hatched extension past the
+// solid fill). Both are drawn ONLY when real — a percentage drawdown means nothing on its
+// own, but neither reference may ever be invented to give it one. No stress test → no
+// hatch, and the caption says so rather than implying the tail is zero.
+function DrawdownMeter({ pct, limitPct, tailPct }: {
+  pct: number; limitPct: number | null; tailPct: number | null
+}) {
+  const ceiling = meterCeiling(pct, limitPct, tailPct)
+  const x = (v: number) => `${Math.min(100, (v / ceiling) * 100)}%`
+  const breached = limitPct != null && pct >= limitPct
+  const hasTail = tailPct != null && tailPct > pct
+  return (
+    <div className="mt-3.5">
+      {/* padding-top leaves room for the limit label; the track clips its own fill, so the
+          tick and label are siblings OUTSIDE it or they'd be cut off at the rounded edge. */}
+      <div className="relative pt-[15px]">
+        {limitPct != null && (
+          <span
+            className="absolute top-0 -translate-x-1/2 font-mono text-[9.5px] text-gold-text whitespace-nowrap"
+            style={{ left: x(limitPct) }}
+          >
+            limit {limitPct.toFixed(0)}%
+          </span>
+        )}
+        <div className="relative h-5 rounded-[5px] bg-bg-sunken border border-border-subtle overflow-hidden">
+          <div
+            className={`absolute inset-y-0 left-0 border-r-2 border-neg-text ${breached ? 'bg-neg-text/40' : 'bg-neg-text/20'}`}
+            style={{ width: x(pct) }}
+          />
+          {hasTail && (
+            <div
+              className="absolute inset-y-0 bg-[repeating-linear-gradient(135deg,currentColor_0_2px,transparent_2px_6px)] text-neg-text/40"
+              style={{ left: x(pct), width: x(tailPct! - pct) }}
+            />
+          )}
+        </div>
+        {limitPct != null && (
+          <span className="absolute w-[2px] bg-gold-text" style={{ left: x(limitPct), top: 11, bottom: -4 }} />
+        )}
+      </div>
+      <div className="flex justify-between mt-1 font-mono text-[9.5px] text-text-tertiary tabular-nums">
+        <span>0%</span><span>{(ceiling / 2).toFixed(0)}%</span><span>{ceiling}%</span>
+      </div>
+    </div>
+  )
+}
+
+type PanelRow = {
+  key: string
+  label: string
+  value: React.ReactNode
+  /** Dim suffix. Where a number is soft, this says so in words instead of via colour. */
+  note?: string
+  /** Exception colour ONLY — omit and the row stays neutral. See the colour policy above. */
+  cls?: string
+  cmp?: (k: DerivedKpis) => number | null | undefined
+  fmt?: (delta: number) => string
+  goodWhen?: 'higher' | 'lower' | 'none'
+}
+
+// ── Panel ────────────────────────────────────────────────────────────────────
+
+export function PerformancePanel({
+  run, fallback, equity = [], balance = null, compare = null, filtered = false,
+  tailPct = null, limitPct = null, ribbon = null,
+}: {
   run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
-  showMore?: boolean; fixedHeight?: number | null
-  // When set, every card's sub-line becomes this metric's delta against `compare` instead of its
-  // usual caption. Used by the news filter: the grid IS the before/after readout, so there is no
-  // second set of KPI tiles anywhere on the page.
+  // When set, every row's delta is measured against this run instead of showing its caption.
+  // The news filter IS this comparison — there is no second copy of the numbers anywhere.
   compare?: { run: Run; fallback: FallbackMetrics; equity: EquityPoint[] } | null
   filtered?: boolean
+  /** Worst-1% simulated drawdown, percent. Null unless a stress test measured one. */
+  tailPct?: number | null
+  /** The selected ruleset's stated peak-drawdown limit, percent. Null when it states none. */
+  limitPct?: number | null
+  /** Verdict ribbon (backtests) or strategy legend (stacks). Rendered above the three cards. */
+  ribbon?: React.ReactNode
 }) {
-  const pnlCls = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
-
   const d  = deriveKpis(run, fallback, equity, balance)
   const dc = compare ? deriveKpis(compare.run, compare.fallback, compare.equity, balance) : null
 
-  const { sharpe, worstDay, worstStreak, recoveryFactor, calmar,
-          expectancyUsd, zScore, pfValue, profitConc, maxDdPct, ddDollar,
-          ddAtWorstPct, ddPeak } = d
+  const { sharpe, worstDay, worstStreak, calmar, expectancyUsd, zScore,
+          pfValue, profitConc, maxDdPct, ddDollar, ddAtWorstPct, ddPeak } = d
   const sharpeEst = run.sharpe == null && fallback.sharpe != null
-  // Canonical daily-√252 Sharpe shown as the value; platform's own value + low-sample as sub.
-  const sharpeSub = (
-    <span>
-      {sharpeLabel(sharpe, sharpeEst)}
-      {run.platform_sharpe != null && (
-        <span className="text-text-tertiary"> · platform: {run.platform_sharpe.toFixed(2)}</span>
-      )}
-      {run.sharpe_low_sample && <span className="text-warn-text"> · low sample &lt;10d</span>}
-    </span>
-  )
-  // Reward:risk for Expectancy's sub-line (Avg Win / Avg Loss folded in here).
-  const rr = (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
-    ? (run.avg_win / Math.abs(run.avg_loss)).toFixed(2) : null
+  const underwater = computeTimeUnderwater(run.daily_pnl ?? [])
 
-  // ── Flat KPI layout: 6 core cards always shown, 6 "more" revealed in the same 6-col grid ──
-  // Big-number cards with a sentiment-coloured left accent (matches the eval cards). Trade Count
-  // moves out to the standout beside the verdict, not here.
-  const calmarTip = `Annualized return (CAGR) ÷ worst peak-relative drawdown. Both sides compound: CAGR always did, and since 2026-07-30 the drawdown does too — measured against the equity it fell from, not the starting balance. Dividing by a static account_size dragged this ratio down by however far the account had grown (it read 0.11 on a run whose honest value is 2.25). It therefore DOES move with the Account balance slider — both halves depend on the balance and they do not cancel.${recoveryFactor != null ? ` Its dollar twin, annualized net P&L ÷ deepest dollar drawdown, is ${recoveryFactor.toFixed(2)} (the old Recovery Factor).` : ''} The definitive risk-adjusted metric for funded traders; trade-derived, so NT8 and MT5 agree.`
-  const expectancySub = (run.avg_win != null && run.avg_loss != null)
-    ? `avg +$${run.avg_win.toFixed(0)} / -$${Math.abs(run.avg_loss).toFixed(0)}${rr ? ` · ${rr}:1 R:R` : ''}`
-    : 'per trade'
+  // The headline is stated in the units this repo already uses for it — CLAUDE.md describes
+  // this strategy as "832x at 64.2% max drawdown", not as a dollar figure. Falls back to net
+  // P&L when there is no balance to multiply.
+  const multiple = (balance != null && balance > 0 && run.net_pnl != null)
+    ? (balance + run.net_pnl) / balance
+    : null
 
-  type KMetric = {
-    key: string; label: string; value: React.ReactNode; valueCls?: string; tone?: KpiTone
-    sub?: React.ReactNode; tooltip?: string
-    // How this card compares against `compare`. No `cmp` = no honest comparison exists (Avg Trade
-    // has no filtered value at all), and the sub-line then says so instead of showing a delta.
-    cmp?: (k: DerivedKpis) => number | null | undefined
-    fmt?: (delta: number) => string
-    goodWhen?: 'higher' | 'lower' | 'none'
-  }
   const fmtMoney = (x: number) => dollar(x, true)
   const fmtRatio = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(2)}`
   const fmtPct01 = (x: number) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}%`
   const fmtPctPt = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}%`
   const fmtCount = (x: number) => `${x >= 0 ? '+' : ''}${x}`
 
-  // Core — always shown.
-  const core: KMetric[] = [
-    { key: 'netpnl', label: 'Net P&L', value: <FitMoney n={run.net_pnl} signed />, valueCls: pnlCls,
-      sub: (balance != null && balance > 0 && run.net_pnl != null) ? `${(run.net_pnl / balance * 100).toFixed(1)}% return` : 'net of commissions',
-      cmp: k => k.netPnl, fmt: fmtMoney,
-      tooltip: "Total profit or loss after commissions. The bottom line." },
-    { key: 'sharpe', label: 'Sharpe (annlzd)', value: sharpe != null ? sharpe.toFixed(2) : '—', valueCls: sharpeCls(sharpe), sub: sharpeSub,
-      cmp: k => k.sharpe, fmt: fmtRatio,
-      tooltip: "Return per unit of risk, annualized (daily P&L × √252) — the canonical definition shared with the optimizer and walk-forward. Days with no trade count as flat $0, so a strategy that sits out most days is scored on the whole period, not just the days it traded. 'platform' shows NT8/MT5's own reported Sharpe for reference (Python runs have no platform, so it's blank); note TradingView's Sharpe is monthly and NOT annualized — multiply it by √12 ≈ 3.46 to compare. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing. 'low sample' flags fewer than 10 days that actually traded, where the value is statistically noisy." },
-    { key: 'winrate', label: 'Win Rate', value: pct(run.win_rate), valueCls: winRateCls(run.win_rate), sub: winRateLabel(run.win_rate),
-      cmp: k => k.winRate, fmt: fmtPct01,
-      tooltip: "% of trades that closed in profit. Good ≥60%, fair ≥50%, weak <50%. High win rate alone doesn't guarantee profitability — size of wins vs losses matters too." },
-    { key: 'maxdd', label: 'Max Drawdown',
-      value: maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—',
-      valueCls: maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary', tone: 'neutral',
-      sub: maxDdPct != null && ddAtWorstPct != null && ddPeak != null
-        ? `−$${Math.round(ddAtWorstPct).toLocaleString()} from a $${Math.round(ddPeak).toLocaleString()} peak`
-        : ddDollar != null
-          ? `$${Math.round(ddDollar).toLocaleString()} peak-to-trough · set a balance for %`
-          : 'set an account balance',
-      cmp: k => k.maxDdPct ?? k.ddDollar, fmt: maxDdPct != null ? fmtPctPt : fmtMoney, goodWhen: 'lower',
-      tooltip: `Worst peak-to-trough drop as a % of the equity it fell FROM — the drawdown that would actually have ended the account. Measured against the running peak, not the starting balance: on a compounding run the account grows away from its opening capital, so dividing a late dollar drawdown by a static account_size reports a percentage that never happened (this card read 1096.7% before 2026-07-30). The sub-line gives that same episode in dollars.${ddDollar != null ? ` The DEEPEST drawdown in dollars is $${Math.round(ddDollar).toLocaleString()} — usually a different, later episode, and the one a prop firm's fixed limit caps.` : ''} Trade-derived, so NT8 and MT5 agree. Lower is better.` },
-    { key: 'pf', label: 'Profit Factor', value: kpiNum(pfValue), valueCls: pfCls(pfValue), sub: pfLabel(pfValue),
-      cmp: k => k.pfValue, fmt: fmtRatio,
-      tooltip: "Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0. A run with no losing trade has no denominator, so it shows ∞." },
-    { key: 'calmar', label: 'Calmar Ratio', value: kpiNum(calmar), valueCls: calmarCls(calmar), sub: calmarLabel(calmar),
-      cmp: k => k.calmar, fmt: fmtRatio, tooltip: calmarTip },
+  const madeRows: PanelRow[] = [
+    { key: 'net', label: 'Net', value: <FitMoney n={run.net_pnl} signed />,
+      // Exception: a NEGATIVE net inside a card labelled "Made" is the unexpected sign.
+      cls: run.net_pnl != null && run.net_pnl < 0 ? 'text-neg-text' : undefined,
+      cmp: k => k.netPnl, fmt: fmtMoney },
+    { key: 'per', label: 'Per trade', value: expectancyUsd != null ? dollar(expectancyUsd, true) : '—',
+      cls: expectancyUsd != null && expectancyUsd < 0 ? 'text-neg-text' : undefined,
+      note: (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
+        ? `${(run.avg_win / Math.abs(run.avg_loss)).toFixed(2)}:1 R:R` : undefined,
+      cmp: k => k.expectancyUsd, fmt: fmtMoney },
+    { key: 'wr', label: 'Win rate', value: pct(run.win_rate),
+      // W/L counts aren't stored; derived from the rate so the note can't drift from the value.
+      note: (run.win_rate != null && run.trade_count != null)
+        ? `${Math.round(run.win_rate * run.trade_count)}W / ${run.trade_count - Math.round(run.win_rate * run.trade_count)}L`
+        : winRateLabel(run.win_rate),
+      cmp: k => k.winRate, fmt: fmtPct01 },
+    { key: 'pf', label: 'Profit factor', value: kpiNum(pfValue),
+      // Exception: below 1.0 the strategy loses money — the one PF value that must shout.
+      cls: pfValue != null && isFinite(pfValue) && pfValue < 1 ? 'text-neg-text' : undefined,
+      note: pfLabel(pfValue),
+      cmp: k => k.pfValue, fmt: fmtRatio },
   ]
 
-  // More — revealed in the same grid, directly beneath the core row.
-  const more: KMetric[] = [
-    { key: 'profconc', label: 'Profit Concentration',
+  const riskedRows: PanelRow[] = [
+    { key: 'dd$', label: 'Deepest in $', value: ddDollar != null ? `−${dollar(ddDollar)}` : '—',
+      note: 'prop-firm view', cmp: k => k.ddDollar, fmt: fmtMoney, goodWhen: 'lower' },
+    { key: 'wd', label: 'Worst day', value: <FitMoney n={worstDay} />,
+      cmp: k => k.worstDay, fmt: fmtMoney },
+    // Exception at ≥6 only. worstStreakCls also ambers at 3, which is an ordinary run of bad
+    // days on a selective strategy — colouring it would make the amber mean nothing by the
+    // time a real 6-day streak showed up.
+    { key: 'ws', label: 'Worst streak', value: worstStreak != null ? `${worstStreak} days` : '—',
+      cls: worstStreak != null && worstStreak >= 6 ? 'text-neg-text' : undefined,
+      note: 'consecutive losing', cmp: k => k.worstStreak, fmt: fmtCount, goodWhen: 'lower' },
+    { key: 'uw', label: 'Time underwater', value: underwater != null ? `${(underwater * 100).toFixed(0)}%` : '—',
+      note: 'of days', goodWhen: 'lower' },
+  ]
+
+  const trustedRows: PanelRow[] = [
+    { key: 'conc', label: 'Profit concentration',
       value: profitConc != null ? `${profitConc.toFixed(0)}%` : '—',
-      valueCls: concentrationCls(profitConc), sub: concentrationLabel(profitConc),
-      cmp: k => k.profitConc, fmt: fmtPctPt, goodWhen: 'lower',
-      tooltip: "Share of total gross profit (sum of positive daily P&L) earned in the single most profitable calendar quarter of the test span (split into 4 equal date slices). High means the edge is clustered in one period — a classic sign of curve-fitting to a recent regime. ≥60% is a red flag." },
-    { key: 'expectancy', label: 'Expectancy', value: expectancyUsd != null ? `$${expectancyUsd.toFixed(2)}` : '—',
-      valueCls: expectancyUsd != null ? (expectancyUsd >= 0 ? 'text-pos-text' : 'text-neg-text') : '', sub: expectancySub,
-      cmp: k => k.expectancyUsd, fmt: fmtMoney,
-      tooltip: "Average net P&L per trade (net P&L ÷ trade count) — your edge per position. Sub-line shows avg win / avg loss and the win:loss (reward:risk) ratio. R-multiple expectancy needs per-trade risk, which stored trades don't carry (profit only), so it's omitted rather than guessed." },
-    { key: 'zscore', label: 'Z-Score', value: zScore != null ? zScore.toFixed(2) : '—', valueCls: zScoreCls(zScore),
-      sub: zScore != null ? zScoreLabel(zScore) : zScoreUnavailableLabel(equity),
-      cmp: k => k.zScore, fmt: fmtRatio, goodWhen: 'none',
-      tooltip: "Wald–Wolfowitz runs test over the win/loss sequence. Measures whether wins and losses streak more than random chance. Within ±1.5 is healthy; beyond ±2 signals non-random streaking (positive = fewer runs / longer streaks, negative = alternating more than chance)." },
-    { key: 'avgtrade', label: 'Avg Trade', value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—',
-      sub: run.avg_trade_duration_min != null ? 'avg duration / trade' : 'duration unavailable',
-      cmp: k => k.avgDur, fmt: (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(0)} min`, goodWhen: 'none',
-      tooltip: "Average time in a position per trade. The MT5 Strategy Tester report includes only trade-close times (no entry time), so duration can't be computed for MT5 runs — it shows as “—”." },
-    { key: 'worstday', label: 'Worst Day', value: <FitMoney n={worstDay} />, valueCls: worstDay != null && worstDay < 0 ? 'text-neg-text' : '', sub: 'single worst trading day',
-      cmp: k => k.worstDay, fmt: fmtMoney,
-      tooltip: "Largest single-day loss. Compare this to your prop firm's daily loss limit — exceeding it would have failed the challenge that day." },
-    { key: 'worststreak', label: 'Worst Streak', value: worstStreak != null ? `${worstStreak} L` : '—', valueCls: worstStreakCls(worstStreak), sub: 'consecutive losing days',
-      cmp: k => k.worstStreak, fmt: fmtCount, goodWhen: 'lower',
-      tooltip: "Longest consecutive run of losing days. Tests whether you'd stay disciplined under sustained drawdown. ≥6 days is a red flag." },
+      // Exception: ≥60% in one quarter is the classic curve-fit signal.
+      cls: exceptionCls(concentrationCls(profitConc)),
+      note: profitConc != null ? concentrationLabel(profitConc) : undefined,
+      cmp: k => k.profitConc, fmt: fmtPctPt, goodWhen: 'lower' },
+    { key: 'sharpe', label: 'Sharpe', value: sharpe != null ? sharpe.toFixed(2) : '—',
+      // NOT coloured by sign — 0.91 is positive AND weak, so a green would call it good.
+      // sharpeLabel carries the quality, and the estimated / low-sample caveats with it.
+      note: sharpe != null ? sharpeLabel(sharpe, sharpeEst) : undefined,
+      cmp: k => k.sharpe, fmt: fmtRatio },
+    { key: 'z', label: 'Z-score', value: zScore != null ? zScore.toFixed(2) : '—',
+      cls: exceptionCls(zScoreCls(zScore)),
+      // When it can't be computed the note says WHY, rather than leaving a bare dash.
+      note: zScore != null ? zScoreLabel(zScore) : zScoreUnavailableLabel(equity),
+      cmp: k => k.zScore, fmt: fmtRatio, goodWhen: 'none' },
+    { key: 'dur', label: 'Avg hold',
+      value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—',
+      cmp: k => k.avgDur, fmt: (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(0)} min`, goodWhen: 'none' },
   ]
 
-  // Sub-line while comparing: the delta replaces the caption rather than crowding in beside it. The
-  // caption is a standing explanation you read once; the delta is the answer to the question the
-  // filter was opened to ask, and it changes on every drag of a slider.
-  const subFor = (m: KMetric): React.ReactNode => {
-    if (!dc) return m.sub
-    if (!m.cmp) return <span className="text-text-tertiary">no filtered value</span>
-    const to = m.cmp(d), from = m.cmp(dc)
-    if (to == null || from == null || !isFinite(to) || !isFinite(from)) {
-      return <span className="text-text-tertiary">no comparison</span>
-    }
+  // While comparing, the delta REPLACES the note. The note is a standing explanation you
+  // read once; the delta answers the question the filter was opened to ask. Rows that did
+  // not move say nothing — printing "unchanged vs unfiltered" on every row was eight lines
+  // of text to communicate that nothing happened.
+  const rowSuffix = (r: PanelRow): React.ReactNode => {
+    if (!dc) return r.note ? <span className="text-text-tertiary"> · {r.note}</span> : null
+    if (!r.cmp) return null
+    const to = r.cmp(d), from = r.cmp(dc)
+    if (to == null || from == null || !isFinite(to) || !isFinite(from)) return null
     const delta = to - from
-    if (Math.abs(delta) < 1e-9) return <span className="text-text-tertiary">unchanged vs unfiltered</span>
-    const good = m.goodWhen === 'lower' ? delta < 0 : delta > 0
-    const cls = m.goodWhen === 'none' ? 'text-text-secondary' : good ? 'text-pos-text' : 'text-neg-text'
-    return (
-      <span>
-        <span className={`tabular-nums font-medium ${cls}`}>{(m.fmt ?? fmtRatio)(delta)}</span>
-        <span className="text-text-tertiary"> vs unfiltered</span>
-      </span>
-    )
+    if (Math.abs(delta) < 1e-9) return null
+    const good = r.goodWhen === 'lower' ? delta < 0 : delta > 0
+    const cls = r.goodWhen === 'none' ? 'text-text-secondary' : good ? 'text-pos-text' : 'text-neg-text'
+    return <span className={`${cls} tabular-nums`}> {(r.fmt ?? fmtRatio)(delta)}</span>
   }
 
-  const card = (m: KMetric, fixedCard = false, valSize = 'text-[26px] lg:text-[30px]') => (
-    <div
-      key={m.key}
-      className={`flex flex-col justify-center ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'} border border-border-subtle border-l-[3px] ${KPI_TONE_BORDER[m.tone ?? kpiTone(m.valueCls)]} rounded-xl px-4 py-3 overflow-hidden transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${fixedCard ? 'h-full min-h-[88px]' : 'min-h-[100px]'}`}
-    >
-      <div className="flex items-center text-[9px] font-bold uppercase tracking-[0.8px] text-text-tertiary">
-        {m.label}{m.tooltip && <InfoTip text={m.tooltip} />}
-      </div>
-      <div className={`${valSize} font-bold tracking-[-0.6px] font-mono leading-none mt-1.5 transition-[font-size] duration-300 ${m.valueCls ?? ''}`}>{m.value}</div>
-      <div className="text-[10px] text-text-tertiary mt-1 leading-snug min-h-[14px]">{subFor(m)}</div>
+  const rows = (list: PanelRow[]) => (
+    <div className="mt-auto pt-3 border-t border-border-subtle">
+      {list.map((r, i) => (
+        <div key={r.key}
+          className={`flex items-baseline justify-between gap-3 py-[7px] text-[12px] ${i < list.length - 1 ? 'border-b border-border-subtle/60' : ''}`}>
+          <span className="text-text-tertiary">{r.label}</span>
+          <span className={`font-mono tabular-nums text-right ${r.cls ?? 'text-text-primary'}`}>
+            {r.value}{rowSuffix(r)}
+          </span>
+        </div>
+      ))}
     </div>
   )
 
-  // On lg the grid is pinned to the shared fixed height (fixedHeight), which already reflects the
-  // collapsed/expanded state (the parent grows it when More metrics opens). Two row-grids with
-  // explicit heights: collapsed → core row = full height; expanded → both rows at half height
-  // summing (with the gap) to exactly the same total, so the grid and eval card always match.
-  // Heights animate. Off lg → normal flow.
-  const fh = fixedHeight
-  if (fh != null) {
-    const gap = 12
-    const half = Math.max(0, (fh - gap) / 2)
-    return (
-      <div className="flex flex-col" style={{ height: fh }}>
-        <div
-          className={`grid ${KPI_COLS} gap-x-3 shrink-0`}
-          style={{ height: showMore ? half : fh, transition: 'height 0.3s ease' }}
-        >
-          {core.map(m => card(m, true, showMore ? 'text-[26px]' : 'text-[34px]'))}
-        </div>
-        <div
-          className={`grid ${KPI_COLS} gap-x-3 shrink-0 overflow-hidden`}
-          style={{ height: showMore ? half : 0, marginTop: showMore ? gap : 0, transition: 'height 0.3s ease, margin-top 0.3s ease' }}
-        >
-          {more.map(m => card(m, true, 'text-[26px]'))}
-        </div>
-      </div>
-    )
+  // Hero delta: shown beside the big number, in the unit that number is stated in.
+  const heroDelta = (to: number | null | undefined, from: number | null | undefined,
+                     fmt: (x: number) => string, goodWhen: 'higher' | 'lower') => {
+    if (!dc) return null
+    if (to == null || from == null || !isFinite(to) || !isFinite(from)) return null
+    const delta = to - from
+    if (Math.abs(delta) < 1e-9) return <span className="text-[12px] text-text-tertiary">unchanged</span>
+    const good = goodWhen === 'lower' ? delta < 0 : delta > 0
+    return <span className={`text-[12px] tabular-nums ${good ? 'text-pos-text' : 'text-neg-text'}`}>{fmt(delta)}</span>
   }
+
+  const cardCls = `flex flex-col rounded-xl border border-border-subtle px-[17px] pt-[15px] pb-[7px] ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'}`
+
+  const head = (title: string, question: string, aside?: React.ReactNode) => (
+    <>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[10px] font-bold uppercase tracking-[0.9px] text-text-secondary">{title}</span>
+        {aside}
+      </div>
+      <div className="text-[11px] text-text-tertiary mt-[2px]">{question}</div>
+    </>
+  )
+
+  const hero = (value: React.ReactNode, unit: React.ReactNode, cls: string, tip: string) => (
+    <div className="flex items-baseline gap-2.5 flex-wrap mt-2.5 mb-0.5">
+      <span className={`text-[38px] font-bold font-mono leading-none tracking-[-0.8px] tabular-nums ${cls}`}>{value}</span>
+      <span className="text-[12px] text-text-tertiary">{unit}<InfoTip text={tip} /></span>
+    </div>
+  )
+
+  const madeTip = "What the account did over the whole test, stated as a multiple of the capital it started with — the unit CLAUDE.md already uses for this strategy ('832x at 64.2% max drawdown'). Moves with the Account balance slider, because the multiple is net P&L ÷ that balance. With no balance set it falls back to net P&L in dollars."
+  const riskedTip = "Worst peak-to-trough drop as a % of the equity it fell FROM — the drawdown that would actually have ended the account. Measured against the running peak, not the starting balance: on a compounding run the account grows away from its opening capital, so dividing a late dollar drawdown by a static account_size reports a percentage that never happened (this read 1096.7% before 2026-07-30). The bar's gold tick is the selected ruleset's stated limit; the hatched extension past the fill is the worst-1% drawdown the stress test simulated. Each is drawn only when it actually exists."
+  const trustedTip = `Annualized return (CAGR) ÷ worst peak-relative drawdown — return earned per unit of pain. Both halves compound, so this DOES move with the Account balance slider; they do not cancel. Above 2 is strong, below 0.5 weak.${d.recoveryFactor != null ? ` Its dollar twin, annualized net P&L ÷ deepest dollar drawdown, is ${d.recoveryFactor.toFixed(2)} (the old Recovery Factor).` : ''} The rows beneath are the reasons to distrust the number above them: profit clustered in one quarter, a soft Sharpe, or streaking that isn't random.`
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-      {core.map(m => card(m))}
-      {showMore && more.map(m => card(m))}
+    <div className="space-y-3">
+      {ribbon}
+      <div className="grid gap-3 md:grid-cols-3 items-stretch">
+
+        <div className={`${cardCls} border-t-2 border-t-pos-text/50`}>
+          {head('Made', 'What came out of it')}
+          {hero(
+            multiple != null ? `${multiple.toFixed(1)}x` : <FitMoney n={run.net_pnl} signed />,
+            multiple != null ? 'on capital' : 'net',
+            (run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text',
+            madeTip,
+          )}
+          {dc && <div className="mb-1">{heroDelta(d.netPnl, dc.netPnl, fmtMoney, 'higher')}</div>}
+          {rows(madeRows)}
+        </div>
+
+        <div className={`${cardCls} border-t-2 border-t-neg-text/50`}>
+          {head('Risked', 'What it cost to hold',
+            limitPct != null
+              ? <span className="font-mono text-[10px] text-gold-text">vs {limitPct.toFixed(0)}% limit</span>
+              : <span className="text-[10px] text-text-tertiary">no limit set</span>)}
+          {hero(
+            maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—',
+            'worst drawdown', maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary', riskedTip,
+          )}
+          {maxDdPct != null
+            ? <DrawdownMeter pct={maxDdPct} limitPct={limitPct} tailPct={tailPct} />
+            : <div className="mt-3.5 text-[11px] text-text-tertiary">Set an account balance to measure drawdown as a percentage.</div>}
+          <div className="text-[11px] text-text-tertiary leading-snug mt-2">
+            {maxDdPct != null && ddAtWorstPct != null && ddPeak != null
+              ? <>−{dollar(ddAtWorstPct)} from a {dollar(ddPeak)} peak.{' '}</>
+              : null}
+            {limitPct != null && maxDdPct != null && (maxDdPct >= limitPct
+              ? <span className="text-neg-text">Breaches the {limitPct.toFixed(0)}% limit.{' '}</span>
+              : <>Clears by {(limitPct - maxDdPct).toFixed(1)} points.{' '}</>)}
+            {tailPct != null
+              ? <>Worst-1% simulated: {tailPct.toFixed(1)}%.</>
+              : <>No stress test — the simulated tail is unknown, not zero.</>}
+          </div>
+          {rows(riskedRows)}
+        </div>
+
+        <div className={`${cardCls} border-t-2 border-t-accent/45`}>
+          {head('Trusted', 'Whether to believe it',
+            run.trade_count != null
+              ? <span className="font-mono text-[10px] text-text-tertiary">{run.trade_count} trades</span>
+              : undefined)}
+          {hero(kpiNum(calmar), 'Calmar', calmarCls(calmar), trustedTip)}
+          {dc
+            ? <div className="mb-1">{heroDelta(d.calmar, dc.calmar, fmtRatio, 'higher')}</div>
+            : <div className="text-[11px] text-text-tertiary leading-snug mt-2">{calmarLabel(calmar)}</div>}
+          {rows(trustedRows)}
+        </div>
+
+      </div>
     </div>
   )
 }
-
-// Lives in the Performance header (not below the grid) so the KPI grid can fill the column and
-// stay the same height as the eval card.
-export function MoreMetricsToggle({ open, onToggle, count }: { open: boolean; onToggle: () => void; count: number }) {
-  return (
-    <button
-      onClick={onToggle}
-      className="inline-flex items-center gap-1.5 text-[12px] text-text-secondary hover:text-text-primary"
-    >
-      <ChevronRight size={13} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
-      {open ? 'Fewer metrics' : `More metrics (${count})`}
-    </button>
-  )
-}
-
-// Standout trade count — used in the no-evaluation fallback (the eval card carries it otherwise).
-export function TradeCountStandout({ count }: { count: number }) {
-  return (
-    <div className="bg-bg-surface border border-border-subtle border-l-[3px] border-l-accent rounded-lg px-4 py-3 flex items-center gap-3">
-      <div className="text-[30px] font-bold font-mono leading-none text-accent tabular-nums">{count}</div>
-      <div className="text-[11px] font-bold uppercase tracking-[0.6px] text-text-secondary">Trades</div>
-    </div>
-  )
-}
-
 // ── Regime overlay — colored line design ──────────────────────────────────────
 
 const _OVERLAY_KEY = 'regime_overlay_enabled'
@@ -1561,13 +1655,6 @@ function personalStreakPass(ev: EvaluationDetail): boolean {
   return ev.breach_count - (ev.drawdown_pass ? 0 : 1) <= 0
 }
 
-const VERDICT_CONFIG = {
-  PASS:    { label: 'PASS',    bg: 'bg-pos-muted',  text: 'text-pos-text',  border: 'border-l-pos-text/50',  Icon: CheckCircle },
-  WARN:    { label: 'WARN',    bg: 'bg-warn-muted', text: 'text-warn-text', border: 'border-l-warn-text/50', Icon: Minus       },
-  DISCARD: { label: 'DISCARD', bg: 'bg-neg-muted',  text: 'text-neg-text',  border: 'border-l-neg-text/50',  Icon: XCircle     },
-  INFO:    { label: 'INFO',    bg: 'bg-bg-sunken',  text: 'text-text-tertiary', border: 'border-l-border-default', Icon: Info   },
-} as const
-
 // Compact ruleset chip that doubles as the firm switcher. Lives in BOTH header layouts (full and
 // condensed sticky) so you can page firms without scrolling back to the eval card, and shows only
 // the SELECTED firm — listing all four overflowed into the action buttons. Chevrons appear only for
@@ -1606,146 +1693,159 @@ function HeaderRulesetChip({ evals, selected, onSelect, compact = false }: {
   )
 }
 
-function EvalCard({ ev, netPnl, tradeCount, showName = true }: { ev: EvaluationDetail; netPnl?: number | null; tradeCount?: number | null; showName?: boolean }) {
-  const cfg = VERDICT_CONFIG[ev.verdict as keyof typeof VERDICT_CONFIG] ?? VERDICT_CONFIG.DISCARD
-  // Profitable runs that fail a firm rule get amber styling (not red) — keep the DISCARD label.
-  const isWarnColor = cfg === VERDICT_CONFIG.DISCARD && (netPnl ?? 0) > 0
-  const colorCfg    = isWarnColor ? VERDICT_CONFIG.WARN : cfg
-  const { Icon }    = cfg
+// ── Verdict ribbon ───────────────────────────────────────────────────────────
+// Replaces the old evaluation CARD. A card forced every ruleset to fill a fixed 300×196px
+// box, and `unconstrained` — which states no rules by design — had nothing to put in it, so
+// it rendered an empty panel next to a green PASS. As one row the verdict costs no vertical
+// space when it has little to say, and it grows a chip per rule when it has a lot.
+//
+// The trade count lives here, at the right, as the ribbon's anchor: it is the sample size
+// every other number on the page rests on, so it gets a size that says so, plus the cadence
+// (trades per month) that the repo's own design target is stated in.
 
+const VERDICT_CHIP: Record<string, { label: string; cls: string; rail: string; Icon: typeof CheckCircle }> = {
+  PASS:    { label: 'Pass',       cls: 'bg-pos-muted text-pos-text',        rail: 'border-l-pos-text/60',     Icon: CheckCircle },
+  WARN:    { label: 'Warn',       cls: 'bg-warn-muted text-warn-text',      rail: 'border-l-warn-text/60',    Icon: Minus },
+  DISCARD: { label: 'Discard',    cls: 'bg-neg-muted text-neg-text',        rail: 'border-l-neg-text/60',     Icon: XCircle },
+  // Not a grade — the absence of one. `unconstrained` states no limit, so nothing was
+  // checked and there is nothing to pass. Neutral on purpose: a green tick here used to
+  // claim a verdict the backend explicitly refuses to give (services/evaluator.py).
+  INFO:    { label: 'Not graded', cls: 'bg-bg-sunken text-text-tertiary',   rail: 'border-l-border-default',  Icon: Info },
+}
+
+function RuleChip({ label, pass, detail }: { label: string; pass: boolean; detail: string }) {
   return (
-    <div className={`bg-bg-surface border border-border-subtle border-l-[3px] ${colorCfg.border} rounded-lg overflow-hidden h-full flex flex-col`}>
-      {/* Header */}
-      <div className="px-4 pt-3.5 pb-2.5 flex items-start justify-between gap-3">
-        {showName && (
-          <div className="text-[13px] font-semibold text-text-primary leading-tight">{ev.ruleset_name}</div>
+    <span
+      title={`${label} — ${detail}`}
+      className={`inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[10.5px] font-medium whitespace-nowrap ${
+        pass ? 'bg-pos-muted/60 text-pos-text' : 'bg-neg-muted/60 text-neg-text'}`}
+    >
+      {pass ? <CheckCircle size={10} /> : <XCircle size={10} />}
+      {label}
+    </span>
+  )
+}
+
+// Sample size + cadence. Trades per month is the unit CLAUDE.md's Trading Philosophy states
+// the design target in ("a couple of times a month"), so the panel reports it in that unit
+// rather than leaving the reader to divide.
+function TradeCountAnchor({ count, of, spanDays }: {
+  count: number; of?: number | null; spanDays: number | null
+}) {
+  const months = spanDays != null && spanDays > 0 ? spanDays / 30.44 : null
+  const perMonth = months != null && months >= 1 ? count / months : null
+  const years = months != null ? months / 12 : null
+  return (
+    <div className="ml-auto flex items-center gap-2.5 pl-4 border-l border-border-subtle shrink-0">
+      <span className="text-[29px] font-bold font-mono leading-none text-accent tabular-nums">{count}</span>
+      <span className="flex flex-col leading-[1.25]">
+        <span className="text-[11px] font-bold uppercase tracking-[0.9px] text-text-secondary">
+          {of != null && of !== count ? `of ${of} trades` : 'Trades'}
+        </span>
+        {(years != null || perMonth != null) && (
+          <span className="font-mono text-[10px] text-text-tertiary">
+            {years != null && years >= 1 ? `${years.toFixed(1)} yrs` : months != null ? `${months.toFixed(0)} mo` : ''}
+            {years != null && perMonth != null ? ' · ' : ''}
+            {perMonth != null ? `≈${perMonth < 1 ? perMonth.toFixed(1) : perMonth.toFixed(0)}/month` : ''}
+          </span>
         )}
-        <span className={`inline-flex items-center gap-[5px] px-3 py-[5px] rounded-full text-[11px] font-bold uppercase tracking-[0.4px] flex-shrink-0 ${colorCfg.bg} ${colorCfg.text}`}>
-          <Icon size={11} />
-          {cfg.label}
-        </span>
-      </div>
-
-      <div className="mx-4 border-t border-border-subtle" />
-
-      {/* Rule checks. Personal/demo cards show the personal rules — never the prop
-          chips: firm_max_loss_eod is 0 there (sentinel = no trailing EOD rule), and
-          trailing MLL / consistency / contract cap don't apply. Old INFO rows
-          (pre-verdict evaluations) still show no chips. */}
-      {ev.verdict !== 'INFO' && (isPersonal(ev) ? (
-        <div className="px-4 py-2.5 space-y-2">
-          {ev.personal_max_drawdown_from_peak_pct != null && (
-            <EvalRow
-              label="Drawdown from peak"
-              pass={ev.drawdown_pass}
-              value={`≤ ${ev.personal_max_drawdown_from_peak_pct}% from equity peak`}
-            />
-          )}
-          {ev.personal_daily_loss_cap != null && ev.personal_max_consecutive_loss_days != null && (
-            <EvalRow
-              label="Consecutive capped days"
-              pass={personalStreakPass(ev)}
-              value={`< ${ev.personal_max_consecutive_loss_days} days in a row at −$${ev.personal_daily_loss_cap.toLocaleString()}`}
-            />
-          )}
-        </div>
-      ) : (
-        <div className="px-4 py-2.5 space-y-2">
-          <EvalRow
-            label="Daily drawdown"
-            pass={ev.drawdown_pass}
-            value={`≤ $${ev.firm_max_loss_eod.toLocaleString()} loss / day`}
-          />
-          {ev.firm_profit_target > 0 && (
-            <EvalRow
-              label="Profit target"
-              pass={ev.target_pass}
-              value={`$${ev.firm_profit_target.toLocaleString()} required`}
-            />
-          )}
-          {ev.consistency_pass != null && ev.firm_consistency_pct != null && (
-            <EvalRow
-              label="Consistency"
-              pass={ev.consistency_pass}
-              value={`No day > ${ev.firm_consistency_pct}% of total P&L`}
-              extra={ev.largest_day_share_pct != null
-                ? `actual: ${ev.largest_day_share_pct.toFixed(1)}%`
-                : undefined}
-            />
-          )}
-        </div>
-      ))}
-
-      {/* Footer — standout trade count (replaces the redundant net-P&L / drawdown notes) */}
-      {tradeCount != null && (
-        <div className="mt-auto flex items-baseline gap-2.5 px-4 py-3 bg-accent/5 border-t border-accent/20">
-          <span className="text-[40px] font-extrabold font-mono leading-none text-accent tabular-nums">{tradeCount}</span>
-          <span className="text-[12px] font-bold uppercase tracking-[0.8px] text-text-secondary">Trades</span>
-        </div>
-      )}
+      </span>
     </div>
   )
 }
 
-// Placeholder for the Evaluation column when the run is an optimizer parameter set that has never
-// been fully backtested (no equity curve / trade-level data / firm verdicts yet). Keeps the same
-// two-column layout as a full backtest, but instead of a verdict it prompts a full backtest. Mirrors
-// EvalCard's shell (header + body + trade-count footer) so it matches height and feel.
-function UnscoredEvalCard({ tradeCount, onRunFullBacktest, busy }: { tradeCount?: number | null; onRunFullBacktest: () => void; busy?: boolean }) {
-  return (
-    <div className="bg-bg-surface border border-border-subtle border-l-[3px] border-l-border-default rounded-lg overflow-hidden h-full flex flex-col">
-      {/* Header */}
-      <div className="px-4 pt-3.5 pb-2.5 flex items-start justify-between gap-3">
-        <div className="text-[13px] font-semibold text-text-primary leading-tight">Not yet scored</div>
-        <span className="inline-flex items-center gap-[5px] px-3 py-[5px] rounded-full text-[11px] font-bold uppercase tracking-[0.4px] flex-shrink-0 bg-bg-sunken text-text-tertiary">
-          <Info size={11} />
-          UNSCORED
-        </span>
-      </div>
+function VerdictRibbon({ ev, tradeCount, totalTrades, spanDays, filtered }: {
+  ev: EvaluationDetail | null
+  tradeCount: number | null
+  totalTrades?: number | null
+  spanDays: number | null
+  /** Performance beside this is news-filtered; the firm verdict is not. Say so, don't imply it. */
+  filtered: boolean
+}) {
+  const cfg = ev ? (VERDICT_CHIP[ev.verdict] ?? VERDICT_CHIP.DISCARD) : null
+  // A profitable run that fails a firm rule is amber, not red — same rule the card used.
+  const rail = cfg
+    ? (ev!.verdict === 'DISCARD' && (ev!.net_pnl ?? 0) > 0 ? VERDICT_CHIP.WARN.rail : cfg.rail)
+    : 'border-l-accent/60'
+  const ungraded = ev?.verdict === 'INFO'
 
-      <div className="mx-4 border-t border-border-subtle" />
-
-      {/* Body — explain why it's unscored + CTA */}
-      <div className="px-4 py-3 space-y-3">
-        <p className="text-[12px] text-text-secondary leading-relaxed">
-          This is an optimizer parameter set. Run a full backtest to get the equity curve, trade-level
-          data, and firm evaluations.
-        </p>
-        <button
-          onClick={onRunFullBacktest}
-          disabled={busy}
-          className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded border border-accent/30 bg-accent/5 text-accent hover:bg-accent/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {busy ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />}
-          Run Full Backtest
-        </button>
-      </div>
-
-      {/* Footer — same trade-count standout as EvalCard */}
-      {tradeCount != null && (
-        <div className="mt-auto flex items-baseline gap-2.5 px-4 py-3 bg-accent/5 border-t border-accent/20">
-          <span className="text-[40px] font-extrabold font-mono leading-none text-accent tabular-nums">{tradeCount}</span>
-          <span className="text-[12px] font-bold uppercase tracking-[0.8px] text-text-secondary">Trades</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function EvalRow({
-  label, pass, value, extra,
-}: { label: string; pass: boolean; value: string; extra?: string }) {
-  return (
-    <div className="flex items-start gap-[10px] text-[12px]">
-      {pass
-        ? <CheckCircle size={13} className="text-pos-text flex-shrink-0 mt-[1px]" />
-        : <XCircle    size={13} className="text-neg-text flex-shrink-0 mt-[1px]" />
+  const chips: React.ReactNode[] = []
+  if (ev && !ungraded) {
+    if (isPersonal(ev)) {
+      if (ev.personal_max_drawdown_from_peak_pct != null) {
+        chips.push(<RuleChip key="dd" label={`Drawdown ≤ ${ev.personal_max_drawdown_from_peak_pct}%`}
+          pass={ev.drawdown_pass} detail="peak-relative, end of day" />)
       }
-      <div className="flex-1 min-w-0">
-        <span className="text-text-tertiary">{label} — </span>
-        <span className={pass ? 'text-text-primary' : 'text-neg-text'}>{value}</span>
-        {extra && <span className="text-text-tertiary ml-2">({extra})</span>}
-      </div>
+      if (ev.personal_daily_loss_cap != null && ev.personal_max_consecutive_loss_days != null) {
+        chips.push(<RuleChip key="streak" label={`< ${ev.personal_max_consecutive_loss_days} capped days`}
+          pass={personalStreakPass(ev)} detail={`days in a row at −$${ev.personal_daily_loss_cap.toLocaleString()}`} />)
+      }
+    } else {
+      chips.push(<RuleChip key="dd" label={`Daily DD ≤ $${ev.firm_max_loss_eod.toLocaleString()}`}
+        pass={ev.drawdown_pass} detail="end-of-day trailing max loss" />)
+      if (ev.firm_profit_target > 0) {
+        chips.push(<RuleChip key="tgt" label={`Target $${ev.firm_profit_target.toLocaleString()}`}
+          pass={ev.target_pass} detail="net P&L required to pass" />)
+      }
+      if (ev.consistency_pass != null && ev.firm_consistency_pct != null) {
+        chips.push(<RuleChip key="con"
+          label={`Consistency ${ev.largest_day_share_pct != null ? `${ev.largest_day_share_pct.toFixed(0)}%` : ''}`.trim()}
+          pass={ev.consistency_pass} detail={`no day above ${ev.firm_consistency_pct}% of total P&L`} />)
+      }
+    }
+  }
+
+  return (
+    <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-lg border border-border-subtle border-l-[3px] ${rail} bg-bg-surface pl-4 pr-2.5 py-2.5`}>
+      {cfg && (
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-[4px] text-[11px] font-bold uppercase tracking-[0.4px] shrink-0 ${cfg.cls}`}>
+          <cfg.Icon size={11} />{cfg.label}
+        </span>
+      )}
+      {ev && <span className="text-[12.5px] text-text-primary">{ev.ruleset_name}</span>}
+      {chips}
+      {ungraded && (
+        <span className="text-[11.5px] text-text-tertiary">
+          · states no limit, so nothing was checked — pick a ruleset with a stated limit to grade this run
+          <InfoTip text="Every grade is a statement about drawdown against a limit. This ruleset deliberately sets none — no daily cap, no drawdown floor — so zero checks ran and there is nothing to pass or fail. It reports the strategy's raw behaviour instead. `personal_forex_risk` is its gradeable twin: the same raw behaviour with one stated bar." />
+        </span>
+      )}
+      {!ev && <span className="text-[12.5px] text-text-secondary">No ruleset evaluated</span>}
+      {filtered && (
+        <span className="rounded border border-border-default bg-bg-sunken px-1.5 py-[1px] text-[10px] font-medium text-text-tertiary">
+          verdict unfiltered
+          <InfoTip text="Firm rules are evaluated on every trade, server-side — there is no news-filtered verdict. This ribbon reports the full run even while the Performance numbers below have news and holiday trades removed." />
+        </span>
+      )}
+      {tradeCount != null && (
+        <TradeCountAnchor count={tradeCount} of={totalTrades} spanDays={spanDays} />
+      )}
+    </div>
+  )
+}
+
+// Optimizer parameter sets have no equity curve and no firm verdicts yet, so there is
+// nothing to grade — the ribbon carries the prompt to run a real backtest instead.
+function UnscoredRibbon({ tradeCount, onRunFullBacktest, busy }: {
+  tradeCount?: number | null; onRunFullBacktest: () => void; busy?: boolean
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border-subtle border-l-[3px] border-l-border-default bg-bg-surface pl-4 pr-2.5 py-2.5">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-bg-sunken px-3 py-[4px] text-[11px] font-bold uppercase tracking-[0.4px] text-text-tertiary shrink-0">
+        <Info size={11} />Unscored
+      </span>
+      <span className="text-[12.5px] text-text-secondary">
+        Optimizer parameter set — no equity curve, trade-level data or firm evaluation yet.
+      </span>
+      <button
+        onClick={onRunFullBacktest}
+        disabled={busy}
+        className="inline-flex items-center gap-1.5 rounded border border-accent/30 bg-accent/5 px-3 py-1 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {busy ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />}
+        Run Full Backtest
+      </button>
+      {tradeCount != null && <TradeCountAnchor count={tradeCount} spanDays={null} />}
     </div>
   )
 }
@@ -3153,10 +3253,6 @@ export function BacktestDetail() {
   // Primary chart tab (the big charts) + secondary tab (supporting charts). Price lazy-loads.
   const [primaryTab, setPrimaryTab] = useState<'equity' | 'sized' | 'price' | 'breakdown'>('equity')
   const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
-  const [showMoreKpis, setShowMoreKpis] = useState(false)
-  // Shared eval-card / KPI-grid height: short when collapsed, taller when More metrics is open so
-  // both grow together and the two KPI rows get enough room (no crop) while staying the same height.
-  const kpiRowH = showMoreKpis ? KPI_ROW_H_EXPANDED : KPI_ROW_H
   // When a run is scored against several firms, show ONE at a time (a wall of cards is
   // confusing). This selects which firm's evaluation card is shown; defaults to the first
   // and resets when the run changes. Performance follows the same firm once sizing lands.
@@ -3171,10 +3267,29 @@ export function BacktestDetail() {
   useEffect(() => { setBalanceOverride(null) }, [run?.run_id])
   const balance = balanceOverride ?? rulesetBalance
 
-  // The firm whose evaluation card is currently shown.
+  // The firm whose evaluation is currently shown in the verdict ribbon.
   const selectedEval = (run && run.evaluations.length)
     ? run.evaluations[Math.min(selectedEvalIdx, run.evaluations.length - 1)]
     : null
+
+  // The drawdown meter's simulated tail — the worst-1% drawdown Monte Carlo produced.
+  // Gated on dd_basis === 'percent': the dollar basis is not comparable to a peak-relative
+  // percentage on a compounding run, and tests run before 2026-07-30 have no percent columns
+  // at all. Null means "not measured", and the meter says exactly that rather than drawing a
+  // tail of zero — an unmeasured tail is unknown, not absent.
+  const stressTailPct = (latestStress?.dd_basis === 'percent' && latestStress.pct1_max_dd_pct != null)
+    ? latestStress.pct1_max_dd_pct
+    : null
+
+  // Calendar span of the run, for the ribbon's trades-per-month cadence.
+  const runSpanDays = useMemo(() => {
+    const daily = run?.daily_pnl ?? []
+    if (daily.length < 2) return null
+    const t0 = new Date(daily[0].date.slice(0, 10)).getTime()
+    const t1 = new Date(daily[daily.length - 1].date.slice(0, 10)).getTime()
+    const days = (t1 - t0) / 86_400_000
+    return days > 0 ? days : null
+  }, [run?.daily_pnl])
 
   // Engine-sized runs size the SAME strategy differently per firm (each firm's own contract
   // ladder / drawdown floor), so every firm has its OWN net P&L, daily P&L and sized timeline.
@@ -3342,18 +3457,6 @@ export function BacktestDetail() {
       { onSuccess: () => setShowRerun(false) },
     )
   }, [run, retryBacktest])
-
-  // The eval card and KPI grid share ONE fixed height on lg so paging through evaluations never
-  // grows or shrinks the row. Was JS-measured off the eval card, but each verdict has a different
-  // number of rule lines (PASS = 1, DISCARD = 2–3), so the grid stretched/squished per verdict.
-  // Fixed height sized to fit the tallest verdict; shorter verdicts just leave headroom.
-  const [isLg, setIsLg] = useState(() => window.matchMedia('(min-width: 1024px)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)')
-    const on = () => setIsLg(mq.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
 
   const progressMatches = progress?.job_id === run?.run_id
   const runPct       = isRunning ? (progressMatches ? (progress?.pct ?? 0) : 0) : 0
@@ -3583,79 +3686,38 @@ export function BacktestDetail() {
           {/* ── Banners ───────────────────────────────────────────────────── */}
           {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={scope === 'mt5' ? MT5_RUN_STEPS : scope === 'python' ? PYTHON_RUN_STEPS : NT8_RUN_STEPS} />}
           {isFailed && <FailureBanner run={run} />}
-          {/* ── Evaluations + Performance (side by side) ──────────────────── */}
+          {/* ── Evaluation + Performance ──────────────────────────────────── */}
+          {/* One stack: verdict ribbon, then the three question cards. The evaluation used to be
+              a fixed-height COLUMN beside a 6+6 KPI grid — see PerformancePanel for why both are
+              gone. An optimizer combo has no verdict yet, so its ribbon prompts a full backtest
+              instead; a run with no evaluations at all gets a ribbon carrying only the trade
+              count. Every path renders the same three cards below. */}
           {isComplete && (
-            // Two-column Evaluation + Performance for real backtests AND optimizer combos. A combo
-            // has no firm verdicts yet, so its Evaluation column is an UnscoredEvalCard prompting a
-            // full backtest — same layout, just unscored. Only a plain run with no evaluations and
-            // no combo origin falls through to the full-width Performance-only layout.
-            run.evaluations.length > 0 || isOptCombo ? (
-              <div className="space-y-3">
-                <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
-                  {/* Left: ONE firm evaluation card — height measured so the KPI grid can match it.
-                      Multi-firm runs switch via the compact counter on the header line (no growth). */}
-                  <div className="flex flex-col">
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">Evaluation</h2>
-                      {/* Firm switching now lives on the header ruleset chip (always visible, even
-                          scrolled) — no second switcher here.
-                          The firm verdict is computed server-side over EVERY trade and cannot be
-                          re-evaluated in the browser, so while Performance beside it is filtered
-                          this column has to say plainly that it is not. */}
-                      {newsOnKpis && (
-                        <span className="shrink-0 rounded px-1.5 py-[1px] text-[10px] font-medium border border-border-default bg-bg-sunken text-text-tertiary">
-                          unfiltered
-                          <InfoTip text="Firm rules are evaluated on every trade, server-side — there is no news-filtered verdict. This card reports the full run even while the Performance numbers beside it have news and holiday trades removed." />
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-3" style={isLg ? { height: kpiRowH, transition: 'height 0.3s ease' } : undefined}>
-                      {isOptCombo ? (
-                        <UnscoredEvalCard
-                          tradeCount={run.trade_count}
-                          onRunFullBacktest={runFullBacktest}
-                          busy={retryBacktest.isPending || jobBusy}
-                        />
-                      ) : (() => {
-                        // One firm at a time. Clamp the index in case the eval list shrank.
-                        const idx = Math.min(selectedEvalIdx, run.evaluations.length - 1)
-                        const ev = run.evaluations[idx]
-                        return (
-                          <EvalCard key={ev.eval_id} ev={ev} netPnl={ev.net_pnl ?? run.net_pnl}
-                            tradeCount={ev.trade_count ?? run.trade_count} showName={run.evaluations.length > 1} />
-                        )
-                      })()}
-                    </div>
-                  </div>
-                  {/* Right: flat KPIs pinned to the eval card's measured pixel height. The news
-                      filter's control lives on this header line — the row was empty, so it costs
-                      no vertical space, and it sits directly above the only numbers it changes. */}
-                  <div className="flex flex-col min-w-0">
-                    <PerformanceHeader news={news} blocked={newsBlocked} filtered={newsOnKpis} />
-                    <KpiGrid run={kpiRun!} fallback={fallback} equity={kpiRun!.equity_curve}
-                      balance={balance} showMore={showMoreKpis} fixedHeight={isLg ? kpiRowH : null}
-                      compare={kpiCompare} filtered={newsOnKpis} />
-                  </div>
-                </div>
-                {/* "More metrics" below the cards (left-aligned) — outside the grid so it doesn't
-                    eat into the height that's matched to the eval card. */}
-                <div className="flex items-start justify-between gap-4">
-                  <MoreMetricsToggle open={showMoreKpis} onToggle={() => setShowMoreKpis(s => !s)} count={6} />
-                  <NewsFilterNote news={news} />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div>
-                  <PerformanceHeader news={news} blocked={newsBlocked} filtered={newsOnKpis} />
-                  {run.trade_count != null && <div className="mb-3"><TradeCountStandout count={run.trade_count} /></div>}
-                  <KpiGrid run={kpiRun!} fallback={fallback} equity={kpiRun!.equity_curve}
-                    balance={balance} showMore={showMoreKpis}
-                    compare={kpiCompare} filtered={newsOnKpis} />
-                </div>
-                <MoreMetricsToggle open={showMoreKpis} onToggle={() => setShowMoreKpis(s => !s)} count={6} />
-              </div>
-            )
+            <div className="space-y-3">
+              <PerformanceHeader news={news} blocked={newsBlocked} filtered={newsOnKpis} />
+              <PerformancePanel
+                run={kpiRun!} fallback={fallback} equity={kpiRun!.equity_curve}
+                balance={balance} compare={kpiCompare} filtered={newsOnKpis}
+                limitPct={selectedEval?.personal_max_drawdown_from_peak_pct ?? null}
+                tailPct={stressTailPct}
+                ribbon={isOptCombo ? (
+                  <UnscoredRibbon
+                    tradeCount={run.trade_count}
+                    onRunFullBacktest={runFullBacktest}
+                    busy={retryBacktest.isPending || jobBusy}
+                  />
+                ) : (
+                  <VerdictRibbon
+                    ev={selectedEval}
+                    tradeCount={kpiRun?.trade_count ?? run.trade_count}
+                    totalTrades={run.trade_count}
+                    spanDays={runSpanDays}
+                    filtered={newsOnKpis}
+                  />
+                )}
+              />
+              <NewsFilterNote news={news} />
+            </div>
           )}
 
           {/* The News & holiday filter no longer has a section of its own. It was carrying a

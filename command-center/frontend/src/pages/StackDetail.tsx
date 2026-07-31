@@ -9,8 +9,8 @@ import { XModeToggle } from '@/components/XModeToggle'
 import { RegimeOverlayToggle } from '@/components/RegimeOverlayToggle'
 import { getXMode, setXModePref, regimeBandsFromTimeline, regimeBandsByIndex, type XMode } from '@/lib/chartAxis'
 import {
-  KpiGrid, computeFallbacks, EquityCurveChart, DrawdownChart, DailyPnlChart, DirectionBreakdown,
-  PriceChartView, MoreMetricsToggle, SeriesToggle, type FallbackMetrics,
+  PerformancePanel, computeFallbacks, EquityCurveChart, DrawdownChart, DailyPnlChart,
+  DirectionBreakdown, PriceChartView, SeriesToggle, type FallbackMetrics,
 } from '@/pages/BacktestDetail'
 import { C } from '@/themes/chart'
 import type { StackStrategyLeg, BacktestDetail as RunDetail, EquityPoint, DailyPnlPoint } from '@/types'
@@ -238,48 +238,28 @@ function StrategyChips({ legs, enabled, colorFor, onToggle }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 // Fixed heights so the trades card and the KPI grid line up (mirrors BacktestDetail's eval/KPI match).
-const KPI_ROW_H = 196
-const KPI_ROW_H_EXPANDED = 228
-
-function useIsLg() {
-  const [isLg, setIsLg] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)')
-    const on = () => setIsLg(mq.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-  return isLg
-}
-
-// The stack's stand-in for the EVALUATION card: per-strategy trade breakdown on top, combined total
-// at the bottom (same shape/height as a backtest's eval card, so the KPI grid matches it).
-function StackTradesCard({ perLegCounts, total, colorFor, height }: {
+// The stack's stand-in for a backtest's VERDICT ribbon: per-strategy trade breakdown inline,
+// combined total anchored right in the same slot the backtest puts its trade count. Was a
+// fixed-height card beside the old KPI grid; both that grid and its pinned height are gone.
+function StackTradesRibbon({ perLegCounts, total, colorFor }: {
   perLegCounts: { strategy_id: string; strategy_name: string; count: number }[]
   total: number
   colorFor: (id: string) => string
-  height: number | null
 }) {
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl px-4 py-4 flex flex-col" style={height ? { height } : undefined}>
-      <div className="flex-1 min-h-0 overflow-auto">
-        <div className="text-[9px] font-bold uppercase tracking-[0.8px] text-text-tertiary mb-2">By strategy</div>
-        <div className="space-y-1.5">
-          {perLegCounts.map(l => (
-            <div key={l.strategy_id} className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 min-w-0">
-                <span className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0" style={{ backgroundColor: colorFor(l.strategy_id) }} />
-                <span className="text-[12px] text-text-secondary truncate">{l.strategy_name}</span>
-              </span>
-              <span className="text-[13px] font-mono tabular-nums text-text-primary">{l.count}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="pt-3 mt-2 border-t border-border-subtle flex items-baseline gap-2">
-        <span className="text-[30px] font-bold font-mono leading-none text-accent tabular-nums">{total}</span>
-        <span className="text-[11px] font-bold uppercase tracking-[0.6px] text-text-secondary">Trades</span>
-      </div>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border-subtle border-l-[3px] border-l-accent/60 bg-bg-surface pl-4 pr-2.5 py-2.5">
+      <span className="text-[10px] font-bold uppercase tracking-[0.9px] text-text-tertiary">By strategy</span>
+      {perLegCounts.map(l => (
+        <span key={l.strategy_id} className="flex items-center gap-1.5 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0" style={{ backgroundColor: colorFor(l.strategy_id) }} />
+          <span className="text-[12px] text-text-secondary truncate max-w-[180px]">{l.strategy_name}</span>
+          <span className="text-[12px] font-mono tabular-nums text-text-primary">{l.count}</span>
+        </span>
+      ))}
+      <span className="ml-auto flex items-baseline gap-2.5 pl-4 border-l border-border-subtle shrink-0">
+        <span className="text-[29px] font-bold font-mono leading-none text-accent tabular-nums">{total}</span>
+        <span className="text-[11px] font-bold uppercase tracking-[0.9px] text-text-secondary">Trades</span>
+      </span>
     </div>
   )
 }
@@ -299,9 +279,6 @@ export function StackDetail() {
   const cancelStack = useCancelStack()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showRerun, setShowRerun] = useState(false)
-  const [showMore, setShowMore] = useState(false)
-  const isLg = useIsLg()
-  const kpiRowH = showMore ? KPI_ROW_H_EXPANDED : KPI_ROW_H
 
   const isRunning = stack?.status === 'running'
   const legs = useMemo(() => stack?.strategies ?? [], [stack])
@@ -569,25 +546,24 @@ export function StackDetail() {
           {/* Trades + Performance — identical two-column layout to a single backtest. The left card
               takes the EVALUATION card's slot: per-strategy trade breakdown on top, the combined
               total at the bottom. The KPI grid on the right is height-matched, More/Fewer grows both. */}
+          {/* Same three-question panel as a single backtest, so the numbers are computed and
+              read identically. A stack has no firm verdict, so the ribbon slot carries the
+              per-strategy trade breakdown instead — the stack's answer to "what is this made
+              of", in the row where a backtest states its verdict. */}
           {hasResults && (
-            <div className="space-y-3">
-              <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
-                <div className="flex flex-col">
-                  <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">Trades</h2>
-                  <StackTradesCard
+            <div>
+              <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">Performance</h2>
+              <PerformancePanel
+                run={combined.run} fallback={combined.fallback} equity={combined.equity}
+                balance={combined.balance}
+                ribbon={
+                  <StackTradesRibbon
                     perLegCounts={combined.perLegCounts}
                     total={combined.run.trade_count ?? 0}
                     colorFor={colorFor}
-                    height={isLg ? kpiRowH : null}
                   />
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">Performance</h2>
-                  <KpiGrid run={combined.run} fallback={combined.fallback} equity={combined.equity}
-                    balance={combined.balance} showMore={showMore} fixedHeight={isLg ? kpiRowH : null} />
-                </div>
-              </div>
-              <MoreMetricsToggle open={showMore} onToggle={() => setShowMore(v => !v)} count={6} />
+                }
+              />
             </div>
           )}
 
